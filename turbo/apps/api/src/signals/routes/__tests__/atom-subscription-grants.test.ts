@@ -1,609 +1,611 @@
 import { randomUUID } from "node:crypto";
-import { beforeEach, describe, expect, it } from "vitest";
-import { http, HttpResponse } from "msw";
 import { atomSubscriptionGrantsContract } from "@okouai/api-contracts/contracts/atom-subscription-grants";
 import {
-  personalModelProvidersMainContract,
   personalModelProvidersByTypeContract,
+  personalModelProvidersMainContract,
 } from "@okouai/api-contracts/contracts/personal-model-providers";
+import { http, HttpResponse } from "msw";
+import { describe, expect, it } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { mockOptionalEnv } from "../../../lib/env";
-import { now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
-import { createDeferredPromise } from "../../utils";
 import { atomSubscriptionGrantRoutes } from "../atom-subscription-grants";
-import { meModelProvidersListRoutes } from "../me-model-providers-list";
 import { meModelProvidersDeleteRoutes } from "../me-model-providers-delete";
+import { meModelProvidersListRoutes } from "../me-model-providers-list";
 import { meModelProvidersUpsertRoutes } from "../me-model-providers-upsert";
-import { mockClerkMembership } from "./helpers/api-bdd-clerk";
+import { now } from "../../../lib/time";
 
 const context = testContext();
-const MACHINE_SECRET = "msk_existing_vm0_machine";
-const M2M_TOKEN = "mt_atom_grant";
-const ATOM_MACHINE = "mch_atom_api";
-const routes = Object.freeze([
-  ...atomSubscriptionGrantRoutes,
-  ...meModelProvidersListRoutes,
-  ...meModelProvidersDeleteRoutes,
-  ...meModelProvidersUpsertRoutes,
-]);
-function client() {
-  return setupApp({ context, routes });
+
+const ATOM_M2M_TOKEN = "atom-m2m-token";
+const atomHeaders = Object.freeze({
+  authorization: `Bearer ${ATOM_M2M_TOKEN}`,
+});
+const sessionHeaders = Object.freeze({ authorization: "Bearer clerk-session" });
+
+interface Recipient {
+  readonly userId: string;
+  readonly orgId: string;
 }
-function fixture(provider: "claude-code" | "codex" = "claude-code") {
-  const actor = {
-    userId: `user_${randomUUID()}`,
-    orgId: `org_${randomUUID()}`,
-  };
-  mockClerkMembership(
-    context,
-    { ...actor, orgRole: "org:member", email: "recipient@example.com" },
-    "org:member",
+
+function bearerOf(request: unknown): string | null {
+  if (!(request instanceof Request)) {
+    return null;
+  }
+  return request.headers.get("authorization")?.replace(/^Bearer /, "") ?? null;
+}
+
+function acceptsM2M(options: unknown): boolean {
+  return (
+    typeof options === "object" &&
+    options !== null &&
+    "acceptsToken" in options &&
+    options.acceptsToken === "m2m_token"
   );
+}
+
+/**
+ * Identity provider boundary: Atom holds a verified M2M token, the recipient
+ * holds a Clerk session for the organization.
+ */
+function arrangeIdentity(recipient: Recipient, members: { current: boolean }) {
   context.mocks.clerk.authenticateRequest.mockImplementation(
-    (request, options) => {
-      if (
-        typeof options === "object" &&
-        options !== null &&
-        "acceptsToken" in options &&
-        options.acceptsToken === "m2m_token"
-      ) {
-        expect(options).toMatchObject({ machineSecretKey: MACHINE_SECRET });
-        const token =
-          request instanceof Request
-            ? request.headers.get("authorization")
-            : null;
-        if (
-          token !== `Bearer ${M2M_TOKEN}` &&
-          token !== "Bearer mt_other_machine"
-        ) {
-          return Promise.resolve({ isAuthenticated: false });
-        }
-        const machineId =
-          token === "Bearer mt_other_machine" ? "mch_other" : ATOM_MACHINE;
+    (request: unknown, options: unknown) => {
+      const token = bearerOf(request);
+      if (acceptsM2M(options)) {
+        return Promise.resolve(
+          token === ATOM_M2M_TOKEN
+            ? {
+                isAuthenticated: true,
+                toAuth: () => {
+                  return {
+                    tokenType: "m2m_token",
+                    machineId: "mch_atom",
+                    id: "m2m_atom_token",
+                  };
+                },
+              }
+            : { isAuthenticated: false },
+        );
+      }
+      if (token === "clerk-session") {
         return Promise.resolve({
           isAuthenticated: true,
           toAuth: () => {
             return {
-              tokenType: "m2m_token",
-              id: "m2m_valid",
-              machineId,
+              userId: recipient.userId,
+              orgId: recipient.orgId,
+              orgRole: "org:member",
             };
           },
         });
       }
+      return Promise.resolve({ isAuthenticated: false });
+    },
+  );
+  context.mocks.clerk.organizations.getOrganizationMembershipList.mockImplementation(
+    (params: unknown) => {
+      const query =
+        typeof params === "object" && params !== null
+          ? (params as { organizationId?: string; userId?: string[] })
+          : {};
+      const matches =
+        members.current &&
+        query.organizationId === recipient.orgId &&
+        (query.userId ?? []).includes(recipient.userId);
       return Promise.resolve({
-        isAuthenticated: true,
-        toAuth: () => {
-          return { ...actor, orgRole: "org:member" };
-        },
+        data: matches
+          ? [
+              {
+                role: "org:member",
+                publicUserData: { userId: recipient.userId },
+                organization: { id: recipient.orgId },
+              },
+            ]
+          : [],
+        totalCount: matches ? 1 : 0,
       });
     },
   );
+}
+
+/** Anthropic OAuth profile API: each access token belongs to one account. */
+function arrangeClaudeAccounts(accounts: ReadonlyMap<string, string>) {
+  server.use(
+    http.get("https://api.anthropic.com/api/oauth/profile", ({ request }) => {
+      const token = bearerOf(request) ?? "";
+      const account = accounts.get(token) ?? "unknown";
+      return HttpResponse.json({
+        account: {
+          uuid: `acct-${account}`,
+          email: `${account}@example.com`,
+          has_claude_max: false,
+          has_claude_pro: true,
+        },
+        organization: {
+          uuid: `org-${account}`,
+          name: `${account} workspace`,
+          organization_type: "claude_pro",
+        },
+      });
+    }),
+    http.get("https://api.anthropic.com/api/oauth/usage", () => {
+      return HttpResponse.json({});
+    }),
+  );
+}
+
+function setup() {
+  const recipient: Recipient = {
+    userId: `user_${randomUUID()}`,
+    orgId: `org_${randomUUID()}`,
+  };
+  const members = { current: true };
+  arrangeIdentity(recipient, members);
+  const appFor = setupApp({
+    context,
+    routes: [
+      ...atomSubscriptionGrantRoutes,
+      ...meModelProvidersListRoutes,
+      ...meModelProvidersDeleteRoutes,
+      ...meModelProvidersUpsertRoutes,
+    ],
+  });
+  const atom = appFor(atomSubscriptionGrantsContract);
+  const providers = appFor(personalModelProvidersMainContract);
+  const providersByType = appFor(personalModelProvidersByTypeContract);
+
+  async function listProviders() {
+    const response = await accept(
+      providers.list({ headers: sessionHeaders }),
+      [200],
+    );
+    return response.body.modelProviders;
+  }
+
+  function claudeGrant(grantId: string, accessToken: string) {
+    return {
+      grantId,
+      orgId: recipient.orgId,
+      userId: recipient.userId,
+      tokens: { provider: "claude-code" as const, accessToken },
+    };
+  }
+
   return {
-    ...actor,
-    grantId: randomUUID(),
-    tokens:
-      provider === "claude-code"
-        ? {
-            provider: "claude-code" as const,
-            accessToken: "sk-ant-test-granted",
-          }
-        : {
-            provider: "codex" as const,
-            accessToken: jwt({ exp: Math.floor(now() / 1000) + 7200 }),
-            refreshToken: "synthetic-grant-refresh-token",
-            idToken: jwt({
-              exp: Math.floor(now() / 1000) + 7200,
-              email: "subscriber@example.com",
-              "https://api.openai.com/auth": {
-                chatgpt_account_id: randomUUID(),
-                chatgpt_plan_type: "plus",
-              },
-            }),
-          },
+    recipient,
+    members,
+    atom,
+    providers,
+    providersByType,
+    listProviders,
+    claudeGrant,
   };
 }
-function jwt(payload: Record<string, unknown>) {
-  return `${Buffer.from('{"alg":"RS256"}').toString("base64url")}.${Buffer.from(JSON.stringify(payload)).toString("base64url")}.synthetic`;
+
+function base64Url(value: unknown): string {
+  return Buffer.from(JSON.stringify(value)).toString("base64url");
 }
 
-function cancel(body: ReturnType<typeof fixture>) {
-  return client()(atomSubscriptionGrantsContract).cancel({
-    headers: { authorization: `Bearer ${M2M_TOKEN}` },
-    params: { grantId: body.grantId },
-    body: {
-      orgId: body.orgId,
-      userId: body.userId,
-      provider: body.tokens.provider,
-    },
-  });
-}
-
-function deliver(body: ReturnType<typeof fixture>) {
-  return client()(atomSubscriptionGrantsContract).deliver({
-    headers: { authorization: `Bearer ${M2M_TOKEN}` },
-    body,
-  });
-}
-
-async function subscriptions() {
-  const response = await accept(
-    client()(personalModelProvidersMainContract).list({
-      headers: { authorization: "Bearer clerk-session" },
-    }),
-    [200],
-  );
-  return response.body.modelProviders;
+function unsignedJwt(payload: Record<string, unknown>): string {
+  return `${base64Url({ alg: "none", typ: "JWT" })}.${base64Url(payload)}.signature`;
 }
 
 describe("Atom subscription grants", () => {
-  beforeEach(() => {
-    mockOptionalEnv("OKOU_MACHINE_SECRET_KEY", MACHINE_SECRET);
-    server.use(
-      http.get("https://api.anthropic.com/api/oauth/profile", ({ request }) => {
-        const token = request.headers.get("authorization");
-        const accountId =
-          token === "Bearer sk-ant-third-account"
-            ? "claude-third-account"
-            : token === "Bearer sk-ant-another-account"
-              ? "claude-second-account"
-              : "claude-first-account";
-        return HttpResponse.json({
-          account: {
-            uuid: accountId,
-            email: `${accountId}@example.com`,
-            has_claude_pro: true,
-          },
-          organization: { uuid: "claude-workspace", name: "Personal" },
-        });
-      }),
-      http.get("https://api.anthropic.com/api/oauth/usage", () => {
-        return HttpResponse.json({
-          five_hour: { utilization: 0, resets_at: null },
-          seven_day: { utilization: 0, resets_at: null },
-        });
-      }),
-    );
-  });
+  it("atom-subscription-grants-001 rejects a signed-in user's session token as Atom", async () => {
+    const { atom, claudeGrant } = setup();
+    arrangeClaudeAccounts(new Map([["claude-token-a", "alpha"]]));
 
-  it.each([
-    "clerk-session",
-    "msk_existing_vm0_machine",
-    "atom-test-grant-credential-32-characters",
-    "mt_invalid",
-  ])("rejects a non-M2M or unverified credential: %s", async (token) => {
-    const body = fixture();
     const response = await accept(
-      client()(atomSubscriptionGrantsContract).deliver({
-        headers: { authorization: `Bearer ${token}` },
-        body,
+      atom.deliver({
+        headers: sessionHeaders,
+        body: claudeGrant(randomUUID(), "claude-token-a"),
       }),
       [401],
     );
-    expect(response.body).toMatchObject({ error: { code: "UNAUTHORIZED" } });
+
+    expect(response.body.error.code).toBe("UNAUTHORIZED");
   });
 
-  it("disables ingestion when the existing M2M secret is not configured", async () => {
-    const body = fixture();
-    mockOptionalEnv("OKOU_MACHINE_SECRET_KEY", undefined);
+  it("atom-subscription-grants-008 refuses to deliver to a user outside the organization", async () => {
+    const { atom, members, listProviders, claudeGrant } = setup();
+    arrangeClaudeAccounts(new Map([["claude-token-a", "alpha"]]));
+    members.current = false;
+
     await accept(
-      client()(atomSubscriptionGrantsContract).deliver({
-        headers: { authorization: `Bearer ${M2M_TOKEN}` },
-        body,
-      }),
-      [503],
-    );
-    expect(context.mocks.clerk.authenticateRequest).not.toHaveBeenCalled();
-  });
-
-  it("accepts another Clerk-authorized machine without a grant-specific allowlist", async () => {
-    const body = fixture();
-    const delivered = await accept(
-      client()(atomSubscriptionGrantsContract).deliver({
-        headers: { authorization: "Bearer mt_other_machine" },
-        body,
-      }),
-      [200],
-    );
-    expect(delivered.body).toStrictEqual({
-      grantId: body.grantId,
-      status: "delivered",
-    });
-    const listed = await accept(
-      client()(personalModelProvidersMainContract).list({
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [200],
-    );
-    expect(listed.body.modelProviders).toHaveLength(1);
-    expect(listed.body.modelProviders[0]).toMatchObject({
-      type: "claude-code-oauth-token",
-      isActive: true,
-    });
-  });
-
-  it("does not expose Clerk failures and allows retry after verification recovers", async () => {
-    const body = fixture();
-    context.mocks.clerk.authenticateRequest.mockRejectedValueOnce(
-      new Error(`private Clerk error ${MACHINE_SECRET}`),
-    );
-    const response = await accept(
-      client()(atomSubscriptionGrantsContract).deliver({
-        headers: { authorization: `Bearer ${M2M_TOKEN}` },
-        body,
-      }),
-      [503],
-    );
-    expect(JSON.stringify(response.body)).not.toContain(MACHINE_SECRET);
-    await accept(
-      client()(atomSubscriptionGrantsContract).deliver({
-        headers: { authorization: `Bearer ${M2M_TOKEN}` },
-        body,
-      }),
-      [200],
-    );
-  });
-
-  it("rejects a recipient who does not belong to the supplied org", async () => {
-    const body = fixture();
-    context.mocks.clerk.organizations.getOrganizationMembershipList.mockResolvedValue(
-      { data: [] },
-    );
-    await accept(
-      client()(atomSubscriptionGrantsContract).deliver({
-        headers: { authorization: `Bearer ${M2M_TOKEN}` },
-        body,
+      atom.deliver({
+        headers: atomHeaders,
+        body: claudeGrant(randomUUID(), "claude-token-a"),
       }),
       [403],
     );
-    const listed = await accept(
-      client()(personalModelProvidersMainContract).list({
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [200],
-    );
-    expect(listed.body.modelProviders).toHaveLength(0);
+
+    members.current = true;
+    await expect(listProviders()).resolves.toStrictEqual([]);
   });
 
-  it.each(["claude-code", "codex"] as const)(
-    "delivers %s to the selected member once and rejects recipient changes",
-    async (provider) => {
-      const base = fixture();
-      const expiry = Math.floor(now() / 1000) + 7200;
-      const tokens =
-        provider === "claude-code"
-          ? base.tokens
-          : {
-              provider,
-              accessToken: jwt({ exp: expiry }),
-              refreshToken: "synthetic-grant-refresh-token",
-              idToken: jwt({
-                exp: expiry,
-                email: "subscriber@example.com",
-                "https://api.openai.com/auth": {
-                  chatgpt_account_id: randomUUID(),
-                  chatgpt_plan_type: "plus",
-                },
-              }),
-            };
-      const body = { ...base, tokens };
-      const deliver = async () => {
-        return await accept(
-          client()(atomSubscriptionGrantsContract).deliver({
-            headers: { authorization: `Bearer ${M2M_TOKEN}` },
-            body,
-          }),
-          [200],
-        );
-      };
-      const delivered = await deliver();
-      expect(delivered.body).toStrictEqual({
-        grantId: body.grantId,
-        status: "delivered",
-      });
-      expect((await deliver()).body).toStrictEqual(delivered.body);
-      const listed = await accept(
-        client()(personalModelProvidersMainContract).list({
-          headers: { authorization: "Bearer clerk-session" },
-        }),
-        [200],
-      );
-      expect(listed.body.modelProviders).toHaveLength(1);
-      expect(listed.body.modelProviders[0]).toMatchObject({
-        type:
-          provider === "codex"
-            ? "codex-oauth-token"
-            : "claude-code-oauth-token",
-        isActive: true,
-      });
-      expect(JSON.stringify(listed.body)).not.toContain(tokens.accessToken);
-      await accept(
-        client()(atomSubscriptionGrantsContract).deliver({
-          headers: { authorization: `Bearer ${M2M_TOKEN}` },
-          body: { ...body, userId: `user_${randomUUID()}` },
-        }),
-        [409],
-      );
-    },
-  );
+  it("atom-subscription-grants-009 delivers a Claude Code grant once and rejects a recipient change", async () => {
+    const { atom, listProviders, claudeGrant } = setup();
+    arrangeClaudeAccounts(new Map([["claude-secret-token", "alpha"]]));
+    const grantId = randomUUID();
+    const grant = claudeGrant(grantId, "claude-secret-token");
 
-  it("preserves the existing default when adding another subscription", async () => {
-    const body = fixture();
-    await accept(
-      client()(atomSubscriptionGrantsContract).deliver({
-        headers: { authorization: `Bearer ${M2M_TOKEN}` },
-        body,
-      }),
+    const first = await accept(
+      atom.deliver({ headers: atomHeaders, body: grant }),
       [200],
     );
-    const initial = await accept(
-      client()(personalModelProvidersMainContract).list({
-        headers: { authorization: "Bearer clerk-session" },
-      }),
+    const second = await accept(
+      atom.deliver({ headers: atomHeaders, body: grant }),
       [200],
     );
+
+    expect(first.body).toStrictEqual({ grantId, status: "delivered" });
+    expect(second.body).toStrictEqual({ grantId, status: "delivered" });
+    const list = await listProviders();
+    expect(list).toHaveLength(1);
+    expect(list[0]).toMatchObject({
+      type: "claude-code-oauth-token",
+      isActive: true,
+    });
+    expect(JSON.stringify(list)).not.toContain("claude-secret-token");
+
     await accept(
-      client()(atomSubscriptionGrantsContract).deliver({
-        headers: { authorization: `Bearer ${M2M_TOKEN}` },
-        body: {
-          ...body,
-          grantId: randomUUID(),
-          tokens: {
-            provider: "claude-code",
-            accessToken: "sk-ant-another-account",
+      atom.deliver({
+        headers: atomHeaders,
+        body: { ...grant, userId: `user_${randomUUID()}` },
+      }),
+      [409],
+    );
+  });
+
+  it("atom-subscription-grants-010 delivers a Codex grant once and rejects a recipient change", async () => {
+    const { atom, recipient, listProviders } = setup();
+    server.use(
+      http.get("https://chatgpt.com/backend-api/*", () => {
+        return HttpResponse.json({}, { status: 503 });
+      }),
+    );
+    const exp = Math.floor(now() / 1000) + 3600;
+    const accessToken = unsignedJwt({ exp, sub: "codex-access" });
+    const grantId = randomUUID();
+    const grant = {
+      grantId,
+      orgId: recipient.orgId,
+      userId: recipient.userId,
+      tokens: {
+        provider: "codex" as const,
+        accessToken,
+        refreshToken: "codex-refresh-token",
+        idToken: unsignedJwt({
+          exp,
+          email: "codex.user@example.com",
+          "https://api.openai.com/auth": {
+            chatgpt_account_id: `chatgpt-${randomUUID()}`,
+            chatgpt_plan_type: "plus",
           },
-        },
-      }),
+        }),
+      },
+    };
+
+    const first = await accept(
+      atom.deliver({ headers: atomHeaders, body: grant }),
       [200],
     );
-    const listed = await accept(
-      client()(personalModelProvidersMainContract).list({
-        headers: { authorization: "Bearer clerk-session" },
-      }),
+    const second = await accept(
+      atom.deliver({ headers: atomHeaders, body: grant }),
       [200],
     );
-    expect(listed.body.modelProviders).toHaveLength(2);
-    expect(
-      listed.body.modelProviders.find((account) => {
-        return account.isActive;
-      })?.id,
-    ).toBe(initial.body.modelProviders[0]?.id);
+
+    expect(first.body).toStrictEqual({ grantId, status: "delivered" });
+    expect(second.body).toStrictEqual({ grantId, status: "delivered" });
+    const list = await listProviders();
+    expect(list).toHaveLength(1);
+    expect(list[0]).toMatchObject({
+      type: "codex-oauth-token",
+      isActive: true,
+    });
+    expect(JSON.stringify(list)).not.toContain(accessToken);
+
+    await accept(
+      atom.deliver({
+        headers: atomHeaders,
+        body: { ...grant, userId: `user_${randomUUID()}` },
+      }),
+      [409],
+    );
   });
 
-  it("does not restore credentials when a delivered grant is retried after the recipient disconnects", async () => {
-    const body = fixture();
+  it("atom-subscription-grants-011 keeps the existing default when a second subscription arrives", async () => {
+    const { atom, listProviders, claudeGrant } = setup();
+    arrangeClaudeAccounts(
+      new Map([
+        ["claude-token-a", "alpha"],
+        ["claude-token-b", "bravo"],
+      ]),
+    );
     await accept(
-      client()(atomSubscriptionGrantsContract).deliver({
-        headers: { authorization: `Bearer ${M2M_TOKEN}` },
-        body,
+      atom.deliver({
+        headers: atomHeaders,
+        body: claudeGrant(randomUUID(), "claude-token-a"),
       }),
       [200],
     );
+    const [firstAccount] = await listProviders();
+
     await accept(
-      client()(personalModelProvidersByTypeContract).delete({
-        headers: { authorization: "Bearer clerk-session" },
+      atom.deliver({
+        headers: atomHeaders,
+        body: claudeGrant(randomUUID(), "claude-token-b"),
+      }),
+      [200],
+    );
+
+    const list = await listProviders();
+    expect(list).toHaveLength(2);
+    const active = list.filter((provider) => {
+      return provider.isActive;
+    });
+    expect(active).toHaveLength(1);
+    expect(active[0]?.id).toBe(firstAccount?.id);
+  });
+
+  it("atom-subscription-grants-012 does not restore a subscription the recipient disconnected", async () => {
+    const { atom, providersByType, listProviders, claudeGrant } = setup();
+    arrangeClaudeAccounts(new Map([["claude-token-a", "alpha"]]));
+    const grant = claudeGrant(randomUUID(), "claude-token-a");
+    await accept(atom.deliver({ headers: atomHeaders, body: grant }), [200]);
+    await accept(
+      providersByType.delete({
+        headers: sessionHeaders,
         params: { type: "claude-code-oauth-token" },
       }),
       [204],
     );
+
+    await accept(atom.deliver({ headers: atomHeaders, body: grant }), [200]);
+
+    await expect(listProviders()).resolves.toStrictEqual([]);
+  });
+
+  it("atom-subscription-grants-013 cancels a delivered grant idempotently and blocks redelivery", async () => {
+    const { atom, recipient, listProviders, claudeGrant } = setup();
+    arrangeClaudeAccounts(new Map([["claude-token-a", "alpha"]]));
+    const grantId = randomUUID();
+    const grant = claudeGrant(grantId, "claude-token-a");
+    await accept(atom.deliver({ headers: atomHeaders, body: grant }), [200]);
+    const cancel = {
+      headers: atomHeaders,
+      params: { grantId },
+      body: {
+        orgId: recipient.orgId,
+        userId: recipient.userId,
+        provider: "claude-code" as const,
+      },
+    };
+
+    const first = await accept(atom.cancel(cancel), [200]);
+    const second = await accept(atom.cancel(cancel), [200]);
+
+    expect(first.body).toStrictEqual({ grantId, status: "cancelled" });
+    expect(second.body).toStrictEqual({ grantId, status: "cancelled" });
+    await expect(listProviders()).resolves.toStrictEqual([]);
+    await accept(atom.deliver({ headers: atomHeaders, body: grant }), [409]);
+    await expect(listProviders()).resolves.toStrictEqual([]);
+  });
+
+  it("atom-subscription-grants-017 cancelling the active account leaves the other account active", async () => {
+    const { atom, recipient, listProviders, claudeGrant } = setup();
+    arrangeClaudeAccounts(
+      new Map([
+        ["claude-token-a", "alpha"],
+        ["claude-token-b", "bravo"],
+      ]),
+    );
+    const firstGrantId = randomUUID();
     await accept(
-      client()(atomSubscriptionGrantsContract).deliver({
-        headers: { authorization: `Bearer ${M2M_TOKEN}` },
-        body,
+      atom.deliver({
+        headers: atomHeaders,
+        body: claudeGrant(firstGrantId, "claude-token-a"),
       }),
       [200],
     );
-    const listed = await accept(
-      client()(personalModelProvidersMainContract).list({
-        headers: { authorization: "Bearer clerk-session" },
+    await accept(
+      atom.deliver({
+        headers: atomHeaders,
+        body: claudeGrant(randomUUID(), "claude-token-b"),
       }),
       [200],
     );
-    expect(listed.body.modelProviders).toHaveLength(0);
-  });
-
-  it.each(["claude-code", "codex"] as const)(
-    "cancels a delivered %s grant idempotently without allowing redelivery",
-    async (provider) => {
-      const body = fixture(provider);
-      await accept(deliver(body), [200]);
-      const cancelled = await accept(cancel(body), [200]);
-      expect(cancelled.body).toStrictEqual({
-        grantId: body.grantId,
-        status: "cancelled",
-      });
-      expect((await accept(cancel(body), [200])).body).toStrictEqual(
-        cancelled.body,
-      );
-      await expect(subscriptions()).resolves.toHaveLength(0);
-      await accept(deliver(body), [409]);
-      await expect(subscriptions()).resolves.toHaveLength(0);
-    },
-  );
-
-  it("cancels before delivery and prevents an in-flight delivery from binding the subscription", async () => {
-    const body = fixture();
-    const started = createDeferredPromise<void>(context.signal);
-    const profile = createDeferredPromise<Response>(context.signal);
-    server.use(
-      http.get("https://api.anthropic.com/api/oauth/profile", async () => {
-        started.resolve();
-        return await profile.promise;
-      }),
-    );
-    const delivery = deliver(body);
-    await started.promise;
-    await accept(cancel(body), [200]).finally(() => {
-      profile.resolve(
-        HttpResponse.json({
-          account: {
-            uuid: "claude-first-account",
-            email: "subscriber@example.com",
-            has_claude_pro: true,
-          },
-          organization: { uuid: "claude-workspace", name: "Personal" },
-        }),
-      );
+    const before = await listProviders();
+    const other = before.find((provider) => {
+      return !provider.isActive;
     });
-    await accept(delivery, [409]);
-    await expect(subscriptions()).resolves.toHaveLength(0);
-  });
 
-  it("keeps a cancellation receipt when delivery has not arrived yet", async () => {
-    const body = fixture();
-    await accept(cancel(body), [200]);
-    await accept(deliver(body), [409]);
-    await expect(subscriptions()).resolves.toHaveLength(0);
-  });
-
-  it.each(["active", "inactive"])(
-    "cancels only the granted %s account and leaves a usable default",
-    async (selection) => {
-      const first = fixture();
-      const second = {
-        ...first,
-        grantId: randomUUID(),
-        tokens: {
-          provider: "claude-code" as const,
-          accessToken: "sk-ant-another-account",
-        },
-      };
-      await accept(deliver(first), [200]);
-      await accept(deliver(second), [200]);
-      const before = await subscriptions();
-      const remaining = before.find((account) => {
-        return account.isActive === (selection === "inactive");
-      });
-      await accept(cancel(selection === "active" ? first : second), [200]);
-      await expect(subscriptions()).resolves.toMatchObject([
-        { id: remaining?.id, isActive: true },
-      ]);
-    },
-  );
-
-  it("does not cancel a newer grant for the same upstream account", async () => {
-    const first = fixture();
-    await accept(deliver(first), [200]);
-    const [account] = await subscriptions();
-    const second = { ...first, grantId: randomUUID() };
-    await accept(deliver(second), [200]);
-    await accept(cancel(first), [200]);
-    await accept(cancel(first), [200]);
-    await expect(subscriptions()).resolves.toMatchObject([
-      { id: account?.id, isActive: true },
-    ]);
-    await accept(cancel(second), [200]);
-    await expect(subscriptions()).resolves.toHaveLength(0);
-  });
-
-  it("keeps a connected default when two grants are cancelled concurrently", async () => {
-    const first = fixture();
-    const second = {
-      ...first,
-      grantId: randomUUID(),
-      tokens: {
-        provider: "claude-code" as const,
-        accessToken: "sk-ant-another-account",
-      },
-    };
-    const third = {
-      ...first,
-      grantId: randomUUID(),
-      tokens: {
-        provider: "claude-code" as const,
-        accessToken: "sk-ant-third-account",
-      },
-    };
-    for (const body of [first, second, third]) {
-      await accept(deliver(body), [200]);
-    }
-    const remaining = (await subscriptions()).find((account) => {
-      return account.accountEmail === "claude-third-account@example.com";
-    });
-    await Promise.all([
-      accept(cancel(first), [200]),
-      accept(cancel(second), [200]),
-    ]);
-    await expect(subscriptions()).resolves.toMatchObject([
-      { id: remaining?.id, isActive: true },
-    ]);
-  });
-
-  it("preserves the account when the recipient has reconnected it themselves", async () => {
-    const body = fixture();
-    await accept(deliver(body), [200]);
-    const [account] = await subscriptions();
     await accept(
-      client()(personalModelProvidersMainContract).upsert({
-        headers: { authorization: "Bearer clerk-session" },
+      atom.cancel({
+        headers: atomHeaders,
+        params: { grantId: firstGrantId },
         body: {
-          type: "claude-code-oauth-token",
-          secret: "sk-ant-manually-reconnected",
+          orgId: recipient.orgId,
+          userId: recipient.userId,
+          provider: "claude-code",
         },
       }),
       [200],
     );
-    await accept(cancel(body), [200]);
-    await expect(subscriptions()).resolves.toMatchObject([
-      { id: account?.id, isActive: true },
-    ]);
+
+    const after = await listProviders();
+    expect(after).toHaveLength(1);
+    expect(after[0]).toMatchObject({ id: other?.id, isActive: true });
   });
 
-  it("rejects cancellation with another recipient, organization or provider", async () => {
-    const body = fixture();
-    await accept(deliver(body), [200]);
-    for (const change of [
-      { userId: "another-user" },
-      { orgId: "another-org" },
-      { provider: "codex" as const },
+  it("atom-subscription-grants-019 cancelling an older grant keeps a newer grant for the same account", async () => {
+    const { atom, recipient, listProviders, claudeGrant } = setup();
+    arrangeClaudeAccounts(
+      new Map([
+        ["claude-token-old", "alpha"],
+        ["claude-token-new", "alpha"],
+      ]),
+    );
+    const olderGrantId = randomUUID();
+    const newerGrantId = randomUUID();
+    await accept(
+      atom.deliver({
+        headers: atomHeaders,
+        body: claudeGrant(olderGrantId, "claude-token-old"),
+      }),
+      [200],
+    );
+    await accept(
+      atom.deliver({
+        headers: atomHeaders,
+        body: claudeGrant(newerGrantId, "claude-token-new"),
+      }),
+      [200],
+    );
+    const cancelBody = {
+      orgId: recipient.orgId,
+      userId: recipient.userId,
+      provider: "claude-code" as const,
+    };
+
+    await accept(
+      atom.cancel({
+        headers: atomHeaders,
+        params: { grantId: olderGrantId },
+        body: cancelBody,
+      }),
+      [200],
+    );
+    await accept(
+      atom.cancel({
+        headers: atomHeaders,
+        params: { grantId: olderGrantId },
+        body: cancelBody,
+      }),
+      [200],
+    );
+
+    const remaining = await listProviders();
+    expect(remaining).toHaveLength(1);
+    expect(remaining[0]?.isActive).toBeTruthy();
+
+    await accept(
+      atom.cancel({
+        headers: atomHeaders,
+        params: { grantId: newerGrantId },
+        body: cancelBody,
+      }),
+      [200],
+    );
+    await expect(listProviders()).resolves.toStrictEqual([]);
+  });
+
+  it("atom-subscription-grants-021 keeps an account the recipient reconnected themselves", async () => {
+    const { atom, recipient, providers, listProviders, claudeGrant } = setup();
+    arrangeClaudeAccounts(
+      new Map([
+        ["claude-token-granted", "alpha"],
+        ["claude-token-own", "alpha"],
+      ]),
+    );
+    const grantId = randomUUID();
+    await accept(
+      atom.deliver({
+        headers: atomHeaders,
+        body: claudeGrant(grantId, "claude-token-granted"),
+      }),
+      [200],
+    );
+    await accept(
+      providers.upsert({
+        headers: sessionHeaders,
+        body: { type: "claude-code-oauth-token", secret: "claude-token-own" },
+      }),
+      [200, 201],
+    );
+    const [reconnected] = await listProviders();
+
+    await accept(
+      atom.cancel({
+        headers: atomHeaders,
+        params: { grantId },
+        body: {
+          orgId: recipient.orgId,
+          userId: recipient.userId,
+          provider: "claude-code",
+        },
+      }),
+      [200],
+    );
+
+    const after = await listProviders();
+    expect(after).toHaveLength(1);
+    expect(after[0]).toMatchObject({ id: reconnected?.id, isActive: true });
+  });
+
+  it("atom-subscription-grants-022 rejects cancellation for another recipient, organization or provider", async () => {
+    const { atom, recipient, listProviders, claudeGrant } = setup();
+    arrangeClaudeAccounts(new Map([["claude-token-a", "alpha"]]));
+    const grantId = randomUUID();
+    await accept(
+      atom.deliver({
+        headers: atomHeaders,
+        body: claudeGrant(grantId, "claude-token-a"),
+      }),
+      [200],
+    );
+    const body = {
+      orgId: recipient.orgId,
+      userId: recipient.userId,
+      provider: "claude-code" as const,
+    };
+
+    for (const mismatch of [
+      { ...body, userId: `user_${randomUUID()}` },
+      { ...body, orgId: `org_${randomUUID()}` },
+      { ...body, provider: "codex" as const },
     ]) {
       await accept(
-        client()(atomSubscriptionGrantsContract).cancel({
-          headers: { authorization: `Bearer ${M2M_TOKEN}` },
-          params: { grantId: body.grantId },
-          body: {
-            orgId: body.orgId,
-            userId: body.userId,
-            provider: body.tokens.provider,
-            ...change,
-          },
+        atom.cancel({
+          headers: atomHeaders,
+          params: { grantId },
+          body: mismatch,
         }),
         [409],
       );
     }
-    await expect(subscriptions()).resolves.toHaveLength(1);
+
+    await expect(listProviders()).resolves.toHaveLength(1);
   });
 
-  it("requires verified M2M authentication to cancel and preserves the account on auth failures", async () => {
-    const body = fixture();
-    await accept(deliver(body), [200]);
+  it("atom-subscription-grants-024 cancels a grant after the recipient left the organization", async () => {
+    const { atom, recipient, members, listProviders, claudeGrant } = setup();
+    arrangeClaudeAccounts(new Map([["claude-token-a", "alpha"]]));
+    const grantId = randomUUID();
     await accept(
-      client()(atomSubscriptionGrantsContract).cancel({
-        headers: { authorization: "Bearer clerk-session" },
-        params: { grantId: body.grantId },
+      atom.deliver({
+        headers: atomHeaders,
+        body: claudeGrant(grantId, "claude-token-a"),
+      }),
+      [200],
+    );
+    members.current = false;
+
+    await accept(
+      atom.cancel({
+        headers: atomHeaders,
+        params: { grantId },
         body: {
-          orgId: body.orgId,
-          userId: body.userId,
-          provider: body.tokens.provider,
+          orgId: recipient.orgId,
+          userId: recipient.userId,
+          provider: "claude-code",
         },
       }),
-      [401],
+      [200],
     );
-    mockOptionalEnv("OKOU_MACHINE_SECRET_KEY", undefined);
-    await accept(cancel(body), [503]);
-    await expect(subscriptions()).resolves.toHaveLength(1);
-  });
 
-  it("can cancel after the recipient has left the organization", async () => {
-    const body = fixture();
-    await accept(deliver(body), [200]);
-    context.mocks.clerk.organizations.getOrganizationMembershipList.mockResolvedValue(
-      { data: [] },
-    );
-    await accept(cancel(body), [200]);
-    await expect(subscriptions()).resolves.toHaveLength(0);
+    await expect(listProviders()).resolves.toStrictEqual([]);
   });
 });

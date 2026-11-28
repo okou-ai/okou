@@ -1,0 +1,125 @@
+# case_id	regex on the first log line	why the log is the production consequence of the case's own failure input
+billing-auto-recharge-014	Auto-recharge Stripe call failed	Given: Stripe declines the recharge payment (card_declined)
+billing-auto-recharge-019	Auto-recharge Stripe call failed	Given: Stripe declines every recharge payment (card_declined)
+billing-auto-recharge-020	Auto-recharge Stripe call failed	Given: Stripe declines the first two and later payments (card_declined)
+hosted-site-access-011	Unhandled request error: Clerk is unavailable	Given: the Clerk membership lookup fails; Then: HTTP 500
+feishu-installation-002	Rejected Feishu URL verification with an invalid token	Then: the rotated-out verification token is rejected
+feishu-installation-012	Rejected Feishu URL verification with an invalid token	Then: the rotated-out Lark verification token is rejected
+skill-import.bdd-024	Unhandled request error: Storage unavailable	Given: every object write fails; Then: HTTP 500
+webhooks-google-calendar-005	Failed to stop Google Calendar watch channel	Given: Google's channel stop endpoint fails with HTTP 500
+me-model-providers-upsert-013	Codex access token unavailable for reset-credit request	Given: the Codex refresh fails with refresh_token_expired; Then: HTTP 500
+me-model-providers-upsert-020	rejected personal codex auth_json paste	Given: auth.json without a refresh token; Then: HTTP 400
+private-artifact-uploads-010	Multipart upload resolution failed	Given: other callers complete/abort someone else's upload (ownership identity_mismatch); Then: 404
+org-cache-010	Unhandled request error: Clerk rejected the profile update	Given: Clerk rejects profile updates; Then: HTTP 500
+billing-redeem-010	coupon no longer valid on resume|redeem: stripe error	Given: the resumed session's coupon is no longer valid; Then: campaign_misconfigured
+billing-redeem-015	redeem: stripe error	Given: Stripe rejects session creation; Then: campaign_misconfigured
+slack-oauth-018	Slack OAuth exchange failed	Given: Slack's code exchange fails with invalid_code
+usage-pack-subscription-lifecycle-018	usage pack duplicate purchase refunded	Given: two plan purchases created before either was paid; Then: the duplicate usage-pack invoice is refunded and cancelled
+feishu-oauth-events-004	Rejected encrypted Feishu event with an invalid signature	When: an encrypted ordinary event with an invalid signature; Then: HTTP 401
+cli-auth.bdd-007	rejected personal codex auth_json paste	When: the member pastes invalid Codex auth.json; Then: HTTP 400 CODEX_AUTH_JSON_SHAPE_INVALID
+billing-customer-publication-006	Unhandled request error: Stripe customer creation failed	Given: Stripe customer creation fails once with an error
+billing-stripe-metadata-binding-003	stripe customer metadata could not bind org	Given: the organization is already bound to a different Stripe customer
+billing-stripe-metadata-binding-005	stripe customer has no org metadata	Given: the incoming Stripe customer carries no organization metadata
+billing-stripe-metadata-binding-006	stripe customer metadata references missing Clerk org	Given: the customer's metadata names an organization Clerk does not know
+codex-reset-credit-expiry-018	failed to read codex reset credit expiry	Given: the reset-credit details endpoint returns HTTP 401
+codex-reset-credit-expiry-019	failed to read codex reset credit expiry	Given: the reset-credit details endpoint returns HTTP 500
+agentphone-verification-002	AgentPhone verification text provider rejected send	Given: AgentPhone rejects the first verification message with HTTP 503
+voice-google-auth-029	Google Cloud LLM authentication rejected	Given: service-account impersonation is rejected with HTTP 403
+image-io-responses-013	OpenAI image response request rejected	Given: OpenAI rejects the submission with HTTP 400 moderation_blocked
+connector-device-auth-claim-awaiting-001	Unhandled request error: \[	Given: the provider answers the due poll with a malformed success; Then: HTTP 500
+connector-external-code-claim-completion-001	Unhandled request error: AWS Sign-In token exchange failed	Given: transient provider HTTP 429 and 503 responses; Then: the two transient failures return HTTP 500
+codex-reset-credit-expiry-invalidation-001	Unhandled request error: Failed to fetch	Given: the ChatGPT consume endpoint fails with a network error; Then: HTTP 500
+codex-reset-credit-expiry-invalidation-002	Unhandled request error: Failed to fetch	Given: the ChatGPT consume endpoint fails with a network error; Then: HTTP 500
+agentphone-groups.bdd-001	Rejected AgentPhone webhook	When: a signed group webhook with empty content; Then: HTTP 500
+agentphone-groups.bdd-007	Rejected AgentPhone webhook	When: the same signed group webhook with empty content is delivered twice
+agentphone-groups.bdd-014	AgentPhone conversation lookup failed	Given: AgentPhone reports the first group conversation as removed (HTTP 404)
+agentphone-groups.bdd-020	AgentPhone conversation lookup failed	Given: AgentPhone's conversation lookup returns HTTP 503
+webhooks-agent-firewall-auth.bdd-032	test-oauth token refresh failed	Given: the provider token endpoint first returns HTTP 500
+billing-archived-stripe-events-019	Unhandled request error: Stripe is temporarily unavailable	Given: a temporary Stripe Price error; Then: HTTP 500
+billing-archived-stripe-events-037	Unhandled request error: Stripe is temporarily unavailable	Given: a temporary Stripe Price error; Then: HTTP 500
+org-delete-billing-019	Unhandled request error: Stripe is temporarily unavailable	Given: the refund fails; Then: HTTP 500
+org-delete-billing-022	organization.deleted billing cleanup failed	Then: the first organization.deleted delivery returns 503
+voice-io-polish-007	Google voice request rejected	Given: the provider rejects the request
+voice-io-polish-010	Google voice request rejected	Given: the provider rejects the request
+chat-events-pi-codex-credentials-006	rejected personal codex auth_json paste: shape	Given: auth.json whose id_token omits the workspace account ID; Then: HTTP 400 CODEX_AUTH_JSON_SHAPE_INVALID
+voice-google-auth-retry-018	Google Cloud LLM authentication rejected	Given: Google STS answers HTTP 400
+billing-usage-pack-subscriptions-052	organizationInvitation.accepted activation failed	When: two concurrent acceptance deliveries; the losing delivery is rejected because the invitation purchase changed
+connectors-oauth-start-091	Connector runtime capability is unavailable	Given: no GitHub OAuth client ID is configured
+cron-connector-catalog-v4-006	Connector catalog candidate rejected	Given: the catalog source has no objects (source-unavailable)
+cron-connector-catalog-v4-007	Connector catalog candidate rejected	Given: the catalog source publishes a malformed v4 release with a numeric firewall header value (invalid-artifact, connector-catalog-sync.service.ts:78)
+computer-use-host-presence-004	Unable to publish computer-use command wakeup	Given: every realtime publication fails
+computer-use-screenshot-completion-001	Unhandled request error: Object storage is unavailable	Given: object storage fails the first upload; Then: completion returns HTTP 500
+discord-ingress-022	Discord ingress processing deferred to recovery	Given: the sender or bot lost the permission to create public threads; Then: no canonical input
+discord-ingress-023	Discord ingress processing deferred to recovery	Given: the sender or bot lost the permission to create public threads; Then: no canonical input
+discord-ingress-031	Discord ingress processing deferred to recovery	Given: the sender or bot lost the permission to create public threads; Then: no canonical input
+feishu-branding-connection-013	Failed to send Feishu connect welcome	Given: Feishu rejects the first connect welcome message
+feishu-branding-connection-026	Failed to send Feishu connect welcome	Given: Feishu rejects the first connect welcome message
+integrations-telegram-007	Failed to send Telegram connect success message	Given: Telegram rejects the welcome DM with HTTP 403 "Bot was blocked"
+mail-039	Unhandled request error: Gmail rejected the draft send \(HTTP 400; reason: unrecognized\)	Given: Gmail rejects the send with HTTP 400 and an unknown reason; the Then expects HTTP 500
+mail-030	Unhandled request error: Failed to read Gmail draft \(HTTP 403\)	Given: Gmail answers the draft read with a non-scope 403; the Then expects the server error
+image-io-generate-048	Fal built-in generation webhook reported failed generation	Given: Fal posts a failure callback with status ERROR and error Invalid status code: 403
+image-io-generate-079	Fal image queue request failed	Given: Fal rejects the image submission with HTTP 429; the Then expects HTTP 502 FAL_IMAGE_REQUEST_FAILED
+integrations.bdd-066	Unhandled request error: AgentPhone send response is missing a message id	Given: AgentPhone omits message id; the Then expects undeclared HTTP 500
+integrations.bdd-066	AgentPhone send message failed	Given: AgentPhone returns HTTP 503; the Then expects HTTP 502 AGENTPHONE_ERROR
+integrations.bdd-066	AgentPhone verification text provider rejected send	Given: AgentPhone returns HTTP 503 during start-link; the Then expects HTTP 503 PROVIDER_UNAVAILABLE
+integrations.bdd-066	Rejected AgentPhone webhook	Given: webhook receives missing message id, missing agent id, and invalid recipient; the Then expects HTTP 500
+agentphone.bdd-063	AgentPhone send message failed	Given: AgentPhone rejects plain-text greeting with HTTP 422 INBOUND_ONLY
+agentphone.bdd-144	AgentPhone conversation lookup failed	Given: AgentPhone roster lookup returns HTTP 404, 503, and network errors
+agentphone.bdd-145	AgentPhone verification text send failed	Given: AgentPhone send fails with network error; the Then expects HTTP 503 PROVIDER_UNAVAILABLE
+webhooks-callbacks.bdd-041	Unhandled request error: Subscription credit lots changed during trial shortening	Given: two overlapping customer.subscription.updated redeliveries during trial shortening (BDD retries any HTTP 500)
+webhooks-callbacks.bdd-049	subscription binding rejected tier replacement	Given: same-tier checkout for another subscription
+webhooks-callbacks.bdd-049	stripe customer has no org metadata	Given: dashboard subscription for an unknown customer
+webhooks-callbacks.bdd-049	stripe customer metadata could not bind org	Given: dashboard subscription for another customer whose metadata names the same org
+webhooks-callbacks.bdd-051	billing restore checkout completed with unexpected mode	Given: mismatched setup checkout with payment mode
+webhooks-callbacks.bdd-051	billing restore checkout completed without customer	Given: mismatched setup checkout without customer
+webhooks-callbacks.bdd-051	billing restore checkout no longer matches org billing state	Given: mismatched setup checkout for another subscription
+webhooks-callbacks.bdd-051	billing downgrade checkout missing metadata	Given: mismatched setup checkout targeting team downgrade
+webhooks-callbacks.bdd-051	checkout\.session\.completed without subscription ID	Given: mismatched payment-mode checkout without subscription ID
+webhooks-callbacks.bdd-066	atom grant invoice missing configured grant price	Given: Atom custom-credit invoice on an untrusted price
+tailscale-parity-007	Unhandled request error: KMS unavailable	Given: KMS encryption fails; the Then expects HTTP 500
+voice-io-transcribe-003	Voice segment transcription failed	Given: Google returns promptFeedback.blockReason SAFETY with empty candidates; the Then expects HTTP 502
+voice-io-transcribe-006	Voice segment transcription failed	Given: Google returns a raw body > 1 MiB; the Then expects HTTP 502
+voice-io-transcribe-019	Voice segment transcription failed	Given: Google returns 147-char hallucinated transcript for 0.1s audio; the Then expects HTTP 502
+voice-io-transcribe-020	Voice segment transcription failed	Given: Google returns 200-char invented transcript for 1s audio; the Then expects HTTP 502 VOICE_TRANSCRIPTION_FAILED
+voice-io-transcribe-031	Voice segment transcription failed	Given: Vertex generation endpoint fails at connection level; the Then expects HTTP 503 PROVIDER_UNAVAILABLE
+auxiliary-generation-009	Auxiliary generation failed	Given: title model returns "---", which strips to empty (unusable_output); Then expects thread remains untitled
+runners-run-lookups-001	Registered connector runtime targets have no catalog entry	Given: BDD explicitly requests runtime sync for a nonexistent built-in connector and expects state absent, reason connector-unavailable
+runners-thread-binding-005	\[WARN\]\[webhook:complete\] Run failed	Given: BDD deliberately completes second Run with exitCode 1 to verify retained initialized native context after failed outcome
+chat-events-automations-004	\[WARN\]\[webhook:complete\] Run failed	Given: BDD deliberately reports a failed Pi automation completion twice to verify single run.failed settlement
+chat-events-attachment-lookups-003	Unhandled request error: User-message attachment not found	Given: BDD tests unauthorized same-org user sending another member private attachment and expects HTTP 500
+chat-events-attachment-lookups-004	Unhandled request error: User-message attachment not found	Given: BDD tests unauthorized cross-org send of a private attachment and expects HTTP 500
+chat-events-pi-failed-history-002	\[WARN\]\[webhook:complete\] Run failed	Given: BDD deliberately reports a failed Pi partial-answer Run with exitCode 1 to verify retained native identity
+run-uploaded-files-publication-001	Unhandled request error: Artifact delivery alias is already allocated	Given: BDD deliberately replays upload completion with mismatched contentType text/markdown and expects HTTP 500
+run-context-diagnostics-005	Unhandled request error: Diagnostic store unavailable	Given: BDD sets diagnostic store to fail and expects owner GET /api/runs/:id/context to return HTTP 500
+chat-input-status-004	\[WARN\]\[webhook:complete\] Run failed	Given: BDD deliberately reports the Run failed with exitCode 1 and error "private failure detail" via POST /api/webhooks/run/complete to verify retained failed status omits the error body
+chat-events-private-attachments-012	Unhandled request error: User-message attachment not found	Given: BDD deliberately deletes a private artifact before POST /api/chat/events and expects HTTP 500
+chat-events-private-attachments-014	Unhandled request error: User-message attachment not found	Given: BDD deliberately sends a prepared upload whose storage object was never written and expects HTTP 500
+chat-events-private-attachments-015	Unhandled request error: User-message attachment not found	Given: BDD deliberately sends a file set containing a foreign owner upload and expects HTTP 500
+runner-ssh-011	\[WARN\]\[RunnerAuth\] Invalid official runner secret	Given: BDD deliberately sends a wrong official Runner secret to POST /api/runners/runs/:runId/ssh/observations and expects HTTP 401
+runner-finalizing-source-001	\[WARN\]\[webhook:complete\] Run failed	Given: BDD starts with a failed predecessor thread Run (exitCode 1 without native init) on Runner A before continuing on Runner B
+runner-finalizing-source-006	\[WARN\]\[webhook:complete\] Run failed	Given: BDD starts with a failed initialized Claude Code thread Run (exitCode 1) on Runner A before switching to Codex
+runner-finalizing-source-007	\[WARN\]\[webhook:complete\] Run failed	Given: BDD starts with a failed predecessor thread Run (exitCode 1 without native init) on Runner A before continuing on the active failed producer
+runner-finalizing-source-016	\[WARN\]\[webhook:complete\] Run failed	Given: BDD starts with a failed predecessor thread Run (exitCode 1 without native init) on Runner A before starting a first Run in a separate thread
+run-reads.bdd-028	\[WARN\]\[webhook:complete\] Run failed	Given: BDD deliberately completes the second chat run via POST /api/webhooks/run/complete with exitCode 1 and error "bdd failure" to verify failed run-log detail returns failureReason "unknown"
+runners-direct-dispatch-007	\[ERROR\]\[Promise\] Detached promise rejected \[wait_until\] Error: Run execution preparation failed	Given: BDD deliberately fails object-storage URL signing ("Object signing is unavailable") during POST /api/chat/events (HTTP 201) to verify background preparation fails with "Run execution preparation failed" and releases concurrency
+run-lifecycle-completion.bdd-005	\[WARN\]\[RunnerAuth\] Invalid official runner secret	Given: BDD deliberately sends a too-short and a wrong official Runner token to POST /api/runners/heartbeat and expects HTTP 401 UNAUTHORIZED
+run-lifecycle-completion.bdd-007	\[WARN\]\[webhook:complete\] Run failed	When: BDD deliberately completes a dispatched Run with exitCode 1 via POST /api/webhooks/run/complete to verify subsequent heartbeat returns HTTP 404
+run-lifecycle-completion.bdd-030	\[WARN\]\[webhook:complete\] Run failed	When: BDD deliberately posts exitCode 1 with unrecognized failureReason future_reason via POST /api/webhooks/run/complete to verify normalization to unknown
+run-lifecycle-completion.bdd-032	\[WARN\]\[webhook:complete\] Run failed	Given: BDD deliberately fails a dispatched Run via POST /api/webhooks/run/complete (exitCode 1) before posting late native recovery outputs
+run-lifecycle-completion.bdd-038	\[WARN\]\[webhook:complete\] Run failed	When: BDD deliberately reports a timeout completion (exitCode 124) via POST /api/webhooks/run/complete before posting late native recovery outputs
+run-lifecycle-completion.bdd-039	\[WARN\]\[webhook:complete\] Run failed	When: BDD deliberately reports a timeout completion (exitCode 124) via POST /api/webhooks/run/complete without prior session init before posting late native recovery outputs
+run-lifecycle-completion.bdd-040	\[WARN\]\[webhook:complete\] Run failed because completion outputs were not provided	When: BDD deliberately posts clean exitCode 0 without native session outputs via POST /api/webhooks/run/complete to verify it is acknowledged as failed with reason unknown
+run-lifecycle-custom-connectors.bdd-005	\[WARN\]\[ConnectorRuntimeWakeup\] Failed to publish connector runtime sync wakeups	When: BDD updates custom connector prefix/header with runtime wake-up notification failing (connector-runtime-wakeup.service.ts:116)
+run-lifecycle-custom-connectors.bdd-027	\[WARN\]\[api:permission-manifest\] Connector excluded from Run admission	Given/Then: BDD connects Jira with an attacker-controlled domain outside its providerOwned atlassian.net hostPolicy to verify Jira is excluded from Run admission (permission-manifest.service.ts:271)
+run-lifecycle-custom-connectors.bdd-031	\[WARN\]\[webhook:complete\] Run failed	Given: BDD deliberately fails a dispatched Run (exitCode 1) via POST /api/webhooks/run/complete before calling connector-runtime/sync and expecting HTTP 409 RUN_TERMINAL
+webhooks-agent-firewall-auth-aws-008	aws token refresh failed	Given: AWS Sign-In rejects refresh with HTTP 503 code TOKEN_EXPIRED (upstream_provider); Then: HTTP 502 TOKEN_REFRESH_FAILED (agent-webhook-firewall-auth.service.ts:2446)
+webhooks-callbacks.bdd-026	Agent telemetry rejected sandbox auth	When: BDD deliberately sends second sandbox credential to POST /api/webhooks/run/telemetry for first Run expecting HTTP 401 UNAUTHORIZED (webhooks-agent-health-usage-telemetry.ts:941)
+webhooks-callbacks.bdd-027	\[WARN\]\[webhook:complete\] Run failed	When: BDD deliberately completes sandbox run with exitCode 1 and error "Sandbox exited" via POST /api/webhooks/run/complete expecting status failed (agent-run-failure-log.service.ts:187)
+connectors.bdd-098	\[ERROR\]\[connectors:oauth-callback\] OAuth callback failed	When: BDD deliberately drives failing test-oauth token exchange (HTTP 400) and userinfo lookup (HTTP 500) reconnects redirecting to /connector/error (src/signals/routes/connectors-slug-callback.ts:1264)
+workflows-050	\[WARN\]\[webhook:complete\] Run failed	Given: BDD deliberately fails the first workflow Run with exitCode 1 via POST /api/webhooks/run/complete to verify queued workflow promotion and completion
+automation-disabled-feed-events-001	\[WARN\]\[webhook:complete\] Run failed	Given: BDD deliberately fails 3 consecutive cron Runs via POST /api/webhooks/run/complete to trigger consecutive-failure auto-disable platform feed event
+automation-disabled-feed-events-002	\[WARN\]\[webhook:complete\] Run failed	Given: BDD deliberately fails scheduled Runs (credit failure + consecutive non-credit failures) via POST /api/webhooks/run/complete to verify auto-disable feed event deduplication
+automation-disabled-feed-events-003	\[WARN\]\[webhook:complete\] Run failed	Given: BDD deliberately fails 3 consecutive cron Runs twice via POST /api/webhooks/run/complete to verify systemUpdates suppression and re-enable emission
+automation-disabled-feed-events-004	\[WARN\]\[webhook:complete\] Run failed	Given: BDD deliberately fails two 3-failure cycles via POST /api/webhooks/run/complete to verify re-enabled automation emits subsequent auto-disable feed events
+personal-subscription-run-identity-004	\[WARN\]\[webhook:complete\] Run failed	Then: BDD deliberately fails the free-plan Claude subscription Run with exitCode 1 via POST /api/webhooks/run/complete and asserts failed status
+personal-subscription-run-identity-005	\[WARN\]\[webhook:complete\] Run failed	Then: BDD deliberately fails the free-plan Codex subscription Run with exitCode 1 via POST /api/webhooks/run/complete and asserts failed status

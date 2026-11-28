@@ -1,723 +1,538 @@
 import { createHash, randomUUID } from "node:crypto";
 import { Readable } from "node:stream";
-import {
-  DeleteObjectsCommand,
-  GetObjectCommand,
-  HeadObjectCommand,
-  PutObjectCommand,
-} from "@aws-sdk/client-s3";
 import { artifactAccessContract } from "@okouai/api-contracts/contracts/artifact-access";
-import { artifactReferencesContract } from "@okouai/api-contracts/contracts/artifact-references";
 import { artifactOgContract } from "@okouai/api-contracts/contracts/artifact-og";
-import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { ARTIFACT_OG_BRAND } from "@okouai/core/artifact-og";
-import {
-  hostContract,
-  type HostedSitePrepareResponse,
-  type HostedSitePreview,
-} from "@okouai/api-contracts/contracts/host";
-import { http, HttpResponse } from "msw";
+import { artifactReferencesContract } from "@okouai/api-contracts/contracts/artifact-references";
+import { hostContract } from "@okouai/api-contracts/contracts/host";
 import { describe, expect, it } from "vitest";
 
-import { setupAppWithRoutes } from "../../../__tests__/test-app";
 import { accept, testContext } from "../../../__tests__/test-context";
+import { setupApp } from "../../../__tests__/test-helpers";
 import { env } from "../../../lib/env";
-import { server } from "../../../mocks/server";
 import { artifactAccessRoutes } from "../artifact-access";
-import { featureSwitchesRoutes } from "../feature-switches";
-import { artifactReferenceRoutes } from "../artifact-references";
 import { artifactOgRoutes } from "../artifact-og";
+import { artifactReferenceRoutes } from "../artifact-references";
 import { hostRoutes } from "../host";
-import { createBddApi } from "./helpers/api-bdd";
-import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
-import { hostedTextFile } from "./helpers/api-bdd-host-files";
-import { createHostBddApi } from "./helpers/api-bdd-host";
-import {
-  createChatEventsFixture,
-  okouTokenFromExecution,
-} from "./helpers/chat-events-fixture";
+import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
-const host = createHostBddApi(context);
-const chat = createChatFilesBddApi(context);
+const bdd = createBddApi(context);
+const headers = Object.freeze({ authorization: "Bearer clerk-session" });
+const COVER = Buffer.from([
+  0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49,
+  0x48, 0x44, 0x52, 0x00, 0x00, 0x00, 0x01,
+]);
 
-/** Model real uploads through the returned presigned URL; no private DB setup. */
-function previewStorage(
-  options: { readonly failStagingDeleteOnce?: boolean } = {},
-) {
-  let failStagingDelete = options.failStagingDeleteOnce ?? false;
-  const fileSigner = context.mocks.s3.getSignedUrl.getMockImplementation();
-  host.captureHostedSitesS3();
-  const baseSend = context.mocks.s3.send.getMockImplementation();
-  const baseSign = context.mocks.s3.getSignedUrl.getMockImplementation();
-  if (!baseSend || !baseSign || !fileSigner) {
-    throw new Error("Missing object-storage fixture");
-  }
-  const objects = new Map<string, Buffer>();
-  const contentTypes = new Map<string, string>();
-  const grants = new Map<string, string>();
+interface StoredObject {
+  readonly body: Buffer;
+  readonly contentType?: string;
+}
+
+interface StoragePut {
+  readonly bucket: string;
+  readonly key: string;
+  readonly body: Buffer;
+  readonly contentType: unknown;
+  readonly ifNoneMatch: unknown;
+}
+
+function sha256(bytes: Buffer | string): string {
+  return createHash("sha256").update(bytes).digest("hex");
+}
+
+function signIn(actor: ApiTestUser) {
+  createRouteMocks(context).clerk.session(
+    actor.userId,
+    actor.orgId,
+    actor.orgRole,
+  );
+  return headers;
+}
+
+function storageError(name: string, status: number): Error {
+  return Object.assign(new Error(name), {
+    name,
+    $metadata: { httpStatusCode: status },
+  });
+}
+
+/** In-memory R2: presigned PUT URLs address the object a browser writes. */
+function installStorage() {
+  const objects = new Map<string, StoredObject>();
+  const puts: StoragePut[] = [];
+  const signed = new Map<string, { bucket: string; key: string }>();
+  const id = (bucket: unknown, key: unknown) => {
+    return `${String(bucket)}/${String(key)}`;
+  };
+
   context.mocks.s3.getSignedUrl.mockImplementation(
-    (client, command, options) => {
-      if (
-        command instanceof GetObjectCommand &&
-        command.input.Bucket === env("R2_PRIVATE_ARTIFACTS_BUCKET_NAME")
-      ) {
-        return fileSigner(client, command, options);
-      }
-      if (
-        command instanceof PutObjectCommand &&
-        command.input.Bucket === env("R2_PRIVATE_ARTIFACTS_BUCKET_NAME") &&
-        command.input.Key
-      ) {
-        const token = randomUUID();
-        grants.set(token, command.input.Key);
-        return Promise.resolve(`https://preview-upload.example/${token}`);
-      }
-      return baseSign(client, command, options);
+    (_client: unknown, command: unknown) => {
+      const { constructor, input } = command as {
+        readonly constructor: { readonly name: string };
+        readonly input: { readonly Bucket: string; readonly Key: string };
+      };
+      const url = `https://r2.example.test/${input.Bucket}/${input.Key}?op=${constructor.name}&n=${String(signed.size)}`;
+      signed.set(url, { bucket: input.Bucket, key: input.Key });
+      return Promise.resolve(url);
     },
   );
-  server.use(
-    http.put(
-      "https://preview-upload.example/:token",
-      async ({ request, params }) => {
-        const key = grants.get(String(params.token));
-        if (!key) {
-          return new HttpResponse(null, { status: 403 });
+
+  context.mocks.s3.send.mockImplementation((command: unknown) => {
+    const { constructor, input } = command as {
+      readonly constructor: { readonly name: string };
+      readonly input: Record<string, unknown>;
+    };
+    const stored = objects.get(id(input.Bucket, input.Key));
+    switch (constructor.name) {
+      case "PutObjectCommand": {
+        if (input.IfNoneMatch === "*" && stored) {
+          return Promise.reject(storageError("PreconditionFailed", 412));
         }
-        objects.set(key, Buffer.from(await request.arrayBuffer()));
-        return new HttpResponse(null, { status: 200 });
-      },
-    ),
-  );
-  context.mocks.s3.send.mockImplementation((command, ...rest) => {
-    if (
-      command instanceof DeleteObjectsCommand &&
-      command.input.Bucket === env("R2_PRIVATE_ARTIFACTS_BUCKET_NAME")
-    ) {
-      if (failStagingDelete) {
-        failStagingDelete = false;
-        return Promise.reject(new Error("Preview staging cleanup unavailable"));
+        const body = Buffer.from(input.Body as string | Uint8Array);
+        objects.set(id(input.Bucket, input.Key), {
+          body,
+          contentType: input.ContentType as string | undefined,
+        });
+        puts.push({
+          bucket: String(input.Bucket),
+          key: String(input.Key),
+          body,
+          contentType: input.ContentType,
+          ifNoneMatch: input.IfNoneMatch,
+        });
+        return Promise.resolve({ ETag: `"${sha256(body)}"` });
       }
-      for (const entry of command.input.Delete?.Objects ?? []) {
-        if (entry.Key) {
-          objects.delete(entry.Key);
+      case "GetObjectCommand": {
+        if (!stored) {
+          return Promise.reject(storageError("NoSuchKey", 404));
         }
+        return Promise.resolve({
+          Body: Readable.from([stored.body]),
+          ContentLength: stored.body.byteLength,
+          ContentType: stored.contentType,
+          ETag: `"${sha256(stored.body)}"`,
+        });
       }
-      return Promise.resolve({});
-    }
-    if (
-      (command instanceof GetObjectCommand ||
-        command instanceof HeadObjectCommand ||
-        command instanceof PutObjectCommand) &&
-      command.input.Bucket === env("R2_PRIVATE_ARTIFACTS_BUCKET_NAME") &&
-      command.input.Key?.startsWith("private-artifacts/")
-    ) {
-      const key = command.input.Key;
-      if (command instanceof PutObjectCommand) {
-        if (!objects.has(key)) {
-          const body = command.input.Body;
-          if (!Buffer.isBuffer(body)) {
-            throw new Error("Expected original preview bytes");
-          }
-          objects.set(key, body);
-          contentTypes.set(key, command.input.ContentType ?? "");
+      case "HeadObjectCommand": {
+        if (!stored) {
+          return Promise.reject(storageError("NotFound", 404));
+        }
+        return Promise.resolve({
+          ContentLength: stored.body.byteLength,
+          ContentType: stored.contentType,
+          LastModified: new Date("2026-01-01T00:00:00.000Z"),
+          ETag: `"${sha256(stored.body)}"`,
+        });
+      }
+      case "DeleteObjectsCommand": {
+        const deleted = (input.Delete as { Objects?: { Key: string }[] })
+          .Objects;
+        for (const entry of deleted ?? []) {
+          objects.delete(id(input.Bucket, entry.Key));
         }
         return Promise.resolve({});
       }
-      const bytes = objects.get(key);
-      if (!bytes) {
-        const error = Object.assign(new Error("No such object"), {
-          name: "NoSuchKey",
-          $metadata: { httpStatusCode: 404 },
+      case "ListObjectsV2Command": {
+        const prefix = id(input.Bucket, input.Prefix);
+        return Promise.resolve({
+          Contents: [...objects]
+            .filter(([key]) => {
+              return key.startsWith(prefix);
+            })
+            .map(([key, object]) => {
+              return {
+                Key: key.slice(String(input.Bucket).length + 1),
+                Size: object.body.byteLength,
+                LastModified: new Date("2026-01-01T00:00:00.000Z"),
+              };
+            }),
+          IsTruncated: false,
         });
-        return Promise.reject(error);
       }
-      return Promise.resolve({
-        Body: Readable.from([bytes]),
-        ContentLength: bytes.length,
-        ContentType: contentTypes.get(key) ?? "image/png",
-        ETag: '"preview"',
-      });
+      default: {
+        return Promise.resolve({});
+      }
     }
-    return baseSend(command, ...rest);
   });
-  return objects;
-}
 
-// Fixed PNG and JPEG uploads; tests neither generate nor decode image data.
-const png = Buffer.from(
-  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+afo8AAAAASUVORK5CYII=",
-  "base64",
-);
-const secondPng = Buffer.from(
-  "iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAEklEQVR4nGP4z8DwHwyBNBgAAEnICff5q7YNAAAAAElFTkSuQmCC",
-  "base64",
-);
-const jpeg = Buffer.from(
-  "/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAP//////////////////////////////////////////////////////////////////////////////////////2wBDAf//////////////////////////////////////////////////////////////////////////////////////wAARCAABAAEDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAX/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/8QAFQEBAQAAAAAAAAAAAAAAAAAAAAX/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIRAxEAPwCdABmX/9k=",
-  "base64",
-);
-
-function preview(
-  bytes: Buffer,
-  contentType: HostedSitePreview["contentType"] = "image/png",
-) {
   return {
-    size: bytes.length,
-    sha256: createHash("sha256").update(bytes).digest("hex"),
-    contentType,
+    puts,
+    /** The browser PUTs bytes to a presigned upload URL. */
+    upload(uploadUrl: string, body: Buffer, contentType: string) {
+      const target = signed.get(uploadUrl);
+      if (!target) {
+        throw new Error(`Unknown upload URL ${uploadUrl}`);
+      }
+      objects.set(id(target.bucket, target.key), { body, contentType });
+    },
+    read(bucket: string, key: string) {
+      return objects.get(id(bucket, key))?.body;
+    },
+    /** Bytes behind a presigned GET URL issued by this storage. */
+    readSigned(url: string) {
+      const [bucket = "", ...key] = new URL(url).pathname.slice(1).split("/");
+      return objects.get(id(bucket, key.join("/")))?.body;
+    },
+    /** The bucket and key a presigned upload URL addresses. */
+    target(uploadUrl: string) {
+      const target = signed.get(uploadUrl);
+      if (!target) {
+        throw new Error(`Unknown upload URL ${uploadUrl}`);
+      }
+      return target;
+    },
   };
 }
 
-async function upload(prepared: HostedSitePrepareResponse, bytes: Buffer) {
-  if (!prepared.preview) {
-    throw new Error("API did not acknowledge preview");
+type Storage = ReturnType<typeof installStorage>;
+
+function hostApi() {
+  return setupApp({ context, routes: hostRoutes })(hostContract);
+}
+
+const HTML = "<html><head><title>Cover</title></head><body>Hi</body></html>";
+
+async function prepareWithCover(
+  owner: ApiTestUser,
+  storage: Storage,
+  visibility?: "public",
+  options: {
+    readonly site?: string;
+    readonly html?: string;
+    readonly cover?: Buffer;
+  } = {},
+) {
+  const site = options.site ?? `cover-${randomUUID().slice(0, 8)}`;
+  const html = options.html ?? HTML;
+  const cover = options.cover ?? COVER;
+  const response = await accept(
+    hostApi().prepare({
+      headers: signIn(owner),
+      body: {
+        ...(visibility ? { visibility } : {}),
+        site,
+        title: "Cover site",
+        artifactKind: "hosted-site",
+        spaFallback: false,
+        files: [
+          {
+            path: "/index.html",
+            size: Buffer.byteLength(html),
+            sha256: sha256(html),
+            contentType: "text/html; charset=utf-8",
+          },
+        ],
+        preview: {
+          size: cover.byteLength,
+          sha256: sha256(cover),
+          contentType: "image/png",
+        },
+      },
+    }),
+    [200],
+  );
+  for (const upload of response.body.uploads) {
+    storage.upload(upload.uploadUrl, Buffer.from(html), "text/html");
   }
-  const response = await fetch(prepared.preview.uploadUrl, {
-    method: "PUT",
-    body: new Uint8Array(bytes),
+  const preview = response.body.preview;
+  if (!preview) {
+    throw new Error("Expected a preview upload grant");
+  }
+  return { ...response.body, site, preview };
+}
+
+function complete(owner: ApiTestUser, deploymentId: string) {
+  return hostApi().complete({
+    headers: signIn(owner),
+    params: { deploymentId },
+    body: {},
   });
-  expect(response.status).toBe(200);
+}
+
+const OG_HTML =
+  '<html><head><title>Quarterly &amp; Annual</title><meta name="description" content="Public summary"></head><body>Q</body></html>';
+
+function ogApi() {
+  return setupApp({ context, routes: artifactOgRoutes })(artifactOgContract);
+}
+
+function ogImage(
+  target: { readonly kind: "host"; readonly id: string },
+  version: string,
+  variant?: "slack",
+) {
+  return accept(
+    ogApi().image({
+      query: { ...target, version, ...(variant ? { variant } : {}) },
+    }),
+    [302],
+  );
+}
+
+/** The cover version the anonymous OG metadata advertises in its image URL. */
+function advertisedVersion(imageUrl: string): string {
+  const advertised = decodeURIComponent(imageUrl).split(
+    "/api/artifact-og/image?",
+  )[1];
+  return new URLSearchParams(advertised).get("version") ?? "";
+}
+
+function referenceOf(url: string): string {
+  return new URL(url).pathname.split("/").at(-1) ?? "";
+}
+
+function coverPuts(storage: Storage) {
+  return storage.puts.filter((put) => {
+    return (
+      put.bucket === env("R2_PRIVATE_ARTIFACTS_BUCKET_NAME") &&
+      put.body.equals(COVER)
+    );
+  });
 }
 
 describe("sandbox hosted previews", () => {
-  it.each([
-    { bytes: png, contentType: "image/png", extension: "png" },
-    { bytes: jpeg, contentType: "image/jpeg", extension: "jpg" },
-  ] as const)(
-    "preserves original $contentType bytes and file identity",
-    async ({ bytes, contentType, extension }) => {
-      const owner = createBddApi(context).user();
-      if (!owner.orgId) {
-        throw new Error("Expected an organization");
-      }
-      const actor = { ...owner, orgId: owner.orgId };
-      const objects = previewStorage();
-      const declared = preview(bytes, contentType);
-      const prepared = await host.prepareHostedSite(actor, {
-        site: `original-${randomUUID().slice(0, 8)}`,
-        title: "Original",
-        artifactKind: "hosted-site",
-        spaFallback: false,
-        files: [hostedTextFile("/index.html", "<main>Original cover</main>")],
-        preview: declared,
-      });
-      expect(prepared.preview?.sha256).toBe(declared.sha256);
-      await upload(prepared, bytes);
-      const completed = await host.completeHostedSite(
-        actor,
-        prepared.deploymentId,
-      );
-      expect(completed.previewImageUrl?.endsWith(`.${extension}`)).toBeTruthy();
-      expect([...objects.values()]).toStrictEqual([bytes]);
-      expect(context.mocks.s3.send).toHaveBeenCalledWith(
-        expect.objectContaining({
-          input: expect.objectContaining({
-            Body: bytes,
-            ContentType: contentType,
-            IfNoneMatch: "*",
-          }),
-        }),
-        expect.objectContaining({ abortSignal: expect.any(AbortSignal) }),
-      );
-      if (!completed.previewImageUrl) {
-        throw new Error("Missing completed preview reference");
-      }
-      const reference = new URL(completed.previewImageUrl).pathname
-        .split("/")
-        .at(-1);
-      if (!reference) {
-        throw new Error("Missing preview reference");
-      }
-      createRouteMocks(context).clerk.session(actor.userId, actor.orgId);
-      const references = setupAppWithRoutes({
-        context,
-        routes: artifactReferenceRoutes,
-      })(artifactReferencesContract);
-      const resolved = await accept(
-        references.resolve({
-          headers: { authorization: "Bearer clerk-session" },
-          params: { reference },
-        }),
-        [200],
-      );
-      expect(resolved.body).toMatchObject({
-        contentType,
-        filename: `preview-${declared.sha256}.${extension}`,
-      });
-      await expect(
-        host.completeHostedSite(actor, prepared.deploymentId),
-      ).resolves.toMatchObject({
-        previewImageUrl: completed.previewImageUrl,
-      });
-      expect([...objects.values()]).toStrictEqual([bytes]);
-    },
-  );
+  it("host-preview-001 preserves original image/png bytes and file identity", async () => {
+    const storage = installStorage();
+    const owner = bdd.user();
+    const prepared = await prepareWithCover(owner, storage);
+    storage.upload(prepared.preview.uploadUrl, COVER, "image/png");
 
-  it("resolves published covers and authorizes them through the current Site policy", async () => {
-    const owner = createBddApi(context).user();
-    if (!owner.orgId) {
-      throw new Error("Expected an organization");
-    }
-    const actor = { ...owner, orgId: owner.orgId };
-    const headers = { authorization: "Bearer clerk-session" };
-    const mocks = createRouteMocks(context);
-    mocks.clerk.session(actor.userId, actor.orgId);
-    previewStorage();
-    const bytes = png;
-    const prepared = await host.prepareHostedSite(actor, {
-      site: `cover-${randomUUID().slice(0, 8)}`,
-      title: "Cover",
-      artifactKind: "hosted-site",
-      spaFallback: false,
-      visibility: "public",
-      files: [hostedTextFile("/index.html", "<main>Website</main>")],
-      preview: preview(bytes),
-    });
-    await upload(prepared, bytes);
-    const completed = await host.completeHostedSite(
-      actor,
-      prepared.deploymentId,
+    const completed = await accept(
+      complete(owner, prepared.deploymentId),
+      [200],
     );
-    expect(completed.previewImageUrl).toBeDefined();
-    const api = setupAppWithRoutes({ context, routes: hostRoutes })(
-      hostContract,
+    const previewImageUrl = completed.body.previewImageUrl ?? "";
+    const resolved = await accept(
+      setupApp({ context, routes: artifactReferenceRoutes })(
+        artifactReferencesContract,
+      ).resolve({
+        headers: signIn(owner),
+        params: { reference: referenceOf(previewImageUrl) },
+        query: {},
+      }),
+      [200],
     );
-    const request = {
-      headers,
-      params: { publicSlug: prepared.publicSlug },
-      query: { hostname: `${prepared.publicSlug}.okou.app` },
-    };
-    mocks.clerk.session(actor.userId, actor.orgId);
-    const first = await accept(api.sitePreview(request), [200]);
-    expect(first.body.expiresAt).not.toBeNull();
-    expect(first.body.url).toMatch(/^https:\/\/pv-/u);
-    expect(first.body.previewImageUrl).toBeDefined();
+    const repeated = await accept(
+      complete(owner, prepared.deploymentId),
+      [200],
+    );
+
+    expect(prepared.preview.sha256).toBe(sha256(COVER));
+    expect(previewImageUrl).toMatch(/\.png$/u);
     expect(
-      new URL(first.body.previewImageUrl!).searchParams.get("object"),
-    ).toContain("test-private-artifacts/private-artifacts/");
-    expect((await accept(api.sitePreview(request), [200])).body).toStrictEqual(
-      first.body,
+      coverPuts(storage).map((put) => {
+        return {
+          contentType: put.contentType,
+          ifNoneMatch: put.ifNoneMatch,
+        };
+      }),
+    ).toStrictEqual([{ contentType: "image/png", ifNoneMatch: "*" }]);
+    expect(resolved.body).toMatchObject({
+      contentType: "image/png",
+      filename: `preview-${sha256(COVER)}.png`,
+    });
+    expect(repeated.body.previewImageUrl).toBe(previewImageUrl);
+    expect(coverPuts(storage)).toHaveLength(1);
+    const sealed = coverPuts(storage)[0];
+    expect(
+      sealed ? storage.read(sealed.bucket, sealed.key) : undefined,
+    ).toStrictEqual(COVER);
+  });
+
+  it("host-preview-003 authorizes published covers through the current Site policy", async () => {
+    const storage = installStorage();
+    const owner = bdd.user();
+    const outsider = bdd.user();
+    const prepared = await prepareWithCover(owner, storage, "public");
+    storage.upload(prepared.preview.uploadUrl, COVER, "image/png");
+    await accept(complete(owner, prepared.deploymentId), [200]);
+    const preview = (actor: ApiTestUser) => {
+      return hostApi().sitePreview({
+        headers: signIn(actor),
+        params: { publicSlug: prepared.publicSlug },
+        query: { hostname: `${prepared.publicSlug}.okou.app` },
+      });
+    };
+
+    const ownerFirst = await accept(preview(owner), [200]);
+    const ownerRepeat = await accept(preview(owner), [200]);
+    const outsiderPublic = await accept(preview(outsider), [200]);
+    const accessApi = setupApp({ context, routes: artifactAccessRoutes })(
+      artifactAccessContract,
     );
-    const outsider = createBddApi(context).user();
-    mocks.clerk.session(outsider.userId, outsider.orgId);
-    const publicPreview = await accept(api.sitePreview(request), [200]);
-    expect(publicPreview.body.url).toBe(
-      `https://${prepared.publicSlug}.okou.app/`,
-    );
-    expect(publicPreview.body.expiresAt).toBeNull();
-    expect(publicPreview.body.previewImageUrl).toBe(first.body.previewImageUrl);
-    mocks.clerk.session(actor.userId, actor.orgId);
-    const accessApi = setupAppWithRoutes({
-      context,
-      routes: artifactAccessRoutes,
-    })(artifactAccessContract);
     await accept(
       accessApi.updateVisibility({
-        headers,
+        headers: signIn(owner),
         params: { artifactId: prepared.siteId },
         body: { visibility: "private" },
       }),
       [200],
     );
-    const privatePreview = await accept(api.sitePreview(request), [200]);
-    expect(privatePreview.body.previewImageUrl).toBe(
-      first.body.previewImageUrl,
-    );
-    expect(privatePreview.body.url).toMatch(/^https:\/\/pv-/u);
-    mocks.clerk.session(outsider.userId, outsider.orgId);
-    await accept(api.sitePreview(request), [404]);
+    const ownerPrivate = await accept(preview(owner), [200]);
+    const outsiderPrivate = await accept(preview(outsider), [404]);
+
+    const cover = ownerFirst.body.previewImageUrl ?? "";
+    expect(ownerFirst.body.url).toMatch(/^https:\/\/pv-/u);
+    expect(ownerFirst.body.expiresAt).not.toBeNull();
+    expect(cover).toContain(`/${env("R2_PRIVATE_ARTIFACTS_BUCKET_NAME")}/`);
+    expect(ownerRepeat.body).toStrictEqual(ownerFirst.body);
+    expect(outsiderPublic.body).toStrictEqual({
+      url: `https://${prepared.publicSlug}.okou.app/`,
+      expiresAt: null,
+      previewImageUrl: cover,
+    });
+    expect(ownerPrivate.body.url).toMatch(/^https:\/\/pv-/u);
+    expect(ownerPrivate.body.previewImageUrl).toBe(cover);
+    expect(outsiderPrivate.status).toBe(404);
   });
 
-  it("reads authored HTML metadata with the hosted-sites credentials even without an uploaded cover", async () => {
-    const owner = createBddApi(context).user();
-    if (!owner.orgId) {
-      throw new Error("Expected an organization");
-    }
-    const actor = { ...owner, orgId: owner.orgId };
-    host.captureHostedSitesS3();
-    const html =
-      '<html><head><title>Morning coffee</title><meta name="description" content="Fresh coffee daily"><meta property="og:image" content="social-card.png"></head><body>Coffee menu</body></html>';
-    const provider = context.mocks.s3.send.getMockImplementation()!;
-    context.mocks.s3.send.mockImplementation((cmd, ...args) => {
-      if (
-        cmd instanceof GetObjectCommand &&
-        cmd.input.Key?.endsWith("/index.html")
-      ) {
-        return Promise.resolve({
-          Body: Readable.from([Buffer.from(html)]),
-          ContentLength: Buffer.byteLength(html),
-        });
-      }
-      return provider(cmd, ...args);
+  it("host-preview-005 (1/2) advertises the published cover and redirects to its original bytes", async () => {
+    const storage = installStorage();
+    const owner = bdd.user();
+    const first = await prepareWithCover(owner, storage, "public", {
+      html: OG_HTML,
     });
-    const prepared = await host.prepareHostedSite(actor, {
-      site: `og-html-${randomUUID().slice(0, 8)}`,
-      title: "OG HTML",
-      artifactKind: "hosted-site",
-      spaFallback: false,
-      visibility: "public",
-      files: [hostedTextFile("/index.html", html)],
-    });
-    await host.completeHostedSite(actor, prepared.deploymentId);
-    const og = setupAppWithRoutes({ context, routes: artifactOgRoutes })(
-      artifactOgContract,
-    );
-    context.mocks.s3.requestConfig.mockClear();
-    const metadata = await accept(
-      og.metadata({ query: { kind: "host", id: prepared.deploymentId } }),
-      [200],
-    );
-    expect(metadata.body).toMatchObject({
-      available: true,
-      title: "Morning coffee",
-      description: "Fresh coffee daily",
-    });
-    expect(context.mocks.s3.requestConfig).toHaveBeenCalledWith(
-      expect.objectContaining({
-        credentials: {
-          accessKeyId: "test-hosted-sites-access-key",
-          secretAccessKey: "test-hosted-sites-secret-key",
-        },
-      }),
-    );
-    expect(context.mocks.s3.requestConfig).not.toHaveBeenCalledWith(
-      expect.objectContaining({
-        credentials: {
-          accessKeyId: "test-access-key",
-          secretAccessKey: "test-secret-key",
-        },
-      }),
-    );
-  });
+    const target = { kind: "host", id: first.deploymentId } as const;
 
-  it("redirects to the original published cover anonymously, retains older versions, and revokes OG on deletion", async () => {
-    const owner = createBddApi(context).user();
-    if (!owner.orgId) {
-      throw new Error("Expected an organization");
+    const pending = await accept(ogApi().metadata({ query: target }), [200]);
+    storage.upload(first.preview.uploadUrl, COVER, "image/png");
+    await accept(complete(owner, first.deploymentId), [200]);
+    const published = await accept(ogApi().metadata({ query: target }), [200]);
+    if (!published.body.available) {
+      throw new Error("Expected published OG metadata");
     }
-    const actor = { ...owner, orgId: owner.orgId };
-    const previewObjects = previewStorage();
-    const html =
-      '<html><head><title>Quarterly &amp; Annual</title><meta name="description" content="Public summary"></head><body>Report</body></html>';
-    const provider = context.mocks.s3.send.getMockImplementation()!;
-    context.mocks.s3.send.mockImplementation((cmd, ...args) => {
-      if (
-        cmd instanceof GetObjectCommand &&
-        cmd.input.Key?.endsWith("/index.html")
-      ) {
-        return Promise.resolve({
-          Body: Readable.from([Buffer.from(html)]),
-          ContentLength: Buffer.byteLength(html),
-          ETag: '"html"',
-        });
-      }
-      return provider(cmd, ...args);
-    });
-    const og = setupAppWithRoutes({ context, routes: artifactOgRoutes })(
-      artifactOgContract,
-    );
-    const bytes = png;
-    const site = `og-${randomUUID().slice(0, 8)}`;
-    const first = await host.prepareHostedSite(actor, {
-      site,
-      title: site,
-      artifactKind: "hosted-site",
-      spaFallback: false,
-      visibility: "public",
-      files: [hostedTextFile("/index.html", html)],
-      preview: preview(bytes),
-    });
-    const target = { kind: "host" as const, id: first.deploymentId };
-    expect(
-      (await accept(og.metadata({ query: target }), [200])).body,
-    ).toStrictEqual({
-      available: false,
-    });
-    await upload(first, bytes);
-    await host.completeHostedSite(actor, first.deploymentId);
-    const metadata = await accept(og.metadata({ query: target }), [200]);
-    expect(metadata.body).toMatchObject({
-      available: true,
+    const version = advertisedVersion(published.body.imageUrl);
+    const original = await ogImage(target, version);
+    const slack = await ogImage(target, version, "slack");
+    const brand = await accept(ogApi().defaultImage(), [302]);
+    const wrongVersion = await ogImage(target, `${version}-stale`);
+
+    expect(pending.body).toStrictEqual({ available: false });
+    expect(published.body).toMatchObject({
       title: "Quarterly & Annual",
       description: "Public summary",
     });
-    if (!metadata.body.available) {
-      throw new Error("Expected public OG metadata");
-    }
-    expect(JSON.stringify(metadata.body)).not.toContain("private-artifacts/");
-    expect(metadata.body.imageUrl).toContain("/cdn-cgi/image/");
-    const source = metadata.body.imageUrl.split("metadata=none/")[1];
-    if (!source) {
-      throw new Error("Missing original cover source URL");
-    }
-    const version = new URL(source).searchParams.get("version")!;
-    const imageQuery = { ...target, version };
-    const original = await accept(og.image({ query: imageQuery }), [302]);
-    const originalUrl = original.headers.get("location");
-    if (!originalUrl) {
-      throw new Error("Missing original cover redirect");
-    }
-    const originalObject = new URL(originalUrl).searchParams.get("object");
-    const bucketPrefix = `${env("R2_PRIVATE_ARTIFACTS_BUCKET_NAME")}/`;
-    if (!originalObject?.startsWith(bucketPrefix)) {
-      throw new Error("Missing original cover object in the signing fixture");
-    }
-    const originalKey = originalObject.slice(bucketPrefix.length);
-    expect(previewObjects.get(originalKey)).toStrictEqual(bytes);
-    const compact = await accept(
-      og.image({ query: { ...imageQuery, variant: "slack" } }),
-      [302],
+    expect(published.body.imageUrl).toContain("/cdn-cgi/image/");
+    expect(JSON.stringify(published.body)).not.toContain(
+      env("R2_PRIVATE_ARTIFACTS_BUCKET_NAME"),
     );
-    expect(compact.headers.get("location")).toBe(originalUrl);
-    expect(original.headers.get("cache-control")).toBe("private, no-store");
-    expect(original.headers.get("cloudflare-cdn-cache-control")).toBe(
-      "no-store",
-    );
-    const brand = await accept(og.defaultImage(), [302]);
-    expect(brand.headers.get("location")).toBe(ARTIFACT_OG_BRAND.imageUrl);
-    expect(brand.headers.get("cache-control")).toBe("private, no-store");
-    const stale = await accept(
-      og.image({ query: { ...imageQuery, version: "wrong" } }),
-      [302],
-    );
-    expect(stale.headers.get("location")).toBe(ARTIFACT_OG_BRAND.imageUrl);
-    const compactStale = await accept(
-      og.image({
-        query: { ...imageQuery, version: "wrong", variant: "slack" },
-      }),
-      [302],
-    );
-    expect(compactStale.headers.get("location")).toBe(
-      ARTIFACT_OG_BRAND.imageUrl,
-    );
-
-    const nextBytes = secondPng;
-    const second = await host.prepareHostedSite(actor, {
-      site,
-      title: site,
-      artifactKind: "hosted-site",
-      spaFallback: false,
-      files: [hostedTextFile("/index.html", html)],
-      preview: preview(nextBytes),
-    });
-    await upload(second, nextBytes);
-    await host.completeHostedSite(actor, second.deploymentId);
-    const retained = await accept(og.image({ query: imageQuery }), [302]);
-    expect(retained.headers.get("location")).toBe(originalUrl);
-    expect(previewObjects.get(originalKey)).toStrictEqual(bytes);
-    await host.deleteHostedSite(actor, first.publicSlug);
     expect(
-      (await accept(og.metadata({ query: target }), [200])).body,
-    ).toStrictEqual({
-      available: false,
-    });
-    const deleted = await accept(og.image({ query: imageQuery }), [302]);
-    expect(deleted.headers.get("location")).toBe(ARTIFACT_OG_BRAND.imageUrl);
+      storage.readSigned(original.headers.get("location") ?? ""),
+    ).toStrictEqual(COVER);
+    expect(new URL(slack.headers.get("location") ?? "").pathname).toBe(
+      new URL(original.headers.get("location") ?? "").pathname,
+    );
+    expect(original.headers.get("cache-control")).toBe("private, no-store");
+    expect(original.headers.get("cdn-cache-control")).toBe("no-store");
+    expect(brand.headers.get("location")).toBeTruthy();
+    expect(wrongVersion.headers.get("location")).toBe(
+      brand.headers.get("location"),
+    );
   });
 
-  it("keeps the active HTML cover in the catalog across late completions and retries", async () => {
-    const fixture = createChatEventsFixture(context);
-    const entitled = await fixture.entitledNativeChatActor();
-    if (!entitled.actor.orgId) {
-      throw new Error("Expected an organization");
-    }
-    const actor = { ...entitled.actor, orgId: entitled.actor.orgId };
-    const run = await fixture.sendChatRun(actor, {
-      prompt: "Publish a site with a preview",
+  it("host-preview-005 (2/2) retains the older cover version and revokes OG on deletion", async () => {
+    const storage = installStorage();
+    const owner = bdd.user();
+    const first = await prepareWithCover(owner, storage, "public", {
+      html: OG_HTML,
     });
-    const { execution } = await fixture.runExecution(run.runId);
-    const runner = { bearerToken: okouTokenFromExecution(execution) };
-    const features = setupAppWithRoutes({
-      context,
-      routes: featureSwitchesRoutes,
-    })(featureSwitchesContract);
-    const headers = { authorization: `Bearer ${runner.bearerToken}` };
-    const available = await accept(features.get({ headers }), [200]);
-    expect(available.headers.get("cache-control")).toBe("private, no-store");
+    const target = { kind: "host", id: first.deploymentId } as const;
+    storage.upload(first.preview.uploadUrl, COVER, "image/png");
+    await accept(complete(owner, first.deploymentId), [200]);
+    const published = await accept(ogApi().metadata({ query: target }), [200]);
+    if (!published.body.available) {
+      throw new Error("Expected published OG metadata");
+    }
+    const version = advertisedVersion(published.body.imageUrl);
+    const brand = await accept(ogApi().defaultImage(), [302]);
+
+    const newerCover = Buffer.concat([COVER, Buffer.from([0x01])]);
+    const second = await prepareWithCover(owner, storage, "public", {
+      site: first.site,
+      html: OG_HTML,
+      cover: newerCover,
+    });
+    storage.upload(second.preview.uploadUrl, newerCover, "image/png");
+    await accept(complete(owner, second.deploymentId), [200]);
+    const retained = await ogImage(target, version);
     await accept(
-      features.update({
-        headers,
-        body: { switches: { [FeatureSwitchKey.Dummy]: false } },
-      }),
-      [403],
-    );
-    await accept(features.delete({ headers }), [403]);
-    previewStorage();
-    const firstImage = png;
-    const secondImage = secondPng;
-    const body = {
-      site: `preview-${randomUUID().slice(0, 8)}`,
-      title: "Preview",
-      artifactKind: "hosted-site" as const,
-      spaFallback: false,
-      visibility: "public" as const,
-      files: [hostedTextFile("/index.html", "<main>Website</main>")],
-    };
-    const first = await host.prepareHostedSite(runner, {
-      ...body,
-      preview: preview(firstImage),
-    });
-    const second = await host.prepareHostedSite(runner, {
-      ...body,
-      preview: preview(secondImage),
-    });
-    await upload(first, firstImage);
-    await upload(second, secondImage);
-    const latest = await host.completeHostedSite(runner, second.deploymentId);
-    const older = await host.completeHostedSite(runner, first.deploymentId);
-    expect(older.isActive).toBeFalsy();
-    expect(latest.previewImageUrl).toMatch(/\/artifacts\/[a-z0-9]+\.png$/u);
-    expect(older.previewImageUrl).not.toBe(latest.previewImageUrl);
-    await expect(
-      host.completeHostedSite(runner, second.deploymentId),
-    ).resolves.toMatchObject({ previewImageUrl: latest.previewImageUrl });
-    const catalog = await chat.listArtifactCatalog(actor);
-    expect(catalog.artifacts).toStrictEqual([
-      expect.objectContaining({
-        kind: "hosted-site",
-        title: body.title,
-        thumbnail: { url: latest.previewImageUrl },
-      }),
-    ]);
-    // A leaked reference is not a credential, even though its parent site is public.
-    if (!latest.previewImageUrl) {
-      throw new Error("Missing completed preview reference");
-    }
-    const reference = new URL(latest.previewImageUrl).pathname
-      .split("/")
-      .at(-1);
-    if (!reference) {
-      throw new Error("Missing preview reference");
-    }
-    const references = setupAppWithRoutes({
-      context,
-      routes: artifactReferenceRoutes,
-    })(artifactReferencesContract);
-    createRouteMocks(context).clerk.session(actor.userId, actor.orgId);
-    await accept(
-      references.resolve({
-        headers: { authorization: "Bearer clerk-session" },
-        params: { reference },
+      hostApi().deleteSite({
+        headers: signIn(owner),
+        params: { publicSlug: first.publicSlug },
       }),
       [200],
     );
-    const outsider = createBddApi(context).user();
-    createRouteMocks(context).clerk.session(outsider.userId, outsider.orgId);
-    await accept(
-      references.resolve({
-        headers: { authorization: "Bearer clerk-session" },
-        params: { reference },
-      }),
-      [404],
-    );
-  });
-
-  it("retries a sealed cover after staging cleanup fails without activating it early", async () => {
-    const fixture = createChatEventsFixture(context);
-    const entitled = await fixture.entitledNativeChatActor();
-    if (!entitled.actor.orgId) {
-      throw new Error("Expected an organization");
-    }
-    const actor = { ...entitled.actor, orgId: entitled.actor.orgId };
-    const run = await fixture.sendChatRun(actor, {
-      prompt: "Publish a site with a retryable preview",
-    });
-    const { execution } = await fixture.runExecution(run.runId);
-    const runner = { bearerToken: okouTokenFromExecution(execution) };
-    const objects = previewStorage({ failStagingDeleteOnce: true });
-    const bytes = jpeg;
-    const body = {
-      site: `preview-retry-${randomUUID().slice(0, 8)}`,
-      title: "Preview retry",
-      artifactKind: "hosted-site" as const,
-      spaFallback: false,
-      files: [hostedTextFile("/index.html", "<main>Website</main>")],
-      preview: preview(bytes, "image/jpeg"),
-    };
-    const prepared = await host.prepareHostedSite(runner, body);
-    await upload(prepared, bytes);
-    await host.requestCompleteHostedSite(runner, prepared.deploymentId, [500]);
-    const pending = await host.readHostedSiteDeployments(runner, body.site);
-    expect(pending.activeDeploymentId).toBeNull();
-    expect(pending.deployments[0]?.status).toBe("uploading");
-    expect(objects.size).toBe(2);
-
-    const completed = await host.completeHostedSite(
-      runner,
-      prepared.deploymentId,
-    );
-    expect(completed.previewImageUrl).toMatch(/\.jpg$/u);
-    expect(completed.isActive).toBeTruthy();
-    expect([...objects.values()]).toStrictEqual([bytes]);
-    expect(objects.size).toBe(1);
-    expect([...objects.keys()][0]).not.toMatch(/\/upload$/u);
-    await expect(
-      host.completeHostedSite(runner, prepared.deploymentId),
-    ).resolves.toMatchObject({ previewImageUrl: completed.previewImageUrl });
-    expect([...objects.values()]).toStrictEqual([bytes]);
-    expect((await chat.listArtifactCatalog(actor)).artifacts).toStrictEqual([
-      expect.objectContaining({
-        kind: "hosted-site",
-        title: body.title,
-        thumbnail: { url: completed.previewImageUrl },
-      }),
-    ]);
-  });
-
-  it("does not activate missing or integrity-mismatched previews and permits repair", async () => {
-    const owner = createBddApi(context).user();
-    if (!owner.orgId) {
-      throw new Error("Expected an organization");
-    }
-    const actor = { ...owner, orgId: owner.orgId };
-    const objects = previewStorage();
-    const bytes = png;
-    const body = {
-      site: `preview-errors-${randomUUID().slice(0, 8)}`,
-      title: "Preview errors",
-      artifactKind: "hosted-site" as const,
-      spaFallback: false,
-      files: [hostedTextFile("/index.html", "<main>Website</main>")],
-      preview: preview(bytes),
-    };
-    const prepared = await host.prepareHostedSite(actor, body);
-    await host.requestCompleteHostedSite(actor, prepared.deploymentId, [400]);
-    await upload(prepared, Buffer.from("incomplete upload"));
-    await host.requestCompleteHostedSite(actor, prepared.deploymentId, [400]);
-    const mismatched = Buffer.from(bytes);
-    mismatched[0] = 0;
-    await upload(prepared, mismatched);
-    await host.requestCompleteHostedSite(actor, prepared.deploymentId, [400]);
-    const pending = await host.readHostedSiteDeployments(actor, body.site);
-    expect(pending.activeDeploymentId).toBeNull();
-    expect(pending.deployments[0]?.status).toBe("uploading");
-    await upload(prepared, bytes);
-    const completed = await host.completeHostedSite(
-      actor,
-      prepared.deploymentId,
-    );
-    expect(completed.previewImageUrl).toBeDefined();
-    expect(
-      [...objects.keys()].some((key) => {
-        return key.endsWith("/upload");
-      }),
-    ).toBeFalsy();
-    const sealed = [...objects.values()].map((bytes) => {
-      return bytes.toString("base64");
-    });
-    // Replacing the temporary PUT object cannot mutate the sealed preview.
-    await upload(prepared, Buffer.from("replaced staging bytes"));
-    await expect(
-      host.completeHostedSite(actor, prepared.deploymentId),
-    ).resolves.toMatchObject({ previewImageUrl: completed.previewImageUrl });
+    const deleted = await accept(ogApi().metadata({ query: target }), [200]);
+    const revoked = await ogImage(target, version);
 
     expect(
-      [...objects.values()].map((bytes) => {
-        return bytes.toString("base64");
+      storage.readSigned(retained.headers.get("location") ?? ""),
+    ).toStrictEqual(COVER);
+    expect(deleted.body).toStrictEqual({ available: false });
+    expect(revoked.headers.get("location")).toBe(brand.headers.get("location"));
+  });
+
+  it("host-preview-008 does not activate missing or mismatched covers and permits repair", async () => {
+    const storage = installStorage();
+    const owner = bdd.user();
+    const prepared = await prepareWithCover(owner, storage);
+    const staging = storage.target(prepared.preview.uploadUrl);
+    const tampered = Buffer.from(COVER);
+    tampered[0] = 0x00;
+
+    const missing = await accept(complete(owner, prepared.deploymentId), [400]);
+    storage.upload(
+      prepared.preview.uploadUrl,
+      COVER.subarray(0, COVER.byteLength - 4),
+      "image/png",
+    );
+    const incomplete = await accept(
+      complete(owner, prepared.deploymentId),
+      [400],
+    );
+    storage.upload(prepared.preview.uploadUrl, tampered, "image/png");
+    const mismatched = await accept(
+      complete(owner, prepared.deploymentId),
+      [400],
+    );
+    const pending = await accept(
+      hostApi().deployments({
+        headers: signIn(owner),
+        params: { site: prepared.site },
       }),
-    ).toStrictEqual(sealed);
+      [200],
+    );
+    storage.upload(prepared.preview.uploadUrl, COVER, "image/png");
+    const repaired = await accept(
+      complete(owner, prepared.deploymentId),
+      [200],
+    );
+    const stagingAfterRepair = storage.read(staging.bucket, staging.key);
+    storage.upload(prepared.preview.uploadUrl, tampered, "image/png");
+    const replayed = await accept(
+      complete(owner, prepared.deploymentId),
+      [200],
+    );
+
+    expect([
+      missing.status,
+      incomplete.status,
+      mismatched.status,
+    ]).toStrictEqual([400, 400, 400]);
+    expect(pending.body.activeDeploymentId).toBeNull();
+    expect(
+      pending.body.deployments.map((deployment) => {
+        return [deployment.deploymentId, deployment.status];
+      }),
+    ).toStrictEqual([[prepared.deploymentId, "uploading"]]);
+    expect(repaired.body.previewImageUrl).toBeTruthy();
+    expect(stagingAfterRepair).toBeUndefined();
+    expect(replayed.body.previewImageUrl).toBe(repaired.body.previewImageUrl);
+    const sealed = coverPuts(storage);
+    expect(sealed).toHaveLength(1);
+    expect(
+      sealed[0] ? storage.read(sealed[0].bucket, sealed[0].key) : undefined,
+    ).toStrictEqual(COVER);
   });
 });

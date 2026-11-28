@@ -1,298 +1,234 @@
 import { randomUUID } from "node:crypto";
-import { expect, test } from "vitest";
 import { sshConnectionsContract } from "@okouai/api-contracts/contracts/ssh-connections";
 import { sshCredentialsContract } from "@okouai/api-contracts/contracts/ssh-credentials";
 import { tailscaleContract } from "@okouai/api-contracts/contracts/tailscale";
+import { createStore } from "ccstate";
+import { describe, expect, it } from "vitest";
+
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { joinAll } from "../../utils";
 import { sshConnectionsRoutes } from "../ssh-connections";
 import { tailscaleRoutes } from "../tailscale";
+import { seedOrgMembership$ } from "./helpers/org-membership";
 import { createRouteMocks } from "./helpers/route-test";
-import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
 
 const context = testContext();
-const mocks = createRouteMocks(context);
 const headers = Object.freeze({ authorization: "Bearer clerk-session" });
-const routes = Object.freeze([...sshConnectionsRoutes, ...tailscaleRoutes]);
-const connections = () => {
-  return setupApp({ context, routes })(sshConnectionsContract);
+const clerkDirectory = createStore();
+
+interface Actor {
+  readonly userId: string;
+  readonly orgId: string;
+}
+
+async function member(orgId = `org_${randomUUID()}`): Promise<Actor> {
+  const actor = { userId: `user_${randomUUID()}`, orgId };
+  await clerkDirectory.set(
+    seedOrgMembership$,
+    { ...actor, role: "member" },
+    context.signal,
+  );
+  return actor;
+}
+
+function signIn(actor: Actor) {
+  createRouteMocks(context).clerk.session(
+    actor.userId,
+    actor.orgId,
+    "org:member",
+  );
+}
+
+const hosts = () => {
+  return setupApp({ context, routes: sshConnectionsRoutes })(
+    sshConnectionsContract,
+  );
 };
-const credentials = () => {
-  return setupApp({ context, routes })(sshCredentialsContract);
+const logins = () => {
+  return setupApp({ context, routes: sshConnectionsRoutes })(
+    sshCredentialsContract,
+  );
 };
 const tailscale = () => {
-  return setupApp({ context, routes })(tailscaleContract);
+  return setupApp({ context, routes: tailscaleRoutes })(tailscaleContract);
 };
-const login = Object.freeze({
-  name: "Atomic login",
-  username: "deploy",
-  authentication: {
-    method: "password" as const,
-    password: "binding-password-canary",
-  },
-});
-const network = Object.freeze({
-  name: "Atomic network",
-  credentials: {
-    clientId: "binding-client-canary",
-    clientSecret: "binding-secret-canary",
-  },
-  tags: ["tag:okou"],
-});
-function owner(orgId = `org_atomic_binding_${randomUUID()}`) {
-  const userId = `user_atomic_binding_${randomUUID()}`;
-  mocks.clerk.session(userId, orgId);
-  return { orgId, userId };
-}
-async function inventory() {
+
+function inlineLogin() {
   return {
-    hosts: (await accept(connections().list({ headers }), [200])).body
-      .connections,
-    credentials: (await accept(credentials().list({ headers }), [200])).body
-      .credentials,
-    configs: (await accept(tailscale().list({ headers }), [200])).body.configs,
-  };
-}
-function inlineHost(id: string) {
-  return {
-    id,
-    displayName: "Atomic host",
-    host: "100.64.0.21",
-    port: 22,
-    credential: { create: login },
-    transport: { type: "tailscale" as const, create: network },
-  };
-}
-async function directHost(id: string = randomUUID()) {
-  return await accept(
-    connections().create({
-      headers,
-      body: {
-        id,
-        displayName: "Direct host",
-        host: "ssh.example.com",
-        port: 22,
-        credential: { create: login },
+    create: {
+      name: `Login ${randomUUID().slice(0, 8)}`,
+      username: "deploy",
+      authentication: {
+        method: "password" as const,
+        password: `pw-${randomUUID()}`,
       },
-    }),
-    [201],
-  );
+    },
+  };
 }
 
-test("concurrent inline Tailscale Host creation commits only the winner's network and login", async () => {
-  useSecretKmsProbe();
-  const creator = owner();
-  const id = randomUUID();
-  const body = inlineHost(id);
-  const outcomes = await joinAll(
-    [body, { ...body, displayName: "Competing host" }].map(async (input) => {
-      return await accept(
-        connections().create({ headers, body: input }),
-        [201, 204],
-      );
-    }),
-  );
-  expect(
-    outcomes
-      .map((result) => {
-        return result.status;
-      })
-      .sort(),
-  ).toStrictEqual([201, 204]);
-  const winner = outcomes.find((result) => {
-    return result.status === 201;
-  });
-  if (winner?.status !== 201) {
-    throw new Error("Expected exactly one winning Host");
-  }
-  const before = await inventory();
-  expect(before.hosts).toStrictEqual([winner.body]);
-  expect(before.credentials).toHaveLength(1);
-  expect(before.configs).toHaveLength(1);
-  expect(winner.body).toMatchObject({
-    id,
-    generation: 1,
-    credentialId: before.credentials[0]?.id,
-    transport: { type: "tailscale", configId: before.configs[0]?.id },
-  });
-  await accept(
-    connections().create({
-      headers,
-      body: { ...body, displayName: "Replay cannot replace" },
-    }),
-    [204],
-  );
-  await expect(inventory()).resolves.toStrictEqual(before);
-  owner(creator.orgId);
-  const refused = await accept(connections().create({ headers, body }), [409]);
-  expect(refused.body.error.code).toBe("SSH_RESOURCE_ID_CONFLICT");
-  await expect(inventory()).resolves.toStrictEqual({
-    hosts: [],
-    credentials: [],
-    configs: [],
-  });
-  mocks.clerk.session(creator.userId, creator.orgId);
-  await expect(inventory()).resolves.toStrictEqual(before);
-});
-
-test("competing inline Tailscale rebinds leave one winner and no losing network or login", async () => {
-  useSecretKmsProbe();
-  owner();
-  const initial = await directHost();
-  const params = { connectionId: initial.body.id };
-  const body = {
-    expectedGeneration: 1,
-    host: "100.64.0.21",
-    port: 22,
-    credential: { create: { ...login, name: "Replacement login" } },
-    transport: { type: "tailscale" as const, create: network },
-  };
-  const outcomes = await joinAll(
-    [body, { ...body, displayName: "Competing edit" }].map(async (input) => {
-      return await accept(
-        connections().update({ headers, params, body: input }),
-        [200, 409],
-      );
-    }),
-  );
-  expect(
-    outcomes
-      .map((result) => {
-        return result.status;
-      })
-      .sort(),
-  ).toStrictEqual([200, 409]);
-  const rejected = outcomes.find((result) => {
-    return result.status === 409;
-  });
-  expect(rejected?.body).toMatchObject({
-    error: { code: "SSH_GENERATION_CONFLICT" },
-  });
-  const current = await inventory();
-  expect(current.hosts).toHaveLength(1);
-  expect(current.credentials).toHaveLength(2);
-  expect(current.configs).toHaveLength(1);
-  expect(current.hosts[0]).toMatchObject({
-    id: initial.body.id,
-    generation: 2,
-    credentialName: "Replacement login",
-    transport: { type: "tailscale", configId: current.configs[0]?.id },
-  });
-  expect(
-    current.credentials.filter((credential) => {
-      return credential.name === "Replacement login";
-    }),
-  ).toHaveLength(1);
-});
-
-test("a visible selected Tailscale configuration does not grant a foreign SSH login", async () => {
-  useSecretKmsProbe();
-  const creator = owner();
-  const config = await accept(
-    tailscale().create({ headers, body: { id: randomUUID(), ...network } }),
-    [201],
-  );
-  owner(creator.orgId);
-  const foreign = await accept(
-    credentials().create({ headers, body: { id: randomUUID(), ...login } }),
-    [201],
-  );
-  mocks.clerk.session(creator.userId, creator.orgId);
-  const refused = await accept(
-    connections().create({
-      headers,
-      body: {
-        ...inlineHost(randomUUID()),
-        credential: { id: foreign.body.id },
-        transport: { type: "tailscale", configId: config.body.id },
-      },
-    }),
-    [404],
-  );
-  expect(refused.body.error.code).toBe("SSH_CREDENTIAL_NOT_FOUND");
-  await expect(inventory()).resolves.toStrictEqual({
-    hosts: [],
-    credentials: [],
-    configs: [config.body],
-  });
-});
-
-test.each(["create", "update"] as const)(
-  "missing selected Tailscale configuration rejects %s without leaving an inline login",
-  async (operation) => {
-    useSecretKmsProbe();
-    owner();
-    const id = randomUUID();
-    const initial = operation === "update" ? await directHost(id) : undefined;
-    const before = await inventory();
-    const transport = { type: "tailscale" as const, configId: randomUUID() };
-    const rejected =
-      operation === "create"
-        ? await accept(
-            connections().create({
-              headers,
-              body: { ...inlineHost(id), transport },
-            }),
-            [404],
-          )
-        : await accept(
-            connections().update({
-              headers,
-              params: { connectionId: id },
-              body: {
-                expectedGeneration: 1,
-                host: "100.64.0.21",
-                credential: { create: login },
-                transport,
-              },
-            }),
-            [404],
-          );
-    expect(rejected.body.error.code).toBe("TAILSCALE_NOT_FOUND");
-    await expect(inventory()).resolves.toStrictEqual(before);
-    if (initial) {
-      expect(before.hosts).toStrictEqual([initial.body]);
-    }
-    const config = await accept(
+async function createTailscaleConfig(id = randomUUID()) {
+  return (
+    await accept(
       tailscale().create({
         headers,
-        body: { id: transport.configId, ...network },
+        body: {
+          id,
+          name: `Tailnet ${id.slice(0, 8)}`,
+          credentials: {
+            clientId: `client-${randomUUID()}`,
+            clientSecret: `secret-${randomUUID()}`,
+          },
+          tags: ["tag:okou"],
+        },
+      }),
+      [201],
+    )
+  ).body;
+}
+
+/** Everything the member can see about hosts, logins and Tailscale configs. */
+async function inventory() {
+  const [hostList, loginList, configList] = await Promise.all([
+    accept(hosts().list({ headers }), [200]),
+    accept(logins().list({ headers }), [200]),
+    accept(tailscale().list({ headers }), [200]),
+  ]);
+  return {
+    hosts: hostList.body.connections,
+    logins: loginList.body.credentials,
+    configs: configList.body.configs,
+  };
+}
+
+describe("SSH Tailscale binding atomicity", () => {
+  it("ssh-tailscale-binding-atomicity-003 does not let a Tailscale config grant another member's SSH login", async () => {
+    const owner = await member();
+    const colleague = await member(owner.orgId);
+    signIn(colleague);
+    const foreignLogin = await accept(
+      logins().create({
+        headers,
+        body: {
+          id: randomUUID(),
+          name: "Colleague login",
+          username: "colleague",
+          authentication: {
+            method: "password",
+            password: `pw-${randomUUID()}`,
+          },
+        },
       }),
       [201],
     );
-    if (operation === "create") {
-      const created = await accept(
-        connections().create({
-          headers,
-          body: { ...inlineHost(id), transport },
-        }),
-        [201],
-      );
-      expect(created.body).toMatchObject({
-        id,
-        generation: 1,
-        transport: { type: "tailscale", configId: config.body.id },
-      });
-    } else {
-      const updated = await accept(
-        connections().update({
-          headers,
-          params: { connectionId: id },
-          body: {
-            expectedGeneration: 1,
-            host: "100.64.0.21",
-            credential: { create: login },
-            transport,
-          },
-        }),
-        [200],
-      );
-      expect(updated.body).toMatchObject({
-        id,
-        generation: 2,
-        transport: { type: "tailscale", configId: config.body.id },
-      });
-    }
-  },
-);
+    signIn(owner);
+    const config = await createTailscaleConfig();
+
+    const response = await accept(
+      hosts().create({
+        headers,
+        body: {
+          id: randomUUID(),
+          displayName: "Borrowed login",
+          host: "peer.example.com",
+          credential: { id: foreignLogin.body.id },
+          transport: { type: "tailscale", configId: config.id },
+        },
+      }),
+      [404],
+    );
+
+    expect(response.body.error.code).toBe("SSH_CREDENTIAL_NOT_FOUND");
+    const after = await inventory();
+    expect(after.hosts).toStrictEqual([]);
+    expect(after.logins).toStrictEqual([]);
+    expect(
+      after.configs.map((item) => {
+        return item.id;
+      }),
+    ).toStrictEqual([config.id]);
+  });
+
+  it("ssh-tailscale-binding-atomicity-004 rejects a missing Tailscale config on create, then binds once it exists", async () => {
+    signIn(await member());
+    const configId = randomUUID();
+    const hostId = randomUUID();
+    const body = {
+      id: hostId,
+      displayName: "Tailnet host",
+      host: "peer.example.com",
+      credential: inlineLogin(),
+      transport: { type: "tailscale" as const, configId },
+    };
+    const before = await inventory();
+
+    const missing = await accept(hosts().create({ headers, body }), [404]);
+
+    expect(missing.body.error.code).toBe("TAILSCALE_NOT_FOUND");
+    await expect(inventory()).resolves.toStrictEqual(before);
+
+    await createTailscaleConfig(configId);
+    const created = await accept(hosts().create({ headers, body }), [201]);
+    expect(created.body).toMatchObject({
+      id: hostId,
+      generation: 1,
+      transport: { type: "tailscale", configId },
+    });
+  });
+
+  it("ssh-tailscale-binding-atomicity-005 rejects a missing Tailscale config on update, then moves the host once it exists", async () => {
+    signIn(await member());
+    const configId = randomUUID();
+    const hostId = randomUUID();
+    await accept(
+      hosts().create({
+        headers,
+        body: {
+          id: hostId,
+          displayName: "Direct host",
+          host: "ssh.example.com",
+          credential: inlineLogin(),
+          transport: { type: "direct" },
+        },
+      }),
+      [201],
+    );
+    const before = await inventory();
+    const update = {
+      expectedGeneration: 1,
+      host: "100.64.0.21",
+      credential: inlineLogin(),
+      transport: { type: "tailscale" as const, configId },
+    };
+
+    const missing = await accept(
+      hosts().update({
+        headers,
+        params: { connectionId: hostId },
+        body: update,
+      }),
+      [404],
+    );
+
+    expect(missing.body.error.code).toBe("TAILSCALE_NOT_FOUND");
+    const after = await inventory();
+    expect(after).toStrictEqual(before);
+    expect(after.hosts[0]).toMatchObject({
+      host: "ssh.example.com",
+      generation: 1,
+    });
+
+    await createTailscaleConfig(configId);
+    const moved = await accept(
+      hosts().update({
+        headers,
+        params: { connectionId: hostId },
+        body: update,
+      }),
+      [200],
+    );
+    expect(moved.body).toMatchObject({
+      generation: 2,
+      transport: { type: "tailscale", configId },
+    });
+  });
+});

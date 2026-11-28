@@ -1,442 +1,711 @@
-import { GetObjectCommand } from "@aws-sdk/client-s3";
-import { createHash, randomUUID } from "node:crypto";
-import { http, HttpResponse } from "msw";
-import { describe, expect, it, test } from "vitest";
-import { connectorPermissionsContract } from "@okouai/api-contracts/contracts/connector-permissions";
-import type { ApplyUserPermissionGrant } from "@okouai/api-contracts/validators/user-permission-grants";
-import { cronConnectorCatalogContract } from "@okouai/api-contracts/contracts/cron";
+import { randomUUID } from "node:crypto";
 import {
-  CONNECTOR_CATALOG_ACTIVE_KEY,
-  connectorCatalogArtifactSchema,
-} from "@okouai/connectors/connector-catalog/artifacts/artifacts";
+  chatEventsContract,
+  chatThreadsContract,
+} from "@okouai/api-contracts/contracts/chat-threads";
+import { connectorPermissionsContract } from "@okouai/api-contracts/contracts/connector-permissions";
+import { builtinConnectorOauthStartContract } from "@okouai/api-contracts/contracts/connectors";
+import { builtinConnectorsSlugCallbackContract } from "@okouai/api-contracts/contracts/connectors-slug-callback";
+import { runsCancelContract } from "@okouai/api-contracts/contracts/run-routes";
+import {
+  runnersConnectorRuntimeSyncContract,
+  runnersHeartbeatContract,
+} from "@okouai/api-contracts/contracts/runners";
+import {
+  webhookClerkContract,
+  webhookCompleteContract,
+} from "@okouai/api-contracts/contracts/webhooks";
+import { beforeAll, describe, expect, it, onTestFinished } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { mockNow, now } from "../../../lib/time";
-import { server } from "../../../mocks/server";
-import { API_TEST_CONNECTOR_CATALOG_ARTIFACT } from "../../../test-fixtures/connector-catalog-artifact";
-import baselineSkillBundle from "../../../test-fixtures/connector-skill-bundle.json";
+import {
+  TEST_WITH_DOUBLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE,
+  TEST_WITH_TRIPLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE,
+} from "../../../__tests__/test-timeouts";
+import { env, mockEnv, mockOptionalEnv, optionalEnv } from "../../../lib/env";
+import { clearMockNow, mockNow, now } from "../../../lib/time";
+import { flushWaitUntilForTest } from "../../context/wait-until";
+import { settleIncludingAbort } from "../../utils";
+import { chatEventsRoutes } from "../chat-events";
+import { chatThreadCreateRoutes } from "../chat-threads-create";
 import { connectorPermissionsRoutes } from "../connector-permissions";
-import { cronConnectorCatalogRoutes } from "../cron-connector-catalog";
+import { builtinConnectorsRoutes } from "../connectors";
+import { builtinConnectorsSlugCallbackRoutes } from "../connectors-slug-callback";
+import { runnersRoutes } from "../runners";
+import { runsCancelRoutes } from "../runs-cancel";
+import { webhooksAgentCompleteRoutes } from "../webhooks-agent-complete";
+import { webhooksClerkRoutes } from "../webhooks-clerk";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
+import { createChatCallbacksApi } from "./helpers/api-bdd-chat-callbacks";
 import {
   mockGitHubConnectorOAuth,
   mockSlackConnectorOAuth,
 } from "./helpers/api-bdd-connectors";
 import { createRunsApi } from "./helpers/api-bdd-runs";
-import { createChatEventsFixture } from "./helpers/chat-events-fixture";
-import { createPublicRunnerMemory } from "./helpers/public-runner-memory";
+import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
-const mocks = createRouteMocks(context);
-const {
-  connectors,
-  entitledNativeChatActor,
-  sendChatRun,
-  queueChatRun,
-  runExecution,
-  cancelChatRun,
-} = createChatEventsFixture(context);
+const bdd = createBddApi(context);
+const runs = createRunsApi(context);
+const chatCallbacks = createChatCallbacksApi(context);
+const webhooks = createWebhookCallbackApi(context);
 
-async function sharedGrants(
-  actor: ApiTestUser,
-  connectorSlug: string,
-  grants: readonly ApplyUserPermissionGrant[],
-  mode: "patch" | "replace" = "patch",
-) {
-  mocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
-  return await accept(
-    setupApp({ context, routes: connectorPermissionsRoutes })(
-      connectorPermissionsContract,
-    ).apply({
-      headers: { authorization: "Bearer clerk-session" },
-      body: {
-        target: { kind: "builtin", connectorSlug },
-        mode,
-        grants: [...grants],
-      },
-    }),
+const SESSION_HEADERS = Object.freeze({
+  authorization: "Bearer clerk-session",
+});
+const GITHUB_TARGET = Object.freeze({
+  kind: "builtin" as const,
+  connectorSlug: "github" as const,
+});
+const SLACK_TARGET = Object.freeze({
+  kind: "builtin" as const,
+  connectorSlug: "slack" as const,
+});
+const HALF_HOUR_MS = 30 * 60 * 1000;
+const ONE_HOUR_MS = 60 * 60 * 1000;
+
+const app = setupApp({
+  context,
+  routes: [
+    ...chatThreadCreateRoutes,
+    ...chatEventsRoutes,
+    ...builtinConnectorsRoutes,
+    ...builtinConnectorsSlugCallbackRoutes,
+    ...connectorPermissionsRoutes,
+    ...runnersRoutes,
+    ...runsCancelRoutes,
+    ...webhooksAgentCompleteRoutes,
+    ...webhooksClerkRoutes,
+  ],
+});
+const threadsApi = app(chatThreadsContract);
+const chatEventsApi = app(chatEventsContract);
+const oauthStartApi = app(builtinConnectorOauthStartContract);
+const oauthCallbackApi = app(builtinConnectorsSlugCallbackContract);
+const permissionsApi = app(connectorPermissionsContract);
+const runnerHeartbeatApi = app(runnersHeartbeatContract);
+const runnerSyncApi = app(runnersConnectorRuntimeSyncContract);
+const runsCancelApi = app(runsCancelContract);
+const agentCompleteApi = app(webhookCompleteContract);
+const clerkWebhookApi = app(webhookClerkContract);
+
+beforeAll(async () => {
+  context.mocks.clerk.authenticateRequest.mockResolvedValue({
+    isAuthenticated: false,
+  });
+  const missingId = randomUUID();
+  await Promise.all([
+    accept(threadsApi.create({ headers: {}, body: { model: null } }), [401]),
+    accept(
+      chatEventsApi.send({
+        headers: {},
+        body: {
+          prompt: "warmup",
+          hasTextContent: true,
+          userMessage: {
+            version: 1,
+            parts: [{ type: "text", text: "warmup" }],
+          },
+        },
+      }),
+      [401],
+    ),
+    accept(
+      oauthStartApi.start({
+        headers: {},
+        params: { connectorSlug: "github" },
+        body: { authMethod: "oauth", account: { intent: "add" } },
+      }),
+      [401],
+    ),
+    accept(
+      permissionsApi.apply({
+        headers: {},
+        body: {
+          target: GITHUB_TARGET,
+          mode: "replace",
+          grants: [],
+        },
+      }),
+      [401],
+    ),
+    accept(
+      runnerHeartbeatApi.heartbeat({
+        headers: {},
+        body: {
+          runnerId: missingId,
+          group: "vm0/warmup",
+          snapshotGeneration: 1,
+          snapshotSequence: 1,
+          totalVcpu: 1,
+          totalMemoryMb: 1024,
+          maxConcurrent: 1,
+          allocatedVcpu: 0,
+          allocatedMemoryMb: 0,
+          runningCount: 0,
+          admittableProfiles: ["vm0/default"],
+          heldSandboxStates: [],
+          heldHomeStates: [],
+          activeReuseProducers: [],
+          mode: "running",
+        },
+      }),
+      [401],
+    ),
+    accept(
+      runnerSyncApi.sync({
+        headers: {},
+        params: { runId: missingId },
+        body: { targets: [SLACK_TARGET] },
+      }),
+      [401],
+    ),
+    accept(
+      runsCancelApi.cancel({ headers: {}, params: { id: missingId } }),
+      [401],
+    ),
+    accept(
+      agentCompleteApi.complete({
+        headers: {},
+        body: { runId: missingId, exitCode: 1, error: "warmup" },
+      }),
+      [401],
+    ),
+  ]);
+});
+
+function signIn(actor: ApiTestUser) {
+  createRouteMocks(context).clerk.session(
+    actor.userId,
+    actor.orgId,
+    actor.orgRole,
+  );
+  return SESSION_HEADERS;
+}
+
+function bearerHeaders(token: string) {
+  return { authorization: `Bearer ${token}` };
+}
+
+function officialRunnerHeaders() {
+  return {
+    authorization: `Bearer vm0_official_${env("OFFICIAL_RUNNER_SECRET")}`,
+  };
+}
+
+interface TrackedRun {
+  readonly runId: string;
+  readonly sandboxToken: string;
+  completed: boolean;
+}
+
+function prepareRunEnvironment() {
+  const actor = bdd.user();
+  if (!actor.orgId) {
+    throw new Error("Expected a workspace actor with an organization");
+  }
+  chatCallbacks.acceptChatObjectStorage();
+  runs.acceptStorageDownloads();
+  runs.acceptTelemetryIngest();
+  chatCallbacks.disableVapid();
+  mockOptionalEnv("OPENROUTER_API_KEY", undefined);
+
+  const trackedRuns: TrackedRun[] = [];
+  const bucket = env("R2_USER_STORAGES_BUCKET_NAME");
+  const kmsKey = env("SECRETS_KMS_KEY_ID");
+  const runnerIdentity = {
+    runnerId: randomUUID(),
+    heartbeatGeneration: 1,
+  };
+  const runnerHostname = `runner-${runnerIdentity.runnerId}.okou.app`;
+
+  webhooks.configureClerkWebhookSecret();
+  webhooks.verifyNextClerkWebhook({
+    type: "organization.created",
+    data: { id: actor.orgId, created_by: actor.userId, created_at: now() },
+  });
+
+  const runnerGroupPromise = runs.configureRunnerGroup({
+    runnerIdentity,
+    hostname: runnerHostname,
+  });
+  const orgCreatedPromise = accept(
+    clerkWebhookApi.post({ body: "{}", extraHeaders: {} }),
     [200],
   );
-}
+  let resolvedRunnerGroup: string | undefined;
 
-async function executeAndCancel(actor: ApiTestUser) {
-  const run = await sendChatRun(actor, {
-    prompt: "use the current connector permission definitions",
-  });
-  const { execution, sandboxHeaders } = await runExecution(run.runId);
-  await cancelChatRun(actor, run.runId, sandboxHeaders);
-  return execution;
-}
-
-test("uses current permission definitions after publication with a warm execution cache", async () => {
-  const publisher = (
-    await setupApp({
-      context,
-      routes: cronConnectorCatalogRoutes,
-      isolatePg: true,
-    })
-  )(cronConnectorCatalogContract);
-  const { actor } = await entitledNativeChatActor();
-  await connectors.connectManualGrant(actor, "figma", "api-token", {
-    accessToken: "execution-catalog-figma-token",
-  });
-
-  const original = connectorCatalogArtifactSchema.parse(
-    structuredClone(API_TEST_CONNECTOR_CATALOG_ARTIFACT),
-  );
-  original.catalogVersion = `2099-11-06.${randomUUID()}`;
-  async function publish(artifact: typeof original) {
-    const raw = Buffer.from(JSON.stringify(artifact));
-    const catalogDigest = `sha256:${createHash("sha256").update(raw).digest("hex")}`;
-    const key = `connectors/v4/releases/${artifact.catalogVersion}/catalog.json`;
-    const bundledConnector = artifact.connectors.find((connector) => {
-      return connector.slug === "nintendo-store";
-    });
-    if (bundledConnector?.skill.kind !== "bundled") {
-      throw new Error("Expected the baseline Nintendo Skill bundle");
+  onTestFinished(async () => {
+    const previousRunnerGroup = optionalEnv("RUNNER_DEFAULT_GROUP");
+    mockEnv("R2_USER_STORAGES_BUCKET_NAME", bucket);
+    mockEnv("SECRETS_KMS_KEY_ID", kmsKey);
+    if (resolvedRunnerGroup !== undefined) {
+      mockOptionalEnv("RUNNER_DEFAULT_GROUP", resolvedRunnerGroup);
     }
-    const receiptKey = `connectors/skill-bundles/v1/${catalogDigest.slice(7)}.json`;
-    const receipt = Buffer.from(
-      JSON.stringify({
-        version: 1,
-        catalogDigest,
-        skills: [
-          {
-            slug: bundledConnector.slug,
-            sourceVersionId: bundledConnector.skill.versionId,
-            bundle: {
-              sha256: baselineSkillBundle.sha256,
-              archiveBytes: baselineSkillBundle.archiveBytes,
-            },
-          },
-        ],
-      }),
-    );
-    const pointer = Buffer.from(
-      JSON.stringify({
-        catalogVersion: artifact.catalogVersion,
-        catalogKey: key,
-        catalogDigest,
-      }),
-    );
-    const send = context.mocks.s3.send.getMockImplementation();
-    if (!send) {
-      throw new Error("Expected the actor object-storage fixture");
-    }
-    context.mocks.s3.send.mockImplementation((command: unknown) => {
-      if (command instanceof GetObjectCommand) {
-        const bytes =
-          command.input.Key === CONNECTOR_CATALOG_ACTIVE_KEY
-            ? pointer
-            : command.input.Key === key
-              ? raw
-              : command.input.Key === receiptKey
-                ? receipt
-                : undefined;
-        if (bytes) {
-          return Promise.resolve({
-            ContentLength: bytes.length,
-            Body: {
-              async *[Symbol.asyncIterator]() {
-                yield bytes;
-              },
-            },
-          });
-        }
+    context.mocks.ably.publish.mockResolvedValue(undefined);
+    const result = await settleIncludingAbort(async () => {
+      const activeRuns = trackedRuns.filter((tracked) => {
+        return !tracked.completed;
+      });
+      if (activeRuns.length > 0) {
+        const ownerHeaders = signIn(actor);
+        await Promise.all(
+          activeRuns.map(async (tracked) => {
+            await accept(
+              runsCancelApi.cancel({
+                headers: ownerHeaders,
+                params: { id: tracked.runId },
+              }),
+              [200],
+            );
+            await accept(
+              agentCompleteApi.complete({
+                headers: bearerHeaders(tracked.sandboxToken),
+                body: {
+                  runId: tracked.runId,
+                  exitCode: 1,
+                  error: "Run cancelled",
+                },
+              }),
+              [200],
+            );
+            tracked.completed = true;
+          }),
+        );
       }
-      return send(command);
+      await flushWaitUntilForTest();
     });
-    const published = await accept(
-      publisher.sync({
-        headers: { authorization: "Bearer test-cron-secret" },
+    mockOptionalEnv("RUNNER_DEFAULT_GROUP", previousRunnerGroup);
+    clearMockNow();
+    if (!result.ok) {
+      throw result.error;
+    }
+  });
+
+  async function awaitBootstrap() {
+    const [runnerGroup] = await Promise.all([
+      runnerGroupPromise,
+      orgCreatedPromise,
+    ]);
+    resolvedRunnerGroup = runnerGroup;
+    return runnerGroup;
+  }
+
+  async function connectOAuth(connectorSlug: "github" | "slack") {
+    if (connectorSlug === "github") {
+      mockGitHubConnectorOAuth();
+    } else {
+      mockSlackConnectorOAuth();
+    }
+    const started = await accept(
+      oauthStartApi.start({
+        headers: signIn(actor),
+        params: { connectorSlug },
+        body: { authMethod: "oauth", account: { intent: "add" } },
       }),
       [200],
     );
-    expect(published.body).toStrictEqual({
-      outcome: "accepted",
-      failureCode: null,
-    });
+    const state = new URL(started.body.authorizationUrl).searchParams.get(
+      "state",
+    );
+    if (!state) {
+      throw new Error(`Expected OAuth state for ${connectorSlug}`);
+    }
+    const completed = await accept(
+      oauthCallbackApi.callback({
+        headers: {},
+        params: { connectorSlug },
+        query: {
+          code: `oauth-code-${randomUUID()}`,
+          state,
+          responseMode: "json",
+        },
+      }),
+      [200],
+    );
+    if (completed.body.status !== "success") {
+      throw new Error(`Expected ${connectorSlug} OAuth callback to succeed`);
+    }
   }
 
-  await publish(original);
-  const first = await executeAndCancel(actor);
-  expect(first.networkPolicies?.figma).toStrictEqual({
-    allow: ["file_content:read"],
-    deny: [],
-    ask: [],
-    unknownPolicy: "allow",
-  });
-  const queued = await queueChatRun(actor, {
-    prompt: "use definitions published after this Run was queued",
-  });
-  const artifact = connectorCatalogArtifactSchema.parse(
-    structuredClone(original),
-  );
-  // The content digest changes even when the published version is reused.
-  const figma = artifact.connectors.find((connector) => {
-    return connector.slug === "figma";
-  });
-  if (figma?.firewall.kind !== "generated") {
-    throw new Error("Expected the generated Figma firewall");
+  async function refreshRunnerHeartbeat(snapshotSequence: number) {
+    const runnerGroup = resolvedRunnerGroup ?? (await awaitBootstrap());
+    await accept(
+      runnerHeartbeatApi.heartbeat({
+        headers: officialRunnerHeaders(),
+        body: {
+          runnerId: runnerIdentity.runnerId,
+          runnerHostname,
+          group: runnerGroup,
+          snapshotGeneration: runnerIdentity.heartbeatGeneration,
+          snapshotSequence,
+          totalVcpu: 8,
+          totalMemoryMb: 16_384,
+          maxConcurrent: 2,
+          allocatedVcpu: 0,
+          allocatedMemoryMb: 0,
+          runningCount: 0,
+          admittableProfiles: ["vm0/default"],
+          heldSandboxStates: [],
+          heldHomeStates: [],
+          activeReuseProducers: [],
+          mode: "running",
+          ingressServiceActive: true,
+        },
+      }),
+      [200],
+    );
   }
-  const api = figma.firewall.config.apis[0];
-  if (!api) {
-    throw new Error("Expected the Figma API");
+
+  async function sendPrompt(threadId: string, prompt: string) {
+    await accept(
+      chatEventsApi.send({
+        headers: signIn(actor),
+        body: {
+          threadId,
+          prompt,
+          model: null,
+          clientEventId: randomUUID(),
+          userMessage: {
+            version: 1,
+            parts: [{ type: "text", text: prompt }],
+          },
+          hasTextContent: true,
+        },
+      }),
+      [201],
+    );
   }
-  api.permissions = [
-    ...(api.permissions ?? []),
-    {
-      name: "file_comments:read",
-      rules: ["GET /v1/files/{file_key}/comments"],
-    },
-  ];
-  figma.firewall.defaultAllowed = [];
-  figma.firewall.defaultUnknownPolicy = "ask";
-  await publish(artifact);
-  const run = await queued.launch();
-  const { execution, sandboxHeaders } = await runExecution(run.runId);
-  expect(execution.networkPolicies?.figma).toStrictEqual({
-    allow: [],
-    deny: ["file_comments:read", "file_content:read"],
-    ask: [],
-    unknownPolicy: "ask",
-  });
-  expect(execution.networkPolicyRefreshes?.figma).toBeUndefined();
-  await cancelChatRun(actor, run.runId, sandboxHeaders);
-});
+
+  async function runCancelAndQueueNext(
+    threadId: string,
+    firstPrompt: string,
+    queuedPrompt: string,
+  ) {
+    const runnerGroup = resolvedRunnerGroup ?? (await awaitBootstrap());
+    await sendPrompt(threadId, firstPrompt);
+    const firstExecution = await runs.nextReceivedExecution(runnerGroup);
+    const firstTracked: TrackedRun = {
+      runId: firstExecution.runId,
+      sandboxToken: firstExecution.sandboxToken,
+      completed: false,
+    };
+    trackedRuns.push(firstTracked);
+
+    await accept(
+      runsCancelApi.cancel({
+        headers: signIn(actor),
+        params: { id: firstExecution.runId },
+      }),
+      [200],
+    );
+
+    await sendPrompt(threadId, queuedPrompt);
+    await flushWaitUntilForTest();
+    expect(runs.unobservedDispatches(runnerGroup)).toStrictEqual([]);
+
+    return {
+      firstExecution,
+      async launchQueuedRun() {
+        await accept(
+          agentCompleteApi.complete({
+            headers: bearerHeaders(firstExecution.sandboxToken),
+            body: {
+              runId: firstExecution.runId,
+              exitCode: 1,
+              error: "Run cancelled",
+            },
+          }),
+          [200],
+        );
+        firstTracked.completed = true;
+        const execution = await runs.nextReceivedExecution(runnerGroup);
+        const tracked: TrackedRun = {
+          runId: execution.runId,
+          sandboxToken: execution.sandboxToken,
+          completed: false,
+        };
+        trackedRuns.push(tracked);
+        return { runId: execution.runId, execution, tracked };
+      },
+    };
+  }
+
+  return {
+    actor,
+    awaitBootstrap,
+    connectOAuth,
+    refreshRunnerHeartbeat,
+    runCancelAndQueueNext,
+  };
+}
 
 describe("Execution connector permissions", () => {
-  it.each(["add", "revoke"] as const)(
-    "applies a %s grant change made after the Run was queued",
-    async (change) => {
-      const { actor } = await entitledNativeChatActor();
-      mockGitHubConnectorOAuth();
-      server.use(
-        http.delete(
-          "https://api.github.com/applications/github-client-id/grant",
-          () => {
-            return new HttpResponse(null, { status: 204 });
-          },
-        ),
-      );
-      const started = await connectors.startOauth(actor, "github", "oauth");
-      const state = new URL(started.authorizationUrl).searchParams.get("state");
-      if (!state) {
-        throw new Error("Expected OAuth state from the public start response");
-      }
-      const completed = await connectors.completeOauthCallbackResult("github", {
-        state,
-        code: randomUUID(),
-      });
-      expect(completed.body.status).toBe("success");
-      const grant = {
-        connectorSlug: "github" as const,
-        permission: "user:read",
-        action: "deny" as const,
-      };
-      if (change === "revoke") {
-        await sharedGrants(actor, "github", [
-          { permission: grant.permission, action: grant.action },
-        ]);
-      }
+  it(
+    "run-execution.connector-permissions-004 evaluates active temporary grant before expiry and denies at expiry on runtime sync",
+    { timeout: TEST_WITH_TRIPLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const baseMs = now();
+      mockNow(baseMs);
+      const envState = prepareRunEnvironment();
+      const ownerHeaders = signIn(envState.actor);
 
-      await executeAndCancel(actor);
-      const queued = await queueChatRun(actor, {
-        prompt: "use the current GitHub permissions for execution",
+      const [, thread] = await Promise.all([
+        envState.awaitBootstrap(),
+        accept(
+          threadsApi.create({ headers: ownerHeaders, body: { model: null } }),
+          [201],
+        ),
+        envState.connectOAuth("slack"),
+      ]);
+
+      const granted = await accept(
+        permissionsApi.apply({
+          headers: signIn(envState.actor),
+          body: {
+            target: SLACK_TARGET,
+            mode: "replace",
+            grants: [
+              { permission: "chat:write", action: "allow", expiresIn: "1h" },
+            ],
+          },
+        }),
+        [200],
+      );
+      const grantExpiresAt = granted.body.grants[0]?.expiresAt;
+      expect(grantExpiresAt).toBeTruthy();
+      expect(Date.parse(grantExpiresAt ?? "")).toBe(baseMs + ONE_HOUR_MS);
+
+      const queued = await envState.runCancelAndQueueNext(
+        thread.body.id,
+        "Run before temporary Slack grant check",
+        "Check active temporary Slack grant",
+      );
+
+      mockNow(baseMs + HALF_HOUR_MS);
+      await envState.refreshRunnerHeartbeat(2);
+      const launched = await queued.launchQueuedRun();
+
+      expect(launched.execution.connectorRuntimeTargets).toContainEqual(
+        expect.objectContaining(SLACK_TARGET),
+      );
+      expect(launched.execution.networkPolicies?.slack?.allow).toContain(
+        "chat:write",
+      );
+      expect(launched.execution.networkPolicies?.slack?.deny).not.toContain(
+        "chat:write",
+      );
+      expect(launched.execution.networkPolicyRefreshes?.slack).toStrictEqual({
+        nextRefreshAt: grantExpiresAt,
       });
-      if (change === "add") {
-        await sharedGrants(actor, "github", [
-          { permission: grant.permission, action: grant.action },
-        ]);
-      } else {
-        await sharedGrants(actor, "github", [], "replace");
-      }
-      const run = await queued.launch();
-      const { execution, sandboxHeaders } = await runExecution(run.runId);
-      expect(execution.connectorRuntimeTargets).toContainEqual(
-        expect.objectContaining({ kind: "builtin", connectorSlug: "github" }),
+
+      mockNow(baseMs + ONE_HOUR_MS);
+      const synced = await accept(
+        runnerSyncApi.sync({
+          headers: officialRunnerHeaders(),
+          params: { runId: launched.runId },
+          body: { targets: launched.execution.connectorRuntimeTargets },
+        }),
+        [200],
       );
-      expect(execution.networkPolicies?.github).toMatchObject(
-        change === "add"
-          ? {
-              deny: expect.arrayContaining(["user:read"]),
-              allow: expect.not.arrayContaining(["user:read"]),
-            }
-          : {
-              allow: expect.arrayContaining(["user:read"]),
-              deny: expect.not.arrayContaining(["user:read"]),
-            },
-      );
-      expect(execution.networkPolicies?.github?.allow).toContain(
-        "notifications:read",
-      );
-      await cancelChatRun(actor, run.runId, sandboxHeaders);
-      const accounts = await connectors.listBuiltinConnectorAccounts(
-        actor,
-        "github",
-      );
-      for (const account of accounts) {
-        await connectors.deleteBuiltinConnectorAccount(
-          actor,
-          "github",
-          account.id,
+      const slackSync = synced.body.results.find((result) => {
+        return (
+          result.target.kind === "builtin" &&
+          result.target.connectorSlug === "slack"
+        );
+      });
+      expect(slackSync).toMatchObject({
+        target: SLACK_TARGET,
+        state: "available",
+      });
+      if (slackSync?.state !== "available") {
+        throw new Error(
+          "Expected Slack connector runtime sync to be available",
         );
       }
+      expect(slackSync.networkPolicy.deny).toContain("chat:write");
+      expect(slackSync.networkPolicy.allow).not.toContain("chat:write");
+      expect(slackSync.nextSyncAt).toBeUndefined();
     },
   );
 
-  it.each([
-    "active",
-    "expired-before-preparation",
-    "expired-during-memory-signing",
-    "expired-during-bundle-signing",
-  ] as const)(
-    "evaluates the captured permission source and temporary deadline: %s",
-    async (expiry) => {
-      const expired = expiry !== "active";
-      const startedAt = now();
-      mockNow(startedAt);
-      const { actor, runnerGroup } = await entitledNativeChatActor();
-      mockSlackConnectorOAuth();
-      const started = await connectors.startOauth(actor, "slack", "oauth");
-      const state = new URL(started.authorizationUrl).searchParams.get("state");
-      if (!state) {
-        throw new Error("Expected OAuth state from the public start response");
-      }
-      const completed = await connectors.completeOauthCallbackResult("slack", {
-        state,
-        code: randomUUID(),
-      });
-      expect(completed.body.status).toBe("success");
-      const runs = createRunsApi(context);
-      const grant = {
-        permission: "chat:write",
-        action: "allow" as const,
-        expiresIn: "1h" as const,
-      };
+  it(
+    "run-execution.connector-permissions-002 applies an added deny grant made after the Run was queued",
+    { timeout: TEST_WITH_DOUBLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const envState = prepareRunEnvironment();
+      const ownerHeaders = signIn(envState.actor);
 
-      await sharedGrants(actor, "slack", [{ ...grant, expiresIn: "1h" }]);
+      const [, thread] = await Promise.all([
+        envState.awaitBootstrap(),
+        accept(
+          threadsApi.create({ headers: ownerHeaders, body: { model: null } }),
+          [201],
+        ),
+        envState.connectOAuth("github"),
+      ]);
 
-      const expiresAt = startedAt + 60 * 60 * 1000;
-      const prompt =
-        "use the current Slack write grant and its original expiry";
-      let run: Awaited<ReturnType<typeof sendChatRun>>;
-      if (expiry === "expired-during-memory-signing") {
-        const memory = createPublicRunnerMemory(context, actor);
-        run = await memory.run(async () => {
-          memory.installObjects();
-          const writer = await memory.startExecution(
-            "Publish Memory for the next Run",
-          );
-          expect(writer.execution.networkPolicies?.slack?.allow).toContain(
-            "chat:write",
-          );
-          const versionId = await memory.publish(writer, [
-            { path: "MEMORY.md", content: "A fact the next Run can recall" },
-          ]);
-          mockNow(expiresAt - 1);
-          await runs.registerDirectRunner(runnerGroup);
-          const presigner = context.mocks.s3.getSignedUrl;
-          const sign = presigner.getMockImplementation();
-          if (!sign) {
-            throw new Error("Expected the Memory presigner fixture");
-          }
-          presigner.mockImplementation((...args) => {
-            const command = args[1];
-            if (
-              command instanceof GetObjectCommand &&
-              command.input.Key?.endsWith(`/${versionId}/archive.tar.gz`)
-            ) {
-              // The pick captured an active grant that expires during signing.
-              mockNow(expiresAt);
-              presigner.mockImplementation(sign);
-            }
-            return sign(...args);
-          });
-          const hydrated = await memory.startExecution(prompt);
-          expect(hydrated.memory).toMatchObject({
-            versionId,
-            archiveUrl: expect.any(String),
-          });
-          expect(now()).toBe(expiresAt);
-          return hydrated.run;
-        });
-      } else if (expiry === "expired-during-bundle-signing") {
-        await createBddApi(context).updatePersonalInstructions(
-          actor,
-          `Instructions for a fresh bundle: ${randomUUID()}`,
-        );
-        mockNow(expiresAt - 1);
-        await runs.registerDirectRunner(runnerGroup);
-        const presigner = context.mocks.s3.getSignedUrl;
-        const sign = presigner.getMockImplementation();
-        if (!sign) {
-          throw new Error("Expected the bundle presigner fixture");
-        }
-        presigner.mockImplementation((...args) => {
-          const command = args[1];
-          if (
-            command instanceof GetObjectCommand &&
-            command.input.Key?.startsWith("bundles/v1/")
-          ) {
-            mockNow(expiresAt);
-            presigner.mockImplementation(sign);
-          }
-          return sign(...args);
-        });
-        run = await sendChatRun(actor, { prompt });
-        expect(now()).toBe(expiresAt);
-      } else {
-        await executeAndCancel(actor);
-        const queued = await queueChatRun(actor, { prompt });
-        mockNow(
-          expiry === "expired-before-preparation"
-            ? expiresAt
-            : startedAt + 30 * 60 * 1000,
-        );
-        await runs.registerDirectRunner(runnerGroup);
-        run = await queued.launch();
-      }
-      // Delivered input keeps its permission source after a mode change.
-
-      const { execution, sandboxHeaders } = await runExecution(run.runId);
-      expect(execution.networkPolicies?.slack?.allow).toStrictEqual(
-        expired
-          ? expect.not.arrayContaining(["chat:write"])
-          : expect.arrayContaining(["chat:write"]),
+      const queued = await envState.runCancelAndQueueNext(
+        thread.body.id,
+        "Run before denying GitHub user:read",
+        "Check GitHub policy after post-queue deny",
       );
-      if (expired) {
-        expect(execution.networkPolicies?.slack?.deny).toContain("chat:write");
-        expect(execution.networkPolicyRefreshes?.slack).toBeUndefined();
-      } else {
-        expect(execution.networkPolicyRefreshes?.slack).toStrictEqual({
-          nextRefreshAt: new Date(expiresAt).toISOString(),
-        });
-        // Active-Run sync follows current settings, independently of the
-        // published execution decision. Restore the mode before testing expiry.
+      expect(queued.firstExecution.networkPolicies?.github?.allow).toContain(
+        "user:read",
+      );
 
-        mockNow(expiresAt);
-        const synced = await runs.syncConnectorRuntime(run.runId, {
-          targets: execution.connectorRuntimeTargets.filter((target) => {
-            return (
-              target.kind === "builtin" && target.connectorSlug === "slack"
-            );
-          }),
-        });
-        expect(synced).toContainEqual(
-          expect.objectContaining({
-            target: { kind: "builtin", connectorSlug: "slack" },
-            state: "available",
-            networkPolicy: expect.objectContaining({
-              deny: expect.arrayContaining(["chat:write"]),
-              allow: expect.not.arrayContaining(["chat:write"]),
-            }),
-          }),
-        );
-      }
-      await cancelChatRun(actor, run.runId, sandboxHeaders);
+      await accept(
+        permissionsApi.apply({
+          headers: signIn(envState.actor),
+          body: {
+            target: GITHUB_TARGET,
+            mode: "patch",
+            grants: [{ permission: "user:read", action: "deny" }],
+          },
+        }),
+        [200],
+      );
+
+      const launched = await queued.launchQueuedRun();
+
+      expect(launched.execution.connectorRuntimeTargets).toContainEqual(
+        expect.objectContaining(GITHUB_TARGET),
+      );
+      expect(launched.execution.networkPolicies?.github?.deny).toContain(
+        "user:read",
+      );
+      expect(launched.execution.networkPolicies?.github?.allow).not.toContain(
+        "user:read",
+      );
+      expect(launched.execution.networkPolicies?.github?.allow).toContain(
+        "notifications:read",
+      );
+    },
+  );
+
+  it(
+    "run-execution.connector-permissions-003 applies a revoked deny grant made after the Run was queued",
+    { timeout: TEST_WITH_DOUBLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const envState = prepareRunEnvironment();
+      const ownerHeaders = signIn(envState.actor);
+
+      const [, thread] = await Promise.all([
+        envState.awaitBootstrap(),
+        accept(
+          threadsApi.create({ headers: ownerHeaders, body: { model: null } }),
+          [201],
+        ),
+        envState.connectOAuth("github"),
+      ]);
+
+      await accept(
+        permissionsApi.apply({
+          headers: signIn(envState.actor),
+          body: {
+            target: GITHUB_TARGET,
+            mode: "replace",
+            grants: [{ permission: "user:read", action: "deny" }],
+          },
+        }),
+        [200],
+      );
+
+      const queued = await envState.runCancelAndQueueNext(
+        thread.body.id,
+        "Run while GitHub user:read is denied",
+        "Check GitHub policy after post-queue revoke",
+      );
+      expect(queued.firstExecution.networkPolicies?.github?.deny).toContain(
+        "user:read",
+      );
+
+      await accept(
+        permissionsApi.apply({
+          headers: signIn(envState.actor),
+          body: {
+            target: GITHUB_TARGET,
+            mode: "replace",
+            grants: [],
+          },
+        }),
+        [200],
+      );
+
+      const launched = await queued.launchQueuedRun();
+
+      expect(launched.execution.connectorRuntimeTargets).toContainEqual(
+        expect.objectContaining(GITHUB_TARGET),
+      );
+      expect(launched.execution.networkPolicies?.github?.allow).toContain(
+        "user:read",
+      );
+      expect(launched.execution.networkPolicies?.github?.deny).not.toContain(
+        "user:read",
+      );
+      expect(launched.execution.networkPolicies?.github?.allow).toContain(
+        "notifications:read",
+      );
+    },
+  );
+
+  it(
+    "run-execution.connector-permissions-005 denies an expired temporary grant when expiry occurs before queued Run preparation",
+    { timeout: TEST_WITH_DOUBLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const baseMs = now();
+      mockNow(baseMs);
+      const envState = prepareRunEnvironment();
+      const ownerHeaders = signIn(envState.actor);
+
+      const [, thread] = await Promise.all([
+        envState.awaitBootstrap(),
+        accept(
+          threadsApi.create({ headers: ownerHeaders, body: { model: null } }),
+          [201],
+        ),
+        envState.connectOAuth("slack"),
+      ]);
+
+      const granted = await accept(
+        permissionsApi.apply({
+          headers: signIn(envState.actor),
+          body: {
+            target: SLACK_TARGET,
+            mode: "replace",
+            grants: [
+              { permission: "chat:write", action: "allow", expiresIn: "1h" },
+            ],
+          },
+        }),
+        [200],
+      );
+      expect(Date.parse(granted.body.grants[0]?.expiresAt ?? "")).toBe(
+        baseMs + ONE_HOUR_MS,
+      );
+
+      const queued = await envState.runCancelAndQueueNext(
+        thread.body.id,
+        "Run before temporary Slack grant expires",
+        "Check expired temporary Slack grant",
+      );
+
+      mockNow(baseMs + ONE_HOUR_MS);
+      await envState.refreshRunnerHeartbeat(2);
+      const launched = await queued.launchQueuedRun();
+
+      expect(launched.execution.connectorRuntimeTargets).toContainEqual(
+        expect.objectContaining(SLACK_TARGET),
+      );
+      expect(launched.execution.networkPolicies?.slack?.allow).not.toContain(
+        "chat:write",
+      );
+      expect(launched.execution.networkPolicies?.slack?.deny).toContain(
+        "chat:write",
+      );
+      expect(launched.execution.networkPolicyRefreshes).toBeUndefined();
     },
   );
 });

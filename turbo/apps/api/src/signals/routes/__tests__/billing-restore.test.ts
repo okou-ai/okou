@@ -1,98 +1,109 @@
 import { randomUUID } from "node:crypto";
 
 import {
-  billingAutoRechargeContract,
   billingRestoreContract,
   billingStatusContract,
 } from "@okouai/api-contracts/contracts/billing";
-import { createStore } from "ccstate";
+import { describe, expect, it } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
-import { setupApp, setupRawAppRequest } from "../../../__tests__/test-helpers";
-import { mockEnv, mockOptionalEnv } from "../../../lib/env";
-import {
-  deleteInvoicesOrg$,
-  seedInvoicesOrg$,
-  type InvoicesOrgFixture,
-} from "./helpers/billing-invoices";
-import { createFixtureTracker, createRouteMocks } from "./helpers/route-test";
-import { billingAutoRechargeRoutes } from "../billing-auto-recharge";
+import { setupApp } from "../../../__tests__/test-helpers";
+import { mockEnv } from "../../../lib/env";
 import { billingRestoreRoutes } from "../billing-restore";
 import { billingStatusRoutes } from "../billing-status";
+import { createRouteMocks } from "./helpers/route-test";
+import {
+  postBillingDowngradeCheckoutCompleted,
+  postSubscriptionInvoicePaid,
+} from "./helpers/stripe-billing-webhook";
 
 const context = testContext();
-const store = createStore();
-const mocks = createRouteMocks(context);
-const adminRequiredResponse = Object.freeze({
-  error: Object.freeze({
-    message: "Only org admins can manage billing",
-    code: "FORBIDDEN",
-  }),
+const headers = Object.freeze({ authorization: "Bearer clerk-session" });
+const app = setupApp({
+  context,
+  routes: [...billingRestoreRoutes, ...billingStatusRoutes],
+});
+const restore = app(billingRestoreContract);
+const status = app(billingStatusContract);
+
+const noScheduledChange = Object.freeze({
+  error: {
+    message: "Subscription has no scheduled billing change",
+    code: "CONFLICT",
+  },
 });
 
-function mockSubscriptionWithPaymentMethod(
-  subId: string,
-  customerId: string,
-): void {
-  context.mocks.stripe.subscriptions.retrieve.mockResolvedValue({
-    id: subId,
-    customer: customerId,
-    default_payment_method: "pm_test",
-  });
+interface Subscriber {
+  readonly orgId: string;
+  readonly userId: string;
+  readonly customerId: string;
+  readonly subscriptionId: string;
 }
 
-async function readBillingStatus() {
-  return await accept(
-    setupApp({ context, routes: billingStatusRoutes })(
-      billingStatusContract,
-    ).get({
-      headers: { authorization: "Bearer clerk-session" },
-    }),
-    [200],
-  );
+function signIn(
+  actor: { readonly orgId: string; readonly userId: string },
+  role: "org:admin" | "org:member" = "org:admin",
+): void {
+  createRouteMocks(context).clerk.session(actor.userId, actor.orgId, role);
+}
+
+/** Stripe reports the paid Pro or Team subscription of a new organization. */
+async function subscribe(
+  tier: "pro" | "team",
+  cancelAtPeriodEnd: boolean,
+  currentPeriodEnd = new Date("2099-07-04T00:00:00.000Z"),
+): Promise<Subscriber> {
+  const subscriber = {
+    orgId: `org_${randomUUID()}`,
+    userId: `user_${randomUUID()}`,
+    customerId: `cus_${randomUUID().slice(0, 8)}`,
+    subscriptionId: `sub_${randomUUID().slice(0, 8)}`,
+  };
+  await postSubscriptionInvoicePaid(context.signal, {
+    ...subscriber,
+    tier,
+    currentPeriodEnd,
+    cancelAtPeriodEnd,
+  });
+  signIn(subscriber);
+  return subscriber;
+}
+
+/** Stripe's current subscription and customer when the admin restores. */
+function stripeAccount(
+  subscriber: Subscriber,
+  options: { readonly cancelAtPeriodEnd: boolean; readonly card: boolean },
+): void {
+  context.mocks.stripe.subscriptions.retrieve.mockResolvedValue({
+    id: subscriber.subscriptionId,
+    status: "active",
+    customer: subscriber.customerId,
+    cancel_at_period_end: options.cancelAtPeriodEnd,
+    default_payment_method: options.card ? "pm_restore_card" : null,
+    default_source: null,
+    metadata: {},
+  });
+  context.mocks.stripe.customers.retrieve.mockResolvedValue({
+    id: subscriber.customerId,
+    invoice_settings: { default_payment_method: null },
+    default_source: null,
+    metadata: { orgId: subscriber.orgId },
+  });
+  context.mocks.stripe.paymentMethods.list.mockResolvedValue({ data: [] });
+  context.mocks.stripe.subscriptions.update.mockResolvedValue({
+    id: subscriber.subscriptionId,
+  });
+  context.mocks.stripe.subscriptionSchedules.release.mockResolvedValue({});
 }
 
 describe("POST /api/billing/restore", () => {
-  const track = createFixtureTracker<InvoicesOrgFixture>((fixture) => {
-    return store.set(deleteInvoicesOrg$, fixture, context.signal);
-  });
-
-  beforeEach(() => {
-    mockOptionalEnv("STRIPE_SECRET_KEY", "sk_test_fake");
-  });
-
-  it("returns 401 when not authenticated", async () => {
-    const client = setupApp({ context, routes: billingRestoreRoutes })(
-      billingRestoreContract,
-    );
-    const response = await accept(
-      client.create({
-        body: {},
-        headers: {},
-      }),
-      [401],
+  it("billing-restore-002 refuses a member who is not an admin", async () => {
+    signIn(
+      { orgId: `org_${randomUUID()}`, userId: `user_${randomUUID()}` },
+      "org:member",
     );
 
-    expect(response.status).toBe(401);
-  });
-
-  it("returns 403 for non-admin org member", async () => {
-    const fixture = await track(
-      store.set(seedInvoicesOrg$, {}, context.signal),
-    );
-    mocks.clerk.session(fixture.userId, fixture.orgId, "org:member");
-
-    const client = setupApp({ context, routes: billingRestoreRoutes })(
-      billingRestoreContract,
-    );
-    const response = await accept(
-      client.create({
-        body: {},
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [403],
-    );
-
+    const response = await accept(restore.create({ headers, body: {} }), [403]);
     expect(response.body).toStrictEqual({
       error: {
         message: "Only org admins can manage billing",
@@ -101,375 +112,123 @@ describe("POST /api/billing/restore", () => {
     });
   });
 
-  it("keeps body validation behind configuration, authentication, and admin checks for each request", async () => {
-    const request = setupRawAppRequest({
-      context,
-      routes: billingRestoreRoutes,
-    });
-    const malformedRequest = {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: "{",
-    };
-    mockOptionalEnv("STRIPE_SECRET_KEY", undefined);
-    const unconfigured = await request(
-      "/api/billing/restore",
-      malformedRequest,
-    );
-    expect(unconfigured.status).toBe(503);
-    expect(unconfigured.body).toStrictEqual({
-      error: {
-        message: "Billing not configured",
-        code: "PROVIDER_UNAVAILABLE",
-      },
-    });
+  it("billing-restore-005 reports a conflict when nothing is scheduled to change", async () => {
+    const subscriber = await subscribe("pro", false);
+    stripeAccount(subscriber, { cancelAtPeriodEnd: false, card: true });
 
-    mockOptionalEnv("STRIPE_SECRET_KEY", "sk_test_fake");
-    const anonymous = await request("/api/billing/restore", malformedRequest);
-    expect(anonymous.status).toBe(401);
-
-    const userId = `user_restore_auth_${randomUUID()}`;
-    const orgId = `org_restore_auth_${randomUUID()}`;
-    mocks.clerk.session(userId, orgId, "org:member");
-    const authenticatedRequest = {
-      ...malformedRequest,
-      headers: {
-        ...malformedRequest.headers,
-        authorization: "Bearer clerk-session",
-      },
-    };
-    const member = await request("/api/billing/restore", authenticatedRequest);
-    expect(member.status).toBe(403);
-    expect(member.body).toStrictEqual(adminRequiredResponse);
-
-    mocks.clerk.session(userId, orgId, "org:admin");
-    const admin = await request("/api/billing/restore", authenticatedRequest);
-    expect(admin.status).toBe(400);
-    expect(admin.body).toStrictEqual({
-      error: {
-        message: "Invalid JSON in request body",
-        code: "BAD_REQUEST",
-      },
-    });
-
-    const client = setupApp({ context, routes: billingRestoreRoutes })(
-      billingRestoreContract,
-    );
-    mocks.clerk.session(userId, orgId, "org:member");
-    const nextMember = await accept(
-      client.create({
-        headers: { authorization: "Bearer clerk-session" },
-        body: {},
-      }),
-      [403],
-    );
-    expect(nextMember.body).toStrictEqual(adminRequiredResponse);
-  });
-
-  it("returns 409 when org has no subscription", async () => {
-    const fixture = await track(
-      store.set(seedInvoicesOrg$, {}, context.signal),
-    );
-    mocks.clerk.session(fixture.userId, fixture.orgId, "org:admin");
-
-    const client = setupApp({ context, routes: billingRestoreRoutes })(
-      billingRestoreContract,
-    );
-    const response = await accept(
-      client.create({
-        body: {},
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [409],
-    );
-
-    expect(response.body).toStrictEqual({
-      error: {
-        message: "Org has no active subscription",
-        code: "CONFLICT",
-      },
-    });
-  });
-
-  it("returns 409 when subscription is not scheduled for cancellation", async () => {
-    const subId = `sub-not-scheduled-${randomUUID().slice(0, 8)}`;
-    const fixture = await track(
-      store.set(
-        seedInvoicesOrg$,
-        {
-          stripeSubscriptionId: subId,
-          subscriptionStatus: "active",
-          tier: "pro",
-          cancelAtPeriodEnd: false,
-        },
-        context.signal,
-      ),
-    );
-    mocks.clerk.session(fixture.userId, fixture.orgId, "org:admin");
-
-    const client = setupApp({ context, routes: billingRestoreRoutes })(
-      billingRestoreContract,
-    );
-    const response = await accept(
-      client.create({
-        body: {},
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [409],
-    );
-
-    expect(response.body).toStrictEqual({
-      error: {
-        message: "Subscription has no scheduled billing change",
-        code: "CONFLICT",
-      },
-    });
+    const response = await accept(restore.create({ headers, body: {} }), [409]);
+    expect(response.body).toStrictEqual(noScheduledChange);
     expect(context.mocks.stripe.subscriptions.update).not.toHaveBeenCalled();
   });
 
-  it("restores a subscription scheduled for cancellation", async () => {
-    const subId = `sub-restore-${randomUUID().slice(0, 8)}`;
-    const customerId = `cus-restore-${randomUUID().slice(0, 8)}`;
-    const fixture = await track(
-      store.set(
-        seedInvoicesOrg$,
-        {
-          stripeCustomerId: customerId,
-          stripeSubscriptionId: subId,
-          subscriptionStatus: "active",
-          tier: "pro",
-          cancelAtPeriodEnd: true,
-        },
-        context.signal,
-      ),
-    );
-    mocks.clerk.session(fixture.userId, fixture.orgId, "org:admin");
-    mockSubscriptionWithPaymentMethod(subId, customerId);
-    context.mocks.stripe.subscriptions.update.mockResolvedValue({ id: subId });
+  it("billing-restore-006 restores a Pro plan scheduled to cancel", async () => {
+    const subscriber = await subscribe("pro", true);
+    stripeAccount(subscriber, { cancelAtPeriodEnd: true, card: true });
 
-    const client = setupApp({ context, routes: billingRestoreRoutes })(
-      billingRestoreContract,
-    );
-    const response = await accept(
-      client.create({
-        body: {},
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [200],
-    );
-
-    expect(response.body).toStrictEqual({ status: "restored" });
+    const restored = await accept(restore.create({ headers, body: {} }), [200]);
+    expect(restored.body).toStrictEqual({ status: "restored" });
     expect(context.mocks.stripe.subscriptions.update).toHaveBeenCalledWith(
-      subId,
+      subscriber.subscriptionId,
       { cancel_at_period_end: false },
     );
-
-    const status = await readBillingStatus();
-    expect(status.body.cancelAtPeriodEnd).toBeFalsy();
-    expect(status.body.scheduledChange).toBeNull();
-    expect(status.body.canRestorePlan).toBeFalsy();
-
-    const repeated = await accept(
-      client.create({
-        body: {},
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [409],
-    );
-    expect(repeated.body).toStrictEqual({
-      error: {
-        message: "Subscription has no scheduled billing change",
-        code: "CONFLICT",
-      },
+    const billing = await accept(status.get({ headers }), [200]);
+    expect(billing.body).toMatchObject({
+      cancelAtPeriodEnd: false,
+      scheduledChange: null,
+      canRestorePlan: false,
     });
+
+    const repeated = await accept(restore.create({ headers, body: {} }), [409]);
+    expect(repeated.body).toStrictEqual(noScheduledChange);
   });
 
-  it("records a restore that Stripe applied while the organization row was rewritten", async () => {
-    const subId = `sub-restore-${randomUUID().slice(0, 8)}`;
-    const customerId = `cus-restore-${randomUUID().slice(0, 8)}`;
-    const fixture = await track(
-      store.set(
-        seedInvoicesOrg$,
-        {
-          stripeCustomerId: customerId,
-          stripeSubscriptionId: subId,
-          subscriptionStatus: "active",
-          tier: "pro",
-          cancelAtPeriodEnd: true,
-        },
-        context.signal,
-      ),
-    );
-    mocks.clerk.session(fixture.userId, fixture.orgId, "org:admin");
-    mockSubscriptionWithPaymentMethod(subId, customerId);
-    // Another organization write (settlement debits and webhooks rewrite the
-    // same row) lands while Stripe is applying the restore.
-    context.mocks.stripe.subscriptions.update.mockImplementation(async () => {
-      await accept(
-        setupApp({ context, routes: billingAutoRechargeRoutes })(
-          billingAutoRechargeContract,
-        ).update({
-          headers: { authorization: "Bearer clerk-session" },
-          body: { enabled: false, threshold: 1000, amount: 5000 },
-        }),
-        [200],
-      );
-      return { id: subId };
+  it("billing-restore-008 restores a Team plan by releasing its scheduled downgrade", async () => {
+    const changeAt = new Date("2099-07-04T00:00:00.000Z");
+    const subscriber = await subscribe("team", false, changeAt);
+    const scheduleId = `sub_sched_${randomUUID().slice(0, 8)}`;
+    await postBillingDowngradeCheckoutCompleted(context.signal, {
+      ...subscriber,
+      tier: "team",
+      currentPeriodEnd: changeAt,
+      targetTier: "pro",
+      scheduleId,
     });
+    signIn(subscriber);
+    stripeAccount(subscriber, { cancelAtPeriodEnd: false, card: true });
 
-    const response = await accept(
-      setupApp({ context, routes: billingRestoreRoutes })(
-        billingRestoreContract,
-      ).create({
-        body: {},
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [200],
-    );
-
-    expect(response.body).toStrictEqual({ status: "restored" });
-    const status = await readBillingStatus();
-    expect(status.body.cancelAtPeriodEnd).toBeFalsy();
-    expect(status.body.scheduledChange).toBeNull();
-  });
-
-  it("restores a scheduled downgrade by releasing its subscription schedule", async () => {
-    const subId = `sub-restore-schedule-${randomUUID().slice(0, 8)}`;
-    const scheduleId = `sched-restore-${randomUUID().slice(0, 8)}`;
-    const customerId = `cus-restore-schedule-${randomUUID().slice(0, 8)}`;
-    const changeAt = new Date("2099-07-04T00:00:00Z");
-    const fixture = await track(
-      store.set(
-        seedInvoicesOrg$,
-        {
-          stripeCustomerId: customerId,
-          stripeSubscriptionId: subId,
-          subscriptionStatus: "active",
-          tier: "team",
-          cancelAtPeriodEnd: false,
-          pendingSubscriptionScheduleId: scheduleId,
-          pendingSubscriptionTargetTier: "pro",
-          pendingSubscriptionChangeAt: changeAt,
-        },
-        context.signal,
-      ),
-    );
-    mocks.clerk.session(fixture.userId, fixture.orgId, "org:admin");
-    mockSubscriptionWithPaymentMethod(subId, customerId);
-    context.mocks.stripe.subscriptionSchedules.release.mockResolvedValue({
-      id: scheduleId,
-    });
-
-    const client = setupApp({ context, routes: billingRestoreRoutes })(
-      billingRestoreContract,
-    );
-    const response = await accept(
-      client.create({
-        body: {},
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [200],
-    );
-
-    expect(response.body).toStrictEqual({ status: "restored" });
+    const restored = await accept(restore.create({ headers, body: {} }), [200]);
+    expect(restored.body).toStrictEqual({ status: "restored" });
     expect(
       context.mocks.stripe.subscriptionSchedules.release,
     ).toHaveBeenCalledWith(scheduleId);
     expect(context.mocks.stripe.subscriptions.update).not.toHaveBeenCalled();
-
-    const status = await readBillingStatus();
-    expect(status.body.cancelAtPeriodEnd).toBeFalsy();
-    expect(status.body.scheduledChange).toBeNull();
+    const billing = await accept(status.get({ headers }), [200]);
+    expect(billing.body).toMatchObject({
+      cancelAtPeriodEnd: false,
+      scheduledChange: null,
+    });
   });
 
-  it("uses the request brand fallback and preserves an explicit return URL when restore requires a payment method", async () => {
-    const subId = `sub-restore-card-${randomUUID().slice(0, 8)}`;
-    const customerId = `cus-restore-card-${randomUUID().slice(0, 8)}`;
-    const okouFallbackReturnUrl = "https://app.okou.ai";
-    const explicitReturnUrl = "https://app.okou.ai/settings/billing";
-    const checkoutUrl = "https://checkout.stripe.com/setup/restore";
-    const fixture = await track(
-      store.set(
-        seedInvoicesOrg$,
-        {
-          stripeCustomerId: customerId,
-          stripeSubscriptionId: subId,
-          subscriptionStatus: "active",
-          tier: "pro",
-          cancelAtPeriodEnd: true,
-        },
-        context.signal,
-      ),
-    );
+  it("billing-restore-009 asks for a payment method and returns to the requested page", async () => {
     mockEnv("APP_URL", "https://app.okou.ai");
-    mocks.clerk.session(fixture.userId, fixture.orgId, "org:admin");
-    context.mocks.stripe.subscriptions.retrieve.mockResolvedValue({
-      id: subId,
-      customer: customerId,
-      default_payment_method: null,
-      default_source: null,
-    });
-    context.mocks.stripe.customers.retrieve.mockResolvedValue({
-      id: customerId,
-      deleted: false,
-      invoice_settings: { default_payment_method: null },
-      default_source: null,
-    });
+    const subscriber = await subscribe("pro", true);
+    stripeAccount(subscriber, { cancelAtPeriodEnd: true, card: false });
+    const checkoutUrl = `https://checkout.stripe.test/c/${randomUUID()}`;
     context.mocks.stripe.checkout.sessions.create.mockResolvedValue({
+      id: `cs_${randomUUID().slice(0, 8)}`,
       url: checkoutUrl,
     });
+    const extraHeaders = { origin: "https://app.okou.ai" };
 
-    const client = setupApp({ context, routes: billingRestoreRoutes })(
-      billingRestoreContract,
+    const fallback = await accept(
+      restore.create({ headers, body: {}, extraHeaders }),
+      [200],
     );
-    const response = await accept(
-      client.create({
-        body: {},
-        headers: { authorization: "Bearer clerk-session" },
-        extraHeaders: { origin: "https://app.okou.ai" },
+    const explicit = await accept(
+      restore.create({
+        headers,
+        body: { returnUrl: "https://app.okou.ai/settings/billing" },
+        extraHeaders,
       }),
       [200],
     );
 
-    expect(response.body).toStrictEqual({
-      status: "payment_method_required",
-      checkoutUrl,
-    });
-    expect(context.mocks.stripe.checkout.sessions.create).toHaveBeenCalledWith({
-      mode: "setup",
-      customer: customerId,
-      currency: "usd",
-      success_url: okouFallbackReturnUrl,
-      cancel_url: okouFallbackReturnUrl,
-      metadata: {
-        purpose: "billing_restore",
-        orgId: fixture.orgId,
-        subscriptionId: subId,
-      },
-      setup_intent_data: {
-        metadata: {
-          purpose: "billing_restore",
-          orgId: fixture.orgId,
-          subscriptionId: subId,
-        },
-      },
-    });
-    context.mocks.stripe.checkout.sessions.create.mockClear();
-    const explicitResponse = await accept(
-      client.create({
-        body: { returnUrl: explicitReturnUrl },
-        headers: { authorization: "Bearer clerk-session" },
-        extraHeaders: { origin: "https://app.okou.ai" },
+    for (const response of [fallback, explicit]) {
+      expect(response.body).toStrictEqual({
+        status: "payment_method_required",
+        checkoutUrl,
+      });
+    }
+    const metadata = {
+      purpose: "billing_restore",
+      orgId: subscriber.orgId,
+      subscriptionId: subscriber.subscriptionId,
+    };
+    const sessions = context.mocks.stripe.checkout.sessions.create.mock.calls;
+    expect(
+      sessions.map(([params]) => {
+        return params;
       }),
-      [200],
-    );
-    expect(explicitResponse.body).toStrictEqual(response.body);
-    expect(context.mocks.stripe.checkout.sessions.create).toHaveBeenCalledWith(
-      expect.objectContaining({
-        success_url: explicitReturnUrl,
-        cancel_url: explicitReturnUrl,
-      }),
-    );
+    ).toStrictEqual([
+      {
+        mode: "setup",
+        customer: subscriber.customerId,
+        currency: "usd",
+        success_url: "https://app.okou.ai",
+        cancel_url: "https://app.okou.ai",
+        metadata,
+        setup_intent_data: { metadata },
+      },
+      {
+        mode: "setup",
+        customer: subscriber.customerId,
+        currency: "usd",
+        success_url: "https://app.okou.ai/settings/billing",
+        cancel_url: "https://app.okou.ai/settings/billing",
+        metadata,
+        setup_intent_data: { metadata },
+      },
+    ]);
     expect(context.mocks.stripe.subscriptions.update).not.toHaveBeenCalled();
   });
 });

@@ -1,414 +1,438 @@
-import { isChatRunReference } from "@okouai/api-contracts/contracts/chat-run-reference";
-import { publicRunOwner } from "./helpers/public-run-owner";
-import { createRunReadsApi } from "./helpers/api-bdd-run-reads";
 import { randomUUID } from "node:crypto";
-
-import { workflowAutomationsContract } from "@okouai/api-contracts/contracts/workflows";
-import { chatThreadsContract } from "@okouai/api-contracts/contracts/chat-threads";
-import { describe, expect, it } from "vitest";
+import { chatEventsContract } from "@okouai/api-contracts/contracts/chat-event-send";
+import { isChatRunReference } from "@okouai/api-contracts/contracts/chat-run-reference";
+import {
+  chatThreadEventsContract,
+  chatThreadsContract,
+  type ChatEvent,
+} from "@okouai/api-contracts/contracts/chat-threads";
+import { logsListContract } from "@okouai/api-contracts/contracts/logs";
+import { runsCancelContract } from "@okouai/api-contracts/contracts/run-routes";
+import {
+  webhookCompleteContract,
+  webhookEventsContract,
+} from "@okouai/api-contracts/contracts/webhooks";
+import {
+  workflowAutomationsContract,
+  workflowsCollectionContract,
+  type ChatRunFinishedEventConfig,
+} from "@okouai/api-contracts/contracts/workflows";
+import { beforeAll, describe, expect, it } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { mockOptionalEnv } from "../../../lib/env";
-
+import {
+  TEST_WITH_DOUBLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE,
+  TEST_WITH_SINGLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE,
+  TEST_WITH_TRIPLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE,
+} from "../../../__tests__/test-timeouts";
+import { now } from "../../../lib/time";
 import { flushWaitUntilForTest } from "../../context/wait-until";
-import { workflowAutomationsRoutes } from "../workflow-automations";
+import { chatEventsRoutes } from "../chat-events";
 import { chatThreadRoutes } from "../chat-threads";
+import { chatThreadCreateRoutes } from "../chat-threads-create";
+import { logsRoutes } from "../logs";
+import { runsCancelRoutes } from "../runs-cancel";
+import { webhooksAgentCompleteRoutes } from "../webhooks-agent-complete";
+import { webhooksAgentEventsRoutes } from "../webhooks-agent-events";
+import { workflowAutomationsRoutes } from "../workflow-automations";
+import { workflowsRoutes } from "../workflows";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createChatCallbacksApi } from "./helpers/api-bdd-chat-callbacks";
-import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
-import { createWorkflowsBddApi } from "./helpers/api-bdd-workflows";
 import { chatEventDisplayText } from "./helpers/chat-event";
-
-/**
- * chat-run-finished workflow automations: creation validation and dispatch
- * from the terminal chat callback (real sandbox complete webhooks).
- */
+import { projectChatEventRows } from "./helpers/chat-event-test-reader";
+import { publicRunOwner } from "./helpers/public-run-owner";
+import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
 const bdd = createBddApi(context);
-const api = createRunsApi(context);
-const chat = createChatFilesBddApi(context);
-const webhooks = createWebhookCallbackApi(context);
+const runs = createRunsApi(context);
 const chatCallbacks = createChatCallbacksApi(context);
-const wf = createWorkflowsBddApi(context);
-const WATCHED_THREAD_TITLE = "Watched chat run";
+const webhooks = createWebhookCallbackApi(context);
+const routeMocks = createRouteMocks(context);
+const headers = Object.freeze({ authorization: "Bearer clerk-session" });
 
-function automationsClient() {
-  return setupApp({ context, routes: workflowAutomationsRoutes })(
-    workflowAutomationsContract,
+const app = setupApp({
+  context,
+  routes: [
+    ...chatThreadCreateRoutes,
+    ...workflowsRoutes,
+    ...workflowAutomationsRoutes,
+  ],
+});
+const threadsApi = app(chatThreadsContract);
+const workflowsApi = app(workflowsCollectionContract);
+const automationsApi = app(workflowAutomationsContract);
+
+const runApp = setupApp({
+  context,
+  routes: [
+    ...chatEventsRoutes,
+    ...chatThreadRoutes,
+    ...logsRoutes,
+    ...runsCancelRoutes,
+    ...webhooksAgentCompleteRoutes,
+    ...webhooksAgentEventsRoutes,
+  ],
+});
+const chatEventsApi = runApp(chatEventsContract);
+const threadEventsApi = runApp(chatThreadEventsContract);
+const logsListApi = runApp(logsListContract);
+const runsCancelApi = runApp(runsCancelContract);
+const webhookEventsApi = runApp(webhookEventsContract);
+const webhookCompleteApi = runApp(webhookCompleteContract);
+
+function signIn(user: ApiTestUser) {
+  routeMocks.clerk.session(
+    user.userId,
+    user.orgId,
+    user.orgRole ?? "org:admin",
   );
+  return headers;
 }
 
-function authHeaders() {
-  return { authorization: "Bearer clerk-session" };
-}
-
-interface ChatAutomationFixture {
-  readonly actor: ApiTestUser & { readonly orgId: string };
-  readonly providerId: string;
-  readonly workflowId: string;
-  readonly runnerGroup: string;
-}
-
-async function setupChatAutomationFixture(): Promise<ChatAutomationFixture> {
-  const actor = bdd.user();
-  if (!actor.orgId) {
-    throw new Error("Expected an org-scoped workflow actor");
-  }
-  chatCallbacks.acceptChatObjectStorage();
-  api.acceptStorageDownloads();
-  api.acceptTelemetryIngest();
-  mockOptionalEnv("OPENROUTER_API_KEY", undefined);
-  chatCallbacks.disableVapid();
-  const runnerGroup = await api.configureRunnerGroup();
-  await api.grantProEntitlement(actor);
-  const { providerId } = await api.ensurePersonalSubscriptionModel(actor);
-  // Completion and queue fixtures use the retained native Claude route.
-  await api.ensurePersonalSubscriptionModel(actor, {
-    model: "claude-fable-5-1",
+async function grantProPlan(user: ApiTestUser): Promise<void> {
+  const suffix = randomUUID();
+  const customerId = `cus_pro_${suffix}`;
+  webhooks.configureStripeBillingEnv();
+  context.mocks.stripe.customers.retrieve.mockResolvedValue({
+    id: customerId,
+    metadata: { orgId: user.orgId },
   });
-  const workflowId = await wf.createWorkflow(actor, {
-    name: "chat-run-finished-workflow",
-  });
-  context.mocks.s3.send.mockResolvedValue({});
-  return {
-    actor: { ...actor, orgId: actor.orgId },
-    providerId,
-    workflowId,
-    runnerGroup,
-  };
-}
-
-function ownAutomationRuns(
-  fixture: ChatAutomationFixture,
-  automationIds: readonly string[],
-) {
-  return publicRunOwner(context, fixture.actor, {
-    beforeRuns: async () => {
-      for (const id of automationIds) {
-        await accept(
-          automationsClient().delete({
-            headers: authHeaders(),
-            params: { id },
-          }),
-          [204],
-        );
-      }
-    },
-  });
-}
-
-/**
- * Each automation gets its own workflow so it also gets its own automation
- * chat thread; automations sharing a workflow queue behind each other and
- * would not record `lastRunAt` until the prior automation run completes.
- */
-async function createChatRunFinishedAutomation(
-  fixture: Pick<ChatAutomationFixture, "actor">,
-  eventConfig: {
-    readonly chatThreadId: string;
-    readonly runStatuses?: readonly ("completed" | "failed" | "cancelled")[];
-    readonly outputPattern?: string;
-  },
-  options: { readonly workflowChatThreadId?: string } = {},
-): Promise<string> {
-  const workflowId = await wf.createWorkflow(fixture.actor, {
-    name: `crf-${randomUUID().slice(0, 8)}`,
-    ...(options.workflowChatThreadId
-      ? { chatThreadId: options.workflowChatThreadId }
-      : {}),
-  });
-  const created = await accept(
-    automationsClient().create({
-      headers: authHeaders(),
-      params: { workflowId },
-      body: {
-        kind: "event",
-        eventType: "chat-run-finished",
-        eventConfig: {
-          provider: "chat",
-          event: "run_finished",
-          chatThreadId: eventConfig.chatThreadId,
-          ...(eventConfig.runStatuses
-            ? { runStatuses: [...eventConfig.runStatuses] }
-            : {}),
-          ...(eventConfig.outputPattern
-            ? { outputPattern: eventConfig.outputPattern }
-            : {}),
+  await webhooks.postStripeEvent(
+    {
+      id: `evt_pro_${suffix}`,
+      type: "customer.subscription.created",
+      created: Math.floor(now() / 1000),
+      data: {
+        object: {
+          id: `sub_pro_${suffix}`,
+          customer: customerId,
+          status: "active",
+          metadata: {},
+          cancel_at_period_end: false,
+          cancel_at: null,
+          schedule: null,
+          trial_end: null,
+          items: { data: [{ price: { id: "price_bdd_pro" } }] },
         },
       },
-    }),
-    [201],
-  );
-  expect(created.body).toMatchObject({
-    kind: "event",
-    eventType: "chat-run-finished",
-    enabled: true,
-  });
-  return created.body.id;
-}
-
-async function automationLastRunAt(automationId: string): Promise<unknown> {
-  const automation = await accept(
-    automationsClient().get({
-      headers: authHeaders(),
-      params: { id: automationId },
-    }),
+    },
     [200],
   );
-  return automation.body.lastRunAt;
-}
-
-async function startWatchedChatRun(
-  fixture: ChatAutomationFixture,
-  prompt: string,
-  model: string | null = "claude-fable-5-1",
-): Promise<{ readonly runId: string; readonly threadId: string }> {
-  const sent = await chat.requestSendEvent(
-    fixture.actor,
-    {
-      prompt,
-      clientEventId: randomUUID(),
-      model,
-    },
-    [201],
-  );
-  if (sent.status !== 201) {
-    throw new Error("Expected the chat send to be accepted");
-  }
-  // The send only enqueues; its background pick launches the run.
   await flushWaitUntilForTest();
-  const page = await chat.listThreadEvents(fixture.actor, sent.body.threadId);
-  const runId = page.events
-    .flatMap((event) => {
-      return event.eventType === "input.prompt" && event.runId
-        ? [event.runId]
-        : [];
-    })
-    .at(-1);
-  if (!runId) {
-    throw new Error("Expected the chat send to create a run");
-  }
-  await chat.renameThread(
-    fixture.actor,
-    sent.body.threadId,
-    WATCHED_THREAD_TITLE,
-  );
-  return { runId, threadId: sent.body.threadId };
-}
-
-async function runExecution(
-  runnerGroup: string,
-  runId: string,
-): Promise<{ readonly authorization: string }> {
-  const input = await api.executionInput(runId);
-  await api.heartbeatRunner(runnerGroup);
-  return { authorization: `Bearer ${input.sandboxToken}` };
-}
-
-async function completeChatRunOk(
-  runId: string,
-  sandboxHeaders: { readonly authorization: string },
-  options: { readonly lastEventSequence?: number } = {},
-): Promise<void> {
-  const stagedOutputEvents = chatCallbacks.consumeMockChatOutputEvents();
-  if (stagedOutputEvents.length > 0) {
-    await webhooks.requestAgentEvents(
-      { runId, events: stagedOutputEvents },
-      sandboxHeaders,
-      [200],
-    );
-  }
-  await webhooks.requestAgentComplete(
-    {
-      runId,
-      exitCode: 0,
-      completion: {
-        cliAgentType: "claude-code",
-        cliAgentSessionId: `bdd-cli-${runId}`,
-        cliAgentSessionHistoryDisposition: "native_only",
-      },
-      ...(options.lastEventSequence === undefined
-        ? stagedOutputEvents.length === 0
-          ? {}
-          : {
-              lastEventSequence: Math.max(
-                ...stagedOutputEvents.map((event) => {
-                  return event.sequenceNumber;
-                }),
-              ),
-            }
-        : { lastEventSequence: options.lastEventSequence }),
-    },
-    sandboxHeaders,
-    [200],
-  );
-}
-
-async function expectAutomationFired(automationId: string): Promise<void> {
-  await flushWaitUntilForTest();
-  await expect(
-    (() => {
-      return automationLastRunAt(automationId);
-    })(),
-  ).resolves.toBeTruthy();
-}
-
-async function expectAutomationSourceAnnotation(
-  fixture: ChatAutomationFixture,
-  automationId: string,
-  sourceRun: { readonly runId: string; readonly threadId: string },
-): Promise<{ readonly runId: string; readonly displayMessage: string | null }> {
-  const automation = await accept(
-    automationsClient().get({
-      headers: authHeaders(),
-      params: { id: automationId },
-    }),
-    [200],
-  );
-  const automationThreadId = automation.body.chatThreadId;
-  if (!automationThreadId) {
-    throw new Error("Expected the automation chat thread");
-  }
-  const automationEvents = await chat.listThreadEvents(
-    fixture.actor,
-    automationThreadId,
-  );
-  const automationInputs = automationEvents.events.filter((event) => {
-    return (
-      event.eventType === "input.prompt" &&
-      event.runId !== undefined &&
-      event.userMessage.parts.some((part) => {
-        return part.type === "chat_thread" && part.runId === sourceRun.runId;
-      })
-    );
-  });
-  expect(automationInputs).toHaveLength(1);
-  const [automationInput] = automationInputs;
-  if (
-    !automationInput ||
-    automationInput.eventType !== "input.prompt" ||
-    !automationInput.runId
-  ) {
-    throw new Error("Expected the triggered automation input");
-  }
-  expect(
-    automationInput.userMessage.parts.filter((part) => {
-      return (
-        part.type === "source" ||
-        part.type === "automation" ||
-        isChatRunReference(part)
-      );
-    }),
-  ).toStrictEqual([
-    {
-      type: "chat_thread",
-      runId: sourceRun.runId,
-      threadId: sourceRun.threadId,
-      titleSnapshot: WATCHED_THREAD_TITLE,
-    },
-  ]);
-  return {
-    runId: automationInput.runId,
-    displayMessage: chatEventDisplayText(automationInput),
-  };
 }
 
 describe("chat-run-finished workflow automations", () => {
-  it("shares one created destination across concurrent creates and rebinds after deletion", async () => {
-    const fixture = await setupChatAutomationFixture();
-    const watched = await chat.createThread(fixture.actor, {
-      model: null,
+  beforeAll(async () => {
+    context.mocks.clerk.authenticateRequest.mockResolvedValue({
+      isAuthenticated: false,
     });
-    const create = async () => {
-      return await accept(
-        automationsClient().create({
-          headers: authHeaders(),
-          params: { workflowId: fixture.workflowId },
+    const warmupId = randomUUID();
+    await Promise.all([
+      accept(
+        threadsApi.create({
+          headers: {},
+          body: { title: "warmup" },
+        }),
+        [401],
+      ),
+      accept(
+        workflowsApi.create({
+          headers: {},
+          body: { name: "warmup-wf", visibility: "private" },
+        }),
+        [401],
+      ),
+      accept(
+        automationsApi.get({
+          headers: {},
+          params: { id: warmupId },
+        }),
+        [401],
+      ),
+      accept(
+        chatEventsApi.send({
+          headers: {},
           body: {
-            kind: "event",
-            eventType: "chat-run-finished",
-            eventConfig: {
-              provider: "chat",
-              event: "run_finished",
-              chatThreadId: watched.id,
+            prompt: "warmup",
+            hasTextContent: true,
+            clientEventId: warmupId,
+            userMessage: {
+              version: 1,
+              parts: [{ type: "text", text: "warmup" }],
             },
           },
         }),
-        [201],
-      );
-    };
-    const [first, second] = await Promise.all([create(), create()]);
-    const destination = first.body.chatThreadId;
-    if (!destination) {
-      throw new Error("Expected an automation destination");
-    }
-    expect(second.body.chatThreadId).toBe(destination);
-    const listed = await accept(
-      automationsClient().listForChatThread({
-        headers: authHeaders(),
-        params: { threadId: destination },
-      }),
-      [200],
-    );
-    expect(
-      listed.body
-        .map((automation) => {
-          return automation.id;
-        })
-        .sort(),
-    ).toStrictEqual([first.body.id, second.body.id].sort());
-    const lifecycle = setupApp({ context, routes: chatThreadRoutes })(
-      chatThreadsContract,
-    );
-    const beforeDeletion = await accept(
-      lifecycle.events({ headers: authHeaders(), query: {} }),
-      [200],
-    );
-    expect(
-      beforeDeletion.body.events.filter((event) => {
-        return event.kind === "created" && event.chatThreadId === destination;
-      }),
-    ).toHaveLength(1);
-
-    await chat.deleteThread(fixture.actor, destination);
-    for (const id of [first.body.id, second.body.id]) {
-      const stopped = await accept(
-        automationsClient().get({ headers: authHeaders(), params: { id } }),
-        [200],
-      );
-      expect(stopped.body).toMatchObject({
-        enabled: false,
-        chatThreadId: null,
-      });
-    }
-    const rebound = await create();
-    expect(rebound.body.chatThreadId).toBeTruthy();
-    expect(rebound.body.chatThreadId).not.toBe(destination);
-    const afterRebinding = await accept(
-      lifecycle.events({ headers: authHeaders(), query: {} }),
-      [200],
-    );
-    expect(
-      afterRebinding.body.events.filter((event) => {
-        return (
-          event.kind === "created" &&
-          event.chatThreadId === rebound.body.chatThreadId
-        );
-      }),
-    ).toHaveLength(1);
+        [401],
+      ),
+      accept(
+        threadEventsApi.rows({
+          headers: {},
+          params: { threadId: warmupId },
+          query: { sinceSeqId: 0 },
+        }),
+        [401],
+      ),
+      accept(
+        logsListApi.list({
+          headers: {},
+          query: { status: "running" },
+        }),
+        [401],
+      ),
+      accept(
+        runsCancelApi.cancel({
+          headers: {},
+          params: { id: warmupId },
+        }),
+        [401],
+      ),
+      accept(
+        webhookEventsApi.send({
+          headers: {},
+          body: {
+            runId: warmupId,
+            events: [
+              {
+                type: "assistant",
+                sequenceNumber: 1,
+                message: { content: [{ type: "text", text: "warmup" }] },
+              },
+            ],
+          },
+        }),
+        [401],
+      ),
+      accept(
+        webhookCompleteApi.complete({
+          headers: {},
+          body: { runId: warmupId, exitCode: 0 },
+        }),
+        [401],
+      ),
+    ]);
   });
 
-  it("requires the watched chat thread to belong to the automation owner", async () => {
-    const fixture = await setupChatAutomationFixture();
+  it(
+    "chat-run-finished-automations.bdd-011 reports no failure reason when a cancelled run triggers recovery",
+    { timeout: TEST_WITH_TRIPLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const watchedTitle = "Watched cancelled run";
+      const {
+        actor,
+        owner,
+        watchedThreadId,
+        watchedRunId,
+        sandboxHeaders,
+        automations,
+      } = await setupWatchedRunScenario({
+        watchedTitle,
+        prompt: "Run that gets cancelled",
+        model: null,
+        withClaudeSubscription: false,
+        rememberWatchedToken: false,
+        automations: [
+          { label: "recovery-cancelled", runStatuses: ["cancelled"] },
+        ],
+      });
+      const recovery = automations[0];
+      if (!recovery) {
+        throw new Error("Expected recovery automation");
+      }
 
-    const missingThread = await accept(
-      automationsClient().create({
-        headers: authHeaders(),
-        params: { workflowId: fixture.workflowId },
+      await accept(
+        runsCancelApi.cancel({
+          headers: signIn(actor),
+          params: { id: watchedRunId },
+        }),
+        [200],
+      );
+      await accept(
+        webhookCompleteApi.complete({
+          headers: sandboxHeaders,
+          body: {
+            runId: watchedRunId,
+            exitCode: 1,
+            error: "Run cancelled",
+          },
+        }),
+        [200],
+      );
+      await flushWaitUntilForTest();
+
+      const [recoverySummary, recoveryEvents] = await Promise.all([
+        readAutomation(actor, recovery.id),
+        readThreadEvents(actor, recovery.chatThreadId),
+      ]);
+
+      expect(recoverySummary.lastRunAt).toStrictEqual(expect.any(String));
+      const recoveryRunId = expectSingleLaunchedWatchedInput(recoveryEvents, {
+        sourceRunId: watchedRunId,
+        sourceThreadId: watchedThreadId,
+        sourceTitle: watchedTitle,
+      });
+      const recoveryExecution = await owner.executionInput(recoveryRunId);
+      expect(recoveryExecution.prompt).toContain('"runStatus": "cancelled"');
+      expect(recoveryExecution.prompt).toContain('"failureReason": null');
+    },
+  );
+
+  it(
+    "chat-run-finished-automations.bdd-004 fires claimable matching automations when a watched run completes",
+    { timeout: TEST_WITH_TRIPLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const watchedTitle = "Watched chat run";
+      const {
+        actor,
+        owner,
+        watchedThreadId,
+        watchedRunId,
+        sandboxHeaders,
+        automations,
+      } = await setupWatchedRunScenario({
+        watchedTitle,
+        prompt: "Run deployment check",
+        model: "claude-fable-5-1",
+        withClaudeSubscription: true,
+        automations: [
+          { label: "always" },
+          { label: "failed-only", runStatuses: ["failed"] },
+          {
+            label: "pattern-match",
+            runStatuses: ["completed"],
+            outputPattern: "*deploy failed*",
+          },
+          {
+            label: "pattern-miss",
+            outputPattern: "*all systems nominal*",
+          },
+        ],
+      });
+      const [always, failedOnly, patternMatch, patternMiss] = automations;
+      if (!always || !failedOnly || !patternMatch || !patternMiss) {
+        throw new Error("Expected four watched automations");
+      }
+
+      const assistantText = "Alert: Deploy FAILED on prod";
+      await accept(
+        webhookEventsApi.send({
+          headers: sandboxHeaders,
+          body: {
+            runId: watchedRunId,
+            events: [
+              {
+                type: "system",
+                subtype: "init",
+                session_id: watchedThreadId,
+                sequenceNumber: 0,
+              },
+              {
+                type: "assistant",
+                sequenceNumber: 1,
+                message: { content: [{ type: "text", text: assistantText }] },
+              },
+              { type: "result", sequenceNumber: 2, result: assistantText },
+            ],
+          },
+        }),
+        [200],
+      );
+      await accept(
+        webhookCompleteApi.complete({
+          headers: sandboxHeaders,
+          body: {
+            runId: watchedRunId,
+            exitCode: 0,
+            lastEventSequence: 2,
+            completion: {
+              cliAgentType: "claude-code",
+              cliAgentSessionId: watchedThreadId,
+              cliAgentSessionHistoryDisposition: "native_only",
+            },
+          },
+        }),
+        [200],
+      );
+      await flushWaitUntilForTest();
+
+      const [
+        alwaysSummary,
+        failedOnlySummary,
+        patternMatchSummary,
+        patternMissSummary,
+        alwaysEvents,
+        runningLogs,
+      ] = await Promise.all([
+        readAutomation(actor, always.id),
+        readAutomation(actor, failedOnly.id),
+        readAutomation(actor, patternMatch.id),
+        readAutomation(actor, patternMiss.id),
+        readThreadEvents(actor, always.chatThreadId),
+        accept(
+          logsListApi.list({
+            headers: signIn(actor),
+            query: { status: "running" },
+          }),
+          [200],
+        ),
+      ]);
+
+      expect(alwaysSummary.lastRunAt).toStrictEqual(expect.any(String));
+      expect(patternMatchSummary.lastRunAt).toStrictEqual(expect.any(String));
+      expect(failedOnlySummary.lastRunAt).toBeNull();
+      expect(patternMissSummary.lastRunAt).toBeNull();
+
+      const alwaysRunId = expectSingleLaunchedWatchedInput(alwaysEvents, {
+        sourceRunId: watchedRunId,
+        sourceThreadId: watchedThreadId,
+        sourceTitle: watchedTitle,
+        displayText: "A run in the watched chat thread completed.",
+      });
+      expect(runningLogs.body.data).toHaveLength(2);
+
+      const triggeredExecution = await owner.executionInput(alwaysRunId);
+      expect(triggeredExecution.prompt).toContain('"failureReason": null');
+    },
+  );
+
+  it("chat-run-finished-automations.bdd-002 requires the watched chat thread to belong to the automation owner", async () => {
+    context.mocks.s3.send.mockResolvedValue({
+      ContentLength: 256,
+      ETag: "workflow-etag",
+    });
+    const owner = bdd.user();
+    if (!owner.orgId) {
+      throw new Error("Expected owner orgId");
+    }
+    const peer = bdd.user({ orgId: owner.orgId, orgRole: "org:member" });
+    await grantProPlan(owner);
+
+    const workflow = await accept(
+      workflowsApi.create({
+        headers: signIn(owner),
+        body: {
+          name: `watch-owner-${randomUUID().slice(0, 8)}`,
+          visibility: "private",
+        },
+      }),
+      [201],
+    );
+
+    const peerThread = await accept(
+      threadsApi.create({
+        headers: signIn(peer),
+        body: { title: "Peer thread" },
+      }),
+      [201],
+    );
+
+    const unknownAttempt = await accept(
+      automationsApi.create({
+        headers: signIn(owner),
+        params: { workflowId: workflow.body.id },
         body: {
           kind: "event",
           eventType: "chat-run-finished",
@@ -421,355 +445,478 @@ describe("chat-run-finished workflow automations", () => {
       }),
       [400],
     );
-    expect(missingThread.body.error.message).toContain("Chat thread not found");
+    expect(unknownAttempt.body.error.message).toContain(
+      "Chat thread not found",
+    );
 
-    const otherUser = bdd.user({
-      orgId: fixture.actor.orgId ?? undefined,
-      orgRole: "org:member",
-    });
-    const otherThread = await chat.createThread(otherUser, {
-      model: null,
-    });
-    // Restore the fixture actor's session after acting as the other member.
-    await bdd.readMe(fixture.actor);
-    const foreignThread = await accept(
-      automationsClient().create({
-        headers: authHeaders(),
-        params: { workflowId: fixture.workflowId },
+    const peerAttempt = await accept(
+      automationsApi.create({
+        headers: signIn(owner),
+        params: { workflowId: workflow.body.id },
         body: {
           kind: "event",
           eventType: "chat-run-finished",
           eventConfig: {
             provider: "chat",
             event: "run_finished",
-            chatThreadId: otherThread.id,
+            chatThreadId: peerThread.body.id,
           },
         },
       }),
       [400],
     );
-    expect(foreignThread.body.error.message).toContain("Chat thread not found");
+    expect(peerAttempt.body.error.message).toContain("Chat thread not found");
   });
 
-  it("prevents a workflow from watching its own chat thread", async () => {
-    const fixture = await setupChatAutomationFixture();
-    const workflowThread = await chat.createThread(fixture.actor, {
-      model: null,
+  it("chat-run-finished-automations.bdd-003 prevents a workflow from watching its own chat thread", async () => {
+    context.mocks.s3.send.mockResolvedValue({
+      ContentLength: 256,
+      ETag: "workflow-etag",
     });
-    const workflowId = await wf.createWorkflow(fixture.actor, {
-      name: `self-watching-${randomUUID().slice(0, 8)}`,
-      chatThreadId: workflowThread.id,
-    });
+    const owner = bdd.user();
+    await grantProPlan(owner);
 
-    const response = await accept(
-      automationsClient().create({
-        headers: authHeaders(),
-        params: { workflowId },
+    const ownThread = await accept(
+      threadsApi.create({
+        headers: signIn(owner),
+        body: { title: "Workflow thread" },
+      }),
+      [201],
+    );
+
+    const workflow = await accept(
+      workflowsApi.create({
+        headers: signIn(owner),
+        body: {
+          name: `self-watch-${randomUUID().slice(0, 8)}`,
+          chatThreadId: ownThread.body.id,
+          visibility: "private",
+        },
+      }),
+      [201],
+    );
+
+    const selfAttempt = await accept(
+      automationsApi.create({
+        headers: signIn(owner),
+        params: { workflowId: workflow.body.id },
         body: {
           kind: "event",
           eventType: "chat-run-finished",
           eventConfig: {
             provider: "chat",
             event: "run_finished",
-            chatThreadId: workflowThread.id,
+            chatThreadId: ownThread.body.id,
           },
         },
       }),
       [400],
     );
-    expect(response.body.error.message).toBe(
+    expect(selfAttempt.body.error.message).toBe(
       "A workflow cannot watch run-finished events from its own chat thread",
     );
   });
 
-  it(
-    "fires claimable matching automations when a watched run completes",
-    { timeout: 30_000 },
-    async () => {
-      const fixture = await setupChatAutomationFixture();
-      const automationIds: string[] = [];
-      const ownedRuns = ownAutomationRuns(fixture, automationIds);
-      const run = await startWatchedChatRun(fixture, "watched completed run");
+  interface WatchedAutomationSpec {
+    readonly label: string;
+    readonly runStatuses?: ChatRunFinishedEventConfig["runStatuses"];
+    readonly outputPattern?: string;
+  }
 
-      const fireAlways = await createChatRunFinishedAutomation(fixture, {
-        chatThreadId: run.threadId,
-      });
-      automationIds.push(fireAlways);
-      const failedOnly = await createChatRunFinishedAutomation(fixture, {
-        chatThreadId: run.threadId,
-        runStatuses: ["failed"],
-      });
-      automationIds.push(failedOnly);
-      const patternMatch = await createChatRunFinishedAutomation(fixture, {
-        chatThreadId: run.threadId,
-        runStatuses: ["completed"],
-        outputPattern: "*deploy failed*",
-      });
-      automationIds.push(patternMatch);
-      const patternMiss = await createChatRunFinishedAutomation(fixture, {
-        chatThreadId: run.threadId,
-        outputPattern: "*all systems nominal*",
-      });
-      automationIds.push(patternMiss);
+  async function readThreadEvents(
+    actor: ApiTestUser,
+    threadId: string,
+  ): Promise<readonly ChatEvent[]> {
+    const response = await accept(
+      threadEventsApi.rows({
+        headers: signIn(actor),
+        params: { threadId },
+        query: { sinceSeqId: 0, limit: 50 },
+      }),
+      [200],
+    );
+    return projectChatEventRows(response.body.rows);
+  }
 
-      chatCallbacks.mockChatOutputEvents([
-        {
-          eventType: "assistant",
-          sequenceNumber: 0,
-          eventData: {
-            message: {
-              content: [{ type: "text", text: "Alert: Deploy FAILED on prod" }],
+  async function setupWatchedRunScenario(args: {
+    readonly watchedTitle: string;
+    readonly prompt: string;
+    readonly model?: string | null;
+    readonly withClaudeSubscription: boolean;
+    readonly automations: readonly WatchedAutomationSpec[];
+    readonly rememberWatchedToken?: boolean;
+  }) {
+    const actor = bdd.user();
+    chatCallbacks.acceptChatObjectStorage();
+    runs.acceptStorageDownloads();
+    runs.acceptTelemetryIngest();
+    chatCallbacks.disableVapid();
+    const runnerReady = runs.configureRunnerGroup({ maxConcurrent: 4 });
+    const owner = publicRunOwner(context, actor);
+    const authHeaders = signIn(actor);
+    const [watchedThread, createdWorkflows] = await Promise.all([
+      accept(
+        threadsApi.create({
+          headers: authHeaders,
+          body: { title: args.watchedTitle },
+        }),
+        [201],
+      ),
+      Promise.all(
+        args.automations.map((spec) => {
+          return accept(
+            workflowsApi.create({
+              headers: authHeaders,
+              body: {
+                name: `${spec.label}-${randomUUID().slice(0, 8)}`,
+                visibility: "private",
+              },
+            }),
+            [201],
+          );
+        }),
+      ),
+      runnerReady,
+      owner.run(() => {
+        return runs.grantProEntitlement(actor);
+      }),
+      args.withClaudeSubscription
+        ? owner.run(() => {
+            return runs.ensurePersonalSubscriptionModel(actor);
+          })
+        : Promise.resolve(),
+    ]);
+
+    const watchedThreadId = watchedThread.body.id;
+
+    const sendEventId = randomUUID();
+    const [, ...createdAutomations] = await Promise.all([
+      owner.run(() => {
+        return accept(
+          chatEventsApi.send({
+            headers: signIn(actor),
+            body: {
+              threadId: watchedThreadId,
+              prompt: args.prompt,
+              hasTextContent: true,
+              clientEventId: sendEventId,
+              ...(args.model === undefined ? {} : { model: args.model }),
+              userMessage: {
+                version: 1,
+                parts: [{ type: "text", text: args.prompt }],
+              },
             },
-          },
-        },
-      ]);
-      const sandboxHeaders = await runExecution(fixture.runnerGroup, run.runId);
-      ownedRuns.rememberExecution(
-        run.runId,
-        sandboxHeaders.authorization.slice("Bearer ".length),
-      );
-      await completeChatRunOk(run.runId, sandboxHeaders, {
-        lastEventSequence: 0,
-      });
+          }),
+          [201],
+        );
+      }),
+      ...args.automations.map((spec, index) => {
+        const workflow = createdWorkflows[index];
+        if (!workflow) {
+          throw new Error("Expected created workflow for automation");
+        }
+        return accept(
+          automationsApi.create({
+            headers: signIn(actor),
+            params: { workflowId: workflow.body.id },
+            body: {
+              kind: "event",
+              eventType: "chat-run-finished",
+              eventConfig: {
+                provider: "chat",
+                event: "run_finished",
+                chatThreadId: watchedThreadId,
+                ...(spec.runStatuses === undefined
+                  ? {}
+                  : { runStatuses: spec.runStatuses }),
+                ...(spec.outputPattern === undefined
+                  ? {}
+                  : { outputPattern: spec.outputPattern }),
+              },
+            },
+          }),
+          [201],
+        );
+      }),
+    ]);
 
-      await expectAutomationFired(fireAlways);
-      await expectAutomationFired(patternMatch);
-      await expect(automationLastRunAt(failedOnly)).resolves.toBeNull();
-      await expect(automationLastRunAt(patternMiss)).resolves.toBeNull();
-      const { displayMessage } = await expectAutomationSourceAnnotation(
-        fixture,
-        fireAlways,
-        run,
-      );
-      expect(displayMessage).toBe(
-        "A run in the watched chat thread completed.",
-      );
+    await flushWaitUntilForTest();
+    const watchedEvents = await readThreadEvents(actor, watchedThreadId);
+    const watchedRunId = watchedEvents.find((event) => {
+      return event.revokesEventId === sendEventId;
+    })?.runId;
+    if (!watchedRunId) {
+      throw new Error("Expected watched chat send to launch a Run");
+    }
 
-      const automationRuns = await createRunReadsApi(context).requestListLogs(
-        fixture.actor,
-        {
-          status: "running",
-          limit: 20,
-        },
-        [200],
-      );
-      expect(automationRuns.body.data).toHaveLength(2);
-      const automationRunId = automationRuns.body.data[0]?.id;
-      if (!automationRunId) {
-        throw new Error("Expected a triggered automation run");
+    const watchedExecution =
+      args.rememberWatchedToken === false
+        ? await runs.executionInput(watchedRunId)
+        : await owner.executionInput(watchedRunId);
+    const sandboxHeaders = {
+      authorization: `Bearer ${watchedExecution.sandboxToken}`,
+    };
+    const automations = createdAutomations.map((created) => {
+      const chatThreadId = created.body.chatThreadId;
+      if (!chatThreadId) {
+        throw new Error("Expected automation creation to bind a chat thread");
       }
-      const execution = await ownedRuns.executionInput(automationRunId);
-      expect(execution.prompt).toContain('"failureReason": null');
+      return { id: created.body.id, chatThreadId };
+    });
+
+    return {
+      actor,
+      owner,
+      watchedThreadId,
+      watchedRunId,
+      sandboxHeaders,
+      automations,
+    };
+  }
+
+  async function readAutomation(actor: ApiTestUser, id: string) {
+    const response = await accept(
+      automationsApi.get({
+        headers: signIn(actor),
+        params: { id },
+      }),
+      [200],
+    );
+    return response.body;
+  }
+
+  function expectSingleLaunchedWatchedInput(
+    events: readonly ChatEvent[],
+    expected: {
+      readonly sourceRunId: string;
+      readonly sourceThreadId: string;
+      readonly sourceTitle: string;
+      readonly displayText?: string;
     },
-  );
+  ): string {
+    const launched = events.filter(
+      (
+        event,
+      ): event is Extract<
+        ChatEvent,
+        { readonly eventType: "input.prompt" }
+      > => {
+        return event.eventType === "input.prompt" && event.runId !== undefined;
+      },
+    );
+    expect(launched).toHaveLength(1);
+    const input = launched[0];
+    if (!input?.runId) {
+      throw new Error("Expected launched automation input with runId");
+    }
+    const nonTextParts = input.userMessage.parts.filter((part) => {
+      return part.type !== "text" && part.type !== "model";
+    });
+    expect(nonTextParts).toStrictEqual([
+      {
+        type: "chat_thread",
+        runId: expected.sourceRunId,
+        threadId: expected.sourceThreadId,
+        titleSnapshot: expected.sourceTitle,
+      },
+    ]);
+    expect(nonTextParts.every(isChatRunReference)).toBeTruthy();
+    if (expected.displayText !== undefined) {
+      expect(chatEventDisplayText(input)).toBe(expected.displayText);
+    }
+    return input.runId;
+  }
 
   it(
-    "fires failed-status automations without matching patterns on errors",
-    { timeout: 30_000 },
+    "chat-run-finished-automations.bdd-005 (1/2) fires failed-status automations and skips completed-status automations on errors",
+    { timeout: TEST_WITH_DOUBLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
     async () => {
-      const fixture = await setupChatAutomationFixture();
-      const automationIds: string[] = [];
-      const ownedRuns = ownAutomationRuns(fixture, automationIds);
-      const run = await startWatchedChatRun(fixture, "watched failed run");
-
-      const failedOnly = await createChatRunFinishedAutomation(fixture, {
-        chatThreadId: run.threadId,
-        runStatuses: ["failed"],
-      });
-      const completedOnly = await createChatRunFinishedAutomation(fixture, {
-        chatThreadId: run.threadId,
-        runStatuses: ["completed"],
-      });
-      const failedWithPattern = await createChatRunFinishedAutomation(fixture, {
-        chatThreadId: run.threadId,
-        runStatuses: ["failed"],
-        outputPattern: "*boom*",
-      });
-      const reasonWithPattern = await createChatRunFinishedAutomation(fixture, {
-        chatThreadId: run.threadId,
-        runStatuses: ["failed"],
-        outputPattern: "*provider_rate_limited*",
-      });
-      automationIds.push(
-        failedOnly,
-        completedOnly,
-        failedWithPattern,
-        reasonWithPattern,
-      );
-
-      const sandboxHeaders = await runExecution(fixture.runnerGroup, run.runId);
-      ownedRuns.rememberExecution(
-        run.runId,
-        sandboxHeaders.authorization.slice("Bearer ".length),
-      );
-      await webhooks.requestAgentComplete(
-        {
-          runId: run.runId,
-          exitCode: 1,
-          error: "boom: sandbox exploded",
-          failureReason: "provider_rate_limited",
-        },
+      const watchedTitle = "Watched failed run";
+      const {
+        actor,
+        watchedThreadId,
+        watchedRunId,
         sandboxHeaders,
-        [200],
-      );
-
-      await expectAutomationFired(failedOnly);
-      await expectAutomationSourceAnnotation(fixture, failedOnly, run);
-      await expect(automationLastRunAt(completedOnly)).resolves.toBeNull();
-      // Error messages are not matchable output, so pattern automations stay
-      // silent even when the error text would match.
-      await expect(automationLastRunAt(failedWithPattern)).resolves.toBeNull();
-      await expect(automationLastRunAt(reasonWithPattern)).resolves.toBeNull();
-    },
-  );
-
-  it.each([
-    {
-      name: "provider rate limit",
-      builtIn: false,
-      failureReason: "provider_rate_limited",
-      expectedReason: "provider_rate_limited",
-    },
-    {
-      name: "personal provider balance",
-      builtIn: false,
-      failureReason: "provider_insufficient_credits",
-      expectedReason: "provider_insufficient_credits",
-    },
-    {
-      name: "redacted platform provider balance",
-      builtIn: true,
-      failureReason: "provider_insufficient_credits",
-      expectedReason: "unknown",
-    },
-    {
-      name: "future failure reason",
-      builtIn: false,
-      failureReason: "future_reason",
-      expectedReason: "unknown",
-    },
-    {
-      name: "unclassified failure",
-      builtIn: false,
-      failureReason: undefined,
-      expectedReason: "unknown",
-    },
-  ])(
-    "passes the recorded $name to the recovery Agent",
-    { timeout: 30_000 },
-    async ({ builtIn, failureReason, expectedReason }) => {
-      const fixture = await setupChatAutomationFixture();
-      const automationIds: string[] = [];
-      const ownedRuns = ownAutomationRuns(fixture, automationIds);
-      if (builtIn) {
-        mockOptionalEnv("OPENROUTER_API_KEY", "bdd-openrouter-key");
-        await api.updateUserModelPreference(fixture.actor, null);
+        automations,
+      } = await setupWatchedRunScenario({
+        watchedTitle,
+        prompt: "Trigger sandbox failure",
+        model: "claude-fable-5-1",
+        withClaudeSubscription: true,
+        automations: [
+          { label: "failed-only", runStatuses: ["failed"] },
+          { label: "completed-only", runStatuses: ["completed"] },
+        ],
+      });
+      const [failedOnly, completedOnly] = automations;
+      if (!failedOnly || !completedOnly) {
+        throw new Error("Expected two watched automations");
       }
-      const sourceRun = await startWatchedChatRun(
-        fixture,
-        "Recover a failure",
-        builtIn ? null : "claude-fable-5-1",
-      );
-      const automationId = await createChatRunFinishedAutomation(fixture, {
-        chatThreadId: sourceRun.threadId,
-        runStatuses: ["failed"],
-      });
-      automationIds.push(automationId);
-      const sandboxHeaders = await runExecution(
-        fixture.runnerGroup,
-        sourceRun.runId,
-      );
-      ownedRuns.rememberExecution(
-        sourceRun.runId,
-        sandboxHeaders.authorization.slice("Bearer ".length),
-      );
-      await webhooks.requestAgentComplete(
-        {
-          runId: sourceRun.runId,
-          exitCode: 1,
-          error: "The provider could not finish the request",
-          ...(failureReason === undefined ? {} : { failureReason }),
-        },
-        sandboxHeaders,
-        [200],
-      );
-      await expectAutomationFired(automationId);
 
-      // A repeated completion cannot replace the recorded cause or dispatch twice.
-      await webhooks.requestAgentComplete(
-        {
-          runId: sourceRun.runId,
-          exitCode: 1,
-          error: "A later completion reported a different error",
-          failureReason: "provider_overloaded",
-        },
-        sandboxHeaders,
+      await accept(
+        webhookCompleteApi.complete({
+          headers: sandboxHeaders,
+          body: {
+            runId: watchedRunId,
+            exitCode: 1,
+            error: "boom: sandbox exploded",
+            failureReason: "provider_rate_limited",
+          },
+        }),
         [200],
       );
       await flushWaitUntilForTest();
-      const history = await chat.listThreadEvents(
-        fixture.actor,
-        sourceRun.threadId,
-      );
-      const failedEvent = history.events.find((event) => {
-        return (
-          event.eventType === "run.failed" && event.runId === sourceRun.runId
-        );
-      });
-      if (!failedEvent || failedEvent.eventType !== "run.failed") {
-        throw new Error("Expected the original run failure");
-      }
-      expect(failedEvent.failureReason ?? null).toBe(expectedReason);
 
-      const recovery = await expectAutomationSourceAnnotation(
-        fixture,
-        automationId,
-        sourceRun,
-      );
-      const execution = await ownedRuns.executionInput(recovery.runId);
-      expect(execution.prompt).toContain('"runStatus": "failed"');
-      expect(execution.prompt).toContain(
-        `"failureReason": ${JSON.stringify(expectedReason)}`,
-      );
+      const [failedOnlySummary, completedOnlySummary, failedOnlyEvents] =
+        await Promise.all([
+          readAutomation(actor, failedOnly.id),
+          readAutomation(actor, completedOnly.id),
+          readThreadEvents(actor, failedOnly.chatThreadId),
+        ]);
+
+      expect(failedOnlySummary.lastRunAt).toStrictEqual(expect.any(String));
+      expect(completedOnlySummary.lastRunAt).toBeNull();
+
+      expectSingleLaunchedWatchedInput(failedOnlyEvents, {
+        sourceRunId: watchedRunId,
+        sourceThreadId: watchedThreadId,
+        sourceTitle: watchedTitle,
+      });
     },
   );
 
   it(
-    "reports no failure reason when a cancelled run triggers recovery",
-    { timeout: 30_000 },
+    "chat-run-finished-automations.bdd-005 (2/2) skips pattern-filtered failed-status automations when the watched run fails without assistant output",
+    { timeout: TEST_WITH_SINGLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
     async () => {
-      const fixture = await setupChatAutomationFixture();
-      const automationIds: string[] = [];
-      const ownedRuns = ownAutomationRuns(fixture, automationIds);
-      const sourceRun = await startWatchedChatRun(fixture, "Cancel this work");
-      const automationId = await createChatRunFinishedAutomation(fixture, {
-        chatThreadId: sourceRun.threadId,
-        runStatuses: ["cancelled"],
-      });
-      automationIds.push(automationId);
-      const sandboxHeaders = await runExecution(
-        fixture.runnerGroup,
-        sourceRun.runId,
-      );
-      ownedRuns.rememberExecution(
-        sourceRun.runId,
-        sandboxHeaders.authorization.slice("Bearer ".length),
-      );
-      await api.requestCancelRun(fixture.actor, sourceRun.runId, [200]);
-      await webhooks.requestAgentComplete(
-        { runId: sourceRun.runId, exitCode: 1, error: "Run cancelled" },
-        sandboxHeaders,
+      const watchedTitle = "Watched failed pattern run";
+      const { actor, watchedRunId, sandboxHeaders, automations } =
+        await setupWatchedRunScenario({
+          watchedTitle,
+          prompt: "Trigger sandbox failure without assistant text",
+          model: "claude-fable-5-1",
+          withClaudeSubscription: true,
+          automations: [
+            {
+              label: "failed-boom",
+              runStatuses: ["failed"],
+              outputPattern: "*boom*",
+            },
+            {
+              label: "failed-rate-limited",
+              runStatuses: ["failed"],
+              outputPattern: "*provider_rate_limited*",
+            },
+          ],
+        });
+      const [failedBoom, failedRateLimited] = automations;
+      if (!failedBoom || !failedRateLimited) {
+        throw new Error("Expected two pattern-filtered automations");
+      }
+
+      await accept(
+        webhookCompleteApi.complete({
+          headers: sandboxHeaders,
+          body: {
+            runId: watchedRunId,
+            exitCode: 1,
+            error: "boom: sandbox exploded",
+            failureReason: "provider_rate_limited",
+          },
+        }),
         [200],
       );
-      await expectAutomationFired(automationId);
-      const recovery = await expectAutomationSourceAnnotation(
-        fixture,
-        automationId,
-        sourceRun,
+      await flushWaitUntilForTest();
+
+      const [failedBoomSummary, failedRateLimitedSummary] = await Promise.all([
+        readAutomation(actor, failedBoom.id),
+        readAutomation(actor, failedRateLimited.id),
+      ]);
+
+      expect(failedBoomSummary.lastRunAt).toBeNull();
+      expect(failedRateLimitedSummary.lastRunAt).toBeNull();
+    },
+  );
+
+  it(
+    "chat-run-finished-automations.bdd-006 passes the recorded provider rate limit to the recovery Agent",
+    { timeout: TEST_WITH_DOUBLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const watchedTitle = "Watched rate-limited run";
+      const {
+        actor,
+        owner,
+        watchedThreadId,
+        watchedRunId,
+        sandboxHeaders,
+        automations,
+      } = await setupWatchedRunScenario({
+        watchedTitle,
+        prompt: "Run that hits rate limit",
+        model: "claude-fable-5-1",
+        withClaudeSubscription: true,
+        automations: [
+          { label: "recovery-rate-limit", runStatuses: ["failed"] },
+        ],
+      });
+      const recovery = automations[0];
+      if (!recovery) {
+        throw new Error("Expected recovery automation");
+      }
+
+      await accept(
+        webhookCompleteApi.complete({
+          headers: sandboxHeaders,
+          body: {
+            runId: watchedRunId,
+            exitCode: 1,
+            error: "The provider could not finish the request",
+            failureReason: "provider_rate_limited",
+          },
+        }),
+        [200],
       );
-      const execution = await ownedRuns.executionInput(recovery.runId);
-      expect(execution.prompt).toContain('"runStatus": "cancelled"');
-      expect(execution.prompt).toContain('"failureReason": null');
+      await accept(
+        webhookCompleteApi.complete({
+          headers: sandboxHeaders,
+          body: {
+            runId: watchedRunId,
+            exitCode: 1,
+            error: "The provider could not finish the request",
+            failureReason: "provider_overloaded",
+          },
+        }),
+        [200],
+      );
+      await flushWaitUntilForTest();
+
+      const [recoverySummary, sourceEvents, recoveryEvents] = await Promise.all(
+        [
+          readAutomation(actor, recovery.id),
+          readThreadEvents(actor, watchedThreadId),
+          readThreadEvents(actor, recovery.chatThreadId),
+        ],
+      );
+
+      expect(recoverySummary.lastRunAt).toStrictEqual(expect.any(String));
+      const failedEvent = sourceEvents.find((event) => {
+        return event.eventType === "run.failed" && event.runId === watchedRunId;
+      });
+      expect(failedEvent).toMatchObject({
+        eventType: "run.failed",
+        failureReason: "provider_rate_limited",
+      });
+
+      const recoveryRunId = expectSingleLaunchedWatchedInput(recoveryEvents, {
+        sourceRunId: watchedRunId,
+        sourceThreadId: watchedThreadId,
+        sourceTitle: watchedTitle,
+      });
+      const recoveryExecution = await owner.executionInput(recoveryRunId);
+      expect(recoveryExecution.prompt).toContain('"runStatus": "failed"');
+      expect(recoveryExecution.prompt).toContain(
+        '"failureReason": "provider_rate_limited"',
+      );
     },
   );
 });

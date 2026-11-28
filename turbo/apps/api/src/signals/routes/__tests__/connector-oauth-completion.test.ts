@@ -1,214 +1,274 @@
 import { randomUUID } from "node:crypto";
-
 import {
   connectorAccountsContract,
+  type ConnectorAccountMutationIntent,
   type ConnectorAccountTarget,
 } from "@okouai/api-contracts/contracts/connector-accounts";
-import { expect, onTestFinished, test } from "vitest";
+import { http, HttpResponse } from "msw";
+import { describe, expect, it } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { now, withMockNowForTest } from "../../../lib/time";
+import { server } from "../../../mocks/server";
 import { connectorAccountRoutes } from "../connector-accounts";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import {
   createConnectorBddApi,
-  mockGitHubConnectorOAuth,
   mockCustomConnectorOAuth2Provider,
+  mockGitHubConnectorOAuth,
 } from "./helpers/api-bdd-connectors";
 import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
-const mocks = createRouteMocks(context);
 const bdd = createBddApi(context);
 const connectors = createConnectorBddApi(context);
-const githubTarget = { kind: "builtin", connectorSlug: "github" } as const;
 
-function accountClient(actor: ApiTestUser) {
-  mocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
-  return setupApp({ context, routes: connectorAccountRoutes })(
-    connectorAccountsContract,
-  );
-}
-
-function authHeaders() {
-  return { authorization: "Bearer clerk-session" };
-}
-
-function state(start: { readonly authorizationUrl: string }): string {
-  const value = new URL(start.authorizationUrl).searchParams.get("state");
-  if (!value) {
-    throw new Error("Expected OAuth state");
-  }
-  return value;
-}
-
-async function receipt(
-  actor: ApiTestUser,
-  id: string,
-  target: ConnectorAccountTarget = githubTarget,
-) {
-  return await accept(
-    accountClient(actor).oauthCompletion({
-      headers: authHeaders(),
-      params: { attemptId: id },
-      query: target,
-    }),
-    [200, 404],
-  );
-}
-
-async function createGithubAccount(actor: ApiTestUser) {
-  mockGitHubConnectorOAuth({ userId: 32_503, login: "completion-account" });
-  const start = await connectors.startOauth(actor, "github", "oauth");
-  const completed = await connectors.completeOauthCallbackResult("github", {
-    code: "create",
-    state: state(start),
-  });
-  expect(completed.body.status).toBe("success");
-  const result = await receipt(actor, start.oauthAttemptId);
-  expect(result.status).toBe(200);
-  if (result.status !== 200) {
-    throw new Error("Expected completed GitHub account");
-  }
-  return { start, connectionId: result.body.connectionId };
-}
-
-test("exposes a receipt only to its owner and exact current connector target", async () => {
-  const actor = bdd.user();
-  const { start, connectionId } = await createGithubAccount(actor);
-  const id = start.oauthAttemptId;
-  const completed = await receipt(actor, id);
-  expect(completed.body).toStrictEqual({ connectionId });
-  expect(completed.headers.get("cache-control")).toBe("no-store");
-
-  const wrongTarget = await receipt(actor, id, {
-    kind: "builtin",
-    connectorSlug: "linear",
-  });
-  const wrongOrg = await receipt(bdd.user({ userId: actor.userId }), id);
-  const wrongUser = await receipt(bdd.user({ orgId: actor.orgId }), id);
-  const missing = await receipt(actor, randomUUID());
-  for (const unavailable of [wrongTarget, wrongOrg, wrongUser, missing]) {
-    expect(unavailable.status).toBe(404);
-    expect(unavailable.body).toStrictEqual(missing.body);
-    expect(unavailable.headers.get("cache-control")).toBe("no-store");
-  }
-  const afterDenials = await receipt(actor, id);
-  expect(afterDenials.status).toBe(200);
-  expect(afterDenials.body).toStrictEqual({ connectionId });
-  expect(afterDenials.headers.get("cache-control")).toBe("no-store");
-  const anonymous = await accountClient(actor).oauthCompletion({
-    params: { attemptId: id },
-    query: githubTarget,
-  });
-  expect(anonymous.status).toBe(401);
-
-  await connectors.deleteBuiltinConnectorAccount(actor, "github", connectionId);
-  const deleted = await receipt(actor, id);
-  expect(deleted.status).toBe(404);
-  expect(deleted.body).toStrictEqual({
-    error: { code: "NOT_FOUND", message: "OAuth completion not found" },
-  });
-  expect(deleted.headers.get("cache-control")).toBe("no-store");
+const githubTarget: ConnectorAccountTarget = Object.freeze({
+  kind: "builtin",
+  connectorSlug: "github",
 });
 
-test("does not complete a denied reconnect after rename or default-account changes and allows retry", async () => {
-  const actor = bdd.user();
-  const { connectionId } = await createGithubAccount(actor);
-  const account = { intent: "reconnect", connectionId } as const;
-  const cancelled = await connectors.startOauth(
-    actor,
-    "github",
-    "oauth",
-    account,
+async function readReceipt(
+  actor: ApiTestUser | null,
+  attemptId: string,
+  target: ConnectorAccountTarget,
+) {
+  const client = setupApp({ context, routes: connectorAccountRoutes })(
+    connectorAccountsContract,
   );
-  await accept(
-    accountClient(actor).rename({
-      headers: authHeaders(),
+  if (actor) {
+    createRouteMocks(context).clerk.session(
+      actor.userId,
+      actor.orgId,
+      actor.orgRole,
+    );
+  } else {
+    context.mocks.clerk.authenticateRequest.mockResolvedValue({
+      isAuthenticated: false,
+    });
+  }
+  return await accept(
+    client.oauthCompletion({
+      headers: actor ? { authorization: "Bearer clerk-session" } : {},
+      params: { attemptId },
+      query: target,
+    }),
+    [200, 401, 404],
+  );
+}
+
+async function expectMissingReceipt(
+  actor: ApiTestUser,
+  attemptId: string,
+  target: ConnectorAccountTarget,
+) {
+  const response = await readReceipt(actor, attemptId, target);
+  expect(response.status).toBe(404);
+  expect(response.headers.get("cache-control")).toBe("no-store");
+  expect(response.body).toMatchObject({
+    error: { code: "NOT_FOUND", message: "OAuth completion not found" },
+  });
+  return response.body;
+}
+
+function stateOf(authorizationUrl: string): string {
+  const state = new URL(authorizationUrl).searchParams.get("state");
+  if (!state) {
+    throw new Error("Expected OAuth state");
+  }
+  return state;
+}
+
+async function renameAccount(
+  actor: ApiTestUser,
+  connectionId: string,
+  target: ConnectorAccountTarget,
+  displayName: string,
+) {
+  const client = setupApp({ context, routes: connectorAccountRoutes })(
+    connectorAccountsContract,
+  );
+  createRouteMocks(context).clerk.session(
+    actor.userId,
+    actor.orgId,
+    actor.orgRole,
+  );
+  const renamed = await accept(
+    client.rename({
+      headers: { authorization: "Bearer clerk-session" },
       params: { connectionId },
-      body: { target: githubTarget, displayName: "Renamed during consent" },
+      body: { target, displayName },
     }),
     [200],
   );
-  await connectors.setDefaultBuiltinConnectorAccount(
-    actor,
-    "github",
-    connectionId,
-  );
-  expect((await receipt(actor, cancelled.oauthAttemptId)).status).toBe(404);
-  const denied = await connectors.completeOauthCallbackResult("github", {
-    error: "access_denied",
-    state: state(cancelled),
-  });
-  expect(denied.body.status).toBe("error");
-  expect((await receipt(actor, cancelled.oauthAttemptId)).status).toBe(404);
+  expect(renamed.body.displayName).toBe(displayName);
+}
 
-  const retry = await connectors.startOauth(actor, "github", "oauth", account);
-  await connectors.completeOauthCallbackResult("github", {
-    code: "retry",
-    state: state(retry),
+async function connectGithub(actor: ApiTestUser) {
+  const started = await connectors.startOauth(actor, "github", "oauth");
+  const state = stateOf(started.authorizationUrl);
+  const result = await connectors.completeOauthCallbackResult("github", {
+    state,
+    code: `code-${randomUUID()}`,
   });
-  expect((await receipt(actor, retry.oauthAttemptId)).body).toStrictEqual({
-    connectionId,
-  });
-  expect((await receipt(actor, cancelled.oauthAttemptId)).status).toBe(404);
-  const replay = await connectors.completeOauthCallbackResult("github", {
-    code: "replay",
-    state: state(cancelled),
-  });
-  expect(replay.body.status).toBe("error");
-  expect((await receipt(actor, cancelled.oauthAttemptId)).status).toBe(404);
-});
+  expect(result.body.status).toBe("success");
+  return started.oauthAttemptId;
+}
 
-test("retains independent receipts for overlapping GitHub adds that reuse the same account", async () => {
-  const actor = bdd.user();
-  const { connectionId } = await createGithubAccount(actor);
-  const first = await connectors.startOauth(actor, "github", "oauth");
-  const second = await connectors.startOauth(actor, "github", "oauth");
-  await connectors.completeOauthCallbackResult("github", {
-    code: "second",
-    state: state(second),
-  });
-  expect((await receipt(actor, first.oauthAttemptId)).status).toBe(404);
-  await connectors.completeOauthCallbackResult("github", {
-    code: "first",
-    state: state(first),
-  });
-  for (const start of [first, second]) {
-    expect(start.connectionId).not.toBe(connectionId);
-    expect((await receipt(actor, start.oauthAttemptId)).body).toStrictEqual({
-      connectionId,
-    });
+async function startDeniedReconnect() {
+  mockGitHubConnectorOAuth();
+  const owner = bdd.user();
+  const addAttemptId = await connectGithub(owner);
+  const added = await readReceipt(owner, addAttemptId, githubTarget);
+  if (!("connectionId" in added.body)) {
+    throw new Error("Expected the GitHub add receipt");
   }
-});
+  const connectionId = added.body.connectionId;
+  const reconnect = { intent: "reconnect", connectionId } as const;
+  const denied = await connectors.startOauth(
+    owner,
+    "github",
+    "oauth",
+    reconnect,
+  );
+  return {
+    owner,
+    connectionId,
+    reconnect,
+    deniedAttemptId: denied.oauthAttemptId,
+    deniedState: stateOf(denied.authorizationUrl),
+  };
+}
 
-test("expires completed attempts without expiring their connector account", async () => {
-  const actor = bdd.user();
-  const { start, connectionId } = await createGithubAccount(actor);
-  await withMockNowForTest(now() + 16 * 60 * 1000, async () => {
-    expect((await receipt(actor, start.oauthAttemptId)).status).toBe(404);
-    const account = await accept(
-      accountClient(actor).connection({
-        headers: authHeaders(),
-        params: { connectionId },
-        query: githubTarget,
-      }),
-      [200],
-    );
-    expect(account.body.id).toBe(connectionId);
+type DeniedReconnect = Awaited<ReturnType<typeof startDeniedReconnect>>;
+
+async function renameAndSelectDefault(attempt: DeniedReconnect) {
+  await renameAccount(
+    attempt.owner,
+    attempt.connectionId,
+    githubTarget,
+    "Work GitHub",
+  );
+  await connectors.setDefaultBuiltinConnectorAccount(
+    attempt.owner,
+    "github",
+    attempt.connectionId,
+  );
+}
+
+async function denyReconnectAfterAccountEdits() {
+  const attempt = await startDeniedReconnect();
+  await renameAndSelectDefault(attempt);
+  const denied = await connectors.completeOauthCallbackResult("github", {
+    state: attempt.deniedState,
+    error: "access_denied",
   });
-});
+  if (denied.body.status !== "error") {
+    throw new Error("Expected the provider denial to fail the reconnect");
+  }
+  return attempt;
+}
 
-test.each(["http", "mcp"] as const)(
-  "tracks successful and cancelled custom %s OAuth attempts independently",
-  async (kind) => {
-    const actor = bdd.user();
+async function completeRetry(attempt: DeniedReconnect) {
+  const retry = await connectors.startOauth(
+    attempt.owner,
+    "github",
+    "oauth",
+    attempt.reconnect,
+  );
+  const result = await connectors.completeOauthCallbackResult("github", {
+    state: stateOf(retry.authorizationUrl),
+    code: `code-${randomUUID()}`,
+  });
+  return { retryAttemptId: retry.oauthAttemptId, status: result.body.status };
+}
+
+async function startCustomOAuth(
+  actor: ApiTestUser,
+  connectorId: string,
+  account: ConnectorAccountMutationIntent,
+) {
+  const response = await connectors.requestStartCustomConnectorOAuth2(
+    actor,
+    connectorId,
+    [200],
+    account,
+  );
+  if (response.status !== 200 || response.body.result !== "authorization") {
+    throw new Error("Expected a custom OAuth authorization redirect");
+  }
+  return response.body;
+}
+
+describe("connector OAuth completion receipts", () => {
+  it("connector-oauth-completion-002 (1/3) reports a denied reconnect as an error without a receipt after a rename and default change", async () => {
+    const attempt = await startDeniedReconnect();
+
+    await renameAndSelectDefault(attempt);
+    await expectMissingReceipt(
+      attempt.owner,
+      attempt.deniedAttemptId,
+      githubTarget,
+    );
+
+    const denied = await connectors.completeOauthCallbackResult("github", {
+      state: attempt.deniedState,
+      error: "access_denied",
+    });
+    expect(denied.body.status).toBe("error");
+    await expectMissingReceipt(
+      attempt.owner,
+      attempt.deniedAttemptId,
+      githubTarget,
+    );
+  });
+
+  it("connector-oauth-completion-002 (2/3) returns the separate retry's receipt while the denied attempt stays missing", async () => {
+    const attempt = await denyReconnectAfterAccountEdits();
+
+    const retry = await completeRetry(attempt);
+    expect(retry.status).toBe("success");
+    const retried = await readReceipt(
+      attempt.owner,
+      retry.retryAttemptId,
+      githubTarget,
+    );
+    expect(retried.status).toBe(200);
+    expect(retried.body).toStrictEqual({ connectionId: attempt.connectionId });
+    await expectMissingReceipt(
+      attempt.owner,
+      attempt.deniedAttemptId,
+      githubTarget,
+    );
+  });
+
+  it("connector-oauth-completion-002 (3/3) rejects a successful callback replayed with the denied attempt's state", async () => {
+    const attempt = await denyReconnectAfterAccountEdits();
+    const retry = await completeRetry(attempt);
+    if (retry.status !== "success") {
+      throw new Error("Expected the separate retry to succeed");
+    }
+
+    const replay = await connectors.completeOauthCallbackResult("github", {
+      state: attempt.deniedState,
+      code: `code-${randomUUID()}`,
+    });
+    expect(replay.body.status).toBe("error");
+    await expectMissingReceipt(
+      attempt.owner,
+      attempt.deniedAttemptId,
+      githubTarget,
+    );
+  });
+
+  it("connector-oauth-completion-005 tracks a custom OAuth add and a cancelled reconnect independently", async () => {
     const provider = mockCustomConnectorOAuth2Provider(context, {
       initialScope: "read",
     });
-    const definition = {
-      displayName: `OAuth completion ${randomUUID()}`,
+    const owner = bdd.user();
+    const connector = await connectors.createCustomConnector(owner, {
+      displayName: "Receipt OAuth",
+      prefixTemplates: ["https://receipt-api.example.test/"],
       fields: [],
       headerInjections: [
         {
@@ -217,121 +277,131 @@ test.each(["http", "mcp"] as const)(
         },
       ],
       queryInjections: [],
-      authMode: "oauth" as const,
+      authMode: "oauth",
       oauthConfig: {
-        providerAdapter: "standard" as const,
-        clientId: "completion-client",
-        clientSecret: "completion-secret",
+        providerAdapter: "standard",
+        clientId: "receipt-client-id",
+        clientSecret: "receipt-client-secret",
         authorizationUrl: provider.authorizationUrl,
         tokenUrl: provider.tokenUrl,
-        tokenEndpointAuthMethod: "client_secret_post" as const,
-        pkceMethod: "none" as const,
+        tokenEndpointAuthMethod: "client_secret_post",
+        pkceMethod: "S256",
         scopes: ["read"],
         authorizationParams: {},
       },
-    };
-    const connector = await connectors.createCustomConnector(
-      actor,
-      kind === "http"
-        ? {
-            ...definition,
-            kind,
-            prefixTemplates: [`https://${randomUUID()}.example.test/api/`],
-          }
-        : {
-            ...definition,
-            kind,
-            endpoint: `https://${randomUUID()}.example.test/mcp`,
-            transport: "streamable-http",
-          },
-    );
-    onTestFinished(async () => {
-      await connectors.deleteCustomConnector(actor, connector.id);
     });
-    const target = { kind: "custom", customConnectorId: connector.id } as const;
-    const started = await connectors.requestStartCustomConnectorOAuth2(
-      actor,
+    const customTarget: ConnectorAccountTarget = {
+      kind: "custom",
+      customConnectorId: connector.id,
+    };
+
+    const add = await startCustomOAuth(owner, connector.id, { intent: "add" });
+    await expectMissingReceipt(owner, add.oauthAttemptId, customTarget);
+    const added = await connectors.completeCustomConnectorOAuth2CallbackResult({
+      state: stateOf(add.authorizationUrl),
+      code: `code-${randomUUID()}`,
+    });
+    expect(added.body.status).toBe("success");
+    const accounts = await connectors.listCustomConnectorAccounts(
+      owner,
       connector.id,
-      [200],
     );
-    if (started.status !== 200 || started.body.result !== "authorization") {
-      throw new Error("Expected custom OAuth authorization");
-    }
-    expect(
-      (await receipt(actor, started.body.oauthAttemptId, target)).status,
-    ).toBe(404);
-    const completed =
+    expect(accounts).toHaveLength(1);
+    const connectionId = accounts[0]?.id ?? "";
+
+    const receipt = await readReceipt(owner, add.oauthAttemptId, customTarget);
+    expect(receipt.status).toBe(200);
+    expect(receipt.headers.get("cache-control")).toBe("no-store");
+    expect(receipt.body).toStrictEqual({ connectionId });
+    await expectMissingReceipt(owner, add.oauthAttemptId, githubTarget);
+    await expectMissingReceipt(owner, add.oauthAttemptId, {
+      kind: "custom",
+      customConnectorId: randomUUID(),
+    });
+
+    await renameAccount(owner, connectionId, customTarget, "Renamed receipt");
+    const reconnect = await startCustomOAuth(owner, connector.id, {
+      intent: "reconnect",
+      connectionId,
+    });
+    const cancelled =
       await connectors.completeCustomConnectorOAuth2CallbackResult({
-        code: "custom-success",
-        state: state(started.body),
+        state: stateOf(reconnect.authorizationUrl),
+        error: "access_denied",
       });
-    expect(completed.body.status).toBe("success");
-    const connected = await receipt(actor, started.body.oauthAttemptId, target);
-    if (connected.status !== 200) {
-      throw new Error("Expected a completed custom account");
-    }
-    const connectionId = connected.body.connectionId;
-    expect(connected.body).toStrictEqual({ connectionId });
-    expect(connected.headers.get("cache-control")).toBe("no-store");
-    for (const wrongTarget of [
-      githubTarget,
-      { kind: "custom", customConnectorId: randomUUID() } as const,
-    ]) {
-      const rejected = await receipt(
-        actor,
-        started.body.oauthAttemptId,
-        wrongTarget,
-      );
-      expect(rejected.status).toBe(404);
-      expect(rejected.body).toStrictEqual({
-        error: { code: "NOT_FOUND", message: "OAuth completion not found" },
-      });
-      expect(rejected.headers.get("cache-control")).toBe("no-store");
-    }
-    const afterDenials = await receipt(
-      actor,
-      started.body.oauthAttemptId,
-      target,
+    expect(cancelled.body.status).toBe("error");
+    await expectMissingReceipt(owner, reconnect.oauthAttemptId, customTarget);
+    const stillAdded = await readReceipt(
+      owner,
+      add.oauthAttemptId,
+      customTarget,
     );
-    expect(afterDenials.status).toBe(200);
-    expect(afterDenials.body).toStrictEqual({ connectionId });
-    const cancelled = await connectors.requestStartCustomConnectorOAuth2(
-      actor,
-      connector.id,
-      [200],
-      { intent: "reconnect", connectionId },
-    );
-    if (cancelled.status !== 200 || cancelled.body.result !== "authorization") {
-      throw new Error("Expected custom OAuth reconnect");
-    }
-    await accept(
-      accountClient(actor).rename({
-        headers: authHeaders(),
-        params: { connectionId },
-        body: { target, displayName: "Renamed" },
-      }),
-      [200],
-    );
-    const denied = await connectors.completeCustomConnectorOAuth2CallbackResult(
-      { error: "access_denied", state: state(cancelled.body) },
-    );
-    expect(denied.body.status).toBe("error");
-    expect(
-      (await receipt(actor, cancelled.body.oauthAttemptId, target)).status,
-    ).toBe(404);
-    expect(
-      (await receipt(actor, started.body.oauthAttemptId, target)).body,
-    ).toStrictEqual({ connectionId });
+    expect(stillAdded.body).toStrictEqual({ connectionId });
+
     await connectors.deleteCustomConnectorAccount(
-      actor,
+      owner,
       connector.id,
       connectionId,
     );
-    const deleted = await receipt(actor, started.body.oauthAttemptId, target);
-    expect(deleted.status).toBe(404);
-    expect(deleted.body).toStrictEqual({
-      error: { code: "NOT_FOUND", message: "OAuth completion not found" },
-    });
-    expect(deleted.headers.get("cache-control")).toBe("no-store");
-  },
-);
+    await expectMissingReceipt(owner, add.oauthAttemptId, customTarget);
+  });
+
+  it("connector-oauth-completion-001 (1/2) shows the GitHub receipt only to its owner and exact target", async () => {
+    const { owner, attemptId, account } = await completedGithubAdd();
+    const colleague = bdd.user({ orgId: owner.orgId, orgRole: "org:member" });
+    const elsewhere = bdd.user({ userId: owner.userId });
+
+    const receipt = await readReceipt(owner, attemptId, githubTarget);
+    expect(receipt.status).toBe(200);
+    expect(receipt.headers.get("cache-control")).toBe("no-store");
+    expect(receipt.body).toStrictEqual({ connectionId: account.id });
+
+    const unknown = await expectMissingReceipt(
+      owner,
+      randomUUID(),
+      githubTarget,
+    );
+    await expect(
+      expectMissingReceipt(owner, attemptId, {
+        kind: "builtin",
+        connectorSlug: "gitlab",
+      }),
+    ).resolves.toStrictEqual(unknown);
+    await expect(
+      expectMissingReceipt(colleague, attemptId, githubTarget),
+    ).resolves.toStrictEqual(unknown);
+    await expect(
+      expectMissingReceipt(elsewhere, attemptId, githubTarget),
+    ).resolves.toStrictEqual(unknown);
+    const anonymous = await readReceipt(null, attemptId, githubTarget);
+    expect(anonymous.status).toBe(401);
+  });
+
+  it("connector-oauth-completion-001 (2/2) keeps the receipt on retry and removes it with the account", async () => {
+    const { owner, attemptId, account } = await completedGithubAdd();
+
+    const retried = await readReceipt(owner, attemptId, githubTarget);
+    expect(retried.status).toBe(200);
+    expect(retried.body).toStrictEqual({ connectionId: account.id });
+
+    server.use(
+      http.delete(
+        "https://api.github.com/applications/github-client-id/grant",
+        () => {
+          return new HttpResponse(null, { status: 204 });
+        },
+      ),
+    );
+    await connectors.deleteBuiltinConnectorAccount(owner, "github", account.id);
+    await expectMissingReceipt(owner, attemptId, githubTarget);
+  });
+});
+
+/** An owner whose GitHub OAuth add attempt completed with one account. */
+async function completedGithubAdd() {
+  mockGitHubConnectorOAuth();
+  const owner = bdd.user();
+  const attemptId = await connectGithub(owner);
+  const account = await connectors.readDefaultBuiltinAccount(owner, "github");
+  return { owner, attemptId, account };
+}

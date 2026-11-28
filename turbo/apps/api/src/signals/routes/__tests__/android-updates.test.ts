@@ -1,221 +1,201 @@
-import { describe, expect, it } from "vitest";
-import { http, HttpResponse } from "msw";
 import { Readable } from "node:stream";
 import { GetObjectCommand } from "@aws-sdk/client-s3";
 import {
   androidUpdatesContract,
   type AndroidRelease,
 } from "@okouai/api-contracts/contracts/android-updates";
-import { createApp } from "../../../app-factory";
+import {
+  CLIENT_TYPE_ANDROID,
+  CLIENT_TYPE_HEADER,
+  CLIENT_VERSION_HEADER,
+} from "@okouai/api-contracts/contracts/client-headers";
+import { http, HttpResponse } from "msw";
+import { describe, expect, it } from "vitest";
+
 import {
   accept,
   androidClientCompatibility,
   testContext,
 } from "../../../__tests__/test-context";
-import { setupApp } from "../../../__tests__/test-helpers";
-import { env, mockEnv } from "../../../lib/env";
+import { setupApp, setupRawAppRequest } from "../../../__tests__/test-helpers";
+import { env } from "../../../lib/env";
 import { server } from "../../../mocks/server";
 import { androidUpdateRoutes } from "../android-updates";
+import { orgReadRoutes } from "../org-read";
 
 const context = testContext();
-const routes = Object.freeze([...androidUpdateRoutes]);
-const manifestUrl = "https://static.okou.io/android-updates/manifest.json";
-const release = Object.freeze({
-  version: "0.14.1",
-  minimumSdk: 24,
-  size: 1234,
-  sha256: "a".repeat(64),
-  notes: "A native update",
-  url: `https://static.okou.io/android-updates/releases/0.14.1/${"a".repeat(64)}.apk`,
+const updates = setupApp({ context, routes: androidUpdateRoutes })(
+  androidUpdatesContract,
+);
+const rawRequest = setupRawAppRequest({
+  context,
+  routes: [...androidUpdateRoutes, ...orgReadRoutes],
+});
+const androidClient = Object.freeze({
+  [CLIENT_TYPE_HEADER]: CLIENT_TYPE_ANDROID,
+  [CLIENT_VERSION_HEADER]: "0.1.0",
 });
 
-function apiClient(rethrowErrors = false) {
-  return setupApp({ context, routes, rethrowErrors })(androidUpdatesContract);
+function release(version: string, sha: string): AndroidRelease {
+  const sha256 = sha.repeat(64);
+  return {
+    version,
+    minimumSdk: 26,
+    size: 48_000_000,
+    sha256,
+    url: `https://static.okou.io/android-updates/releases/${version}/${sha256}.apk`,
+    notes: `Okou for Android ${version}`,
+  };
 }
 
-function serveRelease(value: AndroidRelease = release) {
-  const bytes = Buffer.from(
-    JSON.stringify({ schemaVersion: 1, release: value }),
+function manifestObject(published: AndroidRelease) {
+  const body = Buffer.from(
+    JSON.stringify({ schemaVersion: 1, release: published }),
   );
+  return {
+    Body: Readable.from([body]),
+    ContentLength: body.length,
+    $metadata: { httpStatusCode: 200 },
+  };
+}
+
+function publishInStaticStorage(read: () => AndroidRelease): void {
   context.mocks.s3.send.mockImplementation((command: unknown) => {
     if (
       command instanceof GetObjectCommand &&
       command.input.Bucket === env("R2_STATIC_BUCKET_NAME") &&
       command.input.Key === "android-updates/manifest.json"
     ) {
-      return Promise.resolve({
-        ContentLength: bytes.length,
-        Body: Readable.from([bytes]),
-      });
+      return Promise.resolve(manifestObject(read()));
     }
-    return Promise.reject(
-      Object.assign(new Error("Object unavailable"), { name: "NoSuchKey" }),
-    );
+    return Promise.reject(new Error("Unexpected static storage request"));
   });
 }
 
-function appRequest(path: string, method = "GET") {
-  return createApp({ signal: context.signal, routes }).request(path, {
-    method,
-    headers: { "X-Client-Type": "Android", "X-Client-Version": "0.1.0" },
+function failStaticStorage(error: Error): void {
+  context.mocks.s3.send.mockRejectedValue(error);
+}
+
+async function expectBusinessApiExclusion(): Promise<void> {
+  const org = await rawRequest("/api/org", {
+    method: "GET",
+    headers: { ...androidClient, authorization: "Bearer clerk-session" },
   });
+  expect(org.status).toBe(426);
 }
 
 describe("Android public update recovery", () => {
-  it("retains a precise public bootstrap after business API exclusion", async () => {
+  it("android-updates-001 keeps the public update check open for an excluded Android client", async () => {
     androidClientCompatibility.minimumSupportedVersion = "0.12.0";
-    serveRelease();
-    const response = await accept(
-      apiClient().get({
-        extraHeaders: {
-          "X-Client-Type": "Android",
-          "X-Client-Version": "0.1.0",
-        },
-      }),
+    const published = release("0.14.1", "a");
+    publishInStaticStorage(() => {
+      return published;
+    });
+
+    const current = await accept(
+      updates.get({ extraHeaders: androidClient }),
       [200],
     );
-    expect(response.headers.get("cache-control")).toBe("no-store");
-    expect(response.body).toStrictEqual({
+    expect(current.headers.get("cache-control")).toBe("no-store");
+    expect(current.body).toStrictEqual({
       minimumSupportedVersion: "0.12.0",
-      release,
+      release: published,
     });
-    for (const [path, method] of [
-      ["/api/org", "GET"],
-      ["/api/android/updates/other", "GET"],
-      ["/api/android/updates", "POST"],
-    ]) {
-      expect((await appRequest(path!, method!)).status).toBe(426);
-    }
+
+    await expectBusinessApiExclusion();
+    const otherUpdatePath = await rawRequest("/api/android/updates/other", {
+      method: "GET",
+      headers: androidClient,
+    });
+    expect(otherUpdatePath.status).toBe(426);
+    const updateWrite = await rawRequest("/api/android/updates", {
+      method: "POST",
+      headers: androidClient,
+    });
+    expect(updateWrite.status).toBe(426);
+
     androidClientCompatibility.minimumSupportedVersion = null;
-    const anonymous = await accept(apiClient().get(), [200]);
+    const anonymous = await accept(updates.get(), [200]);
     expect(anonymous.body).toStrictEqual({
       minimumSupportedVersion: null,
-      release,
+      release: published,
     });
   });
 
-  it("discovers successive R2 releases while the public manifest is stale", async () => {
+  it("android-updates-002 serves each new R2 release while the public manifest is stale", async () => {
     server.use(
-      http.get(manifestUrl, () => {
+      http.get("https://static.okou.io/android-updates/manifest.json", () => {
         return HttpResponse.json({
           schemaVersion: 1,
-          release: {
-            ...release,
-            version: "0.14.0",
-            url: release.url.replace("0.14.1", "0.14.0"),
-          },
+          release: release("0.14.0", "0"),
         });
       }),
     );
-    context.mocks.s3.requestConfig.mockImplementation((config: unknown) => {
-      expect(config).toMatchObject({
-        endpoint: "https://test-account.r2.cloudflarestorage.com",
+    let stored = release("0.14.1", "b");
+    publishInStaticStorage(() => {
+      return stored;
+    });
+
+    const first = await accept(updates.get(), [200]);
+    expect(first.body.release).toStrictEqual(release("0.14.1", "b"));
+    expect(context.mocks.s3.requestConfig.mock.lastCall).toStrictEqual([
+      expect.objectContaining({
         credentials: {
-          accessKeyId: "test-static-access-key",
-          secretAccessKey: "test-static-secret-key",
+          accessKeyId: env("R2_STATIC_ACCESS_KEY_ID"),
+          secretAccessKey: env("R2_STATIC_SECRET_ACCESS_KEY"),
         },
-      });
-    });
-    const api = apiClient();
-    serveRelease();
-    expect((await accept(api.get(), [200])).body.release).toStrictEqual(
-      release,
-    );
-    const next = {
-      ...release,
-      version: "0.14.2",
-      url: release.url.replace("0.14.1", "0.14.2"),
-    };
-    serveRelease(next);
-    expect((await accept(api.get(), [200])).body.release).toStrictEqual(next);
-  });
-
-  it.each([
-    [
-      "missing object",
-      Object.assign(new Error("Object unavailable"), { name: "NoSuchKey" }),
-    ],
-    [
-      "temporary S3 failure",
-      Object.assign(new Error("Service unavailable"), {
-        $metadata: { httpStatusCode: 503 },
       }),
-    ],
-    [
-      "connection reset",
-      Object.assign(new Error("Connection reset"), { code: "ECONNRESET" }),
-    ],
-  ])("reports %s as an unavailable release", async (_label, error) => {
+    ]);
+
+    stored = release("0.14.2", "c");
+    const second = await accept(updates.get(), [200]);
+    expect(second.body.release).toStrictEqual(release("0.14.2", "c"));
+  });
+
+  it("android-updates-003 reports a missing manifest object as a retryable unavailable release", async () => {
     androidClientCompatibility.minimumSupportedVersion = "0.12.0";
-    context.mocks.s3.send.mockRejectedValue(error);
-    const unavailable = await accept(apiClient().get(), [503]);
-    expect(unavailable.headers.get("retry-after")).toBe("60");
-    expect(unavailable.headers.get("cache-control")).toBe("no-store");
-    expect(unavailable.body.error.code).toBe("ANDROID_UPDATE_UNAVAILABLE");
-    expect((await appRequest("/api/org")).status).toBe(426);
-  });
-
-  it("reports an owned storage timeout as retryable", async () => {
-    const deadline = new AbortController();
-    context.mocks.abortSignal.timeout.mockImplementation((milliseconds) => {
-      return milliseconds === 5000 ? deadline.signal : undefined;
-    });
-    context.mocks.s3.send.mockImplementation(() => {
-      deadline.abort(new DOMException("Storage deadline", "TimeoutError"));
-      return Promise.reject(new DOMException("Request aborted", "AbortError"));
-    });
-    const unavailable = await accept(apiClient().get(), [503]);
-    expect(unavailable.body.error.code).toBe("ANDROID_UPDATE_UNAVAILABLE");
-  });
-
-  it("surfaces missing static credentials as a configuration error", async () => {
-    mockEnv("R2_STATIC_SECRET_ACCESS_KEY", undefined);
-    await expect(apiClient(true).get()).rejects.toThrow(
-      "Static storage credentials are not configured",
-    );
-  });
-
-  it("surfaces an incorrect static bucket as a configuration error", async () => {
-    context.mocks.s3.send.mockRejectedValue(
-      Object.assign(new Error("The specified bucket does not exist"), {
-        name: "NoSuchBucket",
+    failStaticStorage(
+      Object.assign(new Error("The specified key does not exist."), {
+        name: "NoSuchKey",
         $metadata: { httpStatusCode: 404 },
       }),
     );
-    await expect(apiClient(true).get()).rejects.toThrow(
-      "The specified bucket does not exist",
-    );
+
+    const unavailable = await accept(updates.get(), [503]);
+    expect(unavailable.headers.get("retry-after")).toBe("60");
+    expect(unavailable.headers.get("cache-control")).toBe("no-store");
+    expect(unavailable.body.error.code).toBe("ANDROID_UPDATE_UNAVAILABLE");
+    await expectBusinessApiExclusion();
   });
 
-  it("preserves caller cancellation instead of reporting a retryable release", async () => {
-    const caller = new AbortController();
-    context.mocks.s3.send.mockImplementation(() => {
-      caller.abort(new DOMException("Caller aborted", "AbortError"));
-      return Promise.reject(new DOMException("Request aborted", "AbortError"));
+  it("android-updates-004 reports a temporary storage outage as a retryable unavailable release", async () => {
+    androidClientCompatibility.minimumSupportedVersion = "0.12.0";
+    failStaticStorage(
+      Object.assign(new Error("Service Unavailable"), {
+        name: "ServiceUnavailable",
+        $metadata: { httpStatusCode: 503 },
+      }),
+    );
+
+    const unavailable = await accept(updates.get(), [503]);
+    expect(unavailable.headers.get("retry-after")).toBe("60");
+    expect(unavailable.headers.get("cache-control")).toBe("no-store");
+    expect(unavailable.body.error.code).toBe("ANDROID_UPDATE_UNAVAILABLE");
+    await expectBusinessApiExclusion();
+  });
+
+  it("android-updates-011 rejects a published APK that does not match the release identity", async () => {
+    publishInStaticStorage(() => {
+      return {
+        ...release("0.14.1", "d"),
+        url: "https://example.com/untrusted.apk",
+      };
     });
-    const api = setupApp({
-      context,
-      routes,
-      signal: caller.signal,
-      rethrowErrors: true,
-    })(androidUpdatesContract);
-    await expect(api.get()).rejects.toThrow("Caller aborted");
-  });
 
-  it("surfaces oversized publication bytes as an error", async () => {
-    context.mocks.s3.send.mockResolvedValue({
-      ContentLength: 65_537,
-      Body: Readable.from([Buffer.alloc(65_537)]),
-    });
-    await expect(apiClient(true).get()).rejects.toThrow(
-      "S3 object is too large",
-    );
-  });
-
-  it("validates the published APK identity", async () => {
-    serveRelease({ ...release, url: "https://example.com/untrusted.apk" });
-    await expect(apiClient(true).get()).rejects.toThrow(
-      "Android release identity is inconsistent",
-    );
+    await expect(
+      setupApp({ context, routes: androidUpdateRoutes, rethrowErrors: true })(
+        androidUpdatesContract,
+      ).get(),
+    ).rejects.toThrow("Android release identity is inconsistent");
   });
 });

@@ -1,297 +1,283 @@
 import { randomUUID } from "node:crypto";
-import { billingCreditCheckoutContract } from "@okouai/api-contracts/contracts/billing";
-import StripeSDK from "stripe";
-import { accept } from "../../../__tests__/test-context";
+import { describe, expect, it } from "vitest";
+import {
+  billingCreditCheckoutContract,
+  billingStatusContract,
+} from "@okouai/api-contracts/contracts/billing";
+import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
-import { mockNow, nowDate } from "../../../lib/time";
+import { mockNow } from "../../../lib/time";
 import { billingCreditCheckoutRoutes } from "../billing-credit-checkout";
+import { billingStatusRoutes } from "../billing-status";
+import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
+import { publicPlanLifecycle } from "./helpers/public-plan-lifecycle";
+import { createRouteMocks } from "./helpers/route-test";
 
-import { createBillingCheckoutFixture } from "./helpers/billing-checkout-fixture";
+const context = testContext();
 
-const {
-  context,
-  mocks,
-  APP_ORIGIN,
-  TEST_PRICE_CUSTOM_CREDIT_UNIT,
-  setTierPrices,
-  currentSecond,
-  issueAgentToken,
-  createOrgFixture,
-  createSubscriptionOrg,
-  createPublicBillingOrg,
-  readBillingStatus,
-} = createBillingCheckoutFixture();
+const CREDIT_UNIT_PRICE = "price_credit_checkout_unit";
+const SUCCESS_URL = "http://localhost:3002/settings/billing?credits=success";
+const CANCEL_URL = "http://localhost:3002/settings/billing?credits=cancel";
+const SAVED_CARD = "pm_credit_checkout_saved_card";
+const headers = Object.freeze({ authorization: "Bearer clerk-session" });
+
+function creditCheckoutApi() {
+  return setupApp({ context, routes: billingCreditCheckoutRoutes })(
+    billingCreditCheckoutContract,
+  );
+}
+
+function billingStatusApi() {
+  return setupApp({ context, routes: billingStatusRoutes })(
+    billingStatusContract,
+  );
+}
+
+function signIn(actor: ApiTestUser): void {
+  createRouteMocks(context).clerk.session(
+    actor.userId,
+    actor.orgId,
+    actor.orgRole,
+  );
+}
+
+function newAdmin(): ApiTestUser {
+  mockEnv("OKOU_PRICE_CUSTOM_CREDIT_UNIT", CREDIT_UNIT_PRICE);
+  const admin = createBddApi(context).user();
+  signIn(admin);
+  return admin;
+}
+
+async function proWorkspace(): Promise<ApiTestUser> {
+  const admin = newAdmin();
+  await publicPlanLifecycle(context, admin, "pro").update("active");
+  signIn(admin);
+  return admin;
+}
+
+function stripeHostedCheckout(): string {
+  const sessionId = `cs_credit_checkout_${randomUUID()}`;
+  const url = `https://checkout.stripe.test/${sessionId}`;
+  context.mocks.stripe.checkout.sessions.create.mockResolvedValue({
+    id: sessionId,
+    url,
+  });
+  return url;
+}
+
+/** The workspace's Stripe customer, optionally carrying a coupon discount. */
+function stripeCustomer(orgId: string, couponId?: string): void {
+  context.mocks.stripe.customers.retrieve.mockImplementation(
+    (customerId: unknown) => {
+      return Promise.resolve({
+        id: customerId,
+        metadata: { orgId },
+        discount: couponId ? { source: { coupon: couponId } } : null,
+        invoice_settings: { default_payment_method: null },
+      });
+    },
+  );
+}
+
+function subscriptionPaymentMethod(paymentMethod: string | null): void {
+  context.mocks.stripe.subscriptions.retrieve.mockImplementation(
+    (subscriptionId: unknown) => {
+      return Promise.resolve({
+        id: subscriptionId,
+        status: "active",
+        default_payment_method: paymentMethod,
+      });
+    },
+  );
+}
+
+function metadataOf(params: unknown): unknown {
+  return typeof params === "object" && params !== null && "metadata" in params
+    ? params.metadata
+    : {};
+}
+
+/** Stripe echoes the requested invoice items as preview lines. */
+function stripePreview(amountCents: number): void {
+  context.mocks.stripe.invoices.createPreview.mockImplementation(
+    (params: unknown) => {
+      const items =
+        typeof params === "object" &&
+        params !== null &&
+        "invoice_items" in params &&
+        Array.isArray(params.invoice_items)
+          ? (params.invoice_items as unknown[])
+          : [];
+      return Promise.resolve({
+        currency: "usd",
+        amount_due: amountCents,
+        lines: {
+          data: items.map((item) => {
+            return { metadata: metadataOf(item) };
+          }),
+        },
+      });
+    },
+  );
+}
+
+/** A Stripe invoice that is drafted, finalized open, then paid or held for authentication. */
+function stripeSavedBillingInvoice(args: {
+  readonly amountCents: number;
+  readonly payment: "succeeds" | "requires_action";
+  readonly hostedInvoiceUrl?: string;
+}): void {
+  const id = `in_credit_checkout_${randomUUID()}`;
+  const lines: { metadata: unknown }[] = [];
+  let status = "draft";
+  function current() {
+    return {
+      id,
+      status,
+      amount_due: args.amountCents,
+      currency: "usd",
+      hosted_invoice_url: args.hostedInvoiceUrl ?? null,
+      lines: { data: [...lines] },
+    };
+  }
+  context.mocks.stripe.invoices.create.mockResolvedValue(current());
+  context.mocks.stripe.invoiceItems.create.mockImplementation(
+    (params: unknown) => {
+      lines.push({ metadata: metadataOf(params) });
+      return Promise.resolve({ id: `ii_${randomUUID()}` });
+    },
+  );
+  context.mocks.stripe.invoices.retrieve.mockImplementation(async () => {
+    return await Promise.resolve(current());
+  });
+  context.mocks.stripe.invoices.finalizeInvoice.mockImplementation(() => {
+    status = "open";
+    return Promise.resolve(current());
+  });
+  context.mocks.stripe.invoices.pay.mockImplementation(() => {
+    if (args.payment === "requires_action") {
+      return Promise.reject(
+        Object.assign(new Error("Payment requires authentication"), {
+          type: "StripeCardError",
+          code: "invoice_payment_intent_requires_action",
+        }),
+      );
+    }
+    status = "paid";
+    return Promise.resolve(current());
+  });
+}
+
+async function requestCheckout(options: {
+  readonly previewExistingBilling?: boolean;
+}) {
+  return await creditCheckoutApi().create({
+    headers,
+    body: {
+      credits: 20_000,
+      successUrl: SUCCESS_URL,
+      cancelUrl: CANCEL_URL,
+      ...options,
+    },
+  });
+}
+
+async function readStatus() {
+  const response = await accept(billingStatusApi().get({ headers }), [200]);
+  return response.body;
+}
+
+function onlyCheckoutSession(): unknown {
+  const calls = context.mocks.stripe.checkout.sessions.create.mock.calls;
+  expect(calls).toHaveLength(1);
+  return calls[0]?.[0];
+}
 
 describe("POST /api/billing/credit-checkout", () => {
-  beforeEach(() => {
-    setTierPrices();
-    mockEnv("SECRETS_ENCRYPTION_KEY", "a".repeat(64));
-    context.mocks.stripe.customers.retrieve.mockResolvedValue({
-      discount: null,
+  it("billing-credit-checkout-001 forbids a non-admin member from buying credits", async () => {
+    mockEnv("OKOU_PRICE_CUSTOM_CREDIT_UNIT", CREDIT_UNIT_PRICE);
+    const member = createBddApi(context).user({ orgRole: "org:member" });
+    signIn(member);
+
+    const response = await accept(requestCheckout({}), [403]);
+
+    expect(response.body.error).toStrictEqual({
+      code: "FORBIDDEN",
+      message: "Only org admins can buy credits",
     });
   });
 
-  function trackedSeed(): { orgId: string; userId: string } {
-    return createOrgFixture();
-  }
-
-  function mockCreditPurchasePreview(customerId: string): void {
-    context.mocks.stripe.invoices.createPreview.mockImplementation(
-      (rawParams) => {
-        const params = rawParams as {
-          readonly customer?: string;
-          readonly discounts?: "" | readonly { readonly coupon: string }[];
-          readonly invoice_items?: readonly {
-            readonly metadata?: Readonly<Record<string, string>>;
-          }[];
-        };
-        const purchaseId =
-          params.invoice_items?.[0]?.metadata?.credit_purchase_preview_id;
-        if (!purchaseId) {
-          throw new Error("Expected a credit purchase preview ID");
-        }
-        const subscriptionRenewalLines =
-          params.customer === customerId
-            ? [
-                {
-                  id: `il_renewal_${randomUUID()}`,
-                  amount: 10_000,
-                  subtotal: 10_000,
-                  metadata: {},
-                  period: {
-                    start: currentSecond(),
-                    end: currentSecond(),
-                  },
-                  parent: {
-                    type: "subscription_item_details",
-                    subscription_item_details: {
-                      proration: false,
-                      proration_details: null,
-                    },
-                  },
-                },
-              ]
-            : [];
-        const discounted =
-          Array.isArray(params.discounts) && params.discounts.length > 0;
-        return Promise.resolve({
-          id: `in_preview_${randomUUID()}`,
-          hosted_invoice_url: null,
-          customer: params.customer ?? null,
-          metadata: {},
-          amount_due:
-            (discounted ? 1800 : 2000) +
-            (subscriptionRenewalLines.length > 0 ? 10_000 : 0),
-          currency: "usd",
-          status: null,
-          lines: {
-            has_more: false,
-            data: [
-              ...subscriptionRenewalLines,
-              {
-                id: `il_preview_${randomUUID()}`,
-                amount: 2000,
-                subtotal: 2000,
-                metadata: {
-                  credit_purchase_preview_id: purchaseId,
-                },
-                period: { start: currentSecond(), end: currentSecond() },
-                parent: null,
-              },
-            ],
-          },
-          parent: null,
-        });
-      },
-    );
-  }
-
-  it("returns 403 for non-admin org member", async () => {
-    const fixture = await trackedSeed();
-    mocks.clerk.session(fixture.userId, fixture.orgId, "org:member");
-
-    const client = setupApp({
-      context,
-      routes: billingCreditCheckoutRoutes,
-    })(billingCreditCheckoutContract);
-
-    const response = await accept(
-      client.create({
-        body: {
-          credits: 20_000,
-          successUrl: `${APP_ORIGIN}/billing?credit=success`,
-          cancelUrl: `${APP_ORIGIN}/billing?credit=canceled`,
-        },
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [403],
-    );
-
-    expect(response.body).toStrictEqual({
-      error: {
-        message: "Only org admins can buy credits",
-        code: "FORBIDDEN",
-      },
-    });
-  });
-
-  it("allows promotion codes when the customer has no discount", async () => {
-    const fixture = await trackedSeed();
-    mocks.clerk.session(fixture.userId, fixture.orgId, "org:admin");
-
-    const customerId = `cus_${randomUUID().slice(0, 8)}`;
-    context.mocks.stripe.customers.create.mockResolvedValue({ id: customerId });
-    context.mocks.stripe.checkout.sessions.create.mockResolvedValue({
-      url: "https://checkout.stripe.com/session/credit",
-    });
-
-    const client = setupApp({
-      context,
-      routes: billingCreditCheckoutRoutes,
-    })(billingCreditCheckoutContract);
-
-    const response = await accept(
-      client.create({
-        body: {
-          credits: 20_000,
-          successUrl: `${APP_ORIGIN}/billing?credit=success`,
-          cancelUrl: `${APP_ORIGIN}/billing?credit=canceled`,
-        },
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [200],
-    );
-
-    expect(response.body).toStrictEqual({
-      url: "https://checkout.stripe.com/session/credit",
-    });
-    expect(context.mocks.stripe.checkout.sessions.create).toHaveBeenCalledWith(
-      expect.objectContaining({
-        mode: "payment",
-        customer: customerId,
-        line_items: [{ price: TEST_PRICE_CUSTOM_CREDIT_UNIT, quantity: 20 }],
-        allow_promotion_codes: true,
-        invoice_creation: {
-          enabled: true,
-          invoice_data: {
-            metadata: {
-              type: "credit_purchase",
-              purpose: "credit_purchase",
-              orgId: fixture.orgId,
-              purchaseCreatedAt: expect.any(String),
-              creditsAmountMode: "amount_subtotal",
-              requestedCreditsAmount: "20000",
-            },
-          },
-        },
-        metadata: {
-          purpose: "credit_purchase",
-
-          orgId: fixture.orgId,
-          purchaseCreatedAt: expect.any(String),
-          creditsAmountMode: "amount_subtotal",
-          requestedCreditsAmount: "20000",
-        },
-      }),
-    );
-  });
-
-  it("automatically applies the customer's coupon", async () => {
-    const fixture = await createSubscriptionOrg({ tier: "pro" });
-    const { customerId } = fixture;
-    const couponId = `coupon_${randomUUID().slice(0, 8)}`;
-    context.mocks.stripe.customers.retrieve.mockResolvedValue({
+  it("billing-credit-checkout-002 opens a promotion-code checkout for a customer without a discount", async () => {
+    const admin = newAdmin();
+    const orgId = admin.orgId ?? "";
+    const customerId = `cus_credit_checkout_${randomUUID()}`;
+    context.mocks.stripe.customers.create.mockResolvedValue({
       id: customerId,
-      discount: {
-        source: {
-          type: "coupon",
-          coupon: couponId,
+      metadata: { orgId },
+    });
+    stripeCustomer(orgId);
+    const url = stripeHostedCheckout();
+
+    const response = await accept(requestCheckout({}), [200]);
+
+    expect(response.body).toStrictEqual({ url });
+    const purchaseMetadata = {
+      purpose: "credit_purchase",
+      orgId,
+      purchaseCreatedAt: expect.any(String),
+      creditsAmountMode: "amount_subtotal",
+      requestedCreditsAmount: "20000",
+    };
+    expect(onlyCheckoutSession()).toMatchObject({
+      mode: "payment",
+      customer: customerId,
+      line_items: [{ price: CREDIT_UNIT_PRICE, quantity: 20 }],
+      allow_promotion_codes: true,
+      invoice_creation: {
+        enabled: true,
+        invoice_data: {
+          metadata: { type: "credit_purchase", ...purchaseMetadata },
         },
       },
+      metadata: purchaseMetadata,
     });
-    context.mocks.stripe.checkout.sessions.create.mockResolvedValue({
-      url: "https://checkout.stripe.com/session/discounted-credit",
-    });
+  });
 
-    const response = await accept(
-      setupApp({ context, routes: billingCreditCheckoutRoutes })(
-        billingCreditCheckoutContract,
-      ).create({
-        body: {
-          credits: 20_000,
-          successUrl: `${APP_ORIGIN}/billing?credit=success`,
-          cancelUrl: `${APP_ORIGIN}/billing?credit=canceled`,
-        },
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [200],
-    );
+  it("billing-credit-checkout-003 applies the customer's coupon to the checkout", async () => {
+    const admin = await proWorkspace();
+    stripeCustomer(admin.orgId ?? "", "coupon_credit_checkout_loyal");
+    const url = stripeHostedCheckout();
 
-    expect(response.body).toStrictEqual({
-      url: "https://checkout.stripe.com/session/discounted-credit",
+    const response = await accept(requestCheckout({}), [200]);
+
+    expect(response.body).toStrictEqual({ url });
+    const session = onlyCheckoutSession();
+    expect(session).toMatchObject({
+      mode: "payment",
+      line_items: [{ price: CREDIT_UNIT_PRICE, quantity: 20 }],
+      discounts: [{ coupon: "coupon_credit_checkout_loyal" }],
     });
+    expect(session).not.toHaveProperty("allow_promotion_codes");
     expect(context.mocks.stripe.customers.retrieve).toHaveBeenCalledWith(
-      customerId,
-    );
-    expect(
-      context.mocks.stripe.checkout.sessions.create,
-    ).toHaveBeenLastCalledWith(
-      expect.objectContaining({
-        mode: "payment",
-        customer: customerId,
-        line_items: [{ price: TEST_PRICE_CUSTOM_CREDIT_UNIT, quantity: 20 }],
-        discounts: [{ coupon: couponId }],
-      }),
-    );
-    expect(
-      context.mocks.stripe.checkout.sessions.create,
-    ).toHaveBeenLastCalledWith(
-      expect.not.objectContaining({
-        allow_promotion_codes: true,
-      }),
+      (session as { customer: string }).customer,
     );
   });
 
-  it("preserves the credit purchase preview timestamp at confirmation", async () => {
-    const fixture = await createSubscriptionOrg({ tier: "pro" });
-    const paymentMethodId = `pm_credit_${randomUUID().slice(0, 8)}`;
-    const couponId = `coupon_${randomUUID().slice(0, 8)}`;
-    const invoiceId = `in_credit_${randomUUID().slice(0, 8)}`;
-    context.mocks.stripe.subscriptions.retrieve.mockResolvedValue({
-      id: fixture.subscriptionId,
-      default_payment_method: paymentMethodId,
-    });
-    context.mocks.stripe.customers.retrieve.mockResolvedValue({
-      id: fixture.customerId,
-      discount: {
-        source: {
-          type: "coupon",
-          coupon: couponId,
-        },
-      },
-    });
-    const capturedAt = new Date("2026-09-09T04:00:00.000Z");
-    mockNow(capturedAt);
-    mockCreditPurchasePreview(fixture.customerId);
+  it("billing-credit-checkout-004 confirms a saved-card purchase with the preview time", async () => {
+    const admin = await proWorkspace();
+    const coupon = "coupon_credit_checkout_preview";
+    stripeCustomer(admin.orgId ?? "", coupon);
+    subscriptionPaymentMethod(SAVED_CARD);
+    stripePreview(1800);
+    stripeSavedBillingInvoice({ amountCents: 1800, payment: "succeeds" });
+    const previewedAt = Date.parse("2026-03-02T10:00:00.000Z");
+    mockNow(previewedAt);
 
-    const client = setupApp({
-      context,
-      routes: billingCreditCheckoutRoutes,
-    })(billingCreditCheckoutContract);
     const preview = await accept(
-      client.create({
-        body: {
-          credits: 20_000,
-          previewExistingBilling: true,
-          successUrl: `${APP_ORIGIN}/billing?credit=success`,
-          cancelUrl: `${APP_ORIGIN}/billing?credit=canceled`,
-        },
-        headers: { authorization: "Bearer clerk-session" },
-      }),
+      requestCheckout({ previewExistingBilling: true }),
       [200],
     );
-
     expect(preview.body).toMatchObject({
       status: "preview",
       credits: 20_000,
@@ -300,869 +286,156 @@ describe("POST /api/billing/credit-checkout", () => {
       expiresAt: expect.any(String),
       previewToken: expect.any(String),
     });
+    if (!("previewToken" in preview.body)) {
+      throw new Error("Expected a credit purchase preview");
+    }
+    const previewToken = preview.body.previewToken;
     expect(
       context.mocks.stripe.checkout.sessions.create,
     ).not.toHaveBeenCalled();
-    expect(context.mocks.stripe.invoices.createPreview).toHaveBeenCalledWith(
-      expect.objectContaining({
-        discounts: [{ coupon: couponId }],
-      }),
-    );
-    expect(context.mocks.stripe.invoices.createPreview).toHaveBeenCalledWith(
-      expect.not.objectContaining({ customer: fixture.customerId }),
-    );
-    if (!("previewToken" in preview.body)) {
-      throw new Error("Expected a credit purchase preview");
-    }
+    const previewRequest =
+      context.mocks.stripe.invoices.createPreview.mock.calls[0]?.[0];
+    expect(previewRequest).toMatchObject({ discounts: [{ coupon }] });
+    expect(previewRequest).not.toHaveProperty("customer");
+    expect(previewRequest).not.toHaveProperty("subscription");
 
-    const invalidConfirmation = await accept(
-      client.confirm({
-        body: { previewToken: `${preview.body.previewToken}invalid` },
-        headers: { authorization: "Bearer clerk-session" },
+    // The final base64url character can carry unused padding bits, so alter the first one.
+    const tamperedToken = `${previewToken.startsWith("A") ? "B" : "A"}${previewToken.slice(1)}`;
+    const tampered = await accept(
+      creditCheckoutApi().confirm({
+        headers,
+        body: { previewToken: tamperedToken },
       }),
       [400],
     );
-    expect(invalidConfirmation.body.error.code).toBe("BAD_REQUEST");
+    expect(tampered.body.error.code).toBe("BAD_REQUEST");
     expect(context.mocks.stripe.invoices.create).not.toHaveBeenCalled();
 
-    const draftInvoice = {
-      id: invoiceId,
-      hosted_invoice_url: null,
-      customer: fixture.customerId,
-      metadata: { purpose: "credit_purchase" },
-      amount_due: 1800,
-      currency: "usd",
-      status: "draft",
-      lines: { has_more: false, data: [] },
-      parent: null,
-    };
-    context.mocks.stripe.invoices.create.mockResolvedValue(draftInvoice);
-    let confirmedPurchaseId: string | null = null;
-    context.mocks.stripe.invoiceItems.create.mockImplementation((rawParams) => {
-      const params = rawParams as {
-        readonly metadata?: Readonly<Record<string, string>>;
-      };
-      confirmedPurchaseId = params.metadata?.credit_purchase_preview_id ?? null;
-      return Promise.resolve({
-        id: `ii_credit_${randomUUID().slice(0, 8)}`,
-      });
-    });
-    context.mocks.stripe.invoices.retrieve.mockImplementation(() => {
-      if (!confirmedPurchaseId) {
-        throw new Error("Expected a confirmed credit purchase ID");
-      }
-      return Promise.resolve({
-        ...draftInvoice,
-        lines: {
-          has_more: false,
-          data: [
-            {
-              id: `il_credit_${randomUUID().slice(0, 8)}`,
-              amount: 2000,
-              subtotal: 2000,
-              metadata: {
-                credit_purchase_preview_id: confirmedPurchaseId,
-              },
-              period: { start: currentSecond(), end: currentSecond() },
-              parent: null,
-            },
-          ],
-        },
-      });
-    });
-    context.mocks.stripe.invoices.finalizeInvoice.mockResolvedValue({
-      ...draftInvoice,
-      status: "open",
-    });
-    context.mocks.stripe.invoices.pay.mockResolvedValue({
-      ...draftInvoice,
-      status: "paid",
-    });
-
-    mockNow(new Date(capturedAt.getTime() + 60_000));
-    const confirmation = await accept(
-      client.confirm({
-        body: { previewToken: preview.body.previewToken },
-        headers: { authorization: "Bearer clerk-session" },
-      }),
+    mockNow(previewedAt + 60_000);
+    const confirmed = await accept(
+      creditCheckoutApi().confirm({ headers, body: { previewToken } }),
       [200],
     );
 
-    expect(confirmation.body).toStrictEqual({
+    expect(confirmed.body).toStrictEqual({
       status: "completed",
       hostedInvoiceUrl: null,
     });
+    expect(context.mocks.stripe.invoices.create).toHaveBeenCalledOnce();
     expect(context.mocks.stripe.invoices.create).toHaveBeenCalledWith(
       expect.objectContaining({
-        customer: fixture.customerId,
-        default_payment_method: paymentMethodId,
-        discounts: [{ coupon: couponId }],
+        default_payment_method: SAVED_CARD,
+        discounts: [{ coupon }],
         metadata: expect.objectContaining({
+          type: "credit_purchase",
           purpose: "credit_purchase",
-          orgId: fixture.orgId,
-          requestedCreditsAmount: "20000",
-          purchaseCreatedAt: capturedAt.toISOString(),
+          orgId: admin.orgId,
+          purchaseCreatedAt: new Date(previewedAt).toISOString(),
         }),
       }),
-      expect.objectContaining({
-        idempotencyKey: expect.stringContaining("credit-purchase:"),
-      }),
+      {
+        idempotencyKey: expect.stringMatching(/^credit-purchase:/),
+      },
     );
+    const [invoiceParams] =
+      context.mocks.stripe.invoices.create.mock.calls[0] ?? [];
     expect(context.mocks.stripe.invoiceItems.create).toHaveBeenCalledWith(
       expect.objectContaining({
-        invoice: invoiceId,
-        customer: fixture.customerId,
-        pricing: { price: TEST_PRICE_CUSTOM_CREDIT_UNIT },
+        customer: (invoiceParams as { customer: string }).customer,
+        pricing: { price: CREDIT_UNIT_PRICE },
         quantity: 20,
       }),
-      expect.objectContaining({
-        idempotencyKey: expect.stringContaining("credit-purchase:"),
-      }),
+      { idempotencyKey: expect.stringMatching(/^credit-purchase:/) },
     );
   });
 
-  it("uses a legacy subscription source when no higher-priority card exists", async () => {
-    const fixture = await createSubscriptionOrg({ tier: "pro" });
-    const subscriptionSourceId = `card_${randomUUID().slice(0, 8)}`;
-    const customerSourceId = `card_${randomUUID().slice(0, 8)}`;
-    const invoiceId = `in_credit_${randomUUID().slice(0, 8)}`;
-    context.mocks.stripe.subscriptions.retrieve.mockResolvedValue({
-      id: fixture.subscriptionId,
-      customer: fixture.customerId,
-      default_payment_method: null,
-      default_source: subscriptionSourceId,
+  it("billing-credit-checkout-008 returns the hosted invoice when the saved card needs authentication", async () => {
+    const admin = await proWorkspace();
+    stripeCustomer(admin.orgId ?? "");
+    subscriptionPaymentMethod(SAVED_CARD);
+    stripePreview(2000);
+    const hostedInvoiceUrl =
+      "https://invoice.stripe.com/saved-billing-authentication";
+    stripeSavedBillingInvoice({
+      amountCents: 2000,
+      payment: "requires_action",
+      hostedInvoiceUrl,
     });
-    context.mocks.stripe.customers.retrieve.mockResolvedValue({
-      id: fixture.customerId,
-      discount: null,
-      invoice_settings: { default_payment_method: null },
-      default_source: customerSourceId,
-    });
-    context.mocks.stripe.paymentMethods.list.mockResolvedValue({ data: [] });
-    mockCreditPurchasePreview(fixture.customerId);
 
-    const client = setupApp({
-      context,
-      routes: billingCreditCheckoutRoutes,
-    })(billingCreditCheckoutContract);
     const preview = await accept(
-      client.create({
-        body: {
-          credits: 20_000,
-          supportsInAppPreview: true,
-          successUrl: `${APP_ORIGIN}/billing?credit=success`,
-          cancelUrl: `${APP_ORIGIN}/billing?credit=canceled`,
-        },
-        headers: { authorization: "Bearer clerk-session" },
-      }),
+      requestCheckout({ previewExistingBilling: true }),
       [200],
     );
     if (!("previewToken" in preview.body)) {
       throw new Error("Expected a credit purchase preview");
     }
-
-    const draftInvoice = {
-      id: invoiceId,
-      hosted_invoice_url: null,
-      customer: fixture.customerId,
-      metadata: { purpose: "credit_purchase" },
-      amount_due: 2000,
-      currency: "usd",
-      status: "draft",
-      lines: { has_more: false, data: [] },
-      parent: null,
-    };
-    context.mocks.stripe.invoices.create.mockResolvedValue(draftInvoice);
-    let purchaseId: string | null = null;
-    context.mocks.stripe.invoiceItems.create.mockImplementation((rawParams) => {
-      const params = rawParams as {
-        readonly metadata?: Readonly<Record<string, string>>;
-      };
-      purchaseId = params.metadata?.credit_purchase_preview_id ?? null;
-      return Promise.resolve({ id: `ii_${randomUUID().slice(0, 8)}` });
-    });
-    context.mocks.stripe.invoices.retrieve.mockImplementation(() => {
-      if (!purchaseId) {
-        throw new Error("Expected a confirmed credit purchase ID");
-      }
-      return Promise.resolve({
-        ...draftInvoice,
-        status: "paid",
-        lines: {
-          has_more: false,
-          data: [
-            {
-              id: `il_${randomUUID().slice(0, 8)}`,
-              amount: 2000,
-              subtotal: 2000,
-              metadata: { credit_purchase_preview_id: purchaseId },
-              period: { start: currentSecond(), end: currentSecond() },
-              parent: null,
-            },
-          ],
-        },
-      });
-    });
-
-    const confirmation = await accept(
-      client.confirm({
+    const confirmed = await accept(
+      creditCheckoutApi().confirm({
+        headers,
         body: { previewToken: preview.body.previewToken },
-        headers: { authorization: "Bearer clerk-session" },
       }),
       [200],
     );
 
-    expect(confirmation.body).toStrictEqual({
-      status: "completed",
-      hostedInvoiceUrl: null,
-    });
-    expect(context.mocks.stripe.invoices.create).toHaveBeenCalledWith(
-      expect.objectContaining({
-        customer: fixture.customerId,
-        default_source: subscriptionSourceId,
-      }),
-      expect.any(Object),
-    );
-    expect(context.mocks.stripe.invoices.create).toHaveBeenCalledWith(
-      expect.not.objectContaining({
-        default_payment_method: expect.anything(),
-      }),
-      expect.any(Object),
-    );
-  });
-
-  it("rejects payment when the finalized invoice amount differs from the preview", async () => {
-    const fixture = await createSubscriptionOrg({ tier: "pro" });
-    const paymentMethodId = `pm_credit_${randomUUID().slice(0, 8)}`;
-    const invoiceId = `in_credit_${randomUUID().slice(0, 8)}`;
-    context.mocks.stripe.subscriptions.retrieve.mockResolvedValue({
-      id: fixture.subscriptionId,
-      default_payment_method: paymentMethodId,
-    });
-    mockCreditPurchasePreview(fixture.customerId);
-
-    const client = setupApp({
-      context,
-      routes: billingCreditCheckoutRoutes,
-    })(billingCreditCheckoutContract);
-    const preview = await accept(
-      client.create({
-        body: {
-          credits: 20_000,
-          previewExistingBilling: true,
-          successUrl: `${APP_ORIGIN}/billing?credit=success`,
-          cancelUrl: `${APP_ORIGIN}/billing?credit=canceled`,
-        },
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [200],
-    );
-    if (!("previewToken" in preview.body)) {
-      throw new Error("Expected a credit purchase preview");
-    }
-
-    const draftInvoice = {
-      id: invoiceId,
-      hosted_invoice_url: null,
-      customer: fixture.customerId,
-      metadata: { purpose: "credit_purchase" },
-      amount_due: 2000,
-      currency: "usd",
-      status: "draft",
-      lines: { has_more: false, data: [] },
-      parent: null,
-    };
-    context.mocks.stripe.invoices.create.mockResolvedValue(draftInvoice);
-    let confirmedPurchaseId: string | null = null;
-    context.mocks.stripe.invoiceItems.create.mockImplementation((rawParams) => {
-      const params = rawParams as {
-        readonly metadata?: Readonly<Record<string, string>>;
-      };
-      confirmedPurchaseId = params.metadata?.credit_purchase_preview_id ?? null;
-      return Promise.resolve({
-        id: `ii_credit_${randomUUID().slice(0, 8)}`,
-      });
-    });
-    context.mocks.stripe.invoices.retrieve.mockImplementation(() => {
-      if (!confirmedPurchaseId) {
-        throw new Error("Expected a confirmed credit purchase ID");
-      }
-      return Promise.resolve({
-        ...draftInvoice,
-        lines: {
-          has_more: false,
-          data: [
-            {
-              id: `il_credit_${randomUUID().slice(0, 8)}`,
-              amount: 2000,
-              subtotal: 2000,
-              metadata: {
-                credit_purchase_preview_id: confirmedPurchaseId,
-              },
-              period: { start: currentSecond(), end: currentSecond() },
-              parent: null,
-            },
-          ],
-        },
-      });
-    });
-    const changedInvoice = {
-      ...draftInvoice,
-      amount_due: 1900,
-      status: "open",
-    };
-    context.mocks.stripe.invoices.finalizeInvoice.mockResolvedValue(
-      changedInvoice,
-    );
-    context.mocks.stripe.invoices.voidInvoice.mockResolvedValue({
-      ...changedInvoice,
-      status: "void",
-    });
-
-    const confirmation = await accept(
-      client.confirm({
-        body: { previewToken: preview.body.previewToken },
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [400],
-    );
-
-    expect(confirmation.body.error.code).toBe("BAD_REQUEST");
-    expect(context.mocks.stripe.invoices.voidInvoice).toHaveBeenCalledWith(
-      invoiceId,
-      {},
-      expect.objectContaining({
-        idempotencyKey: expect.stringContaining("credit-purchase:"),
-      }),
-    );
-    expect(context.mocks.stripe.invoices.pay).not.toHaveBeenCalled();
-  });
-
-  it("returns completed when customer balance pays the invoice during finalization", async () => {
-    const fixture = await createSubscriptionOrg({ tier: "pro" });
-    const paymentMethodId = `pm_credit_${randomUUID().slice(0, 8)}`;
-    const invoiceId = `in_credit_${randomUUID().slice(0, 8)}`;
-    context.mocks.stripe.subscriptions.retrieve.mockResolvedValue({
-      id: fixture.subscriptionId,
-      default_payment_method: paymentMethodId,
-    });
-    mockCreditPurchasePreview(fixture.customerId);
-
-    const client = setupApp({
-      context,
-      routes: billingCreditCheckoutRoutes,
-    })(billingCreditCheckoutContract);
-    const preview = await accept(
-      client.create({
-        body: {
-          credits: 20_000,
-          previewExistingBilling: true,
-          successUrl: `${APP_ORIGIN}/billing?credit=success`,
-          cancelUrl: `${APP_ORIGIN}/billing?credit=canceled`,
-        },
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [200],
-    );
-    if (!("previewToken" in preview.body)) {
-      throw new Error("Expected a credit purchase preview");
-    }
-
-    const draftInvoice = {
-      id: invoiceId,
-      hosted_invoice_url: null,
-      customer: fixture.customerId,
-      metadata: { purpose: "credit_purchase" },
-      amount_due: 2000,
-      currency: "usd",
-      status: "draft",
-      lines: { has_more: false, data: [] },
-      parent: null,
-    };
-    context.mocks.stripe.invoices.create.mockResolvedValue(draftInvoice);
-    let confirmedPurchaseId: string | null = null;
-    context.mocks.stripe.invoiceItems.create.mockImplementation((rawParams) => {
-      const params = rawParams as {
-        readonly metadata?: Readonly<Record<string, string>>;
-      };
-      confirmedPurchaseId = params.metadata?.credit_purchase_preview_id ?? null;
-      return Promise.resolve({
-        id: `ii_credit_${randomUUID().slice(0, 8)}`,
-      });
-    });
-    context.mocks.stripe.invoices.retrieve.mockImplementation(() => {
-      if (!confirmedPurchaseId) {
-        throw new Error("Expected a confirmed credit purchase ID");
-      }
-      return Promise.resolve({
-        ...draftInvoice,
-        lines: {
-          has_more: false,
-          data: [
-            {
-              id: `il_credit_${randomUUID().slice(0, 8)}`,
-              amount: 2000,
-              subtotal: 2000,
-              metadata: {
-                credit_purchase_preview_id: confirmedPurchaseId,
-              },
-              period: { start: currentSecond(), end: currentSecond() },
-              parent: null,
-            },
-          ],
-        },
-      });
-    });
-    context.mocks.stripe.invoices.finalizeInvoice.mockResolvedValue({
-      ...draftInvoice,
-      amount_due: 0,
-      status: "paid",
-    });
-
-    const confirmation = await accept(
-      client.confirm({
-        body: { previewToken: preview.body.previewToken },
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [200],
-    );
-
-    expect(confirmation.body).toStrictEqual({
-      status: "completed",
-      hostedInvoiceUrl: null,
-    });
-    expect(context.mocks.stripe.invoices.pay).not.toHaveBeenCalled();
-    expect(context.mocks.stripe.invoices.voidInvoice).not.toHaveBeenCalled();
-    expect(context.mocks.stripe.invoices.del).not.toHaveBeenCalled();
-  });
-
-  it("returns the hosted invoice when saved-billing payment requires authentication", async () => {
-    const fixture = await createSubscriptionOrg({ tier: "pro" });
-    const paymentMethodId = `pm_credit_${randomUUID().slice(0, 8)}`;
-    const invoiceId = `in_credit_${randomUUID().slice(0, 8)}`;
-    context.mocks.stripe.subscriptions.retrieve.mockResolvedValue({
-      id: fixture.subscriptionId,
-      default_payment_method: paymentMethodId,
-    });
-    mockCreditPurchasePreview(fixture.customerId);
-
-    const client = setupApp({
-      context,
-      routes: billingCreditCheckoutRoutes,
-    })(billingCreditCheckoutContract);
-    const preview = await accept(
-      client.create({
-        body: {
-          credits: 20_000,
-          previewExistingBilling: true,
-          successUrl: `${APP_ORIGIN}/billing?credit=success`,
-          cancelUrl: `${APP_ORIGIN}/billing?credit=canceled`,
-        },
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [200],
-    );
-    if (!("previewToken" in preview.body)) {
-      throw new Error("Expected a credit purchase preview");
-    }
-
-    const draftInvoice = {
-      id: invoiceId,
-      hosted_invoice_url: null,
-      customer: fixture.customerId,
-      metadata: { purpose: "credit_purchase" },
-      amount_due: 2000,
-      currency: "usd",
-      status: "draft",
-      lines: { has_more: false, data: [] },
-      parent: null,
-    };
-    context.mocks.stripe.invoices.create.mockResolvedValue(draftInvoice);
-    let confirmedPurchaseId: string | null = null;
-    context.mocks.stripe.invoiceItems.create.mockImplementation((rawParams) => {
-      const params = rawParams as {
-        readonly metadata?: Readonly<Record<string, string>>;
-      };
-      confirmedPurchaseId = params.metadata?.credit_purchase_preview_id ?? null;
-      return Promise.resolve({
-        id: `ii_credit_${randomUUID().slice(0, 8)}`,
-      });
-    });
-    const finalizedInvoice = {
-      ...draftInvoice,
-      status: "open",
-      hosted_invoice_url:
-        "https://invoice.stripe.com/saved-billing-authentication",
-    };
-    context.mocks.stripe.invoices.retrieve
-      .mockImplementationOnce(() => {
-        if (!confirmedPurchaseId) {
-          throw new Error("Expected a confirmed credit purchase ID");
-        }
-        return Promise.resolve({
-          ...draftInvoice,
-          lines: {
-            has_more: false,
-            data: [
-              {
-                id: `il_credit_${randomUUID().slice(0, 8)}`,
-                amount: 2000,
-                subtotal: 2000,
-                metadata: {
-                  credit_purchase_preview_id: confirmedPurchaseId,
-                },
-                period: { start: currentSecond(), end: currentSecond() },
-                parent: null,
-              },
-            ],
-          },
-        });
-      })
-      .mockResolvedValueOnce(finalizedInvoice);
-    context.mocks.stripe.invoices.finalizeInvoice.mockResolvedValue(
-      finalizedInvoice,
-    );
-    context.mocks.stripe.invoices.pay.mockRejectedValue(
-      new StripeSDK.errors.StripeInvalidRequestError({
-        type: "invalid_request_error",
-        code: "invoice_payment_intent_requires_action",
-        message: "This payment requires customer authentication",
-      }),
-    );
-
-    const confirmation = await accept(
-      client.confirm({
-        body: { previewToken: preview.body.previewToken },
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [200],
-    );
-
-    expect(confirmation.body).toStrictEqual({
+    expect(confirmed.body).toStrictEqual({
       status: "pending_payment",
-      hostedInvoiceUrl:
-        "https://invoice.stripe.com/saved-billing-authentication",
+      hostedInvoiceUrl,
     });
     expect(context.mocks.stripe.invoices.pay).toHaveBeenCalledWith(
-      invoiceId,
+      expect.any(String),
       {},
-      expect.objectContaining({
-        idempotencyKey: expect.stringContaining("billing-operation:credit:"),
-      }),
+      { idempotencyKey: expect.stringMatching(/^billing-operation:credit:/) },
     );
     expect(context.mocks.stripe.invoices.retrieve).toHaveBeenCalledTimes(2);
   });
 
-  it("falls back to Stripe checkout when saved billing is unavailable", async () => {
-    const fixture = await createSubscriptionOrg({ tier: "pro" });
-    context.mocks.stripe.subscriptions.retrieve.mockResolvedValue({
-      id: fixture.subscriptionId,
-      default_payment_method: null,
-    });
-    context.mocks.stripe.customers.retrieve.mockResolvedValue({
-      id: fixture.customerId,
-      discount: null,
-      invoice_settings: { default_payment_method: null },
-    });
-    context.mocks.stripe.paymentMethods.list.mockResolvedValue({ data: [] });
-    context.mocks.stripe.checkout.sessions.create.mockResolvedValue({
-      url: "https://checkout.stripe.com/session/credit-fallback",
-    });
+  it("billing-credit-checkout-009 falls back to hosted checkout without saved billing", async () => {
+    const admin = await proWorkspace();
+    stripeCustomer(admin.orgId ?? "");
+    subscriptionPaymentMethod(null);
+    const url = stripeHostedCheckout();
 
     const response = await accept(
-      setupApp({ context, routes: billingCreditCheckoutRoutes })(
-        billingCreditCheckoutContract,
-      ).create({
-        body: {
-          credits: 20_000,
-          previewExistingBilling: true,
-          successUrl: `${APP_ORIGIN}/billing?credit=success`,
-          cancelUrl: `${APP_ORIGIN}/billing?credit=canceled`,
-        },
-        headers: { authorization: "Bearer clerk-session" },
-      }),
+      requestCheckout({ previewExistingBilling: true }),
       [200],
     );
 
-    expect(response.body).toStrictEqual({
-      url: "https://checkout.stripe.com/session/credit-fallback",
-    });
+    expect(response.body).toStrictEqual({ url });
   });
 
-  it("returns Checkout when all saved cards are removed after preview", async () => {
-    const fixture = await createSubscriptionOrg({ tier: "pro" });
-    const paymentMethodId = `pm_credit_${randomUUID().slice(0, 8)}`;
-    context.mocks.stripe.subscriptions.retrieve.mockResolvedValue({
-      id: fixture.subscriptionId,
-      customer: fixture.customerId,
-      default_payment_method: paymentMethodId,
+  it("billing-credit-checkout-011 lets a Free workspace buy credits without changing its plan", async () => {
+    const admin = newAdmin();
+    const orgId = admin.orgId ?? "";
+    await createBddApi(context).provisionWorkspace(admin);
+    signIn(admin);
+    context.mocks.stripe.customers.create.mockResolvedValue({
+      id: `cus_credit_checkout_${randomUUID()}`,
+      metadata: { orgId },
     });
-    context.mocks.stripe.customers.retrieve.mockResolvedValue({
-      id: fixture.customerId,
-      discount: null,
-    });
-    mockCreditPurchasePreview(fixture.customerId);
-    const client = setupApp({
-      context,
-      routes: billingCreditCheckoutRoutes,
-    })(billingCreditCheckoutContract);
-    const previewedAt = nowDate();
-    mockNow(previewedAt);
-    const preview = await accept(
-      client.create({
-        body: {
-          credits: 20_000,
-          supportsInAppPreview: true,
-          successUrl: `${APP_ORIGIN}/billing?credit=success`,
-          cancelUrl: `${APP_ORIGIN}/billing?credit=canceled`,
-        },
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [200],
-    );
-    if (!("previewToken" in preview.body)) {
-      throw new Error("Expected a credit purchase preview");
-    }
+    stripeCustomer(orgId);
+    const url = stripeHostedCheckout();
 
-    context.mocks.stripe.subscriptions.retrieve.mockResolvedValue({
-      id: fixture.subscriptionId,
-      customer: fixture.customerId,
-      default_payment_method: null,
-      default_source: null,
-    });
-    context.mocks.stripe.customers.retrieve.mockResolvedValue({
-      id: fixture.customerId,
-      discount: null,
-      invoice_settings: { default_payment_method: null },
-      default_source: null,
-    });
-    context.mocks.stripe.paymentMethods.list.mockResolvedValue({ data: [] });
-    context.mocks.stripe.checkout.sessions.create.mockResolvedValue({
-      url: "https://checkout.stripe.com/session/cards-removed",
+    await expect(readStatus()).resolves.toMatchObject({
+      tier: "limited-free-1",
+      canBuyCredits: true,
+      hasSubscription: false,
+      subscriptionStatus: null,
     });
 
-    mockNow(new Date(previewedAt.getTime() + 60_000));
-    const confirmation = await accept(
-      client.confirm({
-        body: { previewToken: preview.body.previewToken },
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [200],
-    );
+    const response = await accept(requestCheckout({}), [200]);
 
-    expect(confirmation.body).toStrictEqual({
-      status: "checkout_required",
-      checkoutUrl: "https://checkout.stripe.com/session/cards-removed",
+    expect(response.body).toStrictEqual({ url });
+    expect(onlyCheckoutSession()).toMatchObject({
+      mode: "payment",
+      line_items: [{ price: CREDIT_UNIT_PRICE, quantity: 20 }],
+      metadata: { purpose: "credit_purchase", orgId },
     });
-    expect(context.mocks.stripe.invoices.create).not.toHaveBeenCalled();
-    expect(context.mocks.stripe.checkout.sessions.create).toHaveBeenCalledWith(
-      expect.objectContaining({
-        metadata: expect.objectContaining({
-          purchaseCreatedAt: previewedAt.toISOString(),
-        }),
-        invoice_creation: expect.objectContaining({
-          invoice_data: expect.objectContaining({
-            metadata: expect.objectContaining({
-              purchaseCreatedAt: previewedAt.toISOString(),
-            }),
-          }),
-        }),
-      }),
-      expect.objectContaining({
-        idempotencyKey: expect.stringContaining("credit-purchase:"),
-      }),
-    );
-  });
-
-  it("lets a Free workspace buy credits without upgrading its plan", async () => {
-    const fixture = await createPublicBillingOrg();
-    await fixture.run(async () => {
-      mocks.clerk.session(fixture.userId, fixture.orgId, "org:admin");
-      const checkoutUrl = "https://checkout.stripe.com/session/free-credit";
-      context.mocks.stripe.customers.create.mockResolvedValue({
-        id: fixture.customerId,
-      });
-      context.mocks.stripe.checkout.sessions.create.mockResolvedValue({
-        url: checkoutUrl,
-      });
-
-      await expect(readBillingStatus(fixture)).resolves.toMatchObject({
-        tier: "limited-free-1",
-        canBuyCredits: true,
-        hasSubscription: false,
-      });
-
-      const response = await accept(
-        setupApp({ context, routes: billingCreditCheckoutRoutes })(
-          billingCreditCheckoutContract,
-        ).create({
-          body: {
-            credits: 20_000,
-            successUrl: `${APP_ORIGIN}/billing?credit=success`,
-            cancelUrl: `${APP_ORIGIN}/billing?credit=canceled`,
-          },
-          headers: { authorization: "Bearer clerk-session" },
-        }),
-        [200],
-      );
-
-      expect(response.body).toStrictEqual({ url: checkoutUrl });
-      expect(
-        context.mocks.stripe.checkout.sessions.create,
-      ).toHaveBeenCalledWith(
-        expect.objectContaining({
-          mode: "payment",
-          line_items: [{ price: TEST_PRICE_CUSTOM_CREDIT_UNIT, quantity: 20 }],
-          metadata: expect.objectContaining({
-            purpose: "credit_purchase",
-            orgId: fixture.orgId,
-          }),
-        }),
-      );
-      await expect(readBillingStatus(fixture)).resolves.toMatchObject({
-        tier: "limited-free-1",
-        hasSubscription: false,
-        autoRechargeAllowed: false,
-        restrictedBuiltInModels: true,
-      });
-    });
-  });
-
-  it("creates credit checkout with a real execution-issued agent token", async () => {
-    const fixture = await createSubscriptionOrg({ tier: "pro" });
-    const token = await issueAgentToken(fixture);
-    const customerId = fixture.customerId;
-    context.mocks.stripe.checkout.sessions.create.mockResolvedValue({
-      url: "https://checkout.stripe.com/session/zero-credit",
-    });
-    const client = setupApp({
-      context,
-      routes: billingCreditCheckoutRoutes,
-    })(billingCreditCheckoutContract);
-
-    const response = await accept(
-      client.create({
-        body: {
-          credits: 20_000,
-          successUrl: `${APP_ORIGIN}/billing?credit=success`,
-          cancelUrl: `${APP_ORIGIN}/billing?credit=canceled`,
-        },
-        headers: { authorization: `Bearer ${token}` },
-      }),
-      [200],
-    );
-
-    expect(response.body).toStrictEqual({
-      url: "https://checkout.stripe.com/session/zero-credit",
-    });
-    expect(context.mocks.stripe.checkout.sessions.create).toHaveBeenCalledWith(
-      expect.objectContaining({
-        mode: "payment",
-        customer: customerId,
-      }),
-    );
-  });
-
-  it("creates custom amount credit checkout with the configured Stripe price", async () => {
-    const fixture = await trackedSeed();
-    mocks.clerk.session(fixture.userId, fixture.orgId, "org:admin");
-
-    const customerId = `cus_${randomUUID().slice(0, 8)}`;
-    context.mocks.stripe.customers.create.mockResolvedValue({ id: customerId });
-    context.mocks.stripe.checkout.sessions.create.mockResolvedValue({
-      url: "https://checkout.stripe.com/session/custom-credit",
-    });
-
-    const client = setupApp({
-      context,
-      routes: billingCreditCheckoutRoutes,
-    })(billingCreditCheckoutContract);
-
-    const response = await accept(
-      client.create({
-        body: {
-          credits: 150_000,
-          customAmount: true,
-          successUrl: `${APP_ORIGIN}/billing?credit=success`,
-          cancelUrl: `${APP_ORIGIN}/billing?credit=canceled`,
-        },
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [200],
-    );
-
-    expect(response.body).toStrictEqual({
-      url: "https://checkout.stripe.com/session/custom-credit",
-    });
-    expect(context.mocks.stripe.checkout.sessions.create).toHaveBeenCalledWith(
-      expect.objectContaining({
-        mode: "payment",
-        customer: customerId,
-        line_items: [{ price: TEST_PRICE_CUSTOM_CREDIT_UNIT, quantity: 150 }],
-        allow_promotion_codes: true,
-        invoice_creation: {
-          enabled: true,
-          invoice_data: {
-            metadata: {
-              type: "credit_purchase",
-              purpose: "credit_purchase",
-              orgId: fixture.orgId,
-              purchaseCreatedAt: expect.any(String),
-              creditsAmountMode: "amount_subtotal",
-              requestedCreditsAmount: "150000",
-            },
-          },
-        },
-        metadata: {
-          purpose: "credit_purchase",
-
-          orgId: fixture.orgId,
-          purchaseCreatedAt: expect.any(String),
-          creditsAmountMode: "amount_subtotal",
-          requestedCreditsAmount: "150000",
-        },
-        payment_intent_data: {
-          setup_future_usage: "off_session",
-          metadata: {
-            type: "credit_purchase",
-            purpose: "credit_purchase",
-            orgId: fixture.orgId,
-            purchaseCreatedAt: expect.any(String),
-            creditsAmountMode: "amount_subtotal",
-            requestedCreditsAmount: "150000",
-          },
-        },
-      }),
-    );
-  });
-
-  it("returns 400 when credit price is not configured", async () => {
-    const fixture = await trackedSeed();
-    mocks.clerk.session(fixture.userId, fixture.orgId, "org:admin");
-    mockEnv("OKOU_PRICE_CUSTOM_CREDIT_UNIT", undefined);
-
-    const client = setupApp({
-      context,
-      routes: billingCreditCheckoutRoutes,
-    })(billingCreditCheckoutContract);
-
-    const response = await accept(
-      client.create({
-        body: {
-          credits: 100_000,
-          successUrl: `${APP_ORIGIN}/billing?credit=success`,
-          cancelUrl: `${APP_ORIGIN}/billing?credit=canceled`,
-        },
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [400],
-    );
-
-    expect(response.body).toStrictEqual({
-      error: {
-        message: "Custom credit price not configured",
-        code: "BAD_REQUEST",
-      },
+    await expect(readStatus()).resolves.toMatchObject({
+      tier: "limited-free-1",
+      hasSubscription: false,
+      subscriptionStatus: null,
+      autoRechargeAllowed: false,
+      restrictedBuiltInModels: true,
     });
   });
 });

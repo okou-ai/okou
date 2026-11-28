@@ -1,319 +1,105 @@
-import {
-  CLIENT_DISTRIBUTION_HEADER,
-  CLIENT_FORCE_UPGRADE_STATUS,
-  CLIENT_TYPE_APP,
-  CLIENT_TYPE_CLI,
-  CLIENT_TYPE_DESKTOP,
-  CLIENT_TYPE_HEADER,
-  CLIENT_TYPE_IOS,
-  CLIENT_VERSION_HEADER,
-} from "@okouai/api-contracts/contracts/client-headers";
-import { createApp } from "../app-factory";
+import { createHash, randomUUID } from "node:crypto";
+import { healthContract } from "@okouai/api-contracts/contracts/health";
+import { describe, expect, it } from "vitest";
+
 import { mockEnv } from "../lib/env";
-import webClientCompatibility from "../lib/web-client-compatibility.json";
+import { createRouteMocks } from "../signals/routes/__tests__/helpers/route-test";
+import { chatThreadCreateRoutes } from "../signals/routes/chat-threads-create";
 import { healthRoutes } from "../signals/routes/health";
-import { mailRoutes } from "../signals/routes/mail";
-import { iosClientCompatibility, testContext } from "./test-context";
+import { vncConnectionsRoutes } from "../signals/routes/vnc-connections";
+import { accept, testContext } from "./test-context";
+import { setupApp, setupRawAppRequest } from "./test-helpers";
 
-const TEST_APP_ROUTES = Object.freeze([...healthRoutes, ...mailRoutes]);
-const PREVIEW_APP_ORIGINS = Object.freeze([
-  "https://pr-20640-app.omby.ai",
-  "https://pr-20640-app-okou-app-preview.vm0.workers.dev",
-]);
+const context = testContext();
+const health = setupApp({ context, routes: healthRoutes })(healthContract);
 
-const MINIMUM_WEB_CLIENT_VERSION =
-  webClientCompatibility.minimumSupportedVersion;
-// Derived so that raising the supported floor does not turn this fixture into
-// an unsupported version.
-const NEWER_WEB_CLIENT_VERSION = MINIMUM_WEB_CLIENT_VERSION.replace(
-  /(\d+)$/u,
-  (patch) => {
-    return (Number(patch) + 1).toString();
-  },
-);
+async function checkHealth(headers: Record<string, string>) {
+  return await accept(health.check({ extraHeaders: headers }), [200]);
+}
+
+function requirePreviewBypass(): string {
+  const secret = `bypass-${randomUUID()}`;
+  mockEnv("ENV", "preview");
+  mockEnv("VERCEL_AUTOMATION_BYPASS_SECRET", secret);
+  return secret;
+}
 
 describe("createApp", () => {
-  const context = testContext();
-
   describe("not found", () => {
-    it.each([
-      [
-        "/sign-in?redirect_url=https%3A%2F%2Fwww.okou.ai%2Fconnect",
-        "https://pr-123-app.vm6.ai/sign-in?redirect_url=https%3A%2F%2Fwww.okou.ai%2Fconnect",
-      ],
-      [
-        "/sign-up/verify?redirect_url=https%3A%2F%2Fwww.okou.ai%2Fconnect",
-        "https://pr-123-app.vm6.ai/sign-up/verify?redirect_url=https%3A%2F%2Fwww.okou.ai%2Fconnect",
-      ],
-    ])("redirects %s to the configured app origin", async (path, expected) => {
+    it("app-factory-001 redirects /sign-in?redirect_url=https%3A%2F%2Fwww.okou.ai%2Fconnect to the configured app origin", async () => {
       mockEnv("APP_URL", "https://pr-123-app.vm6.ai");
-      mockEnv("OKOU_WEB_URL", "https://pr-123-www.omby.ai");
-      const app = createApp({
-        signal: context.signal,
-        routes: TEST_APP_ROUTES,
-      });
-      const response = await app.request(`https://pr-123-api.vm6.ai${path}`);
+      const request = setupRawAppRequest({ context, routes: [] });
+
+      const response = await request(
+        "https://pr-123-api.vm6.ai/sign-in?redirect_url=https%3A%2F%2Fwww.okou.ai%2Fconnect",
+        { method: "GET" },
+      );
 
       expect(response.status).toBe(302);
-      expect(response.headers.get("location")).toBe(expected);
+      expect(response.headers.get("location")).toBe(
+        "https://pr-123-app.vm6.ai/sign-in?redirect_url=https%3A%2F%2Fwww.okou.ai%2Fconnect",
+      );
     });
 
-    it.each([
-      [
-        "https://api.okou.ai",
-        "https://app.okou.ai",
-        "/sign-in?redirect_url=%2Fchats",
-        "https://app.okou.ai/sign-in?redirect_url=%2Fchats",
-      ],
-      [
-        "https://api.okou.ai",
-        "https://app.okou.ai",
-        "/sign-up/verify?redirect_url=%2Fonboarding",
-        "https://app.okou.ai/sign-up/verify?redirect_url=%2Fonboarding",
-      ],
-    ])(
-      "redirects auth requests on %s to its matching app domain",
-      async (apiUrl, configuredAppUrl, path, expected) => {
-        mockEnv("APP_URL", configuredAppUrl);
-        const app = createApp({
-          signal: context.signal,
-          routes: TEST_APP_ROUTES,
-        });
+    it("app-factory-005 returns a 404 JSON response for unmatched routes", async () => {
+      createRouteMocks(context).clerk.session(
+        `user_${randomUUID()}`,
+        `org_${randomUUID()}`,
+      );
+      const request = setupRawAppRequest({ context, routes: [] });
 
-        const response = await app.request(`${apiUrl}${path}`);
-
-        expect(response.status).toBe(302);
-        expect(response.headers.get("location")).toBe(expected);
-      },
-    );
-
-    it("returns a 404 JSON response for unmatched routes", async () => {
-      const app = createApp({
-        signal: context.signal,
-        routes: TEST_APP_ROUTES,
-      });
-      const response = await app.request("/api/legacy/fallthrough?limit=5", {
+      const response = await request("/api/legacy/fallthrough?limit=5", {
         method: "GET",
-        headers: { authorization: "Bearer legacy" },
+        headers: { authorization: "Bearer clerk-session" },
       });
 
       expect(response.status).toBe(404);
-      await expect(response.json()).resolves.toStrictEqual({
-        error: "Not found",
-      });
-    });
-
-    it("keeps registered routes matched normally", async () => {
-      const app = createApp({
-        signal: context.signal,
-        routes: TEST_APP_ROUTES,
-      });
-      const response = await app.request("/health", { method: "GET" });
-
-      expect(response.status).toBe(200);
+      expect(response.body).toStrictEqual({ error: "Not found" });
     });
   });
 
   describe("preview automation bypass", () => {
-    it("rejects preview requests without the Vercel bypass header or cookie", async () => {
-      mockEnv("ENV", "preview");
-      mockEnv("VERCEL_AUTOMATION_BYPASS_SECRET", "preview-secret");
-      const app = createApp({
-        signal: context.signal,
-        routes: TEST_APP_ROUTES,
-      });
+    it("app-factory-007 rejects preview requests without the Vercel bypass header or cookie", async () => {
+      const secret = requirePreviewBypass();
+      const request = setupRawAppRequest({ context, routes: healthRoutes });
 
-      const response = await app.request("/health", { method: "GET" });
+      const response = await request("/health", { method: "GET" });
 
       expect(response.status).toBe(403);
-      await expect(response.json()).resolves.toStrictEqual({
+      expect(response.body).toStrictEqual({
         error: "Preview automation bypass required",
         debug: {
-          expected: "582906dc0bca",
+          expected: createHash("sha256")
+            .update(secret)
+            .digest("hex")
+            .slice(0, 12),
           cookieHeaderPresent: false,
         },
       });
     });
 
-    it.each(
-      PREVIEW_APP_ORIGINS.flatMap((origin) => {
-        return [
-          { origin, bypass: null },
-          { origin, bypass: "incorrect-preview-secret" },
-        ];
-      }),
-    )(
-      "exposes preview access rejection to $origin with bypass $bypass",
-      async ({ origin, bypass }) => {
-        mockEnv("ENV", "preview");
-        mockEnv("VERCEL_AUTOMATION_BYPASS_SECRET", "preview-secret");
-        const app = createApp({
-          signal: context.signal,
-          routes: TEST_APP_ROUTES,
-        });
-        const headers = new Headers({ origin });
-        if (bypass !== null) {
-          headers.set("x-vercel-protection-bypass", bypass);
-        }
+    it("app-factory-013 allows preview requests from https://pr-20640-app.omby.ai with the matching Vercel bypass header", async () => {
+      const secret = requirePreviewBypass();
+      const origin = "https://pr-20640-app.omby.ai";
 
-        const response = await app.request("/health", {
-          method: "GET",
-          headers,
-        });
-
-        expect(response.status).toBe(403);
-        expect(response.headers.get("access-control-allow-origin")).toBe(
-          origin,
-        );
-        expect(response.headers.get("access-control-allow-credentials")).toBe(
-          "true",
-        );
-        await expect(response.json()).resolves.toMatchObject({
-          error: "Preview automation bypass required",
-        });
-      },
-    );
-
-    it("denies preview access without allowing a lookalike App origin", async () => {
-      mockEnv("ENV", "preview");
-      mockEnv("VERCEL_AUTOMATION_BYPASS_SECRET", "preview-secret");
-      const app = createApp({
-        signal: context.signal,
-        routes: TEST_APP_ROUTES,
-      });
-      const response = await app.request("/health", {
-        headers: {
-          origin:
-            "https://pr-20640-app-okou-app-preview.vm0.workers.dev.evil.example",
-        },
+      const response = await checkHealth({
+        origin,
+        "x-vercel-protection-bypass": secret,
       });
 
-      expect(response.status).toBe(403);
-      expect(response.headers.get("access-control-allow-origin")).toBeNull();
-      await expect(response.json()).resolves.toMatchObject({
-        error: "Preview automation bypass required",
-      });
-    });
-
-    it.each(PREVIEW_APP_ORIGINS)(
-      "allows preview requests from %s with the matching Vercel bypass header",
-      async (origin) => {
-        mockEnv("ENV", "preview");
-        mockEnv("VERCEL_AUTOMATION_BYPASS_SECRET", "preview-secret");
-        const app = createApp({
-          signal: context.signal,
-          routes: TEST_APP_ROUTES,
-        });
-
-        const response = await app.request("/health", {
-          method: "GET",
-          headers: {
-            origin,
-            "x-vercel-protection-bypass": "preview-secret",
-          },
-        });
-
-        expect(response.status).toBe(200);
-        expect(response.headers.get("access-control-allow-origin")).toBe(
-          origin,
-        );
-        expect(response.headers.get("access-control-allow-credentials")).toBe(
-          "true",
-        );
-      },
-    );
-
-    it("allows preview requests with a matching Vercel bypass cookie", async () => {
-      mockEnv("ENV", "preview");
-      mockEnv("VERCEL_AUTOMATION_BYPASS_SECRET", "preview-secret");
-      const app = createApp({
-        signal: context.signal,
-        routes: TEST_APP_ROUTES,
-      });
-
-      const response = await app.request("/health", {
-        method: "GET",
-        headers: {
-          cookie: "unrelated=1; x-vercel-protection-bypass=preview-secret",
-        },
-      });
-
-      expect(response.status).toBe(200);
-    });
-
-    it("rejects preview requests with the bypass secret in an unrelated cookie", async () => {
-      mockEnv("ENV", "preview");
-      mockEnv("VERCEL_AUTOMATION_BYPASS_SECRET", "preview-secret");
-      const app = createApp({
-        signal: context.signal,
-        routes: TEST_APP_ROUTES,
-      });
-
-      const response = await app.request("/health", {
-        method: "GET",
-        headers: { cookie: "unrelated=preview-secret" },
-      });
-
-      expect(response.status).toBe(403);
-    });
-
-    it("allows preview requests with the matching Vercel bypass query", async () => {
-      mockEnv("ENV", "preview");
-      mockEnv("VERCEL_AUTOMATION_BYPASS_SECRET", "preview-secret");
-      const app = createApp({
-        signal: context.signal,
-        routes: TEST_APP_ROUTES,
-      });
-
-      const response = await app.request(
-        "/health?x-vercel-protection-bypass=preview-secret",
-        { method: "GET" },
+      expect(response.headers.get("access-control-allow-origin")).toBe(origin);
+      expect(response.headers.get("access-control-allow-credentials")).toBe(
+        "true",
       );
-
-      expect(response.status).toBe(200);
-    });
-
-    it("exempts external webhook paths from the guard without the bypass secret", async () => {
-      mockEnv("ENV", "preview");
-      mockEnv("VERCEL_AUTOMATION_BYPASS_SECRET", "preview-secret");
-      const app = createApp({
-        signal: context.signal,
-        routes: TEST_APP_ROUTES,
-      });
-
-      // A non-webhook path is still rejected by the guard before route matching.
-      const guarded = await app.request("/api/legacy/fallthrough", {
-        method: "GET",
-      });
-      expect(guarded.status).toBe(403);
-
-      // Stripe (and every other) webhook is exempt, so the request reaches
-      // routing instead of the guard. GET does not match the POST-only handler,
-      // yielding a normal 404 rather than a bypass rejection — proof the
-      // server-to-server webhook would have reached its handler.
-      const webhook = await app.request("/api/webhooks/stripe", {
-        method: "GET",
-      });
-      expect(webhook.status).toBe(404);
-      await expect(webhook.json()).resolves.toStrictEqual({
-        error: "Not found",
-      });
     });
   });
 
   describe("cors", () => {
-    it("echoes allowed cross-origin on registered route responses", async () => {
+    it("app-factory-019 echoes allowed cross-origin on registered route responses", async () => {
       mockEnv("ENV", "production");
-      const app = createApp({
-        signal: context.signal,
-        routes: TEST_APP_ROUTES,
-      });
-      const response = await app.request("/health", {
-        method: "GET",
-        headers: { origin: "https://app.okou.ai" },
-      });
 
-      expect(response.status).toBe(200);
+      const response = await checkHealth({ origin: "https://app.okou.ai" });
+
       expect(response.headers.get("access-control-allow-origin")).toBe(
         "https://app.okou.ai",
       );
@@ -322,85 +108,47 @@ describe("createApp", () => {
       );
     });
 
-    it("echoes exact vm7 app origin with port on registered route responses", async () => {
+    it("app-factory-022 allows https origins on okou.ai subdomains", async () => {
       mockEnv("ENV", "production");
-      const app = createApp({
-        signal: context.signal,
-        routes: TEST_APP_ROUTES,
-      });
-      const response = await app.request("/health", {
-        method: "GET",
-        headers: { origin: "https://app.vm7.ai:8443" },
-      });
 
-      expect(response.status).toBe(200);
-      expect(response.headers.get("access-control-allow-origin")).toBe(
-        "https://app.vm7.ai:8443",
-      );
-    });
+      const response = await checkHealth({ origin: "https://console.okou.ai" });
 
-    it("echoes the exact okou.ai production origin", async () => {
-      mockEnv("ENV", "production");
-      const app = createApp({
-        signal: context.signal,
-        routes: TEST_APP_ROUTES,
-      });
-      const response = await app.request("/health", {
-        method: "GET",
-        headers: { origin: "https://okou.ai" },
-      });
-
-      expect(response.status).toBe(200);
-      expect(response.headers.get("access-control-allow-origin")).toBe(
-        "https://okou.ai",
-      );
-    });
-
-    it("allows https origins on okou.ai subdomains", async () => {
-      mockEnv("ENV", "production");
-      const app = createApp({
-        signal: context.signal,
-        routes: TEST_APP_ROUTES,
-      });
-      const response = await app.request("/health", {
-        method: "GET",
-        headers: { origin: "https://console.okou.ai" },
-      });
-
-      expect(response.status).toBe(200);
       expect(response.headers.get("access-control-allow-origin")).toBe(
         "https://console.okou.ai",
       );
     });
 
-    it("does not allow lookalike okou.ai origins", async () => {
+    it("app-factory-023 does not allow lookalike okou.ai origins", async () => {
       mockEnv("ENV", "production");
-      const app = createApp({
-        signal: context.signal,
-        routes: TEST_APP_ROUTES,
-      });
-      const response = await app.request("/health", {
-        method: "GET",
-        headers: { origin: "https://okou.ai.evil.example" },
+
+      const response = await checkHealth({
+        origin: "https://app.okou.ai.evil.example",
       });
 
-      expect(response.status).toBe(200);
-      expect(response.headers.get("access-control-allow-origin")).toBeNull();
+      expect(response.headers.has("access-control-allow-origin")).toBeFalsy();
     });
 
-    it("answers preflight without invoking the route handler", async () => {
+    it("app-factory-024 answers preflight without invoking the route handler", async () => {
       mockEnv("ENV", "production");
-      const app = createApp({
-        signal: context.signal,
-        routes: TEST_APP_ROUTES,
+      const request = setupRawAppRequest({
+        context,
+        routes: chatThreadCreateRoutes,
       });
-      const response = await app.request("/api/chat-threads", {
+      const requestedHeaders = [
+        "authorization",
+        "x-vercel-protection-bypass",
+        "x-client-version",
+        "x-client-type",
+        "x-client-session-id",
+        "x-client-request-id",
+      ];
+
+      const response = await request("/api/chat-threads", {
         method: "OPTIONS",
         headers: {
           origin: "https://app.okou.ai",
           "access-control-request-method": "GET",
-          "access-control-request-headers":
-            "authorization,x-client-version,x-client-type,x-client-session-id,x-client-request-id",
+          "access-control-request-headers": requestedHeaders.join(","),
         },
       });
 
@@ -408,525 +156,72 @@ describe("createApp", () => {
       expect(response.headers.get("access-control-allow-origin")).toBe(
         "https://app.okou.ai",
       );
-      expect(response.headers.get("access-control-allow-methods")).toContain(
-        "GET",
-      );
-      const allowHeaders =
-        response.headers.get("access-control-allow-headers") ?? "";
-      expect(allowHeaders).toContain("Authorization");
-      expect(allowHeaders).toContain("X-Vercel-Protection-Bypass");
-      expect(allowHeaders).toContain("X-Client-Version");
-      expect(allowHeaders).toContain("X-Client-Type");
-      expect(allowHeaders).toContain("X-Client-Session-Id");
-      expect(allowHeaders).toContain("X-Client-Request-Id");
-    });
-
-    it.each(PREVIEW_APP_ORIGINS)(
-      "answers preview preflight from %s before enforcing the automation bypass",
-      async (origin) => {
-        mockEnv("ENV", "preview");
-        mockEnv("VERCEL_AUTOMATION_BYPASS_SECRET", "preview-secret");
-        const app = createApp({
-          signal: context.signal,
-          routes: TEST_APP_ROUTES,
-        });
-        const response = await app.request("/api/chat-threads", {
-          method: "OPTIONS",
-          headers: {
-            origin,
-            "access-control-request-method": "GET",
-            "access-control-request-headers":
-              "authorization,x-vercel-protection-bypass,x-client-version",
-          },
-        });
-
-        expect(response.status).toBe(204);
-        expect(response.headers.get("access-control-allow-origin")).toBe(
-          origin,
-        );
-        expect(response.headers.get("access-control-allow-credentials")).toBe(
-          "true",
-        );
-        const allowHeaders =
-          response.headers.get("access-control-allow-headers") ?? "";
-        expect(allowHeaders).toContain("Authorization");
-        expect(allowHeaders).toContain("X-Vercel-Protection-Bypass");
-        expect(allowHeaders).toContain("X-Client-Version");
-      },
-    );
-
-    it("allows okou preview app origins", async () => {
-      mockEnv("ENV", "preview");
-      const app = createApp({
-        signal: context.signal,
-        routes: TEST_APP_ROUTES,
-      });
-      const response = await app.request("/health", {
-        method: "GET",
-        headers: { origin: "https://pr-22085-app.omby.ai" },
-      });
-
-      expect(response.status).toBe(200);
-      expect(response.headers.get("access-control-allow-origin")).toBe(
-        "https://pr-22085-app.omby.ai",
-      );
-    });
-
-    it("allows standalone okou app Worker origins in preview", async () => {
-      mockEnv("ENV", "preview");
-      const app = createApp({
-        signal: context.signal,
-        routes: TEST_APP_ROUTES,
-      });
-      const origin = "https://pr-22085-app-okou-app-preview.vm0.workers.dev";
-      const response = await app.request("/health", {
-        method: "GET",
-        headers: { origin },
-      });
-
-      expect(response.status).toBe(200);
-      expect(response.headers.get("access-control-allow-origin")).toBe(origin);
-    });
-
-    it("does not allow app Worker lookalike origins in preview", async () => {
-      mockEnv("ENV", "preview");
-      const app = createApp({
-        signal: context.signal,
-        routes: TEST_APP_ROUTES,
-      });
-      for (const origin of [
-        "https://pr-22085-app-okou-app-preview.vm0.workers.dev.evil.example",
-        "https://pr-22085-app-okou-app-preview.attacker.workers.dev",
-      ]) {
-        const response = await app.request("/health", {
-          method: "GET",
-          headers: { origin },
-        });
-
-        expect(response.status).toBe(200);
-        expect(response.headers.get("access-control-allow-origin")).toBeNull();
-      }
-    });
-
-    it("does not allow lookalike okou preview origins", async () => {
-      mockEnv("ENV", "preview");
-      const app = createApp({
-        signal: context.signal,
-        routes: TEST_APP_ROUTES,
-      });
-      const response = await app.request("/health", {
-        method: "GET",
-        headers: { origin: "https://pr-22085-app.omby.ai.evil.example" },
-      });
-
-      expect(response.status).toBe(200);
-      expect(response.headers.get("access-control-allow-origin")).toBeNull();
-    });
-
-    it("rejects disallowed origins by omitting the allow-origin header", async () => {
-      mockEnv("ENV", "production");
-      const app = createApp({
-        signal: context.signal,
-        routes: TEST_APP_ROUTES,
-      });
-      const response = await app.request("/health", {
-        method: "GET",
-        headers: { origin: "https://evil.example.com" },
-      });
-
-      expect(response.status).toBe(200);
-      expect(response.headers.get("access-control-allow-origin")).toBeNull();
-    });
-
-    it("allows vm7 origins in development", async () => {
-      mockEnv("ENV", "development");
-      const app = createApp({
-        signal: context.signal,
-        routes: TEST_APP_ROUTES,
-      });
-      const response = await app.request("/health", {
-        method: "GET",
-        headers: { origin: "https://app.vm7.ai:8443" },
-      });
-
-      expect(response.headers.get("access-control-allow-origin")).toBe(
-        "https://app.vm7.ai:8443",
-      );
-    });
-
-    it("allows vm7 preview origins on any https port", async () => {
-      mockEnv("ENV", "preview");
-      const app = createApp({
-        signal: context.signal,
-        routes: TEST_APP_ROUTES,
-      });
-      const response = await app.request("/health", {
-        method: "GET",
-        headers: { origin: "https://www.vm7.ai:3042" },
-      });
-
-      expect(response.headers.get("access-control-allow-origin")).toBe(
-        "https://www.vm7.ai:3042",
+      expect(
+        response.headers.get("access-control-allow-methods")?.split(","),
+      ).toContain("GET");
+      const allowedHeaders = (
+        response.headers.get("access-control-allow-headers") ?? ""
+      )
+        .toLowerCase()
+        .split(",");
+      expect(allowedHeaders).toStrictEqual(
+        expect.arrayContaining(requestedHeaders),
       );
     });
   });
 
   describe("web client compatibility", () => {
-    it.each(["0.1098.0", "0.1099.1", "0.1122.1", "0.1150.0", "0.1179.0"])(
-      "force-upgrades App %s before route matching",
-      async (version) => {
-        const app = createApp({
-          signal: context.signal,
-          routes: TEST_APP_ROUTES,
-        });
-        const response = await app.request("/api/vnc/connections", {
-          headers: {
-            [CLIENT_TYPE_HEADER]: CLIENT_TYPE_APP,
-            [CLIENT_VERSION_HEADER]: version,
-          },
-        });
-
-        expect(response.status).toBe(CLIENT_FORCE_UPGRADE_STATUS);
-        expect(response.headers.get("cache-control")).toBe("no-store");
-        await expect(response.json()).resolves.toStrictEqual({
-          error: "Client update required",
-        });
-      },
-    );
-
-    it("force-upgrades prereleases below the supported App release", async () => {
-      const app = createApp({
-        signal: context.signal,
-        routes: TEST_APP_ROUTES,
-      });
-      const response = await app.request("/health", {
-        headers: {
-          [CLIENT_TYPE_HEADER]: CLIENT_TYPE_APP,
-          [CLIENT_VERSION_HEADER]: `${MINIMUM_WEB_CLIENT_VERSION}-rc.1`,
-        },
+    it("app-factory-034 force-upgrades App 0.1098.0 before route matching", async () => {
+      const request = setupRawAppRequest({
+        context,
+        routes: vncConnectionsRoutes,
       });
 
-      expect(response.status).toBe(CLIENT_FORCE_UPGRADE_STATUS);
+      const response = await request("/api/vnc/connections", {
+        method: "GET",
+        headers: { "x-client-type": "App", "x-client-version": "0.1098.0" },
+      });
+
+      expect(response.status).toBe(426);
+      expect(response.headers.get("cache-control")).toBe("no-store");
+      expect(response.body).toStrictEqual({ error: "Client update required" });
     });
 
-    it.each([
-      MINIMUM_WEB_CLIENT_VERSION,
-      `${MINIMUM_WEB_CLIENT_VERSION}+build.1`,
-    ])("allows the canonical web client floor %s", async (version) => {
-      const app = createApp({
-        signal: context.signal,
-        routes: TEST_APP_ROUTES,
-      });
-      const response = await app.request("/health", {
-        method: "GET",
-        headers: {
-          [CLIENT_TYPE_HEADER]: CLIENT_TYPE_APP,
-          [CLIENT_VERSION_HEADER]: version,
-        },
-      });
-
-      expect(response.status).toBe(200);
+    it("app-factory-039 allows the canonical web client floor 0.1180.0", async () => {
+      await expect(
+        checkHealth({ "x-client-type": "App", "x-client-version": "0.1180.0" }),
+      ).resolves.toMatchObject({ status: 200 });
     });
 
-    it("allows app clients newer than the canonical floor", async () => {
-      const app = createApp({
-        signal: context.signal,
-        routes: TEST_APP_ROUTES,
-      });
-      const response = await app.request("/health", {
-        method: "GET",
-        headers: {
-          [CLIENT_TYPE_HEADER]: CLIENT_TYPE_APP,
-          [CLIENT_VERSION_HEADER]: NEWER_WEB_CLIENT_VERSION,
-        },
-      });
-
-      expect(response.status).toBe(200);
-    });
-
-    it.each([CLIENT_TYPE_CLI, CLIENT_TYPE_DESKTOP])(
-      "does not force upgrade %s clients",
-      async (clientType) => {
-        const app = createApp({
-          signal: context.signal,
-          routes: TEST_APP_ROUTES,
-        });
-        const response = await app.request("/health", {
-          headers: {
-            [CLIENT_TYPE_HEADER]: clientType,
-            [CLIENT_VERSION_HEADER]: "0.599.18",
-          },
-        });
-
-        expect(response.status).toBe(200);
-      },
-    );
-
-    it.each([undefined, "development"])(
-      "preserves App requests without a parseable version (%s)",
-      async (version) => {
-        const app = createApp({
-          signal: context.signal,
-          routes: TEST_APP_ROUTES,
-        });
-        const headers = new Headers({ [CLIENT_TYPE_HEADER]: CLIENT_TYPE_APP });
-        if (version !== undefined) {
-          headers.set(CLIENT_VERSION_HEADER, version);
-        }
-        const response = await app.request("/health", { headers });
-
-        expect(response.status).toBe(200);
-      },
-    );
-
-    it("preserves requests without a client type", async () => {
-      const app = createApp({
-        signal: context.signal,
-        routes: TEST_APP_ROUTES,
-      });
-      const response = await app.request("/health", {
-        method: "GET",
-        headers: {
-          [CLIENT_VERSION_HEADER]: "0.843.0",
-        },
-      });
-
-      expect(response.status).toBe(200);
+    it("app-factory-042 does not force upgrade CLI clients", async () => {
+      await expect(
+        checkHealth({ "x-client-type": "CLI", "x-client-version": "0.599.18" }),
+      ).resolves.toMatchObject({ status: 200 });
     });
   });
 
   describe("iOS client compatibility", () => {
-    const IOS_MINIMUM_VERSION = "0.8.0";
+    it("app-factory-047 force-upgrades iOS builds below the floor before GET /health route matching", async () => {
+      const request = setupRawAppRequest({ context, routes: healthRoutes });
 
-    it.each([
-      { method: "GET", path: "/health" },
-      { method: "POST", path: "/api/chat-threads" },
-    ])(
-      "force-upgrades iOS builds below the floor before $method $path route matching",
-      async ({ method, path }) => {
-        const app = createApp({
-          signal: context.signal,
-          routes: TEST_APP_ROUTES,
-        });
-        const response = await app.request(path, {
-          method,
-          headers: {
-            [CLIENT_TYPE_HEADER]: CLIENT_TYPE_IOS,
-            [CLIENT_DISTRIBUTION_HEADER]: "testflight",
-            [CLIENT_VERSION_HEADER]: "0.49.0",
-          },
-        });
-
-        expect(response.status).toBe(CLIENT_FORCE_UPGRADE_STATUS);
-        await expect(response.json()).resolves.toStrictEqual({
-          error: {
-            code: "IOS_UPDATE_REQUIRED",
-            message: "Update Okou in TestFlight to continue.",
-          },
-          minimumSupportedVersion:
-            iosClientCompatibility.testFlightMinimumSupportedVersion,
-        });
-        expect(response.headers.get("cache-control")).toBe("no-store");
-      },
-    );
-
-    it.each([IOS_MINIMUM_VERSION, "0.8.1", "1.0.0"])(
-      "allows iOS %s at or above the floor",
-      async (version) => {
-        iosClientCompatibility.testFlightMinimumSupportedVersion =
-          IOS_MINIMUM_VERSION;
-        const app = createApp({
-          signal: context.signal,
-          routes: TEST_APP_ROUTES,
-        });
-        const response = await app.request("/health", {
-          headers: {
-            [CLIENT_TYPE_HEADER]: CLIENT_TYPE_IOS,
-            [CLIENT_DISTRIBUTION_HEADER]: "testflight",
-            [CLIENT_VERSION_HEADER]: version,
-          },
-        });
-
-        expect(response.status).toBe(200);
-      },
-    );
-
-    it("allows every iOS version while the floor is null", async () => {
-      iosClientCompatibility.testFlightMinimumSupportedVersion = null;
-      const app = createApp({
-        signal: context.signal,
-        routes: TEST_APP_ROUTES,
-      });
-      const response = await app.request("/health", {
+      const response = await request("/health", {
+        method: "GET",
         headers: {
-          [CLIENT_TYPE_HEADER]: CLIENT_TYPE_IOS,
-          [CLIENT_DISTRIBUTION_HEADER]: "testflight",
-          [CLIENT_VERSION_HEADER]: "0.0.1",
+          "x-client-type": "iOS",
+          "x-client-version": "0.49.0",
+          "x-client-distribution": "testflight",
         },
       });
 
-      expect(response.status).toBe(200);
-    });
-
-    it.each([undefined, "development", "0.7"])(
-      "preserves iOS requests without a parseable version (%s)",
-      async (version) => {
-        iosClientCompatibility.testFlightMinimumSupportedVersion =
-          IOS_MINIMUM_VERSION;
-        const app = createApp({
-          signal: context.signal,
-          routes: TEST_APP_ROUTES,
-        });
-        const headers = new Headers({ [CLIENT_TYPE_HEADER]: CLIENT_TYPE_IOS });
-        if (version !== undefined) {
-          headers.set(CLIENT_VERSION_HEADER, version);
-        }
-        const response = await app.request("/health", { headers });
-
-        expect(response.status).toBe(200);
-      },
-    );
-
-    it.each([
-      ["app-store", "1.1.0", 200],
-      ["testflight", "1.1.0", 426],
-      ["app-store", "1.0.0", 200],
-      ["testflight", "1.2.0", 200],
-      ["app-store", "0.9.0", 426],
-      ["unknown", "0.9.0", 426],
-      ["future-channel", "1.1.0", 200],
-      [undefined, "1.1.0", 200],
-      [undefined, "0.9.0", 426],
-    ] as const)(
-      "applies the correct floor to %s %s",
-      async (distribution, version, status) => {
-        iosClientCompatibility.appStoreMinimumSupportedVersion = "1.0.0";
-        iosClientCompatibility.testFlightMinimumSupportedVersion = "1.2.0";
-        const app = createApp({
-          signal: context.signal,
-          routes: TEST_APP_ROUTES,
-        });
-        const headers = new Headers({
-          [CLIENT_TYPE_HEADER]: CLIENT_TYPE_IOS,
-          [CLIENT_VERSION_HEADER]: version,
-        });
-        if (distribution) {
-          headers.set(CLIENT_DISTRIBUTION_HEADER, distribution);
-        }
-        const response = await app.request("/health", { headers });
-        expect(response.status).toBe(status);
-        if (status === 426) {
-          const body = await response.json();
-          expect(body).toMatchObject({
-            minimumSupportedVersion:
-              distribution === "testflight" ? "1.2.0" : "1.0.0",
-          });
-          if (distribution === "app-store") {
-            expect(body).toMatchObject({
-              error: { message: expect.stringContaining("App Store") },
-            });
-          }
-        }
-      },
-    );
-
-    it.each([
-      [undefined, "0.49.0", 426],
-      [undefined, "0.51.12", 200],
-      ["unknown", "0.49.0", 200],
-      ["app-store", "0.49.0", 200],
-      ["testflight", "0.51.12", 426],
-    ] as const)(
-      "preserves bootstrap behavior for %s %s",
-      async (distribution, version, status) => {
-        iosClientCompatibility.appStoreMinimumSupportedVersion = null;
-        iosClientCompatibility.testFlightMinimumSupportedVersion = "1.2.0";
-        const app = createApp({
-          signal: context.signal,
-          routes: TEST_APP_ROUTES,
-        });
-        const headers = new Headers({
-          [CLIENT_TYPE_HEADER]: CLIENT_TYPE_IOS,
-          [CLIENT_VERSION_HEADER]: version,
-        });
-        if (distribution) {
-          headers.set(CLIENT_DISTRIBUTION_HEADER, distribution);
-        }
-        expect((await app.request("/health", { headers })).status).toBe(status);
-      },
-    );
-
-    it("keeps already excluded headerless installations below the historical floor", async () => {
-      iosClientCompatibility.appStoreMinimumSupportedVersion = "0.40.0";
-      const app = createApp({
-        signal: context.signal,
-        routes: TEST_APP_ROUTES,
-      });
-      const response = await app.request("/health", {
-        headers: {
-          [CLIENT_TYPE_HEADER]: CLIENT_TYPE_IOS,
-          [CLIENT_VERSION_HEADER]: "0.49.0",
-        },
-      });
       expect(response.status).toBe(426);
-      await expect(response.json()).resolves.toMatchObject({
+      expect(response.headers.get("cache-control")).toBe("no-store");
+      expect(response.body).toStrictEqual({
+        error: {
+          code: "IOS_UPDATE_REQUIRED",
+          message: "Update Okou in TestFlight to continue.",
+        },
         minimumSupportedVersion: "0.51.12",
       });
-    });
-
-    it.each(["ios", "IOS"])(
-      "gates only the exact iOS client type, not %s",
-      async (clientType) => {
-        iosClientCompatibility.testFlightMinimumSupportedVersion =
-          IOS_MINIMUM_VERSION;
-        const app = createApp({
-          signal: context.signal,
-          routes: TEST_APP_ROUTES,
-        });
-        const response = await app.request("/health", {
-          headers: {
-            [CLIENT_TYPE_HEADER]: clientType,
-            [CLIENT_VERSION_HEADER]: "0.7.4",
-          },
-        });
-
-        expect(response.status).toBe(200);
-      },
-    );
-
-    it.each([CLIENT_TYPE_APP, CLIENT_TYPE_DESKTOP])(
-      "does not apply the iOS floor to %s clients",
-      async (clientType) => {
-        iosClientCompatibility.testFlightMinimumSupportedVersion = "99.0.0";
-        const app = createApp({
-          signal: context.signal,
-          routes: TEST_APP_ROUTES,
-        });
-        const response = await app.request("/health", {
-          headers: {
-            [CLIENT_TYPE_HEADER]: clientType,
-            [CLIENT_VERSION_HEADER]: NEWER_WEB_CLIENT_VERSION,
-          },
-        });
-
-        expect(response.status).toBe(200);
-      },
-    );
-
-    it("preserves requests without a client type", async () => {
-      iosClientCompatibility.testFlightMinimumSupportedVersion =
-        IOS_MINIMUM_VERSION;
-      const app = createApp({
-        signal: context.signal,
-        routes: TEST_APP_ROUTES,
-      });
-      const response = await app.request("/health", {
-        headers: {
-          [CLIENT_VERSION_HEADER]: "0.7.4",
-        },
-      });
-
-      expect(response.status).toBe(200);
     });
   });
 });

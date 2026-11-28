@@ -1,499 +1,291 @@
-import { randomUUID } from "node:crypto";
-
 import { slackConnectContract } from "@okouai/api-contracts/contracts/slack-connect";
+import { createStore } from "ccstate";
+import { describe, expect, it } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { createRouteMocks } from "./helpers/route-test";
-import { createPublicSlackOrgApi } from "./helpers/slack-public-install";
 import { slackConnectRoutes } from "../slack-connect";
+import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
+import {
+  createBddIntegrationApi,
+  mockSlackIdentityLookup,
+} from "./helpers/api-bdd-integrations";
+import { seedOrgMembership$ } from "./helpers/org-membership";
+import { createRouteMocks } from "./helpers/route-test";
+import {
+  createPublicSlackOrgApi,
+  uniqueSlackUserId,
+} from "./helpers/slack-public-install";
 
 const context = testContext();
-const mocks = createRouteMocks(context);
-const slackOrgs = createPublicSlackOrgApi(context);
-describe("GET /api/integrations/slack/connect", () => {
-  it("returns 401 when the authenticated session has no active organization", async () => {
-    const fixture = await slackOrgs.installOrg();
-    mocks.clerk.session(fixture.userId, null);
 
-    const client = setupApp({ context, routes: slackConnectRoutes })(
-      slackConnectContract,
-    );
-
-    const response = await accept(
-      client.getStatus({
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [401],
-    );
-
-    expect(response.body).toStrictEqual({
-      error: {
-        message: "Not authenticated",
-        code: "UNAUTHORIZED",
+/** Browser sessions of real organization members within one case. */
+function sessions() {
+  const directory = createStore();
+  return async function signIn(actor: ApiTestUser) {
+    const orgId = actor.orgId;
+    if (!orgId) {
+      throw new Error("Expected the Slack actor to belong to an organization");
+    }
+    await directory.set(
+      seedOrgMembership$,
+      {
+        orgId,
+        userId: actor.userId,
+        role: actor.orgRole === "org:member" ? "member" : "admin",
       },
-    });
+      context.signal,
+    );
+    createRouteMocks(context).clerk.session(actor.userId, orgId, actor.orgRole);
+    return { authorization: "Bearer clerk-session" };
+  };
+}
+
+function connectApi() {
+  return setupApp({ context, routes: slackConnectRoutes })(
+    slackConnectContract,
+  );
+}
+
+async function readStatus(headers: { authorization: string }) {
+  const response = await accept(connectApi().getStatus({ headers }), [200]);
+  return response.body;
+}
+
+async function readLinkStatus(
+  headers: { authorization: string },
+  query: { readonly workspaceId: string; readonly slackUserId: string },
+) {
+  const response = await accept(
+    connectApi().getLinkStatus({ headers, query }),
+    [200],
+  );
+  return response.body;
+}
+
+describe("GET /api/integrations/slack/connect", () => {
+  it("slack-connect-002 reports an unlinked admin as not connected", async () => {
+    const signIn = sessions();
+    const org = await createPublicSlackOrgApi(context).installOrg();
+
+    const status = await readStatus(await signIn(org.actor));
+
+    expect(status).toStrictEqual({ isConnected: false, isAdmin: true });
   });
 
-  it("returns isConnected: false when the user has no slack connection", async () => {
-    const fixture = await slackOrgs.installOrg();
-    mocks.clerk.session(fixture.userId, fixture.orgId, "org:admin");
-
-    const client = setupApp({ context, routes: slackConnectRoutes })(
-      slackConnectContract,
-    );
-
-    const response = await accept(
-      client.getStatus({
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [200],
-    );
-
-    expect(response.body).toStrictEqual({
-      isConnected: false,
-      isAdmin: true,
+  it("slack-connect-003 reports a connected admin with the Slack workspace name", async () => {
+    const signIn = sessions();
+    const org = await createPublicSlackOrgApi(context).installOrg({
+      withConnection: true,
     });
-  });
 
-  it("returns isConnected: true with workspace info when the user is connected", async () => {
-    const fixture = await slackOrgs.installOrg({ withConnection: true });
-    mocks.clerk.session(fixture.userId, fixture.orgId, "org:admin");
+    const status = await readStatus(await signIn(org.actor));
 
-    const client = setupApp({ context, routes: slackConnectRoutes })(
-      slackConnectContract,
-    );
-
-    const response = await accept(
-      client.getStatus({
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [200],
-    );
-
-    expect(response.body).toStrictEqual({
+    expect(status).toStrictEqual({
       isConnected: true,
       isAdmin: true,
-      workspaceName: fixture.slackWorkspaceName,
+      workspaceName: org.slackWorkspaceName,
     });
   });
 
-  it("offers OAuth before resolving another user's Slack account ownership", async () => {
-    const fixture = await slackOrgs.installOrg({ withConnection: true });
-    const currentUserId = `user_${randomUUID()}`;
-    mocks.clerk.session(currentUserId, fixture.orgId, "org:admin");
+  it("slack-connect-004 offers OAuth to an unlinked admin for another member's Slack user", async () => {
+    const signIn = sessions();
+    const org = await createPublicSlackOrgApi(context).installOrg({
+      withConnection: true,
+    });
+    const admin = createBddApi(context).user({
+      orgId: org.orgId,
+      orgRole: "org:admin",
+    });
 
-    const client = setupApp({ context, routes: slackConnectRoutes })(
-      slackConnectContract,
-    );
-    const response = await accept(
-      client.getLinkStatus({
-        headers: { authorization: "Bearer clerk-session" },
-        query: {
-          workspaceId: fixture.slackWorkspaceId,
-          slackUserId: fixture.slackUserId,
-        },
-      }),
-      [200],
-    );
+    const status = await readLinkStatus(await signIn(admin), {
+      workspaceId: org.slackWorkspaceId,
+      slackUserId: org.slackUserId,
+    });
 
-    expect(response.body).toStrictEqual({
+    expect(status).toStrictEqual({
       isConnected: false,
       isAdmin: true,
       linkStatus: { kind: "connect" },
     });
   });
 
-  it("reports the identity switch when another workspace belongs to another organization", async () => {
-    const current = await slackOrgs.installOrg({ withConnection: true });
-    const requested = await slackOrgs.installOrg({ withConnection: true });
-    mocks.clerk.session(current.userId, current.orgId, "org:admin");
+  it("slack-connect-005 reports a Slack account switch for another organization's workspace", async () => {
+    const signIn = sessions();
+    const slack = createPublicSlackOrgApi(context);
+    const org = await slack.installOrg({ withConnection: true });
+    const other = await slack.installOrg({ withConnection: true });
 
-    const client = setupApp({ context, routes: slackConnectRoutes })(
-      slackConnectContract,
-    );
-    const response = await accept(
-      client.getLinkStatus({
-        headers: { authorization: "Bearer clerk-session" },
-        query: {
-          workspaceId: requested.slackWorkspaceId,
-          slackUserId: requested.slackUserId,
-        },
-      }),
-      [200],
-    );
+    const status = await readLinkStatus(await signIn(org.actor), {
+      workspaceId: other.slackWorkspaceId,
+      slackUserId: other.slackUserId,
+    });
 
-    expect(response.body).toStrictEqual({
+    expect(status).toStrictEqual({
       isConnected: true,
       isAdmin: true,
-      workspaceName: current.slackWorkspaceName,
+      workspaceName: org.slackWorkspaceName,
       linkStatus: {
         kind: "slack_account_mismatch",
-        currentSlackUserId: current.slackUserId,
-        requestedSlackUserId: requested.slackUserId,
+        currentSlackUserId: org.slackUserId,
+        requestedSlackUserId: other.slackUserId,
       },
     });
   });
 
-  it("reports when the current user is linked to a different Slack account", async () => {
-    const fixture = await slackOrgs.installOrg({ withConnection: true });
-    mocks.clerk.session(fixture.userId, fixture.orgId, "org:admin");
-    const requestedSlackUserId = `U_${randomUUID()}`;
+  it("slack-connect-006 reports a different Slack user in the admin's own workspace", async () => {
+    const signIn = sessions();
+    const org = await createPublicSlackOrgApi(context).installOrg({
+      withConnection: true,
+    });
+    const requestedSlackUserId = uniqueSlackUserId();
 
-    const client = setupApp({ context, routes: slackConnectRoutes })(
-      slackConnectContract,
-    );
-    const response = await accept(
-      client.getLinkStatus({
-        headers: { authorization: "Bearer clerk-session" },
-        query: {
-          workspaceId: fixture.slackWorkspaceId,
-          slackUserId: requestedSlackUserId,
-        },
-      }),
-      [200],
-    );
+    const status = await readLinkStatus(await signIn(org.actor), {
+      workspaceId: org.slackWorkspaceId,
+      slackUserId: requestedSlackUserId,
+    });
 
-    expect(response.body).toStrictEqual({
+    expect(status).toStrictEqual({
       isConnected: true,
       isAdmin: true,
-      workspaceName: fixture.slackWorkspaceName,
+      workspaceName: org.slackWorkspaceName,
       linkStatus: {
         kind: "slack_account_mismatch",
-        currentSlackUserId: fixture.slackUserId,
+        currentSlackUserId: org.slackUserId,
         requestedSlackUserId,
       },
     });
   });
 
-  it("offers connect when the requested account is not linked", async () => {
-    const fixture = await slackOrgs.installOrg();
-    mocks.clerk.session(fixture.userId, fixture.orgId, "org:admin");
-    const client = setupApp({ context, routes: slackConnectRoutes })(
-      slackConnectContract,
-    );
+  it("slack-connect-010 keeps the current connection when another unbound workspace is requested", async () => {
+    const signIn = sessions();
+    const slack = createPublicSlackOrgApi(context);
+    const org = await slack.installOrg({ withConnection: true });
+    const unbound = await slack.installOrg({ installation: "unbound" });
 
-    const response = await accept(
-      client.getLinkStatus({
-        headers: { authorization: "Bearer clerk-session" },
-        query: {
-          workspaceId: fixture.slackWorkspaceId,
-          slackUserId: fixture.slackUserId,
-        },
-      }),
-      [200],
-    );
-
-    expect(response.body).toStrictEqual({
-      isConnected: false,
-      isAdmin: true,
-      linkStatus: { kind: "connect" },
+    const status = await readLinkStatus(await signIn(org.actor), {
+      workspaceId: unbound.slackWorkspaceId,
+      slackUserId: unbound.slackUserId,
     });
-  });
 
-  it.each(["org:admin", "org:member"] as const)(
-    "keeps unbound workspace link eligibility for %s",
-    async (role) => {
-      const fixture = await slackOrgs.installOrg({ installation: "unbound" });
-      mocks.clerk.session(fixture.userId, fixture.orgId, role);
-      const client = setupApp({ context, routes: slackConnectRoutes })(
-        slackConnectContract,
-      );
-
-      const response = await accept(
-        client.getLinkStatus({
-          headers: { authorization: "Bearer clerk-session" },
-          query: {
-            workspaceId: fixture.slackWorkspaceId,
-            slackUserId: fixture.slackUserId,
-          },
-        }),
-        [200],
-      );
-
-      expect(response.body).toStrictEqual({
-        isConnected: false,
-        isAdmin: role === "org:admin",
-        linkStatus: {
-          kind: "connect",
-        },
-      });
-    },
-  );
-
-  it("keeps the current connection when an admin requests another unbound workspace", async () => {
-    const current = await slackOrgs.installOrg({ withConnection: true });
-    const requested = await slackOrgs.installOrg({ installation: "unbound" });
-    mocks.clerk.session(current.userId, current.orgId, "org:admin");
-    const client = setupApp({ context, routes: slackConnectRoutes })(
-      slackConnectContract,
-    );
-
-    const response = await accept(
-      client.getLinkStatus({
-        headers: { authorization: "Bearer clerk-session" },
-        query: {
-          workspaceId: requested.slackWorkspaceId,
-          slackUserId: requested.slackUserId,
-        },
-      }),
-      [200],
-    );
-
-    expect(response.body).toStrictEqual({
+    expect(status).toStrictEqual({
       isConnected: true,
       isAdmin: true,
-      workspaceName: current.slackWorkspaceName,
+      workspaceName: org.slackWorkspaceName,
       linkStatus: {
         kind: "slack_account_mismatch",
-        currentSlackUserId: current.slackUserId,
-        requestedSlackUserId: requested.slackUserId,
+        currentSlackUserId: org.slackUserId,
+        requestedSlackUserId: unbound.slackUserId,
       },
     });
   });
 
-  it("offers identity OAuth without requiring an installed workspace", async () => {
-    mocks.clerk.session(`user_${randomUUID()}`, `org_${randomUUID()}`);
-    const client = setupApp({ context, routes: slackConnectRoutes })(
-      slackConnectContract,
-    );
-
-    const response = await accept(
-      client.getLinkStatus({
-        headers: { authorization: "Bearer clerk-session" },
-        query: {
-          workspaceId: `T_${randomUUID()}`,
-          slackUserId: `U_${randomUUID()}`,
-        },
-      }),
-      [200],
-    );
-
-    expect(response.body).toStrictEqual({
-      isConnected: false,
-      isAdmin: true,
-      linkStatus: { kind: "connect" },
+  it("slack-connect-013 reports isAdmin false for a connected member", async () => {
+    const signIn = sessions();
+    const org = await createPublicSlackOrgApi(context).installOrg();
+    const teamId = org.slackWorkspaceId;
+    const member = createBddApi(context).user({
+      orgId: org.orgId,
+      orgRole: "org:member",
     });
-  });
+    await signIn(member);
+    await createBddIntegrationApi(context).connectSlackUser(member, {
+      workspaceId: teamId,
+      slackUserId: uniqueSlackUserId(),
+    });
 
-  it("returns isAdmin: true for admin users", async () => {
-    const fixture = await slackOrgs.installOrg({ withConnection: true });
-    mocks.clerk.session(fixture.userId, fixture.orgId, "org:admin");
+    const status = await readStatus(await signIn(member));
 
-    const client = setupApp({ context, routes: slackConnectRoutes })(
-      slackConnectContract,
-    );
-
-    const response = await accept(
-      client.getStatus({
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [200],
-    );
-
-    expect(response.body.isAdmin).toBeTruthy();
-  });
-
-  it("returns isAdmin: false for member users", async () => {
-    const fixture = await slackOrgs.installOrg({ withConnection: true });
-    mocks.clerk.session(fixture.userId, fixture.orgId, "org:member");
-
-    const client = setupApp({ context, routes: slackConnectRoutes })(
-      slackConnectContract,
-    );
-
-    const response = await accept(
-      client.getStatus({
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [200],
-    );
-
-    expect(response.body.isAdmin).toBeFalsy();
+    expect(status).toMatchObject({ isConnected: true, isAdmin: false });
   });
 });
 
 describe("POST /api/integrations/slack/connect", () => {
-  it("returns 401 when not authenticated", async () => {
-    const client = setupApp({ context, routes: slackConnectRoutes })(
-      slackConnectContract,
-    );
+  it("slack-connect-015 starts identity OAuth for a workspace without an installation", async () => {
+    const signIn = sessions();
+    const org = await createPublicSlackOrgApi(context).installOrg();
 
-    const response = await accept(
-      client.connect({
-        headers: {},
+    const started = await accept(
+      connectApi().connect({
+        headers: await signIn(org.actor),
         body: {
-          requestUserScopes: true,
-          workspaceId: "T-test",
-          slackUserId: "U-test",
-        },
-      }),
-      [401],
-    );
-
-    expect(response.body).toStrictEqual({
-      error: {
-        message: "Not authenticated",
-        code: "UNAUTHORIZED",
-      },
-    });
-  });
-
-  it("starts identity OAuth when the workspace has no installation", async () => {
-    const fixture = await slackOrgs.installOrg();
-    mocks.clerk.session(fixture.userId, fixture.orgId, "org:admin");
-
-    const client = setupApp({ context, routes: slackConnectRoutes })(
-      slackConnectContract,
-    );
-    const response = await accept(
-      client.connect({
-        headers: { authorization: "Bearer clerk-session" },
-        body: {
-          requestUserScopes: true,
           workspaceId: "T-nonexistent",
-          slackUserId: fixture.slackUserId,
+          slackUserId: org.slackUserId,
+          requestUserScopes: true,
         },
       }),
       [202],
     );
 
-    expect(new URL(response.body.authorizationUrl).pathname).toBe(
+    expect(new URL(started.body.authorizationUrl).pathname).toBe(
       "/api/slack/oauth/connect",
     );
   });
 
-  it("member starts user OAuth before connecting to a bound workspace", async () => {
-    const fixture = await slackOrgs.installOrg();
-    mocks.clerk.session(fixture.userId, fixture.orgId, "org:member");
+  it("slack-connect-016 starts user OAuth for a member of a bound workspace without connecting", async () => {
+    const signIn = sessions();
+    const org = await createPublicSlackOrgApi(context).installOrg();
+    const teamId = org.slackWorkspaceId;
+    const member = createBddApi(context).user({
+      orgId: org.orgId,
+      orgRole: "org:member",
+    });
+    const slackUserId = uniqueSlackUserId();
+    mockSlackIdentityLookup(context, {
+      id: slackUserId,
+      team_id: teamId,
+      real_name: "Slack Member",
+      profile: { email: member.email, display_name: "Slack Member" },
+    });
+    const headers = await signIn(member);
 
-    const client = setupApp({ context, routes: slackConnectRoutes })(
-      slackConnectContract,
-    );
-    const response = await accept(
-      client.connect({
-        headers: { authorization: "Bearer clerk-session" },
-        body: {
-          requestUserScopes: true,
-          workspaceId: fixture.slackWorkspaceId,
-          slackUserId: fixture.slackUserId,
-        },
+    const started = await accept(
+      connectApi().connect({
+        headers,
+        body: { workspaceId: teamId, slackUserId, requestUserScopes: true },
       }),
       [202],
     );
 
-    expect(response.body.authorizationUrl).toContain(
+    expect(started.body.authorizationUrl).toContain(
       "/api/slack/oauth/connect?connectorState=",
     );
-    const status = await accept(
-      client.getStatus({
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [200],
-    );
-    expect(status.body.isConnected).toBeFalsy();
-  });
-
-  it("starts identity OAuth for a member of an unbound workspace", async () => {
-    const fixture = await slackOrgs.installOrg({ installation: "unbound" });
-    mocks.clerk.session(fixture.userId, fixture.orgId, "org:member");
-
-    const client = setupApp({ context, routes: slackConnectRoutes })(
-      slackConnectContract,
-    );
-    const response = await accept(
-      client.connect({
-        headers: { authorization: "Bearer clerk-session" },
-        body: {
-          requestUserScopes: true,
-          workspaceId: fixture.slackWorkspaceId,
-          slackUserId: fixture.slackUserId,
-        },
-      }),
-      [202],
-    );
-
-    expect(new URL(response.body.authorizationUrl).pathname).toBe(
-      "/api/slack/oauth/connect",
-    );
-  });
-
-  it("starts identity OAuth through another organization's installation", async () => {
-    const fixture = await slackOrgs.installOrg({ installation: "other-org" });
-    mocks.clerk.session(fixture.userId, fixture.orgId, "org:admin");
-
-    const client = setupApp({ context, routes: slackConnectRoutes })(
-      slackConnectContract,
-    );
-    const response = await accept(
-      client.connect({
-        headers: { authorization: "Bearer clerk-session" },
-        body: {
-          requestUserScopes: true,
-          workspaceId: fixture.slackWorkspaceId,
-          slackUserId: fixture.slackUserId,
-        },
-      }),
-      [202],
-    );
-
-    expect(new URL(response.body.authorizationUrl).pathname).toBe(
-      "/api/slack/oauth/connect",
-    );
+    await expect(readStatus(headers)).resolves.toMatchObject({
+      isConnected: false,
+    });
   });
 });
 
 describe("POST /api/integrations/slack/connect/switch", () => {
-  it("returns 401 when not authenticated", async () => {
-    const client = setupApp({ context, routes: slackConnectRoutes })(
-      slackConnectContract,
-    );
-
-    const response = await accept(
-      client.switchAccount({
-        headers: {},
-        body: {
-          requestUserScopes: true,
-          workspaceId: "T-test",
-          slackUserId: "U-test",
-        },
-      }),
-      [401],
-    );
-
-    expect(response.body).toStrictEqual({
-      error: {
-        message: "Not authenticated",
-        code: "UNAUTHORIZED",
-      },
+  it("slack-connect-020 starts the switch OAuth on its own route", async () => {
+    const signIn = sessions();
+    const org = await createPublicSlackOrgApi(context).installOrg();
+    const teamId = org.slackWorkspaceId;
+    const member = createBddApi(context).user({
+      orgId: org.orgId,
+      orgRole: "org:member",
     });
-  });
+    const slackUserId = uniqueSlackUserId();
+    mockSlackIdentityLookup(context, {
+      id: slackUserId,
+      team_id: teamId,
+      real_name: "Slack Member",
+      profile: { email: member.email, display_name: "Slack Member" },
+    });
 
-  it("uses a distinct route for switch intent", async () => {
-    const fixture = await slackOrgs.installOrg();
-    mocks.clerk.session(fixture.userId, fixture.orgId, "org:member");
-
-    const client = setupApp({ context, routes: slackConnectRoutes })(
-      slackConnectContract,
-    );
-    const response = await accept(
-      client.switchAccount({
-        headers: { authorization: "Bearer clerk-session" },
-        body: {
-          requestUserScopes: true,
-          workspaceId: fixture.slackWorkspaceId,
-          slackUserId: fixture.slackUserId,
-        },
+    const switched = await accept(
+      connectApi().switchAccount({
+        headers: await signIn(member),
+        body: { workspaceId: teamId, slackUserId, requestUserScopes: true },
       }),
       [202],
     );
-    const authorizationUrl = new URL(response.body.authorizationUrl);
-    const connectorState = authorizationUrl.searchParams.get("connectorState");
 
     expect(slackConnectContract.switchAccount.path).toBe(
       "/api/integrations/slack/connect/switch",
     );
-    expect(authorizationUrl.pathname).toBe("/api/slack/oauth/connect");
-    expect(connectorState).not.toBeNull();
+    const authorization = new URL(switched.body.authorizationUrl);
+    expect(authorization.pathname).toBe("/api/slack/oauth/connect");
+    expect(authorization.searchParams.get("connectorState")).toBeTruthy();
   });
 });

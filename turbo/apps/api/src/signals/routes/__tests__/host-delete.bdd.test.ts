@@ -1,487 +1,80 @@
-import { randomUUID } from "node:crypto";
-import { DeleteObjectsCommand, PutObjectCommand } from "@aws-sdk/client-s3";
-
-import { describe, expect, it, onTestFinished } from "vitest";
+import { createHash, randomUUID } from "node:crypto";
 
 import { testContext } from "../../../__tests__/test-context";
-import { createDeferredPromise } from "../../utils";
-import { createBddApi, expectApiError } from "./helpers/api-bdd";
-import { hostedTextFile } from "./helpers/api-bdd-host-files";
+import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createHostBddApi } from "./helpers/api-bdd-host";
-import { createRunsApi } from "./helpers/api-bdd-runs";
-
-/*
-FILE-01 hosted-site soft deletion through `DELETE /api/host/sites/:publicSlug`.
-Every public address is observed through the hosted-sites R2 boundary the host
-Worker reads (site pointer, version pointers, delivery records); the files and
-deployments GETs report what the API still serves for the site.
-*/
+import { publicPlanLifecycle } from "./helpers/public-plan-lifecycle";
 
 const context = testContext();
+const bdd = createBddApi(context);
+const host = createHostBddApi(context);
 
-function errorMessage(body: unknown): string {
-  expectApiError(body);
-  return body.error.message;
-}
-
-function siteBody(site: string, html: string) {
+function html(content: string) {
   return {
-    site,
-    title: site,
-    artifactKind: "hosted-site" as const,
-    spaFallback: false,
-    files: [hostedTextFile("/index.html", html)],
+    path: "/index.html",
+    size: Buffer.byteLength(content),
+    sha256: createHash("sha256").update(content).digest("hex"),
+    contentType: "text/html; charset=utf-8",
   };
 }
 
+function deployment(site: string, content: string) {
+  return {
+    site,
+    title: "Hosted page",
+    artifactKind: "hosted-site" as const,
+    spaFallback: false,
+    files: [html(content)],
+  };
+}
+
+async function proMember(options: Parameters<typeof bdd.user>[0] = {}) {
+  const member = bdd.user(options);
+  await publicPlanLifecycle(context, member, "pro").update("active");
+  return member;
+}
+
+async function publish(owner: ApiTestUser, site: string, content: string) {
+  const prepared = await host.prepareHostedSite(
+    owner,
+    deployment(site, content),
+  );
+  const completed = await host.completeHostedSite(owner, prepared.deploymentId);
+  return { prepared, completed };
+}
+
 describe("FILE-01: hosted-site deletion through host APIs", () => {
-  it("takes every version offline and restores the address as a new version on redeploy [HOST-A]", async () => {
-    const bdd = createBddApi(context);
-    const api = createHostBddApi(context);
-    const actor = bdd.user();
-    const outsider = bdd.user();
-    await createRunsApi(context).grantProEntitlement(actor);
-    await createRunsApi(context).grantProEntitlement(outsider);
-    const capture = api.captureHostedSitesS3();
-    const site = `bdd-delete-${randomUUID().slice(0, 8)}`;
-    const first = await api.prepareHostedSite(
-      actor,
-      siteBody(site, "<p>1</p>"),
-    );
-    await api.completeHostedSite(actor, first.deploymentId);
-    const second = await api.prepareHostedSite(
-      actor,
-      siteBody(site, "<p>2</p>"),
-    );
-    await api.completeHostedSite(actor, second.deploymentId);
-    // An upload in flight when the site is deleted never goes live.
-    const pending = await api.prepareHostedSite(
-      actor,
-      siteBody(site, "<p>pending</p>"),
-    );
+  it("host-delete.bdd-002 (1/2) denies workspace admin deletion and preserves files", async () => {
+    const storage = host.captureHostedSitesS3();
+    const owner = await proMember();
+    const site = `site-${randomUUID().slice(0, 8)}`;
+    const { prepared } = await publish(owner, site, "<p>v1</p>");
+    const admin = bdd.user({ orgId: owner.orgId, orgRole: "org:admin" });
 
-    const deleted = await api.deleteHostedSite(actor, site);
-
-    expect(deleted).toStrictEqual({
-      siteId: first.siteId,
-      site,
-      publicSlug: site,
-      aliasUrl: first.aliasUrl,
-      offlineUrls: [first.aliasUrl, second.artifactUrl, first.artifactUrl],
-    });
-    const offlineKeys = [
-      `sites/brands/okou/${site}/active.json`,
-      `artifact-delivery/okou/html/${site}.json`,
-      ...[first, second, pending].map((deployment) => {
-        return `sites/brands/okou/deployments/${deployment.deploymentId}.json`;
-      }),
-      ...[first, second].map((deployment) => {
-        return `artifact-delivery/okou/html/dpl-${deployment.deploymentId}.json`;
-      }),
-    ];
-    expect(capture.deletes).toStrictEqual(expect.arrayContaining(offlineKeys));
-    for (const key of offlineKeys) {
-      expect(capture.objects.get(key)).toBeUndefined();
-    }
-    const history = await api.readHostedSiteDeployments(actor, site);
-    expect(history.activeDeploymentId).toBeNull();
-    expect(
-      history.deployments.map((deployment) => {
-        return deployment.status;
-      }),
-    ).toStrictEqual(["deleted", "deleted", "deleted"]);
-    const aliasFiles = await api.requestHostedSiteFiles(actor, site, [409]);
-    expect(errorMessage(aliasFiles.body)).toBe(
-      "Hosted site has no active deployment",
-    );
-    const versionFiles = await api.requestHostedSiteFiles(
-      actor,
-      `dpl-${first.deploymentId}`,
-      [409],
-    );
-    expect(errorMessage(versionFiles.body)).toBe(
-      "Hosted deployment is deleted",
-    );
-    await api.requestHostedSiteFiles(
-      outsider,
-      `dpl-${second.deploymentId}`,
+    const denied = await host.requestDeleteHostedSite(
+      admin,
+      prepared.publicSlug,
       [404],
     );
-    const completion = await api.requestCompleteHostedSite(
-      actor,
-      pending.deploymentId,
-      [409],
-    );
-    expect(errorMessage(completion.body)).toBe("Hosted deployment is deleted");
-    // Repeating the deletion after a partial failure converges.
-    await expect(api.deleteHostedSite(actor, site)).resolves.toStrictEqual(
-      deleted,
-    );
+    const files = await host.readHostedSiteFiles(owner, prepared.publicSlug);
 
-    const restored = await api.prepareHostedSite(
-      actor,
-      siteBody(site, "<p>restored</p>"),
-    );
-    await expect(
-      api.completeHostedSite(actor, restored.deploymentId),
-    ).resolves.toMatchObject({
-      siteId: first.siteId,
-      url: first.aliasUrl,
-      deploymentVersion: 4,
-      isActive: true,
+    expect(denied.body).toMatchObject({
+      error: { message: "Hosted site not found" },
     });
-    expect(
-      capture.objects.get(`sites/brands/okou/${site}/active.json`),
-    ).toContain(restored.deploymentId);
-    await expect(api.readHostedSiteFiles(actor, site)).resolves.toMatchObject({
-      deploymentId: restored.deploymentId,
-    });
-    await api.requestHostedSiteFiles(actor, `dpl-${first.deploymentId}`, [409]);
-    const restoredHistory = await api.readHostedSiteDeployments(actor, site);
-    expect(
-      restoredHistory.deployments.map((deployment) => {
-        return [deployment.deploymentVersion, deployment.status];
-      }),
-    ).toStrictEqual([
-      [4, "ready"],
-      [3, "deleted"],
-      [2, "deleted"],
-      [1, "deleted"],
-    ]);
+    expect(storage.deletes).toStrictEqual([]);
+    expect(files.deploymentId).toBe(prepared.deploymentId);
   });
 
-  it("lets only the site owner delete [HOST-D]", async () => {
-    const bdd = createBddApi(context);
-    const api = createHostBddApi(context);
-    const owner = bdd.user();
-    await createRunsApi(context).grantProEntitlement(owner);
-    const member = bdd.user({ orgId: owner.orgId, orgRole: "org:admin" });
-    const capture = api.captureHostedSitesS3();
-    const site = `bdd-owned-${randomUUID().slice(0, 8)}`;
-    const published = await api.prepareHostedSite(
-      owner,
-      siteBody(site, "<p>owned</p>"),
-    );
-    await api.completeHostedSite(owner, published.deploymentId);
+  it("host-delete.bdd-002 (2/2) denies unauthenticated deletion and preserves files", async () => {
+    const storage = host.captureHostedSitesS3();
+    const owner = await proMember();
+    const site = `site-${randomUUID().slice(0, 8)}`;
+    const { prepared } = await publish(owner, site, "<p>v1</p>");
 
-    for (const [actor, target] of [[member, site]] as const) {
-      const rejected = await api.requestDeleteHostedSite(actor, target, [404]);
-      expect(errorMessage(rejected.body)).toBe("Hosted site not found");
-    }
-    await api.requestDeleteHostedSite(null, site, [401]);
+    await host.requestDeleteHostedSite(null, prepared.publicSlug, [401]);
+    const files = await host.readHostedSiteFiles(owner, prepared.publicSlug);
 
-    expect(capture.deletes).toStrictEqual([]);
-    await expect(api.readHostedSiteFiles(owner, site)).resolves.toMatchObject({
-      deploymentId: published.deploymentId,
-    });
-  });
-
-  it("rejects a delayed completion after deletion and preserves a new redeploy [HOST-A]", async () => {
-    const bdd = createBddApi(context);
-    const api = createHostBddApi(context);
-    const owner = bdd.user();
-    await createRunsApi(context).grantProEntitlement(owner);
-    const capture = api.captureHostedSitesS3();
-    const site = `bdd-delayed-${randomUUID().slice(0, 8)}`;
-    const pending = await api.prepareHostedSite(
-      owner,
-      siteBody(site, "<p>old</p>"),
-    );
-    const send = context.mocks.s3.send.getMockImplementation();
-    if (!send) {
-      throw new Error("Hosted-sites storage mock is not installed");
-    }
-    const publishing = createDeferredPromise<void>(context.signal);
-    const resume = createDeferredPromise<void>(context.signal);
-    context.mocks.s3.send.mockImplementation(async (command: unknown) => {
-      if (
-        command instanceof PutObjectCommand &&
-        command.input.Key ===
-          `sites/brands/okou/deployments/${pending.deploymentId}.json`
-      ) {
-        publishing.resolve(undefined);
-        await resume.promise;
-      }
-      return await send(command);
-    });
-    const completion = api.requestCompleteHostedSite(
-      owner,
-      pending.deploymentId,
-      [409],
-    );
-    onTestFinished(async () => {
-      if (!resume.settled()) {
-        resume.resolve(undefined);
-      }
-      await Promise.allSettled([completion]);
-    });
-    await publishing.promise;
-    await api.deleteHostedSite(owner, site);
-    const replacement = await api.prepareHostedSite(
-      owner,
-      siteBody(site, "<p>new</p>"),
-    );
-    await api.completeHostedSite(owner, replacement.deploymentId);
-    resume.resolve(undefined);
-    const rejected = await completion;
-    expect(errorMessage(rejected.body)).toBe("Hosted deployment is deleted");
-    await expect(api.readHostedSiteFiles(owner, site)).resolves.toMatchObject({
-      deploymentId: replacement.deploymentId,
-      deploymentVersion: 2,
-    });
-    await api.requestHostedSiteFiles(
-      owner,
-      `dpl-${pending.deploymentId}`,
-      [409],
-    );
-    expect(
-      capture.objects.get(
-        `sites/brands/okou/deployments/${pending.deploymentId}.json`,
-      ),
-    ).toBeUndefined();
-    expect(
-      capture.objects.get(
-        `artifact-delivery/okou/html/dpl-${pending.deploymentId}.json`,
-      ),
-    ).toBeUndefined();
-    expect(
-      capture.objects.get(`sites/brands/okou/${site}/active.json`),
-    ).toContain(replacement.deploymentId);
-  });
-
-  it("keeps the site offline when deletion wins an overlapping publication [HOST-A]", async () => {
-    const bdd = createBddApi(context);
-    const api = createHostBddApi(context);
-    const owner = bdd.user();
-    await createRunsApi(context).grantProEntitlement(owner);
-    const capture = api.captureHostedSitesS3();
-    const site = `bdd-overlap-${randomUUID().slice(0, 8)}`;
-    const pending = await api.prepareHostedSite(
-      owner,
-      siteBody(site, "<p>old</p>"),
-    );
-    const send = context.mocks.s3.send.getMockImplementation();
-    if (!send) {
-      throw new Error("Hosted-sites storage mock is not installed");
-    }
-    const publishing = createDeferredPromise<void>(context.signal);
-    const resume = createDeferredPromise<void>(context.signal);
-    context.mocks.s3.send.mockImplementation(async (command: unknown) => {
-      if (
-        command instanceof PutObjectCommand &&
-        command.input.Key === `sites/brands/okou/${site}/active.json` &&
-        !publishing.settled()
-      ) {
-        publishing.resolve(undefined);
-        await resume.promise;
-      }
-      return await send(command);
-    });
-    const completion = api.requestCompleteHostedSite(
-      owner,
-      pending.deploymentId,
-      [409],
-    );
-    onTestFinished(async () => {
-      if (!resume.settled()) {
-        resume.resolve(undefined);
-      }
-      await Promise.allSettled([completion]);
-    });
-    await publishing.promise;
-    // Deletion no longer waits for an in-flight publication's storage write.
-    await api.deleteHostedSite(owner, site);
-    resume.resolve(undefined);
-    const rejected = await completion;
-    expect(errorMessage(rejected.body)).toBe("Hosted deployment is deleted");
-    expect(
-      capture.objects.get(
-        `sites/brands/okou/deployments/${pending.deploymentId}.json`,
-      ),
-    ).toBeUndefined();
-    await api.requestHostedSiteFiles(
-      owner,
-      `dpl-${pending.deploymentId}`,
-      [409],
-    );
-    await api.requestHostedSiteFiles(owner, site, [409]);
-    await expect(
-      api.readHostedSiteDeployments(owner, site),
-    ).resolves.toMatchObject({
-      activeDeploymentId: null,
-      deployments: [expect.objectContaining({ status: "deleted" })],
-    });
-    const replacement = await api.prepareHostedSite(
-      owner,
-      siteBody(site, "<p>new</p>"),
-    );
-    await expect(
-      api.completeHostedSite(owner, replacement.deploymentId),
-    ).resolves.toMatchObject({
-      siteId: pending.siteId,
-      url: pending.aliasUrl,
-      deploymentVersion: 2,
-      isActive: true,
-    });
-  });
-
-  it("lets publication complete while deletion waits for storage, then takes it offline [HOST-A]", async () => {
-    const bdd = createBddApi(context);
-    const api = createHostBddApi(context);
-    const owner = bdd.user();
-    await createRunsApi(context).grantProEntitlement(owner);
-    const capture = api.captureHostedSitesS3();
-    const site = `bdd-delete-wait-${randomUUID().slice(0, 8)}`;
-    const first = await api.prepareHostedSite(
-      owner,
-      siteBody(site, "<p>first</p>"),
-    );
-    await api.completeHostedSite(owner, first.deploymentId);
-    const next = await api.prepareHostedSite(
-      owner,
-      siteBody(site, "<p>next</p>"),
-    );
-    const send = context.mocks.s3.send.getMockImplementation();
-    if (!send) {
-      throw new Error("Hosted-sites storage mock is not installed");
-    }
-    const deleting = createDeferredPromise<void>(context.signal);
-    const resume = createDeferredPromise<void>(context.signal);
-    context.mocks.s3.send.mockImplementation(async (command: unknown) => {
-      if (command instanceof DeleteObjectsCommand && !deleting.settled()) {
-        deleting.resolve(undefined);
-        await resume.promise;
-      }
-      return await send(command);
-    });
-    const deletion = api.deleteHostedSite(owner, site);
-    onTestFinished(async () => {
-      if (!resume.settled()) {
-        resume.resolve(undefined);
-      }
-      await Promise.allSettled([deletion]);
-    });
-    await deleting.promise;
-    await expect(
-      api.completeHostedSite(owner, next.deploymentId),
-    ).resolves.toMatchObject({
-      deploymentId: next.deploymentId,
-      isActive: true,
-      activeDeploymentVersion: 2,
-    });
-    await expect(api.readHostedSiteFiles(owner, site)).resolves.toMatchObject({
-      deploymentId: next.deploymentId,
-    });
-    resume.resolve(undefined);
-    await deletion;
-    await api.requestHostedSiteFiles(owner, site, [409]);
-    await api.requestHostedSiteFiles(owner, `dpl-${next.deploymentId}`, [409]);
-    await expect(
-      api.readHostedSiteDeployments(owner, site),
-    ).resolves.toMatchObject({
-      activeDeploymentId: null,
-      deployments: [
-        expect.objectContaining({
-          deploymentId: next.deploymentId,
-          status: "deleted",
-        }),
-        expect.objectContaining({
-          deploymentId: first.deploymentId,
-          status: "deleted",
-        }),
-      ],
-    });
-    expect(
-      capture.objects.get(`sites/brands/okou/${site}/active.json`),
-    ).toBeUndefined();
-  });
-
-  it("retries a partial remote deletion without losing version history or the site address [HOST-A]", async () => {
-    const bdd = createBddApi(context);
-    const api = createHostBddApi(context);
-    const owner = bdd.user();
-    await createRunsApi(context).grantProEntitlement(owner);
-    const capture = api.captureHostedSitesS3();
-    const site = `bdd-partial-${randomUUID().slice(0, 8)}`;
-    const published = await api.prepareHostedSite(
-      owner,
-      siteBody(site, "<p>old</p>"),
-    );
-    await api.completeHostedSite(owner, published.deploymentId);
-    const send = context.mocks.s3.send.getMockImplementation();
-    if (!send) {
-      throw new Error("Hosted-sites storage mock is not installed");
-    }
-    let failed = false;
-    context.mocks.s3.send.mockImplementation(async (command: unknown) => {
-      if (command instanceof DeleteObjectsCommand && !failed) {
-        failed = true;
-        const key = command.input.Delete?.Objects?.[0]?.Key;
-        const failedKey = command.input.Delete?.Objects?.[1]?.Key;
-        if (!key || !failedKey) {
-          throw new Error("Expected hosted-site deletion keys");
-        }
-        capture.objects.delete(key);
-        return {
-          Errors: [
-            {
-              Key: failedKey,
-              Code: "InternalError",
-              Message: "Partial deletion",
-            },
-          ],
-        };
-      }
-      return await send(command);
-    });
-    await api.requestDeleteHostedSite(owner, site, [500]);
-    await expect(
-      api.readHostedSiteDeployments(owner, site),
-    ).resolves.toMatchObject({
-      activeDeploymentId: published.deploymentId,
-      deployments: [
-        expect.objectContaining({
-          deploymentId: published.deploymentId,
-          status: "ready",
-        }),
-      ],
-    });
-    await api.deleteHostedSite(owner, site);
-    await expect(
-      api.readHostedSiteDeployments(owner, site),
-    ).resolves.toMatchObject({
-      activeDeploymentId: null,
-      deployments: [
-        expect.objectContaining({
-          deploymentId: published.deploymentId,
-          status: "deleted",
-        }),
-      ],
-    });
-    expect(
-      capture.objects.get(`sites/brands/okou/${site}/active.json`),
-    ).toBeUndefined();
-    expect(
-      capture.objects.get(
-        `sites/brands/okou/deployments/${published.deploymentId}.json`,
-      ),
-    ).toBeUndefined();
-    const replacement = await api.prepareHostedSite(
-      owner,
-      siteBody(site, "<p>new</p>"),
-    );
-    await expect(
-      api.completeHostedSite(owner, replacement.deploymentId),
-    ).resolves.toMatchObject({
-      siteId: published.siteId,
-      url: published.aliasUrl,
-      deploymentVersion: 2,
-      isActive: true,
-    });
-    await api.requestHostedSiteFiles(
-      owner,
-      `dpl-${published.deploymentId}`,
-      [409],
-    );
+    expect(storage.deletes).toStrictEqual([]);
+    expect(files.deploymentId).toBe(prepared.deploymentId);
   });
 });

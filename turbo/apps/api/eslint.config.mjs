@@ -195,19 +195,6 @@ const apiTestInfrastructure = [
     reason:
       "Reads the connector catalog source configuration only to restore the external S3 mock.",
   },
-  // Self-tests of the API database library itself, kept pending Ethan's
-  // decision on moving them to an owning package. They do not exercise
-  // business scenarios.
-  {
-    file: "src/lib/__tests__/db.test.ts",
-    kinds: ["db-driver", "db-handle"],
-    reason: "Self-test of the DB handle and Drizzle wiring in src/lib/db.ts.",
-  },
-  {
-    file: "src/lib/__tests__/db-instrumentation.test.ts",
-    kinds: ["db-driver"],
-    reason: "Self-test of the pg query instrumentation in src/lib.",
-  },
 ].map((entry) => {
   exactTestPaths("apiTestInfrastructure", [entry.file]);
   return entry;
@@ -219,23 +206,14 @@ const apiTestInfrastructure = [
 const credentialForgingLegacyConsumers = exactTestPaths(
   "credentialForgingLegacyConsumers",
   [
-    "src/signals/auth/__tests__/tokens.test.ts",
     "src/signals/routes/__tests__/artifact-downloads.test.ts",
     "src/signals/routes/__tests__/cli-auth.bdd.test.ts",
     "src/signals/routes/__tests__/connector-check.test.ts",
     "src/signals/routes/__tests__/helpers/api-bdd-firewall.ts",
-    "src/signals/routes/__tests__/membership-refresh.test.ts",
     "src/signals/routes/__tests__/paid-tools.test.ts",
-    "src/signals/routes/__tests__/run-lifecycle.bdd.cases.ts",
     "src/signals/routes/__tests__/skill-import.bdd.test.ts",
-    "src/signals/routes/__tests__/ssh-access.test.ts",
     "src/signals/routes/__tests__/teams-bot.test.ts",
-    "src/signals/routes/__tests__/uploads-complete.test.ts",
     "src/signals/routes/__tests__/uploads-prepare.test.ts",
-    "src/signals/routes/__tests__/vnc-access.test.ts",
-    "src/signals/routes/__tests__/web-file-url.test.ts",
-    "src/signals/routes/__tests__/webhooks-agent-health-usage-telemetry.test.ts",
-    "src/signals/routes/__tests__/webhooks-agent-session-output.test.ts",
     "src/signals/routes/__tests__/webhooks-github-workflow.test.ts",
   ],
 );
@@ -856,12 +834,6 @@ export default [
       // The stub definition site installs the logger and telemetry mocks that
       // this rule stops tests from reading; it asserts nothing itself.
       "src/__tests__/mocks.ts",
-      // The logger is the subject of this suite, not a diagnostic.
-      "src/lib/__tests__/log.test.ts",
-      // The Axiom log transport is the subject of this suite.
-      "src/lib/__tests__/log-axiom-transport.test.ts",
-      // The telemetry SDK client is the subject of this suite.
-      "src/signals/external/__tests__/axiom.test.ts",
     ]),
     rules: {
       "no-restricted-syntax": [

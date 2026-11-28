@@ -1,1192 +1,361 @@
-import { createHmac, randomBytes, randomUUID } from "node:crypto";
+import { createHmac, randomUUID } from "node:crypto";
 
-import type { TriggerSource } from "@okouai/api-contracts/contracts/logs";
 import {
-  bankingContract,
+  bankingPublicContract,
   bankingWorkspaceContract,
 } from "@okouai/api-contracts/contracts/banking";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { HttpResponse, http } from "msw";
-import { beforeEach, onTestFinished } from "vitest";
+import { http, HttpResponse } from "msw";
+import { describe, expect, it } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { createApp } from "../../../app-factory";
 import { mockEnv } from "../../../lib/env";
 import { server } from "../../../mocks/server";
-import { flushWaitUntilForTest } from "../../context/wait-until";
-import { createBddApi } from "./helpers/api-bdd";
-import { createRunsApi } from "./helpers/api-bdd-runs";
-import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
-import { createWorkflowsBddApi } from "./helpers/api-bdd-workflows";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { bankingRoutes } from "../banking";
+import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
+import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
 
-const UNATTENDED_TRIGGER_SOURCES = [
-  "automation-event",
-] as const satisfies readonly TriggerSource[];
+const FINICITY = "https://api.finicity.com";
+const APP_KEY = "finicity-app-key";
+const APP_TOKEN = "finicity-app-token";
+// A generated Finicity webhook secret, configured for the route below.
+const APP_SECRET = randomUUID();
+const PARTNER_ID = "finicity-partner";
 
-const FINICITY_BASE_URL = "https://api.finicity.com";
-const FINICITY_AUTH_URL = `${FINICITY_BASE_URL}/aggregation/v2/partners/authentication`;
-const FINICITY_CONNECT_URL = `${FINICITY_BASE_URL}/connect/v2/generate`;
-const FINICITY_APP_SECRET = randomBytes(32).toString("hex");
+type ProviderAccount = Readonly<Record<string, unknown>>;
 
-interface BankingFixture {
-  readonly okouToken: string;
-  readonly orgId: string;
-  readonly userId: string;
-  readonly runId: string;
-  readonly connectionId: string;
-  readonly providerCustomerId: string;
-  readonly enabledAccountId: string;
-  readonly disabledAccountId: string;
-}
+const everydayChecking: ProviderAccount = Object.freeze({
+  id: "acct-checking",
+  name: "Everyday Checking",
+  institutionName: "Example Bank",
+  institutionLoginId: "example-bank",
+  type: "checking",
+  realAccountNumberLast4: "6789",
+  status: "active",
+  currency: "USD",
+  aggregationStatusCode: 0,
+});
 
-interface BankingFixtureArgs {
-  readonly triggerSource?: (typeof UNATTENDED_TRIGGER_SOURCES)[number];
-  readonly featureSwitchEnabled?: boolean;
-  readonly bankingEnabledAtLaunch?: boolean;
-}
+const oldSavings: ProviderAccount = Object.freeze({
+  id: "acct-savings",
+  name: "Old Savings",
+  institutionName: "Example Bank",
+  institutionLoginId: "example-bank",
+  type: "savings",
+  realAccountNumberLast4: "1111",
+  status: "active",
+  currency: "USD",
+  aggregationStatusCode: 0,
+});
 
-function okouToken(fixture: BankingFixture): string {
-  return fixture.okouToken;
-}
-
-function randomProviderId(prefix: string): string {
-  return `${prefix}-${randomUUID()}`;
-}
-
-async function createBankingRun(args: BankingFixtureArgs = {}) {
-  const bdd = createBddApi(context);
-  const api = createRunsApi(context);
-  const actor = bdd.user();
-  if (!actor.orgId) {
-    throw new Error("Banking fixtures require an org-scoped actor");
-  }
-  bdd.acceptStorageWrites();
-  api.acceptStorageDownloads();
-  api.acceptTelemetryIngest();
-  const runnerGroup = await api.configureRunnerGroup();
-  // Webhook automations require a Team workspace.
-  await api.grantProEntitlement(actor, {
-    tier: args.triggerSource === "automation-event" ? "team" : "pro",
-  });
-  await api.ensurePersonalSubscriptionModel(actor);
-  await updateFeatureSwitchesForUser(
-    context,
-    { userId: actor.userId, orgId: actor.orgId },
-    { [FeatureSwitchKey.Banking]: args.bankingEnabledAtLaunch ?? true },
-  );
-
-  // Event automations fire through the signed production webhook.
-  const workflows = createWorkflowsBddApi(context);
-  const run =
-    args.triggerSource === "automation-event"
-      ? await workflows.startEventAutomationRun(actor)
-      : await api.createThreadRun(actor, {
-          prompt: "banking precondition",
-        });
-  await api.heartbeatRunner(runnerGroup);
-  const execution = await api.executionInput(run.runId);
-  const token = execution.platformEnvironment.OKOU_TOKEN;
-  if (!token) {
-    throw new Error(
-      "Expected the Banking Runner execution to include OKOU_TOKEN",
-    );
-  }
-  onTestFinished(async () => {
-    await api.requestCancelRun(actor, run.runId, [200]);
-    await createWebhookCallbackApi(context).requestAgentComplete(
-      { runId: run.runId, exitCode: 1, error: "Banking carrier cancelled" },
-      { authorization: `Bearer ${execution.sandboxToken}` },
-      [200],
-    );
-    await flushWaitUntilForTest();
-  });
-
-  return {
-    actor: { ...actor, orgId: actor.orgId },
-    runId: run.runId,
-    okouToken: token,
+function finicityProvider(
+  connectLink: (customerId: string) => string = (customerId) => {
+    return `https://connect.example.test/${customerId}`;
+  },
+) {
+  mockEnv("FINICITY_APP_KEY", APP_KEY);
+  mockEnv("FINICITY_APP_SECRET", APP_SECRET);
+  mockEnv("FINICITY_PARTNER_ID", PARTNER_ID);
+  const provider = {
+    accounts: [] as ProviderAccount[],
+    connectBodies: [] as Record<string, unknown>[],
+    customers: new Map<string, string>(),
   };
-}
-
-function signedWebhookBody(body: Record<string, unknown>) {
-  const rawBody = JSON.stringify(body);
-  const signature = createHmac("sha256", FINICITY_APP_SECRET)
-    .update(rawBody)
-    .digest("hex");
-  return { rawBody, signature };
-}
-
-async function postWebhook(body: Record<string, unknown>) {
-  const signed = signedWebhookBody(body);
-  return await createApp({
-    signal: context.signal,
-    routes: bankingRoutes,
-  }).request("/api/webhooks/finicity", {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      "x-finicity-signature": signed.signature,
-    },
-    body: signed.rawBody,
-  });
-}
-
-async function connectBankingFixture(
-  args: BankingFixtureArgs = {},
-): Promise<BankingFixture> {
-  const { actor, runId, okouToken: token } = await createBankingRun(args);
-  const providerCustomerId = randomProviderId("customer");
-  const enabledAccountId = randomProviderId("acct-enabled");
-  const disabledAccountId = randomProviderId("acct-disabled");
-  const enabledAccount = {
-    id: enabledAccountId,
-    name: "Everyday Checking",
-    institutionName: "Example Bank",
-    institutionLoginId: "login-example-bank",
-    type: "checking",
-    realAccountNumberLast4: "6789",
-    status: "active",
-    aggregationStatusCode: 0,
-  };
-  const disabledAccount = {
-    id: disabledAccountId,
-    name: "Old Savings",
-    institutionName: "Example Bank",
-    institutionLoginId: "login-example-bank",
-    type: "savings",
-    realAccountNumberLast4: "4321",
-    status: "active",
-    aggregationStatusCode: 0,
-  };
-  let providerAccounts = [enabledAccount, disabledAccount];
   server.use(
-    finicityAuthHandler(),
-    http.post(`${FINICITY_BASE_URL}/aggregation/v2/customers/testing`, () => {
-      return HttpResponse.json({ id: providerCustomerId });
+    http.post(`${FINICITY}/aggregation/v2/partners/authentication`, () => {
+      return HttpResponse.json({ token: APP_TOKEN });
     }),
-    http.post(FINICITY_CONNECT_URL, () => {
-      return HttpResponse.json({
-        link: "https://connect.example.test/session",
-      });
+    http.post(
+      `${FINICITY}/aggregation/v2/customers/testing`,
+      async ({ request }) => {
+        const { username } = (await request.json()) as { username: string };
+        if (provider.customers.has(username)) {
+          return HttpResponse.json(
+            { message: "Customer already exists" },
+            { status: 503 },
+          );
+        }
+        const customerId = `cust-${randomUUID()}`;
+        provider.customers.set(username, customerId);
+        return HttpResponse.json({ id: customerId });
+      },
+    ),
+    http.post(`${FINICITY}/connect/v2/generate`, async ({ request }) => {
+      const body = (await request.json()) as Record<string, unknown>;
+      provider.connectBodies.push(body);
+      return HttpResponse.json({ link: connectLink(String(body.customerId)) });
     }),
     http.get(
-      `${FINICITY_BASE_URL}/aggregation/v1/customers/${providerCustomerId}/accounts`,
+      `${FINICITY}/aggregation/v1/customers/:customerId/accounts`,
       () => {
-        return HttpResponse.json({ accounts: providerAccounts });
+        return HttpResponse.json({ accounts: provider.accounts });
       },
     ),
   );
+  return provider;
+}
+
+async function bankingOwner(
+  provider: ReturnType<typeof finicityProvider>,
+  identity: { readonly userId: string; readonly orgId: string } = {
+    userId: `user_${randomUUID()}`,
+    orgId: `org_${randomUUID()}`,
+  },
+) {
+  const { userId, orgId } = identity;
+  const eventPrefix = randomUUID();
   await updateFeatureSwitchesForUser(
     context,
-    { userId: actor.userId, orgId: actor.orgId },
+    { userId, orgId },
     { [FeatureSwitchKey.Banking]: true },
   );
-  const client = setupApp({ context, routes: bankingRoutes })(
-    bankingWorkspaceContract,
-  );
+  const client = setupApp({ context, routes: bankingRoutes });
+  const workspace = client(bankingWorkspaceContract);
+  const webhooks = client(bankingPublicContract);
   const headers = { authorization: "Bearer clerk-session" };
-  const session = await accept(
-    client.createConnectSession({
-      headers,
-      body: { mode: "connect" },
-    }),
-    [200],
-  );
-  const pending = await accept(client.accessRequestStatus({ headers }), [200]);
-  const connectionId = pending.body.connection?.id;
-  if (!connectionId) {
-    throw new Error("Expected a banking connection from the connect API");
-  }
-  const webhookData = {
-    uniqueCustomerId: connectionId,
-    uniqueRequestId: session.body.sessionId,
+  const signIn = () => {
+    createRouteMocks(context).clerk.session(userId, orgId);
   };
-  const added = await postWebhook({
-    eventId: randomProviderId("event-added"),
-    eventType: "added",
-    customerId: providerCustomerId,
-    webhookData,
-  });
-  expect(added.status).toBe(200);
-  // The provider no longer returns the old savings account. Its next signed
-  // update disables that account through the same synchronization used in production.
-  providerAccounts = [enabledAccount];
-  const done = await postWebhook({
-    eventId: randomProviderId("event-done"),
-    eventType: "done",
-    eventTrigger: "userSubmit",
-    customerId: providerCustomerId,
-    webhookData,
-  });
-  expect(done.status).toBe(200);
-  const connected = await accept(
-    client.accessRequestStatus({ headers }),
-    [200],
-  );
-  expect(connected.body.connection?.accounts).toHaveLength(1);
-  const accountId = connected.body.connection?.accounts[0]?.id;
-  if (!accountId) {
-    throw new Error("Expected a publicly connected banking account");
-  }
-  await accept(
-    client.saveGrant({
-      headers,
-      body: {
-        accountIds: [accountId],
-        duration: "7d",
-        purpose: "Read the connected checking account",
-      },
-    }),
-    [200],
-  );
-  if (args.featureSwitchEnabled === false) {
-    await updateFeatureSwitchesForUser(
-      context,
-      { userId: actor.userId, orgId: actor.orgId },
-      { [FeatureSwitchKey.Banking]: false },
-    );
-  }
+
+  const status = async () => {
+    signIn();
+    return (await accept(workspace.accessRequestStatus({ headers }), [200]))
+      .body;
+  };
+  const startSession = async () => {
+    signIn();
+    return (
+      await accept(
+        workspace.createConnectSession({ headers, body: { mode: "connect" } }),
+        [200],
+      )
+    ).body;
+  };
+  const deliver = async (event: {
+    readonly eventType: string;
+    readonly eventId: string;
+    readonly webhookData?: Record<string, unknown>;
+    readonly extra?: Record<string, unknown>;
+  }) => {
+    const latest = provider.connectBodies.at(-1);
+    const body = JSON.stringify({
+      eventType: event.eventType,
+      eventId: `${eventPrefix}-${event.eventId}`,
+      customerId: latest?.customerId,
+      webhookData: event.webhookData ?? latest?.webhookData,
+      ...event.extra,
+    });
+    const signature = createHmac("sha256", APP_SECRET)
+      .update(body)
+      .digest("hex");
+    return await webhooks.finicityWebhook({
+      headers: { "x-finicity-signature": signature },
+      body,
+    });
+  };
+  const saveGrant = async (accountId: string, purpose: string) => {
+    signIn();
+    return (
+      await accept(
+        workspace.saveGrant({
+          headers,
+          body: { accountIds: [accountId], duration: "7d", purpose },
+        }),
+        [200],
+      )
+    ).body;
+  };
+  const revokeGrant = async () => {
+    signIn();
+    return (await accept(workspace.revokeGrant({ headers, body: {} }), [200]))
+      .body;
+  };
+
+  /** Connect checking only: savings disappears before `done`. */
+  const connectChecking = async () => {
+    await startSession();
+    provider.accounts = [everydayChecking, oldSavings];
+    await deliver({ eventType: "added", eventId: "added" });
+    provider.accounts = [everydayChecking];
+    await deliver({ eventType: "done", eventId: "done" });
+  };
+
+  /** Connect checking and grant it, returning the granted account ID. */
+  const connectCheckingWithGrant = async () => {
+    await connectChecking();
+    const connected = await status();
+    const accountId = connected.connection?.accounts[0]?.id ?? "";
+    await saveGrant(accountId, "Household budget review");
+    return accountId;
+  };
+
   return {
-    okouToken: token,
-    orgId: actor.orgId,
-    userId: actor.userId,
-    runId,
-    connectionId,
-    providerCustomerId,
-    enabledAccountId,
-    disabledAccountId,
+    userId,
+    orgId,
+    status,
+    startSession,
+    deliver,
+    saveGrant,
+    revokeGrant,
+    connectChecking,
+    connectCheckingWithGrant,
   };
 }
-
-function finicityAuthHandler() {
-  return http.post(FINICITY_AUTH_URL, async ({ request }) => {
-    const body = await request.json();
-    expect(request.headers.get("Finicity-App-Key")).toBe("test-app-key");
-    expect(body).toStrictEqual({
-      partnerId: "test-partner",
-      partnerSecret: FINICITY_APP_SECRET,
-    });
-    return HttpResponse.json({ token: "test-app-token" });
-  });
-}
-
-describe("/api/banking/*", () => {
-  beforeEach(() => {
-    mockEnv("FINICITY_APP_KEY", "test-app-key");
-    mockEnv("FINICITY_APP_SECRET", FINICITY_APP_SECRET);
-    mockEnv("FINICITY_PARTNER_ID", "test-partner");
-  });
-
-  it("rejects banking requests when the banking feature switch is disabled", async () => {
-    const fixture = await connectBankingFixture({
-      featureSwitchEnabled: false,
-    });
-    let authRequestCount = 0;
-    server.use(
-      http.post(FINICITY_AUTH_URL, () => {
-        authRequestCount += 1;
-        return HttpResponse.json({ token: "test-app-token" });
-      }),
-    );
-
-    const client = setupApp({ context, routes: bankingRoutes })(
-      bankingContract,
-    );
-    const response = await accept(
-      client.accounts({
-        headers: { authorization: `Bearer ${okouToken(fixture)}` },
-        body: {},
-      }),
-      [403],
-    );
-
-    expect(response.body).toStrictEqual({
-      error: {
-        message: "Banking is not enabled",
-        code: "FORBIDDEN",
-      },
-    });
-    expect(authRequestCount).toBe(0);
-  });
-
-  it("filters the member’s accounts by their saved grant", async () => {
-    const fixture = await connectBankingFixture();
-    let accountsRequestHeaders: Headers | undefined;
-    server.use(
-      finicityAuthHandler(),
-      http.get(
-        `${FINICITY_BASE_URL}/aggregation/v1/customers/${fixture.providerCustomerId}/accounts`,
-        ({ request }) => {
-          accountsRequestHeaders = request.headers;
-          return HttpResponse.json({
-            accounts: [
-              {
-                id: fixture.enabledAccountId,
-                name: "Provider Checking",
-                type: "checking",
-                realAccountNumberLast4: "6789",
-                status: "active",
-                currency: "USD",
-              },
-              {
-                id: fixture.disabledAccountId,
-                name: "Disabled Savings",
-                type: "savings",
-                realAccountNumberLast4: "4321",
-                status: "active",
-                currency: "USD",
-              },
-            ],
-          });
-        },
-      ),
-    );
-
-    const client = setupApp({ context, routes: bankingRoutes })(
-      bankingContract,
-    );
-    const response = await accept(
-      client.accounts({
-        headers: { authorization: `Bearer ${okouToken(fixture)}` },
-        body: {},
-      }),
-      [200],
-    );
-
-    expect(accountsRequestHeaders?.get("Finicity-App-Key")).toBe(
-      "test-app-key",
-    );
-    expect(accountsRequestHeaders?.get("Finicity-App-Token")).toBe(
-      "test-app-token",
-    );
-    expect(response.body).toStrictEqual({
-      operation: "accounts",
-      provider: "finicity",
-      accounts: [
-        {
-          id: fixture.enabledAccountId,
-          name: "Provider Checking",
-          institutionName: "Example Bank",
-          type: "checking",
-          last4: "6789",
-          status: "active",
-          currency: "USD",
-        },
-      ],
-    });
-  });
-
-  it("denies balances for accounts not enabled by the member", async () => {
-    const fixture = await connectBankingFixture();
-    let accountsRequestCount = 0;
-    server.use(
-      finicityAuthHandler(),
-      http.get(
-        `${FINICITY_BASE_URL}/aggregation/v1/customers/${fixture.providerCustomerId}/accounts`,
-        () => {
-          accountsRequestCount += 1;
-          return HttpResponse.json({ accounts: [] });
-        },
-      ),
-    );
-
-    const client = setupApp({ context, routes: bankingRoutes })(
-      bankingContract,
-    );
-    const response = await accept(
-      client.balances({
-        headers: { authorization: `Bearer ${okouToken(fixture)}` },
-        body: { accountId: fixture.disabledAccountId },
-      }),
-      [403],
-    );
-
-    expect(response.body.error.code).toBe("BANKING_ACCESS_DENIED");
-    expect(accountsRequestCount).toBe(0);
-  });
-
-  it("reads balances through Finicity with only sanitized fields returned", async () => {
-    const fixture = await connectBankingFixture();
-    server.use(
-      finicityAuthHandler(),
-      http.get(
-        `${FINICITY_BASE_URL}/aggregation/v1/customers/${fixture.providerCustomerId}/accounts`,
-        () => {
-          return HttpResponse.json({
-            accounts: [
-              {
-                id: fixture.enabledAccountId,
-                name: "Provider Checking",
-                type: "checking",
-                balance: 1234.56,
-                availableBalance: 1200.34,
-                currency: "USD",
-                balanceDate: 1_767_225_600,
-                rawProviderField: "not returned",
-              },
-            ],
-          });
-        },
-      ),
-    );
-
-    const client = setupApp({ context, routes: bankingRoutes })(
-      bankingContract,
-    );
-    const response = await accept(
-      client.balances({
-        headers: { authorization: `Bearer ${okouToken(fixture)}` },
-        body: { accountId: fixture.enabledAccountId },
-      }),
-      [200],
-    );
-
-    expect(response.body).toStrictEqual({
-      operation: "balances",
-      provider: "finicity",
-      balance: {
-        accountId: fixture.enabledAccountId,
-        name: "Provider Checking",
-        type: "checking",
-        balance: 1234.56,
-        availableBalance: 1200.34,
-        currency: "USD",
-        balanceDate: 1_767_225_600,
-      },
-    });
-  });
-
-  it("rejects agent tokens without banking capability before provider access", async () => {
-    const fixture = await connectBankingFixture({
-      bankingEnabledAtLaunch: false,
-    });
-    let authRequestCount = 0;
-    server.use(
-      http.post(FINICITY_AUTH_URL, () => {
-        authRequestCount += 1;
-        return HttpResponse.json({ token: "test-app-token" });
-      }),
-    );
-
-    const client = setupApp({ context, routes: bankingRoutes })(
-      bankingContract,
-    );
-    const response = await accept(
-      client.accounts({
-        headers: {
-          authorization: `Bearer ${okouToken(fixture)}`,
-        },
-        body: {},
-      }),
-      [403],
-    );
-
-    expect(response.body).toStrictEqual({
-      error: {
-        message: "Missing required capability: banking:read",
-        code: "FORBIDDEN",
-      },
-    });
-    expect(authRequestCount).toBe(0);
-  });
-
-  it.each(UNATTENDED_TRIGGER_SOURCES)(
-    "denies %s runs unless the banking grant allows automations",
-    async (triggerSource) => {
-      const fixture = await connectBankingFixture({ triggerSource });
-      let authRequestCount = 0;
-      server.use(
-        http.post(FINICITY_AUTH_URL, () => {
-          authRequestCount += 1;
-          return HttpResponse.json({ token: "test-app-token" });
-        }),
-      );
-
-      const client = setupApp({ context, routes: bankingRoutes })(
-        bankingContract,
-      );
-      const response = await accept(
-        client.accounts({
-          headers: { authorization: `Bearer ${okouToken(fixture)}` },
-          body: {},
-        }),
-        [403],
-      );
-
-      expect(response.body.error.message).toBe(
-        "Banking is not enabled for automation runs",
-      );
-      expect(authRequestCount).toBe(0);
-    },
-  );
-
-  it("reads transactions through Finicity with only sanitized fields returned", async () => {
-    const fixture = await connectBankingFixture();
-    let requestedUrl: URL | undefined;
-    server.use(
-      finicityAuthHandler(),
-      http.get(
-        `${FINICITY_BASE_URL}/aggregation/v3/customers/${fixture.providerCustomerId}/accounts/${fixture.enabledAccountId}/transactions`,
-        ({ request }) => {
-          requestedUrl = new URL(request.url);
-          return HttpResponse.json({
-            transactions: [
-              {
-                id: "txn-1",
-                amount: -42.5,
-                description: "Coffee",
-                memo: "latte",
-                postedDate: 1_767_225_600,
-                transactionDate: 1_767_225_600,
-                status: "active",
-                categorization: "Food & Dining",
-                merchant: "Cafe",
-                rawProviderField: "not returned",
-              },
-            ],
-          });
-        },
-      ),
-    );
-
-    const client = setupApp({ context, routes: bankingRoutes })(
-      bankingContract,
-    );
-    const response = await accept(
-      client.transactions({
-        headers: { authorization: `Bearer ${okouToken(fixture)}` },
-        body: {
-          accountId: fixture.enabledAccountId,
-          from: "2026-01-01",
-          to: "2026-01-31",
-          limit: 25,
-        },
-      }),
-      [200],
-    );
-
-    expect(requestedUrl?.searchParams.get("fromDate")).toBe(
-      String(Math.floor(Date.UTC(2026, 0, 1) / 1000)),
-    );
-    expect(requestedUrl?.searchParams.get("toDate")).toBe(
-      String(Math.floor(Date.UTC(2026, 0, 31) / 1000) + 86_399),
-    );
-    expect(requestedUrl?.searchParams.get("limit")).toBe("25");
-    expect(response.body).toStrictEqual({
-      operation: "transactions",
-      provider: "finicity",
-      accountId: fixture.enabledAccountId,
-      transactions: [
-        {
-          id: "txn-1",
-          accountId: fixture.enabledAccountId,
-          amount: -42.5,
-          description: "Coffee",
-          memo: "latte",
-          postedDate: 1_767_225_600,
-          transactionDate: 1_767_225_600,
-          status: "active",
-          categorization: "Food & Dining",
-          merchant: "Cafe",
-        },
-      ],
-    });
-  });
-});
 
 describe("banking access request lifecycle", () => {
-  beforeEach(() => {
-    mockEnv("FINICITY_APP_KEY", "test-app-key");
-    mockEnv("FINICITY_APP_SECRET", FINICITY_APP_SECRET);
-    mockEnv("FINICITY_PARTNER_ID", "test-partner");
-  });
-
-  function sessionHeaders() {
-    return { authorization: "Bearer clerk-session" } as const;
-  }
-
-  it("reuses each owner connection while keeping users and organizations separate", async () => {
-    const bdd = createBddApi(context);
-    bdd.acceptStorageWrites();
-    const firstOwner = bdd.user();
-    const owners = [
-      firstOwner,
-      bdd.user({ orgId: firstOwner.orgId }),
-      bdd.user({ userId: firstOwner.userId }),
-    ];
-    const client = setupApp({ context, routes: bankingRoutes })(
-      bankingWorkspaceContract,
-    );
-    server.use(
-      finicityAuthHandler(),
-      http.post(`${FINICITY_BASE_URL}/aggregation/v2/customers/testing`, () => {
-        return HttpResponse.json(
-          { message: "Customer creation is unavailable" },
-          { status: 503 },
-        );
-      }),
-      http.post(FINICITY_CONNECT_URL, async ({ request }) => {
-        const body: unknown = await request.json();
-        if (
-          typeof body !== "object" ||
-          body === null ||
-          !("customerId" in body) ||
-          typeof body.customerId !== "string"
-        ) {
-          throw new Error(
-            "Expected a provider customer in the connect request",
-          );
-        }
-        return HttpResponse.json({
-          link: `https://connect.example.test/${body.customerId}`,
-        });
-      }),
+  it("banking-014 rejects a webhook with an invalid signature", async () => {
+    finicityProvider();
+    const webhooks = setupApp({ context, routes: bankingRoutes })(
+      bankingPublicContract,
     );
 
-    const connectionIds: string[] = [];
-    for (const owner of owners) {
-      if (!owner.orgId) {
-        throw new Error("Banking requires an org-scoped actor");
-      }
-      await updateFeatureSwitchesForUser(
-        context,
-        { userId: owner.userId, orgId: owner.orgId },
-        { [FeatureSwitchKey.Banking]: true },
-      );
-      const before = await accept(
-        client.accessRequestStatus({
-          headers: sessionHeaders(),
-        }),
-        [200],
-      );
-      expect(before.body.connection).toBeNull();
-
-      const providerCustomerId = randomProviderId("customer");
-      server.use(
-        http.post(
-          `${FINICITY_BASE_URL}/aggregation/v2/customers/testing`,
-          () => {
-            return HttpResponse.json({ id: providerCustomerId });
-          },
-          { once: true },
-        ),
-      );
-      const initial = await accept(
-        client.createConnectSession({
-          headers: sessionHeaders(),
-          body: { mode: "connect" },
-        }),
-        [200],
-      );
-      expect(initial.body.url).toBe(
-        `https://connect.example.test/${providerCustomerId}`,
-      );
-      const connected = await accept(
-        client.accessRequestStatus({
-          headers: sessionHeaders(),
-        }),
-        [200],
-      );
-      const connectionId = connected.body.connection?.id;
-      if (!connectionId) {
-        throw new Error("Expected a publicly connected banking owner");
-      }
-      expect(connectionIds).not.toContain(connectionId);
-      connectionIds.push(connectionId);
-
-      const repeated = await accept(
-        client.createConnectSession({
-          headers: sessionHeaders(),
-          body: { mode: "connect" },
-        }),
-        [200],
-      );
-      expect(repeated.body.url).toBe(initial.body.url);
-      expect(repeated.body.sessionId).not.toBe(initial.body.sessionId);
-      const reused = await accept(
-        client.accessRequestStatus({
-          headers: sessionHeaders(),
-        }),
-        [200],
-      );
-      expect(reused.body.connection?.id).toBe(connectionId);
-      expect(reused.body.session).toMatchObject({
-        id: repeated.body.sessionId,
-        status: "pending",
-      });
-    }
-  });
-
-  it("leaves connect empty after customer creation fails and allows a later attempt", async () => {
-    const bdd = createBddApi(context);
-    const owner = bdd.user();
-    if (!owner.orgId) {
-      throw new Error("Banking requires an org-scoped actor");
-    }
-    bdd.acceptStorageWrites();
-    await updateFeatureSwitchesForUser(
-      context,
-      { userId: owner.userId, orgId: owner.orgId },
-      { [FeatureSwitchKey.Banking]: true },
-    );
-    server.use(
-      finicityAuthHandler(),
-      http.post(`${FINICITY_BASE_URL}/aggregation/v2/customers/testing`, () => {
-        return HttpResponse.json(
-          { message: "Customer creation is unavailable" },
-          { status: 503 },
-        );
-      }),
-      http.post(FINICITY_CONNECT_URL, () => {
-        return HttpResponse.json({
-          link: "https://connect.example.test/recovered-session",
-        });
-      }),
-    );
-    const client = setupApp({ context, routes: bankingRoutes })(
-      bankingWorkspaceContract,
-    );
-    const failed = await accept(
-      client.createConnectSession({
-        headers: sessionHeaders(),
-        body: { mode: "connect" },
-      }),
-      [502],
-    );
-    expect(failed.body.error).toMatchObject({ code: "FINICITY_ERROR" });
-    const empty = await accept(
-      client.accessRequestStatus({
-        headers: sessionHeaders(),
-      }),
-      [200],
-    );
-    expect(empty.body).toMatchObject({ connection: null, session: null });
-
-    server.use(
-      http.post(`${FINICITY_BASE_URL}/aggregation/v2/customers/testing`, () => {
-        return HttpResponse.json({ id: randomProviderId("customer") });
-      }),
-    );
-    const recovered = await accept(
-      client.createConnectSession({
-        headers: sessionHeaders(),
-        body: { mode: "connect" },
-      }),
-      [200],
-    );
-    expect(recovered.body.url).toBe(
-      "https://connect.example.test/recovered-session",
-    );
-    const ready = await accept(
-      client.accessRequestStatus({
-        headers: sessionHeaders(),
-      }),
-      [200],
-    );
-    expect(ready.body.connection).toMatchObject({
-      status: "active",
-      accounts: [],
+    const response = await webhooks.finicityWebhook({
+      headers: { "x-finicity-signature": "0".repeat(64) },
+      body: JSON.stringify({ eventType: "ping" }),
     });
-    expect(ready.body.session).toMatchObject({
-      id: recovered.body.sessionId,
-      status: "pending",
-    });
+
+    expect(response.status).toBe(401);
   });
 
-  it("creates an expiring account-scoped grant and revokes it independently", async () => {
-    await connectBankingFixture();
-    const client = setupApp({ context, routes: bankingRoutes })(
-      bankingWorkspaceContract,
-    );
-    const status = await accept(
-      client.accessRequestStatus({ headers: sessionHeaders() }),
-      [200],
-    );
-    const accountId = status.body.connection?.accounts[0]?.id;
-    if (!accountId) {
-      throw new Error("Expected a connected banking account");
-    }
+  it("banking-010 creates an expiring account-scoped grant and revokes it independently", async () => {
+    const provider = finicityProvider();
+    const owner = await bankingOwner(provider);
+    const accountId = await owner.connectCheckingWithGrant();
 
-    const saved = await accept(
-      client.saveGrant({
-        headers: sessionHeaders(),
-        body: {
-          accountIds: [accountId],
-          duration: "7d",
-          purpose: "Review recent household spending",
-        },
-      }),
-      [200],
+    const saved = await owner.saveGrant(
+      accountId,
+      "Review recent household spending",
     );
-    expect(saved.body.grant).toMatchObject({
+    expect(saved.grant).toMatchObject({
       status: "active",
       accountIds: [accountId],
       purpose: "Review recent household spending",
     });
-    expect(saved.body.grant?.expiresAt).not.toBeNull();
-    expect(saved.body.connection?.status).toBe("active");
+    expect(saved.grant?.expiresAt).not.toBeNull();
+    expect(saved.connection?.status).toBe("active");
+    const afterSave = await owner.status();
+    expect(afterSave.grant).toStrictEqual(saved.grant);
+    expect(afterSave.connection).toStrictEqual(saved.connection);
 
-    const savedStatus = await accept(
-      client.accessRequestStatus({
-        headers: sessionHeaders(),
-      }),
-      [200],
-    );
-    expect(savedStatus.body.grant).toStrictEqual(saved.body.grant);
-    expect(savedStatus.body.connection).toStrictEqual(saved.body.connection);
-
-    const revoked = await accept(
-      client.revokeGrant({
-        headers: sessionHeaders(),
-        body: {},
-      }),
-      [200],
-    );
-    expect(revoked.body.grant?.status).toBe("revoked");
-    expect(revoked.body.connection?.status).toBe("active");
-
-    const revokedStatus = await accept(
-      client.accessRequestStatus({
-        headers: sessionHeaders(),
-      }),
-      [200],
-    );
-    expect(revokedStatus.body.grant).toStrictEqual(revoked.body.grant);
-    expect(revokedStatus.body.connection).toStrictEqual(
-      revoked.body.connection,
-    );
+    const revoked = await owner.revokeGrant();
+    expect(revoked.grant?.status).toBe("revoked");
+    expect(revoked.connection?.status).toBe("active");
+    await expect(owner.status()).resolves.toStrictEqual(revoked);
   });
 
-  it("uses branded Mastercard redirect origins without changing the webhook origin", async () => {
-    mockEnv("APP_URL", "https://app.okou.ai");
-    mockEnv(
-      "FINICITY_WEBHOOK_BASE_URL",
-      "https://public-api-tunnel.example.test",
-    );
-    await connectBankingFixture();
-    const generatedBodies: Record<string, unknown>[] = [];
-    server.use(
-      finicityAuthHandler(),
-      http.post(FINICITY_CONNECT_URL, async ({ request }) => {
-        generatedBodies.push((await request.json()) as Record<string, unknown>);
-        return HttpResponse.json({
-          link: "https://connect.example.test/session",
-        });
-      }),
-    );
-
-    const client = setupApp({ context, routes: bankingRoutes })(
-      bankingWorkspaceContract,
-    );
-    const brandCases = [
-      {
-        origin: "https://app.okou.ai",
-        redirectUri: "https://app.okou.ai/banking/connect/return",
-      },
-    ] as const;
-
-    for (const [index, brandCase] of brandCases.entries()) {
-      await accept(
-        client.createConnectSession({
-          headers: sessionHeaders(),
-          extraHeaders: { origin: brandCase.origin },
-          body: { mode: "connect" },
-        }),
-        [200],
-      );
-      expect(generatedBodies[index]).toMatchObject({
-        redirectUri: brandCase.redirectUri,
-        webhook: "https://public-api-tunnel.example.test/api/webhooks/finicity",
-      });
-    }
-  });
-
-  it("replaces concurrent connect sessions and ignores superseded callbacks", async () => {
-    const bdd = createBddApi(context);
-    const actor = bdd.user();
-    if (!actor.orgId) {
-      throw new Error("Banking requires an org-scoped actor");
-    }
-    bdd.acceptStorageWrites();
-    await updateFeatureSwitchesForUser(
-      context,
-      { userId: actor.userId, orgId: actor.orgId },
-      { [FeatureSwitchKey.Banking]: true },
-    );
-
-    const providerCustomerId = randomProviderId("customer");
-    server.use(
-      finicityAuthHandler(),
-      http.post(`${FINICITY_BASE_URL}/aggregation/v2/customers/testing`, () => {
-        return HttpResponse.json({ id: providerCustomerId });
-      }),
-      http.post(FINICITY_CONNECT_URL, () => {
-        return HttpResponse.json({
-          link: "https://connect.example.test/session",
-        });
-      }),
-      http.get(
-        `${FINICITY_BASE_URL}/aggregation/v1/customers/${providerCustomerId}/accounts`,
-        () => {
-          return HttpResponse.json({
-            accounts: [
-              {
-                id: randomProviderId("account"),
-                name: "Superseded Connect Account",
-                institutionLoginId: "login-superseded",
-                type: "checking",
-                status: "active",
-                aggregationStatusCode: 0,
-              },
-            ],
-          });
-        },
-      ),
-    );
-
-    const client = setupApp({ context, routes: bankingRoutes })(
-      bankingWorkspaceContract,
-    );
-    const createSession = async () => {
-      return await accept(
-        client.createConnectSession({
-          headers: sessionHeaders(),
-          body: { mode: "connect" },
-        }),
-        [200],
-      );
-    };
-    const initial = await createSession();
-    const concurrent = await Promise.all([createSession(), createSession()]);
-    expect(concurrent[0].body.sessionId).not.toBe(concurrent[1].body.sessionId);
-
-    const current = await createSession();
-    const status = await accept(
-      client.accessRequestStatus({
-        headers: sessionHeaders(),
-      }),
-      [200],
-    );
-    expect(status.body.session).toMatchObject({
-      id: current.body.sessionId,
-      status: "pending",
-    });
-    const connectionId = status.body.connection?.id;
-    if (!connectionId) {
-      throw new Error("Expected a banking connection");
-    }
-
-    for (const superseded of [initial, ...concurrent]) {
-      const callback = await postWebhook({
-        eventId: randomProviderId("event-superseded"),
-        eventType: "added",
-        customerId: providerCustomerId,
-        webhookData: {
-          uniqueCustomerId: connectionId,
-          uniqueRequestId: superseded.body.sessionId,
-        },
-      });
-      expect(callback.status).toBe(200);
-    }
-
-    const afterCallbacks = await accept(
-      client.accessRequestStatus({
-        headers: sessionHeaders(),
-      }),
-      [200],
-    );
-    expect(afterCallbacks.body.session).toMatchObject({
-      id: current.body.sessionId,
-      status: "pending",
-    });
-    expect(afterCallbacks.body.connection?.accounts).toStrictEqual([]);
-  });
-
-  it("completes only after signed added and done webhooks", async () => {
+  it("banking-013 completes a connect session only after signed added and done webhooks", async () => {
     mockEnv("APP_URL", "https://local-app.example.test");
     mockEnv(
       "FINICITY_WEBHOOK_BASE_URL",
       "https://public-api-tunnel.example.test",
     );
-    const fixture = await connectBankingFixture();
-    let generatedBody: Record<string, unknown> | undefined;
-    server.use(
-      finicityAuthHandler(),
-      http.post(FINICITY_CONNECT_URL, async ({ request }) => {
-        generatedBody = (await request.json()) as Record<string, unknown>;
-        return HttpResponse.json({
-          link: "https://connect.example.test/session",
-        });
-      }),
-      http.get(
-        `${FINICITY_BASE_URL}/aggregation/v1/customers/${fixture.providerCustomerId}/accounts`,
-        () => {
-          return HttpResponse.json({
-            accounts: [
-              {
-                id: fixture.enabledAccountId,
-                name: "Everyday Checking",
-                institutionName: "Example Bank",
-                institutionLoginId: "login-example-bank",
-                type: "checking",
-                realAccountNumberLast4: "6789",
-                status: "active",
-                aggregationStatusCode: 0,
-              },
-            ],
-          });
-        },
-      ),
-    );
+    const provider = finicityProvider(() => {
+      return "https://connect.example.test/session";
+    });
+    const owner = await bankingOwner(provider);
+    await owner.connectChecking();
 
-    const client = setupApp({ context, routes: bankingRoutes })(
-      bankingWorkspaceContract,
-    );
-    const started = await accept(
-      client.createConnectSession({
-        headers: sessionHeaders(),
-        body: { mode: "connect" },
-      }),
-      [200],
-    );
-    expect(started.body.url).toBe("https://connect.example.test/session");
-    expect(generatedBody).toMatchObject({
-      partnerId: "test-partner",
-      customerId: fixture.providerCustomerId,
+    const started = await owner.startSession();
+    expect(started.url).toBe("https://connect.example.test/session");
+    const connectionId = (await owner.status()).connection?.id;
+    expect(provider.connectBodies.at(-1)).toMatchObject({
+      partnerId: PARTNER_ID,
+      customerId: expect.any(String),
       webhookContentType: "application/json",
       singleUseUrl: true,
       webhookData: {
-        uniqueCustomerId: fixture.connectionId,
-        uniqueRequestId: started.body.sessionId,
+        uniqueCustomerId: connectionId,
+        uniqueRequestId: started.sessionId,
       },
+      webhook: "https://public-api-tunnel.example.test/api/webhooks/finicity",
+      redirectUri: "https://local-app.example.test/banking/connect/return",
     });
-    expect(String(generatedBody?.webhook)).toBe(
-      "https://public-api-tunnel.example.test/api/webhooks/finicity",
-    );
-    expect(String(generatedBody?.redirectUri)).toBe(
-      "https://local-app.example.test/banking/connect/return",
-    );
 
-    const addedEvent = {
-      eventId: randomProviderId("event-added"),
+    const mismatched = await owner.deliver({
       eventType: "added",
-      customerId: fixture.providerCustomerId,
-      webhookData: {
-        uniqueCustomerId: fixture.connectionId,
-        uniqueRequestId: started.body.sessionId,
-      },
-    };
-    const mismatchedConnection = await postWebhook({
-      ...addedEvent,
-      eventId: randomProviderId("event-wrong-connection"),
+      eventId: "mismatched",
       webhookData: {
         uniqueCustomerId: randomUUID(),
-        uniqueRequestId: started.body.sessionId,
+        uniqueRequestId: started.sessionId,
       },
     });
-    expect(mismatchedConnection.status).toBe(200);
-    const added = await postWebhook(addedEvent);
-    expect(added.status).toBe(200);
-    const duplicateAdded = await postWebhook(addedEvent);
-    expect(duplicateAdded.status).toBe(200);
-
-    const beforeDone = await accept(
-      client.accessRequestStatus({
-        headers: sessionHeaders(),
+    expect(mismatched.status).toBe(200);
+    for (let delivery = 0; delivery < 2; delivery += 1) {
+      expect(
+        (await owner.deliver({ eventType: "added", eventId: "added-2" }))
+          .status,
+      ).toBe(200);
+    }
+    const beforeDone = await owner.status();
+    expect(beforeDone.session?.status).toBe("pending");
+    expect(beforeDone.connection?.accounts).toStrictEqual([
+      expect.objectContaining({
+        name: "Everyday Checking",
+        institutionName: "Example Bank",
+        last4: "6789",
+        repairRequired: false,
       }),
-      [200],
-    );
-    expect(beforeDone.body.session?.status).toBe("pending");
-    expect(beforeDone.body.connection?.accounts[0]).toMatchObject({
-      name: "Everyday Checking",
-      institutionName: "Example Bank",
-      last4: "6789",
-      repairRequired: false,
-    });
+    ]);
 
-    const done = await postWebhook({
-      ...addedEvent,
-      eventId: randomProviderId("event-done"),
+    const done = await owner.deliver({
       eventType: "done",
-      eventTrigger: "userSubmit",
+      eventId: "done-2",
+      extra: { eventTrigger: "userSubmit" },
     });
     expect(done.status).toBe(200);
-    const completed = await accept(
-      client.accessRequestStatus({
-        headers: sessionHeaders(),
-      }),
-      [200],
-    );
-    expect(completed.body.session).toMatchObject({
-      id: started.body.sessionId,
+    expect((await owner.status()).session).toMatchObject({
       mode: "connect",
       status: "completed",
     });
 
-    const doneOnlySession = await accept(
-      client.createConnectSession({
-        headers: sessionHeaders(),
-        body: { mode: "connect" },
-      }),
-      [200],
-    );
-    const doneOnly = await postWebhook({
-      eventId: randomProviderId("event-done-only"),
+    await owner.startSession();
+    const exited = await owner.deliver({
       eventType: "done",
-      eventTrigger: "userExit",
-      customerId: fixture.providerCustomerId,
-      webhookData: {
-        uniqueCustomerId: fixture.connectionId,
-        uniqueRequestId: doneOnlySession.body.sessionId,
-      },
+      eventId: "done-3",
+      extra: { eventTrigger: "userExit" },
     });
-    expect(doneOnly.status).toBe(200);
-    const cancelled = await accept(
-      client.accessRequestStatus({
-        headers: sessionHeaders(),
-      }),
-      [200],
-    );
-    expect(cancelled.body.session).toMatchObject({
-      id: doneOnlySession.body.sessionId,
-      status: "cancelled",
-    });
+    expect(exited.status).toBe(200);
+    expect((await owner.status()).session?.status).toBe("cancelled");
   });
 
-  it("rejects invalid webhook signatures", async () => {
-    const response = await createApp({
-      signal: context.signal,
-      routes: bankingRoutes,
-    }).request("/api/webhooks/finicity", {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        "x-finicity-signature": "0".repeat(64),
-      },
-      body: JSON.stringify({ eventType: "ping" }),
-    });
-    expect(response.status).toBe(401);
-  });
+  it("banking-008 reuses each owner's connection while keeping users and organizations separate", async () => {
+    const provider = finicityProvider();
+    const member = {
+      userId: `user_${randomUUID()}`,
+      orgId: `org_${randomUUID()}`,
+    };
+    const owners = [
+      member,
+      { userId: `user_${randomUUID()}`, orgId: member.orgId },
+      { userId: member.userId, orgId: `org_${randomUUID()}` },
+    ];
+    const connectionIds = new Set<string>();
 
-  it("serves the Okou Finicity browser return from the API", async () => {
-    const response = await createApp({
-      signal: context.signal,
-      routes: bankingRoutes,
-    }).request(
-      "https://api.okou.ai/api/banking/connect/return?reason=complete&code=200&reportData=null",
-    );
+    for (const identity of owners) {
+      const owner = await bankingOwner(provider, identity);
+      expect((await owner.status()).connection).toBeNull();
 
-    expect(response.status).toBe(200);
-    expect(response.headers.get("content-type")).toBe(
-      "text/html; charset=utf-8",
-    );
-    const html = await response.text();
-    expect(html).toContain("<title>Return to Okou</title>");
-    expect(html).toContain("continue in Okou Chat.");
+      const first = await owner.startSession();
+      const customerId = String(provider.connectBodies.at(-1)?.customerId);
+      expect(first.url).toBe(`https://connect.example.test/${customerId}`);
+      const afterFirst = await owner.status();
+      const connectionId = afterFirst.connection?.id ?? "";
+      expect(connectionIds.has(connectionId)).toBeFalsy();
+      connectionIds.add(connectionId);
+
+      const second = await owner.startSession();
+      expect(second.url).toBe(first.url);
+      expect(second.sessionId).not.toBe(first.sessionId);
+      const afterSecond = await owner.status();
+      expect(afterSecond.connection?.id).toBe(connectionId);
+      expect(afterSecond.session).toMatchObject({
+        id: second.sessionId,
+        status: "pending",
+      });
+    }
+    expect(connectionIds.size).toBe(3);
   });
 });

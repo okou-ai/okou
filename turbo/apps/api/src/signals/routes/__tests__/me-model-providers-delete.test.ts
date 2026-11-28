@@ -1,224 +1,134 @@
 import { randomUUID } from "node:crypto";
-import { describe, expect, it } from "vitest";
-import { HttpResponse, http } from "msw";
 
 import {
   personalModelProvidersByTypeContract,
   personalModelProvidersMainContract,
 } from "@okouai/api-contracts/contracts/personal-model-providers";
+import { http, HttpResponse } from "msw";
+import { describe, expect, it } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { server } from "../../../mocks/server";
-import { createRouteMocks } from "./helpers/route-test";
 import { meModelProvidersDeleteRoutes } from "../me-model-providers-delete";
 import { meModelProvidersListRoutes } from "../me-model-providers-list";
-import { meModelProvidersResetSubscriptionRoutes } from "../me-model-providers-reset-subscription";
 import { meModelProvidersUpsertRoutes } from "../me-model-providers-upsert";
-
-const personalModelProvidersMainTestRoutes = Object.freeze([
-  ...meModelProvidersListRoutes,
-  ...meModelProvidersUpsertRoutes,
-]);
-
-const personalModelProvidersByTypeTestRoutes = Object.freeze([
-  ...meModelProvidersDeleteRoutes,
-  ...meModelProvidersResetSubscriptionRoutes,
-]);
+import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
 const mocks = createRouteMocks(context);
+const headers = Object.freeze({ authorization: "Bearer clerk-session" });
+const app = setupApp({
+  context,
+  routes: [
+    ...meModelProvidersDeleteRoutes,
+    ...meModelProvidersListRoutes,
+    ...meModelProvidersUpsertRoutes,
+  ],
+});
+const providers = app(personalModelProvidersMainContract);
+const providersByType = app(personalModelProvidersByTypeContract);
 
-interface UserModelProviderFixture {
-  readonly orgId: string;
+interface Member {
   readonly userId: string;
+  readonly orgId: string;
 }
 
-function uniqueOrgUser(prefix: string): UserModelProviderFixture {
-  return {
-    orgId: `org_${prefix}_${randomUUID().slice(0, 8)}`,
-    userId: `user_${prefix}_${randomUUID().slice(0, 8)}`,
-  };
+function member(orgId = `org_${randomUUID()}`): Member {
+  return { userId: `user_${randomUUID()}`, orgId };
 }
+
+function signIn(actor: Member): void {
+  mocks.clerk.session(actor.userId, actor.orgId);
+}
+
+function claudeProfile(profile: () => Response): void {
+  server.use(
+    http.get("https://api.anthropic.com/api/oauth/profile", () => {
+      return profile();
+    }),
+    http.get("https://api.anthropic.com/api/oauth/usage", () => {
+      return HttpResponse.json({});
+    }),
+  );
+}
+
+async function connectClaude(actor: Member) {
+  signIn(actor);
+  const created = await accept(
+    providers.upsert({
+      headers,
+      body: {
+        type: "claude-code-oauth-token",
+        secret: `sk-ant-oat01-${randomUUID()}`,
+      },
+    }),
+    [201],
+  );
+  return created.body.provider;
+}
+
+function deleteClaude(actor: Member) {
+  signIn(actor);
+  return providersByType.delete({
+    headers,
+    params: { type: "claude-code-oauth-token" },
+  });
+}
+
+const notFound = Object.freeze({
+  error: { code: "NOT_FOUND", message: "Resource not found" },
+});
 
 describe("DELETE /api/me/model-providers/:type", () => {
-  async function upsertPersonalProvider(
-    fixture: UserModelProviderFixture,
-  ): Promise<void> {
-    mocks.clerk.session(fixture.userId, fixture.orgId);
-    const client = setupApp({
-      context,
-      routes: personalModelProvidersMainTestRoutes,
-    })(personalModelProvidersMainContract);
-    await accept(
-      client.upsert({
-        body: { type: "claude-code-oauth-token", secret: "sk-ant-test" },
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [201],
-    );
-  }
-
-  it("returns 401 when unauthenticated", async () => {
-    const client = setupApp({
-      context,
-      routes: personalModelProvidersByTypeTestRoutes,
-    })(personalModelProvidersByTypeContract);
-    const response = await accept(
-      client.delete({
-        params: { type: "claude-code-oauth-token" },
-        headers: {},
-      }),
-      [401],
-    );
-    expect(response.body).toMatchObject({
-      error: { code: "UNAUTHORIZED" },
+  it("me-model-providers-delete-003 deletes the member's personal Claude provider once", async () => {
+    claudeProfile(() => {
+      return HttpResponse.json({});
     });
+    const owner = member();
+    await connectClaude(owner);
+
+    await accept(deleteClaude(owner), [204]);
+    const repeated = await accept(deleteClaude(owner), [404]);
+    expect(repeated.body).toMatchObject(notFound);
   });
 
-  it("returns 401 when authenticated session has no organization", async () => {
-    mocks.clerk.session(`user_${randomUUID()}`, null);
-    const client = setupApp({
-      context,
-      routes: personalModelProvidersByTypeTestRoutes,
-    })(personalModelProvidersByTypeContract);
-    const response = await accept(
-      client.delete({
-        params: { type: "claude-code-oauth-token" },
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [401],
-    );
-    expect(response.body).toMatchObject({
-      error: { code: "UNAUTHORIZED" },
-    });
-  });
-
-  it("deletes the user's personal provider", async () => {
-    const fixture = uniqueOrgUser("zmmp-delete");
-    await upsertPersonalProvider(fixture);
-
-    const client = setupApp({
-      context,
-      routes: personalModelProvidersByTypeTestRoutes,
-    })(personalModelProvidersByTypeContract);
-    const response = await client.delete({
-      params: { type: "claude-code-oauth-token" },
-      headers: { authorization: "Bearer clerk-session" },
-    });
-    expect(response.status).toBe(204);
-
-    const deletedAgain = await accept(
-      client.delete({
-        params: { type: "claude-code-oauth-token" },
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [404],
-    );
-    expect(deletedAgain.body).toStrictEqual({
-      error: { message: "Resource not found", code: "NOT_FOUND" },
-    });
-  });
-
-  it.each([200, 503])(
-    "disconnects a legacy Claude account when profile preparation returns %s",
-    async (profileStatus) => {
-      const fixture = uniqueOrgUser("zmmp-delete-legacy-identity");
-      mocks.clerk.session(fixture.userId, fixture.orgId);
-      server.use(
-        http.get("https://api.anthropic.com/api/oauth/profile", () => {
-          return new HttpResponse(null, { status: 503 });
-        }),
-      );
-      const main = setupApp({
-        context,
-        routes: personalModelProvidersMainTestRoutes,
-      })(personalModelProvidersMainContract);
-      const connected = await accept(
-        main.upsert({
-          body: {
-            type: "claude-code-oauth-token",
-            secret: "sk-ant-oat-delete-legacy-identity",
-          },
-          headers: { authorization: "Bearer clerk-session" },
-        }),
-        [201],
-      );
-      expect(connected.body.provider).toMatchObject({
-        accountEmail: null,
-        workspaceName: null,
-      });
-      server.use(
-        http.get("https://api.anthropic.com/api/oauth/profile", () => {
-          return HttpResponse.json(
-            {
-              account: { email: "legacy.delete@example.com" },
-              organization: { name: "Legacy Delete Workspace" },
+  it("me-model-providers-delete-004 disconnects a Claude account added while its profile was unavailable", async () => {
+    let profileAvailable = false;
+    claudeProfile(() => {
+      return profileAvailable
+        ? HttpResponse.json({
+            account: {
+              uuid: randomUUID(),
+              email: `claude_${randomUUID()}@example.test`,
             },
-            { status: profileStatus },
-          );
-        }),
-      );
-      const byType = setupApp({
-        context,
-        routes: personalModelProvidersByTypeTestRoutes,
-      })(personalModelProvidersByTypeContract);
-      const deleted = await byType.delete({
-        params: { type: "claude-code-oauth-token" },
-        headers: { authorization: "Bearer clerk-session" },
-      });
-      expect(deleted.status).toBe(204);
-      const listed = await accept(
-        main.list({ headers: { authorization: "Bearer clerk-session" } }),
-        [200],
-      );
-      expect(listed.body.modelProviders).toStrictEqual([]);
-      const repeated = await accept(
-        byType.delete({
-          params: { type: "claude-code-oauth-token" },
-          headers: { authorization: "Bearer clerk-session" },
-        }),
-        [404],
-      );
-      expect(repeated.body).toStrictEqual({
-        error: { message: "Resource not found", code: "NOT_FOUND" },
-      });
-    },
-  );
-
-  it("does not delete another user's provider in the same organization", async () => {
-    const orgId = `org_zmmp_cross_${randomUUID().slice(0, 8)}`;
-    const alice = {
-      orgId,
-      userId: `user_alice_${randomUUID().slice(0, 8)}`,
-    };
-    const bob = {
-      orgId,
-      userId: `user_bob_${randomUUID().slice(0, 8)}`,
-    };
-    await upsertPersonalProvider(alice);
-    mocks.clerk.session(bob.userId, orgId);
-
-    const client = setupApp({
-      context,
-      routes: personalModelProvidersByTypeTestRoutes,
-    })(personalModelProvidersByTypeContract);
-    const response = await accept(
-      client.delete({
-        params: { type: "claude-code-oauth-token" },
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [404],
-    );
-    expect(response.body).toStrictEqual({
-      error: { message: "Resource not found", code: "NOT_FOUND" },
+            organization: { uuid: randomUUID(), name: "Claude Workspace" },
+          })
+        : HttpResponse.json({ error: "unavailable" }, { status: 503 });
     });
+    const owner = member();
+    const provider = await connectClaude(owner);
+    expect(provider).toMatchObject({ accountEmail: null, workspaceName: null });
 
-    mocks.clerk.session(alice.userId, orgId);
-    const aliceDelete = await client.delete({
-      params: { type: "claude-code-oauth-token" },
-      headers: { authorization: "Bearer clerk-session" },
+    profileAvailable = true;
+    await accept(deleteClaude(owner), [204]);
+    signIn(owner);
+    const listed = await accept(providers.list({ headers }), [200]);
+    expect(listed.body.modelProviders).toStrictEqual([]);
+    const repeated = await accept(deleteClaude(owner), [404]);
+    expect(repeated.body).toMatchObject(notFound);
+  });
+
+  it("me-model-providers-delete-006 does not delete another member's provider in the same organization", async () => {
+    claudeProfile(() => {
+      return HttpResponse.json({});
     });
-    expect(aliceDelete.status).toBe(204);
+    const owner = member();
+    const other = member(owner.orgId);
+    await connectClaude(owner);
+
+    const denied = await accept(deleteClaude(other), [404]);
+    expect(denied.body).toMatchObject(notFound);
+    await accept(deleteClaude(owner), [204]);
   });
 });

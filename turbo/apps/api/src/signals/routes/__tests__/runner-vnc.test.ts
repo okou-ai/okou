@@ -1,35 +1,40 @@
-import { createPublicRemoteAccessRunApi } from "./helpers/public-remote-access-run";
 import { randomUUID } from "node:crypto";
-import { readFileSync } from "node:fs";
-import { chatRemoteAccessContract } from "@okouai/api-contracts/contracts/chat-remote-access";
-import { remoteDevicesContract } from "@okouai/api-contracts/contracts/remote-devices";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { chatInputStatusContract } from "@okouai/api-contracts/contracts/chat-input-status";
 import {
-  runnerVncContract,
-  type RunnerVncCheckRequest,
-  type RunnerVncObservationRequest,
-} from "@okouai/api-contracts/contracts/runner-vnc";
+  remoteDevicesContract,
+  type RemoteDeviceAccess,
+} from "@okouai/api-contracts/contracts/remote-devices";
 import { sshConnectionsContract } from "@okouai/api-contracts/contracts/ssh-connections";
-import { vncHostsContract } from "@okouai/api-contracts/contracts/vnc-access";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { accept, testContext } from "../../../__tests__/test-context";
-import { setupApp, setupRawAppRequest } from "../../../__tests__/test-helpers";
-import { mockNow } from "../../../lib/time";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { beforeEach, describe, expect, it, onTestFinished } from "vitest";
+
+import {
+  accept,
+  testContext,
+  type TestContext,
+} from "../../../__tests__/test-context";
+import { setupApp } from "../../../__tests__/test-helpers";
+import {
+  TEST_WITH_DOUBLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE,
+  TEST_WITH_SINGLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE,
+} from "../../../__tests__/test-timeouts";
+import { mockOptionalEnv } from "../../../lib/env";
+import { nowDate } from "../../../lib/time";
 import { flushWaitUntilForTest } from "../../context/wait-until";
-import { createDeferredPromise, joinAll, onRejection } from "../../utils";
-import { runnerVncRoutes } from "../runner-vnc";
-import { chatRemoteAccessRoutes } from "../chat-remote-access";
+import { chatInputStatusRoutes } from "../chat-input-status";
 import { remoteDevicesRoutes } from "../remote-devices";
 import { sshConnectionsRoutes } from "../ssh-connections";
-import { vncAccessRoutes } from "../vnc-access";
-import { createAuthOrgBddApi } from "./helpers/api-bdd-auth-org";
-import { createBddApi } from "./helpers/api-bdd";
-import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
+import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
+import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createRunsApi } from "./helpers/api-bdd-runs";
-import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
+import {
+  createWebhookCallbackApi,
+  deliverOrganizationCreated,
+} from "./helpers/api-bdd-webhooks";
+import { createWorkflowsBddApi } from "./helpers/api-bdd-workflows";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
-import { requireVncCredentialId } from "./helpers/vnc-response";
-import { certificateChain, privateKey } from "./helpers/vnc-synthetic-client";
+import { holdDownloadSigning } from "./helpers/hold-download-signing";
+import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
 import { inlineSshKey } from "./helpers/ssh-credential";
 import {
   createVncRuntimeApi,
@@ -40,3110 +45,710 @@ import {
   vncRunnerHeaders,
   vncSecurity,
   vncSessionHeaders,
-  vncX509VncProfiles,
-  type VncRuntimeFixture,
 } from "./helpers/vnc-runtime";
 
-const context = testContext();
-const api = createVncRuntimeApi(context);
-const runs = createRunsApi(context);
-beforeEach(initializeVncRuntimeTest);
+const DEVICE_POLICY_HEADERS = Object.freeze({
+  "X-Okou-Remote-Device-Policy": "1",
+});
 
-const kerberosVectors = readFileSync(
-  new URL(
-    "../../../../../../../crates/kerberos-credentials/tests/fixtures/conformance.tsv",
-    import.meta.url,
-  ),
-  "utf8",
-)
-  .trimEnd()
-  .split("\n")
-  .slice(1)
-  .map((line) => {
-    return line.split("\t");
-  });
-function kerberosMaterial(name: string) {
-  const canonical = kerberosVectors.find((vector) => {
-    return vector[0] === name;
-  })?.[3];
-  if (!canonical) {
-    throw new Error("Missing public K1 conformance vector");
-  }
-  return Buffer.from(canonical, "hex").toString("base64");
+const TEST_SSH_KEY =
+  "-----BEGIN OPENSSH PRIVATE KEY-----\ntest-vnc-hop-key\n-----END OPENSSH PRIVATE KEY-----";
+
+interface VncOwner {
+  readonly orgId: string;
+  readonly userId: string;
+  readonly actor: ApiTestUser;
 }
 
-function check(
-  f: VncRuntimeFixture,
-  expectedGeneration: number,
-  override: Partial<RunnerVncCheckRequest> = {},
-  headers: Readonly<Record<string, string>> = vncRunnerHeaders,
+function remoteDevicesClient(context: TestContext) {
+  return setupApp({ context, routes: remoteDevicesRoutes })(
+    remoteDevicesContract,
+  );
+}
+
+function sshConnectionsClient(context: TestContext) {
+  return setupApp({ context, routes: sshConnectionsRoutes })(
+    sshConnectionsContract,
+  );
+}
+
+function createVncOwner(context: TestContext): VncOwner {
+  const bdd = createBddApi(context);
+  const runs = createRunsApi(context);
+  const runtime = createVncRuntimeApi(context);
+  const actor = bdd.user();
+  if (!actor.orgId) {
+    throw new Error("Expected a VNC owner organization");
+  }
+  bdd.acceptStorageWrites();
+  runs.acceptStorageDownloads();
+  runs.acceptTelemetryIngest();
+  mockOptionalEnv("OPENROUTER_API_KEY", "bdd-issued-credential-key");
+  const owner = { orgId: actor.orgId, userId: actor.userId, actor };
+  runtime.authenticate(owner);
+  return owner;
+}
+
+async function startVncRun(
+  context: TestContext,
+  owner: VncOwner,
+  options: { readonly bootstrapOrg?: boolean } = {},
 ) {
-  return accept(
-    api.runner().check({
-      headers,
-      params: { runId: f.runId },
-      body: {
-        connectionId: f.connectionId,
-        runnerIdentity: f.runnerIdentity,
-        expectedGeneration,
-        expectedTransport: { type: "direct" },
-        ...override,
-      },
+  const runs = createRunsApi(context);
+  const chat = createChatFilesBddApi(context);
+  const runtime = createVncRuntimeApi(context);
+  const runnerIdentity = {
+    runnerId: randomUUID(),
+    heartbeatGeneration: 5_000_000_000,
+  };
+  await Promise.all([
+    options.bootstrapOrg === false
+      ? Promise.resolve()
+      : deliverOrganizationCreated(context, owner.actor),
+    runs.configureRunnerGroup({
+      runnerIdentity,
+      heartbeatAuthorization: vncRunnerHeaders.authorization,
+    }),
+  ]);
+
+  const clientEventId = randomUUID();
+  const sent = await chat.requestSendEvent(
+    owner.actor,
+    {
+      prompt: "Use my configured VNC desktop",
+      model: null,
+      clientEventId,
+    },
+    [201],
+  );
+  if (sent.status !== 201) {
+    throw new Error("Expected an accepted VNC chat send");
+  }
+  await flushWaitUntilForTest();
+
+  runtime.authenticate(owner);
+  const observed = await accept(
+    setupApp({ context, routes: chatInputStatusRoutes })(
+      chatInputStatusContract,
+    ).get({
+      headers: vncSessionHeaders,
+      params: { threadId: sent.body.threadId, eventId: clientEventId },
     }),
     [200],
   );
+  if (observed.body.status !== "consumed") {
+    throw new Error("Expected the VNC chat send to launch a Run");
+  }
+  const runId = observed.body.runId;
+  const input = await runs.executionInput(runId);
+  const agentToken = input.platformEnvironment.OKOU_TOKEN;
+  if (!agentToken) {
+    throw new Error("Expected the execution's Agent credential");
+  }
+
+  let terminal = false;
+  onTestFinished(async () => {
+    if (terminal) {
+      return;
+    }
+    terminal = true;
+    runtime.authenticate(owner);
+    useSecretKmsProbe();
+    await runs.requestCancelRun(owner.actor, runId, [200, 400, 404]);
+    await createWebhookCallbackApi(context).requestAgentComplete(
+      { runId, exitCode: 137 },
+      { authorization: `Bearer ${input.sandboxToken}` },
+      [200, 400, 404],
+    );
+    await flushWaitUntilForTest();
+  });
+
+  runtime.authenticate(owner);
+  return {
+    ...owner,
+    runId,
+    threadId: sent.body.threadId,
+    runnerIdentity,
+    sandboxToken: input.sandboxToken,
+    agentToken,
+    piSessionId: input.piSessionId,
+    markTerminal() {
+      terminal = true;
+    },
+  };
+}
+
+async function createDefaultVncFixture(context: TestContext) {
+  const runtime = createVncRuntimeApi(context);
+  const owner = createVncOwner(context);
+  const connection = await accept(
+    runtime.connections().create({
+      headers: vncSessionHeaders,
+      body: vncConnectionBody(),
+    }),
+    [201],
+  );
+  await runtime.enableDefault(owner, "vnc", connection.body.id);
+  const running = await startVncRun(context, owner);
+  return { ...running, connectionId: connection.body.id };
+}
+
+async function finishRun(
+  context: TestContext,
+  run: {
+    readonly actor: ApiTestUser;
+    readonly runId: string;
+    readonly sandboxToken: string;
+    readonly piSessionId?: string;
+    readonly markTerminal: () => void;
+  },
+  status: "completed" | "cancelled" | "failed",
+) {
+  const runs = createRunsApi(context);
+  const webhooks = createWebhookCallbackApi(context);
+  const headers = { authorization: `Bearer ${run.sandboxToken}` };
+
+  if (status === "completed") {
+    if (!run.piSessionId) {
+      throw new Error("Expected a captured Pi session identity");
+    }
+    await webhooks.requestAgentEvents(
+      { runId: run.runId, events: [{ type: "system", sequenceNumber: 0 }] },
+      headers,
+      [200],
+    );
+    await webhooks.requestAgentComplete(
+      {
+        runId: run.runId,
+        exitCode: 0,
+        lastEventSequence: 0,
+        completion: {
+          cliAgentType: "pi",
+          cliAgentSessionId: run.piSessionId,
+          cliAgentSessionHistoryDisposition: "native_only",
+        },
+      },
+      headers,
+      [200],
+    );
+  } else if (status === "cancelled") {
+    await runs.requestCancelRun(run.actor, run.runId, [200]);
+    await webhooks.requestAgentComplete(
+      { runId: run.runId, exitCode: 1, error: "VNC Run cancelled" },
+      headers,
+      [200],
+    );
+  } else {
+    await webhooks.requestAgentComplete(
+      {
+        runId: run.runId,
+        exitCode: 1,
+        error: "VNC Run failed",
+        failureReason: "guest_root_filesystem_full",
+      },
+      headers,
+      [200],
+    );
+  }
+  run.markTerminal();
+  await flushWaitUntilForTest();
+  await expect(runs.readRun(run.actor, run.runId)).resolves.toMatchObject({
+    status,
+  });
 }
 
 describe("private Runner VNC authority", () => {
-  const selectedRuns = createPublicRemoteAccessRunApi(context);
-  const executionRunCleanups: (() => Promise<void>)[] = [];
+  const context = testContext();
 
-  // Cancel owned Runs while the parent context still owns its signal and mocks.
-  afterEach(async () => {
-    await selectedRuns.cleanup();
-    for (const cleanup of executionRunCleanups.splice(0)) {
-      await cleanup();
-      await flushWaitUntilForTest();
-    }
+  beforeEach(() => {
+    initializeVncRuntimeTest();
   });
 
-  async function executionRuntime(
-    owner: Pick<VncRuntimeFixture, "orgId" | "userId">,
-  ) {
-    const actor = createBddApi(context).user(owner);
-    const runnerIdentity = {
-      runnerId: randomUUID(),
-      heartbeatGeneration: 5_000_000_000,
-    };
-    await runs.configureRunnerGroup({
-      runnerIdentity,
-      heartbeatAuthorization: vncRunnerHeaders.authorization,
-    });
-    const { runId, threadId } = await runs.createThreadRun(actor, {
-      prompt: "Use my configured VNC desktop",
-    });
-    const input = await runs.executionInput(runId);
-    executionRunCleanups.push(async () => {
-      // Negative admission and KMS cases must not prevent owned Run cleanup.
-      api.authenticate(owner);
-      useSecretKmsProbe();
-      await runs.requestCancelRun(actor, runId, [200]);
-      await createWebhookCallbackApi(context).requestAgentComplete(
-        { runId, exitCode: 137 },
-        { authorization: `Bearer ${input.sandboxToken}` },
-        [200],
-      );
-    });
-    const { sandboxToken } = input;
-    const agentToken = input.platformEnvironment.OKOU_TOKEN;
-    if (!sandboxToken || !agentToken) {
-      throw new Error(
-        "Expected execution input to include its Run credentials",
-      );
-    }
-    await expect(runs.readRun(actor, runId)).resolves.toMatchObject({
-      status: "running",
-    });
-    api.authenticate(owner);
-    return { runId, threadId, runnerIdentity, sandboxToken, agentToken };
-  }
+  it(
+    "pf-121 denies an existing Run's VNC authority after membership-deletion webhook",
+    { timeout: TEST_WITH_DOUBLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const runtime = createVncRuntimeApi(context);
+      const fixture = await createDefaultVncFixture(context);
+      const kms = useSecretKmsProbe();
 
-  /** Ordinary chat Runs use production launch and dispatch. */
-  async function executionFixture(
-    options: { readonly defaultEnabled?: boolean } = {},
-  ): Promise<
-    VncRuntimeFixture & {
-      readonly connectionCreatedAt: string;
-      readonly agentToken: string;
-    }
-  > {
-    const bdd = createBddApi(context);
-    const actor = bdd.user();
-    if (!actor.orgId) {
-      throw new Error("Expected a VNC owner organization");
-    }
-    const owner = { orgId: actor.orgId, userId: actor.userId };
-    bdd.acceptStorageWrites();
-    runs.acceptStorageDownloads();
-    runs.acceptTelemetryIngest();
-    await runs.grantProEntitlement(actor);
-    await runs.ensurePersonalSubscriptionModel(actor, {
-      model: "claude-fable-5-1",
-    });
-    api.authenticate(owner);
-    const connection = await accept(
-      api.connections().create({
-        headers: vncSessionHeaders,
-        body: vncConnectionBody(),
-      }),
-      [201],
-    );
-    if (options.defaultEnabled !== false) {
-      await api.enableDefault(owner, "vnc", connection.body.id);
-    }
-    const running = await executionRuntime({ ...owner });
-    return {
-      ...owner,
-      ...running,
-      connectionId: connection.body.id,
-      connectionCreatedAt: connection.body.createdAt,
-      credentialId: requireVncCredentialId(connection.body),
-    };
-  }
-
-  it.each(["display", "kdc"] as const)(
-    "requires a separate current device grant for the saved %s SSH hop",
-    async (hop) => {
-      const f = await executionFixture();
-      const ssh = await accept(
-        setupApp({ context, routes: sshConnectionsRoutes })(
-          sshConnectionsContract,
-        ).create({
-          headers: vncSessionHeaders,
+      const initial = await accept(
+        runtime.runner().resolve({
+          headers: vncRunnerHeaders,
+          params: { runId: fixture.runId },
           body: {
-            id: randomUUID(),
-            displayName: "Saved SSH hop",
-            host: "gateway.example.com",
-            credential: inlineSshKey("deploy", "private-key"),
+            connectionId: fixture.connectionId,
+            runnerIdentity: fixture.runnerIdentity,
+            supportedProfiles: [...vncProfiles],
           },
         }),
-        [201],
+        [200],
       );
-      await api.enableDefault(f, "ssh", ssh.body.id);
-      const gateway = { type: "ssh" as const, connectionId: ssh.body.id };
-      const updated = await accept(
-        api.connections().update({
-          headers: vncSessionHeaders,
-          params: { connectionId: f.connectionId },
+      expect(initial.body).toMatchObject({
+        outcome: "resolved_transport",
+        generation: 1,
+        authentication: { method: "vnc_password", password: vncPassword },
+      });
+      const createdAt = initial.headers.get("x-vnc-connection-created-at");
+      if (!createdAt) {
+        throw new Error("Expected X-VNC-Connection-Created-At header");
+      }
+      expect(kms.decryptCalls).toBe(1);
+
+      const webhooks = createWebhookCallbackApi(context);
+      webhooks.configureClerkWebhookSecret();
+      webhooks.verifyNextClerkWebhook({
+        type: "organizationMembership.deleted",
+        data: {
+          organization: { id: fixture.orgId },
+          public_user_data: { user_id: fixture.userId },
+        },
+      });
+      await webhooks.requestClerkWebhook("{}", {}, [200]);
+      await flushWaitUntilForTest();
+      fixture.markTerminal();
+
+      const observedAfterDelete = await accept(
+        runtime.runner().observe({
+          headers: vncRunnerHeaders,
+          params: { runId: fixture.runId },
           body: {
+            connectionId: fixture.connectionId,
+            runnerIdentity: fixture.runnerIdentity,
             expectedGeneration: 1,
-            ...(hop === "display"
-              ? { transport: gateway }
-              : {
-                  security: {
-                    type: "qemu_x509_gssapi",
-                    trust: { mode: "system" },
-                    service: {
-                      realm: "EXAMPLE.INVALID",
-                      components: ["vnc", "desktop.example.com"],
-                    },
-                    kdc: {
-                      host: "127.0.0.1",
-                      port: 88,
-                      transport: gateway,
-                      ticketLifetimeSeconds: 1200,
-                      renewableLifetimeSeconds: 7200,
-                    },
-                  },
-                  credential: {
-                    create: {
-                      name: "KDC test credentials",
-                      authentication: {
-                        method: "qemu_kerberos_password",
-                        initiator: {
-                          realm: "EXAMPLE.INVALID",
-                          components: ["alice"],
-                        },
-                        password: "synthetic test password",
-                      },
-                    },
-                  },
-                }),
+            expectedTransport: { type: "direct" },
+            expectedCreatedAt: createdAt,
+            observedAt: nowDate().toISOString(),
+            failureReason: "authentication_failed",
           },
         }),
         [200],
       );
-      await updateFeatureSwitchesForUser(context, f, {
+      expect(observedAfterDelete.body).toStrictEqual({
+        outcome: "unavailable",
+      });
+
+      await expect(runtime.resolve(fixture)).resolves.toStrictEqual({
+        outcome: "unavailable",
+      });
+
+      const checkedAfterDelete = await accept(
+        runtime.runner().check({
+          headers: vncRunnerHeaders,
+          params: { runId: fixture.runId },
+          body: {
+            connectionId: fixture.connectionId,
+            runnerIdentity: fixture.runnerIdentity,
+            expectedGeneration: 1,
+            expectedTransport: { type: "direct" },
+          },
+        }),
+        [200],
+      );
+      expect(checkedAfterDelete.body).toStrictEqual({
+        outcome: "unavailable",
+      });
+      expect(kms.decryptCalls).toBe(1);
+    },
+  );
+
+  it(
+    "pf-118 requires a separate current device grant for the saved display SSH hop",
+    { timeout: TEST_WITH_DOUBLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const runtime = createVncRuntimeApi(context);
+      const owner = createVncOwner(context);
+      await updateFeatureSwitchesForUser(context, owner, {
         [FeatureSwitchKey.RemoteDevices]: true,
       });
-      api.authenticate(f);
-      const policy = setupApp({ context, routes: remoteDevicesRoutes })(
-        remoteDevicesContract,
+      runtime.authenticate(owner);
+
+      const sshId = randomUUID();
+      await accept(
+        sshConnectionsClient(context).create({
+          headers: vncSessionHeaders,
+          body: {
+            id: sshId,
+            displayName: "Display SSH hop",
+            host: "jump.example.com",
+            port: 22,
+            credential: inlineSshKey("ops", TEST_SSH_KEY),
+          },
+        }),
+        [201],
       );
-      const { devices } = (
-        await accept(policy.list({ headers: vncSessionHeaders }), [200])
-      ).body;
-      const desktop = devices.find((device) => {
-        return device.displayName === "VNC desktop";
+
+      const vncId = randomUUID();
+      await accept(
+        runtime.connections().create({
+          headers: vncSessionHeaders,
+          body: {
+            ...vncConnectionBody(vncId),
+            host: "127.0.0.1",
+            transport: { type: "ssh", connectionId: sshId },
+          },
+        }),
+        [201],
+      );
+
+      const listed = await accept(
+        remoteDevicesClient(context).list({ headers: vncSessionHeaders }),
+        [200],
+      );
+      const vncDevice = listed.body.devices.find((device) => {
+        return device.channels.some((channel) => {
+          return channel.kind === "vnc" && channel.id === vncId;
+        });
       });
-      const carrier = devices.find((device) => {
-        return device.displayName === "Saved SSH hop";
+      const sshDevice = listed.body.devices.find((device) => {
+        return device.channels.some((channel) => {
+          return channel.kind === "ssh" && channel.id === sshId;
+        });
       });
-      if (!desktop || !carrier) {
-        throw new Error("Expected separate devices for VNC and its SSH hop");
+      if (!vncDevice || !sshDevice) {
+        throw new Error(
+          "Expected separate remote devices for VNC display and SSH hop",
+        );
       }
-      expect(desktop.channels).toMatchObject([
-        {
-          id: f.connectionId,
+      expect(vncDevice.id).not.toBe(sshDevice.id);
+      expect(vncDevice).toMatchObject({ accessAllowed: false });
+      expect(sshDevice).toMatchObject({ accessAllowed: false });
+      expect(vncDevice.channels).toContainEqual(
+        expect.objectContaining({
+          id: vncId,
           kind: "vnc",
-          sshDependencyIds: [gateway.connectionId],
-        },
-      ]);
-      const transport = { ...gateway, generation: 1 };
-      const binding: Partial<RunnerVncCheckRequest> =
-        hop === "display"
-          ? { expectedTransport: transport }
-          : { expectedCredentialRevision: 1, expectedKdcTransport: transport };
-      const runner = {
-        ...vncRunnerHeaders,
-        "X-Okou-Remote-Device-Policy": "1",
-      };
-      const setMode = (deviceId: string, mode: "always" | "denied") => {
-        return accept(
-          policy.setAccess({
+          sshDependencyIds: [sshId],
+        }),
+      );
+
+      const running = await startVncRun(context, owner);
+      const runDirectory = await accept(
+        remoteDevicesClient(context).listForRun({
+          headers: { authorization: `Bearer ${running.agentToken}` },
+        }),
+        [200],
+      );
+      expect(runDirectory.body.devices).toContainEqual(
+        expect.objectContaining({
+          id: vncDevice.id,
+          channels: expect.arrayContaining([
+            expect.objectContaining({
+              id: vncId,
+              kind: "vnc",
+              sshDependencyIds: [sshId],
+            }),
+          ]),
+        }),
+      );
+
+      const kms = useSecretKmsProbe();
+      const setAccess = async (deviceId: string, body: RemoteDeviceAccess) => {
+        runtime.authenticate(owner);
+        await accept(
+          remoteDevicesClient(context).setAccess({
             headers: vncSessionHeaders,
             params: { deviceId },
-            body: { mode },
+            body,
           }),
           [200],
         );
       };
-      await setMode(desktop.id, "always");
-      expect(
-        (await check(f, updated.body.generation, binding, runner)).body.outcome,
-      ).toBe("unavailable");
-      await setMode(carrier.id, "always");
-      expect(
-        (await check(f, updated.body.generation, binding, runner)).body.outcome,
-      ).toBe("valid");
-      await setMode(carrier.id, "denied");
-      expect(
-        (await check(f, updated.body.generation, binding, runner)).body.outcome,
-      ).toBe("unavailable");
-    },
-  );
-
-  async function observe(
-    f: VncRuntimeFixture & { readonly connectionCreatedAt: string },
-    overrides: Partial<RunnerVncObservationRequest> = {},
-  ) {
-    return (
-      await accept(
-        api.runner().observe({
-          headers: vncRunnerHeaders,
-          params: { runId: f.runId },
-          body: {
-            connectionId: f.connectionId,
-            runnerIdentity: f.runnerIdentity,
-            expectedGeneration: 1,
-            expectedCreatedAt: f.connectionCreatedAt,
-            expectedTransport: { type: "direct" },
-            observedAt: "2026-10-14T00:00:00.000Z",
-            failureReason: "authentication_failed",
-            ...overrides,
-          },
-        }),
-        [200],
-      )
-    ).body;
-  }
-
-  async function observations(f: Pick<VncRuntimeFixture, "orgId" | "userId">) {
-    api.authenticate(f);
-    const result = await accept(
-      api.connections().observations({ headers: vncSessionHeaders }),
-      [200],
-    );
-    expect(result.headers.get("cache-control")).toBe("no-store");
-    return result.body.observations;
-  }
-
-  it("rejects native snapshots and failure reasons for a Direct VNC route", async () => {
-    mockNow(new Date("2026-10-14T00:00:30.000Z"));
-    const f = await executionFixture();
-    for (const type of ["cloudflare_access", "tailscale"] as const) {
-      const transport = { type, configId: randomUUID(), generation: 1 };
-      await expect(
-        observe(f, { expectedTransport: transport }),
-      ).resolves.toStrictEqual({ outcome: "ignored" });
-      await expect(
-        observe(f, { expectedKdcTransport: transport }),
-      ).resolves.toStrictEqual({ outcome: "ignored" });
-    }
-    for (const failureReason of [
-      "access_rejected",
-      "access_tls_failure",
-      "access_protocol_failure",
-      "origin_tls_failure",
-      "tailscale_unavailable",
-    ] as const) {
-      await expect(observe(f, { failureReason })).resolves.toStrictEqual({
-        outcome: "ignored",
-      });
-    }
-    await expect(observations(f)).resolves.toStrictEqual([]);
-    await expect(observe(f)).resolves.toStrictEqual({ outcome: "recorded" });
-  });
-
-  it("records bounded owner evidence, recovers and ignores reordered, duplicate and future VNC observations", async () => {
-    mockNow(new Date("2026-10-14T00:00:30.000Z"));
-    const f = await executionFixture();
-    await expect(observations(f)).resolves.toStrictEqual([]);
-    await expect(observe(f)).resolves.toStrictEqual({ outcome: "recorded" });
-    await expect(observations(f)).resolves.toStrictEqual([
-      {
-        connectionId: f.connectionId,
-        generation: 1,
-        connectionCreatedAt: f.connectionCreatedAt,
-        observedAt: "2026-10-14T00:00:00.000Z",
-        failureReason: "authentication_failed",
-      },
-    ]);
-    await expect(
-      observe(f, {
-        observedAt: "2026-10-14T00:03:00.000Z",
-      }),
-    ).resolves.toStrictEqual({ outcome: "ignored" });
-    await expect(
-      observe(f, {
-        runnerIdentity: { ...f.runnerIdentity, runnerId: randomUUID() },
-      }),
-    ).resolves.toStrictEqual({ outcome: "unavailable" });
-    await expect(
-      observe(f, {
-        runnerIdentity: {
-          ...f.runnerIdentity,
-          heartbeatGeneration: f.runnerIdentity.heartbeatGeneration + 1,
-        },
-      }),
-    ).resolves.toStrictEqual({ outcome: "unavailable" });
-    await Promise.all([
-      observe(f, {
-        observedAt: "2026-10-14T00:00:10.000Z",
-        failureReason: "network_failure",
-      }),
-      observe(f, {
-        observedAt: "2026-10-14T00:00:20.000Z",
-        failureReason: null,
-      }),
-    ]);
-    await expect(observations(f)).resolves.toStrictEqual([
-      {
-        connectionId: f.connectionId,
-        generation: 1,
-        connectionCreatedAt: f.connectionCreatedAt,
-        observedAt: "2026-10-14T00:00:20.000Z",
-        failureReason: null,
-      },
-    ]);
-    await expect(observe(f)).resolves.toStrictEqual({ outcome: "ignored" });
-    await expect(
-      observe(f, { observedAt: "2026-10-14T00:00:20.000Z" }),
-    ).resolves.toStrictEqual({ outcome: "ignored" });
-    expect((await observations(f))[0]?.failureReason).toBeNull();
-  });
-
-  it("isolates VNC observations by owner, configuration generation and deletion", async () => {
-    mockNow(new Date("2026-10-14T00:00:30.000Z"));
-    const f = await executionFixture();
-    const other = await executionFixture();
-    api.authenticate(f);
-    await expect(observe(f)).resolves.toStrictEqual({ outcome: "recorded" });
-    await expect(observations(other)).resolves.toStrictEqual([]);
-    await expect(
-      observe(other, { connectionId: f.connectionId }),
-    ).resolves.toStrictEqual({ outcome: "unavailable" });
-    api.authenticate(f);
-    await accept(
-      api.connections().update({
-        headers: vncSessionHeaders,
-        params: { connectionId: f.connectionId },
-        body: { expectedGeneration: 1, displayName: "Updated desktop" },
-      }),
-      [200],
-    );
-    await expect(observations(f)).resolves.toStrictEqual([]);
-    await expect(observe(f)).resolves.toStrictEqual({ outcome: "ignored" });
-    await expect(observe(f, { expectedGeneration: 2 })).resolves.toStrictEqual({
-      outcome: "recorded",
-    });
-    expect((await observations(f))[0]?.generation).toBe(2);
-    await accept(
-      api.connections().delete({
-        headers: vncSessionHeaders,
-        params: { connectionId: f.connectionId },
-        body: { expectedGeneration: 2 },
-      }),
-      [204],
-    );
-    await expect(observations(f)).resolves.toStrictEqual([]);
-    await expect(observe(f, { expectedGeneration: 2 })).resolves.toStrictEqual({
-      outcome: "unavailable",
-    });
-  });
-
-  it("ignores delayed evidence when a deleted VNC ID is recreated", async () => {
-    mockNow(new Date("2026-10-14T00:00:30.000Z"));
-    const f = await executionFixture();
-    const handoff = await accept(
-      api.runner().resolve({
-        headers: vncRunnerHeaders,
-        params: { runId: f.runId },
-        body: {
-          connectionId: f.connectionId,
-          runnerIdentity: f.runnerIdentity,
-          supportedProfiles: [...vncX509VncProfiles],
-        },
-      }),
-      [200],
-    );
-    expect(handoff.headers.get("x-vnc-connection-created-at")).toBe(
-      f.connectionCreatedAt,
-    );
-    expect(f.connectionCreatedAt).toMatch(/\.\d{6}Z$/u);
-    await expect(observe(f)).resolves.toStrictEqual({ outcome: "recorded" });
-    await accept(
-      api.connections().delete({
-        headers: vncSessionHeaders,
-        params: { connectionId: f.connectionId },
-        body: { expectedGeneration: 1 },
-      }),
-      [204],
-    );
-    const replacement = await accept(
-      api.connections().create({
-        headers: vncSessionHeaders,
-        body: {
-          ...vncConnectionBody(f.connectionId),
-          host: "new-desktop.example.com",
-        },
-      }),
-      [201],
-    );
-    expect(replacement.body.generation).toBe(1);
-    expect(replacement.body.createdAt).not.toBe(f.connectionCreatedAt);
-    await api.enableDefault(f, "vnc", f.connectionId);
-    await expect(observations(f)).resolves.toStrictEqual([]);
-    await expect(
-      observe(f, { observedAt: "2026-10-14T00:00:10.000Z" }),
-    ).resolves.toStrictEqual({ outcome: "ignored" });
-    await expect(observations(f)).resolves.toStrictEqual([]);
-    await expect(
-      observe(f, {
-        expectedCreatedAt: replacement.body.createdAt,
-        observedAt: "2026-10-14T00:00:05.000Z",
-        failureReason: null,
-      }),
-    ).resolves.toStrictEqual({ outcome: "recorded" });
-    await expect(
-      observe(f, { observedAt: "2026-10-14T00:00:20.000Z" }),
-    ).resolves.toStrictEqual({ outcome: "ignored" });
-    await expect(observations(f)).resolves.toStrictEqual([
-      {
-        connectionId: f.connectionId,
-        connectionCreatedAt: replacement.body.createdAt,
-        generation: 1,
-        observedAt: "2026-10-14T00:00:05.000Z",
-        failureReason: null,
-      },
-    ]);
-  });
-
-  it("rejects secret-bearing and non-connection observation payloads without reflecting their values", async () => {
-    mockNow(new Date("2026-10-14T00:00:30.000Z"));
-    const f = await executionFixture();
-    for (const invalid of [
-      { failureReason: "sensitive-secret-provider-error" },
-      { failureReason: "cancelled" },
-      { failureReason: "stale_geometry" },
-      { password: "sensitive-secret-provider-error" },
-    ]) {
-      const response = await setupRawAppRequest({
-        context,
-        routes: runnerVncRoutes,
-      })(`/api/runners/runs/${f.runId}/vnc/observations`, {
-        method: "POST",
-        headers: { ...vncRunnerHeaders, "content-type": "application/json" },
-        body: JSON.stringify({
-          connectionId: f.connectionId,
-          runnerIdentity: f.runnerIdentity,
-          expectedGeneration: 1,
-          expectedCreatedAt: f.connectionCreatedAt,
-          expectedTransport: { type: "direct" },
-          observedAt: "2026-10-14T00:00:00.000Z",
-          failureReason: null,
-          ...invalid,
-        }),
-      });
-      expect(response.status).toBe(400);
-      expect(JSON.stringify(response.body)).not.toContain(
-        "sensitive-secret-provider-error",
-      );
-    }
-    await expect(observations(f)).resolves.toStrictEqual([]);
-  });
-
-  it.each(["rfb", "kdc"] as const)(
-    "hides old %s carrier evidence and accepts its successor despite clock skew",
-    async (route) => {
-      mockNow(new Date("2026-10-14T00:00:30.000Z"));
-      const f = await executionFixture();
-      const sshApi = setupApp({ context, routes: sshConnectionsRoutes })(
-        sshConnectionsContract,
-      );
-      const ssh = await accept(
-        sshApi.create({
-          headers: vncSessionHeaders,
-          body: {
-            id: randomUUID(),
-            displayName: "Diagnostic carrier",
-            host: "gateway.example.com",
-            credential: inlineSshKey("deploy", "private-key"),
-          },
-        }),
-        [201],
-      );
-      await api.enableDefault(f, "ssh", ssh.body.id);
-      const carrier = {
-        type: "ssh" as const,
-        connectionId: ssh.body.id,
-        generation: 1,
-      };
-      if (route === "rfb") {
-        await accept(
-          api.connections().update({
-            headers: vncSessionHeaders,
-            params: { connectionId: f.connectionId },
+      const resolveWithPolicy = (withPolicyHeader: boolean) => {
+        return accept(
+          runtime.runner().resolve({
+            headers: vncRunnerHeaders,
+            ...(withPolicyHeader
+              ? { extraHeaders: DEVICE_POLICY_HEADERS }
+              : {}),
+            params: { runId: running.runId },
             body: {
+              connectionId: vncId,
+              runnerIdentity: running.runnerIdentity,
+              supportedProfiles: [...vncProfiles],
+            },
+          }),
+          [200],
+        );
+      };
+      const checkWithPolicy = () => {
+        return accept(
+          runtime.runner().check({
+            headers: vncRunnerHeaders,
+            extraHeaders: DEVICE_POLICY_HEADERS,
+            params: { runId: running.runId },
+            body: {
+              connectionId: vncId,
+              runnerIdentity: running.runnerIdentity,
               expectedGeneration: 1,
-              transport: { type: "ssh", connectionId: ssh.body.id },
-            },
-          }),
-          [200],
-        );
-      } else {
-        const initiator = { realm: "EXAMPLE.INVALID", components: ["alice"] };
-        await accept(
-          api.connections().update({
-            headers: vncSessionHeaders,
-            params: { connectionId: f.connectionId },
-            body: {
-              expectedGeneration: 1,
-              security: {
-                type: "qemu_x509_gssapi",
-                trust: { mode: "system" },
-                service: {
-                  realm: initiator.realm,
-                  components: ["vnc", "desktop.example.com"],
-                },
-                kdc: {
-                  host: "127.0.0.1",
-                  port: 88,
-                  transport: { type: "ssh", connectionId: ssh.body.id },
-                  ticketLifetimeSeconds: 1200,
-                  renewableLifetimeSeconds: 7200,
-                },
-              },
-              credential: {
-                create: {
-                  name: "Diagnostic source",
-                  authentication: {
-                    method: "qemu_kerberos_password",
-                    initiator,
-                    password: "synthetic exact source",
-                  },
-                },
+              expectedTransport: {
+                type: "ssh",
+                connectionId: sshId,
+                generation: 1,
               },
             },
           }),
           [200],
         );
-      }
-      const binding =
-        route === "rfb"
-          ? { expectedTransport: carrier }
-          : {
-              expectedTransport: { type: "direct" as const },
-              expectedCredentialRevision: 1,
-              expectedKdcTransport: carrier,
-            };
-      await expect(
-        observe(f, {
-          expectedGeneration: 2,
-          observedAt: "2026-10-14T00:00:20.000Z",
-          ...binding,
-        }),
-      ).resolves.toStrictEqual({ outcome: "recorded" });
-      await expect(observations(f)).resolves.toHaveLength(1);
-      await accept(
-        sshApi.update({
-          headers: vncSessionHeaders,
-          params: { connectionId: ssh.body.id },
-          body: { expectedGeneration: 1, host: "rotated-gateway.example.com" },
-        }),
-        [200],
-      );
-      const currentHosts = await accept(
-        api.connections().list({ headers: vncSessionHeaders }),
-        [200],
-      );
-      expect(
-        currentHosts.body.connections.find((item) => {
-          return item.id === f.connectionId;
-        })?.generation,
-      ).toBe(2);
-      await expect(observations(f)).resolves.toStrictEqual([]);
-      await expect(
-        observe(f, { expectedGeneration: 2, ...binding }),
-      ).resolves.toStrictEqual({ outcome: "ignored" });
-      const successor = { ...carrier, generation: 2 };
-      const updatedBinding =
-        route === "rfb"
-          ? { expectedTransport: successor }
-          : {
-              expectedTransport: { type: "direct" as const },
-              expectedCredentialRevision: 1,
-              expectedKdcTransport: successor,
-            };
-      await expect(
-        observe(f, {
-          expectedGeneration: 2,
-          observedAt: "2026-10-14T00:00:10.000Z",
-          failureReason: null,
-          ...updatedBinding,
-        }),
-      ).resolves.toStrictEqual({ outcome: "recorded" });
-      await expect(observations(f)).resolves.toStrictEqual([
-        {
-          connectionId: f.connectionId,
-          generation: 2,
-          connectionCreatedAt: f.connectionCreatedAt,
-          observedAt: "2026-10-14T00:00:10.000Z",
-          failureReason: null,
-        },
-      ]);
-    },
-  );
+      };
 
-  it("uses current chat access for Runner operations when the Clerk membership lookup is unavailable", async () => {
-    mockNow(new Date("2026-10-14T00:00:30.000Z"));
-    const f = await executionFixture();
-    const membership =
-      context.mocks.clerk.organizations.getOrganizationMembershipList;
-    const unavailable = new Error("Clerk membership lookup is unavailable");
-    membership.mockRejectedValue(unavailable);
-    const { generation } = await api.resolved(f);
-    expect((await check(f, generation)).body).toStrictEqual({
-      outcome: "valid",
-    });
-    await expect(observe(f)).resolves.toStrictEqual({ outcome: "recorded" });
-
-    await api.setDefault(f, "vnc", f.connectionId, false);
-    membership.mockRejectedValue(unavailable);
-    await expect(observe(f)).resolves.toStrictEqual({ outcome: "unavailable" });
-    expect((await check(f, generation)).body).toStrictEqual({
-      outcome: "unavailable",
-    });
-    await expect(api.resolve(f)).resolves.toStrictEqual({
-      outcome: "unavailable",
-    });
-  });
-
-  it.each([
-    "self-leave",
-    "administrator removal",
-    "membership-deletion webhook",
-  ] as const)(
-    "denies an existing Run's VNC authority after %s",
-    async (entry) => {
-      const f = await executionFixture();
-      const { generation } = await api.resolved(f);
-      const inventory = setupApp({ context, routes: vncAccessRoutes })(
-        vncHostsContract,
-      );
-      const headers = { authorization: `Bearer ${f.agentToken}` };
-      const before = await accept(inventory.list({ headers }), [200]);
-      expect(before.body.hosts).toMatchObject([{ id: f.connectionId }]);
-
-      const auth = createAuthOrgBddApi(context);
-      const member = auth.user({ ...f, orgRole: "org:member" });
-      const admin = auth.user({ orgId: f.orgId, orgRole: "org:admin" });
-      const membershipId = `orgmem_${randomUUID()}`;
-      auth.mockClerkOrg(admin, {
-        members: [{ actor: admin }, { actor: member, membershipId }],
-      });
-      const membership =
-        context.mocks.clerk.organizations.getOrganizationMembershipList;
-      if (entry === "self-leave") {
-        await auth.leaveOrg(member);
-      } else if (entry === "administrator removal") {
-        await auth.removeMember(admin, { email: member.email });
-      } else {
-        // Clerk has deleted the membership, but local revocation has yet to arrive.
-        membership.mockResolvedValue({ data: [], totalCount: 0 });
-        const pending = await accept(inventory.list({ headers }), [200]);
-        expect(pending.body.hosts).toMatchObject([{ id: f.connectionId }]);
-        expect((await check(f, generation)).body).toStrictEqual({
-          outcome: "valid",
-        });
-
-        const webhooks = createWebhookCallbackApi(context);
-        webhooks.configureClerkWebhookSecret();
-        webhooks.verifyNextClerkWebhook({
-          type: "organizationMembership.deleted",
-          data: {
-            id: membershipId,
-            organization_id: f.orgId,
-            user_id: f.userId,
-          },
-        });
-        await webhooks.requestClerkWebhook("{}", {}, [200]);
-        await flushWaitUntilForTest();
-      }
-
-      membership.mockRejectedValue(
-        new Error("Clerk membership lookup is unavailable"),
-      );
-      const after = await accept(inventory.list({ headers }), [404]);
-      expect(after.body.error.code).toBe("VNC_UNAVAILABLE");
-      expect((await check(f, generation)).body).toStrictEqual({
+      expect((await resolveWithPolicy(true)).body).toStrictEqual({
         outcome: "unavailable",
       });
-      await expect(api.resolve(f)).resolves.toStrictEqual({
-        outcome: "unavailable",
-      });
-      await expect(runs.readRun(member, f.runId)).resolves.toMatchObject({
-        status: "cancelled",
-      });
-    },
-  );
-
-  it("admits exact online Kerberos capabilities before KMS and independently fences source revision and KDC route", async () => {
-    const f = await executionFixture();
-    const kms = useSecretKmsProbe();
-    const initiator = { realm: "EXAMPLE.INVALID", components: ["alice"] };
-    const changed = await accept(
-      api.connections().update({
-        headers: vncSessionHeaders,
-        params: { connectionId: f.connectionId },
-        body: {
-          expectedGeneration: 1,
-          security: {
-            type: "qemu_x509_gssapi",
-            trust: { mode: "system" },
-            service: {
-              realm: initiator.realm,
-              components: ["vnc", "desktop.example.com"],
-            },
-            kdc: {
-              host: "kdc.example.com",
-              port: 88,
-              transport: { type: "direct" },
-              ticketLifetimeSeconds: 1200,
-              renewableLifetimeSeconds: 7200,
-            },
-          },
-          credential: {
-            create: {
-              name: "Explicit source",
-              authentication: {
-                method: "qemu_kerberos_password",
-                initiator,
-                password: "synthetic exact source",
-              },
-            },
-          },
-        },
-      }),
-      [200],
-    );
-    await expect(api.resolve(f)).resolves.toStrictEqual({
-      outcome: "unsupported_profile",
-    });
-    expect(kms.decryptCalls).toBe(0);
-    const result = await accept(
-      api.runner().resolve({
-        headers: vncRunnerHeaders,
-        params: { runId: f.runId },
-        body: {
-          connectionId: f.connectionId,
-          runnerIdentity: f.runnerIdentity,
-          supportedProfiles: [
-            {
-              authMethod: "qemu_kerberos_password",
-              securityType: "qemu_x509_gssapi",
-              transportType: "direct",
-              kdcTransportType: "direct",
-            },
-          ],
-        },
-      }),
-      [200],
-    );
-    expect(result.body).toMatchObject({
-      outcome: "resolved_kerberos",
-      generation: 2,
-      credentialRevision: 1,
-      authentication: {
-        method: "qemu_kerberos_password",
-        initiator,
-        password: "synthetic exact source",
-      },
-      security: { kdc: { transport: { type: "direct" } } },
-    });
-    expect(kms.decryptCalls).toBe(1);
-    expect((await check(f, 2)).body).toStrictEqual({
-      outcome: "configuration_changed",
-    });
-    const binding = {
-      expectedCredentialRevision: 1,
-      expectedKdcTransport: { type: "direct" as const },
-    };
-    expect((await check(f, 2, binding)).body).toStrictEqual({
-      outcome: "valid",
-    });
-    await accept(
-      api.credentials().update({
-        headers: vncSessionHeaders,
-        params: { credentialId: requireVncCredentialId(changed.body) },
-        body: {
-          expectedRevision: 1,
-          authentication: {
-            method: "qemu_kerberos_password",
-            initiator,
-            password: "synthetic rotated source",
-          },
-        },
-      }),
-      [200],
-    );
-    expect((await check(f, 2, binding)).body).toStrictEqual({
-      outcome: "configuration_changed",
-    });
-    expect(kms.decryptCalls).toBe(1);
-  });
-
-  it.each(
-    (["qemu_kerberos_password", "qemu_kerberos_keytab"] as const).flatMap(
-      (method) => {
-        return (
-          [
-            { rfb: "direct", kdc: "direct" },
-            { rfb: "direct", kdc: "ssh" },
-            { rfb: "ssh", kdc: "direct" },
-            { rfb: "ssh", kdc: "ssh" },
-          ] as const
-        ).map((route) => {
-          return { method, ...route };
-        });
-      },
-    ),
-  )(
-    "independently authorizes and fences $method / $rfb RFB / $kdc KDC routes",
-    async ({ method, rfb, kdc }) => {
-      const f = await executionFixture();
-      const ssh = setupApp({ context, routes: sshConnectionsRoutes })(
-        sshConnectionsContract,
-      );
-      const gateways = [];
-      for (const name of ["RFB", "KDC"]) {
-        const saved = await accept(
-          ssh.create({
-            headers: vncSessionHeaders,
-            body: {
-              id: randomUUID(),
-              displayName: `${name} gateway`,
-              host: `${name.toLowerCase()}.gateway.example.com`,
-              credential: inlineSshKey("operator", "synthetic-private-key"),
-            },
-          }),
-          [201],
-        );
-        gateways.push(saved.body);
-      }
-      const [rfbGateway, kdcGateway] = gateways;
-      if (!rfbGateway || !kdcGateway) {
-        throw new Error("Missing owned route fixture");
-      }
-      const initiator = { realm: "EXAMPLE.INVALID", components: ["alice"] };
-      const authentication =
-        method === "qemu_kerberos_keytab"
-          ? { method, initiator, keytab: kerberosMaterial("keytab") }
-          : { method, initiator, password: "synthetic-secret" };
-      const saved = await accept(
-        api.connections().update({
-          headers: vncSessionHeaders,
-          params: { connectionId: f.connectionId },
-          body: {
-            expectedGeneration: 1,
-            host: rfb === "ssh" ? "127.0.0.1" : "desktop.example.com",
-            transport:
-              rfb === "ssh"
-                ? { type: "ssh", connectionId: rfbGateway.id }
-                : { type: "direct" },
-            security: {
-              type: "qemu_x509_gssapi",
-              trust: { mode: "system" },
-              serverName: "desktop.identity.example.com",
-              service: {
-                realm: initiator.realm,
-                components: ["vnc", "desktop.example.com"],
-              },
-              kdc: {
-                host: kdc === "ssh" ? "127.0.0.1" : "kdc.example.com",
-                port: 88,
-                transport:
-                  kdc === "ssh"
-                    ? { type: "ssh", connectionId: kdcGateway.id }
-                    : { type: "direct" },
-                ticketLifetimeSeconds: 1200,
-                renewableLifetimeSeconds: 7200,
-              },
-            },
-            credential: {
-              create: {
-                name: "Independent Kerberos source",
-                authentication,
-              },
-            },
-          },
-        }),
-        [200],
-      );
-      expect(saved.body.generation).toBe(2);
-      const profiles = [
-        {
-          authMethod: method,
-          securityType: "qemu_x509_gssapi",
-          transportType: rfb,
-          kdcTransportType: kdc,
-        },
-      ] as const;
-      const kms = useSecretKmsProbe();
-      if (rfb === "ssh" || kdc === "ssh") {
-        await expect(
-          api.resolve(f, { supportedProfiles: [...profiles] }),
-        ).resolves.toStrictEqual({ outcome: "unavailable" });
-      }
       expect(kms.decryptCalls).toBe(0);
-      if (rfb === "ssh") {
-        await api.enableDefault(f, "ssh", rfbGateway.id);
-      }
-      if (kdc === "ssh") {
-        await expect(
-          api.resolve(f, { supportedProfiles: [...profiles] }),
-        ).resolves.toStrictEqual({ outcome: "unavailable" });
-        expect(kms.decryptCalls).toBe(0);
-        await api.enableDefault(f, "ssh", kdcGateway.id);
-      }
-      await expect(
-        api.resolve(f, {
-          supportedProfiles: [
-            {
-              ...profiles[0],
-              kdcTransportType: kdc === "ssh" ? "direct" : "ssh",
-            },
-          ],
-        }),
-      ).resolves.toStrictEqual({ outcome: "unsupported_profile" });
+
+      await setAccess(vncDevice.id, { mode: "always" });
+      expect((await resolveWithPolicy(true)).body).toStrictEqual({
+        outcome: "unavailable",
+      });
+      expect((await checkWithPolicy()).body).toStrictEqual({
+        outcome: "unavailable",
+      });
       expect(kms.decryptCalls).toBe(0);
-      const expectedTransport =
-        rfb === "ssh"
-          ? { type: "ssh" as const, connectionId: rfbGateway.id, generation: 1 }
-          : { type: "direct" as const };
-      const expectedKdcTransport =
-        kdc === "ssh"
-          ? { type: "ssh" as const, connectionId: kdcGateway.id, generation: 1 }
-          : { type: "direct" as const };
-      const binding = {
-        expectedTransport,
-        expectedKdcTransport,
-        expectedCredentialRevision: 1,
-      };
-      await expect(
-        api.resolve(f, { supportedProfiles: [...profiles] }),
-      ).resolves.toMatchObject({
-        outcome: "resolved_kerberos",
-        transport: expectedTransport,
-        credentialRevision: 1,
-        authentication,
-        security: { kdc: { transport: expectedKdcTransport } },
-      });
-      expect((await check(f, 2, binding)).body).toStrictEqual({
-        outcome: "valid",
-      });
-      expect(kms.decryptCalls).toBe(1);
-      for (const route of [
-        ...(rfb === "ssh"
-          ? [{ gateway: rfbGateway, field: "expectedTransport" as const }]
-          : []),
-        ...(kdc === "ssh"
-          ? [{ gateway: kdcGateway, field: "expectedKdcTransport" as const }]
-          : []),
-      ]) {
-        await api.setDefault(f, "ssh", route.gateway.id, false);
-        expect((await check(f, 2, binding)).body).toStrictEqual({
-          outcome: "unavailable",
-        });
-        await expect(
-          api.resolve(f, { supportedProfiles: [...profiles] }),
-        ).resolves.toStrictEqual({ outcome: "unavailable" });
-        expect(kms.decryptCalls).toBe(1);
-        await api.enableDefault(f, "ssh", route.gateway.id);
-        expect((await check(f, 2, binding)).body).toStrictEqual({
-          outcome: "valid",
-        });
-        const wrong = {
-          type: "ssh" as const,
-          connectionId:
-            route.field === "expectedTransport" ? kdcGateway.id : rfbGateway.id,
-          generation: 1,
-        };
-        expect(
-          (await check(f, 2, { ...binding, [route.field]: wrong })).body,
-        ).toStrictEqual({ outcome: "configuration_changed" });
-        await accept(
-          ssh.update({
-            headers: vncSessionHeaders,
-            params: { connectionId: route.gateway.id },
-            body: {
-              expectedGeneration: 1,
-              displayName: `Rotated ${route.gateway.displayName}`,
-            },
-          }),
-          [200],
-        );
-        expect((await check(f, 2, binding)).body).toStrictEqual({
-          outcome: "configuration_changed",
-        });
-        binding[route.field] = {
-          type: "ssh",
-          connectionId: route.gateway.id,
-          generation: 2,
-        };
-        expect((await check(f, 2, binding)).body).toStrictEqual({
-          outcome: "valid",
-        });
-      }
-    },
-  );
 
-  it.each(["direct", "ssh"] as const)(
-    "admits an offline ticket through %s without a KDC and refuses expiry before KMS",
-    async (route) => {
-      const f = await executionFixture();
-      mockNow(new Date(200_000));
-      const ssh = setupApp({ context, routes: sshConnectionsRoutes })(
-        sshConnectionsContract,
-      );
-      const saved = await accept(
-        ssh.create({
-          headers: vncSessionHeaders,
-          body: {
-            id: randomUUID(),
-            displayName: "Offline ticket RFB gateway",
-            host: "gateway.example.com",
-            credential: inlineSshKey("operator", "synthetic-private-key"),
-          },
-        }),
-        [201],
-      );
-      const transport =
-        route === "ssh"
-          ? { type: route, connectionId: saved.body.id }
-          : { type: route };
-      const initiator = { realm: "EXAMPLE.INVALID", components: ["alice"] };
-      const service = {
-        realm: initiator.realm,
-        components: ["vnc", "host.example.invalid"],
-      };
-      const authentication = {
-        method: "qemu_kerberos_ticket" as const,
-        initiator,
-        service,
-        ticketCache: kerberosMaterial("service"),
-      };
-      await accept(
-        api.connections().update({
-          headers: vncSessionHeaders,
-          params: { connectionId: f.connectionId },
-          body: {
-            expectedGeneration: 1,
-            host: route === "ssh" ? "127.0.0.1" : "desktop.example.com",
-            transport,
-            security: {
-              type: "qemu_x509_gssapi",
-              trust: { mode: "system" },
-              serverName: "desktop.identity.example.com",
-              service,
-            },
-            credential: {
-              create: { name: "Offline service ticket", authentication },
-            },
-          },
-        }),
-        [200],
-      );
-      if (route === "ssh") {
-        await api.enableDefault(f, "ssh", saved.body.id);
-      }
-      const kms = useSecretKmsProbe();
-      const supportedProfiles = [
-        {
-          authMethod: "qemu_kerberos_ticket" as const,
-          securityType: "qemu_x509_gssapi" as const,
-          transportType: route,
-          kdcTransportType: "none" as const,
-        },
-      ];
-      const expectedTransport: RunnerVncCheckRequest["expectedTransport"] =
-        route === "ssh"
-          ? { type: route, connectionId: saved.body.id, generation: 1 }
-          : { type: route };
-      const binding = {
-        expectedTransport,
-        expectedCredentialRevision: 1,
-      };
-      await expect(
-        api.resolve(f, { supportedProfiles }),
-      ).resolves.toMatchObject({
-        outcome: "resolved_kerberos",
-        authentication,
-        security: { kdc: null },
-        transport: expectedTransport,
-      });
-      expect((await check(f, 2, binding)).body).toStrictEqual({
-        outcome: "valid",
-      });
-      expect(kms.decryptCalls).toBe(1);
-      mockNow(new Date(1_000_000));
-      await expect(
-        api.resolve(f, { supportedProfiles }),
-      ).resolves.toStrictEqual({
+      await setAccess(sshDevice.id, { mode: "always" });
+      expect((await resolveWithPolicy(false)).body).toStrictEqual({
         outcome: "unavailable",
       });
-      expect((await check(f, 2, binding)).body).toStrictEqual({
-        outcome: "unavailable",
-      });
-      expect(kms.decryptCalls).toBe(1);
-      mockNow(new Date(200_000));
-      const expiresDuringKms = useSecretKmsProbe(undefined, () => {
-        mockNow(new Date(1_000_000));
-        return undefined;
-      });
-      await expect(
-        api.resolve(f, { supportedProfiles }),
-      ).resolves.toStrictEqual({
-        outcome: "unavailable",
-      });
-      expect(expiresDuringKms.decryptCalls).toBe(1);
-      expect((await check(f, 2, binding)).body).toStrictEqual({
-        outcome: "unavailable",
-      });
-    },
-  );
-
-  it("uses current chat VNC and exact SSH dependency access during an active Run", async () => {
-    const f = await executionFixture({
-      defaultEnabled: false,
-    });
-    if (!f.threadId) {
-      throw new Error("Missing fixture chat thread");
-    }
-    const threadId = f.threadId;
-    api.authenticate(f);
-    const remote = setupApp({ context, routes: chatRemoteAccessRoutes })(
-      chatRemoteAccessContract,
-    );
-    const vncHost = { protocol: "vnc" as const, connectionId: f.connectionId };
-    await expect(api.resolve(f)).resolves.toStrictEqual({
-      outcome: "unavailable",
-    });
-    await accept(
-      remote.updateHostDefault({
-        headers: vncSessionHeaders,
-        params: vncHost,
-        body: { enabled: true },
-      }),
-      [200],
-    );
-    await expect(api.resolve(f)).resolves.toMatchObject({
-      outcome: "resolved_transport",
-    });
-    expect((await check(f, 1)).body).toStrictEqual({ outcome: "valid" });
-    await accept(
-      remote.setThreadOverride({
-        headers: vncSessionHeaders,
-        params: { threadId, ...vncHost },
-        body: { enabled: false },
-      }),
-      [200],
-    );
-    await expect(api.resolve(f)).resolves.toStrictEqual({
-      outcome: "unavailable",
-    });
-    expect((await check(f, 1)).body).toStrictEqual({ outcome: "unavailable" });
-    await accept(
-      remote.clearThreadOverride({
-        headers: vncSessionHeaders,
-        params: { threadId, ...vncHost },
-      }),
-      [200],
-    );
-    const ssh = await accept(
-      setupApp({ context, routes: sshConnectionsRoutes })(
-        sshConnectionsContract,
-      ).create({
-        headers: vncSessionHeaders,
-        body: {
-          id: randomUUID(),
-          displayName: "VNC gateway",
-          host: "gateway.example.com",
-          credential: inlineSshKey("deploy", "private-key"),
-        },
-      }),
-      [201],
-    );
-    await accept(
-      api.connections().update({
-        headers: vncSessionHeaders,
-        params: { connectionId: f.connectionId },
-        body: {
-          expectedGeneration: 1,
-          transport: { type: "ssh", connectionId: ssh.body.id },
-          security: { ...vncSecurity, serverName: "desktop.internal" },
-        },
-      }),
-      [200],
-    );
-    await expect(
-      api.resolve(f, { supportedProfiles: [...vncProfiles] }),
-    ).resolves.toStrictEqual({ outcome: "unavailable" });
-    await accept(
-      remote.updateHostDefault({
-        headers: vncSessionHeaders,
-        params: { protocol: "ssh", connectionId: ssh.body.id },
-        body: { enabled: true },
-      }),
-      [200],
-    );
-    await expect(
-      api.resolve(f, { supportedProfiles: [...vncProfiles] }),
-    ).resolves.toMatchObject({ outcome: "resolved_transport" });
-    await accept(
-      remote.setThreadOverride({
-        headers: vncSessionHeaders,
-        params: { threadId, protocol: "ssh", connectionId: ssh.body.id },
-        body: { enabled: false },
-      }),
-      [200],
-    );
-    await expect(
-      api.resolve(f, { supportedProfiles: [...vncProfiles] }),
-    ).resolves.toStrictEqual({ outcome: "unavailable" });
-    expect((await check(f, 2)).body).toStrictEqual({ outcome: "unavailable" });
-  });
-
-  it("rejects a delayed stale credential rotation without changing shared hosts or the Runner secret", async () => {
-    const f = await executionFixture();
-    await accept(
-      api.connections().create({
-        headers: vncSessionHeaders,
-        body: {
-          ...vncConnectionBody(),
-          displayName: "Shared desktop",
-          credential: { id: f.credentialId },
-        },
-      }),
-      [201],
-    );
-    const entered = createDeferredPromise<void>(context.signal);
-    const release = createDeferredPromise<void>(context.signal);
-    useSecretKmsProbe(async (request) => {
-      entered.resolve();
-      await release.promise;
-      return {
-        keyId: request.keyId,
-        plaintext: Buffer.from("0123456789abcdef0123456789abcdef"),
-        encryptedDataKey: Buffer.from("test-wrapped-key"),
-      };
-    });
-    const params = { credentialId: f.credentialId };
-    const delayed = accept(
-      api.credentials().update({
-        headers: vncSessionHeaders,
-        params,
-        body: {
-          expectedRevision: 1,
-          name: "Stale rotation",
-          authentication: { method: "vnc_password", password: "stale" },
-        },
-      }),
-      [409],
-    );
-    const [rejected, committed] = await joinAll([
-      delayed,
-      (async () => {
-        await entered.promise;
-        const renamed = await accept(
-          api.credentials().update({
-            headers: vncSessionHeaders,
-            params,
-            body: { expectedRevision: 1, name: "Reviewed rename" },
-          }),
-          [200],
-        );
-        expect(renamed.body.revision).toBe(2);
-        return {
-          credentials: (
-            await accept(
-              api.credentials().list({ headers: vncSessionHeaders }),
-              [200],
-            )
-          ).body,
-          hosts: (
-            await accept(
-              api.connections().list({ headers: vncSessionHeaders }),
-              [200],
-            )
-          ).body,
-        };
-      })().finally(() => {
-        release.resolve();
-      }),
-    ]);
-    expect(rejected.body.error.code).toBe("VNC_CREDENTIAL_REVISION_CONFLICT");
-    expect(
-      (
-        await accept(
-          api.credentials().list({ headers: vncSessionHeaders }),
-          [200],
-        )
-      ).body,
-    ).toStrictEqual(committed.credentials);
-    expect(
-      (
-        await accept(
-          api.connections().list({ headers: vncSessionHeaders }),
-          [200],
-        )
-      ).body,
-    ).toStrictEqual(committed.hosts);
-    await expect(api.resolved(f)).resolves.toMatchObject({
-      authentication: { method: "vnc_password", password: vncPassword },
-      generation: 1,
-    });
-  });
-
-  it("returns the exact Direct snapshot and secret only in the no-store Runner handoff", async () => {
-    const f = await executionFixture();
-    const result = await accept(
-      api.runner().resolve({
-        headers: vncRunnerHeaders,
-        params: { runId: f.runId },
-        body: {
-          connectionId: f.connectionId,
-          runnerIdentity: f.runnerIdentity,
-          supportedProfiles: [...vncX509VncProfiles],
-        },
-      }),
-      [200],
-    );
-    expect(result.headers.get("cache-control")).toBe("no-store");
-    expect(result.body).toStrictEqual({
-      outcome: "resolved_transport",
-      host: "vnc.example.com",
-      port: 5900,
-      generation: 1,
-      serverName: "vnc.example.com",
-      transport: { type: "direct" },
-      authentication: { method: "vnc_password", password: vncPassword },
-      security: vncSecurity,
-    });
-    const listed = await accept(
-      api.connections().list({ headers: vncSessionHeaders }),
-      [200],
-    );
-    expect(JSON.stringify(listed.body)).not.toContain(vncPassword);
-    expect((await check(f, 1)).body).toStrictEqual({ outcome: "valid" });
-    expect(
-      (
-        await check(f, 1, {
-          expectedTransport: {
-            type: "ssh",
-            connectionId: randomUUID(),
-            generation: 1,
-          },
-        })
-      ).body,
-    ).toStrictEqual({ outcome: "configuration_changed" });
-  });
-
-  it("requires an exact X509None capability and resolves without decrypting a credential", async () => {
-    const f = await executionFixture();
-    await accept(
-      api.connections().update({
-        headers: vncSessionHeaders,
-        params: { connectionId: f.connectionId },
-        body: {
-          expectedGeneration: 1,
-          security: { type: "x509_none", trust: { mode: "system" } },
-          credential: { type: "none" },
-        },
-      }),
-      [200],
-    );
-    const kms = useSecretKmsProbe();
-    await expect(
-      api.resolve(f, { supportedProfiles: [...vncProfiles] }),
-    ).resolves.toStrictEqual({ outcome: "unsupported_profile" });
-    expect((await check(f, 1)).body).toStrictEqual({
-      outcome: "configuration_changed",
-    });
-    const resolved = await api.resolve(f, {
-      supportedProfiles: [
-        {
-          authMethod: "none",
-          securityType: "x509_none",
-          transportType: "direct",
-        },
-      ],
-    });
-    expect(resolved).toMatchObject({
-      outcome: "resolved_transport",
-      authentication: { method: "none" },
-      security: { type: "x509_none", trust: { mode: "system" } },
-      generation: 2,
-    });
-    expect(kms.decryptCalls).toBe(0);
-    expect((await check(f, 2)).body).toStrictEqual({ outcome: "valid" });
-  });
-
-  it.each([
-    ["client_certificate", "x509_none", false],
-    ["client_certificate_vnc_password", "x509_vnc", true],
-  ] as const)(
-    "requires exact %s capability before KMS and hands identity only to the Runner",
-    async (method, securityType, passwordRequired) => {
-      const f = await executionFixture();
-      const host = await accept(
-        api.connections().create({
-          headers: vncSessionHeaders,
-          body: {
-            id: randomUUID(),
-            displayName: "mTLS QEMU desktop",
-            host: "qemu.example.com",
-            security: { type: securityType, trust: { mode: "system" } },
-            credential: {
-              create: {
-                name: "mTLS client identity",
-                authentication: passwordRequired
-                  ? {
-                      method: "client_certificate_vnc_password",
-                      certificateChain,
-                      privateKey,
-                      password: " secret ",
-                    }
-                  : {
-                      method: "client_certificate",
-                      certificateChain,
-                      privateKey,
-                    },
-              },
-            },
-          },
-        }),
-        [201],
-      );
-      await api.enableDefault(f, "vnc", host.body.id);
-      const selected = { ...f, connectionId: host.body.id };
-      const kms = useSecretKmsProbe();
-      await expect(
-        api.resolve(selected, { supportedProfiles: [...vncProfiles] }),
-      ).resolves.toStrictEqual({ outcome: "unsupported_profile" });
       expect(kms.decryptCalls).toBe(0);
-      const resolved = await api.resolve(selected, {
-        supportedProfiles: [
-          {
-            authMethod: method,
-            securityType,
-            transportType: "direct",
-          },
-        ],
-      });
-      expect(resolved).toMatchObject({
+
+      const resolved = await resolveWithPolicy(true);
+      expect(resolved.headers.get("x-okou-remote-device-policy")).toBe("1");
+      expect(resolved.body).toStrictEqual({
         outcome: "resolved_transport",
-        authentication: {
-          method,
-          certificateChainDer: [expect.any(String)],
-          privateKeyPkcs8Der: expect.any(String),
-          ...(passwordRequired ? { password: " secret " } : {}),
-        },
-        security: { type: securityType },
+        host: "127.0.0.1",
+        port: 5900,
+        generation: 1,
+        serverName: "127.0.0.1",
+        transport: { type: "ssh", connectionId: sshId, generation: 1 },
+        authentication: { method: "vnc_password", password: vncPassword },
+        security: vncSecurity,
       });
-      expect(kms.decryptCalls).toBe(passwordRequired ? 2 : 1);
-      const listed = await accept(
-        api.connections().list({ headers: vncSessionHeaders }),
-        [200],
-      );
-      expect(JSON.stringify(listed.body)).not.toContain(privateKey);
-      expect(JSON.stringify(listed.body)).not.toContain("privateKeyPkcs8Der");
-      expect((await check(selected, 1)).body).toStrictEqual({
+      expect(kms.decryptCalls).toBe(1);
+      expect((await checkWithPolicy()).body).toStrictEqual({
+        outcome: "valid",
+      });
+      expect(kms.decryptCalls).toBe(1);
+
+      await setAccess(sshDevice.id, { mode: "denied" });
+      expect((await checkWithPolicy()).body).toStrictEqual({
+        outcome: "unavailable",
+      });
+      expect((await resolveWithPolicy(true)).body).toStrictEqual({
+        outcome: "unavailable",
+      });
+      expect(kms.decryptCalls).toBe(1);
+
+      await setAccess(sshDevice.id, { mode: "for", hours: 1 });
+      expect((await checkWithPolicy()).body).toStrictEqual({
         outcome: "valid",
       });
     },
   );
 
-  it("requires independent SSH access and the exact certificate/SSH tuple before decrypting a client key", async () => {
-    const f = await executionFixture();
-    const ssh = await accept(
-      setupApp({ context, routes: sshConnectionsRoutes })(
-        sshConnectionsContract,
-      ).create({
-        headers: vncSessionHeaders,
-        body: {
-          id: randomUUID(),
-          displayName: "QEMU gateway",
-          host: "gateway.example.com",
-          credential: inlineSshKey("deploy", "private-key"),
-        },
-      }),
-      [201],
-    );
-    const created = await accept(
-      api.connections().create({
-        headers: vncSessionHeaders,
-        body: {
-          id: randomUUID(),
-          displayName: "Tunnelled QEMU",
-          host: "127.0.0.1",
-          transport: { type: "ssh", connectionId: ssh.body.id },
-          security: { type: "x509_none", trust: { mode: "system" } },
-          credential: {
-            create: {
-              name: "Tunnelled identity",
-              authentication: {
-                method: "client_certificate",
-                certificateChain,
-                privateKey,
-              },
-            },
-          },
-        },
-      }),
-      [201],
-    );
-    await api.enableDefault(f, "vnc", created.body.id);
-    const selected = { ...f, connectionId: created.body.id };
-    const kms = useSecretKmsProbe();
-    const profile = {
-      authMethod: "client_certificate" as const,
-      securityType: "x509_none" as const,
-      transportType: "ssh" as const,
-    };
-    await expect(
-      api.resolve(selected, { supportedProfiles: [profile] }),
-    ).resolves.toStrictEqual({ outcome: "unavailable" });
-    expect(kms.decryptCalls).toBe(0);
-    await accept(
-      setupApp({ context, routes: chatRemoteAccessRoutes })(
-        chatRemoteAccessContract,
-      ).updateHostDefault({
-        headers: vncSessionHeaders,
-        params: { protocol: "ssh", connectionId: ssh.body.id },
-        body: { enabled: true },
-      }),
-      [200],
-    );
-    await expect(
-      api.resolve(selected, {
-        supportedProfiles: [{ ...profile, transportType: "direct" }],
-      }),
-    ).resolves.toStrictEqual({ outcome: "unsupported_profile" });
-    expect(kms.decryptCalls).toBe(0);
-    await expect(
-      api.resolve(selected, { supportedProfiles: [profile] }),
-    ).resolves.toMatchObject({
-      outcome: "resolved_transport",
-      authentication: {
-        method: "client_certificate",
-        privateKeyPkcs8Der: expect.any(String),
-      },
-      transport: { type: "ssh", connectionId: ssh.body.id },
-    });
-    expect(kms.decryptCalls).toBe(1);
-  });
+  it(
+    "runner-vnc-038 (1/4) rejects a pending Run before decrypting VNC credentials",
+    { timeout: TEST_WITH_SINGLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const runtime = createVncRuntimeApi(context);
+      const runs = createRunsApi(context);
+      const chat = createChatFilesBddApi(context);
+      const owner = createVncOwner(context);
+      const connection = await accept(
+        runtime.connections().create({
+          headers: vncSessionHeaders,
+          body: vncConnectionBody(),
+        }),
+        [201],
+      );
+      await runtime.enableDefault(owner, "vnc", connection.body.id);
 
-  it("requires the SSH-specific X509None capability and independent SSH authority", async () => {
-    const f = await executionFixture();
-    const ssh = await accept(
-      setupApp({ context, routes: sshConnectionsRoutes })(
-        sshConnectionsContract,
-      ).create({
-        headers: vncSessionHeaders,
-        body: {
-          id: randomUUID(),
-          displayName: "VNC gateway",
-          host: "gateway.example.com",
-          credential: inlineSshKey("deploy", "private-key"),
-        },
-      }),
-      [201],
-    );
-    await accept(
-      api.connections().update({
-        headers: vncSessionHeaders,
-        params: { connectionId: f.connectionId },
-        body: {
-          expectedGeneration: 1,
-          transport: { type: "ssh", connectionId: ssh.body.id },
-          security: { type: "x509_none", trust: { mode: "system" } },
-          credential: { type: "none" },
-        },
-      }),
-      [200],
-    );
-    const profiles = [
-      {
-        authMethod: "none" as const,
-        securityType: "x509_none" as const,
-        transportType: "ssh" as const,
-      },
-    ];
-    const kms = useSecretKmsProbe();
-    await expect(
-      api.resolve(f, { supportedProfiles: profiles }),
-    ).resolves.toStrictEqual({ outcome: "unavailable" });
-    await accept(
-      setupApp({ context, routes: chatRemoteAccessRoutes })(
-        chatRemoteAccessContract,
-      ).updateHostDefault({
-        headers: vncSessionHeaders,
-        params: { protocol: "ssh", connectionId: ssh.body.id },
-        body: { enabled: true },
-      }),
-      [200],
-    );
-    await expect(
-      api.resolve(f, {
-        supportedProfiles: [{ ...profiles[0]!, transportType: "direct" }],
-      }),
-    ).resolves.toStrictEqual({ outcome: "unsupported_profile" });
-    await expect(
-      api.resolve(f, { supportedProfiles: profiles }),
-    ).resolves.toMatchObject({
-      outcome: "resolved_transport",
-      authentication: { method: "none" },
-      security: { type: "x509_none" },
-      transport: { type: "ssh", connectionId: ssh.body.id },
-      generation: 2,
-    });
-    expect(kms.decryptCalls).toBe(0);
-  });
-
-  it("rejects wrong auth classes and exact winning-process mismatches before KMS", async () => {
-    const f = await executionFixture();
-    const { generation } = await api.resolved(f);
-    const kms = useSecretKmsProbe();
-    const body = {
-      connectionId: f.connectionId,
-      runnerIdentity: f.runnerIdentity,
-      supportedProfiles: [...vncProfiles],
-    };
-    for (const authorization of [
-      undefined,
-      "Bearer vm0_official_wrong",
-      "Bearer clerk-session",
-      `Bearer ${f.sandboxToken}`,
-    ]) {
-      const result = await api.runner().resolve({
-        headers: { authorization },
-        params: { runId: f.runId },
-        body,
+      const candidateIdentity = {
+        runnerId: randomUUID(),
+        heartbeatGeneration: 5_000_000_000,
+      };
+      await Promise.all([
+        deliverOrganizationCreated(context, owner.actor),
+        runs.configureRunnerGroup({
+          runnerIdentity: candidateIdentity,
+          heartbeatAuthorization: vncRunnerHeaders.authorization,
+        }),
+      ]);
+      await createWorkflowsBddApi(context).createWorkflow(owner.actor, {
+        name: `pending-vnc-${randomUUID().slice(0, 8)}`,
+        visibility: "private",
+        instruction: "Use VNC desktop",
       });
-      expect(result.status).toBe(401);
-      expect(result.headers.get("cache-control")).toBe("no-store");
-      const checked = await api.runner().check({
-        headers: { authorization },
-        params: { runId: f.runId },
-        body: {
-          connectionId: f.connectionId,
-          runnerIdentity: f.runnerIdentity,
-          expectedGeneration: generation,
-          expectedTransport: { type: "direct" },
-        },
-      });
-      expect(checked.status).toBe(401);
-      expect(checked.headers.get("cache-control")).toBe("no-store");
-    }
-    const auth = createAuthOrgBddApi(context);
-    const actor = auth.user();
-    auth.mockClerkOrg(actor);
-    const pat = await auth.createCliToken(actor);
-    await accept(
-      api.runner().resolve({
-        headers: { authorization: `Bearer ${pat.token}` },
-        params: { runId: f.runId },
-        body,
-      }),
-      [403],
-    );
-    await accept(
-      api.runner().check({
-        headers: { authorization: `Bearer ${pat.token}` },
-        params: { runId: f.runId },
-        body: {
-          connectionId: f.connectionId,
-          runnerIdentity: f.runnerIdentity,
-          expectedGeneration: generation,
-          expectedTransport: { type: "direct" },
-        },
-      }),
-      [403],
-    );
-    api.authenticate(f);
-    for (const override of [
-      { connectionId: randomUUID() },
-      { runnerIdentity: { ...f.runnerIdentity, runnerId: randomUUID() } },
-      { runnerIdentity: { ...f.runnerIdentity, heartbeatGeneration: 7 } },
-    ]) {
-      await expect(api.resolve(f, override)).resolves.toStrictEqual({
-        outcome: "unavailable",
-      });
-      expect((await check(f, generation, override)).body).toStrictEqual({
-        outcome: "unavailable",
-      });
-    }
-    await expect(
-      api.resolve({ ...f, runId: randomUUID() }),
-    ).resolves.toStrictEqual({
-      outcome: "unavailable",
-    });
-    expect(
-      (await check({ ...f, runId: randomUUID() }, generation)).body,
-    ).toStrictEqual({ outcome: "unavailable" });
-    expect(kms.decryptCalls).toBe(0);
-  });
-
-  it("keeps cross-owner connections opaque", async () => {
-    const f = await executionFixture();
-    const foreign = await executionFixture();
-    const { generation } = await api.resolved(foreign);
-    api.authenticate(f);
-    const kms = useSecretKmsProbe();
-    await expect(
-      api.resolve(f, { connectionId: foreign.connectionId }),
-    ).resolves.toStrictEqual({ outcome: "unavailable" });
-    expect(
-      (await check(f, generation, { connectionId: foreign.connectionId })).body,
-    ).toStrictEqual({ outcome: "unavailable" });
-    expect(kms.decryptCalls).toBe(0);
-  });
-
-  it("reports unsupported exact profiles before decrypting and rejects injected authority fields", async () => {
-    const f = await executionFixture();
-    const kms = useSecretKmsProbe();
-    await expect(
-      api.resolve(f, { supportedProfiles: [] }),
-    ).resolves.toStrictEqual({
-      outcome: "unsupported_profile",
-    });
-    const request = setupRawAppRequest({ context, routes: runnerVncRoutes });
-    const base = {
-      connectionId: f.connectionId,
-      runnerIdentity: f.runnerIdentity,
-      supportedProfiles: [...vncProfiles],
-    };
-    for (const body of [
-      { ...base, host: "attacker.example.com" },
-      { ...base, userId: f.userId },
-      {
-        ...base,
-        authentication: { method: "vnc_password", password: "injected" },
-      },
-    ]) {
-      const result = await request(
-        runnerVncContract.resolve.path.replace(":runId", f.runId),
+      const held = holdDownloadSigning(context);
+      const clientEventId = randomUUID();
+      const sent = await chat.requestSendEvent(
+        owner.actor,
         {
-          method: "POST",
-          headers: { ...vncRunnerHeaders, "content-type": "application/json" },
-          body: JSON.stringify(body),
+          prompt: "Wait for an available Runner",
+          model: null,
+          clientEventId,
         },
+        [201],
       );
-      expect(result.status).toBe(400);
-      expect(JSON.stringify(result.body)).not.toContain("injected");
-    }
-    expect(kms.decryptCalls).toBe(0);
-  });
-
-  it("requires both chat host permissions and binds SSH-backed handoff and checks to the exact SSH generation", async () => {
-    const f = await executionFixture();
-    const ssh = await accept(
-      setupApp({ context, routes: sshConnectionsRoutes })(
-        sshConnectionsContract,
-      ).create({
-        headers: vncSessionHeaders,
-        body: {
-          id: randomUUID(),
-          displayName: "VNC gateway",
-          host: "gateway.example.com",
-          credential: inlineSshKey("deploy", "private-key"),
-        },
-      }),
-      [201],
-    );
-    await api.enableDefault(f, "ssh", ssh.body.id);
-    await accept(
-      api.connections().update({
-        headers: vncSessionHeaders,
-        params: { connectionId: f.connectionId },
-        body: {
-          expectedGeneration: 1,
-          transport: { type: "ssh", connectionId: ssh.body.id },
-          security: {
-            ...vncSecurity,
-            serverName: "desktop.internal",
-          },
-        },
-      }),
-      [200],
-    );
-    await api.setDefault(f, "ssh", ssh.body.id, false);
-    const kms = useSecretKmsProbe();
-    await expect(
-      api.resolve(f, { supportedProfiles: [...vncProfiles] }),
-    ).resolves.toStrictEqual({ outcome: "unavailable" });
-    expect(
-      (await check(f, 2, { expectedTransport: { type: "direct" } })).body,
-    ).toStrictEqual({ outcome: "unavailable" });
-    expect(kms.decryptCalls).toBe(0);
-
-    await api.setDefault(f, "ssh", ssh.body.id, true);
-    await expect(
-      api.resolve(f, {
-        supportedProfiles: vncProfiles.filter((profile) => {
-          return profile.transportType === "direct";
-        }),
-      }),
-    ).resolves.toStrictEqual({ outcome: "unsupported_profile" });
-    expect(kms.decryptCalls).toBe(0);
-
-    const resolved = await api.resolve(f, {
-      supportedProfiles: [...vncProfiles],
-    });
-    expect(resolved).toStrictEqual({
-      outcome: "resolved_transport",
-      host: "vnc.example.com",
-      port: 5900,
-      generation: 2,
-      serverName: "desktop.internal",
-      transport: {
-        type: "ssh",
-        connectionId: ssh.body.id,
-        generation: 1,
-      },
-      authentication: { method: "vnc_password", password: vncPassword },
-      security: vncSecurity,
-    });
-    expect(JSON.stringify(resolved)).not.toContain("private-key");
-    const expectedTransport = {
-      type: "ssh" as const,
-      connectionId: ssh.body.id,
-      generation: 1,
-    };
-    expect((await check(f, 2, { expectedTransport })).body).toStrictEqual({
-      outcome: "valid",
-    });
-    for (const override of [
-      { expectedTransport: { type: "direct" as const } },
-      {
-        expectedTransport: {
-          ...expectedTransport,
-          connectionId: randomUUID(),
-        },
-      },
-      {
-        expectedTransport: { ...expectedTransport, generation: 2 },
-      },
-    ]) {
-      expect((await check(f, 2, override)).body).toStrictEqual({
-        outcome: "configuration_changed",
-      });
-    }
-
-    const entered = createDeferredPromise<void>(context.signal);
-    const release = createDeferredPromise<Uint8Array>(context.signal);
-    useSecretKmsProbe(undefined, (_request, call) => {
-      if (call !== 1) {
-        return undefined;
+      if (sent.status !== 201) {
+        throw new Error("Expected an accepted pending chat send");
       }
-      entered.resolve(undefined);
-      return release.promise;
-    });
-    const pending = api.resolve(f, {
-      supportedProfiles: [...vncProfiles],
-    });
-    await entered.promise;
-    const rotated = await accept(
-      setupApp({ context, routes: sshConnectionsRoutes })(
-        sshConnectionsContract,
-      ).update({
-        headers: vncSessionHeaders,
-        params: { connectionId: ssh.body.id },
-        body: {
-          expectedGeneration: 1,
-          displayName: "Rotated VNC gateway",
-        },
-      }),
-      [200],
-    ).finally(() => {
-      release.resolve(Buffer.from("0123456789abcdef0123456789abcdef"));
-    });
-    expect(rotated.body.generation).toBe(2);
-    await expect(pending).resolves.toStrictEqual({ outcome: "unavailable" });
-    expect((await check(f, 2, { expectedTransport })).body).toStrictEqual({
-      outcome: "configuration_changed",
-    });
-    await expect(
-      api.resolve(f, { supportedProfiles: [...vncProfiles] }),
-    ).resolves.toMatchObject({
-      outcome: "resolved_transport",
-      generation: 2,
-      transport: {
-        type: "ssh",
-        connectionId: ssh.body.id,
-        generation: 2,
-      },
-    });
-
-    await api.setDefault(f, "ssh", ssh.body.id, false);
-    expect(
-      (
-        await check(f, 2, {
-          expectedTransport: { ...expectedTransport, generation: 2 },
-        })
-      ).body,
-    ).toStrictEqual({ outcome: "unavailable" });
-  });
-
-  it("resolves QEMU SCRAM only for the exact Runner capability, before and after rotation", async () => {
-    const f = await executionFixture();
-    const scramSecurity = {
-      type: "qemu_x509_sasl" as const,
-      trust: { mode: "system" as const },
-      serverName: "qemu.example.com",
-    };
-    const saved = await accept(
-      api.connections().create({
-        headers: vncSessionHeaders,
-        body: {
-          ...vncConnectionBody(),
-          id: randomUUID(),
-          host: "qemu.example.com",
-          credential: {
-            create: {
-              name: "QEMU SCRAM",
-              authentication: {
-                method: "qemu_scram_sha256" as const,
-                username: "operator",
-                password: " first-secret ",
-              },
-            },
-          },
-          security: scramSecurity,
-        },
-      }),
-      [201],
-    );
-    const target = { ...f, connectionId: saved.body.id };
-    await api.enableDefault(f, "vnc", target.connectionId);
-    const direct = {
-      authMethod: "qemu_scram_sha256" as const,
-      securityType: "qemu_x509_sasl" as const,
-      transportType: "direct" as const,
-    };
-    const kms = useSecretKmsProbe();
-    await expect(api.resolve(target)).resolves.toStrictEqual({
-      outcome: "unsupported_profile",
-    });
-    await expect(
-      api.resolve(target, {
-        supportedProfiles: [
-          {
-            authMethod: "username_password",
-            securityType: "x509_plain",
-            transportType: "direct",
-          },
-        ],
-      }),
-    ).resolves.toStrictEqual({ outcome: "unsupported_profile" });
-    await expect(
-      api.resolve(target, {
-        supportedProfiles: [{ ...direct, transportType: "ssh" }],
-      }),
-    ).resolves.toStrictEqual({ outcome: "unsupported_profile" });
-    expect(kms.decryptCalls).toBe(0);
-    await expect(
-      api.resolve(target, { supportedProfiles: [direct] }),
-    ).resolves.toStrictEqual({
-      outcome: "resolved_transport",
-      host: "qemu.example.com",
-      port: 5900,
-      serverName: "qemu.example.com",
-      generation: 1,
-      transport: { type: "direct" },
-      authentication: {
-        method: "qemu_scram_sha256",
-        username: "operator",
-        password: " first-secret ",
-      },
-      security: { type: "qemu_x509_sasl", trust: { mode: "system" } },
-    });
-    expect(kms.decryptCalls).toBe(1);
-    expect((await check(target, 1)).body).toStrictEqual({ outcome: "valid" });
-    const credentialId = requireVncCredentialId(saved.body);
-    const rotated = await accept(
-      api.credentials().update({
-        headers: vncSessionHeaders,
-        params: { credentialId },
-        body: {
-          expectedRevision: 1,
-          authentication: {
-            method: "qemu_scram_sha256",
-            username: "operator",
-            password: "new-secret",
-          },
-        },
-      }),
-      [200],
-    );
-    expect(rotated.body.revision).toBe(2);
-    expect(JSON.stringify(rotated.body)).not.toContain("new-secret");
-    expect((await check(target, 1)).body).toStrictEqual({
-      outcome: "configuration_changed",
-    });
-    await expect(
-      api.resolve(target, { supportedProfiles: [direct] }),
-    ).resolves.toMatchObject({
-      outcome: "resolved_transport",
-      generation: 2,
-      authentication: { password: "new-secret" },
-    });
-
-    const ssh = await accept(
-      setupApp({ context, routes: sshConnectionsRoutes })(
-        sshConnectionsContract,
-      ).create({
-        headers: vncSessionHeaders,
-        body: {
-          id: randomUUID(),
-          displayName: "QEMU SSH gateway",
-          host: "gateway.example.com",
-          credential: inlineSshKey("operator", "private-key"),
-        },
-      }),
-      [201],
-    );
-    await api.enableDefault(f, "ssh", ssh.body.id);
-    const throughSsh = await accept(
-      api.connections().update({
-        headers: vncSessionHeaders,
-        params: { connectionId: target.connectionId },
-        body: {
-          expectedGeneration: 2,
-          host: "127.0.0.1",
-          transport: { type: "ssh", connectionId: ssh.body.id },
-          security: { ...scramSecurity, serverName: "qemu.internal" },
-        },
-      }),
-      [200],
-    );
-    expect(throughSsh.body.generation).toBe(3);
-    await expect(
-      api.resolve(target, { supportedProfiles: [direct] }),
-    ).resolves.toStrictEqual({ outcome: "unsupported_profile" });
-    const sshProfile = { ...direct, transportType: "ssh" as const };
-    await expect(
-      api.resolve(target, { supportedProfiles: [sshProfile] }),
-    ).resolves.toMatchObject({
-      outcome: "resolved_transport",
-      host: "127.0.0.1",
-      serverName: "qemu.internal",
-      generation: 3,
-      transport: { type: "ssh", connectionId: ssh.body.id, generation: 1 },
-      authentication: { method: "qemu_scram_sha256", password: "new-secret" },
-    });
-    await api.setDefault(f, "ssh", ssh.body.id, false);
-    await expect(
-      api.resolve(target, { supportedProfiles: [sshProfile] }),
-    ).resolves.toStrictEqual({ outcome: "unavailable" });
-  });
-
-  it("admits Mac classic password only for an exact authorized SSH loopback profile", async () => {
-    const f = await executionFixture();
-    const ssh = await accept(
-      setupApp({ context, routes: sshConnectionsRoutes })(
-        sshConnectionsContract,
-      ).create({
-        headers: vncSessionHeaders,
-        body: {
-          id: randomUUID(),
-          displayName: "Mac SSH",
-          host: "mac.example.com",
-          credential: inlineSshKey("operator", "private-key"),
-        },
-      }),
-      [201],
-    );
-    await api.enableDefault(f, "ssh", ssh.body.id);
-    const body = {
-      id: randomUUID(),
-      displayName: "Mac classic VNC password",
-      host: "127.0.0.1",
-      credential: {
-        create: {
-          name: "Mac classic password",
-          authentication: {
-            method: "vnc_password" as const,
-            password: "secret",
-          },
-        },
-      },
-      security: { type: "apple_vnc_password" as const },
-      transport: { type: "ssh" as const, connectionId: ssh.body.id },
-    };
-    const invalidRoute = await accept(
-      api.connections().create({
-        headers: vncSessionHeaders,
-        body: { ...body, host: "localhost" },
-      }),
-      [400],
-    );
-    expect(invalidRoute.body.error.code).toBe(
-      "VNC_INVALID_APPLE_VNC_PASSWORD_ROUTE",
-    );
-    const direct = await accept(
-      api.connections().create({
-        headers: vncSessionHeaders,
-        body: {
-          ...body,
-          host: "mac.example.com",
-          transport: { type: "direct" },
-        },
-      }),
-      [400],
-    );
-    expect(direct.body.error.code).toBe("VNC_INVALID_APPLE_VNC_PASSWORD_ROUTE");
-    const mismatch = await accept(
-      api.connections().create({
-        headers: vncSessionHeaders,
-        body: { ...body, security: { type: "apple_dh" } },
-      }),
-      [400],
-    );
-    expect(mismatch.body.error.code).toBe("VNC_PROFILE_MISMATCH");
-    const saved = await accept(
-      api.connections().create({ headers: vncSessionHeaders, body }),
-      [201],
-    );
-    expect(saved.body).toMatchObject({
-      host: "127.0.0.1",
-      security: { type: "apple_vnc_password" },
-      transport: { type: "ssh", connectionId: ssh.body.id },
-    });
-    expect(JSON.stringify(saved.body)).not.toContain("secret");
-    const target = { ...f, connectionId: saved.body.id };
-    await api.enableDefault(f, "vnc", target.connectionId);
-    const profile = [
-      {
-        authMethod: "vnc_password" as const,
-        securityType: "apple_vnc_password" as const,
-        transportType: "ssh" as const,
-      },
-    ];
-    const kms = useSecretKmsProbe();
-    await expect(api.resolve(target)).resolves.toStrictEqual({
-      outcome: "unsupported_profile",
-    });
-    await expect(
-      api.resolve(target, {
-        supportedProfiles: [
-          {
-            authMethod: "vnc_password",
-            securityType: "x509_vnc",
-            transportType: "ssh",
-          },
-        ],
-      }),
-    ).resolves.toStrictEqual({ outcome: "unsupported_profile" });
-    expect(kms.decryptCalls).toBe(0);
-    await api.setDefault(f, "ssh", ssh.body.id, false);
-    await expect(
-      api.resolve(target, { supportedProfiles: profile }),
-    ).resolves.toStrictEqual({
-      outcome: "unavailable",
-    });
-    expect(kms.decryptCalls).toBe(0);
-    await api.setDefault(f, "ssh", ssh.body.id, true);
-    await expect(
-      api.resolve(target, { supportedProfiles: profile }),
-    ).resolves.toStrictEqual({
-      outcome: "resolved_apple_vnc_password",
-      host: "127.0.0.1",
-      port: 5900,
-      generation: 1,
-      transport: { type: "ssh", connectionId: ssh.body.id, generation: 1 },
-      authentication: { method: "vnc_password", password: "secret" },
-      security: { type: "apple_vnc_password" },
-    });
-    expect(kms.decryptCalls).toBe(1);
-    const expectedTransport = {
-      type: "ssh" as const,
-      connectionId: ssh.body.id,
-      generation: 1,
-    };
-    expect((await check(target, 1, { expectedTransport })).body).toStrictEqual({
-      outcome: "valid",
-    });
-    const rotated = await accept(
-      api.credentials().update({
-        headers: vncSessionHeaders,
-        params: { credentialId: requireVncCredentialId(saved.body) },
-        body: {
-          expectedRevision: 1,
-          authentication: { method: "vnc_password", password: "rotated" },
-        },
-      }),
-      [200],
-    );
-    expect(JSON.stringify(rotated.body)).not.toContain("rotated");
-    expect((await check(target, 1, { expectedTransport })).body).toStrictEqual({
-      outcome: "configuration_changed",
-    });
-    await expect(
-      api.resolve(target, { supportedProfiles: profile }),
-    ).resolves.toMatchObject({
-      outcome: "resolved_apple_vnc_password",
-      generation: 2,
-      authentication: { password: "rotated" },
-    });
-    const denied = await accept(
-      api.connections().update({
-        headers: vncSessionHeaders,
-        params: { connectionId: saved.body.id },
-        body: { expectedGeneration: 2, host: "localhost" },
-      }),
-      [400],
-    );
-    expect(denied.body.error.code).toBe("VNC_INVALID_APPLE_VNC_PASSWORD_ROUTE");
-    await api.setDefault(f, "ssh", ssh.body.id, false);
-    expect((await check(target, 2, { expectedTransport })).body).toStrictEqual({
-      outcome: "unavailable",
-    });
-  });
-
-  it("admits Apple DH only for an authorized SSH-to-Mac-loopback profile", async () => {
-    const f = await executionFixture();
-    const ssh = await accept(
-      setupApp({ context, routes: sshConnectionsRoutes })(
-        sshConnectionsContract,
-      ).create({
-        headers: vncSessionHeaders,
-        body: {
-          id: randomUUID(),
-          displayName: "Mac SSH",
-          host: "mac.example.com",
-          credential: inlineSshKey("ec2-user", "private-key"),
-        },
-      }),
-      [201],
-    );
-    await api.enableDefault(f, "ssh", ssh.body.id);
-    const appleBody = {
-      id: randomUUID(),
-      displayName: "Mac Screen Sharing",
-      host: "127.0.0.1",
-      credential: {
-        create: {
-          name: "Mac login",
-          authentication: {
-            method: "apple_dh_username_password" as const,
-            username: "operator",
-            password: "secret",
-          },
-        },
-      },
-      security: { type: "apple_dh" as const },
-      transport: { type: "ssh" as const, connectionId: ssh.body.id },
-    };
-    for (const [invalid, expectedCode] of [
-      [
-        { ...appleBody, transport: { type: "direct" as const } },
-        "VNC_INVALID_HOST",
-      ],
-      [{ ...appleBody, host: "mac.example.com" }, "VNC_INVALID_APPLE_DH_ROUTE"],
-    ] as const) {
-      const result = await accept(
-        api.connections().create({ headers: vncSessionHeaders, body: invalid }),
-        [400],
-      );
-      expect(result.body.error.code).toBe(expectedCode);
-    }
-    const apple = await accept(
-      api.connections().create({ headers: vncSessionHeaders, body: appleBody }),
-      [201],
-    );
-    expect(apple.body.security).toStrictEqual({ type: "apple_dh" });
-    const target = { ...f, connectionId: apple.body.id };
-    await api.enableDefault(f, "vnc", target.connectionId);
-    const profile = [
-      {
-        authMethod: "apple_dh_username_password" as const,
-        securityType: "apple_dh" as const,
-        transportType: "ssh" as const,
-      },
-    ];
-    const kms = useSecretKmsProbe();
-    await expect(api.resolve(target)).resolves.toStrictEqual({
-      outcome: "unsupported_profile",
-    });
-    await api.setDefault(f, "ssh", ssh.body.id, false);
-    expect(kms.decryptCalls).toBe(0);
-    await expect(
-      api.resolve(target, { supportedProfiles: profile }),
-    ).resolves.toStrictEqual({ outcome: "unavailable" });
-    expect(kms.decryptCalls).toBe(0);
-    await api.setDefault(f, "ssh", ssh.body.id, true);
-    await expect(
-      api.resolve(target, { supportedProfiles: profile }),
-    ).resolves.toStrictEqual({
-      outcome: "resolved_apple_dh",
-      host: "127.0.0.1",
-      port: 5900,
-      generation: 1,
-      transport: { type: "ssh", connectionId: ssh.body.id, generation: 1 },
-      authentication: {
-        method: "apple_dh_username_password",
-        username: "operator",
-        password: "secret",
-      },
-      security: { type: "apple_dh" },
-    });
-    expect(kms.decryptCalls).toBe(1);
-    const expectedTransport = {
-      type: "ssh" as const,
-      connectionId: ssh.body.id,
-      generation: 1,
-    };
-    expect((await check(target, 1, { expectedTransport })).body).toStrictEqual({
-      outcome: "valid",
-    });
-    const rotated = await accept(
-      api.credentials().update({
-        headers: vncSessionHeaders,
-        params: { credentialId: requireVncCredentialId(apple.body) },
-        body: {
-          expectedRevision: 1,
-          authentication: {
-            method: "apple_dh_username_password",
-            username: "operator",
-            password: "new-secret",
-          },
-        },
-      }),
-      [200],
-    );
-    expect(rotated.body).toMatchObject({
-      authMethod: "apple_dh_username_password",
-      username: "operator",
-      revision: 2,
-    });
-    expect(JSON.stringify(rotated.body)).not.toContain("new-secret");
-    expect((await check(target, 1, { expectedTransport })).body).toStrictEqual({
-      outcome: "configuration_changed",
-    });
-    await expect(
-      api.resolve(target, { supportedProfiles: profile }),
-    ).resolves.toMatchObject({
-      outcome: "resolved_apple_dh",
-      generation: 2,
-      authentication: { password: "new-secret" },
-    });
-    await api.setDefault(f, "ssh", ssh.body.id, false);
-    expect((await check(target, 2, { expectedTransport })).body).toStrictEqual({
-      outcome: "unavailable",
-    });
-  });
-
-  it("admits Apple SRP only for an authorized SSH-to-Mac-loopback profile", async () => {
-    const f = await executionFixture();
-    const ssh = await accept(
-      setupApp({ context, routes: sshConnectionsRoutes })(
-        sshConnectionsContract,
-      ).create({
-        headers: vncSessionHeaders,
-        body: {
-          id: randomUUID(),
-          displayName: "Mac SSH",
-          host: "mac.example.com",
-          credential: inlineSshKey("ec2-user", "private-key"),
-        },
-      }),
-      [201],
-    );
-    await api.enableDefault(f, "ssh", ssh.body.id);
-    const body = {
-      id: randomUUID(),
-      displayName: "Mac Screen Sharing SRP",
-      host: "127.0.0.1",
-      credential: {
-        create: {
-          name: "Mac SRP login",
-          authentication: {
-            method: "apple_srp_username_password" as const,
-            username: "operator",
-            password: "secret",
-          },
-        },
-      },
-      security: { type: "apple_srp" as const },
-      transport: { type: "ssh" as const, connectionId: ssh.body.id },
-    };
-    expect(
-      (
-        await accept(
-          api.connections().create({
-            headers: vncSessionHeaders,
-            body: { ...body, host: "localhost" },
-          }),
-          [400],
-        )
-      ).body.error.code,
-    ).toBe("VNC_INVALID_APPLE_SRP_ROUTE");
-    expect(
-      (
-        await accept(
-          api.connections().create({
-            headers: vncSessionHeaders,
-            body: { ...body, security: { type: "apple_dh" } },
-          }),
-          [400],
-        )
-      ).body.error.code,
-    ).toBe("VNC_PROFILE_MISMATCH");
-    const saved = await accept(
-      api.connections().create({ headers: vncSessionHeaders, body }),
-      [201],
-    );
-    expect(saved.body.security).toStrictEqual({ type: "apple_srp" });
-    const target = { ...f, connectionId: saved.body.id };
-    await api.enableDefault(f, "vnc", target.connectionId);
-    const profile = [
-      {
-        authMethod: "apple_srp_username_password" as const,
-        securityType: "apple_srp" as const,
-        transportType: "ssh" as const,
-      },
-    ];
-    const kms = useSecretKmsProbe();
-    await expect(api.resolve(target)).resolves.toStrictEqual({
-      outcome: "unsupported_profile",
-    });
-    expect(kms.decryptCalls).toBe(0);
-    await api.setDefault(f, "ssh", ssh.body.id, false);
-    await expect(
-      api.resolve(target, { supportedProfiles: profile }),
-    ).resolves.toStrictEqual({ outcome: "unavailable" });
-    expect(kms.decryptCalls).toBe(0);
-    await api.setDefault(f, "ssh", ssh.body.id, true);
-    await expect(
-      api.resolve(target, { supportedProfiles: profile }),
-    ).resolves.toStrictEqual({
-      outcome: "resolved_apple_srp",
-      host: "127.0.0.1",
-      port: 5900,
-      generation: 1,
-      transport: { type: "ssh", connectionId: ssh.body.id, generation: 1 },
-      authentication: {
-        method: "apple_srp_username_password",
-        username: "operator",
-        password: "secret",
-      },
-      security: { type: "apple_srp" },
-    });
-    expect(kms.decryptCalls).toBe(1);
-    const expectedTransport = {
-      type: "ssh" as const,
-      connectionId: ssh.body.id,
-      generation: 1,
-    };
-    expect((await check(target, 1, { expectedTransport })).body).toStrictEqual({
-      outcome: "valid",
-    });
-    for (const [change, code] of [
-      [{ host: "localhost" }, "VNC_INVALID_APPLE_SRP_ROUTE"],
-      [{ security: { type: "apple_dh" as const } }, "VNC_PROFILE_MISMATCH"],
-    ] as const) {
-      const rejected = await accept(
-        api.connections().update({
+      await held.waitForPending();
+      runtime.authenticate(owner);
+      const observed = await accept(
+        setupApp({ context, routes: chatInputStatusRoutes })(
+          chatInputStatusContract,
+        ).get({
           headers: vncSessionHeaders,
-          params: { connectionId: saved.body.id },
-          body: { expectedGeneration: 1, ...change },
+          params: { threadId: sent.body.threadId, eventId: clientEventId },
         }),
-        [400],
-      );
-      expect(rejected.body.error.code).toBe(code);
-    }
-    expect((await check(target, 1, { expectedTransport })).body).toStrictEqual({
-      outcome: "valid",
-    });
-    const rotated = await accept(
-      api.credentials().update({
-        headers: vncSessionHeaders,
-        params: { credentialId: requireVncCredentialId(saved.body) },
-        body: {
-          expectedRevision: 1,
-          authentication: {
-            method: "apple_srp_username_password",
-            username: "operator",
-            password: "new-secret",
-          },
-        },
-      }),
-      [200],
-    );
-    expect(rotated.body).toMatchObject({
-      authMethod: "apple_srp_username_password",
-      username: "operator",
-      revision: 2,
-    });
-    expect(JSON.stringify(rotated.body)).not.toContain("new-secret");
-    expect((await check(target, 1, { expectedTransport })).body).toStrictEqual({
-      outcome: "configuration_changed",
-    });
-    await expect(
-      api.resolve(target, { supportedProfiles: profile }),
-    ).resolves.toMatchObject({
-      outcome: "resolved_apple_srp",
-      generation: 2,
-      authentication: { password: "new-secret" },
-    });
-    const reboundSsh = await accept(
-      setupApp({ context, routes: sshConnectionsRoutes })(
-        sshConnectionsContract,
-      ).create({
-        headers: vncSessionHeaders,
-        body: {
-          id: randomUUID(),
-          displayName: "Other Mac SSH",
-          host: "other-mac.example.com",
-          credential: inlineSshKey("ec2-user", "private-key"),
-        },
-      }),
-      [201],
-    );
-    await api.enableDefault(f, "ssh", reboundSsh.body.id);
-    const rebound = await accept(
-      api.connections().update({
-        headers: vncSessionHeaders,
-        params: { connectionId: saved.body.id },
-        body: {
-          expectedGeneration: 2,
-          transport: { type: "ssh", connectionId: reboundSsh.body.id },
-        },
-      }),
-      [200],
-    );
-    expect(rebound.body).toMatchObject({
-      generation: 3,
-      transport: { type: "ssh", connectionId: reboundSsh.body.id },
-      security: { type: "apple_srp" },
-    });
-    expect((await check(target, 2, { expectedTransport })).body).toStrictEqual({
-      outcome: "configuration_changed",
-    });
-    const reboundTransport = {
-      type: "ssh" as const,
-      connectionId: reboundSsh.body.id,
-      generation: 1,
-    };
-    await expect(
-      api.resolve(target, { supportedProfiles: profile }),
-    ).resolves.toMatchObject({
-      outcome: "resolved_apple_srp",
-      generation: 3,
-      transport: reboundTransport,
-    });
-    await api.setDefault(f, "ssh", reboundSsh.body.id, false);
-    expect(
-      (await check(target, 3, { expectedTransport: reboundTransport })).body,
-    ).toStrictEqual({ outcome: "unavailable" });
-  });
-
-  it("admits Apple RSA/SRP only for a matching saved SSH loopback and exact Runner capability", async () => {
-    const f = await executionFixture();
-    const ssh = await accept(
-      setupApp({ context, routes: sshConnectionsRoutes })(
-        sshConnectionsContract,
-      ).create({
-        headers: vncSessionHeaders,
-        body: {
-          id: randomUUID(),
-          displayName: "Controlled Mac SSH",
-          host: "mac.example.com",
-          credential: inlineSshKey("operator", "private-key"),
-        },
-      }),
-      [201],
-    );
-    await api.enableDefault(f, "ssh", ssh.body.id);
-    const body = {
-      id: randomUUID(),
-      displayName: "Mac Screen Sharing RSA/SRP",
-      host: "127.0.0.1",
-      credential: {
-        create: {
-          name: "RSA/SRP login",
-          authentication: {
-            method: "apple_rsa_srp_username_password" as const,
-            username: "operator",
-            password: "secret",
-          },
-        },
-      },
-      security: { type: "apple_rsa_srp" as const },
-      transport: { type: "ssh" as const, connectionId: ssh.body.id },
-    };
-    for (const [change, code] of [
-      [{ host: "localhost" }, "VNC_INVALID_APPLE_RSA_SRP_ROUTE"],
-      [{ host: "mac.example.com" }, "VNC_INVALID_APPLE_RSA_SRP_ROUTE"],
-      [{ transport: { type: "direct" as const } }, "VNC_INVALID_HOST"],
-    ] as const) {
-      const invalid = await accept(
-        api.connections().create({
-          headers: vncSessionHeaders,
-          body: { ...body, ...change },
-        }),
-        [400],
-      );
-      expect(invalid.body.error.code).toBe(code);
-    }
-    for (const security of [
-      { type: "apple_dh" as const },
-      { type: "apple_srp" as const },
-    ]) {
-      const mismatch = await accept(
-        api.connections().create({
-          headers: vncSessionHeaders,
-          body: { ...body, security },
-        }),
-        [400],
-      );
-      expect(mismatch.body.error.code).toBe("VNC_PROFILE_MISMATCH");
-    }
-    const saved = await accept(
-      api.connections().create({ headers: vncSessionHeaders, body }),
-      [201],
-    );
-    const target = { ...f, connectionId: saved.body.id };
-    await api.enableDefault(f, "vnc", target.connectionId);
-    const profile = [
-      {
-        authMethod: "apple_rsa_srp_username_password" as const,
-        securityType: "apple_rsa_srp" as const,
-        transportType: "ssh" as const,
-      },
-    ];
-    const kms = useSecretKmsProbe();
-    await expect(api.resolve(target)).resolves.toStrictEqual({
-      outcome: "unsupported_profile",
-    });
-    await expect(
-      api.resolve(target, {
-        supportedProfiles: [
-          {
-            authMethod: "apple_srp_username_password",
-            securityType: "apple_srp",
-            transportType: "ssh",
-          },
-        ],
-      }),
-    ).resolves.toStrictEqual({ outcome: "unsupported_profile" });
-    expect(kms.decryptCalls).toBe(0);
-    await api.setDefault(f, "ssh", ssh.body.id, false);
-    await expect(
-      api.resolve(target, { supportedProfiles: profile }),
-    ).resolves.toStrictEqual({
-      outcome: "unavailable",
-    });
-    expect(kms.decryptCalls).toBe(0);
-    await api.setDefault(f, "ssh", ssh.body.id, true);
-    await expect(
-      api.resolve(target, { supportedProfiles: profile }),
-    ).resolves.toStrictEqual({
-      outcome: "resolved_apple_rsa_srp",
-      host: "127.0.0.1",
-      port: 5900,
-      generation: 1,
-      transport: { type: "ssh", connectionId: ssh.body.id, generation: 1 },
-      authentication: {
-        method: "apple_rsa_srp_username_password",
-        username: "operator",
-        password: "secret",
-      },
-      security: { type: "apple_rsa_srp" },
-    });
-    expect(kms.decryptCalls).toBe(1);
-    const expectedTransport = {
-      type: "ssh" as const,
-      connectionId: ssh.body.id,
-      generation: 1,
-    };
-    expect((await check(target, 1, { expectedTransport })).body).toStrictEqual({
-      outcome: "valid",
-    });
-    const invalidUpdate = await accept(
-      api.connections().update({
-        headers: vncSessionHeaders,
-        params: { connectionId: saved.body.id },
-        body: { expectedGeneration: 1, host: "localhost" },
-      }),
-      [400],
-    );
-    expect(invalidUpdate.body.error.code).toBe(
-      "VNC_INVALID_APPLE_RSA_SRP_ROUTE",
-    );
-    const rotated = await accept(
-      api.credentials().update({
-        headers: vncSessionHeaders,
-        params: { credentialId: requireVncCredentialId(saved.body) },
-        body: {
-          expectedRevision: 1,
-          authentication: {
-            method: "apple_rsa_srp_username_password",
-            username: "operator",
-            password: "new-secret",
-          },
-        },
-      }),
-      [200],
-    );
-    expect(JSON.stringify(rotated.body)).not.toContain("new-secret");
-    expect((await check(target, 1, { expectedTransport })).body).toStrictEqual({
-      outcome: "configuration_changed",
-    });
-    await expect(
-      api.resolve(target, { supportedProfiles: profile }),
-    ).resolves.toMatchObject({
-      outcome: "resolved_apple_rsa_srp",
-      generation: 2,
-      authentication: { password: "new-secret" },
-    });
-  });
-
-  it("rejects X509Plain for an old Runner before KMS and resolves it for a capable Runner", async () => {
-    const f = await executionFixture();
-    const kms = useSecretKmsProbe();
-    const plain = await accept(
-      api.connections().create({
-        headers: vncSessionHeaders,
-        body: {
-          id: randomUUID(),
-          displayName: "Plain desktop",
-          host: "plain.example.com",
-          credential: {
-            create: {
-              name: "Plain credential",
-              authentication: {
-                method: "username_password",
-                username: "operator",
-                password: " private secret ",
-              },
-            },
-          },
-          security: {
-            type: "x509_plain",
-            trust: { mode: "system" },
-          },
-        },
-      }),
-      [201],
-    );
-    await api.enableDefault(f, "vnc", plain.body.id);
-    await expect(
-      api.resolve(f, {
-        connectionId: plain.body.id,
-        supportedProfiles: [...vncX509VncProfiles],
-      }),
-    ).resolves.toStrictEqual({ outcome: "unsupported_profile" });
-    expect(kms.decryptCalls).toBe(0);
-    await expect(
-      api.resolve(f, { connectionId: plain.body.id }),
-    ).resolves.toStrictEqual({
-      outcome: "resolved_transport",
-      host: "plain.example.com",
-      port: 5900,
-      generation: 1,
-      serverName: "plain.example.com",
-      transport: { type: "direct" },
-      authentication: {
-        method: "username_password",
-        username: "operator",
-        password: " private secret ",
-      },
-      security: { type: "x509_plain", trust: { mode: "system" } },
-    });
-    expect(kms.decryptCalls).toBe(1);
-    expect(
-      (
-        await check(f, plain.body.generation, {
-          connectionId: plain.body.id,
-        })
-      ).body,
-    ).toStrictEqual({ outcome: "valid" });
-  });
-
-  it("rejects pending and real terminal Runs before decrypting VNC credentials", async () => {
-    const owner = {
-      orgId: `org_vnc_public_${randomUUID()}`,
-      userId: `user_vnc_public_${randomUUID()}`,
-    };
-    const run = await selectedRuns.start(owner);
-    const execution = await selectedRuns.executionInput(run, vncRunnerHeaders);
-    api.authenticate(owner);
-    const connection = await accept(
-      api
-        .connections()
-        .create({ headers: vncSessionHeaders, body: vncConnectionBody() }),
-      [201],
-    );
-    await api.enableDefault(owner, "vnc", connection.body.id);
-    const f = {
-      ...execution,
-      connectionId: connection.body.id,
-      credentialId: requireVncCredentialId(connection.body),
-    };
-    const { generation } = await api.resolved(f);
-    const pending = await selectedRuns.start(owner);
-    let kms = useSecretKmsProbe();
-    await expect(
-      api.resolve({ ...f, runId: pending.runId }),
-    ).resolves.toStrictEqual({ outcome: "unavailable" });
-    expect(
-      (await check({ ...f, runId: pending.runId }, generation)).body,
-    ).toStrictEqual({ outcome: "unavailable" });
-    expect(kms.decryptCalls).toBe(0);
-    for (const status of ["completed", "cancelled", "failed"] as const) {
-      const next = await selectedRuns.start(owner);
-      const current = await selectedRuns.executionInput(next, vncRunnerHeaders);
-      await selectedRuns.finish(current, status);
-      kms = useSecretKmsProbe();
-      await expect(api.resolve({ ...f, ...current })).resolves.toStrictEqual({
-        outcome: "unavailable",
-      });
-      expect(
-        (await check({ ...f, ...current }, generation)).body,
-      ).toStrictEqual({ outcome: "unavailable" });
-      expect(kms.decryptCalls).toBe(0);
-    }
-  });
-
-  it("authorizes independent Runs concurrently without reserving the connection or decrypting on checks", async () => {
-    const f = await executionFixture();
-    const other = { ...f, ...(await executionRuntime(f)) };
-    const [first, second] = await Promise.all([
-      api.resolved(f),
-      api.resolved(other),
-    ]);
-    expect(second.generation).toBe(first.generation);
-    const kms = useSecretKmsProbe();
-    for (const result of await Promise.all([
-      check(f, first.generation),
-      check(other, second.generation),
-    ])) {
-      expect(result.headers.get("cache-control")).toBe("no-store");
-      expect(result.body).toStrictEqual({ outcome: "valid" });
-    }
-    expect(kms.decryptCalls).toBe(0);
-  });
-
-  it("preserves a rejected profile edit and checks generation through rotation, deletion and recreation", async () => {
-    const f = await executionFixture();
-    const original = await api.resolved(f);
-    const rejected = await accept(
-      api.credentials().update({
-        headers: vncSessionHeaders,
-        params: { credentialId: f.credentialId },
-        body: {
-          expectedRevision: 1,
-          authentication: {
-            method: "client_certificate_vnc_password",
-            password: "rejected",
-            certificateChain,
-            privateKey,
-          },
-        },
-      }),
-      [400],
-    );
-    expect(rejected.body.error.code).toBe("VNC_PROFILE_MISMATCH");
-    await expect(api.resolved(f)).resolves.toStrictEqual(original);
-    expect((await check(f, original.generation)).body).toStrictEqual({
-      outcome: "valid",
-    });
-    await accept(
-      api.credentials().update({
-        headers: vncSessionHeaders,
-        params: { credentialId: f.credentialId },
-        body: {
-          expectedRevision: 1,
-          authentication: { method: "vnc_password", password: "rotated" },
-        },
-      }),
-      [200],
-    );
-    const rotated = await api.resolved(f);
-    expect(rotated.generation).toBe(2);
-    expect((await check(f, original.generation)).body).toStrictEqual({
-      outcome: "configuration_changed",
-    });
-    expect((await check(f, rotated.generation)).body).toStrictEqual({
-      outcome: "valid",
-    });
-    await accept(
-      api.connections().delete({
-        headers: vncSessionHeaders,
-        params: { connectionId: f.connectionId },
-        body: { expectedGeneration: 2 },
-      }),
-      [204],
-    );
-    expect((await check(f, rotated.generation)).body).toStrictEqual({
-      outcome: "unavailable",
-    });
-    await accept(
-      api.connections().create({
-        headers: vncSessionHeaders,
-        body: {
-          ...vncConnectionBody(f.connectionId),
-          credential: {
-            create: {
-              name: "Replacement VNC password",
-              authentication: {
-                method: "vnc_password",
-                password: "replaced",
-              },
-            },
-          },
-        },
-      }),
-      [201],
-    );
-    await api.enableDefault(f, "vnc", f.connectionId);
-    const replacement = await api.resolved(f);
-    expect(replacement.generation).toBe(1);
-    expect(replacement.authentication).toStrictEqual({
-      method: "vnc_password",
-      password: "replaced",
-    });
-    expect((await check(f, original.generation)).body).toStrictEqual({
-      outcome: "valid",
-    });
-    expect((await check(f, rotated.generation)).body).toStrictEqual({
-      outcome: "configuration_changed",
-    });
-  });
-
-  it("surfaces KMS failure as a sanitized error", async () => {
-    const f = await executionFixture();
-    useSecretKmsProbe(undefined, () => {
-      return Promise.reject(new Error("KMS secret-response-canary"));
-    });
-    const result = await accept(
-      api.runner().resolve({
-        headers: vncRunnerHeaders,
-        params: { runId: f.runId },
-        body: {
-          connectionId: f.connectionId,
-          runnerIdentity: f.runnerIdentity,
-          supportedProfiles: [...vncProfiles],
-        },
-      }),
-      [500],
-    );
-    expect(result.headers.get("cache-control")).toBe("no-store");
-    expect(JSON.stringify(result.body)).not.toContain("secret-response-canary");
-    expect(JSON.stringify(result.body)).not.toContain(vncPassword);
-  });
-
-  it("allows rotation while KMS is pending and discards the old secret handoff", async () => {
-    const f = await executionFixture();
-    const entered = createDeferredPromise<void>(context.signal);
-    const release = createDeferredPromise<Uint8Array>(context.signal);
-    useSecretKmsProbe(undefined, (_request, call) => {
-      if (call !== 1) {
-        return undefined;
-      }
-      entered.resolve(undefined);
-      return release.promise;
-    });
-    const pending = api.resolve(f);
-    await entered.promise;
-    await accept(
-      api.credentials().update({
-        headers: vncSessionHeaders,
-        params: { credentialId: f.credentialId },
-        body: {
-          expectedRevision: 1,
-          authentication: { method: "vnc_password", password: "rotated" },
-        },
-      }),
-      [200],
-    ).finally(() => {
-      release.resolve(Buffer.from("0123456789abcdef0123456789abcdef"));
-    });
-    await expect(pending).resolves.toStrictEqual({ outcome: "unavailable" });
-    await expect(api.resolved(f)).resolves.toMatchObject({
-      authentication: { method: "vnc_password", password: "rotated" },
-      generation: 2,
-    });
-  });
-
-  it("discards an in-flight direct VNC password when its Run is cancelled before KMS returns", async () => {
-    const f = await executionFixture();
-    const peer = await executionFixture();
-    api.authenticate(f);
-    const entered = createDeferredPromise<void>(context.signal);
-    const release = createDeferredPromise<Uint8Array>(context.signal);
-    useSecretKmsProbe(undefined, (_request, call) => {
-      if (call === 1) {
-        entered.resolve(undefined);
-        return release.promise;
-      }
-      return undefined;
-    });
-    const pending = api.resolve(f);
-    await entered.promise;
-    const releaseKms = () => {
-      release.resolve(Buffer.from("0123456789abcdef0123456789abcdef"));
-    };
-    const cancellation = await onRejection(
-      runs.requestCancelRun(
-        {
-          userId: f.userId,
-          orgId: f.orgId,
-          orgRole: "org:admin",
-          email: `${f.userId}@example.com`,
-        },
-        f.runId,
         [200],
-      ),
-      () => {
-        releaseKms();
-      },
-    );
-    expect(cancellation.body).toMatchObject({
-      id: f.runId,
-      status: "cancelled",
-    });
-    releaseKms();
-    await expect(pending).resolves.toStrictEqual({ outcome: "unavailable" });
-    await expect(check(f, 1)).resolves.toMatchObject({
-      body: { outcome: "unavailable" },
-    });
-    api.authenticate(peer);
-    await expect(api.resolve(peer)).resolves.toMatchObject({
-      outcome: "resolved_transport",
-    });
-  }, 20_000);
+      );
+      if (observed.body.status !== "consumed") {
+        throw new Error("Expected a pending Run");
+      }
+      const pendingRunId = observed.body.runId;
+      await expect(
+        runs.readRun(owner.actor, pendingRunId),
+      ).resolves.toMatchObject({ status: "pending" });
+
+      const kms = useSecretKmsProbe();
+      await expect(
+        runtime.resolve({
+          runId: pendingRunId,
+          connectionId: connection.body.id,
+          runnerIdentity: candidateIdentity,
+        }),
+      ).resolves.toStrictEqual({ outcome: "unavailable" });
+      const checked = await accept(
+        runtime.runner().check({
+          headers: vncRunnerHeaders,
+          params: { runId: pendingRunId },
+          body: {
+            connectionId: connection.body.id,
+            runnerIdentity: candidateIdentity,
+            expectedGeneration: 1,
+            expectedTransport: { type: "direct" },
+          },
+        }),
+        [200],
+      );
+      expect(checked.body).toStrictEqual({ outcome: "unavailable" });
+      expect(kms.decryptCalls).toBe(0);
+
+      await runs.requestCancelRun(owner.actor, pendingRunId, [200]);
+      held.release();
+      await flushWaitUntilForTest();
+    },
+  );
+
+  it(
+    "runner-vnc-038 (2/4) rejects a completed Run before decrypting VNC credentials",
+    { timeout: TEST_WITH_SINGLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const runtime = createVncRuntimeApi(context);
+      const fixture = await createDefaultVncFixture(context);
+      const kms = useSecretKmsProbe();
+
+      await expect(runtime.resolve(fixture)).resolves.toMatchObject({
+        outcome: "resolved_transport",
+        generation: 1,
+      });
+      expect(kms.decryptCalls).toBe(1);
+
+      await finishRun(context, fixture, "completed");
+
+      await expect(runtime.resolve(fixture)).resolves.toStrictEqual({
+        outcome: "unavailable",
+      });
+      const checked = await accept(
+        runtime.runner().check({
+          headers: vncRunnerHeaders,
+          params: { runId: fixture.runId },
+          body: {
+            connectionId: fixture.connectionId,
+            runnerIdentity: fixture.runnerIdentity,
+            expectedGeneration: 1,
+            expectedTransport: { type: "direct" },
+          },
+        }),
+        [200],
+      );
+      expect(checked.body).toStrictEqual({ outcome: "unavailable" });
+      expect(kms.decryptCalls).toBe(1);
+    },
+  );
+
+  it(
+    "runner-vnc-038 (3/4) rejects a cancelled Run before decrypting VNC credentials",
+    { timeout: TEST_WITH_SINGLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const runtime = createVncRuntimeApi(context);
+      const fixture = await createDefaultVncFixture(context);
+      const kms = useSecretKmsProbe();
+
+      await expect(runtime.resolve(fixture)).resolves.toMatchObject({
+        outcome: "resolved_transport",
+        generation: 1,
+      });
+      expect(kms.decryptCalls).toBe(1);
+
+      await finishRun(context, fixture, "cancelled");
+
+      await expect(runtime.resolve(fixture)).resolves.toStrictEqual({
+        outcome: "unavailable",
+      });
+      const checked = await accept(
+        runtime.runner().check({
+          headers: vncRunnerHeaders,
+          params: { runId: fixture.runId },
+          body: {
+            connectionId: fixture.connectionId,
+            runnerIdentity: fixture.runnerIdentity,
+            expectedGeneration: 1,
+            expectedTransport: { type: "direct" },
+          },
+        }),
+        [200],
+      );
+      expect(checked.body).toStrictEqual({ outcome: "unavailable" });
+      expect(kms.decryptCalls).toBe(1);
+    },
+  );
+
+  it(
+    "runner-vnc-038 (4/4) rejects a failed Run before decrypting VNC credentials",
+    { timeout: TEST_WITH_SINGLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const runtime = createVncRuntimeApi(context);
+      const fixture = await createDefaultVncFixture(context);
+      const kms = useSecretKmsProbe();
+
+      await expect(runtime.resolve(fixture)).resolves.toMatchObject({
+        outcome: "resolved_transport",
+        generation: 1,
+      });
+      expect(kms.decryptCalls).toBe(1);
+
+      await finishRun(context, fixture, "failed");
+
+      await expect(runtime.resolve(fixture)).resolves.toStrictEqual({
+        outcome: "unavailable",
+      });
+      const checked = await accept(
+        runtime.runner().check({
+          headers: vncRunnerHeaders,
+          params: { runId: fixture.runId },
+          body: {
+            connectionId: fixture.connectionId,
+            runnerIdentity: fixture.runnerIdentity,
+            expectedGeneration: 1,
+            expectedTransport: { type: "direct" },
+          },
+        }),
+        [200],
+      );
+      expect(checked.body).toStrictEqual({ outcome: "unavailable" });
+      expect(kms.decryptCalls).toBe(1);
+    },
+  );
 });

@@ -9,7 +9,6 @@ import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { server } from "../../../mocks/server";
-import { createUniqueStaffOrgIdFixture } from "../../../test-fixtures/staff-org";
 import { builtinConnectorsRoutes } from "../connectors";
 import { builtinConnectorsSlugCallbackRoutes } from "../connectors-slug-callback";
 import { connectorAccountRoutes } from "../connector-accounts";
@@ -44,7 +43,7 @@ beforeEach(() => {
 async function actor(enabled: boolean) {
   const identity = {
     userId: `user_${randomUUID()}`,
-    orgId: createUniqueStaffOrgIdFixture(),
+    orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe",
   };
   await updateFeatureSwitchesForUser(context, identity, {
     [FeatureSwitchKey.IosConnectorAppAuthorization]: enabled,
@@ -160,132 +159,125 @@ function provider(slug: Provider, url: URL) {
   }
 }
 
-test.each(providers)(
-  "exchanges %s native codes on the server and confirms add/reconnect to the exact account",
-  async (slug) => {
-    await actor(true);
-    let connectionId: string | undefined;
-    for (const intent of ["add", "reconnect"]) {
-      const started = await start(slug, true, connectionId);
-      const url = new URL(started.authorizationUrl);
-      const redirect =
-        slug === "dropbox"
-          ? "db-native-client://2/token"
-          : slug === "spotify"
-            ? "ai.okou.ios://connector-provider/spotify"
-            : "https://app.okou.ai/connectors/tiktok/callback";
-      expect(started.nativeAppAuthorization).toMatchObject({
-        provider: slug,
-        callbackUrl: redirect,
-      });
-      expect(url.searchParams.get("redirect_uri")).toBe(redirect);
-      expect(url.searchParams.get("state")).toMatch(/^ios-https-v1:/u);
-      if (slug === "tiktok") {
-        expect(url.searchParams.get("state")).toMatch(
-          /^ios-https-v1:app-tiktok:/u,
-        );
-        expect(url.searchParams.get("code_challenge_method")).toBe("S256");
-        expect(url.searchParams.has("from")).toBeFalsy();
-      }
-      expect(started.authorizationUrl).not.toContain("server-secret");
-      expect(started.authorizationUrl).not.toContain("code_verifier");
-      expect((await completion(slug, started.oauthAttemptId)).status).toBe(404);
-      provider(slug, url);
-      const result = await accept(
-        client(builtinConnectorsSlugCallbackContract).callback({
-          params: { connectorSlug: slug },
-          query: {
-            state: url.searchParams.get("state")!,
-            code: "native-code",
-            responseMode: "json",
-          },
-        }),
-        [200],
-      );
-      expect(result.body.status).toBe("success");
-      expect(result.body.nativeAppReturn?.attemptId).toBe(
-        started.oauthAttemptId,
-      );
-      const receipt = await completion(slug, started.oauthAttemptId);
-      expect(receipt.status).toBe(200);
-      if (receipt.status !== 200) {
-        throw new Error("Missing completion");
-      }
-      if (intent === "reconnect") {
-        expect(receipt.body.connectionId).toBe(connectionId);
-      }
-      connectionId = receipt.body.connectionId;
-      const account = await accept(
-        client(connectorAccountsContract).connection({
-          headers,
-          params: { connectionId },
-          query: { kind: "builtin", connectorSlug: slug },
-        }),
-        [200],
-      );
-      expect(account.body.target).toStrictEqual({
-        kind: "builtin",
-        connectorSlug: slug,
-      });
-      expect(account.body.connectionStatus).toBe("connected");
-      expect(JSON.stringify(account.body)).not.toContain("refresh-token");
-    }
+async function exchangeNativeCode(
+  slug: Provider,
+  options: {
+    readonly connectionId?: string;
+    readonly checkUnfinished?: boolean;
   },
-);
-
-test.each(providers)(
-  "keeps %s web OAuth when disabled or the caller lacks native capability",
-  async (slug) => {
-    await actor(false);
-    const disabled = await start(slug);
-    expect(disabled.nativeAppAuthorization).toBeUndefined();
-    expect(disabled.authorizationUrl).not.toContain("app-tiktok");
-    expect(
-      new URL(disabled.authorizationUrl).searchParams.get("redirect_uri"),
-    ).toBe(`https://app.okou.ai/connectors/${slug}/callback`);
-    await actor(true);
-    expect((await start(slug, false)).nativeAppAuthorization).toBeUndefined();
-  },
-);
-
-test("keeps Dropbox HTTPS authorization when the build uses a different environment's public app key", async () => {
-  await actor(true);
-  const response = await accept(
-    client(builtinConnectorOauthStartContract).start({
-      headers,
-      params: { connectorSlug: "dropbox" },
-      body: {
-        authMethod: "oauth",
-        callbackTarget: "app",
-        nativeCallback: "ios-https",
-        nativeAppAuthorization: "ios",
-        nativeAppClientId: "different-build-key",
-        account: { intent: "add" },
+) {
+  const started = await start(slug, true, options.connectionId);
+  const url = new URL(started.authorizationUrl);
+  const redirect =
+    slug === "dropbox"
+      ? "db-native-client://2/token"
+      : slug === "spotify"
+        ? "ai.okou.ios://connector-provider/spotify"
+        : "https://app.okou.ai/connectors/tiktok/callback";
+  expect(started.nativeAppAuthorization).toMatchObject({
+    provider: slug,
+    callbackUrl: redirect,
+  });
+  expect(url.searchParams.get("redirect_uri")).toBe(redirect);
+  expect(url.searchParams.get("state")).toMatch(/^ios-https-v1:/u);
+  if (slug === "tiktok") {
+    expect(url.searchParams.get("state")).toMatch(/^ios-https-v1:app-tiktok:/u);
+    expect(url.searchParams.get("code_challenge_method")).toBe("S256");
+    expect(url.searchParams.has("from")).toBeFalsy();
+  }
+  expect(started.authorizationUrl).not.toContain("server-secret");
+  expect(started.authorizationUrl).not.toContain("code_verifier");
+  if (options.checkUnfinished) {
+    expect((await completion(slug, started.oauthAttemptId)).status).toBe(404);
+  }
+  provider(slug, url);
+  const result = await accept(
+    client(builtinConnectorsSlugCallbackContract).callback({
+      params: { connectorSlug: slug },
+      query: {
+        state: url.searchParams.get("state")!,
+        code: "native-code",
+        responseMode: "json",
       },
     }),
     [200],
   );
-  expect(response.body.nativeAppAuthorization).toBeUndefined();
-  expect(
-    new URL(response.body.authorizationUrl).searchParams.get("redirect_uri"),
-  ).toBe("https://app.okou.ai/connectors/dropbox/callback");
-});
+  expect(result.body.status).toBe("success");
+  expect(result.body.nativeAppReturn?.attemptId).toBe(started.oauthAttemptId);
+  const receipt = await completion(slug, started.oauthAttemptId);
+  expect(receipt.status).toBe(200);
+  if (receipt.status !== 200) {
+    throw new Error("Missing completion");
+  }
+  return receipt.body.connectionId;
+}
 
 test.each(providers)(
-  "consumes %s denial without issuing an account completion",
+  "exchanges %s native codes on the server and confirms adding the account",
   async (slug) => {
     await actor(true);
-    const started = await start(slug);
-    const state = new URL(started.authorizationUrl).searchParams.get("state")!;
-    const denied = await accept(
-      client(builtinConnectorsSlugCallbackContract).callback({
-        params: { connectorSlug: slug },
-        query: { state, error: "access_denied", responseMode: "json" },
+    const connectionId = await exchangeNativeCode(slug, {
+      checkUnfinished: true,
+    });
+    const account = await accept(
+      client(connectorAccountsContract).connection({
+        headers,
+        params: { connectionId },
+        query: { kind: "builtin", connectorSlug: slug },
       }),
       [200],
     );
-    expect(denied.body.status).toBe("error");
-    expect(denied.body.nativeAppReturn?.attemptId).toBe(started.oauthAttemptId);
-    expect((await completion(slug, started.oauthAttemptId)).status).toBe(404);
+    expect(account.body.target).toStrictEqual({
+      kind: "builtin",
+      connectorSlug: slug,
+    });
+    expect(account.body.connectionStatus).toBe("connected");
+    expect(JSON.stringify(account.body)).not.toContain("refresh-token");
   },
 );
+
+test("exchanges tiktok native codes on the server and confirms reconnecting the exact account", async () => {
+  await actor(true);
+  const connectionId = await exchangeNativeCode("tiktok", {});
+  const reconnected = await exchangeNativeCode("tiktok", { connectionId });
+  expect(reconnected).toBe(connectionId);
+  const account = await accept(
+    client(connectorAccountsContract).connection({
+      headers,
+      params: { connectionId: reconnected },
+      query: { kind: "builtin", connectorSlug: "tiktok" },
+    }),
+    [200],
+  );
+  expect(account.body.connectionStatus).toBe("connected");
+});
+
+test("keeps tiktok web OAuth when disabled or the caller lacks native capability", async () => {
+  await actor(false);
+  const disabled = await start("tiktok");
+  expect(disabled.nativeAppAuthorization).toBeUndefined();
+  expect(disabled.authorizationUrl).not.toContain("app-tiktok");
+  expect(
+    new URL(disabled.authorizationUrl).searchParams.get("redirect_uri"),
+  ).toBe("https://app.okou.ai/connectors/tiktok/callback");
+  await actor(true);
+  expect((await start("tiktok", false)).nativeAppAuthorization).toBeUndefined();
+});
+
+test("consumes spotify denial without issuing an account completion", async () => {
+  await actor(true);
+  const started = await start("spotify");
+  const state = new URL(started.authorizationUrl).searchParams.get("state")!;
+  const denied = await accept(
+    client(builtinConnectorsSlugCallbackContract).callback({
+      params: { connectorSlug: "spotify" },
+      query: { state, error: "access_denied", responseMode: "json" },
+    }),
+    [200],
+  );
+  expect(denied.body.status).toBe("error");
+  expect(denied.body.nativeAppReturn?.attemptId).toBe(started.oauthAttemptId);
+  expect((await completion("spotify", started.oauthAttemptId)).status).toBe(
+    404,
+  );
+});

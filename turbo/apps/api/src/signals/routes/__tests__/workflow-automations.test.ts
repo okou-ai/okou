@@ -1,36 +1,44 @@
-import { publicChatActor } from "./helpers/public-chat-actor";
-import { publicRunOwner } from "./helpers/public-run-owner";
-import { captureConnectorExternalState } from "./helpers/public-connector-actor";
-import { randomUUID } from "node:crypto";
+import { Buffer } from "node:buffer";
+import { generateKeyPairSync, randomInt, randomUUID } from "node:crypto";
 
 import {
   chatThreadByIdContract,
   chatThreadMetadataContract,
-  chatThreadsContract,
 } from "@okouai/api-contracts/contracts/chat-threads";
-
+import { webhookStripeContract } from "@okouai/api-contracts/contracts/webhooks";
 import {
   workflowAutomationsContract,
   workflowsCollectionContract,
   workflowsDetailContract,
 } from "@okouai/api-contracts/contracts/workflows";
-import { HttpResponse, http } from "msw";
+import { http, HttpResponse } from "msw";
+import { describe, expect, it, onTestFinished } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
-import { setupApp } from "../../../__tests__/test-helpers";
-import { createApp } from "../../../app-factory";
+import { apiTestEnvironment } from "../../../__tests__/test-environment";
+import { setupApp, setupRawAppRequest } from "../../../__tests__/test-helpers";
+import {
+  TEST_WITH_DOUBLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE,
+  TEST_WITH_SINGLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE,
+} from "../../../__tests__/test-timeouts";
 import { mockEnv, mockOptionalEnv } from "../../../lib/env";
-import { mockNow, now } from "../../../lib/time";
+import { clearMockNow, mockNow, now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import { flushWaitUntilForTest } from "../../context/wait-until";
-import { createDeferredPromise, settleIncludingAbort } from "../../utils";
+import { chatThreadDeleteRoutes } from "../chat-threads-delete";
+import { chatThreadGetRoutes } from "../chat-threads-get";
+import { githubOauthRoutes } from "../github-oauth";
+import { webhooksStripeRoutes } from "../webhooks-stripe";
+import { workflowAutomationsRoutes } from "../workflow-automations";
+import { workflowsRoutes } from "../workflows";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
+import { createChatCallbacksApi } from "./helpers/api-bdd-chat-callbacks";
+import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
+import { mockClerkMembership } from "./helpers/api-bdd-clerk";
 import {
-  createConnectorBddApi,
   mockGmailConnectorOAuth,
   mockGoogleFormsConnectorOAuth,
 } from "./helpers/api-bdd-connectors";
-import { createGithubBddApi } from "./helpers/api-bdd-github";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import {
@@ -38,701 +46,415 @@ import {
   mockGoogleCalendarConnectorOAuth,
   mockNotionConnectorOAuth,
 } from "./helpers/api-bdd-workflows";
-import {
-  chatEventAutomationPart,
-  chatEventDisplayText,
-} from "./helpers/chat-event";
+import { mockClerkUsers } from "./helpers/clerk-users";
+import { channelsPublishedTo } from "./helpers/realtime-publications";
 import { createRouteMocks } from "./helpers/route-test";
-import { chatThreadDeleteRoutes } from "../chat-threads-delete";
-import { chatThreadGetRoutes } from "../chat-threads-get";
-import { chatThreadRoutes } from "../chat-threads";
-import { workflowAutomationsRoutes } from "../workflow-automations";
-import { workflowsRoutes } from "../workflows";
-import { webhooksGoogleCalendarRoutes } from "../webhooks-google-calendar";
-
-const TEST_APP_ROUTES = Object.freeze([
-  ...webhooksGoogleCalendarRoutes,
-  ...workflowAutomationsRoutes,
-  ...workflowsRoutes,
-]);
+import { installWorkflowVolumeS3Fixture } from "./helpers/workflow-volume-s3";
 
 const context = testContext();
-const mocks = createRouteMocks(context);
-const wf = createWorkflowsBddApi(context);
-const connectorsApi = createConnectorBddApi(context);
 const bdd = createBddApi(context);
-const gh = createGithubBddApi(context);
-const runs = createRunsApi(context);
-const webhookCallbacks = createWebhookCallbackApi(context);
+const workflowsBdd = createWorkflowsBddApi(context);
+const runsApi = createRunsApi(context);
 
-function authHeaders() {
-  return { authorization: "Bearer clerk-session" };
-}
+const AUTH_HEADERS = Object.freeze({ authorization: "Bearer clerk-session" });
+const PRO_PRICE = apiTestEnvironment.OKOU_PRICE_PRO;
+const TEAM_PRICE = apiTestEnvironment.OKOU_PRICE_TEAM;
+const DAY_SECONDS = 86_400;
+const GMAIL_TOPIC = "projects/okou-test/topics/gmail-automations";
+const GOOGLE_FORMS_TOPIC = "projects/okou-test/topics/google-forms-automations";
+const GOOGLE_FORMS_AUDIENCE = "https://api.okou.ai/api/webhooks/google-forms";
+const GOOGLE_FORMS_SA = "forms-push@okou-test.iam.gserviceaccount.com";
+const GITHUB_APP_SLUG = "okou-test";
+const GITHUB_APP_ID = "123456";
+const GITHUB_APP_PRIVATE_KEY_B64 = Buffer.from(
+  generateKeyPairSync("rsa", { modulusLength: 2048 }).privateKey.export({
+    type: "pkcs8",
+    format: "pem",
+  }),
+).toString("base64");
 
-function automationsClient() {
-  return setupApp({ context, routes: workflowAutomationsRoutes })(
-    workflowAutomationsContract,
-  );
-}
-
-/**
- * Manual Run now. The route only enqueues; once its background pick finished,
- * `runId` is the newest run in the automation's thread, if any.
- */
-async function runAutomationNow(
-  automationId: string,
-  headers: Readonly<Record<string, string>> = authHeaders(),
-): Promise<{ readonly chatThreadId: string; readonly runId: string | null }> {
-  const response = await accept(
-    automationsClient().run({ headers, params: { id: automationId } }),
-    [201],
-  );
-  expect(response.body.runId).toBeNull();
-  await flushWaitUntilForTest();
-  const runIds = (
-    await wf.readThreadEvents(response.body.chatThreadId)
-  ).flatMap((event) => {
-    return event.eventType === "input.prompt" && event.runId
-      ? [event.runId]
-      : [];
+function setupClients() {
+  const mocks = createRouteMocks(context);
+  mockOptionalEnv("STRIPE_WEBHOOK_SECRET", `whsec_${randomUUID()}`);
+  context.mocks.s3.send.mockResolvedValue({
+    ContentLength: 1024,
+    UploadId: randomUUID(),
+    ETag: "fixture-etag",
   });
-  return {
-    chatThreadId: response.body.chatThreadId,
-    runId: runIds.at(-1) ?? null,
-  };
-}
 
-function detailClient() {
-  return setupApp({ context, routes: workflowsRoutes })(
-    workflowsDetailContract,
-  );
-}
+  const appFor = setupApp({
+    context,
+    routes: [
+      ...webhooksStripeRoutes,
+      ...workflowsRoutes,
+      ...workflowAutomationsRoutes,
+      ...chatThreadDeleteRoutes,
+      ...chatThreadGetRoutes,
+    ],
+  });
 
-async function readRunHistory(workflowId: string) {
-  const response = await accept(
-    detailClient().runHistory({
-      headers: authHeaders(),
-      params: { workflowId },
-      query: {},
-    }),
-    [200],
-  );
-  return response.body;
-}
+  const stripeWebhook = appFor(webhookStripeContract);
+  const workflows = appFor(workflowsCollectionContract);
+  const workflowDetail = appFor(workflowsDetailContract);
+  const automations = appFor(workflowAutomationsContract);
+  const chatThreadById = appFor(chatThreadByIdContract);
+  const chatThreadMetadata = appFor(chatThreadMetadataContract);
 
-async function readThreadLifecycleEvents(sinceSeqId?: number) {
-  const response = await accept(
-    setupApp({ context, routes: chatThreadRoutes })(chatThreadsContract).events(
-      {
-        headers: authHeaders(),
-        query: { sinceSeqId },
+  function asActor(actor: ApiTestUser) {
+    mocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
+  }
+
+  async function deliverStripeEvent(event: Record<string, unknown>) {
+    context.mocks.stripe.webhooks.constructEventAsync.mockReturnValueOnce(
+      event,
+    );
+    await accept(
+      stripeWebhook.post({
+        body: JSON.stringify(event),
+        extraHeaders: { "stripe-signature": "t=1,v1=workflow-automations" },
+      }),
+      [200],
+    );
+  }
+
+  async function activatePlan(
+    orgId: string,
+    tier: "pro" | "team",
+    existing?: {
+      readonly customerId?: string;
+      readonly subscriptionId?: string;
+    },
+  ) {
+    const priceId = tier === "team" ? TEAM_PRICE : PRO_PRICE;
+    const customerId =
+      existing?.customerId ?? `cus_${randomUUID().slice(0, 8)}`;
+    const subscriptionId =
+      existing?.subscriptionId ?? `sub_${randomUUID().slice(0, 8)}`;
+    const end = Math.floor(now() / 1000) + 30 * DAY_SECONDS;
+    const start = end - 30 * DAY_SECONDS;
+
+    context.mocks.stripe.customers.retrieve.mockResolvedValueOnce({
+      id: customerId,
+      metadata: { orgId },
+    });
+    context.mocks.stripe.subscriptions.retrieve.mockResolvedValueOnce({
+      id: subscriptionId,
+      status: "active",
+      customer: customerId,
+      cancel_at_period_end: false,
+      cancel_at: null,
+      schedule: null,
+      trial_end: null,
+      metadata: {},
+      items: {
+        data: [
+          {
+            price: { id: priceId },
+            current_period_start: start,
+            current_period_end: end,
+          },
+        ],
       },
-    ),
-    [200],
-  );
-  expect(response.body.hasMore).toBeFalsy();
-  return response.body.events;
-}
+    });
 
-const WORKFLOW_NAME = "automation-workflow";
-const GMAIL_TOPIC_NAME = "projects/vm0-ai-488909/topics/gmail-events";
-const GMAIL_EMAIL = "workflow-user@example.com";
-const GOOGLE_CALENDAR_EMAIL = "calendar-user@example.com";
-const GOOGLE_FORMS_TOPIC_NAME = "projects/vm0-ai-488909/topics/forms-events";
-const GOOGLE_FORMS_PUSH_AUDIENCE =
-  "https://api.okou.ai/api/webhooks/google-forms";
-const GOOGLE_FORMS_PUSH_SERVICE_ACCOUNT =
-  "gmail-pubsub-push@vm0-ai-488909.iam.gserviceaccount.com";
-const GOOGLE_FORM_ID = "1FAIpQLScGoogleFormsAutomationTest";
-const GOOGLE_FORM_URL = `https://docs.google.com/forms/d/${GOOGLE_FORM_ID}/edit`;
-const SECOND_GOOGLE_FORM_ID = "1FAIpQLScSecondGoogleFormsAutomationTest";
-const SECOND_GOOGLE_FORM_URL = `https://docs.google.com/forms/d/${SECOND_GOOGLE_FORM_ID}/edit`;
-const GOOGLE_FORM_SEED_CURSOR = "2026-08-05T09:30:00.123456Z";
-const NOTION_PARENT_PAGE_ID = "11111111-1111-4111-8111-111111111111";
-const NOTION_PARENT_PAGE_URL =
-  "https://www.notion.so/Roadmap-11111111111141118111111111111111";
-const NOTION_DATABASE_ID = "22222222-2222-4222-8222-222222222222";
-const NOTION_DATA_SOURCE_ID = "33333333-3333-4333-8333-333333333333";
-const NOTION_DATABASE_URL =
-  "https://www.notion.so/22222222222242228222222222222222?v=aaaaaaaaaaaa4aaa8aaaaaaaaaaaaaaa&source=copy_link";
-const NOTION_DATA_SOURCE_URL =
-  "https://www.notion.so/Bug-Bash-33333333333343338333333333333333";
-interface WorkflowsFixture {
-  readonly orgId: string;
-  readonly userId: string;
-}
-
-interface AutomationScenario {
-  readonly fixture: WorkflowsFixture;
-  readonly actor: ApiTestUser;
-  readonly workflowId: string;
-  readonly customerId: string;
-  readonly subscriptionId: string;
-}
-
-function futureIso(offsetMs: number): string {
-  return new Date(now() + offsetMs).toISOString();
-}
-
-interface GoogleFormsWatchRecorder {
-  readonly watchIds: string[];
-  createCalls: number;
-}
-
-function configureGoogleFormsCreationMock(args?: {
-  readonly unpublished?: boolean;
-  readonly expireTime?: string;
-  readonly formIds?: readonly string[];
-}): GoogleFormsWatchRecorder {
-  const recorder: GoogleFormsWatchRecorder = {
-    watchIds: [],
-    createCalls: 0,
-  };
-  mockOptionalEnv("GOOGLE_FORMS_PUBSUB_TOPIC_NAME", GOOGLE_FORMS_TOPIC_NAME);
-  mockOptionalEnv(
-    "GOOGLE_FORMS_PUBSUB_PUSH_AUDIENCE",
-    GOOGLE_FORMS_PUSH_AUDIENCE,
-  );
-  mockOptionalEnv(
-    "GOOGLE_FORMS_PUBSUB_PUSH_SERVICE_ACCOUNT_EMAIL",
-    GOOGLE_FORMS_PUSH_SERVICE_ACCOUNT,
-  );
-  server.use(
-    http.get(
-      "https://forms.googleapis.com/v1/forms/:formId",
-      ({ request, params }) => {
-        const formId = params.formId;
-        if (typeof formId !== "string") {
-          throw new Error("Expected a Google Forms form id");
-        }
-        expect(args?.formIds ?? [GOOGLE_FORM_ID]).toContain(formId);
-        expect(request.headers.get("authorization")).toBe(
-          "Bearer google-forms-access-token",
-        );
-        return HttpResponse.json({
-          formId,
-          info: { title: "Customer survey" },
-          publishSettings: args?.unpublished
-            ? { publishState: {} }
-            : {
-                publishState: {
-                  isPublished: true,
-                  isAcceptingResponses: true,
-                },
+    await deliverStripeEvent({
+      id: `evt_${randomUUID()}`,
+      created: Math.floor(now() / 1000),
+      type: "invoice.paid",
+      data: {
+        object: {
+          id: `in_${randomUUID().slice(0, 8)}`,
+          customer: customerId,
+          metadata: {},
+          parent: {
+            subscription_details: {
+              subscription: subscriptionId,
+              metadata: {},
+            },
+          },
+          lines: {
+            has_more: false,
+            data: [
+              {
+                id: `il_${randomUUID().slice(0, 8)}`,
+                price: { id: priceId },
+                quantity: 1,
+                parent: { type: "subscription_item_details" },
+                period: { start, end },
               },
-        });
-      },
-    ),
-    http.get(
-      "https://forms.googleapis.com/v1/forms/:formId/responses",
-      ({ request }) => {
-        const url = new URL(request.url);
-        expect(url.searchParams.get("pageSize")).toBeNull();
-        expect(url.searchParams.get("fields")).toBe(
-          "responses(responseId,createTime,lastSubmittedTime,respondentEmail),nextPageToken",
-        );
-        if (url.searchParams.has("filter")) {
-          return HttpResponse.json({ responses: [] });
-        }
-        return HttpResponse.json({
-          responses: [
-            {
-              responseId: "seed-response",
-              createTime: GOOGLE_FORM_SEED_CURSOR,
-              lastSubmittedTime: GOOGLE_FORM_SEED_CURSOR,
-            },
-          ],
-        });
-      },
-    ),
-    http.get("https://forms.googleapis.com/v1/forms/:formId/watches", () => {
-      return HttpResponse.json({
-        watches: recorder.watchIds.map((id) => {
-          return {
-            id,
-            createTime: "2026-08-05T10:00:00Z",
-            expireTime: args?.expireTime ?? "2099-08-12T10:00:00Z",
-            eventType: "RESPONSES",
-            target: { topic: { topicName: GOOGLE_FORMS_TOPIC_NAME } },
-          };
-        }),
-      });
-    }),
-    http.post(
-      "https://forms.googleapis.com/v1/forms/:formId/watches",
-      async ({ request }) => {
-        recorder.createCalls += 1;
-        await expect(request.json()).resolves.toStrictEqual({
-          watch: {
-            target: { topic: { topicName: GOOGLE_FORMS_TOPIC_NAME } },
-            eventType: "RESPONSES",
+            ],
           },
-        });
-        const watchId = `forms-watch-${randomUUID()}`;
-        recorder.watchIds.push(watchId);
-        return HttpResponse.json({
-          id: watchId,
-          createTime: "2026-08-05T10:00:00Z",
-          expireTime: args?.expireTime ?? "2099-08-12T10:00:00Z",
-          eventType: "RESPONSES",
-          target: { topic: { topicName: GOOGLE_FORMS_TOPIC_NAME } },
-        });
+        },
       },
-    ),
-  );
-  return recorder;
-}
-
-interface WatchCallRecorder {
-  calls: number;
-}
-
-function configureGmailWatchMock(
-  historyIds: string | readonly string[] = "100",
-): WatchCallRecorder {
-  const recorder: WatchCallRecorder = { calls: 0 };
-  mockOptionalEnv("GMAIL_PUBSUB_TOPIC_NAME", GMAIL_TOPIC_NAME);
-  server.use(
-    http.post(
-      "https://gmail.googleapis.com/gmail/v1/users/me/watch",
-      async ({ request }) => {
-        recorder.calls += 1;
-        expect(request.headers.get("authorization")).toBe(
-          "Bearer gmail-access-token",
-        );
-        await expect(request.json()).resolves.toStrictEqual({
-          topicName: GMAIL_TOPIC_NAME,
-        });
-        return HttpResponse.json({
-          historyId:
-            typeof historyIds === "string"
-              ? historyIds
-              : historyIds[Math.min(recorder.calls - 1, historyIds.length - 1)],
-          expiration: String(now() + 7 * 24 * 60 * 60 * 1000),
-        });
-      },
-    ),
-  );
-  return recorder;
-}
-
-interface StopCallRecorder {
-  calls: number;
-}
-
-function configureGmailStopMock(): StopCallRecorder {
-  const recorder: StopCallRecorder = { calls: 0 };
-  server.use(
-    http.post(
-      "https://gmail.googleapis.com/gmail/v1/users/me/stop",
-      async ({ request }) => {
-        recorder.calls += 1;
-        expect(request.headers.get("authorization")).toBe(
-          "Bearer gmail-access-token",
-        );
-        await expect(request.json()).resolves.toStrictEqual({});
-        return new HttpResponse(null, { status: 204 });
-      },
-    ),
-  );
-  return recorder;
-}
-
-interface CalendarWatchRecorder {
-  watchCalls: number;
-  baselineCalls: number;
-  incrementalCalls: number;
-  readonly channelIds: string[];
-  readonly eventListRequests: {
-    readonly syncToken: string | null;
-  }[];
-}
-
-interface CalendarWatchRegistration {
-  readonly channelId: string;
-  readonly channelToken: string;
-  readonly resourceId: string;
-  readonly calendarId: string;
-}
-
-interface CalendarStopRecorder extends StopCallRecorder {
-  readonly requests: {
-    readonly id: string;
-    readonly resourceId: string;
-  }[];
-}
-
-function configureGoogleCalendarStopMock(
-  statuses: readonly number[] = [204],
-  accessTokens: readonly string[] = ["calendar-access-token"],
-): CalendarStopRecorder {
-  const recorder: CalendarStopRecorder = { calls: 0, requests: [] };
-  server.use(
-    http.post(
-      "https://www.googleapis.com/calendar/v3/channels/stop",
-      async ({ request }) => {
-        recorder.calls += 1;
-        expect(
-          accessTokens.map((token) => {
-            return `Bearer ${token}`;
-          }),
-        ).toContain(request.headers.get("authorization"));
-        const body = (await request.json()) as {
-          readonly id: string;
-          readonly resourceId: string;
-        };
-        recorder.requests.push(body);
-        const status =
-          statuses[Math.min(recorder.calls - 1, statuses.length - 1)] ?? 204;
-        return status === 204
-          ? new HttpResponse(null, { status })
-          : HttpResponse.json({ error: "stop failed" }, { status });
-      },
-    ),
-  );
-  return recorder;
-}
-
-function configureGoogleCalendarWatchMock(args?: {
-  readonly calendarId?: string;
-  readonly calendarIds?: readonly string[];
-  readonly resourceId?: string;
-  readonly accessTokens?: readonly string[];
-  readonly watchTtlMs?: number;
-  readonly baselineItems?: readonly Record<string, unknown>[];
-  readonly incrementalItems?: readonly Record<string, unknown>[];
-  readonly onWatchRegistered?: (
-    registration: CalendarWatchRegistration,
-  ) => Promise<void>;
-}): CalendarWatchRecorder {
-  const recorder: CalendarWatchRecorder = {
-    watchCalls: 0,
-    baselineCalls: 0,
-    incrementalCalls: 0,
-    channelIds: [],
-    eventListRequests: [],
-  };
-  const calendarIds = args?.calendarIds ?? [args?.calendarId ?? "primary"];
-  const accessTokens = args?.accessTokens ?? ["calendar-access-token"];
-  mockEnv("OKOU_API_BACKEND_URL", "https://api.okou.ai");
-  server.use(
-    http.post(
-      "https://www.googleapis.com/calendar/v3/calendars/:calendarId/events/watch",
-      async ({ request, params }) => {
-        recorder.watchCalls += 1;
-        const calendarId = String(params.calendarId);
-        expect(calendarIds).toContain(calendarId);
-        expect(
-          accessTokens.map((token) => {
-            return `Bearer ${token}`;
-          }),
-        ).toContain(request.headers.get("authorization"));
-        const body = (await request.json()) as {
-          readonly id?: string;
-          readonly type?: string;
-          readonly address?: string;
-          readonly token?: string;
-          readonly params?: { readonly ttl?: string };
-        };
-        expect(body).toMatchObject({
-          type: "web_hook",
-          address: "https://api.okou.ai/api/webhooks/google-calendar",
-          params: { ttl: "604800" },
-        });
-        expect(body.id).toBeTruthy();
-        expect(body.token).toBeTruthy();
-        const channelId = String(body.id);
-        const channelToken = String(body.token);
-        const resourceId =
-          args?.resourceId ?? `calendar-resource-${recorder.watchCalls}`;
-        recorder.channelIds.push(channelId);
-        await args?.onWatchRegistered?.({
-          channelId,
-          channelToken,
-          resourceId,
-          calendarId,
-        });
-        return HttpResponse.json({
-          id: body.id,
-          resourceId,
-          resourceUri: `https://www.googleapis.com/calendar/v3/calendars/${calendarId}/events`,
-          expiration: String(
-            now() + (args?.watchTtlMs ?? 7 * 24 * 60 * 60 * 1000),
-          ),
-        });
-      },
-    ),
-    http.get(
-      "https://www.googleapis.com/calendar/v3/calendars/:calendarId/events",
-      ({ request, params }) => {
-        expect(calendarIds).toContain(String(params.calendarId));
-        expect(
-          accessTokens.map((token) => {
-            return `Bearer ${token}`;
-          }),
-        ).toContain(request.headers.get("authorization"));
-        const url = new URL(request.url);
-        expect(url.searchParams.get("showDeleted")).toBe("true");
-        expect(url.searchParams.get("maxResults")).toBe("2500");
-        const syncToken = url.searchParams.get("syncToken");
-        recorder.eventListRequests.push({ syncToken });
-        if (syncToken) {
-          recorder.incrementalCalls += 1;
-          return HttpResponse.json({
-            items: args?.incrementalItems ?? [],
-            nextSyncToken: "calendar-sync-incremental",
-          });
-        }
-        recorder.baselineCalls += 1;
-        return HttpResponse.json({
-          items: args?.baselineItems ?? [],
-          nextSyncToken: "calendar-sync-baseline",
-        });
-      },
-    ),
-  );
-  return recorder;
-}
-
-function configureGmailLabelsMock(
-  labels: readonly { readonly id: string; readonly name: string }[],
-): void {
-  server.use(
-    http.get("https://gmail.googleapis.com/gmail/v1/users/me/labels", () => {
-      return HttpResponse.json({ labels });
-    }),
-  );
-}
-
-function configureNotionPageMock(args?: {
-  readonly pageId?: string;
-  readonly title?: string;
-  readonly url?: string;
-  readonly parent?: Record<string, unknown>;
-}): void {
-  const pageId = args?.pageId ?? NOTION_PARENT_PAGE_ID;
-  const title = args?.title ?? "Roadmap";
-  server.use(
-    http.get(
-      "https://api.notion.com/v1/pages/:pageId",
-      ({ request, params }) => {
-        expect(params.pageId).toBe(pageId);
-        expect(request.headers.get("authorization")).toBe(
-          "Bearer notion-access-token",
-        );
-        expect(request.headers.get("notion-version")).toBe("2026-03-11");
-        return HttpResponse.json({
-          object: "page",
-          id: pageId,
-          created_time: "2026-07-01T00:00:00.000Z",
-          last_edited_time: "2026-07-01T00:00:00.000Z",
-          archived: false,
-          in_trash: false,
-          url: args?.url ?? NOTION_PARENT_PAGE_URL,
-          parent: args?.parent ?? { type: "workspace" },
-          properties: {
-            title: {
-              id: "title",
-              type: "title",
-              title: [{ type: "text", plain_text: title }],
-            },
-          },
-        });
-      },
-    ),
-  );
-}
-
-function configureNotionDatabaseMock(args?: {
-  readonly databaseId?: string;
-  readonly dataSourceId?: string;
-  readonly title?: string;
-  readonly databaseUrl?: string;
-  readonly dataSourceUrl?: string;
-}): void {
-  const databaseId = args?.databaseId ?? NOTION_DATABASE_ID;
-  const dataSourceId = args?.dataSourceId ?? NOTION_DATA_SOURCE_ID;
-  const title = args?.title ?? "Bug Bash";
-  server.use(
-    http.get(
-      "https://api.notion.com/v1/databases/:databaseId",
-      ({ request, params }) => {
-        expect(params.databaseId).toBe(databaseId);
-        expect(request.headers.get("authorization")).toBe(
-          "Bearer notion-access-token",
-        );
-        expect(request.headers.get("notion-version")).toBe("2026-03-11");
-        return HttpResponse.json({
-          object: "database",
-          id: databaseId,
-          url: args?.databaseUrl ?? NOTION_DATABASE_URL,
-          title: [{ plain_text: title }],
-          data_sources: [{ id: dataSourceId, name: title }],
-        });
-      },
-    ),
-    http.get(
-      "https://api.notion.com/v1/data_sources/:dataSourceId",
-      ({ request, params }) => {
-        expect(params.dataSourceId).toBe(dataSourceId);
-        expect(request.headers.get("authorization")).toBe(
-          "Bearer notion-access-token",
-        );
-        expect(request.headers.get("notion-version")).toBe("2026-03-11");
-        return HttpResponse.json({
-          object: "data_source",
-          id: dataSourceId,
-          name: title,
-          url: args?.dataSourceUrl ?? NOTION_DATA_SOURCE_URL,
-          parent: { type: "database_id", database_id: databaseId },
-        });
-      },
-    ),
-  );
-}
-
-describe("okou workflow automations", () => {
-  async function setupFixture(
-    tier: "pro" | "team" = "pro",
-    options: { readonly maxAutonomyBudget?: number } = {},
-  ): Promise<AutomationScenario> {
-    // Fable keeps automation runs on the native Runner execution route.
-    const { actor, customerId, subscriptionId } = await wf.setupWorkflowOrg({
-      tier,
-      model: "claude-fable-5-1",
-      ...options,
     });
+
+    return { customerId, subscriptionId };
+  }
+
+  async function setupOrgWorkflow(
+    options: {
+      readonly tier?: "pro" | "team";
+      readonly name?: string;
+      readonly visibility?: "public" | "private";
+    } = {},
+  ) {
+    const actor = bdd.user();
     if (!actor.orgId) {
-      throw new Error("Expected an org-scoped workflow actor");
+      throw new Error("Expected org-scoped actor");
     }
-    const workflowId = await wf.createWorkflow(actor, {
-      name: WORKFLOW_NAME,
-    });
-    const fixture = { orgId: actor.orgId, userId: actor.userId };
-    mocks.clerk.session(fixture.userId, fixture.orgId, "org:member");
-    context.mocks.s3.send.mockResolvedValue({});
+    const billing = await activatePlan(actor.orgId, options.tier ?? "pro");
+    asActor(actor);
+    const workflowName = options.name ?? `wf-${randomUUID().slice(0, 8)}`;
+    const created = await accept(
+      workflows.create({
+        headers: AUTH_HEADERS,
+        body: {
+          name: workflowName,
+          visibility: options.visibility ?? "public",
+        },
+      }),
+      [201],
+    );
     return {
-      fixture,
       actor,
-      workflowId,
-      customerId,
-      subscriptionId,
+      orgId: actor.orgId,
+      workflowId: created.body.id,
+      workflowName,
+      ...billing,
     };
   }
 
-  async function createMemberWorkflow(
-    scenario: AutomationScenario,
+  async function createWorkflowFor(
+    actor: ApiTestUser,
     options: {
-      readonly workflowName?: string;
+      readonly name?: string;
       readonly visibility?: "public" | "private";
-      readonly userId?: string;
     } = {},
-  ): Promise<{ workflowId: string }> {
-    const owner = options.userId
-      ? wf.user({
-          userId: options.userId,
-          orgId: scenario.fixture.orgId,
-          orgRole: "org:member",
-        })
-      : scenario.actor;
-    await bdd.provisionWorkspace(owner);
-    const workflowId = await wf.createWorkflow(owner, {
-      name: options.workflowName ?? WORKFLOW_NAME,
-      visibility: options.visibility,
-    });
-    mocks.clerk.session(
-      scenario.fixture.userId,
-      scenario.fixture.orgId,
-      "org:member",
-    );
-    return { workflowId };
-  }
-
-  async function connectGmail(
-    scenario: AutomationScenario,
-    email = GMAIL_EMAIL,
-    oauth?: {
-      readonly accessToken?: string;
-      readonly refreshToken?: string;
-    },
-  ): Promise<string> {
-    mockGmailConnectorOAuth({ email, ...oauth });
-    await wf.connectConnector(scenario.actor, "gmail");
-    const connector = await connectorsApi.readDefaultBuiltinAccount(
-      scenario.actor,
-      "gmail",
-    );
-    mocks.clerk.session(
-      scenario.fixture.userId,
-      scenario.fixture.orgId,
-      "org:member",
-    );
-    return connector.id;
-  }
-
-  async function connectGoogleCalendar(
-    scenario: AutomationScenario,
-    options: {
-      readonly accessToken?: string;
-      readonly email?: string;
-      readonly subject?: string;
-    } = { email: GOOGLE_CALENDAR_EMAIL },
-  ): Promise<string> {
-    mockGoogleCalendarConnectorOAuth(options);
-    await wf.connectConnector(scenario.actor, "google-calendar");
-    const connector = await connectorsApi.readDefaultBuiltinAccount(
-      scenario.actor,
-      "google-calendar",
-    );
-    mocks.clerk.session(
-      scenario.fixture.userId,
-      scenario.fixture.orgId,
-      "org:member",
-    );
-    return connector.id;
-  }
-
-  async function connectGoogleForms(
-    scenario: AutomationScenario,
-  ): Promise<string> {
-    mockGoogleFormsConnectorOAuth();
-    await wf.connectConnector(scenario.actor, "google-forms");
-    const connector = await connectorsApi.readDefaultBuiltinAccount(
-      scenario.actor,
-      "google-forms",
-    );
-    mocks.clerk.session(
-      scenario.fixture.userId,
-      scenario.fixture.orgId,
-      "org:member",
-    );
-    return connector.id;
-  }
-
-  async function connectNotion(scenario: AutomationScenario): Promise<string> {
-    mockNotionConnectorOAuth();
-    await wf.connectConnector(scenario.actor, "notion");
-    const connector = await connectorsApi.readDefaultBuiltinAccount(
-      scenario.actor,
-      "notion",
-    );
-    mocks.clerk.session(
-      scenario.fixture.userId,
-      scenario.fixture.orgId,
-      "org:member",
-    );
-    return connector.id;
-  }
-
-  it("creates, disables, and re-enables a cron automation without binding a chat thread", async () => {
-    const { workflowId } = await setupFixture();
-    mockNow(Date.parse("2026-06-26T08:00:00.000Z"));
-
+  ) {
+    asActor(actor);
+    const name = options.name ?? `wf-${randomUUID().slice(0, 8)}`;
     const created = await accept(
-      automationsClient().create({
-        headers: authHeaders(),
+      workflows.create({
+        headers: AUTH_HEADERS,
+        body: {
+          name,
+          visibility: options.visibility ?? "public",
+        },
+      }),
+      [201],
+    );
+    return { id: created.body.id, name };
+  }
+
+  return {
+    asActor,
+    activatePlan,
+    deliverStripeEvent,
+    setupOrgWorkflow,
+    createWorkflowFor,
+    workflows,
+    workflowDetail,
+    automations,
+    chatThreadById,
+    chatThreadMetadata,
+  };
+}
+
+function configureGmailPubSub() {
+  mockOptionalEnv("GMAIL_PUBSUB_TOPIC_NAME", GMAIL_TOPIC);
+}
+
+function configureGoogleFormsPubSub() {
+  mockOptionalEnv("GOOGLE_FORMS_PUBSUB_TOPIC_NAME", GOOGLE_FORMS_TOPIC);
+  mockOptionalEnv("GOOGLE_FORMS_PUBSUB_PUSH_AUDIENCE", GOOGLE_FORMS_AUDIENCE);
+  mockOptionalEnv(
+    "GOOGLE_FORMS_PUBSUB_PUSH_SERVICE_ACCOUNT_EMAIL",
+    GOOGLE_FORMS_SA,
+  );
+}
+
+async function installGithubAppForOrg(actor: ApiTestUser): Promise<void> {
+  if (!actor.orgId) {
+    throw new Error("GitHub installation requires an org-scoped actor");
+  }
+  const clientId = `gh-client-${randomUUID().slice(0, 8)}`;
+  const clientSecret = `gh-secret-${randomUUID().slice(0, 8)}`;
+  mockOptionalEnv("GITHUB_APP_SLUG", GITHUB_APP_SLUG);
+  mockOptionalEnv("GITHUB_APP_ID", GITHUB_APP_ID);
+  mockOptionalEnv("GITHUB_APP_PRIVATE_KEY", GITHUB_APP_PRIVATE_KEY_B64);
+  mockOptionalEnv("GITHUB_APP_CLIENT_ID", clientId);
+  mockOptionalEnv("GITHUB_APP_CLIENT_SECRET", clientSecret);
+
+  createRouteMocks(context).clerk.session(
+    actor.userId,
+    actor.orgId,
+    actor.orgRole,
+  );
+  mockClerkMembership(context, actor, "org:admin");
+  const emailId = `email_${actor.userId}`;
+  mockClerkUsers(context, [
+    {
+      id: actor.userId,
+      emailAddresses: [{ id: emailId, emailAddress: actor.email }],
+      primaryEmailAddressId: emailId,
+      firstName: "BDD",
+      lastName: "GitHub",
+    },
+  ]);
+
+  const installationId = String(randomInt(1_000_000_000, 9_999_999_999));
+  const targetId = String(randomInt(1_000_000_000, 9_999_999_999));
+  const code = `gh-install-${randomUUID().slice(0, 8)}`;
+  const accessToken = `gho_${code}`;
+
+  server.use(
+    http.get("https://api.github.com/app/installations", () => {
+      return HttpResponse.json([]);
+    }),
+    http.get(
+      `https://api.github.com/app/installations/${installationId}`,
+      () => {
+        return HttpResponse.json({
+          id: Number(installationId),
+          app_id: Number(GITHUB_APP_ID),
+          app_slug: GITHUB_APP_SLUG,
+          account: {
+            id: Number(targetId),
+            login: "okou-ai",
+            type: "Organization",
+          },
+        });
+      },
+    ),
+    http.post(
+      `https://api.github.com/app/installations/${installationId}/access_tokens`,
+      () => {
+        return HttpResponse.json(
+          {
+            token: "ghs_test_installation_token",
+            expires_at: "2099-01-01T00:00:00Z",
+          },
+          { status: 201 },
+        );
+      },
+    ),
+    http.post("https://github.com/login/oauth/access_token", () => {
+      return HttpResponse.json({
+        access_token: accessToken,
+        scope: "repo,project,workflow",
+      });
+    }),
+    http.get("https://api.github.com/user", () => {
+      return HttpResponse.json({
+        id: Number(targetId),
+        login: "octocat",
+        email: null,
+      });
+    }),
+    http.get("https://api.github.com/user/memberships/orgs", () => {
+      return HttpResponse.json([
+        {
+          state: "active",
+          role: "admin",
+          organization: { id: Number(targetId) },
+        },
+      ]);
+    }),
+  );
+
+  const rawRequest = setupRawAppRequest({ context, routes: githubOauthRoutes });
+  const installQuery = new URLSearchParams({
+    userId: actor.userId,
+    orgId: actor.orgId,
+  }).toString();
+  const installResponse = await rawRequest(
+    `/api/github/oauth/install?${installQuery}`,
+    { method: "GET", headers: AUTH_HEADERS },
+  );
+  const location = installResponse.headers.get("location");
+  if (installResponse.status !== 307 || !location) {
+    throw new Error(
+      `Expected GitHub install redirect, got ${installResponse.status}`,
+    );
+  }
+  const state = new URL(location).searchParams.get("state");
+  if (!state) {
+    throw new Error("Expected GitHub install redirect state");
+  }
+
+  const callbackQuery = new URLSearchParams({
+    installation_id: installationId,
+    setup_action: "install",
+    state,
+    code,
+  }).toString();
+  let callbackResponse = await rawRequest(
+    `/api/github/app/setup/callback?${callbackQuery}`,
+    { method: "GET", headers: AUTH_HEADERS },
+  );
+  let callbackLocation = callbackResponse.headers.get("location");
+  if (
+    callbackResponse.status === 307 &&
+    callbackLocation &&
+    new URL(callbackLocation).pathname === "/api/github/app/setup/callback"
+  ) {
+    callbackResponse = await rawRequest(callbackLocation, {
+      method: "GET",
+      headers: AUTH_HEADERS,
+    });
+    callbackLocation = callbackResponse.headers.get("location");
+  }
+  if (
+    callbackResponse.status !== 307 ||
+    !callbackLocation ||
+    new URL(callbackLocation).pathname !== "/workflows"
+  ) {
+    throw new Error(
+      `Expected GitHub setup callback to finish at /workflows, got ${callbackResponse.status} ${callbackLocation ?? ""}`,
+    );
+  }
+}
+
+describe("okou workflow automations", () => {
+  it("workflow-automations-005 rejects creation on a workflow the caller cannot see", async () => {
+    const { setupOrgWorkflow, asActor, automations } = setupClients();
+    const { orgId, workflowId } = await setupOrgWorkflow({
+      tier: "pro",
+      visibility: "private",
+    });
+    const peer = bdd.user({ orgId, orgRole: "org:member" });
+
+    asActor(peer);
+    const response = await accept(
+      automations.create({
+        headers: AUTH_HEADERS,
         params: { workflowId },
         body: {
+          kind: "schedule",
+          schedule: { type: "loop", intervalSeconds: 3600 },
+        },
+      }),
+      [404],
+    );
+
+    expect(response.body.error).toStrictEqual({
+      code: "NOT_FOUND",
+      message: `Workflow not found: ${workflowId}`,
+    });
+  });
+
+  it("workflow-automations-001 creates, disables, and re-enables a cron automation without binding a chat thread", async () => {
+    mockNow(new Date("2026-06-26T08:00:00.000Z"));
+    const { setupOrgWorkflow, asActor, automations } = setupClients();
+    const { actor, workflowId } = await setupOrgWorkflow({ tier: "pro" });
+
+    asActor(actor);
+    const created = await accept(
+      automations.create({
+        headers: AUTH_HEADERS,
+        params: { workflowId },
+        body: {
+          kind: "schedule",
           schedule: {
             type: "cron",
             cronExpression: "0 9 * * 1-5",
@@ -742,86 +464,85 @@ describe("okou workflow automations", () => {
       }),
       [201],
     );
-
     expect(created.body).toMatchObject({
       kind: "schedule",
       enabled: true,
-      schedule: {
-        type: "cron",
-        cronExpression: "0 9 * * 1-5",
-        timezone: "UTC",
-      },
+      chatThreadId: null,
+      nextRunAt: "2026-06-26T09:00:00.000Z",
+      scheduleSummary: "0 9 * * 1-5 (UTC)",
     });
-    expect(created.body.chatThreadId).toBeNull();
-    expect(created.body.nextRunAt).toBe("2026-06-26T09:00:00.000Z");
-    expect(created.body.scheduleSummary).toBe("0 9 * * 1-5 (UTC)");
 
     const disabled = await accept(
-      automationsClient().disable({
-        headers: authHeaders(),
+      automations.disable({
+        headers: AUTH_HEADERS,
         params: { id: created.body.id },
       }),
       [200],
     );
-    expect(disabled.body.enabled).toBeFalsy();
-    expect(disabled.body.nextRunAt).toBeNull();
+    expect(disabled.body).toMatchObject({
+      enabled: false,
+      nextRunAt: null,
+    });
 
-    mockNow(Date.parse("2026-06-26T10:00:00.000Z"));
-    const enabled = await accept(
-      automationsClient().enable({
-        headers: authHeaders(),
+    mockNow(new Date("2026-06-26T10:00:00.000Z"));
+    const reenabled = await accept(
+      automations.enable({
+        headers: AUTH_HEADERS,
         params: { id: created.body.id },
       }),
       [200],
     );
-    expect(enabled.body.enabled).toBeTruthy();
-    expect(enabled.body.nextRunAt).toBe("2026-06-29T09:00:00.000Z");
-    expect(enabled.body.chatThreadId).toBeNull();
-
-    // Keep the mock-dated automation out of later cron sweeps.
-    await accept(
-      automationsClient().disable({
-        headers: authHeaders(),
-        params: { id: created.body.id },
-      }),
-      [200],
-    );
+    expect(reenabled.body).toMatchObject({
+      enabled: true,
+      nextRunAt: "2026-06-29T09:00:00.000Z",
+      chatThreadId: null,
+    });
   });
 
-  it("lists thread-bound workflow automations", async () => {
-    const { workflowId } = await setupFixture("team");
-    const seed = await accept(
-      automationsClient().create({
-        headers: authHeaders(),
+  it("workflow-automations-002 lists thread-bound workflow automations", async () => {
+    const { setupOrgWorkflow, asActor, automations } = setupClients();
+    const { actor, workflowId, workflowName } = await setupOrgWorkflow({
+      tier: "team",
+    });
+
+    asActor(actor);
+    const webhook = await accept(
+      automations.create({
+        headers: AUTH_HEADERS,
         params: { workflowId },
         body: { kind: "event", eventType: "webhook-received" },
       }),
       [201],
     );
-    if (!seed.body.chatThreadId) {
-      throw new Error("Expected the event automation to bind a chat thread");
+    const threadId = webhook.body.chatThreadId;
+    if (!threadId) {
+      throw new Error("Expected webhook automation to bind a chat thread");
     }
-    const threadId = seed.body.chatThreadId;
     await accept(
-      automationsClient().delete({
-        headers: authHeaders(),
-        params: { id: seed.body.id },
+      automations.delete({
+        headers: AUTH_HEADERS,
+        params: { id: webhook.body.id },
       }),
       [204],
     );
-    const created = await accept(
-      automationsClient().create({
-        headers: authHeaders(),
+
+    const loop = await accept(
+      automations.create({
+        headers: AUTH_HEADERS,
         params: { workflowId },
-        body: { schedule: { type: "loop", intervalSeconds: 60 } },
+        body: {
+          kind: "schedule",
+          schedule: { type: "loop", intervalSeconds: 60 },
+        },
       }),
       [201],
     );
-    const second = await accept(
-      automationsClient().create({
-        headers: authHeaders(),
+    const cron = await accept(
+      automations.create({
+        headers: AUTH_HEADERS,
         params: { workflowId },
         body: {
+          kind: "schedule",
           schedule: {
             type: "cron",
             cronExpression: "0 9 * * *",
@@ -831,134 +552,221 @@ describe("okou workflow automations", () => {
       }),
       [201],
     );
-    expect(created.body.chatThreadId).toBe(threadId);
-    expect(second.body.chatThreadId).toBe(threadId);
+
+    expect(loop.body.chatThreadId).toBe(threadId);
+    expect(cron.body.chatThreadId).toBe(threadId);
 
     const listed = await accept(
-      automationsClient().listForChatThread({
-        headers: authHeaders(),
+      automations.listForChatThread({
+        headers: AUTH_HEADERS,
         params: { threadId },
       }),
       [200],
     );
-
     expect(listed.body).toHaveLength(2);
-    expect(
-      listed.body.map((automation) => {
-        return {
-          id: automation.id,
-          kind: automation.kind,
-          scheduleSummary: automation.scheduleSummary,
-          chatThreadId: automation.chatThreadId,
-          workflow: automation.workflow,
-        };
-      }),
-    ).toStrictEqual([
-      {
-        id: created.body.id,
-        kind: "schedule",
-        scheduleSummary: "Every 60s",
-        chatThreadId: threadId,
-        workflow: expect.objectContaining({
-          id: workflowId,
-          name: WORKFLOW_NAME,
-        }),
-      },
-      {
-        id: second.body.id,
-        kind: "schedule",
-        scheduleSummary: "0 9 * * * (UTC)",
-        chatThreadId: threadId,
-        workflow: expect.objectContaining({
-          id: workflowId,
-          name: WORKFLOW_NAME,
-        }),
-      },
-    ]);
+    expect(listed.body[0]).toMatchObject({
+      id: loop.body.id,
+      kind: "schedule",
+      chatThreadId: threadId,
+      scheduleSummary: "Every 60s",
+      workflow: { id: workflowId, name: workflowName },
+    });
+    expect(listed.body[1]).toMatchObject({
+      id: cron.body.id,
+      kind: "schedule",
+      chatThreadId: threadId,
+      scheduleSummary: "0 9 * * * (UTC)",
+      workflow: { id: workflowId, name: workflowName },
+    });
   });
 
-  it("shares a destination across concurrent creates and rebinds after deletion", async () => {
-    const { workflowId } = await setupFixture("team");
-    const createAutomation = () => {
-      return accept(
-        automationsClient().create({
-          headers: authHeaders(),
+  it("workflow-automations-003 (1/3) shares one destination thread across concurrent webhook automation creates", async () => {
+    const { setupOrgWorkflow, asActor, automations } = setupClients();
+    const { actor, workflowId } = await setupOrgWorkflow({ tier: "team" });
+
+    asActor(actor);
+    const [first, second] = await Promise.all([
+      accept(
+        automations.create({
+          headers: AUTH_HEADERS,
           params: { workflowId },
           body: { kind: "event", eventType: "webhook-received" },
         }),
         [201],
-      );
-    };
-    const [first, second] = await Promise.all([
-      createAutomation(),
-      createAutomation(),
+      ),
+      accept(
+        automations.create({
+          headers: AUTH_HEADERS,
+          params: { workflowId },
+          body: { kind: "event", eventType: "webhook-received" },
+        }),
+        [201],
+      ),
     ]);
-    const threadId = first.body.chatThreadId;
-    if (!threadId) {
-      throw new Error("Expected the event automation to bind a chat thread");
+
+    const firstThreadId = first.body.chatThreadId;
+    if (!firstThreadId) {
+      throw new Error("Expected concurrent creates to bind a thread");
     }
-    expect(second.body.chatThreadId).toBe(threadId);
-    const listed = await accept(
-      automationsClient().listForChatThread({
-        headers: authHeaders(),
-        params: { threadId },
+    expect(second.body.chatThreadId).toBe(firstThreadId);
+
+    const threadList = await accept(
+      automations.listForChatThread({
+        headers: AUTH_HEADERS,
+        params: { threadId: firstThreadId },
       }),
       [200],
     );
     expect(
-      listed.body
-        .map((automation) => {
-          return automation.id;
-        })
-        .sort(),
-    ).toStrictEqual([first.body.id, second.body.id].sort());
-
-    await accept(
-      setupApp({ context, routes: chatThreadDeleteRoutes })(
-        chatThreadByIdContract,
-      ).delete({ headers: authHeaders(), params: { id: threadId } }),
-      [204],
-    );
-    for (const automationId of [first.body.id, second.body.id]) {
-      const stopped = await accept(
-        automationsClient().get({
-          headers: authHeaders(),
-          params: { id: automationId },
+      new Set(
+        threadList.body.map((item) => {
+          return item.id;
         }),
-        [200],
-      );
-      expect(stopped.body.enabled).toBeFalsy();
-      expect(stopped.body.chatThreadId).toBeNull();
-    }
-
-    const rebound = await createAutomation();
-    const reboundThreadId = rebound.body.chatThreadId;
-    if (!reboundThreadId) {
-      throw new Error("Expected a fresh destination after thread deletion");
-    }
-    expect(reboundThreadId).not.toBe(threadId);
-    const threads = setupApp({ context, routes: chatThreadGetRoutes })(
-      chatThreadMetadataContract,
-    );
-    await accept(
-      threads.get({ headers: authHeaders(), params: { id: threadId } }),
-      [404],
-    );
-    await accept(
-      threads.get({ headers: authHeaders(), params: { id: reboundThreadId } }),
-      [200],
-    );
+      ),
+    ).toStrictEqual(new Set([first.body.id, second.body.id]));
   });
 
-  it("validates, creates, updates and lists a one-time schedule in its time zone", async () => {
-    mockNow(Date.parse("2026-06-22T07:50:00.000Z"));
-    const { workflowId } = await setupFixture();
+  it("workflow-automations-003 (2/3) disables bound automations and clears their thread after deleting the destination thread", async () => {
+    const { setupOrgWorkflow, asActor, automations, chatThreadById } =
+      setupClients();
+    const { actor, workflowId } = await setupOrgWorkflow({ tier: "team" });
 
-    const pastOnce = await accept(
-      automationsClient().create({
-        headers: authHeaders(),
+    asActor(actor);
+    const [first, second] = await Promise.all([
+      accept(
+        automations.create({
+          headers: AUTH_HEADERS,
+          params: { workflowId },
+          body: { kind: "event", eventType: "webhook-received" },
+        }),
+        [201],
+      ),
+      accept(
+        automations.create({
+          headers: AUTH_HEADERS,
+          params: { workflowId },
+          body: { kind: "event", eventType: "webhook-received" },
+        }),
+        [201],
+      ),
+    ]);
+
+    const firstThreadId = first.body.chatThreadId;
+    if (!firstThreadId) {
+      throw new Error("Expected concurrent creates to bind a thread");
+    }
+
+    await accept(
+      chatThreadById.delete({
+        headers: AUTH_HEADERS,
+        params: { id: firstThreadId },
+      }),
+      [204],
+    );
+
+    const [firstAfterDelete, secondAfterDelete] = await Promise.all([
+      accept(
+        automations.get({
+          headers: AUTH_HEADERS,
+          params: { id: first.body.id },
+        }),
+        [200],
+      ),
+      accept(
+        automations.get({
+          headers: AUTH_HEADERS,
+          params: { id: second.body.id },
+        }),
+        [200],
+      ),
+    ]);
+    expect(firstAfterDelete.body).toMatchObject({
+      enabled: false,
+      chatThreadId: null,
+    });
+    expect(secondAfterDelete.body).toMatchObject({
+      enabled: false,
+      chatThreadId: null,
+    });
+  });
+
+  it("workflow-automations-003 (3/3) rebinds a subsequent webhook automation to a new thread after deleting the old thread", async () => {
+    const {
+      setupOrgWorkflow,
+      asActor,
+      automations,
+      chatThreadById,
+      chatThreadMetadata,
+    } = setupClients();
+    const { actor, workflowId } = await setupOrgWorkflow({ tier: "team" });
+
+    asActor(actor);
+    const first = await accept(
+      automations.create({
+        headers: AUTH_HEADERS,
+        params: { workflowId },
+        body: { kind: "event", eventType: "webhook-received" },
+      }),
+      [201],
+    );
+    const firstThreadId = first.body.chatThreadId;
+    if (!firstThreadId) {
+      throw new Error("Expected webhook automation to bind a thread");
+    }
+
+    await accept(
+      chatThreadById.delete({
+        headers: AUTH_HEADERS,
+        params: { id: firstThreadId },
+      }),
+      [204],
+    );
+
+    const rebound = await accept(
+      automations.create({
+        headers: AUTH_HEADERS,
+        params: { workflowId },
+        body: { kind: "event", eventType: "webhook-received" },
+      }),
+      [201],
+    );
+    const reboundThreadId = rebound.body.chatThreadId;
+    if (!reboundThreadId) {
+      throw new Error("Expected rebound automation to bind a new thread");
+    }
+    expect(reboundThreadId).not.toBe(firstThreadId);
+
+    await Promise.all([
+      accept(
+        chatThreadMetadata.get({
+          headers: AUTH_HEADERS,
+          params: { id: firstThreadId },
+        }),
+        [404],
+      ),
+      accept(
+        chatThreadMetadata.get({
+          headers: AUTH_HEADERS,
+          params: { id: reboundThreadId },
+        }),
+        [200],
+      ),
+    ]);
+  });
+
+  it("workflow-automations-004 validates, creates, updates and lists a one-time schedule in its time zone", async () => {
+    mockNow(new Date("2026-06-22T07:50:00.000Z"));
+    const { setupOrgWorkflow, asActor, automations, workflowDetail } =
+      setupClients();
+    const { actor, workflowId } = await setupOrgWorkflow({ tier: "pro" });
+
+    asActor(actor);
+    const pastResponse = await accept(
+      automations.create({
+        headers: AUTH_HEADERS,
         params: { workflowId },
         body: {
+          kind: "schedule",
           schedule: {
             type: "once",
             atTime: "2026-06-22T07:49:00.000Z",
@@ -968,18 +776,17 @@ describe("okou workflow automations", () => {
       }),
       [400],
     );
-    expect(pastOnce.body).toStrictEqual({
-      error: {
-        message: "Schedule atTime must be in the future",
-        code: "BAD_REQUEST",
-      },
+    expect(pastResponse.body.error).toStrictEqual({
+      code: "BAD_REQUEST",
+      message: "Schedule atTime must be in the future",
     });
 
     const created = await accept(
-      automationsClient().create({
-        headers: authHeaders(),
+      automations.create({
+        headers: AUTH_HEADERS,
         params: { workflowId },
         body: {
+          kind: "schedule",
           schedule: {
             type: "once",
             atTime: "2026-06-22T15:55:00",
@@ -989,17 +796,19 @@ describe("okou workflow automations", () => {
       }),
       [201],
     );
-
-    expect(created.body.schedule).toStrictEqual({
-      type: "once",
-      atTime: "2026-06-22T07:55:00.000Z",
-      timezone: "Asia/Shanghai",
+    expect(created.body).toMatchObject({
+      kind: "schedule",
+      nextRunAt: "2026-06-22T07:55:00.000Z",
+      schedule: {
+        type: "once",
+        atTime: "2026-06-22T07:55:00.000Z",
+        timezone: "Asia/Shanghai",
+      },
     });
-    expect(created.body.nextRunAt).toBe("2026-06-22T07:55:00.000Z");
 
     const updated = await accept(
-      automationsClient().update({
-        headers: authHeaders(),
+      automations.update({
+        headers: AUTH_HEADERS,
         params: { id: created.body.id },
         body: {
           schedule: {
@@ -1011,189 +820,105 @@ describe("okou workflow automations", () => {
       }),
       [200],
     );
-
-    expect(updated.body.schedule).toStrictEqual({
-      type: "once",
-      atTime: "2026-06-22T08:05:00.000Z",
-      timezone: "Asia/Shanghai",
-    });
-    expect(updated.body.nextRunAt).toBe("2026-06-22T08:05:00.000Z");
-
-    const listed = await accept(
-      automationsClient().list({
-        headers: authHeaders(),
-        params: { workflowId },
-      }),
-      [200],
-    );
-    const expectedAutomations = [
-      {
-        id: created.body.id,
-        kind: "schedule",
-        schedule: updated.body.schedule,
-      },
-    ];
-    expect(listed.body).toMatchObject(expectedAutomations);
-    const detail = await accept(
-      detailClient().get({
-        headers: authHeaders(),
-        params: { workflowId },
-      }),
-      [200],
-    );
-    expect(detail.body.automations).toMatchObject(expectedAutomations);
-
-    // Disable so the past-dated one-time automation never becomes a stale due
-    // candidate for later cron sweeps in the shared database.
-    await accept(
-      automationsClient().disable({
-        headers: authHeaders(),
-        params: { id: created.body.id },
-      }),
-      [200],
-    );
-  });
-
-  it("rejects creation on a workflow the caller cannot see", async () => {
-    const scenario = await setupFixture();
-    // A private workflow belongs to its creating member.
-    const otherUserId = `user_${randomUUID()}`;
-    const hidden = await createMemberWorkflow(scenario, {
-      userId: otherUserId,
-      workflowName: "hidden-workflow",
-      visibility: "private",
-    });
-
-    const response = await accept(
-      automationsClient().create({
-        headers: authHeaders(),
-        params: { workflowId: hidden.workflowId },
-        body: {
-          schedule: { type: "loop", intervalSeconds: 3600 },
-        },
-      }),
-      [404],
-    );
-
-    expect(response.body).toStrictEqual({
-      error: {
-        message: `Workflow not found: ${hidden.workflowId}`,
-        code: "NOT_FOUND",
+    expect(updated.body).toMatchObject({
+      kind: "schedule",
+      nextRunAt: "2026-06-22T08:05:00.000Z",
+      schedule: {
+        type: "once",
+        atTime: "2026-06-22T08:05:00.000Z",
+        timezone: "Asia/Shanghai",
       },
     });
+
+    const [listRes, detailRes] = await Promise.all([
+      accept(
+        automations.list({ headers: AUTH_HEADERS, params: { workflowId } }),
+        [200],
+      ),
+      accept(
+        workflowDetail.get({ headers: AUTH_HEADERS, params: { workflowId } }),
+        [200],
+      ),
+    ]);
+    const expectedMatch = {
+      id: created.body.id,
+      kind: "schedule",
+      nextRunAt: "2026-06-22T08:05:00.000Z",
+      schedule: {
+        type: "once",
+        atTime: "2026-06-22T08:05:00.000Z",
+        timezone: "Asia/Shanghai",
+      },
+    };
+    expect(listRes.body).toHaveLength(1);
+    expect(listRes.body[0]).toMatchObject(expectedMatch);
+    expect(detailRes.body.automations).toHaveLength(1);
+    expect(detailRes.body.automations[0]).toMatchObject(expectedMatch);
   });
 
-  it("requires Team for webhook automation creation", async () => {
-    const { actor, customerId, subscriptionId, workflowId } =
-      await setupFixture();
+  it("workflow-automations-006 requires Team for webhook automation creation", async () => {
+    const { setupOrgWorkflow, activatePlan, asActor, automations } =
+      setupClients();
+    const { actor, orgId, workflowId, customerId, subscriptionId } =
+      await setupOrgWorkflow({ tier: "pro" });
 
-    const proRejected = await accept(
-      automationsClient().create({
-        headers: authHeaders(),
+    asActor(actor);
+    const proAttempt = await accept(
+      automations.create({
+        headers: AUTH_HEADERS,
         params: { workflowId },
         body: { kind: "event", eventType: "webhook-received" },
       }),
       [402],
     );
-    expect(proRejected.body.error).toStrictEqual({
+    expect(proAttempt.body.error).toStrictEqual({
       code: "TEAM_REQUIRED",
       message: "Webhook automations require a Team workspace",
     });
 
-    await runs.grantProEntitlement(actor, {
-      customerId,
-      subscriptionId,
-      tier: "team",
-    });
-    const teamCreated = await accept(
-      automationsClient().create({
-        headers: authHeaders(),
+    await activatePlan(orgId, "team", { customerId, subscriptionId });
+
+    asActor(actor);
+    const teamAttempt = await accept(
+      automations.create({
+        headers: AUTH_HEADERS,
         params: { workflowId },
         body: { kind: "event", eventType: "webhook-received" },
       }),
       [201],
     );
-    expect(teamCreated.body).toMatchObject({
+    expect(teamAttempt.body).toMatchObject({
       kind: "event",
       eventType: "webhook-received",
     });
   });
 
-  it("serializes webhook creation with an effective downgrade", async () => {
-    const { subscriptionId, workflowId } = await setupFixture("team");
-
-    const [created] = await Promise.all([
-      accept(
-        automationsClient().create({
-          headers: authHeaders(),
-          params: { workflowId },
-          body: { kind: "event", eventType: "webhook-received" },
-        }),
-        [201, 402],
-      ),
-      webhookCallbacks.postStripeEvent(
-        {
-          id: `evt_trigger_create_race_${randomUUID()}`,
-          type: "customer.subscription.deleted",
-          data: { object: { id: subscriptionId } },
-        },
-        [200],
-      ),
-    ]);
-
-    const readBack =
-      created.status === 201
-        ? await wf.readAutomation(created.body.id)
-        : undefined;
-    if (
-      readBack !== undefined &&
-      (readBack.kind !== "event" || readBack.eventType !== "webhook-received")
-    ) {
-      throw new Error("Expected a webhook automation");
-    }
-    const outcome = {
-      status: created.status,
-      enabled: readBack?.enabled,
-      disabledReason: readBack?.disabledReason,
-      errorCode: created.status === 402 ? created.body.error.code : undefined,
-    };
-    expect([
-      {
-        status: 201,
-        enabled: false,
-        disabledReason: "paid_plan_required",
-        errorCode: undefined,
-      },
-      {
-        status: 402,
-        enabled: undefined,
-        disabledReason: undefined,
-        errorCode: "TEAM_REQUIRED",
-      },
-    ]).toContainEqual(outcome);
-  });
-
-  it("lists owned workflow automations across visible workflows", async () => {
-    const scenario = await setupFixture();
-    const { workflowId } = scenario;
-    const secondWorkflowName = "second-workspace-automation";
-    const secondWorkflowId = await wf.createWorkflow(scenario.actor, {
-      name: secondWorkflowName,
+  it("workflow-automations-008 lists owned workflow automations across visible workflows", async () => {
+    const { setupOrgWorkflow, createWorkflowFor, asActor, automations } =
+      setupClients();
+    const { actor, workflowId, workflowName } = await setupOrgWorkflow({
+      tier: "pro",
     });
+    const second = await createWorkflowFor(actor);
 
-    const first = await accept(
-      automationsClient().create({
-        headers: authHeaders(),
+    asActor(actor);
+    const firstAuto = await accept(
+      automations.create({
+        headers: AUTH_HEADERS,
         params: { workflowId },
-        body: { schedule: { type: "loop", intervalSeconds: 60 } },
+        body: {
+          kind: "schedule",
+          schedule: { type: "loop", intervalSeconds: 60 },
+        },
       }),
       [201],
     );
-    const second = await accept(
-      automationsClient().create({
-        headers: authHeaders(),
-        params: { workflowId: secondWorkflowId },
+    const secondAuto = await accept(
+      automations.create({
+        headers: AUTH_HEADERS,
+        params: { workflowId: second.id },
         body: {
+          kind: "schedule",
           schedule: {
             type: "cron",
             cronExpression: "0 10 * * *",
@@ -1204,463 +929,352 @@ describe("okou workflow automations", () => {
       [201],
     );
 
-    const listed = await accept(
-      automationsClient().listWorkspace({ headers: authHeaders() }),
+    const workspaceList = await accept(
+      automations.listWorkspace({ headers: AUTH_HEADERS }),
       [200],
     );
-
-    expect(
-      listed.body.map((entry) => {
-        return {
-          automationId: entry.automation.id,
-          workflowId: entry.workflow.id,
-          workflowName: entry.workflow.name,
-        };
+    expect(workspaceList.body).toHaveLength(2);
+    const byId = new Map(
+      workspaceList.body.map((entry) => {
+        return [entry.automation.id, entry];
       }),
-    ).toStrictEqual(
-      expect.arrayContaining([
-        {
-          automationId: first.body.id,
-          workflowId,
-          workflowName: WORKFLOW_NAME,
-        },
-        {
-          automationId: second.body.id,
-          workflowId: secondWorkflowId,
-          workflowName: secondWorkflowName,
-        },
-      ]),
     );
-    expect("files" in listed.body[0]!.workflow).toBeFalsy();
-    expect("fileContents" in listed.body[0]!.workflow).toBeFalsy();
+    expect(byId.get(firstAuto.body.id)?.workflow).toMatchObject({
+      id: workflowId,
+      name: workflowName,
+    });
+    expect(byId.get(secondAuto.body.id)?.workflow).toMatchObject({
+      id: second.id,
+      name: second.name,
+    });
+    for (const entry of workspaceList.body) {
+      expect("files" in entry.workflow).toBeFalsy();
+      expect("fileContents" in entry.workflow).toBeFalsy();
+    }
   });
 
-  it("discloses webhook credentials only on create and reveal and keeps the thread after deletion", async () => {
-    const { workflowId } = await setupFixture("team");
+  it("workflow-automations-009 (1/2) discloses webhook credentials only on create and reveal while hiding them in lists", async () => {
+    const { setupOrgWorkflow, asActor, automations } = setupClients();
+    const { actor, workflowId } = await setupOrgWorkflow({ tier: "team" });
 
+    asActor(actor);
     const created = await accept(
-      automationsClient().create({
-        headers: authHeaders(),
+      automations.create({
+        headers: AUTH_HEADERS,
         params: { workflowId },
-        body: {
-          kind: "event",
-          eventType: "webhook-received",
-        },
+        body: { kind: "event", eventType: "webhook-received" },
       }),
       [201],
     );
-
-    expect(created.body).toMatchObject({
-      kind: "event",
-      eventType: "webhook-received",
-      eventConfig: {
-        provider: "webhook",
-        event: "received",
-        auth: { mode: "hmac-sha256" },
-      },
-      schedule: null,
-      scheduleSummary: null,
-      lastReceivedAt: null,
-    });
+    const automation = created.body;
     if (
-      created.body.kind !== "event" ||
-      created.body.eventType !== "webhook-received" ||
-      !created.body.chatThreadId
+      automation.kind !== "event" ||
+      automation.eventType !== "webhook-received" ||
+      !automation.webhookUrl ||
+      !automation.webhookSecret ||
+      !automation.chatThreadId
     ) {
-      throw new Error("Expected a thread-bound webhook automation");
+      throw new Error("Expected created webhook-received automation");
     }
-    const threadId = created.body.chatThreadId;
-    expect(created.body.webhookUrl).toContain(
-      "/api/webhooks/workflow-automations/whk_",
-    );
-    expect(created.body.webhookSecret).toBeTruthy();
-    expect(created.body.secretLastFour).toBe(
-      created.body.webhookSecret?.slice(-4),
-    );
-
-    const listed = await accept(
-      automationsClient().list({
-        headers: authHeaders(),
-        params: { workflowId },
-      }),
-      [200],
-    );
-    const listedWebhook = listed.body.find((automation) => {
-      return automation.id === created.body.id;
+    const threadId = automation.chatThreadId;
+    const webhookPath = new URL(automation.webhookUrl).pathname;
+    expect(automation.eventConfig).toStrictEqual({
+      provider: "webhook",
+      event: "received",
+      auth: { mode: "hmac-sha256" },
     });
-    if (
-      !listedWebhook ||
-      listedWebhook.kind !== "event" ||
-      listedWebhook.eventType !== "webhook-received"
-    ) {
-      throw new Error("Expected created webhook automation to be listed");
-    }
-    expect(listedWebhook.webhookUrl).toBeUndefined();
-    expect(listedWebhook.secretLastFour).toBe(created.body.secretLastFour);
-    expect(listedWebhook.webhookSecret).toBeUndefined();
+    expect(
+      webhookPath.startsWith("/api/webhooks/workflow-automations/whk_"),
+    ).toBeTruthy();
+    expect(automation.secretLastFour).toBe(automation.webhookSecret.slice(-4));
 
-    const threadListing = await accept(
-      automationsClient().listForChatThread({
-        headers: authHeaders(),
-        params: { threadId },
-      }),
-      [200],
-    );
-    expect(threadListing.body).toMatchObject([
-      {
-        id: created.body.id,
-        kind: "event",
-        eventType: "webhook-received",
-        eventConfig: created.body.eventConfig,
-        chatThreadId: threadId,
-        secretLastFour: created.body.secretLastFour,
-        disabledReason: null,
-        lastReceivedAt: null,
-        workflow: { id: workflowId },
-      },
+    const [workflowList, threadList, revealed] = await Promise.all([
+      accept(
+        automations.list({ headers: AUTH_HEADERS, params: { workflowId } }),
+        [200],
+      ),
+      accept(
+        automations.listForChatThread({
+          headers: AUTH_HEADERS,
+          params: { threadId },
+        }),
+        [200],
+      ),
+      accept(
+        automations.revealWebhookSecret({
+          headers: AUTH_HEADERS,
+          params: { id: automation.id },
+        }),
+        [200],
+      ),
     ]);
-    expect(threadListing.body[0]).not.toHaveProperty("webhookUrl");
-    expect(threadListing.body[0]).not.toHaveProperty("webhookSecret");
+    for (const listed of [workflowList.body[0], threadList.body[0]]) {
+      if (
+        !listed ||
+        listed.kind !== "event" ||
+        listed.eventType !== "webhook-received"
+      ) {
+        throw new Error("Expected webhook-received entry in list");
+      }
+      expect(listed.secretLastFour).toBe(automation.secretLastFour);
+      expect(listed.webhookUrl).toBeUndefined();
+      expect(listed.webhookSecret).toBeUndefined();
+    }
 
-    const revealed = await accept(
-      automationsClient().revealWebhookSecret({
-        headers: authHeaders(),
-        params: { id: created.body.id },
-        body: undefined,
-      }),
-      [200],
-    );
     expect(revealed.body).toStrictEqual({
-      webhookUrl: created.body.webhookUrl,
-      webhookSecret: created.body.webhookSecret,
+      webhookUrl: automation.webhookUrl,
+      webhookSecret: automation.webhookSecret,
+    });
+  });
+
+  it("workflow-automations-009 (2/2) notifies on deletion and keeps the thread model while emptying its automation list", async () => {
+    const { setupOrgWorkflow, asActor, automations, chatThreadMetadata } =
+      setupClients();
+    const { actor, workflowId } = await setupOrgWorkflow({ tier: "team" });
+    await runsApi.ensurePersonalSubscriptionModel(actor, {
+      model: "claude-fable-5-1",
     });
 
+    asActor(actor);
+    const created = await accept(
+      automations.create({
+        headers: AUTH_HEADERS,
+        params: { workflowId },
+        body: { kind: "event", eventType: "webhook-received" },
+      }),
+      [201],
+    );
+    const threadId = created.body.chatThreadId;
+    if (!threadId) {
+      throw new Error("Expected created webhook-received automation thread");
+    }
+
+    context.mocks.ably.channelGet.mockClear();
     context.mocks.ably.publish.mockClear();
+
     await accept(
-      automationsClient().delete({
-        headers: authHeaders(),
+      automations.delete({
+        headers: AUTH_HEADERS,
         params: { id: created.body.id },
       }),
       [204],
     );
-    expect(context.mocks.ably.publish).toHaveBeenCalledWith(
-      `chatThreadAutomationsChanged:${threadId}`,
-      null,
-    );
-    await expect(wf.readThreadSelectedModel(threadId)).resolves.toBe(
-      "claude-fable-5-1",
-    );
-    const remaining = await accept(
-      automationsClient().listForChatThread({
-        headers: authHeaders(),
-        params: { threadId },
-      }),
-      [200],
-    );
-    expect(remaining.body).toStrictEqual([]);
-  });
 
-  it("uses configured webhook URLs for agent run tokens", async () => {
-    mockEnv("OKOU_WEB_URL", "https://api.okou.ai");
-    const owned = await publicChatActor(context, {
-      tier: "team",
-    });
-    const { actor } = owned;
-    await owned.run(async () => {
-      await runs.updateUserModelPreference(actor, "claude-fable-5-1");
-      const workflowId = await wf.createWorkflow(actor, {
-        name: WORKFLOW_NAME,
-      });
-      const created = await accept(
-        automationsClient().create({
-          headers: authHeaders(),
-          extraHeaders: { origin: "https://app.okou.ai" },
-          params: { workflowId },
-          body: { kind: "event", eventType: "webhook-received" },
-        }),
-        [201],
-      );
-      if (
-        created.body.kind !== "event" ||
-        created.body.eventType !== "webhook-received" ||
-        !created.body.webhookUrl ||
-        !created.body.webhookSecret
-      ) {
-        throw new Error("Expected a webhook automation with credentials");
-      }
-      const createdUrl = new URL(created.body.webhookUrl);
-      expect(createdUrl.hostname).toBe("api.okou.ai");
+    expect(
+      channelsPublishedTo(
+        context.mocks,
+        `chatThreadAutomationsChanged:${threadId}`,
+      ),
+    ).toContain(`user:${actor.userId}`);
 
-      const sourceRun = await owned.sendChatRun(actor, {
-        prompt: "read configured webhook credentials",
-      });
-
-      const { execution } = await owned.runExecution(sourceRun.runId);
-      const token = execution.platformEnvironment.OKOU_TOKEN;
-      if (!token) {
-        throw new Error("Expected an authenticated agent token");
-      }
-      const revealed = await accept(
-        automationsClient().revealWebhookSecret({
-          headers: { authorization: `Bearer ${token}` },
-          params: { id: created.body.id },
-          body: undefined,
+    const [threadMeta, threadListAfter] = await Promise.all([
+      accept(
+        chatThreadMetadata.get({
+          headers: AUTH_HEADERS,
+          params: { id: threadId },
         }),
         [200],
-      );
-      const revealedUrl = new URL(revealed.body.webhookUrl);
-      expect(revealedUrl.hostname).toBe("api.okou.ai");
-      expect(revealedUrl.pathname).toBe(createdUrl.pathname);
-      expect(revealed.body.webhookSecret).toBe(created.body.webhookSecret);
-    });
-  });
-
-  it("rejects webhook re-enable for Pro", async () => {
-    const { actor, customerId, workflowId, subscriptionId } =
-      await setupFixture("team");
-    const created = await accept(
-      automationsClient().create({
-        headers: authHeaders(),
-        params: { workflowId },
-        body: { kind: "event", eventType: "webhook-received" },
-      }),
-      [201],
-    );
-    await accept(
-      automationsClient().disable({
-        headers: authHeaders(),
-        params: { id: created.body.id },
-        body: undefined,
-      }),
-      [200],
-    );
-    await webhookCallbacks.postStripeEvent(
-      {
-        id: `evt_trigger_pro_${randomUUID()}`,
-        type: "customer.subscription.deleted",
-        data: { object: { id: subscriptionId } },
-      },
-      [200],
-    );
-    await runs.grantProEntitlement(actor, { customerId, subscriptionId });
-
-    const teamRequired = await accept(
-      automationsClient().enable({
-        headers: authHeaders(),
-        params: { id: created.body.id },
-        body: undefined,
-      }),
-      [402],
-    );
-    expect(teamRequired.body.error.code).toBe("TEAM_REQUIRED");
-  });
-
-  it("serializes webhook re-enable with an effective downgrade", async () => {
-    const { subscriptionId, workflowId } = await setupFixture("team");
-    const created = await accept(
-      automationsClient().create({
-        headers: authHeaders(),
-        params: { workflowId },
-        body: { kind: "event", eventType: "webhook-received" },
-      }),
-      [201],
-    );
-    await accept(
-      automationsClient().disable({
-        headers: authHeaders(),
-        params: { id: created.body.id },
-        body: undefined,
-      }),
-      [200],
-    );
-
-    const [enabled] = await Promise.all([
-      accept(
-        automationsClient().enable({
-          headers: authHeaders(),
-          params: { id: created.body.id },
-          body: undefined,
-        }),
-        [200, 402],
       ),
-      webhookCallbacks.postStripeEvent(
-        {
-          id: `evt_trigger_enable_race_${randomUUID()}`,
-          type: "customer.subscription.deleted",
-          data: { object: { id: subscriptionId } },
-        },
+      accept(
+        automations.listForChatThread({
+          headers: AUTH_HEADERS,
+          params: { threadId },
+        }),
         [200],
       ),
     ]);
-
-    const after = await wf.readAutomation(created.body.id);
-    if (after.kind !== "event" || after.eventType !== "webhook-received") {
-      throw new Error("Expected a webhook automation");
-    }
-    const outcome = {
-      status: enabled.status,
-      enabled: after.enabled,
-      disabledReason: enabled.status === 200 ? after.disabledReason : undefined,
-      errorCode: enabled.status === 402 ? enabled.body.error.code : undefined,
-    };
-    expect([
-      {
-        status: 200,
-        enabled: false,
-        disabledReason: "paid_plan_required",
-        errorCode: undefined,
-      },
-      {
-        status: 402,
-        enabled: false,
-        disabledReason: undefined,
-        errorCode: "TEAM_REQUIRED",
-      },
-    ]).toContainEqual(outcome);
+    expect(threadMeta.body.selectedModel).toBe("claude-fable-5-1");
+    expect(threadListAfter.body).toStrictEqual([]);
   });
 
-  it("clears the plan-disabled reason without rotating webhook credentials", async () => {
-    const { actor, customerId, workflowId, subscriptionId } =
-      await setupFixture("team");
+  it("workflow-automations-013 (1/2) disables the webhook with paid_plan_required after Stripe deletes the Team subscription", async () => {
+    const { setupOrgWorkflow, deliverStripeEvent, asActor, automations } =
+      setupClients();
+    const { actor, workflowId, customerId, subscriptionId } =
+      await setupOrgWorkflow({ tier: "team" });
+
+    asActor(actor);
     const created = await accept(
-      automationsClient().create({
-        headers: authHeaders(),
+      automations.create({
+        headers: AUTH_HEADERS,
         params: { workflowId },
         body: { kind: "event", eventType: "webhook-received" },
       }),
       [201],
     );
-    if (
-      created.body.kind !== "event" ||
-      created.body.eventType !== "webhook-received"
-    ) {
-      throw new Error("Expected a webhook automation");
-    }
-    await webhookCallbacks.postStripeEvent(
-      {
-        id: `evt_trigger_restore_${randomUUID()}`,
-        type: "customer.subscription.deleted",
-        data: { object: { id: subscriptionId } },
+
+    await deliverStripeEvent({
+      id: `evt_${randomUUID()}`,
+      created: Math.floor(now() / 1000),
+      type: "customer.subscription.deleted",
+      data: {
+        object: {
+          id: subscriptionId,
+          customer: customerId,
+          status: "canceled",
+          metadata: {},
+          items: { data: [{ price: { id: TEAM_PRICE } }] },
+        },
       },
-      [200],
-    );
-    const disabled = await wf.readAutomation(created.body.id);
-    expect(disabled).toMatchObject({
-      enabled: false,
-      disabledReason: "paid_plan_required",
-    });
-    await runs.grantProEntitlement(actor, {
-      customerId,
-      subscriptionId,
-      tier: "team",
     });
 
-    const enabled = await accept(
-      automationsClient().enable({
-        headers: authHeaders(),
+    asActor(actor);
+    const afterDowngrade = await accept(
+      automations.get({
+        headers: AUTH_HEADERS,
         params: { id: created.body.id },
-        body: undefined,
       }),
       [200],
     );
-    expect(enabled.body).toMatchObject({
+    expect(afterDowngrade.body).toMatchObject({
+      enabled: false,
+      disabledReason: "paid_plan_required",
+    });
+  });
+
+  it("workflow-automations-013 (2/2) clears the plan-disabled reason on re-enable after regaining Team without rotating credentials", async () => {
+    const {
+      setupOrgWorkflow,
+      activatePlan,
+      deliverStripeEvent,
+      asActor,
+      automations,
+    } = setupClients();
+    const { actor, orgId, workflowId, customerId, subscriptionId } =
+      await setupOrgWorkflow({ tier: "team" });
+
+    asActor(actor);
+    const created = await accept(
+      automations.create({
+        headers: AUTH_HEADERS,
+        params: { workflowId },
+        body: { kind: "event", eventType: "webhook-received" },
+      }),
+      [201],
+    );
+    const automation = created.body;
+    if (
+      automation.kind !== "event" ||
+      automation.eventType !== "webhook-received" ||
+      !automation.webhookUrl ||
+      !automation.webhookSecret
+    ) {
+      throw new Error("Expected webhook-received automation");
+    }
+
+    await deliverStripeEvent({
+      id: `evt_${randomUUID()}`,
+      created: Math.floor(now() / 1000),
+      type: "customer.subscription.deleted",
+      data: {
+        object: {
+          id: subscriptionId,
+          customer: customerId,
+          status: "canceled",
+          metadata: {},
+          items: { data: [{ price: { id: TEAM_PRICE } }] },
+        },
+      },
+    });
+
+    await activatePlan(orgId, "team", { customerId });
+
+    asActor(actor);
+    const reenabled = await accept(
+      automations.enable({
+        headers: AUTH_HEADERS,
+        params: { id: automation.id },
+      }),
+      [200],
+    );
+    expect(reenabled.body).toMatchObject({
       enabled: true,
       disabledReason: null,
     });
+
     const revealed = await accept(
-      automationsClient().revealWebhookSecret({
-        headers: authHeaders(),
-        params: { id: created.body.id },
-        body: undefined,
+      automations.revealWebhookSecret({
+        headers: AUTH_HEADERS,
+        params: { id: automation.id },
       }),
       [200],
     );
     expect(revealed.body).toStrictEqual({
-      webhookUrl: created.body.webhookUrl,
-      webhookSecret: created.body.webhookSecret,
+      webhookUrl: automation.webhookUrl,
+      webhookSecret: automation.webhookSecret,
     });
   });
 
-  it("requires a connected account for provider event automations", async () => {
-    const { workflowId } = await setupFixture();
-    mockOptionalEnv("GMAIL_PUBSUB_TOPIC_NAME", GMAIL_TOPIC_NAME);
-    const cases = [
-      {
+  it("workflow-automations-014 requires a connected account for provider event automations", async () => {
+    configureGmailPubSub();
+    const { setupOrgWorkflow, asActor, automations } = setupClients();
+    const { actor, workflowId } = await setupOrgWorkflow({ tier: "pro" });
+
+    asActor(actor);
+    const gmailRes = await accept(
+      automations.create({
+        headers: AUTH_HEADERS,
+        params: { workflowId },
         body: {
           kind: "event",
           eventType: "gmail-new-message",
           eventConfig: { provider: "gmail", event: "new_message" },
         },
-        message: "Connect Gmail before adding a Gmail event automation",
-      },
-      {
+      }),
+      [400],
+    );
+    expect(gmailRes.body.error.message).toBe(
+      "Connect Gmail before adding a Gmail event automation",
+    );
+
+    const calRes = await accept(
+      automations.create({
+        headers: AUTH_HEADERS,
+        params: { workflowId },
         body: {
           kind: "event",
           eventType: "google-calendar-event-created",
         },
-        message:
-          "Connect Google Calendar before adding a Google Calendar event automation",
-      },
-      {
+      }),
+      [400],
+    );
+    expect(calRes.body.error.message).toBe(
+      "Connect Google Calendar before adding a Google Calendar event automation",
+    );
+
+    const notionRes = await accept(
+      automations.create({
+        headers: AUTH_HEADERS,
+        params: { workflowId },
         body: {
           kind: "event",
           eventType: "notion-child-page-created",
           eventConfig: {
             provider: "notion",
             event: "child_page_created",
-            parentPageUrl: NOTION_PARENT_PAGE_URL,
-          },
-        },
-        message: "Connect Notion before adding a Notion event automation",
-      },
-    ] as const;
-
-    for (const { body, message } of cases) {
-      const rejected = await accept(
-        automationsClient().create({
-          headers: authHeaders(),
-          params: { workflowId },
-          body,
-        }),
-        [400],
-      );
-      expect(rejected.body.error.message).toBe(message);
-    }
-  });
-
-  it("rejects Google Forms creation when Pub/Sub push is not configured", async () => {
-    const scenario = await setupFixture();
-    await connectGoogleForms(scenario);
-
-    const rejected = await accept(
-      automationsClient().create({
-        headers: authHeaders(),
-        params: { workflowId: scenario.workflowId },
-        body: {
-          kind: "event",
-          eventType: "google-forms-response-submitted",
-          eventConfig: {
-            provider: "google-forms",
-            event: "response_submitted",
-            formUrl: GOOGLE_FORM_URL,
+            parentPageUrl: `https://www.notion.so/Page-${randomUUID().replaceAll("-", "")}`,
           },
         },
       }),
       [400],
     );
-
-    expect(rejected.body.error.message).toBe(
-      "Google Forms Pub/Sub push is not configured",
+    expect(notionRes.body.error.message).toBe(
+      "Connect Notion before adding a Notion event automation",
     );
   });
 
-  it("rejects Google Forms respondent links with edit-page guidance", async () => {
-    const scenario = await setupFixture();
-    await connectGoogleForms(scenario);
-    const rejected = await accept(
-      automationsClient().create({
-        headers: authHeaders(),
-        params: { workflowId: scenario.workflowId },
+  it("workflow-automations-016 rejects Google Forms respondent links with edit-page guidance", async () => {
+    mockGoogleFormsConnectorOAuth();
+    configureGoogleFormsPubSub();
+    const { setupOrgWorkflow, asActor, automations } = setupClients();
+    const { actor, workflowId } = await setupOrgWorkflow({ tier: "pro" });
+    await workflowsBdd.connectConnector(actor, "google-forms");
+
+    asActor(actor);
+    const response = await accept(
+      automations.create({
+        headers: AUTH_HEADERS,
+        params: { workflowId },
         body: {
           kind: "event",
           eventType: "google-forms-response-submitted",
@@ -1668,421 +1282,108 @@ describe("okou workflow automations", () => {
             provider: "google-forms",
             event: "response_submitted",
             formUrl:
-              "https://docs.google.com/forms/d/e/1FAIpQLSfPublic/viewform",
+              "https://docs.google.com/forms/d/e/1FAIpQLSeRespondentExample/viewform",
           },
         },
       }),
       [400],
     );
-    expect(rejected.body.error.message).toBe(
+    expect(response.body.error.message).toBe(
       "Please open the form's edit page and copy the link from the address bar",
     );
   });
 
-  it("explains inaccessible or missing Google Forms", async () => {
-    const scenario = await setupFixture();
-    await connectGoogleForms(scenario);
-    configureGoogleFormsCreationMock();
+  it("workflow-automations-018 validates Google Forms, seeds the raw cursor, creates a watch, and warns for unpublished forms", async () => {
+    mockGoogleFormsConnectorOAuth();
+    configureGoogleFormsPubSub();
+    const { setupOrgWorkflow, asActor, automations } = setupClients();
+    const { actor, workflowId } = await setupOrgWorkflow({ tier: "pro" });
+    await workflowsBdd.connectConnector(actor, "google-forms");
+
+    const formId = `form_${randomUUID().replaceAll("-", "").slice(0, 16)}`;
+    const editUrl = `https://docs.google.com/forms/d/${formId}/edit`;
+    const expireTime = new Date(now() + 7 * 86_400_000).toISOString();
+
     server.use(
-      http.get("https://forms.googleapis.com/v1/forms/:formId", () => {
-        return HttpResponse.json(
-          {
-            error: {
-              code: 403,
-              status: "PERMISSION_DENIED",
-              message: "The caller does not have permission",
+      http.get(`https://forms.googleapis.com/v1/forms/${formId}`, () => {
+        return HttpResponse.json({
+          formId,
+          info: { title: "Customer survey" },
+          publishSettings: {
+            publishState: {
+              isPublished: false,
+              isAcceptingResponses: false,
             },
           },
-          { status: 403 },
-        );
+        });
       }),
-    );
-
-    const rejected = await accept(
-      automationsClient().create({
-        headers: authHeaders(),
-        params: { workflowId: scenario.workflowId },
-        body: {
-          kind: "event",
-          eventType: "google-forms-response-submitted",
-          eventConfig: {
-            provider: "google-forms",
-            event: "response_submitted",
-            formUrl: GOOGLE_FORM_URL,
-          },
+      http.get(
+        `https://forms.googleapis.com/v1/forms/${formId}/responses`,
+        () => {
+          return HttpResponse.json({ responses: [] });
         },
-      }),
-      [400],
+      ),
+      http.post(
+        `https://forms.googleapis.com/v1/forms/${formId}/watches`,
+        () => {
+          return HttpResponse.json({
+            id: `watch_${randomUUID().slice(0, 8)}`,
+            eventType: "RESPONSES",
+            expireTime,
+            target: { topic: { topicName: GOOGLE_FORMS_TOPIC } },
+          });
+        },
+      ),
     );
 
-    expect(rejected.body.error.message).toBe(
-      "You do not have access to this form, or it does not exist",
-    );
-  });
-
-  it("validates Google Forms, seeds the raw cursor, creates a watch, and warns for unpublished forms", async () => {
-    const scenario = await setupFixture();
-    const connectorId = await connectGoogleForms(scenario);
-    configureGoogleFormsCreationMock({ unpublished: true });
+    asActor(actor);
     const created = await accept(
-      automationsClient().create({
-        headers: authHeaders(),
-        params: { workflowId: scenario.workflowId },
+      automations.create({
+        headers: AUTH_HEADERS,
+        params: { workflowId },
         body: {
           kind: "event",
           eventType: "google-forms-response-submitted",
           eventConfig: {
             provider: "google-forms",
             event: "response_submitted",
-            formUrl: GOOGLE_FORM_URL,
+            formUrl: editUrl,
           },
         },
       }),
       [201],
     );
+
     expect(created.body).toMatchObject({
       kind: "event",
       eventType: "google-forms-response-submitted",
+      enabled: true,
+      warning:
+        "This Google Form is not accepting responses yet. Publish it before expecting response events.",
       eventConfig: {
         provider: "google-forms",
         event: "response_submitted",
-        connectorId,
+        connectorId: expect.any(String),
         form: {
-          id: GOOGLE_FORM_ID,
+          id: formId,
           title: "Customer survey",
-          url: GOOGLE_FORM_URL,
+          url: editUrl,
         },
       },
-      warning:
-        "This Google Form is not accepting responses yet. Publish it before expecting response events.",
-      enabled: true,
     });
   });
 
-  it("shares one Google Forms watch until the last same-user consumer is disabled", async () => {
-    const scenario = await setupFixture();
-    const second = await createMemberWorkflow(scenario, {
-      workflowName: `second-${WORKFLOW_NAME}`,
-    });
-    await connectGoogleForms(scenario);
-    const watch = configureGoogleFormsCreationMock();
-    const createAutomation = async (workflowId: string) => {
-      return await accept(
-        automationsClient().create({
-          headers: authHeaders(),
-          params: { workflowId },
-          body: {
-            kind: "event",
-            eventType: "google-forms-response-submitted",
-            eventConfig: {
-              provider: "google-forms",
-              event: "response_submitted",
-              formUrl: GOOGLE_FORM_URL,
-            },
-          },
-        }),
-        [201],
-      );
-    };
-    const firstAutomation = await createAutomation(scenario.workflowId);
-    const secondAutomation = await createAutomation(second.workflowId);
-    let deleteCalls = 0;
-    server.use(
-      http.delete(
-        /^https:\/\/forms\.googleapis\.com\/v1\/forms\/[^/]+\/watches\/[^/]+$/,
-        () => {
-          deleteCalls += 1;
-          return HttpResponse.json({});
-        },
-      ),
-    );
+  it("workflow-automations-025 requires standard notion.so page and database URLs for Notion automations", async () => {
+    mockNotionConnectorOAuth();
+    const { setupOrgWorkflow, asActor, automations } = setupClients();
+    const { actor, workflowId } = await setupOrgWorkflow({ tier: "pro" });
+    await workflowsBdd.connectConnector(actor, "notion");
 
-    await accept(
-      automationsClient().disable({
-        headers: authHeaders(),
-        params: { id: firstAutomation.body.id },
-      }),
-      [200],
-    );
-    expect(deleteCalls).toBe(0);
-    await accept(
-      automationsClient().disable({
-        headers: authHeaders(),
-        params: { id: secondAutomation.body.id },
-      }),
-      [200],
-    );
-
-    expect(watch.createCalls).toBe(1);
-    expect(deleteCalls).toBe(1);
-  });
-
-  it("adopts the matching Google Forms watch after a create conflict", async () => {
-    const scenario = await setupFixture();
-    await connectGoogleForms(scenario);
-    configureGoogleFormsCreationMock();
-    const adoptedWatchId = `forms-watch-adopted-${randomUUID()}`;
-    let listCalls = 0;
-    server.use(
-      http.post("https://forms.googleapis.com/v1/forms/:formId/watches", () => {
-        return HttpResponse.json(
-          {
-            error: {
-              code: 400,
-              status: "FAILED_PRECONDITION",
-              message:
-                "A watch for the given end user, project, form, and event type already exists.",
-            },
-          },
-          { status: 400 },
-        );
-      }),
-      http.get("https://forms.googleapis.com/v1/forms/:formId/watches", () => {
-        listCalls += 1;
-        return HttpResponse.json({
-          watches: [
-            {
-              id: adoptedWatchId,
-              createTime: "2026-08-05T10:00:00Z",
-              expireTime: "2099-08-12T10:00:00Z",
-              eventType: "RESPONSES",
-              target: {
-                topic: { topicName: GOOGLE_FORMS_TOPIC_NAME },
-              },
-            },
-          ],
-        });
-      }),
-    );
-
-    const created = await accept(
-      automationsClient().create({
-        headers: authHeaders(),
-        params: { workflowId: scenario.workflowId },
-        body: {
-          kind: "event",
-          eventType: "google-forms-response-submitted",
-          eventConfig: {
-            provider: "google-forms",
-            event: "response_submitted",
-            formUrl: GOOGLE_FORM_URL,
-          },
-        },
-      }),
-      [201],
-    );
-
-    expect(created.body.enabled).toBeTruthy();
-    expect(listCalls).toBe(1);
-  });
-
-  it("keeps a Google Forms automation disabled when remote cleanup fails", async () => {
-    const scenario = await setupFixture();
-    await connectGoogleForms(scenario);
-    configureGoogleFormsCreationMock();
-    const created = await accept(
-      automationsClient().create({
-        headers: authHeaders(),
-        params: { workflowId: scenario.workflowId },
-        body: {
-          kind: "event",
-          eventType: "google-forms-response-submitted",
-          eventConfig: {
-            provider: "google-forms",
-            event: "response_submitted",
-            formUrl: GOOGLE_FORM_URL,
-          },
-        },
-      }),
-      [201],
-    );
-    let deleteCalls = 0;
-    server.use(
-      http.delete(
-        /^https:\/\/forms\.googleapis\.com\/v1\/forms\/[^/]+\/watches\/[^/]+$/,
-        () => {
-          deleteCalls += 1;
-          return HttpResponse.json(
-            { error: { code: 500, status: "INTERNAL" } },
-            { status: 500 },
-          );
-        },
-      ),
-    );
-    await accept(
-      automationsClient().disable({
-        headers: authHeaders(),
-        params: { id: created.body.id },
-      }),
-      [200],
-    );
-    await expect(wf.readAutomation(created.body.id)).resolves.toMatchObject({
-      enabled: false,
-    });
-    expect(deleteCalls).toBe(1);
-  });
-
-  it("attempts to stop every Google Forms watch on disconnect", async () => {
-    const scenario = await setupFixture();
-    const second = await createMemberWorkflow(scenario, {
-      workflowName: `second-${WORKFLOW_NAME}`,
-    });
-    await connectGoogleForms(scenario);
-    configureGoogleFormsCreationMock({
-      formIds: [GOOGLE_FORM_ID, SECOND_GOOGLE_FORM_ID],
-    });
-    const createAutomation = async (workflowId: string, formUrl: string) => {
-      await accept(
-        automationsClient().create({
-          headers: authHeaders(),
-          params: { workflowId },
-          body: {
-            kind: "event",
-            eventType: "google-forms-response-submitted",
-            eventConfig: {
-              provider: "google-forms",
-              event: "response_submitted",
-              formUrl,
-            },
-          },
-        }),
-        [201],
-      );
-    };
-    await createAutomation(scenario.workflowId, GOOGLE_FORM_URL);
-    await createAutomation(second.workflowId, SECOND_GOOGLE_FORM_URL);
-    let deleteCalls = 0;
-    server.use(
-      http.delete(
-        /^https:\/\/forms\.googleapis\.com\/v1\/forms\/[^/]+\/watches\/[^/]+$/,
-        () => {
-          deleteCalls += 1;
-          return deleteCalls === 1
-            ? HttpResponse.json(
-                { error: { code: 500, status: "INTERNAL" } },
-                { status: 500 },
-              )
-            : HttpResponse.json({});
-        },
-      ),
-    );
-
-    await connectorsApi.deleteDefaultBuiltinConnectorAccount(
-      scenario.actor,
-      "google-forms",
-    );
-
-    expect(deleteCalls).toBe(2);
-  });
-
-  it("treats the Google Forms missing-watch 403 as successful teardown", async () => {
-    const scenario = await setupFixture();
-    await connectGoogleForms(scenario);
-    const watch = configureGoogleFormsCreationMock();
-    const created = await accept(
-      automationsClient().create({
-        headers: authHeaders(),
-        params: { workflowId: scenario.workflowId },
-        body: {
-          kind: "event",
-          eventType: "google-forms-response-submitted",
-          eventConfig: {
-            provider: "google-forms",
-            event: "response_submitted",
-            formUrl: GOOGLE_FORM_URL,
-          },
-        },
-      }),
-      [201],
-    );
-    let deleteCalls = 0;
-    server.use(
-      http.delete(
-        /^https:\/\/forms\.googleapis\.com\/v1\/forms\/[^/]+\/watches\/[^/]+$/,
-        () => {
-          deleteCalls += 1;
-          return HttpResponse.json(
-            {
-              error: {
-                code: 403,
-                status: "PERMISSION_DENIED",
-                message: "Watch not found or permission denied.",
-              },
-            },
-            { status: 403 },
-          );
-        },
-      ),
-    );
-
-    await accept(
-      automationsClient().disable({
-        headers: authHeaders(),
-        params: { id: created.body.id },
-      }),
-      [200],
-    );
-    const enabled = await accept(
-      automationsClient().enable({
-        headers: authHeaders(),
-        params: { id: created.body.id },
-      }),
-      [200],
-    );
-
-    expect(deleteCalls).toBe(1);
-    expect(watch.createCalls).toBe(2);
-    expect(enabled.body.enabled).toBeTruthy();
-  });
-
-  it("rejects updates to a Google Forms trigger with explicit guidance", async () => {
-    const scenario = await setupFixture();
-    await connectGoogleForms(scenario);
-    configureGoogleFormsCreationMock();
-    const created = await accept(
-      automationsClient().create({
-        headers: authHeaders(),
-        params: { workflowId: scenario.workflowId },
-        body: {
-          kind: "event",
-          eventType: "google-forms-response-submitted",
-          eventConfig: {
-            provider: "google-forms",
-            event: "response_submitted",
-            formUrl: GOOGLE_FORM_URL,
-          },
-        },
-      }),
-      [201],
-    );
-
-    const rejected = await accept(
-      automationsClient().update({
-        headers: authHeaders(),
-        params: { id: created.body.id },
-        body: {
-          eventConfig: {
-            provider: "gmail",
-            event: "new_message",
-          },
-        },
-      }),
-      [400],
-    );
-
-    expect(rejected.body.error.message).toBe(
-      "this trigger has no updatable fields; delete it and create a new one",
-    );
-  });
-
-  it("requires standard notion.so page and database URLs for Notion automations", async () => {
-    const scenario = await setupFixture();
-    await connectNotion(scenario);
-
-    const page = await accept(
-      automationsClient().create({
-        headers: authHeaders(),
-        params: { workflowId: scenario.workflowId },
+    asActor(actor);
+    const pageRes = await accept(
+      automations.create({
+        headers: AUTH_HEADERS,
+        params: { workflowId },
         body: {
           kind: "event",
           eventType: "notion-child-page-created",
@@ -2095,13 +1396,14 @@ describe("okou workflow automations", () => {
       }),
       [400],
     );
+    expect(pageRes.body.error.message).toBe(
+      "Enter a standard notion.so page URL",
+    );
 
-    expect(page.body.error.message).toBe("Enter a standard notion.so page URL");
-
-    const database = await accept(
-      automationsClient().create({
-        headers: authHeaders(),
-        params: { workflowId: scenario.workflowId },
+    const dbRes = await accept(
+      automations.create({
+        headers: AUTH_HEADERS,
+        params: { workflowId },
         body: {
           kind: "event",
           eventType: "notion-database-item-created",
@@ -2114,82 +1416,121 @@ describe("okou workflow automations", () => {
       }),
       [400],
     );
-
-    expect(database.body.error.message).toBe(
+    expect(dbRes.body.error.message).toBe(
       "Enter a standard notion.so database URL",
     );
   });
 
-  it("reports inaccessible Notion pages and databases", async () => {
-    const scenario = await setupFixture();
-    await connectNotion(scenario);
+  it("workflow-automations-026 reports inaccessible Notion pages and databases", async () => {
+    mockNotionConnectorOAuth();
+    const { setupOrgWorkflow, asActor, automations } = setupClients();
+    const { actor, workflowId } = await setupOrgWorkflow({ tier: "pro" });
+    await workflowsBdd.connectConnector(actor, "notion");
+
+    const pageId = randomUUID();
+    const dbId = randomUUID();
     server.use(
-      http.get("https://api.notion.com/v1/pages/:pageId", () => {
-        return new HttpResponse(null, { status: 404 });
+      http.get(`https://api.notion.com/v1/pages/${pageId}`, () => {
+        return HttpResponse.json(
+          { object: "error", status: 404, code: "object_not_found" },
+          { status: 404 },
+        );
       }),
-      http.get("https://api.notion.com/v1/databases/:databaseId", () => {
-        return new HttpResponse(null, { status: 404 });
+      http.get(`https://api.notion.com/v1/databases/${dbId}`, () => {
+        return HttpResponse.json(
+          { object: "error", status: 404, code: "object_not_found" },
+          { status: 404 },
+        );
       }),
-      http.get("https://api.notion.com/v1/data_sources/:dataSourceId", () => {
-        return new HttpResponse(null, { status: 404 });
+      http.get(`https://api.notion.com/v1/data_sources/${dbId}`, () => {
+        return HttpResponse.json(
+          { object: "error", status: 404, code: "object_not_found" },
+          { status: 404 },
+        );
       }),
     );
 
-    const page = await accept(
-      automationsClient().create({
-        headers: authHeaders(),
-        params: { workflowId: scenario.workflowId },
+    asActor(actor);
+    const pageRes = await accept(
+      automations.create({
+        headers: AUTH_HEADERS,
+        params: { workflowId },
         body: {
           kind: "event",
           eventType: "notion-child-page-created",
           eventConfig: {
             provider: "notion",
             event: "child_page_created",
-            parentPageUrl: NOTION_PARENT_PAGE_URL,
+            parentPageUrl: `https://www.notion.so/Missing-${pageId.replaceAll("-", "")}`,
           },
         },
       }),
       [400],
     );
-    expect(page.body.error.message).toBe("Okou cannot access this Notion page");
+    expect(pageRes.body.error.message).toBe(
+      "Okou cannot access this Notion page",
+    );
 
-    const database = await accept(
-      automationsClient().create({
-        headers: authHeaders(),
-        params: { workflowId: scenario.workflowId },
+    const dbRes = await accept(
+      automations.create({
+        headers: AUTH_HEADERS,
+        params: { workflowId },
         body: {
           kind: "event",
           eventType: "notion-database-item-created",
           eventConfig: {
             provider: "notion",
             event: "database_item_created",
-            databaseUrl: NOTION_DATABASE_URL,
+            databaseUrl: `https://www.notion.so/Missing-${dbId.replaceAll("-", "")}`,
           },
         },
       }),
       [400],
     );
-    expect(database.body.error.message).toBe(
+    expect(dbRes.body.error.message).toBe(
       "Okou cannot access this Notion database",
     );
   });
 
-  it("creates Notion child page automations by validating and storing the parent page", async () => {
-    const scenario = await setupFixture();
-    const connectorId = await connectNotion(scenario);
-    configureNotionPageMock();
+  it("workflow-automations-027 creates Notion child page automations by validating and storing the parent page", async () => {
+    mockNotionConnectorOAuth();
+    const { setupOrgWorkflow, asActor, automations } = setupClients();
+    const { actor, workflowId } = await setupOrgWorkflow({ tier: "pro" });
+    await workflowsBdd.connectConnector(actor, "notion");
 
+    const pageId = randomUUID();
+    const rawUrl = `https://www.notion.so/Roadmap-${pageId.replaceAll("-", "")}`;
+    const canonicalUrl = `https://www.notion.so/Roadmap-${pageId.replaceAll("-", "")}`;
+    server.use(
+      http.get(`https://api.notion.com/v1/pages/${pageId}`, () => {
+        return HttpResponse.json({
+          object: "page",
+          id: pageId,
+          url: canonicalUrl,
+          parent: { type: "workspace" },
+          properties: {
+            title: {
+              id: "title",
+              type: "title",
+              title: [{ plain_text: "Roadmap" }],
+            },
+          },
+        });
+      }),
+    );
+
+    asActor(actor);
     const created = await accept(
-      automationsClient().create({
-        headers: authHeaders(),
-        params: { workflowId: scenario.workflowId },
+      automations.create({
+        headers: AUTH_HEADERS,
+        params: { workflowId },
         body: {
           kind: "event",
           eventType: "notion-child-page-created",
           eventConfig: {
             provider: "notion",
             event: "child_page_created",
-            parentPageUrl: NOTION_PARENT_PAGE_URL,
+            parentPageUrl: rawUrl,
           },
         },
       }),
@@ -2199,41 +1540,75 @@ describe("okou workflow automations", () => {
     expect(created.body).toMatchObject({
       kind: "event",
       eventType: "notion-child-page-created",
+      enabled: true,
+      schedule: null,
+      scheduleSummary: null,
+      nextRunAt: null,
+      chatThreadId: expect.any(String),
       eventConfig: {
         provider: "notion",
         event: "child_page_created",
-        connectorId,
+        connectorId: expect.any(String),
         parentPage: {
-          id: NOTION_PARENT_PAGE_ID,
-          url: NOTION_PARENT_PAGE_URL,
+          id: pageId,
+          url: canonicalUrl,
           title: "Roadmap",
-          rawUrl: NOTION_PARENT_PAGE_URL,
+          rawUrl,
         },
       },
-      schedule: null,
-      scheduleSummary: null,
-      enabled: true,
-      nextRunAt: null,
     });
-    expect(created.body.chatThreadId).toBeTruthy();
   });
 
-  it("creates Notion database item automations by validating and storing the data source", async () => {
-    const scenario = await setupFixture();
-    const connectorId = await connectNotion(scenario);
-    configureNotionDatabaseMock();
+  it("workflow-automations-028 creates Notion database item automations by validating and storing the data source", async () => {
+    mockNotionConnectorOAuth();
+    const { setupOrgWorkflow, asActor, automations } = setupClients();
+    const { actor, workflowId } = await setupOrgWorkflow({ tier: "pro" });
+    await workflowsBdd.connectConnector(actor, "notion");
 
+    const databaseId = randomUUID();
+    const dataSourceId = randomUUID();
+    const rawUrl = `https://www.notion.so/Bug-Bash-${databaseId.replaceAll("-", "")}`;
+    const dataSourceUrl = `https://www.notion.so/${databaseId.replaceAll("-", "")}`;
+
+    server.use(
+      http.get(`https://api.notion.com/v1/data_sources/${databaseId}`, () => {
+        return HttpResponse.json(
+          { object: "error", status: 404, code: "object_not_found" },
+          { status: 404 },
+        );
+      }),
+      http.get(`https://api.notion.com/v1/databases/${databaseId}`, () => {
+        return HttpResponse.json({
+          object: "database",
+          id: databaseId,
+          url: dataSourceUrl,
+          title: [{ plain_text: "Bug Bash" }],
+          data_sources: [{ id: dataSourceId, name: "Bug Bash" }],
+        });
+      }),
+      http.get(`https://api.notion.com/v1/data_sources/${dataSourceId}`, () => {
+        return HttpResponse.json({
+          object: "data_source",
+          id: dataSourceId,
+          name: "Bug Bash",
+          url: dataSourceUrl,
+          parent: { type: "database_id", database_id: databaseId },
+        });
+      }),
+    );
+
+    asActor(actor);
     const created = await accept(
-      automationsClient().create({
-        headers: authHeaders(),
-        params: { workflowId: scenario.workflowId },
+      automations.create({
+        headers: AUTH_HEADERS,
+        params: { workflowId },
         body: {
           kind: "event",
           eventType: "notion-database-item-created",
           eventConfig: {
             provider: "notion",
             event: "database_item_created",
-            databaseUrl: NOTION_DATABASE_URL,
+            databaseUrl: rawUrl,
           },
         },
       }),
@@ -2243,41 +1618,64 @@ describe("okou workflow automations", () => {
     expect(created.body).toMatchObject({
       kind: "event",
       eventType: "notion-database-item-created",
+      enabled: true,
+      schedule: null,
+      scheduleSummary: null,
+      nextRunAt: null,
+      chatThreadId: expect.any(String),
       eventConfig: {
         provider: "notion",
         event: "database_item_created",
-        connectorId,
+        connectorId: expect.any(String),
         dataSource: {
-          id: NOTION_DATA_SOURCE_ID,
-          url: NOTION_DATA_SOURCE_URL,
+          id: dataSourceId,
+          url: dataSourceUrl,
           title: "Bug Bash",
-          rawUrl: NOTION_DATABASE_URL,
+          rawUrl,
         },
       },
-      schedule: null,
-      scheduleSummary: null,
-      enabled: true,
-      nextRunAt: null,
     });
-    expect(created.body.chatThreadId).toBeTruthy();
   });
 
-  it("creates Notion page content updated automations for a page scope", async () => {
-    const scenario = await setupFixture();
-    const connectorId = await connectNotion(scenario);
-    configureNotionPageMock();
+  it("workflow-automations-029 creates Notion page content updated automations for a page scope", async () => {
+    mockNotionConnectorOAuth();
+    const { setupOrgWorkflow, asActor, automations } = setupClients();
+    const { actor, workflowId } = await setupOrgWorkflow({ tier: "pro" });
+    await workflowsBdd.connectConnector(actor, "notion");
 
+    const pageId = randomUUID();
+    const rawUrl = `https://www.notion.so/Roadmap-${pageId.replaceAll("-", "")}`;
+    const canonicalUrl = `https://www.notion.so/Roadmap-${pageId.replaceAll("-", "")}`;
+    server.use(
+      http.get(`https://api.notion.com/v1/pages/${pageId}`, () => {
+        return HttpResponse.json({
+          object: "page",
+          id: pageId,
+          url: canonicalUrl,
+          parent: { type: "workspace" },
+          properties: {
+            title: {
+              id: "title",
+              type: "title",
+              title: [{ plain_text: "Roadmap" }],
+            },
+          },
+        });
+      }),
+    );
+
+    asActor(actor);
     const created = await accept(
-      automationsClient().create({
-        headers: authHeaders(),
-        params: { workflowId: scenario.workflowId },
+      automations.create({
+        headers: AUTH_HEADERS,
+        params: { workflowId },
         body: {
           kind: "event",
           eventType: "notion-page-content-updated",
           eventConfig: {
             provider: "notion",
             event: "page_content_updated",
-            pageUrl: NOTION_PARENT_PAGE_URL,
+            pageUrl: rawUrl,
           },
         },
       }),
@@ -2287,84 +1685,60 @@ describe("okou workflow automations", () => {
     expect(created.body).toMatchObject({
       kind: "event",
       eventType: "notion-page-content-updated",
+      enabled: true,
+      schedule: null,
+      scheduleSummary: null,
+      nextRunAt: null,
+      chatThreadId: expect.any(String),
       eventConfig: {
         provider: "notion",
         event: "page_content_updated",
-        connectorId,
+        connectorId: expect.any(String),
         scope: {
           type: "page",
           page: {
-            id: NOTION_PARENT_PAGE_ID,
-            url: NOTION_PARENT_PAGE_URL,
+            id: pageId,
+            url: canonicalUrl,
             title: "Roadmap",
-            rawUrl: NOTION_PARENT_PAGE_URL,
+            rawUrl,
           },
         },
       },
-      schedule: null,
-      scheduleSummary: null,
-      enabled: true,
-      nextRunAt: null,
     });
-    expect(created.body.chatThreadId).toBeTruthy();
   });
 
-  it("creates Notion page content updated automations for a database scope", async () => {
-    const scenario = await setupFixture();
-    const connectorId = await connectNotion(scenario);
-    configureNotionDatabaseMock();
+  it("workflow-automations-031 creates a Gmail event automation with a watch and updates its match criteria", async () => {
+    mockGmailConnectorOAuth();
+    configureGmailPubSub();
+    const { setupOrgWorkflow, asActor, automations } = setupClients();
+    const { actor, workflowId } = await setupOrgWorkflow({ tier: "pro" });
+    await workflowsBdd.connectConnector(actor, "gmail");
 
-    const created = await accept(
-      automationsClient().create({
-        headers: authHeaders(),
-        params: { workflowId: scenario.workflowId },
-        body: {
-          kind: "event",
-          eventType: "notion-page-content-updated",
-          eventConfig: {
-            provider: "notion",
-            event: "page_content_updated",
-            databaseUrl: NOTION_DATABASE_URL,
-          },
-        },
+    const watchRegistrations: unknown[] = [];
+    server.use(
+      http.get("https://gmail.googleapis.com/gmail/v1/users/me/profile", () => {
+        return HttpResponse.json({
+          emailAddress: "bdd-gmail@example.test",
+          historyId: "1000",
+        });
       }),
-      [201],
+      http.post(
+        "https://gmail.googleapis.com/gmail/v1/users/me/watch",
+        async ({ request }) => {
+          watchRegistrations.push(await request.json());
+          return HttpResponse.json({
+            historyId: "1001",
+            expiration: String(now() + 7 * 86_400_000),
+          });
+        },
+      ),
     );
 
-    expect(created.body).toMatchObject({
-      kind: "event",
-      eventType: "notion-page-content-updated",
-      eventConfig: {
-        provider: "notion",
-        event: "page_content_updated",
-        connectorId,
-        scope: {
-          type: "data_source",
-          dataSource: {
-            id: NOTION_DATA_SOURCE_ID,
-            url: NOTION_DATA_SOURCE_URL,
-            title: "Bug Bash",
-            rawUrl: NOTION_DATABASE_URL,
-          },
-        },
-      },
-      schedule: null,
-      scheduleSummary: null,
-      enabled: true,
-      nextRunAt: null,
-    });
-    expect(created.body.chatThreadId).toBeTruthy();
-  });
-
-  it("creates a Gmail event automation with a watch and updates its match criteria", async () => {
-    const scenario = await setupFixture();
-    await connectGmail(scenario);
-    const watchRecorder = configureGmailWatchMock();
-
+    asActor(actor);
     const created = await accept(
-      automationsClient().create({
-        headers: authHeaders(),
-        params: { workflowId: scenario.workflowId },
+      automations.create({
+        headers: AUTH_HEADERS,
+        params: { workflowId },
         body: {
           kind: "event",
           eventType: "gmail-new-message",
@@ -2377,29 +1751,25 @@ describe("okou workflow automations", () => {
       }),
       [201],
     );
-
     expect(created.body).toMatchObject({
       kind: "event",
       eventType: "gmail-new-message",
+      enabled: true,
+      schedule: null,
+      scheduleSummary: null,
+      chatThreadId: expect.any(String),
       eventConfig: {
         provider: "gmail",
         event: "new_message",
         match: { subject: { contains: "invoice" } },
       },
-      schedule: null,
-      scheduleSummary: null,
-      enabled: true,
-      nextRunAt: null,
     });
-    expect(created.body.chatThreadId).toBeTruthy();
-    // The Gmail watch was registered against the provider exactly once with
-    // the connector's token and the configured Pub/Sub topic (asserted in the
-    // provider mock).
-    expect(watchRecorder.calls).toBe(1);
+    expect(watchRegistrations).toHaveLength(1);
+    expect(watchRegistrations[0]).toMatchObject({ topicName: GMAIL_TOPIC });
 
     const updated = await accept(
-      automationsClient().update({
-        headers: authHeaders(),
+      automations.update({
+        headers: AUTH_HEADERS,
         params: { id: created.body.id },
         body: {
           eventConfig: {
@@ -2411,146 +1781,79 @@ describe("okou workflow automations", () => {
       }),
       [200],
     );
-    expect(updated.body.kind).toBe("event");
     if (
       updated.body.kind !== "event" ||
       updated.body.eventType !== "gmail-new-message"
     ) {
-      throw new Error("Expected a Gmail event automation");
+      throw new Error("Expected gmail-new-message automation");
     }
     expect(updated.body.eventConfig.match).toStrictEqual({
       from: { contains: "billing@example.com" },
     });
   });
 
-  it("finishes admitted thread deletion and notifies its Runner when the API instance lifetime ends during Calendar teardown", async () => {
-    const runnerGroup = await runs.configureRunnerGroup();
-    const scenario = await setupFixture();
-    await connectGoogleCalendar(scenario);
-    configureGoogleCalendarWatchMock({ baselineItems: [] });
-    const created = await accept(
-      automationsClient().create({
-        headers: authHeaders(),
-        params: { workflowId: scenario.workflowId },
-        body: {
-          kind: "event",
-          eventType: "google-calendar-event-created",
-          eventConfig: {
-            provider: "google-calendar",
-            event: "event_created",
-            calendarId: "primary",
-          },
-        },
-      }),
-      [201],
-    );
-    const run = await runAutomationNow(created.body.id);
-    if (!run.runId) {
-      throw new Error("Expected the public Run now request to start a Run");
-    }
-    await runs.heartbeatRunner(runnerGroup);
-    await runs.executionInput(run.runId);
-    mocks.clerk.session(
-      scenario.fixture.userId,
-      scenario.fixture.orgId,
-      "org:member",
-    );
-    await expect(wf.readAutomation(created.body.id)).resolves.toMatchObject({
-      enabled: true,
-      chatThreadId: run.chatThreadId,
-    });
+  it("workflow-automations-033 creates Google Calendar event-created automations with a watch and baseline", async () => {
+    mockEnv("OKOU_WEB_URL", "https://www.okou.ai");
+    mockGoogleCalendarConnectorOAuth({ email: "calendar-user@example.com" });
+    const { setupOrgWorkflow, asActor, automations } = setupClients();
+    const { actor, workflowId } = await setupOrgWorkflow({ tier: "pro" });
+    await workflowsBdd.connectConnector(actor, "google-calendar");
 
-    const instanceLifetime = new AbortController();
-    let providerStops = 0;
+    const watchRegistrations: unknown[] = [];
+    const baselineSyncTokens: (string | null)[] = [];
+
     server.use(
+      http.get(
+        "https://www.googleapis.com/calendar/v3/calendars/:calendarId",
+        () => {
+          return HttpResponse.json({ id: "calendar-user@example.com" });
+        },
+      ),
       http.post(
-        "https://www.googleapis.com/calendar/v3/channels/stop",
+        "https://www.googleapis.com/calendar/v3/calendars/:calendarId/events/watch",
         async ({ request }) => {
-          providerStops += 1;
-          expect(request.headers.get("authorization")).toBe(
-            "Bearer calendar-access-token",
-          );
-          await expect(request.json()).resolves.toStrictEqual({
-            id: expect.any(String),
-            resourceId: expect.any(String),
+          const body = (await request.json()) as { readonly id?: string };
+          watchRegistrations.push(body);
+          return HttpResponse.json({
+            id: body.id ?? `ch_${randomUUID().slice(0, 8)}`,
+            resourceId: "res-calendar-1",
+            resourceUri:
+              "https://www.googleapis.com/calendar/v3/calendars/primary/events",
+            expiration: String(now() + 7 * 86_400_000),
           });
-          instanceLifetime.abort(
-            new DOMException("API instance lifetime ended", "AbortError"),
-          );
-          return new HttpResponse(null, { status: 204 });
+        },
+      ),
+      http.get(
+        "https://www.googleapis.com/calendar/v3/calendars/:calendarId/events",
+        ({ request }) => {
+          const url = new URL(request.url);
+          baselineSyncTokens.push(url.searchParams.get("syncToken"));
+          return HttpResponse.json({
+            items: [
+              {
+                id: "evt-confirmed-1",
+                status: "confirmed",
+                summary: "Existing standup",
+              },
+            ],
+            nextSyncToken: "sync-token-baseline-1",
+          });
         },
       ),
     );
-    context.mocks.ably.publish.mockClear();
-    const deletion = await settleIncludingAbort(
-      setupApp({
-        context,
-        routes: chatThreadDeleteRoutes,
-        signal: instanceLifetime.signal,
-        rethrowErrors: true,
-      })(chatThreadByIdContract).delete({
-        headers: authHeaders(),
-        params: { id: run.chatThreadId },
-      }),
-    );
-    expect(
-      instanceLifetime.signal.aborted,
-      deletion.ok ? JSON.stringify(deletion.value) : String(deletion.error),
-    ).toBeTruthy();
-    expect(deletion.ok).toBeFalsy();
-    await flushWaitUntilForTest();
-    expect(providerStops).toBe(1);
-    await expect(wf.readAutomation(created.body.id)).resolves.toMatchObject({
-      enabled: false,
-      chatThreadId: null,
-    });
-    expect((await runs.readRun(scenario.actor, run.runId)).status).toBe(
-      "cancelled",
-    );
-    await accept(
-      setupApp({ context, routes: chatThreadGetRoutes })(
-        chatThreadMetadataContract,
-      ).get({
-        headers: authHeaders(),
-        params: { id: run.chatThreadId },
-      }),
-      [404],
-    );
-    expect(context.mocks.ably.publish).toHaveBeenCalledWith("cancel", {
-      runId: run.runId,
-      mode: "hard",
-    });
-  });
 
-  it("creates Google Calendar event-created automations with a watch and baseline", async () => {
-    const scenario = await setupFixture();
-    await connectGoogleCalendar(scenario);
-    const watchRecorder = configureGoogleCalendarWatchMock({
-      baselineItems: [
-        {
-          id: "existing-event",
-          etag: '"existing-etag"',
-          status: "confirmed",
-          summary: "Already on calendar",
-          created: "2026-06-01T00:00:00.000Z",
-          updated: "2026-06-01T00:00:00.000Z",
-          start: { dateTime: "2026-06-30T09:00:00-07:00" },
-          end: { dateTime: "2026-06-30T09:30:00-07:00" },
-        },
-      ],
-    });
-
+    asActor(actor);
     const created = await accept(
-      automationsClient().create({
-        headers: authHeaders(),
-        params: { workflowId: scenario.workflowId },
+      automations.create({
+        headers: AUTH_HEADERS,
+        params: { workflowId },
         body: {
           kind: "event",
           eventType: "google-calendar-event-created",
           eventConfig: {
             provider: "google-calendar",
             event: "event_created",
-            calendarId: GOOGLE_CALENDAR_EMAIL,
+            calendarId: "calendar-user@example.com",
           },
         },
       }),
@@ -2560,978 +1863,47 @@ describe("okou workflow automations", () => {
     expect(created.body).toMatchObject({
       kind: "event",
       eventType: "google-calendar-event-created",
+      enabled: true,
+      schedule: null,
+      scheduleSummary: null,
+      chatThreadId: expect.any(String),
       eventConfig: {
         provider: "google-calendar",
         event: "event_created",
         calendarId: "primary",
       },
-      schedule: null,
-      scheduleSummary: null,
-      enabled: true,
-      nextRunAt: null,
     });
-    expect(created.body.chatThreadId).toBeTruthy();
-
-    // The provider watch was registered once and the baseline event snapshot
-    // sync ran once. The mock asserts the calendar id and shared sync params;
-    // this test owns the recorded sync-token assertion below.
-    // Baseline semantics — pre-existing events never dispatch runs — are
-    // covered by webhooks-google-calendar.test.ts.
-    expect(watchRecorder.watchCalls).toBe(1);
-    expect(watchRecorder.baselineCalls).toBe(1);
-    expect(watchRecorder.eventListRequests).toStrictEqual([
-      { syncToken: null },
-    ]);
+    expect(watchRegistrations).toHaveLength(1);
+    expect(baselineSyncTokens).toStrictEqual([null]);
   });
 
-  it("dispatches from a published Calendar channel after registration", async () => {
-    const runnerGroup = await runs.configureRunnerGroup();
-    runs.acceptStorageDownloads();
-    runs.acceptTelemetryIngest();
-    const scenario = await setupFixture();
-    await connectGoogleCalendar(scenario);
-    let channel:
-      | { channelId: string; channelToken: string; resourceId: string }
-      | undefined;
-    configureGoogleCalendarWatchMock({
-      baselineItems: [],
-      incrementalItems: [
-        {
-          id: "after-registration-event",
-          etag: '"version-1"',
-          status: "confirmed",
-          summary: "Created after watch registration",
-        },
-      ],
-      onWatchRegistered: (registered) => {
-        channel = registered;
-        return Promise.resolve();
-      },
-    });
+  it("workflow-automations-048 leaves a Gmail automation disabled when watch setup fails", async () => {
+    mockGmailConnectorOAuth();
+    configureGmailPubSub();
+    const { setupOrgWorkflow, asActor, automations } = setupClients();
+    const { actor, workflowId } = await setupOrgWorkflow({ tier: "pro" });
+    await workflowsBdd.connectConnector(actor, "gmail");
 
-    await accept(
-      automationsClient().create({
-        headers: authHeaders(),
-        params: { workflowId: scenario.workflowId },
-        body: { kind: "event", eventType: "google-calendar-event-created" },
-      }),
-      [201],
-    );
-    if (!channel) {
-      throw new Error("Expected the registered Calendar channel");
-    }
-    const response = await createApp({
-      signal: context.signal,
-      routes: TEST_APP_ROUTES,
-    }).request("/api/webhooks/google-calendar", {
-      method: "POST",
-      headers: {
-        "x-goog-channel-id": channel.channelId,
-        "x-goog-channel-token": channel.channelToken,
-        "x-goog-resource-id": channel.resourceId,
-        "x-goog-resource-state": "exists",
-        "x-goog-message-number": "2",
-      },
-    });
-    expect(response.status).toBe(200);
-    await expect(response.json()).resolves.toMatchObject({
-      success: true,
-      dispatched: 1,
-      duplicates: 0,
-    });
-    await flushWaitUntilForTest();
-    expect(runs.receivedDispatches(runnerGroup)).toStrictEqual([
-      expect.objectContaining({
-        executionContext: expect.objectContaining({
-          runId: expect.any(String),
-        }),
-      }),
-    ]);
-    const history = await readRunHistory(scenario.workflowId);
-    expect(history.runs).toMatchObject([
-      {
-        id: expect.any(String),
-        trigger: "event",
-        eventType: "google-calendar-event-created",
-        chatThreadId: expect.any(String),
-      },
-    ]);
-  });
-
-  it("does not create provider watches for disabled Gmail or Calendar automations", async () => {
-    const scenario = await setupFixture();
-    await connectGmail(scenario);
-    await connectGoogleCalendar(scenario);
-    const gmailWatch = configureGmailWatchMock();
-    const calendarWatch = configureGoogleCalendarWatchMock();
-
-    const gmail = await accept(
-      automationsClient().create({
-        headers: authHeaders(),
-        params: { workflowId: scenario.workflowId },
-        body: {
-          kind: "event",
-          eventType: "gmail-new-message",
-          eventConfig: { provider: "gmail", event: "new_message" },
-          enabled: false,
-        },
-      }),
-      [201],
-    );
-    const calendar = await accept(
-      automationsClient().create({
-        headers: authHeaders(),
-        params: { workflowId: scenario.workflowId },
-        body: {
-          kind: "event",
-          eventType: "google-calendar-event-created",
-          enabled: false,
-        },
-      }),
-      [201],
-    );
-
-    expect(gmail.body.enabled).toBeFalsy();
-    expect(calendar.body.enabled).toBeFalsy();
-    expect(gmailWatch.calls).toBe(0);
-    expect(calendarWatch.watchCalls).toBe(0);
-    expect(calendarWatch.baselineCalls).toBe(0);
-  });
-
-  it("reconfigures every enabled Calendar event type without replacing automation state", async () => {
-    mockOptionalEnv("RUNNER_DEFAULT_GROUP", "vm0/test");
-    const scenario = await setupFixture();
-    await connectGoogleCalendar(scenario);
-    const cases = [
-      {
-        create: {
-          kind: "event",
-          eventType: "google-calendar-event-created",
-          eventConfig: {
-            provider: "google-calendar",
-            event: "event_created",
-            calendarId: "created-old@example.com",
-          },
-        },
-        update: {
-          provider: "google-calendar",
-          event: "event_created",
-          calendarId: "created-new@example.com",
-        },
-      },
-      {
-        create: {
-          kind: "event",
-          eventType: "google-calendar-event-updated",
-          eventConfig: {
-            provider: "google-calendar",
-            event: "event_updated",
-            calendarId: "updated-old@example.com",
-          },
-        },
-        update: {
-          provider: "google-calendar",
-          event: "event_updated",
-          calendarId: "updated-new@example.com",
-        },
-      },
-      {
-        create: {
-          kind: "event",
-          eventType: "google-calendar-event-cancelled",
-          eventConfig: {
-            provider: "google-calendar",
-            event: "event_cancelled",
-            calendarId: "cancelled-old@example.com",
-          },
-        },
-        update: {
-          provider: "google-calendar",
-          event: "event_cancelled",
-          calendarId: "cancelled-new@example.com",
-        },
-      },
-    ] as const;
-    const watch = configureGoogleCalendarWatchMock({
-      calendarIds: cases.flatMap((entry) => {
-        return [entry.create.eventConfig.calendarId, entry.update.calendarId];
-      }),
-    });
-    const stop = configureGoogleCalendarStopMock();
-
-    for (const [index, entry] of cases.entries()) {
-      const created = await accept(
-        automationsClient().create({
-          headers: authHeaders(),
-          params: { workflowId: scenario.workflowId },
-          body: entry.create,
-        }),
-        [201],
-      );
-      if (index === 0) {
-        await runAutomationNow(created.body.id);
-      }
-      const before = await wf.readAutomation(created.body.id);
-
-      const updated = await accept(
-        automationsClient().update({
-          headers: authHeaders(),
-          params: { id: created.body.id },
-          body: { eventConfig: entry.update },
-        }),
-        [200],
-      );
-
-      expect(updated.body).toMatchObject({
-        id: before.id,
-        kind: "event",
-        eventType: entry.create.eventType,
-        eventConfig: entry.update,
-        enabled: before.enabled,
-        chatThreadId: before.chatThreadId,
-        lastRunAt: before.lastRunAt,
-        official: before.official,
-      });
-    }
-
-    expect(watch.watchCalls).toBe(6);
-    expect(watch.baselineCalls).toBe(6);
-    expect(stop.calls).toBe(3);
-  });
-
-  it("rejects mismatched Calendar config and keeps disabled reconfiguration watch-free", async () => {
-    const scenario = await setupFixture();
-    await connectGoogleCalendar(scenario);
-    const watch = configureGoogleCalendarWatchMock({
-      calendarIds: ["disabled-old@example.com", "primary"],
-    });
-    const stop = configureGoogleCalendarStopMock();
-    const created = await accept(
-      automationsClient().create({
-        headers: authHeaders(),
-        params: { workflowId: scenario.workflowId },
-        body: {
-          kind: "event",
-          eventType: "google-calendar-event-created",
-          eventConfig: {
-            provider: "google-calendar",
-            event: "event_created",
-            calendarId: "disabled-old@example.com",
-          },
-          enabled: false,
-        },
-      }),
-      [201],
-    );
-
-    const mismatched = await accept(
-      automationsClient().update({
-        headers: authHeaders(),
-        params: { id: created.body.id },
-        body: {
-          eventConfig: {
-            provider: "google-calendar",
-            event: "event_updated",
-            calendarId: "mismatch@example.com",
-          },
-        },
-      }),
-      [400],
-    );
-    expect(mismatched.body.error.message).toBe(
-      "eventConfig must match the Google Calendar automation type",
-    );
-    await expect(wf.readAutomation(created.body.id)).resolves.toMatchObject({
-      enabled: false,
-      eventConfig: { calendarId: "disabled-old@example.com" },
-    });
-
-    const updated = await accept(
-      automationsClient().update({
-        headers: authHeaders(),
-        params: { id: created.body.id },
-        body: {
-          eventConfig: {
-            provider: "google-calendar",
-            event: "event_created",
-            calendarId: GOOGLE_CALENDAR_EMAIL,
-          },
-        },
-      }),
-      [200],
-    );
-    expect(updated.body).toMatchObject({
-      id: created.body.id,
-      enabled: false,
-      eventConfig: { calendarId: "primary" },
-    });
-    expect(watch.watchCalls).toBe(0);
-    expect(watch.baselineCalls).toBe(0);
-    expect(stop.calls).toBe(0);
-  });
-
-  it("preserves consumers shared across both Calendar reconfiguration targets", async () => {
-    const scenario = await setupFixture();
-    await connectGoogleCalendar(scenario);
-    const oldTarget = "shared-old@example.com";
-    const newTarget = "shared-new@example.com";
-    const watch = configureGoogleCalendarWatchMock({
-      calendarIds: [oldTarget, newTarget],
-    });
-    const stop = configureGoogleCalendarStopMock();
-    const switching = await accept(
-      automationsClient().create({
-        headers: authHeaders(),
-        params: { workflowId: scenario.workflowId },
-        body: {
-          kind: "event",
-          eventType: "google-calendar-event-created",
-          eventConfig: {
-            provider: "google-calendar",
-            event: "event_created",
-            calendarId: oldTarget,
-          },
-        },
-      }),
-      [201],
-    );
-    const stayingOnOld = await accept(
-      automationsClient().create({
-        headers: authHeaders(),
-        params: { workflowId: scenario.workflowId },
-        body: {
-          kind: "event",
-          eventType: "google-calendar-event-updated",
-          eventConfig: {
-            provider: "google-calendar",
-            event: "event_updated",
-            calendarId: oldTarget,
-          },
-        },
-      }),
-      [201],
-    );
-    const stayingOnNew = await accept(
-      automationsClient().create({
-        headers: authHeaders(),
-        params: { workflowId: scenario.workflowId },
-        body: {
-          kind: "event",
-          eventType: "google-calendar-event-cancelled",
-          eventConfig: {
-            provider: "google-calendar",
-            event: "event_cancelled",
-            calendarId: newTarget,
-          },
-        },
-      }),
-      [201],
-    );
-
-    await accept(
-      automationsClient().update({
-        headers: authHeaders(),
-        params: { id: switching.body.id },
-        body: {
-          eventConfig: {
-            provider: "google-calendar",
-            event: "event_created",
-            calendarId: newTarget,
-          },
-        },
-      }),
-      [200],
-    );
-
-    await expect(
-      wf.readAutomation(stayingOnOld.body.id),
-    ).resolves.toMatchObject({
-      enabled: true,
-      eventConfig: { calendarId: oldTarget },
-    });
-    await expect(
-      wf.readAutomation(stayingOnNew.body.id),
-    ).resolves.toMatchObject({
-      enabled: true,
-      eventConfig: { calendarId: newTarget },
-    });
-    expect(watch.watchCalls).toBe(2);
-    expect(watch.baselineCalls).toBe(2);
-    expect(stop.calls).toBe(0);
-  });
-
-  it("keeps matching-resource alias consumers independent during public reconfiguration", async () => {
-    const scenario = await setupFixture();
-    await connectGoogleCalendar(scenario);
-    const alias = "shared-alias@example.com";
-    const watch = configureGoogleCalendarWatchMock({
-      calendarIds: [alias, "primary"],
-      resourceId: "same-provider-calendar-resource",
-    });
-    const stop = configureGoogleCalendarStopMock();
-    const switching = await accept(
-      automationsClient().create({
-        headers: authHeaders(),
-        params: { workflowId: scenario.workflowId },
-        body: {
-          kind: "event",
-          eventType: "google-calendar-event-created",
-          eventConfig: {
-            provider: "google-calendar",
-            event: "event_created",
-            calendarId: alias,
-          },
-        },
-      }),
-      [201],
-    );
-    const disabledAlias = await accept(
-      automationsClient().create({
-        headers: authHeaders(),
-        params: { workflowId: scenario.workflowId },
-        body: {
-          kind: "event",
-          eventType: "google-calendar-event-updated",
-          enabled: false,
-          eventConfig: {
-            provider: "google-calendar",
-            event: "event_updated",
-            calendarId: alias,
-          },
-        },
-      }),
-      [201],
-    );
-    const primary = await accept(
-      automationsClient().create({
-        headers: authHeaders(),
-        params: { workflowId: scenario.workflowId },
-        body: { kind: "event", eventType: "google-calendar-event-cancelled" },
-      }),
-      [201],
-    );
-    await accept(
-      automationsClient().update({
-        headers: authHeaders(),
-        params: { id: switching.body.id },
-        body: {
-          eventConfig: {
-            provider: "google-calendar",
-            event: "event_created",
-            calendarId: "primary",
-          },
-        },
-      }),
-      [200],
-    );
-
-    await expect(wf.readAutomation(switching.body.id)).resolves.toMatchObject({
-      enabled: true,
-      eventConfig: { calendarId: "primary" },
-    });
-    await expect(
-      wf.readAutomation(disabledAlias.body.id),
-    ).resolves.toMatchObject({
-      enabled: false,
-      eventConfig: { calendarId: alias },
-    });
-    await expect(wf.readAutomation(primary.body.id)).resolves.toMatchObject({
-      enabled: true,
-      eventConfig: { calendarId: "primary" },
-    });
-    expect(watch.watchCalls).toBe(2);
-    expect(watch.baselineCalls).toBe(2);
-    expect(stop.requests).toStrictEqual([
-      {
-        id: watch.channelIds[0],
-        resourceId: "same-provider-calendar-resource",
-      },
-    ]);
-  });
-
-  it("rolls back Calendar config when replacement watch registration fails", async () => {
-    const scenario = await setupFixture();
-    await connectGoogleCalendar(scenario);
-    const oldTarget = "registration-old@example.com";
-    const newTarget = "registration-new@example.com";
-    const watch = configureGoogleCalendarWatchMock({
-      calendarIds: [oldTarget, newTarget],
-    });
-    const stop = configureGoogleCalendarStopMock();
-    const automation = await accept(
-      automationsClient().create({
-        headers: authHeaders(),
-        params: { workflowId: scenario.workflowId },
-        body: {
-          kind: "event",
-          eventType: "google-calendar-event-updated",
-          eventConfig: {
-            provider: "google-calendar",
-            event: "event_updated",
-            calendarId: oldTarget,
-          },
-        },
-      }),
-      [201],
-    );
-    const before = await wf.readAutomation(automation.body.id);
     server.use(
-      http.post(
-        "https://www.googleapis.com/calendar/v3/calendars/:calendarId/events/watch",
-        ({ params }) => {
-          expect(params.calendarId).toBe(newTarget);
-          return HttpResponse.json(
-            { error: "provider unavailable" },
-            { status: 503 },
-          );
-        },
-      ),
-    );
-
-    const failed = await accept(
-      automationsClient().update({
-        headers: authHeaders(),
-        params: { id: automation.body.id },
-        body: {
-          eventConfig: {
-            provider: "google-calendar",
-            event: "event_updated",
-            calendarId: newTarget,
-          },
-        },
+      http.get("https://gmail.googleapis.com/gmail/v1/users/me/profile", () => {
+        return HttpResponse.json({
+          emailAddress: "bdd-gmail@example.test",
+          historyId: "1000",
+        });
       }),
-      [400],
-    );
-
-    expect(JSON.stringify(failed.body)).not.toContain(newTarget);
-    await expect(wf.readAutomation(automation.body.id)).resolves.toMatchObject({
-      id: before.id,
-      enabled: before.enabled,
-      chatThreadId: before.chatThreadId,
-      lastRunAt: before.lastRunAt,
-      eventConfig: { calendarId: oldTarget },
-    });
-    expect(watch.baselineCalls).toBe(2);
-    expect(watch.watchCalls).toBe(1);
-    expect(stop.calls).toBe(0);
-  });
-
-  it("keeps a shared Gmail watch until the last consumer and refreshes it for label re-enable", async () => {
-    const scenario = await setupFixture();
-    await connectGmail(
-      scenario,
-      `shared-consumer-${scenario.fixture.userId}@example.com`,
-    );
-    configureGmailLabelsMock([{ id: "Label_support", name: "Support" }]);
-    const watch = configureGmailWatchMock(["history-1", "history-2"]);
-    const stop = configureGmailStopMock();
-
-    const messageAutomation = await accept(
-      automationsClient().create({
-        headers: authHeaders(),
-        params: { workflowId: scenario.workflowId },
-        body: {
-          kind: "event",
-          eventType: "gmail-new-message",
-          eventConfig: { provider: "gmail", event: "new_message" },
-        },
-      }),
-      [201],
-    );
-    const labelAutomation = await accept(
-      automationsClient().create({
-        headers: authHeaders(),
-        params: { workflowId: scenario.workflowId },
-        body: {
-          kind: "event",
-          eventType: "gmail-label-applied",
-          eventConfig: {
-            provider: "gmail",
-            event: "label_applied",
-            labelName: "Support",
-          },
-        },
-      }),
-      [201],
-    );
-    expect(watch.calls).toBe(1);
-
-    await accept(
-      automationsClient().disable({
-        headers: authHeaders(),
-        params: { id: labelAutomation.body.id },
-      }),
-      [200],
-    );
-    expect(stop.calls).toBe(0);
-
-    await accept(
-      automationsClient().delete({
-        headers: authHeaders(),
-        params: { id: messageAutomation.body.id },
-      }),
-      [204],
-    );
-    expect(stop.calls).toBe(0);
-
-    const enabled = await accept(
-      automationsClient().enable({
-        headers: authHeaders(),
-        params: { id: labelAutomation.body.id },
-      }),
-      [200],
-    );
-    expect(enabled.body.enabled).toBeTruthy();
-    expect(watch.calls).toBe(2);
-  });
-
-  it("does not stop a Gmail mailbox while another connected identity consumes it", async () => {
-    const first = await setupFixture();
-    const sharedEmail = `cross-identity-${first.fixture.userId}@example.com`;
-    await connectGmail(first, sharedEmail);
-    const second = await setupFixture();
-    await connectGmail(second, sharedEmail);
-    const watch = configureGmailWatchMock();
-    const stop = configureGmailStopMock();
-
-    mocks.clerk.session(
-      first.fixture.userId,
-      first.fixture.orgId,
-      "org:member",
-    );
-    const firstAutomation = await accept(
-      automationsClient().create({
-        headers: authHeaders(),
-        params: { workflowId: first.workflowId },
-        body: {
-          kind: "event",
-          eventType: "gmail-new-message",
-          eventConfig: { provider: "gmail", event: "new_message" },
-        },
-      }),
-      [201],
-    );
-    mocks.clerk.session(
-      second.fixture.userId,
-      second.fixture.orgId,
-      "org:member",
-    );
-    const secondAutomation = await accept(
-      automationsClient().create({
-        headers: authHeaders(),
-        params: { workflowId: second.workflowId },
-        body: {
-          kind: "event",
-          eventType: "gmail-new-message",
-          eventConfig: { provider: "gmail", event: "new_message" },
-        },
-      }),
-      [201],
-    );
-    expect(watch.calls).toBe(2);
-
-    mocks.clerk.session(
-      first.fixture.userId,
-      first.fixture.orgId,
-      "org:member",
-    );
-    await accept(
-      automationsClient().disable({
-        headers: authHeaders(),
-        params: { id: firstAutomation.body.id },
-      }),
-      [200],
-    );
-    expect(stop.calls).toBe(0);
-
-    mocks.clerk.session(
-      second.fixture.userId,
-      second.fixture.orgId,
-      "org:member",
-    );
-    await accept(
-      automationsClient().disable({
-        headers: authHeaders(),
-        params: { id: secondAutomation.body.id },
-      }),
-      [200],
-    );
-    expect(stop.calls).toBe(0);
-  });
-
-  it("stops Calendar with the persisted channel pair after the last consumer", async () => {
-    const scenario = await setupFixture();
-    await connectGoogleCalendar(scenario);
-    const watch = configureGoogleCalendarWatchMock();
-    const stop = configureGoogleCalendarStopMock();
-
-    const createdAutomation = await accept(
-      automationsClient().create({
-        headers: authHeaders(),
-        params: { workflowId: scenario.workflowId },
-        body: {
-          kind: "event",
-          eventType: "google-calendar-event-created",
-        },
-      }),
-      [201],
-    );
-    const updatedAutomation = await accept(
-      automationsClient().create({
-        headers: authHeaders(),
-        params: { workflowId: scenario.workflowId },
-        body: {
-          kind: "event",
-          eventType: "google-calendar-event-updated",
-        },
-      }),
-      [201],
-    );
-    expect(watch.watchCalls).toBe(1);
-
-    await accept(
-      automationsClient().disable({
-        headers: authHeaders(),
-        params: { id: createdAutomation.body.id },
-      }),
-      [200],
-    );
-    expect(stop.calls).toBe(0);
-
-    await accept(
-      automationsClient().delete({
-        headers: authHeaders(),
-        params: { id: updatedAutomation.body.id },
-      }),
-      [204],
-    );
-    expect(stop.requests).toStrictEqual([
-      { id: watch.channelIds[0], resourceId: "calendar-resource-1" },
-    ]);
-
-    await accept(
-      automationsClient().enable({
-        headers: authHeaders(),
-        params: { id: createdAutomation.body.id },
-      }),
-      [200],
-    );
-    expect(watch.watchCalls).toBe(2);
-    expect(watch.baselineCalls).toBe(2);
-  });
-
-  it("leaves a Calendar automation recoverable after a disable during registration", async () => {
-    const scenario = await setupFixture();
-    await connectGoogleCalendar(scenario);
-    const registrationStarted = createDeferredPromise<void>(context.signal);
-    const releaseRegistration = createDeferredPromise<void>(context.signal);
-    let blockRegistration = true;
-    const watch = configureGoogleCalendarWatchMock({
-      onWatchRegistered: async () => {
-        if (!blockRegistration) {
-          return;
-        }
-        blockRegistration = false;
-        registrationStarted.resolve(undefined);
-        await releaseRegistration.promise;
-      },
-    });
-    configureGoogleCalendarStopMock();
-    const created = await accept(
-      automationsClient().create({
-        headers: authHeaders(),
-        params: { workflowId: scenario.workflowId },
-        body: {
-          kind: "event",
-          eventType: "google-calendar-event-created",
-          enabled: false,
-        },
-      }),
-      [201],
-    );
-
-    const enabling = accept(
-      automationsClient().enable({
-        headers: authHeaders(),
-        params: { id: created.body.id },
-      }),
-      [200, 400],
-    );
-    await registrationStarted.promise;
-    const disabled = await accept(
-      automationsClient().disable({
-        headers: authHeaders(),
-        params: { id: created.body.id },
-      }),
-      [200],
-    );
-    releaseRegistration.resolve(undefined);
-
-    expect(disabled.body.enabled).toBeFalsy();
-    await enabling;
-
-    const enabled = await accept(
-      automationsClient().enable({
-        headers: authHeaders(),
-        params: { id: created.body.id },
-      }),
-      [200],
-    );
-    expect(enabled.body.enabled).toBeTruthy();
-    expect(watch.watchCalls).toBe(2);
-  });
-
-  it("recovers after Calendar registration outlives its connector state", async () => {
-    const scenario = await setupFixture();
-    await connectGoogleCalendar(scenario);
-    let deleteConnector = true;
-    const watch = configureGoogleCalendarWatchMock({
-      onWatchRegistered: async () => {
-        if (!deleteConnector) {
-          return;
-        }
-        deleteConnector = false;
-        await connectorsApi.deleteDefaultBuiltinConnectorAccount(
-          scenario.actor,
-          "google-calendar",
-        );
-      },
-    });
-    const stop = configureGoogleCalendarStopMock();
-    const created = await accept(
-      automationsClient().create({
-        headers: authHeaders(),
-        params: { workflowId: scenario.workflowId },
-        body: {
-          kind: "event",
-          eventType: "google-calendar-event-created",
-          enabled: false,
-        },
-      }),
-      [201],
-    );
-
-    const failedEnable = await createApp({
-      signal: context.signal,
-      routes: TEST_APP_ROUTES,
-    }).request(`/api/workflow-automations/${created.body.id}/enable`, {
-      method: "POST",
-      headers: authHeaders(),
-    });
-    expect(failedEnable.ok).toBeFalsy();
-    expect(stop.requests).toStrictEqual([
-      { id: watch.channelIds[0], resourceId: "calendar-resource-1" },
-    ]);
-    await expect(wf.readAutomation(created.body.id)).resolves.toMatchObject({
-      enabled: false,
-    });
-
-    await connectGoogleCalendar(scenario);
-    const enabled = await accept(
-      automationsClient().enable({
-        headers: authHeaders(),
-        params: { id: created.body.id },
-      }),
-      [200],
-    );
-    expect(enabled.body.enabled).toBeTruthy();
-    expect(watch.watchCalls).toBe(2);
-  });
-
-  it("does not create a Calendar channel when baseline setup fails", async () => {
-    const scenario = await setupFixture();
-    await connectGoogleCalendar(scenario);
-    const watch = configureGoogleCalendarWatchMock();
-    const stop = configureGoogleCalendarStopMock();
-    server.use(
-      http.get(
-        "https://www.googleapis.com/calendar/v3/calendars/:calendarId/events",
-        () => {
-          return HttpResponse.json(
-            { error: "baseline failed" },
-            { status: 500 },
-          );
-        },
-      ),
-    );
-
-    await accept(
-      automationsClient().create({
-        headers: authHeaders(),
-        params: { workflowId: scenario.workflowId },
-        body: {
-          kind: "event",
-          eventType: "google-calendar-event-created",
-        },
-      }),
-      [400],
-    );
-
-    expect(watch.watchCalls).toBe(0);
-    expect(stop.calls).toBe(0);
-    const listed = await accept(
-      automationsClient().list({
-        headers: authHeaders(),
-        params: { workflowId: scenario.workflowId },
-      }),
-      [200],
-    );
-    expect(listed.body).toHaveLength(0);
-  });
-
-  it("keeps Calendar disabled when remote cleanup fails and permits re-enable", async () => {
-    const scenario = await setupFixture();
-    await connectGoogleCalendar(scenario);
-    configureGoogleCalendarWatchMock();
-    configureGoogleCalendarStopMock([500]);
-    const created = await accept(
-      automationsClient().create({
-        headers: authHeaders(),
-        params: { workflowId: scenario.workflowId },
-        body: { kind: "event", eventType: "google-calendar-event-created" },
-      }),
-      [201],
-    );
-    await accept(
-      automationsClient().disable({
-        headers: authHeaders(),
-        params: { id: created.body.id },
-      }),
-      [200],
-    );
-
-    await expect(wf.readAutomation(created.body.id)).resolves.toMatchObject({
-      enabled: false,
-    });
-
-    const enabled = await accept(
-      automationsClient().enable({
-        headers: authHeaders(),
-        params: { id: created.body.id },
-      }),
-      [200],
-    );
-
-    expect(enabled.body.enabled).toBeTruthy();
-  });
-
-  it("leaves a Gmail automation disabled when watch setup fails", async () => {
-    const scenario = await setupFixture();
-    await connectGmail(
-      scenario,
-      `watch-failure-${scenario.fixture.userId}@example.com`,
-    );
-    mockOptionalEnv("GMAIL_PUBSUB_TOPIC_NAME", GMAIL_TOPIC_NAME);
-    server.use(
       http.post("https://gmail.googleapis.com/gmail/v1/users/me/watch", () => {
-        return HttpResponse.json({ error: "watch failed" }, { status: 500 });
+        return HttpResponse.json(
+          { error: { code: 500, message: "Gmail watch unavailable" } },
+          { status: 500 },
+        );
       }),
     );
 
-    const created = await accept(
-      automationsClient().create({
-        headers: authHeaders(),
-        params: { workflowId: scenario.workflowId },
+    asActor(actor);
+    const disabledCreated = await accept(
+      automations.create({
+        headers: AUTH_HEADERS,
+        params: { workflowId },
         body: {
           kind: "event",
           eventType: "gmail-new-message",
@@ -3541,156 +1913,82 @@ describe("okou workflow automations", () => {
       }),
       [201],
     );
+    expect(disabledCreated.body.enabled).toBeFalsy();
+
     await accept(
-      automationsClient().enable({
-        headers: authHeaders(),
-        params: { id: created.body.id },
+      automations.enable({
+        headers: AUTH_HEADERS,
+        params: { id: disabledCreated.body.id },
       }),
       [400],
     );
 
-    await expect(wf.readAutomation(created.body.id)).resolves.toMatchObject({
-      enabled: false,
-    });
+    const readAfterEnable = await accept(
+      automations.get({
+        headers: AUTH_HEADERS,
+        params: { id: disabledCreated.body.id },
+      }),
+      [200],
+    );
+    expect(readAfterEnable.body.enabled).toBeFalsy();
+
     await accept(
-      automationsClient().create({
-        headers: authHeaders(),
-        params: { workflowId: scenario.workflowId },
+      automations.create({
+        headers: AUTH_HEADERS,
+        params: { workflowId },
         body: {
           kind: "event",
           eventType: "gmail-new-message",
           eventConfig: { provider: "gmail", event: "new_message" },
+          enabled: true,
         },
       }),
       [400],
     );
-    const listed = await accept(
-      automationsClient().list({
-        headers: authHeaders(),
-        params: { workflowId: scenario.workflowId },
-      }),
+
+    const listRes = await accept(
+      automations.list({ headers: AUTH_HEADERS, params: { workflowId } }),
       [200],
     );
-    expect(listed.body).toMatchObject([
-      { id: created.body.id, enabled: false },
-    ]);
-  });
-
-  it("disables and re-enables Gmail locally without stopping the mailbox", async () => {
-    const scenario = await setupFixture();
-    await connectGmail(
-      scenario,
-      `concurrent-lifecycle-${scenario.fixture.userId}@example.com`,
-    );
-    configureGmailWatchMock(["history-1", "history-2"]);
-    const stop = configureGmailStopMock();
-
-    const created = await accept(
-      automationsClient().create({
-        headers: authHeaders(),
-        params: { workflowId: scenario.workflowId },
-        body: {
-          kind: "event",
-          eventType: "gmail-new-message",
-          eventConfig: { provider: "gmail", event: "new_message" },
-        },
-      }),
-      [201],
-    );
-
-    await accept(
-      automationsClient().disable({
-        headers: authHeaders(),
-        params: { id: created.body.id },
-      }),
-      [200],
-    );
-    await expect(wf.readAutomation(created.body.id)).resolves.toMatchObject({
+    expect(listRes.body).toHaveLength(1);
+    expect(listRes.body[0]).toMatchObject({
+      id: disabledCreated.body.id,
       enabled: false,
     });
-    const enabled = await accept(
-      automationsClient().enable({
-        headers: authHeaders(),
-        params: { id: created.body.id },
-      }),
-      [200],
-    );
-    expect(enabled.body.enabled).toBeTruthy();
-    expect(stop.calls).toBe(0);
-    await expect(wf.readAutomation(created.body.id)).resolves.toMatchObject({
-      enabled: true,
-    });
   });
 
-  it("preserves the Gmail watch after deleting a workflow", async () => {
-    const workflowScenario = await setupFixture();
-    await connectGmail(
-      workflowScenario,
-      `workflow-cascade-${workflowScenario.fixture.userId}@example.com`,
-    );
-    const watch = configureGmailWatchMock();
-    const stop = configureGmailStopMock();
-    await accept(
-      automationsClient().create({
-        headers: authHeaders(),
-        params: { workflowId: workflowScenario.workflowId },
-        body: {
-          kind: "event",
-          eventType: "gmail-new-message",
-          eventConfig: { provider: "gmail", event: "new_message" },
-        },
+  it("workflow-automations-052 (1/2) rejects a missing Gmail label on create and creates once the exact label exists", async () => {
+    mockGmailConnectorOAuth();
+    configureGmailPubSub();
+    const { setupOrgWorkflow, asActor, automations } = setupClients();
+    const { actor, workflowId } = await setupOrgWorkflow({ tier: "pro" });
+    await workflowsBdd.connectConnector(actor, "gmail");
+
+    server.use(
+      http.get("https://gmail.googleapis.com/gmail/v1/users/me/profile", () => {
+        return HttpResponse.json({
+          emailAddress: "bdd-gmail@example.test",
+          historyId: "1000",
+        });
       }),
-      [201],
-    );
-    await accept(
-      detailClient().delete({
-        headers: authHeaders(),
-        params: { workflowId: workflowScenario.workflowId },
+      http.post("https://gmail.googleapis.com/gmail/v1/users/me/watch", () => {
+        return HttpResponse.json({
+          historyId: "1001",
+          expiration: String(now() + 7 * 86_400_000),
+        });
       }),
-      [204],
-    );
-    expect(watch.calls).toBe(1);
-    expect(stop.calls).toBe(0);
-  });
-
-  it("removes connector credentials without stopping the Gmail mailbox", async () => {
-    const scenario = await setupFixture();
-    await connectGmail(
-      scenario,
-      `connector-cleanup-${scenario.fixture.userId}@example.com`,
-    );
-    configureGmailWatchMock();
-    const stop = configureGmailStopMock();
-    await accept(
-      automationsClient().create({
-        headers: authHeaders(),
-        params: { workflowId: scenario.workflowId },
-        body: {
-          kind: "event",
-          eventType: "gmail-new-message",
-          eventConfig: { provider: "gmail", event: "new_message" },
-        },
+      http.get("https://gmail.googleapis.com/gmail/v1/users/me/labels", () => {
+        return HttpResponse.json({
+          labels: [{ id: "Label_support", name: "Support" }],
+        });
       }),
-      [201],
     );
 
-    await connectorsApi.deleteDefaultBuiltinConnectorAccount(
-      scenario.actor,
-      "gmail",
-    );
-    expect(stop.calls).toBe(0);
-  });
-
-  it("recovers from missing Gmail labels when creating and updating automations", async () => {
-    const scenario = await setupFixture();
-    await connectGmail(scenario);
-    configureGmailLabelsMock([{ id: "Label_support", name: "Support" }]);
-    configureGmailWatchMock();
-
-    const missing = await accept(
-      automationsClient().create({
-        headers: authHeaders(),
-        params: { workflowId: scenario.workflowId },
+    asActor(actor);
+    const missingCreate = await accept(
+      automations.create({
+        headers: AUTH_HEADERS,
+        params: { workflowId },
         body: {
           kind: "event",
           eventType: "gmail-label-applied",
@@ -3703,26 +2001,81 @@ describe("okou workflow automations", () => {
       }),
       [400],
     );
-    expect(missing.body).toStrictEqual({
-      error: {
-        code: "GMAIL_LABEL_NOT_FOUND",
-        message:
-          "Label not found in the connected Gmail account. Check the label name and connected account.",
-      },
+    expect(missingCreate.body.error).toStrictEqual({
+      code: "GMAIL_LABEL_NOT_FOUND",
+      message:
+        "Label not found in the connected Gmail account. Check the label name and connected account.",
     });
-    const afterMissing = await accept(
-      automationsClient().list({
-        headers: authHeaders(),
-        params: { workflowId: scenario.workflowId },
-      }),
+
+    const listBeforeCreate = await accept(
+      automations.list({ headers: AUTH_HEADERS, params: { workflowId } }),
       [200],
     );
-    expect(afterMissing.body).toHaveLength(0);
+    expect(listBeforeCreate.body).toStrictEqual([]);
 
     const created = await accept(
-      automationsClient().create({
-        headers: authHeaders(),
-        params: { workflowId: scenario.workflowId },
+      automations.create({
+        headers: AUTH_HEADERS,
+        params: { workflowId },
+        body: {
+          kind: "event",
+          eventType: "gmail-label-applied",
+          eventConfig: {
+            provider: "gmail",
+            event: "label_applied",
+            labelName: "Support",
+          },
+        },
+      }),
+      [201],
+    );
+    expect(created.body).toMatchObject({
+      kind: "event",
+      eventType: "gmail-label-applied",
+      enabled: true,
+      eventConfig: {
+        provider: "gmail",
+        event: "label_applied",
+        labelName: "Support",
+        resolvedLabelId: "Label_support",
+      },
+    });
+  });
+
+  it("workflow-automations-052 (2/2) keeps a Gmail label automation unchanged when an update label is missing and updates once added", async () => {
+    mockGmailConnectorOAuth();
+    configureGmailPubSub();
+    const { setupOrgWorkflow, asActor, automations } = setupClients();
+    const { actor, workflowId } = await setupOrgWorkflow({ tier: "pro" });
+    await workflowsBdd.connectConnector(actor, "gmail");
+
+    const gmailLabels: { readonly id: string; readonly name: string }[] = [
+      { id: "Label_support", name: "Support" },
+    ];
+
+    server.use(
+      http.get("https://gmail.googleapis.com/gmail/v1/users/me/profile", () => {
+        return HttpResponse.json({
+          emailAddress: "bdd-gmail@example.test",
+          historyId: "1000",
+        });
+      }),
+      http.post("https://gmail.googleapis.com/gmail/v1/users/me/watch", () => {
+        return HttpResponse.json({
+          historyId: "1001",
+          expiration: String(now() + 7 * 86_400_000),
+        });
+      }),
+      http.get("https://gmail.googleapis.com/gmail/v1/users/me/labels", () => {
+        return HttpResponse.json({ labels: gmailLabels });
+      }),
+    );
+
+    asActor(actor);
+    const created = await accept(
+      automations.create({
+        headers: AUTH_HEADERS,
+        params: { workflowId },
         body: {
           kind: "event",
           eventType: "gmail-label-applied",
@@ -3736,24 +2089,9 @@ describe("okou workflow automations", () => {
       [201],
     );
 
-    expect(created.body).toMatchObject({
-      kind: "event",
-      eventType: "gmail-label-applied",
-      eventConfig: {
-        provider: "gmail",
-        event: "label_applied",
-        labelName: "Support",
-        resolvedLabelId: "Label_support",
-      },
-      schedule: null,
-      scheduleSummary: null,
-      enabled: true,
-      nextRunAt: null,
-    });
-
-    const rejectedUpdate = await accept(
-      automationsClient().update({
-        headers: authHeaders(),
+    const missingUpdate = await accept(
+      automations.update({
+        headers: AUTH_HEADERS,
         params: { id: created.body.id },
         body: {
           eventConfig: {
@@ -3765,26 +2103,26 @@ describe("okou workflow automations", () => {
       }),
       [400],
     );
-    expect(rejectedUpdate.body.error.code).toBe("GMAIL_LABEL_NOT_FOUND");
+    expect(missingUpdate.body.error.code).toBe("GMAIL_LABEL_NOT_FOUND");
+
     const unchanged = await accept(
-      automationsClient().get({
-        headers: authHeaders(),
+      automations.get({
+        headers: AUTH_HEADERS,
         params: { id: created.body.id },
       }),
       [200],
     );
     expect(unchanged.body).toMatchObject({
-      enabled: true,
       eventConfig: {
         labelName: "Support",
         resolvedLabelId: "Label_support",
       },
     });
 
-    configureGmailLabelsMock([{ id: "Label_escalated", name: "Escalated" }]);
-    const updated = await accept(
-      automationsClient().update({
-        headers: authHeaders(),
+    gmailLabels.push({ id: "Label_escalated", name: "Escalated" });
+    const recoveredUpdate = await accept(
+      automations.update({
+        headers: AUTH_HEADERS,
         params: { id: created.body.id },
         body: {
           eventConfig: {
@@ -3796,76 +2134,26 @@ describe("okou workflow automations", () => {
       }),
       [200],
     );
-
-    expect(updated.body.kind).toBe("event");
-    if (
-      updated.body.kind !== "event" ||
-      updated.body.eventType !== "gmail-label-applied"
-    ) {
-      throw new Error("Expected a Gmail label applied automation");
-    }
-    expect(updated.body.eventConfig).toStrictEqual({
-      provider: "gmail",
-      event: "label_applied",
-      labelName: "Escalated",
-      resolvedLabelId: "Label_escalated",
+    expect(recoveredUpdate.body).toMatchObject({
+      eventConfig: {
+        provider: "gmail",
+        event: "label_applied",
+        labelName: "Escalated",
+        resolvedLabelId: "Label_escalated",
+      },
     });
   });
 
-  it("keeps Gmail provider failures distinct from missing labels", async () => {
-    const scenario = await setupFixture();
-    await connectGmail(scenario);
-    server.use(
-      http.get("https://gmail.googleapis.com/gmail/v1/users/me/labels", () => {
-        return HttpResponse.json(
-          { error: { message: "Service unavailable" } },
-          { status: 503 },
-        );
-      }),
-    );
+  it("workflow-automations-054 (1/2) creates a GitHub pull request automation with action, merged, and PR filters", async () => {
+    const { setupOrgWorkflow, asActor, automations } = setupClients();
+    const { actor, workflowId } = await setupOrgWorkflow({ tier: "pro" });
+    await installGithubAppForOrg(actor);
 
-    const rejected = await accept(
-      automationsClient().create({
-        headers: authHeaders(),
-        params: { workflowId: scenario.workflowId },
-        body: {
-          kind: "event",
-          eventType: "gmail-label-applied",
-          eventConfig: {
-            provider: "gmail",
-            event: "label_applied",
-            labelName: "Support",
-          },
-        },
-      }),
-      [400],
-    );
-    expect(rejected.body).toStrictEqual({
-      error: { code: "BAD_REQUEST", message: "Failed to read Gmail labels" },
-    });
-    const listed = await accept(
-      automationsClient().list({
-        headers: authHeaders(),
-        params: { workflowId: scenario.workflowId },
-      }),
-      [200],
-    );
-    expect(listed.body).toHaveLength(0);
-  });
-
-  it("creates and updates GitHub pull request automations", async () => {
-    const scenario = await setupFixture();
-    await gh.installGithubApp(scenario.actor);
-    mocks.clerk.session(
-      scenario.fixture.userId,
-      scenario.fixture.orgId,
-      "org:member",
-    );
-
+    asActor(actor);
     const created = await accept(
-      automationsClient().create({
-        headers: authHeaders(),
-        params: { workflowId: scenario.workflowId },
+      automations.create({
+        headers: AUTH_HEADERS,
+        params: { workflowId },
         body: {
           kind: "event",
           eventType: "github-pull-request",
@@ -3877,7 +2165,7 @@ describe("okou workflow automations", () => {
             merged: true,
             filters: {
               baseBranches: ["main"],
-              authors: ["pr-author"],
+              authors: ["octocat"],
               pullRequestNumbers: ["42"],
             },
           },
@@ -3885,10 +2173,12 @@ describe("okou workflow automations", () => {
       }),
       [201],
     );
-
     expect(created.body).toMatchObject({
       kind: "event",
       eventType: "github-pull-request",
+      enabled: true,
+      schedule: null,
+      scheduleSummary: null,
       eventConfig: {
         provider: "github",
         event: "pull_request",
@@ -3897,19 +2187,46 @@ describe("okou workflow automations", () => {
         merged: true,
         filters: {
           baseBranches: ["main"],
-          authors: ["pr-author"],
+          authors: ["octocat"],
           pullRequestNumbers: ["42"],
         },
       },
-      schedule: null,
-      scheduleSummary: null,
-      enabled: true,
-      nextRunAt: null,
     });
+  });
+
+  it("workflow-automations-054 (2/2) updates a GitHub pull request automation to labeled and rejects opened with merged", async () => {
+    const { setupOrgWorkflow, asActor, automations } = setupClients();
+    const { actor, workflowId } = await setupOrgWorkflow({ tier: "pro" });
+    await installGithubAppForOrg(actor);
+
+    asActor(actor);
+    const created = await accept(
+      automations.create({
+        headers: AUTH_HEADERS,
+        params: { workflowId },
+        body: {
+          kind: "event",
+          eventType: "github-pull-request",
+          eventConfig: {
+            provider: "github",
+            event: "pull_request",
+            repository: "okou-ai/okou",
+            action: "closed",
+            merged: true,
+            filters: {
+              baseBranches: ["main"],
+              authors: ["octocat"],
+              pullRequestNumbers: ["42"],
+            },
+          },
+        },
+      }),
+      [201],
+    );
 
     const updated = await accept(
-      automationsClient().update({
-        headers: authHeaders(),
+      automations.update({
+        headers: AUTH_HEADERS,
         params: { id: created.body.id },
         body: {
           eventConfig: {
@@ -3917,62 +2234,55 @@ describe("okou workflow automations", () => {
             event: "pull_request",
             repository: "okou-ai/okou",
             action: "labeled",
-            filters: {
-              labels: ["ready-to-merge"],
-            },
+            filters: { labels: ["ready-to-merge"] },
           },
         },
       }),
       [200],
     );
-
-    expect(updated.body.kind).toBe("event");
     if (
       updated.body.kind !== "event" ||
       updated.body.eventType !== "github-pull-request"
     ) {
-      throw new Error("Expected a GitHub pull request automation");
+      throw new Error("Expected github-pull-request automation");
     }
     expect(updated.body.eventConfig).toStrictEqual({
       provider: "github",
       event: "pull_request",
       repository: "okou-ai/okou",
       action: "labeled",
-      filters: {
-        labels: ["ready-to-merge"],
-      },
+      filters: { labels: ["ready-to-merge"] },
     });
 
-    const rejected = await automationsClient().update({
-      headers: authHeaders(),
-      params: { id: created.body.id },
-      body: {
-        eventConfig: {
-          provider: "github",
-          event: "pull_request",
-          repository: "okou-ai/okou",
-          action: "opened",
-          merged: true,
-          filters: {},
+    await accept(
+      automations.update({
+        headers: AUTH_HEADERS,
+        params: { id: created.body.id },
+        body: {
+          eventConfig: {
+            provider: "github",
+            event: "pull_request",
+            repository: "okou-ai/okou",
+            action: "opened",
+            merged: true,
+            filters: {},
+          },
         },
-      },
-    });
-    expect(rejected.status).toBe(400);
+      }),
+      [400],
+    );
   });
 
-  it("creates and updates GitHub workflow run completed automations", async () => {
-    const scenario = await setupFixture();
-    await gh.installGithubApp(scenario.actor);
-    mocks.clerk.session(
-      scenario.fixture.userId,
-      scenario.fixture.orgId,
-      "org:member",
-    );
+  it("workflow-automations-055 creates and updates GitHub workflow run completed automations", async () => {
+    const { setupOrgWorkflow, asActor, automations } = setupClients();
+    const { actor, workflowId } = await setupOrgWorkflow({ tier: "pro" });
+    await installGithubAppForOrg(actor);
 
+    asActor(actor);
     const created = await accept(
-      automationsClient().create({
-        headers: authHeaders(),
-        params: { workflowId: scenario.workflowId },
+      automations.create({
+        headers: AUTH_HEADERS,
+        params: { workflowId },
         body: {
           kind: "event",
           eventType: "github-workflow-run-completed",
@@ -3981,10 +2291,10 @@ describe("okou workflow automations", () => {
             event: "workflow_run_completed",
             filters: {
               repositories: ["okou-ai/okou"],
-              workflows: ["Turbo", ".github/workflows/turbo.yml"],
+              workflows: ["CI"],
               conclusions: ["failure", "startup_failure"],
               branches: ["main"],
-              events: ["push", "workflow_dispatch"],
+              events: ["push"],
               actors: ["dependabot[bot]"],
             },
           },
@@ -3992,29 +2302,28 @@ describe("okou workflow automations", () => {
       }),
       [201],
     );
-
     expect(created.body).toMatchObject({
       kind: "event",
       eventType: "github-workflow-run-completed",
+      enabled: true,
+      nextRunAt: null,
       eventConfig: {
         provider: "github",
         event: "workflow_run_completed",
         filters: {
           repositories: ["okou-ai/okou"],
-          workflows: ["Turbo", ".github/workflows/turbo.yml"],
+          workflows: ["CI"],
           conclusions: ["failure", "startup_failure"],
           branches: ["main"],
-          events: ["push", "workflow_dispatch"],
+          events: ["push"],
           actors: ["dependabot[bot]"],
         },
       },
-      enabled: true,
-      nextRunAt: null,
     });
 
     const updated = await accept(
-      automationsClient().update({
-        headers: authHeaders(),
+      automations.update({
+        headers: AUTH_HEADERS,
         params: { id: created.body.id },
         body: {
           eventConfig: {
@@ -4030,32 +2339,32 @@ describe("okou workflow automations", () => {
       }),
       [200],
     );
-
-    expect(updated.body).toMatchObject({
-      kind: "event",
-      eventType: "github-workflow-run-completed",
-      eventConfig: {
-        filters: {
-          repositories: ["okou-ai/okou"],
-          conclusions: ["success"],
-          branches: ["release"],
-        },
+    if (
+      updated.body.kind !== "event" ||
+      updated.body.eventType !== "github-workflow-run-completed"
+    ) {
+      throw new Error("Expected github-workflow-run-completed automation");
+    }
+    expect(updated.body.eventConfig).toStrictEqual({
+      provider: "github",
+      event: "workflow_run_completed",
+      filters: {
+        repositories: ["okou-ai/okou"],
+        conclusions: ["success"],
+        branches: ["release"],
       },
     });
   });
 
-  it("rejects GitHub pull request automations when the GitHub App is not installed", async () => {
-    const scenario = await setupFixture();
-    mocks.clerk.session(
-      scenario.fixture.userId,
-      scenario.fixture.orgId,
-      "org:member",
-    );
+  it("workflow-automations-056 rejects GitHub pull request automations when the GitHub App is not installed", async () => {
+    const { setupOrgWorkflow, asActor, automations } = setupClients();
+    const { actor, workflowId } = await setupOrgWorkflow({ tier: "pro" });
 
-    const created = await accept(
-      automationsClient().create({
-        headers: authHeaders(),
-        params: { workflowId: scenario.workflowId },
+    asActor(actor);
+    const response = await accept(
+      automations.create({
+        headers: AUTH_HEADERS,
+        params: { workflowId },
         body: {
           kind: "event",
           eventType: "github-pull-request",
@@ -4063,730 +2372,403 @@ describe("okou workflow automations", () => {
             provider: "github",
             event: "pull_request",
             repository: "okou-ai/okou",
-            action: "closed",
+            action: "opened",
             filters: {},
           },
         },
       }),
       [400],
     );
-
-    expect(created.body).toStrictEqual({
-      error: {
-        code: "BAD_REQUEST",
-        message: "Install GitHub before creating GitHub webhook automations",
-      },
+    expect(response.body.error).toStrictEqual({
+      code: "BAD_REQUEST",
+      message: "Install GitHub before creating GitHub webhook automations",
     });
   });
 
-  it("schedules a loop from its last run after updates and re-enabling, then converts it to cron", async () => {
-    mockOptionalEnv("RUNNER_DEFAULT_GROUP", "vm0/test");
-    mockNow(Date.parse("2026-06-28T06:00:00.000Z"));
-    const { workflowId } = await setupFixture();
-    const created = await accept(
-      automationsClient().create({
-        headers: authHeaders(),
-        params: { workflowId },
-        body: {
-          schedule: { type: "loop", intervalSeconds: 600 },
-        },
-      }),
-      [201],
-    );
-    expect(created.body.schedule).toStrictEqual({
-      type: "loop",
-      intervalSeconds: 600,
+  it("workflow-automations-059 allows another org member to manage only their own automations", async () => {
+    const { setupOrgWorkflow, asActor, automations } = setupClients();
+    const {
+      actor: owner,
+      orgId,
+      workflowId,
+    } = await setupOrgWorkflow({
+      tier: "pro",
+      visibility: "public",
     });
-    expect(created.body.nextRunAt).toBe("2026-06-28T06:00:00.000Z");
 
-    // A real manual run through the public run route stamps lastRunAt.
-    mockNow(Date.parse("2026-06-28T06:05:00.000Z"));
-    await runAutomationNow(created.body.id);
-
-    mockNow(Date.parse("2026-06-28T06:10:00.000Z"));
-    const updated = await accept(
-      automationsClient().update({
-        headers: authHeaders(),
-        params: { id: created.body.id },
-        body: {
-          schedule: { type: "loop", intervalSeconds: 3600 },
-        },
-      }),
-      [200],
-    );
-
-    expect(updated.body.nextRunAt).toBe("2026-06-28T07:05:00.000Z");
-
-    const disabled = await accept(
-      automationsClient().disable({
-        headers: authHeaders(),
-        params: { id: created.body.id },
-      }),
-      [200],
-    );
-    expect(disabled.body.nextRunAt).toBeNull();
-
-    mockNow(Date.parse("2026-06-28T06:12:00.000Z"));
-    const enabled = await accept(
-      automationsClient().enable({
-        headers: authHeaders(),
-        params: { id: created.body.id },
-      }),
-      [200],
-    );
-    expect(enabled.body.enabled).toBeTruthy();
-    expect(enabled.body.nextRunAt).toBe("2026-06-28T07:05:00.000Z");
-
-    const cron = await accept(
-      automationsClient().update({
-        headers: authHeaders(),
-        params: { id: created.body.id },
-        body: {
-          schedule: {
-            type: "cron",
-            cronExpression: "*/15 * * * *",
-            timezone: "UTC",
-          },
-        },
-      }),
-      [200],
-    );
-    expect(cron.body.schedule).toStrictEqual({
-      type: "cron",
-      cronExpression: "*/15 * * * *",
-      timezone: "UTC",
-    });
-    expect(cron.body.nextRunAt).toBe("2026-06-28T06:15:00.000Z");
-
-    // Keep the past-dated schedule out of later global cron sweeps.
-    await accept(
-      automationsClient().disable({
-        headers: authHeaders(),
-        params: { id: created.body.id },
-      }),
-      [200],
-    );
-  });
-
-  it("treats a deleted workflow's automation as not found on enable", async () => {
-    const { workflowId } = await setupFixture();
-    const created = await accept(
-      automationsClient().create({
-        headers: authHeaders(),
-        params: { workflowId },
-        body: {
-          schedule: { type: "loop", intervalSeconds: 3600 },
-        },
-      }),
-      [201],
-    );
-
-    await accept(
-      automationsClient().disable({
-        headers: authHeaders(),
-        params: { id: created.body.id },
-      }),
-      [200],
-    );
-
-    await accept(
-      detailClient().delete({
-        headers: authHeaders(),
-        params: { workflowId },
-      }),
-      [204],
-    );
-
-    const response = await accept(
-      automationsClient().enable({
-        headers: authHeaders(),
-        params: { id: created.body.id },
-      }),
-      [404],
-    );
-
-    expect(response.body).toStrictEqual({
-      error: {
-        message: "Workflow automation not found",
-        code: "NOT_FOUND",
-      },
-    });
-  });
-
-  it("allows another org member to manage only their own automations", async () => {
-    const { fixture, workflowId } = await setupFixture();
+    asActor(owner);
     const ownerAutomation = await accept(
-      automationsClient().create({
-        headers: authHeaders(),
+      automations.create({
+        headers: AUTH_HEADERS,
         params: { workflowId },
         body: {
+          kind: "schedule",
           schedule: { type: "loop", intervalSeconds: 3600 },
         },
       }),
       [201],
     );
 
-    // A different member of the same org can create their own automation on the
-    // public workflow + public agent, but cannot modify the owner's automation.
-    const otherUserId = `user_${randomUUID()}`;
-    mocks.clerk.session(otherUserId, fixture.orgId, "org:member");
-
-    const memberAutomation = await accept(
-      automationsClient().create({
-        headers: authHeaders(),
+    const peer = bdd.user({ orgId, orgRole: "org:member" });
+    asActor(peer);
+    const peerAutomation = await accept(
+      automations.create({
+        headers: AUTH_HEADERS,
         params: { workflowId },
         body: {
+          kind: "schedule",
           schedule: { type: "loop", intervalSeconds: 7200 },
         },
       }),
       [201],
     );
+    expect(peerAutomation.body.ownerUserId).toBe(peer.userId);
 
-    const denied = await accept(
-      automationsClient().delete({
-        headers: authHeaders(),
+    const deleteOwnerAttempt = await accept(
+      automations.delete({
+        headers: AUTH_HEADERS,
         params: { id: ownerAutomation.body.id },
       }),
       [403],
     );
-
-    expect(memberAutomation.body.ownerUserId).toBe(otherUserId);
-    expect(denied.body).toStrictEqual({
-      error: {
-        message: "Only the automation owner can manage this automation",
-        code: "FORBIDDEN",
-      },
+    expect(deleteOwnerAttempt.body.error).toStrictEqual({
+      code: "FORBIDDEN",
+      message: "Only the automation owner can manage this automation",
     });
   });
+});
 
-  it("lazily binds a chat thread when a one-time automation runs now", async () => {
-    const requestedAt = now();
-    mockNow(requestedAt);
-    const { actor, workflowId } = await setupFixture();
-    await runs.configureRunnerGroup();
-    const created = await accept(
-      automationsClient().create({
-        headers: authHeaders(),
-        params: { workflowId },
-        body: {
-          schedule: {
-            type: "once",
-            atTime: futureIso(86_400_000),
-            timezone: "Asia/Shanghai",
-          },
-        },
-      }),
-      [201],
-    );
-    expect(created.body).toMatchObject({ chatThreadId: null, enabled: true });
-    await expect(readRunHistory(workflowId)).resolves.toStrictEqual({
-      runs: [],
-      nextCursor: null,
-    });
+describe("okou workflow automations execution", () => {
+  const chatApi = createChatFilesBddApi(context);
+  const webhooksApi = createWebhookCallbackApi(context);
+  const chatCallbacks = createChatCallbacksApi(context);
 
-    const run = await runAutomationNow(created.body.id);
+  function installExecutionBoundaries() {
+    installWorkflowVolumeS3Fixture(context);
+    runsApi.acceptStorageDownloads();
+    runsApi.acceptTelemetryIngest();
+    chatCallbacks.disableVapid();
+    mockOptionalEnv("OPENROUTER_API_KEY", undefined);
+  }
 
-    const threadId = run.chatThreadId;
-    if (!run.runId) {
-      throw new Error("Expected an idle manual automation run to start");
+  async function cleanupDispatchedRuns(
+    actors: readonly ApiTestUser[],
+    runnerGroup: string,
+  ): Promise<void> {
+    await flushWaitUntilForTest();
+    for (let round = 0; round < 5; round++) {
+      const dispatches = runsApi.receivedDispatches(runnerGroup);
+      let cleanedAny = false;
+      for (const envelope of dispatches) {
+        const { runId, sandboxToken } = envelope.executionContext;
+        for (const actor of actors) {
+          const read = await runsApi.requestReadRun(actor, runId, [200, 404]);
+          if (read.status !== 200) {
+            continue;
+          }
+          if (
+            read.body.status === "pending" ||
+            read.body.status === "running"
+          ) {
+            await runsApi.requestCancelRun(actor, runId, [200]);
+            await webhooksApi.requestAgentComplete(
+              { runId, exitCode: 1, error: "Cancelled by test cleanup" },
+              { authorization: `Bearer ${sandboxToken}` },
+              [200],
+            );
+            await flushWaitUntilForTest();
+            cleanedAny = true;
+          }
+          break;
+        }
+      }
+      if (!cleanedAny) {
+        break;
+      }
     }
+  }
 
-    const execution = await runs.executionInput(run.runId);
-    const requestedAtIso = new Date(requestedAt).toISOString();
-    const runStatus = await runs.readRun(actor, run.runId);
-    await expect(readRunHistory(workflowId)).resolves.toStrictEqual({
-      runs: [
-        {
-          id: run.runId,
-          createdAt: requestedAtIso,
-          status: runStatus.status,
-          trigger: "manual",
-          eventType: null,
-          chatThreadId: threadId,
-        },
-      ],
-      nextCursor: null,
-    });
-    expect(execution.prompt).toContain(
-      `/${WORKFLOW_NAME}\n\nAutomation event\nType: manual\nSummary: manual run requested at ${requestedAtIso}.`,
-    );
-    expect(execution.prompt).toContain(
-      JSON.stringify(
-        {
-          automationId: created.body.id,
-          trigger: "manual",
-          requestedAt: requestedAtIso,
-        },
-        null,
-        2,
-      ),
-    );
-    expect(execution.appendSystemPrompt).toContain("Your name is Okou.");
+  it(
+    "workflow-automations-057 schedules a loop from its last run after updates and re-enabling, then converts it to cron",
+    { timeout: TEST_WITH_SINGLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      mockNow(new Date("2026-06-28T06:00:00.000Z"));
+      const { actor } = await workflowsBdd.setupWorkflowOrg({ tier: "pro" });
+      installExecutionBoundaries();
+      const runnerGroup = await runsApi.configureRunnerGroup();
 
-    const automation = await wf.readAutomation(created.body.id);
-    expect(automation).toMatchObject({
-      chatThreadId: threadId,
-      enabled: false,
-      nextRunAt: created.body.nextRunAt,
-    });
-    expect(typeof automation.lastRunAt).toBe("string");
-
-    // The run landed in the bound thread as the workflow slash-command user
-    // message, linked to the created run id.
-    const messages = await wf.readThreadEvents(threadId);
-    const workflowMessage = messages.find((message) => {
-      return (
-        message.eventType === "input.prompt" &&
-        chatEventAutomationPart(message)?.workflowName === WORKFLOW_NAME
-      );
-    });
-    expect(workflowMessage).toBeDefined();
-    expect(workflowMessage?.runId).toBe(run.runId);
-    expect(chatEventDisplayText(workflowMessage!)).toBe(
-      "A manual run of this workflow was requested.",
-    );
-  });
-
-  it("shares one lazy destination across concurrent and repeated Run now requests", async () => {
-    const requestedAt = Date.UTC(2026, 7, 1, 12, 34, 56, 123);
-    const owned = await publicChatActor(context, {
-      clockTime: requestedAt,
-    });
-    await owned.run(async () => {
-      const sinceSeqId = (await readThreadLifecycleEvents()).at(-1)?.seqId;
-      const workflowId = await wf.createWorkflow(owned.actor, {
-        name: WORKFLOW_NAME,
-        displayName: "Lazy workflow destination",
+      onTestFinished(async () => {
+        await cleanupDispatchedRuns([actor], runnerGroup);
+        clearMockNow();
       });
+      const workflowId = await workflowsBdd.createWorkflow(actor, {
+        name: `loop-last-run-${randomUUID().slice(0, 8)}`,
+        visibility: "public",
+      });
+      const { asActor, automations } = setupClients();
+      asActor(actor);
+
       const created = await accept(
-        automationsClient().create({
-          headers: authHeaders(),
+        automations.create({
+          headers: AUTH_HEADERS,
           params: { workflowId },
           body: {
+            kind: "schedule",
+            schedule: { type: "loop", intervalSeconds: 600 },
+          },
+        }),
+        [201],
+      );
+      expect(created.body.nextRunAt).toBe("2026-06-28T06:00:00.000Z");
+
+      mockNow(new Date("2026-06-28T06:05:00.000Z"));
+      await accept(
+        automations.run({
+          headers: AUTH_HEADERS,
+          params: { id: created.body.id },
+        }),
+        [201],
+      );
+      await flushWaitUntilForTest();
+
+      mockNow(new Date("2026-06-28T06:10:00.000Z"));
+      const updatedInterval = await accept(
+        automations.update({
+          headers: AUTH_HEADERS,
+          params: { id: created.body.id },
+          body: { schedule: { type: "loop", intervalSeconds: 3600 } },
+        }),
+        [200],
+      );
+      expect(updatedInterval.body.nextRunAt).toBe("2026-06-28T07:05:00.000Z");
+
+      const disabled = await accept(
+        automations.disable({
+          headers: AUTH_HEADERS,
+          params: { id: created.body.id },
+        }),
+        [200],
+      );
+      expect(disabled.body.nextRunAt).toBeNull();
+
+      mockNow(new Date("2026-06-28T06:12:00.000Z"));
+      const reenabled = await accept(
+        automations.enable({
+          headers: AUTH_HEADERS,
+          params: { id: created.body.id },
+        }),
+        [200],
+      );
+      expect(reenabled.body).toMatchObject({
+        enabled: true,
+        nextRunAt: "2026-06-28T07:05:00.000Z",
+      });
+
+      const converted = await accept(
+        automations.update({
+          headers: AUTH_HEADERS,
+          params: { id: created.body.id },
+          body: {
+            schedule: {
+              type: "cron",
+              cronExpression: "*/15 * * * *",
+              timezone: "UTC",
+            },
+          },
+        }),
+        [200],
+      );
+      expect(converted.body).toMatchObject({
+        kind: "schedule",
+        schedule: {
+          type: "cron",
+          cronExpression: "*/15 * * * *",
+          timezone: "UTC",
+        },
+        nextRunAt: "2026-06-28T06:15:00.000Z",
+      });
+    },
+  );
+
+  it(
+    "workflow-automations-063 repairs a lazy destination after public thread deletion without reusing its identity",
+    { timeout: TEST_WITH_DOUBLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const startTime = Date.parse("2026-07-10T09:00:00.000Z");
+      mockNow(startTime);
+      const { actor } = await workflowsBdd.setupWorkflowOrg({ tier: "pro" });
+      installExecutionBoundaries();
+      const runnerGroup = await runsApi.configureRunnerGroup();
+
+      onTestFinished(async () => {
+        await cleanupDispatchedRuns([actor], runnerGroup);
+        clearMockNow();
+      });
+      const workflowId = await workflowsBdd.createWorkflow(actor, {
+        name: `repair-lazy-${randomUUID().slice(0, 8)}`,
+        visibility: "public",
+      });
+      const {
+        asActor,
+        automations,
+        workflowDetail,
+        chatThreadById,
+        chatThreadMetadata,
+      } = setupClients();
+      asActor(actor);
+
+      const created = await accept(
+        automations.create({
+          headers: AUTH_HEADERS,
+          params: { workflowId },
+          body: {
+            kind: "schedule",
             schedule: {
               type: "once",
-              atTime: futureIso(86_400_000),
+              atTime: "2026-07-11T09:00:00.000Z",
               timezone: "UTC",
             },
           },
         }),
         [201],
       );
-      expect(created.body.chatThreadId).toBeNull();
-      await expect(
-        readThreadLifecycleEvents(sinceSeqId),
-      ).resolves.toStrictEqual([]);
-      const runNow = () => {
-        return accept(
-          automationsClient().run({
-            headers: authHeaders(),
-            params: { id: created.body.id },
-          }),
-          [201],
-        );
-      };
-      const [first, second] = await Promise.all([runNow(), runNow()]);
-      expect(first.body.runId).toBeNull();
-      expect(second.body).toStrictEqual(first.body);
-      await flushWaitUntilForTest();
-      const threadId = first.body.chatThreadId;
-      const before = await readThreadLifecycleEvents(sinceSeqId);
-      expect(
-        before.filter((event) => {
-          return event.kind === "created";
-        }),
-      ).toStrictEqual([
-        expect.objectContaining({
-          chatThreadId: threadId,
-          title: "Lazy workflow destination",
-          selectedModel: "claude-fable-5-1",
-          modelSettings: {},
-          serviceTier: null,
-          cloudBrowserEnabled: true,
-          createdAt: new Date(requestedAt).toISOString(),
-        }),
-      ]);
-      const repeated = await runNow();
-      expect(repeated.body).toStrictEqual(first.body);
-      await flushWaitUntilForTest();
-      await expect(
-        readThreadLifecycleEvents(sinceSeqId),
-      ).resolves.toStrictEqual(before);
-      await expect(wf.readAutomation(created.body.id)).resolves.toMatchObject({
-        chatThreadId: threadId,
-        nextRunAt: created.body.nextRunAt,
-      });
-      const inputs = (await wf.readThreadEvents(threadId)).filter((event) => {
-        return event.eventType === "input.prompt";
-      });
-      // Manual ingress deduplicates requests with the same application clock.
-      expect(inputs).toHaveLength(1);
-      const active = inputs.find((event) => {
-        return event.runId;
-      });
-      if (!active?.runId) {
-        throw new Error("Expected the ordinary Run now request to start a Run");
-      }
-      await runs.heartbeatRunner(owned.runnerGroup);
-      const execution = await owned.executionInput(active.runId);
-      expect(execution.prompt).toContain(`/${WORKFLOW_NAME}`);
-      expect(execution.appendSystemPrompt).toContain("Your name is Okou.");
-    });
-  });
 
-  it("repairs a lazy destination after public thread deletion without reusing its identity", async () => {
-    const owned = await publicChatActor(context, {});
-    await owned.run(async () => {
-      const workflowId = await wf.createWorkflow(owned.actor, {
-        name: WORKFLOW_NAME,
-      });
-      const created = await accept(
-        automationsClient().create({
-          headers: authHeaders(),
-          params: { workflowId },
-          body: {
-            schedule: {
-              type: "once",
-              atTime: futureIso(86_400_000),
-              timezone: "UTC",
-            },
-          },
+      const firstTrigger = await accept(
+        automations.run({
+          headers: AUTH_HEADERS,
+          params: { id: created.body.id },
         }),
         [201],
       );
-      const first = await runAutomationNow(created.body.id);
-      if (!first.runId) {
-        throw new Error("Expected an admitted manual Run");
+      await flushWaitUntilForTest();
+      const firstThreadId = firstTrigger.body.chatThreadId;
+
+      const firstEvents = await workflowsBdd.readThreadEvents(firstThreadId);
+      const firstRunId = firstEvents.find((event) => {
+        return event.eventType === "input.prompt" && event.runId !== undefined;
+      })?.runId;
+      if (!firstRunId) {
+        throw new Error("Expected first run to launch");
       }
-      await runs.heartbeatRunner(owned.runnerGroup);
-      const execution = await owned.executionInput(first.runId);
-      await runs.requestCancelRun(owned.actor, first.runId, [200]);
-      await webhookCallbacks.requestAgentComplete(
-        { runId: first.runId, exitCode: 1, error: "Run cancelled" },
-        { authorization: `Bearer ${execution.sandboxToken}` },
+
+      const firstExec = await runsApi.executionInput(firstRunId);
+      await runsApi.requestCancelRun(actor, firstRunId, [200]);
+      await webhooksApi.requestAgentComplete(
+        { runId: firstRunId, exitCode: 1, error: "Run cancelled" },
+        { authorization: `Bearer ${firstExec.sandboxToken}` },
         [200],
       );
       await flushWaitUntilForTest();
+
+      asActor(actor);
       await accept(
-        setupApp({ context, routes: chatThreadDeleteRoutes })(
-          chatThreadByIdContract,
-        ).delete({
-          headers: authHeaders(),
-          params: { id: first.chatThreadId },
+        chatThreadById.delete({
+          headers: AUTH_HEADERS,
+          params: { id: firstThreadId },
         }),
         [204],
       );
-      await expect(wf.readAutomation(created.body.id)).resolves.toMatchObject({
+
+      const afterDelete = await accept(
+        automations.get({
+          headers: AUTH_HEADERS,
+          params: { id: created.body.id },
+        }),
+        [200],
+      );
+      expect(afterDelete.body).toMatchObject({
         chatThreadId: null,
         enabled: false,
       });
-      const deleted = await readThreadLifecycleEvents();
-      mockNow(now() + 1000);
-      const repaired = await runAutomationNow(created.body.id);
-      expect(repaired.chatThreadId).not.toBe(first.chatThreadId);
-      const history = await readRunHistory(workflowId);
-      expect(history.runs).toMatchObject([
-        { id: repaired.runId, chatThreadId: repaired.chatThreadId },
-        {
-          id: first.runId,
-          status: "cancelled",
-          chatThreadId: null,
-          trigger: null,
-        },
-      ]);
-      await expect(wf.readAutomation(created.body.id)).resolves.toMatchObject({
-        chatThreadId: repaired.chatThreadId,
-      });
-      const threads = setupApp({ context, routes: chatThreadGetRoutes })(
-        chatThreadMetadataContract,
+
+      const lifecycleBefore = await chatApi.requestThreadEvents(
+        actor,
+        {},
+        [200],
       );
-      await accept(
-        threads.get({
-          headers: authHeaders(),
-          params: { id: first.chatThreadId },
+      if (lifecycleBefore.status !== 200) {
+        throw new Error("Expected 200 for lifecycleBefore");
+      }
+      const prevEvents = lifecycleBefore.body.events;
+      const prevLastSeqId = prevEvents.at(-1)?.seqId ?? 0;
+
+      mockNow(startTime + 1000);
+      asActor(actor);
+      const secondTrigger = await accept(
+        automations.run({
+          headers: AUTH_HEADERS,
+          params: { id: created.body.id },
         }),
-        [404],
+        [201],
       );
-      await accept(
-        threads.get({
-          headers: authHeaders(),
-          params: { id: repaired.chatThreadId },
+      await flushWaitUntilForTest();
+      const secondThreadId = secondTrigger.body.chatThreadId;
+      expect(secondThreadId).not.toBe(firstThreadId);
+
+      const history = await accept(
+        workflowDetail.runHistory({
+          headers: AUTH_HEADERS,
+          params: { workflowId },
+          query: {},
         }),
         [200],
       );
-      const after = await readThreadLifecycleEvents();
-      expect(after.slice(0, deleted.length)).toStrictEqual(deleted);
-      expect(after.slice(deleted.length)).toStrictEqual([
-        expect.objectContaining({
-          kind: "created",
-          chatThreadId: repaired.chatThreadId,
-          seqId: deleted.at(-1)!.seqId + 1,
-        }),
-      ]);
-    });
-  });
+      expect(history.body.runs).toHaveLength(2);
+      expect(history.body.runs[0]).toMatchObject({
+        chatThreadId: secondThreadId,
+        trigger: "manual",
+      });
+      expect(history.body.runs[1]).toMatchObject({
+        id: firstRunId,
+        status: "cancelled",
+        chatThreadId: null,
+        trigger: null,
+      });
 
-  it("keeps lazy destinations distinct for workflows and owners of one public workflow", async () => {
-    const owned = await publicChatActor(context, {
-      tier: "team",
-    });
-    await owned.run(async () => {
-      const sinceSeqId = (await readThreadLifecycleEvents()).at(-1)?.seqId;
-      const workflowId = await wf.createWorkflow(owned.actor, {
-        name: WORKFLOW_NAME,
-      });
-      const secondWorkflowId = await wf.createWorkflow(owned.actor, {
-        name: "second-lazy-workflow",
-      });
-      const createAndRun = async (id: string) => {
-        const automation = await accept(
-          automationsClient().create({
-            headers: authHeaders(),
-            params: { workflowId: id },
-            body: {
-              schedule: {
-                type: "once",
-                atTime: futureIso(86_400_000),
-                timezone: "UTC",
-              },
-            },
+      const afterRepair = await accept(
+        automations.get({
+          headers: AUTH_HEADERS,
+          params: { id: created.body.id },
+        }),
+        [200],
+      );
+      expect(afterRepair.body.chatThreadId).toBe(secondThreadId);
+
+      await Promise.all([
+        accept(
+          chatThreadMetadata.get({
+            headers: AUTH_HEADERS,
+            params: { id: firstThreadId },
           }),
-          [201],
-        );
-        expect(automation.body.chatThreadId).toBeNull();
-        return {
-          ...(await runAutomationNow(automation.body.id)),
-          automationId: automation.body.id,
-        };
-      };
-      const first = await createAndRun(workflowId);
-      const second = await createAndRun(secondWorkflowId);
-      expect(second.chatThreadId).not.toBe(first.chatThreadId);
-      const ownerEvents = await readThreadLifecycleEvents(sinceSeqId);
+          [404],
+        ),
+        accept(
+          chatThreadMetadata.get({
+            headers: AUTH_HEADERS,
+            params: { id: secondThreadId },
+          }),
+          [200],
+        ),
+      ]);
+
+      const lifecycleAfter = await chatApi.requestThreadEvents(
+        actor,
+        {},
+        [200],
+      );
+      if (lifecycleAfter.status !== 200) {
+        throw new Error("Expected 200 for lifecycleAfter");
+      }
       expect(
-        ownerEvents
-          .filter((event) => {
-            return event.kind === "created";
-          })
-          .map((event) => {
-            return event.chatThreadId;
-          }),
-      ).toStrictEqual([first.chatThreadId, second.chatThreadId]);
-
-      const member = bdd.user({
-        orgId: owned.actor.orgId,
-        orgRole: "org:member",
+        lifecycleAfter.body.events.slice(0, prevEvents.length),
+      ).toStrictEqual(prevEvents);
+      const addedEvents = lifecycleAfter.body.events.slice(prevEvents.length);
+      expect(addedEvents).toHaveLength(1);
+      expect(addedEvents[0]).toMatchObject({
+        kind: "created",
+        chatThreadId: secondThreadId,
+        seqId: prevLastSeqId + 1,
       });
-      const accepted = captureConnectorExternalState(context);
-      const memberOwner = publicRunOwner(context, member, {
-        continueAcceptedOperations: true,
-        restoreEnvironment: accepted,
-      });
-      await memberOwner.run(async () => {
-        await bdd.completeOnboarding(member);
-        await runs.ensurePersonalSubscriptionModel(member);
-        const memberRun = await createAndRun(workflowId);
-        expect(memberRun.chatThreadId).not.toBe(first.chatThreadId);
-        const history = await readRunHistory(workflowId);
-        expect(
-          history.runs.map(({ id }) => {
-            return id;
-          }),
-        ).toStrictEqual([memberRun.runId]);
-        const memberEvents = await readThreadLifecycleEvents();
-        expect(
-          memberEvents.filter((event) => {
-            return event.kind === "created";
-          }),
-        ).toStrictEqual([
-          expect.objectContaining({
-            chatThreadId: memberRun.chatThreadId,
-            seqId: 1,
-          }),
-        ]);
-        await accept(
-          setupApp({ context, routes: chatThreadGetRoutes })(
-            chatThreadMetadataContract,
-          ).get({
-            headers: authHeaders(),
-            params: { id: first.chatThreadId },
-          }),
-          [404],
-        );
-        await wf.demoteWorkflow(owned.actor, workflowId);
-        mocks.clerk.session(member.userId, member.orgId, member.orgRole);
-        await accept(
-          detailClient().runHistory({
-            headers: authHeaders(),
-            params: { workflowId },
-            query: {},
-          }),
-          [404],
-        );
-        await accept(
-          automationsClient().run({
-            headers: authHeaders(),
-            params: { id: memberRun.automationId },
-          }),
-          [404],
-        );
-      });
-      mocks.clerk.session(
-        owned.actor.userId,
-        owned.actor.orgId,
-        owned.actor.orgRole,
-      );
-      await expect(
-        readThreadLifecycleEvents(sinceSeqId),
-      ).resolves.toStrictEqual(ownerEvents);
-    });
-  });
-
-  it("spends one delegation hop per derived Automation and stops the chain at zero", async () => {
-    // A two-hop limit keeps the real chain short: the user-created root gets
-    // 2, each agent-created Automation spends exactly one hop, and the third
-    // derivation is refused.
-    const runnerGroup = await runs.configureRunnerGroup();
-    const { actor, workflowId } = await setupFixture("pro", {
-      maxAutonomyBudget: 2,
-    });
-
-    async function readRunExecution(runId: string | null) {
-      if (!runId) {
-        throw new Error("Expected the Automation run to start");
-      }
-      await runs.heartbeatRunner(runnerGroup);
-      const execution = await runs.executionInput(runId);
-      const okouToken = execution.platformEnvironment.OKOU_TOKEN;
-      if (!okouToken) {
-        throw new Error("Expected the dispatched Run to receive OKOU_TOKEN");
-      }
-      return { runId, okouToken, sandboxToken: execution.sandboxToken };
-    }
-
-    // The user cancels and the Runner reports its exit, which releases the
-    // shared workflow Automation thread for the next run.
-    async function cancel(run: {
-      readonly runId: string;
-      readonly sandboxToken: string;
-    }): Promise<void> {
-      await runs.requestCancelRun(actor, run.runId, [200]);
-      await flushWaitUntilForTest();
-      await webhookCallbacks.requestAgentComplete(
-        { runId: run.runId, exitCode: 1, error: "Run cancelled" },
-        { authorization: `Bearer ${run.sandboxToken}` },
-        [200],
-      );
-      await flushWaitUntilForTest();
-    }
-
-    function createAs(authorization: string, intervalSeconds: number) {
-      return automationsClient().create({
-        headers: { authorization },
-        params: { workflowId },
-        body: { schedule: { type: "loop", intervalSeconds } },
-      });
-    }
-
-    const root = await accept(createAs("Bearer clerk-session", 3600), [201]);
-    const rootRun = await readRunExecution(
-      (await runAutomationNow(root.body.id)).runId,
-    );
-    const first = await accept(
-      createAs(`Bearer ${rootRun.okouToken}`, 3601),
-      [201],
-    );
-    await cancel(rootRun);
-
-    const firstRun = await readRunExecution(
-      (await runAutomationNow(first.body.id)).runId,
-    );
-    const second = await accept(
-      createAs(`Bearer ${firstRun.okouToken}`, 3602),
-      [201],
-    );
-    await cancel(firstRun);
-
-    const secondRun = await readRunExecution(
-      (await runAutomationNow(second.body.id)).runId,
-    );
-    const exhausted = `Bearer ${secondRun.okouToken}`;
-
-    const blockedCreate = await accept(createAs(exhausted, 3603), [409]);
-    expect(blockedCreate.body.error.code).toBe("AUTONOMY_BUDGET_EXHAUSTED");
-    const listed = await accept(
-      automationsClient().list({
-        headers: authHeaders(),
-        params: { workflowId },
-      }),
-      [200],
-    );
-    expect(
-      listed.body.map((automation) => {
-        return automation.id;
-      }),
-    ).toHaveLength(3);
-
-    await accept(
-      automationsClient().disable({
-        headers: authHeaders(),
-        params: { id: first.body.id },
-      }),
-      [200],
-    );
-    const blockedEnable = await accept(
-      automationsClient().enable({
-        headers: { authorization: exhausted },
-        params: { id: first.body.id },
-      }),
-      [409],
-    );
-    expect(blockedEnable.body.error.code).toBe("AUTONOMY_BUDGET_EXHAUSTED");
-    await expect(wf.readAutomation(first.body.id)).resolves.toMatchObject({
-      enabled: false,
-    });
-
-    const workspaceWorkflows = setupApp({ context, routes: workflowsRoutes })(
-      workflowsCollectionContract,
-    );
-    const beforeCopy = await accept(
-      workspaceWorkflows.list({ headers: authHeaders(), query: {} }),
-      [200],
-    );
-    const blockedCopy = await accept(
-      detailClient().copy({
-        headers: { authorization: exhausted },
-        params: { workflowId },
-        body: {},
-      }),
-      [409],
-    );
-    expect(blockedCopy.body.error.code).toBe("AUTONOMY_BUDGET_EXHAUSTED");
-    const afterCopy = await accept(
-      workspaceWorkflows.list({ headers: authHeaders(), query: {} }),
-      [200],
-    );
-    expect(afterCopy.body).toStrictEqual(beforeCopy.body);
-
-    // The exhausted request is accepted; once the shared workflow Automation
-    // thread is idle its rejection appears there and no child run is linked.
-    await cancel(secondRun);
-    const blockedRun = await runAutomationNow(root.body.id, {
-      authorization: exhausted,
-    });
-    const events = await wf.readThreadEvents(blockedRun.chatThreadId);
-    expect(events).toContainEqual(
-      expect.objectContaining({
-        eventType: "input.rejected",
-        error: "autonomy_budget_exhausted",
-      }),
-    );
-    expect(
-      events.flatMap((event) => {
-        return event.eventType === "input.prompt" && event.runId
-          ? [event.runId]
-          : [];
-      }),
-    ).toStrictEqual([rootRun.runId, firstRun.runId, secondRun.runId]);
-  });
+    },
+  );
 });

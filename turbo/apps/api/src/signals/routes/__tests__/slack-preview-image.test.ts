@@ -1,161 +1,117 @@
-import { createHmac, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
+
 import { artifactOgContract } from "@okouai/api-contracts/contracts/artifact-og";
 import { escapeAttribute } from "entities/escape";
-import { http, HttpResponse } from "msw";
+import { HttpResponse, http } from "msw";
 import { describe, expect, it } from "vitest";
-import { array, object, record, string } from "zod";
-import {
-  setupAppWithRoutes,
-  setupRawAppRequestWithRoutes,
-} from "../../../__tests__/test-app";
+
 import { accept, testContext } from "../../../__tests__/test-context";
-import { env } from "../../../lib/env";
+import { setupApp } from "../../../__tests__/test-helpers";
 import { server } from "../../../mocks/server";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { artifactOgRoutes } from "../artifact-og";
-import { slackEventsRoutes } from "../slack-events";
-import { createBddApi } from "./helpers/api-bdd";
 import { createBddIntegrationApi } from "./helpers/api-bdd-integrations";
+import { createPublicSlackOrgApi } from "./helpers/slack-public-install";
 
 const context = testContext();
-const integrations = createBddIntegrationApi(context);
-const imageClient = setupAppWithRoutes({ context, routes: artifactOgRoutes })(
-  artifactOgContract,
-);
-const authorSlackUserId = "U_THUMBNAIL_SHARER";
 
-async function fixture() {
-  integrations.configureSlackAppMocks();
-  const user = createBddApi(context).user({ orgRole: "org:admin" });
-  if (!user.orgId) {
-    throw new Error("Expected an organization");
-  }
-  const actor = { ...user, orgId: user.orgId };
-  const { teamId } = await integrations.installSlackWorkspace(actor, {
-    botScopes: "chat:write,im:write,users:read,links:read,links:write",
-    installerSlackUserId: authorSlackUserId,
-  });
-  await flushWaitUntilForTest();
+const APP_ORIGIN = "https://app.okou.test";
+
+/** Installs the Slack bot with its default link scopes for a new workspace. */
+async function installedWorkspace(): Promise<string> {
+  const fixture = await createPublicSlackOrgApi(context).installOrg();
   context.mocks.slack.chat.unfurl.mockResolvedValue({ ok: true });
-  return { teamId };
+  return fixture.slackWorkspaceId;
 }
 
-/** Obtain capabilities through a real signed webhook, without signing test URLs. */
-async function previewUrls(teamId: string, sources: readonly string[]) {
-  const pages = sources.map((source, index) => {
-    const url = new URL(`/thumbnail-test/${index}`, env("APP_URL")).href;
-    server.use(
-      http.get(url, () => {
-        return HttpResponse.html(
-          `<head><meta property="og:title" content="Published title"><meta property="og:image" content="${escapeAttribute(source)}"></head>`,
-        );
-      }),
-    );
-    return url;
-  });
-  const body = JSON.stringify({
-    type: "event_callback",
-    team_id: teamId,
-    event_id: `Ev_${randomUUID()}`,
-    event: {
-      type: "link_shared",
-      channel: "C_PREVIEW",
-      user: authorSlackUserId,
-      message_ts: "1791618140.315329",
-      links: pages.map((url) => {
-        return { url };
-      }),
-    },
-  });
-  context.mocks.slack.chat.unfurl.mockClear();
-  await accept(
-    setupRawAppRequestWithRoutes({ context, routes: slackEventsRoutes })(
-      "/api/webhooks/slack/events",
-      {
-        method: "POST",
-        body,
-        headers: {
-          "content-type": "application/json",
-          ...integrations.signedSlackIngressHeaders(body),
-        },
-      },
-    ),
-    [200],
+/** An App page whose Open Graph image is the given URL. */
+function appPageWithImage(imageUrl: string): string {
+  const pageUrl = `${APP_ORIGIN}/pages/${randomUUID()}`;
+  const escaped = escapeAttribute(imageUrl);
+  server.use(
+    http.get(pageUrl, () => {
+      return new HttpResponse(
+        `<!doctype html><html><head><title>Preview page</title><meta property="og:image" content="${escaped}"></head><body></body></html>`,
+        { headers: { "content-type": "text/html; charset=utf-8" } },
+      );
+    }),
   );
+  return pageUrl;
+}
+
+/** Shares links in Slack and returns the image URL unfurled for each link. */
+async function unfurlImages(
+  workspaceId: string,
+  pageUrls: readonly string[],
+): Promise<Record<string, string | null>> {
+  const unfurl = context.mocks.slack.chat.unfurl;
+  unfurl.mockClear();
+  await createBddIntegrationApi(context).postSlackEvent(workspaceId, {
+    type: "link_shared",
+    channel: "C_PREVIEW",
+    message_ts: "1710000000.000100",
+    links: pageUrls.map((url) => {
+      return { url, domain: "app.okou.test" };
+    }),
+  });
   await flushWaitUntilForTest();
-  expect(context.mocks.slack.chat.unfurl).toHaveBeenCalledTimes(1);
-  const payload = object({
-    unfurls: record(
-      string(),
-      object({
-        blocks: array(
-          object({
-            type: string(),
-            image_url: string().optional(),
-          }),
-        ),
-      }),
-    ),
-  }).parse(context.mocks.slack.chat.unfurl.mock.calls[0]?.[0]);
-  return pages.map((page) => {
-    const image = payload.unfurls[page]?.blocks.find((block) => {
-      return block.type === "image";
-    })?.image_url;
-    return image ? new URL(image) : null;
-  });
-}
-
-function signedSource(url: URL | null | undefined) {
-  if (!url) {
-    throw new Error("Expected a transformed image URL");
+  // A link whose preview omits the image block maps to null.
+  const images: Record<string, string | null> = {};
+  for (const call of unfurl.mock.calls) {
+    const request = call[0] as {
+      readonly unfurls: Record<
+        string,
+        { readonly blocks: readonly { type: string; image_url?: string }[] }
+      >;
+    };
+    for (const [url, preview] of Object.entries(request.unfurls)) {
+      const image = preview.blocks.find((block) => {
+        return block.type === "image";
+      });
+      images[url] = image?.image_url ?? null;
+    }
   }
-  expect(url.origin).toBe(env("OKOU_PUBLIC_ARTIFACTS_BASE_URL"));
-  expect(url.pathname).toContain(
-    "/cdn-cgi/image/width=320,height=112,fit=scale-down,format=auto,quality=85,metadata=none/",
-  );
-  expect(url.href.length).toBeLessThanOrEqual(3000);
-  return new URL(url.href.split("metadata=none/")[1]!);
+  return images;
 }
 
-function readImage(url: URL) {
-  expect(url.origin).toBe(
-    new URL(string().parse(env("OKOU_API_BACKEND_URL"))).origin,
-  );
-  expect(url.pathname).toBe("/api/artifact-og/slack.png");
-  return imageClient.slackImage({
-    query: {
-      url: string().parse(url.searchParams.get("url")),
-      signature: string().parse(url.searchParams.get("signature")),
-    },
-  });
+function slackImageClient() {
+  return setupApp({ context, routes: artifactOgRoutes })(artifactOgContract);
+}
+
+/** Splits the public-artifacts Cloudflare transformation of an image URL. */
+function cloudflareTransformation(imageUrl: string): {
+  readonly directives: string;
+  readonly source: URL;
+} {
+  const url = new URL(imageUrl);
+  const [, cdn, image, directives, ...source] = url.pathname.split("/");
+  if (
+    url.origin !== "https://a.okou.io" ||
+    cdn !== "cdn-cgi" ||
+    image !== "image" ||
+    !directives ||
+    source.length === 0
+  ) {
+    throw new Error(`Expected a Cloudflare transformation: ${imageUrl}`);
+  }
+  return {
+    directives,
+    source: new URL(`${source.join("/")}${url.search}`),
+  };
 }
 
 describe("Slack preview image URLs", () => {
-  it("delivers a direct transformation URL whose signed source redirects to the literal original", async () => {
-    const f = await fixture();
-    const source =
-      "https://images.example.com/original?token=a%2Fb%2Bc&size=large";
-    const [url] = await previewUrls(f.teamId, [source]);
-    const adapter = signedSource(url);
-    expect(adapter.searchParams.get("url")).toBe(source);
-    const response = await accept(readImage(adapter), [302]);
-    expect(response.headers.get("location")).toBe(source);
-    expect(response.headers.get("cache-control")).toBe("private, no-store");
-    expect(response.headers.get("cdn-cache-control")).toBe("no-store");
-    expect(response.headers.get("cloudflare-cdn-cache-control")).toBe(
-      "no-store",
-    );
-    expect(response.headers.get("referrer-policy")).toBe("no-referrer");
-  });
+  it("slack-preview-image-002 keeps first-party file previews on the policy-gated thumbnail URL", async () => {
+    const workspaceId = await installedWorkspace();
+    const pageUrl = appPageWithImage("https://a.okou.io/0123456789.png");
 
-  it("uses the existing policy-gated thumbnail URL for first-party file grants", async () => {
-    const f = await fixture();
-    const [url] = await previewUrls(f.teamId, [
+    const images = await unfurlImages(workspaceId, [pageUrl]);
+
+    const image = new URL(images[pageUrl] ?? "missing:");
+    expect(`${image.origin}${image.pathname}`).toBe(
       "https://a.okou.io/0123456789.png",
-    ]);
-    expect(url?.origin).toBe("https://a.okou.io");
-    expect(url?.pathname).toBe("/0123456789.png");
-    expect(Object.fromEntries(url?.searchParams ?? [])).toStrictEqual({
+    );
+    expect(Object.fromEntries(image.searchParams)).toStrictEqual({
       thumbnail: "1",
       width: "320",
       height: "112",
@@ -164,70 +120,82 @@ describe("Slack preview image URLs", () => {
     });
   });
 
-  it("resolves republished nested CF images to their original instead of another derivative", async () => {
-    const f = await fixture();
-    const original = "https://images.example.com/cover?signature=a%2Fb";
-    const wrapped = `https://a.okou.io/cdn-cgi/image/width=500/https://cdn.vm7.io/cdn-cgi/image/height=200/${original}`;
-    const [url] = await previewUrls(f.teamId, [wrapped]);
-    const adapter = signedSource(url);
-    const response = await accept(readImage(adapter), [302]);
-    expect(response.headers.get("location")).toBe(original);
-  });
+  it("slack-preview-image-001 redirects the signed preview source to the literal original image", async () => {
+    const workspaceId = await installedWorkspace();
+    const original =
+      "https://images.example.com/original?token=a%2Fb%2Bc&size=large";
+    const pageUrl = appPageWithImage(original);
 
-  it("preserves HTTP, IPv6 and internal-host image sources for Cloudflare delivery", async () => {
-    const f = await fixture();
-    const sources = [
-      "http://10.0.0.1/cover.png",
-      "http://[fd00::1]/cover.png",
-      "https://internal.local/cover.png",
-    ];
-    const urls = await previewUrls(f.teamId, sources);
-    for (const [index, url] of urls.entries()) {
-      const response = await accept(readImage(signedSource(url)), [302]);
-      expect(response.headers.get("location")).toBe(sources[index]);
-    }
-  });
+    const images = await unfurlImages(workspaceId, [pageUrl]);
+    const imageUrl = images[pageUrl] ?? "";
 
-  it("keeps already-issued literal-URL HMAC capabilities resolving to originals", async () => {
-    const original = "https://images.example.com/legacy.png?token=a%2Fb";
-    const source = `https://a.okou.io/cdn-cgi/image/height=112/${original}`;
-    // Fixture from the deployed v1 issuer: the HMAC binds the literal CF URL.
-    const signature = createHmac("sha256", env("SECRETS_ENCRYPTION_KEY"))
-      .update("slack-preview-image:v1\0")
-      .update(source)
-      .digest("hex");
+    expect(imageUrl.length).toBeGreaterThan(0);
+    expect(imageUrl.length).toBeLessThanOrEqual(3000);
+    const { directives, source } = cloudflareTransformation(imageUrl);
+    expect(directives).toMatch(/^width=320,height=112,/u);
+    expect(`${source.origin}${source.pathname}`).toBe(
+      "https://api.okou.test/api/artifact-og/slack.png",
+    );
+    expect(source.searchParams.get("url")).toBe(original);
     const response = await accept(
-      imageClient.slackImage({
-        query: { url: source, signature },
+      slackImageClient().slackImage({
+        query: {
+          url: source.searchParams.get("url") ?? "",
+          signature: source.searchParams.get("signature") ?? "",
+        },
       }),
       [302],
     );
     expect(response.headers.get("location")).toBe(original);
+    expect(response.headers.get("cache-control")).toBe("private, no-store");
+    expect(response.headers.get("cdn-cache-control")).toBe("no-store");
+    expect(response.headers.get("cloudflare-cdn-cache-control")).toBe(
+      "no-store",
+    );
+    expect(response.headers.get("referrer-policy")).toBe("no-referrer");
   });
 
-  it("rejects modified signed capabilities and does not create nested adapters or unbounded Slack URLs", async () => {
-    const f = await fixture();
-    const [url] = await previewUrls(f.teamId, [
-      "https://images.example.com/cover.png",
+  it("slack-preview-image-006 rejects modified capabilities and refuses nested or unbounded image sources", async () => {
+    const workspaceId = await installedWorkspace();
+    const issuedPage = appPageWithImage("https://images.example.com/cover.png");
+    const issued = await unfurlImages(workspaceId, [issuedPage]);
+    const issuedImage = issued[issuedPage] ?? "";
+    const capability = cloudflareTransformation(issuedImage).source;
+    const url = capability.searchParams.get("url") ?? "";
+    const signature = capability.searchParams.get("signature") ?? "";
+    const otherSignature = `${signature.slice(0, -1)}${signature.endsWith("0") ? "1" : "0"}`;
+
+    const [changedUrl, changedSignature] = await Promise.all([
+      accept(
+        slackImageClient().slackImage({
+          query: { url: "https://images.example.com/other.png", signature },
+        }),
+        [403],
+      ),
+      accept(
+        slackImageClient().slackImage({
+          query: { url, signature: otherSignature },
+        }),
+        [403],
+      ),
     ]);
-    const adapter = signedSource(url);
-    const changedSource = new URL(adapter);
-    changedSource.searchParams.set(
-      "url",
-      "https://images.example.com/different.png",
-    );
-    await accept(readImage(changedSource), [403]);
-    const changedSignature = new URL(adapter);
-    changedSignature.searchParams.set("signature", "0".repeat(64));
-    await accept(readImage(changedSignature), [403]);
-    await expect(
-      previewUrls(f.teamId, [
-        adapter.href,
-        `https://a.okou.io/cdn-cgi/image/width=500/${url!.href}`,
-        `https://images.example.com/${"x".repeat(2048)}.png`,
-        "https://images.example.com:4444/cover.png",
-        `${env("APP_URL")}/artifacts/example.png`,
-      ]),
-    ).resolves.toStrictEqual([null, null, null, null, null]);
+    const rejectedPages = [
+      appPageWithImage(capability.href),
+      appPageWithImage(
+        `https://a.okou.io/cdn-cgi/image/width=640/${issuedImage}`,
+      ),
+      appPageWithImage(`https://images.example.com/${"a".repeat(2049)}.png`),
+      appPageWithImage("https://images.example.com:8443/cover.png"),
+      appPageWithImage(`${APP_ORIGIN}/artifacts/cover.png`),
+    ];
+    const images = await unfurlImages(workspaceId, rejectedPages);
+
+    expect(changedUrl.status).toBe(403);
+    expect(changedSignature.status).toBe(403);
+    expect(
+      rejectedPages.map((page) => {
+        return images[page];
+      }),
+    ).toStrictEqual([null, null, null, null, null]);
   });
 });

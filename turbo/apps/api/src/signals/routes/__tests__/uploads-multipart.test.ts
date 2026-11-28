@@ -1,229 +1,247 @@
 import { randomUUID } from "node:crypto";
-import { describe, expect, it } from "vitest";
-
-import {
-  AbortMultipartUploadCommand,
-  CompleteMultipartUploadCommand,
-  CreateMultipartUploadCommand,
-  GetObjectCommand,
-  HeadObjectCommand,
-  ListObjectsV2Command,
-  ListPartsCommand,
-  PutObjectCommand,
-} from "@aws-sdk/client-s3";
+import { Readable } from "node:stream";
 import { uploadsContract } from "@okouai/api-contracts/contracts/uploads";
 
-import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { createRouteMocks } from "./helpers/route-test";
-import { uploadsCompleteRoutes } from "../uploads-complete";
+import { accept, testContext } from "../../../__tests__/test-context";
+import { env } from "../../../lib/env";
 import { uploadsMultipartRoutes } from "../uploads-multipart";
 import { uploadsPrepareRoutes } from "../uploads-prepare";
-
-const uploadsTestRoutes = Object.freeze([
-  ...uploadsCompleteRoutes,
-  ...uploadsMultipartRoutes,
-  ...uploadsPrepareRoutes,
-]);
+import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
-const mocks = createRouteMocks(context);
+const headers = Object.freeze({ authorization: "Bearer clerk-session" });
+const MiB = 1024 * 1024;
 
-function apiClient() {
-  return setupApp({ context, routes: uploadsTestRoutes })(uploadsContract);
+interface Actor {
+  readonly userId: string;
+  readonly orgId: string | null;
 }
 
-function authHeaders() {
-  return { authorization: "Bearer clerk-session" };
+interface StorageOperation {
+  readonly name: string;
+  readonly input: Record<string, unknown>;
 }
 
-function useOrganizationlessUploads(userId: string) {
-  mocks.clerk.session(userId, null);
+interface StoredObject {
+  readonly size: number;
+  readonly contentType: string;
+  readonly metadata: Record<string, string>;
 }
 
-describe("multipart user artifact uploads", () => {
-  it.each(["complete", "abort"] as const)(
-    "preserves the public %s error when storage cannot find the multipart upload",
-    async (action) => {
-      mocks.clerk.session(`user_${randomUUID()}`, `org_${randomUUID()}`);
-      context.mocks.s3.send.mockImplementation((command) => {
-        expect(command).toBeInstanceOf(ListPartsCommand);
-        return Promise.reject(
-          Object.assign(new Error("Multipart upload not found"), {
-            name: "NoSuchUpload",
-          }),
-        );
-      });
-      const body = {
-        id: randomUUID(),
-        filename: "recording.mp4",
-        uploadId: randomUUID(),
+function signIn(actor: Actor) {
+  createRouteMocks(context).clerk.session(actor.userId, actor.orgId);
+  return setupApp({
+    context,
+    routes: [...uploadsPrepareRoutes, ...uploadsMultipartRoutes],
+  })(uploadsContract);
+}
+
+function member(): Actor {
+  return { userId: `user_${randomUUID()}`, orgId: `org_${randomUUID()}` };
+}
+
+/** In-memory R2 with a configurable multipart upload. */
+function installStorage(options: {
+  readonly uploadId: string;
+  readonly uploadedParts: number;
+  readonly completedObject?: (
+    operation: Record<string, unknown>,
+  ) => StoredObject;
+}) {
+  const objects = new Map<string, StoredObject>();
+  const operations: StorageOperation[] = [];
+  const signed: { url: string; expiresIn: number }[] = [];
+  const objectKey = (bucket: unknown, key: unknown) => {
+    return `${String(bucket)}/${String(key)}`;
+  };
+
+  context.mocks.s3.getSignedUrl.mockImplementation(
+    (_client: unknown, command: unknown, signing: unknown) => {
+      const { input } = command as {
+        readonly input: { readonly Bucket: string; readonly Key: string };
       };
-      const response =
-        action === "complete"
-          ? await accept(
-              apiClient().completeMultipart({
-                headers: authHeaders(),
-                body: { ...body, partCount: 1 },
-              }),
-              [500],
-            )
-          : await accept(
-              apiClient().abortMultipart({ headers: authHeaders(), body }),
-              [500],
-            );
-      expect(response.body).toStrictEqual({ error: "Internal server error" });
+      const expiresIn =
+        (signing as { readonly expiresIn?: number } | undefined)?.expiresIn ??
+        0;
+      const url = `https://r2.example.com/${input.Bucket}/${input.Key}?n=${signed.length}`;
+      signed.push({ url, expiresIn });
+      return Promise.resolve(url);
     },
   );
 
-  it("prepares 5 MiB parts for a large upload", async () => {
-    const userId = `user_${randomUUID()}`;
-    useOrganizationlessUploads(userId);
-    let publicRegistration: unknown;
-    context.mocks.s3.send.mockImplementation((command: unknown) => {
-      if (command instanceof ListObjectsV2Command) {
-        return Promise.resolve({ Contents: [] });
+  context.mocks.s3.send.mockImplementation((command: unknown) => {
+    const { constructor, input } = command as {
+      readonly constructor: { readonly name: string };
+      readonly input: Record<string, unknown>;
+    };
+    operations.push({ name: constructor.name, input });
+    const stored = objects.get(objectKey(input.Bucket, input.Key));
+    switch (constructor.name) {
+      case "CreateMultipartUploadCommand": {
+        return Promise.resolve({ UploadId: options.uploadId });
       }
-      if (command instanceof PutObjectCommand) {
-        expect(command.input.Bucket).toBe("test-hosted-sites");
-        publicRegistration = JSON.parse(String(command.input.Body));
-      }
-      if (command instanceof CreateMultipartUploadCommand) {
-        expect(publicRegistration).toMatchObject({
-          kind: "legacy-file",
-          filename: "recording.mp4",
-          contentType: "video/mp4",
-          audience: "public",
+      case "ListPartsCommand": {
+        return Promise.resolve({
+          Parts: Array.from({ length: options.uploadedParts }, (_, index) => {
+            return { PartNumber: index + 1, ETag: `"etag-${index + 1}"` };
+          }),
         });
-        return Promise.resolve({ UploadId: "multipart-upload-1" });
       }
-      return Promise.resolve({});
-    });
-    context.mocks.s3.getSignedUrl.mockImplementation(
-      (_client: unknown, command: unknown) => {
-        if (
-          typeof command === "object" &&
-          command !== null &&
-          "input" in command &&
-          typeof command.input === "object" &&
-          command.input !== null &&
-          "PartNumber" in command.input
-        ) {
-          return Promise.resolve(
-            `https://r2.example.com/part-${String(command.input.PartNumber)}`,
+      case "CompleteMultipartUploadCommand": {
+        if (options.completedObject) {
+          objects.set(
+            objectKey(input.Bucket, input.Key),
+            options.completedObject(input),
           );
         }
-        return Promise.resolve("https://r2.example.com/upload");
-      },
-    );
+        return Promise.resolve({});
+      }
+      case "ListObjectsV2Command": {
+        const prefix = `${String(input.Bucket)}/${String(input.Prefix ?? "")}`;
+        return Promise.resolve({
+          Contents: [...objects.entries()]
+            .filter(([key]) => {
+              return key.startsWith(prefix);
+            })
+            .map(([key, object]) => {
+              return {
+                Key: key.slice(String(input.Bucket).length + 1),
+                Size: object.size,
+                LastModified: new Date("2026-01-01T00:00:00.000Z"),
+              };
+            }),
+        });
+      }
+      case "HeadObjectCommand": {
+        if (!stored) {
+          return Promise.reject(
+            Object.assign(new Error("Not found"), {
+              name: "NotFound",
+              $metadata: { httpStatusCode: 404 },
+            }),
+          );
+        }
+        return Promise.resolve({
+          ContentLength: stored.size,
+          ContentType: stored.contentType,
+          LastModified: new Date("2026-01-01T00:00:00.000Z"),
+          Metadata: stored.metadata,
+        });
+      }
+      case "GetObjectCommand": {
+        if (!stored) {
+          return Promise.reject(
+            Object.assign(new Error("Not found"), {
+              name: "NoSuchKey",
+              $metadata: { httpStatusCode: 404 },
+            }),
+          );
+        }
+        return Promise.resolve({
+          ContentLength: stored.size,
+          ContentType: stored.contentType,
+          Body: Readable.from([Buffer.from("multipart-header-bytes")]),
+        });
+      }
+      default: {
+        return Promise.resolve({});
+      }
+    }
+  });
 
-    const response = await accept(
-      apiClient().prepare({
+  return { operations, signed };
+}
+
+const publicArtifactKey = /^artifacts\/[A-Za-z0-9_-]{10}\.mp4$/;
+const publicArtifactUrl = /^https:\/\/a\.okou\.io\/[A-Za-z0-9_-]{10}\.mp4$/;
+
+describe("multipart user artifact uploads", () => {
+  it("uploads-multipart-003 prepares 5 MiB parts for a large upload", async () => {
+    const storage = installStorage({
+      uploadId: "multipart-upload-1",
+      uploadedParts: 0,
+    });
+    const actor: Actor = { userId: `user_${randomUUID()}`, orgId: null };
+    const api = signIn(actor);
+
+    const prepared = await accept(
+      api.prepare({
+        headers,
         body: {
           filename: "recording.mp4",
           contentType: "video/mp4",
-          size: 20 * 1024 * 1024,
+          size: 20 * MiB,
           multipart: true,
         },
-        headers: authHeaders(),
       }),
       [200],
     );
 
-    expect(response.body).toMatchObject({
+    if (!("multipart" in prepared.body)) {
+      throw new Error("Expected a multipart upload");
+    }
+    expect(prepared.body).toMatchObject({
       filename: "recording.mp4",
       contentType: "video/mp4",
-      size: 20 * 1024 * 1024,
-      multipart: {
-        uploadId: "multipart-upload-1",
-        partSize: 5 * 1024 * 1024,
-        parts: [
-          { partNumber: 1, uploadUrl: "https://r2.example.com/part-1" },
-          { partNumber: 2, uploadUrl: "https://r2.example.com/part-2" },
-          { partNumber: 3, uploadUrl: "https://r2.example.com/part-3" },
-          { partNumber: 4, uploadUrl: "https://r2.example.com/part-4" },
-        ],
-      },
+      size: 20 * MiB,
     });
-    expect(response.body.url).toMatch(
-      /^https:\/\/a\.okou\.io\/[0-9a-z]{10}\.mp4$/u,
-    );
+    expect(prepared.body.url).toMatch(publicArtifactUrl);
+    expect(prepared.body.multipart.uploadId).toBe("multipart-upload-1");
+    expect(prepared.body.multipart.partSize).toBe(5 * MiB);
     expect(
-      context.mocks.s3.getSignedUrl.mock.calls.map((call) => {
-        return call[2];
+      prepared.body.multipart.parts.map((part) => {
+        return part.partNumber;
       }),
-    ).toStrictEqual(
-      Array.from({ length: 4 }, () => {
-        return { expiresIn: 172_800 };
-      }),
+    ).toStrictEqual([1, 2, 3, 4]);
+    for (const part of prepared.body.multipart.parts) {
+      expect(
+        storage.signed.find((entry) => {
+          return entry.url === part.uploadUrl;
+        })?.expiresIn,
+      ).toBe(172_800);
+    }
+
+    const names = storage.operations.map((operation) => {
+      return operation.name;
+    });
+    const registration = storage.operations.find((operation) => {
+      return (
+        operation.name === "PutObjectCommand" &&
+        String(operation.input.Body).includes('"legacy-file"')
+      );
+    });
+    expect(registration).toBeDefined();
+    const created = storage.operations.find((operation) => {
+      return operation.name === "CreateMultipartUploadCommand";
+    })!;
+    expect(names.indexOf("PutObjectCommand")).toBeLessThan(
+      names.indexOf("CreateMultipartUploadCommand"),
     );
-    const createCommand = context.mocks.s3.send.mock.calls
-      .map(([command]) => {
-        return command;
-      })
-      .find((command): command is CreateMultipartUploadCommand => {
-        return command instanceof CreateMultipartUploadCommand;
-      });
-    expect(createCommand?.input).toMatchObject({
-      Bucket: "test-user-artifacts",
-      Key: expect.stringMatching(/^artifacts\/[0-9a-z]{10}\.mp4$/u),
-      ContentType: "video/mp4",
-      Metadata: {
-        "artifact-id": response.body.id,
-        filename: "recording.mp4",
-        "public-brand": "okou",
-        "user-id": encodeURIComponent(userId),
-      },
+    expect(created.input.Bucket).toBe(env("R2_USER_ARTIFACTS_BUCKET_NAME"));
+    expect(String(created.input.Key)).toMatch(publicArtifactKey);
+    expect(created.input.Metadata).toMatchObject({
+      "artifact-id": prepared.body.id,
+      filename: "recording.mp4",
+      "public-brand": "okou",
+      "user-id": actor.userId,
     });
   });
 
-  it("prepares and completes a 5 GiB attachment within the 1000-part contract", async () => {
-    const userId = `user_${randomUUID()}`;
-    const orgId = `org_${randomUUID()}`;
-    mocks.clerk.session(userId, orgId);
-    const size = 5 * 1024 * 1024 * 1024;
-    const uploadedParts = Array.from({ length: 512 }, (_, index) => {
-      return { PartNumber: index + 1, ETag: `"etag-${index + 1}"` };
+  it("uploads-multipart-004 prepares and completes a 5 GiB attachment within the 1000-part contract", async () => {
+    const size = 5 * 1024 * MiB;
+    installStorage({
+      uploadId: "five-gib-upload",
+      uploadedParts: 512,
+      completedObject: () => {
+        return { size, contentType: "video/mp4", metadata: {} };
+      },
     });
-    const referenceObjects = new Map<string, string>();
-    context.mocks.s3.send.mockImplementation((command: unknown) => {
-      if (command instanceof PutObjectCommand && command.input.Key) {
-        referenceObjects.set(
-          command.input.Key,
-          String(command.input.Body ?? ""),
-        );
-        return Promise.resolve({});
-      }
-      if (command instanceof GetObjectCommand && command.input.Key) {
-        const stored = referenceObjects.get(command.input.Key);
-        if (stored !== undefined) {
-          return Promise.resolve({
-            ETag: '"etag"',
-            Body: {
-              async *[Symbol.asyncIterator]() {
-                yield Buffer.from(stored);
-              },
-            },
-          });
-        }
-        return Promise.reject(
-          Object.assign(new Error("NoSuchKey"), { name: "NoSuchKey" }),
-        );
-      }
-      if (command instanceof CreateMultipartUploadCommand) {
-        return Promise.resolve({ UploadId: "five-gib-upload" });
-      }
-      if (command instanceof ListPartsCommand) {
-        return Promise.resolve({ Parts: uploadedParts });
-      }
-      if (command instanceof HeadObjectCommand) {
-        return Promise.resolve({ ContentLength: size });
-      }
-      return Promise.resolve({});
-    });
+    const api = signIn(member());
+
     const prepared = await accept(
-      apiClient().prepare({
-        headers: authHeaders(),
+      api.prepare({
+        headers,
         body: {
           filename: "long-recording.mp4",
           contentType: "video/mp4",
@@ -236,222 +254,73 @@ describe("multipart user artifact uploads", () => {
     if (!("multipart" in prepared.body)) {
       throw new Error("Expected a multipart upload");
     }
-    expect(prepared.body.multipart.partSize).toBe(10 * 1024 * 1024);
-    expect(prepared.body.multipart.parts).toHaveLength(512);
     const completed = await accept(
-      apiClient().completeMultipart({
-        headers: authHeaders(),
+      api.completeMultipart({
+        headers,
         body: {
           id: prepared.body.id,
-          filename: prepared.body.filename,
+          filename: "long-recording.mp4",
           uploadId: prepared.body.multipart.uploadId,
           partCount: prepared.body.multipart.parts.length,
         },
       }),
       [200],
     );
+
+    expect(prepared.body.multipart.partSize).toBe(10 * MiB);
+    expect(prepared.body.multipart.parts).toHaveLength(512);
     expect(completed.body).toStrictEqual({
       id: prepared.body.id,
-      url: prepared.body.url,
+      url: new URL(
+        `/artifacts/${prepared.body.id.replace(/-/gu, "")}.mp4`,
+        prepared.body.url,
+      ).href,
     });
   });
 
-  it("stores the declared text charset when preparing a multipart artifact", async () => {
-    useOrganizationlessUploads(`user_${randomUUID()}`);
-    context.mocks.s3.send.mockImplementation((command) => {
-      if (command instanceof ListObjectsV2Command) {
-        return Promise.resolve({ Contents: [] });
-      }
-      if (command instanceof PutObjectCommand) {
-        expect(JSON.parse(String(command.input.Body))).toMatchObject({
-          kind: "legacy-file",
-          contentType: "text/csv; charset=utf-8",
-        });
-        return Promise.resolve({});
-      }
-      if (command instanceof CreateMultipartUploadCommand) {
-        expect(command.input.ContentType).toBe("text/csv; charset=utf-8");
-        return Promise.resolve({ UploadId: "text-multipart-upload" });
-      }
-      throw new Error("Unexpected storage command");
-    });
-
-    const response = await accept(
-      apiClient().prepare({
-        headers: authHeaders(),
-        body: {
-          filename: "report.csv",
-          contentType: 'Text/CSV; Charset="UTF-8"',
-          size: 6 * 1024 * 1024,
-          purpose: "artifact",
-          multipart: true,
-        },
-      }),
-      [200],
-    );
-
-    expect(response.body).toMatchObject({
-      contentType: "text/csv; charset=utf-8",
-      multipart: { uploadId: "text-multipart-upload" },
-    });
-  });
-
-  it("keeps the legacy single PUT response for small multipart requests", async () => {
-    const userId = `user_${randomUUID()}`;
-    useOrganizationlessUploads(userId);
-    mocks.s3.listObjects([]);
-
-    const response = await accept(
-      apiClient().prepare({
-        body: {
-          filename: "small.mp4",
+  it("uploads-multipart-008 lists uploaded parts and completes the multipart upload", async () => {
+    const actor = member();
+    const id = randomUUID();
+    const storage = installStorage({
+      uploadId: "multipart-upload-1",
+      uploadedParts: 2,
+      completedObject: () => {
+        return {
+          size: 20 * MiB,
           contentType: "video/mp4",
-          size: 5 * 1024 * 1024 - 1,
-          multipart: true,
-        },
-        headers: authHeaders(),
-      }),
-      [200],
-    );
-
-    expect(response.body).toMatchObject({
-      uploadUrl: "https://r2.example.com/upload?sig=test",
-      url: expect.stringMatching(/^https:\/\/a\.okou\.io\/[0-9a-z]{10}\.mp4$/u),
-      uploadHeaders: {
-        "x-amz-meta-artifact-id": response.body.id,
-        "x-amz-meta-filename": "small.mp4",
-        "x-amz-meta-public-brand": "okou",
-        "x-amz-meta-user-id": encodeURIComponent(userId),
-      },
-    });
-    expect(response.body).not.toHaveProperty("multipart");
-  });
-
-  it("aborts the default-private multipart session when the API owner is cancelled after creation", async () => {
-    const userId = `user_${randomUUID()}`;
-    const orgId = `org_${randomUUID()}`;
-    const controller = new AbortController();
-    const abortError = new Error("API owner cancelled multipart preparation");
-    abortError.name = "AbortError";
-    const ownerContext = {
-      mocks: context.mocks,
-      sessionHistoryBlobs: context.sessionHistoryBlobs,
-      signal: controller.signal,
-    };
-    mocks.clerk.session(userId, orgId);
-    context.mocks.s3.send.mockImplementation((command: unknown) => {
-      if (command instanceof ListObjectsV2Command) {
-        return Promise.resolve({ Contents: [] });
-      }
-      if (command instanceof CreateMultipartUploadCommand) {
-        controller.abort(abortError);
-        return Promise.resolve({ UploadId: "multipart-upload-cancelled" });
-      }
-      return Promise.resolve({});
-    });
-
-    const response = await setupApp({
-      context: ownerContext,
-      routes: uploadsTestRoutes,
-    })(uploadsContract).prepare({
-      body: {
-        filename: "cancelled.mp4",
-        contentType: "video/mp4",
-        size: 5 * 1024 * 1024,
-        multipart: true,
-      },
-      headers: authHeaders(),
-    });
-
-    expect(response.status).toBe(500);
-    expect(context.mocks.s3.getSignedUrl).not.toHaveBeenCalled();
-    const abortCommand = context.mocks.s3.send.mock.calls
-      .map(([command]) => {
-        return command;
-      })
-      .find((command): command is AbortMultipartUploadCommand => {
-        return command instanceof AbortMultipartUploadCommand;
-      });
-    expect(abortCommand?.input).toMatchObject({
-      Bucket: "test-private-artifacts",
-      Key: expect.stringMatching(
-        /^private-artifacts\/[0-9a-f-]{36}\/cancelled\.mp4$/u,
-      ),
-      UploadId: "multipart-upload-cancelled",
-    });
-  });
-
-  it("lists uploaded parts and completes the multipart upload", async () => {
-    const userId = `user_${randomUUID()}`;
-    const orgId = `org_${randomUUID()}`;
-    const artifactId = "3a513aef-a376-49c4-8f15-61f7e8e40526";
-    let objectKey: string | undefined;
-    mocks.clerk.session(userId, orgId);
-    context.mocks.s3.send.mockImplementation((command: unknown) => {
-      if (command instanceof ListPartsCommand) {
-        objectKey = command.input.Key;
-        return Promise.resolve({
-          Parts: [
-            { PartNumber: 1, ETag: '"etag-1"' },
-            { PartNumber: 2, ETag: '"etag-2"' },
-          ],
-        });
-      }
-      if (command instanceof ListObjectsV2Command) {
-        return Promise.resolve({
-          Contents: objectKey
-            ? [
-                {
-                  Key: objectKey,
-                  Size: 20 * 1024 * 1024,
-                  LastModified: new Date("2026-08-20T00:00:00.000Z"),
-                },
-              ]
-            : [],
-        });
-      }
-      if (command instanceof HeadObjectCommand) {
-        return Promise.resolve({
-          ContentLength: 20 * 1024 * 1024,
-          ContentType: "video/mp4",
-          Metadata: {
-            "artifact-id": artifactId,
-            filename: "my recording.mp4",
+          metadata: {
+            "artifact-id": id,
+            filename: encodeURIComponent("my recording.mp4"),
+            "user-id": actor.userId,
             "public-brand": "okou",
-            "user-id": encodeURIComponent(userId),
           },
-        });
-      }
-      return Promise.resolve({});
+        };
+      },
     });
+    const api = signIn(actor);
 
-    const response = await accept(
-      apiClient().completeMultipart({
+    const completed = await accept(
+      api.completeMultipart({
+        headers,
         body: {
-          id: artifactId,
+          id,
           filename: "my recording.mp4",
           uploadId: "multipart-upload-1",
           partCount: 2,
         },
-        headers: authHeaders(),
       }),
       [200],
     );
 
-    expect(response.body).toStrictEqual({
-      id: artifactId,
-      url: expect.stringMatching(/^https:\/\/a\.okou\.io\/[0-9a-z]{10}\.mp4$/u),
+    expect(Object.keys(completed.body).sort()).toStrictEqual(["id", "url"]);
+    expect(completed.body.id).toBe(id);
+    expect(completed.body.url).toMatch(publicArtifactUrl);
+    const completion = storage.operations.filter((operation) => {
+      return operation.name === "CompleteMultipartUploadCommand";
     });
-    const completeCommand = context.mocks.s3.send.mock.calls
-      .map(([command]) => {
-        return command;
-      })
-      .find((command): command is CompleteMultipartUploadCommand => {
-        return command instanceof CompleteMultipartUploadCommand;
-      });
-    expect(completeCommand?.input).toMatchObject({
-      Bucket: "test-user-artifacts",
-      Key: expect.stringMatching(/^artifacts\/[0-9a-z]{10}\.mp4$/u),
+    expect(completion).toHaveLength(1);
+    expect(completion[0]!.input).toMatchObject({
+      Bucket: env("R2_USER_ARTIFACTS_BUCKET_NAME"),
       UploadId: "multipart-upload-1",
       MultipartUpload: {
         Parts: [
@@ -460,65 +329,66 @@ describe("multipart user artifact uploads", () => {
         ],
       },
     });
+    expect(String(completion[0]!.input.Key)).toMatch(publicArtifactKey);
   });
 
-  it("rejects completion when an uploaded part is missing", async () => {
-    const userId = `user_${randomUUID()}`;
-    const orgId = `org_${randomUUID()}`;
-    mocks.clerk.session(userId, orgId);
-    context.mocks.s3.send.mockResolvedValue({
-      Parts: [{ PartNumber: 1, ETag: '"etag-1"' }],
+  it("uploads-multipart-009 rejects completion when an uploaded part is missing", async () => {
+    const storage = installStorage({
+      uploadId: "multipart-upload-2",
+      uploadedParts: 1,
     });
+    const api = signIn(member());
 
-    const response = await accept(
-      apiClient().completeMultipart({
+    const rejected = await accept(
+      api.completeMultipart({
+        headers,
         body: {
-          id: "857873df-23b7-47e8-8273-4bf9014b5dbe",
+          id: randomUUID(),
           filename: "recording.mp4",
           uploadId: "multipart-upload-2",
           partCount: 2,
         },
-        headers: authHeaders(),
       }),
       [400],
     );
 
-    expect(response.body.error.message).toBe("Multipart upload is incomplete");
-    expect(context.mocks.s3.send).toHaveBeenCalledTimes(1);
+    expect(rejected.body.error.message).toBe("Multipart upload is incomplete");
+    expect(
+      storage.operations.map((operation) => {
+        return operation.name;
+      }),
+    ).toStrictEqual(["ListPartsCommand"]);
   });
 
-  it("aborts an unfinished multipart upload", async () => {
-    const userId = `user_${randomUUID()}`;
-    const orgId = `org_${randomUUID()}`;
-    mocks.clerk.session(userId, orgId);
-    context.mocks.s3.send.mockResolvedValue({});
+  it("uploads-multipart-010 aborts an unfinished multipart upload", async () => {
+    const storage = installStorage({
+      uploadId: "multipart-upload-3",
+      uploadedParts: 1,
+    });
+    const api = signIn(member());
+    const id = randomUUID();
 
-    const response = await accept(
-      apiClient().abortMultipart({
+    const aborted = await accept(
+      api.abortMultipart({
+        headers,
         body: {
-          id: "ba428dc9-af58-4785-b45f-bbed9633ecde",
+          id,
           filename: "my recording.mp4",
           uploadId: "multipart-upload-3",
         },
-        headers: authHeaders(),
       }),
       [200],
     );
 
-    expect(response.body).toStrictEqual({
-      id: "ba428dc9-af58-4785-b45f-bbed9633ecde",
+    expect(aborted.body).toStrictEqual({ id });
+    const aborts = storage.operations.filter((operation) => {
+      return operation.name === "AbortMultipartUploadCommand";
     });
-    const abortCommand = context.mocks.s3.send.mock.calls
-      .map(([command]) => {
-        return command;
-      })
-      .find((command): command is AbortMultipartUploadCommand => {
-        return command instanceof AbortMultipartUploadCommand;
-      });
-    expect(abortCommand?.input).toMatchObject({
-      Bucket: "test-user-artifacts",
-      Key: expect.stringMatching(/^artifacts\/[0-9a-z]{10}\.mp4$/u),
+    expect(aborts).toHaveLength(1);
+    expect(aborts[0]!.input).toMatchObject({
+      Bucket: env("R2_USER_ARTIFACTS_BUCKET_NAME"),
       UploadId: "multipart-upload-3",
     });
+    expect(String(aborts[0]!.input.Key)).toMatch(publicArtifactKey);
   });
 });

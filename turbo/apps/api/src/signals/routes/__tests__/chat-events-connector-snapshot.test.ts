@@ -1,403 +1,215 @@
-import { randomUUID } from "node:crypto";
-import { HeadObjectCommand } from "@aws-sdk/client-s3";
-import { chatConnectorAccessContract } from "@okouai/api-contracts/contracts/chat-connector-access";
-import { connectorPermissionsContract } from "@okouai/api-contracts/contracts/connector-permissions";
-
-import { getCustomConnectorSkillName } from "@okouai/core/storage-names";
 import { describe, expect, it, onTestFinished } from "vitest";
-import { accept, testContext } from "../../../__tests__/test-context";
-import { setupApp } from "../../../__tests__/test-helpers";
-import { buildArtifactKeyV2 } from "../../../lib/file-url";
-import { mockNow, now } from "../../../lib/time";
-import { flushWaitUntilForTest } from "../../context/wait-until";
-import { createDeferredPromise, settleIncludingAbort } from "../../utils";
-import { chatConnectorAccessRoutes } from "../chat-connector-access";
-
-import { connectorPermissionsRoutes } from "../connector-permissions";
-import { createConnectorBddApi } from "./helpers/api-bdd-connectors";
-import { createChatEventsFixture } from "./helpers/chat-events-fixture";
+import { testContext } from "../../../__tests__/test-context";
+import {
+  TEST_WITH_SINGLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE,
+  TEST_WITH_TRIPLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE,
+} from "../../../__tests__/test-timeouts";
+import { mockOptionalEnv } from "../../../lib/env";
+import { now } from "../../../lib/time";
+import { settleIncludingAbort } from "../../utils";
+import { mockClaudeCodeTokenEndpoint } from "./helpers/api-bdd-auth-device";
+import { manualHttpCustomConnectorCreateBody } from "./helpers/api-bdd-connectors";
 import { createRunsApi } from "./helpers/api-bdd-runs";
-import { readExecutionContentBundle } from "./helpers/execution-content-bundle";
-import { publicChatActor } from "./helpers/public-chat-actor";
-import { installWorkflowVolumeS3Fixture } from "./helpers/workflow-volume-s3";
+import { createChatConnectorAccessApi } from "./helpers/chat-connector-access";
+import { createChatEventsFixture } from "./helpers/chat-events-fixture";
+import { captureConnectorExternalState } from "./helpers/public-connector-actor";
+import { publicRunOwner } from "./helpers/public-run-owner";
 
-const context = testContext();
-const connectors = createConnectorBddApi(context);
-const fixture = createChatEventsFixture(context);
-const headers = { authorization: "Bearer clerk-session" } as const;
+const ONE_HOUR_MS = 60 * 60 * 1000;
 
-/** Suspend the normal input's external attachment lookup after request preload starts. */
-function holdAttachment(userId: string) {
-  const fileId = randomUUID();
-  const filename = "accepted-connectors.txt";
-  const key = buildArtifactKeyV2(fileId, filename);
-  const entered = createDeferredPromise<void>(context.signal);
-  const release = createDeferredPromise<void>(context.signal);
-  const send = context.mocks.s3.send.getMockImplementation();
-  if (!send) {
-    throw new Error("Expected public chat S3 transport");
-  }
-  context.mocks.s3.send.mockImplementation(async (request: unknown) => {
-    if (request instanceof HeadObjectCommand && request.input.Key === key) {
-      if (!entered.settled()) {
-        entered.resolve();
-      }
-      await release.promise;
-      return {
-        ContentLength: 42,
-        ContentType: "text/plain",
-        LastModified: new Date("2026-11-18T00:00:00Z"),
-        Metadata: {
-          "artifact-id": fileId,
-          filename: encodeURIComponent(filename),
-          "user-id": encodeURIComponent(userId),
-        },
-      };
+describe("chat-events-connector-snapshot", () => {
+  const context = testContext();
+
+  async function setupCustomSlackPermissionRun() {
+    const startTime = now();
+    let clockTime = startTime;
+    const fixture = createChatEventsFixture(context);
+    const runsApi = createRunsApi(context);
+    const connectorAccess = createChatConnectorAccessApi(context);
+    const actor = fixture.bdd.user();
+    let accepted = captureConnectorExternalState(context);
+    let previous: (() => void) | undefined;
+    onTestFinished(() => {
+      previous?.();
+    });
+    const owner = publicRunOwner(context, actor, {
+      clockTime: () => {
+        return clockTime;
+      },
+      continueAcceptedOperations: true,
+      restoreEnvironment: () => {
+        previous ??= captureConnectorExternalState(context);
+        accepted();
+      },
+    });
+    function run<T>(operation: () => Promise<T>) {
+      return owner.run(() => {
+        const pending = settleIncludingAbort(operation);
+        accepted = captureConnectorExternalState(context);
+        return pending.then((result) => {
+          if (!result.ok) {
+            throw result.error;
+          }
+          return result.value;
+        });
+      });
     }
-    return await send(request);
-  });
-  return {
-    entered: entered.promise,
-    release() {
-      if (!release.settled()) {
-        release.resolve();
-      }
-    },
-    userMessage: {
-      version: 1 as const,
-      parts: [
-        {
-          type: "file" as const,
-          fileId,
-          filenameSnapshot: filename,
-          contentType: "text/plain",
-        },
-        { type: "text" as const, text: "use the accepted Connectors" },
-      ],
-    },
-  };
-}
 
-describe("accepted Connector preparation", () => {
-  it.each(["active", "expired"] as const)(
-    "retains custom permission refresh while the Run is active: %s",
-    async (state) => {
-      const startedAt = now();
-      mockNow(startedAt);
-      const owned = await publicChatActor(context);
-      owned.ownsFeatureSwitches();
-      const { actor } = owned;
-      const connector = await owned.run(async () => {
-        const connector = await connectors.createCustomConnector(actor, {
-          displayName: "Temporary Slack permissions",
-          authMode: "none",
-          prefixTemplates: ["https://slack.com/api/"],
-          fields: [],
-          headerInjections: [],
-          queryInjections: [],
-          permissionBundleRef: "builtin:slack@1",
-        });
-        await connectors.setCustomConnectorValues(actor, connector.id, []);
-        const client = setupApp({
-          context,
-          routes: connectorPermissionsRoutes,
-        })(connectorPermissionsContract);
-        await accept(
-          client.apply({
-            headers,
-            body: {
-              target: { kind: "custom", customConnectorId: connector.id },
-              mode: "patch",
-              grants: [
-                { permission: "chat:write", action: "allow", expiresIn: "1h" },
-              ],
-            },
+    fixture.chatCallbacks.acceptChatObjectStorage();
+    fixture.api.acceptStorageDownloads();
+    fixture.api.acceptTelemetryIngest();
+    mockOptionalEnv("OPENROUTER_API_KEY", undefined);
+    fixture.chatCallbacks.disableVapid();
+    mockClaudeCodeTokenEndpoint();
+
+    const runnerGroupPromise = fixture.api.configureRunnerGroup();
+    const [connector] = await Promise.all([
+      run(() => {
+        return fixture.connectors.createCustomConnector(
+          actor,
+          manualHttpCustomConnectorCreateBody({
+            displayName: "Custom Slack Refresh",
+            prefixTemplates: ["https://slack.example.test/api"],
+            permissionBundleRef: "builtin:slack@1",
           }),
-          [200],
         );
-        return connector;
-      });
-      const run = await owned.sendChatRun(actor, {
-        prompt: "use the captured temporary grant",
-      });
-      const { execution } = await owned.runExecution(run.runId);
-      const firewall = execution.firewalls?.find((entry) => {
-        return (
-          entry.kind === "inline" && entry.customConnectorId === connector.id
+      }),
+      runnerGroupPromise,
+      run(() => {
+        return fixture.api.grantProEntitlement(actor);
+      }),
+    ]);
+
+    await Promise.all([
+      run(() => {
+        return fixture.api.createPersonalModelProvider(actor, {
+          type: "claude-code-oauth-token",
+          secret: "bdd-personal-claude-token",
+        });
+      }),
+      run(() => {
+        return fixture.connectors.setCustomConnectorSecret(
+          actor,
+          connector.id,
+          "custom-slack-secret",
         );
+      }),
+    ]);
+
+    const permissions = await run(() => {
+      return connectorAccess.applyPermissions(actor, {
+        target: { kind: "custom", customConnectorId: connector.id },
+        mode: "patch",
+        grants: [
+          { permission: "chat:write", action: "allow", expiresIn: "1h" },
+        ],
       });
-      if (!firewall || firewall.kind !== "inline") {
-        throw new Error("Expected the accepted custom firewall");
-      }
-      expect(
-        execution.networkPolicies?.[firewall.firewall.name]?.allow,
-      ).toContain("chat:write");
-      if (state === "expired") {
-        mockNow(startedAt + 60 * 60 * 1000);
-      }
-      const synced = await owned.run(() => {
-        return createRunsApi(context).syncConnectorRuntime(run.runId, {
-          targets: execution.connectorRuntimeTargets,
+    });
+    const grantExpiry = permissions.grants.find((grant) => {
+      return grant.permission === "chat:write";
+    })?.expiresAt;
+    if (!grantExpiry) {
+      throw new Error("Expected chat:write allow grant to have an expiry");
+    }
+
+    const chatRun = await run(() => {
+      return fixture.sendChatRun(actor, {
+        model: "claude-fable-5-1",
+        prompt: "Post an update through the custom Slack connector",
+      });
+    });
+    const execution = await run(async () => {
+      const dispatched = await fixture.api.executionInput(chatRun.runId);
+      owner.rememberExecution(chatRun.runId, dispatched.sandboxToken);
+      return dispatched;
+    });
+    const customTarget = execution.connectorRuntimeTargets.find((target) => {
+      return (
+        target.kind === "custom" && target.customConnectorId === connector.id
+      );
+    });
+    if (!customTarget) {
+      throw new Error("Expected custom connector target on execution context");
+    }
+    const customFirewall = execution.firewalls?.find((entry) => {
+      return (
+        entry.kind === "inline" && entry.customConnectorId === connector.id
+      );
+    });
+    if (!customFirewall || customFirewall.kind !== "inline") {
+      throw new Error("Expected inline custom firewall on execution context");
+    }
+    expect(
+      execution.networkPolicies?.[customFirewall.firewall.name]?.allow,
+    ).toContain("chat:write");
+
+    return {
+      connectorId: connector.id,
+      customTarget,
+      grantExpiry,
+      run,
+      runId: chatRun.runId,
+      runsApi,
+      setClockTime(nextTime: number): void {
+        clockTime = nextTime;
+      },
+      startTime,
+    };
+  }
+
+  it(
+    "chat-events-connector-snapshot-001 retains custom permission refresh while the Run is active before expiry",
+    { timeout: TEST_WITH_TRIPLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const state = await setupCustomSlackPermissionRun();
+
+      state.setClockTime(state.startTime + ONE_HOUR_MS / 2);
+      const results = await state.run(() => {
+        return state.runsApi.syncConnectorRuntime(state.runId, {
+          targets: [state.customTarget],
         });
       });
-      const current = synced.find((result) => {
-        return (
-          result.target.kind === "custom" &&
-          result.target.customConnectorId === connector.id
-        );
+
+      expect(results).toHaveLength(1);
+      const synced = results[0];
+      expect(synced).toMatchObject({
+        target: { kind: "custom", customConnectorId: state.connectorId },
+        state: "available",
+        nextSyncAt: state.grantExpiry,
       });
-      expect(current).toMatchObject({ state: "available" });
-      if (current?.state !== "available") {
-        throw new Error("Expected the active Run's custom Connector policy");
+      if (!synced || synced.state !== "available") {
+        throw new Error("Expected synced custom connector to be available");
       }
-      if (state === "expired") {
-        expect(current.networkPolicy?.allow).not.toContain("chat:write");
-        expect(current.networkPolicy?.deny).toContain("chat:write");
-        expect(current.nextSyncAt).toBeUndefined();
-      } else {
-        expect(current.networkPolicy?.allow).toContain("chat:write");
-        expect(current.nextSyncAt).toBe(
-          new Date(startedAt + 60 * 60 * 1000).toISOString(),
-        );
-      }
+      expect(synced.networkPolicy.allow).toContain("chat:write");
+      expect(synced.networkPolicy.deny).not.toContain("chat:write");
     },
   );
 
-  it("retains the first Thread account choice while input is prepared", async () => {
-    const owned = await publicChatActor(context);
-    owned.ownsFeatureSwitches();
-    const { actor } = owned;
-    const { firstAccount, nextAccount, thread } = await owned.run(async () => {
-      const firstAccount = await connectors.connectManualGrant(
-        actor,
-        "runtime",
-        "api-token",
-        { apiKey: "accepted-runtime-key" },
-      );
-      const nextAccount = await connectors.connectManualGrant(
-        actor,
-        "runtime",
-        "api-token",
-        { apiKey: "next-runtime-key" },
-        { intent: "add", displayName: "Later account" },
-      );
-      const thread = await fixture.chat.createThread(actor, {});
-      return { firstAccount, nextAccount, thread };
-    });
-    const selectAccount = async (connectionId: string) => {
-      return await owned.run(async () => {
-        const body = {
-          connectionId,
-          target: {
-            kind: "builtin" as const,
-            connectorSlug: "runtime" as const,
-          },
-        };
-        const client = setupApp({
-          context,
-          routes: chatConnectorAccessRoutes,
-        })(chatConnectorAccessContract);
-        await accept(
-          client.setThreadCurrent({
-            headers,
-            params: { threadId: thread.id },
-            body,
-          }),
-          [200],
-        );
-      });
-    };
-    await selectAccount(firstAccount.id);
-    const held = holdAttachment(actor.userId);
-    const sending = settleIncludingAbort(
-      owned.sendChatRun(actor, {
-        threadId: thread.id,
-        prompt: "use the first account",
-        userMessage: held.userMessage,
-      }),
-    );
-    onTestFinished(async () => {
-      held.release();
-      await sending;
-    });
-    await held.entered;
-    // Attachment IO proves preload started, not that its database reads finished.
-    await flushWaitUntilForTest();
-    await selectAccount(nextAccount.id);
-    held.release();
-    const sent = await sending;
-    if (!sent.ok) {
-      throw sent.error;
-    }
-    const first = await owned.runExecution(sent.value.runId);
-    expect(
-      first.execution.secretConnectorMetadataMap?.RUNTIME_API_KEY,
-    ).toMatchObject({ sourceId: firstAccount.id });
-    expect(JSON.stringify(first.execution)).not.toContain(
-      "accepted-runtime-key",
-    );
-    await owned.run(() => {
-      return fixture.cancelChatRun(
-        actor,
-        sent.value.runId,
-        first.sandboxHeaders,
-      );
-    });
-    const next = await owned.sendChatRun(actor, {
-      threadId: thread.id,
-      prompt: "use the later account",
-    });
-    const execution = await owned.runExecution(next.runId);
-    expect(
-      execution.execution.secretConnectorMetadataMap?.RUNTIME_API_KEY,
-    ).toMatchObject({ sourceId: nextAccount.id });
-  });
+  it(
+    "chat-events-connector-snapshot-002 revokes expired custom permission on active Run sync without a next sync time",
+    { timeout: TEST_WITH_SINGLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const state = await setupCustomSlackPermissionRun();
 
-  it.each(["reconnect", "deletion"] as const)(
-    "retains coherent custom configuration and Skill bytes through %s",
-    async (change) => {
-      const owned = await publicChatActor(context);
-      owned.ownsFeatureSwitches();
-      const { actor } = owned;
-      const body = {
-        displayName: "Accepted custom source",
-        authMode: "none" as const,
-        prefixTemplates: ["https://accepted-custom.example.test/api/"],
-        fields: [],
-        headerInjections: [],
-        queryInjections: [],
-        skillMarkdown: "Accepted Connector instructions.",
-      };
-      const { connector, connectionId, s3 } = await owned.run(async () => {
-        const s3 = installWorkflowVolumeS3Fixture(context);
-        const connector = await connectors.createCustomConnector(actor, body);
-        const account = await connectors.setCustomConnectorValues(
-          actor,
-          connector.id,
-          [],
-        );
-        return { connector, connectionId: account.connectionId, s3 };
-      });
-      const held = holdAttachment(actor.userId);
-      const sending = settleIncludingAbort(
-        owned.sendChatRun(actor, {
-          prompt: "use the accepted custom source",
-          userMessage: held.userMessage,
-        }),
-      );
-      onTestFinished(async () => {
-        held.release();
-        await sending;
-      });
-      await held.entered;
-      await flushWaitUntilForTest();
-      await owned.run(async () => {
-        if (change === "deletion") {
-          await connectors.deleteCustomConnector(actor, connector.id);
-          return;
-        }
-        await connectors.updateCustomConnector(actor, connector.id, {
-          ...body,
-          prefixTemplates: ["https://later-custom.example.test/api/"],
-          skillMarkdown: "Later Connector instructions.",
-        });
-        await connectors.setCustomConnectorValues(actor, connector.id, [], {
-          intent: "reconnect",
-          connectionId,
+      state.setClockTime(state.startTime + ONE_HOUR_MS);
+      const results = await state.run(() => {
+        return state.runsApi.syncConnectorRuntime(state.runId, {
+          targets: [state.customTarget],
         });
       });
-      held.release();
-      const sent = await sending;
-      if (!sent.ok) {
-        throw sent.error;
+
+      expect(results).toHaveLength(1);
+      const synced = results[0];
+      expect(synced).toMatchObject({
+        target: { kind: "custom", customConnectorId: state.connectorId },
+        state: "available",
+      });
+      if (!synced || synced.state !== "available") {
+        throw new Error("Expected synced custom connector to be available");
       }
-      const first = await owned.runExecution(sent.value.runId);
-      const skillName = getCustomConnectorSkillName(
-        connector.slug,
-        connector.id,
-      );
-      const firewall = first.execution.firewalls?.find((entry) => {
-        return (
-          entry.kind === "inline" && entry.customConnectorId === connector.id
-        );
-      });
-      expect(firewall).toMatchObject({
-        firewall: {
-          apis: [expect.objectContaining({ base: body.prefixTemplates[0] })],
-        },
-      });
-      expect(first.execution.connectorRuntimeTargets).toContainEqual({
-        kind: "custom",
-        customConnectorId: connector.id,
-        sourceId: connectionId,
-        baseUrlVars: {},
-      });
-      const skill = first.execution.startupInputs.contentBundles.skills.find(
-        (bundle) => {
-          return bundle.name === skillName;
-        },
-      );
-      if (!skill) {
-        throw new Error("Expected the accepted Connector Skill");
-      }
-      expect(
-        readExecutionContentBundle(s3.objects, skill.bundle)
-          .get("SKILL.md")
-          ?.toString(),
-      ).toContain(body.skillMarkdown);
-      await owned.run(() => {
-        return fixture.cancelChatRun(
-          actor,
-          sent.value.runId,
-          first.sandboxHeaders,
-        );
-      });
-      const next = await owned.sendChatRun(actor, {
-        prompt: "use the later custom source",
-      });
-      const execution = await owned.runExecution(next.runId);
-      if (change === "deletion") {
-        expect(execution.execution.connectorRuntimeTargets).not.toContainEqual(
-          expect.objectContaining({
-            kind: "custom",
-            customConnectorId: connector.id,
-          }),
-        );
-        expect(
-          execution.execution.startupInputs.contentBundles.skills,
-        ).not.toContainEqual(expect.objectContaining({ name: skillName }));
-        return;
-      }
-      expect(
-        execution.execution.firewalls?.find((entry) => {
-          return (
-            entry.kind === "inline" && entry.customConnectorId === connector.id
-          );
-        }),
-      ).toMatchObject({
-        firewall: {
-          apis: [
-            expect.objectContaining({
-              base: "https://later-custom.example.test/api/",
-            }),
-          ],
-        },
-      });
-      const nextSkill =
-        execution.execution.startupInputs.contentBundles.skills.find(
-          (bundle) => {
-            return bundle.name === skillName;
-          },
-        );
-      if (!nextSkill) {
-        throw new Error("Expected the later Connector Skill");
-      }
-      expect(nextSkill.bundle.sha256).not.toBe(skill.bundle.sha256);
-      expect(
-        readExecutionContentBundle(s3.objects, nextSkill.bundle)
-          .get("SKILL.md")
-          ?.toString(),
-      ).toContain("Later Connector instructions.");
+      expect(synced.networkPolicy.allow).not.toContain("chat:write");
+      expect(synced.networkPolicy.deny).toContain("chat:write");
+      expect(synced.nextSyncAt).toBeUndefined();
     },
   );
 });

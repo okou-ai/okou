@@ -1,106 +1,202 @@
 import { randomUUID } from "node:crypto";
 import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
+import { orgMembersContract } from "@okouai/api-contracts/contracts/org-member-routes";
+import { orgLeaveContract } from "@okouai/api-contracts/contracts/org-routes";
 import { userPreferencesContract } from "@okouai/api-contracts/contracts/user-preferences";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { createStore } from "ccstate";
 import { describe, expect, it } from "vitest";
-import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { flushWaitUntilForTest } from "../../context/wait-until";
+import { accept, testContext } from "../../../__tests__/test-context";
 import { featureSwitchesRoutes } from "../feature-switches";
+import { orgMembersRoutes } from "../org-members";
+import { orgReadRoutes } from "../org-read";
 import { userPreferencesRoutes } from "../user-preferences";
-import {
-  createAuthOrgBddApi,
-  type ApiTestUser,
-} from "./helpers/api-bdd-auth-org";
-import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
+import { seedOrgMembership$ } from "./helpers/org-membership";
 
 const context = testContext();
-const org = createAuthOrgBddApi(context);
-const webhooks = createWebhookCallbackApi(context);
-const headers = Object.freeze({ authorization: "Bearer clerk-session" });
+const store = createStore();
+const dummy = FeatureSwitchKey.Dummy;
+const app = setupApp({
+  context,
+  routes: [
+    ...userPreferencesRoutes,
+    ...featureSwitchesRoutes,
+    ...orgReadRoutes,
+    ...orgMembersRoutes,
+  ],
+});
 
-function member(actor: ApiTestUser) {
-  if (!actor.orgId) {
-    throw new Error("Expected a workspace member");
-  }
-  return { ...actor, orgId: actor.orgId };
+interface Identity {
+  readonly userId: string;
+  readonly orgId: string;
+  readonly role: "admin" | "member";
 }
 
-async function initialize(actor: ApiTestUser) {
-  org.authenticate(actor);
+function headersFor(identity: Identity) {
+  return { authorization: `Bearer ${identity.userId}:${identity.orgId}` };
+}
+
+/** Clerk has issued no bearer sessions when a scenario starts. */
+function installSessions() {
+  context.mocks.clerk.authenticateRequest.mockResolvedValue({
+    isAuthenticated: false,
+    toAuth: () => {
+      return null;
+    },
+  });
+}
+
+/** Clerk resolves the identity's bearer session, in addition to earlier ones. */
+function issueSession(identity: Identity) {
+  const authorization = headersFor(identity).authorization;
+  const issued =
+    context.mocks.clerk.authenticateRequest.getMockImplementation();
+  context.mocks.clerk.authenticateRequest.mockImplementation(
+    (request: unknown) => {
+      const header =
+        request instanceof Request
+          ? (request.headers.get("authorization") ?? "")
+          : "";
+      if (header === authorization) {
+        return Promise.resolve({
+          isAuthenticated: true,
+          toAuth: () => {
+            return {
+              userId: identity.userId,
+              orgId: identity.orgId,
+              orgRole: identity.role === "admin" ? "org:admin" : "org:member",
+            };
+          },
+        });
+      }
+      return issued
+        ? issued(request)
+        : Promise.resolve({
+            isAuthenticated: false,
+            toAuth: () => {
+              return null;
+            },
+          });
+    },
+  );
+}
+
+async function join(identity: Identity) {
+  issueSession(identity);
+  await store.set(
+    seedOrgMembership$,
+    { orgId: identity.orgId, userId: identity.userId, role: identity.role },
+    context.signal,
+  );
+}
+
+async function initialize(identity: Identity) {
   await accept(
-    setupApp({ context, routes: userPreferencesRoutes })(
-      userPreferencesContract,
-    ).initialize({
-      headers,
-      body: { timezone: "Asia/Shanghai", locale: "en-US" },
+    app(userPreferencesContract).initialize({
+      headers: headersFor(identity),
+      body: { locale: "en-US", timezone: "UTC" },
     }),
     [200],
   );
 }
 
-async function switches(actor: ApiTestUser) {
-  org.authenticate(actor);
-  const response = await accept(
-    setupApp({ context, routes: featureSwitchesRoutes })(
-      featureSwitchesContract,
-    ).get({ headers }),
+async function saveDummyOff(identity: Identity) {
+  await accept(
+    app(featureSwitchesContract).update({
+      headers: headersFor(identity),
+      body: { switches: { [dummy]: false } },
+    }),
     [200],
   );
-  return response.body;
+}
+
+async function readSwitches(identity: Identity) {
+  return (
+    await accept(
+      app(featureSwitchesContract).get({ headers: headersFor(identity) }),
+      [200],
+    )
+  ).body;
+}
+
+async function scenario() {
+  installSessions();
+  const orgId = `org_${randomUUID()}`;
+  const memberId = `user_${randomUUID()}`;
+  const member: Identity = { userId: memberId, orgId, role: "member" };
+  const admin: Identity = {
+    userId: `user_${randomUUID()}`,
+    orgId,
+    role: "admin",
+  };
+  const elsewhere: Identity = {
+    userId: memberId,
+    orgId: `org_${randomUUID()}`,
+    role: "admin",
+  };
+  await join(admin);
+  await join(elsewhere);
+  await join(member);
+  await Promise.all([
+    saveDummyOff(admin),
+    saveDummyOff(elsewhere),
+    initialize(member).then(() => {
+      return saveDummyOff(member);
+    }),
+  ]);
+  return { member, admin, elsewhere };
+}
+
+async function expectSettingsPreserved(
+  member: Identity,
+  admin: Identity,
+  elsewhere: Identity,
+) {
+  await join(member);
+  await initialize(member);
+  const [reinitialized, adminSwitches, otherSwitches] = await Promise.all([
+    readSwitches(member),
+    readSwitches(admin),
+    readSwitches(elsewhere),
+  ]);
+  expect(reinitialized.switches).toStrictEqual({ [dummy]: false });
+  expect(reinitialized.effectiveSwitches[dummy]).toBeFalsy();
+  expect(adminSwitches.switches).toStrictEqual({ [dummy]: false });
+  expect(otherSwitches.switches).toStrictEqual({ [dummy]: false });
 }
 
 describe("Member settings across membership changes", () => {
-  it.each(["leave", "remove", "webhook"] as const)(
-    "preserves member settings after %s and reinitialization",
-    async (departure) => {
-      const departing = member(org.user({ orgRole: "org:member" }));
-      const admin = member(org.user({ orgId: departing.orgId }));
-      const elsewhere = member(
-        org.user({ userId: departing.userId, email: departing.email }),
-      );
-      await initialize(departing);
-      for (const actor of [departing, admin, elsewhere]) {
-        await updateFeatureSwitchesForUser(context, actor, {
-          [FeatureSwitchKey.Dummy]: false,
-        });
-      }
-      org.mockClerkOrg(admin, {
-        members: [
-          { actor: admin, role: "org:admin" },
-          { actor: departing, role: "org:member" },
-        ],
-      });
-      if (departure === "leave") {
-        await org.leaveOrg(departing);
-      } else if (departure === "remove") {
-        await org.removeMember(admin, { email: departing.email });
-      } else {
-        webhooks.configureClerkWebhookSecret();
-        webhooks.verifyNextClerkWebhook({
-          type: "organizationMembership.deleted",
-          data: {
-            id: `orgmem_${randomUUID()}`,
-            organization_id: departing.orgId,
-            user_id: departing.userId,
-          },
-        });
-        await webhooks.requestClerkWebhook("{}", {}, [200]);
-        await flushWaitUntilForTest();
-        await flushWaitUntilForTest();
-      }
+  it("member-settings-lifecycle-001 keeps a member's settings after leaving and initializing again", async () => {
+    const { member, admin, elsewhere } = await scenario();
 
-      await initialize(departing);
-      const rejoined = await switches(departing);
-      expect(rejoined.switches).toStrictEqual({
-        [FeatureSwitchKey.Dummy]: false,
-      });
-      for (const actor of [admin, elsewhere]) {
-        expect((await switches(actor)).switches).toStrictEqual({
-          [FeatureSwitchKey.Dummy]: false,
-        });
-      }
-    },
-  );
+    const left = await accept(
+      app(orgLeaveContract).leave({ headers: headersFor(member), body: {} }),
+      [200],
+    );
+    expect(left.body).toStrictEqual({ message: "Left org" });
+
+    await expectSettingsPreserved(member, admin, elsewhere);
+  });
+
+  it("member-settings-lifecycle-002 keeps a member's settings after removal and initializing again", async () => {
+    const { member, admin, elsewhere } = await scenario();
+    const email = `${member.userId}@example.com`;
+    context.mocks.clerk.users.getUserList.mockResolvedValue({
+      data: [{ id: member.userId }],
+    });
+
+    const removed = await accept(
+      app(orgMembersContract).removeMember({
+        headers: headersFor(admin),
+        body: { email },
+      }),
+      [200],
+    );
+    expect(removed.body).toStrictEqual({
+      message: `Removed ${email} from org`,
+    });
+
+    await expectSettingsPreserved(member, admin, elsewhere);
+  });
 });

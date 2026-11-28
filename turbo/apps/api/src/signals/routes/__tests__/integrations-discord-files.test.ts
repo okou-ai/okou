@@ -1,387 +1,471 @@
 import { createHash, randomUUID } from "node:crypto";
-import { PutObjectCommand } from "@aws-sdk/client-s3";
+import { Readable } from "node:stream";
 
 import { artifactCatalogContract } from "@okouai/api-contracts/contracts/artifact-catalog";
-import { revokedChatEventIds } from "@okouai/api-contracts/contracts/chat-events";
 import {
   integrationsDiscordDownloadFileContract,
   integrationsDiscordUploadCompleteContract,
   integrationsDiscordUploadInitContract,
-  MAX_DISCORD_FILE_SIZE_BYTES,
-  type DiscordUploadCompleteBody,
-  type DiscordUploadInitBody,
 } from "@okouai/api-contracts/contracts/integrations-discord-files";
+import { createStore } from "ccstate";
 import { HttpResponse, http } from "msw";
-import { describe, expect, it, onTestFinished } from "vitest";
-import { array, literal, object, string } from "zod";
+import { describe, expect, it } from "vitest";
+import { array, boolean, object, string } from "zod";
 
 import { accept, testContext } from "../../../__tests__/test-context";
-import { setupApp } from "../../../__tests__/test-helpers";
-import { mockEnv } from "../../../lib/env";
-import { sanitizeArtifactFilename } from "../../../lib/file-url";
+import { setupApp, setupRawAppRequest } from "../../../__tests__/test-helpers";
 import { server } from "../../../mocks/server";
-import { flushWaitUntilForTest } from "../../context/wait-until";
-import { clearAllDetached, settleIncludingAbort } from "../../utils";
-import { createBddApi } from "./helpers/api-bdd";
-import { createChatCallbacksApi } from "./helpers/api-bdd-chat-callbacks";
-import { createRunsApi } from "./helpers/api-bdd-runs";
-import { readProjectedChatEvents } from "./helpers/chat-event-test-reader";
-import {
-  discordChatThreads,
-  discordMessageForTest,
-  mockDiscordProvider,
-  postDiscordMessage,
-  setupConnectedDiscordActor,
-} from "./helpers/discord-fixture";
-import {
-  discordApiOrigin,
-  discordFileMessage,
-  discordSnowflake,
-  mockDiscordFileProvider,
-  type DiscordFileProviderIdentity,
-} from "./helpers/discord-file-provider";
-import {
-  configureDiscordApp,
-  removePublicDiscordBinding,
-  mockDiscordMemberships,
-  createPublicDiscordBinding,
-} from "./helpers/discord";
-import { launchPublicDiscordTestRun } from "./helpers/discord-run";
-import { createFixtureLifecycle } from "./helpers/fixture-lifecycle";
 import { artifactCatalogRoutes } from "../artifact-catalog";
 import { integrationsDiscordFileRoutes } from "../integrations-discord-files";
+import {
+  configureDiscordApp,
+  createPublicDiscordBinding,
+  removePublicDiscordBinding,
+  uniqueDiscordSnowflake,
+  type DiscordFixture,
+} from "./helpers/discord";
+import { seedOrgMembership$ } from "./helpers/org-membership";
+import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
-const bdd = createBddApi(context);
-const storage = createChatCallbacksApi(context);
-const runs = createRunsApi(context);
-const channelId = "123456789012345678";
-const messageId = "223456789012345678";
-const attachmentId = "323456789012345678";
+const memberships = createStore();
 
-function fileClients() {
-  const app = setupApp({ context, routes: integrationsDiscordFileRoutes });
-  return {
-    init: app(integrationsDiscordUploadInitContract).init,
-    complete: app(integrationsDiscordUploadCompleteContract).complete,
-    fileUrl: app(integrationsDiscordDownloadFileContract).fileUrl,
-  };
-}
+const SESSION = Object.freeze({ authorization: "Bearer clerk-session" });
+const DISCORD_API = "https://discord.com/api/v10";
+const TIMESTAMP = "2026-01-01T00:00:00.000Z";
 
-function uploadBody(
-  overrides: Partial<DiscordUploadInitBody> = {},
-): DiscordUploadInitBody {
-  return {
-    filename: "report.csv",
-    length: 8,
-    contentType: "text/csv",
-    checksumSha256: "a".repeat(64),
-    channelId,
-    ...overrides,
-  };
-}
+const PERMISSION = Object.freeze({
+  viewChannel: 1n << 10n,
+  sendMessages: 1n << 11n,
+  attachFiles: 1n << 15n,
+  readMessageHistory: 1n << 16n,
+});
 
-async function finishPublishedDiscordFixture(disconnect: () => Promise<void>) {
-  const waiting = await settleIncludingAbort(flushWaitUntilForTest);
-  const detached = await settleIncludingAbort(clearAllDetached);
-  const disconnected = await settleIncludingAbort(disconnect);
-  const finalWaiting = await settleIncludingAbort(flushWaitUntilForTest);
-  const finalDetached = await settleIncludingAbort(clearAllDetached);
-  const errors = [
-    waiting,
-    detached,
-    disconnected,
-    finalWaiting,
-    finalDetached,
-  ].flatMap((result) => {
-    return result.ok ? [] : [result.error];
-  });
-  if (errors.length === 1) {
-    throw errors[0];
-  }
-  if (errors.length > 1) {
-    throw new AggregateError(errors, "Discord publication cleanup failed");
-  }
-}
+const DEFAULT_ROLE_PERMISSIONS = String(
+  PERMISSION.viewChannel |
+    PERMISSION.sendMessages |
+    PERMISSION.attachFiles |
+    PERMISSION.readMessageHistory,
+);
 
-function withPublishedDiscordFixture(
-  operation: (
-    fixture: BoundFixture,
-    lifecycle: ReturnType<typeof createFixtureLifecycle>,
-  ) => Promise<void>,
-) {
-  return async () => {
-    const cleanupController = new AbortController();
-    const cleanupContext = { ...context, signal: cleanupController.signal };
-    let disconnect = () => {
-      return Promise.resolve();
-    };
-    const lifecycle = createFixtureLifecycle({
-      teardown: () => {
-        return finishPublishedDiscordFixture(disconnect);
-      },
-      afterTeardown: () => {
-        return cleanupController.abort();
-      },
-    });
-    const result = await settleIncludingAbort(() => {
-      return lifecycle.run(async () => {
-        const fixture = await boundFixture({
-          registerCleanup(actor) {
-            disconnect = async () => {
-              mockDiscordMemberships(cleanupContext, [actor]);
-              await removePublicDiscordBinding(cleanupContext, actor);
-            };
-          },
-        });
-        await operation(fixture, lifecycle);
-      });
-    });
-    const finished = await settleIncludingAbort(() => {
-      return lifecycle.finish();
-    });
-    const errors = [result, finished].flatMap((outcome) => {
-      return outcome.ok ? [] : [outcome.error];
-    });
-    if (errors.length === 1) {
-      throw errors[0];
-    }
-    if (errors.length > 1) {
-      throw new AggregateError(errors, "Discord publication fixture failed");
-    }
-  };
-}
+const app = setupApp({
+  context,
+  routes: [...integrationsDiscordFileRoutes, ...artifactCatalogRoutes],
+});
 
-async function actorSession(options: Parameters<typeof bdd.user>[0] = {}) {
-  const actor = bdd.user(options);
-  if (!actor.orgId) {
-    throw new Error("Discord file test actor must have an organization");
-  }
-  await bdd.readMe(actor);
-  return { ...actor, orgId: actor.orgId };
-}
-
-interface BoundFixture extends DiscordFileProviderIdentity {
-  readonly actor: Awaited<ReturnType<typeof actorSession>>;
-  readonly binding: Awaited<ReturnType<typeof createPublicDiscordBinding>>;
-  readonly connectionId: string;
-  readonly headers: { readonly authorization: string };
-}
-
-async function boundFixture(
-  options: {
-    readonly registerCleanup?: (actor: BoundFixture["actor"]) => void;
-  } = {},
-): Promise<BoundFixture> {
-  const actor = await actorSession();
-  options.registerCleanup?.(actor);
-  const identity = {
-    guildId: discordSnowflake(),
-    discordUserId: discordSnowflake(),
-    botUserId: discordSnowflake(),
-    channelId: discordSnowflake(),
-  };
-  configureDiscordApp();
-  mockEnv("DISCORD_APPLICATION_ID", identity.botUserId);
-  mockDiscordMemberships(context, [actor]);
-  mockDiscordFileProvider(identity);
-  const binding = await createPublicDiscordBinding(context, {
-    flow: "install",
-    userId: actor.userId,
-    orgId: actor.orgId,
-    orgRole: "org:admin",
-    guildId: identity.guildId,
-    guildName: "Discord file tests",
-    botUserId: identity.botUserId,
-    discordUserId: identity.discordUserId,
-  });
-  if (!options.registerCleanup) {
-    onTestFinished(async () => {
-      mockDiscordMemberships(context, [actor]);
-      await removePublicDiscordBinding(context, binding);
-    });
-  }
-  return {
-    ...identity,
-    actor,
-    binding,
-    connectionId: binding.connectionId,
-    headers: { authorization: "Bearer clerk-session" },
-  };
-}
-
-async function canonicalUpload(
-  fixture: BoundFixture,
-  overrides: Partial<DiscordUploadInitBody> = {},
-) {
-  const objectStore = storage.acceptChatObjectStorage();
-  const bytes = Buffer.from("a,b\n1,2\n");
-  const body = uploadBody({
-    channelId: fixture.channelId,
-    checksumSha256: createHash("sha256").update(bytes).digest("hex"),
-    ...overrides,
-  });
-  const initialized = await accept(
-    fileClients().init({ headers: fixture.headers, body }),
-    [200],
-  );
-  objectStore.addObject({
-    bucket: "test-private-artifacts",
-    key: `private-artifacts/${initialized.body.assetId}/${sanitizeArtifactFilename(body.filename)}`,
-    size: bytes.byteLength,
-    body: bytes,
-    contentType: body.contentType,
-    metadata: { "artifact-id": initialized.body.assetId },
-  });
-  const completeBody: DiscordUploadCompleteBody = {
-    assetId: initialized.body.assetId,
-    ...(body.channelId !== undefined ? { channelId: body.channelId } : {}),
-    ...(body.userId !== undefined ? { userId: body.userId } : {}),
-    ...(body.guildId !== undefined ? { guildId: body.guildId } : {}),
-    ...(body.comment !== undefined ? { comment: body.comment } : {}),
-  };
-  return {
-    initialized: initialized.body,
-    body,
-    bytes,
-    completeBody,
-  };
-}
-
-function catalogClient() {
-  return setupApp({ context, routes: artifactCatalogRoutes })(
-    artifactCatalogContract,
-  );
-}
-
-const deliveryPayloadSchema = object({
+const openDmBodySchema = object({ recipient_id: string() }).strict();
+const payloadJsonSchema = object({
+  content: string(),
   allowed_mentions: object({
     parse: array(string()),
-    replied_user: literal(false),
+    replied_user: boolean(),
   }),
 });
 
-async function expectUploadedDiscordFile(
-  request: Request,
-  expectedBytes: Buffer,
-) {
-  const form = await request.formData();
-  const payloadJson = form.get("payload_json");
-  if (typeof payloadJson !== "string") {
-    throw new Error("Expected Discord multipart message payload");
-  }
-  const payload = deliveryPayloadSchema.parse(JSON.parse(payloadJson));
-  expect(payload.allowed_mentions.parse).toStrictEqual([]);
-  const attachment = form.get("files[0]");
-  if (!(attachment instanceof File)) {
-    throw new Error("Expected the canonical file in Discord multipart bytes");
-  }
-  expect(Buffer.from(await attachment.arrayBuffer())).toStrictEqual(
-    expectedBytes,
-  );
+interface Actor {
+  readonly userId: string;
+  readonly orgId: string;
+  readonly role: "org:admin" | "org:member";
 }
 
-function incomingAttachment(fixture: DiscordFileProviderIdentity) {
-  const fileId = discordSnowflake();
-  const sourceMessageId = discordSnowflake();
-  const bytes = "a,b\n1,2\n";
-  const filename = "quarterly report.csv";
-  const url =
-    `https://cdn.discordapp.com/attachments/${fixture.channelId}/${fileId}/` +
-    `${encodeURIComponent(filename)}?ex=expires&hm=signed`;
-  const attachment = {
-    id: fileId,
-    filename,
-    size: Buffer.byteLength(bytes),
-    content_type: "text/csv",
-    url,
+interface StoredObject {
+  readonly key: string;
+  readonly bytes: Buffer;
+  readonly contentType: string;
+}
+
+interface SignedPutRecord {
+  readonly key: string;
+  readonly checksumSha256: string | undefined;
+  readonly uploadUrl: string;
+}
+
+interface DeliveredDiscordUpload {
+  readonly channelId: string;
+  readonly allowedMentions: {
+    readonly parse: readonly string[];
+    readonly replied_user: boolean;
   };
-  const message = discordFileMessage({
-    channelId: fixture.channelId,
-    messageId: sourceMessageId,
-    authorId: fixture.discordUserId,
-    attachment,
+  readonly filename: string;
+  readonly bytes: Buffer;
+}
+
+interface DiscordChannelSpec {
+  readonly id: string;
+  readonly type: number;
+  readonly guild_id?: string;
+  readonly name?: string;
+  readonly permission_overwrites?: readonly {
+    readonly id: string;
+    readonly type: 0 | 1;
+    readonly allow: string;
+    readonly deny: string;
+  }[];
+  readonly recipients?: readonly {
+    readonly id: string;
+    readonly username: string;
+  }[];
+}
+
+interface DiscordAttachmentSpec {
+  readonly id: string;
+  readonly filename: string;
+  readonly size: number;
+  readonly url: string;
+  readonly content_type?: string;
+}
+
+interface DiscordMessageSpec {
+  readonly id: string;
+  readonly channel_id: string;
+  readonly author: {
+    readonly id: string;
+    readonly username: string;
+    readonly bot?: boolean;
+  };
+  readonly content: string;
+  readonly timestamp: string;
+  readonly attachments: readonly DiscordAttachmentSpec[];
+}
+
+function signIn(actor: Actor) {
+  createRouteMocks(context).clerk.session(
+    actor.userId,
+    actor.orgId,
+    actor.role,
+  );
+  return SESSION;
+}
+
+async function seedActor(
+  role: "org:admin" | "org:member",
+  overrides: Partial<Actor> = {},
+): Promise<Actor> {
+  const actor: Actor = {
+    userId: overrides.userId ?? `user_df_${randomUUID()}`,
+    orgId: overrides.orgId ?? `org_df_${randomUUID()}`,
+    role,
+  };
+  await memberships.set(
+    seedOrgMembership$,
+    {
+      userId: actor.userId,
+      orgId: actor.orgId,
+      role: role === "org:admin" ? "admin" : "member",
+      name: "Discord files workspace",
+    },
+    context.signal,
+  );
+  return actor;
+}
+
+function sha256Hex(bytes: Buffer): string {
+  return createHash("sha256").update(bytes).digest("hex");
+}
+
+function createStorageMock() {
+  const objectsByUrl = new Map<string, { key: string; contentType: string }>();
+  const objectsByKey = new Map<string, StoredObject>();
+  const signedPuts: SignedPutRecord[] = [];
+
+  context.mocks.s3.getSignedUrl.mockImplementation((_client, command) => {
+    const cmd = command as {
+      readonly constructor: { readonly name: string };
+      readonly input?: {
+        readonly Key?: string;
+        readonly ContentType?: string;
+        readonly ChecksumSHA256?: string;
+      };
+    };
+    const key = cmd.input?.Key ?? `unknown/${randomUUID()}`;
+    if (cmd.constructor.name === "PutObjectCommand") {
+      const uploadUrl = `https://r2.okou.test/put/${randomUUID()}`;
+      objectsByUrl.set(uploadUrl, {
+        key,
+        contentType: cmd.input?.ContentType ?? "application/octet-stream",
+      });
+      signedPuts.push({
+        key,
+        checksumSha256: cmd.input?.ChecksumSHA256,
+        uploadUrl,
+      });
+      return Promise.resolve(uploadUrl);
+    }
+    return Promise.resolve(`https://r2.okou.test/get/${randomUUID()}`);
   });
-  const messageUrl =
-    `${discordApiOrigin}/channels/${fixture.channelId}/messages/` +
-    sourceMessageId;
+
+  context.mocks.s3.send.mockImplementation((command: unknown) => {
+    const cmd = command as {
+      readonly constructor: { readonly name: string };
+      readonly input?: { readonly Key?: string };
+    };
+    const key = cmd.input?.Key ?? "";
+    const stored = objectsByKey.get(key);
+    if (cmd.constructor.name === "HeadObjectCommand") {
+      if (!stored) {
+        const error = Object.assign(new Error("NotFound"), {
+          name: "NotFound",
+          $metadata: { httpStatusCode: 404 },
+        });
+        return Promise.reject(error);
+      }
+      return Promise.resolve({
+        ContentLength: stored.bytes.byteLength,
+        ContentType: stored.contentType,
+      });
+    }
+    if (cmd.constructor.name === "GetObjectCommand") {
+      if (!stored) {
+        const error = Object.assign(new Error("NoSuchKey"), {
+          name: "NoSuchKey",
+          $metadata: { httpStatusCode: 404 },
+        });
+        return Promise.reject(error);
+      }
+      return Promise.resolve({
+        Body: Readable.from([stored.bytes]),
+        ContentLength: stored.bytes.byteLength,
+        ContentType: stored.contentType,
+      });
+    }
+    return Promise.resolve({});
+  });
+
   server.use(
-    http.get(messageUrl, () => {
-      return HttpResponse.json(message);
+    http.put("https://r2.okou.test/put/:id", async ({ request }) => {
+      const target = objectsByUrl.get(request.url);
+      if (!target) {
+        return new HttpResponse(null, { status: 404 });
+      }
+      const bytes = Buffer.from(await request.arrayBuffer());
+      objectsByKey.set(target.key, {
+        key: target.key,
+        bytes,
+        contentType: target.contentType,
+      });
+      return new HttpResponse(null, { status: 200 });
     }),
   );
-  return {
-    attachment,
-    message,
-    messageUrl,
-    query: {
-      channelId: fixture.channelId,
-      messageId: sourceMessageId,
-      attachmentId: fileId,
+
+  return { signedPuts, objectsByKey };
+}
+
+interface DiscordWorldOptions {
+  readonly guildOwnerId?: string;
+  readonly channels?: readonly DiscordChannelSpec[];
+  readonly messages?: readonly DiscordMessageSpec[];
+  readonly dmChannelsByRecipient?: ReadonlyMap<string, string>;
+  readonly normalizeAttachmentFilename?: (filename: string) => string;
+  readonly rateLimitUploads?: boolean;
+}
+
+function serveDiscordWorld(
+  fixture: DiscordFixture,
+  options: DiscordWorldOptions = {},
+) {
+  const channels = new Map<string, DiscordChannelSpec>();
+  for (const channel of options.channels ?? []) {
+    channels.set(
+      channel.id,
+      channel.type === 1 ? channel : { permission_overwrites: [], ...channel },
+    );
+  }
+  const messages = new Map<string, DiscordMessageSpec>();
+  for (const message of options.messages ?? []) {
+    messages.set(`${message.channel_id}:${message.id}`, message);
+  }
+  const dmChannels = new Map<string, string>(options.dmChannelsByRecipient);
+  const dmOpens: string[] = [];
+  const uploads: DeliveredDiscordUpload[] = [];
+  const createdMessages: {
+    readonly channelId: string;
+    readonly messageId: string;
+    readonly attachmentId: string;
+  }[] = [];
+
+  server.use(
+    http.get(`${DISCORD_API}/users/@me`, () => {
+      return HttpResponse.json({
+        id: fixture.botUserId,
+        username: "Okou",
+        bot: true,
+      });
+    }),
+    http.get(`${DISCORD_API}/guilds/${fixture.guildId}`, () => {
+      return HttpResponse.json({
+        id: fixture.guildId,
+        name: fixture.guildName,
+        owner_id: options.guildOwnerId ?? fixture.discordUserId,
+      });
+    }),
+    http.get(`${DISCORD_API}/guilds/${fixture.guildId}/roles`, () => {
+      return HttpResponse.json([
+        {
+          id: fixture.guildId,
+          name: "@everyone",
+          permissions: DEFAULT_ROLE_PERMISSIONS,
+        },
+      ]);
+    }),
+    http.get(
+      `${DISCORD_API}/guilds/${fixture.guildId}/members/:userId`,
+      ({ params }) => {
+        const id = String(params.userId);
+        return HttpResponse.json({
+          user: { id, username: "member", bot: id === fixture.botUserId },
+          roles: [],
+        });
+      },
+    ),
+    http.get(`${DISCORD_API}/channels/:channelId`, ({ params }) => {
+      const channel = channels.get(String(params.channelId));
+      if (!channel) {
+        return HttpResponse.json(
+          { message: "Unknown Channel" },
+          { status: 404 },
+        );
+      }
+      return HttpResponse.json(channel);
+    }),
+    http.get(
+      `${DISCORD_API}/channels/:channelId/messages/:messageId`,
+      ({ params }) => {
+        const message = messages.get(
+          `${String(params.channelId)}:${String(params.messageId)}`,
+        );
+        if (!message) {
+          return HttpResponse.json(
+            { message: "Unknown Message" },
+            { status: 404 },
+          );
+        }
+        return HttpResponse.json(message);
+      },
+    ),
+    http.post(`${DISCORD_API}/users/@me/channels`, async ({ request }) => {
+      const parsed = openDmBodySchema.parse(await request.json());
+      dmOpens.push(parsed.recipient_id);
+      const dmChannelId =
+        dmChannels.get(parsed.recipient_id) ?? uniqueDiscordSnowflake();
+      dmChannels.set(parsed.recipient_id, dmChannelId);
+      if (!channels.has(dmChannelId)) {
+        channels.set(dmChannelId, {
+          id: dmChannelId,
+          type: 1,
+          recipients: [{ id: parsed.recipient_id, username: "recipient" }],
+        });
+      }
+      return HttpResponse.json(channels.get(dmChannelId));
+    }),
+    http.post(
+      `${DISCORD_API}/channels/:channelId/messages`,
+      async ({ request, params }) => {
+        const channelId = String(params.channelId);
+        const form = await request.formData();
+        const payloadRaw = form.get("payload_json");
+        const parsedPayload = payloadJsonSchema.parse(
+          JSON.parse(typeof payloadRaw === "string" ? payloadRaw : "{}"),
+        );
+        const fileEntry = form.get("files[0]");
+        if (!(fileEntry instanceof File)) {
+          return HttpResponse.json(
+            { message: "Missing attachment" },
+            { status: 400 },
+          );
+        }
+        const bytes = Buffer.from(await fileEntry.arrayBuffer());
+        uploads.push({
+          channelId,
+          allowedMentions: parsedPayload.allowed_mentions,
+          filename: fileEntry.name,
+          bytes,
+        });
+        if (options.rateLimitUploads) {
+          return HttpResponse.json(
+            {
+              message: "You are being rate limited.",
+              retry_after: 1,
+              global: false,
+            },
+            { status: 429 },
+          );
+        }
+        const messageId = uniqueDiscordSnowflake();
+        const attachmentId = uniqueDiscordSnowflake();
+        const storedFilename = options.normalizeAttachmentFilename
+          ? options.normalizeAttachmentFilename(fileEntry.name)
+          : fileEntry.name;
+        createdMessages.push({ channelId, messageId, attachmentId });
+        return HttpResponse.json({
+          id: messageId,
+          channel_id: channelId,
+          author: { id: fixture.botUserId, username: "Okou", bot: true },
+          content: parsedPayload.content,
+          timestamp: TIMESTAMP,
+          attachments: [
+            {
+              id: attachmentId,
+              filename: storedFilename,
+              size: bytes.byteLength,
+              url: `https://cdn.discordapp.com/attachments/${channelId}/${attachmentId}/${encodeURIComponent(storedFilename)}`,
+              content_type: fileEntry.type || "application/octet-stream",
+            },
+          ],
+        });
+      },
+    ),
+  );
+
+  return { dmOpens, uploads, createdMessages };
+}
+
+async function bindAdminDiscord(
+  overrides: { readonly discordUserId?: string } = {},
+) {
+  configureDiscordApp();
+  const admin = await seedActor("org:admin");
+  const fixture = await createPublicDiscordBinding(context, {
+    userId: admin.userId,
+    orgId: admin.orgId,
+    orgRole: "org:admin",
+    flow: "install",
+    ...(overrides.discordUserId
+      ? { discordUserId: overrides.discordUserId }
+      : {}),
+  });
+  return { admin, fixture };
+}
+
+async function putUploadedBytes(
+  uploadUrl: string,
+  bytes: Buffer,
+  contentType: string,
+  headers?: Readonly<Record<string, string>>,
+): Promise<void> {
+  const response = await fetch(uploadUrl, {
+    method: "PUT",
+    headers: {
+      "content-type": contentType,
+      ...headers,
     },
-  };
+    body: new Uint8Array(bytes),
+  });
+  expect(response.status).toBe(200);
 }
 
 describe("Discord file authorization and input validation", () => {
-  it("requires authentication for every file endpoint", async () => {
-    const client = fileClients();
-    const responses = [
-      await accept(client.init({ headers: {}, body: uploadBody() }), [401]),
-      await accept(
-        client.complete({
-          headers: {},
-          body: { assetId: randomUUID(), channelId },
-        }),
-        [401],
-      ),
-      await accept(
-        client.fileUrl({
-          headers: {},
-          query: { channelId, messageId, attachmentId },
-        }),
-        [401],
-      ),
-    ];
-
-    for (const response of responses) {
-      expect(response.body.error.code).toBe("UNAUTHORIZED");
-    }
-  });
-
-  it("requires native read or write capability for sandbox requests", async () => {
-    const actor = await actorSession();
-    const { execution: receivedExecution } = await launchPublicDiscordTestRun(
-      context,
-      actor,
-    );
-    const headers = {
-      authorization: `Bearer ${receivedExecution.sandboxToken}`,
-    };
-    const client = fileClients();
-    const upload = await accept(
-      client.init({ headers, body: uploadBody() }),
-      [403],
-    );
-    const download = await accept(
-      client.fileUrl({
-        headers,
-        query: { channelId, messageId, attachmentId },
-      }),
-      [403],
-    );
-
-    expect(upload.body.error.message).toContain("discord:write");
-    expect(download.body.error.message).toContain("discord:read");
-  });
-
-  it("rejects an unbound caller", async () => {
-    const actor = await actorSession();
+  it("integrations-discord-files-003 rejects an unbound caller", async () => {
     configureDiscordApp();
-    mockDiscordMemberships(context, [actor]);
+    const member = await seedActor("org:member");
+
     const response = await accept(
-      fileClients().fileUrl({
-        headers: { authorization: "Bearer clerk-session" },
-        query: { channelId, messageId, attachmentId },
+      app(integrationsDiscordDownloadFileContract).fileUrl({
+        headers: signIn(member),
+        query: {
+          channelId: uniqueDiscordSnowflake(),
+          messageId: uniqueDiscordSnowflake(),
+          attachmentId: uniqueDiscordSnowflake(),
+        },
       }),
       [404],
     );
@@ -389,570 +473,755 @@ describe("Discord file authorization and input validation", () => {
     expect(response.body.error.code).toBe("NOT_FOUND");
   });
 
-  it.each([
-    { filename: "../report.csv" },
-    { filename: "report\r\n.csv" },
-    { filename: "report\\private.csv" },
-    { filename: "." },
-    { length: MAX_DISCORD_FILE_SIZE_BYTES + 1 },
-  ])("rejects malformed upload metadata: %j", async (invalid) => {
-    await actorSession();
-    const response = await accept(
-      fileClients().init({
-        headers: { authorization: "Bearer clerk-session" },
-        body: uploadBody(invalid),
-      }),
-      [400],
-    );
+  it("integrations-discord-files-008 rejects malformed upload metadata: length over 10 MiB", async () => {
+    configureDiscordApp();
+    const member = await seedActor("org:member");
+    signIn(member);
+    const request = setupRawAppRequest({
+      context,
+      routes: integrationsDiscordFileRoutes,
+    });
 
-    expect(response.body.error.code).toBe("BAD_REQUEST");
-  });
-
-  it("rejects download identifiers that cannot identify a Discord attachment", async () => {
-    await actorSession();
-    const response = await accept(
-      fileClients().fileUrl({
-        headers: { authorization: "Bearer clerk-session" },
-        query: {
-          channelId,
-          messageId,
-          attachmentId: "../../credentials",
+    const response = await request(
+      "/api/integrations/discord/upload-file/init",
+      {
+        method: "POST",
+        headers: {
+          ...SESSION,
+          "content-type": "application/json",
         },
-      }),
-      [400],
+        body: JSON.stringify({
+          filename: "oversized.csv",
+          length: 10_485_761,
+          contentType: "text/csv",
+          checksumSha256: "a".repeat(64),
+          channelId: uniqueDiscordSnowflake(),
+        }),
+      },
     );
 
-    expect(response.body.error.code).toBe("BAD_REQUEST");
+    expect(response.status).toBe(400);
+    expect(response.body).toMatchObject({
+      error: { code: "BAD_REQUEST" },
+    });
   });
 });
 
 describe("Discord attachment downloads", () => {
-  it.each([
-    { contentType: "text/csv", expectedType: "text/csv" },
-    { contentType: undefined, expectedType: "application/octet-stream" },
-  ])(
-    "resolves fresh attachment metadata with MIME type $expectedType",
-    async ({ contentType, expectedType }) => {
-      const fixture = await boundFixture();
-      const source = incomingAttachment(fixture);
-      const freshUrl = `${source.attachment.url}&version=fresh`;
-      server.use(
-        http.get(source.messageUrl, () => {
-          return HttpResponse.json({
-            ...source.message,
-            attachments: [
-              {
-                ...source.attachment,
-                url: freshUrl,
-                content_type: contentType,
-              },
-            ],
-          });
-        }),
-      );
+  it("integrations-discord-files-010 resolves fresh attachment metadata with MIME type text/csv", async () => {
+    const { admin, fixture } = await bindAdminDiscord();
+    const channelId = uniqueDiscordSnowflake();
+    const messageId = uniqueDiscordSnowflake();
+    const attachmentId = uniqueDiscordSnowflake();
+    const freshUrl = `https://cdn.discordapp.com/attachments/${channelId}/${attachmentId}/quarterly%20report.csv?ex=1&is=1&hm=abc`;
+    serveDiscordWorld(fixture, {
+      channels: [
+        { id: channelId, type: 0, guild_id: fixture.guildId, name: "reports" },
+      ],
+      messages: [
+        {
+          id: messageId,
+          channel_id: channelId,
+          author: { id: fixture.discordUserId, username: "admin" },
+          content: "latest report",
+          timestamp: TIMESTAMP,
+          attachments: [
+            {
+              id: attachmentId,
+              filename: "quarterly report.csv",
+              size: 42,
+              url: freshUrl,
+              content_type: "text/csv",
+            },
+          ],
+        },
+      ],
+    });
 
-      const response = await accept(
-        fileClients().fileUrl({
-          headers: fixture.headers,
-          query: source.query,
-        }),
-        [200],
-      );
+    const response = await accept(
+      app(integrationsDiscordDownloadFileContract).fileUrl({
+        headers: signIn(admin),
+        query: { channelId, messageId, attachmentId },
+      }),
+      [200],
+    );
 
-      expect(response.body).toStrictEqual({
-        downloadUrl: freshUrl,
-        filename: source.attachment.filename,
-        contentType: expectedType,
-        size: source.attachment.size,
-      });
-      expect(response.headers.get("cache-control")).toBe("private, no-store");
-    },
-  );
+    expect(response.headers.get("cache-control")).toBe("private, no-store");
+    expect(response.body).toStrictEqual({
+      downloadUrl: freshUrl,
+      filename: "quarterly report.csv",
+      contentType: "text/csv",
+      size: 42,
+    });
+  });
 
-  it.each(["member", "bot"])(
-    "requires the %s to have ATTACH_FILES in addition to readable channel access",
-    async (deniedParty) => {
-      const fixture = await boundFixture();
-      const source = incomingAttachment(fixture);
-      server.use(
-        http.get(`${discordApiOrigin}/channels/${fixture.channelId}`, () => {
-          return HttpResponse.json({
-            id: fixture.channelId,
-            type: 0,
-            guild_id: fixture.guildId,
-            permission_overwrites: [
-              {
-                id:
-                  deniedParty === "member"
-                    ? fixture.discordUserId
-                    : fixture.botUserId,
-                type: 1,
-                allow: "0",
-                deny: (1n << 15n).toString(),
-              },
-            ],
-          });
-        }),
-      );
-      const client = fileClients();
-      const readable = await accept(
-        client.fileUrl({ headers: fixture.headers, query: source.query }),
-        [200],
-      );
-      const upload = await accept(
-        client.init({
-          headers: fixture.headers,
-          body: uploadBody({ channelId: fixture.channelId }),
-        }),
-        [404],
-      );
-
-      expect(readable.body).toMatchObject({
-        downloadUrl: source.attachment.url,
-        filename: source.attachment.filename,
-      });
-      expect(upload.body.error.code).toBe("NOT_FOUND");
-    },
-  );
-
-  it.each(["own", "other"] as const)(
-    "denies %s bot DM downloads while allowing outbound file delivery",
-    async (recipient) => {
-      const fixture = await boundFixture();
-      const source = incomingAttachment(fixture);
-      const recipientId =
-        recipient === "own" ? fixture.discordUserId : discordSnowflake();
-      server.use(
-        http.get(`${discordApiOrigin}/channels/${fixture.channelId}`, () => {
-          return HttpResponse.json({
-            id: fixture.channelId,
-            type: 1,
-            recipients: [{ id: recipientId, username: "file-owner" }],
-          });
-        }),
-        http.post(
-          `${discordApiOrigin}/users/@me/channels`,
-          async ({ request }) => {
-            await expect(request.json()).resolves.toStrictEqual({
-              recipient_id: recipientId,
-            });
-            return HttpResponse.json({
-              id: fixture.channelId,
+  it("integrations-discord-files-012 requires the member to have ATTACH_FILES in addition to readable channel access", async () => {
+    const { admin, fixture } = await bindAdminDiscord();
+    const channelId = uniqueDiscordSnowflake();
+    const messageId = uniqueDiscordSnowflake();
+    const attachmentId = uniqueDiscordSnowflake();
+    const freshUrl = `https://cdn.discordapp.com/attachments/${channelId}/${attachmentId}/report.csv`;
+    const bytes = Buffer.from("col\n1\n", "utf8");
+    serveDiscordWorld(fixture, {
+      guildOwnerId: uniqueDiscordSnowflake(),
+      channels: [
+        {
+          id: channelId,
+          type: 0,
+          guild_id: fixture.guildId,
+          name: "read-only-files",
+          permission_overwrites: [
+            {
+              id: fixture.discordUserId,
               type: 1,
-              recipients: [{ id: recipientId, username: "file-owner" }],
-            });
-          },
-        ),
-      );
-      const denied = await accept(
-        fileClients().fileUrl({
-          headers: fixture.headers,
-          query: source.query,
-        }),
-        [recipient === "own" ? 403 : 404],
-      );
-      expect(denied.body.error.code).toBe(
-        recipient === "own" ? "DISCORD_DM_READ_DENIED" : "NOT_FOUND",
-      );
-      const upload = await canonicalUpload(fixture, {
-        channelId: undefined,
-        userId: recipientId,
-      });
-      expect(upload.initialized.assetId).toStrictEqual(expect.any(String));
-      server.use(
-        http.post(
-          `${discordApiOrigin}/channels/${fixture.channelId}/messages`,
-          async ({ request }) => {
-            await expectUploadedDiscordFile(request, upload.bytes);
-            return HttpResponse.json(
-              discordFileMessage({
-                channelId: fixture.channelId,
-                messageId: discordSnowflake(),
-                authorId: fixture.botUserId,
-                bot: true,
-                attachment: source.attachment,
-              }),
-            );
-          },
-        ),
-      );
-      const delivered = await accept(
-        fileClients().complete({
-          headers: fixture.headers,
-          body: upload.completeBody,
-        }),
-        [200],
-      );
-      expect(delivered.body.delivery.status).toBe("delivered");
-    },
-  );
+              allow: "0",
+              deny: String(PERMISSION.attachFiles),
+            },
+          ],
+        },
+      ],
+      messages: [
+        {
+          id: messageId,
+          channel_id: channelId,
+          author: { id: fixture.discordUserId, username: "admin" },
+          content: "readable attachment",
+          timestamp: TIMESTAMP,
+          attachments: [
+            {
+              id: attachmentId,
+              filename: "report.csv",
+              size: bytes.byteLength,
+              url: freshUrl,
+              content_type: "text/csv",
+            },
+          ],
+        },
+      ],
+    });
+
+    const downloaded = await accept(
+      app(integrationsDiscordDownloadFileContract).fileUrl({
+        headers: signIn(admin),
+        query: { channelId, messageId, attachmentId },
+      }),
+      [200],
+    );
+    expect(downloaded.body.downloadUrl).toBe(freshUrl);
+    expect(downloaded.body.filename).toBe("report.csv");
+
+    const initDenied = await accept(
+      app(integrationsDiscordUploadInitContract).init({
+        headers: signIn(admin),
+        body: {
+          filename: "report.csv",
+          length: bytes.byteLength,
+          contentType: "text/csv",
+          checksumSha256: sha256Hex(bytes),
+          channelId,
+        },
+      }),
+      [404],
+    );
+    expect(initDenied.body.error.code).toBe("NOT_FOUND");
+  });
+
+  it("integrations-discord-files-014 (1/2) denies own bot DM attachment downloads", async () => {
+    const { admin, fixture } = await bindAdminDiscord();
+    const dmChannelId = uniqueDiscordSnowflake();
+    const messageId = uniqueDiscordSnowflake();
+    const attachmentId = uniqueDiscordSnowflake();
+    const bytes = Buffer.from("metric,value\nlatency,12\n", "utf8");
+    serveDiscordWorld(fixture, {
+      channels: [
+        {
+          id: dmChannelId,
+          type: 1,
+          recipients: [{ id: fixture.discordUserId, username: "admin" }],
+        },
+      ],
+      dmChannelsByRecipient: new Map([[fixture.discordUserId, dmChannelId]]),
+      messages: [
+        {
+          id: messageId,
+          channel_id: dmChannelId,
+          author: { id: fixture.discordUserId, username: "admin" },
+          content: "dm attachment",
+          timestamp: TIMESTAMP,
+          attachments: [
+            {
+              id: attachmentId,
+              filename: "dm.csv",
+              size: bytes.byteLength,
+              url: `https://cdn.discordapp.com/attachments/${dmChannelId}/${attachmentId}/dm.csv`,
+              content_type: "text/csv",
+            },
+          ],
+        },
+      ],
+    });
+
+    const downloadDenied = await accept(
+      app(integrationsDiscordDownloadFileContract).fileUrl({
+        headers: signIn(admin),
+        query: { channelId: dmChannelId, messageId, attachmentId },
+      }),
+      [403],
+    );
+    expect(downloadDenied.body.error.code).toBe("DISCORD_DM_READ_DENIED");
+  });
+
+  it("integrations-discord-files-014 (2/2) allows outbound file delivery to own bot DM", async () => {
+    const { admin, fixture } = await bindAdminDiscord();
+    createStorageMock();
+    const dmChannelId = uniqueDiscordSnowflake();
+    const bytes = Buffer.from("metric,value\nlatency,12\n", "utf8");
+    const world = serveDiscordWorld(fixture, {
+      channels: [
+        {
+          id: dmChannelId,
+          type: 1,
+          recipients: [{ id: fixture.discordUserId, username: "admin" }],
+        },
+      ],
+      dmChannelsByRecipient: new Map([[fixture.discordUserId, dmChannelId]]),
+    });
+
+    const initialized = await accept(
+      app(integrationsDiscordUploadInitContract).init({
+        headers: signIn(admin),
+        body: {
+          filename: "dm-report.csv",
+          length: bytes.byteLength,
+          contentType: "text/csv",
+          checksumSha256: sha256Hex(bytes),
+          userId: fixture.discordUserId,
+        },
+      }),
+      [200],
+    );
+    expect(initialized.body.assetId).toBeTruthy();
+    await putUploadedBytes(
+      initialized.body.uploadUrl,
+      bytes,
+      "text/csv",
+      initialized.body.uploadHeaders,
+    );
+
+    const completed = await accept(
+      app(integrationsDiscordUploadCompleteContract).complete({
+        headers: signIn(admin),
+        body: {
+          assetId: initialized.body.assetId,
+          userId: fixture.discordUserId,
+        },
+      }),
+      [200],
+    );
+
+    expect(completed.body.delivery.status).toBe("delivered");
+    expect(world.dmOpens.length).toBeGreaterThan(0);
+    for (const recipientId of world.dmOpens) {
+      expect(recipientId).toBe(fixture.discordUserId);
+    }
+    expect(world.uploads).toHaveLength(1);
+    expect(world.uploads[0]?.bytes.equals(bytes)).toBeTruthy();
+    expect(world.uploads[0]?.allowedMentions).toStrictEqual({
+      parse: [],
+      replied_user: false,
+    });
+  });
+
+  it("integrations-discord-files-015 (1/2) denies other bot DM attachment downloads", async () => {
+    const { admin, fixture } = await bindAdminDiscord();
+    const otherDiscordUserId = uniqueDiscordSnowflake();
+    const dmChannelId = uniqueDiscordSnowflake();
+    const messageId = uniqueDiscordSnowflake();
+    const attachmentId = uniqueDiscordSnowflake();
+    const bytes = Buffer.from("metric,value\nusers,99\n", "utf8");
+    serveDiscordWorld(fixture, {
+      channels: [
+        {
+          id: dmChannelId,
+          type: 1,
+          recipients: [{ id: otherDiscordUserId, username: "other" }],
+        },
+      ],
+      dmChannelsByRecipient: new Map([[otherDiscordUserId, dmChannelId]]),
+      messages: [
+        {
+          id: messageId,
+          channel_id: dmChannelId,
+          author: { id: otherDiscordUserId, username: "other" },
+          content: "other dm attachment",
+          timestamp: TIMESTAMP,
+          attachments: [
+            {
+              id: attachmentId,
+              filename: "other.csv",
+              size: bytes.byteLength,
+              url: `https://cdn.discordapp.com/attachments/${dmChannelId}/${attachmentId}/other.csv`,
+              content_type: "text/csv",
+            },
+          ],
+        },
+      ],
+    });
+
+    const downloadDenied = await accept(
+      app(integrationsDiscordDownloadFileContract).fileUrl({
+        headers: signIn(admin),
+        query: { channelId: dmChannelId, messageId, attachmentId },
+      }),
+      [404],
+    );
+    expect(downloadDenied.body.error.code).toBe("NOT_FOUND");
+  });
+
+  it("integrations-discord-files-015 (2/2) allows outbound file delivery to another user's bot DM", async () => {
+    const { admin, fixture } = await bindAdminDiscord();
+    createStorageMock();
+    const otherDiscordUserId = uniqueDiscordSnowflake();
+    const dmChannelId = uniqueDiscordSnowflake();
+    const bytes = Buffer.from("metric,value\nusers,99\n", "utf8");
+    const world = serveDiscordWorld(fixture, {
+      channels: [
+        {
+          id: dmChannelId,
+          type: 1,
+          recipients: [{ id: otherDiscordUserId, username: "other" }],
+        },
+      ],
+      dmChannelsByRecipient: new Map([[otherDiscordUserId, dmChannelId]]),
+    });
+
+    const initialized = await accept(
+      app(integrationsDiscordUploadInitContract).init({
+        headers: signIn(admin),
+        body: {
+          filename: "other-report.csv",
+          length: bytes.byteLength,
+          contentType: "text/csv",
+          checksumSha256: sha256Hex(bytes),
+          userId: otherDiscordUserId,
+        },
+      }),
+      [200],
+    );
+    expect(initialized.body.assetId).toBeTruthy();
+    await putUploadedBytes(
+      initialized.body.uploadUrl,
+      bytes,
+      "text/csv",
+      initialized.body.uploadHeaders,
+    );
+
+    const completed = await accept(
+      app(integrationsDiscordUploadCompleteContract).complete({
+        headers: signIn(admin),
+        body: {
+          assetId: initialized.body.assetId,
+          userId: otherDiscordUserId,
+        },
+      }),
+      [200],
+    );
+
+    expect(completed.body.delivery.status).toBe("delivered");
+    expect(world.dmOpens.length).toBeGreaterThan(0);
+    for (const recipientId of world.dmOpens) {
+      expect(recipientId).toBe(otherDiscordUserId);
+    }
+    expect(world.uploads).toHaveLength(1);
+    expect(world.uploads[0]?.bytes.equals(bytes)).toBeTruthy();
+    expect(world.uploads[0]?.allowedMentions).toStrictEqual({
+      parse: [],
+      replied_user: false,
+    });
+  });
 });
 
-describe("Fire-and-forget Discord file publication and delivery", () => {
-  it.each(["user", "organization"])(
-    "does not expose another %s's asset through complete",
-    async (foreignOwner) => {
-      const fixture = await boundFixture();
-      const upload = await canonicalUpload(fixture);
-      const actor = await actorSession(
-        foreignOwner === "user"
-          ? { orgId: fixture.actor.orgId }
-          : { userId: fixture.actor.userId },
-      );
-      mockDiscordMemberships(context, [fixture.actor, actor]);
-      const complete = await accept(
-        fileClients().complete({
-          headers: { authorization: "Bearer clerk-session" },
-          body: upload.completeBody,
-        }),
-        [404],
-      );
-      expect(complete.body.error.code).toBe("NOT_FOUND");
-    },
-  );
-
-  it(
-    "publishes one file artifact in catalog and delivers fire-and-forget to Discord",
-    withPublishedDiscordFixture(async (fixture, lifecycle) => {
-      const headers = fixture.headers;
-      const upload = await canonicalUpload(fixture);
-      expect(context.mocks.s3.getSignedUrl).toHaveBeenCalledWith(
-        expect.anything(),
-        expect.objectContaining({
-          input: expect.objectContaining({
-            Key: `private-artifacts/${upload.initialized.assetId}/${upload.body.filename}`,
-          }),
-        }),
-        expect.anything(),
-      );
-      const signedCalls = context.mocks.s3.getSignedUrl.mock.calls;
-      const signedPut = signedCalls.find((call) => {
-        return (
-          call[1] instanceof PutObjectCommand &&
-          call[1].input.Key?.endsWith(`/${upload.body.filename}`)
-        );
-      });
-      if (!signedPut || !(signedPut[1] instanceof PutObjectCommand)) {
-        throw new Error("Expected a signed Discord PUT");
-      }
-      expect(signedPut[1].input.ChecksumSHA256).toBeUndefined();
-
-      const deliveredMessageId = discordSnowflake();
-      const deliveredAttachmentId = discordSnowflake();
-      server.use(
-        http.post(
-          `${discordApiOrigin}/channels/${fixture.channelId}/messages`,
-          ({ request }) => {
-            return lifecycle.run(async () => {
-              await expectUploadedDiscordFile(request, upload.bytes);
-              return HttpResponse.json(
-                discordFileMessage({
-                  channelId: fixture.channelId,
-                  messageId: deliveredMessageId,
-                  authorId: fixture.botUserId,
-                  bot: true,
-                  attachment: {
-                    id: deliveredAttachmentId,
-                    filename: upload.body.filename,
-                    size: upload.bytes.byteLength,
-                    url: `https://cdn.discordapp.com/attachments/${fixture.channelId}/${deliveredAttachmentId}/report.csv`,
-                    content_type: "text/csv",
-                  },
-                }),
-              );
-            });
-          },
-        ),
-      );
-      const completed = await accept(
-        fileClients().complete({ headers, body: upload.completeBody }),
-        [200],
-      );
-
-      expect(completed.body).toStrictEqual({
-        assetId: upload.initialized.assetId,
-        url: upload.initialized.url,
-        delivery: {
-          status: "delivered",
-          channelId: fixture.channelId,
-          messageId: deliveredMessageId,
-          attachmentId: deliveredAttachmentId,
-          permalink: `https://discord.com/channels/${fixture.guildId}/${fixture.channelId}/${deliveredMessageId}`,
-        },
-      });
-
-      const catalog = await accept(catalogClient().list({ headers }), [200]);
-      expect(catalog.body.artifacts).toHaveLength(1);
-      const artifact = catalog.body.artifacts[0];
-      if (!artifact) {
-        throw new Error("Expected the published Discord file in the catalog");
-      }
-      const detail = await accept(
-        catalogClient().get({
-          headers,
-          params: { artifactId: artifact.id },
-        }),
-        [200],
-      );
-      expect(detail.body).toMatchObject({
-        kind: "file",
-        file: {
-          id: upload.initialized.assetId,
-          filename: upload.body.filename,
-          contentType: "text/csv",
-          size: upload.bytes.byteLength,
-          url: upload.initialized.url,
-        },
-      });
-    }),
-  );
-
-  it("refuses publication when the stored bytes have a different checksum", async () => {
-    const fixture = await boundFixture();
-    const upload = await canonicalUpload(fixture);
-    const objectStore = storage.acceptChatObjectStorage();
-    objectStore.addObject({
-      bucket: "test-private-artifacts",
-      key: `private-artifacts/${upload.initialized.assetId}/${upload.body.filename}`,
-      size: upload.bytes.byteLength,
-      body: Buffer.from("a,b\n9,9\n"),
-      contentType: "text/csv",
-      metadata: { "artifact-id": upload.initialized.assetId },
+describe("Canonical Discord file publication and delivery", () => {
+  it("integrations-discord-files-016 does not expose another user's asset through complete", async () => {
+    const { admin, fixture } = await bindAdminDiscord();
+    const otherMember = await seedActor("org:member", { orgId: admin.orgId });
+    createStorageMock();
+    const channelId = uniqueDiscordSnowflake();
+    const bytes = Buffer.from("a,b\n1,2\n", "utf8");
+    serveDiscordWorld(fixture, {
+      channels: [
+        { id: channelId, type: 0, guild_id: fixture.guildId, name: "general" },
+      ],
     });
-    const rejected = await accept(
-      fileClients().complete({
-        headers: fixture.headers,
-        body: upload.completeBody,
+
+    const initialized = await accept(
+      app(integrationsDiscordUploadInitContract).init({
+        headers: signIn(admin),
+        body: {
+          filename: "report.csv",
+          length: bytes.byteLength,
+          contentType: "text/csv",
+          checksumSha256: sha256Hex(bytes),
+          channelId,
+        },
+      }),
+      [200],
+    );
+    await putUploadedBytes(
+      initialized.body.uploadUrl,
+      bytes,
+      "text/csv",
+      initialized.body.uploadHeaders,
+    );
+
+    const completed = await accept(
+      app(integrationsDiscordUploadCompleteContract).complete({
+        headers: signIn(otherMember),
+        body: { assetId: initialized.body.assetId, channelId },
+      }),
+      [404],
+    );
+
+    expect(completed.body.error.code).toBe("NOT_FOUND");
+  });
+
+  it("integrations-discord-files-017 does not expose another organization's asset through complete", async () => {
+    const { admin, fixture } = await bindAdminDiscord();
+    const sameUserOtherOrg = await seedActor("org:admin", {
+      userId: admin.userId,
+    });
+    createStorageMock();
+    const channelId = uniqueDiscordSnowflake();
+    const bytes = Buffer.from("a,b\n3,4\n", "utf8");
+    serveDiscordWorld(fixture, {
+      channels: [
+        { id: channelId, type: 0, guild_id: fixture.guildId, name: "general" },
+      ],
+    });
+
+    const initialized = await accept(
+      app(integrationsDiscordUploadInitContract).init({
+        headers: signIn(admin),
+        body: {
+          filename: "report.csv",
+          length: bytes.byteLength,
+          contentType: "text/csv",
+          checksumSha256: sha256Hex(bytes),
+          channelId,
+        },
+      }),
+      [200],
+    );
+    await putUploadedBytes(
+      initialized.body.uploadUrl,
+      bytes,
+      "text/csv",
+      initialized.body.uploadHeaders,
+    );
+
+    const completed = await accept(
+      app(integrationsDiscordUploadCompleteContract).complete({
+        headers: signIn(sameUserOtherOrg),
+        body: { assetId: initialized.body.assetId, channelId },
+      }),
+      [404],
+    );
+
+    expect(completed.body.error.code).toBe("NOT_FOUND");
+  });
+
+  it("integrations-discord-files-024 refuses publication when the stored bytes have a different checksum", async () => {
+    const { admin, fixture } = await bindAdminDiscord();
+    createStorageMock();
+    const channelId = uniqueDiscordSnowflake();
+    const declaredBytes = Buffer.from("declared,content\n1,2\n", "utf8");
+    const tamperedBytes = Buffer.from("tampered,content\n9,9\n", "utf8");
+    serveDiscordWorld(fixture, {
+      channels: [
+        { id: channelId, type: 0, guild_id: fixture.guildId, name: "general" },
+      ],
+    });
+
+    const initialized = await accept(
+      app(integrationsDiscordUploadInitContract).init({
+        headers: signIn(admin),
+        body: {
+          filename: "report.csv",
+          length: declaredBytes.byteLength,
+          contentType: "text/csv",
+          checksumSha256: sha256Hex(declaredBytes),
+          channelId,
+        },
+      }),
+      [200],
+    );
+    await putUploadedBytes(
+      initialized.body.uploadUrl,
+      tamperedBytes,
+      "text/csv",
+      initialized.body.uploadHeaders,
+    );
+
+    const completed = await accept(
+      app(integrationsDiscordUploadCompleteContract).complete({
+        headers: signIn(admin),
+        body: { assetId: initialized.body.assetId, channelId },
       }),
       [400],
     );
+    expect(completed.body.error.code).toBe("INVALID_FILE");
+    expect(completed.body.error.message.toLowerCase()).toContain("checksum");
 
-    expect(rejected.body.error).toMatchObject({
-      code: "INVALID_FILE",
-      message: expect.stringMatching(/checksum/iu),
-    });
     const catalog = await accept(
-      catalogClient().list({ headers: fixture.headers }),
+      app(artifactCatalogContract).list({
+        headers: signIn(admin),
+        query: {},
+      }),
       [200],
     );
     expect(catalog.body.artifacts).toStrictEqual([]);
   });
 
-  it(
-    "reports delivery failure while keeping the published artifact in catalog when Discord errors",
-    withPublishedDiscordFixture(async (fixture) => {
-      const upload = await canonicalUpload(fixture);
-      server.use(
-        http.post(
-          `${discordApiOrigin}/channels/${fixture.channelId}/messages`,
-          async ({ request }) => {
-            await expectUploadedDiscordFile(request, upload.bytes);
-            return HttpResponse.error();
-          },
-        ),
-      );
-      const unconfirmed = await accept(
-        fileClients().complete({
-          headers: fixture.headers,
-          body: upload.completeBody,
-        }),
-        [200],
-      );
-
-      expect(unconfirmed.body).toMatchObject({
-        assetId: upload.initialized.assetId,
-        url: upload.initialized.url,
-        delivery: { status: "failed" },
-      });
-      const catalog = await accept(
-        catalogClient().list({ headers: fixture.headers }),
-        [200],
-      );
-      expect(catalog.body.artifacts).toHaveLength(1);
-    }),
-  );
-
-  it("records the receipt when Discord normalizes the attachment filename", async () => {
-    const fixture = await boundFixture();
-    const upload = await canonicalUpload(fixture, {
-      filename: "quarterly report.csv",
+  it("integrations-discord-files-018 publishes one canonical artifact and delivers it to Discord", async () => {
+    const { admin, fixture } = await bindAdminDiscord();
+    const storage = createStorageMock();
+    const channelId = uniqueDiscordSnowflake();
+    const bytes = Buffer.from("region,revenue\nus,1200\n", "utf8");
+    const world = serveDiscordWorld(fixture, {
+      channels: [
+        { id: channelId, type: 0, guild_id: fixture.guildId, name: "general" },
+      ],
     });
-    const deliveredMessageId = discordSnowflake();
-    const deliveredAttachmentId = discordSnowflake();
-    server.use(
-      http.post(
-        `${discordApiOrigin}/channels/${fixture.channelId}/messages`,
-        async ({ request }) => {
-          await expectUploadedDiscordFile(request, upload.bytes);
-          return HttpResponse.json(
-            discordFileMessage({
-              channelId: fixture.channelId,
-              messageId: deliveredMessageId,
-              authorId: fixture.botUserId,
-              bot: true,
-              attachment: {
-                id: deliveredAttachmentId,
-                filename: "quarterly_report.csv",
-                size: upload.bytes.byteLength,
-                url: `https://cdn.discordapp.com/attachments/${fixture.channelId}/${deliveredAttachmentId}/quarterly_report.csv`,
-                content_type: "text/csv",
-              },
-            }),
-          );
+
+    const initialized = await accept(
+      app(integrationsDiscordUploadInitContract).init({
+        headers: signIn(admin),
+        body: {
+          filename: "report.csv",
+          length: bytes.byteLength,
+          contentType: "text/csv",
+          checksumSha256: sha256Hex(bytes),
+          channelId,
         },
-      ),
+      }),
+      [200],
     );
+    const { assetId, url } = initialized.body;
+    expect(storage.signedPuts).toHaveLength(1);
+    expect(storage.signedPuts[0]?.key).toBe(
+      `private-artifacts/${assetId}/report.csv`,
+    );
+    expect(storage.signedPuts[0]?.checksumSha256).toBeUndefined();
+    await putUploadedBytes(
+      initialized.body.uploadUrl,
+      bytes,
+      "text/csv",
+      initialized.body.uploadHeaders,
+    );
+
     const completed = await accept(
-      fileClients().complete({
-        headers: fixture.headers,
-        body: upload.completeBody,
+      app(integrationsDiscordUploadCompleteContract).complete({
+        headers: signIn(admin),
+        body: { assetId, channelId },
       }),
       [200],
     );
 
-    expect(completed.body.delivery).toStrictEqual({
-      status: "delivered",
-      channelId: fixture.channelId,
-      messageId: deliveredMessageId,
-      attachmentId: deliveredAttachmentId,
-      permalink: `https://discord.com/channels/${fixture.guildId}/${fixture.channelId}/${deliveredMessageId}`,
+    expect(world.uploads).toHaveLength(1);
+    expect(world.uploads[0]?.bytes.equals(bytes)).toBeTruthy();
+    const [created] = world.createdMessages;
+    if (!created) {
+      throw new Error("Expected one delivered Discord message");
+    }
+    expect(completed.body).toStrictEqual({
+      assetId,
+      url: new URL(`/artifacts/${assetId.replace(/-/gu, "")}.csv`, url).href,
+      delivery: {
+        status: "delivered",
+        channelId,
+        messageId: created.messageId,
+        attachmentId: created.attachmentId,
+        permalink: `https://discord.com/channels/${fixture.guildId}/${channelId}/${created.messageId}`,
+      },
+    });
+
+    const catalog = await accept(
+      app(artifactCatalogContract).list({
+        headers: signIn(admin),
+        query: {},
+      }),
+      [200],
+    );
+    expect(catalog.body.artifacts).toHaveLength(1);
+    const [listedArtifact] = catalog.body.artifacts;
+    if (!listedArtifact) {
+      throw new Error("Expected one catalog artifact");
+    }
+    expect(listedArtifact.kind).toBe("file");
+
+    const detail = await accept(
+      app(artifactCatalogContract).get({
+        headers: signIn(admin),
+        params: { artifactId: listedArtifact.id },
+      }),
+      [200],
+    );
+    expect(detail.body.kind).toBe("file");
+    if (detail.body.kind !== "file") {
+      throw new Error("Expected a file artifact detail");
+    }
+    expect(detail.body.file).toMatchObject({
+      id: assetId,
+      filename: "report.csv",
+      contentType: "text/csv",
+      size: bytes.byteLength,
+      url: new URL(`/artifacts/${assetId.replace(/-/gu, "")}.csv`, url).href,
     });
   });
 
-  it("denies delivery after the verified Discord connection is removed", async () => {
-    const fixture = await boundFixture();
-    const upload = await canonicalUpload(fixture);
-    await removePublicDiscordBinding(context, fixture.binding);
-    const revoked = await accept(
-      fileClients().complete({
-        headers: fixture.headers,
-        body: upload.completeBody,
+  it("integrations-discord-files-026 records the receipt when Discord normalizes the attachment filename", async () => {
+    const { admin, fixture } = await bindAdminDiscord();
+    createStorageMock();
+    const channelId = uniqueDiscordSnowflake();
+    const bytes = Buffer.from("quarter,sales\nQ1,500\n", "utf8");
+    const world = serveDiscordWorld(fixture, {
+      channels: [
+        { id: channelId, type: 0, guild_id: fixture.guildId, name: "general" },
+      ],
+      normalizeAttachmentFilename: (name) => {
+        return name.replaceAll(" ", "_");
+      },
+    });
+
+    const initialized = await accept(
+      app(integrationsDiscordUploadInitContract).init({
+        headers: signIn(admin),
+        body: {
+          filename: "quarterly report.csv",
+          length: bytes.byteLength,
+          contentType: "text/csv",
+          checksumSha256: sha256Hex(bytes),
+          channelId,
+        },
+      }),
+      [200],
+    );
+    await putUploadedBytes(
+      initialized.body.uploadUrl,
+      bytes,
+      "text/csv",
+      initialized.body.uploadHeaders,
+    );
+
+    const completed = await accept(
+      app(integrationsDiscordUploadCompleteContract).complete({
+        headers: signIn(admin),
+        body: { assetId: initialized.body.assetId, channelId },
+      }),
+      [200],
+    );
+
+    const [created] = world.createdMessages;
+    if (!created) {
+      throw new Error("Expected one delivered Discord message");
+    }
+    expect(completed.body.delivery).toStrictEqual({
+      status: "delivered",
+      channelId,
+      messageId: created.messageId,
+      attachmentId: created.attachmentId,
+      permalink: `https://discord.com/channels/${fixture.guildId}/${channelId}/${created.messageId}`,
+    });
+  });
+
+  it("integrations-discord-files-027 reports a Discord rate limit as a failed file delivery", async () => {
+    const { admin, fixture } = await bindAdminDiscord();
+    createStorageMock();
+    const channelId = uniqueDiscordSnowflake();
+    const bytes = Buffer.from("status,ok\ntrue,1\n", "utf8");
+    const world = serveDiscordWorld(fixture, {
+      channels: [
+        { id: channelId, type: 0, guild_id: fixture.guildId, name: "general" },
+      ],
+      rateLimitUploads: true,
+    });
+
+    const initialized = await accept(
+      app(integrationsDiscordUploadInitContract).init({
+        headers: signIn(admin),
+        body: {
+          filename: "report.csv",
+          length: bytes.byteLength,
+          contentType: "text/csv",
+          checksumSha256: sha256Hex(bytes),
+          channelId,
+        },
+      }),
+      [200],
+    );
+    await putUploadedBytes(
+      initialized.body.uploadUrl,
+      bytes,
+      "text/csv",
+      initialized.body.uploadHeaders,
+    );
+
+    const first = await accept(
+      app(integrationsDiscordUploadCompleteContract).complete({
+        headers: signIn(admin),
+        body: { assetId: initialized.body.assetId, channelId },
+      }),
+      [200],
+    );
+
+    expect(first.body.delivery).toStrictEqual({
+      status: "failed",
+      message: "Discord rejected the file delivery",
+    });
+    expect(world.uploads).toHaveLength(1);
+  });
+
+  it("integrations-discord-files-029 denies completion after the verified connection is removed", async () => {
+    const { admin, fixture } = await bindAdminDiscord();
+    createStorageMock();
+    const channelId = uniqueDiscordSnowflake();
+    const bytes = Buffer.from("id,name\n1,alpha\n", "utf8");
+    const world = serveDiscordWorld(fixture, {
+      channels: [
+        { id: channelId, type: 0, guild_id: fixture.guildId, name: "general" },
+      ],
+    });
+
+    const initialized = await accept(
+      app(integrationsDiscordUploadInitContract).init({
+        headers: signIn(admin),
+        body: {
+          filename: "report.csv",
+          length: bytes.byteLength,
+          contentType: "text/csv",
+          checksumSha256: sha256Hex(bytes),
+          channelId,
+        },
+      }),
+      [200],
+    );
+    await putUploadedBytes(
+      initialized.body.uploadUrl,
+      bytes,
+      "text/csv",
+      initialized.body.uploadHeaders,
+    );
+
+    await removePublicDiscordBinding(context, admin);
+
+    const afterRemoval = await accept(
+      app(integrationsDiscordUploadCompleteContract).complete({
+        headers: signIn(admin),
+        body: { assetId: initialized.body.assetId, channelId },
       }),
       [404],
     );
-    expect(revoked.body.error.code).toBe("NOT_FOUND");
-  });
-
-  it("creates the Discord output thread only when the prepared file is sent", async () => {
-    const connected = await setupConnectedDiscordActor(context);
-    onTestFinished(async () => {
-      await flushWaitUntilForTest();
-      mockDiscordMemberships(context, [connected]);
-      await removePublicDiscordBinding(context, connected.fixture);
-    });
-    runs.acceptTelemetryIngest();
-    const provider = mockDiscordProvider(connected);
-    const source = discordMessageForTest(connected, {
-      channelId: provider.guildChannelId,
-      content: `<@${connected.botUserId}> Publish this report to our thread`,
-    });
-    provider.messages.set(source.id, source);
-    const accepted = await postDiscordMessage(context, source);
-    expect(accepted.body.outcome).toBe("accepted");
-    await flushWaitUntilForTest();
-    const [thread] = await discordChatThreads(context, connected);
-    if (!thread) {
-      throw new Error("Expected Discord ingress to create a canonical chat");
-    }
-    const events = await readProjectedChatEvents(context, {
-      threadId: thread.id,
-      headers: { authorization: "Bearer clerk-session" },
-    });
-    const revokedIds = revokedChatEventIds(events);
-    const input = events.find((event) => {
-      return event.eventType === "input.prompt" && !revokedIds.has(event.id);
-    });
-    expect(input).toMatchObject({
-      eventType: "input.prompt",
-      runId: expect.any(String),
-    });
-    if (input?.eventType !== "input.prompt" || !input.runId) {
-      throw new Error("Expected a Run admitted from the Discord input");
-    }
-    expect(input.userMessage.parts).toContainEqual({
-      type: "source",
-      kind: "discord",
-      href: `https://discord.com/channels/${connected.guildId}/${provider.guildChannelId}/${source.id}`,
-    });
-    await runs.heartbeatRunner(connected.runnerGroup);
-    const execution = await runs.executionInput(input.runId);
-    const token = execution.platformEnvironment.OKOU_TOKEN;
-    if (!token) {
-      throw new Error(
-        "Expected the Runner execution to issue an Okou run token",
-      );
-    }
-    const headers = { authorization: `Bearer ${token}` };
-    const fixture: BoundFixture = {
-      ...connected,
-      actor: { ...connected.actor, orgId: connected.orgId },
-      binding: connected.fixture,
-      channelId: source.id,
-      headers,
-    };
-    expect(provider.channels.has(source.id)).toBeFalsy();
-    const upload = await canonicalUpload(fixture);
-    expect(provider.channels.has(source.id)).toBeFalsy();
-    const client = fileClients();
-    const deliveredMessageId = discordSnowflake();
-    const deliveredAttachmentId = discordSnowflake();
-    server.use(
-      http.post(
-        `${discordApiOrigin}/channels/${source.id}/messages`,
-        async ({ request }) => {
-          expect(provider.channels.get(source.id)?.parent_id).toBe(
-            provider.guildChannelId,
-          );
-          await expectUploadedDiscordFile(request, upload.bytes);
-          return HttpResponse.json(
-            discordFileMessage({
-              channelId: source.id,
-              messageId: deliveredMessageId,
-              authorId: connected.botUserId,
-              bot: true,
-              attachment: {
-                id: deliveredAttachmentId,
-                filename: upload.body.filename,
-                size: upload.bytes.byteLength,
-                url: `https://cdn.discordapp.com/attachments/${source.id}/${deliveredAttachmentId}/report.csv`,
-                content_type: "text/csv",
-              },
-            }),
-          );
-        },
-      ),
-    );
-    server.use(
-      http.post(
-        `${discordApiOrigin}/channels/${provider.guildChannelId}/messages/${source.id}/threads`,
-        () => {
-          return HttpResponse.json(
-            { message: "Rate limited", retry_after: 60, global: false },
-            { status: 429 },
-          );
-        },
-        { once: true },
-      ),
-    );
-    await accept(
-      client.complete({ headers, body: upload.completeBody }),
-      [429],
-    );
-    expect(provider.channels.has(source.id)).toBeFalsy();
-    const completed = await accept(
-      client.complete({ headers, body: upload.completeBody }),
-      [200],
-    );
-    expect(completed.body).toStrictEqual({
-      assetId: upload.initialized.assetId,
-      url: upload.initialized.url,
-      delivery: {
-        status: "delivered",
-        channelId: source.id,
-        messageId: deliveredMessageId,
-        attachmentId: deliveredAttachmentId,
-        permalink: `https://discord.com/channels/${connected.guildId}/${source.id}/${deliveredMessageId}`,
-      },
-    });
+    expect(afterRemoval.body.error.code).toBe("NOT_FOUND");
+    expect(world.uploads).toHaveLength(0);
   });
 });

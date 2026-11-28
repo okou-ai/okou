@@ -1,1564 +1,1208 @@
-import { createChatConnectorAccessApi } from "./helpers/chat-connector-access";
 import { randomUUID } from "node:crypto";
-import { createBddIntegrationApi } from "./helpers/api-bdd-integrations";
-
+import { chatConnectorAccessContract } from "@okouai/api-contracts/contracts/chat-connector-access";
 import { chatRemoteAccessContract } from "@okouai/api-contracts/contracts/chat-remote-access";
 import {
   chatThreadConnectorSelectionContract,
   chatThreadMetadataContract,
-  chatThreadRenameContract,
   chatThreadsContract,
 } from "@okouai/api-contracts/contracts/chat-threads";
 import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
+import { builtinConnectorManualGrantContract } from "@okouai/api-contracts/contracts/connectors";
+import {
+  customConnectorValuesContract,
+  customConnectorsContract,
+} from "@okouai/api-contracts/contracts/custom-connectors";
 import { sshConnectionsContract } from "@okouai/api-contracts/contracts/ssh-connections";
-import { userModelPreferenceContract } from "@okouai/api-contracts/contracts/user-model-preference";
+import { userPreferencesContract } from "@okouai/api-contracts/contracts/user-preferences";
+import { vncConnectionsContract } from "@okouai/api-contracts/contracts/vnc-connections";
 import { createStore } from "ccstate";
 import { describe, expect, it } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
+import {
+  TEST_WITH_DOUBLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE,
+  TEST_WITH_SINGLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE,
+} from "../../../__tests__/test-timeouts";
 import { flushWaitUntilForTest } from "../../context/wait-until";
+import { chatConnectorAccessRoutes } from "../chat-connector-access";
 import { chatRemoteAccessRoutes } from "../chat-remote-access";
 import { chatThreadRoutes } from "../chat-threads";
+import { chatThreadConnectorSelectionRoutes } from "../chat-threads-connector-selections";
+import { chatThreadCreateRoutes } from "../chat-threads-create";
 import { chatThreadGetRoutes } from "../chat-threads-get";
-import { chatThreadRenameRoutes } from "../chat-threads-rename";
 import { connectorAccountRoutes } from "../connector-accounts";
+import { builtinConnectorsRoutes } from "../connectors";
+import { customConnectorsRoutes } from "../custom-connectors";
+import { customConnectorsValuesSetRoutes } from "../custom-connectors-values-set";
 import { sshConnectionsRoutes } from "../ssh-connections";
-import { userModelPreferenceRoutes } from "../user-model-preference";
+import { userPreferencesRoutes } from "../user-preferences";
+import { vncConnectionsRoutes } from "../vnc-connections";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
-import {
-  createConnectorBddApi,
-  manualHttpCustomConnectorCreateBody,
-} from "./helpers/api-bdd-connectors";
-import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
 import { createRunsApi } from "./helpers/api-bdd-runs";
-import { createRunExecutionCredentials } from "./helpers/run-execution-credentials";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { seedOrgMembership$ } from "./helpers/org-membership";
+import { channelsPublishedTo } from "./helpers/realtime-publications";
 import { createRouteMocks } from "./helpers/route-test";
-import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
+import { createRunExecutionCredentials } from "./helpers/run-execution-credentials";
 import { inlineSshKey } from "./helpers/ssh-credential";
-import {
-  createVncRuntimeApi,
-  initializeVncRuntimeTest,
-  vncConnectionBody,
-} from "./helpers/vnc-runtime";
+import { vncConnectionBody } from "./helpers/vnc-runtime";
 
 const context = testContext();
-const executionToken = createRunExecutionCredentials(context).okouToken;
-const store = createStore();
-const bdd = createBddApi(context);
-const api = createRunsApi(context);
-const connectorApi = createConnectorBddApi(context);
-const vnc = createVncRuntimeApi(context);
+const headers = Object.freeze({ authorization: "Bearer clerk-session" });
+const openaiTarget = Object.freeze({
+  kind: "builtin" as const,
+  connectorSlug: "openai" as const,
+});
+const chatThreadEventsRoutes = Object.freeze(
+  chatThreadRoutes.filter(({ route }) => {
+    return route === chatThreadsContract.events;
+  }),
+);
+const runCredentials = createRunExecutionCredentials(context, {
+  plan: "limited-free",
+});
 
-const WORKSPACE_DEFAULT_MODEL = "claude-sonnet-5-5";
-const OTHER_WORKSPACE_MODEL = "claude-opus-5-5";
-const PRIORITY_MODEL = "gpt-6-sol";
+const app = setupApp({
+  context,
+  routes: [
+    ...chatThreadCreateRoutes,
+    ...chatRemoteAccessRoutes,
+    ...sshConnectionsRoutes,
+    ...vncConnectionsRoutes,
+    ...builtinConnectorsRoutes,
+    ...customConnectorsRoutes,
+    ...customConnectorsValuesSetRoutes,
+    ...chatThreadConnectorSelectionRoutes,
+    ...chatConnectorAccessRoutes,
+  ],
+});
+const threadsApi = app(chatThreadsContract);
+const remoteAccessApi = app(chatRemoteAccessContract);
+const sshApi = app(sshConnectionsContract);
+const vncApi = app(vncConnectionsContract);
+const builtinConnectApi = app(builtinConnectorManualGrantContract);
+const customConnectorsApi = app(customConnectorsContract);
+const customValuesApi = app(customConnectorValuesContract);
+const selectionsApi = app(chatThreadConnectorSelectionContract);
+const connectorAccessApi = app(chatConnectorAccessContract);
 
-interface AgentFixture {
-  readonly actor: ApiTestUser;
-  readonly userId: string;
-  readonly orgId: string;
+const runThreadsApi = setupApp({
+  context,
+  routes: chatThreadCreateRoutes,
+})(chatThreadsContract);
+const threadEventsApi = setupApp({
+  context,
+  routes: chatThreadEventsRoutes,
+})(chatThreadsContract);
+const metadataApi = setupApp({
+  context,
+  routes: chatThreadGetRoutes,
+})(chatThreadMetadataContract);
+const runSelectionsApi = setupApp({
+  context,
+  routes: chatThreadConnectorSelectionRoutes,
+})(chatThreadConnectorSelectionContract);
+const runBuiltinConnectApi = setupApp({
+  context,
+  routes: builtinConnectorsRoutes,
+})(builtinConnectorManualGrantContract);
+const connectorAccountsApi = setupApp({
+  context,
+  routes: connectorAccountRoutes,
+})(connectorAccountsContract);
+const userPreferencesApi = setupApp({
+  context,
+  routes: userPreferencesRoutes,
+})(userPreferencesContract);
+
+function signIn(userId: string, orgId: string) {
+  createRouteMocks(context).clerk.session(userId, orgId, "org:admin");
+  return headers;
 }
 
-/** Creates an agent with caller-owned subscriptions and a saved member model. */
-async function seedAgent(): Promise<AgentFixture> {
-  const actor = bdd.user();
-  bdd.acceptStorageWrites();
-  await api.ensurePersonalSubscriptionModel(actor, {
-    model: WORKSPACE_DEFAULT_MODEL,
-  });
-  await createBddIntegrationApi(context).configureNativeSubscriptionModels(
-    actor,
-  );
-  await api.updateUserModelPreference(actor, WORKSPACE_DEFAULT_MODEL);
+function bearerHeaders(token: string) {
+  return { authorization: `Bearer ${token}` };
+}
 
+function requireOrgId(actor: ApiTestUser): string {
   if (!actor.orgId) {
-    throw new Error("Expected the seeded actor to belong to an org");
+    throw new Error("Expected an organization member");
   }
-  await store.set(
+  return actor.orgId;
+}
+
+async function connectOpenAiAccount(
+  authHeaders: { readonly authorization: string },
+  displayName: string,
+) {
+  const connected = await accept(
+    runBuiltinConnectApi.connect({
+      headers: authHeaders,
+      params: { connectorSlug: "openai" },
+      body: {
+        authMethod: "api-token",
+        values: { apiKey: `sk-test-${randomUUID()}` },
+        account: { intent: "add", displayName },
+      },
+    }),
+    [200],
+  );
+  return connected.body.connectionId;
+}
+
+async function createdEventsFor(
+  authHeaders: { readonly authorization: string },
+  threadId: string,
+) {
+  const response = await accept(
+    threadEventsApi.events({ headers: authHeaders, query: {} }),
+    [200],
+  );
+  return response.body.events.filter((event) => {
+    return event.chatThreadId === threadId && event.kind === "created";
+  });
+}
+
+async function setupRemoteAccessChat() {
+  const userId = `user_${randomUUID()}`;
+  const orgId = `org_${randomUUID()}`;
+  await createStore().set(
     seedOrgMembership$,
-    { orgId: actor.orgId, userId: actor.userId },
+    { userId, orgId, role: "admin" },
     context.signal,
   );
-  return {
-    actor,
-    userId: actor.userId,
-    orgId: actor.orgId,
-  };
-}
-
-function threadsClient() {
-  return setupApp({ context, routes: chatThreadRoutes })(chatThreadsContract);
-}
-
-function remoteAccessClient() {
-  return setupApp({ context, routes: chatRemoteAccessRoutes })(
-    chatRemoteAccessContract,
-  );
-}
-
-function sshClient() {
-  return setupApp({ context, routes: sshConnectionsRoutes })(
-    sshConnectionsContract,
-  );
-}
-
-function metadataClient() {
-  return setupApp({ context, routes: chatThreadGetRoutes })(
-    chatThreadMetadataContract,
-  );
-}
-
-function preferenceClient() {
-  return setupApp({ context, routes: userModelPreferenceRoutes })(
-    userModelPreferenceContract,
-  );
-}
-
-function connectorSelectionsClient() {
-  return setupApp({ context, routes: chatThreadRoutes })(
-    chatThreadConnectorSelectionContract,
-  );
-}
-
-function connectorAccountsClient() {
-  return setupApp({ context, routes: connectorAccountRoutes })(
-    connectorAccountsContract,
-  );
-}
-
-function renameClient() {
-  return setupApp({ context, routes: chatThreadRenameRoutes })(
-    chatThreadRenameContract,
-  );
-}
-
-async function readCreatedThreadEvents(threadId: string, token: string) {
-  const response = await accept(
-    threadsClient().events({
-      headers: { authorization: `Bearer ${token}` },
-      query: {},
-    }),
-    [200],
-  );
-  return response.body.events.filter((candidate) => {
-    return candidate.kind === "created" && candidate.chatThreadId === threadId;
-  });
-}
-
-async function readCreatedThreadEvent(threadId: string, token: string) {
-  const response = await accept(
-    threadsClient().events({
-      headers: { authorization: `Bearer ${token}` },
-      query: {},
-    }),
-    [200],
-  );
-  const event = response.body.events.find((candidate) => {
-    return candidate.kind === "created" && candidate.chatThreadId === threadId;
-  });
-  if (!event) {
-    throw new Error(`Created event not found for thread ${threadId}`);
-  }
-  return event;
-}
-
-describe("POST /api/chat-threads", () => {
-  it.each([true, false])(
-    "snapshots the member's cloud browser preference (%s) and preserves it on replay",
-    async (enabled) => {
-      const fixture = await seedAgent();
-      const preferences = createMiscRoutesApi(context);
-      await preferences.updatePreferences(
-        fixture.actor,
-        { cloudBrowserEnabledByDefault: enabled },
-        [200],
-      );
-      const token = await executionToken({
-        userId: fixture.userId,
-        orgId: fixture.orgId,
-      });
-      const headers = { authorization: `Bearer ${token}` };
-      const body = {
-        clientThreadId: randomUUID(),
-        model: WORKSPACE_DEFAULT_MODEL,
-      } as const;
-      const first = await accept(
-        threadsClient().create({ headers, body }),
-        [201],
-      );
-      await expect(
-        readCreatedThreadEvent(first.body.id, token),
-      ).resolves.toMatchObject({ cloudBrowserEnabled: enabled });
-
-      await preferences.updatePreferences(
-        fixture.actor,
-        { cloudBrowserEnabledByDefault: !enabled },
-        [200],
-      );
-      const replay = await accept(
-        threadsClient().create({ headers, body }),
-        [201],
-      );
-      expect(replay.body.id).toBe(first.body.id);
-      const retained = await accept(
-        metadataClient().get({ headers, params: { id: first.body.id } }),
-        [200],
-      );
-      expect(retained.body.cloudBrowserEnabled).toBe(enabled);
-      await expect(
-        readCreatedThreadEvents(first.body.id, token),
-      ).resolves.toHaveLength(1);
-
-      const next = await accept(
-        threadsClient().create({
-          headers,
-          body: { ...body, clientThreadId: randomUUID() },
-        }),
-        [201],
-      );
-      const updated = await accept(
-        metadataClient().get({ headers, params: { id: next.body.id } }),
-        [200],
-      );
-      expect(updated.body.cloudBrowserEnabled).toBe(!enabled);
-      await expect(
-        readCreatedThreadEvent(next.body.id, token),
-      ).resolves.toMatchObject({ cloudBrowserEnabled: !enabled });
-    },
-  );
-
-  it("creates initial SSH and VNC overrides and preserves them on replay", async () => {
-    initializeVncRuntimeTest();
-    const fixture = await seedAgent();
-    vnc.authenticate({ orgId: fixture.orgId, userId: fixture.userId });
-    const headers = { authorization: "Bearer clerk-session" };
-    const hostId = randomUUID();
-    const host = await accept(
-      sshClient().create({
-        headers,
+  const authHeaders = signIn(userId, orgId);
+  const sshId = randomUUID();
+  const [ssh, vnc] = await Promise.all([
+    accept(
+      sshApi.create({
+        headers: authHeaders,
         body: {
-          id: hostId,
+          id: sshId,
           displayName: "Selected host",
-          host: "selected.example.com",
-          credential: inlineSshKey("deploy", "private-key", null),
+          host: `host-${sshId.slice(0, 8)}.example.test`,
+          credential: inlineSshKey("deploy", `key-${randomUUID()}`),
         },
       }),
       [201],
-    );
+    ),
+    accept(
+      vncApi.create({
+        headers: authHeaders,
+        body: vncConnectionBody(),
+      }),
+      [201],
+    ),
+  ]);
+  await accept(
+    remoteAccessApi.updateHostDefault({
+      headers: authHeaders,
+      params: { protocol: "ssh", connectionId: ssh.body.id },
+      body: { enabled: true },
+    }),
+    [200],
+  );
+  const clientThreadId = randomUUID();
+  const created = await accept(
+    threadsApi.create({
+      headers: authHeaders,
+      body: {
+        clientThreadId,
+        model: null,
+        initialRemoteAccessOverrides: [
+          { protocol: "ssh", connectionId: ssh.body.id, enabled: false },
+          { protocol: "vnc", connectionId: vnc.body.id, enabled: true },
+        ],
+      },
+    }),
+    [201],
+  );
+  return {
+    authHeaders,
+    sshId: ssh.body.id,
+    sshGeneration: ssh.body.generation,
+    vncId: vnc.body.id,
+    clientThreadId,
+    threadId: created.body.id,
+  };
+}
+
+async function setupConnectorSelectionChat() {
+  const userId = `user_${randomUUID()}`;
+  const orgId = `org_${randomUUID()}`;
+  const authHeaders = signIn(userId, orgId);
+
+  const openai = await accept(
+    builtinConnectApi.connect({
+      headers: authHeaders,
+      params: { connectorSlug: "openai" },
+      body: {
+        authMethod: "api-token",
+        values: { apiKey: `sk-test-${randomUUID()}` },
+        account: { intent: "add", displayName: "OpenAI work" },
+      },
+    }),
+    [200],
+  );
+  const customConnector = await accept(
+    customConnectorsApi.create({
+      headers: authHeaders,
+      body: {
+        displayName: "Custom HTTP",
+        prefixTemplates: [`https://${randomUUID()}.example.test/api`],
+        authMode: "none",
+        fields: [],
+        headerInjections: [],
+        queryInjections: [],
+      },
+    }),
+    [201],
+  );
+  const customAccount = await accept(
+    customValuesApi.set({
+      headers: authHeaders,
+      params: { id: customConnector.body.id },
+      body: {
+        values: [],
+        account: { intent: "add", displayName: "Custom account" },
+      },
+    }),
+    [200],
+  );
+  const thread = await accept(
+    threadsApi.create({
+      headers: authHeaders,
+      body: { model: null },
+    }),
+    [201],
+  );
+  const threadId = thread.body.id;
+
+  const targets = [
+    {
+      target: { kind: "builtin" as const, connectorSlug: "openai" },
+      connectionId: openai.body.connectionId,
+    },
+    {
+      target: {
+        kind: "custom" as const,
+        customConnectorId: customConnector.body.id,
+      },
+      connectionId: customAccount.body.connectionId,
+    },
+  ];
+  for (const selection of targets) {
     await accept(
-      remoteAccessClient().updateHostDefault({
-        headers,
-        params: { protocol: "ssh", connectionId: hostId },
-        body: { enabled: true },
+      selectionsApi.update({
+        headers: authHeaders,
+        params: { id: threadId },
+        body: selection,
       }),
       [200],
     );
-    const vncHost = await accept(
-      vnc.connections().create({ headers, body: vncConnectionBody() }),
-      [201],
-    );
-    const vncHostId = vncHost.body.id;
-    const threadId = randomUUID();
-    const body = {
-      clientThreadId: threadId,
-      model: WORKSPACE_DEFAULT_MODEL,
-      initialRemoteAccessOverrides: [
-        { protocol: "ssh" as const, connectionId: hostId, enabled: false },
-        { protocol: "vnc" as const, connectionId: vncHostId, enabled: true },
-      ],
-    };
-    await accept(threadsClient().create({ headers, body }), [201]);
-    const selected = await accept(
-      remoteAccessClient().listThreadAccess({ headers, params: { threadId } }),
+  }
+  const initial = await accept(
+    selectionsApi.get({
+      headers: authHeaders,
+      params: { id: threadId },
+    }),
+    [200],
+  );
+  return { authHeaders, threadId, targets, initial: initial.body };
+}
+
+describe("POST /api/chat-threads", () => {
+  it("chat-threads-create-003 (1/2) creates initial SSH and VNC overrides, preserves them on inverted replay, and rejects unknown hosts", async () => {
+    const { authHeaders, sshId, vncId, clientThreadId, threadId } =
+      await setupRemoteAccessChat();
+
+    const access = await accept(
+      remoteAccessApi.listThreadAccess({
+        headers: authHeaders,
+        params: { threadId },
+      }),
       [200],
     );
-    expect(selected.body.ssh[0]).toMatchObject({
-      connectionId: hostId,
-      enabled: false,
-      overrideEnabled: false,
-      source: "override",
-    });
-    expect(selected.body.vnc[0]).toMatchObject({
-      connectionId: vncHostId,
-      enabled: true,
-      overrideEnabled: true,
-      source: "override",
-    });
-    await accept(
-      threadsClient().create({
-        headers,
+    expect(access.body.ssh).toContainEqual(
+      expect.objectContaining({
+        connectionId: sshId,
+        enabled: false,
+        overrideEnabled: false,
+        source: "override",
+      }),
+    );
+    expect(access.body.vnc).toContainEqual(
+      expect.objectContaining({
+        connectionId: vncId,
+        enabled: true,
+        overrideEnabled: true,
+        source: "override",
+      }),
+    );
+
+    const replayedInverted = await accept(
+      threadsApi.create({
+        headers: authHeaders,
         body: {
-          ...body,
+          clientThreadId,
+          model: null,
           initialRemoteAccessOverrides: [
-            { protocol: "ssh", connectionId: hostId, enabled: true },
-            { protocol: "vnc", connectionId: vncHostId, enabled: false },
+            { protocol: "ssh", connectionId: sshId, enabled: true },
+            { protocol: "vnc", connectionId: vncId, enabled: false },
           ],
         },
       }),
       [201],
     );
-    const replayed = await accept(
-      remoteAccessClient().listThreadAccess({ headers, params: { threadId } }),
+    expect(replayedInverted.body.id).toBe(threadId);
+    const afterInverted = await accept(
+      remoteAccessApi.listThreadAccess({
+        headers: authHeaders,
+        params: { threadId },
+      }),
       [200],
     );
-    expect(replayed.body.ssh[0]).toMatchObject({ overrideEnabled: false });
-    expect(replayed.body.vnc[0]).toMatchObject({ overrideEnabled: true });
+    expect(afterInverted.body).toStrictEqual(access.body);
 
+    const unknownChatId = randomUUID();
     await accept(
-      sshClient().delete({
-        headers,
-        params: { connectionId: hostId },
-        body: { expectedGeneration: host.body.generation },
-      }),
-      [204],
-    );
-    const afterDeletion = await accept(
-      threadsClient().create({ headers, body }),
-      [201],
-    );
-    expect(afterDeletion.body.id).toBe(threadId);
-
-    const invalidId = randomUUID();
-    const invalidThreadId = randomUUID();
-    await accept(
-      threadsClient().create({
-        headers,
+      threadsApi.create({
+        headers: authHeaders,
         body: {
-          ...body,
-          clientThreadId: invalidThreadId,
+          clientThreadId: unknownChatId,
+          model: null,
           initialRemoteAccessOverrides: [
-            { protocol: "ssh", connectionId: invalidId, enabled: true },
+            { protocol: "ssh", connectionId: randomUUID(), enabled: true },
           ],
         },
       }),
       [400],
     );
     await accept(
-      remoteAccessClient().listThreadAccess({
-        headers,
-        params: { threadId: invalidThreadId },
+      remoteAccessApi.listThreadAccess({
+        headers: authHeaders,
+        params: { threadId: unknownChatId },
       }),
       [404],
     );
   });
 
-  it("does not let a run token choose access to a host when creating a chat", async () => {
-    useSecretKmsProbe();
-    const fixture = await seedAgent();
-    const ownerHeaders = { authorization: "Bearer clerk-session" };
-    const hostId = randomUUID();
+  it("chat-threads-create-003 (2/2) replays the created chat after deleting the overridden SSH host", async () => {
+    const {
+      authHeaders,
+      sshId,
+      sshGeneration,
+      vncId,
+      clientThreadId,
+      threadId,
+    } = await setupRemoteAccessChat();
+
     await accept(
-      sshClient().create({
-        headers: ownerHeaders,
-        body: {
-          id: hostId,
-          displayName: "Disabled host",
-          host: "disabled.example.com",
-          credential: inlineSshKey("deploy", "private-key", null),
-        },
+      sshApi.delete({
+        headers: authHeaders,
+        params: { connectionId: sshId },
+        body: { expectedGeneration: sshGeneration },
       }),
-      [201],
+      [204],
     );
-    const threadId = randomUUID();
-    const token = await executionToken({
-      userId: fixture.userId,
-      orgId: fixture.orgId,
-    });
-    const response = await accept(
-      threadsClient().create({
-        headers: { authorization: `Bearer ${token}` },
+
+    const replayedAfterDelete = await accept(
+      threadsApi.create({
+        headers: authHeaders,
         body: {
-          clientThreadId: threadId,
-          model: WORKSPACE_DEFAULT_MODEL,
+          clientThreadId,
+          model: null,
           initialRemoteAccessOverrides: [
-            { protocol: "ssh", connectionId: hostId, enabled: true },
+            { protocol: "ssh", connectionId: sshId, enabled: false },
+            { protocol: "vnc", connectionId: vncId, enabled: true },
           ],
         },
       }),
-      [403],
+      [201],
     );
-    expect(response.body.error.code).toBe("FORBIDDEN");
-    await accept(
-      remoteAccessClient().listThreadAccess({
-        headers: ownerHeaders,
-        params: { threadId },
-      }),
-      [404],
-    );
+    expect(replayedAfterDelete.body.id).toBe(threadId);
   });
 
-  it("repairs selected and inherited accounts during deletion", async () => {
-    const fixture = await seedAgent();
+  it("chat-threads-create-006 (1/2) stores builtin and custom selections and rejects them while disallowed in the Chat", async () => {
+    const { authHeaders, threadId, targets, initial } =
+      await setupConnectorSelectionChat();
+    expect(initial.selections).toHaveLength(2);
 
-    const firstResponse = await connectorApi.requestManualGrant(
-      fixture.actor,
-      "openai",
-      "api-token",
-      { apiKey: "first-openai-key" },
-      { statuses: [200], account: { intent: "add", displayName: "First" } },
-    );
-    const secondResponse = await connectorApi.requestManualGrant(
-      fixture.actor,
-      "openai",
-      "api-token",
-      { apiKey: "second-openai-key" },
-      { statuses: [200], account: { intent: "add", displayName: "Second" } },
-    );
-    if (firstResponse.status !== 200 || secondResponse.status !== 200) {
-      throw new Error("Expected connector account creation to succeed");
-    }
-    const token = await executionToken({
-      userId: fixture.userId,
-      orgId: fixture.orgId,
-    });
-    const inheritedThread = await accept(
-      threadsClient().create({
-        headers: { authorization: `Bearer ${token}` },
-        body: {
-          model: WORKSPACE_DEFAULT_MODEL,
-        },
-      }),
-      [201],
-    );
-    const selectedThread = await accept(
-      threadsClient().create({
-        headers: { authorization: `Bearer ${token}` },
-        body: {
-          model: WORKSPACE_DEFAULT_MODEL,
-        },
-      }),
-      [201],
-    );
-
-    await accept(
-      connectorSelectionsClient().update({
-        headers: { authorization: `Bearer ${token}` },
-        params: { id: selectedThread.body.id },
-        body: {
-          connectionId: secondResponse.body.connectionId,
-          target: { kind: "builtin", connectorSlug: "openai" },
-        },
-      }),
-      [200],
-    );
-
-    createRouteMocks(context).clerk.session(fixture.userId, fixture.orgId);
-    const impact = await accept(
-      connectorAccountsClient().deletionImpact({
-        headers: { authorization: "Bearer clerk-session" },
-        params: { connectionId: secondResponse.body.connectionId },
-        query: { kind: "builtin", connectorSlug: "openai" },
-      }),
-      [200],
-    );
-    expect(impact.body.explicitSelectionCount).toBe(1);
-
-    const deletedSelectedAccount = await accept(
-      connectorAccountsClient().delete({
-        headers: { authorization: "Bearer clerk-session" },
-        params: { connectionId: secondResponse.body.connectionId },
-        body: {
-          target: { kind: "builtin", connectorSlug: "openai" },
-        },
-      }),
-      [200],
-    );
-    expect(deletedSelectedAccount.body.resolvedSelectionCount).toBe(1);
-
-    const selected = await accept(
-      connectorSelectionsClient().get({
-        headers: { authorization: `Bearer ${token}` },
-        params: { id: selectedThread.body.id },
-      }),
-      [200],
-    );
-    const remaining = {
-      target: { kind: "builtin", connectorSlug: "openai" },
-      connectionId: firstResponse.body.connectionId,
-    };
-    expect(selected.body.selections).toStrictEqual([remaining]);
-    expect(selected.body.selectedConnections).toMatchObject([
-      { id: remaining.connectionId, target: remaining.target },
-    ]);
-    const inherited = await accept(
-      connectorSelectionsClient().get({
-        headers: { authorization: `Bearer ${token}` },
-        params: { id: inheritedThread.body.id },
-      }),
-      [200],
-    );
-    expect(inherited.body).toStrictEqual({
-      selections: [],
-      selectedConnections: [],
-    });
-
-    createRouteMocks(context).clerk.session(fixture.userId, fixture.orgId);
-    const deletedRemainingAccount = await accept(
-      connectorAccountsClient().delete({
-        headers: { authorization: "Bearer clerk-session" },
-        params: { connectionId: firstResponse.body.connectionId },
-        body: {
-          target: { kind: "builtin", connectorSlug: "openai" },
-        },
-      }),
-      [200],
-    );
-    expect(deletedRemainingAccount.body.resolvedSelectionCount).toBe(1);
-    const afterClear = await accept(
-      connectorSelectionsClient().get({
-        headers: { authorization: `Bearer ${token}` },
-        params: { id: selectedThread.body.id },
-      }),
-      [200],
-    );
-    expect(afterClear.body.selections).toStrictEqual([]);
-    expect(afterClear.body.selectedConnections).toStrictEqual([]);
-
-    const replayed = await accept(
-      threadsClient().create({
-        headers: { authorization: `Bearer ${token}` },
-        body: {
-          clientThreadId: selectedThread.body.id,
-          model: WORKSPACE_DEFAULT_MODEL,
-        },
-      }),
-      [201],
-    );
-    expect(replayed.body).toStrictEqual(selectedThread.body);
-    await expect(
-      readCreatedThreadEvents(selectedThread.body.id, token),
-    ).resolves.toHaveLength(1);
-  });
-
-  it("refreshes builtin and custom selection authorization after Chat allowance changes", async () => {
-    const actor = bdd.user();
-
-    bdd.acceptStorageWrites();
-    const builtin = await connectorApi.connectManualGrant(
-      actor,
-      "openai",
-      "api-token",
-      { apiKey: "scope-read-openai-key" },
-    );
-    const definition = await connectorApi.createCustomConnector(
-      actor,
-      manualHttpCustomConnectorCreateBody({
-        slug: `_scope-read-${randomUUID()}`,
-        displayName: "Selection scope read",
-        prefixTemplates: ["https://scope-read.example.test/"],
-      }),
-    );
-    const custom = await connectorApi.setCustomConnectorValues(
-      actor,
-      definition.id,
-      [{ key: "secret", kind: "secret", value: "scope-read-custom-key" }],
-    );
-    if (!custom.connectionId) {
-      throw new Error("Expected the API-created custom connector account");
-    }
-    const headers = { authorization: "Bearer clerk-session" };
-    const requested = [
-      {
-        connectionId: builtin.id,
-        target: { kind: "builtin", connectorSlug: "openai" },
-      },
-      {
-        connectionId: custom.connectionId,
-        target: { kind: "custom", customConnectorId: definition.id },
-      },
-    ] as const;
-    const created = await accept(
-      threadsClient().create({
-        headers,
-        body: { model: null },
-      }),
-      [201],
-    );
-    for (const selection of requested) {
+    for (const selection of targets) {
       await accept(
-        connectorSelectionsClient().update({
-          headers,
-          params: { id: created.body.id },
-          body: selection,
+        connectorAccessApi.setThreadOverride({
+          headers: authHeaders,
+          params: { threadId, connectionId: selection.connectionId },
+          body: { target: selection.target, enabled: false },
         }),
         [200],
       );
-    }
-    const initial = await accept(
-      connectorSelectionsClient().get({
-        headers,
-        params: { id: created.body.id },
-      }),
-      [200],
-    );
-    expect(initial.body.selections).toHaveLength(2);
-    expect(initial.body.selections).toStrictEqual(
-      expect.arrayContaining([...requested]),
-    );
-
-    const access = createChatConnectorAccessApi(context);
-    for (const selection of requested) {
-      await access.setThreadOverride(actor, created.body.id, selection, false);
-      const denied = await accept(
-        connectorSelectionsClient().update({
-          headers,
-          params: { id: created.body.id },
+      const rejected = await accept(
+        selectionsApi.update({
+          headers: authHeaders,
+          params: { id: threadId },
           body: selection,
         }),
         [400],
       );
-      expect(denied.body.error).toStrictEqual({
-        code: "BAD_REQUEST",
-        message: "Account is unavailable or not allowed in this Chat",
+      expect(rejected.body).toStrictEqual({
+        error: {
+          code: "BAD_REQUEST",
+          message: "Account is unavailable or not allowed in this Chat",
+        },
       });
     }
-    const preserved = await accept(
-      connectorSelectionsClient().get({
-        headers,
-        params: { id: created.body.id },
+
+    const disallowed = await accept(
+      selectionsApi.get({
+        headers: authHeaders,
+        params: { id: threadId },
       }),
       [200],
     );
-    expect(preserved.body.selections).toStrictEqual([]);
+    expect(disallowed.body.selections).toStrictEqual([]);
+  });
 
-    for (const selection of requested) {
-      await access.setThreadOverride(actor, created.body.id, selection, true);
-      const updated = await accept(
-        connectorSelectionsClient().update({
-          headers,
-          params: { id: created.body.id },
+  it("chat-threads-create-006 (2/2) restores builtin and custom selections after re-allowing them in the Chat", async () => {
+    const { authHeaders, threadId, targets, initial } =
+      await setupConnectorSelectionChat();
+
+    for (const selection of targets) {
+      await accept(
+        connectorAccessApi.setThreadOverride({
+          headers: authHeaders,
+          params: { threadId, connectionId: selection.connectionId },
+          body: { target: selection.target, enabled: false },
+        }),
+        [200],
+      );
+      await accept(
+        connectorAccessApi.setThreadOverride({
+          headers: authHeaders,
+          params: { threadId, connectionId: selection.connectionId },
+          body: { target: selection.target, enabled: true },
+        }),
+        [200],
+      );
+      const restored = await accept(
+        selectionsApi.update({
+          headers: authHeaders,
+          params: { id: threadId },
           body: selection,
         }),
         [200],
       );
-      expect(updated.body).toStrictEqual(selection);
+      expect(restored.body).toStrictEqual(selection);
     }
-    const restored = await accept(
-      connectorSelectionsClient().get({
-        headers,
-        params: { id: created.body.id },
+
+    const final = await accept(
+      selectionsApi.get({
+        headers: authHeaders,
+        params: { id: threadId },
       }),
       [200],
     );
-    expect(restored.body.selections).toStrictEqual(initial.body.selections);
+    expect(final.body).toStrictEqual(initial);
   });
 
-  it("sets and reads an exact built-in connector account", async () => {
-    const fixture = await seedAgent();
+  it(
+    "chat-threads-create-020 answers a client thread id owned by another member like a missing thread",
+    { timeout: TEST_WITH_DOUBLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const bdd = createBddApi(context);
+      const owner = bdd.user();
+      const otherWorkspaceMember = bdd.user();
+      const ownerTokenHeaders = bearerHeaders(
+        await runCredentials.okouToken(owner),
+      );
+      const otherTokenHeaders = bearerHeaders(
+        await runCredentials.okouToken(otherWorkspaceMember),
+      );
 
-    const connection = await connectorApi.connectManualGrant(
-      fixture.actor,
-      "openai",
-      "api-token",
-      { apiKey: "selected-openai-key" },
-    );
-    const token = await executionToken({
-      userId: fixture.userId,
-      orgId: fixture.orgId,
-    });
-
-    const created = await accept(
-      threadsClient().create({
-        headers: { authorization: `Bearer ${token}` },
-        body: {
-          model: WORKSPACE_DEFAULT_MODEL,
-        },
-      }),
-      [201],
-    );
-    await accept(
-      connectorSelectionsClient().update({
-        headers: { authorization: `Bearer ${token}` },
-        params: { id: created.body.id },
-        body: {
-          connectionId: connection.id,
-          target: { kind: "builtin", connectorSlug: "openai" },
-        },
-      }),
-      [200],
-    );
-    const selections = await accept(
-      connectorSelectionsClient().get({
-        headers: { authorization: `Bearer ${token}` },
-        params: { id: created.body.id },
-      }),
-      [200],
-    );
-    expect(selections.body.selections).toStrictEqual([
-      {
-        connectionId: connection.id,
-        target: { kind: "builtin", connectorSlug: "openai" },
-      },
-    ]);
-    expect(selections.body.selectedConnections).toHaveLength(1);
-    expect(selections.body.selectedConnections[0]).toMatchObject({
-      id: connection.id,
-      target: { kind: "builtin", connectorSlug: "openai" },
-      connectionStatus: "connected",
-    });
-    const foreignActor = bdd.user({ orgId: fixture.orgId });
-    await store.set(
-      seedOrgMembership$,
-      { orgId: fixture.orgId, userId: foreignActor.userId },
-      context.signal,
-    );
-
-    const foreignConnection = await connectorApi.connectManualGrant(
-      foreignActor,
-      "openai",
-      "api-token",
-      { apiKey: "foreign-openai-key" },
-    );
-    await accept(
-      connectorSelectionsClient().update({
-        headers: { authorization: `Bearer ${token}` },
-        params: { id: created.body.id },
-        body: {
-          connectionId: foreignConnection.id,
-          target: { kind: "builtin", connectorSlug: "openai" },
-        },
-      }),
-      [400],
-    );
-    const foreignToken = await executionToken({
-      userId: foreignActor.userId,
-      orgId: fixture.orgId,
-    });
-    await accept(
-      connectorSelectionsClient().get({
-        headers: { authorization: `Bearer ${foreignToken}` },
-        params: { id: created.body.id },
-      }),
-      [404],
-    );
-    const otherOrgId = `org_${randomUUID()}`;
-    await store.set(
-      seedOrgMembership$,
-      { orgId: otherOrgId, userId: fixture.userId },
-      context.signal,
-    );
-
-    const otherOrgToken = await executionToken({
-      userId: fixture.userId,
-      orgId: otherOrgId,
-    });
-    for (const deniedToken of [foreignToken, otherOrgToken]) {
+      const clientThreadId = randomUUID();
       await accept(
-        connectorSelectionsClient().get({
-          headers: { authorization: `Bearer ${deniedToken}` },
+        runThreadsApi.create({
+          headers: ownerTokenHeaders,
+          body: {
+            clientThreadId,
+            title: "Owner thread",
+            model: null,
+          },
+        }),
+        [201],
+      );
+
+      const colliding = await accept(
+        runThreadsApi.create({
+          headers: otherTokenHeaders,
+          body: {
+            clientThreadId,
+            title: "Colliding thread",
+            model: null,
+          },
+        }),
+        [404],
+      );
+      expect(colliding.body).toStrictEqual({
+        error: {
+          code: "NOT_FOUND",
+          message: "Chat thread not found",
+        },
+      });
+
+      const ownerMetadata = await accept(
+        metadataApi.get({
+          headers: ownerTokenHeaders,
+          params: { id: clientThreadId },
+        }),
+        [200],
+      );
+      expect(ownerMetadata.body.title).toBe("Owner thread");
+    },
+  );
+
+  it(
+    "chat-threads-create-001 snapshots the member's cloud browser preference (true) and preserves it on replay",
+    { timeout: TEST_WITH_SINGLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const actor = createBddApi(context).user();
+      const orgId = requireOrgId(actor);
+      const tokenHeaders = bearerHeaders(await runCredentials.okouToken(actor));
+      await createRunsApi(context).ensurePersonalSubscriptionModel(actor, {
+        model: "claude-sonnet-5-5",
+      });
+      await accept(
+        userPreferencesApi.update({
+          headers: signIn(actor.userId, orgId),
+          body: { cloudBrowserEnabledByDefault: true },
+        }),
+        [200],
+      );
+
+      const firstClientThreadId = randomUUID();
+      const firstCreated = await accept(
+        runThreadsApi.create({
+          headers: tokenHeaders,
+          body: { clientThreadId: firstClientThreadId },
+        }),
+        [201],
+      );
+      const firstEvents = await createdEventsFor(
+        tokenHeaders,
+        firstCreated.body.id,
+      );
+      expect(firstEvents).toHaveLength(1);
+      expect(firstEvents).toMatchObject([{ cloudBrowserEnabled: true }]);
+
+      await accept(
+        userPreferencesApi.update({
+          headers: signIn(actor.userId, orgId),
+          body: { cloudBrowserEnabledByDefault: false },
+        }),
+        [200],
+      );
+
+      const replayed = await accept(
+        runThreadsApi.create({
+          headers: tokenHeaders,
+          body: { clientThreadId: firstClientThreadId },
+        }),
+        [201],
+      );
+      expect(replayed.body.id).toBe(firstCreated.body.id);
+      const [firstMetadata, replayedEvents] = await Promise.all([
+        accept(
+          metadataApi.get({
+            headers: tokenHeaders,
+            params: { id: firstCreated.body.id },
+          }),
+          [200],
+        ),
+        createdEventsFor(tokenHeaders, firstCreated.body.id),
+      ]);
+      expect(firstMetadata.body).toMatchObject({ cloudBrowserEnabled: true });
+      expect(replayedEvents).toHaveLength(1);
+
+      const secondClientThreadId = randomUUID();
+      const secondCreated = await accept(
+        runThreadsApi.create({
+          headers: tokenHeaders,
+          body: { clientThreadId: secondClientThreadId },
+        }),
+        [201],
+      );
+      const [secondMetadata, secondEvents] = await Promise.all([
+        accept(
+          metadataApi.get({
+            headers: tokenHeaders,
+            params: { id: secondCreated.body.id },
+          }),
+          [200],
+        ),
+        createdEventsFor(tokenHeaders, secondCreated.body.id),
+      ]);
+      expect(secondMetadata.body).toMatchObject({ cloudBrowserEnabled: false });
+      expect(secondEvents).toHaveLength(1);
+      expect(secondEvents).toMatchObject([{ cloudBrowserEnabled: false }]);
+    },
+  );
+
+  it(
+    "chat-threads-create-004 does not let a run token choose access to a host when creating a chat",
+    { timeout: TEST_WITH_SINGLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const actor = createBddApi(context).user();
+      const orgId = requireOrgId(actor);
+      const tokenHeaders = bearerHeaders(await runCredentials.okouToken(actor));
+      await createStore().set(
+        seedOrgMembership$,
+        { userId: actor.userId, orgId, role: "admin" },
+        context.signal,
+      );
+      const authHeaders = signIn(actor.userId, orgId);
+      const sshId = randomUUID();
+      const ssh = await accept(
+        sshApi.create({
+          headers: authHeaders,
+          body: {
+            id: sshId,
+            displayName: "Disabled host",
+            host: `host-${sshId.slice(0, 8)}.example.test`,
+            credential: inlineSshKey("deploy", `key-${randomUUID()}`),
+          },
+        }),
+        [201],
+      );
+      await accept(
+        remoteAccessApi.updateHostDefault({
+          headers: authHeaders,
+          params: { protocol: "ssh", connectionId: ssh.body.id },
+          body: { enabled: false },
+        }),
+        [200],
+      );
+
+      const clientThreadId = randomUUID();
+      const rejected = await accept(
+        runThreadsApi.create({
+          headers: tokenHeaders,
+          body: {
+            clientThreadId,
+            model: null,
+            initialRemoteAccessOverrides: [
+              { protocol: "ssh", connectionId: ssh.body.id, enabled: true },
+            ],
+          },
+        }),
+        [403],
+      );
+      expect(rejected.body.error.code).toBe("FORBIDDEN");
+
+      await accept(
+        remoteAccessApi.listThreadAccess({
+          headers: signIn(actor.userId, orgId),
+          params: { threadId: clientThreadId },
+        }),
+        [404],
+      );
+    },
+  );
+
+  it(
+    "chat-threads-create-005 repairs selected and inherited accounts during deletion",
+    { timeout: TEST_WITH_SINGLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const actor = createBddApi(context).user();
+      const orgId = requireOrgId(actor);
+      const tokenHeaders = bearerHeaders(await runCredentials.okouToken(actor));
+      const [firstId, unselectedChat, selectedChat] = await Promise.all([
+        connectOpenAiAccount(signIn(actor.userId, orgId), "First"),
+        accept(
+          runThreadsApi.create({
+            headers: tokenHeaders,
+            body: { model: null },
+          }),
+          [201],
+        ),
+        accept(
+          runThreadsApi.create({
+            headers: tokenHeaders,
+            body: { model: null },
+          }),
+          [201],
+        ),
+      ]);
+      const secondId = await connectOpenAiAccount(
+        signIn(actor.userId, orgId),
+        "Second",
+      );
+      await accept(
+        runSelectionsApi.update({
+          headers: tokenHeaders,
+          params: { id: selectedChat.body.id },
+          body: { target: openaiTarget, connectionId: secondId },
+        }),
+        [200],
+      );
+
+      const impact = await accept(
+        connectorAccountsApi.deletionImpact({
+          headers: signIn(actor.userId, orgId),
+          params: { connectionId: secondId },
+          query: openaiTarget,
+        }),
+        [200],
+      );
+      expect(impact.body).toStrictEqual({
+        connectionId: secondId,
+        explicitSelectionCount: 1,
+        hasSibling: true,
+      });
+
+      const deletedSecond = await accept(
+        connectorAccountsApi.delete({
+          headers: signIn(actor.userId, orgId),
+          params: { connectionId: secondId },
+          body: { target: openaiTarget },
+        }),
+        [200],
+      );
+      expect(deletedSecond.body).toStrictEqual({
+        deletedConnectionId: secondId,
+        resolvedSelectionCount: 1,
+        promotedDefaultConnectionId: null,
+      });
+
+      const [repairedSelected, stillUnselected] = await Promise.all([
+        accept(
+          runSelectionsApi.get({
+            headers: tokenHeaders,
+            params: { id: selectedChat.body.id },
+          }),
+          [200],
+        ),
+        accept(
+          runSelectionsApi.get({
+            headers: tokenHeaders,
+            params: { id: unselectedChat.body.id },
+          }),
+          [200],
+        ),
+      ]);
+      expect(repairedSelected.body.selections).toStrictEqual([
+        { target: openaiTarget, connectionId: firstId },
+      ]);
+      expect(repairedSelected.body.selectedConnections).toMatchObject([
+        { id: firstId },
+      ]);
+      expect(stillUnselected.body).toStrictEqual({
+        selections: [],
+        selectedConnections: [],
+      });
+
+      const deletedFirst = await accept(
+        connectorAccountsApi.delete({
+          headers: signIn(actor.userId, orgId),
+          params: { connectionId: firstId },
+          body: { target: openaiTarget },
+        }),
+        [200],
+      );
+      expect(deletedFirst.body).toStrictEqual({
+        deletedConnectionId: firstId,
+        resolvedSelectionCount: 1,
+        promotedDefaultConnectionId: null,
+      });
+
+      const [clearedSelected, replayed] = await Promise.all([
+        accept(
+          runSelectionsApi.get({
+            headers: tokenHeaders,
+            params: { id: selectedChat.body.id },
+          }),
+          [200],
+        ),
+        accept(
+          runThreadsApi.create({
+            headers: tokenHeaders,
+            body: { clientThreadId: selectedChat.body.id, model: null },
+          }),
+          [201],
+        ),
+      ]);
+      expect(clearedSelected.body).toStrictEqual({
+        selections: [],
+        selectedConnections: [],
+      });
+      expect(replayed.body).toStrictEqual(selectedChat.body);
+      await expect(
+        createdEventsFor(tokenHeaders, selectedChat.body.id),
+      ).resolves.toHaveLength(1);
+    },
+  );
+
+  it(
+    "chat-threads-create-007 (1/4) selects an owned built-in account, rejects foreign or mismatched targets, and publishes detail changes on reselect",
+    { timeout: TEST_WITH_SINGLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const bdd = createBddApi(context);
+      const member = bdd.user();
+      const orgId = requireOrgId(member);
+      const otherMember = bdd.user({ orgId });
+      const tokenHeaders = bearerHeaders(
+        await runCredentials.okouToken(member),
+      );
+      const memberConnectionId = await connectOpenAiAccount(
+        signIn(member.userId, orgId),
+        "Member OpenAI",
+      );
+      const otherConnectionId = await connectOpenAiAccount(
+        signIn(otherMember.userId, orgId),
+        "Other OpenAI",
+      );
+
+      const created = await accept(
+        runThreadsApi.create({ headers: tokenHeaders, body: { model: null } }),
+        [201],
+      );
+      const threadId = created.body.id;
+
+      await accept(
+        runSelectionsApi.update({
+          headers: tokenHeaders,
+          params: { id: threadId },
+          body: { target: openaiTarget, connectionId: memberConnectionId },
+        }),
+        [200],
+      );
+      const readBack = await accept(
+        runSelectionsApi.get({
+          headers: tokenHeaders,
+          params: { id: threadId },
+        }),
+        [200],
+      );
+      expect(readBack.body.selections).toStrictEqual([
+        { target: openaiTarget, connectionId: memberConnectionId },
+      ]);
+      expect(readBack.body.selectedConnections).toMatchObject([
+        { id: memberConnectionId, connectionStatus: "connected" },
+      ]);
+
+      await accept(
+        runSelectionsApi.update({
+          headers: tokenHeaders,
+          params: { id: threadId },
+          body: { target: openaiTarget, connectionId: otherConnectionId },
+        }),
+        [400],
+      );
+
+      await flushWaitUntilForTest();
+      context.mocks.ably.channelGet.mockClear();
+      context.mocks.ably.publish.mockClear();
+      const reselected = await accept(
+        runSelectionsApi.update({
+          headers: tokenHeaders,
+          params: { id: threadId },
+          body: { target: openaiTarget, connectionId: memberConnectionId },
+        }),
+        [200],
+      );
+      expect(reselected.body).toStrictEqual({
+        target: openaiTarget,
+        connectionId: memberConnectionId,
+      });
+      await flushWaitUntilForTest();
+      expect(
+        channelsPublishedTo(
+          context.mocks,
+          `chatThreadDetailChanged:${threadId}`,
+        ),
+      ).toStrictEqual([`user:${member.userId}`]);
+
+      await accept(
+        runSelectionsApi.update({
+          headers: tokenHeaders,
+          params: { id: threadId },
+          body: {
+            target: { kind: "builtin", connectorSlug: "github" },
+            connectionId: memberConnectionId,
+          },
+        }),
+        [400],
+      );
+    },
+  );
+
+  it(
+    "chat-threads-create-007 (2/4) leaves no selection when reselecting an account concurrently with deletion",
+    { timeout: TEST_WITH_SINGLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const member = createBddApi(context).user();
+      const orgId = requireOrgId(member);
+      const tokenHeaders = bearerHeaders(
+        await runCredentials.okouToken(member),
+      );
+      const [memberConnectionId, created] = await Promise.all([
+        connectOpenAiAccount(signIn(member.userId, orgId), "Member OpenAI"),
+        accept(
+          runThreadsApi.create({
+            headers: tokenHeaders,
+            body: { model: null },
+          }),
+          [201],
+        ),
+      ]);
+      const threadId = created.body.id;
+
+      await accept(
+        runSelectionsApi.update({
+          headers: tokenHeaders,
+          params: { id: threadId },
+          body: { target: openaiTarget, connectionId: memberConnectionId },
+        }),
+        [200],
+      );
+
+      const memberSessionHeaders = signIn(member.userId, orgId);
+      const [racedSelect, racedDelete] = await Promise.all([
+        accept(
+          runSelectionsApi.update({
+            headers: tokenHeaders,
+            params: { id: threadId },
+            body: { target: openaiTarget, connectionId: memberConnectionId },
+          }),
+          [200, 400],
+        ),
+        accept(
+          connectorAccountsApi.delete({
+            headers: memberSessionHeaders,
+            params: { connectionId: memberConnectionId },
+            body: { target: openaiTarget },
+          }),
+          [200],
+        ),
+      ]);
+      expect([200, 400]).toContain(racedSelect.status);
+      expect(racedDelete.body.deletedConnectionId).toBe(memberConnectionId);
+
+      const afterRace = await accept(
+        runSelectionsApi.get({
+          headers: tokenHeaders,
+          params: { id: threadId },
+        }),
+        [200],
+      );
+      expect(afterRace.body).toStrictEqual({
+        selections: [],
+        selectedConnections: [],
+      });
+    },
+  );
+
+  it(
+    "chat-threads-create-007 (3/4) hides thread connector selections from another organization member's run token",
+    { timeout: TEST_WITH_DOUBLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const bdd = createBddApi(context);
+      const runs = createRunsApi(context);
+      const member = bdd.user();
+      const orgId = requireOrgId(member);
+      const otherMember = bdd.user({ orgId });
+      bdd.acceptStorageWrites();
+      runs.acceptStorageDownloads();
+      runs.acceptTelemetryIngest();
+      await runs.grantProEntitlement(member);
+
+      const memberTokenHeaders = bearerHeaders(
+        await runCredentials.okouToken(member),
+      );
+      const otherTokenHeaders = bearerHeaders(
+        await runCredentials.okouToken(otherMember),
+      );
+      const [connectionId, created] = await Promise.all([
+        connectOpenAiAccount(signIn(member.userId, orgId), "Member OpenAI"),
+        accept(
+          runThreadsApi.create({
+            headers: memberTokenHeaders,
+            body: { model: null },
+          }),
+          [201],
+        ),
+      ]);
+      await accept(
+        runSelectionsApi.update({
+          headers: memberTokenHeaders,
+          params: { id: created.body.id },
+          body: { target: openaiTarget, connectionId },
+        }),
+        [200],
+      );
+
+      const foreignRead = await accept(
+        runSelectionsApi.get({
+          headers: otherTokenHeaders,
           params: { id: created.body.id },
         }),
         [404],
       );
-    }
-    context.mocks.ably.publish.mockClear();
-    const updated = await accept(
-      connectorSelectionsClient().update({
-        headers: { authorization: `Bearer ${token}` },
-        params: { id: created.body.id },
-        body: {
-          connectionId: connection.id,
-          target: { kind: "builtin", connectorSlug: "openai" },
-        },
-      }),
-      [200],
-    );
-    expect(updated.body.connectionId).toBe(connection.id);
-    expect(context.mocks.ably.publish).toHaveBeenCalledWith(
-      `chatThreadDetailChanged:${created.body.id}`,
-      null,
-    );
-
-    await accept(
-      connectorSelectionsClient().update({
-        headers: { authorization: `Bearer ${token}` },
-        params: { id: created.body.id },
-        body: {
-          connectionId: connection.id,
-          target: { kind: "builtin", connectorSlug: "github" },
-        },
-      }),
-      [400],
-    );
-
-    createRouteMocks(context).clerk.session(fixture.userId, fixture.orgId);
-    const [concurrentSelectionWrite, concurrentDisconnect] = await Promise.all([
-      connectorSelectionsClient().update({
-        headers: { authorization: `Bearer ${token}` },
-        params: { id: created.body.id },
-        body: {
-          connectionId: connection.id,
-          target: { kind: "builtin", connectorSlug: "openai" },
-        },
-      }),
-      connectorAccountsClient().delete({
-        headers: { authorization: "Bearer clerk-session" },
-        params: { connectionId: connection.id },
-        body: { target: { kind: "builtin", connectorSlug: "openai" } },
-      }),
-    ]);
-    expect([200, 400]).toContain(concurrentSelectionWrite.status);
-    expect(concurrentDisconnect.status).toBe(200);
-    const afterDisconnect = await accept(
-      connectorSelectionsClient().get({
-        headers: { authorization: `Bearer ${token}` },
-        params: { id: created.body.id },
-      }),
-      [200],
-    );
-    expect(afterDisconnect.body.selections).toStrictEqual([]);
-  });
-
-  it("sets exact custom HTTP and MCP connector accounts", async () => {
-    const fixture = await seedAgent();
-    const httpConnector = await connectorApi.createCustomConnector(
-      fixture.actor,
-      manualHttpCustomConnectorCreateBody({
-        slug: `_thread-http-${randomUUID()}`,
-        displayName: "Thread HTTP connector",
-        prefixTemplates: ["https://thread-http.example.test/v1/"],
-      }),
-    );
-    const mcpConnector = await connectorApi.createCustomConnector(
-      fixture.actor,
-      {
-        kind: "mcp",
-        slug: `_thread-mcp-${randomUUID()}`,
-        displayName: "Thread MCP connector",
-        endpoint: "https://thread-mcp.example.test/server",
-        transport: "streamable-http",
-        fields: [
-          {
-            key: "secret",
-            label: "API token",
-            kind: "secret",
-            required: true,
-          },
-        ],
-        headerInjections: [
-          {
-            name: "Authorization",
-            valueTemplate: "Bearer {{secrets.secret}}",
-          },
-        ],
-        queryInjections: [],
-        authMode: "manual",
-      },
-    );
-    const httpConnection = await connectorApi.setCustomConnectorValues(
-      fixture.actor,
-      httpConnector.id,
-      [{ key: "secret", kind: "secret", value: "thread-http-secret" }],
-    );
-    const mcpConnection = await connectorApi.setCustomConnectorValues(
-      fixture.actor,
-      mcpConnector.id,
-      [{ key: "secret", kind: "secret", value: "thread-mcp-secret" }],
-    );
-    const httpConnectionId = httpConnection.connectionId;
-    const mcpConnectionId = mcpConnection.connectionId;
-    if (!httpConnectionId || !mcpConnectionId) {
-      throw new Error("Expected custom connector account fixtures");
-    }
-    const token = await executionToken({
-      userId: fixture.userId,
-      orgId: fixture.orgId,
-    });
-
-    const created = await accept(
-      threadsClient().create({
-        headers: { authorization: `Bearer ${token}` },
-        body: {
-          model: WORKSPACE_DEFAULT_MODEL,
-        },
-      }),
-      [201],
-    );
-    for (const [connectionId, customConnectorId] of [
-      [httpConnectionId, httpConnector.id],
-      [mcpConnectionId, mcpConnector.id],
-    ] as const) {
-      await accept(
-        connectorSelectionsClient().update({
-          headers: { authorization: `Bearer ${token}` },
-          params: { id: created.body.id },
-          body: { connectionId, target: { kind: "custom", customConnectorId } },
-        }),
-        [200],
-      );
-    }
-    const selections = await accept(
-      connectorSelectionsClient().get({
-        headers: { authorization: `Bearer ${token}` },
-        params: { id: created.body.id },
-      }),
-      [200],
-    );
-    expect(selections.body.selections).toHaveLength(2);
-    expect(selections.body.selectedConnections).toHaveLength(2);
-    expect(
-      selections.body.selections.map((selection) => {
-        return selection.connectionId;
-      }),
-    ).toStrictEqual(
-      expect.arrayContaining([httpConnectionId, mcpConnectionId]),
-    );
-
-    createRouteMocks(context).clerk.session(fixture.userId, fixture.orgId);
-    await accept(
-      connectorAccountsClient().delete({
-        headers: { authorization: "Bearer clerk-session" },
-        params: { connectionId: httpConnectionId },
-        body: {
-          target: { kind: "custom", customConnectorId: httpConnector.id },
-        },
-      }),
-      [200],
-    );
-    const afterDisconnect = await accept(
-      connectorSelectionsClient().get({
-        headers: { authorization: `Bearer ${token}` },
-        params: { id: created.body.id },
-      }),
-      [200],
-    );
-    expect(afterDisconnect.body.selections).toStrictEqual([
-      {
-        connectionId: mcpConnectionId,
-        target: { kind: "custom", customConnectorId: mcpConnector.id },
-      },
-    ]);
-  });
-
-  it.each([
-    { initial: "deleted", selected: "surviving" },
-    { initial: "surviving", selected: "deleted" },
-    { initial: "deleted", selected: "deleted" },
-  ] as const)(
-    "keeps custom selection $initial to $selected consistent with default deletion",
-    async ({ initial, selected }) => {
-      const fixture = await seedAgent();
-      const definition = await connectorApi.createCustomConnector(
-        fixture.actor,
-        manualHttpCustomConnectorCreateBody({
-          slug: `_selection-delete-${randomUUID()}`,
-          displayName: "Concurrent custom selection",
-          prefixTemplates: ["https://selection-delete.example.test/"],
-        }),
-      );
-      const survivor = await connectorApi.setCustomConnectorValues(
-        fixture.actor,
-        definition.id,
-        [{ key: "secret", kind: "secret", value: "surviving-secret" }],
-        { intent: "add", displayName: "Surviving" },
-      );
-      const removed = await connectorApi.setCustomConnectorValues(
-        fixture.actor,
-        definition.id,
-        [{ key: "secret", kind: "secret", value: "deleted-secret" }],
-        { intent: "add", displayName: "Deleted" },
-      );
-      if (!survivor.connectionId || !removed.connectionId) {
-        throw new Error("Expected both custom connector accounts");
-      }
-      const accounts = {
-        surviving: survivor.connectionId,
-        deleted: removed.connectionId,
-      };
-      const target = {
-        kind: "custom" as const,
-        customConnectorId: definition.id,
-      };
-      createRouteMocks(context).clerk.session(fixture.userId, fixture.orgId);
-      await accept(
-        connectorAccountsClient().setDefault({
-          headers: { authorization: "Bearer clerk-session" },
-          params: { connectionId: accounts.deleted },
-          body: { target },
-        }),
-        [200],
-      );
-      const token = await executionToken({
-        userId: fixture.userId,
-        orgId: fixture.orgId,
-      });
-      const thread = await accept(
-        threadsClient().create({
-          headers: { authorization: `Bearer ${token}` },
-          body: {
-            model: WORKSPACE_DEFAULT_MODEL,
-          },
-        }),
-        [201],
-      );
-      await accept(
-        connectorSelectionsClient().update({
-          headers: { authorization: `Bearer ${token}` },
-          params: { id: thread.body.id },
-          body: { connectionId: accounts[initial], target },
-        }),
-        [200],
-      );
-      const [selectionResult, deletion] = await Promise.all([
-        accept(
-          connectorSelectionsClient().update({
-            headers: { authorization: `Bearer ${token}` },
-            params: { id: thread.body.id },
-            body: { connectionId: accounts[selected], target },
-          }),
-          selected === "surviving" ? [200] : [200, 400],
-        ),
-        accept(
-          connectorAccountsClient().delete({
-            headers: { authorization: "Bearer clerk-session" },
-            params: { connectionId: accounts.deleted },
-            body: { target },
-          }),
-          initial === "surviving" && selected === "deleted"
-            ? [200, 400]
-            : [200],
-        ),
-      ]);
-      if (selectionResult.status === 400) {
-        expect(selectionResult.body.error).toStrictEqual({
-          code: "BAD_REQUEST",
-          message: "Account is unavailable or not allowed in this Chat",
-        });
-      }
-      const selections = await accept(
-        connectorSelectionsClient().get({
-          headers: { authorization: `Bearer ${token}` },
-          params: { id: thread.body.id },
-        }),
-        [200],
-      );
-      const remainingAccounts = await accept(
-        connectorAccountsClient().connections({
-          headers: { authorization: "Bearer clerk-session" },
-          query: { ...target, limit: 100 },
-        }),
-        [200],
-      );
-      if (deletion.status === 400) {
-        expect(deletion.body.error).toStrictEqual({
-          code: "BAD_REQUEST",
-          message:
-            "Connector account selection changed during deletion; refresh and try again",
-        });
-        expect(selectionResult.status).toBe(200);
-        expect(selections.body.selections).toStrictEqual([
-          { connectionId: accounts.deleted, target },
-        ]);
-        expect(remainingAccounts.body.connections).toHaveLength(2);
-        expect(remainingAccounts.body.connections).toStrictEqual(
-          expect.arrayContaining([
-            expect.objectContaining({ id: accounts.deleted, isDefault: true }),
-            expect.objectContaining({
-              id: accounts.surviving,
-              isDefault: false,
-            }),
-          ]),
-        );
-        return;
-      }
-      expect(deletion.body.promotedDefaultConnectionId).toBe(
-        accounts.surviving,
-      );
-      if (selected === "deleted") {
-        expect(deletion.body.resolvedSelectionCount).toBe(
-          initial === "deleted" || selectionResult.status === 200 ? 1 : 0,
-        );
-      } else {
-        expect([0, 1]).toContain(deletion.body.resolvedSelectionCount);
-      }
-      const remainsSelected =
-        selected === "surviving" ||
-        (initial === "surviving" && selectionResult.status === 400);
-      expect(selections.body.selections).toStrictEqual(
-        remainsSelected ? [{ connectionId: accounts.surviving, target }] : [],
-      );
-      expect(remainingAccounts.body.connections).toMatchObject([
-        { id: accounts.surviving, isDefault: true },
-      ]);
+      expect(foreignRead.body.error.code).toBe("NOT_FOUND");
     },
   );
 
-  it("routes thread-list invalidations only to the user-org channel", async () => {
-    const fixture = await seedAgent();
-    const token = await executionToken({
-      userId: fixture.userId,
-      orgId: fixture.orgId,
-    });
-    await flushWaitUntilForTest();
-    context.mocks.ably.channelGet.mockClear();
-    context.mocks.ably.publish.mockClear();
-
-    await accept(
-      threadsClient().create({
-        headers: { authorization: `Bearer ${token}` },
-        body: {
-          model: WORKSPACE_DEFAULT_MODEL,
-        },
-      }),
-      [201],
-    );
-    await flushWaitUntilForTest();
-    expect(context.mocks.ably.channelGet.mock.calls).toStrictEqual([
-      [`user-org:${fixture.userId}:${fixture.orgId}`],
-    ]);
-    expect(context.mocks.ably.publish).toHaveBeenCalledOnce();
-    expect(context.mocks.ably.publish).toHaveBeenCalledWith(
-      "threadListChanged",
-      null,
-    );
-  });
-
-  it("creates a titled thread with an Okou run token carrying chat-thread:write", async () => {
-    const fixture = await seedAgent();
-    const token = await executionToken({
-      userId: fixture.userId,
-      orgId: fixture.orgId,
-    });
-
-    const response = await accept(
-      threadsClient().create({
-        headers: { authorization: `Bearer ${token}` },
-        body: {
-          title: "Deep dive on P2",
-          model: OTHER_WORKSPACE_MODEL,
-        },
-      }),
-      [201],
-    );
-    expect(response.body).toStrictEqual({
-      id: expect.any(String),
-      title: "Deep dive on P2",
-      createdAt: expect.any(String),
-      selectedModel: OTHER_WORKSPACE_MODEL,
-      serviceTier: null,
-    });
-
-    const metadataResponse = await accept(
-      metadataClient().get({
-        headers: { authorization: `Bearer ${token}` },
-        params: { id: response.body.id },
-      }),
-      [200],
-    );
-    expect(metadataResponse.body).toStrictEqual({
-      id: response.body.id,
-      title: "Deep dive on P2",
-      pinnedAt: null,
-      archived: false,
-      hidden: false,
-      muted: false,
-      selectedModel: OTHER_WORKSPACE_MODEL,
-      modelSettings: {},
-      serviceTier: null,
-      computerUseHostId: null,
-      cloudBrowserEnabled: true,
-    });
-  });
-
-  it("uses the member default for a new thread instead of the caller run model", async () => {
-    const fixture = await seedAgent();
-    const runnerGroup = await api.configureRunnerGroup();
-    api.acceptStorageDownloads();
-    await api.grantProEntitlement(fixture.actor);
-    createRouteMocks(context).clerk.session(fixture.userId, fixture.orgId);
-    const source = await accept(
-      threadsClient().create({
-        headers: { authorization: "Bearer clerk-session" },
-        body: {
-          title: "Caller using another model",
-          model: OTHER_WORKSPACE_MODEL,
-        },
-      }),
-      [201],
-    );
-    const { runId } = await api.createThreadRun(fixture.actor, {
-      threadId: source.body.id,
-      prompt: "Create a separate thread using the workspace default",
-    });
-    await api.heartbeatRunner(runnerGroup);
-    const execution = await api.executionInput(runId);
-    expect(execution.modelUsageProvider).toBe(OTHER_WORKSPACE_MODEL);
-    const token = execution.platformEnvironment.OKOU_TOKEN;
-    if (!token) {
-      throw new Error(
-        "Expected the caller execution input to provide OKOU_TOKEN",
+  it(
+    "chat-threads-create-007 (4/4) hides thread connector selections from the member's run token in another organization",
+    { timeout: TEST_WITH_DOUBLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const bdd = createBddApi(context);
+      const member = bdd.user();
+      const orgId = requireOrgId(member);
+      const secondOrgMember = bdd.user({ userId: member.userId });
+      const memberTokenHeaders = bearerHeaders(
+        await runCredentials.okouToken(member),
       );
-    }
-
-    const response = await accept(
-      threadsClient().create({
-        headers: { authorization: `Bearer ${token}` },
-        body: { title: "Inherited model" },
-      }),
-      [201],
-    );
-    expect(response.body.selectedModel).toBe(WORKSPACE_DEFAULT_MODEL);
-
-    const metadataResponse = await accept(
-      metadataClient().get({
-        headers: { authorization: `Bearer ${token}` },
-        params: { id: response.body.id },
-      }),
-      [200],
-    );
-    expect(metadataResponse.body.selectedModel).toBe(WORKSPACE_DEFAULT_MODEL);
-    expect(metadataResponse.body.serviceTier).toBeNull();
-    await api.requestCancelRun(fixture.actor, runId, [200]);
-  });
-
-  it("uses the member model and priority default and allows an explicit standard override", async () => {
-    const fixture = await seedAgent();
-    const runnerGroup = await api.configureRunnerGroup();
-    api.acceptStorageDownloads();
-    await api.grantProEntitlement(fixture.actor);
-    await api.ensurePersonalSubscriptionModel(fixture.actor);
-
-    await createBddIntegrationApi(context).configureNativeSubscriptionModels(
-      fixture.actor,
-    );
-    createRouteMocks(context).clerk.session(fixture.userId, fixture.orgId);
-    await accept(
-      preferenceClient().update({
-        headers: { authorization: "Bearer clerk-session" },
-        body: { selectedModel: PRIORITY_MODEL, serviceTier: "priority" },
-      }),
-      [200],
-    );
-    const sourceToken = await executionToken({
-      userId: fixture.userId,
-      orgId: fixture.orgId,
-    });
-    const source = await accept(
-      threadsClient().create({
-        headers: { authorization: `Bearer ${sourceToken}` },
-        body: {
-          title: "Priority source",
-          model: PRIORITY_MODEL,
-          serviceTier: "priority",
-        },
-      }),
-      [201],
-    );
-    expect(source.body.serviceTier).toBe("priority");
-
-    const { runId } = await api.createThreadRun(fixture.actor, {
-      threadId: source.body.id,
-      prompt: "Create a separate thread with the member's priority default",
-    });
-    await api.heartbeatRunner(runnerGroup);
-    const execution = await api.executionInput(runId);
-    expect(execution.piModelConfig).toMatchObject({
-      model: PRIORITY_MODEL,
-      serviceTier: "fast",
-    });
-    const inheritedToken = execution.platformEnvironment.OKOU_TOKEN;
-    if (!inheritedToken) {
-      throw new Error(
-        "Expected the caller execution input to provide OKOU_TOKEN",
+      const secondOrgTokenHeaders = bearerHeaders(
+        await runCredentials.okouToken(secondOrgMember),
       );
-    }
+      const [connectionId, created] = await Promise.all([
+        connectOpenAiAccount(signIn(member.userId, orgId), "Member OpenAI"),
+        accept(
+          runThreadsApi.create({
+            headers: memberTokenHeaders,
+            body: { model: null },
+          }),
+          [201],
+        ),
+      ]);
+      await accept(
+        runSelectionsApi.update({
+          headers: memberTokenHeaders,
+          params: { id: created.body.id },
+          body: { target: openaiTarget, connectionId },
+        }),
+        [200],
+      );
 
-    const inherited = await accept(
-      threadsClient().create({
-        headers: { authorization: `Bearer ${inheritedToken}` },
-        body: { title: "Inherited priority" },
-      }),
-      [201],
-    );
-    expect(inherited.body).toMatchObject({
-      selectedModel: PRIORITY_MODEL,
-      serviceTier: "priority",
-    });
-    const inheritedMetadata = await accept(
-      metadataClient().get({
-        headers: { authorization: `Bearer ${inheritedToken}` },
-        params: { id: inherited.body.id },
-      }),
-      [200],
-    );
-    expect(inheritedMetadata.body.serviceTier).toBe("priority");
+      const foreignRead = await accept(
+        runSelectionsApi.get({
+          headers: secondOrgTokenHeaders,
+          params: { id: created.body.id },
+        }),
+        [404],
+      );
+      expect(foreignRead.body.error.code).toBe("NOT_FOUND");
+    },
+  );
 
-    const standard = await accept(
-      threadsClient().create({
-        headers: { authorization: `Bearer ${inheritedToken}` },
-        body: {
-          title: "Explicit standard",
-          serviceTier: null,
-        },
-      }),
-      [201],
-    );
-    expect(standard.body).toMatchObject({
-      selectedModel: PRIORITY_MODEL,
-      serviceTier: null,
-    });
-    await api.requestCancelRun(fixture.actor, runId, [200]);
-  });
+  it(
+    "chat-threads-create-013 creates a titled thread with an Okou run token carrying chat-thread:write",
+    { timeout: TEST_WITH_SINGLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const actor = createBddApi(context).user();
+      const tokenHeaders = bearerHeaders(await runCredentials.okouToken(actor));
+      await createRunsApi(context).ensurePersonalSubscriptionModel(actor, {
+        model: "claude-sonnet-5-5",
+      });
 
-  it("uses the workspace default when the request omits a model", async () => {
-    const fixture = await seedAgent();
-    const token = await executionToken({
-      userId: fixture.userId,
-      orgId: fixture.orgId,
-    });
-
-    const response = await accept(
-      threadsClient().create({
-        headers: { authorization: `Bearer ${token}` },
-        body: { title: "No model anywhere" },
-      }),
-      [201],
-    );
-    expect(response.body).toMatchObject({
-      selectedModel: WORKSPACE_DEFAULT_MODEL,
-      serviceTier: null,
-    });
-  });
-
-  it("replays one thread when a create request is delivered twice", async () => {
-    const fixture = await seedAgent();
-    await updateFeatureSwitchesForUser(context, fixture, {});
-    const token = await executionToken({
-      userId: fixture.userId,
-      orgId: fixture.orgId,
-    });
-    const clientThreadId = randomUUID();
-    const eventId = randomUUID();
-
-    const created = await accept(
-      threadsClient().create({
-        headers: { authorization: `Bearer ${token}` },
-        body: {
-          clientThreadId,
-          eventId,
-          title: "Duplicate delivery",
-          model: OTHER_WORKSPACE_MODEL,
-        },
-      }),
-      [201],
-    );
-    expect(created.body.id).toBe(clientThreadId);
-
-    // The same request, delivered a second time.
-    const replayed = await accept(
-      threadsClient().create({
-        headers: { authorization: `Bearer ${token}` },
-        body: {
-          clientThreadId,
-          eventId,
-          title: "Duplicate delivery",
-          model: OTHER_WORKSPACE_MODEL,
-        },
-      }),
-      [201],
-    );
-    expect(replayed.body).toStrictEqual(created.body);
-
-    await expect(
-      readCreatedThreadEvents(clientThreadId, token),
-    ).resolves.toHaveLength(1);
-  });
-
-  it("replays the stored thread instead of the repeated request body", async () => {
-    const fixture = await seedAgent();
-    const token = await executionToken({
-      userId: fixture.userId,
-      orgId: fixture.orgId,
-    });
-    const clientThreadId = randomUUID();
-
-    const created = await accept(
-      threadsClient().create({
-        headers: { authorization: `Bearer ${token}` },
-        body: {
-          clientThreadId,
-          title: "Title from the request",
-          model: OTHER_WORKSPACE_MODEL,
-        },
-      }),
-      [201],
-    );
-    await accept(
-      renameClient().rename({
-        headers: { authorization: `Bearer ${token}` },
-        params: { id: clientThreadId },
-        body: { title: "Title the member chose" },
-      }),
-      [204],
-    );
-
-    const replayed = await accept(
-      threadsClient().create({
-        headers: { authorization: `Bearer ${token}` },
-        body: {
-          clientThreadId,
-          title: "Title from the request",
-          model: OTHER_WORKSPACE_MODEL,
-        },
-      }),
-      [201],
-    );
-    expect(replayed.body).toStrictEqual({
-      id: clientThreadId,
-      title: "Title the member chose",
-      createdAt: created.body.createdAt,
-      selectedModel: OTHER_WORKSPACE_MODEL,
-      serviceTier: null,
-    });
-
-    const metadataResponse = await accept(
-      metadataClient().get({
-        headers: { authorization: `Bearer ${token}` },
-        params: { id: clientThreadId },
-      }),
-      [200],
-    );
-    expect(metadataResponse.body.title).toBe("Title the member chose");
-  });
-
-  it("creates one thread when two deliveries race on a client thread id", async () => {
-    const fixture = await seedAgent();
-    const token = await executionToken({
-      userId: fixture.userId,
-      orgId: fixture.orgId,
-    });
-    const clientThreadId = randomUUID();
-    const eventId = randomUUID();
-
-    const [first, second] = await Promise.all([
-      accept(
-        threadsClient().create({
-          headers: { authorization: `Bearer ${token}` },
+      const created = await accept(
+        runThreadsApi.create({
+          headers: tokenHeaders,
           body: {
-            clientThreadId,
-            eventId,
-            title: "Raced delivery",
-            model: OTHER_WORKSPACE_MODEL,
+            title: "Deep dive on P2",
+            model: "claude-opus-5-5",
           },
         }),
         [201],
-      ),
-      accept(
-        threadsClient().create({
-          headers: { authorization: `Bearer ${token}` },
-          body: {
-            clientThreadId,
-            eventId,
-            title: "Raced delivery",
-            model: OTHER_WORKSPACE_MODEL,
-          },
+      );
+      expect(created.body).toStrictEqual({
+        id: expect.any(String),
+        title: "Deep dive on P2",
+        createdAt: expect.any(String),
+        selectedModel: "claude-opus-5-5",
+        serviceTier: null,
+      });
+
+      const metadata = await accept(
+        metadataApi.get({
+          headers: tokenHeaders,
+          params: { id: created.body.id },
+        }),
+        [200],
+      );
+      expect(metadata.body).toStrictEqual({
+        id: created.body.id,
+        title: "Deep dive on P2",
+        selectedModel: "claude-opus-5-5",
+        modelSettings: {},
+        serviceTier: null,
+        pinnedAt: null,
+        archived: false,
+        hidden: false,
+        muted: false,
+        computerUseHostId: null,
+        cloudBrowserEnabled: true,
+      });
+    },
+  );
+
+  it(
+    "chat-threads-create-016 uses the workspace default when the request omits a model",
+    { timeout: TEST_WITH_SINGLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const actor = createBddApi(context).user();
+      const tokenHeaders = bearerHeaders(await runCredentials.okouToken(actor));
+      await createRunsApi(context).ensurePersonalSubscriptionModel(actor, {
+        model: "claude-sonnet-5-5",
+      });
+
+      const created = await accept(
+        runThreadsApi.create({
+          headers: tokenHeaders,
+          body: { title: "No model anywhere" },
         }),
         [201],
-      ),
-    ]);
-    expect(second.body).toStrictEqual(first.body);
-    expect(first.body.id).toBe(clientThreadId);
+      );
+      expect(created.body.title).toBe("No model anywhere");
+      expect(created.body.selectedModel).toBe("claude-sonnet-5-5");
+      expect(created.body.serviceTier).toBeNull();
+    },
+  );
 
-    await expect(
-      readCreatedThreadEvents(clientThreadId, token),
-    ).resolves.toHaveLength(1);
-  });
+  it(
+    "chat-threads-create-017 replays one thread when a create request is delivered twice",
+    { timeout: TEST_WITH_SINGLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const actor = createBddApi(context).user();
+      const tokenHeaders = bearerHeaders(await runCredentials.okouToken(actor));
+      await createRunsApi(context).ensurePersonalSubscriptionModel(actor);
 
-  it("answers a client thread id owned by another member like a missing thread", async () => {
-    const owner = await seedAgent();
-    const ownerToken = await executionToken({
-      userId: owner.userId,
-      orgId: owner.orgId,
-    });
-    const clientThreadId = randomUUID();
-    await accept(
-      threadsClient().create({
-        headers: { authorization: `Bearer ${ownerToken}` },
-        body: {
-          clientThreadId,
-          title: "Owner thread",
-          model: WORKSPACE_DEFAULT_MODEL,
-        },
-      }),
-      [201],
-    );
+      const clientThreadId = randomUUID();
+      const eventId = randomUUID();
+      const requestBody = {
+        clientThreadId,
+        eventId,
+        title: "Duplicate delivery",
+        model: "claude-opus-5-5",
+      };
 
-    const other = await seedAgent();
-    const otherToken = await executionToken({
-      userId: other.userId,
-      orgId: other.orgId,
-    });
-    const collision = await accept(
-      threadsClient().create({
-        headers: { authorization: `Bearer ${otherToken}` },
-        body: {
-          clientThreadId,
-          title: "Colliding thread",
-          model: WORKSPACE_DEFAULT_MODEL,
-        },
-      }),
-      [404],
-    );
-    expect(collision.body).toStrictEqual({
-      error: { code: "NOT_FOUND", message: "Chat thread not found" },
-    });
+      const first = await accept(
+        runThreadsApi.create({ headers: tokenHeaders, body: requestBody }),
+        [201],
+      );
+      const second = await accept(
+        runThreadsApi.create({ headers: tokenHeaders, body: requestBody }),
+        [201],
+      );
 
-    const metadataResponse = await accept(
-      metadataClient().get({
-        headers: { authorization: `Bearer ${ownerToken}` },
-        params: { id: clientThreadId },
-      }),
-      [200],
-    );
-    expect(metadataResponse.body).toMatchObject({
-      title: "Owner thread",
-    });
-  });
-
-  it("returns the existing member thread when a create is retried", async () => {
-    const fixture = await seedAgent();
-    const token = await executionToken({
-      userId: fixture.userId,
-      orgId: fixture.orgId,
-    });
-    const clientThreadId = randomUUID();
-    await accept(
-      threadsClient().create({
-        headers: { authorization: `Bearer ${token}` },
-        body: {
-          clientThreadId,
-          title: "First title",
-          model: WORKSPACE_DEFAULT_MODEL,
-        },
-      }),
-      [201],
-    );
-
-    const collision = await accept(
-      threadsClient().create({
-        headers: { authorization: `Bearer ${token}` },
-        body: {
-          clientThreadId,
-          title: "Updated title",
-          model: WORKSPACE_DEFAULT_MODEL,
-        },
-      }),
-      [201],
-    );
-    expect(collision.body.id).toBe(clientThreadId);
-
-    const metadataResponse = await accept(
-      metadataClient().get({
-        headers: { authorization: `Bearer ${token}` },
-        params: { id: clientThreadId },
-      }),
-      [200],
-    );
-    expect(metadataResponse.body).toMatchObject({
-      title: "First title",
-    });
-  });
+      expect(first.body.id).toBe(clientThreadId);
+      expect(second.body).toStrictEqual(first.body);
+      const createdEvents = await createdEventsFor(
+        tokenHeaders,
+        clientThreadId,
+      );
+      expect(createdEvents).toHaveLength(1);
+      expect(createdEvents[0]?.id).toBe(eventId);
+    },
+  );
 });

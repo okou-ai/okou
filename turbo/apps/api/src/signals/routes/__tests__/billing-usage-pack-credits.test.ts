@@ -1,237 +1,145 @@
-import { marketingCheckinCampaign } from "./helpers/marketing-reward-consumer";
 import { randomUUID } from "node:crypto";
-
 import { billingUsagePackCreditsContract } from "@okouai/api-contracts/contracts/billing";
 import { getStartedContract } from "@okouai/api-contracts/contracts/get-started";
-import { getStartedRoutes } from "../get-started";
-import { purchaseUsagePacks } from "./helpers/public-usage-pack-checkout";
+import { describe, expect, it } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
 import { mockNow } from "../../../lib/time";
 import { billingUsagePackCreditsRoutes } from "../billing-usage-pack-credits";
+import { getStartedRoutes } from "../get-started";
+import { marketingCheckinCampaign } from "./helpers/marketing-reward-consumer";
+import { purchaseUsagePacks } from "./helpers/public-usage-pack-checkout";
 import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
-const mocks = createRouteMocks(context);
+const headers = Object.freeze({ authorization: "Bearer clerk-session" });
 
-interface UsagePackCreditsFixture {
-  readonly orgId: string;
-  readonly userId: string;
-}
-
-function fixture(): UsagePackCreditsFixture {
+function workspace() {
+  mockEnv("ENV", "development");
   return {
     orgId: `org_${randomUUID()}`,
-    userId: `user_${randomUUID()}`,
+    adminId: `user_${randomUUID()}`,
+    memberId: `user_${randomUUID()}`,
+    otherId: `user_${randomUUID()}`,
   };
 }
 
-function authenticate(
-  actor: UsagePackCreditsFixture,
-  role: "org:admin" | "org:member" = "org:member",
-): void {
-  mocks.clerk.session(actor.userId, actor.orgId, role);
-}
-
-function creditsClient() {
-  return setupApp({ context, routes: billingUsagePackCreditsRoutes })(
-    billingUsagePackCreditsContract,
+async function readCredits(
+  userId: string,
+  orgId: string,
+  role: "org:admin" | "org:member",
+) {
+  createRouteMocks(context).clerk.session(userId, orgId, role);
+  const response = await accept(
+    setupApp({ context, routes: billingUsagePackCreditsRoutes })(
+      billingUsagePackCreditsContract,
+    ).get({ headers }),
+    [200],
   );
+  return response.body;
 }
 
-async function checkIn(actor: UsagePackCreditsFixture): Promise<void> {
+/** The member checks in through Get Started; the external campaign grants the bonus. */
+async function checkIn(userId: string, orgId: string) {
   marketingCheckinCampaign(context);
-  authenticate(actor);
+  createRouteMocks(context).clerk.session(userId, orgId, "org:member");
   await accept(
     setupApp({ context, routes: getStartedRoutes })(getStartedContract).checkin(
-      { headers: { authorization: "Bearer clerk-session" } },
+      {
+        headers,
+      },
     ),
     [200],
   );
 }
 
 describe("GET /api/billing/usage-pack-credits", () => {
-  it("reports when the organization has no active usage pack", async () => {
-    mockEnv("ENV", "development");
-    const actor = fixture();
-    authenticate(actor);
+  it("billing-usage-pack-credits-003 returns a check-in bonus to a member without a usage pack", async () => {
+    const ws = workspace();
+    mockNow(new Date("2026-08-10T00:00:00Z"));
+    await checkIn(ws.memberId, ws.orgId);
 
-    const response = await accept(
-      creditsClient().get({
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [200],
-    );
+    const body = await readCredits(ws.memberId, ws.orgId, "org:member");
 
-    expect(response.body).toStrictEqual({
-      totalCredits: 0,
-      purchasedCredits: 0,
-      bonusCredits: 0,
-      creditGrants: [],
-      hasUsagePack: false,
-    });
-  });
-
-  it("reports no usage pack for a member without an active allocation", async () => {
-    mockEnv("ENV", "development");
-    const actor = fixture();
-    await purchaseUsagePacks(context, actor, [
-      { userId: `user_${randomUUID()}`, usd: 20 },
-    ]);
-    authenticate(actor);
-
-    const response = await accept(
-      creditsClient().get({
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [200],
-    );
-
-    expect(response.body).toStrictEqual({
-      totalCredits: 0,
-      purchasedCredits: 0,
-      bonusCredits: 0,
-      creditGrants: [],
-      hasUsagePack: false,
-    });
-  });
-
-  it("returns a check-in bonus without a usage pack allocation", async () => {
-    mockEnv("ENV", "development");
-    mockNow(new Date("2026-08-10T00:00:00.000Z"));
-    const actor = fixture();
-
-    await checkIn(actor);
-    authenticate(actor);
-
-    const response = await accept(
-      creditsClient().get({
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [200],
-    );
-
-    expect(response.body).toStrictEqual({
+    expect(body).toMatchObject({
       totalCredits: 100,
       purchasedCredits: 0,
       bonusCredits: 100,
       hasUsagePack: false,
-      creditGrants: [
-        expect.objectContaining({
-          grantType: "bonus",
-          amount: 100,
-          remaining: 100,
-          createdAt: expect.any(String),
-          expiresAt: "2026-08-17T00:00:00.000Z",
-        }),
-      ],
+    });
+    expect(body.creditGrants).toHaveLength(1);
+    expect(body.creditGrants[0]).toMatchObject({
+      grantType: "bonus",
+      amount: 100,
+      remaining: 100,
+      expiresAt: "2026-08-17T00:00:00.000Z",
     });
   });
 
-  it("returns only the current member's active purchased and bonus credits", async () => {
-    mockEnv("ENV", "development");
-    mockNow(new Date("2026-08-10T00:00:00.000Z"));
-    const actor = fixture();
-    mockNow(new Date("2026-08-02T00:00:00.000Z"));
-    await checkIn(actor);
-    mockNow(new Date("2026-08-10T00:00:00.000Z"));
-    await purchaseUsagePacks(context, actor, [
-      { userId: actor.userId, usd: 20 },
-      { userId: `user_${randomUUID()}`, usd: 50 },
+  it("billing-usage-pack-credits-004 returns only the member's own active purchased and bonus credits", async () => {
+    const ws = workspace();
+    mockNow(new Date("2026-08-02T00:00:00Z"));
+    await checkIn(ws.memberId, ws.orgId);
+    mockNow(new Date("2026-08-10T00:00:00Z"));
+    await purchaseUsagePacks(context, { userId: ws.adminId, orgId: ws.orgId }, [
+      { userId: ws.memberId, usd: 20 },
+      { userId: ws.otherId, usd: 50 },
     ]);
-    authenticate(actor);
 
-    const response = await accept(
-      creditsClient().get({
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [200],
-    );
+    const body = await readCredits(ws.memberId, ws.orgId, "org:member");
 
-    expect(response.body).toStrictEqual({
+    expect(body).toMatchObject({
       totalCredits: 20_400,
       purchasedCredits: 20_000,
       bonusCredits: 400,
       hasUsagePack: true,
-      creditGrants: expect.arrayContaining([
-        expect.objectContaining({
-          grantType: "purchased",
-          amount: 20_000,
-          remaining: 20_000,
-          createdAt: expect.any(String),
-          expiresAt: "2026-09-09T00:00:00.000Z",
-        }),
-        expect.objectContaining({
-          grantType: "bonus",
-          amount: 400,
-          remaining: 400,
-          createdAt: expect.any(String),
-          expiresAt: "2026-09-09T00:00:00.000Z",
-        }),
-      ]),
     });
-    expect(response.body.creditGrants).toHaveLength(2);
+    // Both grants expire together, so the API does not define their order.
+    const grants = body.creditGrants.map((grant) => {
+      return [grant.grantType, grant.amount, grant.remaining, grant.expiresAt];
+    });
+    expect(grants).toHaveLength(2);
+    expect(grants).toStrictEqual(
+      expect.arrayContaining([
+        ["purchased", 20_000, 20_000, "2026-09-09T00:00:00.000Z"],
+        ["bonus", 400, 400, "2026-09-09T00:00:00.000Z"],
+      ]),
+    );
+    expect(body.memberCredits).toBeUndefined();
   });
 
-  it("returns every member's active usage pack balance to an admin", async () => {
-    mockEnv("ENV", "development");
-    mockNow(new Date("2026-08-10T00:00:00.000Z"));
-    const actor = fixture();
-    const otherUserId = `user_${randomUUID()}`;
-    await purchaseUsagePacks(context, actor, [
-      { userId: actor.userId, usd: 20 },
-      { userId: otherUserId, usd: 50 },
+  it("billing-usage-pack-credits-005 shows an admin every member's active usage pack balance", async () => {
+    const ws = workspace();
+    mockNow(new Date("2026-08-10T00:00:00Z"));
+    await purchaseUsagePacks(context, { userId: ws.adminId, orgId: ws.orgId }, [
+      { userId: ws.adminId, usd: 20 },
+      { userId: ws.otherId, usd: 50 },
     ]);
-    authenticate(actor, "org:admin");
 
-    const response = await accept(
-      creditsClient().get({
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [200],
-    );
+    const body = await readCredits(ws.adminId, ws.orgId, "org:admin");
 
-    expect(response.body.memberCredits).toStrictEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          memberId: actor.userId,
-          totalCredits: 20_400,
-          purchasedCredits: 20_000,
-          bonusCredits: 400,
-          creditGrants: expect.arrayContaining([
-            expect.objectContaining({
-              grantType: "purchased",
-              remaining: 20_000,
-            }),
-            expect.objectContaining({ grantType: "bonus", remaining: 400 }),
-          ]),
-        }),
-        expect.objectContaining({
-          memberId: otherUserId,
-          totalCredits: 52_600,
-          purchasedCredits: 50_000,
-          bonusCredits: 2600,
-          creditGrants: expect.arrayContaining([
-            expect.objectContaining({
-              grantType: "purchased",
-              remaining: 50_000,
-            }),
-            expect.objectContaining({
-              grantType: "bonus",
-              remaining: 2600,
-            }),
-          ]),
-        }),
-      ]),
-    );
-    expect(response.body.memberCredits).toHaveLength(2);
-    expect(
-      response.body.memberCredits?.map((member) => {
-        return member.creditGrants.length;
-      }),
-    ).toStrictEqual([2, 2]);
-    expect(response.body.hasUsagePack).toBeTruthy();
+    expect(body.hasUsagePack).toBeTruthy();
+    const members = body.memberCredits ?? [];
+    expect(members).toHaveLength(2);
+    const admin = members.find((m) => {
+      return m.memberId === ws.adminId;
+    });
+    const other = members.find((m) => {
+      return m.memberId === ws.otherId;
+    });
+    expect(admin).toMatchObject({
+      totalCredits: 20_400,
+      purchasedCredits: 20_000,
+      bonusCredits: 400,
+    });
+    expect(admin?.creditGrants).toHaveLength(2);
+    expect(other).toMatchObject({
+      totalCredits: 52_600,
+      purchasedCredits: 50_000,
+      bonusCredits: 2600,
+    });
+    expect(other?.creditGrants).toHaveLength(2);
   });
 });

@@ -1,394 +1,228 @@
-import { createHmac, randomUUID } from "node:crypto";
-
-import { describe, expect, it } from "vitest";
-
-import { env, mockEnv } from "../../../lib/env";
-import { testContext } from "../../../__tests__/test-context";
-import { createBddApi, expectApiError } from "./helpers/api-bdd";
-import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
+import { randomUUID } from "node:crypto";
+import {
+  personalModelProvidersByTypeContract,
+  personalModelProvidersMainContract,
+} from "@okouai/api-contracts/contracts/personal-model-providers";
+import { runModelsMainContract } from "@okouai/api-contracts/contracts/run-models";
+import {
+  workflowsCollectionContract,
+  workflowsDetailContract,
+} from "@okouai/api-contracts/contracts/workflows";
+import { createStore } from "ccstate";
+import { expect, test } from "vitest";
+import { setupApp } from "../../../__tests__/test-helpers";
+import { accept, testContext } from "../../../__tests__/test-context";
+import { meModelProvidersDeleteRoutes } from "../me-model-providers-delete";
+import { meModelProvidersListRoutes } from "../me-model-providers-list";
+import { meModelProvidersUpsertRoutes } from "../me-model-providers-upsert";
+import { runModelsRoutes } from "../run-models";
+import { workflowsRoutes } from "../workflows";
+import { mockClaudeCodeTokenEndpoint } from "./helpers/api-bdd-auth-device";
+import { seedOrgMembership$ } from "./helpers/org-membership";
+import { createRouteMocks } from "./helpers/route-test";
+import { installWorkflowVolumeS3Fixture } from "./helpers/workflow-volume-s3";
 
 const context = testContext();
+const headers = Object.freeze({ authorization: "Bearer clerk-session" });
 
-function testActors() {
-  const base = createBddApi(context);
-  const api = createMiscRoutesApi(context);
-  const admin = base.user();
-  const member = base.user({ orgId: admin.orgId, orgRole: "org:member" });
-  return { api, base, admin, member };
+interface Member {
+  readonly userId: string;
+  readonly orgId: string;
+  readonly role: "admin" | "member";
 }
 
-function unsubscribeToken(userId: string): string {
-  const signature = createHmac("sha256", env("SECRETS_ENCRYPTION_KEY"))
-    .update(`unsubscribe:${userId}`)
-    .digest("hex")
-    .slice(0, 32);
-  return `${userId}.${signature}`;
+async function workspaceMember(
+  role: "admin" | "member",
+  orgId = `org_${randomUUID()}`,
+): Promise<Member> {
+  const member: Member = { userId: `user_${randomUUID()}`, orgId, role };
+  await createStore().set(seedOrgMembership$, member, context.signal);
+  return member;
 }
 
-describe("MISC-02: preferences, push subscription, user export, and empty logs", () => {
-  it("keeps reporting the retired chat resources preference as false", async () => {
-    const { api, admin } = testActors();
-    const written = await api.updatePreferences(
-      admin,
-      { timezone: "UTC", locale: "en-US", theme: "dark" },
-      [200],
-    );
-    expect(written.body).toMatchObject({
-      chatResourcesEnabledByDefault: false,
-      theme: "dark",
-    });
-    expect((await api.readPreferences(admin)).body).toMatchObject({
-      chatResourcesEnabledByDefault: false,
-      theme: "dark",
-    });
+function signIn(member: Member) {
+  createRouteMocks(context).clerk.session(
+    member.userId,
+    member.orgId,
+    member.role === "admin" ? "org:admin" : "org:member",
+  );
+}
+
+test("misc-routes.bdd-006 creates, replaces and deletes a personal subscription", async () => {
+  const providers = setupApp({
+    context,
+    routes: [...meModelProvidersListRoutes, ...meModelProvidersUpsertRoutes],
+  })(personalModelProvidersMainContract);
+  const byType = setupApp({ context, routes: meModelProvidersDeleteRoutes })(
+    personalModelProvidersByTypeContract,
+  );
+  const runModels = setupApp({ context, routes: runModelsRoutes })(
+    runModelsMainContract,
+  );
+  const listProviders = async () => {
+    return (await accept(providers.list({ headers }), [200])).body
+      .modelProviders;
+  };
+  const listRunModels = async () => {
+    return (await accept(runModels.list({ headers }), [200])).body.models;
+  };
+
+  const anonymous = await accept(providers.list({ headers: {} }), [401]);
+  const admin = await workspaceMember("admin");
+  signIn(admin);
+  mockClaudeCodeTokenEndpoint();
+  const initial = await listProviders();
+  const first = await accept(
+    providers.upsert({
+      headers,
+      body: { type: "claude-code-oauth-token", secret: "first-claude-token" },
+    }),
+    [201],
+  );
+  const modelsWithSubscription = await listRunModels();
+  mockClaudeCodeTokenEndpoint({ accountEmail: "replacement@example.com" });
+  const replacement = await accept(
+    providers.upsert({
+      headers,
+      body: { type: "claude-code-oauth-token", secret: "second-claude-token" },
+    }),
+    [201],
+  );
+  const afterReplacement = await listProviders();
+  await accept(
+    byType.delete({
+      headers,
+      params: { type: "claude-code-oauth-token" },
+    }),
+    [204],
+  );
+  const afterDelete = await listProviders();
+  const modelsAfterDelete = await listRunModels();
+
+  expect(anonymous.body).toMatchObject({ error: expect.any(Object) });
+  expect(initial).toStrictEqual([]);
+  expect(first.body.created).toBeTruthy();
+  expect(first.body.provider.isActive).toBeTruthy();
+  expect(first.body.provider.modelProviderId).toStrictEqual(expect.any(String));
+  expect(first.body.provider).not.toHaveProperty("secret");
+  expect(modelsWithSubscription).toContainEqual(
+    expect.objectContaining({
+      model: "claude-sonnet-5-5",
+      memberEffective: expect.objectContaining({
+        runtimeProviderType: "claude-code-oauth-token",
+        credentialScope: "member",
+      }),
+    }),
+  );
+  expect(replacement.body.provider.modelProviderId).toBe(
+    first.body.provider.modelProviderId,
+  );
+  expect(replacement.body.provider.id).not.toBe(first.body.provider.id);
+  expect(afterReplacement).toHaveLength(1);
+  expect(afterReplacement[0]).toMatchObject({
+    id: replacement.body.provider.id,
+    isActive: true,
   });
-
-  it("chains visible user-scoped reads and writes without hidden fixtures", async () => {
-    const { api, admin } = testActors();
-
-    const initialPreferences = await api.readUninitializedPreferences(admin);
-    expect(initialPreferences.body.error.code).toBe(
-      "USER_PREFERENCES_UNINITIALIZED",
-    );
-
-    const updatedPreferences = await api.updatePreferences(
-      admin,
-      {
-        timezone: "UTC",
-        locale: "en-US",
-        sendMode: "cmd-enter",
-        cloudBrowserEnabledByDefault: false,
-        theme: "dark",
-        colorTheme: "golden-hour",
-        captureNetworkBodiesRemaining: 3,
-      },
-      [200],
-    );
-    expect(updatedPreferences.body).toMatchObject({
-      timezone: "UTC",
-      locale: "en-US",
-      sendMode: "cmd-enter",
-      cloudBrowserEnabledByDefault: false,
-      theme: "dark",
-      colorTheme: "golden-hour",
-      captureNetworkBodiesRemaining: 3,
-    });
-    const rereadPreferences = await api.readPreferences(admin);
-    expect(rereadPreferences.body).toStrictEqual(updatedPreferences.body);
-
-    const registeredPush = await api.registerPush(admin, [201]);
-    expect(registeredPush.body).toStrictEqual({ success: true });
-
-    const exportStatus = await api.readUserExport(admin, [200]);
-    expect(exportStatus.body).toMatchObject({
-      job: null,
-      canExport: true,
-    });
-    const noOrgActor = createBddApi(context).user({ orgId: null });
-    const noOrgStart = await api.startUserExport(noOrgActor, [401]);
-    expectApiError(noOrgStart.body);
-
-    const missingUnsubscribeToken = await api.requestEmailUnsubscribePage(
-      undefined,
-      [400],
-    );
-    expect(missingUnsubscribeToken.body).toStrictEqual({
-      error: "Missing token",
-    });
-
-    const missingUnsubscribePost = await api.requestEmailUnsubscribe(
-      undefined,
-      [400],
-    );
-    expect(missingUnsubscribePost.body).toStrictEqual({
-      error: "Missing token",
-    });
-
-    const invalidUnsubscribePage = await api.requestEmailUnsubscribePage(
-      "not-a-valid-token",
-      [400],
-    );
-    expect(invalidUnsubscribePage.body).toStrictEqual({
-      error: "Invalid token",
-    });
-
-    const invalidUnsubscribeToken = await api.requestEmailUnsubscribe(
-      "not-a-valid-token",
-      [400],
-    );
-    expect(invalidUnsubscribeToken.body).toStrictEqual({
-      error: "Invalid token",
-    });
-
-    const validToken = unsubscribeToken(`user_${randomUUID()}`);
-    mockEnv("APP_URL", "https://app.okou.ai");
-    const unsubscribePage = await api.requestEmailUnsubscribePage(
-      validToken,
-      [302],
-    );
-    expect(unsubscribePage.headers.get("Location")).toBe(
-      `https://app.okou.ai/email/unsubscribe?token=${validToken}`,
-    );
-
-    const unsubscribed = await api.requestEmailUnsubscribe(validToken, [200]);
-    expect(unsubscribed.body).toStrictEqual({ unsubscribed: true });
-
-    const logs = await api.listLogs(admin);
-    expect(logs.body.data).toStrictEqual([]);
-  });
-
-  it("reads and writes every supported locale through the canonical contract", async () => {
-    const { api, admin } = testActors();
-    await api.updatePreferences(
-      admin,
-      { timezone: "UTC", locale: "en-US" },
-      [200],
-    );
-    const supportedLocales = [
-      "en-US",
-      "pt-BR",
-      "ja-JP",
-      "ko-KR",
-      "id-ID",
-      "de-DE",
-      "es-ES",
-      "it-IT",
-      "fr-FR",
-      "hi-IN",
-      "zh-Hans",
-      "zh-Hant",
-    ] as const;
-
-    for (const locale of supportedLocales) {
-      const current = await api.readPreferences(admin);
-      expect(current.body.supportedLocales).toStrictEqual(supportedLocales);
-
-      const updated = await api.updatePreferences(admin, { locale }, [200]);
-      expect(updated.body).toMatchObject({
-        locale,
-        supportedLocales,
-      });
-    }
-
-    const allLocales = await api.readPreferences(admin);
-    expect(allLocales.body).toMatchObject({
-      locale: "zh-Hant",
-      supportedLocales,
-    });
-  });
+  expect(afterDelete).toStrictEqual([]);
+  expect(
+    modelsAfterDelete.map((model) => {
+      return model.model;
+    }),
+  ).toStrictEqual(["auto"]);
 });
 
-describe("MISC-03: workflows lifecycle through public API", () => {
-  it("chains create, list, read, update, delete, and post-delete read", async () => {
-    const { api, base, admin, member } = testActors();
-    const memberWorkflowName = `bdd-member-workflow-${randomUUID().slice(0, 8)}`;
-    const workflowName = `bdd-workflow-${randomUUID().slice(0, 8)}`;
+test("misc-routes.bdd-004 runs a workflow through create, read, update and delete", async () => {
+  installWorkflowVolumeS3Fixture(context);
+  const admin = await workspaceMember("admin");
+  const member = await workspaceMember("member", admin.orgId);
+  const collection = setupApp({ context, routes: workflowsRoutes })(
+    workflowsCollectionContract,
+  );
+  const detail = setupApp({ context, routes: workflowsRoutes })(
+    workflowsDetailContract,
+  );
 
-    await base.completeOnboarding(admin);
-    await base.completeOnboarding(member);
-    await base.provisionWorkspace(admin);
+  signIn(member);
+  const memberWorkflow = await accept(
+    collection.create({
+      headers,
+      body: {
+        name: `member-${randomUUID().slice(0, 8)}`,
+        instruction: "Member instruction",
+      },
+    }),
+    [201],
+  );
 
-    const memberCreated = await api.createWorkflow(
-      member,
-      memberWorkflowName,
-      { content: "# Member private workflow" },
-      [201],
-    );
-    expect(memberCreated.body).toMatchObject({
-      name: memberWorkflowName,
-      visibility: "private",
-      ownerUserId: member.userId,
-      canManage: true,
-    });
-    const adminListAfterMemberCreate = await api.listWorkflows(admin);
-    expect(
-      adminListAfterMemberCreate.body.some((workflow) => {
-        return workflow.name === memberWorkflowName;
-      }),
-    ).toBeFalsy();
+  signIn(admin);
+  const initialList = await accept(collection.list({ headers }), [200]);
+  const reserved = await accept(
+    collection.create({
+      headers,
+      body: {
+        name: `reserved-${randomUUID().slice(0, 8)}`,
+        instruction: "Reserved file",
+        files: [{ path: "SKILL.md", content: "reserved" }],
+      },
+    }),
+    [400],
+  );
+  const created = await accept(
+    collection.create({
+      headers,
+      body: {
+        name: `bdd-${randomUUID().slice(0, 8)}`,
+        displayName: "BDD Workflow",
+        description: "Workflow created through the public API",
+        instruction: "Original instruction",
+      },
+    }),
+    [201],
+  );
+  const workflowId = created.body.id;
+  const list = await accept(collection.list({ headers }), [200]);
+  const read = await accept(
+    detail.get({ headers, params: { workflowId } }),
+    [200],
+  );
+  const updated = await accept(
+    detail.update({
+      headers,
+      params: { workflowId },
+      body: { instruction: "Updated instruction" },
+    }),
+    [200],
+  );
+  await accept(
+    detail.delete({ headers, params: { workflowId }, body: undefined }),
+    [204],
+  );
+  const afterDelete = await accept(
+    detail.get({ headers, params: { workflowId } }),
+    [404],
+  );
 
-    const invalidCreate = await api.requestCreateInvalidWorkflow(admin, [400]);
-    expectApiError(invalidCreate.body);
-
-    const created = await api.createWorkflow(
-      admin,
-      workflowName,
-      { content: "# BDD Workflow\n\nCreated through API." },
-      [201],
-    );
-    if (created.status !== 201) {
-      throw new Error(
-        `Expected workflow creation to succeed, got ${created.status}`,
-      );
-    }
-    expect(created.body).toMatchObject({
-      name: workflowName,
-      displayName: "BDD Workflow",
-      description: "Created through public workflow API",
-    });
-    const workflowId = created.body.id;
-
-    const listed = await api.listWorkflows(admin);
-    expect(
-      listed.body.some((workflow) => {
-        return workflow.name === workflowName;
-      }),
-    ).toBeTruthy();
-
-    const detail = await api.readWorkflow(admin, workflowId, [200]);
-    if (detail.status !== 200) {
-      throw new Error(
-        `Expected workflow detail to be readable, got ${detail.status}`,
-      );
-    }
-    expect(detail.body.instruction).toBe(
-      "# BDD Workflow\n\nCreated through API.",
-    );
-
-    const updated = await api.updateWorkflow(
-      admin,
-      workflowId,
-      "# BDD Workflow\n\nUpdated through API.",
-      [200],
-    );
-    if (updated.status !== 200) {
-      throw new Error(
-        `Expected workflow update to succeed, got ${updated.status}`,
-      );
-    }
-    expect(updated.body.instruction).toBe(
-      "# BDD Workflow\n\nUpdated through API.",
-    );
-
-    await api.deleteWorkflow(admin, workflowId, [204]);
-    const missing = await api.readWorkflow(admin, workflowId, [404]);
-    expectApiError(missing.body);
+  expect(memberWorkflow.body).toMatchObject({
+    visibility: "private",
+    ownerUserId: member.userId,
+    canManage: true,
   });
-});
-
-describe("MISC-04: available run models, personal subscriptions, and logs", () => {
-  it("lists the fixed Auto model for both administrators and members", async () => {
-    const { api, admin, member } = testActors();
-    for (const actor of [admin, member]) {
-      const available = await api.listRunModels(actor);
-      expect(
-        available.models.map((model) => {
-          return model.model;
-        }),
-      ).toStrictEqual(["auto"]);
-      expect(available.models[0]).toMatchObject({
-        memberEffective: expect.objectContaining({
-          providerType: "built-in",
-          credentialScope: "org",
-        }),
-        modelProviderId: null,
-      });
-    }
+  expect(
+    initialList.body.map((workflow) => {
+      return workflow.id;
+    }),
+  ).not.toContain(memberWorkflow.body.id);
+  expect(reserved.body).toMatchObject({ error: expect.any(Object) });
+  expect(created.body).toMatchObject({
+    displayName: "BDD Workflow",
+    description: "Workflow created through the public API",
   });
-
-  it("chains personal subscription account create, replace, list, and delete through public API", async () => {
-    const { api, admin } = testActors();
-
-    const unauthenticatedList = await api.listPersonalModelProviders(
-      null,
-      [401],
-    );
-    expectApiError(unauthenticatedList.body);
-
-    const initial = await api.listPersonalModelProviders(admin, [200]);
-    if (!("modelProviders" in initial.body)) {
-      throw new Error("Expected personal model provider list response");
-    }
-    expect(initial.body.modelProviders).toStrictEqual([]);
-
-    const created = await api.upsertPersonalModelProvider(
-      admin,
-      {
-        type: "claude-code-oauth-token",
-        secret: "bdd-claude-oauth-token",
-      },
-      [201],
-    );
-    expect(created.body).toMatchObject({
-      created: true,
-      provider: {
-        type: "claude-code-oauth-token",
-        modelProviderId: expect.any(String),
-        isActive: true,
-      },
-    });
-    if (!("provider" in created.body)) {
-      throw new Error("Expected personal model provider upsert response");
-    }
-    expect("secret" in created.body.provider).toBeFalsy();
-    const connectedModels = await api.listRunModels(admin);
-    expect(connectedModels.models).toContainEqual(
-      expect.objectContaining({
-        model: "claude-sonnet-5-5",
-        memberEffective: expect.objectContaining({
-          providerType: "claude-code-oauth-token",
-          credentialScope: "member",
-        }),
-      }),
-    );
-
-    const listed = await api.listPersonalModelProviders(admin, [200]);
-    if (!("modelProviders" in listed.body)) {
-      throw new Error("Expected personal model provider list response");
-    }
-    expect(listed.body.modelProviders).toHaveLength(1);
-    expect(listed.body.modelProviders[0]).toMatchObject({
-      type: "claude-code-oauth-token",
-    });
-
-    // Tokens without a resolved upstream identity replace the concrete account,
-    // while the logical provider remains the same.
-    const replaced = await api.upsertPersonalModelProvider(
-      admin,
-      {
-        type: "claude-code-oauth-token",
-        secret: "bdd-updated-claude-oauth-token",
-      },
-      [201],
-    );
-    expect(replaced.body).toMatchObject({
-      created: true,
-      provider: {
-        type: "claude-code-oauth-token",
-        modelProviderId: created.body.provider.modelProviderId,
-        isActive: true,
-      },
-    });
-    if (!("provider" in replaced.body)) {
-      throw new Error("Expected personal subscription account response");
-    }
-    expect(replaced.body.provider.id).not.toBe(created.body.provider.id);
-    const afterReplace = await api.listPersonalModelProviders(admin, [200]);
-    if (!("modelProviders" in afterReplace.body)) {
-      throw new Error("Expected personal model provider list response");
-    }
-    expect(afterReplace.body.modelProviders).toHaveLength(1);
-    expect(afterReplace.body.modelProviders[0]).toMatchObject({
-      id: replaced.body.provider.id,
-      modelProviderId: created.body.provider.modelProviderId,
-      isActive: true,
-    });
-
-    await api.deletePersonalModelProvider(
-      admin,
-      "claude-code-oauth-token",
-      [204],
-    );
-    const afterDelete = await api.listPersonalModelProviders(admin, [200]);
-    if (!("modelProviders" in afterDelete.body)) {
-      throw new Error("Expected personal model provider list response");
-    }
-    expect(afterDelete.body.modelProviders).toStrictEqual([]);
-    const disconnectedModels = await api.listRunModels(admin);
-    expect(
-      disconnectedModels.models.map((model) => {
-        return model.model;
-      }),
-    ).toStrictEqual(["auto"]);
-  });
+  expect(
+    list.body.map((workflow) => {
+      return workflow.id;
+    }),
+  ).toContain(workflowId);
+  expect(read.body.instruction).toBe("Original instruction");
+  expect(updated.body.instruction).toBe("Updated instruction");
+  expect(afterDelete.body).toMatchObject({ error: expect.any(Object) });
 });

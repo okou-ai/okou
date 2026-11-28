@@ -1,77 +1,135 @@
-import { createHmac, randomUUID } from "node:crypto";
-import type StripeSDK from "stripe";
+import { randomUUID } from "node:crypto";
 import {
   webhookStripeConnectContract,
   webhookStripeContract,
 } from "@okouai/api-contracts/contracts/webhooks";
+import { describe, expect, it, vi } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { mockOptionalEnv } from "../../../lib/env";
+import { mockOptionalEnv, optionalEnv } from "../../../lib/env";
 import { now } from "../../../lib/time";
 import { webhooksStripeRoutes } from "../webhooks-stripe";
 import { webhooksStripeConnectRoutes } from "../webhooks-stripe-connect";
 
 const context = testContext();
-const { default: ActualStripeSDK } = await vi.importActual<{
-  default: typeof StripeSDK;
-}>("stripe");
 
-test.each(["billing", "connect"] as const)(
-  "authenticates signed %s webhooks with the Worker's Web Crypto provider",
-  async (ingress) => {
-    const secret = `whsec_${randomUUID()}`;
-    mockOptionalEnv("STRIPE_WEBHOOK_SECRET", secret);
-    mockOptionalEnv("STRIPE_AUTOMATION_WEBHOOK_SECRET", secret);
-    const stripe = new ActualStripeSDK("sk_test_worker_signature_test");
-    // Stripe's worker export selects this asynchronous provider by default.
-    const cryptoProvider = ActualStripeSDK.createSubtleCryptoProvider();
-    context.mocks.stripe.webhooks.constructEventAsync.mockImplementation(
-      (body, signature, webhookSecret) => {
-        return stripe.webhooks.constructEventAsync(
-          String(body),
-          String(signature),
-          String(webhookSecret),
-          undefined,
-          cryptoProvider,
-        );
-      },
+function requiredString(value: unknown, label: string): string {
+  if (typeof value !== "string") {
+    throw new Error(`Expected ${label} to be a string`);
+  }
+  return value;
+}
+
+/**
+ * Configures both Stripe endpoint secrets and verifies signatures with the
+ * real Stripe SDK through its asynchronous Web Crypto provider, as the Worker
+ * runtime does. Returns the real SDK so the caller can sign as Stripe would.
+ */
+async function configureWorkerStripeWebhooks() {
+  mockOptionalEnv("STRIPE_WEBHOOK_SECRET", `whsec_billing_${randomUUID()}`);
+  mockOptionalEnv(
+    "STRIPE_AUTOMATION_WEBHOOK_SECRET",
+    `whsec_connect_${randomUUID()}`,
+  );
+  const { default: Stripe } =
+    await vi.importActual<typeof import("stripe")>("stripe");
+  const cryptoProvider = Stripe.createSubtleCryptoProvider();
+  context.mocks.stripe.webhooks.constructEventAsync.mockImplementation(
+    (payload: unknown, header: unknown, secret: unknown) => {
+      return Stripe.webhooks.constructEventAsync(
+        requiredString(payload, "payload"),
+        requiredString(header, "stripe-signature header"),
+        requiredString(secret, "webhook secret"),
+        undefined,
+        cryptoProvider,
+      );
+    },
+  );
+  return Stripe;
+}
+
+function configuredSecret(name: string): string {
+  const secret = optionalEnv(name);
+  if (!secret) {
+    throw new Error(`Expected ${name} to be configured`);
+  }
+  return secret;
+}
+
+function customerEvent(type: "customer.created" | "customer.deleted") {
+  return JSON.stringify({
+    id: `evt_${randomUUID()}`,
+    object: "event",
+    type,
+    created: Math.floor(now() / 1000),
+    livemode: false,
+    data: { object: { id: `cus_${randomUUID()}`, object: "customer" } },
+  });
+}
+
+describe("Stripe webhook signatures in the Worker runtime", () => {
+  it("webhooks-stripe-worker-001 accepts a Stripe-signed billing event and rejects the same signature on a changed body", async () => {
+    const Stripe = await configureWorkerStripeWebhooks();
+    const client = setupApp({ context, routes: webhooksStripeRoutes })(
+      webhookStripeContract,
     );
-
-    const app = setupApp({
-      context,
-      routes: [...webhooksStripeRoutes, ...webhooksStripeConnectRoutes],
+    const payload = customerEvent("customer.created");
+    const signature = Stripe.webhooks.generateTestHeaderString({
+      payload,
+      secret: configuredSecret("STRIPE_WEBHOOK_SECRET"),
     });
-    const post =
-      ingress === "billing"
-        ? app(webhookStripeContract).post
-        : app(webhookStripeConnectContract).post;
-    const timestamp = Math.floor(now() / 1000);
-    const body = JSON.stringify({
-      id: `evt_${randomUUID()}`,
-      object: "event",
-      type: "customer.created",
-      created: timestamp,
-      livemode: false,
-      data: { object: { id: `cus_${randomUUID()}` } },
-    });
-    const digest = createHmac("sha256", secret)
-      .update(`${timestamp}.${body}`)
-      .digest("hex");
-    const extraHeaders = {
-      "stripe-signature": `t=${timestamp},v1=${digest}`,
-    };
 
-    const accepted = await accept(post({ body, extraHeaders }), [200]);
-    expect(accepted.body).toBe("OK");
+    const signed = await accept(
+      client.post({
+        body: payload,
+        extraHeaders: { "stripe-signature": signature },
+      }),
+      [200],
+    );
+    expect(signed.body).toBe("OK");
 
     const tampered = await accept(
-      post({
-        body: body.replace("customer.created", "customer.deleted"),
-        extraHeaders,
+      client.post({
+        body: payload.replace('"customer.created"', '"customer.deleted"'),
+        extraHeaders: { "stripe-signature": signature },
       }),
       [401],
     );
-    expect(tampered.body).toStrictEqual({ error: "Invalid webhook signature" });
-  },
-);
+    expect(tampered.body).toStrictEqual({
+      error: "Invalid webhook signature",
+    });
+  });
+
+  it("webhooks-stripe-worker-002 accepts a Stripe-signed Connect event and rejects the same signature on a changed body", async () => {
+    const Stripe = await configureWorkerStripeWebhooks();
+    const client = setupApp({ context, routes: webhooksStripeConnectRoutes })(
+      webhookStripeConnectContract,
+    );
+    const payload = customerEvent("customer.created");
+    const signature = Stripe.webhooks.generateTestHeaderString({
+      payload,
+      secret: configuredSecret("STRIPE_AUTOMATION_WEBHOOK_SECRET"),
+    });
+
+    const signed = await accept(
+      client.post({
+        body: payload,
+        extraHeaders: { "stripe-signature": signature },
+      }),
+      [200],
+    );
+    expect(signed.body).toBe("OK");
+
+    const tampered = await accept(
+      client.post({
+        body: payload.replace('"customer.created"', '"customer.deleted"'),
+        extraHeaders: { "stripe-signature": signature },
+      }),
+      [401],
+    );
+    expect(tampered.body).toStrictEqual({
+      error: "Invalid webhook signature",
+    });
+  });
+});

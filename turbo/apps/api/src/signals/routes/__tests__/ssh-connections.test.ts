@@ -1,481 +1,167 @@
-import { createSshExecutionApi } from "./helpers/ssh-execution";
-import { inlineSshKey } from "./helpers/ssh-credential";
 import { randomUUID } from "node:crypto";
 
-import { afterEach, describe, expect, it } from "vitest";
-
-import { sshConnectionsContract } from "@okouai/api-contracts/contracts/ssh-connections";
-import { runnerSshContract } from "@okouai/api-contracts/contracts/runner-ssh";
-import { chatRemoteAccessContract } from "@okouai/api-contracts/contracts/chat-remote-access";
+import {
+  sshConnectionsContract,
+  type SshConnectionResponse,
+} from "@okouai/api-contracts/contracts/ssh-connections";
+import { createStore } from "ccstate";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp, setupRawAppRequest } from "../../../__tests__/test-helpers";
+import { sshConnectionsRoutes } from "../ssh-connections";
+import { seedOrgMembership$ } from "./helpers/org-membership";
 import { createRouteMocks } from "./helpers/route-test";
 import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
-import { sshConnectionsRoutes } from "../ssh-connections";
-import { runnerSshRoutes } from "../runner-ssh";
-import { chatRemoteAccessRoutes } from "../chat-remote-access";
-import { mockEnv } from "../../../lib/env";
+import { inlineSshKey } from "./helpers/ssh-credential";
 
 const context = testContext();
-const mocks = createRouteMocks(context);
+const headers = Object.freeze({ authorization: "Bearer clerk-session" });
 
 interface Actor {
-  readonly orgId: string;
   readonly userId: string;
+  readonly orgId: string;
 }
 
-function actor(prefix: string, orgId = `org_ssh_${randomUUID()}`): Actor {
-  return { orgId, userId: `user_ssh_${prefix}_${randomUUID()}` };
+const clerkDirectory = createStore();
+
+async function newActor(ids: Partial<Actor> = {}): Promise<Actor> {
+  const actor = {
+    userId: ids.userId ?? `user_${randomUUID()}`,
+    orgId: ids.orgId ?? `org_${randomUUID()}`,
+  };
+  await clerkDirectory.set(
+    seedOrgMembership$,
+    { ...actor, role: "member" },
+    context.signal,
+  );
+  return actor;
 }
 
-function authenticate(
-  value: Actor | { readonly orgId: null; readonly userId: string },
-) {
-  mocks.clerk.session(value.userId, value.orgId);
+function signIn(actor: Actor) {
+  createRouteMocks(context).clerk.session(
+    actor.userId,
+    actor.orgId,
+    "org:member",
+  );
 }
 
-function authHeaders() {
-  return { authorization: "Bearer clerk-session" };
-}
-
-function client() {
+function hosts() {
   return setupApp({ context, routes: sshConnectionsRoutes })(
     sshConnectionsContract,
   );
 }
 
-function createBody(
+function createHost(
   host: string,
-  overrides: Partial<{
-    readonly displayName: string;
-    readonly port: number;
-    readonly username: string;
-    readonly privateKey: string;
-    readonly passphrase: string | null;
-  }> = {},
+  username = "deploy",
+  options: { readonly port?: number } = {},
 ) {
-  return {
-    displayName: overrides.displayName ?? `Host ${host}`,
-    host,
-    port: overrides.port ?? 22,
-    credential: inlineSshKey(
-      overrides.username ?? "deploy",
-      overrides.privateKey ?? "private-key",
-      overrides.passphrase ?? null,
-    ),
-  };
+  return hosts().create({
+    headers,
+    body: {
+      id: randomUUID(),
+      displayName: `Host ${host}`,
+      host,
+      ...(options.port === undefined ? {} : { port: options.port }),
+      credential: inlineSshKey(username, `key-${randomUUID()}\n`),
+    },
+  });
+}
+
+async function listHosts() {
+  return (await accept(hosts().list({ headers }), [200])).body.connections;
+}
+
+function byId(items: readonly SshConnectionResponse[]) {
+  return [...items].sort((a, b) => {
+    return a.id.localeCompare(b.id);
+  });
 }
 
 describe("SSH connection routes", () => {
-  const runnerSecret = "e".repeat(64);
-  const runnerHeaders = {
-    authorization: `Bearer vm0_official_${runnerSecret}`,
-  };
-  const ordinary = createSshExecutionApi(context, {
-    runnerHeaders,
-    authenticate,
-  });
-  afterEach(ordinary.cleanup);
-  it.each(["org_3ANttyrbWYJk6JKRSTRLEsbsDLe", "org_ordinary_ssh"])(
-    "allows host management without feature overrides in %s",
-    async (orgId) => {
-      const owner = actor("availability", orgId);
-      authenticate(owner);
-      const result = await accept(
-        client().list({ headers: authHeaders() }),
-        [200],
-      );
-      expect(result.body.connections).toStrictEqual([]);
-      expect(result.headers.get("cache-control")).toBe("no-store");
-    },
-  );
+  it("ssh-connections-002 an ordinary member lists no hosts without feature overrides", async () => {
+    signIn(await newActor({ orgId: "org_ordinary_ssh" }));
 
-  it("notifies only the owner after every successful connection creation", async () => {
-    useSecretKmsProbe();
-    const owner = actor("browser-notice");
-    authenticate(owner);
-    for (const host of [
-      "first.example.com",
-      "second.example.com",
-      "first.example.com",
-    ]) {
-      context.mocks.ably.publish.mockClear();
-      context.mocks.ably.channelGet.mockClear();
-      await accept(
-        client().create({
-          headers: authHeaders(),
-          body: { id: randomUUID(), ...createBody(host) },
-        }),
-        [201],
-      );
-      expect(context.mocks.ably.publish.mock.calls).toStrictEqual([
-        ["ssh:changed", { orgId: owner.orgId }],
-      ]);
-      expect(context.mocks.ably.channelGet.mock.calls).toStrictEqual([
-        [`user:${owner.userId}`],
-      ]);
-    }
-  });
-  it("requires organization authentication", async () => {
-    const unauthenticated = await accept(client().list({ headers: {} }), [401]);
-    expect(unauthenticated.body.error.code).toBe("UNAUTHORIZED");
+    const response = await accept(hosts().list({ headers }), [200]);
 
-    authenticate({ userId: `user_ssh_no_org_${randomUUID()}`, orgId: null });
-    const withoutOrg = await accept(
-      client().list({ headers: authHeaders() }),
-      [401],
-    );
-    expect(withoutOrg.body.error.code).toBe("UNAUTHORIZED");
+    expect(response.body).toStrictEqual({ connections: [] });
+    expect(response.headers.get("cache-control")).toBe("no-store");
   });
 
-  it("creates, normalizes, lists, edits, resets, and deletes without exposing secrets", async () => {
-    useSecretKmsProbe();
-    const owner = actor("crud");
-    authenticate(owner);
-    const privateKey = "  -----BEGIN KEY-----\nvalue\n-----END KEY-----\n";
-    const passphrase = " passphrase with spaces ";
-
-    const created = await accept(
-      client().create({
-        headers: authHeaders(),
-        body: {
-          id: randomUUID(),
-          displayName: "  Production  ",
-          host: "  BÜCHER.Example.  ",
-          credential: inlineSshKey("  deploy  ", privateKey, passphrase),
-        },
-      }),
-      [201],
-    );
-    expect(created.body).toMatchObject({
-      displayName: "Production",
-      host: "xn--bcher-kva.example",
-      port: 22,
-      username: "deploy",
-      generation: 1,
-      learnedHostKey: null,
-    });
-    expect(created.body).not.toHaveProperty("privateKey");
-    expect(created.body).not.toHaveProperty("passphrase");
-    expect(JSON.stringify(created.body)).not.toContain("vm0secret:");
-
-    const summary = await accept(
-      client().summary({ headers: authHeaders() }),
-      [200],
-    );
-    expect(summary.body).toStrictEqual({ configuredCount: 1 });
-    const listed = await accept(
-      client().list({ headers: authHeaders() }),
-      [200],
-    );
-    expect(listed.body.connections).toStrictEqual([created.body]);
-
-    await accept(
-      setupApp({ context, routes: chatRemoteAccessRoutes })(
-        chatRemoteAccessContract,
-      ).updateHostDefault({
-        headers: authHeaders(),
-        params: { protocol: "ssh", connectionId: created.body.id },
-        body: { enabled: true },
-      }),
-      [200],
-    );
-    mockEnv("OFFICIAL_RUNNER_SECRET", runnerSecret);
-    const running = await ordinary.runtime(owner);
-    const runner = setupApp({ context, routes: runnerSshRoutes })(
-      runnerSshContract,
-    );
-    const request = {
-      headers: runnerHeaders,
-      params: { runId: running.runId },
-      body: {
-        connectionId: created.body.id,
-        runnerIdentity: running.runnerIdentity,
-      },
-    };
-    const credentials = await accept(runner.resolve(request), [200]);
-    expect(credentials.body).toMatchObject({
-      outcome: "resolved",
-      privateKey,
-      passphrase,
-    });
-
-    const hostKey = {
-      algorithm: "ssh-ed25519" as const,
-      fingerprint: `SHA256:${Buffer.alloc(32, 1).toString("base64").replace(/=+$/u, "")}`,
-    };
-    const pinned = await accept(
-      runner.pin({
-        ...request,
-        body: {
-          ...request.body,
-          expectedGeneration: 1,
-          observedHostKey: hostKey,
-        },
-      }),
-      [200],
-    );
-    expect(pinned.body).toStrictEqual({ outcome: "pinned", generation: 2 });
-
-    const metadataUpdated = await accept(
-      client().update({
-        headers: authHeaders(),
-        params: { connectionId: created.body.id },
-        body: {
-          expectedGeneration: 2,
-          displayName: "Renamed",
-          credential: inlineSshKey("operator", privateKey, passphrase),
-        },
-      }),
-      [200],
-    );
-    expect(metadataUpdated.body).toMatchObject({
-      generation: 3,
-      learnedHostKey: hostKey,
-    });
-
-    const credentialUpdated = await accept(
-      client().update({
-        headers: authHeaders(),
-        params: { connectionId: created.body.id },
-        body: {
-          expectedGeneration: 3,
-          credential: inlineSshKey("operator", "replacement\n"),
-        },
-      }),
-      [200],
-    );
-    expect(credentialUpdated.body.generation).toBe(4);
-    expect(credentialUpdated.body.learnedHostKey).not.toBeNull();
-
-    const replacement = await accept(runner.resolve(request), [200]);
-    expect(replacement.body).toMatchObject({
-      outcome: "resolved",
-      privateKey: "replacement\n",
-      passphrase: null,
-    });
-
-    const endpointUpdated = await accept(
-      client().update({
-        headers: authHeaders(),
-        params: { connectionId: created.body.id },
-        body: {
-          expectedGeneration: 4,
-          host: "2001:0DB8:0:0::1",
-          port: 2222,
-        },
-      }),
-      [200],
-    );
-    expect(endpointUpdated.body).toMatchObject({
-      host: "2001:db8::1",
-      port: 2222,
-      generation: 5,
-      learnedHostKey: null,
-    });
-
-    const repinned = await accept(
-      runner.pin({
-        ...request,
-        body: {
-          ...request.body,
-          expectedGeneration: 5,
-          observedHostKey: {
-            algorithm: "ssh-ed25519",
-            fingerprint: `SHA256:${Buffer.alloc(32, 2).toString("base64").replace(/=+$/u, "")}`,
-          },
-        },
-      }),
-      [200],
-    );
-    expect(repinned.body).toStrictEqual({ outcome: "pinned", generation: 6 });
-
-    const reset = await accept(
-      client().resetHostKey({
-        headers: authHeaders(),
-        params: { connectionId: created.body.id },
-        body: { expectedGeneration: 6 },
-      }),
-      [200],
-    );
-    expect(reset.body).toMatchObject({ generation: 7, learnedHostKey: null });
-
-    const resetAgain = await accept(
-      client().resetHostKey({
-        headers: authHeaders(),
-        params: { connectionId: created.body.id },
-        body: { expectedGeneration: 7 },
-      }),
-      [200],
-    );
-    expect(resetAgain.body).toMatchObject({
-      generation: 8,
-      learnedHostKey: null,
-    });
-
-    const stale = await accept(
-      client().update({
-        headers: authHeaders(),
-        params: { connectionId: created.body.id },
-        body: {
-          expectedGeneration: 7,
-          displayName: "Stale",
-        },
-      }),
-      [409],
-    );
-    expect(stale.body.error.message).toContain("modified");
-
-    const staleReset = await accept(
-      client().resetHostKey({
-        headers: authHeaders(),
-        params: { connectionId: created.body.id },
-        body: { expectedGeneration: 7 },
-      }),
-      [409],
-    );
-    expect(staleReset.body.error.message).toContain("modified");
-
-    await accept(
-      client().delete({
-        headers: authHeaders(),
-        params: { connectionId: created.body.id },
-        body: { expectedGeneration: resetAgain.body.generation },
-      }),
-      [204],
-    );
-    const afterDelete = await accept(
-      client().summary({ headers: authHeaders() }),
-      [200],
-    );
-    // This counts every owner connection row; it makes no claim about credential-row deletion.
-    expect(afterDelete.body).toStrictEqual({ configuredCount: 0 });
-  });
-
-  it("rejects invalid input before KMS work", async () => {
+  it("ssh-connections-006 invalid hosts and extra password fields are rejected before KMS work", async () => {
     const kms = useSecretKmsProbe();
-    const owner = actor("validation");
-    authenticate(owner);
+    signIn(await newActor());
 
-    const invalidHosts = ["[::1]", "example.com:22", "https://example.com"];
-    for (const host of invalidHosts) {
-      const response = await accept(
-        client().create({
-          headers: authHeaders(),
-          body: { id: randomUUID(), ...createBody(host) },
-        }),
-        [400],
-      );
-      expect(response.body.error.code).toBe("SSH_INVALID_HOST");
+    for (const host of ["[::1]", "example.com:22", "https://example.com"]) {
+      const invalid = await accept(createHost(host), [400]);
+      expect(invalid.body.error.code).toBe("SSH_INVALID_HOST");
     }
     expect(kms.generateDataKeyCalls).toBe(0);
 
-    const created = await accept(
-      client().create({
-        headers: authHeaders(),
-        body: { id: randomUUID(), ...createBody("EXAMPLE.com.") },
-      }),
-      [201],
-    );
-    expect(created.body.host).toBe("example.com");
+    const valid = await accept(createHost("EXAMPLE.com."), [201]);
+    expect(valid.body.host).toBe("example.com");
     expect(kms.generateDataKeyCalls).toBe(1);
 
-    const rawRequest = setupRawAppRequest({
-      context,
-      routes: sshConnectionsRoutes,
+    const canary = `canary-${randomUUID()}`;
+    const authentication = {
+      method: "private_key",
+      privateKey: `key-${randomUUID()}`,
+      passphrase: null,
+      password: canary,
+    };
+    const raw = setupRawAppRequest({ context, routes: sshConnectionsRoutes });
+    const create = await raw("/api/ssh/connections", {
+      method: "POST",
+      headers: { ...headers, "content-type": "application/json" },
+      body: JSON.stringify({
+        id: randomUUID(),
+        displayName: "Broken",
+        host: "broken.example.com",
+        credential: {
+          create: { name: "Broken login", username: "deploy", authentication },
+        },
+      }),
     });
-    for (const [path, method, body] of [
-      [
-        "/api/ssh/connections",
-        "POST",
-        {
-          ...createBody("password.example.com"),
-          credential: {
-            create: {
-              name: "Invalid",
-              username: "deploy",
-              authentication: {
-                method: "private_key",
-                privateKey: "test",
-                password: "password-canary",
-              },
-            },
-          },
+    const update = await raw(`/api/ssh/connections/${valid.body.id}`, {
+      method: "PATCH",
+      headers: { ...headers, "content-type": "application/json" },
+      body: JSON.stringify({
+        expectedGeneration: valid.body.generation,
+        credential: {
+          create: { name: "Broken login", username: "deploy", authentication },
         },
-      ],
-      [
-        `/api/ssh/connections/${created.body.id}`,
-        "PATCH",
-        {
-          expectedGeneration: created.body.generation,
-          credential: {
-            create: {
-              name: "Invalid",
-              username: "deploy",
-              authentication: {
-                method: "private_key",
-                privateKey: "test",
-                password: "password-canary",
-              },
-            },
-          },
-        },
-      ],
-    ] as const) {
-      const response = await rawRequest(path, {
-        method,
-        headers: { ...authHeaders(), "content-type": "application/json" },
-        body: JSON.stringify(body),
-      });
+      }),
+    });
+
+    for (const response of [create, update]) {
       expect(response.status).toBe(400);
-      expect(JSON.stringify(response.body)).not.toContain("password-canary");
+      expect(JSON.stringify(response.body)).not.toContain(canary);
     }
     expect(kms.generateDataKeyCalls).toBe(1);
   });
 
-  it("allows independent logins to share a normalized endpoint on create and update", async () => {
+  it("ssh-connections-007 independent logins share a normalized endpoint on create and update", async () => {
     useSecretKmsProbe();
-    const owner = actor("shared-endpoint");
-    authenticate(owner);
-    const original = await accept(
-      client().create({
-        headers: authHeaders(),
-        body: {
-          id: randomUUID(),
-          ...createBody("EXAMPLE.com.", { username: "ubuntu" }),
-        },
-      }),
+    signIn(await newActor());
+
+    const first = await accept(createHost("EXAMPLE.com.", "ubuntu"), [201]);
+    const second = await accept(createHost("example.COM", "deploy"), [201]);
+    const third = await accept(
+      createHost("other.example.com", "deploy", { port: 2222 }),
       [201],
     );
-    const additional = await accept(
-      client().create({
-        headers: authHeaders(),
-        body: { id: randomUUID(), ...createBody("example.COM") },
-      }),
-      [201],
-    );
-    expect(additional.body).toMatchObject({
+    expect(second.body).toMatchObject({
       host: "example.com",
       port: 22,
       username: "deploy",
     });
-    const other = await accept(
-      client().create({
-        headers: authHeaders(),
-        body: {
-          id: randomUUID(),
-          ...createBody("other.example.com", { port: 2222 }),
-        },
-      }),
-      [201],
-    );
+
     const moved = await accept(
-      client().update({
-        headers: authHeaders(),
-        params: { connectionId: other.body.id },
+      hosts().update({
+        headers,
+        params: { connectionId: third.body.id },
         body: {
-          expectedGeneration: 1,
+          expectedGeneration: third.body.generation,
           host: "EXAMPLE.com.",
           port: 22,
         },
@@ -483,190 +169,136 @@ describe("SSH connection routes", () => {
       [200],
     );
     expect(moved.body).toMatchObject({
-      id: other.body.id,
+      id: third.body.id,
       host: "example.com",
       port: 22,
       username: "deploy",
       generation: 2,
     });
-    const listed = await accept(
-      client().list({ headers: authHeaders() }),
-      [200],
-    );
-    expect(listed.body.connections).toHaveLength(3);
-    expect(listed.body.connections).toStrictEqual(
-      expect.arrayContaining([original.body, additional.body, moved.body]),
+
+    expect(byId(await listHosts())).toStrictEqual(
+      byId([first.body, second.body, moved.body]),
     );
   });
 
-  it("fails closed across owners without invoking KMS", async () => {
+  it("ssh-connections-008 another member cannot update the owner's host and KMS is not called", async () => {
     const kms = useSecretKmsProbe();
-    const owner = actor("owner");
-    authenticate(owner);
-    const created = await accept(
-      client().create({
-        headers: authHeaders(),
-        body: {
-          id: randomUUID(),
-          ...createBody("isolated.example.com"),
-        },
-      }),
-      [201],
-    );
+    const owner = await newActor();
+    signIn(owner);
+    const created = await accept(createHost("owner.example.com"), [201]);
     expect(kms.generateDataKeyCalls).toBe(1);
 
-    const other = actor("other", owner.orgId);
-    authenticate(other);
-    const crossOwner = await accept(
-      client().update({
-        headers: authHeaders(),
+    signIn(await newActor({ orgId: owner.orgId }));
+    const update = await accept(
+      hosts().update({
+        headers,
         params: { connectionId: created.body.id },
         body: {
-          expectedGeneration: 1,
-          credential: inlineSshKey("deploy", "should-not-encrypt"),
+          expectedGeneration: created.body.generation,
+          credential: inlineSshKey("intruder", `key-${randomUUID()}`),
         },
       }),
       [404],
     );
-    expect(crossOwner.body.error.message).toBe("SSH connection not found");
-    expect(kms.generateDataKeyCalls).toBe(1);
 
-    const otherList = await accept(
-      client().list({ headers: authHeaders() }),
-      [200],
-    );
-    expect(otherList.body.connections).toStrictEqual([]);
+    expect(update.body.error.message).toBe("SSH connection not found");
+    expect(kms.generateDataKeyCalls).toBe(1);
+    await expect(listHosts()).resolves.toStrictEqual([]);
   });
 
-  it.each(["orgId", "userId"] as const)(
-    "rejects a foreign host-key reset sharing the %s without changing either owner's configuration",
-    async (shared) => {
-      useSecretKmsProbe();
-      const owner = actor("reset-owner");
-      authenticate(owner);
-      const created = await accept(
-        client().create({
-          headers: authHeaders(),
-          body: { id: randomUUID(), ...createBody("reset-owner.example.com") },
-        }),
-        [201],
-      );
-      const peer = { ...actor("reset-peer"), [shared]: owner[shared] };
-      authenticate(peer);
-      const peerCreated = await accept(
-        client().create({
-          headers: authHeaders(),
-          body: { id: randomUUID(), ...createBody("reset-peer.example.com") },
-        }),
-        [201],
-      );
-      const denied = await accept(
-        client().resetHostKey({
-          headers: authHeaders(),
-          params: { connectionId: created.body.id },
-          body: { expectedGeneration: 1 },
-        }),
-        [404],
-      );
-      expect(denied.body.error.code).toBe("SSH_CONNECTION_NOT_FOUND");
-      const missing = await accept(
-        client().resetHostKey({
-          headers: authHeaders(),
-          params: { connectionId: randomUUID() },
-          body: { expectedGeneration: 1 },
-        }),
-        [404],
-      );
-      expect(missing.body).toStrictEqual(denied.body);
-      expect(
-        (await accept(client().list({ headers: authHeaders() }), [200])).body
-          .connections,
-      ).toStrictEqual([peerCreated.body]);
-      authenticate(owner);
-      expect(
-        (await accept(client().list({ headers: authHeaders() }), [200])).body
-          .connections,
-      ).toStrictEqual([created.body]);
-      const reset = await accept(
-        client().resetHostKey({
-          headers: authHeaders(),
-          params: { connectionId: created.body.id },
-          body: { expectedGeneration: 1 },
-        }),
-        [200],
-      );
-      expect(reset.body).toStrictEqual({
-        ...created.body,
-        generation: 2,
-        updatedAt: reset.body.updatedAt,
-      });
-      expect(
-        (await accept(client().list({ headers: authHeaders() }), [200])).body
-          .connections,
-      ).toStrictEqual([reset.body]);
-    },
-  );
-
-  it("preserves concurrent configurations for the same endpoint and username", async () => {
+  it("ssh-connections-009 a peer sharing the organization cannot reset the owner's host key", async () => {
     useSecretKmsProbe();
-    const duplicateOwner = actor("concurrent-duplicate");
-    authenticate(duplicateOwner);
-    const [first, second] = await Promise.all([
-      accept(
-        client().create({
-          headers: authHeaders(),
-          body: {
-            id: randomUUID(),
-            ...createBody("RACE.example.com", { privateKey: "first-key" }),
-          },
-        }),
-        [201],
-      ),
-      accept(
-        client().create({
-          headers: authHeaders(),
-          body: {
-            id: randomUUID(),
-            ...createBody("race.example.com.", { privateKey: "second-key" }),
-          },
-        }),
-        [201],
-      ),
-    ]);
-    const listed = await accept(
-      client().list({ headers: authHeaders() }),
+    const owner = await newActor();
+    signIn(owner);
+    const ownerHost = await accept(createHost("owner.example.com"), [201]);
+    const peer = await newActor({ orgId: owner.orgId });
+    signIn(peer);
+    const peerHost = await accept(createHost("peer.example.com"), [201]);
+
+    const foreign = await accept(
+      hosts().resetHostKey({
+        headers,
+        params: { connectionId: ownerHost.body.id },
+        body: { expectedGeneration: ownerHost.body.generation },
+      }),
+      [404],
+    );
+    const unknown = await accept(
+      hosts().resetHostKey({
+        headers,
+        params: { connectionId: randomUUID() },
+        body: { expectedGeneration: 1 },
+      }),
+      [404],
+    );
+    expect(foreign.body.error.code).toBe("SSH_CONNECTION_NOT_FOUND");
+    expect(foreign.body).toStrictEqual(unknown.body);
+
+    await expect(listHosts()).resolves.toStrictEqual([peerHost.body]);
+    signIn(owner);
+    await expect(listHosts()).resolves.toStrictEqual([ownerHost.body]);
+
+    const reset = await accept(
+      hosts().resetHostKey({
+        headers,
+        params: { connectionId: ownerHost.body.id },
+        body: { expectedGeneration: ownerHost.body.generation },
+      }),
       [200],
     );
-    expect(listed.body.connections).toHaveLength(2);
-    expect(listed.body.connections).toStrictEqual(
-      expect.arrayContaining([first.body, second.body]),
-    );
+    expect(reset.body).toMatchObject({
+      id: ownerHost.body.id,
+      host: "owner.example.com",
+      generation: 2,
+    });
+    await expect(listHosts()).resolves.toStrictEqual([reset.body]);
   });
 
-  it("leaves no visible row when KMS encryption fails", async () => {
-    const owner = actor("kms-failure");
-    authenticate(owner);
-    const kms = useSecretKmsProbe(() => {
-      return Promise.reject(new Error("KMS unavailable"));
-    });
+  it("ssh-connections-010 a peer sharing the user ID in another organization cannot reset the owner's host key", async () => {
+    useSecretKmsProbe();
+    const owner = await newActor();
+    signIn(owner);
+    const ownerHost = await accept(createHost("owner.example.com"), [201]);
+    const peer = await newActor({ userId: owner.userId });
+    signIn(peer);
+    const peerHost = await accept(createHost("peer.example.com"), [201]);
 
-    const response = await accept(
-      client().create({
-        headers: authHeaders(),
-        body: {
-          id: randomUUID(),
-          ...createBody("kms-failure.example.com"),
-        },
+    const foreign = await accept(
+      hosts().resetHostKey({
+        headers,
+        params: { connectionId: ownerHost.body.id },
+        body: { expectedGeneration: ownerHost.body.generation },
       }),
-      [500],
+      [404],
     );
-    expect(JSON.stringify(response.body)).not.toContain("KMS unavailable");
-    expect(kms.generateDataKeyCalls).toBe(1);
+    const unknown = await accept(
+      hosts().resetHostKey({
+        headers,
+        params: { connectionId: randomUUID() },
+        body: { expectedGeneration: 1 },
+      }),
+      [404],
+    );
+    expect(foreign.body.error.code).toBe("SSH_CONNECTION_NOT_FOUND");
+    expect(foreign.body).toStrictEqual(unknown.body);
 
-    const summary = await accept(
-      client().summary({ headers: authHeaders() }),
+    await expect(listHosts()).resolves.toStrictEqual([peerHost.body]);
+    signIn(owner);
+    await expect(listHosts()).resolves.toStrictEqual([ownerHost.body]);
+
+    const reset = await accept(
+      hosts().resetHostKey({
+        headers,
+        params: { connectionId: ownerHost.body.id },
+        body: { expectedGeneration: ownerHost.body.generation },
+      }),
       [200],
     );
-    expect(summary.body.configuredCount).toBe(0);
+    expect(reset.body).toMatchObject({
+      id: ownerHost.body.id,
+      host: "owner.example.com",
+      generation: 2,
+    });
+    await expect(listHosts()).resolves.toStrictEqual([reset.body]);
   });
 });

@@ -1,0 +1,600 @@
+test_file	cases	quota	selected	exception	reason
+scripts/register-discord-commands.test.mjs	12	6	4	fewer	Operator-only registration script (all cases review); kept preview, guild/global apply and partial-failure safety, dropped flag-validation and error-format variants
+src/__tests__/app-factory-android.test.ts	14	7	5	fewer	Rows are parameter variants of one Android version-floor rule; kept one row per distinct outcome
+src/__tests__/app-factory.test.ts	75	38	18	fewer	Most rows are parameter variants of client-floor, CORS-origin and preview-bypass rules; kept one representative per distinct outcome
+src/__tests__/benchmark-http.test.ts	5	3	0	fewer	Benchmark MSW/R2 test-fixture behavior, no user-reachable scenario
+src/__tests__/instrument-export.test.ts	6	3	0	fewer	Telemetry export and test content-extractor checks, no user-observable outcome
+src/__tests__/instrument.test.ts	4	2	0	fewer	Observability SDK initialization only
+src/__tests__/node-server.test.ts	6	3	1	fewer	Process shutdown infrastructure; kept only the case where a caller observes 503 and cancellation
+src/__tests__/release-please-config.test.ts	10	5	0	fewer	Release/CI workflow configuration checks, no user-reachable scenario
+src/__tests__/route-registration.test.ts	3	2	0	fewer	Static route-table inventory checks, not user-triggered
+src/__tests__/test-database-url.test.ts	8	4	0	fewer	Test-infrastructure database URL helper only
+src/__tests__/vercel-build.test.ts	2	1	1	none	
+src/__tests__/vercel-crons.test.ts	2	1	0	fewer	Static deployment cron configuration check
+src/__tests__/worker-lifecycle.test.ts	6	3	3	none	
+src/lib/__tests__/agent-notification-email-renderer.test.ts	8	4	5	more	Spot check of unselected cases added agent-notification-email-renderer-001 (notification emails keep ordered-list numbering).
+src/lib/__tests__/api-backend-url.test.ts	3	2	0	fewer	Deployment URL configuration helper, no user-triggered scenario
+src/lib/__tests__/billing-redirect.test.ts	5	3	2	fewer	Remaining rows are preview-host variants of the same redirect allowlist rule
+src/lib/__tests__/db-instrumentation.test.ts	14	7	0	fewer	DB pool telemetry and test resource cleanup internals
+src/lib/__tests__/db.test.ts	1	1	0	fewer	Internal pool shutdown race, not user-reachable
+src/lib/__tests__/discord-oauth-telemetry.test.ts	4	2	0	fewer	Sentry telemetry scrubbing internals, no user-observable outcome
+src/lib/__tests__/env.test.ts	8	4	0	fewer	Environment configuration lifetime/precedence internals
+src/lib/__tests__/immutable-dedupe-insert.test.ts	6	3	0	fewer	Internal DB insert-error mapping library
+src/lib/__tests__/internal-api-url.test.ts	3	2	0	fewer	Internal API base-URL configuration helper
+src/lib/__tests__/log-axiom-transport.test.ts	34	17	1	fewer	Telemetry/log transport and redaction internals; kept only the case where a user's template run survives telemetry failure
+src/lib/__tests__/log.test.ts	56	28	0	fewer	Logger configuration, dispatch and error-serialization internals
+src/lib/__tests__/morning-brief-notification-source.test.ts	13	7	3	fewer	One ownership policy repeated across parameter rows; kept accept, cross-owner deny and non-official deny
+src/lib/__tests__/pg-errors.test.ts	21	11	0	fewer	Internal SQLSTATE classification library
+src/lib/__tests__/pi-model-config-observation.test.ts	12	6	0	fewer	Telemetry-only classification of captured config
+src/lib/__tests__/presigned-url-redaction.test.ts	2	1	0	fewer	Internal error-text sanitization utility, no direct user scenario
+src/lib/__tests__/run-activity.test.ts	7	4	2	fewer	Text-sanitization helper with Unicode edge rows; kept two representative visible-activity cases
+src/lib/__tests__/sql-span-name.test.ts	16	8	0	fewer	SQL telemetry span-naming adapter only
+src/lib/__tests__/tar.test.ts	7	4	0	fewer	Low-level TAR extraction library, no direct user scenario
+src/lib/__tests__/time.test.ts	6	3	0	fewer	Test clock utility only
+src/lib/__tests__/user-export-restore.test.ts	10	5	4	fewer	Remaining rows are writer or integrity-rejection variants of the selected restore outcomes
+src/lib/__tests__/user-export-zip.test.ts	19	10	2	fewer	ZIP64/CRC format internals and filename-validation parameter rows; kept the two cases where the user's archive opens correctly
+src/lib/__tests__/web-url.test.ts	4	2	0	fewer	Environment configuration validation only
+src/lib/__tests__/workflow-owner-profile-negative-cache.test.ts	2	1	0	fewer	Internal cache capacity/expiry bookkeeping
+src/scripts/__tests__/dev-bench-seed.test.ts	1	1	0	fewer	Development benchmark fixture builder only
+src/scripts/__tests__/dev-seed.test.ts	13	7	0	fewer	Development/preview seed script rows, not reachable by production users
+src/scripts/__tests__/validate-env.test.ts	3	2	0	fewer	Deployment environment validation script
+src/signals/__tests__/utils.test.ts	11	6	0	fewer	Internal async/promise helper library
+src/signals/auth/__tests__/tokens.test.ts	30	15	8	fewer	Most rows are per-capability default/feature-switch parameter variants; kept one representative per distinct token gate
+src/signals/external/__tests__/axiom-datasets.test.ts	3	2	0	fewer	Internal telemetry credential selection only
+src/signals/external/__tests__/axiom.test.ts	25	13	4	fewer	Mostly telemetry ingestion/transport internals; kept Runner-facing webhook and phase-mark acceptance, owner opt-out and run completion surviving telemetry outage
+src/signals/external/__tests__/s3-delete.test.ts	11	6	0	fewer	S3 deletion provider-adapter batching contract, no direct user scenario
+src/signals/external/__tests__/s3-list.test.ts	11	6	0	fewer	S3 listing provider-adapter pagination contract, no direct user scenario
+src/signals/external/__tests__/wechat-client.test.ts	14	7	3	fewer	WeChat protocol adapter; error-wrapping, abort and origin-validation rows are parameter variants; kept message fidelity, rejected send and expired session
+src/signals/external/__tests__/wechat-media.test.ts	12	6	4	fewer	Media wire adapter; kept inbound file/image and outbound file/image delivery, dropped key-encoding, origin and size-bound variants
+src/signals/routes/__tests__/agent-custom-connectors.test.ts	2	1	1	none	
+src/signals/routes/__tests__/agentphone-connect.bdd.test.ts	9	5	6	more	Rewrite review added agentphone-connect.bdd-006 (a stale phone switch must be refused while the member stays on the current number; no selected case covers the stale replacement handle)
+src/signals/routes/__tests__/agentphone-groups.bdd.test.ts	21	11	11	none	
+src/signals/routes/__tests__/agentphone-verification.test.ts	6	3	3	none	
+src/signals/routes/__tests__/agentphone.bdd.test.ts	145	73	73	none	
+src/signals/routes/__tests__/android-updates.test.ts	11	6	6	none	
+src/signals/routes/__tests__/antigravity-device-auth.test.ts	6	3	3	none	
+src/signals/routes/__tests__/antigravity-personal-subscription.test.ts	7	4	4	none	
+src/signals/routes/__tests__/artifact-catalog-drive.test.ts	4	2	2	none	
+src/signals/routes/__tests__/artifact-catalog.bdd.test.ts	33	17	17	none	
+src/signals/routes/__tests__/artifact-downloads.test.ts	9	5	5	none	
+src/signals/routes/__tests__/artifact-library.test.ts	3	2	2	none	
+src/signals/routes/__tests__/artifact-paywall.test.ts	2	1	1	none	
+src/signals/routes/__tests__/artifact-shares.test.ts	59	30	30	none	
+src/signals/routes/__tests__/artifact-sharing.test.ts	6	3	4	more	Spot check of unselected cases added artifact-sharing-004 (file share search is limited to the owner workspace).
+src/signals/routes/__tests__/artifacts.bdd.test.ts	2	1	1	none	
+src/signals/routes/__tests__/atom-subscription-grants.test.ts	24	12	12	none	
+src/signals/routes/__tests__/auth-device.bdd.test.ts	22	11	12	more	Spot check of unselected cases added auth-device.bdd-005 (a signed-in web user renews the realtime token).
+src/signals/routes/__tests__/auth-me.test.ts	4	2	2	none	
+src/signals/routes/__tests__/auth-org.bdd.test.ts	8	4	4	none	
+src/signals/routes/__tests__/auto-run-routing.test.ts	2	1	1	none	
+src/signals/routes/__tests__/automation-disabled-feed-events.test.ts	8	4	4	none	
+src/signals/routes/__tests__/auxiliary-generation.test.ts	11	6	6	none	
+src/signals/routes/__tests__/banking-webhook.test.ts	19	10	10	none	
+src/signals/routes/__tests__/banking.test.ts	15	8	9	more	Spot check of unselected cases added banking-013 (the bank connect link carries the webhook and return addresses).
+src/signals/routes/__tests__/billing-archived-stripe-events.test.ts	39	20	20	none	
+src/signals/routes/__tests__/billing-auto-recharge.test.ts	30	15	15	none	
+src/signals/routes/__tests__/billing-checkout-complete.test.ts	9	5	5	none	
+src/signals/routes/__tests__/billing-checkout.test.ts	25	13	13	none	
+src/signals/routes/__tests__/billing-concurrency-checkout.test.ts	48	24	26	more	distinct user-reachable billing/webhook business rules added in round 22 candidate review
+src/signals/routes/__tests__/billing-concurrency-invoice-publication.test.ts	1	1	0	fewer	The only case is a webhook-during-subscription-update race interleaving users cannot construct
+src/signals/routes/__tests__/billing-credit-checkout-auto-recharge.test.ts	10	5	5	none	
+src/signals/routes/__tests__/billing-credit-checkout.test.ts	14	7	7	none	
+src/signals/routes/__tests__/billing-customer-publication.test.ts	7	4	4	none	
+src/signals/routes/__tests__/billing-downgrade.test.ts	17	9	9	none	
+src/signals/routes/__tests__/billing-entitlement-fixture.test.ts	4	2	0	fewer	All 4 cases check the shared Stripe entitlement test fixture, not a user scenario
+src/signals/routes/__tests__/billing-feedback.test.ts	11	6	6	none	
+src/signals/routes/__tests__/billing-invoices.test.ts	6	3	3	none	
+src/signals/routes/__tests__/billing-model-reporting.test.ts	4	2	2	none	
+src/signals/routes/__tests__/billing-portal.test.ts	14	7	7	none	
+src/signals/routes/__tests__/billing-redeem-code.test.ts	18	9	9	none	
+src/signals/routes/__tests__/billing-redeem.test.ts	19	10	10	none	
+src/signals/routes/__tests__/billing-restore.test.ts	9	5	5	none	
+src/signals/routes/__tests__/billing-status.test.ts	27	14	18	more	Spot check of unselected cases added billing-status-018 (a non-admin member can read billing status); round 22 added distinct uncovered user-reachable rules.
+src/signals/routes/__tests__/billing-stripe-metadata-binding.test.ts	9	5	5	none	
+src/signals/routes/__tests__/billing-usage-media.bdd.test.ts	6	3	3	none	
+src/signals/routes/__tests__/billing-usage-pack-checkout.test.ts	24	12	12	none	
+src/signals/routes/__tests__/billing-usage-pack-credits.test.ts	5	3	3	none	
+src/signals/routes/__tests__/billing-usage-pack-subscriptions.test.ts	58	29	29	none	
+src/signals/routes/__tests__/billing-usage-pack-upgrade-invoice.test.ts	4	2	2	none	
+src/signals/routes/__tests__/browser-admission.test.ts	2	1	1	none	
+src/signals/routes/__tests__/browser-body-policy.test.ts	6	3	1	fewer	Rewrite review removed browser-body-policy-005 and -006: malformed-JSON and schema-validation input only, which the rewrite rules exclude
+src/signals/routes/__tests__/browser-context.test.ts	8	4	4	none	
+src/signals/routes/__tests__/browser-display.test.ts	8	4	4	none	
+src/signals/routes/__tests__/browser-expiry.test.ts	12	6	6	none	
+src/signals/routes/__tests__/browser-extensions.test.ts	2	1	1	none	
+src/signals/routes/__tests__/browser-input.test.ts	15	8	8	none	
+src/signals/routes/__tests__/browser-lifecycle.test.ts	32	16	12	fewer	Remaining 20 are held-reply, held-upload and held-encryption completion-order races, clock-offset permutations and concurrent same-chat use interleavings of already-selected restore-URL and preview outcomes
+src/signals/routes/__tests__/browser-native-extension.test.ts	7	4	4	none	
+src/signals/routes/__tests__/browser-profile-cleanup.test.ts	3	2	2	none	
+src/signals/routes/__tests__/browser-reclaim.test.ts	13	7	7	none	
+src/signals/routes/__tests__/browser-reconcile.test.ts	8	4	4	none	
+src/signals/routes/__tests__/browser-recovery.test.ts	8	4	4	none	
+src/signals/routes/__tests__/browser-reuse.test.ts	17	9	9	none	
+src/signals/routes/__tests__/browser-screenshot-publication.test.ts	2	1	1	none	
+src/signals/routes/__tests__/browser-viewer-acquisition.test.ts	10	5	5	none	
+src/signals/routes/__tests__/browser-viewer-connection.test.ts	5	3	3	none	
+src/signals/routes/__tests__/browser-viewer.test.ts	2	1	1	none	
+src/signals/routes/__tests__/browser.test.ts	80	40	40	none	
+src/signals/routes/__tests__/built-in-generation.test.ts	2	1	1	none	
+src/signals/routes/__tests__/builtin-mcp-account-surfaces.test.ts	3	2	2	none	
+src/signals/routes/__tests__/builtin-mcp-discovery.test.ts	2	1	1	none	
+src/signals/routes/__tests__/builtin-mcp-run.test.ts	2	1	1	none	
+src/signals/routes/__tests__/chat-activity-summary.test.ts	33	17	16	fewer	Remaining 17 are provider-side malformed-output/transport-failure rows sharing one empty-summary outcome, model-key configuration, Axiom telemetry, and model-input ordering/bounding internals
+src/signals/routes/__tests__/chat-callbacks.bdd.test.ts	82	41	41	none	
+src/signals/routes/__tests__/chat-connector-access.test.ts	6	3	3	none	
+src/signals/routes/__tests__/chat-connector-execution.test.ts	10	5	5	none	
+src/signals/routes/__tests__/chat-event-annotations.test.ts	10	5	6	more	Rewrite review added chat-event-annotations-009 (a GitHub pull request source keeps its exact link (B01 review; 008 covers issue comments only)).
+src/signals/routes/__tests__/chat-event-snapshot.test.ts	1	1	1	none	
+src/signals/routes/__tests__/chat-events-admission.test.ts	13	7	7	none	
+src/signals/routes/__tests__/chat-events-attachment-lookups.test.ts	7	4	4	none	
+src/signals/routes/__tests__/chat-events-attachments.test.ts	42	21	21	none	
+src/signals/routes/__tests__/chat-events-auto-route.test.ts	1	1	1	none	
+src/signals/routes/__tests__/chat-events-automations.test.ts	5	3	3	none	
+src/signals/routes/__tests__/chat-events-batched-preload.test.ts	2	1	1	none	
+src/signals/routes/__tests__/chat-events-bootstrap-prefetch.test.ts	11	6	6	none	
+src/signals/routes/__tests__/chat-events-budget-steer.test.ts	5	3	3	none	
+src/signals/routes/__tests__/chat-events-codex-execution.test.ts	7	4	4	none	
+src/signals/routes/__tests__/chat-events-concurrency-prefetch.test.ts	1	1	1	none	
+src/signals/routes/__tests__/chat-events-connector-selection.test.ts	1	1	1	none	
+src/signals/routes/__tests__/chat-events-connector-snapshot.test.ts	5	3	2	fewer	Remaining 3 are account/config/deletion snapshot races that need a delayed attachment lookup during send preparation
+src/signals/routes/__tests__/chat-events-connectors.test.ts	11	6	6	none	
+src/signals/routes/__tests__/chat-events-context-batches.test.ts	2	1	1	none	
+src/signals/routes/__tests__/chat-events-custom-domains-prompt.test.ts	2	1	1	none	
+src/signals/routes/__tests__/chat-events-effort.test.ts	10	5	5	none	
+src/signals/routes/__tests__/chat-events-history.test.ts	3	2	2	none	
+src/signals/routes/__tests__/chat-events-identity.test.ts	4	2	2	none	
+src/signals/routes/__tests__/chat-events-media.test.ts	2	1	1	none	
+src/signals/routes/__tests__/chat-events-member-defaults.test.ts	3	2	2	none	
+src/signals/routes/__tests__/chat-events-message-queue.test.ts	6	3	3	none	
+src/signals/routes/__tests__/chat-events-model-overrides.test.ts	9	5	5	none	
+src/signals/routes/__tests__/chat-events-model-routing.test.ts	12	6	6	none	
+src/signals/routes/__tests__/chat-events-model-snapshot.test.ts	3	2	1	fewer	Remaining 2 are Codex reconnect races against a delayed attachment lookup during send preparation
+src/signals/routes/__tests__/chat-events-model-source-context.test.ts	4	2	2	none	
+src/signals/routes/__tests__/chat-events-native-routes.test.ts	3	2	2	none	
+src/signals/routes/__tests__/chat-events-personal-instructions.test.ts	1	1	0	fewer	Only case checks static system-prompt wording in the Runner dispatch, no user-observable result
+src/signals/routes/__tests__/chat-events-pi-activity.test.ts	1	1	1	none	
+src/signals/routes/__tests__/chat-events-pi-codex-credentials.test.ts	6	3	3	none	
+src/signals/routes/__tests__/chat-events-pi-delegation.test.ts	1	1	1	none	
+src/signals/routes/__tests__/chat-events-pi-failed-history.test.ts	2	1	1	none	
+src/signals/routes/__tests__/chat-events-pi-failures.test.ts	2	1	1	none	
+src/signals/routes/__tests__/chat-events-pi-handoff.test.ts	5	3	3	none	
+src/signals/routes/__tests__/chat-events-pi-preparation.test.ts	1	1	1	none	
+src/signals/routes/__tests__/chat-events-pi-responses.test.ts	2	1	1	none	
+src/signals/routes/__tests__/chat-events-pi-session.test.ts	2	1	1	none	
+src/signals/routes/__tests__/chat-events-private-attachments.test.ts	16	8	8	none	
+src/signals/routes/__tests__/chat-events-remote-diagnostics.test.ts	1	1	0	fewer	Only case checks static SSH/VNC diagnostic wording in the dispatched system prompt
+src/signals/routes/__tests__/chat-events-session-continuity.test.ts	21	11	11	none	
+src/signals/routes/__tests__/chat-events-shared-queue.test.ts	14	7	7	none	
+src/signals/routes/__tests__/chat-events-steer.test.ts	10	5	5	none	
+src/signals/routes/__tests__/chat-events-subscription-authority.test.ts	9	5	5	none	
+src/signals/routes/__tests__/chat-events-telemetry.test.ts	1	1	0	fewer	Only case is an external telemetry-sink AbortError during enqueue, no user-triggerable scenario
+src/signals/routes/__tests__/chat-files.bdd.test.ts	10	5	5	none	
+src/signals/routes/__tests__/chat-indicators-realtime.test.ts	2	1	1	none	
+src/signals/routes/__tests__/chat-input-status.test.ts	10	5	5	none	
+src/signals/routes/__tests__/chat-relations.test.ts	5	3	3	none	
+src/signals/routes/__tests__/chat-remote-access.test.ts	7	4	4	none	
+src/signals/routes/__tests__/chat-run-finished-automations.bdd.test.ts	11	6	6	none	
+src/signals/routes/__tests__/chat-thread-connector-selection.ownership.test.ts	1	1	1	none	
+src/signals/routes/__tests__/chat-thread-draft-store.test.ts	10	5	5	none	
+src/signals/routes/__tests__/chat-thread-indicators.test.ts	5	3	3	none	
+src/signals/routes/__tests__/chat-thread-mark-all-read.test.ts	7	4	4	none	
+src/signals/routes/__tests__/chat-thread-pdf-filename.test.ts	4	2	2	none	
+src/signals/routes/__tests__/chat-thread-queue-pick.test.ts	10	5	6	more	Spot check of unselected cases added chat-thread-queue-pick-007 (a member prompt steers the Run while an automation event waits).
+src/signals/routes/__tests__/chat-thread-read-cursor.test.ts	6	3	3	none	
+src/signals/routes/__tests__/chat-thread-stored-selection.test.ts	1	1	1	none	
+src/signals/routes/__tests__/chat-threads-archive.test.ts	2	1	1	none	
+src/signals/routes/__tests__/chat-threads-create.test.ts	21	11	11	none	
+src/signals/routes/__tests__/chat-threads-get.test.ts	2	1	1	none	
+src/signals/routes/__tests__/chat-threads-model-selection.test.ts	12	6	6	none	
+src/signals/routes/__tests__/chat-threads-mute.test.ts	3	2	2	none	
+src/signals/routes/__tests__/chat-threads-pin-order.test.ts	4	2	2	none	
+src/signals/routes/__tests__/chat-threads-rename.test.ts	4	2	2	none	
+src/signals/routes/__tests__/chat-threads.bdd.test.ts	112	56	56	none	
+src/signals/routes/__tests__/cli-auth.bdd.test.ts	10	5	5	none	
+src/signals/routes/__tests__/cloudflare-access-concurrency.test.ts	33	17	14	fewer	Remaining 19 are KMS-window interleavings (006-009, 022, 023, 028) and either-branch races of conversion/deletion/rotation/rename against concurrent bindings or renames (003, 010-020) that users cannot steer
+src/signals/routes/__tests__/cloudflare-access-custom-connector-erasure.test.ts	4	2	0	fewer	All 4 are races between an in-flight connector write and organization erasure during secret preparation
+src/signals/routes/__tests__/cloudflare-access-custom-connectors.test.ts	5	3	3	none	
+src/signals/routes/__tests__/cloudflare-access-lifecycle.test.ts	6	3	3	none	
+src/signals/routes/__tests__/cloudflare-access-promotion-deletion.test.ts	12	6	6	none	
+src/signals/routes/__tests__/cloudflare-access.test.ts	29	15	15	none	
+src/signals/routes/__tests__/codex-reset-credit-expiry-capacity.test.ts	1	1	0	fewer	Sole case checks expiry-cache eviction under 257 held provider requests, internal caching only
+src/signals/routes/__tests__/codex-reset-credit-expiry-concurrency.test.ts	3	2	0	fewer	All 3 are in-flight request coalescing, caller cancellation and cooldown-cache internals checked by request counts
+src/signals/routes/__tests__/codex-reset-credit-expiry-invalidation.test.ts	13	7	4	fewer	Remaining 9 are in-flight fencing races with stalled provider reads (003-006, 013) and per-user/org cooldown cache-key isolation checked by request counts (007-010)
+src/signals/routes/__tests__/codex-reset-credit-expiry.test.ts	22	11	3	fewer	Remaining 19 are millisecond TTL/cooldown boundaries, Retry-After header parsing variants and malformed provider JSON/schema/transport responses
+src/signals/routes/__tests__/composer-draft.test.ts	5	3	3	none	
+src/signals/routes/__tests__/computer-use-audit-events.test.ts	4	2	2	none	
+src/signals/routes/__tests__/computer-use-command-create.test.ts	2	1	1	none	
+src/signals/routes/__tests__/computer-use-command-get.test.ts	4	2	2	none	
+src/signals/routes/__tests__/computer-use-command-notifications.test.ts	5	3	3	none	
+src/signals/routes/__tests__/computer-use-content-get.test.ts	1	1	1	none	
+src/signals/routes/__tests__/computer-use-host-directory.test.ts	3	2	2	none	
+src/signals/routes/__tests__/computer-use-host-presence.test.ts	12	6	6	none	
+src/signals/routes/__tests__/computer-use-host-session-concurrency.test.ts	4	2	2	none	
+src/signals/routes/__tests__/computer-use-host-start.test.ts	2	1	2	more	Spot check of unselected cases added computer-use-host-start-002 (another user reusing an installation ID gets a separate host).
+src/signals/routes/__tests__/computer-use-result-notifications.test.ts	8	4	4	none	
+src/signals/routes/__tests__/computer-use-screenshot-completion.test.ts	2	1	1	none	
+src/signals/routes/__tests__/computer-use-session-hosts.test.ts	25	13	13	none	
+src/signals/routes/__tests__/computer-use.bdd.test.ts	30	15	15	none	
+src/signals/routes/__tests__/connected-connectors-accounts.test.ts	2	1	2	more	Rewrite review added connected-connectors-accounts-002 (the connected directory and account list for a custom MCP connector are not covered; the selected case covers only a built-in connector)
+src/signals/routes/__tests__/connected-connectors.test.ts	5	3	3	none	
+src/signals/routes/__tests__/connector-account-default-wakeups.test.ts	2	1	1	none	
+src/signals/routes/__tests__/connector-account-detail.test.ts	6	3	3	none	
+src/signals/routes/__tests__/connector-account-scope-diff.test.ts	5	3	3	none	
+src/signals/routes/__tests__/connector-accounts.test.ts	25	13	13	none	
+src/signals/routes/__tests__/connector-catalog-immutable.test.ts	2	1	1	none	
+src/signals/routes/__tests__/connector-catalog-status-generation.test.ts	1	1	1	none	
+src/signals/routes/__tests__/connector-catalog.test.ts	31	16	16	none	
+src/signals/routes/__tests__/connector-check.stored-accounts.test.ts	2	1	1	none	
+src/signals/routes/__tests__/connector-check.test.ts	26	13	13	none	
+src/signals/routes/__tests__/connector-device-auth-claim-awaiting.test.ts	3	2	1	fewer	Remaining 2 are held-provider-response supersession races a user cannot construct
+src/signals/routes/__tests__/connector-device-auth-claim-completion.test.ts	2	1	0	fewer	Both cases are delayed-provider-response interleavings between concurrent reconnect sessions
+src/signals/routes/__tests__/connector-device-auth-claim-terminal.test.ts	5	3	1	fewer	Remaining 4 are held-provider-response race variants (access_denied, expired_token, invalid_request, obsolete denial)
+src/signals/routes/__tests__/connector-device-auth-completed-replay.test.ts	2	1	1	none	
+src/signals/routes/__tests__/connector-device-auth-session-claim.test.ts	2	1	1	none	
+src/signals/routes/__tests__/connector-device-auth-session-creation.test.ts	3	2	2	none	
+src/signals/routes/__tests__/connector-device-auth-session-expiration.test.ts	2	1	1	none	
+src/signals/routes/__tests__/connector-device-auth-session-read.test.ts	2	1	1	none	
+src/signals/routes/__tests__/connector-external-code-claim-completion.test.ts	4	2	1	fewer	Remaining 3 are a malformed provider success body and held-response millisecond stale-threshold races
+src/signals/routes/__tests__/connector-external-code-completed-replay.test.ts	2	1	1	none	
+src/signals/routes/__tests__/connector-external-code-session-claim.test.ts	2	1	1	none	
+src/signals/routes/__tests__/connector-external-code-session-creation.test.ts	3	2	2	none	
+src/signals/routes/__tests__/connector-external-code-session-expiration.test.ts	2	1	1	none	
+src/signals/routes/__tests__/connector-external-code-session-read.test.ts	2	1	1	none	
+src/signals/routes/__tests__/connector-grant-identity.test.ts	9	5	5	none	
+src/signals/routes/__tests__/connector-invalidation.test.ts	1	1	0	fewer	Sole case is a client-aborted delete during provider revocation, an interleaving a user cannot deliberately construct
+src/signals/routes/__tests__/connector-oauth-completion.test.ts	6	3	3	none	
+src/signals/routes/__tests__/connector-permissions.expiration.test.ts	2	1	1	none	
+src/signals/routes/__tests__/connector-permissions.test.ts	5	3	4	more	Spot check of unselected cases added connector-permissions-003 (connector rules survive account switches and stay editable).
+src/signals/routes/__tests__/connector-required-entries.test.ts	2	1	1	none	
+src/signals/routes/__tests__/connector-run-failure-isolation.test.ts	2	1	1	none	
+src/signals/routes/__tests__/connector-runtime-placeholders.test.ts	1	1	1	none	
+src/signals/routes/__tests__/connector-runtime-wakeups.test.ts	5	3	2	fewer	Remaining 3 are Ably provider-rejection/missing-result response variants (channel 429, HTTP 429, empty result) with the same deletion outcome already covered by 001
+src/signals/routes/__tests__/connector-skill-bundles.test.ts	4	2	2	none	
+src/signals/routes/__tests__/connectors-automatic-security.test.ts	7	4	4	none	
+src/signals/routes/__tests__/connectors-automatic.test.ts	60	30	32	more	Rewrite review added connectors-automatic-033 (two simultaneous no-auth adds must end with exactly one default account; no selected case checks the default flag on this path); Rewrite review added connectors-automatic-059 (an account deleted by the user must not return when an earlier reconnect completes; no selected case covers deleting during a reconnect)
+src/signals/routes/__tests__/connectors-external-code.bdd.test.ts	9	5	5	none	
+src/signals/routes/__tests__/connectors-https-return.test.ts	17	9	9	none	
+src/signals/routes/__tests__/connectors-list.test.ts	7	4	4	none	
+src/signals/routes/__tests__/connectors-manual-grant-connect.test.ts	22	11	11	none	
+src/signals/routes/__tests__/connectors-native-app-authorization.test.ts	7	4	4	none	
+src/signals/routes/__tests__/connectors-oauth-reconnect-start.test.ts	5	3	3	none	
+src/signals/routes/__tests__/connectors-oauth-start.test.ts	91	46	46	none	
+src/signals/routes/__tests__/connectors-openid.bdd.test.ts	8	4	4	none	
+src/signals/routes/__tests__/connectors-search.test.ts	12	6	6	none	
+src/signals/routes/__tests__/connectors.bdd.test.ts	100	50	51	more	Spot check of unselected cases added connectors.bdd-049 (a temporarily unavailable custom MCP server returns a retryable error).
+src/signals/routes/__tests__/conversation-history-deletion.test.ts	2	1	1	none	
+src/signals/routes/__tests__/credit-low-balance-alert.test.ts	3	2	1	fewer	Remaining 2 differ only in membership-cache refresh shape (duplicate identity across directory pages, empty directory) observable only during a live membership-lookup outage
+src/signals/routes/__tests__/cron-compact-chat-thread-snapshots.test.ts	1	1	1	none	
+src/signals/routes/__tests__/cron-compact-usage-events.test.ts	2	1	0	fewer	Both rows are cron-secret 401 checks on an internal scheduler endpoint that no user or integration calls
+src/signals/routes/__tests__/cron-connector-catalog-v4.test.ts	10	5	5	none	
+src/signals/routes/__tests__/cron-connector-catalog.test.ts	12	6	6	none	
+src/signals/routes/__tests__/cron-monitor-chat-event-queue.test.ts	1	1	0	fewer	Single cron-secret 401 check on an internal scheduler endpoint that no user or integration calls
+src/signals/routes/__tests__/cron-official-workflow-catalog.test.ts	8	4	4	none	
+src/signals/routes/__tests__/cron-process-background-jobs.test.ts	4	2	0	fewer	Remaining 4 are scheduler cron-secret 401 checks and marketing-rewards delivery-config/batch-bound operator checks with no user or integration caller
+src/signals/routes/__tests__/cron-project-chat-event-search.test.ts	6	3	4	more	Spot check of unselected cases added cron-project-chat-event-search-006 (chat search returns hits newest first).
+src/signals/routes/__tests__/cron-retain-chat-events.test.ts	1	1	0	fewer	Single cron-secret 401 check on an internal scheduler endpoint that no user or integration calls
+src/signals/routes/__tests__/cron-snapshot-chat-events.test.ts	4	2	2	none	
+src/signals/routes/__tests__/cron-sync-skills.test.ts	6	3	3	none	
+src/signals/routes/__tests__/custom-connector-auth-modes.test.ts	32	16	16	none	
+src/signals/routes/__tests__/custom-connector-cloudflare-oauth.test.ts	22	11	11	none	
+src/signals/routes/__tests__/custom-connector-hostnames.test.ts	5	3	3	none	
+src/signals/routes/__tests__/custom-connector-network-execution.test.ts	1	1	1	none	
+src/signals/routes/__tests__/custom-connectors-automatic-dcr.test.ts	3	2	2	none	
+src/signals/routes/__tests__/custom-connectors-automatic-preflight.test.ts	21	11	11	none	
+src/signals/routes/__tests__/custom-connectors-oauth2.test.ts	8	4	4	none	
+src/signals/routes/__tests__/data-router.test.ts	5	3	3	none	
+src/signals/routes/__tests__/desktop-shell.test.ts	10	5	5	none	
+src/signals/routes/__tests__/desktop-updates-02-marks-only-supported-sparkle-replacements-critical-and-keeps-the.test.ts	1	1	1	none	
+src/signals/routes/__tests__/desktop-updates-03-keeps-blocked-native-releases-out-of-the-sparkle-feed.test.ts	1	1	1	none	
+src/signals/routes/__tests__/desktop-updates-04-escapes-release-text-in-the-native-xml-feed.test.ts	1	1	1	none	
+src/signals/routes/__tests__/desktop-updates-05-lets-native-clients-retry-when-the-release-manifest-is.test.ts	1	1	1	none	
+src/signals/routes/__tests__/desktop-updates-07-serves-the-current-okou-desktop-line-on-the-neutral.test.ts	1	1	1	none	
+src/signals/routes/__tests__/desktop-updates-08-caches-the-desktop-manifest-until-the-60-second-ttl.test.ts	1	1	0	fewer	Manifest cache TTL at a 59,999/60,000 ms boundary is caching internals
+src/signals/routes/__tests__/desktop-updates-09-serves-an-okou-release-only-from-the-isolated-okou.test.ts	1	1	1	none	
+src/signals/routes/__tests__/desktop-updates-10-redirects-the-final-okou-line-to-final-identity-release.test.ts	1	1	1	none	
+src/signals/routes/__tests__/desktop-updates-12-does-not-return-a-blocked-latest-release.test.ts	1	1	1	none	
+src/signals/routes/__tests__/desktop-updates-14-still-serves-a-release-after-transient-upstream-failures.test.ts	1	1	0	fewer	Upstream retry count after transient 502s is retry internals
+src/signals/routes/__tests__/desktop-updates-15-stops-retrying-at-the-attempt-bound-and-reports-the.test.ts	1	1	0	fewer	Retry attempt bound is retry internals; the unavailable-feed outcome is kept in desktop-updates-05
+src/signals/routes/__tests__/desktop-updates-16-keeps-an-unavailable-feed-uncacheable-and-tells-the-caller.test.ts	1	1	0	fewer	Same 503/Retry-After/no-store outcome as desktop-updates-05, differing only in the upstream failure transport
+src/signals/routes/__tests__/desktop-updates-18-reports-every-manifest-backed-route-as-unavailable-including-the.test.ts	1	1	1	none	
+src/signals/routes/__tests__/desktop-updates-19-serves-the-cached-release-while-the-manifest-host-is.test.ts	1	1	0	fewer	Stale-cache serving one millisecond before the 30-minute deadline is caching internals at a clock boundary
+src/signals/routes/__tests__/desktop-updates-20-expires-the-cached-release-instead-of-renewing-it-on.test.ts	1	1	0	fewer	Stale-cache expiry policy during an upstream outage is caching internals
+src/signals/routes/__tests__/desktop-updates-21-does-not-serve-stale-after-retries-carry-it-past.test.ts	1	1	0	fewer	Retry-versus-stale-deadline millisecond interleaving is an extreme timing edge
+src/signals/routes/__tests__/desktop-updates-22-keeps-the-cached-release-usable-across-a-failed-refresh.test.ts	1	1	0	fewer	Cache refresh across a timed upstream outage is caching internals
+src/signals/routes/__tests__/desktop-updates-23-fails-loudly-when-the-manifest-is-missing-or-unreadable.test.ts	1	1	0	fewer	Publisher-broken manifest yielding 500 plus Sentry report is publisher misconfiguration and telemetry, not user-constructible
+src/signals/routes/__tests__/desktop-updates-24-fails-loudly-when-the-manifest-body-is-not-json.test.ts	1	1	0	fewer	Non-JSON publisher manifest checked via Sentry telemetry, not user-constructible
+src/signals/routes/__tests__/desktop-updates-25-does-not-answer-a-broken-manifest-from-the-cache.test.ts	1	1	0	fewer	Cache bypass for a publisher-broken manifest is caching internals
+src/signals/routes/__tests__/desktop-updates-27-rejects-a-manifest-without-the-current-product-identity.test.ts	1	1	0	fewer	Publisher manifest schema (product identity) validation, not reachable by a user or updater
+src/signals/routes/__tests__/desktop-updates-28-freezes-the-electron-hop-while-native-updates-advance.test.ts	1	1	1	none	
+src/signals/routes/__tests__/desktop-updates-29-keeps-the-migration-hop-available-during-native-manifest-failures.test.ts	1	1	1	none	
+src/signals/routes/__tests__/desktop-updates-30-requires-an-eligible-native-release.test.ts	1	1	0	fewer	Every-candidate-blocked manifest is a publisher misconfiguration edge, not user-constructible
+src/signals/routes/__tests__/desktop-updates-31-requires-a-native-platform-asset.test.ts	1	1	0	fewer	Target release published without platform assets is a publisher misconfiguration edge
+src/signals/routes/__tests__/desktop-updates-32-requires-a-native-channel-target.test.ts	1	1	0	fewer	Channel targeting an Electron release is a publisher misconfiguration edge
+src/signals/routes/__tests__/desktop-updates.test.ts	1	1	1	none	
+src/signals/routes/__tests__/discord-chat-write-compatibility.test.ts	1	1	1	none	
+src/signals/routes/__tests__/discord-conversation-parity.test.ts	13	7	7	none	
+src/signals/routes/__tests__/discord-gateway-auth.test.ts	16	8	5	fewer	Remaining 11 are HMAC byte vectors, ±300 s timestamp-window boundaries, malformed signature/timestamp, transport owner/oversize/config checks and a no-installation guild-removal no-op, constructible only by the internal Gateway
+src/signals/routes/__tests__/discord-gateway-identity.test.ts	3	2	1	fewer	Remaining 2 are channel/guild variants of the same changed-identity replay, constructible only by the internal Gateway since a Discord message ID cannot change channel or guild
+src/signals/routes/__tests__/discord-ingress.test.ts	56	28	28	none	
+src/signals/routes/__tests__/discord-interactions-preferences.test.ts	11	6	6	none	
+src/signals/routes/__tests__/discord-interactions-verification.test.ts	29	15	3	fewer	Remaining 26 are Ed25519 signature-format vectors, missing headers, reserialized bytes, +/-seconds timestamp boundaries, malformed or unsupported payload schemas, oversized body and missing-config 503s (protocol/config only; one forged-signature rejection already kept); rewrite review added discord-interactions-verification-017 (a correctly signed interaction for another Discord application is a distinct boundary from an invalid signature)
+src/signals/routes/__tests__/discord-interactions.test.ts	9	5	5	none	
+src/signals/routes/__tests__/discord-lifecycle.test.ts	2	1	1	none	
+src/signals/routes/__tests__/discord-oauth-export.test.ts	1	1	1	none	
+src/signals/routes/__tests__/discord-oauth.test.ts	60	30	21	fewer	Remaining 39 are concurrency races (027,034,035,038-042,054,057,059), fail-closed provider-verification or callback-tampering variants (014-022,024,025,037,044), malformed-input bounds and forged capabilities (010-012,033,058), sub-second stage-revalidation and expiry variants (007,049-053,056), and config, 200-guild pagination and OTel checks (008,028,060)
+src/signals/routes/__tests__/email-subscription.test.ts	14	7	7	none	
+src/signals/routes/__tests__/email.test.ts	2	1	1	none	
+src/signals/routes/__tests__/execution-storage-url-freshness.test.ts	2	1	0	fewer	Both cases are signed-URL cache-margin refresh at the 44-hour threshold and a signing-race interleaving, internal caching not user-constructible
+src/signals/routes/__tests__/feature-guides.test.ts	18	9	9	none	
+src/signals/routes/__tests__/feature-switches.test.ts	18	9	9	none	
+src/signals/routes/__tests__/feishu-branding-connection.test.ts	26	13	13	none	
+src/signals/routes/__tests__/feishu-browser-connect.test.ts	1	1	1	none	
+src/signals/routes/__tests__/feishu-conversation.test.ts	20	10	11	more	Spot check of unselected cases added feishu-conversation-018 (a Lark history failure still starts the mentioned Run).
+src/signals/routes/__tests__/feishu-files-history.test.ts	14	7	7	none	
+src/signals/routes/__tests__/feishu-installation.test.ts	20	10	8	fewer	Remaining 12 are concurrent-setup race interleavings (004-007, 014-017) and injected object-storage failure/R2-free repair internals (008-009, 018-019)
+src/signals/routes/__tests__/feishu-message-delivery.test.ts	16	8	8	none	
+src/signals/routes/__tests__/feishu-oauth-events.test.ts	14	7	7	none	
+src/signals/routes/__tests__/feishu-oauth-preview.test.ts	1	1	0	fewer	The only case is cross-flow OAuth nonce confusion between custom-connector and Feishu callbacks, a protocol check no user can construct
+src/signals/routes/__tests__/feishu-oauth-state.test.ts	2	1	1	none	
+src/signals/routes/__tests__/feishu-shared-conversation.test.ts	8	4	4	none	
+src/signals/routes/__tests__/feishu-user-deletion.test.ts	2	1	1	none	
+src/signals/routes/__tests__/friend-referrals.test.ts	5	3	3	none	
+src/signals/routes/__tests__/generation-template-prompt.test.ts	11	6	0	fewer	All 11 are Intent: review unit checks of the prompt-builder library asserting internal prompt text, with no user-observable API outcome
+src/signals/routes/__tests__/get-started-invitations.test.ts	6	3	3	none	
+src/signals/routes/__tests__/get-started.test.ts	3	2	2	none	
+src/signals/routes/__tests__/github-install-authorization.test.ts	21	11	13	more	Rewrite review added github-install-authorization-001 (a signed-out install request that names an admin's identifiers must go to sign-in and create nothing; selected cases cover only signed-in mismatches); Rewrite review added github-install-authorization-020 (GitHub's stateless update callback after an edit on github.com must only navigate without binding an installation; no selected case covers it)
+src/signals/routes/__tests__/github-oauth-account-mutations.test.ts	6	3	3	none	
+src/signals/routes/__tests__/global-sweep-contracts.test.ts	16	8	2	fewer	Remaining 14 are cron-secret 401 checks on internal scheduler endpoints that no user or integration calls (one representative kept)
+src/signals/routes/__tests__/hooks-ops.bdd.test.ts	5	3	3	none	
+src/signals/routes/__tests__/host-delete.bdd.test.ts	6	3	2	fewer	Remaining 4 are storage-stall race interleavings (003-005) and an injected partial R2 delete-batch failure (006)
+src/signals/routes/__tests__/host-delivery-authorization.test.ts	4	2	1	fewer	Remaining 3 are host-Worker malformed-pointer protocol checks and stall/lost-R2-response race interleavings
+src/signals/routes/__tests__/host-preview.test.ts	8	4	4	none	
+src/signals/routes/__tests__/host.bdd.test.ts	10	5	5	none	
+src/signals/routes/__tests__/hosted-site-access.test.ts	28	14	14	none	
+src/signals/routes/__tests__/hosted-site-domains.test.ts	26	13	13	none	
+src/signals/routes/__tests__/hosted-site-scope.test.ts	2	1	1	none	
+src/signals/routes/__tests__/hosted-site-sharing.test.ts	12	6	6	none	
+src/signals/routes/__tests__/hosted-site-url.test.ts	5	3	3	none	
+src/signals/routes/__tests__/hosted-upload-immutability.test.ts	4	2	2	none	
+src/signals/routes/__tests__/image-io-generate.test.ts	79	40	38	fewer	Remaining 42 are Fal failure-payload parsing variants (status-only codes, ambiguous/malformed details, duplicate-callback repeats of already-kept error codes), a concurrent last-slot race, and a provider-omitted billing-dimensions fault Spot check of unselected cases added image-io-generate-048 (an unclassified provider failure shows the generic error without a charge).
+src/signals/routes/__tests__/image-io-responses-recovery.test.ts	1	1	1	none	
+src/signals/routes/__tests__/image-io-responses.test.ts	14	7	7	none	
+src/signals/routes/__tests__/image-io-run-lifetime.test.ts	2	1	1	none	
+src/signals/routes/__tests__/instructions.test.ts	7	4	4	none	
+src/signals/routes/__tests__/integration-model-recovery-slack.test.ts	15	8	8	none	
+src/signals/routes/__tests__/integration-model-recovery-teams.test.ts	1	1	1	none	
+src/signals/routes/__tests__/integration-model-recovery-telegram.test.ts	1	1	1	none	
+src/signals/routes/__tests__/integrations-discord-files.test.ts	31	16	16	none	
+src/signals/routes/__tests__/integrations-discord-native.test.ts	54	27	30	more	Rewrite review added integrations-discord-native-008 (History reads fail closed with 502 DISCORD_ERROR when Discord application discovery fails (signals/services/discord-access.service.ts:360) while sends skip discovery (discord-access.service.ts:345), a branch no selected case (005, 006 only see successful discovery) reaches), integrations-discord-native-048 (Thread sends require SEND_MESSAGES_IN_THREADS instead of parent SEND_MESSAGES (signals/services/discord-provider-access.ts:152-154), and no selected case denies a send for a missing send permission (045 is timeout, 038 is lock, 024/023 are read permissions)), integrations-discord-native-054 (A non-429 provider failure on a channel post returns immediately as 502 DISCORD_ERROR without retry (signals/routes/integrations-discord-message.ts:123-128, discord-api-response.ts:65), a different branch and error code from selected integrations-discord-native-053's 429 path)
+src/signals/routes/__tests__/integrations-discord.test.ts	38	19	19	none	
+src/signals/routes/__tests__/integrations-email.test.ts	77	39	40	more	Spot check of unselected cases added integrations-email-066 (a DMARC-failing sender cannot link an address).
+src/signals/routes/__tests__/integrations-feishu-message.test.ts	26	13	15	more	Rewrite review added integrations-feishu-message-009 (the access check must read every page of the chat member list (B01 review)); integrations-feishu-message-023 (a member removed from the chat cannot complete a stored upload (B01 review; 024 is its variant)).
+src/signals/routes/__tests__/integrations-github-files.test.ts	5	3	3	none	
+src/signals/routes/__tests__/integrations-github-status.test.ts	3	2	2	none	
+src/signals/routes/__tests__/integrations-slack-message.test.ts	29	15	15	none	
+src/signals/routes/__tests__/integrations-slack-read.test.ts	39	20	21	more	Spot check of unselected cases added integrations-slack-read-007 (channel membership is found beyond the first Slack page).
+src/signals/routes/__tests__/integrations-slack-status.test.ts	12	6	6	none	
+src/signals/routes/__tests__/integrations-slack-upload-complete.test.ts	45	23	23	none	
+src/signals/routes/__tests__/integrations-slack-upload-init.test.ts	7	4	4	none	
+src/signals/routes/__tests__/integrations-slack.test.ts	22	11	11	none	
+src/signals/routes/__tests__/integrations-teams-installation-owner.test.ts	14	7	7	none	
+src/signals/routes/__tests__/integrations-teams.test.ts	17	9	9	none	
+src/signals/routes/__tests__/integrations-telegram-callback.test.ts	28	14	14	none	
+src/signals/routes/__tests__/integrations-telegram-message.test.ts	20	10	10	none	
+src/signals/routes/__tests__/integrations-telegram-post.test.ts	33	17	17	none	
+src/signals/routes/__tests__/integrations-telegram-readiness.test.ts	10	5	4	fewer	Remaining 5 are Telegram probe content-length heuristic variants (1000/no length/503+5000) and operator bot-configuration states (missing username, token, invalid bot id) a member cannot trigger
+src/signals/routes/__tests__/integrations-telegram-upload-complete.test.ts	4	2	2	none	
+src/signals/routes/__tests__/integrations-telegram.test.ts	29	15	16	more	"Rewrite review added integrations-telegram-014 (Unlinking with no official link returns 404 NOT_FOUND ""No linked Telegram account"" (signals/routes/integrations-telegram-link.ts:185-186), a distinct error code on the public DELETE route that selected integrations-telegram-015 and integrations-telegram-post-015 (both 204) never reach)"
+src/signals/routes/__tests__/integrations-wechat.test.ts	55	28	28	none	
+src/signals/routes/__tests__/integrations.bdd.test.ts	66	33	33	none	
+src/signals/routes/__tests__/internal-callbacks-discord.test.ts	56	28	28	none	
+src/signals/routes/__tests__/internal-callbacks-teams-delivery.test.ts	1	1	0	fewer	Sole case is a no-retry-count assertion on completion replay under a combined Teams token-503 plus activity-500 outage; no user-visible delivery outcome beyond retry bookkeeping
+src/signals/routes/__tests__/internal-callbacks-teams.test.ts	18	9	9	none	
+src/signals/routes/__tests__/ios-notifications.test.ts	9	5	5	none	
+src/signals/routes/__tests__/ios-push-registrations.test.ts	4	2	2	none	
+src/signals/routes/__tests__/lark-integration.test.ts	7	4	5	more	Rewrite review added lark-integration-003 (GET /api/integrations/lark/app-id returns 409 CONFLICT for an App ID already used by a Feishu installation (signals/routes/feishu-connect.ts:102-108), a route and error no selected Lark or Feishu case reaches (feishu-branding-connection-007 tests setup, not the availability check))
+src/signals/routes/__tests__/lark-official.test.ts	10	5	5	none	
+src/signals/routes/__tests__/mail.test.ts	75	38	39	more	Rewrite review added mail-030 (A Gmail 403 whose reason is not ACCESS_TOKEN_SCOPE_INSUFFICIENT takes the false arm of the 403 reason check (signals/services/gmail-error.ts:143-151) and fails as a server error while the account stays connected (mail-draft.service.ts:1001), a branch neither selected mail-029 (scope 403) nor mail-021 (400) reaches)
+src/signals/routes/__tests__/marketing-handoffs.test.ts	19	10	10	none	
+src/signals/routes/__tests__/marketing-invitation-observation.test.ts	6	3	3	none	
+src/signals/routes/__tests__/marketing-reward-checkin.test.ts	2	1	1	none	
+src/signals/routes/__tests__/marketing-reward-events.test.ts	6	3	3	none	
+src/signals/routes/__tests__/marketing-reward-notification.test.ts	8	4	4	none	
+src/signals/routes/__tests__/marketing-reward-routing.test.ts	2	1	1	none	
+src/signals/routes/__tests__/marketing-reward-settlement.test.ts	8	4	4	none	
+src/signals/routes/__tests__/marketing-reward-workflow-progress.test.ts	1	1	1	none	
+src/signals/routes/__tests__/marketing-reward-workflows.test.ts	3	2	2	none	
+src/signals/routes/__tests__/mcp-connectors.test.ts	11	6	7	more	Rewrite review added mcp-connectors-011 (the reauthorize write route's authentication is not covered; only the read route's is)
+src/signals/routes/__tests__/mcp-oauth-foundations.test.ts	28	14	14	none	
+src/signals/routes/__tests__/mcp-server-reads.test.ts	19	10	10	none	
+src/signals/routes/__tests__/mcp-server.test.ts	28	14	14	none	
+src/signals/routes/__tests__/me-model-provider-accounts-activate.test.ts	11	6	6	none	
+src/signals/routes/__tests__/me-model-providers-delete.test.ts	6	3	3	none	
+src/signals/routes/__tests__/me-model-providers-kms-config.test.ts	1	1	0	fewer	Sole case varies only the deployment's AWS/KMS configuration source; the user's connect-and-list path is already selected in me-model-providers-upsert-003
+src/signals/routes/__tests__/me-model-providers-upsert.test.ts	21	11	11	none	
+src/signals/routes/__tests__/member-memory-initialization.test.ts	10	5	5	none	
+src/signals/routes/__tests__/member-settings-lifecycle.test.ts	3	2	2	none	
+src/signals/routes/__tests__/membership-refresh.test.ts	8	4	2	fewer	Remaining 6 are cold-cache concurrency, caller-cancellation races and Clerk 429/503/network outage modes that no user or caller can trigger
+src/signals/routes/__tests__/memory-publication-authorization.test.ts	11	6	6	none	
+src/signals/routes/__tests__/misc-routes.bdd.test.ts	6	3	3	none	
+src/signals/routes/__tests__/model-catalog-antigravity.test.ts	2	1	1	none	
+src/signals/routes/__tests__/model-catalog-authority.test.ts	2	1	2	more	Rewrite review added model-catalog-authority-001 (every member's model catalog shape (Auto as default and first, private no-store, one enabled built-in route) is not covered; the selected case covers only route capabilities)
+src/signals/routes/__tests__/model-catalog.test.ts	12	6	6	none	
+src/signals/routes/__tests__/model-identity-writes.test.ts	6	3	3	none	
+src/signals/routes/__tests__/model-route-capabilities.test.ts	2	1	1	none	
+src/signals/routes/__tests__/native-oauth.test.ts	18	9	9	none	
+src/signals/routes/__tests__/notifications.test.ts	14	7	7	none	
+src/signals/routes/__tests__/official-workflows.test.ts	11	6	6	none	
+src/signals/routes/__tests__/onboarding-bootstrap.test.ts	7	4	4	none	
+src/signals/routes/__tests__/onboarding-recommendations.test.ts	3	2	2	none	
+src/signals/routes/__tests__/onboarding-sources.test.ts	2	1	1	none	
+src/signals/routes/__tests__/onboarding.test.ts	17	9	10	more	Spot check of unselected cases added onboarding-012 (a failed onboarding completion can be retried).
+src/signals/routes/__tests__/ops-logs.bdd.test.ts	4	2	2	none	
+src/signals/routes/__tests__/org-cache.test.ts	10	5	5	none	
+src/signals/routes/__tests__/org-delete-billing.test.ts	22	11	12	more	Rewrite review added org-delete-billing-018 (a retried organization deletion must reuse the credit note it already issued instead of refunding twice; the selected case covers only reusing the deletion marker)
+src/signals/routes/__tests__/org-invitation-purchase.test.ts	2	1	1	none	
+src/signals/routes/__tests__/org-member-cleanup-automations.bdd.test.ts	3	2	2	none	
+src/signals/routes/__tests__/org-member-directory.test.ts	14	7	7	none	
+src/signals/routes/__tests__/org-openrouter-preset.test.ts	6	3	4	more	Rewrite review added org-openrouter-preset-004 (an admin without Debug being denied is a separate permission gate; selected cases cover a member without the admin role)
+src/signals/routes/__tests__/org-team.bdd.test.ts	12	6	6	none	
+src/signals/routes/__tests__/paid-tools.test.ts	12	6	6	none	
+src/signals/routes/__tests__/personal-subscription-run-identity.test.ts	41	21	21	none	
+src/signals/routes/__tests__/phone-use.test.ts	10	5	5	none	
+src/signals/routes/__tests__/pi-memory-recall.test.ts	1	1	1	none	
+src/signals/routes/__tests__/presentation-template-publish.test.ts	11	6	6	none	
+src/signals/routes/__tests__/presentation-templates.test.ts	1	1	1	none	
+src/signals/routes/__tests__/preview-connector-catalog.catalog-generation.test.ts	1	1	1	none	
+src/signals/routes/__tests__/private-artifact-generation.test.ts	5	3	3	none	
+src/signals/routes/__tests__/private-artifact-uploads.test.ts	17	9	9	none	
+src/signals/routes/__tests__/private-integration-uploads.test.ts	5	3	3	none	
+src/signals/routes/__tests__/proactive-preferences.test.ts	2	1	1	none	
+src/signals/routes/__tests__/project-reference-validation.test.ts	12	6	6	none	
+src/signals/routes/__tests__/project-run-context.test.ts	1	1	1	none	
+src/signals/routes/__tests__/projects.test.ts	13	7	8	more	Rewrite review added projects-011 (a Project created from a missing or foreign source conversation must be rejected without creating it; no selected case covers this)
+src/signals/routes/__tests__/provider-console-paths.test.ts	4	2	2	none	
+src/signals/routes/__tests__/public-run-lifecycle.test.ts	10	5	0	fewer	All 10 are Intent: review checks of the test-fixture lifecycle helper (finish/teardown/restore ordering), with no user-reachable scenario
+src/signals/routes/__tests__/registry-resources-download.test.ts	5	3	3	none	
+src/signals/routes/__tests__/remote-control-cli-management.test.ts	4	2	2	none	
+src/signals/routes/__tests__/remote-control-deletion-versions.test.ts	25	13	13	none	
+src/signals/routes/__tests__/remote-runtime-invalidation.test.ts	1	1	1	none	
+src/signals/routes/__tests__/remotes.test.ts	5	3	3	none	
+src/signals/routes/__tests__/run-bootstrap.catalog-generation.test.ts	2	1	1	none	
+src/signals/routes/__tests__/run-context-diagnostics.test.ts	5	3	3	none	
+src/signals/routes/__tests__/run-cron.bdd.test.ts	6	3	3	none	
+src/signals/routes/__tests__/run-execution.connector-permissions.test.ts	7	4	4	none	
+src/signals/routes/__tests__/run-lifecycle-admission.bdd.test.ts	11	6	6	none	
+src/signals/routes/__tests__/run-lifecycle-automatic.bdd.test.ts	3	2	2	none	
+src/signals/routes/__tests__/run-lifecycle-billing.bdd.test.ts	2	1	1	none	
+src/signals/routes/__tests__/run-lifecycle-chain.bdd.test.ts	25	13	13	none	
+src/signals/routes/__tests__/run-lifecycle-chat-events.bdd.test.ts	8	4	4	none	
+src/signals/routes/__tests__/run-lifecycle-completion.bdd.test.ts	43	22	22	none	
+src/signals/routes/__tests__/run-lifecycle-connector-injection.bdd.test.ts	12	6	6	none	
+src/signals/routes/__tests__/run-lifecycle-custom-connectors.bdd.test.ts	34	17	18	more	Spot check of unselected cases added run-lifecycle-custom-connectors.bdd-003 (built-in and custom connectors on the same host both reach the Run).
+src/signals/routes/__tests__/run-lifecycle-runner-context.bdd.test.ts	20	10	10	none	
+src/signals/routes/__tests__/run-model-invalidation.test.ts	1	1	1	none	
+src/signals/routes/__tests__/run-models.test.ts	5	3	3	none	
+src/signals/routes/__tests__/run-phase-timing.test.ts	11	6	6	none	
+src/signals/routes/__tests__/run-reads.bdd.test.ts	31	16	16	none	
+src/signals/routes/__tests__/run-runner-startup.bdd.test.ts	8	4	4	none	
+src/signals/routes/__tests__/run-uploaded-files-publication.test.ts	3	2	2	none	
+src/signals/routes/__tests__/runner-app-state.test.ts	2	1	1	none	
+src/signals/routes/__tests__/runner-cancellation.test.ts	12	6	6	none	
+src/signals/routes/__tests__/runner-disk-telemetry.test.ts	1	1	0	fewer	The single case is Runner disk-telemetry ingestion (present/missing/malformed observations); its run-failed outcome is covered by completion tests
+src/signals/routes/__tests__/runner-environment-ownership.test.ts	1	1	1	none	
+src/signals/routes/__tests__/runner-finalizing-source.test.ts	17	9	9	none	
+src/signals/routes/__tests__/runner-home-operations.test.ts	7	4	1	fewer	Remaining 6 are Runner Home/GC/inventory telemetry payload acceptance, telemetry auth and metrics/systemLog schema checks with no user-visible consequence
+src/signals/routes/__tests__/runner-home-protocol-compatibility.test.ts	1	1	0	fewer	The single case is Runner whole-state heartbeat schema validation (missing heldHomeStates)
+src/signals/routes/__tests__/runner-ingress-heartbeat.test.ts	2	1	0	fewer	Both cases are Runner heartbeat protocol checks (legacy/omitted ingress-service field compatibility and missing-auth 401 already covered by run-lifecycle-completion-005)
+src/signals/routes/__tests__/runner-ssh.test.ts	30	15	15	none	
+src/signals/routes/__tests__/runner-vnc.test.ts	43	22	22	none	
+src/signals/routes/__tests__/runners-built-in-execution.test.ts	3	2	2	none	
+src/signals/routes/__tests__/runners-builtin-firewalls.test.ts	8	4	4	none	
+src/signals/routes/__tests__/runners-direct-dispatch.test.ts	25	13	13	none	
+src/signals/routes/__tests__/runners-execution-defaults.test.ts	1	1	1	none	
+src/signals/routes/__tests__/runners-home-reuse-context.test.ts	1	1	0	fewer	The single case only checks the internal isFirstRun dispatch flag used for Runner Home reuse
+src/signals/routes/__tests__/runners-member-instructions.test.ts	3	2	2	none	
+src/signals/routes/__tests__/runners-personal-instructions.test.ts	3	2	2	none	
+src/signals/routes/__tests__/runners-run-lookups.test.ts	2	1	1	none	
+src/signals/routes/__tests__/runners-thread-binding.test.ts	6	3	3	none	
+src/signals/routes/__tests__/runners-unavailable-execution.test.ts	2	1	1	none	
+src/signals/routes/__tests__/runtime-credit-balance.test.ts	3	2	2	none	
+src/signals/routes/__tests__/shared-thread-artifacts.test.ts	25	13	13	none	
+src/signals/routes/__tests__/shared-thread-attachments.test.ts	12	6	6	none	
+src/signals/routes/__tests__/shared-threads.test.ts	17	9	9	none	
+src/signals/routes/__tests__/skill-import.bdd.test.ts	29	15	15	none	
+src/signals/routes/__tests__/slack-artifact-channel-sharing.test.ts	32	16	18	more	Rewrite review added slack-artifact-channel-sharing-005 (An unbound Slack member whose email matches a verified workspace email is treated as already covered for organization-visible artifacts (signals/services/artifact-channel-access.service.ts:180-187), whereas selected slack-artifact-channel-sharing-004 only reaches the linked-account branch), slack-artifact-channel-sharing-023 (Owner prompts are suppressed for Slack retries, unfurl refreshes and composer link_shared events (signals/services/slack-webhooks.service.ts:1212-1218), a guard none of the selected cases reach because they all deliver a first, non-composer event)
+src/signals/routes/__tests__/slack-channels.test.ts	5	3	3	none	
+src/signals/routes/__tests__/slack-connect.test.ts	20	10	10	none	
+src/signals/routes/__tests__/slack-connector-oauth.test.ts	34	17	17	none	
+src/signals/routes/__tests__/slack-link-unfurl.test.ts	19	10	10	none	
+src/signals/routes/__tests__/slack-oauth.test.ts	21	11	11	none	
+src/signals/routes/__tests__/slack-preview-image.test.ts	6	3	3	none	
+src/signals/routes/__tests__/ssh-access.test.ts	8	4	4	none	
+src/signals/routes/__tests__/ssh-authorization.test.ts	6	3	3	none	
+src/signals/routes/__tests__/ssh-connections.test.ts	12	6	7	more	Rewrite review added ssh-connections-010 (a host-key reset by the same user ID in another organization is not covered; selected cases cover only another member of the same organization)
+src/signals/routes/__tests__/ssh-create-retries.test.ts	11	6	6	none	
+src/signals/routes/__tests__/ssh-credential-rotation-race.test.ts	3	2	2	none	
+src/signals/routes/__tests__/ssh-credentials.test.ts	13	7	7	none	
+src/signals/routes/__tests__/ssh-host-key-cas.test.ts	3	2	2	none	
+src/signals/routes/__tests__/ssh-member-lifecycle.test.ts	5	3	3	none	
+src/signals/routes/__tests__/ssh-network-binding-publication.test.ts	6	3	3	none	
+src/signals/routes/__tests__/ssh-tailscale-binding-atomicity.test.ts	5	3	3	none	
+src/signals/routes/__tests__/storage-presigned-url-cache.test.ts	16	8	8	none	
+src/signals/routes/__tests__/stripe-connect-events.test.ts	3	2	2	none	
+src/signals/routes/__tests__/subscription-controls.test.ts	11	6	7	more	Rewrite review added subscription-controls-007 (subscription resets by foreign users, other organizations and deleted or logical IDs are not covered by the read and activate isolation case)
+src/signals/routes/__tests__/subscription-credit-balances.test.ts	4	2	2	none	
+src/signals/routes/__tests__/subscription-deletion.test.ts	2	1	1	none	
+src/signals/routes/__tests__/suggestions.test.ts	28	14	14	none	
+src/signals/routes/__tests__/tailscale-creation.test.ts	1	1	1	none	
+src/signals/routes/__tests__/tailscale-metadata-concurrency.test.ts	15	8	8	none	
+src/signals/routes/__tests__/tailscale-parity.test.ts	11	6	6	none	
+src/signals/routes/__tests__/tailscale.test.ts	34	17	17	none	
+src/signals/routes/__tests__/teams-bot-compose-owner.test.ts	3	2	2	none	
+src/signals/routes/__tests__/teams-bot.test.ts	38	19	20	more	"Rewrite review added teams-bot-018 (A personal message with no text and no files gets the ""Please include a message"" notice instead of a dispatch (signals/services/teams-dispatch.service.ts:1678-1679, 1696-1697), a user-visible reply no selected teams-bot case triggers)"
+src/signals/routes/__tests__/teams-browser-connect.test.ts	2	1	2	more	Rewrite review added teams-browser-connect-001 (a signed-out browser opening the Teams connect link must be sent to sign-in and back; the selected case covers only a signed-in member)
+src/signals/routes/__tests__/teams-connect.test.ts	8	4	4	none	
+src/signals/routes/__tests__/teams-identity-refresh.test.ts	1	1	1	none	
+src/signals/routes/__tests__/teams-oauth.test.ts	22	11	11	none	
+src/signals/routes/__tests__/teams-route-ownership.test.ts	4	2	2	none	
+src/signals/routes/__tests__/teams-workspace-identity.test.ts	16	8	9	more	Rewrite review added teams-workspace-identity-016 (user.deleted releases the Teams identity across every organization through the userId-only arm of deleteTeamsOwnerAccounts$ (signals/services/teams-workspace-identity.service.ts:154-155), a where-clause no selected case reaches (014 uses the owner arm, webhooks-callbacks.bdd-054 has no Teams account))
+src/signals/routes/__tests__/template-guidance-publication.test.ts	27	14	14	none	
+src/signals/routes/__tests__/test-teams-state.test.ts	3	2	2	none	
+src/signals/routes/__tests__/transcribe.test.ts	1	1	1	none	
+src/signals/routes/__tests__/uploads-complete.test.ts	18	9	9	none	
+src/signals/routes/__tests__/uploads-multipart.test.ts	10	5	5	none	
+src/signals/routes/__tests__/uploads-prepare.test.ts	23	12	12	none	
+src/signals/routes/__tests__/usage-pack-subscription-lifecycle.test.ts	27	14	14	none	
+src/signals/routes/__tests__/usage-record.test.ts	3	2	2	none	
+src/signals/routes/__tests__/user-config.bdd.test.ts	12	6	7	more	Rewrite review added user-config.bdd-001 (the defaults a brand-new user sees are not checked by any selected case)
+src/signals/routes/__tests__/user-export-publication.test.ts	6	3	3	none	
+src/signals/routes/__tests__/user-model-image-preference.test.ts	4	2	2	none	
+src/signals/routes/__tests__/user-preferences.test.ts	12	6	6	none	
+src/signals/routes/__tests__/user-template-publish.test.ts	26	13	13	none	
+src/signals/routes/__tests__/user-templates.test.ts	3	2	2	none	
+src/signals/routes/__tests__/vnc-access.test.ts	17	9	9	none	
+src/signals/routes/__tests__/vnc-authority-cache.test.ts	4	2	2	none	
+src/signals/routes/__tests__/vnc-authorization.test.ts	8	4	4	none	
+src/signals/routes/__tests__/vnc-configuration.test.ts	54	27	27	none	
+src/signals/routes/__tests__/vnc-lifecycle.test.ts	10	5	5	none	
+src/signals/routes/__tests__/vnc-native-authority.test.ts	8	4	4	none	
+src/signals/routes/__tests__/vnc-native-publication.test.ts	39	20	20	none	
+src/signals/routes/__tests__/vnc-needs-rebind.test.ts	3	2	2	none	
+src/signals/routes/__tests__/vnc-rsa-aes.test.ts	10	5	5	none	
+src/signals/routes/__tests__/voice-google-auth-retry.test.ts	32	16	3	fewer	Remaining 29 are Google STS/impersonation retry internals (per-status and transport retry counts, jitter, Retry-After timing, malformed token bodies); user only sees recovered polish, 503 after exhaustion or 502 on denied auth, one row each kept
+src/signals/routes/__tests__/voice-google-auth.test.ts	30	15	4	fewer	Remaining 26 are server-side Google workload-identity config/env permutations, malformed STS/impersonation token fields, body-size bounds and credential-cache/clock-skew timing; success, 503 PROVIDER_UNAVAILABLE, 503 NOT_CONFIGURED and 502 denied-auth outcomes each kept once
+src/signals/routes/__tests__/voice-io-polish.test.ts	14	7	7	none	
+src/signals/routes/__tests__/voice-io-transcribe.test.ts	42	21	21	none	
+src/signals/routes/__tests__/wallet.test.ts	86	43	44	more	Spot check of unselected cases added wallet-072 (transactions stay readable after a token refresh).
+src/signals/routes/__tests__/web-file-url.test.ts	7	4	4	none	
+src/signals/routes/__tests__/webhooks-agent-firewall-auth-automatic.test.ts	15	8	8	none	
+src/signals/routes/__tests__/webhooks-agent-firewall-auth-aws.test.ts	8	4	4	none	
+src/signals/routes/__tests__/webhooks-agent-firewall-auth-custom-oauth.test.ts	45	23	23	none	
+src/signals/routes/__tests__/webhooks-agent-firewall-auth-google-analytics.test.ts	7	4	4	none	
+src/signals/routes/__tests__/webhooks-agent-firewall-auth-static-headers.test.ts	2	1	1	none	
+src/signals/routes/__tests__/webhooks-agent-firewall-auth.bdd.test.ts	73	37	37	none	
+src/signals/routes/__tests__/webhooks-agent-health-usage-telemetry.test.ts	3	2	2	none	
+src/signals/routes/__tests__/webhooks-agent-session-output.test.ts	4	2	2	none	
+src/signals/routes/__tests__/webhooks-agent-trace-retry.test.ts	17	9	1	fewer	Remaining 16 are debug-only diagnostic trace ingest retry counts per status/transport, Retry-After timing, cancellation and required-telemetry ingest; no user-visible outcome beyond the kept chat-output case
+src/signals/routes/__tests__/webhooks-callbacks.bdd.test.ts	69	35	35	none	
+src/signals/routes/__tests__/webhooks-github-workflow.test.ts	15	8	8	none	
+src/signals/routes/__tests__/webhooks-gmail.test.ts	22	11	11	none	
+src/signals/routes/__tests__/webhooks-google-calendar.test.ts	22	11	11	none	
+src/signals/routes/__tests__/webhooks-google-forms.test.ts	22	11	11	none	
+src/signals/routes/__tests__/webhooks-google-workspace-events.test.ts	13	7	7	none	
+src/signals/routes/__tests__/webhooks-notion.test.ts	22	11	11	none	
+src/signals/routes/__tests__/webhooks-stripe-credit-purchase.test.ts	1	1	1	none	
+src/signals/routes/__tests__/webhooks-stripe-worker.test.ts	2	1	2	more	Rewrite review added webhooks-stripe-worker-002 (payment cases leave signature verification to this dedicated group, so the Connect signature check must be covered here like the Billing check in 001)
+src/signals/routes/__tests__/webhooks-workflow-automations.test.ts	4	2	3	more	distinct user-reachable billing/webhook business rules added in round 22 candidate review
+src/signals/routes/__tests__/webhooks-x-resource-usage.test.ts	9	5	5	none	
+src/signals/routes/__tests__/welcome-chat-threads-automatic.test.ts	7	4	5	more	Spot check of unselected cases added welcome-chat-threads-automatic-003 (a user joining a second workspace gets its own welcome thread).
+src/signals/routes/__tests__/welcome-chat-threads.test.ts	18	9	9	none	
+src/signals/routes/__tests__/whatsapp.test.ts	48	24	24	none	
+src/signals/routes/__tests__/workflow-automations.test.ts	65	33	33	none	
+src/signals/routes/__tests__/workflow-copy-publication.test.ts	2	1	0	fewer	Both cases are multi-step races (source edited or deleted mid archive upload) that a user cannot realistically construct
+src/signals/routes/__tests__/workflow-execution-distribution.test.ts	14	7	7	none	
+src/signals/routes/__tests__/workflow-queue.test.ts	19	10	10	none	
+src/signals/routes/__tests__/workflow-recency.test.ts	8	4	4	none	
+src/signals/routes/__tests__/workflow-webhook-lock.test.ts	8	4	3	fewer	Remaining 5 are KMS-stall lock-scope checks and mid-preparation races (demote or Stripe downgrade while KMS is stalled) plus a second-KMS-call failure repeat
+src/signals/routes/__tests__/workflows-creation.test.ts	6	3	3	none	
+src/signals/routes/__tests__/workflows.test.ts	50	25	25	none	
+src/signals/routes/__tests__/workspace-workflow-permissions.test.ts	2	1	2	more	002 (copy brings only the caller's own Automations) is a distinct cross-member isolation outcome not covered by 001's workflow permission matrix

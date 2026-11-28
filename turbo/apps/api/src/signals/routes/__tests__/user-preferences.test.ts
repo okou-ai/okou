@@ -1,537 +1,300 @@
 import { randomUUID } from "node:crypto";
-
 import {
+  cliAuthApproveContract,
+  cliAuthDeviceContract,
+  cliAuthTokenContract,
+} from "@okouai/api-contracts/contracts/cli-auth";
+import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
+import {
+  type UpdateUserPreferencesRequest,
   USER_PREFERENCES_UNINITIALIZED,
   userPreferencesContract,
 } from "@okouai/api-contracts/contracts/user-preferences";
-import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { DEFAULT_USER_TIMEZONE } from "@okouai/core/timezone";
-import { expect, test } from "vitest";
-
-import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { createUniqueStaffOrgIdFixture } from "../../../test-fixtures/staff-org";
-import { userPreferencesRoutes } from "../user-preferences";
+import { accept, testContext } from "../../../__tests__/test-context";
+import { cliAuthRoutes } from "../cli-auth";
 import { featureSwitchesRoutes } from "../feature-switches";
-import { createBddApi } from "./helpers/api-bdd";
-import { createAuthDeviceApiActions } from "./helpers/api-bdd-auth-device";
+import { userPreferencesRoutes } from "../user-preferences";
 import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
-const mocks = createRouteMocks(context);
-
-function headers() {
-  return { authorization: "Bearer clerk-session" };
+interface AuthHeaders {
+  readonly authorization: string;
 }
 
-function client() {
-  return setupApp({ context, routes: userPreferencesRoutes })(
-    userPreferencesContract,
-  );
+const session: AuthHeaders = Object.freeze({
+  authorization: "Bearer clerk-session",
+});
+const presentation = FeatureSwitchKey.PresentationOutputFormat;
+
+const app = setupApp({
+  context,
+  routes: [
+    ...userPreferencesRoutes,
+    ...featureSwitchesRoutes,
+    ...cliAuthRoutes,
+  ],
+});
+const prefs = () => {
+  return app(userPreferencesContract);
+};
+const switches = () => {
+  return app(featureSwitchesContract);
+};
+
+function newUser() {
+  return `user_${randomUUID()}`;
 }
 
-function newMember() {
-  mocks.clerk.session(`user_${randomUUID()}`, `org_${randomUUID()}`);
+function newOrg() {
+  return `org_${randomUUID()}`;
 }
 
-test("get requires initialization and post returns the saved preferences", async () => {
-  newMember();
-
-  const before = await accept(client().get({ headers: headers() }), [409]);
-  expect(before.body.error.code).toBe(USER_PREFERENCES_UNINITIALIZED);
-
-  const initialized = await accept(
-    client().initialize({
-      headers: headers(),
-      body: { timezone: "Asia/Tokyo", locale: "ja-JP" },
-    }),
-    [200],
-  );
-  expect(initialized.body.timezone).toBe("Asia/Tokyo");
-  expect(initialized.body.locale).toBe("ja-JP");
-
-  const after = await accept(client().get({ headers: headers() }), [200]);
-  expect(after.body).toStrictEqual(initialized.body);
-
-  const repeated = await accept(
-    client().initialize({
-      headers: headers(),
-      body: { timezone: "America/Los_Angeles", locale: "en-US" },
-    }),
-    [200],
-  );
-  expect(repeated.body.timezone).toBe("Asia/Tokyo");
-  expect(repeated.body.locale).toBe("ja-JP");
-});
-
-test("initialization fills only a missing locale", async () => {
-  newMember();
-  await accept(
-    client().update({
-      headers: headers(),
-      body: { timezone: "Asia/Tokyo" },
-    }),
-    [200],
-  );
-  await accept(client().get({ headers: headers() }), [409]);
-
-  const initialized = await accept(
-    client().initialize({
-      headers: headers(),
-      body: { timezone: "America/Los_Angeles", locale: "fr-FR" },
-    }),
-    [200],
-  );
-  expect(initialized.body.timezone).toBe("Asia/Tokyo");
-  expect(initialized.body.locale).toBe("fr-FR");
-});
-
-test("initialization fills only a missing timezone", async () => {
-  newMember();
-  await accept(
-    client().update({ headers: headers(), body: { locale: "de-DE" } }),
-    [200],
-  );
-  await accept(client().get({ headers: headers() }), [409]);
-
-  const initialized = await accept(
-    client().initialize({
-      headers: headers(),
-      body: { timezone: "Asia/Tokyo", locale: "fr-FR" },
-    }),
-    [200],
-  );
-  expect(initialized.body.timezone).toBe("Asia/Tokyo");
-  expect(initialized.body.locale).toBe("de-DE");
-});
-
-test("initialization uses Pacific Time and English when no hints are provided", async () => {
-  newMember();
-
-  const initialized = await accept(
-    client().initialize({ headers: headers(), body: { locale: "en-US" } }),
-    [200],
-  );
-  expect(initialized.body.timezone).toBe(DEFAULT_USER_TIMEZONE);
-  expect(initialized.body.locale).toBe("en-US");
-  const persisted = await accept(client().get({ headers: headers() }), [200]);
-  expect(persisted.body).toStrictEqual(initialized.body);
-});
-
-test("for you covers persist per workspace member and can be reset", async () => {
-  const userId = `user_${randomUUID()}`;
-  const orgId = `org_${randomUUID()}`;
-  mocks.clerk.session(userId, orgId);
-  const initialized = await accept(
-    client().initialize({
-      headers: headers(),
-      body: { timezone: "Asia/Shanghai", locale: "en-US" },
-    }),
-    [200],
-  );
-  expect(initialized.body.forYouCoverId).toBeNull();
-
-  const saved = await accept(
-    client().update({
-      headers: headers(),
-      body: { forYouCoverId: "cover-08" },
-    }),
-    [200],
-  );
-  expect(saved.body.forYouCoverId).toBe("cover-08");
-  const persisted = await accept(client().get({ headers: headers() }), [200]);
-  expect(persisted.body.forYouCoverId).toBe("cover-08");
-
-  mocks.clerk.session(`user_${randomUUID()}`, orgId);
-  const otherMember = await accept(
-    client().initialize({
-      headers: headers(),
-      body: { locale: "en-US" },
-    }),
-    [200],
-  );
-  expect(otherMember.body.forYouCoverId).toBeNull();
-
-  mocks.clerk.session(userId, `org_${randomUUID()}`);
-  const otherWorkspace = await accept(
-    client().initialize({
-      headers: headers(),
-      body: { locale: "en-US" },
-    }),
-    [200],
-  );
-  expect(otherWorkspace.body.forYouCoverId).toBeNull();
-
-  mocks.clerk.session(userId, orgId);
-  await accept(
-    client().update({ headers: headers(), body: { theme: "dark" } }),
-    [200],
-  );
-  const afterThemeChange = await accept(
-    client().get({ headers: headers() }),
-    [200],
-  );
-  expect(afterThemeChange.body.forYouCoverId).toBe("cover-08");
-
-  await accept(
-    client().update({ headers: headers(), body: { forYouCoverId: null } }),
-    [200],
-  );
-  const reset = await accept(client().get({ headers: headers() }), [200]);
-  expect(reset.body.forYouCoverId).toBeNull();
-  expect(reset.body.theme).toBe("dark");
-});
-
-const presentationFormatKey = FeatureSwitchKey.PresentationOutputFormat;
-const eligibleUserId = "user_3EWY21Oe3f15kfs3yYmbGgDb3NV";
-
-function newPresentationMember() {
-  const member = { userId: eligibleUserId, orgId: `org_${randomUUID()}` };
-  mocks.clerk.session(member.userId, member.orgId);
-  return member;
+function signIn(
+  userId: string,
+  orgId: string,
+  role: "org:admin" | "org:member" = "org:admin",
+) {
+  createRouteMocks(context).clerk.session(userId, orgId, role);
 }
 
-function featureClient() {
-  return setupApp({ context, routes: featureSwitchesRoutes })(
-    featureSwitchesContract,
-  );
+async function initialize(
+  body: { timezone?: string; locale: "en-US" | "ja-JP" },
+  headers: AuthHeaders = session,
+) {
+  return (await accept(prefs().initialize({ headers, body }), [200])).body;
 }
 
-test("presentation preferences stay null until chosen and survive unrelated updates and initialization", async () => {
-  newPresentationMember();
-  const initialized = await accept(
-    client().initialize({ headers: headers(), body: { locale: "en-US" } }),
-    [200],
-  );
-  expect(initialized.body.presentationFormat).toBeNull();
-  const html = await accept(
-    client().update({
-      headers: headers(),
-      body: { presentationFormat: "html" },
-    }),
-    [200],
-  );
-  expect(html.body.presentationFormat).toBe("html");
-  const pptx = await accept(
-    client().update({
-      headers: headers(),
-      body: { presentationFormat: "pptx" },
-    }),
-    [200],
-  );
-  expect(pptx.body.presentationFormat).toBe("pptx");
-  const theme = await accept(
-    client().update({ headers: headers(), body: { theme: "dark" } }),
-    [200],
-  );
-  expect(theme.body.presentationFormat).toBe("pptx");
-  const repeated = await accept(
-    client().initialize({ headers: headers(), body: { locale: "ja-JP" } }),
-    [200],
-  );
-  expect(repeated.body.presentationFormat).toBe("pptx");
-  expect(repeated.body.locale).toBe("en-US");
-  const persisted = await accept(client().get({ headers: headers() }), [200]);
-  expect(persisted.body.presentationFormat).toBe("pptx");
-});
+async function read() {
+  return (await accept(prefs().get({ headers: session }), [200])).body;
+}
 
-test("presentation preferences stay isolated between members and workspaces", async () => {
-  const member = {
-    userId: eligibleUserId,
-    orgId: createUniqueStaffOrgIdFixture(),
-  };
-  mocks.clerk.session(member.userId, member.orgId);
+async function save(
+  body: UpdateUserPreferencesRequest,
+  headers: AuthHeaders = session,
+) {
+  return (await accept(prefs().update({ headers, body }), [200])).body;
+}
+
+async function rejectSave(
+  body: UpdateUserPreferencesRequest,
+  headers: AuthHeaders = session,
+) {
+  const response = await accept(prefs().update({ headers, body }), [400]);
+  return JSON.stringify(response.body);
+}
+
+async function setPresentation(enabled: boolean) {
+  const response = await accept(
+    switches().update({
+      headers: session,
+      body: { switches: { [presentation]: enabled } },
+    }),
+    [200],
+  );
+  return response.body.effectiveSwitches[presentation];
+}
+
+async function issueCliToken(userId: string, orgId: string) {
+  const device = await accept(
+    app(cliAuthDeviceContract).create({ body: {} }),
+    [200],
+  );
+  signIn(userId, orgId);
   await accept(
-    client().initialize({ headers: headers(), body: { locale: "en-US" } }),
-    [200],
-  );
-  await accept(
-    client().update({
-      headers: headers(),
-      body: { presentationFormat: "pptx" },
+    app(cliAuthApproveContract).approve({
+      headers: session,
+      body: { device_code: device.body.device_code },
     }),
     [200],
   );
-
-  mocks.clerk.session(`user_${randomUUID()}`, member.orgId);
-  const otherMember = await accept(
-    client().initialize({ headers: headers(), body: { locale: "en-US" } }),
-    [200],
-  );
-  expect(otherMember.body.presentationFormat).toBeNull();
-  await accept(
-    client().update({
-      headers: headers(),
-      body: { presentationFormat: "html" },
+  const issued = await accept(
+    app(cliAuthTokenContract).exchange({
+      body: { device_code: device.body.device_code },
     }),
     [200],
   );
-
-  mocks.clerk.session(member.userId, `org_${randomUUID()}`);
-  const otherWorkspace = await accept(
-    client().initialize({ headers: headers(), body: { locale: "en-US" } }),
-    [200],
-  );
-  expect(otherWorkspace.body.presentationFormat).toBeNull();
-  await accept(
-    client().update({
-      headers: headers(),
-      body: { presentationFormat: "html" },
-    }),
-    [200],
-  );
-
-  mocks.clerk.session(member.userId, member.orgId);
-  const saved = await accept(client().get({ headers: headers() }), [200]);
-  expect(saved.body.presentationFormat).toBe("pptx");
-});
-
-test("saving a presentation preference does not initialize timezone, locale, or memory", async () => {
-  newPresentationMember();
-  const saved = await accept(
-    client().update({
-      headers: headers(),
-      body: { presentationFormat: "pptx" },
-    }),
-    [200],
-  );
-  expect(saved.body.presentationFormat).toBe("pptx");
-  expect(saved.body.timezone).toBeNull();
-  expect(saved.body.locale).toBeNull();
-  expect(saved.body).toHaveProperty("memoryInitialized", false);
-  const uninitialized = await accept(
-    client().get({ headers: headers() }),
-    [409],
-  );
-  expect(uninitialized.body.error.code).toBe(USER_PREFERENCES_UNINITIALIZED);
-  const initialized = await accept(
-    client().initialize({ headers: headers(), body: { locale: "en-US" } }),
-    [200],
-  );
-  expect(initialized.body.presentationFormat).toBe("pptx");
-});
-
-test("opting out hides and ignores presentation preferences without erasing the saved value or legacy updates", async () => {
-  newPresentationMember();
-  await accept(
-    client().initialize({ headers: headers(), body: { locale: "en-US" } }),
-    [200],
-  );
-  await accept(
-    client().update({
-      headers: headers(),
-      body: { presentationFormat: "pptx" },
-    }),
-    [200],
-  );
-  await accept(
-    featureClient().update({
-      headers: headers(),
-      body: { switches: { [presentationFormatKey]: false } },
-    }),
-    [200],
-  );
-  const hidden = await accept(client().get({ headers: headers() }), [200]);
-  expect(hidden.body).not.toHaveProperty("presentationFormat");
-  const onlyFormat = await accept(
-    client().update({
-      headers: headers(),
-      body: { presentationFormat: "html" },
-    }),
-    [400],
-  );
-  expect(onlyFormat.body.error.message).toBe(
-    "At least one preference must be provided",
-  );
-  const mixed = await accept(
-    client().update({
-      headers: headers(),
-      body: { theme: "dark", presentationFormat: "html" },
-    }),
-    [200],
-  );
-  expect(mixed.body.theme).toBe("dark");
-  expect(mixed.body).not.toHaveProperty("presentationFormat");
-  const reinitialized = await accept(
-    client().initialize({ headers: headers(), body: { locale: "en-US" } }),
-    [200],
-  );
-  expect(reinitialized.body).not.toHaveProperty("presentationFormat");
-  await accept(
-    featureClient().update({
-      headers: headers(),
-      body: { switches: { [presentationFormatKey]: true } },
-    }),
-    [200],
-  );
-  const restored = await accept(client().get({ headers: headers() }), [200]);
-  expect(restored.body.presentationFormat).toBe("pptx");
-  expect(restored.body.theme).toBe("dark");
-});
-
-test("non-opted-in callers retain legacy preferences without saving a presentation default", async () => {
-  newMember();
-  const initialized = await accept(
-    client().initialize({ headers: headers(), body: { locale: "en-US" } }),
-    [200],
-  );
-  expect(initialized.body).not.toHaveProperty("presentationFormat");
-  const mixed = await accept(
-    client().update({
-      headers: headers(),
-      body: { theme: "dark", presentationFormat: "pptx" },
-    }),
-    [200],
-  );
-  expect(mixed.body.theme).toBe("dark");
-  expect(mixed.body).not.toHaveProperty("presentationFormat");
-  await accept(
-    client().update({
-      headers: headers(),
-      body: { presentationFormat: "pptx" },
-    }),
-    [400],
-  );
-});
-
-test("ordinary members can opt in and save HTML and PPTX presentation preferences", async () => {
-  mocks.clerk.session(
-    `user_${randomUUID()}`,
-    `org_${randomUUID()}`,
-    "org:member",
-  );
-  const initialSwitches = await accept(
-    featureClient().get({ headers: headers() }),
-    [200],
-  );
-  expect(initialSwitches.body.effectiveSwitches).toMatchObject({
-    [presentationFormatKey]: false,
-  });
-  const initialized = await accept(
-    client().initialize({ headers: headers(), body: { locale: "en-US" } }),
-    [200],
-  );
-  expect(initialized.body).not.toHaveProperty("presentationFormat");
-
-  const optedIn = await accept(
-    featureClient().update({
-      headers: headers(),
-      body: { switches: { [presentationFormatKey]: true } },
-    }),
-    [200],
-  );
-  expect(optedIn.body.effectiveSwitches).toMatchObject({
-    [presentationFormatKey]: true,
-  });
-  const enabled = await accept(
-    featureClient().get({ headers: headers() }),
-    [200],
-  );
-  expect(enabled.body.effectiveSwitches).toMatchObject({
-    [presentationFormatKey]: true,
-  });
-  const unchosen = await accept(client().get({ headers: headers() }), [200]);
-  expect(unchosen.body.presentationFormat).toBeNull();
-
-  const html = await accept(
-    client().update({
-      headers: headers(),
-      body: { presentationFormat: "html" },
-    }),
-    [200],
-  );
-  expect(html.body.presentationFormat).toBe("html");
-  const savedHtml = await accept(client().get({ headers: headers() }), [200]);
-  expect(savedHtml.body.presentationFormat).toBe("html");
-  const pptx = await accept(
-    client().update({
-      headers: headers(),
-      body: { presentationFormat: "pptx" },
-    }),
-    [200],
-  );
-  expect(pptx.body.presentationFormat).toBe("pptx");
-  const savedPptx = await accept(client().get({ headers: headers() }), [200]);
-  expect(savedPptx.body.presentationFormat).toBe("pptx");
-});
-
-test("cli PATs retain legacy preference access but cannot save the enabled presentation preference", async () => {
-  const identity = newPresentationMember();
-  const actor = createBddApi(context).user(identity);
-  const devices = createAuthDeviceApiActions(context);
-  const device = await devices.startCliDevice();
-  await devices.requestCliApproval(
-    actor,
-    { device_code: device.device_code },
-    [200],
-  );
-  const issued = await devices.requestCliToken(device.device_code, [200]);
   if (issued.status !== 200) {
-    throw new Error("Expected the approved device to issue a CLI PAT");
+    throw new Error("Expected an issued CLI token");
   }
-  const patHeaders = { authorization: `Bearer ${issued.body.access_token}` };
-  const legacy = await accept(
-    client().update({ headers: patHeaders, body: { theme: "dark" } }),
-    [200],
-  );
-  expect(legacy.body.theme).toBe("dark");
-  expect(legacy.body.presentationFormat).toBeNull();
-  const denied = await accept(
-    client().update({
-      headers: patHeaders,
-      body: { presentationFormat: "pptx", theme: "light" },
-    }),
-    [400],
-  );
-  expect(denied.body.error.message).toBe(
-    "Presentation format preferences require a human session",
-  );
-  const afterDenial = await accept(
-    client().update({ headers: patHeaders, body: { locale: "en-US" } }),
-    [200],
-  );
-  expect(afterDenial.body.theme).toBe("dark");
-  expect(afterDenial.body.presentationFormat).toBeNull();
+  context.mocks.clerk.users.getOrganizationMembershipList.mockResolvedValue({
+    data: [
+      {
+        role: "org:admin",
+        organization: { id: orgId, slug: orgId.toLowerCase(), name: "Org" },
+        publicUserData: { userId },
+        createdAt: Date.parse("2026-01-01T00:00:00.000Z"),
+      },
+    ],
+  });
+  return { authorization: `Bearer ${issued.body.access_token}` };
+}
 
-  mocks.clerk.session(identity.userId, identity.orgId);
-  await accept(
-    featureClient().update({
-      headers: headers(),
-      body: { switches: { [presentationFormatKey]: false } },
-    }),
-    [200],
-  );
-  const disabledMixed = await accept(
-    client().update({
-      headers: patHeaders,
-      body: { theme: "light", presentationFormat: "pptx" },
-    }),
-    [200],
-  );
-  expect(disabledMixed.body.theme).toBe("light");
-  expect(disabledMixed.body).not.toHaveProperty("presentationFormat");
-  const disabledFormat = await accept(
-    client().update({
-      headers: patHeaders,
-      body: { presentationFormat: "pptx" },
-    }),
-    [400],
-  );
-  expect(disabledFormat.body.error.message).toBe(
-    "At least one preference must be provided",
-  );
-  await accept(
-    featureClient().update({
-      headers: headers(),
-      body: { switches: { [presentationFormatKey]: true } },
-    }),
-    [200],
-  );
-  const restored = await accept(
-    client().update({ headers: patHeaders, body: { locale: "en-US" } }),
-    [200],
-  );
-  expect(restored.body.theme).toBe("light");
-  expect(restored.body.presentationFormat).toBeNull();
+describe("/api/user-preferences", () => {
+  it("user-preferences-001 requires initialization and keeps the first saved timezone and locale", async () => {
+    signIn(newUser(), newOrg());
+
+    const uninitialized = await accept(
+      prefs().get({ headers: session }),
+      [409],
+    );
+    expect(uninitialized.body).toMatchObject({
+      error: { code: USER_PREFERENCES_UNINITIALIZED },
+    });
+
+    const initialized = await initialize({
+      timezone: "Asia/Tokyo",
+      locale: "ja-JP",
+    });
+    expect(initialized).toMatchObject({
+      timezone: "Asia/Tokyo",
+      locale: "ja-JP",
+    });
+    await expect(read()).resolves.toStrictEqual(initialized);
+
+    const repeated = await initialize({
+      timezone: "America/Los_Angeles",
+      locale: "en-US",
+    });
+    expect(repeated).toMatchObject({
+      timezone: "Asia/Tokyo",
+      locale: "ja-JP",
+    });
+  });
+
+  it("user-preferences-004 defaults the timezone to Pacific Time when none is provided", async () => {
+    signIn(newUser(), newOrg());
+
+    const initialized = await initialize({ locale: "en-US" });
+    expect(initialized).toMatchObject({
+      timezone: "America/Los_Angeles",
+      locale: "en-US",
+    });
+    await expect(read()).resolves.toStrictEqual(initialized);
+  });
+
+  it("user-preferences-005 keeps the For You cover per workspace member until it is reset", async () => {
+    const orgId = newOrg();
+    const memberId = newUser();
+    signIn(memberId, orgId);
+    expect(
+      (await initialize({ timezone: "UTC", locale: "en-US" })).forYouCoverId,
+    ).toBeNull();
+
+    expect((await save({ forYouCoverId: "cover-08" })).forYouCoverId).toBe(
+      "cover-08",
+    );
+    expect((await read()).forYouCoverId).toBe("cover-08");
+
+    signIn(newUser(), orgId);
+    expect(
+      (await initialize({ timezone: "UTC", locale: "en-US" })).forYouCoverId,
+    ).toBeNull();
+    signIn(memberId, newOrg());
+    expect(
+      (await initialize({ timezone: "UTC", locale: "en-US" })).forYouCoverId,
+    ).toBeNull();
+
+    signIn(memberId, orgId);
+    expect((await save({ theme: "dark" })).forYouCoverId).toBe("cover-08");
+    expect((await read()).forYouCoverId).toBe("cover-08");
+    const reset = await save({ forYouCoverId: null });
+    expect(reset).toMatchObject({ forYouCoverId: null, theme: "dark" });
+    await expect(read()).resolves.toMatchObject({
+      forYouCoverId: null,
+      theme: "dark",
+    });
+  });
+
+  it("user-preferences-009 hides presentation preferences while opted out and restores them after opting back in", async () => {
+    signIn(newUser(), newOrg());
+    await setPresentation(true);
+    await initialize({ timezone: "UTC", locale: "en-US" });
+    expect(
+      (await save({ presentationFormat: "pptx" })).presentationFormat,
+    ).toBe("pptx");
+
+    await expect(setPresentation(false)).resolves.toBeFalsy();
+    await expect(read()).resolves.not.toHaveProperty("presentationFormat");
+    await expect(rejectSave({ presentationFormat: "html" })).resolves.toContain(
+      "At least one preference must be provided",
+    );
+    const mixed = await save({ theme: "dark", presentationFormat: "html" });
+    expect(mixed.theme).toBe("dark");
+    expect(mixed).not.toHaveProperty("presentationFormat");
+    await expect(
+      initialize({ timezone: "UTC", locale: "en-US" }),
+    ).resolves.not.toHaveProperty("presentationFormat");
+
+    await expect(setPresentation(true)).resolves.toBeTruthy();
+    await expect(read()).resolves.toMatchObject({
+      presentationFormat: "pptx",
+      theme: "dark",
+    });
+  });
+
+  it("user-preferences-011 lets an ordinary member opt in and save HTML then PPTX presentations", async () => {
+    signIn(newUser(), newOrg(), "org:member");
+
+    const initial = await accept(switches().get({ headers: session }), [200]);
+    expect(initial.body.effectiveSwitches[presentation]).toBeFalsy();
+    await expect(
+      initialize({ timezone: "UTC", locale: "en-US" }),
+    ).resolves.not.toHaveProperty("presentationFormat");
+
+    await expect(setPresentation(true)).resolves.toBeTruthy();
+    const optedIn = await accept(switches().get({ headers: session }), [200]);
+    expect(optedIn.body.effectiveSwitches[presentation]).toBeTruthy();
+    expect((await read()).presentationFormat).toBeNull();
+
+    expect(
+      (await save({ presentationFormat: "html" })).presentationFormat,
+    ).toBe("html");
+    expect((await read()).presentationFormat).toBe("html");
+    expect(
+      (await save({ presentationFormat: "pptx" })).presentationFormat,
+    ).toBe("pptx");
+    expect((await read()).presentationFormat).toBe("pptx");
+  });
+
+  it("user-preferences-012 lets a CLI token save legacy preferences but not the presentation format", async () => {
+    const userId = newUser();
+    const orgId = newOrg();
+    signIn(userId, orgId);
+    await setPresentation(true);
+    const cli = await issueCliToken(userId, orgId);
+
+    await expect(save({ theme: "dark" }, cli)).resolves.toMatchObject({
+      theme: "dark",
+      presentationFormat: null,
+    });
+    await expect(
+      rejectSave({ presentationFormat: "pptx", theme: "light" }, cli),
+    ).resolves.toContain(
+      "Presentation format preferences require a human session",
+    );
+    await expect(save({ locale: "en-US" }, cli)).resolves.toMatchObject({
+      theme: "dark",
+      presentationFormat: null,
+    });
+
+    signIn(userId, orgId);
+    await expect(setPresentation(false)).resolves.toBeFalsy();
+    const mixed = await save(
+      { theme: "light", presentationFormat: "pptx" },
+      cli,
+    );
+    expect(mixed.theme).toBe("light");
+    expect(mixed).not.toHaveProperty("presentationFormat");
+    await expect(
+      rejectSave({ presentationFormat: "pptx" }, cli),
+    ).resolves.toContain("At least one preference must be provided");
+
+    await expect(setPresentation(true)).resolves.toBeTruthy();
+    await expect(save({ locale: "en-US" }, cli)).resolves.toMatchObject({
+      theme: "light",
+      presentationFormat: null,
+    });
+  });
 });

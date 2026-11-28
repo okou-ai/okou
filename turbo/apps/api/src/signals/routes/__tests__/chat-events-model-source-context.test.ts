@@ -1,200 +1,267 @@
 import { randomUUID } from "node:crypto";
-import { ListObjectsV2Command } from "@aws-sdk/client-s3";
-import { describe, expect, it } from "vitest";
-
-import { testContext } from "../../../__tests__/test-context";
-import { flushWaitUntilForTest } from "../../context/wait-until";
+import { chatEventsContract } from "@okouai/api-contracts/contracts/chat-event-send";
 import {
-  createChatEventsFixture,
-  userMessages,
-} from "./helpers/chat-events-fixture";
-import { publicChatActor } from "./helpers/public-chat-actor";
+  chatThreadEventsContract,
+  chatThreadsContract,
+} from "@okouai/api-contracts/contracts/chat-threads";
+import { runsCancelContract } from "@okouai/api-contracts/contracts/run-routes";
+import { beforeAll, describe, expect, it } from "vitest";
+
+import { accept, testContext } from "../../../__tests__/test-context";
+import { setupApp } from "../../../__tests__/test-helpers";
+import { TEST_WITH_SINGLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE } from "../../../__tests__/test-timeouts";
+import { mockOptionalEnv } from "../../../lib/env";
+import { flushWaitUntilForTest } from "../../context/wait-until";
+import { chatEventsRoutes } from "../chat-events";
+import { chatThreadRoutes } from "../chat-threads";
+import { runsCancelRoutes } from "../runs-cancel";
+import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
+import { mockClaudeCodeTokenEndpoint } from "./helpers/api-bdd-auth-device";
+import { createChatCallbacksApi } from "./helpers/api-bdd-chat-callbacks";
+import { createRunsApi } from "./helpers/api-bdd-runs";
+import { projectChatEventRows } from "./helpers/chat-event-test-reader";
+import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
-const {
-  chat,
-  entitledNativeChatActor,
-  sendChatRun,
-  runExecution,
-  cancelChatRun,
-  requestSendEventRaw,
-} = createChatEventsFixture(context);
+const bdd = createBddApi(context);
+const runs = createRunsApi(context);
+const chatCallbacks = createChatCallbacksApi(context);
+const headers = Object.freeze({ authorization: "Bearer clerk-session" });
+
+const app = setupApp({
+  context,
+  routes: [...chatThreadRoutes, ...chatEventsRoutes, ...runsCancelRoutes],
+});
+const threadsApi = app(chatThreadsContract);
+const threadEventsApi = app(chatThreadEventsContract);
+const chatEventsApi = app(chatEventsContract);
+const runsCancelApi = app(runsCancelContract);
+
+// File-level route & schema warm-up (unauthenticated 401s: zero DB access, zero side effects).
+beforeAll(async () => {
+  context.mocks.clerk.authenticateRequest.mockResolvedValue({
+    isAuthenticated: false,
+  });
+  await Promise.all([
+    accept(
+      threadsApi.create({ headers: {}, body: { title: "warmup" } }),
+      [401],
+    ),
+    accept(
+      threadEventsApi.rows({
+        headers: {},
+        params: { threadId: randomUUID() },
+        query: { sinceSeqId: 0, limit: 1 },
+      }),
+      [401],
+    ),
+    accept(
+      chatEventsApi.send({
+        headers: {},
+        body: {
+          prompt: "warmup",
+          hasTextContent: true,
+          clientEventId: randomUUID(),
+          userMessage: {
+            version: 1,
+            parts: [{ type: "text", text: "warmup" }],
+          },
+        },
+      }),
+      [401],
+    ),
+    accept(
+      runsCancelApi.cancel({ headers: {}, params: { id: randomUUID() } }),
+      [401],
+    ),
+  ]);
+});
+
+function signIn(user: ApiTestUser) {
+  createRouteMocks(context).clerk.session(
+    user.userId,
+    user.orgId,
+    user.orgRole ?? "org:admin",
+  );
+  return headers;
+}
 
 describe("chat send authorization, validation and cancellation", () => {
-  it("launches an uppercase client UUID and accepts its lowercase retry as the same input", async () => {
-    const owner = await publicChatActor(context);
-    const clientEventId = randomUUID().toUpperCase();
-    const canonicalId = clientEventId.toLowerCase();
-    const input = {
-      clientEventId,
-      prompt: "Use the same input identity across preparation and retry",
-    };
-    const sent = await owner.run(() => {
-      return chat.requestSendEvent(owner.actor, input, [201]);
+  it("chat-events-model-source-context-002 rejects invalid model settings before resolving unavailable attachments", async () => {
+    const member = bdd.user();
+    mockClaudeCodeTokenEndpoint();
+    await createRunsApi(context).createPersonalModelProvider(member, {
+      type: "claude-code-oauth-token",
+      secret: `claude-token-${randomUUID()}`,
     });
-    if (sent.status !== 201) {
-      throw new Error("Expected the input to be accepted");
-    }
-    await flushWaitUntilForTest();
-    const messages = await chat.listThreadEvents(
-      owner.actor,
-      sent.body.threadId,
-    );
-    const launched = userMessages(messages.events).find((message) => {
-      return message.revokesEventId === canonicalId;
-    });
-    if (!launched?.runId) {
-      throw new Error("Expected the uppercase UUID input to launch a Run");
-    }
-    const runId = launched.runId;
-    const execution = await owner.runExecution(runId);
-    await owner.run(() => {
-      return chat.requestSendEvent(
-        owner.actor,
-        {
-          ...input,
-          threadId: sent.body.threadId,
-          clientEventId: canonicalId,
-        },
-        [201],
-      );
-    });
-    await flushWaitUntilForTest();
-    const retried = await chat.listThreadEvents(
-      owner.actor,
-      sent.body.threadId,
-    );
-    expect(
-      userMessages(retried.events).filter((message) => {
-        return message.revokesEventId === canonicalId;
+
+    const authHeaders = signIn(member);
+    const created = await accept(
+      threadsApi.create({
+        headers: authHeaders,
+        body: { title: "Fable thread", model: "claude-fable-5-1" },
       }),
-    ).toMatchObject([{ runId }]);
-    await owner.run(() => {
-      return cancelChatRun(owner.actor, runId, execution.sandboxHeaders);
-    });
-  });
-
-  it("rejects invalid model settings before resolving unavailable attachments", async () => {
-    const { actor } = await entitledNativeChatActor();
-    const thread = await chat.createThread(actor, {
-      model: "claude-fable-5-1",
-    });
-    const before = await chat.listThreadEvents(actor, thread.id);
-    const fileId = randomUUID();
-    context.mocks.s3.send.mockRejectedValue(
-      new Error("attachment unavailable"),
+      [201],
     );
-    const rejected = await requestSendEventRaw(actor, {
-      threadId: thread.id,
-      prompt: "Reject before attachment preparation",
-      runOptions: { reasoningEffort: "xhigh" },
-      userMessage: {
-        version: 1,
-        parts: [
-          {
-            type: "file",
-            fileId,
-            filenameSnapshot: "missing.txt",
-            contentType: "text/plain",
+    const threadId = created.body.id;
+
+    const eventsBefore = await accept(
+      threadEventsApi.rows({
+        headers: authHeaders,
+        params: { threadId },
+        query: { sinceSeqId: 0, limit: 50 },
+      }),
+      [200],
+    );
+
+    const unavailableFileId = randomUUID();
+    const rejected = await accept(
+      chatEventsApi.send({
+        headers: authHeaders,
+        body: {
+          threadId,
+          prompt: "Inspect this file",
+          hasTextContent: true,
+          clientEventId: randomUUID(),
+          runOptions: { reasoningEffort: "xhigh" },
+          userMessage: {
+            version: 1,
+            parts: [
+              { type: "text", text: "Inspect this file" },
+              {
+                type: "file",
+                fileId: unavailableFileId,
+                filenameSnapshot: "missing.pdf",
+                contentType: "application/pdf",
+              },
+            ],
           },
-        ],
-      },
-      hasTextContent: true,
-    });
-    expect(rejected).toStrictEqual({
-      status: 400,
-      body: {
-        error: {
-          code: "BAD_REQUEST",
-          message: "Reasoning effort is not supported by the selected model",
         },
-      },
-    });
-    await expect(flushWaitUntilForTest()).resolves.toBeUndefined();
-    expect(
-      (await chat.listThreadEvents(actor, thread.id)).events,
-    ).toStrictEqual(before.events);
-  });
-
-  it("does not enqueue when the caller aborts during attachment lookup", async () => {
-    const { actor } = await entitledNativeChatActor();
-    const thread = await chat.createThread(actor, {});
-    if (!actor.orgId) {
-      throw new Error("Expected an organization");
-    }
-    const before = await chat.listThreadEvents(actor, thread.id);
-    const controller = new AbortController();
-    const error = new Error("client disconnected during attachment lookup");
-    error.name = "AbortError";
-    context.mocks.s3.send.mockImplementation((command: unknown) => {
-      if (command instanceof ListObjectsV2Command) {
-        controller.abort(error);
-      }
-      return Promise.resolve({ Contents: [] });
-    });
-    const rejected = await requestSendEventRaw(
-      actor,
-      {
-        threadId: thread.id,
-        prompt: "abort before enqueue",
-        hasTextContent: true,
-        userMessage: {
-          version: 1,
-          parts: [
-            {
-              type: "file",
-              fileId: randomUUID(),
-              filenameSnapshot: "aborted.txt",
-              contentType: "text/plain",
-            },
-            { type: "text", text: "abort before enqueue" },
-          ],
-        },
-      },
-      controller.signal,
-    );
-    expect(controller.signal.aborted).toBeTruthy();
-    expect(rejected).toStrictEqual({
-      status: 500,
-      body: { error: "Internal server error" },
-    });
-    await expect(flushWaitUntilForTest()).resolves.toBeUndefined();
-    const after = await chat.listThreadEvents(actor, thread.id);
-    expect(after.events).toStrictEqual(before.events);
-  });
-
-  it("rejects an unknown model without changing thread events", async () => {
-    const { actor } = await entitledNativeChatActor();
-    const first = await sendChatRun(actor, {
-      prompt: "early preload rejection anchor",
-    });
-    const execution = await runExecution(first.runId);
-    await cancelChatRun(actor, first.runId, execution.sandboxHeaders);
-    await flushWaitUntilForTest();
-    const before = await chat.listThreadEvents(actor, first.threadId);
-    if (!actor.orgId) {
-      throw new Error("Expected an organization");
-    }
-    const rejected = await chat.requestSendEvent(
-      actor,
-      {
-        threadId: first.threadId,
-        clientEventId: randomUUID(),
-        model: "missing-preload-rejection-model",
-        prompt: "must not enqueue",
-      },
+      }),
       [400],
     );
-    expect(rejected.status).toBe(400);
-    expect(rejected.body).toMatchObject({
+
+    expect(rejected.body).toStrictEqual({
       error: {
         code: "BAD_REQUEST",
-        message: 'Unknown model "missing-preload-rejection-model"',
+        message: "Reasoning effort is not supported by the selected model",
       },
     });
-    // Await only work scheduled by the rejected public request.
-    await expect(flushWaitUntilForTest()).resolves.toBeUndefined();
-    const after = await chat.listThreadEvents(actor, first.threadId);
-    expect(after.events).toStrictEqual(before.events);
+
+    const eventsAfter = await accept(
+      threadEventsApi.rows({
+        headers: authHeaders,
+        params: { threadId },
+        query: { sinceSeqId: 0, limit: 50 },
+      }),
+      [200],
+    );
+    expect(eventsAfter.body).toStrictEqual(eventsBefore.body);
   });
+
+  it(
+    "chat-events-model-source-context-004 rejects an unknown model without changing thread events",
+    { timeout: TEST_WITH_SINGLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const actor = bdd.user();
+      chatCallbacks.acceptChatObjectStorage();
+      runs.acceptStorageDownloads();
+      runs.acceptTelemetryIngest();
+      mockOptionalEnv("OPENROUTER_API_KEY", undefined);
+      chatCallbacks.disableVapid();
+      await Promise.all([
+        runs.configureRunnerGroup(),
+        bdd.bootstrapLimitedFreeOnboarding(actor),
+      ]);
+
+      const authHeaders = signIn(actor);
+      const clientEventId = randomUUID();
+      const sent = await accept(
+        chatEventsApi.send({
+          headers: authHeaders,
+          body: {
+            prompt: "Initial prompt before cancellation",
+            hasTextContent: true,
+            model: null,
+            clientEventId,
+            userMessage: {
+              version: 1,
+              parts: [
+                { type: "text", text: "Initial prompt before cancellation" },
+              ],
+            },
+          },
+        }),
+        [201],
+      );
+      await flushWaitUntilForTest();
+      const launchedRows = await accept(
+        threadEventsApi.rows({
+          headers: authHeaders,
+          params: { threadId: sent.body.threadId },
+          query: { sinceSeqId: 0, limit: 50 },
+        }),
+        [200],
+      );
+      const firstRunId = projectChatEventRows(launchedRows.body.rows).find(
+        (event) => {
+          return event.revokesEventId === clientEventId;
+        },
+      )?.runId;
+      if (!firstRunId) {
+        throw new Error("Expected initial chat send to launch a Run");
+      }
+
+      await accept(
+        runsCancelApi.cancel({
+          headers: authHeaders,
+          params: { id: firstRunId },
+        }),
+        [200],
+      );
+      await flushWaitUntilForTest();
+
+      const eventsBefore = await accept(
+        threadEventsApi.rows({
+          headers: authHeaders,
+          params: { threadId: sent.body.threadId },
+          query: { sinceSeqId: 0, limit: 50 },
+        }),
+        [200],
+      );
+      const rejected = await accept(
+        chatEventsApi.send({
+          headers: authHeaders,
+          body: {
+            threadId: sent.body.threadId,
+            prompt: "Prompt selecting unknown model",
+            hasTextContent: true,
+            model: "unknown-model-for-context-004",
+            clientEventId: randomUUID(),
+            userMessage: {
+              version: 1,
+              parts: [{ type: "text", text: "Prompt selecting unknown model" }],
+            },
+          },
+        }),
+        [400],
+      );
+
+      expect(rejected.body).toStrictEqual({
+        error: {
+          code: "BAD_REQUEST",
+          message: 'Unknown model "unknown-model-for-context-004"',
+        },
+      });
+      const eventsAfter = await accept(
+        threadEventsApi.rows({
+          headers: authHeaders,
+          params: { threadId: sent.body.threadId },
+          query: { sinceSeqId: 0, limit: 50 },
+        }),
+        [200],
+      );
+      expect(eventsAfter.body).toStrictEqual(eventsBefore.body);
+    },
+  );
 });

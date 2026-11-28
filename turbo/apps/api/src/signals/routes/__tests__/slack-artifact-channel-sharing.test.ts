@@ -1,174 +1,128 @@
 import { randomUUID } from "node:crypto";
 import { Readable } from "node:stream";
 import { GetObjectCommand, HeadObjectCommand } from "@aws-sdk/client-s3";
-import { array, literal, object, string, unknown as zUnknown } from "zod";
-import { http, HttpResponse } from "msw";
-import { expect, test } from "vitest";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { artifactAccessContract } from "@okouai/api-contracts/contracts/artifact-access";
 import { artifactReferencesContract } from "@okouai/api-contracts/contracts/artifact-references";
-import { artifactOgContract } from "@okouai/api-contracts/contracts/artifact-og";
+import { hostContract } from "@okouai/api-contracts/contracts/host";
 import { uploadsContract } from "@okouai/api-contracts/contracts/uploads";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { createStore } from "ccstate";
+import { http, HttpResponse } from "msw";
+import { array, object, string } from "zod";
+import { describe, expect, it } from "vitest";
+
 import { accept, testContext } from "../../../__tests__/test-context";
-import {
-  setupAppWithRoutes,
-  setupRawAppRequestWithRoutes,
-} from "../../../__tests__/test-app";
+import { setupApp } from "../../../__tests__/test-helpers";
 import { env } from "../../../lib/env";
 import { mockNow, now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { artifactAccessRoutes } from "../artifact-access";
 import { artifactReferenceRoutes } from "../artifact-references";
-import { artifactOgRoutes } from "../artifact-og";
-import { uploadsPrepareRoutes } from "../uploads-prepare";
-import { uploadsCompleteRoutes } from "../uploads-complete";
 import { hostRoutes } from "../host";
-import { slackEventsRoutes } from "../slack-events";
-import { slackInteractiveRoutes } from "../slack-interactive";
+import { hostedSiteAccessRoutes } from "../hosted-site-access";
+import { uploadsCompleteRoutes } from "../uploads-complete";
+import { uploadsPrepareRoutes } from "../uploads-prepare";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
-import { createBddIntegrationApi } from "./helpers/api-bdd-integrations";
 import { createHostBddApi } from "./helpers/api-bdd-host";
 import { hostedTextFile } from "./helpers/api-bdd-host-files";
+import {
+  createBddIntegrationApi,
+  mockSlackIdentityLookup,
+} from "./helpers/api-bdd-integrations";
 import { mockClerkUsers } from "./helpers/clerk-users";
-import { createRouteMocks } from "./helpers/route-test";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
+import {
+  deleteOrgMembership$,
+  seedOrgMembership$,
+} from "./helpers/org-membership";
+import { createRouteMocks } from "./helpers/route-test";
+import {
+  createPublicSlackOrgApi,
+  uniqueSlackUserId,
+} from "./helpers/slack-public-install";
 
 const context = testContext();
-const integrations = createBddIntegrationApi(context);
-const host = createHostBddApi(context);
+const store = createStore();
 const headers = Object.freeze({ authorization: "Bearer clerk-session" });
+const CHANNEL = "C_ARTIFACT_SHARE";
+const MESSAGE_TS = "1796112000.000101";
+const RESPONSE_URL = "https://hooks.slack.com/actions/T0/1/artifact-share";
 
-function app(user: ApiTestUser) {
+type Owner = ApiTestUser & { readonly orgId: string };
+
+const integrationApi = createBddIntegrationApi(context);
+const appClient = setupApp({
+  context,
+  routes: [
+    ...artifactAccessRoutes,
+    ...artifactReferenceRoutes,
+    ...hostRoutes,
+    ...hostedSiteAccessRoutes,
+    ...uploadsPrepareRoutes,
+    ...uploadsCompleteRoutes,
+  ],
+});
+
+function client(actor: ApiTestUser) {
   createRouteMocks(context).clerk.session(
-    user.userId,
-    user.orgId,
-    user.orgRole,
+    actor.userId,
+    actor.orgId,
+    actor.orgRole,
   );
-  return setupAppWithRoutes({
-    context,
-    routes: [
-      ...artifactAccessRoutes,
-      ...artifactReferenceRoutes,
-      ...artifactOgRoutes,
-      ...uploadsPrepareRoutes,
-      ...uploadsCompleteRoutes,
-      ...hostRoutes,
-    ],
-  });
+  return appClient;
 }
 
-function profile(user: ApiTestUser) {
-  return {
-    id: user.userId,
-    firstName: "Channel",
-    lastName: "Member",
-    banned: false,
-    primaryEmailAddressId: `email_${user.userId}`,
-    emailAddresses: [
-      {
-        id: `email_${user.userId}`,
-        emailAddress: user.email,
-        verification: { status: "verified" },
-      },
-    ],
-  };
-}
-
+/** Clerk profiles with verified emails for every Okou account in the case. */
 function directory(users: readonly ApiTestUser[]) {
-  mockClerkUsers(context, users.map(profile));
-  context.mocks.clerk.organizations.getOrganization.mockImplementation(
-    (input) => {
-      const params = object({ organizationId: string() }).parse(input);
-      return Promise.resolve({
-        id: params.organizationId,
-        name: "Artifact workspace",
-      });
-    },
-  );
-  context.mocks.clerk.users.getUserList.mockImplementation((input) => {
-    const params = object({ userId: array(string()) }).parse(input);
-    return Promise.resolve({
-      data: users.map(profile).filter((user) => {
-        return params.userId.includes(user.id);
-      }),
-    });
-  });
-  context.mocks.clerk.organizations.getOrganizationMembershipList.mockImplementation(
-    (input) => {
-      const params = object({
-        organizationId: string(),
-        userId: array(string()).optional(),
-        emailAddress: array(string()).optional(),
-      }).parse(input);
-      return Promise.resolve({
-        data: users
-          .filter((user) => {
-            return (
-              user.orgId === params.organizationId &&
-              (!params.userId || params.userId.includes(user.userId)) &&
-              (!params.emailAddress || params.emailAddress.includes(user.email))
-            );
-          })
-          .map((user) => {
-            return {
-              organization: {
-                id: params.organizationId,
-                name: "Artifact workspace",
-              },
-              publicUserData: { userId: user.userId },
-              role: user.orgRole,
-            };
-          }),
-      });
-    },
+  mockClerkUsers(
+    context,
+    users.map((user) => {
+      return {
+        id: user.userId,
+        firstName: "Channel",
+        lastName: "Member",
+        banned: false,
+        primaryEmailAddressId: `email_${user.userId}`,
+        emailAddresses: [
+          {
+            id: `email_${user.userId}`,
+            emailAddress: user.email,
+            verification: { status: "verified" },
+          },
+        ],
+      };
+    }),
   );
 }
 
-async function fixture(
-  options: {
-    readonly audience?: "private" | "organization" | "public";
-    readonly kind?: "file" | "site";
-    readonly siteReference?: boolean;
-    readonly image?: boolean;
-  } = {},
-) {
-  integrations.configureSlackAppMocks();
-  const owner = createBddApi(context).user({ orgRole: "org:admin" });
-  if (!owner.orgId) {
-    throw new Error("Expected an owner workspace");
+/** Serves stored private artifact bytes for uploads made by the case. */
+function privateArtifactStorage() {
+  const stored = createHostBddApi(context).captureHostedSitesS3();
+  const storage = context.mocks.s3.send.getMockImplementation();
+  if (!storage) {
+    throw new Error("Expected captured hosted-site storage");
   }
-  const sender = `U_OWNER_${randomUUID().slice(0, 8)}`;
-  const { teamId } = await integrations.installSlackWorkspace(owner, {
-    installerSlackUserId: sender,
-  });
-  await flushWaitUntilForTest();
-  await updateFeatureSwitchesForUser(
-    context,
-    { ...owner, orgId: owner.orgId },
-    {
-      [FeatureSwitchKey.ArtifactUserSharing]: true,
-    },
-  );
-  const directoryUsers: ApiTestUser[] = [owner];
-  directory(directoryUsers);
-  const capture = host.captureHostedSitesS3();
-  const storage = context.mocks.s3.send.getMockImplementation()!;
   context.mocks.s3.send.mockImplementation((operation, ...rest) => {
+    const key =
+      operation instanceof HeadObjectCommand ||
+      operation instanceof GetObjectCommand
+        ? operation.input.Key
+        : undefined;
     if (
       operation instanceof HeadObjectCommand &&
-      operation.input.Key?.startsWith("private-artifacts/")
+      key?.startsWith("private-artifacts/")
     ) {
       return Promise.resolve({
         ContentLength: 13,
-        ContentType: options.image ? "image/png" : "application/pdf",
-        Metadata: { "artifact-id": operation.input.Key.split("/")[1] },
+        ContentType: "application/pdf",
+        Metadata: { "artifact-id": key.split("/")[1] },
       });
     }
     if (
       operation instanceof GetObjectCommand &&
-      operation.input.Key?.startsWith("artifact-shares/") &&
-      !capture.objects.has(operation.input.Key)
+      key?.startsWith("artifact-shares/") &&
+      !stored.objects.has(key)
     ) {
       return Promise.reject(
         Object.assign(new Error("Missing publication policy"), {
@@ -178,8 +132,8 @@ async function fixture(
     }
     if (
       operation instanceof GetObjectCommand &&
-      operation.input.Key?.startsWith("private-artifacts/") &&
-      !capture.objects.has(operation.input.Key)
+      key?.startsWith("private-artifacts/") &&
+      !stored.objects.has(key)
     ) {
       return Promise.resolve({
         Body: Readable.from([Buffer.from("report bytes!")]),
@@ -188,733 +142,752 @@ async function fixture(
     }
     return storage(operation, ...rest);
   });
-  let resource: {
-    readonly kind: "file" | "site";
-    readonly id: string;
-    readonly url: string;
+  return stored;
+}
+
+interface Artifact {
+  readonly kind: "file" | "site";
+  readonly id: string;
+  readonly url: string;
+  readonly reference: string | null;
+}
+
+async function uploadFile(
+  owner: Owner,
+  audience: "private" | "organization",
+): Promise<Artifact> {
+  const prepared = await accept(
+    client(owner)(uploadsContract).prepare({
+      headers,
+      body: {
+        filename: "report.pdf",
+        contentType: "application/pdf",
+        size: 13,
+        purpose: "artifact",
+      },
+    }),
+    [200],
+  );
+  const completed = await accept(
+    client(owner)(uploadsContract).complete({
+      headers,
+      body: { id: prepared.body.id },
+    }),
+    [200],
+  );
+  if (audience !== "private") {
+    await accept(
+      client(owner)(artifactAccessContract).updateVisibility({
+        headers,
+        params: { artifactId: prepared.body.id },
+        body: { visibility: audience },
+      }),
+      [200],
+    );
+  }
+  const url = new URL(completed.body.url, env("APP_URL"));
+  return {
+    kind: "file",
+    id: prepared.body.id,
+    url: url.href,
+    reference: url.pathname.split("/").at(-1) ?? null,
   };
-  if (options.kind === "site") {
-    const prepared = await host.prepareHostedSite(owner, {
-      site: `channel-${randomUUID().slice(0, 8)}`,
-      title: "Channel artifact",
-      artifactKind: "hosted-site",
-      spaFallback: false,
-      visibility: options.audience ?? "private",
-      files: [
-        hostedTextFile(
-          "/index.html",
-          "<html><head><title>Private report</title></head><body>Report</body></html>",
-        ),
-      ],
-    });
-    const completed = await host.completeHostedSite(
-      owner,
-      prepared.deploymentId,
-    );
-    resource = {
-      kind: "site",
-      id: prepared.siteId,
-      url: options.siteReference
-        ? new URL(completed.artifactUrl ?? completed.url, env("APP_URL")).href
-        : `https://${prepared.publicSlug}.okou.app/`,
-    };
-  } else {
-    const prepared = await accept(
-      app(owner)(uploadsContract).prepare({
-        headers,
-        body: {
-          filename: options.image ? "report.png" : "report.pdf",
-          contentType: options.image ? "image/png" : "application/pdf",
-          size: 13,
-          purpose: "artifact",
-        },
-      }),
-      [200],
-    );
-    const completed = await accept(
-      app(owner)(uploadsContract).complete({
-        headers,
-        body: { id: prepared.body.id },
-      }),
-      [200],
-    );
-    resource = {
-      kind: "file",
-      id: prepared.body.id,
-      url: new URL(completed.body.url, env("APP_URL")).href,
-    };
-    if (options.audience && options.audience !== "private") {
-      await accept(
-        app(owner)(artifactAccessContract).updateVisibility({
-          headers,
-          params: { artifactId: resource.id },
-          body: { visibility: options.audience },
-        }),
-        [200],
-      );
+}
+
+async function publishSite(
+  owner: Owner,
+  stored: ReturnType<typeof privateArtifactStorage>,
+  visibility: "private" | "public",
+  link: "site" | "artifact" = "site",
+): Promise<Artifact> {
+  const html =
+    "<html><head><title>Channel report</title></head><body>Report</body></html>";
+  const prepared = await accept(
+    client(owner)(hostContract).prepare({
+      headers,
+      body: {
+        site: `share-${randomUUID().slice(0, 8)}`,
+        title: "Channel report",
+        artifactKind: "hosted-site",
+        spaFallback: false,
+        visibility,
+        files: [hostedTextFile("/index.html", html)],
+      },
+    }),
+    [200],
+  );
+  for (const key of stored.objects.keys()) {
+    if (key.endsWith("/index.html")) {
+      stored.objects.set(key, html);
     }
   }
-  const channel = `C_${randomUUID().slice(0, 8)}`;
-  const members = [sender];
-  context.mocks.slack.conversations.members.mockResolvedValue({
-    ok: true,
-    members,
-    response_metadata: { next_cursor: "" },
-  });
+  const completed = await accept(
+    client(owner)(hostContract).complete({
+      headers,
+      params: { deploymentId: prepared.body.deploymentId },
+      body: {},
+    }),
+    [200],
+  );
+  const url =
+    link === "artifact"
+      ? new URL(
+          completed.body.artifactUrl ?? completed.body.url,
+          env("APP_URL"),
+        ).href
+      : completed.body.url;
+  return { kind: "site", id: prepared.body.siteId, url, reference: null };
+}
+
+/**
+ * A Slack workspace installed and connected by its Okou admin, with artifact
+ * email sharing enabled and the owner alone in the channel.
+ */
+async function workspace() {
+  const slack = createPublicSlackOrgApi(context);
+  const installed = await slack.installOrg({ withConnection: true });
+  const owner: Owner = { ...installed.actor, orgId: installed.orgId };
+  await Promise.all([
+    store.set(
+      seedOrgMembership$,
+      { orgId: owner.orgId, userId: owner.userId, role: "admin" },
+      context.signal,
+    ),
+    updateFeatureSwitchesForUser(context, owner, {
+      [FeatureSwitchKey.ArtifactUserSharing]: true,
+    }),
+  ]);
+  const accounts: ApiTestUser[] = [owner];
+  directory(accounts);
+  const stored = privateArtifactStorage();
+  const members: string[] = [];
+  /** Slack reports the channel membership at the time of each read. */
+  function syncMembers() {
+    context.mocks.slack.conversations.members.mockResolvedValue({
+      ok: true,
+      members: [...members],
+      response_metadata: { next_cursor: "" },
+    });
+  }
+  function join(id: string) {
+    members.push(id);
+    syncMembers();
+  }
+  function leave(id: string) {
+    const index = members.indexOf(id);
+    if (index !== -1) {
+      members.splice(index, 1);
+    }
+    syncMembers();
+  }
+  join(installed.slackUserId);
   context.mocks.slack.chat.postEphemeral.mockResolvedValue({
     ok: true,
-    message_ts: "1795586400.000002",
+    message_ts: "1796112000.000102",
   });
   context.mocks.slack.chat.unfurl.mockResolvedValue({ ok: true });
   context.mocks.resend.send.mockResolvedValue({
     data: { id: randomUUID() },
     error: null,
   });
-  const callbacks: { readonly text: string }[] = [];
-  const responseUrl = `https://hooks.slack.com/actions/${teamId}/${randomUUID()}`;
+  const callbacks: string[] = [];
   server.use(
-    http.post(responseUrl, async ({ request }) => {
-      callbacks.push(object({ text: string() }).parse(await request.json()));
-      return HttpResponse.text("ok");
+    http.post(RESPONSE_URL, async ({ request }) => {
+      const body = object({ text: string() }).parse(await request.json());
+      callbacks.push(body.text);
+      return new HttpResponse("ok");
     }),
   );
+  await flushWaitUntilForTest();
   context.mocks.slack.chat.postEphemeral.mockClear();
+  context.mocks.slack.chat.unfurl.mockClear();
+  context.mocks.slack.conversations.members.mockClear();
   context.mocks.resend.send.mockClear();
+
+  /** A Slack member with an email and no Okou connection. */
+  function emailMember(email = `${randomUUID()}@external.test`) {
+    const id = uniqueSlackUserId();
+    mockSlackIdentityLookup(context, {
+      id,
+      team_id: installed.slackWorkspaceId,
+      real_name: "Channel Guest",
+      profile: { email, display_name: "Channel Guest" },
+    });
+    join(id);
+    return { id, email };
+  }
+
+  /** A Slack member whose profile has no email, or a bot or deleted user. */
+  function profileMember(kind: "no-email" | "bot" | "deleted") {
+    const id = uniqueSlackUserId();
+    const identity = {
+      id,
+      team_id: installed.slackWorkspaceId,
+      real_name: "Channel Member",
+      profile: { display_name: "Channel Member" },
+      ...(kind === "bot" ? { is_bot: true } : {}),
+      ...(kind === "deleted" ? { deleted: true } : {}),
+    };
+    mockSlackIdentityLookup(context, identity);
+    join(id);
+    return { id };
+  }
+
+  /** A member of the owner's workspace with a verified email and no Slack binding. */
+  async function unboundColleague() {
+    const user = createBddApi(context).user({
+      orgId: owner.orgId,
+      orgRole: "org:member",
+    });
+    await store.set(
+      seedOrgMembership$,
+      {
+        orgId: owner.orgId,
+        userId: user.userId,
+        emailAddresses: [user.email],
+      },
+      context.signal,
+    );
+    accounts.push(user);
+    directory(accounts);
+    return user;
+  }
+
+  /** A Slack member whose email matches an unbound member of the owner's workspace. */
+  async function workspaceEmailMember() {
+    const colleague = await unboundColleague();
+    return emailMember(colleague.email);
+  }
+
+  /** An Okou account connected to this Slack workspace. */
+  async function connectedMember(orgId?: string) {
+    const user = createBddApi(context).user(
+      orgId === undefined ? {} : { orgId, orgRole: "org:member" },
+    );
+    const userOrgId = user.orgId;
+    if (!userOrgId) {
+      throw new Error("Expected the member to belong to a workspace");
+    }
+    const [, { slackUserId }] = await Promise.all([
+      store.set(
+        seedOrgMembership$,
+        { orgId: userOrgId, userId: user.userId },
+        context.signal,
+      ),
+      slack.connectMember({
+        orgId: userOrgId,
+        userId: user.userId,
+        slackWorkspaceId: installed.slackWorkspaceId,
+      }),
+    ]);
+    accounts.push(user);
+    directory(accounts);
+    join(slackUserId);
+    return { ...user, slackUserId };
+  }
+
+  async function postLink(url: string, user = installed.slackUserId) {
+    await integrationApi.postSlackEvent(installed.slackWorkspaceId, {
+      type: "link_shared",
+      channel: CHANNEL,
+      message_ts: MESSAGE_TS,
+      user,
+      links: [{ url, domain: new URL(url).hostname }],
+    });
+    await flushWaitUntilForTest();
+  }
+
+  function promptActions(index = -1) {
+    const call = context.mocks.slack.chat.postEphemeral.mock.calls.at(index);
+    const prompt = object({
+      channel: string(),
+      user: string(),
+      blocks: array(
+        object({
+          type: string(),
+          elements: array(
+            object({
+              action_id: string().optional(),
+              value: string().optional(),
+            }),
+          ).optional(),
+        }),
+      ),
+    }).parse(call?.[0]);
+    const actions = prompt.blocks.flatMap((block) => {
+      return block.elements ?? [];
+    });
+    return {
+      channel: prompt.channel,
+      user: prompt.user,
+      actionIds: actions.flatMap((action) => {
+        return action.action_id ? [action.action_id] : [];
+      }),
+      token: actions.find((action) => {
+        return action.value !== undefined;
+      })?.value,
+    };
+  }
+
+  function promptRecipients(): string[] {
+    return context.mocks.slack.chat.postEphemeral.mock.calls.map((call) => {
+      return object({ user: string() }).parse(call[0]).user;
+    });
+  }
+
+  function promptText(): string {
+    const call = context.mocks.slack.chat.postEphemeral.mock.calls.at(-1);
+    const prompt = object({
+      blocks: array(object({ text: object({ text: string() }).optional() })),
+    }).parse(call?.[0]);
+    return prompt.blocks
+      .map((block) => {
+        return block.text?.text ?? "";
+      })
+      .join("\n");
+  }
+
+  async function click(action: string, token = promptActions().token) {
+    if (!token) {
+      throw new Error("Expected a sharing prompt token");
+    }
+    const body = await integrationApi.postSlackInteractive({
+      type: "block_actions",
+      team: { id: installed.slackWorkspaceId },
+      user: { id: installed.slackUserId },
+      channel: { id: CHANNEL },
+      response_url: RESPONSE_URL,
+      actions: [{ action_id: action, value: token }],
+    });
+    await flushWaitUntilForTest();
+    return body;
+  }
+
+  async function shareEmails(artifact: Artifact) {
+    const response = await accept(
+      client(owner)(artifactAccessContract).listShares({
+        headers,
+        params: { artifactId: artifact.id },
+      }),
+      [200],
+    );
+    return response.body.shares
+      .map((share) => {
+        return share.email;
+      })
+      .sort();
+  }
+
+  async function fileAudience(artifact: Artifact) {
+    const response = await accept(
+      client(owner)(artifactAccessContract).getVisibility({
+        headers,
+        params: { artifactId: artifact.id },
+      }),
+      [200],
+    );
+    return response.body.visibility;
+  }
+
+  function unfurledUrls(): string[] {
+    return context.mocks.slack.chat.unfurl.mock.calls.flatMap((call) => {
+      const request = object({
+        channel: string(),
+        ts: string(),
+        unfurls: object({}).catchall(object({}).passthrough()),
+      }).parse(call[0]);
+      return Object.keys(request.unfurls).map((url) => {
+        return `${request.channel}/${request.ts}/${url}`;
+      });
+    });
+  }
+
   return {
+    ...installed,
     owner,
-    sender,
-    teamId,
-    channel,
-    members,
-    directoryUsers,
-    resource,
+    stored,
     callbacks,
-    responseUrl,
+    leave,
+    emailMember,
+    workspaceEmailMember,
+    profileMember,
+    unboundColleague,
+    connectedMember,
+    postLink,
+    promptActions,
+    promptRecipients,
+    promptText,
+    click,
+    shareEmails,
+    fileAudience,
+    unfurledUrls,
   };
 }
 
-type Fixture = Awaited<ReturnType<typeof fixture>>;
+const ALL_ACTIONS = Object.freeze([
+  "artifact_share_channel",
+  "artifact_share_organization",
+  "artifact_share_public",
+]);
 
-function addMember(f: Fixture, email?: string) {
-  const id = `U_MEMBER_${randomUUID().slice(0, 8)}`;
-  f.members.push(id);
-  context.mocks.slack.users.identities.set(id, {
-    id,
-    team_id: f.teamId,
-    real_name: "Channel member",
-    profile: { display_name: "Channel member", ...(email ? { email } : {}) },
+describe("Slack artifact channel sharing", () => {
+  it("slack-artifact-channel-sharing-016 rejects a sharing button after it expires", async () => {
+    const w = await workspace();
+    const file = await uploadFile(w.owner, "private");
+    w.emailMember();
+    await w.postLink(file.url);
+    mockNow(now() + 16 * 60_000);
+    const response = object({ response_type: string(), text: string() }).parse(
+      await w.click("artifact_share_channel"),
+    );
+    expect(response.response_type).toBe("ephemeral");
+    expect(response.text).toContain("expired");
+    await expect(w.shareEmails(file)).resolves.toStrictEqual([]);
+    expect(w.callbacks).toStrictEqual([]);
   });
-  return id;
-}
 
-function addWorkspaceMember(f: Fixture) {
-  const user = createBddApi(context).user({
-    orgId: f.owner.orgId ?? undefined,
+  it("slack-artifact-channel-sharing-004 does not prompt when every channel member already has workspace access", async () => {
+    const w = await workspace();
+    const file = await uploadFile(w.owner, "organization");
+    await w.connectedMember(w.owner.orgId);
+    await w.postLink(file.url);
+    expect(context.mocks.slack.chat.postEphemeral).not.toHaveBeenCalled();
   });
-  f.directoryUsers.push(user);
-  directory(f.directoryUsers);
-  const slackUserId = addMember(f, user.email);
-  return { user, slackUserId };
-}
 
-async function connectedMember(f: Fixture, sameWorkspace = false) {
-  const user = createBddApi(context).user(
-    sameWorkspace ? { orgId: f.owner.orgId ?? undefined } : {},
-  );
-  const slackUserId = addMember(f, user.email);
-  await integrations.connectSlackUser(user, {
-    workspaceId: f.teamId,
-    slackUserId,
-    channelId: f.channel,
-    threadTs: "1795586400.000001",
+  it("slack-artifact-channel-sharing-005 recognizes existing workspace access by verified email without requiring a Slack account binding", async () => {
+    const w = await workspace();
+    const file = await uploadFile(w.owner, "organization");
+    const colleague = await w.unboundColleague();
+    w.emailMember(colleague.email);
+    await w.postLink(file.url);
+    expect(context.mocks.slack.chat.postEphemeral).not.toHaveBeenCalled();
+    await expect(w.shareEmails(file)).resolves.toStrictEqual([]);
   });
-  await flushWaitUntilForTest();
-  f.directoryUsers.push(user);
-  directory(f.directoryUsers);
-  context.mocks.slack.chat.postEphemeral.mockClear();
-  return { user, slackUserId };
-}
 
-async function postLink(
-  f: Fixture,
-  overrides: Record<string, unknown> = {},
-  retry = false,
-) {
-  const body = JSON.stringify({
-    type: "event_callback",
-    team_id: f.teamId,
-    event_id: `Ev_${randomUUID()}`,
-    event: {
+  it("slack-artifact-channel-sharing-023 does not repeat private prompts for retries, refreshes, or composer events", async () => {
+    const w = await workspace();
+    const file = await uploadFile(w.owner, "private");
+    w.emailMember();
+    const slackEvents = createBddIntegrationApi(context);
+    const linkShared = {
       type: "link_shared",
-      channel: f.channel,
-      user: f.sender,
-      is_bot_user_member: true,
-      source: "conversations_history",
-      message_ts: "1795586400.000001",
-      links: [{ url: f.resource.url }],
-      ...overrides,
-    },
+      channel: CHANNEL,
+      message_ts: MESSAGE_TS,
+      user: w.slackUserId,
+      links: [{ url: file.url, domain: new URL(file.url).hostname }],
+    };
+    await slackEvents.postSlackEvent(w.slackWorkspaceId, linkShared, {
+      "x-slack-retry-num": "1",
+    });
+    await slackEvents.postSlackEvent(w.slackWorkspaceId, {
+      ...linkShared,
+      is_unfurl_refresh: true,
+    });
+    await slackEvents.postSlackEvent(w.slackWorkspaceId, {
+      ...linkShared,
+      source: "composer",
+    });
+    await flushWaitUntilForTest();
+    expect(context.mocks.slack.chat.postEphemeral).not.toHaveBeenCalled();
   });
-  const response = await setupRawAppRequestWithRoutes({
-    context,
-    routes: slackEventsRoutes,
-  })("/api/webhooks/slack/events", {
-    method: "POST",
-    body,
-    headers: {
-      "content-type": "application/json",
-      ...integrations.signedSlackIngressHeaders(body),
-      ...(retry ? { "x-slack-retry-num": "1" } : {}),
-    },
-  });
-  expect(response.status).toBe(200);
-  await flushWaitUntilForTest();
-}
 
-function promptActions() {
-  const call = context.mocks.slack.chat.postEphemeral.mock.calls.at(-1)?.[0];
-  const prompt = object({
-    channel: string(),
-    user: string(),
-    blocks: array(zUnknown()),
-  }).parse(call);
-  const actions = prompt.blocks.flatMap((block) => {
-    const parsed = object({
-      type: literal("actions"),
-      elements: array(object({ action_id: string(), value: string() })),
-    }).safeParse(block);
-    return parsed.success ? parsed.data.elements : [];
-  });
-  return { ...prompt, actions };
-}
-
-async function click(
-  f: Fixture,
-  actionId = "artifact_share_channel",
-  overrides: Record<string, unknown> = {},
-) {
-  const action = promptActions().actions.find((entry) => {
-    return entry.action_id === actionId;
-  });
-  if (!action) {
-    throw new Error(`Expected ${actionId} button`);
-  }
-  const body = new URLSearchParams({
-    payload: JSON.stringify({
-      type: "block_actions",
-      team: { id: f.teamId },
-      user: { id: f.sender },
-      channel: { id: f.channel },
-      response_url: f.responseUrl,
-      actions: [action],
-      ...overrides,
-    }),
-  }).toString();
-  const response = await setupRawAppRequestWithRoutes({
-    context,
-    routes: slackInteractiveRoutes,
-  })("/api/webhooks/slack/interactive", {
-    method: "POST",
-    body,
-    headers: {
-      "content-type": "application/x-www-form-urlencoded",
-      ...integrations.signedSlackIngressHeaders(body),
-    },
-  });
-  expect(response.status).toBe(200);
-  await flushWaitUntilForTest();
-  return response;
-}
-
-async function shares(f: Fixture) {
-  return (
-    await accept(
-      app(f.owner)(artifactAccessContract).listShares({
-        headers,
-        params: { artifactId: f.resource.id },
-      }),
-      [200],
-    )
-  ).body.shares;
-}
-
-async function visibility(f: Fixture) {
-  return (
-    await accept(
-      app(f.owner)(artifactAccessContract).getVisibility({
-        headers,
-        params: { artifactId: f.resource.id },
-      }),
-      [200],
-    )
-  ).body.visibility;
-}
-
-test.each(["file", "site"] as const)(
-  "privately prompts the %s owner and shares only with the members present at click time",
-  async (kind) => {
-    const f = await fixture({ kind });
-    const viewer = await connectedMember(f);
-    const departed = addWorkspaceMember(f);
-    await postLink(f);
-    const prompt = promptActions();
-    expect(prompt.user).toBe(f.sender);
-    expect(prompt.channel).toBe(f.channel);
-    expect(
-      prompt.actions.map((action) => {
-        return action.action_id;
-      }),
-    ).toStrictEqual([
+  it("slack-artifact-channel-sharing-003 omits workspace visibility for a workspace-visible file and reports external email-only members as unresolved", async () => {
+    const w = await workspace();
+    const file = await uploadFile(w.owner, "organization");
+    await w.connectedMember(w.owner.orgId);
+    const external = w.emailMember();
+    await w.postLink(file.url);
+    expect(w.promptActions().actionIds).toStrictEqual([
       "artifact_share_channel",
-      "artifact_share_organization",
       "artifact_share_public",
     ]);
-    await expect(shares(f)).resolves.toStrictEqual([]);
-    f.members.splice(f.members.indexOf(departed.slackUserId), 1);
-    const joined = addWorkspaceMember(f);
-    await click(f);
-    expect(
-      (await shares(f))
-        .map((share) => {
-          return share.email;
-        })
-        .sort(),
-    ).toStrictEqual([viewer.user.email, joined.user.email].sort());
-    if (kind === "file") {
-      const preview = await accept(
-        app(viewer.user)(artifactReferencesContract).resolve({
-          headers,
-          params: {
-            reference: new URL(f.resource.url).pathname.slice(
-              "/artifacts/".length,
-            ),
-          },
-        }),
-        [200],
-      );
-      expect(preview.body.target).toStrictEqual({
-        kind: "file",
-        id: f.resource.id,
-      });
-    }
-    expect(context.mocks.resend.send).toHaveBeenCalledTimes(2);
-    expect(f.callbacks.at(-1)?.text).toContain("2 current channel members");
-    expect(f.callbacks.at(-1)?.text).not.toContain(departed.user.email);
-  },
-);
+    await w.click("artifact_share_channel");
+    await expect(w.shareEmails(file)).resolves.toStrictEqual([]);
+    await expect(w.fileAudience(file)).resolves.toBe("organization");
+    expect(w.callbacks.at(-1)).toContain(`<@${external.id}>`);
+  });
 
-test("omits workspace visibility when already workspace-visible and reports external email-only members as unresolved", async () => {
-  const f = await fixture({ audience: "organization" });
-  await connectedMember(f, true);
-  const externalId = addMember(f, `external-${randomUUID()}@example.com`);
-  await postLink(f);
-  expect(
-    promptActions().actions.map((action) => {
-      return action.action_id;
-    }),
-  ).toStrictEqual(["artifact_share_channel", "artifact_share_public"]);
-  await click(f);
-  await expect(shares(f)).resolves.toStrictEqual([]);
-  expect(f.callbacks.at(-1)?.text).toContain(`<@${externalId}>`);
-  await expect(visibility(f)).resolves.toBe("organization");
-});
+  it("slack-artifact-channel-sharing-006 does not prompt or read members for a public site and unfurls it", async () => {
+    const w = await workspace();
+    const site = await publishSite(w.owner, w.stored, "public");
+    w.emailMember();
+    await w.postLink(site.url);
+    expect(context.mocks.slack.chat.postEphemeral).not.toHaveBeenCalled();
+    expect(context.mocks.slack.conversations.members).not.toHaveBeenCalled();
+    expect(w.unfurledUrls()).toContain(`${CHANNEL}/${MESSAGE_TS}/${site.url}`);
+  });
 
-test("does not prompt when all channel members already have workspace access", async () => {
-  const f = await fixture({ audience: "organization" });
-  await connectedMember(f, true);
-  await postLink(f);
-  expect(context.mocks.slack.chat.postEphemeral).not.toHaveBeenCalled();
-  expect(context.mocks.slack.chat.unfurl).toHaveBeenCalledWith(
-    expect.objectContaining({
-      channel: f.channel,
-      ts: "1795586400.000001",
-      unfurls: expect.objectContaining({
-        [f.resource.url]: expect.any(Object),
-      }),
-    }),
-  );
-});
+  it("slack-artifact-channel-sharing-008 does not let a connected non-owner manage another person's file", async () => {
+    const w = await workspace();
+    const file = await uploadFile(w.owner, "private");
+    const other = await w.connectedMember();
+    await w.postLink(file.url, other.slackUserId);
+    expect(context.mocks.slack.chat.postEphemeral).not.toHaveBeenCalled();
+    await expect(w.shareEmails(file)).resolves.toStrictEqual([]);
+  });
 
-test("recognizes existing workspace access by verified email without requiring a Slack account binding", async () => {
-  const f = await fixture({ audience: "organization" });
-  addWorkspaceMember(f);
-  await postLink(f);
-  expect(context.mocks.slack.chat.postEphemeral).not.toHaveBeenCalled();
-  await expect(shares(f)).resolves.toStrictEqual([]);
-  expect(context.mocks.slack.chat.unfurl).toHaveBeenCalledTimes(1);
-});
+  it("slack-artifact-channel-sharing-010 reports a member without email separately while sharing with identifiable members", async () => {
+    const w = await workspace();
+    const file = await uploadFile(w.owner, "private");
+    const anonymous = w.profileMember("no-email");
+    await w.workspaceEmailMember();
+    await w.postLink(file.url);
+    await w.click("artifact_share_channel");
+    await expect(w.shareEmails(file)).resolves.toHaveLength(1);
+    const summary = w.callbacks.at(-1) ?? "";
+    expect(summary).toContain(`<@${anonymous.id}>`);
+    expect(summary).toContain("Could not finish sharing");
+  });
 
-test("does not prompt or inspect members for public artifacts", async () => {
-  const f = await fixture({ audience: "public", kind: "site" });
-  addMember(f, `external-${randomUUID()}@example.com`);
-  await postLink(f);
-  expect(context.mocks.slack.chat.postEphemeral).not.toHaveBeenCalled();
-  expect(context.mocks.slack.conversations.members).not.toHaveBeenCalled();
-  expect(context.mocks.slack.chat.unfurl).toHaveBeenCalledWith(
-    expect.objectContaining({ channel: f.channel }),
-  );
-});
-
-test("does not let a connected non-owner manage another person's artifact", async () => {
-  const f = await fixture();
-  const viewer = await connectedMember(f);
-  await postLink(f, { user: viewer.slackUserId });
-  expect(context.mocks.slack.chat.postEphemeral).not.toHaveBeenCalled();
-  await expect(shares(f)).resolves.toStrictEqual([]);
-});
-
-test("paginates channel membership, including an empty page with a continuation", async () => {
-  const f = await fixture();
-  const member = addWorkspaceMember(f);
-  context.mocks.slack.conversations.members.mockImplementation((input) => {
-    const page = object({ cursor: string().optional() }).parse(input);
-    return Promise.resolve(
-      page.cursor
-        ? {
-            ok: true,
-            members: [f.sender, member.slackUserId],
-            response_metadata: { next_cursor: "" },
-          }
-        : {
-            ok: true,
-            members: [],
-            response_metadata: { next_cursor: "page-two" },
-          },
+  it("slack-artifact-channel-sharing-017 does not duplicate invitations when the same button is clicked again", async () => {
+    const w = await workspace();
+    const file = await uploadFile(w.owner, "private");
+    await w.workspaceEmailMember();
+    await w.postLink(file.url);
+    const { token } = w.promptActions();
+    await w.click("artifact_share_channel", token);
+    await w.click("artifact_share_channel", token);
+    await expect(w.shareEmails(file)).resolves.toHaveLength(1);
+    expect(context.mocks.resend.send).toHaveBeenCalledTimes(1);
+    expect(w.callbacks.at(-1)).toContain(
+      "already have access or an invitation",
     );
   });
-  await postLink(f);
-  await click(f);
-  expect(
-    (await shares(f)).map((share) => {
-      return share.email;
-    }),
-  ).toStrictEqual([member.user.email]);
-});
 
-test("reports missing email separately while sharing with identifiable members", async () => {
-  const f = await fixture();
-  const unresolved = addMember(f);
-  addWorkspaceMember(f);
-  await postLink(f);
-  await click(f);
-  await expect(shares(f)).resolves.toHaveLength(1);
-  expect(f.callbacks.at(-1)?.text).toContain(`<@${unresolved}>`);
-  expect(f.callbacks.at(-1)?.text).toContain("Could not finish sharing");
-});
-
-test("does not equate an unavailable member list with an empty channel", async () => {
-  const f = await fixture();
-  addWorkspaceMember(f);
-  await postLink(f);
-  context.mocks.slack.conversations.members.mockRejectedValue(
-    new Error("Channel is unavailable"),
-  );
-  await click(f);
-  await expect(shares(f)).resolves.toStrictEqual([]);
-  expect(f.callbacks.at(-1)?.text).toContain("could not be verified");
-});
-
-test.each(["user", "team", "channel", "token", "expired"])(
-  "rejects a stale or mismatched %s action",
-  async (changed) => {
-    const f = await fixture();
-    addWorkspaceMember(f);
-    await postLink(f);
-    const overrides: Record<string, unknown> =
-      changed === "token"
-        ? { actions: [{ ...promptActions().actions[0], value: "tampered" }] }
-        : changed === "expired"
-          ? {}
-          : { [changed]: { id: `WRONG_${randomUUID()}` } };
-    if (changed === "expired") {
-      mockNow(now() + 16 * 60_000);
-    }
-    const response = await click(f, "artifact_share_channel", overrides);
-    expect(response.body).toMatchObject({
-      response_type: "ephemeral",
-      text: expect.stringContaining("expired"),
-    });
-    await expect(shares(f)).resolves.toStrictEqual([]);
-    expect(f.callbacks).toStrictEqual([]);
-  },
-);
-
-test("does not duplicate invitations when the same button is clicked again", async () => {
-  const f = await fixture();
-  addWorkspaceMember(f);
-  await postLink(f);
-  await click(f);
-  await click(f);
-  await expect(shares(f)).resolves.toHaveLength(1);
-  expect(context.mocks.resend.send).toHaveBeenCalledTimes(1);
-  expect(f.callbacks.at(-1)?.text).toContain(
-    "already have access or an invitation",
-  );
-});
-
-test("shares with more than ten channel members in one action", async () => {
-  const f = await fixture();
-  for (let index = 0; index < 12; index++) {
-    addWorkspaceMember(f);
-  }
-  await postLink(f);
-  await click(f);
-  await expect(shares(f)).resolves.toHaveLength(12);
-  expect(f.callbacks.at(-1)?.text).not.toContain("limit was reached");
-});
-
-test("keeps confirmed invitations when the existing hourly recipient limit is reached", async () => {
-  const f = await fixture();
-  for (let index = 0; index < 61; index++) {
-    addWorkspaceMember(f);
-  }
-  await postLink(f);
-  await click(f);
-  await expect(shares(f)).resolves.toHaveLength(60);
-  expect(f.callbacks.at(-1)?.text).toContain("sharing limit was reached");
-  expect(f.callbacks.at(-1)?.text).toContain("1 remaining");
-  mockNow(now() + 3_600_001);
-  await postLink(f);
-  await click(f);
-  await expect(shares(f)).resolves.toHaveLength(61);
-  expect(context.mocks.resend.send).toHaveBeenCalledTimes(61);
-});
-
-test.each(["file", "site"] as const)(
-  "can make a %s workspace-visible from the private owner prompt",
-  async (kind) => {
-    const f = await fixture({ kind });
-    addMember(f, `invited-${randomUUID()}@example.com`);
-    await postLink(f);
-    await click(f, "artifact_share_organization");
-    await expect(visibility(f)).resolves.toBe("organization");
+  it("slack-artifact-channel-sharing-020 can make a file workspace-visible from the owner prompt", async () => {
+    const w = await workspace();
+    const file = await uploadFile(w.owner, "private");
+    w.emailMember();
+    await w.postLink(file.url);
+    await w.click("artifact_share_organization");
+    await expect(w.fileAudience(file)).resolves.toBe("organization");
     expect(context.mocks.slack.chat.unfurl).not.toHaveBeenCalled();
-  },
-);
-
-test("can make a hosted site public and refresh the original Slack preview", async () => {
-  const f = await fixture({ kind: "site" });
-  addMember(f, `invited-${randomUUID()}@example.com`);
-  await postLink(f);
-  await click(f, "artifact_share_public");
-  await expect(visibility(f)).resolves.toBe("public");
-  expect(context.mocks.slack.chat.unfurl).toHaveBeenCalledWith(
-    expect.objectContaining({
-      channel: f.channel,
-      ts: "1795586400.000001",
-      unfurls: expect.objectContaining({
-        [f.resource.url]: expect.any(Object),
-      }),
-    }),
-  );
-});
-
-test("does not repeat private prompts for retries, refreshes, or composer events", async () => {
-  const f = await fixture();
-  addWorkspaceMember(f);
-  await postLink(f, {}, true);
-  await postLink(f, { is_unfurl_refresh: true });
-  await postLink(f, { source: "composer" });
-  expect(context.mocks.slack.chat.postEphemeral).not.toHaveBeenCalled();
-});
-
-test("shares a website through its App artifact reference", async () => {
-  const f = await fixture({ kind: "site", siteReference: true });
-  const member = addWorkspaceMember(f);
-  await postLink(f);
-  await click(f);
-  expect(
-    (await shares(f)).map((share) => {
-      return share.email;
-    }),
-  ).toStrictEqual([member.user.email]);
-});
-
-test("ignores already-granted members, bots, and deleted members", async () => {
-  const f = await fixture();
-  const member = addWorkspaceMember(f);
-  await accept(
-    app(f.owner)(artifactAccessContract).addShare({
-      headers,
-      params: { artifactId: f.resource.id },
-      body: { userId: member.user.userId },
-    }),
-    [200],
-  );
-  await flushWaitUntilForTest();
-  for (const state of ["bot", "deleted"]) {
-    addMember(f, `${state}-${randomUUID()}@example.com`);
-  }
-  const identities = context.mocks.slack.users.identities;
-  context.mocks.slack.users.info.mockImplementation((input) => {
-    const { user } = object({ user: string() }).parse(input);
-    const identity = identities.get(user);
-    return Promise.resolve({
-      ok: true,
-      user: {
-        ...identity,
-        is_bot: identity?.profile.email?.startsWith("bot-"),
-        deleted: identity?.profile.email?.startsWith("deleted-"),
-      },
-    });
   });
-  context.mocks.slack.chat.postEphemeral.mockClear();
-  const before = context.mocks.resend.send.mock.calls.length;
-  await postLink(f);
-  expect(context.mocks.slack.chat.postEphemeral).not.toHaveBeenCalled();
-  expect(context.mocks.resend.send).toHaveBeenCalledTimes(before);
-});
 
-test.each(["membership", "banned", "left-channel"])(
-  "rechecks %s before applying an old sharing button",
-  async (change) => {
-    const f = await fixture();
-    addWorkspaceMember(f);
-    await postLink(f);
-    if (change === "membership") {
-      context.mocks.clerk.organizations.getOrganizationMembershipList.mockResolvedValue(
-        { data: [] },
-      );
-    } else if (change === "banned") {
-      mockClerkUsers(context, [{ ...profile(f.owner), banned: true }]);
-    } else {
-      f.members.splice(f.members.indexOf(f.sender), 1);
-    }
-    await click(f);
-    expect(f.callbacks.at(-1)?.text).toMatch(
+  it("slack-artifact-channel-sharing-022 can make a hosted site public and refresh the original Slack preview", async () => {
+    const w = await workspace();
+    const site = await publishSite(w.owner, w.stored, "private");
+    w.emailMember();
+    await w.postLink(site.url);
+    await w.click("artifact_share_public");
+    const visibility = await accept(
+      client(w.owner)(artifactAccessContract).getVisibility({
+        headers,
+        params: { artifactId: site.id },
+      }),
+      [200],
+    );
+    expect(visibility.body.visibility).toBe("public");
+    expect(w.unfurledUrls()).toContain(`${CHANNEL}/${MESSAGE_TS}/${site.url}`);
+  });
+
+  it("slack-artifact-channel-sharing-024 shares a website through its App artifact reference", async () => {
+    const w = await workspace();
+    const site = await publishSite(w.owner, w.stored, "private", "artifact");
+    const member = await w.workspaceEmailMember();
+    await w.postLink(site.url);
+    await w.click("artifact_share_channel");
+    await expect(w.shareEmails(site)).resolves.toStrictEqual([member.email]);
+  });
+
+  it("slack-artifact-channel-sharing-025 skips already-granted workspace members and ignores bots and deleted members", async () => {
+    const w = await workspace();
+    const file = await uploadFile(w.owner, "private");
+    const invited = await w.workspaceEmailMember();
+    w.profileMember("bot");
+    w.profileMember("deleted");
+    await accept(
+      client(w.owner)(artifactAccessContract).addShare({
+        headers,
+        params: { artifactId: file.id },
+        body: { email: invited.email },
+      }),
+      [200],
+    );
+    await flushWaitUntilForTest();
+    context.mocks.resend.send.mockClear();
+    await w.postLink(file.url);
+    expect(context.mocks.slack.chat.postEphemeral).not.toHaveBeenCalled();
+    expect(context.mocks.resend.send).not.toHaveBeenCalled();
+  });
+
+  it("slack-artifact-channel-sharing-027 rechecks workspace membership before applying an old sharing button", async () => {
+    const w = await workspace();
+    const file = await uploadFile(w.owner, "private");
+    w.emailMember();
+    await w.postLink(file.url);
+    await store.set(
+      deleteOrgMembership$,
+      { orgId: w.owner.orgId, userId: w.owner.userId },
+      context.signal,
+    );
+    await w.click("artifact_share_channel");
+    expect(w.callbacks.at(-1)).toMatch(
       /no longer available|could not be verified/u,
     );
-    directory(f.directoryUsers);
-    await expect(shares(f)).resolves.toStrictEqual([]);
-  },
-);
-
-test("rejects a forged callback destination", async () => {
-  const f = await fixture();
-  addWorkspaceMember(f);
-  await postLink(f);
-  const response = await click(f, "artifact_share_channel", {
-    response_url: "https://example.com/actions/steal",
+    await expect(w.shareEmails(file)).resolves.toStrictEqual([]);
   });
-  expect(response.body).toMatchObject({ response_type: "ephemeral" });
-  await expect(shares(f)).resolves.toStrictEqual([]);
-});
 
-test("can make a file public and refresh its original preview", async () => {
-  const f = await fixture();
-  addWorkspaceMember(f);
-  await postLink(f);
-  await click(f, "artifact_share_public");
-  await expect(visibility(f)).resolves.toBe("public");
-  expect(context.mocks.slack.chat.unfurl).toHaveBeenCalledWith(
-    expect.objectContaining({
-      channel: f.channel,
-      unfurls: expect.objectContaining({
-        [f.resource.url]: expect.any(Object),
-      }),
-    }),
-  );
-});
+  it("slack-artifact-channel-sharing-031 can make a file public and refresh its original preview", async () => {
+    const w = await workspace();
+    const file = await uploadFile(w.owner, "private");
+    w.emailMember();
+    await w.postLink(file.url);
+    await w.click("artifact_share_public");
+    await expect(w.fileAudience(file)).resolves.toBe("public");
+    expect(w.unfurledUrls()).toContain(`${CHANNEL}/${MESSAGE_TS}/${file.url}`);
+  });
 
-test("an owner can change general visibility when channel membership cannot be read", async () => {
-  const f = await fixture();
-  addWorkspaceMember(f);
-  await postLink(f);
-  context.mocks.slack.conversations.members.mockRejectedValue(
-    new Error("Channel membership is unavailable"),
-  );
-  await click(f, "artifact_share_public");
-  await expect(visibility(f)).resolves.toBe("public");
-});
+  it("slack-artifact-channel-sharing-001 (1/3) privately prompts the file owner before any shares exist", async () => {
+    const w = await workspace();
+    const file = await uploadFile(w.owner, "private");
+    await w.connectedMember();
+    w.emailMember();
 
-test.each(["file", "site"] as const)(
-  "adds a restricted %s preview after granting access to every connected member",
-  async (kind) => {
-    const f = await fixture({ kind, image: kind === "file" });
-    const viewer = await connectedMember(f);
-    await postLink(f);
-    expect(context.mocks.slack.chat.unfurl).not.toHaveBeenCalled();
-    await click(f);
-    expect(context.mocks.slack.chat.unfurl).toHaveBeenCalledTimes(1);
-    const unfurl = object({
-      channel: string(),
-      ts: string(),
-      unfurls: object({}).catchall(object({ blocks: array(zUnknown()) })),
-    }).parse(context.mocks.slack.chat.unfurl.mock.calls[0]?.[0]);
-    expect(unfurl.channel).toBe(f.channel);
-    expect(unfurl.ts).toBe("1795586400.000001");
-    expect(unfurl.unfurls[f.resource.url]?.blocks).toContainEqual(
-      expect.objectContaining({ type: "image" }),
+    await w.postLink(file.url);
+
+    expect(w.promptRecipients()).toStrictEqual([w.slackUserId]);
+    expect(w.promptActions()).toMatchObject({
+      channel: CHANNEL,
+      user: w.slackUserId,
+      actionIds: [...ALL_ACTIONS],
+    });
+    await expect(w.shareEmails(file)).resolves.toStrictEqual([]);
+  });
+
+  it("slack-artifact-channel-sharing-001 (2/3) shares the file only with members present at click time", async () => {
+    const w = await workspace();
+    const file = await uploadFile(w.owner, "private");
+    const viewer = await w.connectedMember();
+    const departed = await w.workspaceEmailMember();
+    await w.postLink(file.url);
+
+    w.leave(departed.id);
+    const joined = await w.workspaceEmailMember();
+    await w.click("artifact_share_channel");
+
+    await expect(w.shareEmails(file)).resolves.toStrictEqual(
+      [viewer.email, joined.email].sort(),
     );
-    if (kind === "file") {
-      const anonymous = await accept(
-        app(f.owner)(artifactOgContract).metadata({
-          query: {
-            kind: "reference",
-            id: new URL(f.resource.url).pathname.slice("/artifacts/".length),
-          },
-        }),
-        [200],
-      );
-      expect(anonymous.body.available).toBeFalsy();
-    }
-    await expect(visibility(f)).resolves.toBe("private");
-    expect(
-      (await shares(f)).map((share) => {
-        return share.email;
+    const resolved = await accept(
+      client(viewer)(artifactReferencesContract).resolve({
+        headers,
+        params: { reference: file.reference ?? "" },
+        query: {},
       }),
-    ).toStrictEqual([viewer.user.email]);
+      [200],
+    );
+    expect(resolved.body.target).toStrictEqual({ kind: "file", id: file.id });
+    expect(context.mocks.resend.send).toHaveBeenCalledTimes(2);
+    const summary = w.callbacks.at(-1) ?? "";
+    expect(summary).toContain("2 current channel members");
+    expect(summary).not.toContain(departed.email);
+  });
+
+  it("slack-artifact-channel-sharing-001 (3/3) does not unfurl or re-prompt missing access when reposting the shared file", async () => {
+    const w = await workspace();
+    const file = await uploadFile(w.owner, "private");
+    await w.connectedMember();
+    const departed = w.emailMember();
+    await w.postLink(file.url);
+    w.leave(departed.id);
+    w.emailMember();
+    await w.click("artifact_share_channel");
+
+    // Since #50984 the joined member's unclaimed invitation keeps the
+    // owner prompt open as unconfirmed access instead of staying silent.
     context.mocks.slack.chat.unfurl.mockClear();
     context.mocks.slack.chat.postEphemeral.mockClear();
-    await postLink(f);
-    expect(context.mocks.slack.chat.unfurl).toHaveBeenCalledTimes(1);
-    expect(context.mocks.slack.chat.postEphemeral).not.toHaveBeenCalled();
-  },
-);
+    await w.postLink(file.url);
+    expect(context.mocks.slack.chat.unfurl).not.toHaveBeenCalled();
+    expect(w.promptText()).toContain(
+      "Access could not be confirmed for 1 member.",
+    );
+    expect(w.promptText()).not.toContain("need access");
+  });
 
-test("refreshes the preview after making a file workspace-visible when every member belongs to that workspace", async () => {
-  const f = await fixture();
-  await connectedMember(f, true);
-  await postLink(f);
-  await click(f, "artifact_share_organization");
-  expect(context.mocks.slack.chat.unfurl).toHaveBeenCalledTimes(1);
-  await expect(shares(f)).resolves.toStrictEqual([]);
-});
+  it("slack-artifact-channel-sharing-002 (1/3) privately prompts the site owner before any shares exist", async () => {
+    const w = await workspace();
+    const site = await publishSite(w.owner, w.stored, "private");
+    await w.connectedMember();
+    w.emailMember();
 
-test("retains a private file without a preview while an external email-only member remains unresolved", async () => {
-  const f = await fixture({ image: true });
-  addMember(f, `pending-${randomUUID()}@example.com`);
-  await postLink(f);
-  await click(f);
-  await expect(shares(f)).resolves.toStrictEqual([]);
-  expect(context.mocks.slack.chat.unfurl).not.toHaveBeenCalled();
-  context.mocks.slack.chat.postEphemeral.mockClear();
-  await postLink(f);
-  expect(context.mocks.slack.chat.postEphemeral).toHaveBeenCalledTimes(1);
-  expect(context.mocks.slack.chat.unfurl).not.toHaveBeenCalled();
-});
+    await w.postLink(site.url);
 
-test("checks newly joined members again before publishing a post-share preview", async () => {
-  const f = await fixture();
-  await connectedMember(f);
-  await postLink(f);
-  const before = [...f.members];
-  addMember(f, `joined-${randomUUID()}@example.com`);
-  context.mocks.slack.conversations.members
-    .mockResolvedValueOnce({ ok: true, members: before })
-    .mockResolvedValueOnce({ ok: true, members: [...f.members] });
-  await click(f);
-  await expect(shares(f)).resolves.toHaveLength(1);
-  expect(context.mocks.slack.chat.unfurl).not.toHaveBeenCalled();
-});
+    expect(w.promptRecipients()).toStrictEqual([w.slackUserId]);
+    expect(w.promptActions()).toMatchObject({
+      channel: CHANNEL,
+      user: w.slackUserId,
+      actionIds: [...ALL_ACTIONS],
+    });
+    await expect(w.shareEmails(site)).resolves.toStrictEqual([]);
+  });
 
-test("does not publish a workspace preview when a member's identity cannot be confirmed", async () => {
-  const f = await fixture({ audience: "organization", image: true });
-  await connectedMember(f, true);
-  context.mocks.slack.users.info.mockRejectedValue(
-    new Error("Slack profile unavailable"),
-  );
-  await postLink(f);
-  expect(context.mocks.slack.chat.postEphemeral).toHaveBeenCalledTimes(1);
-  expect(context.mocks.slack.chat.unfurl).not.toHaveBeenCalled();
+  it("slack-artifact-channel-sharing-002 (2/3) shares the site only with members present at click time", async () => {
+    const w = await workspace();
+    const site = await publishSite(w.owner, w.stored, "private");
+    const viewer = await w.connectedMember();
+    const departed = await w.workspaceEmailMember();
+    await w.postLink(site.url);
+
+    w.leave(departed.id);
+    const joined = await w.workspaceEmailMember();
+    await w.click("artifact_share_channel");
+
+    await expect(w.shareEmails(site)).resolves.toStrictEqual(
+      [viewer.email, joined.email].sort(),
+    );
+    expect(context.mocks.resend.send).toHaveBeenCalledTimes(2);
+    const summary = w.callbacks.at(-1) ?? "";
+    expect(summary).toContain("2 current channel members");
+    expect(summary).not.toContain(departed.email);
+  });
+
+  it("slack-artifact-channel-sharing-002 (3/3) does not unfurl or re-prompt missing access when reposting the shared site", async () => {
+    const w = await workspace();
+    const site = await publishSite(w.owner, w.stored, "private");
+    await w.connectedMember();
+    const departed = w.emailMember();
+    await w.postLink(site.url);
+    w.leave(departed.id);
+    w.emailMember();
+    await w.click("artifact_share_channel");
+
+    // Since #50984 the joined member's unclaimed invitation keeps the
+    // owner prompt open as unconfirmed access instead of staying silent.
+    context.mocks.slack.chat.unfurl.mockClear();
+    context.mocks.slack.chat.postEphemeral.mockClear();
+    await w.postLink(site.url);
+    expect(context.mocks.slack.chat.unfurl).not.toHaveBeenCalled();
+    expect(w.promptText()).toContain(
+      "Access could not be confirmed for 1 member.",
+    );
+    expect(w.promptText()).not.toContain("need access");
+  });
+
+  it("pf-128 adds a restricted file preview after granting access to every connected member", async () => {
+    const w = await workspace();
+    const file = await uploadFile(w.owner, "private");
+    const viewer = await w.connectedMember();
+    await w.postLink(file.url);
+    expect(context.mocks.slack.chat.unfurl).not.toHaveBeenCalled();
+
+    await w.click("artifact_share_channel");
+
+    await expect(w.shareEmails(file)).resolves.toStrictEqual([viewer.email]);
+    expect(w.unfurledUrls()).toContain(`${CHANNEL}/${MESSAGE_TS}/${file.url}`);
+  });
+
+  it("pf-130 refreshes the preview after making a file workspace-visible when every member belongs to that workspace", async () => {
+    const w = await workspace();
+    const file = await uploadFile(w.owner, "private");
+    await w.connectedMember(w.owner.orgId);
+    await w.postLink(file.url);
+    expect(context.mocks.slack.chat.unfurl).not.toHaveBeenCalled();
+
+    await w.click("artifact_share_organization");
+
+    await expect(w.fileAudience(file)).resolves.toBe("organization");
+    expect(w.unfurledUrls()).toContain(`${CHANNEL}/${MESSAGE_TS}/${file.url}`);
+  });
 });

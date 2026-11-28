@@ -1274,6 +1274,7 @@ export function createBddIntegrationApi(context: TestContext) {
     async postSlackEvent(
       teamId: string,
       event: Record<string, unknown>,
+      deliveryHeaders: Readonly<Record<string, string>> = {},
     ): Promise<unknown> {
       const body = JSON.stringify({
         type: "event_callback",
@@ -1282,12 +1283,10 @@ export function createBddIntegrationApi(context: TestContext) {
         event,
       });
       const response = await accept(
-        requestRawSlackIngress(
-          context,
-          "/api/webhooks/slack/events",
-          body,
-          signedSlackHeaders(body),
-        ),
+        requestRawSlackIngress(context, "/api/webhooks/slack/events", body, {
+          ...signedSlackHeaders(body),
+          ...deliveryHeaders,
+        }),
         [200],
       );
       return response.body;

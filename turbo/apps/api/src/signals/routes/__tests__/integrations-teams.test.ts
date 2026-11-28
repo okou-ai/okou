@@ -1,634 +1,338 @@
-import { connectTeamsAccountForTest } from "./helpers/teams-account";
-import { createHash, randomUUID } from "node:crypto";
-
+import { GetObjectCommand, HeadObjectCommand } from "@aws-sdk/client-s3";
+import { Readable } from "node:stream";
 import {
-  integrationsTeamsMessageContract,
-  integrationsTeamsUploadInitContract,
   integrationsTeamsUploadCompleteContract,
+  integrationsTeamsUploadInitContract,
+  type TeamsUploadCompleteBody,
+  type TeamsUploadInitBody,
 } from "@okouai/api-contracts/contracts/integrations";
 import { webFilesContract } from "@okouai/api-contracts/contracts/web-files";
 import { createStore } from "ccstate";
-import { HttpResponse, http } from "msw";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { http, HttpResponse } from "msw";
+import { createHash, randomUUID } from "node:crypto";
+import { describe, expect, it } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { mockEnv } from "../../../lib/env";
+import { mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { server } from "../../../mocks/server";
-import { integrationsTeamsMessageRoutes } from "../integrations-teams-message";
 import { integrationsTeamsUploadCompleteRoutes } from "../integrations-teams-upload-complete";
 import { integrationsTeamsUploadInitRoutes } from "../integrations-teams-upload-init";
 import { webFileUrlRoutes } from "../web-file-url";
-import { installSharedThreadStorage } from "./helpers/shared-thread-storage";
-import { createRunExecutionCredentials } from "./helpers/run-execution-credentials";
 import { seedOrgMembership$ } from "./helpers/org-membership";
 import { createRouteMocks } from "./helpers/route-test";
+import { connectTeamsAccountForTest } from "./helpers/teams-account";
 import {
   installTeamsForTest,
-  removeTeamsForTest,
   setupTeamsConnectTestEnv,
   teamsConnectFixture,
-  teamsFixtureExternalId,
   type TeamsConnectFixture,
 } from "./helpers/teams-connect";
 
 const context = testContext();
-const credentials = createRunExecutionCredentials(context);
-const store = createStore();
-const mocks = createRouteMocks(context);
-const SERVICE_URL = "https://smba.trafficmanager.net/amer/";
-const TEAMS_APP_TENANT_ID = "11111111-1111-1111-1111-111111111111";
-const BOT_FRAMEWORK_TOKEN_URL = `https://login.microsoftonline.com/${TEAMS_APP_TENANT_ID}/oauth2/v2.0/token`;
+const memberships = createStore();
 
-interface CapturedTeamsActivity {
-  conversationBody?: Record<string, unknown>;
-  conversationId?: string;
-  body?: Record<string, unknown>;
-  authorization?: string | null;
+const TEAMS_TOKEN_URL = "https://teams-auth.test/token";
+const BOT_TOKEN = "teams-bot-token";
+const headers = Object.freeze({ authorization: "Bearer clerk-session" });
+
+interface TeamsDelivery {
+  readonly path: string;
+  readonly authorization: string | null;
+  readonly body: unknown;
 }
 
-function teamsFixture(): TeamsConnectFixture {
-  return teamsConnectFixture({
-    orgId: `org_teams_cli_${randomUUID().slice(0, 8)}`,
-    userId: `user_teams_cli_${randomUUID().slice(0, 8)}`,
-    serviceUrl: SERVICE_URL,
+/** Bot Framework for the installation: records every bot POST. */
+function serveBotFramework(
+  fixture: TeamsConnectFixture,
+  activityOutcome: "delivered" | "network-error" = "delivered",
+) {
+  const deliveries: TeamsDelivery[] = [];
+  const servicePath = new URL(fixture.serviceUrl).pathname.replace(/\/+$/u, "");
+  async function record(request: Request): Promise<unknown> {
+    const body: unknown = await request.json();
+    deliveries.push({
+      path: new URL(request.url).pathname.slice(servicePath.length),
+      authorization: request.headers.get("authorization"),
+      body,
+    });
+    return body;
+  }
+  server.use(
+    http.post(TEAMS_TOKEN_URL, () => {
+      return HttpResponse.json({
+        access_token: BOT_TOKEN,
+        token_type: "Bearer",
+        expires_in: 3600,
+      });
+    }),
+    http.post(`${fixture.serviceUrl}v3/conversations`, async ({ request }) => {
+      const body = await record(request);
+      const members =
+        typeof body === "object" && body !== null && "members" in body
+          ? body.members
+          : undefined;
+      const first = Array.isArray(members) ? members[0] : undefined;
+      const memberId =
+        typeof first === "object" &&
+        first !== null &&
+        "id" in first &&
+        typeof first.id === "string"
+          ? first.id
+          : "unknown";
+      return HttpResponse.json({ id: `a:personal-${memberId}` });
+    }),
+    http.post(
+      `${fixture.serviceUrl}v3/conversations/:conversationId/activities/:activityId?`,
+      async ({ request }) => {
+        await record(request);
+        if (activityOutcome === "network-error") {
+          return HttpResponse.error();
+        }
+        return HttpResponse.json({ id: "delivered-activity" });
+      },
+    ),
+  );
+  return deliveries;
+}
+
+/** The org installs the bot through Teams; Ada connects through OAuth. */
+async function installedTeamsMember(
+  activityOutcome: "delivered" | "network-error" = "delivered",
+) {
+  const fixture = teamsConnectFixture();
+  setupTeamsConnectTestEnv();
+  mockEnv("MICROSOFT_TEAMS_BOT_APP_PASSWORD", "teams-app-password");
+  mockOptionalEnv("MICROSOFT_TEAMS_BOT_TOKEN_URL", TEAMS_TOKEN_URL);
+  serveBotFramework(fixture);
+  await installTeamsForTest(context.signal, fixture);
+  await connectTeamsAccountForTest(context, fixture, {
+    displayName: "Ada Lovelace",
+  });
+  const deliveries = serveBotFramework(fixture, activityOutcome);
+  createRouteMocks(context).clerk.session(fixture.userId, fixture.orgId);
+  return { fixture, deliveries };
+}
+
+/** Private artifact storage accepts the bytes and reports what it stored. */
+function acceptUploadStorage(contentType: string) {
+  const stored: { bytes?: Buffer } = {};
+  server.use(
+    http.put("https://r2.example.com/upload", async ({ request }) => {
+      stored.bytes = Buffer.from(await request.arrayBuffer());
+      return new HttpResponse(null, { status: 200 });
+    }),
+  );
+  context.mocks.s3.send.mockImplementation((command: unknown) => {
+    if (command instanceof HeadObjectCommand && stored.bytes !== undefined) {
+      return Promise.resolve({
+        ContentLength: stored.bytes.byteLength,
+        ContentType: contentType,
+      });
+    }
+    if (
+      command instanceof GetObjectCommand &&
+      !command.input.Key?.startsWith("private-artifacts/")
+    ) {
+      return Promise.reject(
+        Object.assign(new Error("Missing object"), {
+          name: "NoSuchKey",
+        }),
+      );
+    }
+    if (command instanceof GetObjectCommand && stored.bytes !== undefined) {
+      return Promise.resolve({
+        ContentLength: stored.bytes.byteLength,
+        ContentType: contentType,
+        Body: Readable.from([stored.bytes]),
+      });
+    }
+    return Promise.resolve({ ETag: '"etag-1"' });
   });
 }
 
-function mockOutgoingTeams(
-  fixture: TeamsConnectFixture,
-  captured: CapturedTeamsActivity,
-  recipientId = fixture.teamsUserId,
-): {
-  readonly activityId: string;
-  readonly dmConversationId: string;
-} {
-  const activityId = teamsFixtureExternalId(fixture, "teams-activity");
-  const dmConversationId = `a:${teamsFixtureExternalId(
-    fixture,
-    "teams-dm-conversation",
-  )}`;
-  server.use(
-    http.get(
-      "https://smba.trafficmanager.net/amer/v3/conversations/:conversationId/members/:memberId",
-      ({ params }) => {
-        return String(params.memberId) === recipientId
-          ? HttpResponse.json({
-              id: recipientId,
-              tenantId: fixture.teamsTenantId,
-              aadObjectId: fixture.teamsAadObjectId,
-            })
-          : new HttpResponse(null, { status: 404 });
-      },
-    ),
-    http.post(BOT_FRAMEWORK_TOKEN_URL, async ({ request }) => {
-      const form = await request.formData();
-      expect(form.get("scope")).toBe("https://api.botframework.com/.default");
-      return HttpResponse.json({ access_token: "bot-framework-token" });
-    }),
-    http.post(
-      "https://smba.trafficmanager.net/amer/v3/conversations",
-      async ({ request }) => {
-        captured.authorization = request.headers.get("authorization");
-        captured.conversationBody = (await request.json()) as Record<
-          string,
-          unknown
-        >;
-        return HttpResponse.json({ id: dmConversationId });
-      },
-    ),
-    http.post(
-      "https://smba.trafficmanager.net/amer/v3/conversations/:conversationId/activities/:activityId",
-      async ({ params, request }) => {
-        captured.authorization = request.headers.get("authorization");
-        captured.conversationId =
-          typeof params.conversationId === "string"
-            ? params.conversationId
-            : undefined;
-        captured.body = (await request.json()) as Record<string, unknown>;
-        return HttpResponse.json({ id: activityId });
-      },
-    ),
-    http.post(
-      "https://smba.trafficmanager.net/amer/v3/conversations/:conversationId/activities",
-      async ({ params, request }) => {
-        captured.authorization = request.headers.get("authorization");
-        captured.conversationId =
-          typeof params.conversationId === "string"
-            ? params.conversationId
-            : undefined;
-        captured.body = (await request.json()) as Record<string, unknown>;
-        return HttpResponse.json({ id: activityId });
-      },
-    ),
-  );
-
-  return { activityId, dmConversationId };
+function checksum(bytes: Uint8Array): string {
+  return createHash("sha256").update(bytes).digest("hex");
 }
 
-async function seedConnectedTeams(fixture: TeamsConnectFixture): Promise<void> {
-  await store.set(
-    seedOrgMembership$,
-    { orgId: fixture.orgId, userId: fixture.userId, role: "admin" },
-    context.signal,
-  );
-  await installTeamsForTest(context.signal, fixture);
-  mocks.clerk.session(fixture.userId, fixture.orgId, "org:admin");
-
-  await connectTeamsAccountForTest(context, fixture);
-}
-
-async function uploadTeamsFixtureFile(target: {
-  conversationId?: string;
-  user?: string;
-  activityId?: string;
-}) {
-  installSharedThreadStorage(context);
-  const bytes = Buffer.alloc(1234, "x");
-  const initialized = await accept(
+async function initUpload<Status extends 200 | 409>(
+  body: TeamsUploadInitBody,
+  statuses: readonly Status[],
+) {
+  return await accept(
     setupApp({ context, routes: integrationsTeamsUploadInitRoutes })(
       integrationsTeamsUploadInitContract,
-    ).init({
-      headers: { authorization: "Bearer clerk-session" },
-      body: {
-        filename: "report.pdf",
-        contentType: "application/pdf",
-        length: bytes.length,
-        checksumSha256: createHash("sha256").update(bytes).digest("hex"),
-        ...target,
-      },
-    }),
-    [200],
+    ).init({ headers, body }),
+    statuses,
   );
-  const uploaded = await fetch(initialized.body.uploadUrl, {
+}
+
+async function initUploaded(body: TeamsUploadInitBody, bytes: Uint8Array) {
+  const init = await initUpload(body, [200]);
+  const uploaded = await fetch(init.body.uploadUrl, {
     method: "PUT",
-    headers: {
-      "Content-Type": "application/pdf",
-      ...initialized.body.uploadHeaders,
-    },
+    headers: init.body.uploadHeaders,
     body: bytes,
   });
   expect(uploaded.status).toBe(200);
-  return initialized.body;
+  return init.body;
+}
+
+async function completeUpload<Status extends 200 | 404 | 409>(
+  body: TeamsUploadCompleteBody,
+  statuses: readonly Status[],
+) {
+  return await accept(
+    setupApp({ context, routes: integrationsTeamsUploadCompleteRoutes })(
+      integrationsTeamsUploadCompleteContract,
+    ).complete({ headers, body }),
+    statuses,
+  );
+}
+
+async function fileUrl<Status extends 200 | 404>(
+  fileId: string,
+  statuses: readonly Status[],
+) {
+  return await accept(
+    setupApp({ context, routes: webFileUrlRoutes })(webFilesContract).fileUrl({
+      headers,
+      query: { file_id: fileId },
+    }),
+    statuses,
+  );
+}
+
+async function signInAnotherMember(orgId: string): Promise<void> {
+  const userId = `user_${randomUUID()}`;
+  await memberships.set(
+    seedOrgMembership$,
+    { orgId, userId, role: "admin" },
+    context.signal,
+  );
+  createRouteMocks(context).clerk.session(userId, orgId);
+}
+
+function personalConversationId(fixture: TeamsConnectFixture): string {
+  return `a:personal-${fixture.teamsUserId}`;
 }
 
 describe("Microsoft Teams integration CLI routes", () => {
-  const fixtures: TeamsConnectFixture[] = [];
+  it("integrations-teams-016 delivers an uploaded file to the caller's Teams DM", async () => {
+    const { fixture, deliveries } = await installedTeamsMember();
+    acceptUploadStorage("application/pdf");
+    const bytes = new Uint8Array(1234);
+    const init = await initUploaded(
+      {
+        checksumSha256: checksum(bytes),
+        user: "me",
+        filename: "report.pdf",
+        contentType: "application/pdf",
+        length: bytes.byteLength,
+      },
+      bytes,
+    );
 
-  beforeEach(() => {
-    setupTeamsConnectTestEnv("https://app.okou.test");
-    mockEnv("MICROSOFT_TEAMS_BOT_APP_PASSWORD", "bot-password");
-  });
-
-  afterEach(async () => {
-    while (fixtures.length > 0) {
-      const fixture = fixtures.pop();
-      if (fixture) {
-        await removeTeamsForTest(context.signal, fixture);
-      }
-    }
-  });
-
-  it("sends a Teams message through the installed bot", async () => {
-    const fixture = teamsFixture();
-    fixtures.push(fixture);
-    await seedConnectedTeams(fixture);
-    const captured: CapturedTeamsActivity = {};
-    const outgoing = mockOutgoingTeams(fixture, captured);
-
-    const client = setupApp({
-      context,
-      routes: integrationsTeamsMessageRoutes,
-    })(integrationsTeamsMessageContract);
-    const response = await accept(
-      client.sendMessage({
-        body: {
-          conversationId: fixture.teamsConversationId,
-          activityId: fixture.teamsThreadId,
-          text: "Hello from Teams CLI",
-        },
-        headers: {
-          authorization: `Bearer ${await credentials.okouToken({ userId: fixture.userId, orgId: fixture.orgId })}`,
-        },
-      }),
+    const completed = await completeUpload(
+      {
+        uploadId: init.uploadId,
+        user: "me",
+        contentType: "application/pdf",
+      },
       [200],
     );
 
-    expect(response.body).toStrictEqual({
-      ok: true,
-      activityId: outgoing.activityId,
-      conversationId: fixture.teamsConversationId,
+    expect(completed.body).toMatchObject({
+      activityId: "delivered-activity",
+      conversationId: personalConversationId(fixture),
+      filename: "report.pdf",
     });
-    expect(captured.authorization).toBe("Bearer bot-framework-token");
-    expect(captured.body).toMatchObject({
-      type: "message",
-      text: "Hello from Teams CLI\n\nTriggered by <at>Ada Lovelace</at>",
-      entities: [
-        {
-          type: "mention",
-          text: "<at>Ada Lovelace</at>",
-          mentioned: { id: fixture.teamsAadObjectId, name: "Ada Lovelace" },
-        },
-      ],
-      textFormat: "markdown",
-      replyToId: fixture.teamsThreadId,
-      channelData: { tenant: { id: fixture.teamsTenantId } },
-    });
-  });
-
-  it.each(["missing member", "different tenant"])(
-    "denies Teams delivery for a %s",
-    async (scenario) => {
-      const fixture = teamsFixture();
-      fixtures.push(fixture);
-      await seedConnectedTeams(fixture);
-      const captured: CapturedTeamsActivity = {};
-      mockOutgoingTeams(fixture, captured);
-      server.use(
-        http.get(
-          "https://smba.trafficmanager.net/amer/v3/conversations/:conversationId/members/:memberId",
-          () => {
-            return scenario === "missing member"
-              ? new HttpResponse(null, { status: 404 })
-              : HttpResponse.json({
-                  id: fixture.teamsUserId,
-                  tenantId: "another-tenant",
-                });
-          },
-        ),
-      );
-      const response = await accept(
-        setupApp({ context, routes: integrationsTeamsMessageRoutes })(
-          integrationsTeamsMessageContract,
-        ).sendMessage({
-          headers: {
-            authorization: `Bearer ${await credentials.okouToken(fixture)}`,
-          },
-          body: {
-            conversationId: fixture.teamsConversationId,
-            text: "blocked",
-          },
-        }),
-        [404],
-      );
-      expect(response.body.error.code).toBe("NOT_FOUND");
-      expect(captured.body).toBeUndefined();
-    },
-  );
-
-  it.each(["me", "29:other-recipient"])(
-    "delivers to Teams recipient %s: Adaptive Card",
-    async (target) => {
-      const fixture = teamsFixture();
-      fixtures.push(fixture);
-      await seedConnectedTeams(fixture);
-      const captured: CapturedTeamsActivity = {};
-      const recipientId = target === "me" ? fixture.teamsUserId : target;
-      const outgoing = mockOutgoingTeams(fixture, captured, recipientId);
-
-      const client = setupApp({
-        context,
-        routes: integrationsTeamsMessageRoutes,
-      })(integrationsTeamsMessageContract);
-      const response = await accept(
-        client.sendMessage({
-          body: {
-            user: target,
-            text: "Pick a workflow",
-            card: {
-              type: "AdaptiveCard",
-              version: "1.4",
-              msteams: { width: "Full" },
-              body: [
-                {
-                  type: "TextBlock",
-                  text: "Pick a workflow",
-                  wrap: true,
-                },
-              ],
-            },
-          },
-          headers: {
-            authorization: `Bearer ${await credentials.okouToken({ userId: fixture.userId, orgId: fixture.orgId })}`,
-          },
-        }),
-        [200],
-      );
-
-      expect(response.body).toStrictEqual({
-        ok: true,
-        activityId: outgoing.activityId,
-        conversationId: outgoing.dmConversationId,
-      });
-      expect(captured.conversationBody).toMatchObject({
-        bot: { id: fixture.teamsBotId, name: "Nova" },
-        members: [
-          {
-            id: recipientId,
-            ...(target === "me" ? { name: "Ada Lovelace" } : {}),
-          },
-        ],
+    expect(deliveries).toHaveLength(2);
+    expect(deliveries[0]).toMatchObject({
+      path: "/v3/conversations",
+      body: {
+        bot: { name: "Nova" },
+        members: [{ id: fixture.teamsUserId, name: "Ada Lovelace" }],
         isGroup: false,
         channelData: { tenant: { id: fixture.teamsTenantId } },
-      });
-      expect(captured.conversationId).toBe(outgoing.dmConversationId);
-      expect(captured.body).toMatchObject({
-        type: "message",
-        summary: "Pick a workflow\n\nTriggered by <at>Ada Lovelace</at>",
-        attachments: [
-          {
-            contentType: "application/vnd.microsoft.card.adaptive",
-            content: {
-              type: "AdaptiveCard",
-              version: "1.4",
-              body: [
-                { type: "TextBlock", text: "Pick a workflow", wrap: true },
-                {
-                  type: "TextBlock",
-                  text: "Triggered by <at>Ada Lovelace</at>",
-                  size: "Small",
-                  isSubtle: true,
-                  wrap: true,
-                  separator: true,
-                },
-              ],
-              msteams: {
-                width: "Full",
-                entities: [
-                  {
-                    type: "mention",
-                    text: "<at>Ada Lovelace</at>",
-                    mentioned: {
-                      id: fixture.teamsAadObjectId,
-                      name: "Ada Lovelace",
-                    },
-                  },
-                ],
-              },
-            },
-          },
-        ],
-        channelData: { tenant: { id: fixture.teamsTenantId } },
-      });
-    },
-  );
-
-  it.each(
-    ["delivered", "failed"].flatMap((outcome) => {
-      return ["conversation", "direct DM", "me", "29:other-recipient"].map(
-        (target) => {
-          return {
-            outcome,
-            target,
-          };
-        },
-      );
-    }),
-  )(
-    "delivers a fire-and-forget Teams $target upload ($outcome) and enforces ownership",
-    async ({ outcome, target }) => {
-      const fixture = teamsFixture();
-      fixtures.push(fixture);
-      await seedConnectedTeams(fixture);
-      const captured: CapturedTeamsActivity = {};
-      const outgoing = mockOutgoingTeams(
-        fixture,
-        captured,
-        target === "29:other-recipient" ? target : fixture.teamsUserId,
-      );
-      installSharedThreadStorage(context);
-      let sends = 0;
-      server.use(
-        http.post(
-          `${SERVICE_URL}v3/conversations/:conversationId/activities`,
-          async ({ request, params }) => {
-            sends++;
-            captured.conversationId = String(params.conversationId);
-            captured.body = (await request.json()) as Record<string, unknown>;
-            return outcome === "failed"
-              ? HttpResponse.error()
-              : HttpResponse.json({ id: outgoing.activityId });
-          },
-        ),
-      );
-      const client = setupApp({
-        context,
-        routes: [
-          ...integrationsTeamsUploadInitRoutes,
-          ...integrationsTeamsUploadCompleteRoutes,
-        ],
-      });
-      const headers = { authorization: "Bearer clerk-session" };
-      const bytes = Buffer.from("Account-owned Teams report");
-      const destination =
-        target === "conversation"
-          ? { conversationId: fixture.teamsConversationId }
-          : target === "direct DM"
-            ? { conversationId: outgoing.dmConversationId }
-            : { user: target };
-      const prepared = await accept(
-        client(integrationsTeamsUploadInitContract).init({
-          headers,
-          body: {
-            filename: "report.txt",
-            contentType: "text/plain",
-            length: bytes.length,
-            checksumSha256: createHash("sha256").update(bytes).digest("hex"),
-            ...destination,
-          },
-        }),
-        [200],
-      );
-      const uploaded = await fetch(prepared.body.uploadUrl, {
-        method: "PUT",
-        headers: {
-          "Content-Type": "text/plain",
-          ...prepared.body.uploadHeaders,
-        },
-        body: bytes,
-      });
-      expect(uploaded.status).toBe(200);
-      const completion = {
-        uploadId: prepared.body.uploadId,
-        ...destination,
-        text: "Account report",
-      };
-      const response = await client(
-        integrationsTeamsUploadCompleteContract,
-      ).complete({
-        headers,
-        body: completion,
-      });
-      expect(response.status).toBe(outcome === "delivered" ? 200 : 502);
-      expect(sends).toBe(1);
-      expect(captured.conversationId).toBe(
-        target === "conversation"
-          ? fixture.teamsConversationId
-          : outgoing.dmConversationId,
-      );
-      expect(captured.body?.text).toContain("Account report");
-      mocks.clerk.session(`user_other_${randomUUID()}`, fixture.orgId);
-      const foreignResponse = await client(
-        integrationsTeamsUploadCompleteContract,
-      ).complete({
-        headers,
-        body: completion,
-      });
-      expect(foreignResponse.status).toBe(404);
-      expect(sends).toBe(1);
-    },
-  );
-
-  it("requires an organization for a Teams upload", async () => {
-    mocks.clerk.session(`user_${randomUUID()}`, null);
-    const response = await setupApp({
-      context,
-      routes: integrationsTeamsUploadInitRoutes,
-    })(integrationsTeamsUploadInitContract).init({
-      headers: { authorization: "Bearer clerk-session" },
-      body: {
-        filename: "report.txt",
-        contentType: "text/plain",
-        length: 12,
-        checksumSha256: "a".repeat(64),
-        conversationId: "19:example",
       },
     });
-    expect(response.status).toBe(403);
+    expect(deliveries[1]).toMatchObject({
+      path: `/v3/conversations/${encodeURIComponent(personalConversationId(fixture))}/activities`,
+      body: {
+        attachments: [
+          {
+            contentType: "application/pdf",
+            name: "report.pdf",
+            contentUrl: expect.stringContaining(
+              `object=${encodeURIComponent("test-private-artifacts/")}`,
+            ),
+          },
+        ],
+      },
+    });
+    expect(deliveries[1]?.body).not.toHaveProperty("replyToId");
   });
 
-  it("sends an uploaded file URL as a Teams attachment", async () => {
-    const fixture = teamsFixture();
-    fixtures.push(fixture);
-    await seedConnectedTeams(fixture);
-    const captured: CapturedTeamsActivity = {};
-    const outgoing = mockOutgoingTeams(fixture, captured);
-
-    const prepared = await uploadTeamsFixtureFile({
+  it("integrations-teams-015 replies in the thread with an uploaded file and keeps the file URL in the organization", async () => {
+    const { fixture, deliveries } = await installedTeamsMember();
+    acceptUploadStorage("application/pdf");
+    const bytes = new Uint8Array(1234);
+    const target = {
       conversationId: fixture.teamsConversationId,
       activityId: fixture.teamsThreadId,
-    });
-    const client = setupApp({
-      context,
-      routes: integrationsTeamsUploadCompleteRoutes,
-    })(integrationsTeamsUploadCompleteContract);
-    const response = await accept(
-      client.complete({
-        body: {
-          uploadId: prepared.uploadId,
-          conversationId: fixture.teamsConversationId,
-          activityId: fixture.teamsThreadId,
-          contentType: "application/pdf",
-          text: "Daily report",
-        },
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [200],
+      text: "Daily report",
+    };
+    const init = await initUploaded(
+      {
+        checksumSha256: checksum(bytes),
+        ...target,
+        filename: "report.pdf",
+        contentType: "application/pdf",
+        length: bytes.byteLength,
+      },
+      bytes,
     );
 
-    expect(response.body).toMatchObject({
-      activityId: outgoing.activityId,
+    const completed = await completeUpload(
+      {
+        uploadId: init.uploadId,
+        contentType: "application/pdf",
+        ...target,
+      },
+      [200],
+    );
+    const owned = await fileUrl(init.uploadId, [200]);
+    await signInAnotherMember(`org_${randomUUID()}`);
+    await fileUrl(init.uploadId, [404]);
+
+    expect(completed.body).toStrictEqual({
+      activityId: "delivered-activity",
       conversationId: fixture.teamsConversationId,
       filename: "report.pdf",
       mimetype: "application/pdf",
       size: 1234,
+      url: new URL(
+        `/artifacts/${init.uploadId.replace(/-/gu, "")}.pdf`,
+        init.fileUrl,
+      ).href,
     });
-    expect(response.body.url).toBe(prepared.fileUrl);
-    const files = setupApp({ context, routes: webFileUrlRoutes })(
-      webFilesContract,
-    );
-    const preview = await accept(
-      files.fileUrl({
-        headers: { authorization: "Bearer clerk-session" },
-        query: { file_id: prepared.uploadId },
-      }),
-      [200],
-    );
-    expect(preview.body.publicUrl).toBeNull();
-    mocks.clerk.session(fixture.userId, "another-org");
-    await accept(
-      files.fileUrl({
-        headers: { authorization: "Bearer clerk-session" },
-        query: { file_id: prepared.uploadId },
-      }),
-      [404],
-    );
-    expect(captured.body?.text).toContain("Daily report");
-    expect(captured.body?.text).toContain("[report.pdf]");
-    expect(captured.body).toMatchObject({
-      type: "message",
-      replyToId: fixture.teamsThreadId,
-      attachments: [
-        {
-          contentType: "application/pdf",
-          contentUrl: expect.stringContaining(
-            "https://attachment-storage.example/test-private-artifacts/",
-          ),
-          name: "report.pdf",
-        },
-      ],
-    });
-  });
-
-  it.each(["me", "29:other-recipient"])(
-    "delivers to Teams recipient %s: file",
-    async (target) => {
-      const fixture = teamsFixture();
-      fixtures.push(fixture);
-      await seedConnectedTeams(fixture);
-      const captured: CapturedTeamsActivity = {};
-      const recipientId = target === "me" ? fixture.teamsUserId : target;
-      const outgoing = mockOutgoingTeams(fixture, captured, recipientId);
-
-      const prepared = await uploadTeamsFixtureFile({
-        user: target,
-      });
-      const client = setupApp({
-        context,
-        routes: integrationsTeamsUploadCompleteRoutes,
-      })(integrationsTeamsUploadCompleteContract);
-      const response = await accept(
-        client.complete({
-          body: {
-            uploadId: prepared.uploadId,
-            user: target,
-            contentType: "application/pdf",
-          },
-          headers: { authorization: "Bearer clerk-session" },
-        }),
-        [200],
-      );
-
-      expect(response.body).toMatchObject({
-        activityId: outgoing.activityId,
-        conversationId: outgoing.dmConversationId,
-        filename: "report.pdf",
-      });
-      expect(captured.conversationBody).toMatchObject({
-        bot: { id: fixture.teamsBotId, name: "Nova" },
-        members: [
-          {
-            id: recipientId,
-            ...(target === "me" ? { name: "Ada Lovelace" } : {}),
-          },
-        ],
-        isGroup: false,
-        channelData: { tenant: { id: fixture.teamsTenantId } },
-      });
-      expect(captured.conversationId).toBe(outgoing.dmConversationId);
-      expect(captured.body).toMatchObject({
-        type: "message",
+    expect(owned.body.publicUrl).toBeNull();
+    expect(deliveries).toHaveLength(1);
+    expect(deliveries[0]).toMatchObject({
+      body: {
+        replyToId: fixture.teamsThreadId,
+        text: expect.stringContaining(`Daily report\n\n[report.pdf](`),
         attachments: [
           {
             contentType: "application/pdf",
-            contentUrl: expect.stringContaining(
-              "https://attachment-storage.example/test-private-artifacts/",
-            ),
             name: "report.pdf",
+            contentUrl: expect.stringContaining(
+              `object=${encodeURIComponent("test-private-artifacts/")}`,
+            ),
           },
         ],
-      });
-      expect(captured.body).not.toHaveProperty("replyToId");
-    },
-  );
+      },
+    });
+  });
 });

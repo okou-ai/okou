@@ -2,42 +2,42 @@ import { randomUUID } from "node:crypto";
 
 import { cloudflareAccessContract } from "@okouai/api-contracts/contracts/cloudflare-access";
 import { sshConnectionsContract } from "@okouai/api-contracts/contracts/ssh-connections";
-import { sshCredentialsContract } from "@okouai/api-contracts/contracts/ssh-credentials";
-import { orgDeleteContract } from "@okouai/api-contracts/contracts/org-routes";
 import { webhookClerkContract } from "@okouai/api-contracts/contracts/webhooks";
-import { createStore, state } from "ccstate";
-import { beforeEach, expect, onTestFinished, test } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { mockOptionalEnv } from "../../../lib/env";
-import { flushWaitUntilForTest } from "../../context/wait-until";
-import { joinAll } from "../../utils";
 import { cloudflareAccessRoutes } from "../cloudflare-access";
 import { sshConnectionsRoutes } from "../ssh-connections";
-import { orgDeleteRoutes } from "../org-delete";
 import { webhooksClerkRoutes } from "../webhooks-clerk";
-import { seedOrgMembership$ } from "./helpers/org-membership";
 import { createRouteMocks } from "./helpers/route-test";
-import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
-import {
-  cleanupCloudflareAccessLifecycle,
-  type CloudflareAccessLifecycleOwner,
-} from "./helpers/cloudflare-access-lifecycle-cleanup";
+import { inlineSshKey } from "./helpers/ssh-credential";
+import { now } from "../../../lib/time";
 
 const context = testContext();
-const store = createStore();
-const mocks = createRouteMocks(context);
 const headers = Object.freeze({ authorization: "Bearer clerk-session" });
-const query = Object.freeze({ view: "scoped" as const });
-const owners$ = state<readonly CloudflareAccessLifecycleOwner[]>([]);
 
-beforeEach(() => {
-  store.set(owners$, []);
-  onTestFinished(async () => {
-    await cleanupCloudflareAccessLifecycle(context, store.get(owners$));
-  });
-});
+interface Actor {
+  readonly userId: string;
+  readonly orgId: string;
+  readonly role: "org:admin" | "org:member";
+}
+
+function workspace() {
+  const orgId = `org_${randomUUID()}`;
+  const actor = (role: Actor["role"]): Actor => {
+    return { userId: `user_${randomUUID()}`, orgId, role };
+  };
+  return { admin: actor("org:admin"), member: actor("org:member") };
+}
+
+function signIn(actor: Actor) {
+  createRouteMocks(context).clerk.session(
+    actor.userId,
+    actor.orgId,
+    actor.role,
+  );
+}
 
 const configs = () => {
   return setupApp({ context, routes: cloudflareAccessRoutes })(
@@ -50,558 +50,303 @@ const hosts = () => {
   );
 };
 
-async function owner(
-  orgId = `org_shared_access_${randomUUID()}`,
-  role: "admin" | "member" = "admin",
+async function createConfig(
+  actor: Actor,
+  scope: "personal" | "organization",
+  id: string = randomUUID(),
 ) {
-  const value = {
-    orgId,
-    userId: `user_shared_access_${randomUUID()}`,
-    membershipId: `orgmem_${randomUUID()}`,
-  };
-  store.set(owners$, [...store.get(owners$), value]);
-  await store.set(seedOrgMembership$, { ...value, role }, context.signal);
-  mocks.clerk.session(value.userId, value.orgId, `org:${role}`);
-  mocks.s3.listObjects([]);
-  return value;
-}
-
-async function createShared() {
-  return (
-    await accept(
-      configs().create({
-        headers,
-        query,
-        body: {
-          id: randomUUID(),
-          scope: "organization",
-          name: "Shared gateway",
-          credentials: { clientId: "client-id", clientSecret: "client-secret" },
-        },
-      }),
-      [201],
-    )
-  ).body;
-}
-
-async function createHost(configId: string) {
-  const created = (
-    await accept(
-      hosts().create({
-        headers,
-        body: {
-          id: randomUUID(),
-          displayName: "Shared protected host",
-          host: "ssh.example.com",
-          port: 443,
-          credential: {
-            create: {
-              name: "Login",
-              username: "deploy",
-              authentication: { method: "password", password: "password" },
-            },
-          },
-          transport: { type: "cloudflare_access", configId },
-        },
-      }),
-      [201],
-    )
-  ).body;
-  if (!("credentialId" in created)) {
-    throw new Error("Expected a credential-backed test host");
-  }
-  return created;
-}
-
-function forgetErasedOwners(
-  type: "user.deleted" | "organization.deleted",
-  id: string,
-) {
-  store.set(
-    owners$,
-    store.get(owners$).filter((owner) => {
-      return type === "user.deleted" ? owner.userId !== id : owner.orgId !== id;
-    }),
-  );
-}
-
-async function webhook(
-  type: "user.deleted" | "organization.deleted",
-  id: string,
-) {
-  mockOptionalEnv(
-    "CLERK_WEBHOOK_SIGNING_SECRET",
-    "synthetic-access-signing-secret",
-  );
-  const event = { type, data: { id } };
-  context.mocks.clerk.verifyWebhook.mockResolvedValueOnce(event);
-  await accept(
-    setupApp({ context, routes: webhooksClerkRoutes })(
-      webhookClerkContract,
-    ).post({
-      body: JSON.stringify(event),
-    }),
-    [200],
-  );
-  await flushWaitUntilForTest();
-  forgetErasedOwners(type, id);
-}
-
-test("creator deletion erases private Access while preserving shared Access and another member's SSH host", async () => {
-  useSecretKmsProbe();
-  const creator = await owner();
-  const shared = await createShared();
-  const personal = (
-    await accept(
-      configs().create({
-        headers,
-        query,
-        body: {
-          id: randomUUID(),
-          scope: "personal",
-          name: "Personal gateway",
-          credentials: {
-            clientId: "personal-id",
-            clientSecret: "personal-secret",
-          },
-        },
-      }),
-      [201],
-    )
-  ).body;
-  await createHost(personal.id);
-  const member = await owner(creator.orgId, "member");
-  const host = await createHost(shared.id);
-
-  await webhook("user.deleted", creator.userId);
-
-  mocks.clerk.session(member.userId, member.orgId, "org:member");
-  const recreated = await accept(
+  signIn(actor);
+  const created = await accept(
     configs().create({
       headers,
-      query,
+      query: { view: "scoped" },
       body: {
-        id: personal.id,
-        scope: "personal",
-        name: "Replacement after creator erasure",
-        credentials: { clientId: "peer-id", clientSecret: "peer-secret" },
+        id,
+        name: `Access ${id.slice(0, 8)}`,
+        scope,
+        credentials: {
+          clientId: `client-${randomUUID()}`,
+          clientSecret: `secret-${randomUUID()}`,
+        },
       },
     }),
     [201],
   );
-  expect(
-    (await accept(configs().list({ headers, query }), [200])).body.configs,
-  ).toStrictEqual([
-    { ...shared, sshHosts: [{ id: host.id, displayName: host.displayName }] },
-    recreated.body,
-  ]);
-  expect(
-    (await accept(hosts().list({ headers }), [200])).body.connections,
-  ).toContainEqual(expect.objectContaining({ id: host.id }));
-});
+  return created.body;
+}
 
-test.each(["Clerk webhook", "manual"] as const)(
-  "%s organization deletion erases remote identities while preserving another organization's resources",
-  async (entry) => {
-    useSecretKmsProbe();
-    const creator = await owner();
-    const shared = await createShared();
-    await owner(creator.orgId, "member");
-    const departedHost = await createHost(shared.id);
-    const survivor = await owner();
-    const ownConfig = await createShared();
-    const ownHost = await createHost(ownConfig.id);
-
-    if (entry === "manual") {
-      mocks.clerk.session(creator.userId, creator.orgId, "org:admin");
-      context.mocks.clerk.organizations.getOrganization.mockResolvedValue({
-        id: creator.orgId,
-      });
-      context.mocks.clerk.organizations.getOrganizationMembershipList.mockResolvedValue(
-        { data: [] },
-      );
-      context.mocks.clerk.organizations.deleteOrganization.mockResolvedValue(
-        {},
-      );
-      await accept(
-        setupApp({ context, routes: orgDeleteRoutes })(
-          orgDeleteContract,
-        ).delete({
-          headers,
-          body: { confirm: "confirm" },
-        }),
-        [200],
-      );
-      forgetErasedOwners("organization.deleted", creator.orgId);
-    } else {
-      await webhook("organization.deleted", creator.orgId);
-    }
-
-    mocks.clerk.session(survivor.userId, survivor.orgId, "org:admin");
-    const recreated = await accept(
-      configs().create({
-        headers,
-        query,
-        body: {
-          id: shared.id,
-          scope: "organization",
-          name: "Replacement after organization erasure",
-          credentials: {
-            clientId: "foreign-id",
-            clientSecret: "foreign-secret",
-          },
-        },
-      }),
-      [201],
-    );
-    expect(
-      (await accept(configs().list({ headers, query }), [200])).body.configs,
-    ).toStrictEqual([
-      {
-        ...ownConfig,
-        sshHosts: [{ id: ownHost.id, displayName: ownHost.displayName }],
-      },
-      recreated.body,
-    ]);
-    expect(
-      (await accept(hosts().list({ headers }), [200])).body.connections,
-    ).toStrictEqual([ownHost]);
-    const recreatedLogin = (
-      await accept(
-        setupApp({ context, routes: sshConnectionsRoutes })(
-          sshCredentialsContract,
-        ).create({
-          headers,
-          body: {
-            id: departedHost.credentialId,
-            name: "Replacement login after erasure",
-            username: "replacement",
-            authentication: {
-              method: "password",
-              password: "replacement-password",
-            },
-          },
-        }),
-        [201],
-      )
-    ).body;
-    const recreatedHost = (
-      await accept(
-        hosts().create({
-          headers,
-          body: {
-            id: departedHost.id,
-            displayName: "Replacement host after erasure",
-            host: "replacement.example.com",
-            port: 443,
-            credential: { id: recreatedLogin.id },
-            transport: {
-              type: "cloudflare_access",
-              configId: recreated.body.id,
-            },
-          },
-        }),
-        [201],
-      )
-    ).body;
-    expect(
-      (await accept(hosts().list({ headers }), [200])).body.connections,
-    ).toStrictEqual([ownHost, recreatedHost]);
-  },
-);
-
-test("admin conversion retains the config and hosts while other owners must rebind", async () => {
-  useSecretKmsProbe();
-  const admin = await owner();
-  const shared = await createShared();
-  const adminHost = await createHost(shared.id);
-  const member = await owner(admin.orgId, "member");
-  const memberHost = await createHost(shared.id);
-  const secondMember = await owner(admin.orgId, "member");
-  const secondMemberHost = await createHost(shared.id);
-
-  await expect(
-    accept(
-      configs().impactPreview({
-        headers,
-        params: { configId: shared.id },
-        query: { operation: "convert" },
-      }),
-      [403],
-    ),
-  ).resolves.toMatchObject({
-    body: { error: { code: "CLOUDFLARE_ACCESS_FORBIDDEN" } },
-  });
-
-  mocks.clerk.session(admin.userId, admin.orgId, "org:admin");
-  const preview = (
-    await accept(
-      configs().impactPreview({
-        headers,
-        params: { configId: shared.id },
-        query: { operation: "convert" },
-      }),
-      [200],
-    )
-  ).body;
-  expect(preview).toMatchObject({
-    expectedRevision: 1,
-    otherHostCount: 2,
-    impactSnapshot: expect.stringMatching(/^[a-f0-9]{64}$/u),
-  });
-  expect(preview.affectedOwners).toStrictEqual(
-    expect.arrayContaining([
-      expect.objectContaining({ userId: member.userId }),
-      expect.objectContaining({ userId: secondMember.userId }),
-    ]),
-  );
-  expect(JSON.stringify(preview)).not.toContain("hostCount");
-  expect(JSON.stringify(preview)).not.toContain(memberHost.id);
-  expect(JSON.stringify(preview)).not.toContain(secondMemberHost.id);
-  mocks.clerk.session(member.userId, member.orgId, "org:member");
-  await expect(
-    accept(
-      configs().convertToPersonal({
-        headers,
-        params: { configId: shared.id },
-        body: {
-          expectedRevision: preview.expectedRevision,
-          impactSnapshot: preview.impactSnapshot,
-        },
-      }),
-      [403],
-    ),
-  ).resolves.toMatchObject({
-    body: { error: { code: "CLOUDFLARE_ACCESS_FORBIDDEN" } },
-  });
-  mocks.clerk.session(admin.userId, admin.orgId, "org:admin");
-  const converted = await accept(
-    configs().convertToPersonal({
+async function bindHost(actor: Actor, configId: string) {
+  signIn(actor);
+  const id = randomUUID();
+  const created = await accept(
+    hosts().create({
       headers,
-      params: { configId: shared.id },
       body: {
-        expectedRevision: preview.expectedRevision,
-        impactSnapshot: preview.impactSnapshot,
+        id,
+        displayName: `Host ${id.slice(0, 8)}`,
+        host: `ssh-${id.slice(0, 8)}.example.test`,
+        port: 443,
+        credential: inlineSshKey("deploy", `key-${randomUUID()}`),
+        transport: { type: "cloudflare_access", configId },
+      },
+    }),
+    [201],
+  );
+  return created.body;
+}
+
+async function listHosts(actor: Actor) {
+  signIn(actor);
+  const listed = await accept(hosts().list({ headers }), [200]);
+  return listed.body.connections;
+}
+
+async function listConfigs(actor: Actor) {
+  signIn(actor);
+  const listed = await accept(
+    configs().list({ headers, query: { view: "scoped" } }),
+    [200],
+  );
+  return listed.body.configs;
+}
+
+async function deleteClerkUser(userId: string) {
+  context.mocks.clerk.verifyWebhook.mockResolvedValue({
+    type: "user.deleted",
+    data: { id: userId, deleted: true, object: "user" },
+  });
+  await accept(
+    setupApp({ context, routes: webhooksClerkRoutes })(
+      webhookClerkContract,
+    ).post({
+      body: JSON.stringify({ type: "user.deleted", data: { id: userId } }),
+      extraHeaders: {
+        "svix-id": `msg_${randomUUID()}`,
+        "svix-timestamp": String(Math.floor(now() / 1000)),
+        "svix-signature": "v1,signed-by-clerk",
       },
     }),
     [200],
   );
-  expect(converted.body).toMatchObject({
-    id: shared.id,
-    scope: "personal",
-    revision: 2,
-    generation: 2,
-    sshHosts: [{ id: adminHost.id }],
+}
+
+describe("Cloudflare Access lifecycle", () => {
+  it("cloudflare-access-lifecycle-005 conversion needs a fresh preview after a new binding or a rename", async () => {
+    const { admin, member } = workspace();
+    const config = await createConfig(admin, "organization");
+    signIn(admin);
+    const stale = await accept(
+      configs().impactPreview({
+        headers,
+        params: { configId: config.id },
+        query: { operation: "convert" },
+      }),
+      [200],
+    );
+    const memberHost = await bindHost(member, config.id);
+
+    signIn(admin);
+    const impactConflict = await accept(
+      configs().convertToPersonal({
+        headers,
+        params: { configId: config.id },
+        body: {
+          expectedRevision: stale.body.expectedRevision,
+          impactSnapshot: stale.body.impactSnapshot,
+        },
+      }),
+      [409],
+    );
+    expect(impactConflict.body.error.code).toBe(
+      "CLOUDFLARE_ACCESS_IMPACT_CONFLICT",
+    );
+    const fresh = await accept(
+      configs().impactPreview({
+        headers,
+        params: { configId: config.id },
+        query: { operation: "convert" },
+      }),
+      [200],
+    );
+    expect(fresh.body.otherHostCount).toBe(1);
+    expect(fresh.body.impactSnapshot).not.toBe(stale.body.impactSnapshot);
+    await accept(
+      configs().update({
+        headers,
+        params: { configId: config.id },
+        query: { view: "scoped" },
+        body: { expectedRevision: config.revision, name: "Renamed Access" },
+      }),
+      [200],
+    );
+    const revisionConflict = await accept(
+      configs().convertToPersonal({
+        headers,
+        params: { configId: config.id },
+        body: {
+          expectedRevision: fresh.body.expectedRevision,
+          impactSnapshot: fresh.body.impactSnapshot,
+        },
+      }),
+      [409],
+    );
+    expect(revisionConflict.body.error.code).toBe(
+      "CLOUDFLARE_ACCESS_REVISION_CONFLICT",
+    );
+
+    const [hostAfter] = await listHosts(member);
+    expect(hostAfter).toMatchObject({
+      id: memberHost.id,
+      transport: { type: "cloudflare_access", configId: config.id },
+    });
   });
-  expect(JSON.stringify(converted.body)).not.toContain("client-secret");
-  expect(
-    (await accept(hosts().list({ headers }), [200])).body.connections,
-  ).toContainEqual(
-    expect.objectContaining({
+
+  it("cloudflare-access-lifecycle-001 erasing the creator removes private Access but keeps shared Access and a member's host", async () => {
+    const { admin: creator, member } = workspace();
+    const shared = await createConfig(creator, "organization");
+    const personal = await createConfig(creator, "personal");
+    await bindHost(creator, personal.id);
+    const memberHost = await bindHost(member, shared.id);
+
+    await deleteClerkUser(creator.userId);
+
+    const recreated = await createConfig(member, "personal", personal.id);
+    expect(recreated.id).toBe(personal.id);
+    const memberConfigs = await listConfigs(member);
+    expect(
+      memberConfigs.map(({ id, scope, sshHosts }) => {
+        return {
+          id,
+          scope,
+          sshHosts: sshHosts.map((host) => {
+            return host.id;
+          }),
+        };
+      }),
+    ).toStrictEqual(
+      expect.arrayContaining([
+        { id: shared.id, scope: "organization", sshHosts: [memberHost.id] },
+        { id: personal.id, scope: "personal", sshHosts: [] },
+      ]),
+    );
+    expect(memberConfigs).toHaveLength(2);
+    const memberHosts = await listHosts(member);
+    expect(
+      memberHosts.map(({ id }) => {
+        return id;
+      }),
+    ).toStrictEqual([memberHost.id]);
+  });
+
+  it("cloudflare-access-lifecycle-004 converting shared Access to personal keeps the admin's host and asks members to rebind", async () => {
+    const { admin, member } = workspace();
+    const secondMember: Actor = { ...member, userId: `user_${randomUUID()}` };
+    const config = await createConfig(admin, "organization");
+    const adminHost = await bindHost(admin, config.id);
+    const memberHost = await bindHost(member, config.id);
+    const secondHost = await bindHost(secondMember, config.id);
+
+    signIn(member);
+    const memberPreview = await accept(
+      configs().impactPreview({
+        headers,
+        params: { configId: config.id },
+        query: { operation: "convert" },
+      }),
+      [403],
+    );
+    expect(memberPreview.body.error.code).toBe("CLOUDFLARE_ACCESS_FORBIDDEN");
+
+    signIn(admin);
+    const preview = await accept(
+      configs().impactPreview({
+        headers,
+        params: { configId: config.id },
+        query: { operation: "convert" },
+      }),
+      [200],
+    );
+    expect(preview.body.expectedRevision).toBe(1);
+    expect(preview.body.otherHostCount).toBe(2);
+    expect(preview.body.impactSnapshot).toMatch(/^[a-f0-9]{64}$/u);
+    expect(
+      [...preview.body.affectedOwners].sort((a, b) => {
+        return a.userId.localeCompare(b.userId);
+      }),
+    ).toStrictEqual(
+      [member.userId, secondMember.userId].sort().map((userId) => {
+        return { userId, displayName: null };
+      }),
+    );
+    expect(JSON.stringify(preview.body)).not.toContain(memberHost.id);
+
+    signIn(member);
+    const memberConvert = await accept(
+      configs().convertToPersonal({
+        headers,
+        params: { configId: config.id },
+        body: {
+          expectedRevision: preview.body.expectedRevision,
+          impactSnapshot: preview.body.impactSnapshot,
+        },
+      }),
+      [403],
+    );
+    expect(memberConvert.body.error.code).toBe("CLOUDFLARE_ACCESS_FORBIDDEN");
+
+    signIn(admin);
+    const converted = await accept(
+      configs().convertToPersonal({
+        headers,
+        params: { configId: config.id },
+        body: {
+          expectedRevision: preview.body.expectedRevision,
+          impactSnapshot: preview.body.impactSnapshot,
+        },
+      }),
+      [200],
+    );
+    expect(converted.body).toMatchObject({
+      scope: "personal",
+      revision: 2,
+      generation: 2,
+      sshHosts: [{ id: adminHost.id }],
+    });
+    expect(converted.body.sshHosts).toHaveLength(1);
+    expect(converted.body).not.toHaveProperty("credentials");
+    expect(JSON.stringify(converted.body)).not.toContain("secret-");
+
+    const [adminAfter] = await listHosts(admin);
+    expect(adminAfter).toMatchObject({
       id: adminHost.id,
       generation: adminHost.generation + 1,
-      transport: { type: "cloudflare_access", configId: shared.id },
-    }),
-  );
+      transport: { type: "cloudflare_access", configId: config.id },
+    });
+    for (const [owner, host] of [
+      [member, memberHost],
+      [secondMember, secondHost],
+    ] as const) {
+      const [[after], ownerConfigs] = await Promise.all([
+        listHosts(owner),
+        listConfigs(owner),
+      ]);
+      expect(after).toMatchObject({
+        id: host.id,
+        generation: host.generation + 1,
+        transport: { type: "cloudflare_access", needsRebind: true },
+      });
+      expect(
+        after && "transport" in after ? after.transport : undefined,
+      ).not.toHaveProperty("configId");
+      expect(ownerConfigs).toStrictEqual([]);
+    }
 
-  mocks.clerk.session(member.userId, member.orgId, "org:member");
-  const retained = (
-    await accept(hosts().list({ headers }), [200])
-  ).body.connections.find((host) => {
-    return host.id === memberHost.id;
-  });
-  expect(retained).toMatchObject({
-    id: memberHost.id,
-    host: memberHost.host,
-    port: memberHost.port,
-    credentialId: memberHost.credentialId,
-    generation: memberHost.generation + 1,
-    transport: { type: "cloudflare_access", needsRebind: true },
-  });
-  expect(retained).not.toHaveProperty("transport.configId");
-  expect(
-    (await accept(configs().list({ headers, query }), [200])).body.configs,
-  ).toStrictEqual([]);
-
-  mocks.clerk.session(secondMember.userId, secondMember.orgId, "org:member");
-  expect(
-    (await accept(hosts().list({ headers }), [200])).body.connections,
-  ).toContainEqual(
-    expect.objectContaining({
-      id: secondMemberHost.id,
-      generation: secondMemberHost.generation + 1,
-      transport: { type: "cloudflare_access", needsRebind: true },
-    }),
-  );
-
-  await webhook("user.deleted", admin.userId);
-  mocks.clerk.session(member.userId, member.orgId, "org:member");
-  expect(
-    (await accept(hosts().list({ headers }), [200])).body.connections,
-  ).toContainEqual(expect.objectContaining({ id: memberHost.id }));
-});
-
-test("conversion requires a fresh preview after binding or revision drift", async () => {
-  useSecretKmsProbe();
-  const admin = await owner();
-  const shared = await createShared();
-  const initial = (
-    await accept(
-      configs().impactPreview({
-        headers,
-        params: { configId: shared.id },
-        query: { operation: "convert" },
-      }),
-      [200],
-    )
-  ).body;
-  const member = await owner(admin.orgId, "member");
-  await createHost(shared.id);
-  mocks.clerk.session(admin.userId, admin.orgId, "org:admin");
-  await expect(
-    accept(
-      configs().convertToPersonal({
-        headers,
-        params: { configId: shared.id },
-        body: {
-          expectedRevision: initial.expectedRevision,
-          impactSnapshot: initial.impactSnapshot,
-        },
-      }),
-      [409],
-    ),
-  ).resolves.toMatchObject({
-    body: { error: { code: "CLOUDFLARE_ACCESS_IMPACT_CONFLICT" } },
-  });
-  const updated = (
-    await accept(
-      configs().impactPreview({
-        headers,
-        params: { configId: shared.id },
-        query: { operation: "convert" },
-      }),
-      [200],
-    )
-  ).body;
-  expect(updated.otherHostCount).toBe(1);
-  expect(updated.impactSnapshot).not.toBe(initial.impactSnapshot);
-  await accept(
-    configs().update({
-      headers,
-      query,
-      params: { configId: shared.id },
-      body: { expectedRevision: 1, name: "Renamed shared gateway" },
-    }),
-    [200],
-  );
-  await expect(
-    accept(
-      configs().convertToPersonal({
-        headers,
-        params: { configId: shared.id },
-        body: {
-          expectedRevision: updated.expectedRevision,
-          impactSnapshot: updated.impactSnapshot,
-        },
-      }),
-      [409],
-    ),
-  ).resolves.toMatchObject({
-    body: { error: { code: "CLOUDFLARE_ACCESS_REVISION_CONFLICT" } },
-  });
-  mocks.clerk.session(member.userId, member.orgId, "org:member");
-  expect(
-    (await accept(hosts().list({ headers }), [200])).body.connections[0],
-  ).toMatchObject({
-    transport: { type: "cloudflare_access", configId: shared.id },
-  });
-});
-
-test("conversion and concurrent host binding retain a valid admin-owned reference", async () => {
-  useSecretKmsProbe();
-  await owner();
-  const shared = await createShared();
-  const preview = (
-    await accept(
-      configs().impactPreview({
-        headers,
-        params: { configId: shared.id },
-        query: { operation: "convert" },
-      }),
-      [200],
-    )
-  ).body;
-  const [converted, host] = await joinAll([
-    accept(
-      configs().convertToPersonal({
-        headers,
-        params: { configId: shared.id },
-        body: {
-          expectedRevision: preview.expectedRevision,
-          impactSnapshot: preview.impactSnapshot,
-        },
-      }),
-      [200, 409],
-    ),
-    createHost(shared.id),
-  ]);
-  if (converted.status === 409) {
-    expect([
-      "CLOUDFLARE_ACCESS_REVISION_CONFLICT",
-      "CLOUDFLARE_ACCESS_IMPACT_CONFLICT",
-    ]).toContain(converted.body.error.code);
+    await deleteClerkUser(admin.userId);
+    const remaining = await listHosts(member);
     expect(
-      (await accept(configs().list({ headers, query }), [200])).body.configs,
-    ).toContainEqual(
-      expect.objectContaining({
-        id: shared.id,
-        scope: "organization",
-        revision: shared.revision,
-        generation: shared.generation,
+      remaining.map(({ id }) => {
+        return id;
       }),
-    );
-    expect(
-      (await accept(hosts().list({ headers }), [200])).body.connections,
-    ).toStrictEqual([host]);
-    const latest = (
-      await accept(
-        configs().impactPreview({
-          headers,
-          params: { configId: shared.id },
-          query: { operation: "convert" },
-        }),
-        [200],
-      )
-    ).body;
-    await accept(
-      configs().convertToPersonal({
-        headers,
-        params: { configId: shared.id },
-        body: {
-          expectedRevision: latest.expectedRevision,
-          impactSnapshot: latest.impactSnapshot,
-        },
-      }),
-      [200],
-    );
-  }
-  expect(
-    (await accept(configs().list({ headers, query }), [200])).body.configs,
-  ).toContainEqual(
-    expect.objectContaining({
-      id: shared.id,
-      scope: "personal",
-      revision: shared.revision + 1,
-      generation: shared.generation + 1,
-    }),
-  );
-  expect(
-    (await accept(hosts().list({ headers }), [200])).body.connections,
-  ).toContainEqual(
-    expect.objectContaining({
-      id: host.id,
-      generation: host.generation + (converted.status === 409 ? 1 : 0),
-      transport: { type: "cloudflare_access", configId: shared.id },
-    }),
-  );
+    ).toStrictEqual([memberHost.id]);
+  });
 });

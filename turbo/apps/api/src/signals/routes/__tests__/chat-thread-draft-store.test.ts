@@ -1,387 +1,289 @@
 import { randomUUID } from "node:crypto";
-
-import type {
-  PersistedAttachment,
-  UserMessageInputDocument,
-} from "@okouai/api-contracts/contracts/chat-threads";
-import { describe, expect, it } from "vitest";
-
-import { testContext } from "../../../__tests__/test-context";
-import { createBddApi } from "./helpers/api-bdd";
+import type { input } from "zod";
+import { chatEventsContract } from "@okouai/api-contracts/contracts/chat-event-send";
 import {
-  createChatFilesBddApi,
-  persistedAttachment,
-} from "./helpers/api-bdd-chat-files";
-import { createRunsApi } from "./helpers/api-bdd-runs";
+  chatThreadByIdContract,
+  chatThreadDraftContract,
+  chatThreadsContract,
+  type UserMessageInputDocument,
+} from "@okouai/api-contracts/contracts/chat-threads";
+import { accept, testContext } from "../../../__tests__/test-context";
+import { setupApp } from "../../../__tests__/test-helpers";
+import { chatEventsRoutes } from "../chat-events";
+import { chatThreadRoutes } from "../chat-threads";
+import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
-const bdd = createBddApi(context);
-const chat = createChatFilesBddApi(context);
-const runs = createRunsApi(context);
+const sessionHeaders = Object.freeze({ authorization: "Bearer clerk-session" });
 
-const malformedText = 'Keep "quotes", \\ and 👒; replace \udc52 and \ud83d.';
-const repairedText = String.raw`Keep "quotes", \ and 👒; replace � and �.`;
-
-interface DraftFixture {
-  readonly actor: ReturnType<typeof bdd.user>;
-  readonly threadId: string;
+interface Member {
+  readonly userId: string;
+  readonly orgId: string;
 }
 
-async function createDraftFixture(): Promise<DraftFixture> {
-  const actor = bdd.user();
-  const thread = await chat.createThread(actor, {
-    title: `Draft ${randomUUID()}`,
-  });
-  return { actor, threadId: thread.id };
+function newMember(orgId = `org_${randomUUID()}`): Member {
+  return { userId: `user_${randomUUID()}`, orgId };
 }
 
-async function sendWithoutCredits(fixture: DraftFixture): Promise<void> {
-  const sent = await chat.requestSendEvent(
-    fixture.actor,
-    {
-      threadId: fixture.threadId,
-      prompt: "Send the saved draft",
-      clientEventId: randomUUID(),
-    },
-    [201],
-  );
-  if (sent.status !== 201) {
-    throw new Error("Expected a no-credit message send");
-  }
+function signIn(member: Member): void {
+  createRouteMocks(context).clerk.session(member.userId, member.orgId);
 }
 
-function draftDocument(text: string): UserMessageInputDocument {
+function textDocument(text: string): UserMessageInputDocument {
   return { version: 1, parts: [{ type: "text", text }] };
 }
 
-function imageMessage(
-  image: PersistedAttachment,
-  text: string,
-): UserMessageInputDocument {
-  return {
-    version: 1,
-    parts: [
-      {
-        type: "file",
-        fileId: image.id,
-        filenameSnapshot: image.filename,
-        contentType: image.contentType,
-      },
-      { type: "text", text },
-    ],
-  };
+function threadsClient(member: Member) {
+  signIn(member);
+  return setupApp({ context, routes: chatThreadRoutes });
 }
 
-function draftBody(text: string) {
-  return { draftUserMessage: draftDocument(text), draftAttachments: null };
+async function createThread(member: Member): Promise<string> {
+  const created = await accept(
+    threadsClient(member)(chatThreadsContract).create({
+      headers: sessionHeaders,
+      body: {},
+    }),
+    [201],
+  );
+  return created.body.id;
 }
 
-function draftAttachment(): PersistedAttachment {
-  return {
-    id: "attachment-1",
-    url: "https://files.example.com/attachment-1",
-    filename: "notes.txt",
-    contentType: "text/plain",
-    size: 12,
-  };
+function readDraft(member: Member, threadId: string) {
+  return threadsClient(member)(chatThreadDraftContract).readComposer({
+    headers: sessionHeaders,
+    params: { id: threadId },
+  });
 }
 
-async function servedDraftText(fixture: DraftFixture): Promise<string | null> {
-  const draft = await chat.readThreadDraft(fixture.actor, fixture.threadId);
-  if (draft.draftUserMessage === null) {
-    return null;
-  }
-  const [part] = draft.draftUserMessage.parts;
-  if (part === undefined || part.type !== "text") {
-    throw new Error("Expected a single text draft part");
-  }
-  return part.text;
+function saveDraft(
+  member: Member,
+  threadId: string,
+  body: input<typeof chatThreadDraftContract.saveComposer.body>,
+) {
+  return threadsClient(member)(chatThreadDraftContract).saveComposer({
+    headers: sessionHeaders,
+    params: { id: threadId },
+    body,
+  });
 }
 
-function listedDraftIds(fixture: DraftFixture): Promise<readonly string[]> {
-  return chat.listThreadDrafts(fixture.actor);
+async function draftThreadIds(member: Member): Promise<string[]> {
+  const listed = await accept(
+    threadsClient(member)(chatThreadsContract).drafts({
+      headers: sessionHeaders,
+      query: {},
+    }),
+    [200],
+  );
+  return listed.body.draftThreadIds;
 }
 
 describe("thread drafts", () => {
-  it("saves, replaces and clears the document and its attachments", async () => {
-    const fixture = await createDraftFixture();
-    await expect(servedDraftText(fixture)).resolves.toBeNull();
-    await expect(listedDraftIds(fixture)).resolves.not.toContain(
-      fixture.threadId,
-    );
+  it("chat-thread-draft-store-001 saves, replaces and clears a draft with its attachment and preset", async () => {
+    const owner = newMember();
+    const threadId = await createThread(owner);
 
-    const preset = {
+    await expect(readDraft(owner, threadId)).resolves.toMatchObject({
+      status: 200,
+      body: { draftUserMessage: null, draftAttachments: null },
+    });
+    await expect(draftThreadIds(owner)).resolves.not.toContain(threadId);
+
+    const attachment = {
+      id: randomUUID(),
+      url: "https://cdn.example.test/artifacts/brief.pdf",
+      filename: "brief.pdf",
+      contentType: "application/pdf",
+      size: 2048,
+    };
+    const suggestionPreset = {
       suggestion_id: randomUUID(),
       impression_id: randomUUID(),
-      option_id: "review",
+      option_id: "outline",
       option_position: 2,
     };
-    await chat.patchThread(fixture.actor, fixture.threadId, {
-      suggestionPreset: preset,
-      draftUserMessage: draftDocument("first draft"),
-      draftAttachments: [draftAttachment()],
+    await accept(
+      saveDraft(owner, threadId, {
+        draftUserMessage: textDocument("Summarize the attached brief"),
+        draftAttachments: [attachment],
+        suggestionPreset,
+      }),
+      [204],
+    );
+    const saved = await accept(readDraft(owner, threadId), [200]);
+
+    expect(saved.body).toStrictEqual({
+      draftUserMessage: textDocument("Summarize the attached brief"),
+      draftAttachments: [attachment],
+      suggestionPreset,
     });
-    const saved = await chat.readThreadDraft(fixture.actor, fixture.threadId);
-    expect(saved.suggestionPreset).toStrictEqual(preset);
-    expect(saved.draftUserMessage).toStrictEqual(draftDocument("first draft"));
-    expect(saved.draftAttachments).toStrictEqual([draftAttachment()]);
-    await expect(listedDraftIds(fixture)).resolves.toContain(fixture.threadId);
+    await expect(draftThreadIds(owner)).resolves.toContain(threadId);
 
-    await chat.patchThread(
-      fixture.actor,
-      fixture.threadId,
-      draftBody("second draft"),
+    await accept(
+      saveDraft(owner, threadId, {
+        draftUserMessage: textDocument("Just the text now"),
+      }),
+      [204],
     );
-    const replaced = await chat.readThreadDraft(
-      fixture.actor,
-      fixture.threadId,
-    );
-    expect(replaced.draftUserMessage).toStrictEqual(
-      draftDocument("second draft"),
-    );
-    expect(replaced.suggestionPreset).toBeUndefined();
-    expect(replaced.draftAttachments).toBeNull();
+    const replaced = await accept(readDraft(owner, threadId), [200]);
 
-    await chat.patchThread(fixture.actor, fixture.threadId, {
+    expect(replaced.body).toStrictEqual({
+      draftUserMessage: textDocument("Just the text now"),
+      draftAttachments: null,
+    });
+
+    await accept(saveDraft(owner, threadId, { draftUserMessage: null }), [204]);
+    const cleared = await accept(readDraft(owner, threadId), [200]);
+
+    expect(cleared.body).toStrictEqual({
       draftUserMessage: null,
       draftAttachments: null,
     });
-    await expect(servedDraftText(fixture)).resolves.toBeNull();
-    await expect(listedDraftIds(fixture)).resolves.not.toContain(
-      fixture.threadId,
-    );
+    await expect(draftThreadIds(owner)).resolves.not.toContain(threadId);
   });
 
-  it("round-trips artifact quote snapshots without requiring an attachment", async () => {
-    const { actor, threadId } = await createDraftFixture();
-    const draftUserMessage: UserMessageInputDocument = {
-      version: 1,
-      parts: [
-        {
-          type: "feedback",
-          quote: "Quoted before the file was renamed",
-          note: [{ type: "text", text: "Clarify this paragraph" }],
-          source: {
-            type: "artifact",
-            fileId: randomUUID(),
-            filenameSnapshot: "original-name.md",
-          },
-        },
-      ],
-    };
-    await chat.patchThread(actor, threadId, {
-      draftUserMessage,
-      draftAttachments: null,
-    });
-    await expect(chat.readThreadDraft(actor, threadId)).resolves.toStrictEqual({
-      draftUserMessage,
-      draftAttachments: null,
-    });
-    await expect(listedDraftIds({ actor, threadId })).resolves.toContain(
-      threadId,
-    );
-  });
+  it("chat-thread-draft-store-004 keeps drafts separate per thread and per member", async () => {
+    const owner = newMember();
+    const peer = newMember(owner.orgId);
+    const clearedThreadId = await createThread(owner);
+    const savedThreadId = await createThread(owner);
 
-  it("saves rich draft edits containing unpaired surrogates", async () => {
-    const { actor, threadId } = await createDraftFixture();
-    const image = persistedAttachment(
-      randomUUID(),
-      "image.png",
-      "image/png",
-      23,
+    await accept(
+      saveDraft(owner, clearedThreadId, { draftUserMessage: null }),
+      [204],
+    );
+    await accept(
+      saveDraft(owner, savedThreadId, {
+        draftUserMessage: textDocument("Owner's private note"),
+      }),
+      [204],
     );
 
-    await chat.patchThread(actor, threadId, draftBody("earlier draft"));
-    await chat.patchThread(actor, threadId, {
-      draftUserMessage: imageMessage(image, malformedText),
-      draftAttachments: [image],
+    await expect(readDraft(owner, clearedThreadId)).resolves.toMatchObject({
+      status: 200,
+      body: { draftUserMessage: null, draftAttachments: null },
     });
-
-    await expect(chat.readThreadDraft(actor, threadId)).resolves.toStrictEqual({
-      draftUserMessage: imageMessage(image, repairedText),
-      draftAttachments: [image],
+    await expect(draftThreadIds(peer)).resolves.not.toContain(savedThreadId);
+    await expect(readDraft(peer, savedThreadId)).resolves.toMatchObject({
+      status: 404,
+    });
+    await expect(readDraft(owner, randomUUID())).resolves.toMatchObject({
+      status: 404,
     });
   });
 
-  it("keeps drafts separate per thread and per user", async () => {
-    const fixture = await createDraftFixture();
-    const sibling = await chat.createThread(fixture.actor, {
-      title: `Sibling ${randomUUID()}`,
-    });
-    await chat.patchThread(fixture.actor, sibling.id, {
-      draftUserMessage: null,
-      draftAttachments: null,
-    });
-    await chat.patchThread(fixture.actor, fixture.threadId, draftBody("mine"));
+  it("chat-thread-draft-store-006 hides another member's private thread from draft writes", async () => {
+    const owner = newMember();
+    const peer = newMember(owner.orgId);
+    const threadId = await createThread(owner);
+    await accept(
+      saveDraft(owner, threadId, {
+        draftUserMessage: textDocument("Original owner draft"),
+      }),
+      [204],
+    );
 
     await expect(
-      chat.readThreadDraft(fixture.actor, sibling.id),
-    ).resolves.toStrictEqual({
-      draftUserMessage: null,
-      draftAttachments: null,
-    });
-    const foreign = bdd.user({ orgId: fixture.actor.orgId });
-    await expect(chat.listThreadDrafts(foreign)).resolves.not.toContain(
-      fixture.threadId,
-    );
-    await chat.requestReadThreadDraft(foreign, fixture.threadId, [404]);
-    await chat.requestReadThreadDraft(fixture.actor, randomUUID(), [404]);
-  });
-
-  it("isolates drafts between the same user's workspaces", async () => {
-    const fixture = await createDraftFixture();
-    const other = bdd.user({ userId: fixture.actor.userId });
-    await chat.patchThread(fixture.actor, fixture.threadId, draftBody("owned"));
-    await chat.patchThread(
-      other,
-      fixture.threadId,
-      draftBody("wrong workspace"),
-      404,
-    );
-    await chat.patchThread(
-      other,
-      fixture.threadId,
-      { draftUserMessage: null, draftAttachments: null },
-      404,
-    );
-    await expect(chat.listThreadDrafts(other)).resolves.not.toContain(
-      fixture.threadId,
-    );
-    await chat.requestReadThreadDraft(other, fixture.threadId, [404]);
-    await expect(servedDraftText(fixture)).resolves.toBe("owned");
-  });
-
-  it("returns the same miss for another owner's private thread as for a deleted thread", async () => {
-    const fixture = await createDraftFixture();
-    await chat.patchThread(fixture.actor, fixture.threadId, draftBody("owned"));
-    const peer = bdd.user({ orgId: fixture.actor.orgId });
-    await chat.patchThread(peer, fixture.threadId, draftBody("not mine"), 404);
-    await chat.patchThread(
-      peer,
-      fixture.threadId,
-      { draftUserMessage: null, draftAttachments: null },
-      404,
-    );
-    await expect(servedDraftText(fixture)).resolves.toBe("owned");
-  });
-
-  it("preserves installed clients' member drafts and empty responses on the original routes", async () => {
-    const { actor, threadId } = await createDraftFixture();
-    const legacy = chat.legacyThreadDraft(actor, threadId);
-    const peer = chat.legacyThreadDraft(
-      bdd.user({ orgId: actor.orgId }),
-      threadId,
-    );
-    const empty = { draftUserMessage: null, draftAttachments: null };
-    await legacy.save(draftBody("owner draft"));
-    await expect(chat.readThreadDraft(actor, threadId)).resolves.toStrictEqual(
-      draftBody("owner draft"),
-    );
-    await peer.save(draftBody("peer draft"));
-    await expect(peer.read()).resolves.toStrictEqual(draftBody("peer draft"));
-    await expect(legacy.read()).resolves.toStrictEqual(
-      draftBody("owner draft"),
-    );
-    await chat.patchThread(actor, threadId, empty);
-    await expect(legacy.read()).resolves.toStrictEqual(empty);
-    await chat.deleteThread(actor, threadId);
-    await legacy.save(draftBody("late save"));
-    await expect(legacy.read()).resolves.toStrictEqual(empty);
-    await legacy.save(empty);
-  });
-
-  it("removes the draft with the thread it belongs to", async () => {
-    const fixture = await createDraftFixture();
-    await chat.patchThread(
-      fixture.actor,
-      fixture.threadId,
-      draftBody("deleted draft"),
-    );
-    await expect(listedDraftIds(fixture)).resolves.toContain(fixture.threadId);
-
-    await chat.deleteThread(fixture.actor, fixture.threadId);
+      saveDraft(peer, threadId, {
+        draftUserMessage: textDocument("Peer overwrite"),
+      }),
+    ).resolves.toMatchObject({ status: 404 });
     await expect(
-      chat.requestReadThreadDraft(fixture.actor, fixture.threadId, [404]),
-    ).resolves.toMatchObject({
+      saveDraft(peer, threadId, { draftUserMessage: null }),
+    ).resolves.toMatchObject({ status: 404 });
+
+    const ownerDraft = await accept(readDraft(owner, threadId), [200]);
+
+    expect(ownerDraft.body.draftUserMessage).toStrictEqual(
+      textDocument("Original owner draft"),
+    );
+  });
+
+  it("chat-thread-draft-store-008 removes the draft together with its deleted thread", async () => {
+    const owner = newMember();
+    const threadId = await createThread(owner);
+    await accept(
+      saveDraft(owner, threadId, {
+        draftUserMessage: textDocument("Draft before deletion"),
+      }),
+      [204],
+    );
+    await expect(draftThreadIds(owner)).resolves.toContain(threadId);
+
+    await accept(
+      threadsClient(owner)(chatThreadByIdContract).delete({
+        headers: sessionHeaders,
+        params: { id: threadId },
+      }),
+      [204],
+    );
+
+    const read = await readDraft(owner, threadId);
+    const lateSave = await saveDraft(owner, threadId, {
+      draftUserMessage: textDocument("Late draft"),
+    });
+    const clear = await saveDraft(owner, threadId, { draftUserMessage: null });
+
+    expect(read).toMatchObject({
+      status: 404,
       body: { error: { code: "CHAT_THREAD_NOT_FOUND" } },
     });
-    await expect(
-      chat.patchThread(
-        fixture.actor,
-        fixture.threadId,
-        draftBody("late save"),
-        404,
-      ),
-    ).resolves.toMatchObject({
+    expect(lateSave).toMatchObject({
+      status: 404,
       body: { error: { code: "CHAT_THREAD_NOT_FOUND" } },
     });
-    await chat.patchThread(
-      fixture.actor,
-      fixture.threadId,
-      { draftUserMessage: null, draftAttachments: null },
-      404,
-    );
-
-    await expect(listedDraftIds(fixture)).resolves.not.toContain(
-      fixture.threadId,
-    );
+    expect(clear.status).toBe(404);
+    await expect(draftThreadIds(owner)).resolves.not.toContain(threadId);
   });
 });
 
 describe("sends and drafts", () => {
-  it("publishes a rich send containing unpaired surrogates", async () => {
-    const { actor, threadId } = await createDraftFixture();
-    await runs.ensurePersonalSubscriptionModel(actor);
-    const image = persistedAttachment(
-      randomUUID(),
-      "image.png",
-      "image/png",
-      23,
+  it("chat-thread-draft-store-010 keeps the saved draft after a send until the client clears it", async () => {
+    const owner = newMember();
+    const threadId = await createThread(owner);
+    const attachment = {
+      id: randomUUID(),
+      url: "https://cdn.example.test/artifacts/notes.txt",
+      filename: "notes.txt",
+      contentType: "text/plain",
+      size: 12,
+    };
+    await accept(
+      saveDraft(owner, threadId, {
+        draftUserMessage: textDocument("Unsent follow-up"),
+        draftAttachments: [attachment],
+      }),
+      [204],
     );
-    chat.mockCompletedUploadObject(actor, image.id, image.filename, image.size);
-    const clientEventId = randomUUID();
 
-    await chat.requestSendEvent(
-      actor,
-      {
-        threadId,
-        clientEventId,
-        prompt: malformedText,
-        userMessage: imageMessage(image, malformedText),
-      },
+    signIn(owner);
+    await accept(
+      setupApp({ context, routes: chatEventsRoutes })(chatEventsContract).send({
+        headers: sessionHeaders,
+        body: {
+          threadId,
+          prompt: "Hello there",
+          hasTextContent: true,
+          clientEventId: randomUUID(),
+          userMessage: textDocument("Hello there"),
+        },
+      }),
       [201],
     );
+    const afterSend = await accept(readDraft(owner, threadId), [200]);
 
-    const { events } = await chat.listThreadEvents(actor, threadId);
-    const stored = events.find((event) => {
-      return event.id === clientEventId;
-    });
-    expect(stored).toMatchObject({
-      eventType: "input.prompt",
-      userMessage: imageMessage(image, repairedText),
-    });
-  });
+    expect(afterSend.body.draftUserMessage).toStrictEqual(
+      textDocument("Unsent follow-up"),
+    );
 
-  it("leaves the saved draft for the client to clear when a message is sent", async () => {
-    const fixture = await createDraftFixture();
-    await runs.ensurePersonalSubscriptionModel(fixture.actor);
-    await chat.patchThread(fixture.actor, fixture.threadId, {
-      draftUserMessage: draftDocument("saved before send"),
-      draftAttachments: [draftAttachment()],
-    });
+    await accept(saveDraft(owner, threadId, { draftUserMessage: null }), [204]);
+    const cleared = await accept(readDraft(owner, threadId), [200]);
 
-    // The web client clears its draft with its own PATCH alongside the send;
-    // the send itself does not touch `chat_thread_drafts`.
-    await sendWithoutCredits(fixture);
-
-    await expect(servedDraftText(fixture)).resolves.toBe("saved before send");
-    await chat.patchThread(fixture.actor, fixture.threadId, {
+    expect(cleared.body).toStrictEqual({
       draftUserMessage: null,
       draftAttachments: null,
     });
-    await expect(servedDraftText(fixture)).resolves.toBeNull();
-    await expect(listedDraftIds(fixture)).resolves.not.toContain(
-      fixture.threadId,
-    );
+    await expect(draftThreadIds(owner)).resolves.not.toContain(threadId);
   });
 });

@@ -1,18 +1,10 @@
 import { randomUUID } from "node:crypto";
-import {
-  CompleteMultipartUploadCommand,
-  CreateMultipartUploadCommand,
-  PutObjectCommand,
-  UploadPartCommand,
-} from "@aws-sdk/client-s3";
+import { Readable } from "node:stream";
 
 import {
-  SKILL_IMPORT_LIMITS,
+  SKILL_IMPORT_SESSION_TTL_SECONDS,
   skillImportSessionsContract,
   skillImportSkillsContract,
-  type SkillImportRequest,
-  type SkillImportSessionRequest,
-  type SkillImportSessionResponse,
 } from "@okouai/api-contracts/contracts/skill-import";
 import {
   workflowsCollectionContract,
@@ -21,874 +13,575 @@ import {
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp, setupRawAppRequest } from "../../../__tests__/test-helpers";
-import { now } from "../../../lib/time";
-import { signSkillImportJwtForTests } from "../../auth/tokens";
 import { skillImportRoutes } from "../skill-import";
 import { workflowsRoutes } from "../workflows";
-import {
-  createBddApi,
-  expectApiError,
-  type ApiTestUser,
-} from "./helpers/api-bdd";
 import { createRouteMocks } from "./helpers/route-test";
-import { installWorkflowVolumeS3Fixture } from "./helpers/workflow-volume-s3";
+import { clearMockNow, mockNow, now } from "../../../lib/time";
 
 const context = testContext();
-const bdd = createBddApi(context);
-const mocks = createRouteMocks(context);
 
-type OrgActor = ApiTestUser & { readonly orgId: string };
+interface Member {
+  readonly userId: string;
+  readonly orgId: string;
+}
 
-function clerkHeaders(actor: ApiTestUser) {
-  mocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
+function newMember(orgId = `org_${randomUUID()}`): Member {
+  return { userId: `user_${randomUUID()}`, orgId };
+}
+
+function signedIn(member: Member) {
+  createRouteMocks(context).clerk.session(
+    member.userId,
+    member.orgId,
+    "org:member",
+  );
   return { authorization: "Bearer clerk-session" };
 }
 
-function sessionsClient() {
+function bearer(token: string) {
+  return { authorization: `Bearer ${token}` };
+}
+
+function sessions() {
   return setupApp({ context, routes: skillImportRoutes })(
     skillImportSessionsContract,
   );
 }
 
-function uploadClient() {
+function skills() {
   return setupApp({ context, routes: skillImportRoutes })(
     skillImportSkillsContract,
   );
 }
 
-function workflowListClient() {
+function workflowCollection() {
   return setupApp({ context, routes: workflowsRoutes })(
     workflowsCollectionContract,
   );
 }
 
-function workflowDetailClient() {
+function workflowDetail() {
   return setupApp({ context, routes: workflowsRoutes })(
     workflowsDetailContract,
   );
 }
 
-function tokenHeaders(token: string) {
-  return { authorization: `Bearer ${token}` };
+interface StoredObject {
+  readonly body: Buffer;
 }
 
-function skillBody(
-  overrides: Partial<SkillImportRequest> = {},
-): SkillImportRequest {
-  return {
-    name: "release-notes",
-    displayName: "Release Notes",
-    description: "Draft release notes from merged pull requests",
-    instruction: "Collect the merged pull requests and draft release notes.",
-    ...overrides,
+/** In-memory object storage standing in for the external S3/R2 boundary. */
+function useObjectStorage(options: { readonly failWrites?: boolean } = {}) {
+  const objects = new Map<string, StoredObject>();
+  const uploads = new Map<string, Map<number, Buffer>>();
+  const id = (input: Record<string, unknown>) => {
+    return `${String(input.Bucket)}/${String(input.Key)}`;
   };
-}
-
-function bootstrapActor(): { readonly actor: OrgActor } {
-  const actor = bdd.user();
-  if (!actor.orgId) {
-    throw new Error("Expected the test actor to have an organization");
-  }
-  bdd.acceptStorageWrites();
-  installWorkflowVolumeS3Fixture(context);
-  return {
-    actor: { ...actor, orgId: actor.orgId },
+  const storageError = () => {
+    return Promise.reject(
+      Object.assign(new Error("Storage unavailable"), {
+        name: "InternalError",
+        $metadata: { httpStatusCode: 500 },
+      }),
+    );
   };
+  const notFound = () => {
+    return Promise.reject(
+      Object.assign(new Error("Not found"), {
+        name: "NotFound",
+        $metadata: { httpStatusCode: 404 },
+      }),
+    );
+  };
+  context.mocks.s3.send.mockImplementation((command: unknown) => {
+    const { constructor, input } = command as {
+      readonly constructor: { readonly name: string };
+      readonly input: Record<string, unknown>;
+    };
+    const stored = objects.get(id(input));
+    switch (constructor.name) {
+      case "PutObjectCommand": {
+        if (options.failWrites) {
+          return storageError();
+        }
+        objects.set(id(input), {
+          body: Buffer.from(input.Body as string | Uint8Array),
+        });
+        return Promise.resolve({ ETag: '"put"' });
+      }
+      case "HeadObjectCommand": {
+        if (!stored) {
+          return notFound();
+        }
+        return Promise.resolve({ ContentLength: stored.body.byteLength });
+      }
+      case "GetObjectCommand": {
+        if (!stored) {
+          return Promise.reject(
+            Object.assign(new Error("Missing"), {
+              name: "NoSuchKey",
+              $metadata: { httpStatusCode: 404 },
+            }),
+          );
+        }
+        return Promise.resolve({
+          Body: Readable.from([stored.body]),
+          ContentLength: stored.body.byteLength,
+        });
+      }
+      case "CreateMultipartUploadCommand": {
+        if (options.failWrites) {
+          return storageError();
+        }
+        const uploadId = randomUUID();
+        uploads.set(uploadId, new Map());
+        return Promise.resolve({ UploadId: uploadId });
+      }
+      case "UploadPartCommand": {
+        if (options.failWrites) {
+          return storageError();
+        }
+        uploads
+          .get(String(input.UploadId))
+          ?.set(
+            Number(input.PartNumber),
+            Buffer.from(input.Body as string | Uint8Array),
+          );
+        return Promise.resolve({ ETag: `"part-${String(input.PartNumber)}"` });
+      }
+      case "CompleteMultipartUploadCommand": {
+        if (options.failWrites) {
+          return storageError();
+        }
+        const parts = uploads.get(String(input.UploadId)) ?? new Map();
+        const body = Buffer.concat(
+          [...parts.entries()]
+            .sort(([left], [right]) => {
+              return left - right;
+            })
+            .map(([, part]) => {
+              return part;
+            }),
+        );
+        objects.set(id(input), { body });
+        return Promise.resolve({ ETag: '"complete"' });
+      }
+      default: {
+        return Promise.resolve({});
+      }
+    }
+  });
 }
 
 async function openSession(
-  body: SkillImportSessionRequest = { provider: "claudeCode" },
-): Promise<{
-  readonly actor: OrgActor;
-  readonly session: SkillImportSessionResponse;
-}> {
-  const { actor } = bootstrapActor();
-
+  member: Member,
+  provider: "claudeCode" | "codex" = "claudeCode",
+) {
   const response = await accept(
-    sessionsClient().create({ headers: clerkHeaders(actor), body }),
+    sessions().create({ headers: signedIn(member), body: { provider } }),
     [200],
   );
+  return response.body;
+}
 
-  return { actor, session: response.body };
+function skill(name: string, instruction = `Use ${name} carefully.`) {
+  return { name, instruction };
+}
+
+async function uploadCreated(
+  token: string,
+  body: Parameters<ReturnType<typeof skills>["upload"]>[0]["body"],
+) {
+  const response = await accept(
+    skills().upload({ headers: bearer(token), body }),
+    [201],
+  );
+  return response.body;
+}
+
+async function listSessionSkills(member: Member, sessionId: string) {
+  const response = await accept(
+    sessions().listSkills({
+      headers: signedIn(member),
+      params: { sessionId },
+    }),
+    [200],
+  );
+  return response.body;
+}
+
+async function readWorkflow(member: Member, workflowId: string) {
+  const response = await accept(
+    workflowDetail().get({
+      headers: signedIn(member),
+      params: { workflowId },
+    }),
+    [200],
+  );
+  return response.body;
+}
+
+async function listWorkflows(member: Member) {
+  const response = await accept(
+    workflowCollection().list({ headers: signedIn(member), query: {} }),
+    [200],
+  );
+  return response.body;
+}
+
+function fileContents(
+  workflow: Awaited<ReturnType<typeof readWorkflow>>,
+): Record<string, string> {
+  return Object.fromEntries(
+    (workflow.fileContents ?? []).map((file) => {
+      return [file.path, file.content];
+    }),
+  );
 }
 
 describe("POST /api/skill-import/sessions", () => {
-  it("keeps parallel sessions and late uploads attributed to their own credentials", async () => {
-    const { actor, session: first } = await openSession();
-    const second = await accept(
-      sessionsClient().create({
-        headers: clerkHeaders(actor),
-        body: { provider: "codex" },
-      }),
-      [200],
+  it("skill-import.bdd-001 keeps parallel sessions and late uploads attributed to their own sessions", async () => {
+    useObjectStorage();
+    const member = newMember();
+    const first = await openSession(member, "claudeCode");
+    const second = await openSession(member, "codex");
+
+    expect(second.sessionId).not.toBe(first.sessionId);
+    expect(second.token).not.toBe(first.token);
+
+    const fresh = await uploadCreated(second.token, skill("new-session-skill"));
+    const late = await uploadCreated(
+      first.token,
+      skill("late-old-session-skill"),
     );
-    expect(first.sessionId).toBeDefined();
-    expect(second.body.sessionId).toBeDefined();
-    expect(first.sessionId).not.toBe(second.body.sessionId);
-    expect(first.token).not.toBe(second.body.token);
-    const secondUpload = await accept(
-      uploadClient().upload({
-        headers: tokenHeaders(second.body.token),
-        body: skillBody({ name: "new-session-skill" }),
+
+    const firstList = await listSessionSkills(member, first.sessionId);
+    const secondList = await listSessionSkills(member, second.sessionId);
+    expect(
+      firstList.map((workflow) => {
+        return [workflow.id, workflow.name];
       }),
-      [201],
-    );
-    // The prompt copied earlier is still valid after another session opens.
-    const firstUpload = await accept(
-      uploadClient().upload({
-        headers: tokenHeaders(first.token),
-        body: skillBody({ name: "late-old-session-skill" }),
+    ).toStrictEqual([[late.workflowId, "late-old-session-skill"]]);
+    expect(
+      secondList.map((workflow) => {
+        return [workflow.id, workflow.name];
       }),
-      [201],
-    );
-    for (const [session, uploaded] of [
-      [first, firstUpload],
-      [second.body, secondUpload],
-    ] as const) {
-      if (!session.sessionId) {
-        throw new Error("Expected an attributed session");
-      }
-      const result = await accept(
-        sessionsClient().listSkills({
-          headers: clerkHeaders(actor),
-          params: { sessionId: session.sessionId },
-        }),
-        [200],
-      );
-      expect(
-        result.body.map((skill) => {
-          return skill.id;
-        }),
-      ).toStrictEqual([uploaded.body.workflowId]);
-    }
+    ).toStrictEqual([[fresh.workflowId, "new-session-skill"]]);
   });
 
-  it("does not expose another member or organization's import results", async () => {
-    const { actor, session } = await openSession();
-    if (!session.sessionId) {
-      throw new Error("Expected an attributed session");
-    }
-    await accept(
-      uploadClient().upload({
-        headers: tokenHeaders(session.token),
-        body: skillBody(),
-      }),
-      [201],
-    );
-    for (const other of [bdd.user({ orgId: actor.orgId }), bdd.user()]) {
-      const result = await accept(
-        sessionsClient().listSkills({
-          headers: clerkHeaders(other),
-          params: { sessionId: session.sessionId },
-        }),
-        [200],
-      );
-      expect(result.body).toStrictEqual([]);
-    }
+  it("skill-import.bdd-002 does not expose another member or workspace's import results", async () => {
+    useObjectStorage();
+    const member = newMember();
+    const colleague = newMember(member.orgId);
+    const outsider = newMember();
+    const session = await openSession(member);
+    await uploadCreated(session.token, skill("private-skill"));
+
+    await expect(
+      listSessionSkills(colleague, session.sessionId),
+    ).resolves.toStrictEqual([]);
+    await expect(
+      listSessionSkills(outsider, session.sessionId),
+    ).resolves.toStrictEqual([]);
+
     context.mocks.clerk.authenticateRequest.mockResolvedValue({
       isAuthenticated: false,
       toAuth: () => {
-        return { userId: null, orgId: null };
+        return null;
       },
     });
-    await accept(
-      sessionsClient().listSkills({
-        headers: tokenHeaders(session.token),
-        params: { sessionId: session.sessionId },
-      }),
-      [401],
-    );
+    const tokenOnly = await sessions().listSkills({
+      headers: bearer(session.token),
+      params: { sessionId: session.sessionId },
+    });
+    expect(tokenOnly.status).toBe(401);
   });
 
-  it("issues an upload session for the workspace member", async () => {
-    const { session } = await openSession();
+  it("skill-import.bdd-003 issues an upload session for the workspace member", async () => {
+    const member = newMember();
+    const before = now();
+    const session = await openSession(member);
 
     expect(session.uploadUrl).toBe(
       "http://localhost:3000/api/skill-import/skills",
     );
-    expect(session.token.startsWith("vm0_skillimport_")).toBeTruthy();
-    expect(session.limits).toStrictEqual(SKILL_IMPORT_LIMITS);
-    const remainingMs = Date.parse(session.expiresAt) - now();
-    expect(remainingMs).toBeGreaterThan(23 * 60 * 60 * 1000);
-    expect(remainingMs).toBeLessThanOrEqual(24 * 60 * 60 * 1000);
-  });
-
-  it("refuses an unauthenticated caller", async () => {
-    context.mocks.clerk.authenticateRequest.mockResolvedValue({
-      isAuthenticated: false,
+    expect(session.token).toMatch(/^vm0_skillimport_/);
+    expect(session.limits).toStrictEqual({
+      maxSkillsPerSession: 50,
+      maxInstructionBytes: 256 * 1024,
+      maxFilesPerSkill: 50,
+      maxFileBytes: 64 * 1024,
+      maxTotalFileBytes: 1024 * 1024,
+      maxRequestBytes: 2 * 1024 * 1024,
     });
-
-    const response = await accept(
-      sessionsClient().create({
-        headers: { authorization: "Bearer nope" },
-        body: { provider: "claudeCode" },
-      }),
-      [401],
-    );
-
-    expectApiError(response.body);
-    expect(response.body.error.code).toBe("UNAUTHORIZED");
+    const remaining = Date.parse(session.expiresAt) - before;
+    expect(remaining).toBeGreaterThan(23 * 60 * 60 * 1000);
+    expect(remaining).toBeLessThanOrEqual(24 * 60 * 60 * 1000);
   });
 });
 
 describe("POST /api/skill-import/skills", () => {
-  it("imports a skill as a private workflow for the workspace member", async () => {
-    const { actor, session } = await openSession();
+  it("skill-import.bdd-005 imports a skill as a private workflow for the workspace member", async () => {
+    useObjectStorage();
+    const member = newMember();
+    const session = await openSession(member);
 
-    const created = await accept(
-      uploadClient().upload({
-        headers: tokenHeaders(session.token),
-        body: skillBody({
-          name: "Release Notes",
-          files: [
-            { path: "./references//tone.md", content: "Keep it short. 世界" },
-            { path: "references//tone.md", content: "Earlier alias." },
-            { path: "references/tone.md", content: "Keep it short. 世界" },
-          ],
-        }),
-      }),
-      [201],
-    );
-
-    expect(created.body).toStrictEqual({
-      outcome: "created",
-      workflowId: expect.any(String),
-      // The locally authored name is normalized into a workflow slug.
-      name: "release-notes",
-    });
-
-    const detail = await accept(
-      workflowDetailClient().get({
-        headers: clerkHeaders(actor),
-        params: { workflowId: created.body.workflowId },
-      }),
-      [200],
-    );
-    expect(detail.body).toMatchObject({
-      name: "release-notes",
+    const created = await uploadCreated(session.token, {
+      name: "Release Notes",
       displayName: "Release Notes",
-      description: "Draft release notes from merged pull requests",
+      description: "Drafts release notes",
+      instruction: "Write the release notes.",
+      files: [
+        { path: "./references//tone.md", content: "Keep it short. 世界" },
+        { path: "references//tone.md", content: "Keep it short. 世界" },
+        { path: "references/tone.md", content: "Keep it short. 世界" },
+      ],
+    });
+    expect(created.outcome).toBe("created");
+    expect(created.name).toBe("release-notes");
+
+    const workflow = await readWorkflow(member, created.workflowId);
+    expect(workflow).toMatchObject({
+      id: created.workflowId,
+      name: "release-notes",
       visibility: "private",
-      ownerUserId: actor.userId,
-      instruction: "Collect the merged pull requests and draft release notes.",
+      ownerUserId: member.userId,
+      displayName: "Release Notes",
+      description: "Drafts release notes",
+      instruction: "Write the release notes.",
     });
-    expect(detail.body.fileContents).toStrictEqual([
-      { path: "references/tone.md", content: "Keep it short. 世界" },
-    ]);
-
-    const listed = await accept(
-      workflowListClient().list({
-        headers: clerkHeaders(actor),
-        query: {},
-      }),
-      [200],
-    );
-    expect(listed.body).toContainEqual(
-      expect.objectContaining({
-        id: created.body.workflowId,
-        name: "release-notes",
-        visibility: "private",
-      }),
-    );
-  });
-
-  it("tags the workflow with the tool the session was opened for", async () => {
-    const { actor, session } = await openSession({
-      provider: "codex",
+    expect(fileContents(workflow)).toStrictEqual({
+      "references/tone.md": "Keep it short. 世界",
     });
 
-    const created = await accept(
-      uploadClient().upload({
-        headers: tokenHeaders(session.token),
-        body: skillBody(),
-      }),
-      [201],
-    );
-
-    const listed = await accept(
-      workflowListClient().list({
-        headers: clerkHeaders(actor),
-        query: {},
-      }),
-      [200],
-    );
-    expect(listed.body).toContainEqual(
-      expect.objectContaining({
-        id: created.body.workflowId,
-        importSource: "codex",
-      }),
-    );
+    const listed = (await listWorkflows(member)).find((entry) => {
+      return entry.id === created.workflowId;
+    });
+    expect(listed).toMatchObject({
+      name: "release-notes",
+      visibility: "private",
+    });
   });
 
-  it("skips a skill whose name is already imported", async () => {
-    const { session } = await openSession();
-    const created = await accept(
-      uploadClient().upload({
-        headers: tokenHeaders(session.token),
-        body: skillBody(),
-      }),
-      [201],
-    );
+  it("skill-import.bdd-006 tags the workflow with the tool the session was opened for", async () => {
+    useObjectStorage();
+    const member = newMember();
+    const session = await openSession(member, "codex");
+    const created = await uploadCreated(session.token, skill("codex-skill"));
 
-    const repeated = await accept(
-      uploadClient().upload({
-        headers: tokenHeaders(session.token),
-        body: skillBody({ instruction: "A different instruction." }),
+    const listed = (await listWorkflows(member)).find((entry) => {
+      return entry.id === created.workflowId;
+    });
+    expect(listed?.importSource).toBe("codex");
+  });
+
+  it("skill-import.bdd-007 skips a skill whose name is already imported", async () => {
+    useObjectStorage();
+    const member = newMember();
+    const session = await openSession(member);
+    const created = await uploadCreated(session.token, skill("release-notes"));
+
+    const again = await accept(
+      skills().upload({
+        headers: bearer(session.token),
+        body: skill("release-notes", "A different instruction."),
       }),
       [200],
     );
-
-    expect(repeated.body).toStrictEqual({
+    expect(again.body).toStrictEqual({
       outcome: "skipped",
       reason: "name_exists",
-      workflowId: created.body.workflowId,
+      workflowId: created.workflowId,
       name: "release-notes",
     });
   });
 
-  it("reports a name taken by a built-in workflow", async () => {
-    const { session } = await openSession();
+  it("skill-import.bdd-008 reports a name taken by a built-in workflow", async () => {
+    useObjectStorage();
+    const session = await openSession(newMember());
 
     const response = await accept(
-      uploadClient().upload({
-        headers: tokenHeaders(session.token),
-        body: skillBody({ name: "workflow-setup" }),
+      skills().upload({
+        headers: bearer(session.token),
+        body: skill("workflow-setup"),
       }),
       [409],
     );
-
-    expectApiError(response.body);
     expect(response.body.error.code).toBe("SKILL_NAME_TAKEN");
   });
 
-  it("rejects a request body over the size limit", async () => {
-    const { session } = await openSession();
+  it("skill-import.bdd-010 rejects an instruction over the instruction limit", async () => {
+    useObjectStorage();
+    const session = await openSession(newMember());
 
     const response = await accept(
-      uploadClient().upload({
-        headers: tokenHeaders(session.token),
-        body: skillBody({
-          instruction: "a".repeat(SKILL_IMPORT_LIMITS.maxRequestBytes + 1),
-        }),
+      skills().upload({
+        headers: bearer(session.token),
+        body: skill("huge-skill", "a".repeat(256 * 1024 + 1)),
       }),
       [413],
     );
-
-    expectApiError(response.body);
     expect(response.body.error.code).toBe("SKILL_TOO_LARGE");
   });
 
-  it("rejects an instruction over the instruction limit", async () => {
-    const { session } = await openSession();
+  it("skill-import.bdd-013 repairs relative Windows paths and preserves the attachment text", async () => {
+    useObjectStorage();
+    const member = newMember();
+    const session = await openSession(member);
 
-    const response = await accept(
-      uploadClient().upload({
-        headers: tokenHeaders(session.token),
-        body: skillBody({
-          instruction: "a".repeat(SKILL_IMPORT_LIMITS.maxInstructionBytes + 1),
-        }),
-      }),
-      [413],
-    );
-
-    expectApiError(response.body);
-    expect(response.body.error.code).toBe("SKILL_TOO_LARGE");
-  });
-
-  it("rejects content that is not valid UTF-8", async () => {
-    const { session } = await openSession();
-    const request = setupRawAppRequest({ context, routes: skillImportRoutes });
-
-    const response = await request("/api/skill-import/skills", {
-      method: "POST",
-      headers: {
-        authorization: `Bearer ${session.token}`,
-        "content-type": "application/json",
-      },
-      body: Buffer.concat([
-        Buffer.from('{"name":"binary-skill","instruction":"'),
-        Buffer.from([0xff, 0xfe]),
-        Buffer.from('"}'),
-      ]),
-    });
-
-    expect(response.status).toBe(400);
-    expectApiError(response.body);
-    expect(response.body.error.code).toBe("BINARY_FILE_UNSUPPORTED");
-  });
-
-  it("rejects metadata that carries binary content", async () => {
-    const { session } = await openSession();
-
-    const response = await accept(
-      uploadClient().upload({
-        headers: tokenHeaders(session.token),
-        body: skillBody({ description: "drafts\u0000notes" }),
-      }),
-      [400],
-    );
-
-    expectApiError(response.body);
-    expect(response.body.error.code).toBe("BINARY_FILE_UNSUPPORTED");
-  });
-
-  it("repairs relative Windows paths and preserves the attachment text", async () => {
-    const { actor, session } = await openSession();
-    const response = await accept(
-      uploadClient().upload({
-        headers: tokenHeaders(session.token),
-        body: skillBody({
-          files: [
-            {
-              path: String.raw`references\tone.md`,
-              content: "Keep it short. 世界",
-            },
-            { path: String.raw`.\scripts\\check.sh`, content: "echo ok\n" },
-          ],
-        }),
-      }),
-      [201],
-    );
-    expect(response.body).toStrictEqual({
-      outcome: "created",
-      workflowId: expect.any(String),
+    const created = await uploadCreated(session.token, {
       name: "release-notes",
+      instruction: "Write the release notes.",
+      files: [
+        { path: "references\\tone.md", content: "Keep it short. 世界" },
+        { path: ".\\scripts\\\\check.sh", content: "echo ok\n" },
+      ],
     });
-    const detail = await accept(
-      workflowDetailClient().get({
-        headers: clerkHeaders(actor),
-        params: { workflowId: response.body.workflowId },
-      }),
-      [200],
-    );
-    expect(detail.body.fileContents).toStrictEqual([
-      { path: "references/tone.md", content: "Keep it short. 世界" },
-      { path: "scripts/check.sh", content: "echo ok\n" },
-    ]);
+    expect(created.outcome).toBe("created");
+    expect(created.name).toBe("release-notes");
+
+    const workflow = await readWorkflow(member, created.workflowId);
+    expect(fileContents(workflow)).toStrictEqual({
+      "references/tone.md": "Keep it short. 世界",
+      "scripts/check.sh": "echo ok\n",
+    });
   });
 
-  it("imports the instruction and valid files while reporting unusable attachments", async () => {
-    const { actor, session } = await openSession();
+  it("skill-import.bdd-014 imports the instruction and valid files while reporting unusable attachments", async () => {
+    useObjectStorage();
+    const member = newMember();
+    const session = await openSession(member);
+    const longName = `${"n".repeat(252)}.md`;
     const invalidPaths = [
-      String.raw`C:\outside.md`,
-      "C:outside.md",
-      String.raw`\\server\share\outside.md`,
-      String.raw`\outside.md`,
-      String.raw`..\outside.md`,
-      String.raw`scripts\..\..\outside.md`,
-      String.raw`.\SKILL.md`,
-      ".",
-      "./",
-      "references/",
-      "references",
-      "/outside.md",
-      "../outside.md",
+      "/etc/passwd",
+      "/references/tone.md",
+      String.raw`C:\skills\tone.md`,
+      "C:tone.md",
+      "D:/skills/tone.md",
+      String.raw`\\server\share\tone.md`,
+      "//server/share/tone.md",
+      String.raw`\rooted.md`,
+      "../escape.md",
+      "references/../../escape.md",
+      String.raw`..\escape.md`,
       "SKILL.md",
       "./SKILL.md",
-      "SKILL.md/child.txt",
-      "a".repeat(256),
-      "a".repeat(257),
-      `${"文".repeat(85)}.md`,
+      "SKILL.md/notes.md",
+      "",
+      ".",
+      "references/",
+      "references",
+      `${"x".repeat(256)}.md`,
     ];
+    const invalidFiles = invalidPaths.map((path) => {
+      return { path, content: "ignored" };
+    });
 
-    const response = await accept(
-      uploadClient().upload({
-        headers: tokenHeaders(session.token),
-        body: skillBody({
-          files: [
-            { path: "references/tone.md", content: "Keep it short." },
-            ...invalidPaths.map((path) => {
-              return { path, content: "Unusable attachment" };
-            }),
-            { path: "data.txt", content: "text\u0000more" },
-            {
-              path: "large.txt",
-              content: "a".repeat(SKILL_IMPORT_LIMITS.maxFileBytes + 1),
-            },
-            { path: "scripts/check.sh", content: "echo ok\n" },
-            { path: `${"文".repeat(84)}.md`, content: "A 255-byte filename" },
-          ],
-        }),
-      }),
-      [201],
-    );
+    const created = await uploadCreated(session.token, {
+      name: "release-notes",
+      instruction: "Write the release notes.",
+      files: [
+        { path: "references/tone.md", content: "Keep it short. 世界" },
+        { path: "scripts/check.sh", content: "echo ok\n" },
+        { path: longName, content: "long name" },
+        ...invalidFiles,
+        { path: "data.txt", content: "a\u0000b" },
+        { path: "large.txt", content: "z".repeat(64 * 1024 + 1) },
+      ],
+    });
 
-    expect(response.body.skippedFiles).toStrictEqual([
+    expect(created.skippedFiles).toStrictEqual([
       ...invalidPaths.map((path) => {
         return { path, reason: "invalid_path" };
       }),
       { path: "data.txt", reason: "binary_content" },
       { path: "large.txt", reason: "size_limit" },
     ]);
-    const detail = await accept(
-      workflowDetailClient().get({
-        headers: clerkHeaders(actor),
-        params: { workflowId: response.body.workflowId },
-      }),
-      [200],
-    );
-    expect(detail.body.instruction).toBe(skillBody().instruction);
-    expect(detail.body.fileContents).toStrictEqual([
-      { path: "references/tone.md", content: "Keep it short." },
-      { path: "scripts/check.sh", content: "echo ok\n" },
-      { path: `${"文".repeat(84)}.md`, content: "A 255-byte filename" },
-    ]);
-  });
-
-  it.each([
-    ["file count", SKILL_IMPORT_LIMITS.maxFilesPerSkill + 1, "text"],
-    [
-      "combined bytes",
-      SKILL_IMPORT_LIMITS.maxTotalFileBytes / SKILL_IMPORT_LIMITS.maxFileBytes +
-        1,
-      "a".repeat(SKILL_IMPORT_LIMITS.maxFileBytes),
-    ],
-  ])(
-    "deduplicates identical path aliases before enforcing the %s limit",
-    async (_name, count, content) => {
-      const { actor, session } = await openSession();
-      const response = await accept(
-        uploadClient().upload({
-          headers: tokenHeaders(session.token),
-          body: skillBody({
-            files: [
-              ...Array.from({ length: count }, (_, index) => {
-                return {
-                  path:
-                    index % 2 === 0
-                      ? "./references/tone.md"
-                      : "references/tone.md",
-                  content,
-                };
-              }),
-              { path: "scripts/check.sh", content },
-            ],
-          }),
-        }),
-        [201],
-      );
-      expect(response.body).toStrictEqual({
-        outcome: "created",
-        workflowId: expect.any(String),
-        name: "release-notes",
-      });
-      const detail = await accept(
-        workflowDetailClient().get({
-          headers: clerkHeaders(actor),
-          params: { workflowId: response.body.workflowId },
-        }),
-        [200],
-      );
-      expect(detail.body.fileContents).toStrictEqual([
-        { path: "references/tone.md", content },
-        { path: "scripts/check.sh", content },
-      ]);
-    },
-  );
-
-  it("imports the instruction when every attachment is invalid", async () => {
-    const { actor, session } = await openSession();
-    const response = await accept(
-      uploadClient().upload({
-        headers: tokenHeaders(session.token),
-        body: skillBody({ files: [{ path: ".", content: "not a file" }] }),
-      }),
-      [201],
-    );
-    expect(response.body.skippedFiles).toStrictEqual([
-      { path: ".", reason: "invalid_path" },
-    ]);
-    const detail = await accept(
-      workflowDetailClient().get({
-        headers: clerkHeaders(actor),
-        params: { workflowId: response.body.workflowId },
-      }),
-      [200],
-    );
-    expect(detail.body.instruction).toBe(skillBody().instruction);
-    expect(detail.body.fileContents).toStrictEqual([]);
-  });
-
-  it.each([
-    ["file count", SKILL_IMPORT_LIMITS.maxFilesPerSkill, "text"],
-    [
-      "combined bytes",
-      SKILL_IMPORT_LIMITS.maxTotalFileBytes / SKILL_IMPORT_LIMITS.maxFileBytes,
-      "a".repeat(SKILL_IMPORT_LIMITS.maxFileBytes),
-    ],
-  ])(
-    "keeps accepted files when the %s limit is reached",
-    async (_name, limit, content) => {
-      const { actor, session } = await openSession();
-      const response = await accept(
-        uploadClient().upload({
-          headers: tokenHeaders(session.token),
-          body: skillBody({
-            files: Array.from({ length: limit + 1 }, (_, index) => {
-              return { path: `file-${String(index)}.txt`, content };
-            }),
-          }),
-        }),
-        [201],
-      );
-      expect(response.body.skippedFiles).toStrictEqual([
-        { path: `file-${String(limit)}.txt`, reason: "size_limit" },
-      ]);
-      const detail = await accept(
-        workflowDetailClient().get({
-          headers: clerkHeaders(actor),
-          params: { workflowId: response.body.workflowId },
-        }),
-        [200],
-      );
-      expect(detail.body.fileContents).toHaveLength(limit);
-    },
-  );
-
-  it.each([
-    ["start", CreateMultipartUploadCommand],
-    ["part", UploadPartCommand],
-    ["completion", CompleteMultipartUploadCommand],
-  ])(
-    "imports only the instruction when attachment upload fails at %s",
-    async (_name, failedCommand) => {
-      const { actor, session } = await openSession();
-      const provider = context.mocks.s3.send.getMockImplementation();
-      if (!provider) {
-        throw new Error("Expected the S3 provider fixture");
-      }
-      context.mocks.s3.send.mockImplementation((command: unknown) => {
-        if (command instanceof failedCommand) {
-          throw new Error("Attachment upload unavailable");
-        }
-        return provider(command);
-      });
-      const response = await accept(
-        uploadClient().upload({
-          headers: tokenHeaders(session.token),
-          body: skillBody({
-            files: [{ path: "references/tone.md", content: "Keep it short." }],
-          }),
-        }),
-        [201],
-      );
-      expect(response.body.skippedFiles).toStrictEqual([
-        { path: "references/tone.md", reason: "upload_failed" },
-      ]);
-      const detail = await accept(
-        workflowDetailClient().get({
-          headers: clerkHeaders(actor),
-          params: { workflowId: response.body.workflowId },
-        }),
-        [200],
-      );
-      expect(detail.body.instruction).toBe(skillBody().instruction);
-      expect(detail.body.fileContents).toStrictEqual([]);
-      const imported = await accept(
-        sessionsClient().listSkills({
-          headers: clerkHeaders(actor),
-          params: { sessionId: session.sessionId },
-        }),
-        [200],
-      );
-      expect(
-        imported.body.map((skill) => {
-          return skill.id;
-        }),
-      ).toStrictEqual([response.body.workflowId]);
-    },
-  );
-
-  it("imports only the instruction when the content bundle with attachments cannot be uploaded", async () => {
-    const { actor, session } = await openSession();
-    const provider = context.mocks.s3.send.getMockImplementation();
-    if (!provider) {
-      throw new Error("Expected the S3 provider fixture");
-    }
-    let failBundle = true;
-    context.mocks.s3.send.mockImplementation((command: unknown) => {
-      if (command instanceof PutObjectCommand && failBundle) {
-        failBundle = false;
-        throw new Error("Attachment bundle upload unavailable");
-      }
-      return provider(command);
+    const workflow = await readWorkflow(member, created.workflowId);
+    expect(workflow.instruction).toBe("Write the release notes.");
+    expect(fileContents(workflow)).toStrictEqual({
+      "references/tone.md": "Keep it short. 世界",
+      "scripts/check.sh": "echo ok\n",
+      [longName]: "long name",
     });
-    const response = await accept(
-      uploadClient().upload({
-        headers: tokenHeaders(session.token),
-        body: skillBody({
-          files: [{ path: "references/tone.md", content: "Keep it short." }],
-        }),
-      }),
-      [201],
-    );
-    expect(response.body.skippedFiles).toStrictEqual([
-      { path: "references/tone.md", reason: "upload_failed" },
-    ]);
-    const detail = await accept(
-      workflowDetailClient().get({
-        headers: clerkHeaders(actor),
-        params: { workflowId: response.body.workflowId },
-      }),
-      [200],
-    );
-    expect(detail.body.instruction).toBe(skillBody().instruction);
-    expect(detail.body.fileContents).toStrictEqual([]);
   });
 
-  it.each([
-    ["instruction upload failure", new Error("Storage unavailable")],
-    ["cancellation", new DOMException("Request aborted", "AbortError")],
-  ])("does not report success after %s", async (_name, error) => {
-    const { actor, session } = await openSession();
-    const provider = context.mocks.s3.send.getMockImplementation();
-    if (!provider) {
-      throw new Error("Expected the S3 provider fixture");
-    }
-    context.mocks.s3.send.mockImplementation((command: unknown) => {
-      if (command instanceof PutObjectCommand) {
-        throw error;
-      }
-      return provider(command);
+  it("skill-import.bdd-018 keeps accepted files when the file count limit is reached", async () => {
+    useObjectStorage();
+    const member = newMember();
+    const session = await openSession(member);
+
+    const created = await uploadCreated(session.token, {
+      name: "many-files",
+      instruction: "Use the files.",
+      files: Array.from({ length: 51 }, (_, index) => {
+        return { path: `file-${String(index)}.txt`, content: `file ${index}` };
+      }),
     });
+
+    expect(created.skippedFiles).toStrictEqual([
+      { path: "file-50.txt", reason: "size_limit" },
+    ]);
+    const workflow = await readWorkflow(member, created.workflowId);
+    expect(workflow.fileContents).toHaveLength(50);
+  });
+
+  it("skill-import.bdd-024 does not report success after a storage write failure", async () => {
+    useObjectStorage({ failWrites: true });
+    const member = newMember();
+    const session = await openSession(member);
+
+    // The contract has no 500 response, so the typed client cannot express it.
     const request = setupRawAppRequest({ context, routes: skillImportRoutes });
-    const response = await request("/api/skill-import/skills", {
+    const response = await request(skillImportSkillsContract.upload.path, {
       method: "POST",
       headers: {
-        ...tokenHeaders(session.token),
+        ...bearer(session.token),
         "content-type": "application/json",
       },
-      body: JSON.stringify(
-        skillBody({
-          files: [{ path: "references/tone.md", content: "Keep it short." }],
-        }),
-      ),
+      body: JSON.stringify({
+        name: "release-notes",
+        instruction: "Write the release notes.",
+        files: [{ path: "references/tone.md", content: "Keep it short." }],
+      }),
     });
     expect(response.status).toBe(500);
-    const imported = await accept(
-      sessionsClient().listSkills({
-        headers: clerkHeaders(actor),
-        params: { sessionId: session.sessionId },
-      }),
-      [200],
-    );
-    expect(imported.body).toStrictEqual([]);
+    await expect(
+      listSessionSkills(member, session.sessionId),
+    ).resolves.toStrictEqual([]);
   });
 
-  it("rejects an expired session token", async () => {
-    const { actor } = await openSession();
-    const issuedAt = Math.floor(now() / 1000) - 2 * 60 * 60;
-    const expired = signSkillImportJwtForTests({
-      scope: "skill-import",
-      userId: actor.userId,
-      orgId: actor.orgId,
-
-      provider: "claudeCode",
-      sessionId: randomUUID(),
-      iat: issuedAt,
-      exp: issuedAt + 60 * 60,
-    });
+  it("skill-import.bdd-026 rejects an expired session token", async () => {
+    useObjectStorage();
+    const issuedAt = now();
+    mockNow(issuedAt);
+    const session = await openSession(newMember());
+    mockNow(issuedAt + (SKILL_IMPORT_SESSION_TTL_SECONDS + 60) * 1000);
 
     const response = await accept(
-      uploadClient().upload({
-        headers: tokenHeaders(expired),
-        body: skillBody(),
+      skills().upload({
+        headers: bearer(session.token),
+        body: skill("expired-skill"),
       }),
       [401],
     );
-
-    expectApiError(response.body);
+    clearMockNow();
     expect(response.body.error.code).toBe("SKILL_IMPORT_SESSION_INVALID");
   });
 
-  it("rejects a token that does not verify", async () => {
-    const { session } = await openSession();
-
-    const response = await accept(
-      uploadClient().upload({
-        headers: tokenHeaders(`${session.token}tampered`),
-        body: skillBody(),
-      }),
-      [401],
-    );
-
-    expectApiError(response.body);
-    expect(response.body.error.code).toBe("SKILL_IMPORT_SESSION_INVALID");
-  });
-
-  it("does not authenticate any other route", async () => {
-    const { session } = await openSession();
+  it("skill-import.bdd-028 does not authenticate any other route", async () => {
+    const session = await openSession(newMember());
     context.mocks.clerk.authenticateRequest.mockResolvedValue({
       isAuthenticated: false,
+      toAuth: () => {
+        return null;
+      },
     });
 
     const response = await accept(
-      workflowListClient().list({
-        headers: tokenHeaders(session.token),
-        query: {},
-      }),
+      workflowCollection().list({ headers: bearer(session.token), query: {} }),
       [401],
     );
-
-    expectApiError(response.body);
     expect(response.body.error.code).toBe("UNAUTHORIZED");
   });
-
-  it(
-    "stops importing once the session cap is reached",
-    { timeout: 120_000 },
-    async () => {
-      const { actor, session } = await openSession();
-      // Workflows created outside this credential cannot consume its quota.
-      await accept(
-        workflowListClient().create({
-          headers: clerkHeaders(actor),
-          body: {
-            name: "unrelated-private-skill",
-            instruction: "Unrelated work",
-          },
-        }),
-        [201],
-      );
-
-      for (
-        let index = 0;
-        index < SKILL_IMPORT_LIMITS.maxSkillsPerSession;
-        index++
-      ) {
-        await accept(
-          uploadClient().upload({
-            headers: tokenHeaders(session.token),
-            body: skillBody({ name: `capped-skill-${String(index)}` }),
-          }),
-          [201],
-        );
-      }
-
-      const response = await accept(
-        uploadClient().upload({
-          headers: tokenHeaders(session.token),
-          body: skillBody({ name: "capped-skill-overflow" }),
-        }),
-        [429],
-      );
-
-      expectApiError(response.body);
-      expect(response.body.error.code).toBe("SKILL_IMPORT_LIMIT_REACHED");
-      const next = await accept(
-        sessionsClient().create({
-          headers: clerkHeaders(actor),
-          body: { provider: "claudeCode" },
-        }),
-        [200],
-      );
-      await accept(
-        uploadClient().upload({
-          headers: tokenHeaders(next.body.token),
-          body: skillBody({ name: "independent-session-skill" }),
-        }),
-        [201],
-      );
-    },
-  );
 });

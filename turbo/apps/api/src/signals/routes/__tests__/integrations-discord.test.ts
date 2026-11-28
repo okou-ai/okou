@@ -1,862 +1,702 @@
 import { randomUUID } from "node:crypto";
-import { object, string } from "zod";
-import { beforeEach, describe, expect, it } from "vitest";
+import { createStore } from "ccstate";
 import { http, HttpResponse } from "msw";
-import { server } from "../../../mocks/server";
+import { describe, expect, it, onTestFinished } from "vitest";
 import { integrationsDiscordContract } from "@okouai/api-contracts/contracts/integrations-discord";
 
 import { accept, testContext } from "../../../__tests__/test-context";
-import { setupApp, setupRawAppRequest } from "../../../__tests__/test-helpers";
+import { setupApp } from "../../../__tests__/test-helpers";
+import { TEST_WITH_SINGLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE } from "../../../__tests__/test-timeouts";
 import { mockEnv } from "../../../lib/env";
+import { server } from "../../../mocks/server";
 import { flushWaitUntilForTest } from "../../context/wait-until";
-import { createDeferredPromise, settleIncludingAbort } from "../../utils";
 import { integrationsDiscordRoutes } from "../integrations-discord";
+import { createBddApi } from "./helpers/api-bdd";
+import { createRunsApi } from "./helpers/api-bdd-runs";
+import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import {
   configureDiscordApp,
-  removePublicDiscordBinding,
-  mockDiscordApplication,
-  mockDiscordMemberships,
   createPublicDiscordBinding,
-  type DiscordActor,
+  mockDiscordApplication,
+  uniqueDiscordSnowflake,
   type DiscordFixture,
 } from "./helpers/discord";
-import { createFixtureTracker, createRouteMocks } from "./helpers/route-test";
-import { createAuthOrgBddApi } from "./helpers/api-bdd-auth-org";
-import { channelsPublishedTo } from "./helpers/realtime-publications";
 import { launchPublicDiscordTestRun } from "./helpers/discord-run";
+import {
+  deleteOrgMembership$,
+  seedOrgMembership$,
+} from "./helpers/org-membership";
+import {
+  channelsPublishedTo,
+  countPublishedTo,
+} from "./helpers/realtime-publications";
+import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
-const track = createFixtureTracker((fixture: DiscordFixture) => {
-  return removePublicDiscordBinding(context, fixture);
-});
+const SESSION = Object.freeze({ authorization: "Bearer clerk-session" });
+const TOPIC = "discord:changed";
+const WORKSPACE_NAME = "Discord test workspace";
+const GUILD_ID = "1559819014036000790";
 
-beforeEach(() => {
-  mockEnv("ENV", "development");
-  configureDiscordApp();
-  mockEnv("DISCORD_OAUTH_CLIENT_SECRET", "discord-test-client-secret");
-});
-
-function createActors() {
-  const actors: DiscordActor[] = [];
-  return {
-    actor(options: Partial<DiscordActor> = {}): DiscordActor {
-      const value = {
-        userId: options.userId ?? `user_${randomUUID()}`,
-        orgId: options.orgId ?? `org_${randomUUID()}`,
-        orgRole: options.orgRole ?? "org:admin",
-      } as const;
-      actors.push(value);
-      mockDiscordMemberships(context, actors);
-      return value;
-    },
-    restore(): void {
-      mockDiscordMemberships(context, actors);
-    },
-  };
+interface Member {
+  readonly userId: string;
+  readonly orgId: string;
+  readonly role: "admin" | "member";
 }
 
-function authenticate(value: DiscordActor) {
-  createRouteMocks(context).clerk.session(
-    value.userId,
-    value.orgId,
-    value.orgRole,
-  );
-  return { authorization: "Bearer clerk-session" };
-}
-
-function client() {
+function discordApi() {
   return setupApp({ context, routes: integrationsDiscordRoutes })(
     integrationsDiscordContract,
   );
 }
 
-async function fixture(
-  value: DiscordActor,
-  options: Partial<
-    Pick<
-      DiscordFixture,
-      "guildId" | "guildName" | "discordUserId" | "botUserId"
-    >
-  > & { readonly flow?: "install" | "connect" } = {},
-): Promise<DiscordFixture> {
-  const binding = await track(
-    createPublicDiscordBinding(context, {
-      ...value,
-      flow: "install",
-      ...options,
-    }),
-  );
-  await flushWaitUntilForTest();
-  // Assertions below observe settings mutations, not OAuth setup broadcasts.
-  context.mocks.ably.publish.mockClear();
-  context.mocks.ably.channelGet.mockClear();
-  return binding;
-}
-
-async function status(value: DiscordActor) {
-  return (
-    await accept(client().getStatus({ headers: authenticate(value) }), [200])
-  ).body;
-}
-
-async function expectDiscordChanges(userIds: readonly string[]): Promise<void> {
-  await flushWaitUntilForTest();
-  expect(
-    [...channelsPublishedTo(context.mocks, "discord:changed")].sort(),
-  ).toStrictEqual(
-    userIds
-      .map((userId) => {
-        return `user:${userId}`;
-      })
-      .sort(),
-  );
-  expect(
-    context.mocks.ably.publish.mock.calls
-      .filter((call) => {
-        return call[0] === "discord:changed";
-      })
-      .map((call) => {
-        return call[1];
-      }),
-  ).toStrictEqual(
-    userIds.map(() => {
-      return null;
-    }),
-  );
-}
-
-async function registerMemberCache(value: DiscordActor): Promise<void> {
-  const api = createAuthOrgBddApi(context);
-  const profile = api.user(value);
-  const { token } = await api.createCliToken(profile);
-  context.mocks.clerk.users.getOrganizationMembershipList.mockResolvedValueOnce(
-    {
-      data: [
-        {
-          role: value.orgRole ?? "org:admin",
-          organization: { id: value.orgId },
-        },
-      ],
+/** Real workspace members, as the identity provider reports them. */
+function workspace() {
+  const store = createStore();
+  return {
+    async member(
+      role: "admin" | "member" = "admin",
+      orgId = `org_${randomUUID()}`,
+      userId = `user_${randomUUID()}`,
+    ): Promise<Member> {
+      await store.set(
+        seedOrgMembership$,
+        { orgId, userId, role, name: WORKSPACE_NAME },
+        context.signal,
+      );
+      return { userId, orgId, role };
     },
+    async revoke(member: Member): Promise<void> {
+      await store.set(deleteOrgMembership$, member, context.signal);
+    },
+  };
+}
+
+function signIn(member: Member): void {
+  createRouteMocks(context).clerk.session(
+    member.userId,
+    member.orgId,
+    member.role === "admin" ? "org:admin" : "org:member",
   );
-  await api.requestReadMeWithBearer(token, profile, [200]);
+}
+
+function bind(
+  member: Member,
+  args: {
+    readonly flow: "install" | "connect";
+    readonly guildId?: string;
+    readonly guildName?: string;
+    readonly discordUserId?: string;
+  },
+): Promise<DiscordFixture> {
+  return createPublicDiscordBinding(context, {
+    ...args,
+    userId: member.userId,
+    orgId: member.orgId,
+    orgRole: member.role === "admin" ? "org:admin" : "org:member",
+  });
+}
+
+async function readStatus(member: Member) {
+  signIn(member);
+  const response = await accept(
+    discordApi().getStatus({ headers: SESSION }),
+    [200],
+  );
+  return response.body;
+}
+
+function published(userId: string): number {
+  return countPublishedTo(context.mocks, {
+    channel: `user:${userId}`,
+    topic: TOPIC,
+  });
+}
+
+function publishedTotal(): number {
+  return channelsPublishedTo(context.mocks, TOPIC).length;
+}
+
+interface InviteLookup {
+  readonly method: string;
+  readonly url: URL;
+  readonly authorization: string | null;
+}
+
+function configureInstallLinks(): void {
+  configureDiscordApp();
+  mockEnv("DISCORD_OAUTH_CLIENT_SECRET", "discord-test-client-secret");
+  mockEnv("APP_URL", "https://preview-app.example");
+}
+
+function mockInviteLookup(respond: () => Response): InviteLookup[] {
+  const lookups: InviteLookup[] = [];
+  server.use(
+    http.get("https://discord.com/api/v10/invites/:code", ({ request }) => {
+      lookups.push({
+        method: request.method,
+        url: new URL(request.url),
+        authorization: request.headers.get("authorization"),
+      });
+      return respond();
+    }),
+  );
+  return lookups;
+}
+
+function guildInvite(): Response {
+  return HttpResponse.json({
+    type: 0,
+    code: "example",
+    expires_at: null,
+    guild: { id: GUILD_ID, name: "New server" },
+  });
+}
+
+async function resolveInstallLink(invite: string) {
+  const admin = await workspace().member("admin");
+  signIn(admin);
+  configureInstallLinks();
+  const lookups = mockInviteLookup(guildInvite);
+
+  const response = await accept(
+    discordApi().installLink({ headers: SESSION, body: { invite } }),
+    [200],
+  );
+
+  return {
+    body: response.body,
+    lookups: lookups.map((lookup) => {
+      return {
+        method: lookup.method,
+        path: lookup.url.pathname,
+        withExpiration: lookup.url.searchParams.get("with_expiration"),
+        authorization: lookup.authorization,
+      };
+    }),
+    published: publishedTotal(),
+  };
+}
+
+const RESOLVED_INSTALL_LINK = Object.freeze({
+  body: {
+    url: `https://preview-app.example/settings/discord/install?guild_id=${GUILD_ID}`,
+    guildId: GUILD_ID,
+    guildName: "New server",
+  },
+  lookups: [
+    {
+      method: "GET",
+      path: "/api/v10/invites/example",
+      withExpiration: "true",
+      authorization: null,
+    },
+  ],
+  published: 0,
+});
+
+async function installLinkStatus(respond: () => Response): Promise<number> {
+  const admin = await workspace().member("admin");
+  signIn(admin);
+  configureInstallLinks();
+  mockInviteLookup(respond);
+  const response = await accept(
+    discordApi().installLink({
+      headers: SESSION,
+      body: { invite: "https://discord.gg/example" },
+    }),
+    [400, 404, 429],
+  );
+  return response.status;
+}
+
+async function rejectUnsupportedInvite(invite: string) {
+  const admin = await workspace().member("admin");
+  signIn(admin);
+  configureInstallLinks();
+  const lookups = mockInviteLookup(guildInvite);
+
+  const response = await accept(
+    discordApi().installLink({ headers: SESSION, body: { invite } }),
+    [400],
+  );
+
+  return { code: response.body.error.code, lookups: lookups.length };
 }
 
 describe("Discord server installation links", () => {
-  const invite = "https://discord.gg/example";
-  const guild = { id: "1559819014036000790", name: "New server" };
-
-  function resolve(invitation: string) {
-    const owner = createActors().actor();
-    return client().installLink({
-      headers: authenticate(owner),
-      body: { invite: invitation },
+  it("integrations-discord-004 rejects an unsupported attacker URL without fetching it", async () => {
+    await expect(
+      rejectUnsupportedInvite("https://attacker.example/invite/example"),
+    ).resolves.toStrictEqual({
+      code: "BAD_REQUEST",
+      lookups: 0,
     });
-  }
-
-  it.each([
-    invite,
-    "https://discord.com/invite/example?utm_source=share",
-    "https://discordapp.com/invite/example/",
-  ])(
-    "resolves %s without an existing binding or provider credentials",
-    async (invitation) => {
-      mockEnv("APP_URL", "https://preview-app.example");
-      const lookups: string[] = [];
-      server.use(
-        http.get(
-          "https://discord.com/api/v10/invites/example",
-          ({ request }) => {
-            lookups.push(request.method);
-            expect(request.headers.get("authorization")).toBeNull();
-            expect(
-              new URL(request.url).searchParams.get("with_expiration"),
-            ).toBe("true");
-            return HttpResponse.json({ type: 0, guild, expires_at: null });
-          },
-        ),
-      );
-      const result = await accept(resolve(invitation), [200]);
-      expect(result.body).toStrictEqual({
-        url: `https://preview-app.example/settings/discord/install?guild_id=${guild.id}`,
-        guildId: guild.id,
-        guildName: guild.name,
-      });
-      expect(lookups).toStrictEqual(["GET"]);
-      await expectDiscordChanges([]);
-    },
-  );
-
-  it.each([
-    "https://attacker.example/invite/example",
-    "https://discord.gg.attacker.example/example",
-    "https://discord.gg@attacker.example/example",
-    "http://discord.gg/example",
-    "https://discord.gg:444/example",
-    "https://discord.gg/example/another",
-    "https://discord.com/channels/123",
-  ])(
-    "rejects an unsupported URL without fetching it: %s",
-    async (invitation) => {
-      const response = await accept(resolve(invitation), [400]);
-      expect(response.body.error.code).toBe("BAD_REQUEST");
-    },
-  );
-
-  it.each([
-    { providerStatus: 404, body: {}, expected: 404 },
-    { providerStatus: 200, body: { type: 1 }, expected: 400 },
-    {
-      providerStatus: 200,
-      body: { type: 0, guild, expires_at: "2020-01-01T00:00:00Z" },
-      expected: 404,
-    },
-    {
-      providerStatus: 429,
-      body: { retry_after: 5, global: false },
-      expected: 429,
-    },
-    { providerStatus: 500, body: {}, expected: 502 },
-  ] as const)(
-    "handles provider status $providerStatus as $expected",
-    async ({ providerStatus, body, expected }) => {
-      server.use(
-        http.get("https://discord.com/api/v10/invites/example", () => {
-          return HttpResponse.json(body, { status: providerStatus });
-        }),
-      );
-      expect((await resolve(invite)).status).toBe(expected);
-    },
-  );
-
-  it("requires authentication", async () => {
-    context.mocks.clerk.authenticateRequest.mockResolvedValue({
-      isAuthenticated: false,
-    });
-    const response = await accept(
-      client().installLink({ headers: {}, body: { invite } }),
-      [401],
-    );
-    expect(response.body.error.code).toBe("UNAUTHORIZED");
   });
-});
 
-describe("Discord installation link run access", () => {
-  it("grants a run Discord installation link access without requiring a server binding", async () => {
-    const { actor, restore } = createActors();
-    const owner = actor();
-    const profile = createAuthOrgBddApi(context).user(owner);
-    const run = await launchPublicDiscordTestRun(context, profile);
-    // Web runs can use the CLI, but must not receive Discord-only invite guidance.
-    expect(run.execution.appendSystemPrompt).not.toContain(
-      "okou discord install-link",
-    );
-    restore();
-    server.use(
-      http.get("https://discord.com/api/v10/invites/example", () => {
+  it("integrations-discord-001 resolves a discord.gg invite into the app installation link", async () => {
+    await expect(
+      resolveInstallLink("https://discord.gg/example"),
+    ).resolves.toStrictEqual(RESOLVED_INSTALL_LINK);
+  });
+
+  it("integrations-discord-002 resolves a discord.com invite with tracking parameters", async () => {
+    await expect(
+      resolveInstallLink("https://discord.com/invite/example?utm_source=share"),
+    ).resolves.toStrictEqual(RESOLVED_INSTALL_LINK);
+  });
+
+  it("integrations-discord-003 resolves a discordapp.com invite with a trailing slash", async () => {
+    await expect(
+      resolveInstallLink("https://discordapp.com/invite/example/"),
+    ).resolves.toStrictEqual(RESOLVED_INSTALL_LINK);
+  });
+
+  it("integrations-discord-010 rejects a Discord channel URL as an invite", async () => {
+    await expect(
+      rejectUnsupportedInvite("https://discord.com/channels/123"),
+    ).resolves.toStrictEqual({
+      code: "BAD_REQUEST",
+      lookups: 0,
+    });
+  });
+
+  it("integrations-discord-011 reports an unknown invite as not found", async () => {
+    await expect(
+      installLinkStatus(() => {
+        return HttpResponse.json(
+          { message: "Unknown Invite", code: 10_006 },
+          { status: 404 },
+        );
+      }),
+    ).resolves.toBe(404);
+  });
+
+  it("integrations-discord-012 rejects an invite that is not for a server", async () => {
+    await expect(
+      installLinkStatus(() => {
+        return HttpResponse.json({ type: 1, code: "example", guild: null });
+      }),
+    ).resolves.toBe(400);
+  });
+
+  it("integrations-discord-013 reports an expired server invite as not found", async () => {
+    await expect(
+      installLinkStatus(() => {
         return HttpResponse.json({
           type: 0,
-          guild: { id: "1559819014036000790", name: "New server" },
+          code: "example",
+          expires_at: "2020-01-01T00:00:00Z",
+          guild: { id: GUILD_ID, name: "New server" },
         });
       }),
-    );
-    const result = await client().installLink({
-      headers: run.headers,
-      body: { invite: "https://discord.gg/example" },
-    });
-    expect(result.status).toBe(200);
+    ).resolves.toBe(404);
+  });
+
+  it("integrations-discord-014 reports Discord rate limiting as too many requests", async () => {
+    await expect(
+      installLinkStatus(() => {
+        return HttpResponse.json(
+          {
+            message: "You are being rate limited.",
+            retry_after: 5,
+            global: false,
+          },
+          { status: 429 },
+        );
+      }),
+    ).resolves.toBe(429);
   });
 });
 
+async function selectDm(member: Member, connectionId: string) {
+  signIn(member);
+  const response = await discordApi().setDmSelection({
+    headers: SESSION,
+    body: { connectionId },
+  });
+  return response.status;
+}
+
+/** Select one DM connection and read the caller's events and saved choice. */
+async function selectAndRead(member: Member, connectionId: string) {
+  const before = published(member.userId);
+  const status = await selectDm(member, connectionId);
+  const events = published(member.userId) - before;
+  const { dmSelectionConnectionId } = await readStatus(member);
+  return { status, events, selection: dmSelectionConnectionId };
+}
+
+function connectionIds(status: Awaited<ReturnType<typeof readStatus>>) {
+  return status.dmBindings
+    .map((binding) => {
+      return binding.connectionId;
+    })
+    .sort();
+}
+
+/** One Okou user and Discord account installed into three organizations. */
+async function sameUserInThreeOrganizations() {
+  configureDiscordApp();
+  const members = workspace();
+  const userId = `user_${randomUUID()}`;
+  const discordUserId = uniqueDiscordSnowflake();
+  const firstOrg = await members.member("admin", `org_${randomUUID()}`, userId);
+  const secondOrg = await members.member(
+    "admin",
+    `org_${randomUUID()}`,
+    userId,
+  );
+  const thirdOrg = await members.member("admin", `org_${randomUUID()}`, userId);
+  const firstBinding = await bind(firstOrg, { flow: "install", discordUserId });
+  const secondBinding = await bind(secondOrg, {
+    flow: "install",
+    discordUserId,
+  });
+  const thirdBinding = await bind(thirdOrg, { flow: "install", discordUserId });
+  return { firstOrg, secondOrg, firstBinding, secondBinding, thirdBinding };
+}
+
 describe("verified Discord integration settings", () => {
-  it("requires authenticated organization membership", async () => {
-    context.mocks.clerk.authenticateRequest.mockResolvedValue({
-      isAuthenticated: false,
-    });
-    const anonymousStatus = await accept(
-      client().getStatus({ headers: {} }),
-      [401],
-    );
-    expect(anonymousStatus.status).toBe(401);
-    await accept(client().disconnect({ headers: {}, query: {} }), [401]);
-    await accept(
-      client().setDmSelection({
-        headers: {},
-        body: { connectionId: randomUUID() },
-      }),
-      [401],
-    );
+  it("integrations-discord-018 requires authenticated organization membership", async () => {
+    configureDiscordApp();
+    const api = discordApi();
+    const connectionId = randomUUID();
 
+    const statuses = [
+      (await api.getStatus({ headers: {} })).status,
+      (await api.disconnect({ headers: {}, query: {} })).status,
+      (
+        await api.setDmSelection({
+          headers: {},
+          body: { connectionId },
+        })
+      ).status,
+    ];
     createRouteMocks(context).clerk.session(`user_${randomUUID()}`, null);
-    const withoutOrganization = await accept(
-      client().getStatus({
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [401],
-    );
-    expect(withoutOrganization.status).toBe(401);
-    await expectDiscordChanges([]);
+    statuses.push((await api.getStatus({ headers: SESSION })).status);
+
+    expect(statuses).toStrictEqual([401, 401, 401, 401]);
+    expect(publishedTotal()).toBe(0);
   });
 
-  it("reports existing bindings and unavailable context when app configuration is missing", async () => {
-    const { actor } = createActors();
-    const owner = actor();
-    const installed = await fixture(owner);
-    mockEnv("DISCORD_BOT_TOKEN", undefined);
-
-    await expect(status(owner)).resolves.toMatchObject({
-      isAvailable: false,
-      isConnected: true,
-      guildId: installed.guildId,
-      contextMode: "unavailable",
-      onboarding: "oauth",
-      dmBindings: [],
+  it("integrations-discord-020 reports verified guild identity and honest MESSAGE_CONTENT availability", async () => {
+    configureDiscordApp();
+    const admin = await workspace().member("admin");
+    const fixture = await bind(admin, {
+      flow: "install",
+      guildName: "Customer workspace",
     });
-  });
 
-  it("reports verified guild identity and honest MESSAGE_CONTENT availability", async () => {
-    const { actor } = createActors();
-    const owner = actor();
-    const installed = await fixture(owner, { guildName: "Customer workspace" });
+    const first = await readStatus(admin);
+    mockDiscordApplication(1 << 18);
+    const second = await readStatus(admin);
 
-    await expect(status(owner)).resolves.toStrictEqual({
+    expect(first).toStrictEqual({
       isAvailable: true,
       isConnected: true,
       isAdmin: true,
-      guildId: installed.guildId,
+      guildId: fixture.guildId,
       guildName: "Customer workspace",
-      discordUserId: installed.discordUserId,
-
+      discordUserId: fixture.discordUserId,
       contextMode: "mentions_only",
       onboarding: "oauth",
       dmSelectionConnectionId: null,
       dmBindings: [
         {
-          connectionId: installed.connectionId,
-          guildId: installed.guildId,
+          connectionId: fixture.connectionId,
+          guildId: fixture.guildId,
           guildName: "Customer workspace",
-          workspaceName: "Discord test workspace",
+          workspaceName: WORKSPACE_NAME,
         },
       ],
     });
-    mockDiscordApplication(1 << 18);
-    await expect(status(owner)).resolves.toMatchObject({ contextMode: "full" });
+    expect(second.contextMode).toBe("full");
   });
 
-  it.each([
-    { flags: 1 << 19 },
-    { flags: 0, flagsNew: String((1n << 40n) | (1n << 18n)) },
-    { flags: 0, flagsNew: String(1n << 19n) },
-  ])(
-    "reports full context for Discord's actual grant $flags/$flagsNew",
-    async ({ flags, flagsNew }) => {
-      const { actor } = createActors();
-      const owner = actor();
-      await fixture(owner);
-      mockDiscordApplication(flags, flagsNew);
-      await expect(status(owner)).resolves.toMatchObject({
-        contextMode: "full",
-      });
-    },
-  );
+  it("integrations-discord-021 reports full context for Discord's actual 1 << 19 grant", async () => {
+    configureDiscordApp();
+    const admin = await workspace().member("admin");
+    await bind(admin, { flow: "install" });
+    mockDiscordApplication(524_288);
 
-  it.each([
-    { id: "123456789012345678", flags: 1 << 14 },
-    { id: "123456789012345678", flags: 1 << 18, flags_new: "0" },
-  ])(
-    "reports mentions-only when the authoritative flags do not grant content",
-    async (application) => {
-      const { actor } = createActors();
-      const owner = actor();
-      await fixture(owner);
-      server.use(
-        http.get("https://discord.com/api/v10/applications/@me", () => {
-          return HttpResponse.json(application);
-        }),
-      );
-      await expect(status(owner)).resolves.toMatchObject({
-        contextMode: "mentions_only",
-      });
-    },
-  );
+    const status = await readStatus(admin);
 
-  it.each([
-    { id: "123456789012345679", flags: 1 << 18 },
-    { id: "123456789012345678" },
-  ])(
-    "does not claim content access from invalid or mismatched application metadata",
-    async (application) => {
-      const { actor } = createActors();
-      const owner = actor();
-      await fixture(owner);
-      server.use(
-        http.get("https://discord.com/api/v10/applications/@me", () => {
-          return HttpResponse.json(application);
-        }),
-      );
-      await expect(status(owner)).resolves.toMatchObject({
-        contextMode: "unavailable",
-      });
-    },
-  );
+    expect(status.contextMode).toBe("full");
+  });
 
-  it.each([401, 429, 500])(
-    "reports unavailable context when application discovery fails with %i",
-    async (statusCode) => {
-      const { actor } = createActors();
-      const owner = actor();
-      await fixture(owner);
-      server.use(
-        http.get("https://discord.com/api/v10/applications/@me", () => {
-          return HttpResponse.json(
-            { retry_after: 1, global: false },
-            { status: statusCode },
-          );
-        }),
-      );
-      await expect(status(owner)).resolves.toMatchObject({
-        contextMode: "unavailable",
-      });
-    },
-  );
-
-  it("disconnects only the caller while preserving the guild and another verified user", async () => {
-    const { actor } = createActors();
-    const owner = actor();
-    const first = await fixture(owner);
-    const peer = actor({ orgId: owner.orgId });
-    const second = await fixture(peer, {
+  it("integrations-discord-031 disconnects only the caller while preserving the guild and another verified user", async () => {
+    configureDiscordApp();
+    const members = workspace();
+    const admin = await members.member("admin");
+    const peer = await members.member("member", admin.orgId);
+    const installed = await bind(admin, { flow: "install" });
+    const connected = await bind(peer, {
       flow: "connect",
-      guildId: first.guildId,
+      guildId: installed.guildId,
+    });
+    const before = publishedTotal();
+    const adminBefore = published(admin.userId);
+
+    signIn(admin);
+    const first = await discordApi().disconnect({
+      headers: SESSION,
+      query: {},
     });
 
-    await accept(
-      client().disconnect({ headers: authenticate(owner), query: {} }),
-      [200],
-    );
-    await expectDiscordChanges([owner.userId]);
-
-    const disconnected = await status(owner);
-    expect(disconnected).toMatchObject({
+    expect(first.status).toBe(200);
+    expect(published(admin.userId)).toBe(adminBefore + 1);
+    expect(publishedTotal()).toBe(before + 1);
+    const adminStatus = await readStatus(admin);
+    expect(adminStatus).toMatchObject({
       isConnected: false,
       discordUserId: null,
-    });
-    expect(disconnected.dmBindings).toStrictEqual([]);
-    expect(disconnected.dmSelectionConnectionId).toBeNull();
-    await expect(status(peer)).resolves.toMatchObject({
-      isConnected: true,
-      discordUserId: second.discordUserId,
-    });
-    await accept(
-      client().disconnect({ headers: authenticate(owner), query: {} }),
-      [404],
-    );
-    await expectDiscordChanges([owner.userId]);
-  });
-
-  it("notifies only the disconnecting user and preserves peers and cached admins", async () => {
-    const { actor } = createActors();
-    const owner = actor();
-    const installed = await fixture(owner);
-    const connected = actor({ orgId: owner.orgId });
-    await fixture(connected, { flow: "connect", guildId: installed.guildId });
-    const unconnectedAdmin = actor({ orgId: owner.orgId });
-    const unconnectedMember = actor({
-      orgId: owner.orgId,
-      orgRole: "org:member",
-    });
-    const otherOwner = actor();
-    const otherInstalled = await fixture(otherOwner);
-    for (const cachedActor of [
-      owner,
-      unconnectedAdmin,
-      unconnectedMember,
-      otherOwner,
-    ]) {
-      await registerMemberCache(cachedActor);
-    }
-    await expect(status(unconnectedAdmin)).resolves.toMatchObject({
-      isConnected: false,
-    });
-    await expectDiscordChanges([]);
-
-    await accept(
-      client().disconnect({
-        headers: authenticate(owner),
-        query: {},
-      }),
-      [200],
-    );
-    const recipients = [owner.userId];
-    await expectDiscordChanges(recipients);
-    await expect(status(connected)).resolves.toMatchObject({
-      isConnected: true,
-    });
-    await expect(status(otherOwner)).resolves.toMatchObject({
-      isConnected: true,
-      guildId: otherInstalled.guildId,
-    });
-
-    await accept(
-      client().disconnect({
-        headers: authenticate(owner),
-        query: {},
-      }),
-      [404],
-    );
-    await expectDiscordChanges(recipients);
-  });
-
-  it("hides revoked membership and refuses subsequent binding mutations", async () => {
-    const { actor, restore } = createActors();
-    const owner = actor();
-    const installed = await fixture(owner);
-    mockDiscordMemberships(context, []);
-
-    await expect(status(owner)).resolves.toMatchObject({
-      isConnected: false,
       dmBindings: [],
+      dmSelectionConnectionId: null,
     });
-    await accept(
-      client().setDmSelection({
-        headers: authenticate(owner),
-        body: { connectionId: installed.connectionId },
-      }),
-      [404],
-    );
-    await accept(
-      client().disconnect({ headers: authenticate(owner), query: {} }),
-      [404],
-    );
-    await expectDiscordChanges([]);
-    restore();
+    const peerStatus = await readStatus(peer);
+    expect(peerStatus).toMatchObject({
+      isConnected: true,
+      discordUserId: connected.discordUserId,
+      guildId: installed.guildId,
+    });
+
+    signIn(admin);
+    const second = await discordApi().disconnect({
+      headers: SESSION,
+      query: {},
+    });
+
+    expect(second.status).toBe(404);
+    expect(publishedTotal()).toBe(before + 1);
   });
 
-  it("keeps DM bindings and saved choices isolated across successive user requests", async () => {
-    const { actor } = createActors();
-    const firstOwner = actor();
-    const first = await fixture(firstOwner);
-    const secondOwner = actor();
-    const second = await fixture(secondOwner);
+  it("integrations-discord-033 hides revoked membership and refuses subsequent binding mutations", async () => {
+    configureDiscordApp();
+    const members = workspace();
+    const admin = await members.member("admin");
+    const fixture = await bind(admin, { flow: "install" });
+    await members.revoke(admin);
+    const before = publishedTotal();
 
-    for (const [owner, binding] of [
-      [firstOwner, first],
-      [secondOwner, second],
+    const status = await readStatus(admin);
+    signIn(admin);
+    const selection = await discordApi().setDmSelection({
+      headers: SESSION,
+      body: { connectionId: fixture.connectionId },
+    });
+    signIn(admin);
+    const disconnect = await discordApi().disconnect({
+      headers: SESSION,
+      query: {},
+    });
+
+    expect(status.isConnected).toBeFalsy();
+    expect(status.dmBindings).toStrictEqual([]);
+    expect(selection.status).toBe(404);
+    expect(disconnect.status).toBe(404);
+    expect(publishedTotal()).toBe(before);
+  });
+
+  it("integrations-discord-034 keeps DM bindings and saved choices isolated across successive user requests", async () => {
+    configureDiscordApp();
+    const members = workspace();
+    const first = await members.member("admin");
+    const second = await members.member("admin");
+    const firstBinding = await bind(first, { flow: "install" });
+    const secondBinding = await bind(second, { flow: "install" });
+
+    const selections: number[] = [];
+    for (const [member, binding] of [
+      [first, firstBinding],
+      [second, secondBinding],
     ] as const) {
-      await accept(
-        client().setDmSelection({
-          headers: authenticate(owner),
-          body: { connectionId: binding.connectionId },
-        }),
-        [200],
-      );
-    }
-
-    for (const [owner, binding] of [
-      [firstOwner, first],
-      [secondOwner, second],
-      [firstOwner, first],
-    ] as const) {
-      const current = await status(owner);
-      expect({
-        discordUserId: current.discordUserId,
-        dmBindings: current.dmBindings,
-        dmSelectionConnectionId: current.dmSelectionConnectionId,
-      }).toStrictEqual({
-        discordUserId: binding.discordUserId,
-        dmBindings: [
-          {
-            connectionId: binding.connectionId,
-            guildId: binding.guildId,
-            guildName: binding.guildName,
-            workspaceName: "Discord test workspace",
-          },
-        ],
-        dmSelectionConnectionId: binding.connectionId,
+      signIn(member);
+      const selected = await discordApi().setDmSelection({
+        headers: SESSION,
+        body: { connectionId: binding.connectionId },
       });
+      selections.push(selected.status);
     }
-  });
+    const reads = [
+      { binding: firstBinding, status: await readStatus(first) },
+      { binding: secondBinding, status: await readStatus(second) },
+      { binding: firstBinding, status: await readStatus(first) },
+    ];
 
-  it("requires an explicit DM choice across organizations and invalidates a revoked choice", async () => {
-    const { actor } = createActors();
-    const firstOwner = actor();
-    const first = await fixture(firstOwner);
-    const secondOwner = actor({ userId: firstOwner.userId });
-    const second = await fixture(secondOwner, {
-      discordUserId: first.discordUserId,
-    });
-    const thirdOwner = actor({ userId: firstOwner.userId });
-    const third = await fixture(thirdOwner, {
-      discordUserId: first.discordUserId,
-    });
-
-    const ambiguous = await status(firstOwner);
-    expect(ambiguous.dmSelectionConnectionId).toBeNull();
-    expect(
-      ambiguous.dmBindings
-        .map((binding) => {
-          return binding.connectionId;
-        })
-        .sort(),
-    ).toStrictEqual(
-      [first.connectionId, second.connectionId, third.connectionId].sort(),
-    );
-    await accept(
-      client().setDmSelection({
-        headers: authenticate(firstOwner),
-        body: { connectionId: second.connectionId },
-      }),
-      [200],
-    );
-    await expectDiscordChanges([firstOwner.userId]);
-    await expect(status(firstOwner)).resolves.toMatchObject({
-      dmSelectionConnectionId: second.connectionId,
-    });
-
-    for (const connectionId of [third.connectionId, second.connectionId]) {
-      await accept(
-        client().setDmSelection({
-          headers: authenticate(firstOwner),
-          body: { connectionId },
-        }),
-        [200],
-      );
-      await expect(status(firstOwner)).resolves.toMatchObject({
-        dmSelectionConnectionId: connectionId,
-      });
-    }
-    await expectDiscordChanges([
-      firstOwner.userId,
-      firstOwner.userId,
-      firstOwner.userId,
-    ]);
-
-    await accept(
-      client().disconnect({ headers: authenticate(secondOwner), query: {} }),
-      [200],
-    );
-    await expectDiscordChanges([
-      firstOwner.userId,
-      firstOwner.userId,
-      firstOwner.userId,
-      firstOwner.userId,
-    ]);
-    const revoked = await status(firstOwner);
-    expect(revoked.dmSelectionConnectionId).toBeNull();
-    expect(
-      revoked.dmBindings
-        .map((binding) => {
-          return binding.connectionId;
-        })
-        .sort(),
-    ).toStrictEqual([first.connectionId, third.connectionId].sort());
-    await accept(
-      client().setDmSelection({
-        headers: authenticate(firstOwner),
-        body: { connectionId: second.connectionId },
-      }),
-      [404],
-    );
-    await expectDiscordChanges([
-      firstOwner.userId,
-      firstOwner.userId,
-      firstOwner.userId,
-      firstOwner.userId,
-    ]);
-  });
-
-  it("keeps the previous DM choice when a requested binding is disconnected while reading the body", async () => {
-    const { actor } = createActors();
-    const firstOwner = actor();
-    const first = await fixture(firstOwner);
-    const secondOwner = actor({ userId: firstOwner.userId });
-    const second = await fixture(secondOwner, {
-      discordUserId: first.discordUserId,
-    });
-    await accept(
-      client().setDmSelection({
-        headers: authenticate(firstOwner),
-        body: { connectionId: first.connectionId },
-      }),
-      [200],
-    );
-    context.mocks.ably.publish.mockClear();
-    context.mocks.ably.channelGet.mockClear();
-    const reading = createDeferredPromise<void>(context.signal);
-    const release = createDeferredPromise<void>(context.signal);
-    const body = new ReadableStream<Uint8Array>(
-      {
-        async pull(controller) {
-          reading.resolve();
-          await release.promise;
-          controller.enqueue(
-            new TextEncoder().encode(
-              JSON.stringify({ connectionId: second.connectionId }),
-            ),
-          );
-          controller.close();
-        },
-      },
-      // Do not prefetch when constructing the native Request. The gate is
-      // reached only when the real route consumes its valid streamed body.
-      { highWaterMark: 0 },
-    );
-    const request: RequestInit & { readonly duplex: "half" } = {
-      method: "PUT",
-      headers: {
-        ...authenticate(firstOwner),
-        "content-type": "application/json",
-      },
-      body,
-      duplex: "half",
-    };
-    // The typed client cannot express a streamed request body.
-    const pending = setupRawAppRequest({
-      context,
-      routes: integrationsDiscordRoutes,
-    })(integrationsDiscordContract.setDmSelection.path, request);
-    const outcome = await settleIncludingAbort(
-      (async () => {
-        await reading.promise;
-        await accept(
-          client().disconnect({
-            headers: authenticate(secondOwner),
-            query: {},
-          }),
-          [200],
-        );
-        await expectDiscordChanges([firstOwner.userId]);
-        release.resolve();
-        expect((await pending).status).toBe(404);
-        // Disconnect publishes once; the rejected selection publishes nothing.
-        await expectDiscordChanges([firstOwner.userId]);
-        await expect(status(firstOwner)).resolves.toMatchObject({
-          dmSelectionConnectionId: first.connectionId,
-          dmBindings: [
-            {
-              connectionId: first.connectionId,
-              guildId: first.guildId,
-              guildName: first.guildName,
-              workspaceName: "Discord test workspace",
-            },
-          ],
-        });
-      })(),
-    );
-    if (!release.settled()) {
-      release.resolve();
-    }
-    await Promise.allSettled([pending]);
-    if (!outcome.ok) {
-      throw outcome.error;
-    }
-  });
-
-  it("keeps the previous DM choice when the requested connection is revoked during revalidation", async () => {
-    const { actor } = createActors();
-    const firstOwner = actor();
-    const first = await fixture(firstOwner);
-    const secondOwner = actor({ userId: firstOwner.userId });
-    const second = await fixture(secondOwner, {
-      discordUserId: first.discordUserId,
-    });
-    await accept(
-      client().setDmSelection({
-        headers: authenticate(firstOwner),
-        body: { connectionId: first.connectionId },
-      }),
-      [200],
-    );
-    context.mocks.ably.publish.mockClear();
-    context.mocks.ably.channelGet.mockClear();
-    const membership =
-      context.mocks.clerk.organizations.getOrganizationMembershipList;
-    const currentMembership = membership.getMockImplementation();
-    if (!currentMembership) {
-      throw new Error("Expected the genuine Clerk membership response");
-    }
-    let revoked = false;
-    membership.mockImplementation(async (...args) => {
-      const { organizationId } = object({ organizationId: string() }).parse(
-        args[0],
-      );
-      const response = await currentMembership(...args);
-      if (!revoked && organizationId === secondOwner.orgId) {
-        revoked = true;
-        await accept(
-          client().disconnect({
-            headers: authenticate(secondOwner),
-            query: {},
-          }),
-          [200],
-        );
-      }
-      return response;
-    });
-
-    await accept(
-      client().setDmSelection({
-        headers: authenticate(firstOwner),
-        body: { connectionId: second.connectionId },
-      }),
-      [404],
-    );
-
-    expect(revoked).toBeTruthy();
-    await expectDiscordChanges([firstOwner.userId]);
-    await expect(status(firstOwner)).resolves.toMatchObject({
-      dmSelectionConnectionId: first.connectionId,
-      dmBindings: [
+    expect(selections).toStrictEqual([200, 200]);
+    for (const { binding, status } of reads) {
+      expect(status.discordUserId).toBe(binding.discordUserId);
+      expect(status.dmBindings).toStrictEqual([
         {
-          connectionId: first.connectionId,
-          guildId: first.guildId,
-          guildName: first.guildName,
-          workspaceName: "Discord test workspace",
+          connectionId: binding.connectionId,
+          guildId: binding.guildId,
+          guildName: binding.guildName,
+          workspaceName: WORKSPACE_NAME,
         },
-      ],
+      ]);
+      expect(status.dmSelectionConnectionId).toBe(binding.connectionId);
+    }
+  });
+
+  it("integrations-discord-035 (1/3) starts without a DM choice and selects the second organization", async () => {
+    const given = await sameUserInThreeOrganizations();
+
+    const initial = await readStatus(given.firstOrg);
+    expect(initial.dmSelectionConnectionId).toBeNull();
+    expect(connectionIds(initial)).toStrictEqual(
+      [
+        given.firstBinding.connectionId,
+        given.secondBinding.connectionId,
+        given.thirdBinding.connectionId,
+      ].sort(),
+    );
+
+    await expect(
+      selectAndRead(given.firstOrg, given.secondBinding.connectionId),
+    ).resolves.toStrictEqual({
+      status: 200,
+      events: 1,
+      selection: given.secondBinding.connectionId,
     });
   });
 
-  it("rejects DM selections for another Discord sender or another Okou user", async () => {
-    const { actor } = createActors();
-    const owner = actor();
-    const current = await fixture(owner);
-    const differentSender = actor({ userId: owner.userId });
-    const wrongSenderBinding = await fixture(differentSender);
-    const differentUser = actor();
-    // A Discord account cannot be owned by another Okou user. The foreign
-    // connection is independently installed and owned by its actual caller.
-    const wrongUserBinding = await fixture(differentUser);
+  it("integrations-discord-035 (2/3) switches the DM choice to the third and back to the second organization", async () => {
+    const given = await sameUserInThreeOrganizations();
+    await selectDm(given.firstOrg, given.secondBinding.connectionId);
 
-    for (const connectionId of [
-      wrongSenderBinding.connectionId,
-      wrongUserBinding.connectionId,
-    ]) {
-      await accept(
-        client().setDmSelection({
-          headers: authenticate(owner),
-          body: { connectionId },
-        }),
-        [404],
-      );
+    await expect(
+      selectAndRead(given.firstOrg, given.thirdBinding.connectionId),
+    ).resolves.toStrictEqual({
+      status: 200,
+      events: 1,
+      selection: given.thirdBinding.connectionId,
+    });
+    await expect(
+      selectAndRead(given.firstOrg, given.secondBinding.connectionId),
+    ).resolves.toStrictEqual({
+      status: 200,
+      events: 1,
+      selection: given.secondBinding.connectionId,
+    });
+  });
+
+  it("integrations-discord-035 (3/3) clears the choice when its organization disconnects and refuses it afterwards", async () => {
+    const given = await sameUserInThreeOrganizations();
+    await selectDm(given.firstOrg, given.secondBinding.connectionId);
+
+    const beforeDisconnect = published(given.firstOrg.userId);
+    signIn(given.secondOrg);
+    const disconnected = await discordApi().disconnect({
+      headers: SESSION,
+      query: {},
+    });
+    expect(disconnected.status).toBe(200);
+    expect(published(given.firstOrg.userId)).toBe(beforeDisconnect + 1);
+
+    const after = await readStatus(given.firstOrg);
+    expect(after.dmSelectionConnectionId).toBeNull();
+    expect(connectionIds(after)).toStrictEqual(
+      [given.firstBinding.connectionId, given.thirdBinding.connectionId].sort(),
+    );
+    const beforeReselect = publishedTotal();
+    const reselected = await selectDm(
+      given.firstOrg,
+      given.secondBinding.connectionId,
+    );
+    expect(reselected).toBe(404);
+    expect(publishedTotal()).toBe(beforeReselect);
+  });
+
+  it("integrations-discord-038 rejects DM selections for another Discord sender or another Okou user", async () => {
+    configureDiscordApp();
+    const members = workspace();
+    const admin = await members.member("admin");
+    const otherWorkspace = await members.member(
+      "admin",
+      `org_${randomUUID()}`,
+      admin.userId,
+    );
+    const otherUser = await members.member("admin");
+    const own = await bind(admin, { flow: "install" });
+    const otherSender = await bind(otherWorkspace, { flow: "install" });
+    const otherOwner = await bind(otherUser, { flow: "install" });
+    const before = publishedTotal();
+
+    const foreign: number[] = [];
+    for (const binding of [otherSender, otherOwner]) {
+      signIn(admin);
+      const selected = await discordApi().setDmSelection({
+        headers: SESSION,
+        body: { connectionId: binding.connectionId },
+      });
+      foreign.push(selected.status);
     }
-    await expectDiscordChanges([]);
-    expect((await status(owner)).dmBindings).toStrictEqual([
+    expect(foreign).toStrictEqual([404, 404]);
+    expect(publishedTotal()).toBe(before);
+    const status = await readStatus(admin);
+    expect(status.dmBindings).toStrictEqual([
       {
-        connectionId: current.connectionId,
-        guildId: current.guildId,
-        guildName: current.guildName,
-        workspaceName: "Discord test workspace",
+        connectionId: own.connectionId,
+        guildId: own.guildId,
+        guildName: own.guildName,
+        workspaceName: WORKSPACE_NAME,
       },
     ]);
 
-    await accept(
-      client().setDmSelection({
-        headers: authenticate(owner),
-        body: { connectionId: current.connectionId },
-      }),
-      [200],
-    );
-    await expectDiscordChanges([owner.userId]);
+    const adminBefore = published(admin.userId);
+    signIn(admin);
+    const selected = await discordApi().setDmSelection({
+      headers: SESSION,
+      body: { connectionId: own.connectionId },
+    });
+    expect(selected.status).toBe(200);
+    expect(published(admin.userId)).toBe(adminBefore + 1);
+    expect(publishedTotal()).toBe(before + 1);
   });
+});
+
+describe("Discord installation link run access", () => {
+  it(
+    "integrations-discord-017 grants a run Discord installation link access without requiring a server binding",
+    { timeout: TEST_WITH_SINGLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const admin = await workspace().member("admin");
+      const actor = createBddApi(context).user({
+        userId: admin.userId,
+        orgId: admin.orgId,
+        orgRole: "org:admin",
+      });
+      configureInstallLinks();
+      mockInviteLookup(guildInvite);
+
+      const run = await launchPublicDiscordTestRun(context, actor);
+      onTestFinished(async () => {
+        await createRunsApi(context).requestCancelRun(
+          actor,
+          run.runId,
+          [200, 400],
+        );
+        await createWebhookCallbackApi(context).requestAgentComplete(
+          { runId: run.runId, exitCode: 1, error: "Run cancelled" },
+          { authorization: `Bearer ${run.execution.sandboxToken}` },
+          [200],
+        );
+        await flushWaitUntilForTest();
+      });
+
+      expect(run.execution.appendSystemPrompt ?? "").not.toContain(
+        "okou discord install-link",
+      );
+
+      const response = await accept(
+        discordApi().installLink({
+          headers: run.headers,
+          body: { invite: "https://discord.gg/example" },
+        }),
+        [200],
+      );
+      expect(response.status).toBe(200);
+    },
+  );
 });

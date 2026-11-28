@@ -1,270 +1,197 @@
+import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
+
 import { testContext } from "../../../__tests__/test-context";
-import { mockNow, now } from "../../../lib/time";
 import {
   createAgentPhoneBddApi,
   uniquePhoneHandle,
 } from "./helpers/api-bdd-agentphone";
 import { createBddIntegrationApi } from "./helpers/api-bdd-integrations";
+import type { ApiTestUser } from "./helpers/api-bdd";
 
 const context = testContext();
+const integrations = createBddIntegrationApi(context);
+const agentPhone = createAgentPhoneBddApi(context);
 
-function connectionFlow() {
-  const integrations = createBddIntegrationApi(context);
-  const phone = createAgentPhoneBddApi(context);
+/** AgentPhone with a signed webhook; provider texts are captured. */
+function configureSignedAgentPhone() {
   integrations.configureAgentPhoneProvider();
   integrations.configureAgentPhoneWebhook();
-  context.mocks.ably.publish.mockResolvedValue(undefined);
-  const sends = phone.captureAgentPhoneSends();
-  return {
-    integrations,
-    phone,
-    sends,
-    actor: integrations.user(),
-    async proof(
-      handle = uniquePhoneHandle(),
-      channel: "sms" | "imessage" = "sms",
-    ) {
-      return await phone.requestConnectLink(handle, sends, channel);
-    },
-  };
+  return agentPhone.captureAgentPhoneSends();
+}
+
+type Capture = ReturnType<typeof configureSignedAgentPhone>;
+
+async function connectedMember(capture: Capture, phone: string) {
+  const member = integrations.user();
+  const proof = await agentPhone.requestConnectLink(phone, capture);
+  await integrations.requestConnectAgentPhone(member, proof, [200]);
+  return member;
+}
+
+async function linkedHandle(member: ApiTestUser) {
+  const link = await integrations.getAgentPhoneLinkStatus(member);
+  return link.linked ? link.phoneHandle : null;
 }
 
 describe("AgentPhone connection status and explicit phone switching", () => {
-  it("checks a signed connection without linking, then recognizes the connected number", async () => {
-    const flow = connectionFlow();
-    const proof = await flow.proof();
-    const before = await flow.integrations.requestAgentPhoneConnectStatus(
-      flow.actor,
+  it("agentphone-connect.bdd-001 checks a signed connect link without linking, then recognizes the connected number", async () => {
+    const capture = configureSignedAgentPhone();
+    const phone = uniquePhoneHandle();
+    const proof = await agentPhone.requestConnectLink(phone, capture);
+    const member = integrations.user();
+
+    const before = await integrations.requestAgentPhoneConnectStatus(
+      member,
       proof,
       [200],
     );
     expect(before.body).toStrictEqual({ kind: "connect" });
-    await expect(
-      flow.integrations.getAgentPhoneLinkStatus(flow.actor),
-    ).resolves.toMatchObject({
-      linked: false,
-    });
-    await flow.integrations.requestConnectAgentPhone(flow.actor, proof, [200]);
-    const after = await flow.integrations.requestAgentPhoneConnectStatus(
-      flow.actor,
+    const link = await integrations.getAgentPhoneLinkStatus(member);
+    expect(link.linked).toBeFalsy();
+
+    await integrations.requestConnectAgentPhone(member, proof, [200]);
+    const after = await integrations.requestAgentPhoneConnectStatus(
+      member,
       proof,
       [200],
     );
-    expect(after.body).toStrictEqual({
-      kind: "connected",
-      phoneHandle: proof.phoneHandle,
-    });
+    expect(after.body).toStrictEqual({ kind: "connected", phoneHandle: phone });
   });
 
-  it("requires explicit switching and releases the previous number only after success", async () => {
-    const flow = connectionFlow();
-    const first = await flow.proof();
-    await flow.integrations.requestConnectAgentPhone(flow.actor, first, [200]);
-    const next = await flow.proof();
-    const status = await flow.integrations.requestAgentPhoneConnectStatus(
-      flow.actor,
-      next,
+  it("agentphone-connect.bdd-002 requires explicit switching and releases the previous number only after success", async () => {
+    const capture = configureSignedAgentPhone();
+    const firstPhone = uniquePhoneHandle();
+    const secondPhone = uniquePhoneHandle();
+    const member = await connectedMember(capture, firstPhone);
+    const proof = await agentPhone.requestConnectLink(secondPhone, capture);
+
+    const status = await integrations.requestAgentPhoneConnectStatus(
+      member,
+      proof,
       [200],
     );
     expect(status.body).toStrictEqual({
       kind: "phone_mismatch",
-      currentPhoneHandle: first.phoneHandle,
+      currentPhoneHandle: firstPhone,
     });
-    await flow.integrations.requestConnectAgentPhone(flow.actor, next, [409]);
-    await expect(
-      flow.integrations.getAgentPhoneLinkStatus(flow.actor),
-    ).resolves.toMatchObject({
-      linked: true,
-      phoneHandle: first.phoneHandle,
-    });
-    const switchRequest = { ...next, replacePhoneHandle: first.phoneHandle };
-    await flow.integrations.requestConnectAgentPhone(
-      flow.actor,
-      switchRequest,
-      [200],
-    );
-    await flow.integrations.requestConnectAgentPhone(
-      flow.actor,
-      switchRequest,
-      [200],
-    );
-    await expect(
-      flow.integrations.getAgentPhoneLinkStatus(flow.actor),
-    ).resolves.toMatchObject({
-      linked: true,
-      phoneHandle: next.phoneHandle,
-    });
-    const other = flow.integrations.user();
-    await flow.integrations.requestConnectAgentPhone(other, first, [200]);
-    await expect(
-      flow.integrations.getAgentPhoneLinkStatus(other),
-    ).resolves.toMatchObject({
-      linked: true,
-      phoneHandle: first.phoneHandle,
-    });
+
+    await integrations.requestConnectAgentPhone(member, proof, [409]);
+    await expect(linkedHandle(member)).resolves.toBe(firstPhone);
+
+    const switchBody = { ...proof, replacePhoneHandle: firstPhone };
+    await integrations.requestConnectAgentPhone(member, switchBody, [200]);
+    await integrations.requestConnectAgentPhone(member, switchBody, [200]);
+    await expect(linkedHandle(member)).resolves.toBe(secondPhone);
+
+    const other = integrations.user();
+    const released = await agentPhone.requestConnectLink(firstPhone, capture);
+    await integrations.requestConnectAgentPhone(other, released, [200]);
+    await expect(linkedHandle(other)).resolves.toBe(firstPhone);
   });
 
-  it("preserves both bindings when another account claims the requested number after the status check", async () => {
-    const flow = connectionFlow();
-    const first = await flow.proof();
-    await flow.integrations.requestConnectAgentPhone(flow.actor, first, [200]);
-    const next = await flow.proof();
-    const checked = await flow.integrations.requestAgentPhoneConnectStatus(
-      flow.actor,
-      next,
+  it("agentphone-connect.bdd-003 keeps both bindings when another account claims the requested number after the status check", async () => {
+    const capture = configureSignedAgentPhone();
+    const firstPhone = uniquePhoneHandle();
+    const secondPhone = uniquePhoneHandle();
+    const member = await connectedMember(capture, firstPhone);
+    const proof = await agentPhone.requestConnectLink(secondPhone, capture);
+    const mismatch = await integrations.requestAgentPhoneConnectStatus(
+      member,
+      proof,
       [200],
     );
-    expect(checked.body).toMatchObject({ kind: "phone_mismatch" });
-    const other = flow.integrations.user();
-    await flow.integrations.requestConnectAgentPhone(other, next, [200]);
-    const occupied = await flow.integrations.requestAgentPhoneConnectStatus(
-      flow.actor,
-      next,
+    expect(mismatch.body).toStrictEqual({
+      kind: "phone_mismatch",
+      currentPhoneHandle: firstPhone,
+    });
+
+    const other = integrations.user();
+    await integrations.requestConnectAgentPhone(other, proof, [200]);
+    const status = await integrations.requestAgentPhoneConnectStatus(
+      member,
+      proof,
       [200],
     );
-    expect(occupied.body).toStrictEqual({ kind: "phone_in_use" });
-    await flow.integrations.requestConnectAgentPhone(
-      flow.actor,
-      { ...next, replacePhoneHandle: first.phoneHandle },
+    expect(status.body).toStrictEqual({ kind: "phone_in_use" });
+    await integrations.requestConnectAgentPhone(
+      member,
+      { ...proof, replacePhoneHandle: firstPhone },
       [409],
     );
-    await expect(
-      flow.integrations.getAgentPhoneLinkStatus(flow.actor),
-    ).resolves.toMatchObject({
-      linked: true,
-      phoneHandle: first.phoneHandle,
-    });
-    await expect(
-      flow.integrations.getAgentPhoneLinkStatus(other),
-    ).resolves.toMatchObject({
-      linked: true,
-      phoneHandle: next.phoneHandle,
-    });
+
+    await expect(linkedHandle(member)).resolves.toBe(firstPhone);
+    await expect(linkedHandle(other)).resolves.toBe(secondPhone);
   });
 
-  it("allows only one competing replacement of the confirmed binding", async () => {
-    const flow = connectionFlow();
-    const first = await flow.proof();
-    await flow.integrations.requestConnectAgentPhone(flow.actor, first, [200]);
-    const candidates = [await flow.proof(), await flow.proof()];
-    const results = await Promise.all(
-      candidates.map((proof) => {
-        return flow.integrations.requestConnectAgentPhone(
-          flow.actor,
-          { ...proof, replacePhoneHandle: first.phoneHandle },
-          [200, 409],
-        );
-      }),
-    );
-    expect(
-      results
-        .map((result) => {
-          return result.status;
-        })
-        .sort(),
-    ).toStrictEqual([200, 409]);
-    const winner =
-      candidates[
-        results.findIndex((result) => {
-          return result.status === 200;
-        })
-      ];
-    await expect(
-      flow.integrations.getAgentPhoneLinkStatus(flow.actor),
-    ).resolves.toMatchObject({
-      linked: true,
-      phoneHandle: winner?.phoneHandle,
-    });
-  });
-
-  it("switches from an iMessage email handle to a phone number", async () => {
-    const flow = connectionFlow();
-    const first = await flow.proof(
-      `sender-${crypto.randomUUID()}@example.com`,
+  it("agentphone-connect.bdd-005 switches from an iMessage email handle to a phone number", async () => {
+    const capture = configureSignedAgentPhone();
+    const email = `bdd-${randomUUID()}@example.test`;
+    const member = integrations.user();
+    const emailProof = await agentPhone.requestConnectLink(
+      email,
+      capture,
       "imessage",
     );
-    await flow.integrations.requestConnectAgentPhone(flow.actor, first, [200]);
-    const next = await flow.proof();
-    await flow.integrations.requestConnectAgentPhone(
-      flow.actor,
-      { ...next, replacePhoneHandle: first.phoneHandle },
+    await integrations.requestConnectAgentPhone(member, emailProof, [200]);
+    await expect(linkedHandle(member)).resolves.toBe(email);
+    const phone = uniquePhoneHandle();
+    const phoneProof = await agentPhone.requestConnectLink(phone, capture);
+
+    await integrations.requestConnectAgentPhone(
+      member,
+      { ...phoneProof, replacePhoneHandle: email },
       [200],
     );
-    await expect(
-      flow.integrations.getAgentPhoneLinkStatus(flow.actor),
-    ).resolves.toMatchObject({
-      linked: true,
-      phoneHandle: next.phoneHandle,
-    });
+
+    await expect(linkedHandle(member)).resolves.toBe(phone);
   });
 
-  it("rejects a stale confirmation after the current number changes", async () => {
-    const flow = connectionFlow();
-    const first = await flow.proof();
-    await flow.integrations.requestConnectAgentPhone(flow.actor, first, [200]);
-    const next = await flow.proof();
-    const stale = await flow.proof();
-    await flow.integrations.requestConnectAgentPhone(
-      flow.actor,
-      { ...next, replacePhoneHandle: first.phoneHandle },
+  it("agentphone-connect.bdd-006 rejects a stale confirmation after the current number changes", async () => {
+    const capture = configureSignedAgentPhone();
+    const firstPhone = uniquePhoneHandle();
+    const secondPhone = uniquePhoneHandle();
+    const member = await connectedMember(capture, firstPhone);
+    const secondProof = await agentPhone.requestConnectLink(
+      secondPhone,
+      capture,
+    );
+    const thirdProof = await agentPhone.requestConnectLink(
+      uniquePhoneHandle(),
+      capture,
+    );
+
+    await integrations.requestConnectAgentPhone(
+      member,
+      { ...secondProof, replacePhoneHandle: firstPhone },
       [200],
     );
-    await flow.integrations.requestConnectAgentPhone(
-      flow.actor,
-      { ...stale, replacePhoneHandle: first.phoneHandle },
+    await integrations.requestConnectAgentPhone(
+      member,
+      { ...thirdProof, replacePhoneHandle: firstPhone },
       [409],
     );
-    await expect(
-      flow.integrations.getAgentPhoneLinkStatus(flow.actor),
-    ).resolves.toMatchObject({
-      linked: true,
-      phoneHandle: next.phoneHandle,
-    });
+
+    await expect(linkedHandle(member)).resolves.toBe(secondPhone);
   });
 
-  it.each(["tampered", "expired"])(
-    "rejects a %s proof for status and switching without removing the old number",
-    async (failure) => {
-      const flow = connectionFlow();
-      const first = await flow.proof();
-      await flow.integrations.requestConnectAgentPhone(
-        flow.actor,
-        first,
-        [200],
-      );
-      const next = await flow.proof();
-      const invalid =
-        failure === "tampered" ? { ...next, signature: "0".repeat(64) } : next;
-      if (failure === "expired") {
-        mockNow(now() + 601_000);
-      }
-      await flow.integrations.requestAgentPhoneConnectStatus(
-        flow.actor,
-        invalid,
-        [400],
-      );
-      await flow.integrations.requestConnectAgentPhone(
-        flow.actor,
-        { ...invalid, replacePhoneHandle: first.phoneHandle },
-        [400],
-      );
-      await expect(
-        flow.integrations.getAgentPhoneLinkStatus(flow.actor),
-      ).resolves.toMatchObject({
-        linked: true,
-        phoneHandle: first.phoneHandle,
-      });
-    },
-  );
-
-  it("requires authentication for connection status", async () => {
-    const flow = connectionFlow();
-    const result = await flow.integrations.requestAgentPhoneConnectStatus(
-      null,
-      await flow.proof(),
-      [401],
+  it("agentphone-connect.bdd-007 rejects a tampered proof for status and switching without removing the old number", async () => {
+    const capture = configureSignedAgentPhone();
+    const firstPhone = uniquePhoneHandle();
+    const member = await connectedMember(capture, firstPhone);
+    const proof = await agentPhone.requestConnectLink(
+      uniquePhoneHandle(),
+      capture,
     );
-    expect(result.status).toBe(401);
+    const tampered = { ...proof, signature: "0".repeat(64) };
+
+    await integrations.requestAgentPhoneConnectStatus(member, tampered, [400]);
+    await integrations.requestConnectAgentPhone(
+      member,
+      { ...tampered, replacePhoneHandle: firstPhone },
+      [400],
+    );
+
+    await expect(linkedHandle(member)).resolves.toBe(firstPhone);
   });
 });

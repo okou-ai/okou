@@ -1,13 +1,12 @@
 import { randomUUID } from "node:crypto";
-import { describe, expect, it, onTestFinished } from "vitest";
-import { http, HttpResponse } from "msw";
+
 import {
-  computerUseSessionHostsContract as contract,
-  computerUseHostsContract,
   computerUseCommandContract,
-  computerUseWriteCommandContract,
-  computerUseAuditEventsContract,
+  computerUseSessionHostsContract,
 } from "@okouai/api-contracts/contracts/computer-use";
+import { remoteDevicesContract } from "@okouai/api-contracts/contracts/remote-devices";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { describe, expect, it } from "vitest";
 
 import {
   accept,
@@ -15,1152 +14,1109 @@ import {
   testContext,
 } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { mockNow } from "../../../lib/time";
-import { server } from "../../../mocks/server";
-import { createDeferredPromise, settleIncludingAbort } from "../../utils";
+import { mockNow, nowDate } from "../../../lib/time";
 import { computerUseRoutes } from "../computer-use";
 import { remoteDevicesRoutes } from "../remote-devices";
-import { remoteDevicesContract } from "@okouai/api-contracts/contracts/remote-devices";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
+import { createComputerUseBddApi } from "./helpers/api-bdd-computer-use";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 
 const context = testContext();
-const headers = Object.freeze({ authorization: "Bearer clerk-session" });
-const runtimeBody = Object.freeze({
-  installationId: randomUUID(),
-  hostName: "Native test Mac",
-  appVersion: "0.50.0",
-  osVersion: "macOS 26",
-  supportedCapabilities: ["apps.list"],
-  permissions: { accessibility: true, screenRecording: true },
-});
-function identity() {
+const sessionHeaders = Object.freeze({ authorization: "Bearer clerk-session" });
+
+function sessionHosts() {
+  return setupApp({ context, routes: computerUseRoutes })(
+    computerUseSessionHostsContract,
+  );
+}
+
+function runtimeBody(
+  options: {
+    readonly installationId?: string;
+    readonly appVersion?: string;
+    readonly supportedCapabilities?: readonly string[];
+  } = {},
+) {
   return {
-    userId: `user_${randomUUID()}`,
-    orgId: `org_${randomUUID()}`,
-    sessionId: `sess_${randomUUID()}`,
+    installationId: options.installationId ?? randomUUID(),
+    hostName: "Session Desktop",
+    appVersion: options.appVersion ?? "0.54.0",
+    osVersion: "macOS 15",
+    supportedCapabilities: [
+      ...(options.supportedCapabilities ?? ["apps.list", "app.state"]),
+    ],
+    permissions: { accessibility: true, screenRecording: true },
   };
 }
-function authenticate(actor: ReturnType<typeof identity>) {
+
+function setAuthToken(actor: ApiTestUser, sessionId: string | undefined): void {
   context.mocks.clerk.authenticateRequest.mockResolvedValue({
     isAuthenticated: true,
     toAuth: () => {
-      return { ...actor, orgRole: "org:admin" };
+      return sessionId === undefined ? { ...actor } : { ...actor, sessionId };
     },
   });
+}
+
+function setProviderAuthority(
+  actor: ApiTestUser,
+  sessionId: string,
+  options: {
+    readonly sessionStatus?: "active" | "revoked";
+    readonly hasMembership?: boolean;
+  } = {},
+): void {
+  const sessionStatus = options.sessionStatus ?? "active";
+  const hasMembership = options.hasMembership ?? true;
   context.mocks.clerk.sessions.getSession.mockResolvedValue({
-    id: actor.sessionId,
+    id: sessionId,
     userId: actor.userId,
-    status: "active",
+    status: sessionStatus,
   });
   context.mocks.clerk.organizations.getOrganizationMembershipList.mockResolvedValue(
-    {
-      data: [
-        {
-          organization: { id: actor.orgId },
-          publicUserData: { userId: actor.userId },
-          role: "org:admin",
-        },
-      ],
-      totalCount: 1,
-    },
+    hasMembership
+      ? {
+          data: [
+            {
+              organization: { id: actor.orgId ?? "" },
+              publicUserData: { userId: actor.userId },
+              role: actor.orgRole ?? "org:admin",
+            },
+          ],
+          totalCount: 1,
+        }
+      : { data: [], totalCount: 0 },
   );
 }
-async function app() {
-  return await setupApp({
-    context,
-    routes: computerUseRoutes,
+
+function signInDesktop(
+  actor: ApiTestUser,
+  sessionId = `sess_${actor.userId}`,
+  options: {
+    readonly sessionStatus?: "active" | "revoked";
+    readonly hasMembership?: boolean;
+  } = {},
+): string {
+  setAuthToken(actor, sessionId);
+  setProviderAuthority(actor, sessionId, options);
+  return sessionId;
+}
+
+async function registerAndClaimAppsList(
+  admin: ApiTestUser,
+  options: {
+    readonly appVersion?: string;
+    readonly installationId?: string;
+    readonly timeoutMs?: number;
+  } = {},
+) {
+  const api = createComputerUseBddApi(context);
+  const installationId = options.installationId ?? randomUUID();
+  const sessionId = signInDesktop(admin);
+  const registered = await accept(
+    sessionHosts().register({
+      headers: sessionHeaders,
+      body: runtimeBody({
+        installationId,
+        appVersion: options.appVersion,
+      }),
+    }),
+    [200],
+  );
+  const created = await api.createComputerUseReadCommand(admin, {
+    kind: "apps.list",
+    ...(options.timeoutMs !== undefined
+      ? { timeoutMs: options.timeoutMs }
+      : {}),
   });
+  setAuthToken(admin, sessionId);
+  const claimed = await accept(
+    sessionHosts().next({
+      headers: sessionHeaders,
+      params: { hostId: registered.body.hostId },
+      body: {
+        connectionGeneration: registered.body.connectionGeneration,
+        supportedCapabilities: ["apps.list", "app.state"],
+      },
+    }),
+    [200],
+  );
+  expect(claimed.body).toMatchObject({
+    status: "command",
+    command: { id: created.commandId },
+  });
+  return {
+    api,
+    sessionId,
+    installationId,
+    hostId: registered.body.hostId,
+    connectionGeneration: registered.body.connectionGeneration,
+    commandId: created.commandId,
+  };
+}
+
+async function readListedHost(
+  api: ReturnType<typeof createComputerUseBddApi>,
+  actor: ApiTestUser,
+  hostId: string,
+) {
+  const listing = await api.listComputerUseHosts(actor);
+  const found = listing.hosts.find((host) => {
+    return host.id === hostId;
+  });
+  if (!found) {
+    throw new Error("Expected Desktop host in host directory");
+  }
+  return found;
 }
 
 describe("Native Computer Use session authentication", () => {
-  it("renames the owned device and preserves its access and channel across Desktop registration", async () => {
-    const api = await app();
-    const client = api(contract);
-    const devices = setupApp({ context, routes: remoteDevicesRoutes })(
-      remoteDevicesContract,
-    );
-    const owner = identity();
-    const enabled = { [FeatureSwitchKey.RemoteDevices]: true };
-    await updateFeatureSwitchesForUser(context, owner, enabled);
-    authenticate(owner);
-    const { body: host } = await accept(
-      client.register({ headers, body: runtimeBody }),
-      [200],
-    );
-    const { body: original } = await accept(devices.list({ headers }), [200]);
-    const [device] = original.devices;
-    if (!device) {
-      throw new Error("Expected the registered Desktop device");
-    }
-    const params = { deviceId: device.id };
-    const { body: granted } = await accept(
-      devices.setAccess({ headers, params, body: { mode: "for", hours: 24 } }),
-      [200],
-    );
-    const rename = {
-      headers,
-      params,
-      body: { displayName: "  Studio Mac  " },
-    };
+  it("computer-use-session-hosts-018 denies a missing session and an inactive provider session at registration", async () => {
+    const admin = createBddApi(context).user({ orgRole: "org:admin" });
+    setAuthToken(admin, undefined);
 
-    for (const actor of [
-      { ...identity(), orgId: owner.orgId },
-      { ...identity(), userId: owner.userId },
-    ]) {
-      await updateFeatureSwitchesForUser(context, actor, enabled);
-      authenticate(actor);
-      await accept(devices.rename(rename), [404]);
-    }
-    await updateFeatureSwitchesForUser(context, owner, {
-      [FeatureSwitchKey.RemoteDevices]: false,
+    const missingSession = await accept(
+      sessionHosts().register({
+        headers: sessionHeaders,
+        body: runtimeBody(),
+      }),
+      [401],
+    );
+
+    expect(missingSession.body.error.code).toBe("UNAUTHORIZED");
+
+    signInDesktop(admin, `sess_${admin.userId}`, {
+      sessionStatus: "revoked",
     });
-    authenticate(owner);
-    await accept(devices.rename(rename), [404]);
-    await updateFeatureSwitchesForUser(context, owner, enabled);
-    authenticate(owner);
-    for (const displayName of ["  ", "x".repeat(121)]) {
-      await accept(
-        devices.rename({ headers, params, body: { displayName } }),
-        [400],
-      );
-    }
-    const { body: before } = await accept(devices.list({ headers }), [200]);
-    expect(before.devices).toMatchObject([granted]);
 
-    const renamed = { ...granted, displayName: "Studio Mac" };
-    const { body: saved } = await accept(devices.rename(rename), [200]);
-    expect(saved).toStrictEqual(renamed);
-    const hostName = "Updated macOS host name";
-    const { body: reconnected } = await accept(
-      client.register({ headers, body: { ...runtimeBody, hostName } }),
-      [200],
+    const inactiveSession = await accept(
+      sessionHosts().register({
+        headers: sessionHeaders,
+        body: runtimeBody(),
+      }),
+      [401],
     );
-    expect(reconnected.hostId).toBe(host.hostId);
-    const { body: current } = await accept(devices.list({ headers }), [200]);
-    expect(current.devices).toMatchObject([
-      {
-        ...renamed,
-        channels: [{ id: host.hostId, kind: "desktop", displayName: hostName }],
-      },
-    ]);
+
+    expect(inactiveSession.body.error.code).toBe("UNAUTHORIZED");
   });
 
-  it("deletes the Desktop and command history and registers a fresh device on reconnect", async () => {
-    const api = await app();
-    const actor = identity();
-    await updateFeatureSwitchesForUser(context, actor, {
-      [FeatureSwitchKey.RemoteDevices]: true,
-    });
-    authenticate(actor);
-    const client = api(contract);
-    const commands = api(computerUseCommandContract);
-    const audit = api(computerUseAuditEventsContract);
-    const devices = setupApp({ context, routes: remoteDevicesRoutes })(
-      remoteDevicesContract,
-    );
-    const runtime = { ...runtimeBody, supportedCapabilities: ["app.open"] };
-    const { body: first } = await accept(
-      client.register({ headers, body: runtime }),
-      [200],
-    );
-    const { body: directory } = await accept(devices.list({ headers }), [200]);
-    const [original] = directory.devices;
-    if (!original) {
-      throw new Error("Expected the registered Desktop device");
-    }
-    await accept(
-      devices.setAccess({
-        headers,
-        params: { deviceId: original.id },
-        body: { mode: "always" },
-      }),
-      [200],
-    );
-    const { body: queued } = await accept(
-      api(computerUseWriteCommandContract).create({
-        headers,
-        body: { kind: "app.open", app: "Fixture", timeoutMs: 10_000 },
-      }),
-      [200],
-    );
-    const params = { hostId: first.hostId };
-    const connection = { connectionGeneration: first.connectionGeneration };
-    await accept(
-      client.next({
-        headers,
-        params,
-        body: {
-          ...connection,
-          supportedCapabilities: runtime.supportedCapabilities,
-        },
-      }),
-      [200],
-    );
-    await accept(
-      client.complete({
-        headers,
-        params: { ...params, commandId: queued.commandId },
-        body: {
-          ...connection,
-          status: "succeeded",
-          result: { app: "Fixture", opened: true },
-        },
-      }),
-      [200],
-    );
-    const auditQuery = { headers, query: { commandId: queued.commandId } };
-    const { body: before } = await accept(audit.list(auditQuery), [200]);
-    expect(before.auditEvents).toHaveLength(1);
-    await accept(
-      devices.delete({
-        headers,
-        params: { deviceId: original.id },
-        body: undefined,
-      }),
-      [204],
-    );
-
-    const { body: empty } = await accept(devices.list({ headers }), [200]);
-    expect(empty.devices).toStrictEqual([]);
-    const { body: after } = await accept(audit.list(auditQuery), [200]);
-    expect(after.auditEvents).toStrictEqual([]);
-    await accept(
-      commands.get({ headers, params: { commandId: queued.commandId } }),
-      [404],
-    );
-    await accept(
-      client.next({
-        headers,
-        params: { hostId: first.hostId },
-        body: { connectionGeneration: first.connectionGeneration },
-      }),
-      [409],
-    );
-
-    const { body: second } = await accept(
-      client.register({ headers, body: runtime }),
-      [200],
-    );
-    expect(second.hostId).not.toBe(first.hostId);
-    const { body: current } = await accept(devices.list({ headers }), [200]);
-    expect(current.devices[0]?.id).not.toBe(original.id);
-    expect(current.devices).toMatchObject([
-      {
-        accessAllowed: false,
-        channels: [{ id: second.hostId, kind: "desktop" }],
-      },
-    ]);
-  });
-
-  it("enforces the supported Native version at registration", async () => {
-    const api = await app();
-    authenticate(identity());
+  it("computer-use-session-hosts-001 enforces the supported Native version at registration", async () => {
+    const admin = createBddApi(context).user({ orgRole: "org:admin" });
     desktopCompatibility.minimumSupportedVersion = "0.54.0";
-    const old = await accept(
-      api(contract).register({
-        headers,
-        body: { ...runtimeBody, appVersion: "0.53.4" },
+    signInDesktop(admin);
+
+    const rejected = await accept(
+      sessionHosts().register({
+        headers: sessionHeaders,
+        body: runtimeBody({ appVersion: "0.53.4" }),
       }),
       [426],
     );
-    expect(old.body).toMatchObject({
+
+    expect(rejected.body).toMatchObject({
       error: { code: "DESKTOP_UPDATE_REQUIRED" },
       minimumSupportedVersion: "0.54.0",
     });
-    await accept(
-      api(contract).register({
-        headers,
-        body: { ...runtimeBody, appVersion: "0.54.0" },
+
+    const accepted = await accept(
+      sessionHosts().register({
+        headers: sessionHeaders,
+        body: runtimeBody({ appVersion: "0.54.0" }),
       }),
       [200],
     );
+
+    expect(accepted.body.connectionGeneration).toBe(1);
   });
 
-  it("closes admission for existing old hosts but lets their claimed command finish and stop", async () => {
-    const api = await app();
-    authenticate(identity());
-    const client = api(contract);
-    const oldRuntime = { ...runtimeBody, appVersion: "0.53.4" };
-    const registered = (
-      await accept(client.register({ headers, body: oldRuntime }), [200])
-    ).body;
-    const params = { hostId: registered.hostId };
-    const body = { connectionGeneration: registered.connectionGeneration };
-    const created = (
-      await accept(
-        api(computerUseCommandContract).create({
-          headers,
-          body: { kind: "apps.list", timeoutMs: 10_000 },
-        }),
-        [200],
-      )
-    ).body;
-    await accept(
-      client.next({
-        headers,
-        params,
-        body: { ...body, supportedCapabilities: ["apps.list"] },
-      }),
-      [200],
-    );
+  it("computer-use-session-hosts-002 closes admission for existing old hosts but lets their claimed command finish and stop", async () => {
+    const admin = createBddApi(context).user({ orgRole: "org:admin" });
+    const setup = await registerAndClaimAppsList(admin, {
+      appVersion: "0.53.4",
+    });
     desktopCompatibility.minimumSupportedVersion = "0.54.0";
-    await accept(
-      client.next({
-        headers,
-        params,
-        body,
-        extraHeaders: { "X-Client-Version": "99.0.0" },
+
+    setAuthToken(admin, setup.sessionId);
+    const poll = await accept(
+      sessionHosts().next({
+        headers: sessionHeaders,
+        extraHeaders: { "x-client-version": "99.0.0" },
+        params: { hostId: setup.hostId },
+        body: {
+          connectionGeneration: setup.connectionGeneration,
+          supportedCapabilities: ["apps.list"],
+        },
       }),
       [426],
     );
-    const listed = (
-      await accept(api(computerUseHostsContract).list({ headers }), [200])
-    ).body;
-    expect(listed.hosts).toContainEqual(
-      expect.objectContaining({ id: params.hostId, status: "offline" }),
-    );
-    await accept(
-      api(computerUseCommandContract).create({
-        headers,
-        body: { kind: "apps.list" },
-      }),
+    expect(poll.body.error.code).toBe("DESKTOP_UPDATE_REQUIRED");
+
+    const listed = await readListedHost(setup.api, admin, setup.hostId);
+    expect(listed.status).toBe("offline");
+
+    const blockedCreate = await setup.api.requestCreateComputerUseReadCommand(
+      admin,
+      { kind: "apps.list" },
       [409],
     );
-    await accept(
-      client.heartbeat({ headers, params, body: { ...oldRuntime, ...body } }),
-      [200],
-    );
-    await accept(
-      client.complete({
-        headers,
-        params: { ...params, commandId: created.commandId },
-        body: { ...body, status: "succeeded", result: { apps: [] } },
-      }),
-      [200],
-    );
-    const observed = (
-      await accept(
-        api(computerUseCommandContract).get({
-          headers,
-          params: { commandId: created.commandId },
-        }),
-        [200],
-      )
-    ).body;
-    expect(observed).toMatchObject({
-      status: "succeeded",
-      result: { apps: [] },
-    });
-    await accept(client.stop({ headers, params, body }), [200]);
-  });
+    expect(blockedCreate.status).toBe(409);
 
-  it("preserves the GUI claim lifecycle for a supported Desktop", async () => {
-    const version = "0.54.0";
-    const supportedRuntime = { ...runtimeBody, appVersion: version };
-    const headers = {
-      authorization: "Bearer clerk-session",
-      "X-Client-Type": "Desktop",
-      "X-Client-Version": version,
-    };
-    const api = await app();
-    desktopCompatibility.minimumSupportedVersion = version;
-    const client = api(contract);
-    const actor = identity();
-    authenticate(actor);
-    const registered = await accept(
-      client.register({ headers, body: supportedRuntime }),
-      [200],
-    );
-    expect(registered.body).toStrictEqual({
-      hostId: expect.any(String),
-      connectionGeneration: 1,
-      commandNotifications: {
-        channelName: `computer-use-host:${actor.userId}:${actor.orgId}:${registered.body.hostId}:1`,
-        eventName: "commandsChanged",
-      },
-    });
-    const params = { hostId: registered.body.hostId };
-    const body = {
-      connectionGeneration: registered.body.connectionGeneration,
-    };
-    await accept(
-      client.heartbeat({
-        headers,
-        params,
-        body: { ...supportedRuntime, ...body },
-      }),
-      [200],
-    );
-    const created = await accept(
-      api(computerUseCommandContract).create({
-        headers,
-        body: { kind: "apps.list", timeoutMs: 10_000 },
-      }),
-      [200],
-    );
-    const claimed = await accept(
-      client.next({
-        headers,
-        params,
-        body: { ...body, supportedCapabilities: ["apps.list"] },
-      }),
-      [200],
-    );
-    expect(claimed.body).toMatchObject({
-      status: "command",
-      command: { id: created.body.commandId },
-    });
-    await accept(
-      client.complete({
-        headers,
-        params: { ...params, commandId: created.body.commandId },
-        body: { ...body, status: "succeeded", result: { apps: [] } },
-      }),
-      [200],
-    );
-    const observed = await accept(
-      api(computerUseCommandContract).get({
-        headers,
-        params: { commandId: created.body.commandId },
-      }),
-      [200],
-    );
-    expect(observed.body).toMatchObject({
-      status: "succeeded",
-      result: { apps: [] },
-    });
-    await accept(client.stop({ headers, params, body }), [200]);
-    await accept(
-      client.heartbeat({
-        headers,
-        params,
-        body: { ...supportedRuntime, ...body },
-      }),
-      [409],
-    );
-    const listed = await accept(
-      api(computerUseHostsContract).list({ headers }),
-      [200],
-    );
-    expect(listed.body.hosts).toContainEqual(
-      expect.objectContaining({ id: params.hostId, status: "offline" }),
-    );
-  });
-
-  it.each([
-    ["succeeded", 29_999],
-    ["succeeded", 30_000],
-    ["failed", 29_999],
-    ["failed", 30_000],
-  ] as const)(
-    "refreshes liveness for %s completion at %i ms and preserves the result through retries",
-    async (status, completionAge) => {
-      const startedAt = Date.parse("2026-10-12T01:00:00Z");
-      mockNow(startedAt);
-      const api = await app();
-      const client = api(contract);
-      authenticate(identity());
-      const registered = (
-        await accept(client.register({ headers, body: runtimeBody }), [200])
-      ).body;
-      const params = { hostId: registered.hostId };
-      const generation = {
-        connectionGeneration: registered.connectionGeneration,
-      };
-      const created = await accept(
-        api(computerUseCommandContract).create({
-          headers,
-          body: { kind: "apps.list", timeoutMs: 60_000 },
-        }),
-        [200],
-      );
-      const claimed = await accept(
-        client.next({
-          headers,
-          params,
-          body: {
-            ...generation,
-            supportedCapabilities: runtimeBody.supportedCapabilities,
-          },
-        }),
-        [200],
-      );
-      expect(claimed.body).toMatchObject({
-        status: "command",
-        command: { id: created.body.commandId },
-      });
-      const completedParams = { ...params, commandId: created.body.commandId };
-      const succeeded = {
-        ...generation,
-        status: "succeeded" as const,
-        result: { apps: [] },
-      };
-      const failed = {
-        ...generation,
-        status: "failed" as const,
-        error: {
-          code: "app_not_found" as const,
-          message: "The requested app is unavailable",
-        },
-      };
-      mockNow(startedAt + completionAge);
-      await accept(
-        client.complete({
-          headers,
-          params: completedParams,
-          body: status === "succeeded" ? succeeded : failed,
-        }),
-        [200],
-      );
-      const initialDirectory = await accept(
-        api(computerUseHostsContract).list({ headers }),
-        [200],
-      );
-      expect(initialDirectory.body.hosts).toContainEqual(
-        expect.objectContaining({
-          id: registered.hostId,
-          status: "online",
-          lastSeenAt: new Date(
-            startedAt + (completionAge === 30_000 ? completionAge : 0),
-          ).toISOString(),
-        }),
-      );
-      const original = (
-        await accept(
-          api(computerUseCommandContract).get({
-            headers,
-            params: { commandId: created.body.commandId },
-          }),
-          [200],
-        )
-      ).body;
-      expect(original).toMatchObject({
-        status,
-        completedAt: new Date(startedAt + completionAge).toISOString(),
-        ...(status === "succeeded"
-          ? { result: succeeded.result }
-          : { error: failed.error }),
-      });
-      for (const retryAge of [30_000, 59_999, 60_000]) {
-        mockNow(startedAt + retryAge);
-        const retried = await accept(
-          client.complete({
-            headers,
-            params: completedParams,
-            body: status === "succeeded" ? failed : succeeded,
-          }),
-          [200],
-        );
-        expect(retried.body).toStrictEqual({ ok: true });
-        const directory = await accept(
-          api(computerUseHostsContract).list({ headers }),
-          [200],
-        );
-        expect(directory.body.hosts).toContainEqual(
-          expect.objectContaining({
-            id: registered.hostId,
-            status: "online",
-            lastSeenAt: new Date(
-              startedAt + (retryAge === 60_000 ? retryAge : 30_000),
-            ).toISOString(),
-          }),
-        );
-        const observed = await accept(
-          api(computerUseCommandContract).get({
-            headers,
-            params: { commandId: created.body.commandId },
-          }),
-          [200],
-        );
-        expect(observed.body).toStrictEqual(original);
-      }
-    },
-  );
-
-  it("acknowledges a completion that loses to timeout during screenshot storage without refreshing liveness", async () => {
-    const startedAt = Date.parse("2026-10-12T02:00:00Z");
-    mockNow(startedAt);
-    const api = await app();
-    const client = api(contract);
-    authenticate(identity());
-    const hostBody = { ...runtimeBody, supportedCapabilities: ["app.state"] };
-    const registered = (
-      await accept(client.register({ headers, body: hostBody }), [200])
-    ).body;
-    const created = await accept(
-      api(computerUseCommandContract).create({
-        headers,
-        body: { kind: "app.state", app: "Calculator", timeoutMs: 1000 },
-      }),
-      [200],
-    );
-    const claimed = await accept(
-      client.next({
-        headers,
-        params: { hostId: registered.hostId },
+    setAuthToken(admin, setup.sessionId);
+    const heartbeat = await accept(
+      sessionHosts().heartbeat({
+        headers: sessionHeaders,
+        params: { hostId: setup.hostId },
         body: {
-          connectionGeneration: registered.connectionGeneration,
-          supportedCapabilities: hostBody.supportedCapabilities,
+          ...runtimeBody({ appVersion: "0.53.4" }),
+          connectionGeneration: setup.connectionGeneration,
         },
       }),
       [200],
     );
-    expect(claimed.body).toMatchObject({
-      status: "command",
-      command: { id: created.body.commandId },
-    });
-    context.mocks.s3.send.mockImplementationOnce(async () => {
-      mockNow(startedAt + 30_000);
-      const expired = await accept(
-        api(computerUseCommandContract).get({
-          headers,
-          params: { commandId: created.body.commandId },
-        }),
-        [200],
-      );
-      expect(expired.body).toMatchObject({
-        status: "failed",
-        error: { code: "timeout" },
-        completedAt: new Date(startedAt + 30_000).toISOString(),
-      });
-      return {};
-    });
+    expect(heartbeat.body.ok).toBeTruthy();
+
     const completed = await accept(
-      client.complete({
-        headers,
-        params: {
-          hostId: registered.hostId,
-          commandId: created.body.commandId,
-        },
+      sessionHosts().complete({
+        headers: sessionHeaders,
+        params: { hostId: setup.hostId, commandId: setup.commandId },
         body: {
-          connectionGeneration: registered.connectionGeneration,
+          connectionGeneration: setup.connectionGeneration,
           status: "succeeded",
-          result: {
-            screenshot: `data:image/png;base64,${Buffer.from("test-png").toString("base64")}`,
-            screenshotWidth: 800,
-            screenshotHeight: 600,
-          },
+          result: { apps: [] },
         },
       }),
       [200],
     );
     expect(completed.body).toStrictEqual({ ok: true });
-    const observed = await accept(
-      api(computerUseCommandContract).get({
-        headers,
-        params: { commandId: created.body.commandId },
-      }),
-      [200],
+
+    const command = await setup.api.readComputerUseCommand(
+      admin,
+      setup.commandId,
     );
-    expect(observed.body).toMatchObject({
-      status: "failed",
-      error: { code: "timeout" },
-      completedAt: new Date(startedAt + 30_000).toISOString(),
+    expect(command).toMatchObject({
+      status: "succeeded",
+      result: { apps: [] },
     });
-    expect(observed.body).not.toHaveProperty("result");
-    const directory = await accept(
-      api(computerUseHostsContract).list({ headers }),
+
+    setAuthToken(admin, setup.sessionId);
+    const stopped = await accept(
+      sessionHosts().stop({
+        headers: sessionHeaders,
+        params: { hostId: setup.hostId },
+        body: { connectionGeneration: setup.connectionGeneration },
+      }),
       [200],
     );
-    expect(directory.body.hosts).toContainEqual(
-      expect.objectContaining({
-        id: registered.hostId,
-        status: "online",
-        lastSeenAt: new Date(startedAt).toISOString(),
-      }),
-    );
+    expect(stopped.body).toStrictEqual({ ok: true, hostId: setup.hostId });
   });
 
-  it("rejects another user, organization, session, and replaced connection", async () => {
-    const api = await app();
-    const client = api(contract);
-    const owner = identity();
-    authenticate(owner);
-    const first = (
-      await accept(client.register({ headers, body: runtimeBody }), [200])
-    ).body;
-    for (const actor of [
-      { ...owner, userId: `user_${randomUUID()}` },
-      { ...owner, orgId: `org_${randomUUID()}` },
-      { ...owner, sessionId: `sess_${randomUUID()}` },
-    ]) {
-      authenticate(actor);
-      await accept(
-        client.next({
-          headers,
-          params: { hostId: first.hostId },
-          body: {
-            connectionGeneration: first.connectionGeneration,
-            supportedCapabilities: runtimeBody.supportedCapabilities,
-          },
-        }),
-        [409],
-      );
-    }
-    authenticate(owner);
-    const second = (
-      await accept(client.register({ headers, body: runtimeBody }), [200])
-    ).body;
-    expect(second).toStrictEqual({
-      hostId: first.hostId,
-      connectionGeneration: 2,
+  it("computer-use-session-hosts-003 preserves the GUI claim lifecycle for a supported Desktop", async () => {
+    const admin = createBddApi(context).user({ orgRole: "org:admin" });
+    const api = createComputerUseBddApi(context);
+    desktopCompatibility.minimumSupportedVersion = "0.54.0";
+    const sessionId = signInDesktop(admin);
+    const desktopHeaders = { "x-client-type": "Desktop" };
+
+    const registered = await accept(
+      sessionHosts().register({
+        headers: sessionHeaders,
+        extraHeaders: desktopHeaders,
+        body: runtimeBody({ appVersion: "0.54.0" }),
+      }),
+      [200],
+    );
+
+    expect(registered.body).toStrictEqual({
+      hostId: registered.body.hostId,
+      connectionGeneration: 1,
       commandNotifications: {
-        channelName: `computer-use-host:${owner.userId}:${owner.orgId}:${first.hostId}:2`,
+        channelName: `computer-use-host:${admin.userId}:${admin.orgId ?? ""}:${registered.body.hostId}:1`,
         eventName: "commandsChanged",
       },
     });
-    await accept(
-      client.stop({
-        headers,
-        params: { hostId: first.hostId },
-        body: { connectionGeneration: 1 },
-      }),
-      [409],
-    );
-    await accept(
-      client.heartbeat({
-        headers,
-        params: { hostId: second.hostId },
-        body: { ...runtimeBody, connectionGeneration: 2 },
-      }),
-      [200],
-    );
-  });
 
-  it.each([
-    ["session", "heartbeat"],
-    ["session", "next"],
-    ["session", "complete"],
-    ["session", "stop"],
-    ["membership", "heartbeat"],
-    ["membership", "next"],
-    ["membership", "complete"],
-    ["membership", "stop"],
-  ] as const)(
-    "expires cached authority after remote %s revocation before %s",
-    async (revocation, operation) => {
-      const registeredAt = Date.parse("2026-10-08T01:00:00Z");
-      mockNow(registeredAt);
-      const api = await app();
-      const client = api(contract);
-      const actor = identity();
-      authenticate(actor);
-      const registered = (
-        await accept(client.register({ headers, body: runtimeBody }), [200])
-      ).body;
-      const params = { hostId: registered.hostId };
-      const body = { connectionGeneration: registered.connectionGeneration };
-      const created = await accept(
-        api(computerUseCommandContract).create({
-          headers,
-          body: { kind: "apps.list", timeoutMs: 60_000 },
-        }),
-        [200],
-      );
-      const claimed = await accept(
-        client.next({
-          headers,
-          params,
-          body: {
-            ...body,
-            supportedCapabilities: runtimeBody.supportedCapabilities,
-          },
-        }),
-        [200],
-      );
-      expect(claimed.body).toMatchObject({
-        status: "command",
-        command: { id: created.body.commandId },
-      });
-      if (revocation === "session") {
-        context.mocks.clerk.sessions.getSession.mockResolvedValue({
-          id: actor.sessionId,
-          userId: actor.userId,
-          status: "revoked",
-        });
-      } else {
-        context.mocks.clerk.organizations.getOrganizationMembershipList.mockResolvedValue(
-          { data: [], totalCount: 0 },
-        );
-      }
-      mockNow(registeredAt + 29_999);
-      await accept(
-        client.heartbeat({
-          headers,
-          params,
-          body: { ...runtimeBody, ...body },
-        }),
-        [200],
-      );
-      mockNow(registeredAt + 30_000);
-      if (operation === "heartbeat") {
-        await accept(
-          client.heartbeat({
-            headers,
-            params,
-            body: { ...runtimeBody, ...body },
-          }),
-          [409],
-        );
-      } else if (operation === "next") {
-        await accept(
-          client.next({
-            headers,
-            params,
-            body: {
-              ...body,
-              supportedCapabilities: runtimeBody.supportedCapabilities,
-            },
-          }),
-          [409],
-        );
-      } else if (operation === "complete") {
-        await accept(
-          client.complete({
-            headers,
-            params: { ...params, commandId: created.body.commandId },
-            body: { ...body, status: "succeeded", result: { apps: [] } },
-          }),
-          [409],
-        );
-      } else {
-        await accept(client.stop({ headers, params, body }), [409]);
-      }
-      const listed = await accept(
-        api(computerUseHostsContract).list({ headers }),
-        [200],
-      );
-      expect(listed.body.hosts).toContainEqual(
-        expect.objectContaining({ id: registered.hostId, status: "offline" }),
-      );
-    },
-  );
-
-  it("denies a missing session and an inactive provider session at registration", async () => {
-    const client = (await app())(contract);
-    const actor = identity();
-    authenticate(actor);
-    context.mocks.clerk.authenticateRequest.mockResolvedValue({
-      isAuthenticated: true,
-      toAuth: () => {
-        return {
-          userId: actor.userId,
-          orgId: actor.orgId,
-          orgRole: "org:admin",
-        };
-      },
-    });
-    const missing = await accept(
-      client.register({ headers, body: runtimeBody }),
-      [401],
-    );
-    expect(missing.body.error.code).toBe("UNAUTHORIZED");
-    authenticate(actor);
-    context.mocks.clerk.sessions.getSession.mockResolvedValue({
-      id: actor.sessionId,
-      userId: actor.userId,
-      status: "revoked",
-    });
-    const inactive = await accept(
-      client.register({ headers, body: runtimeBody }),
-      [401],
-    );
-    expect(inactive.body.error.code).toBe("UNAUTHORIZED");
-  });
-
-  it("does not let a new connection report an older connection's action", async () => {
-    const api = await app();
-    const client = api(contract);
-    authenticate(identity());
-    const first = (
-      await accept(client.register({ headers, body: runtimeBody }), [200])
-    ).body;
-    const created = await accept(
-      api(computerUseCommandContract).create({
-        headers,
-        body: { kind: "apps.list", timeoutMs: 10_000 },
-      }),
-      [200],
-    );
     await accept(
-      client.next({
-        headers,
-        params: { hostId: first.hostId },
+      sessionHosts().heartbeat({
+        headers: sessionHeaders,
+        extraHeaders: desktopHeaders,
+        params: { hostId: registered.body.hostId },
         body: {
-          connectionGeneration: first.connectionGeneration,
-          supportedCapabilities: runtimeBody.supportedCapabilities,
+          ...runtimeBody({ appVersion: "0.54.0" }),
+          connectionGeneration: 1,
         },
       }),
       [200],
     );
-    const second = (
-      await accept(client.register({ headers, body: runtimeBody }), [200])
-    ).body;
-    const params = { hostId: first.hostId, commandId: created.body.commandId };
-    await accept(
-      client.complete({
-        headers,
-        params,
+
+    const created = await api.createComputerUseReadCommand(admin, {
+      kind: "apps.list",
+    });
+
+    setAuthToken(admin, sessionId);
+    const claimed = await accept(
+      sessionHosts().next({
+        headers: sessionHeaders,
+        extraHeaders: desktopHeaders,
+        params: { hostId: registered.body.hostId },
         body: {
-          connectionGeneration: first.connectionGeneration,
+          connectionGeneration: 1,
+          supportedCapabilities: ["apps.list"],
+        },
+      }),
+      [200],
+    );
+    expect(claimed.body).toMatchObject({
+      status: "command",
+      command: { id: created.commandId },
+    });
+
+    await accept(
+      sessionHosts().complete({
+        headers: sessionHeaders,
+        extraHeaders: desktopHeaders,
+        params: {
+          hostId: registered.body.hostId,
+          commandId: created.commandId,
+        },
+        body: {
+          connectionGeneration: 1,
+          status: "succeeded",
+          result: { apps: [] },
+        },
+      }),
+      [200],
+    );
+
+    const command = await api.readComputerUseCommand(admin, created.commandId);
+    expect(command).toMatchObject({
+      status: "succeeded",
+      result: { apps: [] },
+    });
+
+    setAuthToken(admin, sessionId);
+    await accept(
+      sessionHosts().stop({
+        headers: sessionHeaders,
+        extraHeaders: desktopHeaders,
+        params: { hostId: registered.body.hostId },
+        body: { connectionGeneration: 1 },
+      }),
+      [200],
+    );
+
+    await accept(
+      sessionHosts().heartbeat({
+        headers: sessionHeaders,
+        extraHeaders: desktopHeaders,
+        params: { hostId: registered.body.hostId },
+        body: {
+          ...runtimeBody({ appVersion: "0.54.0" }),
+          connectionGeneration: 1,
+        },
+      }),
+      [409],
+    );
+
+    const listed = await readListedHost(api, admin, registered.body.hostId);
+    expect(listed.status).toBe("offline");
+  });
+
+  it("computer-use-session-hosts-004 refreshes liveness for succeeded completion at 29999 ms and preserves the result through retries", async () => {
+    const start = Date.parse("2026-02-01T12:00:00.000Z");
+    mockNow(start);
+    const registeredAt = nowDate().toISOString();
+    const admin = createBddApi(context).user({ orgRole: "org:admin" });
+    const setup = await registerAndClaimAppsList(admin, { timeoutMs: 60_000 });
+
+    mockNow(start + 29_999);
+    const completedAt = nowDate().toISOString();
+    setAuthToken(admin, setup.sessionId);
+    const firstComplete = await accept(
+      sessionHosts().complete({
+        headers: sessionHeaders,
+        params: { hostId: setup.hostId, commandId: setup.commandId },
+        body: {
+          connectionGeneration: setup.connectionGeneration,
+          status: "succeeded",
+          result: { apps: [] },
+        },
+      }),
+      [200],
+    );
+    expect(firstComplete.body).toStrictEqual({ ok: true });
+
+    const hostAt29999 = await readListedHost(setup.api, admin, setup.hostId);
+    const commandAt29999 = await setup.api.readComputerUseCommand(
+      admin,
+      setup.commandId,
+    );
+    expect(hostAt29999).toMatchObject({
+      status: "online",
+      lastSeenAt: registeredAt,
+    });
+    expect(commandAt29999).toMatchObject({
+      status: "succeeded",
+      completedAt,
+      result: { apps: [] },
+    });
+
+    mockNow(start + 30_000);
+    const at30000 = nowDate().toISOString();
+    setAuthToken(admin, setup.sessionId);
+    const retry1 = await accept(
+      sessionHosts().complete({
+        headers: sessionHeaders,
+        params: { hostId: setup.hostId, commandId: setup.commandId },
+        body: {
+          connectionGeneration: setup.connectionGeneration,
+          status: "failed",
+          error: { code: "app_not_found", message: "Finder missing" },
+        },
+      }),
+      [200],
+    );
+    expect(retry1.body).toStrictEqual({ ok: true });
+    await expect(
+      readListedHost(setup.api, admin, setup.hostId),
+    ).resolves.toMatchObject({ lastSeenAt: at30000 });
+    await expect(
+      setup.api.readComputerUseCommand(admin, setup.commandId),
+    ).resolves.toStrictEqual(commandAt29999);
+
+    mockNow(start + 59_999);
+    setAuthToken(admin, setup.sessionId);
+    const retry2 = await accept(
+      sessionHosts().complete({
+        headers: sessionHeaders,
+        params: { hostId: setup.hostId, commandId: setup.commandId },
+        body: {
+          connectionGeneration: setup.connectionGeneration,
+          status: "failed",
+          error: { code: "app_not_found", message: "Finder missing" },
+        },
+      }),
+      [200],
+    );
+    expect(retry2.body).toStrictEqual({ ok: true });
+    await expect(
+      readListedHost(setup.api, admin, setup.hostId),
+    ).resolves.toMatchObject({ lastSeenAt: at30000 });
+    await expect(
+      setup.api.readComputerUseCommand(admin, setup.commandId),
+    ).resolves.toStrictEqual(commandAt29999);
+
+    mockNow(start + 60_000);
+    const at60000 = nowDate().toISOString();
+    setAuthToken(admin, setup.sessionId);
+    const retry3 = await accept(
+      sessionHosts().complete({
+        headers: sessionHeaders,
+        params: { hostId: setup.hostId, commandId: setup.commandId },
+        body: {
+          connectionGeneration: setup.connectionGeneration,
+          status: "failed",
+          error: { code: "app_not_found", message: "Finder missing" },
+        },
+      }),
+      [200],
+    );
+    expect(retry3.body).toStrictEqual({ ok: true });
+    await expect(
+      readListedHost(setup.api, admin, setup.hostId),
+    ).resolves.toMatchObject({ lastSeenAt: at60000 });
+    await expect(
+      setup.api.readComputerUseCommand(admin, setup.commandId),
+    ).resolves.toStrictEqual(commandAt29999);
+  });
+
+  it("computer-use-session-hosts-006 refreshes liveness for failed completion at 29999 ms and preserves the result through retries", async () => {
+    const start = Date.parse("2026-02-01T12:00:00.000Z");
+    mockNow(start);
+    const registeredAt = nowDate().toISOString();
+    const admin = createBddApi(context).user({ orgRole: "org:admin" });
+    const setup = await registerAndClaimAppsList(admin, { timeoutMs: 60_000 });
+
+    mockNow(start + 29_999);
+    const completedAt = nowDate().toISOString();
+    setAuthToken(admin, setup.sessionId);
+    const firstComplete = await accept(
+      sessionHosts().complete({
+        headers: sessionHeaders,
+        params: { hostId: setup.hostId, commandId: setup.commandId },
+        body: {
+          connectionGeneration: setup.connectionGeneration,
+          status: "failed",
+          error: { code: "app_not_found", message: "App missing" },
+        },
+      }),
+      [200],
+    );
+    expect(firstComplete.body).toStrictEqual({ ok: true });
+
+    const hostAt29999 = await readListedHost(setup.api, admin, setup.hostId);
+    const commandAt29999 = await setup.api.readComputerUseCommand(
+      admin,
+      setup.commandId,
+    );
+    expect(hostAt29999).toMatchObject({
+      status: "online",
+      lastSeenAt: registeredAt,
+    });
+    expect(commandAt29999).toMatchObject({
+      status: "failed",
+      completedAt,
+      error: { code: "app_not_found", message: "App missing" },
+    });
+
+    mockNow(start + 30_000);
+    const at30000 = nowDate().toISOString();
+    setAuthToken(admin, setup.sessionId);
+    const retry1 = await accept(
+      sessionHosts().complete({
+        headers: sessionHeaders,
+        params: { hostId: setup.hostId, commandId: setup.commandId },
+        body: {
+          connectionGeneration: setup.connectionGeneration,
+          status: "succeeded",
+          result: { apps: [] },
+        },
+      }),
+      [200],
+    );
+    expect(retry1.body).toStrictEqual({ ok: true });
+    await expect(
+      readListedHost(setup.api, admin, setup.hostId),
+    ).resolves.toMatchObject({ lastSeenAt: at30000 });
+    await expect(
+      setup.api.readComputerUseCommand(admin, setup.commandId),
+    ).resolves.toStrictEqual(commandAt29999);
+
+    mockNow(start + 59_999);
+    setAuthToken(admin, setup.sessionId);
+    const retry2 = await accept(
+      sessionHosts().complete({
+        headers: sessionHeaders,
+        params: { hostId: setup.hostId, commandId: setup.commandId },
+        body: {
+          connectionGeneration: setup.connectionGeneration,
+          status: "succeeded",
+          result: { apps: [] },
+        },
+      }),
+      [200],
+    );
+    expect(retry2.body).toStrictEqual({ ok: true });
+    await expect(
+      readListedHost(setup.api, admin, setup.hostId),
+    ).resolves.toMatchObject({ lastSeenAt: at30000 });
+    await expect(
+      setup.api.readComputerUseCommand(admin, setup.commandId),
+    ).resolves.toStrictEqual(commandAt29999);
+
+    mockNow(start + 60_000);
+    const at60000 = nowDate().toISOString();
+    setAuthToken(admin, setup.sessionId);
+    const retry3 = await accept(
+      sessionHosts().complete({
+        headers: sessionHeaders,
+        params: { hostId: setup.hostId, commandId: setup.commandId },
+        body: {
+          connectionGeneration: setup.connectionGeneration,
+          status: "succeeded",
+          result: { apps: [] },
+        },
+      }),
+      [200],
+    );
+    expect(retry3.body).toStrictEqual({ ok: true });
+    await expect(
+      readListedHost(setup.api, admin, setup.hostId),
+    ).resolves.toMatchObject({ lastSeenAt: at60000 });
+    await expect(
+      setup.api.readComputerUseCommand(admin, setup.commandId),
+    ).resolves.toStrictEqual(commandAt29999);
+  });
+
+  it("computer-use-session-hosts-009 rejects another user, organization, session, and replaced connection", async () => {
+    const bdd = createBddApi(context);
+    const admin = bdd.user({ orgRole: "org:admin" });
+    const otherUser = bdd.user({ orgId: admin.orgId, orgRole: "org:admin" });
+    const otherOrg = bdd.user({ userId: admin.userId, orgRole: "org:admin" });
+    const installationId = randomUUID();
+    const ownerSessionId = signInDesktop(admin);
+
+    const gen1 = await accept(
+      sessionHosts().register({
+        headers: sessionHeaders,
+        body: runtimeBody({ installationId }),
+      }),
+      [200],
+    );
+
+    signInDesktop(otherUser);
+    await accept(
+      sessionHosts().next({
+        headers: sessionHeaders,
+        params: { hostId: gen1.body.hostId },
+        body: { connectionGeneration: 1, supportedCapabilities: ["apps.list"] },
+      }),
+      [409],
+    );
+
+    signInDesktop(otherOrg, ownerSessionId);
+    await accept(
+      sessionHosts().next({
+        headers: sessionHeaders,
+        params: { hostId: gen1.body.hostId },
+        body: { connectionGeneration: 1, supportedCapabilities: ["apps.list"] },
+      }),
+      [409],
+    );
+
+    signInDesktop(admin, `sess_other_${randomUUID()}`);
+    await accept(
+      sessionHosts().next({
+        headers: sessionHeaders,
+        params: { hostId: gen1.body.hostId },
+        body: { connectionGeneration: 1, supportedCapabilities: ["apps.list"] },
+      }),
+      [409],
+    );
+
+    signInDesktop(admin, ownerSessionId);
+    const gen2 = await accept(
+      sessionHosts().register({
+        headers: sessionHeaders,
+        body: runtimeBody({ installationId }),
+      }),
+      [200],
+    );
+
+    expect(gen2.body).toMatchObject({
+      hostId: gen1.body.hostId,
+      connectionGeneration: 2,
+      commandNotifications: {
+        channelName: `computer-use-host:${admin.userId}:${admin.orgId ?? ""}:${gen1.body.hostId}:2`,
+        eventName: "commandsChanged",
+      },
+    });
+
+    await accept(
+      sessionHosts().stop({
+        headers: sessionHeaders,
+        params: { hostId: gen1.body.hostId },
+        body: { connectionGeneration: 1 },
+      }),
+      [409],
+    );
+
+    await accept(
+      sessionHosts().heartbeat({
+        headers: sessionHeaders,
+        params: { hostId: gen1.body.hostId },
+        body: {
+          ...runtimeBody({ installationId }),
+          connectionGeneration: 2,
+        },
+      }),
+      [200],
+    );
+  });
+
+  it("computer-use-session-hosts-010 expires cached authority after remote session revocation before heartbeat", async () => {
+    const start = Date.parse("2026-02-01T12:00:00.000Z");
+    mockNow(start);
+    const admin = createBddApi(context).user({ orgRole: "org:admin" });
+    const setup = await registerAndClaimAppsList(admin);
+
+    setProviderAuthority(admin, setup.sessionId, { sessionStatus: "revoked" });
+
+    mockNow(start + 29_999);
+    setAuthToken(admin, setup.sessionId);
+    await accept(
+      sessionHosts().heartbeat({
+        headers: sessionHeaders,
+        params: { hostId: setup.hostId },
+        body: {
+          ...runtimeBody({ installationId: setup.installationId }),
+          connectionGeneration: setup.connectionGeneration,
+        },
+      }),
+      [200],
+    );
+
+    mockNow(start + 30_000);
+    setAuthToken(admin, setup.sessionId);
+    await accept(
+      sessionHosts().heartbeat({
+        headers: sessionHeaders,
+        params: { hostId: setup.hostId },
+        body: {
+          ...runtimeBody({ installationId: setup.installationId }),
+          connectionGeneration: setup.connectionGeneration,
+        },
+      }),
+      [409],
+    );
+
+    const listed = await readListedHost(setup.api, admin, setup.hostId);
+    expect(listed.status).toBe("offline");
+  });
+
+  it("computer-use-session-hosts-011 expires cached authority after remote session revocation before next", async () => {
+    const start = Date.parse("2026-02-01T12:00:00.000Z");
+    mockNow(start);
+    const admin = createBddApi(context).user({ orgRole: "org:admin" });
+    const setup = await registerAndClaimAppsList(admin);
+
+    setProviderAuthority(admin, setup.sessionId, { sessionStatus: "revoked" });
+
+    mockNow(start + 29_999);
+    setAuthToken(admin, setup.sessionId);
+    await accept(
+      sessionHosts().heartbeat({
+        headers: sessionHeaders,
+        params: { hostId: setup.hostId },
+        body: {
+          ...runtimeBody({ installationId: setup.installationId }),
+          connectionGeneration: setup.connectionGeneration,
+        },
+      }),
+      [200],
+    );
+
+    mockNow(start + 30_000);
+    setAuthToken(admin, setup.sessionId);
+    await accept(
+      sessionHosts().next({
+        headers: sessionHeaders,
+        params: { hostId: setup.hostId },
+        body: {
+          connectionGeneration: setup.connectionGeneration,
+          supportedCapabilities: ["apps.list"],
+        },
+      }),
+      [409],
+    );
+
+    const listed = await readListedHost(setup.api, admin, setup.hostId);
+    expect(listed.status).toBe("offline");
+  });
+
+  it("computer-use-session-hosts-015 expires cached authority after remote membership revocation before next", async () => {
+    const start = Date.parse("2026-02-01T12:00:00.000Z");
+    mockNow(start);
+    const admin = createBddApi(context).user({ orgRole: "org:admin" });
+    const setup = await registerAndClaimAppsList(admin);
+
+    setProviderAuthority(admin, setup.sessionId, { hasMembership: false });
+
+    mockNow(start + 29_999);
+    setAuthToken(admin, setup.sessionId);
+    await accept(
+      sessionHosts().heartbeat({
+        headers: sessionHeaders,
+        params: { hostId: setup.hostId },
+        body: {
+          ...runtimeBody({ installationId: setup.installationId }),
+          connectionGeneration: setup.connectionGeneration,
+        },
+      }),
+      [200],
+    );
+
+    mockNow(start + 30_000);
+    setAuthToken(admin, setup.sessionId);
+    await accept(
+      sessionHosts().next({
+        headers: sessionHeaders,
+        params: { hostId: setup.hostId },
+        body: {
+          connectionGeneration: setup.connectionGeneration,
+          supportedCapabilities: ["apps.list"],
+        },
+      }),
+      [409],
+    );
+
+    const listed = await readListedHost(setup.api, admin, setup.hostId);
+    expect(listed.status).toBe("offline");
+  });
+
+  it("computer-use-session-hosts-016 expires cached authority after remote membership revocation before complete", async () => {
+    const start = Date.parse("2026-02-01T12:00:00.000Z");
+    mockNow(start);
+    const admin = createBddApi(context).user({ orgRole: "org:admin" });
+    const setup = await registerAndClaimAppsList(admin);
+
+    setProviderAuthority(admin, setup.sessionId, { hasMembership: false });
+
+    mockNow(start + 29_999);
+    setAuthToken(admin, setup.sessionId);
+    await accept(
+      sessionHosts().heartbeat({
+        headers: sessionHeaders,
+        params: { hostId: setup.hostId },
+        body: {
+          ...runtimeBody({ installationId: setup.installationId }),
+          connectionGeneration: setup.connectionGeneration,
+        },
+      }),
+      [200],
+    );
+
+    mockNow(start + 30_000);
+    setAuthToken(admin, setup.sessionId);
+    await accept(
+      sessionHosts().complete({
+        headers: sessionHeaders,
+        params: { hostId: setup.hostId, commandId: setup.commandId },
+        body: {
+          connectionGeneration: setup.connectionGeneration,
           status: "succeeded",
           result: { apps: [] },
         },
       }),
       [409],
     );
+
+    const listed = await readListedHost(setup.api, admin, setup.hostId);
+    expect(listed.status).toBe("offline");
+  });
+
+  it("computer-use-session-hosts-019 does not let a new connection report an older connection's action", async () => {
+    const admin = createBddApi(context).user({ orgRole: "org:admin" });
+    const setup = await registerAndClaimAppsList(admin);
+
+    setAuthToken(admin, setup.sessionId);
+    const gen2 = await accept(
+      sessionHosts().register({
+        headers: sessionHeaders,
+        body: runtimeBody({ installationId: setup.installationId }),
+      }),
+      [200],
+    );
+    expect(gen2.body.connectionGeneration).toBe(2);
+
     await accept(
-      client.complete({
-        headers,
-        params,
+      sessionHosts().complete({
+        headers: sessionHeaders,
+        params: { hostId: setup.hostId, commandId: setup.commandId },
         body: {
-          connectionGeneration: second.connectionGeneration,
+          connectionGeneration: 1,
+          status: "succeeded",
+          result: { apps: [] },
+        },
+      }),
+      [409],
+    );
+
+    await accept(
+      sessionHosts().complete({
+        headers: sessionHeaders,
+        params: { hostId: setup.hostId, commandId: setup.commandId },
+        body: {
+          connectionGeneration: 2,
           status: "succeeded",
           result: { apps: [] },
         },
       }),
       [404],
     );
-    const observed = await accept(
-      api(computerUseCommandContract).get({
-        headers,
-        params: { commandId: created.body.commandId },
-      }),
-      [200],
+
+    const command = await setup.api.readComputerUseCommand(
+      admin,
+      setup.commandId,
     );
-    expect(observed.body.status).toBe("running");
+    expect(command.status).toBe("running");
   });
 
-  it.each(["replaced", "stopped"])(
-    "rejects a connection %s during screenshot upload without confirming its result",
-    async (invalidation) => {
-      const api = await app();
-      const client = api(contract);
-      const actor = identity();
-      authenticate(actor);
-      const hostBody = { ...runtimeBody, supportedCapabilities: ["app.state"] };
-      const first = (
-        await accept(client.register({ headers, body: hostBody }), [200])
-      ).body;
-      const created = await accept(
-        api(computerUseCommandContract).create({
-          headers,
-          body: { kind: "app.state", app: "Calculator", timeoutMs: 10_000 },
-        }),
-        [200],
-      );
-      const claimed = await accept(
-        client.next({
-          headers,
-          params: { hostId: first.hostId },
-          body: {
-            connectionGeneration: first.connectionGeneration,
-            supportedCapabilities: hostBody.supportedCapabilities,
-          },
-        }),
-        [200],
-      );
-      expect(claimed.body).toMatchObject({
-        status: "command",
-        command: { id: created.body.commandId },
-      });
-      context.mocks.s3.send.mockImplementationOnce(async () => {
-        if (invalidation === "replaced") {
-          const replacement = await accept(
-            client.register({ headers, body: hostBody }),
-            [200],
-          );
-          expect(replacement.body).toStrictEqual({
-            hostId: first.hostId,
-            connectionGeneration: first.connectionGeneration + 1,
-            commandNotifications: {
-              channelName: `computer-use-host:${actor.userId}:${actor.orgId}:${first.hostId}:${first.connectionGeneration + 1}`,
-              eventName: "commandsChanged",
-            },
-          });
-        } else {
-          const stopped = await accept(
-            client.stop({
-              headers,
-              params: { hostId: first.hostId },
-              body: { connectionGeneration: first.connectionGeneration },
-            }),
-            [200],
-          );
-          expect(stopped.body).toStrictEqual({
-            ok: true,
-            hostId: first.hostId,
-          });
-        }
-        return {};
-      });
-      const rejected = await accept(
-        client.complete({
-          headers,
-          params: { hostId: first.hostId, commandId: created.body.commandId },
-          body: {
-            connectionGeneration: first.connectionGeneration,
-            status: "succeeded",
-            result: {
-              screenshot: `data:image/png;base64,${Buffer.from("test-png").toString("base64")}`,
-              screenshotWidth: 800,
-              screenshotHeight: 600,
-            },
-          },
-        }),
-        [409],
-      );
-      expect(rejected.body.error.code).toBe("HOST_CONNECTION_INVALID");
-      const observed = await accept(
-        api(computerUseCommandContract).get({
-          headers,
-          params: { commandId: created.body.commandId },
-        }),
-        [200],
-      );
-      expect(observed.body.status).toBe("running");
-    },
-  );
-
-  it.each(["session", "membership"])(
-    "cancels a stalled Clerk %s read and recovers the same connection",
-    async (stage) => {
-      const initialTime = Date.parse("2026-10-08T02:00:00Z");
-      mockNow(initialTime);
-      const api = await app();
-      const client = api(contract);
-      const actor = identity();
-      authenticate(actor);
-      const host = (
-        await accept(client.register({ headers, body: runtimeBody }), [200])
-      ).body;
-      mockNow(initialTime + 31_000);
-      const received = createDeferredPromise<void>(context.signal);
-      const cancelled = createDeferredPromise<void>(context.signal);
-      const path =
-        stage === "session"
-          ? `sessions/${actor.sessionId}`
-          : `organizations/${actor.orgId}/memberships`;
-      server.use(
-        http.get(
-          `https://api.clerk.com/v1/${path}`,
-          async ({ request }) => {
-            const disconnected = createDeferredPromise<void>(context.signal);
-            const observeDisconnect = () => {
-              if (!disconnected.settled()) {
-                disconnected.resolve();
-              }
-            };
-            request.signal.addEventListener("abort", observeDisconnect, {
-              once: true,
-            });
-            if (request.signal.aborted) {
-              observeDisconnect();
-            }
-            received.resolve();
-            const observed = await settleIncludingAbort(disconnected.promise);
-            request.signal.removeEventListener("abort", observeDisconnect);
-            if (!observed.ok) {
-              throw observed.error;
-            }
-            cancelled.resolve();
-            return HttpResponse.json({ errors: [] }, { status: 503 });
-          },
-          { once: true },
-        ),
-      );
-      const request = client.next({
-        headers,
-        params: { hostId: host.hostId },
-        body: {
-          connectionGeneration: host.connectionGeneration,
-          supportedCapabilities: runtimeBody.supportedCapabilities,
-        },
-      });
-      await received.promise;
-      await accept(request, [503]);
-      await cancelled.promise;
-      const recovered = await accept(
-        client.next({
-          headers,
-          params: { hostId: host.hostId },
-          body: {
-            connectionGeneration: host.connectionGeneration,
-            supportedCapabilities: runtimeBody.supportedCapabilities,
-          },
-        }),
-        [200],
-      );
-      expect(recovered.body.status).toBe("idle");
-    },
-    6000,
-  );
-
-  it("pauses after expired validation during a Clerk outage and recovers the same connection", async () => {
-    onTestFinished(context.mocks.clerkRetryJitter(0));
-    mockNow(Date.parse("2026-10-08T02:00:00Z"));
-    const api = await app();
-    const client = api(contract);
-    const actor = identity();
-    authenticate(actor);
-    const host = (
-      await accept(client.register({ headers, body: runtimeBody }), [200])
-    ).body;
-    class ClerkUnavailable extends Error {
-      static readonly kind = "ClerkAPIResponseError";
-      readonly status = 503;
+  it("pf-149 deletes the Desktop and command history and registers a fresh device on reconnect", async () => {
+    const admin = createBddApi(context).user({ orgRole: "org:admin" });
+    if (!admin.orgId) {
+      throw new Error("Expected an org admin");
     }
-    context.mocks.clerk.sessions.getSession.mockRejectedValue(
-      new ClerkUnavailable("Clerk unavailable"),
+    await updateFeatureSwitchesForUser(
+      context,
+      { userId: admin.userId, orgId: admin.orgId, orgRole: admin.orgRole },
+      { [FeatureSwitchKey.RemoteDevices]: true },
     );
-    mockNow(Date.parse("2026-10-08T02:00:31Z"));
+    const setup = await registerAndClaimAppsList(admin);
+    const remoteDevices = setupApp({ context, routes: remoteDevicesRoutes })(
+      remoteDevicesContract,
+    );
+    const commands = setupApp({ context, routes: computerUseRoutes })(
+      computerUseCommandContract,
+    );
+
+    setAuthToken(admin, setup.sessionId);
     await accept(
-      client.next({
-        headers,
-        params: { hostId: host.hostId },
+      sessionHosts().complete({
+        headers: sessionHeaders,
+        params: { hostId: setup.hostId, commandId: setup.commandId },
         body: {
-          connectionGeneration: host.connectionGeneration,
-          supportedCapabilities: runtimeBody.supportedCapabilities,
-        },
-      }),
-      [503],
-    );
-    authenticate(actor);
-    const recovered = await accept(
-      client.next({
-        headers,
-        params: { hostId: host.hostId },
-        body: {
-          connectionGeneration: host.connectionGeneration,
-          supportedCapabilities: runtimeBody.supportedCapabilities,
+          connectionGeneration: setup.connectionGeneration,
+          status: "succeeded",
+          result: { apps: [] },
         },
       }),
       [200],
     );
-    expect(recovered.body).toStrictEqual({ status: "idle" });
+
+    const beforeDirectory = await accept(
+      remoteDevices.list({ headers: sessionHeaders }),
+      [200],
+    );
+    const originalDevice = beforeDirectory.body.devices.find((device) => {
+      return device.channels.some((channel) => {
+        return channel.kind === "desktop" && channel.id === setup.hostId;
+      });
+    });
+    expect(originalDevice).toBeDefined();
+    if (!originalDevice) {
+      throw new Error("Expected Desktop channel in remote devices directory");
+    }
+
+    const commandBefore = await setup.api.readComputerUseCommand(
+      admin,
+      setup.commandId,
+    );
+    expect(commandBefore.status).toBe("succeeded");
+
+    setAuthToken(admin, setup.sessionId);
+    await accept(
+      remoteDevices.delete({
+        headers: sessionHeaders,
+        params: { deviceId: originalDevice.id },
+      }),
+      [204],
+    );
+
+    const [afterDirectory, hostsAfter, commandAfter, auditAfter] =
+      await Promise.all([
+        accept(remoteDevices.list({ headers: sessionHeaders }), [200]),
+        setup.api.listComputerUseHosts(admin),
+        accept(
+          commands.get({
+            headers: sessionHeaders,
+            params: { commandId: setup.commandId },
+          }),
+          [404],
+        ),
+        setup.api.listComputerUseAuditEvents(admin, { hostId: setup.hostId }),
+      ]);
+
+    expect(
+      afterDirectory.body.devices.some((device) => {
+        return device.id === originalDevice.id;
+      }),
+    ).toBeFalsy();
+    expect(
+      hostsAfter.hosts.some((host) => {
+        return host.id === setup.hostId;
+      }),
+    ).toBeFalsy();
+    expect(commandAfter.status).toBe(404);
+    expect(auditAfter.auditEvents).toStrictEqual([]);
+
+    signInDesktop(admin, setup.sessionId);
+    const reconnected = await accept(
+      sessionHosts().register({
+        headers: sessionHeaders,
+        body: runtimeBody({ installationId: setup.installationId }),
+      }),
+      [200],
+    );
+    expect(reconnected.body.hostId).not.toBe(setup.hostId);
+    expect(reconnected.body.connectionGeneration).toBe(1);
+
+    const reconnectedDirectory = await accept(
+      remoteDevices.list({ headers: sessionHeaders }),
+      [200],
+    );
+    const freshDevice = reconnectedDirectory.body.devices.find((device) => {
+      return device.channels.some((channel) => {
+        return (
+          channel.kind === "desktop" && channel.id === reconnected.body.hostId
+        );
+      });
+    });
+    expect(freshDevice).toBeDefined();
+    expect(freshDevice?.id).not.toBe(originalDevice.id);
   });
 
-  it("exposes provider rate limits without creating a host connection", async () => {
-    const api = await app();
-    authenticate(identity());
-    class ClerkRateLimited extends Error {
-      static readonly kind = "ClerkAPIResponseError";
-      readonly status = 429;
-      readonly retryAfter = 7;
+  it("pf-156 renames an owned remote device and rejects another member's rename", async () => {
+    const bdd = createBddApi(context);
+    const owner = bdd.user({ orgRole: "org:admin" });
+    const peer = bdd.user({ orgId: owner.orgId, orgRole: "org:member" });
+    if (!owner.orgId) {
+      throw new Error("Expected an org admin");
     }
-    context.mocks.clerk.sessions.getSession.mockRejectedValue(
-      new ClerkRateLimited("Clerk rate limited"),
+    await updateFeatureSwitchesForUser(
+      context,
+      { userId: owner.userId, orgId: owner.orgId, orgRole: owner.orgRole },
+      { [FeatureSwitchKey.RemoteDevices]: true },
     );
-    const rejected = await accept(
-      api(contract).register({ headers, body: runtimeBody }),
-      [429],
+    const remoteDevices = setupApp({ context, routes: remoteDevicesRoutes })(
+      remoteDevicesContract,
     );
-    expect(rejected.headers.get("Retry-After")).toBe("7");
-    const listed = await accept(
-      api(computerUseHostsContract).list({ headers }),
+
+    const desktopSessionId = `sess_${randomUUID()}`;
+    signInDesktop(owner, desktopSessionId);
+    const registered = await accept(
+      sessionHosts().register({
+        headers: sessionHeaders,
+        body: runtimeBody({ installationId: randomUUID() }),
+      }),
       [200],
     );
-    expect(listed.body.hosts).toStrictEqual([]);
+
+    setAuthToken(owner, desktopSessionId);
+    const beforeDirectory = await accept(
+      remoteDevices.list({ headers: sessionHeaders }),
+      [200],
+    );
+    const ownedDevice = beforeDirectory.body.devices.find((device) => {
+      return device.channels.some((channel) => {
+        return (
+          channel.kind === "desktop" && channel.id === registered.body.hostId
+        );
+      });
+    });
+    expect(ownedDevice).toBeDefined();
+    if (!ownedDevice) {
+      throw new Error("Expected owned Desktop device in directory");
+    }
+
+    const renamed = await accept(
+      remoteDevices.rename({
+        headers: sessionHeaders,
+        params: { deviceId: ownedDevice.id },
+        body: { displayName: "Studio Mac" },
+      }),
+      [200],
+    );
+    expect(renamed.body.id).toBe(ownedDevice.id);
+    expect(renamed.body.displayName).toBe("Studio Mac");
+
+    setAuthToken(peer, undefined);
+    await accept(
+      remoteDevices.rename({
+        headers: sessionHeaders,
+        params: { deviceId: ownedDevice.id },
+        body: { displayName: "Unauthorized Name" },
+      }),
+      [404],
+    );
+
+    setAuthToken(owner, desktopSessionId);
+    const afterDirectory = await accept(
+      remoteDevices.list({ headers: sessionHeaders }),
+      [200],
+    );
+    const readBack = afterDirectory.body.devices.find((device) => {
+      return device.id === ownedDevice.id;
+    });
+    expect(readBack?.displayName).toBe("Studio Mac");
   });
 });

@@ -1,443 +1,611 @@
+import { Buffer } from "node:buffer";
 import { randomUUID } from "node:crypto";
 import { Readable } from "node:stream";
-import {
-  GetObjectCommand,
-  HeadObjectCommand,
-  PutObjectCommand,
-  type PutObjectCommandInput,
-} from "@aws-sdk/client-s3";
+
 import { builtInGenerationContract } from "@okouai/api-contracts/contracts/built-in-generation";
-import {
-  imageIoGenerateContract,
-  imageIoGenerateResponseSchema,
-} from "@okouai/api-contracts/contracts/image-io-generate";
-import type { ImageModelId } from "@okouai/api-contracts/contracts/image-models";
+import { imageIoGenerateContract } from "@okouai/api-contracts/contracts/image-io-generate";
 import { userModelPreferenceContract } from "@okouai/api-contracts/contracts/user-model-preference";
 import { webFilesContract } from "@okouai/api-contracts/contracts/web-files";
-import { webhookBuiltInGenerationFalContract } from "@okouai/api-contracts/contracts/webhooks";
-import { HttpResponse, http } from "msw";
+import { http, HttpResponse } from "msw";
+import { expect, test } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
-import { createAppWithRoutes } from "../../../app-factory-core";
 import { setupApp } from "../../../__tests__/test-helpers";
+import { createAppWithRoutes } from "../../../app-factory-core";
 import { mockEnv } from "../../../lib/env";
-
+import { now, nowDate } from "../../../lib/time";
 import { server } from "../../../mocks/server";
-import { createPublicImageMember } from "./helpers/public-image-member";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { builtInGenerationRoutes } from "../built-in-generation";
 import { imageIoGenerateRoutes } from "../image-io-generate";
 import { userModelPreferenceRoutes } from "../user-model-preference";
 import { webFileUrlRoutes } from "../web-file-url";
 import { webhooksBuiltInGenerationRoutes } from "../webhooks-built-in-generations";
-
+import { webhooksStripeRoutes } from "../webhooks-stripe";
+import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
+import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
+import { tokenRequest } from "./helpers/public-image-run";
 import { createRouteMocks } from "./helpers/route-test";
 
+const AUTH_HEADERS = Object.freeze({ authorization: "Bearer clerk-session" });
+const PRIVATE_BUCKET = "private-artifacts-test";
+const JPEG_BYTES = Buffer.from([
+  0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0xff, 0xd9,
+]);
+const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
+const EXPECTED_SIGNED_TTL_SECONDS = 172_800;
+
 const context = testContext();
+const userModelPreference = setupApp({
+  context,
+  routes: userModelPreferenceRoutes,
+})(userModelPreferenceContract);
+const imageIoGenerate = setupApp({ context, routes: imageIoGenerateRoutes })(
+  imageIoGenerateContract,
+);
+const builtInGeneration = setupApp({
+  context,
+  routes: builtInGenerationRoutes,
+})(builtInGenerationContract);
+const webFiles = setupApp({ context, routes: webFileUrlRoutes })(
+  webFilesContract,
+);
 
-const mocks = createRouteMocks(context);
-const headers = Object.freeze({ authorization: "Bearer clerk-session" });
-const privateBucket = "test-private-artifacts";
-const imageBytes = Buffer.from("private generated image");
-const sourceUrl = "https://fal.media/private-generation/output.jpg";
-const signedReference =
-  "https://private-r2.example/reference?signature=temporary";
-
-async function createFixture() {
-  const actor = await createPublicImageMember(context, {
-    credits: 1_000_000,
-  });
-  const api = setupApp({
-    context,
-    routes: [
-      ...imageIoGenerateRoutes,
-      ...userModelPreferenceRoutes,
-      ...builtInGenerationRoutes,
-      ...webhooksBuiltInGenerationRoutes,
-      ...webFileUrlRoutes,
-    ],
-  });
-  return { actor, api, run: actor.run };
+function signIn(actor: ApiTestUser): void {
+  if (!actor.orgId) {
+    throw new Error("Expected an org-scoped actor");
+  }
+  createRouteMocks(context).clerk.session(
+    actor.userId,
+    actor.orgId,
+    actor.orgRole ?? "org:admin",
+  );
 }
 
-type Fixture = Awaited<ReturnType<typeof createFixture>>;
+function signOut(): void {
+  context.mocks.clerk.authenticateRequest.mockResolvedValue({
+    isAuthenticated: false,
+  });
+}
 
-describe("managed artifact privacy", () => {
-  const callbacks = new Map<string, URL>();
-
-  function callbackFor(generationId: string) {
-    const callback = callbacks.get(generationId);
-    if (!callback) {
-      throw new Error("Expected the provider's actual callback URL");
-    }
-    return callback;
+function toBuffer(body: unknown): Buffer {
+  if (Buffer.isBuffer(body)) {
+    return body;
   }
-
-  async function useImageModel(fixture: Fixture, model: ImageModelId) {
-    await fixture.run(() => {
-      return accept(
-        fixture.api(userModelPreferenceContract).update({
-          headers,
-          body: {
-            selectedModel: null,
-            serviceTier: null,
-            selectedImageModel: model,
-          },
-        }),
-        [200],
-      );
-    });
+  if (body instanceof Uint8Array) {
+    return Buffer.from(body);
   }
-
-  async function queueImage(
-    fixture: Fixture,
-    imageUrls?: readonly string[],
-    requirePrivateArtifact = false,
-  ) {
-    mocks.clerk.session(fixture.actor.userId, fixture.actor.orgId);
-    await fixture.run(() => {
-      return useImageModel(fixture, "fal-ai/flux-pro/v1.1");
-    });
-    const client = fixture.api(imageIoGenerateContract);
-    const create = requirePrivateArtifact ? client.postPrivate : client.post;
-    const response = await fixture.run(() => {
-      return accept(
-        create({
-          headers,
-          body: {
-            prompt: "A private landscape",
-            imageUrls,
-            ...(requirePrivateArtifact ? { requirePrivateArtifact: true } : {}),
-          },
-        }),
-        [202],
-      );
-    });
-    return response.body.generationId;
+  if (typeof body === "string") {
+    return Buffer.from(body);
   }
+  return Buffer.alloc(0);
+}
 
-  async function completeImage(fixture: Fixture, generationId: string) {
-    await fixture.run(() => {
-      return accept(
-        fixture.api(webhookBuiltInGenerationFalContract).post({
-          params: { generationId },
-          query: {
-            token: callbackFor(generationId).searchParams.get("token") ?? "",
-          },
-          body: JSON.stringify({
-            status: "COMPLETED",
-            payload: {
-              images: [
-                {
-                  url: sourceUrl,
-                  width: 1024,
-                  height: 1024,
-                  content_type: "image/jpeg",
-                },
-              ],
-              cover_url: "https://provider.example/cover.jpg",
-            },
-          }),
-        }),
-        [200],
-      );
-    });
-    await fixture.run(() => {
-      return flushWaitUntilForTest();
-    });
-    mocks.clerk.session(fixture.actor.userId, fixture.actor.orgId);
-    const response = await fixture.run(() => {
-      return accept(
-        fixture
-          .api(builtInGenerationContract)
-          .get({ headers, params: { generationId } }),
-        [200],
-      );
-    });
-    expect(response.body.status).toBe("completed");
-    return imageIoGenerateResponseSchema.parse(response.body.result);
-  }
+function configurePrivateImageEnv(): void {
+  mockEnv("OKOU_API_BACKEND_URL", "https://api.okou.ai");
+  mockEnv("OKOU_WEB_URL", "https://www.okou.ai");
+  mockEnv("FAL_KEY", "fal-test-key");
+  mockEnv("R2_PRIVATE_ARTIFACTS_BUCKET_NAME", PRIVATE_BUCKET);
+  context.mocks.ably.createTokenRequest.mockResolvedValue(tokenRequest);
+  context.mocks.ably.publish.mockResolvedValue(undefined);
 
-  const objects = new Map<string, PutObjectCommandInput>();
-  const providerInputs: unknown[] = [];
-
-  beforeEach(() => {
-    mockEnv("OKOU_API_BACKEND_URL", "https://api.okou.ai");
-    objects.clear();
-    callbacks.clear();
-    providerInputs.length = 0;
-    context.mocks.ably.publish.mockClear();
-    context.mocks.ably.publish.mockResolvedValue(undefined);
-    context.mocks.ably.createTokenRequest.mockResolvedValue({
-      keyName: "test-key",
-      timestamp: 1_700_000_000,
-      capability: "{}",
-      nonce: "nonce",
-      mac: "mac",
-    });
-    context.mocks.s3.getSignedUrl.mockResolvedValue(signedReference);
-    context.mocks.s3.send.mockImplementation((command) => {
-      if (command instanceof PutObjectCommand) {
-        objects.set(
-          `${command.input.Bucket}/${command.input.Key}`,
-          command.input,
-        );
-        return Promise.resolve({});
-      }
-      if (
-        command instanceof HeadObjectCommand ||
-        command instanceof GetObjectCommand
-      ) {
-        const object = objects.get(
-          `${command.input.Bucket}/${command.input.Key}`,
-        );
-        if (
-          !object ||
-          !(
-            object.Body instanceof Uint8Array || typeof object.Body === "string"
-          )
-        ) {
-          return Promise.reject(
-            Object.assign(new Error("Missing object"), { name: "NotFound" }),
-          );
-        }
-        const body = Buffer.from(object.Body);
-        return Promise.resolve({
-          ETag: '"stored-object"',
-          ContentLength: body.byteLength,
-          ContentType: object.ContentType,
-          Metadata: object.Metadata,
-          Body: Readable.from([body]),
-        });
-      }
+  const objects = new Map<
+    string,
+    { readonly bytes: Buffer; readonly contentType: string | undefined }
+  >();
+  context.mocks.s3.send.mockImplementation((command: unknown) => {
+    if (
+      typeof command !== "object" ||
+      command === null ||
+      !("input" in command) ||
+      typeof command.input !== "object" ||
+      command.input === null
+    ) {
       return Promise.resolve({});
-    });
-    server.use(
-      http.post("https://queue.fal.run/*", async ({ request }) => {
-        const callback = new URL(request.url).searchParams.get("fal_webhook");
-        if (!callback) {
-          throw new Error("Expected a real Fal webhook URL");
-        }
-        const url = new URL(callback);
-        const generationId = url.pathname.split("/").at(-1);
-        if (!generationId) {
-          throw new Error("Expected the generation ID in the callback URL");
-        }
-        callbacks.set(generationId, url);
-        providerInputs.push(await request.json());
-        return HttpResponse.json({
-          request_id: randomUUID(),
-          status_url: "https://queue.fal.run/status",
-          response_url: "https://queue.fal.run/result",
-        });
-      }),
-      http.get(sourceUrl, () => {
-        return new HttpResponse(imageBytes, {
-          headers: { "Content-Type": "image/jpeg" },
-        });
-      }),
-    );
-  });
+    }
+    const name = command.constructor.name;
+    const input = command.input;
+    const bucket =
+      "Bucket" in input && typeof input.Bucket === "string" ? input.Bucket : "";
+    const key =
+      "Key" in input && typeof input.Key === "string" ? input.Key : "";
+    const storageKey = `${bucket}/${key}`;
 
-  afterEach(async () => {
-    await flushWaitUntilForTest();
-  });
-
-  it.each([false, true])(
-    "keeps generated images private through completion (guarded=%s)",
-    async (guarded) => {
-      const fixture = await createFixture();
-      await fixture.run(async () => {
-        const generationId = await fixture.run(() => {
-          return queueImage(fixture, undefined, guarded);
+    if (name === "PutObjectCommand") {
+      const bytes = "Body" in input ? toBuffer(input.Body) : Buffer.alloc(0);
+      const contentType =
+        "ContentType" in input && typeof input.ContentType === "string"
+          ? input.ContentType
+          : undefined;
+      objects.set(storageKey, { bytes, contentType });
+      return Promise.resolve({ ETag: '"etag-1"' });
+    }
+    if (name === "HeadObjectCommand") {
+      const stored = objects.get(storageKey);
+      if (!stored) {
+        const missing = Object.assign(new Error("NoSuchKey"), {
+          name: "NotFound",
+          $metadata: { httpStatusCode: 404 },
         });
-        const result = await fixture.run(() => {
-          return completeImage(fixture, generationId);
-        });
-        expect(result.privateArtifacts).toBeTruthy();
-        const stored = [...objects.values()].find((object) => {
-          return (
-            object.Body === imageBytes || object.ContentType === "image/jpeg"
-          );
-        });
-        expect(stored?.Bucket).toBe(privateBucket);
-        expect(result.url).toMatch(
-          /^https?:\/\/[^/]+\/artifacts\/[a-z0-9]{10}\.jpg$/u,
-        );
-        expect(result.sourceUrl).toBeUndefined();
-        expect(result.embedUrl).toBeUndefined();
-        const serializedEvents = JSON.stringify(
-          context.mocks.ably.publish.mock.calls,
-        );
-        expect(serializedEvents).not.toContain(sourceUrl);
-        expect(serializedEvents).not.toContain("cover_url");
-        expect(serializedEvents).not.toContain("private-artifacts/");
-        expect(serializedEvents).not.toContain(signedReference);
-        const preview = await fixture.run(() => {
-          return accept(
-            fixture
-              .api(webFilesContract)
-              .fileUrl({ headers, query: { file_id: result.id } }),
-            [200],
-          );
-        });
-        expect(preview.body).toStrictEqual({
-          url: signedReference,
-          downloadUrl: signedReference,
-          publicUrl: null,
-          previewImageUrl: null,
-          expiresAt: expect.any(String),
-        });
-        expect(
-          context.mocks.s3.getSignedUrl.mock.calls.at(-1)?.[2],
-        ).toMatchObject({ expiresIn: 172_800 });
-        for (const [userId, orgId] of [
-          [`user_${randomUUID()}`, fixture.actor.orgId],
-          [fixture.actor.userId, `org_${randomUUID()}`],
-        ]) {
-          if (!userId || !orgId) {
-            throw new Error("Missing viewer identity");
-          }
-          mocks.clerk.session(userId, orgId);
-          await fixture.run(() => {
-            return accept(
-              fixture
-                .api(builtInGenerationContract)
-                .get({ headers, params: { generationId } }),
-              [404],
-            );
-          });
-          await fixture.run(() => {
-            return accept(
-              fixture
-                .api(webFilesContract)
-                .fileUrl({ headers, query: { file_id: result.id } }),
-              [404],
-            );
-          });
-        }
-        context.mocks.clerk.authenticateRequest.mockResolvedValue({
-          isAuthenticated: false,
-        });
-        await fixture.run(() => {
-          return accept(
-            fixture
-              .api(webFilesContract)
-              .fileUrl({ headers: {}, query: { file_id: result.id } }),
-            [401],
-          );
-        });
+        return Promise.reject(missing);
+      }
+      return Promise.resolve({
+        ContentLength: stored.bytes.byteLength,
+        ContentType: stored.contentType,
+        ETag: '"etag-1"',
       });
+    }
+    if (name === "GetObjectCommand") {
+      const stored = objects.get(storageKey);
+      if (!stored) {
+        const missing = Object.assign(new Error("NoSuchKey"), {
+          name: "NoSuchKey",
+          $metadata: { httpStatusCode: 404 },
+        });
+        return Promise.reject(missing);
+      }
+      return Promise.resolve({
+        Body: Readable.from([stored.bytes]),
+        ContentLength: stored.bytes.byteLength,
+        ContentType: stored.contentType,
+        ETag: '"etag-1"',
+      });
+    }
+    return Promise.resolve({});
+  });
+}
+
+async function createFundedMember(): Promise<
+  ApiTestUser & { readonly orgId: string }
+> {
+  createWebhookCallbackApi(context).configureStripeBillingEnv();
+  const bdd = createBddApi(context);
+  const member = bdd.user({ orgRole: "org:admin" });
+  if (!member.orgId) {
+    throw new Error("Expected an org-scoped member");
+  }
+  const onboarded = await bdd.completeOnboarding(member);
+  expect(onboarded.status).toBe(200);
+
+  const stripeApp = createAppWithRoutes({
+    signal: context.signal,
+    routes: webhooksStripeRoutes,
+  });
+  const stripeEvent = {
+    id: `evt_priv_credits_${randomUUID()}`,
+    type: "checkout.session.completed",
+    created: Math.floor(now() / 1000),
+    data: {
+      object: {
+        id: `cs_priv_${randomUUID()}`,
+        invoice: null,
+        subscription: null,
+        customer: null,
+        mode: "payment",
+        payment_status: "paid",
+        amount_subtotal: 50_000,
+        amount_total: 50_000,
+        metadata: {
+          purpose: "credit_purchase",
+          orgId: member.orgId,
+          creditsAmountMode: "amount_total",
+          creditsExpiresAt: new Date(
+            nowDate().getTime() + THIRTY_DAYS_MS,
+          ).toISOString(),
+        },
+      },
     },
+  };
+  context.mocks.stripe.webhooks.constructEventAsync.mockReturnValueOnce(
+    stripeEvent,
+  );
+  const response = await stripeApp.request("/api/webhooks/stripe", {
+    method: "POST",
+    headers: { "stripe-signature": "t=1,v1=bdd" },
+    body: JSON.stringify(stripeEvent),
+  });
+  expect(response.status).toBe(200);
+  await flushWaitUntilForTest();
+
+  return { ...member, orgId: member.orgId };
+}
+
+async function selectFluxPro(actor: ApiTestUser): Promise<void> {
+  signIn(actor);
+  await accept(
+    userModelPreference.update({
+      headers: AUTH_HEADERS,
+      body: {
+        selectedModel: null,
+        serviceTier: null,
+        selectedImageModel: "fal-ai/flux-pro/v1.1",
+      },
+    }),
+    [200],
+  );
+}
+
+interface CompletedPrivateImage {
+  readonly generationId: string;
+  readonly artifactId: string;
+  readonly artifactUrl: string;
+  readonly result: Readonly<Record<string, unknown>>;
+  readonly falSourceUrl: string;
+}
+
+function readStringField(
+  record: Readonly<Record<string, unknown>>,
+  key: string,
+): string {
+  const value = record[key];
+  if (typeof value !== "string") {
+    throw new Error(`Expected string field "${key}" in generation result`);
+  }
+  return value;
+}
+
+async function completePrivateImageGeneration(
+  actor: ApiTestUser,
+  options: {
+    readonly prompt?: string;
+    readonly imageUrls?: readonly string[];
+    readonly onFalRequest?: (body: unknown) => void;
+  } = {},
+): Promise<CompletedPrivateImage> {
+  const falSourceUrl = `https://fal.media/files/private-${randomUUID()}.jpg`;
+  let webhookUrl: string | null = null;
+  server.use(
+    http.post("https://queue.fal.run/*", async ({ request }) => {
+      webhookUrl = new URL(request.url).searchParams.get("fal_webhook");
+      options.onFalRequest?.(await request.json());
+      const requestId = `fal_req_${randomUUID()}`;
+      return HttpResponse.json({
+        request_id: requestId,
+        status_url: `https://queue.fal.run/fal-ai/flux-pro/v1.1/requests/${requestId}/status`,
+        response_url: `https://queue.fal.run/fal-ai/flux-pro/v1.1/requests/${requestId}`,
+      });
+    }),
+    http.get(falSourceUrl, () => {
+      return new HttpResponse(JPEG_BYTES, {
+        status: 200,
+        headers: { "content-type": "image/jpeg" },
+      });
+    }),
   );
 
-  it("resolves an owned private input and keeps the stable reference in the next result", async () => {
-    const fixture = await createFixture();
-    await fixture.run(async () => {
-      const image = await fixture.run(async () => {
-        return completeImage(fixture, await queueImage(fixture));
-      });
-      const nextId = await fixture.run(() => {
-        return queueImage(fixture, [image.url]);
-      });
-      expect(JSON.stringify(providerInputs.at(-1))).toContain(signedReference);
-      expect(JSON.stringify(providerInputs.at(-1))).not.toContain(image.url);
-      expect(context.mocks.s3.getSignedUrl.mock.calls.at(-1)).toMatchObject({
-        1: {
-          input: {
-            Bucket: privateBucket,
-            Key: `private-artifacts/${image.id}/${image.filename}`,
-          },
+  signIn(actor);
+  const queued = await accept(
+    imageIoGenerate.post({
+      headers: AUTH_HEADERS,
+      body: {
+        prompt: options.prompt ?? "Private studio portrait",
+        ...(options.imageUrls ? { imageUrls: [...options.imageUrls] } : {}),
+      },
+    }),
+    [202],
+  );
+  const generationId = queued.body.generationId;
+  if (!webhookUrl) {
+    throw new Error("Expected Fal submission to include fal_webhook");
+  }
+
+  const webhookTarget = new URL(webhookUrl);
+  const webhookApp = createAppWithRoutes({
+    signal: context.signal,
+    routes: webhooksBuiltInGenerationRoutes,
+  });
+  const webhookResponse = await webhookApp.request(
+    `${webhookTarget.pathname}${webhookTarget.search}`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        status: "COMPLETED",
+        payload: {
+          images: [
+            {
+              url: falSourceUrl,
+              content_type: "image/jpeg",
+              width: 1024,
+              height: 1024,
+            },
+          ],
         },
-        2: { expiresIn: 172_800 },
+      }),
+    },
+  );
+  expect(webhookResponse.status).toBe(200);
+  await flushWaitUntilForTest();
+
+  signIn(actor);
+  const completed = await accept(
+    builtInGeneration.get({
+      headers: AUTH_HEADERS,
+      params: { generationId },
+    }),
+    [200],
+  );
+  expect(completed.body.status).toBe("completed");
+  if (!completed.body.result) {
+    throw new Error("Expected completed generation result");
+  }
+  const artifactId = readStringField(completed.body.result, "id");
+  const artifactUrl = readStringField(completed.body.result, "url");
+  return {
+    generationId,
+    artifactId,
+    artifactUrl,
+    result: completed.body.result,
+    falSourceUrl,
+  };
+}
+
+function readUploadedPrivateObjects(): readonly {
+  readonly bucket: string;
+  readonly key: string;
+}[] {
+  const uploaded: { readonly bucket: string; readonly key: string }[] = [];
+  for (const call of context.mocks.s3.send.mock.calls) {
+    const command: unknown = call[0];
+    if (
+      typeof command === "object" &&
+      command !== null &&
+      "input" in command &&
+      typeof command.input === "object" &&
+      command.input !== null &&
+      "Bucket" in command.input &&
+      "Key" in command.input &&
+      typeof command.input.Bucket === "string" &&
+      typeof command.input.Key === "string"
+    ) {
+      uploaded.push({
+        bucket: command.input.Bucket,
+        key: command.input.Key,
       });
-      const next = await fixture.run(() => {
-        return completeImage(fixture, nextId);
+    }
+  }
+  return uploaded;
+}
+
+function readSignedUrlCalls(): readonly {
+  readonly bucket: string;
+  readonly key: string;
+  readonly expiresIn: number | undefined;
+}[] {
+  const signed: {
+    readonly bucket: string;
+    readonly key: string;
+    readonly expiresIn: number | undefined;
+  }[] = [];
+  for (const call of context.mocks.s3.getSignedUrl.mock.calls) {
+    const command: unknown = call[1];
+    const options: unknown = call[2];
+    if (
+      typeof command === "object" &&
+      command !== null &&
+      "input" in command &&
+      typeof command.input === "object" &&
+      command.input !== null &&
+      "Bucket" in command.input &&
+      "Key" in command.input &&
+      typeof command.input.Bucket === "string" &&
+      typeof command.input.Key === "string"
+    ) {
+      const expiresIn =
+        typeof options === "object" &&
+        options !== null &&
+        "expiresIn" in options &&
+        typeof options.expiresIn === "number"
+          ? options.expiresIn
+          : undefined;
+      signed.push({
+        bucket: command.input.Bucket,
+        key: command.input.Key,
+        expiresIn,
       });
-      expect(next.sourceImageUrls).toStrictEqual([image.url]);
-      expect(JSON.stringify(next)).not.toContain(signedReference);
-    });
+    }
+  }
+  return signed;
+}
+
+test("private-artifact-generation-001 (1/2) stores completed generated images privately, keeps realtime clean, and resolves owner signed file URLs", async () => {
+  configurePrivateImageEnv();
+  const owner = await createFundedMember();
+  await selectFluxPro(owner);
+
+  const completed = await completePrivateImageGeneration(owner);
+
+  expect(completed.result.privateArtifacts).toBeTruthy();
+  expect(completed.result.sourceUrl).toBeUndefined();
+  expect(completed.result.embedUrl).toBeUndefined();
+
+  const parsedArtifactUrl = new URL(completed.artifactUrl);
+  const pathSegments = parsedArtifactUrl.pathname.split("/").filter(Boolean);
+  expect(pathSegments[0]).toBe("artifacts");
+  const filename = pathSegments[1] ?? "";
+  expect(filename.endsWith(".jpg")).toBeTruthy();
+  expect(filename.slice(0, -4)).toHaveLength(10);
+
+  const uploadedObjects = readUploadedPrivateObjects();
+  expect(uploadedObjects).toContainEqual({
+    bucket: PRIVATE_BUCKET,
+    key: expect.stringContaining(`private-artifacts/${completed.artifactId}/`),
   });
 
-  it("does not forward another user's private reference or sign it for a provider", async () => {
-    const fixture = await createFixture();
-    await fixture.run(async () => {
-      const image = await fixture.run(async () => {
-        return completeImage(fixture, await queueImage(fixture));
-      });
-      const requestCount = providerInputs.length;
-      const signatureCount = context.mocks.s3.getSignedUrl.mock.calls.length;
-      mocks.clerk.session(`user_${randomUUID()}`, fixture.actor.orgId);
-      await fixture.run(() => {
-        return useImageModel(fixture, "fal-ai/flux-pro/v1.1");
-      });
-      const response = await fixture.run(() => {
-        return fixture.api(imageIoGenerateContract).post({
-          headers,
-          body: {
-            prompt: "Use reference",
-            imageUrls: [image.url],
-          },
-        });
-      });
-      expect(response.status).toBe(400);
-      expect(providerInputs).toHaveLength(requestCount);
-      expect(context.mocks.s3.getSignedUrl.mock.calls).toHaveLength(
-        signatureCount,
-      );
-    });
+  const realtimePayloads = context.mocks.ably.publish.mock.calls.map((call) => {
+    return JSON.stringify(call);
+  });
+  for (const payload of realtimePayloads) {
+    expect(payload).not.toContain(completed.falSourceUrl);
+    expect(payload).not.toContain("cover_url");
+    expect(payload).not.toContain("private-artifacts/");
+    expect(payload).not.toContain("r2.example.com");
+  }
+
+  signIn(owner);
+  const fileUrlResponse = await accept(
+    webFiles.fileUrl({
+      headers: AUTH_HEADERS,
+      query: { file_id: completed.artifactId },
+    }),
+    [200],
+  );
+  expect(fileUrlResponse.body.publicUrl).toBeNull();
+  expect(fileUrlResponse.body.previewImageUrl).toBeNull();
+  const signedPreviewUrl = new URL(fileUrlResponse.body.url);
+  expect(signedPreviewUrl.searchParams.get("object")).toContain(
+    `${PRIVATE_BUCKET}/private-artifacts/${completed.artifactId}/`,
+  );
+
+  const signedCalls = readSignedUrlCalls();
+  expect(signedCalls).toContainEqual(
+    expect.objectContaining({
+      bucket: PRIVATE_BUCKET,
+      key: expect.stringContaining(
+        `private-artifacts/${completed.artifactId}/`,
+      ),
+      expiresIn: EXPECTED_SIGNED_TTL_SECONDS,
+    }),
+  );
+});
+
+test("private-artifact-generation-001 (2/2) denies colleague, cross-organization, and unauthenticated reads of private generated images", async () => {
+  configurePrivateImageEnv();
+  const owner = await createFundedMember();
+  await selectFluxPro(owner);
+  const completed = await completePrivateImageGeneration(owner);
+
+  const bdd = createBddApi(context);
+  const colleague = bdd.user({ orgId: owner.orgId, orgRole: "org:member" });
+  const sameUserOtherOrg = bdd.user({
+    userId: owner.userId,
+    orgRole: "org:admin",
   });
 
-  it("fails private completion without falling back to the public bucket when credentials are missing", async () => {
-    const fixture = await createFixture();
-    await fixture.run(async () => {
-      const generationId = await fixture.run(() => {
-        return queueImage(fixture);
-      });
-      mockEnv("R2_PRIVATE_ARTIFACTS_ACCESS_KEY_ID", undefined);
-      // The typed webhook contract does not model an infrastructure 500.
-      const callbackApp = createAppWithRoutes({
-        signal: context.signal,
-        routes: webhooksBuiltInGenerationRoutes,
-      });
-      const rejected = await fixture.run(async () => {
-        return await callbackApp.request(
-          `${callbackFor(generationId).pathname}${callbackFor(generationId).search}`,
-          {
-            method: "POST",
-            body: JSON.stringify({
-              status: "COMPLETED",
-              payload: {
-                images: [{ url: sourceUrl, width: 1024, height: 1024 }],
-              },
-            }),
-          },
-        );
-      });
-      expect(rejected.status).toBe(500);
-      await fixture.run(() => {
-        return flushWaitUntilForTest();
-      });
-      const job = await fixture.run(() => {
-        return accept(
-          fixture
-            .api(builtInGenerationContract)
-            .get({ headers, params: { generationId } }),
-          [200],
-        );
-      });
-      expect(job.body.status).toBe("running");
-      expect(job.body.result).toBeUndefined();
-      expect(
-        [...objects.values()].filter((object) => {
-          return object.ContentType === "image/jpeg";
-        }),
-      ).toStrictEqual([]);
-      mockEnv("R2_PRIVATE_ARTIFACTS_ACCESS_KEY_ID", "test-private-access-key");
-      const retried = await fixture.run(() => {
-        return completeImage(fixture, generationId);
-      });
-      expect(retried.url).toContain("/artifacts/");
-    });
+  signIn(colleague);
+  const colleagueGen = await accept(
+    builtInGeneration.get({
+      headers: AUTH_HEADERS,
+      params: { generationId: completed.generationId },
+    }),
+    [404],
+  );
+  expect(colleagueGen.status).toBe(404);
+  const colleagueFile = await accept(
+    webFiles.fileUrl({
+      headers: AUTH_HEADERS,
+      query: { file_id: completed.artifactId },
+    }),
+    [404],
+  );
+  expect(colleagueFile.status).toBe(404);
+
+  signIn(sameUserOtherOrg);
+  const otherOrgGen = await accept(
+    builtInGeneration.get({
+      headers: AUTH_HEADERS,
+      params: { generationId: completed.generationId },
+    }),
+    [404],
+  );
+  expect(otherOrgGen.status).toBe(404);
+  const otherOrgFile = await accept(
+    webFiles.fileUrl({
+      headers: AUTH_HEADERS,
+      query: { file_id: completed.artifactId },
+    }),
+    [404],
+  );
+  expect(otherOrgFile.status).toBe(404);
+
+  signOut();
+  const unauthFile = await accept(
+    webFiles.fileUrl({
+      headers: {},
+      query: { file_id: completed.artifactId },
+    }),
+    [401],
+  );
+  expect(unauthFile.status).toBe(401);
+});
+
+test("private-artifact-generation-003 resolves an owned private input and keeps the stable reference in the next result", async () => {
+  configurePrivateImageEnv();
+  const owner = await createFundedMember();
+  await selectFluxPro(owner);
+  const first = await completePrivateImageGeneration(owner, {
+    prompt: "Initial private source image",
   });
+
+  let secondFalBody: unknown = null;
+  const second = await completePrivateImageGeneration(owner, {
+    prompt: "Refine the private source image",
+    imageUrls: [first.artifactUrl],
+    onFalRequest: (body) => {
+      secondFalBody = body;
+    },
+  });
+
+  if (
+    typeof secondFalBody !== "object" ||
+    secondFalBody === null ||
+    !("image_url" in secondFalBody) ||
+    typeof secondFalBody.image_url !== "string"
+  ) {
+    throw new Error("Expected Fal redux request to carry image_url");
+  }
+  expect(secondFalBody.image_url).not.toBe(first.artifactUrl);
+  const signedForProvider = new URL(secondFalBody.image_url);
+  expect(signedForProvider.searchParams.get("object")).toContain(
+    `${PRIVATE_BUCKET}/private-artifacts/${first.artifactId}/`,
+  );
+  expect(readSignedUrlCalls()).toContainEqual(
+    expect.objectContaining({
+      bucket: PRIVATE_BUCKET,
+      key: expect.stringContaining(`private-artifacts/${first.artifactId}/`),
+      expiresIn: EXPECTED_SIGNED_TTL_SECONDS,
+    }),
+  );
+
+  expect(second.result.sourceImageUrls).toStrictEqual([first.artifactUrl]);
+  expect(JSON.stringify(second.result)).not.toContain("r2.example.com");
+});
+
+test("private-artifact-generation-004 does not forward another user's private reference or sign it for a provider", async () => {
+  configurePrivateImageEnv();
+  const owner = await createFundedMember();
+  await selectFluxPro(owner);
+  const first = await completePrivateImageGeneration(owner);
+
+  const colleague = createBddApi(context).user({
+    orgId: owner.orgId,
+    orgRole: "org:member",
+  });
+  await selectFluxPro(colleague);
+
+  let extraFalRequests = 0;
+  server.use(
+    http.post("https://queue.fal.run/*", () => {
+      extraFalRequests += 1;
+      return HttpResponse.json({}, { status: 500 });
+    }),
+  );
+  const signedCallsBefore = context.mocks.s3.getSignedUrl.mock.calls.length;
+
+  signIn(colleague);
+  await accept(
+    imageIoGenerate.post({
+      headers: AUTH_HEADERS,
+      body: {
+        prompt: "Attempt to borrow colleague artifact",
+        imageUrls: [first.artifactUrl],
+      },
+    }),
+    [400],
+  );
+
+  expect(extraFalRequests).toBe(0);
+  expect(context.mocks.s3.getSignedUrl.mock.calls).toHaveLength(
+    signedCallsBefore,
+  );
 });

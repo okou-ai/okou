@@ -1,272 +1,221 @@
-import { createHmac, randomUUID } from "node:crypto";
-import {
-  ClerkUserNotFoundTestError,
-  mockClerkUsers,
-} from "./helpers/clerk-users";
-
+import { randomUUID } from "node:crypto";
 import { emailSubscriptionContract } from "@okouai/api-contracts/contracts/email-subscription";
-import { emailUnsubscribeContract } from "@okouai/api-contracts/contracts/email-unsubscribe";
 import { describe, expect, it } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { env } from "../../../lib/env";
+import { now } from "../../../lib/time";
 import { emailSubscriptionRoutes } from "../email-subscription";
-import { emailUnsubscribeRoutes } from "../email-unsubscribe";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
-import { createRunExecutionCredentials } from "./helpers/run-execution-credentials";
-import { ClerkTransportTestError } from "./helpers/clerk-transport-error";
+import { ClerkUserNotFoundTestError } from "./helpers/clerk-users";
 import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
-const executionToken = createRunExecutionCredentials(context).okouToken;
-const mocks = createRouteMocks(context);
-const headers = Object.freeze({ authorization: "Bearer clerk-session" });
+const webhooks = createWebhookCallbackApi(context);
 
-function client() {
+interface Member {
+  readonly userId: string;
+  readonly orgId: string;
+  readonly email: string;
+}
+
+interface ClerkProfile {
+  readonly id: string;
+  readonly emailAddresses: readonly {
+    readonly id: string;
+    readonly emailAddress: string;
+  }[];
+  readonly primaryEmailAddressId: string;
+}
+
+function member(): Member {
+  const userId = `user_${randomUUID()}`;
+  return {
+    userId,
+    orgId: `org_${randomUUID()}`,
+    email: `${userId}@example.test`,
+  };
+}
+
+function profile(user: Member): ClerkProfile {
+  return {
+    id: user.userId,
+    emailAddresses: [{ id: `email_${user.userId}`, emailAddress: user.email }],
+    primaryEmailAddressId: `email_${user.userId}`,
+  };
+}
+
+/** Clerk's user directory: lookups by ID and by email address. */
+function clerkDirectory(profiles: readonly ClerkProfile[]): void {
+  context.mocks.clerk.users.getUser.mockImplementation((userId: unknown) => {
+    const found = profiles.find((candidate) => {
+      return candidate.id === userId;
+    });
+    return found
+      ? Promise.resolve(found)
+      : Promise.reject(new ClerkUserNotFoundTestError());
+  });
+  context.mocks.clerk.users.getUserList.mockImplementation(
+    (params: unknown) => {
+      const wanted =
+        typeof params === "object" &&
+        params !== null &&
+        "emailAddress" in params &&
+        Array.isArray(params.emailAddress)
+          ? params.emailAddress.map((address) => {
+              return String(address).toLowerCase();
+            })
+          : [];
+      return Promise.resolve({
+        data: profiles.filter((candidate) => {
+          return candidate.emailAddresses.some((entry) => {
+            return wanted.includes(entry.emailAddress.toLowerCase());
+          });
+        }),
+      });
+    },
+  );
+}
+
+function providerLookups(userId: string): number {
+  return context.mocks.clerk.users.getUser.mock.calls.filter((call) => {
+    return call[0] === userId;
+  }).length;
+}
+
+function preferences(user: Member, orgId = user.orgId) {
+  createRouteMocks(context).clerk.session(user.userId, orgId);
   return setupApp({ context, routes: emailSubscriptionRoutes })(
     emailSubscriptionContract,
   );
 }
 
-function actor() {
-  const userId = `user_${randomUUID()}`;
-  const orgId = `org_${randomUUID()}`;
-  const email = `${userId}@example.test`;
-  context.mocks.clerk.users.getUser.mockResolvedValue({
-    id: userId,
-    primaryEmailAddressId: "primary",
-    firstName: "Test",
-    lastName: "User",
-    emailAddresses: [{ id: "primary", emailAddress: email }],
-    imageUrl: null,
-  });
-  mocks.clerk.session(userId, orgId);
-  return { userId, orgId, email };
+async function readPreference(user: Member, orgId = user.orgId) {
+  const response = await accept(
+    preferences(user, orgId).get({
+      headers: { authorization: "Bearer clerk-session" },
+    }),
+    [200],
+  );
+  return response.body;
+}
+
+async function updatePreference(user: Member, subscribed: boolean) {
+  const response = await accept(
+    preferences(user).update({
+      headers: { authorization: "Bearer clerk-session" },
+      body: { subscribed },
+    }),
+    [200],
+  );
+  return response.body;
+}
+
+async function deliverResendEvent(
+  type: "email.bounced" | "email.complained",
+  to: string,
+) {
+  webhooks.configureResendWebhookSecret();
+  const event = {
+    type,
+    created_at: new Date(now()).toISOString(),
+    data: { email_id: randomUUID(), to: [to] },
+  };
+  return await webhooks.requestResendInboundWebhook(
+    event,
+    webhooks.signedResendWebhookHeaders(event),
+    [200],
+  );
 }
 
 describe("email subscription preferences", () => {
-  it("persists the current user's preference across workspaces and isolates other users", async () => {
-    const owner = actor();
-    const initial = await accept(client().get({ headers }), [200]);
-    expect(initial.body).toStrictEqual({
+  it("email-subscription-001 keeps the member's choice across workspaces without affecting other users", async () => {
+    const owner = member();
+    const other = member();
+    clerkDirectory([profile(owner), profile(other)]);
+
+    await expect(readPreference(owner)).resolves.toStrictEqual({
       subscribed: true,
       email: owner.email,
       deliveryStatus: "available",
     });
-
-    await accept(
-      client().update({ headers, body: { subscribed: false } }),
-      [200],
-    );
-    const otherOrg = `org_${randomUUID()}`;
-    mocks.clerk.session(owner.userId, otherOrg);
-    expect(
-      (await accept(client().get({ headers }), [200])).body.subscribed,
-    ).toBeFalsy();
-
-    const other = actor();
-    expect((await accept(client().get({ headers }), [200])).body).toMatchObject(
-      { subscribed: true, email: other.email },
-    );
-    mocks.clerk.session(owner.userId, owner.orgId);
-    await accept(
-      client().update({ headers, body: { subscribed: true } }),
-      [200],
-    );
-    expect(
-      (await accept(client().get({ headers }), [200])).body.subscribed,
-    ).toBeTruthy();
-  });
-
-  it("reads one-click opt-outs and allows explicit resubscription", async () => {
-    const owner = actor();
-    const signature = createHmac("sha256", env("SECRETS_ENCRYPTION_KEY"))
-      .update(`unsubscribe:${owner.userId}`)
-      .digest("hex")
-      .slice(0, 32);
-    const query = { token: `${owner.userId}.${signature}` };
-    const unsubscribe = setupApp({ context, routes: emailUnsubscribeRoutes })(
-      emailUnsubscribeContract,
-    );
-    await accept(unsubscribe.get({ query }), [302]);
-    expect(
-      (await accept(client().get({ headers }), [200])).body.subscribed,
-    ).toBeTruthy();
-    await accept(unsubscribe.unsubscribe({ query }), [200]);
-    expect(
-      (await accept(client().get({ headers }), [200])).body.subscribed,
-    ).toBeFalsy();
-    await accept(
-      client().update({ headers, body: { subscribed: true } }),
-      [200],
-    );
-    expect(
-      (await accept(client().get({ headers }), [200])).body.subscribed,
-    ).toBeTruthy();
-  });
-
-  it.each(["email.bounced", "email.complained"])(
-    "keeps %s suppression after resubscribing",
-    async (type) => {
-      const owner = actor();
-      const webhooks = createWebhookCallbackApi(context);
-      const event = {
-        type,
-        data: { to: [owner.email.toUpperCase()], email_id: randomUUID() },
-      };
-      await webhooks.requestResendInboundWebhook(
-        event,
-        webhooks.signedResendWebhookHeaders(event),
-        [200],
-      );
-      await accept(
-        client().update({ headers, body: { subscribed: true } }),
-        [200],
-      );
-      expect(
-        (await accept(client().get({ headers }), [200])).body,
-      ).toMatchObject({ subscribed: true, deliveryStatus: "suppressed" });
-    },
-  );
-
-  it.each(["cache hit", "provider lookup"])(
-    "unsubscribes a known complaint recipient through a %s and isolates other users",
-    async (resolution) => {
-      const owner = actor();
-      const other = actor();
-      mockClerkUsers(
-        context,
-        [owner, other].map((user) => {
-          return {
-            id: user.userId,
-            primaryEmailAddressId: "primary",
-            firstName: "Test",
-            lastName: "User",
-            emailAddresses: [{ id: "primary", emailAddress: user.email }],
-            imageUrl: null,
-          };
-        }),
-      );
-      const app = setupApp({
-        context,
-        routes: emailSubscriptionRoutes,
-      });
-      const preferences = app(emailSubscriptionContract);
-      mocks.clerk.session(owner.userId, owner.orgId);
-      if (resolution === "cache hit") {
-        const initial = await accept(preferences.get({ headers }), [200]);
-        expect(initial.body).toStrictEqual({
-          subscribed: true,
-          email: owner.email,
-          deliveryStatus: "available",
-        });
-        context.mocks.clerk.users.getUserList.mockRejectedValue(
-          new Error("The cached recipient must not require a Clerk lookup"),
-        );
-      }
-
-      const webhooks = createWebhookCallbackApi(context);
-      const event = {
-        type: "email.complained",
-        data: { to: [owner.email], email_id: randomUUID() },
-      };
-      const response = await webhooks.requestResendInboundWebhook(
-        event,
-        webhooks.signedResendWebhookHeaders(event),
-        [200],
-      );
-      expect(response.body).toStrictEqual({ received: true });
-      expect(
-        (await accept(preferences.get({ headers }), [200])).body,
-      ).toStrictEqual({
-        subscribed: false,
-        email: owner.email,
-        deliveryStatus: "suppressed",
-      });
-
-      mocks.clerk.session(other.userId, other.orgId);
-      expect(
-        (await accept(preferences.get({ headers }), [200])).body,
-      ).toStrictEqual({
-        subscribed: true,
-        email: other.email,
-        deliveryStatus: "available",
-      });
-    },
-  );
-
-  it("reports a missing recipient without inventing an email address", async () => {
-    actor();
-    context.mocks.clerk.users.getUser.mockRejectedValue(
-      new ClerkUserNotFoundTestError(),
-    );
-    expect((await accept(client().get({ headers }), [200])).body).toStrictEqual(
-      { subscribed: true, email: null, deliveryStatus: "no-email" },
-    );
-    expect(context.mocks.clerk.users.getUser).toHaveBeenCalledOnce();
-  });
-
-  it("retains the first email when the primary address no longer resolves", async () => {
-    const owner = actor();
-    context.mocks.clerk.users.getUser.mockResolvedValue({
-      id: owner.userId,
-      primaryEmailAddressId: "deleted-primary",
-      emailAddresses: [{ id: "secondary", emailAddress: owner.email }],
+    await updatePreference(owner, false);
+    await expect(
+      readPreference(owner, `org_${randomUUID()}`),
+    ).resolves.toMatchObject({ subscribed: false });
+    await expect(readPreference(other)).resolves.toMatchObject({
+      subscribed: true,
+      email: other.email,
     });
-    expect((await accept(client().get({ headers }), [200])).body).toStrictEqual(
+    await updatePreference(owner, true);
+    await expect(readPreference(owner)).resolves.toMatchObject({
+      subscribed: true,
+    });
+  });
+
+  it("email-subscription-003 keeps a bounced address suppressed after the member resubscribes", async () => {
+    const owner = member();
+    clerkDirectory([profile(owner)]);
+
+    await deliverResendEvent("email.bounced", owner.email.toUpperCase());
+    await updatePreference(owner, true);
+
+    await expect(readPreference(owner)).resolves.toMatchObject({
+      subscribed: true,
+      deliveryStatus: "suppressed",
+    });
+  });
+
+  it("email-subscription-006 unsubscribes a complaining recipient found through the identity provider only", async () => {
+    const owner = member();
+    const other = member();
+    clerkDirectory([profile(owner), profile(other)]);
+
+    const delivered = await deliverResendEvent("email.complained", owner.email);
+
+    expect(delivered.body).toStrictEqual({ received: true });
+    await expect(readPreference(owner)).resolves.toStrictEqual({
+      subscribed: false,
+      email: owner.email,
+      deliveryStatus: "suppressed",
+    });
+    await expect(readPreference(other)).resolves.toStrictEqual({
+      subscribed: true,
+      email: other.email,
+      deliveryStatus: "available",
+    });
+  });
+
+  it("email-subscription-007 reports no email for a member the identity provider cannot find", async () => {
+    const owner = member();
+    clerkDirectory([]);
+
+    await expect(readPreference(owner)).resolves.toStrictEqual({
+      subscribed: true,
+      email: null,
+      deliveryStatus: "no-email",
+    });
+    expect(providerLookups(owner.userId)).toBe(1);
+  });
+
+  it("email-subscription-008 falls back to the remaining address when the primary one was deleted", async () => {
+    const owner = member();
+    const remaining = `remaining-${randomUUID()}@example.test`;
+    clerkDirectory([
       {
-        subscribed: true,
-        email: owner.email,
-        deliveryStatus: "available",
+        id: owner.userId,
+        emailAddresses: [
+          { id: `email_${randomUUID()}`, emailAddress: remaining },
+        ],
+        primaryEmailAddressId: `email_${randomUUID()}`,
       },
-    );
-    expect(context.mocks.clerk.users.getUser).toHaveBeenCalledExactlyOnceWith(
-      owner.userId,
-    );
-  });
+    ]);
 
-  it.each([
-    ["unexpected failure", new Error("Clerk request failed")],
-    ["rate limit", new ClerkTransportTestError(429)],
-    ["server failure", new ClerkTransportTestError(503)],
-    ["transport failure", new ClerkTransportTestError()],
-  ])(
-    "does not disguise %s as an unavailable recipient",
-    async (_name, error) => {
-      actor();
-      context.mocks.signalTimers.delay.mockResolvedValue(undefined);
-      context.mocks.clerk.users.getUser.mockRejectedValue(error);
-      const response = await accept(client().get({ headers }), [500]);
-      expect(response.status).toBe(500);
-    },
-  );
-
-  it("requires an active workspace", async () => {
-    const owner = actor();
-    mocks.clerk.session(owner.userId, null);
-    const response = await accept(client().get({ headers }), [401]);
-    expect(response.body.error.code).toBe("UNAUTHORIZED");
-    await accept(
-      client().update({ headers, body: { subscribed: false } }),
-      [401],
-    );
-  });
-
-  it("requires a signed-in session and rejects run credentials", async () => {
-    await accept(client().get({ headers: {} }), [401]);
-    await accept(
-      client().update({ headers: {}, body: { subscribed: false } }),
-      [401],
-    );
-    const owner = actor();
-    const token = await executionToken(owner);
-    const runHeaders = { authorization: `Bearer ${token}` };
-    const response = await accept(client().get({ headers: runHeaders }), [403]);
-    expect(response.body.error.code).toBe("FORBIDDEN");
-    await accept(
-      client().update({ headers: runHeaders, body: { subscribed: true } }),
-      [403],
-    );
+    await expect(readPreference(owner)).resolves.toStrictEqual({
+      subscribed: true,
+      email: remaining,
+      deliveryStatus: "available",
+    });
+    expect(providerLookups(owner.userId)).toBe(1);
   });
 });

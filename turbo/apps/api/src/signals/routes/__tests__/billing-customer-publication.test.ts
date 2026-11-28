@@ -1,29 +1,44 @@
-import { marketingCheckinCampaign } from "./helpers/marketing-reward-consumer";
 import { randomUUID } from "node:crypto";
-
 import {
   billingPortalContract,
   billingStatusContract,
 } from "@okouai/api-contracts/contracts/billing";
 import { getStartedContract } from "@okouai/api-contracts/contracts/get-started";
+import { describe, expect, it } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { mockEnv, mockOptionalEnv } from "../../../lib/env";
+import { mockEnv } from "../../../lib/env";
+import { now } from "../../../lib/time";
 import { billingPortalRoutes } from "../billing-portal";
 import { billingStatusRoutes } from "../billing-status";
 import { getStartedRoutes } from "../get-started";
+import { marketingCheckinCampaign } from "./helpers/marketing-reward-consumer";
 import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
-const mocks = createRouteMocks(context);
-const headers = Object.freeze({ authorization: "Bearer clerk-session" });
-const returnUrl = "http://app.localhost:3002/settings/billing";
-const portalUrl = "https://billing.stripe.com/session/customer-publication";
 
-function clients() {
-  marketingCheckinCampaign(context);
-  const app = setupApp({
+const APP_URL = "http://app.localhost:3002";
+const RETURN_URL = `${APP_URL}/settings/billing`;
+const headers = Object.freeze({ authorization: "Bearer clerk-session" });
+const PORTAL_CONFIGURATION = "bpc_payment_methods";
+
+function setup() {
+  mockEnv("APP_URL", APP_URL);
+  mockEnv("ENV", "development");
+  const admin = {
+    orgId: `org_${randomUUID()}`,
+    userId: `user_${randomUUID()}`,
+  };
+  createRouteMocks(context).clerk.session(admin.userId, admin.orgId);
+  context.mocks.clerk.organizations.getOrganization.mockResolvedValue({
+    id: admin.orgId,
+    slug: `publication-${admin.orgId.slice(-8)}`,
+    name: "Customer Publication Org",
+    createdBy: admin.userId,
+    createdAt: now(),
+  });
+  const appFor = setupApp({
     context,
     routes: [
       ...billingPortalRoutes,
@@ -31,239 +46,195 @@ function clients() {
       ...getStartedRoutes,
     ],
   });
+  const portal = appFor(billingPortalContract);
+  const billing = appFor(billingStatusContract);
+  const getStarted = appFor(getStartedContract);
+
+  async function openPortal(status: 200 | 500 = 200) {
+    return await accept(
+      portal.create({ headers, body: { returnUrl: RETURN_URL } }),
+      [status],
+    );
+  }
+
+  async function readStatus() {
+    return (await accept(billing.get({ headers }), [200])).body;
+  }
+
+  async function checkIn() {
+    return (await accept(getStarted.checkin({ headers }), [200])).body;
+  }
+
+  return { admin, openPortal, readStatus, checkIn };
+}
+
+function managedConfiguration() {
   return {
-    portal: app(billingPortalContract),
-    status: app(billingStatusContract),
-    getStarted: app(getStartedContract),
+    id: PORTAL_CONFIGURATION,
+    active: true,
+    features: {
+      customer_update: { enabled: false },
+      invoice_history: { enabled: false },
+      payment_method_update: { enabled: true },
+      subscription_cancel: { enabled: false },
+      subscription_update: { enabled: false },
+    },
+    login_page: { enabled: false },
+    metadata: { purpose: "payment_method_management" },
   };
 }
 
-function signIn() {
-  const userId = `user_${randomUUID()}`;
-  const orgId = `org_${randomUUID()}`;
-  mocks.clerk.session(userId, orgId, "org:admin");
-  return { userId, orgId };
-}
-
-beforeEach(() => {
-  mockEnv("APP_URL", "http://app.localhost:3002");
+function existingPortalConfiguration() {
   context.mocks.stripe.billingPortal.configurations.list.mockResolvedValue({
-    data: [],
+    data: [managedConfiguration()],
+    has_more: false,
   });
-  context.mocks.stripe.billingPortal.configurations.create.mockResolvedValue({
-    id: "bpc_customer_publication",
-  });
+}
+
+function stripePortalSession(): string {
+  const url = `https://billing.stripe.test/session/${randomUUID()}`;
   context.mocks.stripe.billingPortal.sessions.create.mockResolvedValue({
-    url: portalUrl,
+    id: `bps_${randomUUID()}`,
+    url,
   });
-});
+  return url;
+}
 
-test("initializes the default Plan through a fresh payment-method portal and reuses its customer", async () => {
-  const { orgId } = signIn();
-  const customerId = `cus_${randomUUID()}`;
-  context.mocks.stripe.customers.create.mockResolvedValue({ id: customerId });
-  const api = clients();
-  const open = () => {
-    return accept(api.portal.create({ headers, body: { returnUrl } }), [200]);
-  };
-  expect((await open()).body).toStrictEqual({ url: portalUrl });
-  const status = await accept(api.status.get({ headers }), [200]);
-  expect(status.body).toMatchObject({
-    tier: "limited-free-1",
-    status: "active",
-    credits: 0,
-    concurrencyLimit: 2,
-    canBuyCredits: true,
-    canBuyConcurrency: false,
-    showUsagePack: false,
-    autoRechargeAllowed: false,
-    restrictedBuiltInModels: true,
-    workflowWebhookAutomationAllowed: false,
-    hasSubscription: false,
-  });
-  context.mocks.stripe.customers.create.mockResolvedValue({
-    id: `cus_unused_${randomUUID()}`,
-  });
-  expect((await open()).body).toStrictEqual({ url: portalUrl });
-  expect(context.mocks.stripe.customers.create).toHaveBeenCalledTimes(1);
-  expect(context.mocks.stripe.customers.create).toHaveBeenCalledWith(
-    { metadata: { orgId } },
-    { idempotencyKey: `stripe-customer:development::${orgId}` },
-  );
-  expect(
-    context.mocks.stripe.billingPortal.sessions.create,
-  ).toHaveBeenLastCalledWith({
-    customer: customerId,
-    configuration: "bpc_customer_publication",
-    return_url: returnUrl,
-  });
-  expect((await accept(api.status.get({ headers }), [200])).body).toStrictEqual(
-    status.body,
-  );
-});
+function stripeCustomerId(): string {
+  return `cus_${randomUUID().slice(0, 8)}`;
+}
 
-test("binds an organization initialized by a check-in while preserving its Plan and reward", async () => {
-  signIn();
-  const api = clients();
-  const checkin = await accept(api.getStarted.checkin({ headers }), [200]);
-  const before = await accept(api.status.get({ headers }), [200]);
-  const customerId = `cus_${randomUUID()}`;
-  context.mocks.stripe.customers.create.mockResolvedValue({ id: customerId });
-  expect(
-    (await accept(api.portal.create({ headers, body: { returnUrl } }), [200]))
-      .body,
-  ).toStrictEqual({ url: portalUrl });
-  expect((await accept(api.status.get({ headers }), [200])).body).toStrictEqual(
-    before.body,
-  );
-  expect(
-    (await accept(api.getStarted.checkin({ headers }), [200])).body,
-  ).toStrictEqual(checkin.body);
-  expect(
-    context.mocks.stripe.billingPortal.sessions.create,
-  ).toHaveBeenCalledWith({
-    customer: customerId,
-    configuration: "bpc_customer_publication",
-    return_url: returnUrl,
-  });
-});
+describe("billing customer publication", () => {
+  it("billing-customer-publication-001 initializes the default Plan through a fresh payment-method portal and reuses its customer", async () => {
+    const { admin, openPortal, readStatus } = setup();
+    const customerId = stripeCustomerId();
+    context.mocks.stripe.customers.create
+      .mockResolvedValueOnce({ id: customerId })
+      .mockResolvedValue({ id: stripeCustomerId() });
+    context.mocks.stripe.billingPortal.configurations.list.mockResolvedValue({
+      data: [],
+      has_more: false,
+    });
+    context.mocks.stripe.billingPortal.configurations.create.mockResolvedValue(
+      managedConfiguration(),
+    );
+    const url = stripePortalSession();
 
-test("publishes one authoritative customer for concurrent fresh portal requests", async () => {
-  signIn();
-  const customerId = `cus_${randomUUID()}`;
-  context.mocks.stripe.customers.create.mockResolvedValue({ id: customerId });
-  const api = clients();
-  const opened = await Promise.all([
-    api.portal.create({ headers, body: { returnUrl } }),
-    api.portal.create({ headers, body: { returnUrl } }),
-  ]);
-  for (const response of opened) {
-    expect(response.status).toBe(200);
-    expect(response.body).toStrictEqual({ url: portalUrl });
-  }
-  expect(
-    context.mocks.stripe.billingPortal.sessions.create,
-  ).toHaveBeenCalledTimes(2);
-  for (const [session] of context.mocks.stripe.billingPortal.sessions.create
-    .mock.calls) {
-    expect(session).toMatchObject({ customer: customerId });
-  }
-  expect((await accept(api.status.get({ headers }), [200])).body).toMatchObject(
-    {
+    const first = await openPortal();
+    const firstStatus = await readStatus();
+    const second = await openPortal();
+    const secondStatus = await readStatus();
+
+    expect(first.body).toStrictEqual({ url });
+    expect(second.body).toStrictEqual({ url });
+    expect(firstStatus).toMatchObject({
+      tier: "limited-free-1",
+      status: "active",
+      credits: 0,
+      concurrencyLimit: 2,
+      canBuyCredits: true,
+      canBuyConcurrency: false,
+      showUsagePack: false,
+      autoRechargeAllowed: false,
+      workflowWebhookAutomationAllowed: false,
+      restrictedBuiltInModels: true,
+      hasSubscription: false,
+      subscriptionStatus: null,
+    });
+    expect(context.mocks.stripe.customers.create).toHaveBeenCalledTimes(1);
+    expect(context.mocks.stripe.customers.create).toHaveBeenCalledWith(
+      { metadata: expect.objectContaining({ orgId: admin.orgId }) },
+      { idempotencyKey: `stripe-customer:development::${admin.orgId}` },
+    );
+    expect(
+      context.mocks.stripe.billingPortal.sessions.create,
+    ).toHaveBeenLastCalledWith({
+      customer: customerId,
+      configuration: PORTAL_CONFIGURATION,
+      return_url: RETURN_URL,
+    });
+    expect(secondStatus).toStrictEqual(firstStatus);
+  });
+
+  it("billing-customer-publication-002 binds an organization initialized by a check-in while preserving its Plan and reward", async () => {
+    marketingCheckinCampaign(context);
+    const { openPortal, readStatus, checkIn } = setup();
+    const receipt = await checkIn();
+    const before = await readStatus();
+    const customerId = stripeCustomerId();
+    context.mocks.stripe.customers.create.mockResolvedValue({ id: customerId });
+    existingPortalConfiguration();
+    const url = stripePortalSession();
+
+    const opened = await openPortal();
+    const after = await readStatus();
+    const repeated = await checkIn();
+
+    expect(opened.body).toStrictEqual({ url });
+    expect(
+      context.mocks.stripe.billingPortal.sessions.create,
+    ).toHaveBeenCalledWith({
+      customer: customerId,
+      configuration: PORTAL_CONFIGURATION,
+      return_url: RETURN_URL,
+    });
+    expect(after).toStrictEqual(before);
+    expect(repeated).toStrictEqual(receipt);
+  });
+
+  it("billing-customer-publication-003 publishes one authoritative customer for concurrent fresh portal requests", async () => {
+    const { openPortal, readStatus } = setup();
+    const customerId = stripeCustomerId();
+    context.mocks.stripe.customers.create.mockResolvedValue({ id: customerId });
+    existingPortalConfiguration();
+    const url = stripePortalSession();
+
+    const opened = await Promise.all([openPortal(), openPortal()]);
+    const status = await readStatus();
+
+    expect(
+      opened.map((response) => {
+        return response.body;
+      }),
+    ).toStrictEqual([{ url }, { url }]);
+    const sessionCustomers =
+      context.mocks.stripe.billingPortal.sessions.create.mock.calls.map(
+        ([params]) => {
+          return typeof params === "object" &&
+            params !== null &&
+            "customer" in params
+            ? params.customer
+            : undefined;
+        },
+      );
+    expect(sessionCustomers).toStrictEqual([customerId, customerId]);
+    expect(status).toMatchObject({
       tier: "limited-free-1",
       credits: 0,
       concurrencyLimit: 2,
       restrictedBuiltInModels: true,
-    },
-  );
-});
+    });
+  });
 
-test("preserves an organization check-in completed during external customer preparation", async () => {
-  signIn();
-  const api = clients();
-  const customerId = `cus_${randomUUID()}`;
-  let originalReceiptId: string | undefined;
-  context.mocks.stripe.customers.create.mockImplementationOnce(async () => {
-    originalReceiptId = (
-      await accept(api.getStarted.checkin({ headers }), [200])
-    ).body.id;
-    return { id: customerId };
-  });
-  await accept(api.portal.create({ headers, body: { returnUrl } }), [200]);
-  expect(
-    (await accept(api.getStarted.checkin({ headers }), [200])).body,
-  ).toMatchObject({
-    id: originalReceiptId,
-    status: "granted",
-    rewardAmount: 100,
-  });
-  expect((await accept(api.status.get({ headers }), [200])).body).toMatchObject(
-    {
-      tier: "limited-free-1",
-      credits: 0,
-      concurrencyLimit: 2,
-    },
-  );
-  expect(
-    context.mocks.stripe.billingPortal.sessions.create,
-  ).toHaveBeenCalledWith({
-    customer: customerId,
-    configuration: "bpc_customer_publication",
-    return_url: returnUrl,
-  });
-});
+  it("billing-customer-publication-006 propagates provider failure without a winner and accepts another normal portal request", async () => {
+    marketingCheckinCampaign(context);
+    const { openPortal, readStatus, checkIn } = setup();
+    await checkIn();
+    const before = await readStatus();
+    context.mocks.stripe.customers.create
+      .mockRejectedValueOnce(new Error("Stripe customer creation failed"))
+      .mockResolvedValue({ id: stripeCustomerId() });
+    existingPortalConfiguration();
+    const url = stripePortalSession();
 
-test("uses a concurrently committed customer after losing the provider response", async () => {
-  signIn();
-  const api = clients();
-  const customerId = `cus_${randomUUID()}`;
-  context.mocks.stripe.customers.create
-    .mockImplementationOnce(async () => {
-      await accept(api.portal.create({ headers, body: { returnUrl } }), [200]);
-      throw new Error("Customer response was lost");
-    })
-    .mockResolvedValue({ id: customerId });
-  expect(
-    (await accept(api.portal.create({ headers, body: { returnUrl } }), [200]))
-      .body,
-  ).toStrictEqual({ url: portalUrl });
-  expect(
-    context.mocks.stripe.billingPortal.sessions.create,
-  ).toHaveBeenCalledTimes(2);
-  for (const [session] of context.mocks.stripe.billingPortal.sessions.create
-    .mock.calls) {
-    expect(session).toMatchObject({ customer: customerId });
-  }
-  expect((await accept(api.status.get({ headers }), [200])).body).toMatchObject(
-    {
-      tier: "limited-free-1",
-      credits: 0,
-      concurrencyLimit: 2,
-    },
-  );
-});
+    await openPortal(500);
+    const sessionsAfterFailure =
+      context.mocks.stripe.billingPortal.sessions.create.mock.calls.length;
+    const after = await readStatus();
+    const retried = await openPortal();
 
-test("propagates provider failure without a winner and accepts another normal portal request", async () => {
-  signIn();
-  const api = clients();
-  await accept(api.getStarted.checkin({ headers }), [200]);
-  const before = await accept(api.status.get({ headers }), [200]);
-  context.mocks.stripe.customers.create.mockRejectedValueOnce(
-    new Error("Stripe unavailable"),
-  );
-  const failed = await accept(
-    api.portal.create({ headers, body: { returnUrl } }),
-    [500],
-  );
-  expect(failed.status).toBe(500);
-  expect(
-    context.mocks.stripe.billingPortal.sessions.create,
-  ).not.toHaveBeenCalled();
-  expect((await accept(api.status.get({ headers }), [200])).body).toStrictEqual(
-    before.body,
-  );
-  context.mocks.stripe.customers.create.mockResolvedValue({
-    id: `cus_${randomUUID()}`,
+    expect(sessionsAfterFailure).toBe(0);
+    expect(after).toStrictEqual(before);
+    expect(retried.body).toStrictEqual({ url });
   });
-  expect(
-    (await accept(api.portal.create({ headers, body: { returnUrl } }), [200]))
-      .body,
-  ).toStrictEqual({ url: portalUrl });
-});
-
-test("retains the preview routing metadata and provider idempotency identity", async () => {
-  const { orgId } = signIn();
-  mockEnv("ENV", "preview");
-  mockOptionalEnv("OKOU_PREVIEW_JOB_REF", "pr-tx0062");
-  context.mocks.stripe.customers.create.mockResolvedValue({
-    id: `cus_${randomUUID()}`,
-  });
-  await accept(
-    clients().portal.create({ headers, body: { returnUrl } }),
-    [200],
-  );
-  expect(context.mocks.stripe.customers.create).toHaveBeenCalledWith(
-    { metadata: { orgId, vm0_environment: "preview", job_ref: "pr-tx0062" } },
-    { idempotencyKey: `stripe-customer:preview:pr-tx0062:${orgId}` },
-  );
 });

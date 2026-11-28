@@ -1,21 +1,13 @@
-import { PutObjectCommand } from "@aws-sdk/client-s3";
-import {
-  userTemplatesContract,
-  type PublishUserTemplateBody,
-  type UserTemplateKind,
-} from "@okouai/api-contracts/contracts/user-templates";
-import { readTemplateGuidanceBundle } from "@okouai/core/template-guidance-bundle";
-import { beforeEach, describe, expect, it, onTestFinished } from "vitest";
+import { userTemplatesContract } from "@okouai/api-contracts/contracts/user-templates";
+import { describe, expect, it } from "vitest";
 
-import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { mockEnv } from "../../../lib/env";
-import { ClerkRateLimitError } from "../../external/clerk";
-import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
-import { createRunsApi } from "./helpers/api-bdd-runs";
-import { createChatEventsFixture } from "./helpers/chat-events-fixture";
+import { accept, testContext } from "../../../__tests__/test-context";
 import { flushWaitUntilForTest } from "../../context/wait-until";
+import { userTemplatesRoutes } from "../user-templates";
+import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { mockClerkUsers } from "./helpers/clerk-users";
+import { channelsPublishedTo } from "./helpers/realtime-publications";
 import { createRouteMocks } from "./helpers/route-test";
 import {
   installS3Fixture,
@@ -23,320 +15,303 @@ import {
   uploadTemplateFile,
   type Fixture,
 } from "./helpers/template-publish-fixture";
-import { userTemplatesRoutes } from "../user-templates";
 
 const context = testContext();
 const bdd = createBddApi(context);
-const mocks = createRouteMocks(context);
-const runs = createRunsApi(context);
-const chatEvents = createChatEventsFixture(context);
-
-const SOURCE_CONTENT_TYPE =
+const PPTX =
   "application/vnd.openxmlformats-officedocument.presentationml.presentation";
-const PACKAGE_CONTENT_TYPE = "application/gzip";
+const DOCX =
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+const PNG = "image/png";
+const GZIP = "application/gzip";
+const CHANGED = "presentationTemplatesChanged";
 
-function webHeaders() {
-  return { authorization: "Bearer clerk-session" };
-}
+type PackageFiles = readonly { path: string; content: string | Buffer }[];
 
-function templateClient() {
+const DECK_PACKAGE: PackageFiles = Object.freeze([
+  { path: "SKILL.md", content: "# Brand system" },
+  { path: "design-system.md", content: "Use the brand palette." },
+]);
+
+function templatesApi() {
   return setupApp({ context, routes: userTemplatesRoutes })(
     userTemplatesContract,
   );
 }
 
-/**
- * What each template-extraction branch actually writes.
- *
- * `presentation-extract-template` produces the visual language as prose;
- * `docx-extract-template` produces `reference.docx`, which is what pandoc
- * consumes, and writes no `design-system.md` at all; the illustration branch
- * writes the locked frame and the prompt into `SKILL.md` itself and saves its
- * example pictures under names that follow the subject and dials they
- * demonstrate. A fixture that gave every kind the same files would agree with
- * the endpoint and disagree with the packages it has to accept.
- */
-function guidance(
-  kind: UserTemplateKind,
-): readonly { path: string; content: string }[] {
-  switch (kind) {
-    case "presentation": {
-      return [
-        { path: "SKILL.md", content: "# Use this template\n" },
-        { path: "design-system.md", content: "Ink on warm paper.\n" },
-      ];
-    }
-    case "document": {
-      return [
-        { path: "SKILL.md", content: "# Use this template\n" },
-        { path: "reference.docx", content: "PK reference bytes\n" },
-      ];
-    }
-    case "illustration": {
-      return [
-        { path: "SKILL.md", content: "# Draw in this style\n" },
-        { path: "ref-market-sage.png", content: "approved piece\n" },
-      ];
-    }
-  }
-}
-
-/** A directory entry with a name of its own, to tell two members apart. */
-function clerkProfile(userId: string, firstName: string, lastName: string) {
-  const emailId = `email_${userId}`;
-  return {
-    id: userId,
-    emailAddresses: [{ id: emailId, emailAddress: `${userId}@example.test` }],
-    primaryEmailAddressId: emailId,
-    firstName,
-    lastName,
-    username: null,
-    imageUrl: "",
-    privateMetadata: {},
-  };
-}
-
-/** Signs in a workspace member. */
 function signIn(actor: ApiTestUser) {
-  if (!actor.orgId) {
-    throw new Error("User template tests require an organization");
-  }
-  mocks.clerk.session(actor.userId, actor.orgId, "org:admin");
+  createRouteMocks(context).clerk.session(
+    actor.userId,
+    actor.orgId,
+    actor.orgRole,
+  );
+  return { authorization: "Bearer clerk-session" };
 }
 
-async function publishBody(
+function upload(
   actor: ApiTestUser,
   fixture: Fixture,
-  archive: Buffer = tarGz(guidance("presentation")),
-): Promise<PublishUserTemplateBody> {
-  const sourceFileId = await uploadTemplateFile(
+  filename: string,
+  contentType: string,
+  body: Buffer,
+): Promise<string> {
+  return uploadTemplateFile(
     context,
     actor,
     fixture,
-    { filename: "brand-system.pptx", contentType: SOURCE_CONTENT_TYPE },
-    Buffer.from("PK deck bytes", "utf8"),
+    { filename, contentType },
+    body,
+  );
+}
+
+async function uploadDeck(
+  actor: ApiTestUser,
+  fixture: Fixture,
+  packageFiles: PackageFiles = DECK_PACKAGE,
+) {
+  const sourceFileId = await upload(
+    actor,
+    fixture,
+    "brand-system.pptx",
+    PPTX,
+    Buffer.from("deck"),
   );
   const pageFileIds = [
-    await uploadTemplateFile(
-      context,
-      actor,
-      fixture,
-      { filename: "page-001.png", contentType: "image/png" },
-      Buffer.from("cover", "utf8"),
-    ),
-    await uploadTemplateFile(
-      context,
-      actor,
-      fixture,
-      { filename: "page-002.png", contentType: "image/png" },
-      Buffer.from("second", "utf8"),
-    ),
+    await upload(actor, fixture, "page-1.png", PNG, Buffer.from("png-1")),
+    await upload(actor, fixture, "page-2.png", PNG, Buffer.from("png-2")),
   ];
-  const packageFileId = await uploadTemplateFile(
-    context,
+  const packageFileId = await upload(
     actor,
     fixture,
-    { filename: "package.tar.gz", contentType: PACKAGE_CONTENT_TYPE },
-    archive,
+    "package.tar.gz",
+    GZIP,
+    tarGz(packageFiles),
   );
   return {
-    title: "Brand system",
-    kind: "presentation",
+    kind: "presentation" as const,
     sourceFileId,
     pageFileIds,
     packageFileId,
   };
 }
 
-const DOCX_CONTENT_TYPE =
-  "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
-
-/**
- * A document publish body carrying whatever the reverse run managed to render.
- *
- * Both of the document arm's fields are optional and separately so, which is
- * the point of taking them separately here: a test that omits one is covering
- * a run that produced the other and nothing more.
- */
-async function documentPublishBody(
-  actor: ApiTestUser,
-  fixture: Fixture,
-  rendered: {
-    readonly cover?: { readonly contentType: string };
-    readonly pageCount?: number;
-  } = {},
-): Promise<PublishUserTemplateBody> {
-  const sourceFileId = await uploadTemplateFile(
-    context,
-    actor,
-    fixture,
-    { filename: "brand-report.docx", contentType: DOCX_CONTENT_TYPE },
-    Buffer.from("PK docx bytes", "utf8"),
+async function publishDeck(actor: ApiTestUser, fixture: Fixture) {
+  const inputs = await uploadDeck(actor, fixture);
+  const response = await accept(
+    templatesApi().publish({
+      headers: signIn(actor),
+      body: { ...inputs, title: "Brand system" },
+    }),
+    [200],
   );
-  const coverFileId =
-    rendered.cover === undefined
-      ? undefined
-      : await uploadTemplateFile(
-          context,
-          actor,
-          fixture,
-          {
-            filename: "cover.png",
-            contentType: rendered.cover.contentType,
-          },
-          Buffer.from("first page", "utf8"),
-        );
-  const packageFileId = await uploadTemplateFile(
-    context,
-    actor,
-    fixture,
-    { filename: "package.tar.gz", contentType: PACKAGE_CONTENT_TYPE },
-    tarGz(guidance("document")),
-  );
-  return {
-    title: "Brand report",
-    kind: "document",
-    sourceFileId,
-    ...(coverFileId === undefined ? {} : { coverFileId }),
-    ...(rendered.pageCount === undefined
-      ? {}
-      : { pageCount: rendered.pageCount }),
-    packageFileId,
-  };
+  return response.body;
 }
 
-beforeEach(() => {
-  mockEnv("R2_USER_ARTIFACTS_BUCKET_NAME", "test-user-artifacts");
-});
+async function shareWithOrganization(owner: ApiTestUser, templateId: string) {
+  await accept(
+    templatesApi().update({
+      headers: signIn(owner),
+      params: { templateId },
+      body: { visibility: "organization" },
+    }),
+    [200],
+  );
+}
+
+function colleagueOf(owner: ApiTestUser): ApiTestUser {
+  return bdd.user({ orgId: owner.orgId, orgRole: "org:member" });
+}
+
+function forgetRealtime(): void {
+  context.mocks.ably.channelGet.mockClear();
+  context.mocks.ably.publish.mockClear();
+}
+
+function userDirectory(
+  people: readonly {
+    readonly user: ApiTestUser;
+    readonly firstName: string;
+    readonly lastName: string;
+  }[],
+): void {
+  mockClerkUsers(
+    context,
+    people.map(({ user, firstName, lastName }) => {
+      return {
+        id: user.userId,
+        firstName,
+        lastName,
+        imageUrl: "",
+        emailAddresses: [
+          { id: `email_${user.userId}`, emailAddress: user.email },
+        ],
+        primaryEmailAddressId: `email_${user.userId}`,
+      };
+    }),
+  );
+}
 
 describe("POST /api/user-templates", () => {
-  it("publishes a compiled reverse run as a private template", async () => {
+  it("user-template-publish-007 publishes a document template that has no page images", async () => {
     const fixture = installS3Fixture(context);
-    const actor = bdd.user();
-    signIn(actor);
-    const client = templateClient();
+    const admin = bdd.user();
+    const source = Buffer.from("docx-bytes");
+    const sourceFileId = await upload(
+      admin,
+      fixture,
+      "brand-report.docx",
+      DOCX,
+      source,
+    );
+    const packageFileId = await upload(
+      admin,
+      fixture,
+      "package.tar.gz",
+      GZIP,
+      tarGz([
+        { path: "SKILL.md", content: "# Brand report" },
+        { path: "reference.docx", content: "reference" },
+      ]),
+    );
+    const api = templatesApi();
 
-    const response = await accept(
-      client.publish({
-        headers: webHeaders(),
-        body: await publishBody(actor, fixture),
+    const published = await accept(
+      api.publish({
+        headers: signIn(admin),
+        body: {
+          kind: "document",
+          title: "Brand report",
+          sourceFileId,
+          packageFileId,
+        },
       }),
       [200],
     );
+    expect(published.body).toMatchObject({
+      kind: "document",
+      sourceFilename: "brand-report.docx",
+      pageCount: null,
+      coverUrl: null,
+      coverHasMorePages: false,
+    });
 
-    expect(response.body).toMatchObject({
+    const headers = signIn(admin);
+    const list = await accept(api.list({ headers }), [200]);
+    expect(list.body).toHaveLength(1);
+    expect(list.body[0]?.previewAssets).toStrictEqual([]);
+    const detail = await accept(
+      api.get({ headers, params: { templateId: published.body.id } }),
+      [200],
+    );
+    expect(detail.body.pageUrls).toStrictEqual([]);
+    expect(fixture.readSignedObject(detail.body.sourceUrl)).toStrictEqual(
+      source,
+    );
+  });
+  it("user-template-publish-001 publishes an uploaded deck as a private template", async () => {
+    const fixture = installS3Fixture(context);
+    const admin = bdd.user();
+
+    const published = await publishDeck(admin, fixture);
+
+    expect(published).toMatchObject({
       title: "Brand system",
       kind: "presentation",
       sourceFilename: "brand-system.pptx",
       pageCount: 2,
       visibility: "private",
-      ownerUserId: actor.userId,
+      ownerUserId: admin.userId,
       canManage: true,
     });
-    expect(fixture.keys()).toContainEqual(
-      expect.stringMatching(/^bundles\/v1\/[a-f0-9]{64}\.tar\.gz$/u),
-    );
+    expect(
+      fixture.keys().filter((key) => {
+        return /^bundles\/v1\/[0-9a-f]{64}\.tar\.gz$/u.test(key);
+      }),
+    ).toHaveLength(1);
   });
-
-  it("renames a private template and preserves its cover and ownership", async () => {
+  it("user-template-publish-002 renames a private template while keeping its cover and owner", async () => {
     const fixture = installS3Fixture(context);
     const owner = bdd.user();
-    signIn(owner);
-    const client = templateClient();
-    mockClerkUsers(context, [clerkProfile(owner.userId, "Mina", "Okafor")]);
-    const published = await accept(
-      client.publish({
-        headers: webHeaders(),
-        body: await publishBody(owner, fixture),
-      }),
-      [200],
-    );
-    context.mocks.ably.channelGet.mockClear();
+    userDirectory([{ user: owner, firstName: "Mina", lastName: "Okafor" }]);
+    const published = await publishDeck(owner, fixture);
+    forgetRealtime();
+    const api = templatesApi();
 
-    const updated = await accept(
-      client.update({
-        headers: webHeaders(),
-        params: { templateId: published.body.id },
+    const renamed = await accept(
+      api.update({
+        headers: signIn(owner),
+        params: { templateId: published.id },
         body: { title: "Renamed brand" },
       }),
       [200],
     );
-    expect(updated.body).toMatchObject({
-      id: published.body.id,
+
+    expect(renamed.body).toMatchObject({
+      id: published.id,
       title: "Renamed brand",
       visibility: "private",
       ownerUserId: owner.userId,
       ownerDisplayName: "Mina Okafor",
       canManage: true,
-      sourceFilename: published.body.sourceFilename,
+      sourceFilename: "brand-system.pptx",
       pageCount: 2,
       coverHasMorePages: true,
-      createdAt: published.body.createdAt,
+      createdAt: published.createdAt,
     });
-    expect(Date.parse(updated.body.updatedAt)).toBeGreaterThanOrEqual(
-      Date.parse(published.body.updatedAt),
+    expect(Date.parse(renamed.body.updatedAt)).toBeGreaterThanOrEqual(
+      Date.parse(published.updatedAt),
     );
-    expect(fixture.signedKey(updated.body.coverUrl!)).toBe(
-      fixture.signedKey(published.body.coverUrl!),
+    expect(fixture.signedKey(renamed.body.coverUrl ?? "")).toBe(
+      fixture.signedKey(published.coverUrl ?? ""),
     );
-    expect(context.mocks.ably.channelGet).toHaveBeenCalledWith(
-      `user:${owner.userId}`,
-    );
-    expect(context.mocks.ably.channelGet).not.toHaveBeenCalledWith(
-      `org:${owner.orgId}`,
-    );
-    const listed = await accept(client.list({ headers: webHeaders() }), [200]);
-    expect(listed.body[0]).toMatchObject(updated.body);
+    await flushWaitUntilForTest();
+    const channels = channelsPublishedTo(context.mocks, CHANGED);
+    expect(channels).toContain(`user:${owner.userId}`);
+    expect(channels).not.toContain(`org:${owner.orgId ?? ""}`);
+
+    const list = await accept(api.list({ headers: signIn(owner) }), [200]);
+    expect(list.body[0]).toMatchObject(renamed.body);
   });
 
-  it("retracts a shared template and its preview handles from colleagues", async () => {
+  it("user-template-publish-003 retracts a shared template and its previews from a colleague", async () => {
     const fixture = installS3Fixture(context);
     const owner = bdd.user();
-    signIn(owner);
-    const client = templateClient();
-    const published = await accept(
-      client.publish({
-        headers: webHeaders(),
-        body: await publishBody(owner, fixture),
-      }),
+    const colleague = colleagueOf(owner);
+    const published = await publishDeck(owner, fixture);
+    const params = { templateId: published.id };
+    const api = templatesApi();
+    await shareWithOrganization(owner, published.id);
+
+    const sharedList = await accept(
+      api.list({ headers: signIn(colleague) }),
       [200],
     );
-    await accept(
-      client.update({
-        headers: webHeaders(),
-        params: { templateId: published.body.id },
-        body: { visibility: "organization" },
-      }),
-      [200],
-    );
-    const colleague = bdd.user({ orgId: owner.orgId });
-    signIn(colleague);
-    const shared = await accept(client.list({ headers: webHeaders() }), [200]);
-    const previewAssetIds = shared.body.flatMap((entry) => {
-      return entry.previewAssets.map((asset) => {
+    const previewAssetIds = (sharedList.body[0]?.previewAssets ?? []).map(
+      (asset) => {
         return asset.previewAssetId;
-      });
-    });
+      },
+    );
     expect(previewAssetIds).toHaveLength(2);
 
-    mocks.clerk.session(owner.userId, owner.orgId, "org:admin");
-    context.mocks.ably.channelGet.mockClear();
+    forgetRealtime();
     await accept(
-      client.update({
-        headers: webHeaders(),
-        params: { templateId: published.body.id },
+      api.update({
+        headers: signIn(owner),
+        params,
         body: { title: "Shared edit" },
       }),
       [200],
     );
-    expect(context.mocks.ably.channelGet).toHaveBeenCalledWith(
-      `org:${owner.orgId}`,
+    await flushWaitUntilForTest();
+    expect(channelsPublishedTo(context.mocks, CHANGED)).toContain(
+      `org:${owner.orgId ?? ""}`,
     );
-    context.mocks.ably.channelGet.mockClear();
+
+    forgetRealtime();
     const retracted = await accept(
-      client.update({
-        headers: webHeaders(),
-        params: { templateId: published.body.id },
+      api.update({
+        headers: signIn(owner),
+        params,
         body: { visibility: "private" },
       }),
       [200],
@@ -345,1164 +320,309 @@ describe("POST /api/user-templates", () => {
       title: "Shared edit",
       visibility: "private",
     });
-    expect(context.mocks.ably.channelGet).toHaveBeenCalledWith(
-      `org:${owner.orgId}`,
-    );
-    expect(context.mocks.ably.channelGet).not.toHaveBeenCalledWith(
-      `user:${owner.userId}`,
-    );
-    expect(context.mocks.ably.publish).toHaveBeenCalledWith(
-      "presentationTemplatesChanged",
-      null,
-    );
+    await flushWaitUntilForTest();
+    const channels = channelsPublishedTo(context.mocks, CHANGED);
+    expect(channels).toContain(`org:${owner.orgId ?? ""}`);
+    expect(channels).not.toContain(`user:${owner.userId}`);
 
-    mocks.clerk.session(colleague.userId, colleague.orgId, "org:admin");
-    const listed = await accept(client.list({ headers: webHeaders() }), [200]);
-    expect(listed.body).toStrictEqual([]);
-    await accept(
-      client.get({
-        headers: webHeaders(),
-        params: { templateId: published.body.id },
-      }),
-      [404],
-    );
-    const previews = await accept(
-      client.resolvePreviewUrls({
-        headers: webHeaders(),
+    const colleagueHeaders = signIn(colleague);
+    await expect(
+      api.list({ headers: colleagueHeaders }),
+    ).resolves.toMatchObject({ status: 200, body: [] });
+    await accept(api.get({ headers: colleagueHeaders, params }), [404]);
+    await expect(
+      api.resolvePreviewUrls({
+        headers: colleagueHeaders,
         body: { previewAssetIds },
       }),
-      [200],
-    );
-    expect(previews.body.assets).toStrictEqual([]);
+    ).resolves.toMatchObject({ status: 200, body: { assets: [] } });
   });
 
-  it("rejects cross-organization edits without changing the template", async () => {
+  it("user-template-publish-004 refuses an edit from another workspace and leaves the template unchanged", async () => {
     const fixture = installS3Fixture(context);
     const owner = bdd.user();
-    signIn(owner);
-    const client = templateClient();
-    const published = await accept(
-      client.publish({
-        headers: webHeaders(),
-        body: await publishBody(owner, fixture),
-      }),
-      [200],
-    );
     const outsider = bdd.user();
-    signIn(outsider);
-    const hidden = await accept(
-      client.update({
-        headers: webHeaders(),
-        params: { templateId: published.body.id },
+    const published = await publishDeck(owner, fixture);
+    const params = { templateId: published.id };
+    const api = templatesApi();
+
+    const refused = await accept(
+      api.update({
+        headers: signIn(outsider),
+        params,
         body: { title: "Cross-organization edit" },
       }),
       [404],
     );
-    expect(hidden.body.error).toMatchObject({
+    expect(refused.body.error).toStrictEqual({
       code: "NOT_FOUND",
-      message: `User template not found: ${published.body.id}`,
+      message: `User template not found: ${published.id}`,
     });
-    signIn(owner);
-    const preserved = await accept(
-      client.get({
-        headers: webHeaders(),
-        params: { templateId: published.body.id },
-      }),
+
+    const detail = await accept(
+      api.get({ headers: signIn(owner), params }),
       [200],
     );
-    expect(preserved.body).toMatchObject(published.body);
+    expect(detail.body).toMatchObject(published);
   });
 
-  it("notifies the readers on both sides of overlapping visibility edits", async () => {
+  it("user-template-publish-008 covers a document with its first page without counting pages", async () => {
     const fixture = installS3Fixture(context);
-    const owner = bdd.user();
-    signIn(owner);
-    const client = templateClient();
+    const admin = bdd.user();
+    const sourceFileId = await upload(
+      admin,
+      fixture,
+      "brand-report.docx",
+      DOCX,
+      Buffer.from("docx-bytes"),
+    );
+    const packageFileId = await upload(
+      admin,
+      fixture,
+      "package.tar.gz",
+      GZIP,
+      tarGz([{ path: "SKILL.md", content: "# Brand report" }]),
+    );
+    const coverFileId = await upload(
+      admin,
+      fixture,
+      "cover.png",
+      PNG,
+      Buffer.from("cover-png"),
+    );
+    const api = templatesApi();
+
     const published = await accept(
-      client.publish({
-        headers: webHeaders(),
-        body: await publishBody(owner, fixture),
-      }),
-      [200],
-    );
-    context.mocks.ably.channelGet.mockClear();
-    const edits = await Promise.all([
-      accept(
-        client.update({
-          headers: webHeaders(),
-          params: { templateId: published.body.id },
-          body: { title: "Shared edit", visibility: "organization" },
-        }),
-        [200],
-      ),
-      accept(
-        client.update({
-          headers: webHeaders(),
-          params: { templateId: published.body.id },
-          body: { title: "Private edit", visibility: "private" },
-        }),
-        [200],
-      ),
-    ]);
-    const current = await accept(
-      client.get({
-        headers: webHeaders(),
-        params: { templateId: published.body.id },
-      }),
-      [200],
-    );
-    expect(
-      edits.map((edit) => {
-        return edit.body;
-      }),
-    ).toContainEqual(
-      expect.objectContaining({
-        title: current.body.title,
-        visibility: current.body.visibility,
-      }),
-    );
-    for (const edit of edits) {
-      expect(Date.parse(current.body.updatedAt)).toBeGreaterThanOrEqual(
-        Date.parse(edit.body.updatedAt),
-      );
-    }
-    const channels = context.mocks.ably.channelGet.mock.calls.map(
-      ([channel]) => {
-        return channel;
-      },
-    );
-    expect(channels.sort()).toStrictEqual(
-      (current.body.visibility === "private"
-        ? [`org:${owner.orgId}`, `org:${owner.orgId}`]
-        : [`org:${owner.orgId}`, `user:${owner.userId}`]
-      ).sort(),
-    );
-  });
-
-  it("accepts a pdf source, which the import picker already offers", async () => {
-    const fixture = installS3Fixture(context);
-    const actor = bdd.user();
-    signIn(actor);
-    const client = templateClient();
-
-    const body = await publishBody(actor, fixture);
-    // Rejecting a format the picker lets the user choose would fail only after
-    // the reverse run had already done its work.
-    const pdfSourceId = await uploadTemplateFile(
-      context,
-      actor,
-      fixture,
-      { filename: "brand-system.pdf", contentType: "application/pdf" },
-      Buffer.from("%PDF-1.7", "utf8"),
-    );
-
-    const response = await accept(
-      client.publish({
-        headers: webHeaders(),
-        body: { ...body, sourceFileId: pdfSourceId },
-      }),
-      [200],
-    );
-    expect(response.body.sourceFilename).toBe("brand-system.pdf");
-  });
-
-  it("publishes a document template without page images", async () => {
-    const fixture = installS3Fixture(context);
-    const actor = bdd.user();
-    signIn(actor);
-    const client = templateClient();
-
-    const docxSourceId = await uploadTemplateFile(
-      context,
-      actor,
-      fixture,
-      {
-        filename: "brand-report.docx",
-        contentType:
-          "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-      },
-      Buffer.from("PK docx bytes", "utf8"),
-    );
-    // The package the docx reverse skill actually writes: no design-system.md.
-    const packageFileId = await uploadTemplateFile(
-      context,
-      actor,
-      fixture,
-      { filename: "package.tar.gz", contentType: PACKAGE_CONTENT_TYPE },
-      tarGz(guidance("document")),
-    );
-
-    const response = await accept(
-      client.publish({
-        headers: webHeaders(),
+      api.publish({
+        headers: signIn(admin),
         body: {
-          title: "Brand report",
           kind: "document",
-          sourceFileId: docxSourceId,
+          title: "Brand report",
+          sourceFileId,
           packageFileId,
+          coverFileId,
+          pageCount: 12,
         },
       }),
       [200],
     );
-
-    // A document is its styles, so it has no pages — null rather than a zero
-    // that would read as an empty template. This one was also published
-    // without a rendered first page, so it has no cover either, and nothing
-    // for the catalog to stack behind one.
-    expect(response.body).toMatchObject({
-      kind: "document",
-      sourceFilename: "brand-report.docx",
-      pageCount: null,
-      coverUrl: null,
-      coverHasMorePages: false,
-    });
-
-    const listed = await accept(client.list({ headers: webHeaders() }), [200]);
-    expect(listed.body).toHaveLength(1);
-    expect(listed.body[0]?.previewAssets).toStrictEqual([]);
-
-    // Nothing was rendered, so the detail answers with the file itself: it is
-    // the only thing there is to show, and the reader opening the template is
-    // the moment its URL is worth minting.
-    const detail = await accept(
-      client.get({
-        headers: webHeaders(),
-        params: { templateId: response.body.id },
-      }),
-      [200],
-    );
-    expect(detail.body.pageUrls).toStrictEqual([]);
-    // The object that URL signs is the document itself, not the package
-    // archive uploaded beside it. Stored names are generated, so the extension
-    // is what identifies it.
-    expect(fixture.signedKey(detail.body.sourceUrl)).toBe(
-      fixture.keys().find((key) => {
-        return key.endsWith(".docx");
-      }),
-    );
-  });
-
-  it("covers a document with its first page without calling it a page", async () => {
-    const fixture = installS3Fixture(context);
-    const actor = bdd.user();
-    signIn(actor);
-    const client = templateClient();
-
-    const response = await accept(
-      client.publish({
-        headers: webHeaders(),
-        body: await documentPublishBody(actor, fixture, {
-          cover: { contentType: "image/png" },
-          pageCount: 12,
-        }),
-      }),
-      [200],
-    );
-
-    // The picture is a cover and only a cover. `pageCount` stays null because
-    // it answers how many pages this template renders, which is still none;
-    // how long the source was reaches the catalog as the one thing the tile
-    // does with it.
-    expect(response.body).toMatchObject({
+    expect(published.body).toMatchObject({
       kind: "document",
       coverHasMorePages: true,
       pageCount: null,
     });
-    expect(response.body.coverUrl).not.toBeNull();
+    expect(published.body.coverUrl).not.toBeNull();
 
     const detail = await accept(
-      client.get({
-        headers: webHeaders(),
-        params: { templateId: response.body.id },
+      api.get({
+        headers: signIn(admin),
+        params: { templateId: published.body.id },
       }),
       [200],
     );
-    // Not in `pageUrls`: a reader opening a document is given the file to
-    // read, not one picture of its opening. Putting the cover here is what
-    // would replace the source viewer with a dead end.
     expect(detail.body.pageUrls).toStrictEqual([]);
     expect(detail.body.previewAssets).toHaveLength(1);
   });
 
-  it("leaves a one-page document nothing to stack behind its cover", async () => {
+  it("user-template-publish-012 covers an illustration with its approved examples rather than its source", async () => {
     const fixture = installS3Fixture(context);
-    const actor = bdd.user();
-    signIn(actor);
-    const client = templateClient();
-
-    const response = await accept(
-      client.publish({
-        headers: webHeaders(),
-        body: await documentPublishBody(actor, fixture, {
-          cover: { contentType: "image/png" },
-          pageCount: 1,
-        }),
-      }),
-      [200],
-    );
-
-    expect(response.body.coverUrl).not.toBeNull();
-    // An invitation is one page. Sheets behind it would claim a second.
-    // `toMatchObject` rather than `toBeFalsy`, which would also accept the
-    // `undefined` an absent field would produce.
-    expect(response.body).toMatchObject({ coverHasMorePages: false });
-  });
-
-  it("keeps a page count that arrived without a cover from claiming one", async () => {
-    const fixture = installS3Fixture(context);
-    const actor = bdd.user();
-    signIn(actor);
-    const client = templateClient();
-
-    const response = await accept(
-      client.publish({
-        headers: webHeaders(),
-        body: await documentPublishBody(actor, fixture, { pageCount: 12 }),
-      }),
-      [200],
-    );
-
-    // The count is recorded and the catalog still has nothing to draw, so the
-    // template falls back to being named by its file. A stack with no sheet in
-    // front of it is what pairing the two fields would have had to prevent by
-    // rejecting the publish instead.
-    expect(response.body.coverUrl).toBeNull();
-    expect(response.body).toMatchObject({ coverHasMorePages: false });
-  });
-
-  it("refuses a cover the catalog could not paint", async () => {
-    const fixture = installS3Fixture(context);
-    const actor = bdd.user();
-    signIn(actor);
-    const client = templateClient();
-
-    const response = await accept(
-      client.publish({
-        headers: webHeaders(),
-        body: await documentPublishBody(actor, fixture, {
-          cover: { contentType: "image/webp" },
-          pageCount: 12,
-        }),
-      }),
-      [400],
-    );
-    expect(response.body.error.message).toContain("image/png");
-  });
-
-  it("covers an illustration with its approved examples, not its source", async () => {
-    const fixture = installS3Fixture(context);
-    const actor = bdd.user();
-    signIn(actor);
-    const client = templateClient();
-
-    const upload = async (
-      filename: string,
-      contentType: string,
-      body: string,
-    ) => {
-      return await uploadTemplateFile(
-        context,
-        actor,
-        fixture,
-        { filename, contentType },
-        Buffer.from(body, "utf8"),
-      );
-    };
-    const referenceId = await upload(
-      "design-review.png",
-      "image/png",
-      "PNG reference bytes",
-    );
-    const firstExampleId = await upload(
-      "ref-agenda.png",
-      "image/png",
-      "PNG first example bytes",
-    );
-    const secondExampleId = await upload(
-      "ref-approval.png",
-      "image/png",
-      "PNG second example bytes",
-    );
-    const packageFileId = await uploadTemplateFile(
-      context,
-      actor,
+    const admin = bdd.user();
+    const reference = Buffer.from("reference-png");
+    const agenda = Buffer.from("agenda-png");
+    const approval = Buffer.from("approval-png");
+    const sourceFileId = await upload(
+      admin,
       fixture,
-      { filename: "package.tar.gz", contentType: PACKAGE_CONTENT_TYPE },
-      tarGz(guidance("illustration")),
+      "reference.png",
+      PNG,
+      reference,
     );
+    const exampleFileIds = [
+      await upload(admin, fixture, "ref-agenda.png", PNG, agenda),
+      await upload(admin, fixture, "ref-approval.png", PNG, approval),
+    ];
+    const packageFileId = await upload(
+      admin,
+      fixture,
+      "package.tar.gz",
+      GZIP,
+      tarGz([
+        { path: "SKILL.md", content: "# Ink style" },
+        { path: "examples/agenda.png", content: agenda },
+      ]),
+    );
+    const api = templatesApi();
 
-    const response = await accept(
-      client.publish({
-        headers: webHeaders(),
+    const published = await accept(
+      api.publish({
+        headers: signIn(admin),
         body: {
-          title: "Quiet UI mockup",
           kind: "illustration",
-          sourceFileId: referenceId,
+          title: "Ink style",
+          sourceFileId,
           packageFileId,
-          exampleFileIds: [firstExampleId, secondExampleId],
+          exampleFileIds,
         },
       }),
       [200],
     );
-
-    // The style is shown by what it draws: the first example is the cover.
     expect(
-      fixture.readSignedObject(response.body.coverUrl!).toString("utf8"),
-    ).toBe("PNG first example bytes");
+      fixture.readSignedObject(published.body.coverUrl ?? ""),
+    ).toStrictEqual(agenda);
 
-    const listed = await accept(client.list({ headers: webHeaders() }), [200]);
-    const listedAssets = listed.body[0]?.previewAssets ?? [];
+    const headers = signIn(admin);
+    const list = await accept(api.list({ headers }), [200]);
+    const previewAssets = list.body[0]?.previewAssets ?? [];
     expect(
-      listedAssets.map((asset) => {
-        return fixture.readSignedObject(asset.url).toString("utf8");
+      previewAssets.map((asset) => {
+        return fixture.readSignedObject(asset.url);
       }),
-    ).toStrictEqual(["PNG first example bytes", "PNG second example bytes"]);
-    const reresolved = await accept(
-      client.resolvePreviewUrls({
-        headers: webHeaders(),
+    ).toStrictEqual([agenda, approval]);
+    const resolved = await accept(
+      api.resolvePreviewUrls({
+        headers,
         body: {
-          previewAssetIds: listedAssets.map((asset) => {
+          previewAssetIds: previewAssets.map((asset) => {
             return asset.previewAssetId;
           }),
         },
       }),
       [200],
     );
-    expect(reresolved.body.assets).toHaveLength(2);
+    expect(resolved.body.assets).toHaveLength(2);
 
     const detail = await accept(
-      client.get({
-        headers: webHeaders(),
-        params: { templateId: response.body.id },
-      }),
+      api.get({ headers, params: { templateId: published.body.id } }),
       [200],
     );
-    // The examples are not pages, and the source is still the file the
-    // template was read from.
     expect(detail.body.pageUrls).toStrictEqual([]);
     expect(detail.body.previewAssets).toHaveLength(2);
-    expect(
-      fixture.readSignedObject(detail.body.sourceUrl).toString("utf8"),
-    ).toBe("PNG reference bytes");
+    expect(fixture.readSignedObject(detail.body.sourceUrl)).toStrictEqual(
+      reference,
+    );
   });
 
-  it("refuses an example the catalog could not paint", async () => {
+  it("user-template-publish-016 replaces a template's package and leaves everything else as published", async () => {
     const fixture = installS3Fixture(context);
-    const actor = bdd.user();
-    signIn(actor);
-    const client = templateClient();
-
-    const referenceId = await uploadTemplateFile(
-      context,
-      actor,
+    const admin = bdd.user();
+    const published = await publishDeck(admin, fixture);
+    const packageFileId = await upload(
+      admin,
       fixture,
-      { filename: "market-day.png", contentType: "image/png" },
-      Buffer.from("PNG reference bytes", "utf8"),
-    );
-    const exampleId = await uploadTemplateFile(
-      context,
-      actor,
-      fixture,
-      { filename: "ref-market.gif", contentType: "image/gif" },
-      Buffer.from("GIF example bytes", "utf8"),
-    );
-    const packageFileId = await uploadTemplateFile(
-      context,
-      actor,
-      fixture,
-      { filename: "package.tar.gz", contentType: PACKAGE_CONTENT_TYPE },
-      tarGz(guidance("illustration")),
-    );
-
-    const response = await accept(
-      client.publish({
-        headers: webHeaders(),
-        body: {
-          title: "Market day",
-          kind: "illustration",
-          sourceFileId: referenceId,
-          packageFileId,
-          exampleFileIds: [exampleId],
-        },
-      }),
-      [400],
-    );
-    expect(response.body.error.message).toBe("Example 1 must be a image/png");
-    const listed = await accept(client.list({ headers: webHeaders() }), [200]);
-    expect(listed.body).toStrictEqual([]);
-  });
-
-  it("refuses a source the kind it was published as cannot be shown as", async () => {
-    const fixture = installS3Fixture(context);
-    const actor = bdd.user();
-    signIn(actor);
-    const client = templateClient();
-
-    const docxSourceId = await uploadTemplateFile(
-      context,
-      actor,
-      fixture,
-      {
-        filename: "brand-report.docx",
-        contentType:
-          "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-      },
-      Buffer.from("PK docx bytes", "utf8"),
-    );
-    const exampleId = await uploadTemplateFile(
-      context,
-      actor,
-      fixture,
-      { filename: "ref-report.png", contentType: "image/png" },
-      Buffer.from("PNG example bytes", "utf8"),
-    );
-    const packageFileId = await uploadTemplateFile(
-      context,
-      actor,
-      fixture,
-      { filename: "package.tar.gz", contentType: PACKAGE_CONTENT_TYPE },
-      tarGz(guidance("illustration")),
-    );
-
-    // An illustration's source is the picture its style was read from, so a
-    // file that is not a picture is refused. The package and the example are
-    // what the illustration branch sends, so only the source is wrong.
-    const response = await accept(
-      client.publish({
-        headers: webHeaders(),
-        body: {
-          title: "Brand report",
-          kind: "illustration",
-          sourceFileId: docxSourceId,
-          packageFileId,
-          exampleFileIds: [exampleId],
-        },
-      }),
-      [400],
-    );
-    expect(response.body.error.message).toContain("illustration");
-  });
-
-  it("takes a document package that carries its skill and nothing else", async () => {
-    const fixture = installS3Fixture(context);
-    const actor = bdd.user();
-    signIn(actor);
-    const client = templateClient();
-
-    const docxSourceId = await uploadTemplateFile(
-      context,
-      actor,
-      fixture,
-      {
-        filename: "brand-report.docx",
-        contentType:
-          "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-      },
-      Buffer.from("PK docx bytes", "utf8"),
-    );
-    const packageFileId = await uploadTemplateFile(
-      context,
-      actor,
-      fixture,
-      { filename: "package.tar.gz", contentType: PACKAGE_CONTENT_TYPE },
-      tarGz([{ path: "SKILL.md", content: "# Use this template\n" }]),
-    );
-
-    const response = await accept(
-      client.publish({
-        headers: webHeaders(),
-        body: {
-          title: "Brand report",
-          kind: "document",
-          sourceFileId: docxSourceId,
-          packageFileId,
-        },
-      }),
-      [200],
-    );
-
-    // The skill names the artifact it consumes and the command that consumes
-    // it, so what else the package carries is that account's business. Naming
-    // a second file here would let a reverse skill that changed its own output
-    // be refused by an endpoint that had not changed with it.
-    expect(response.body.kind).toBe("document");
-  });
-
-  it("replaces a template's package without touching anything else", async () => {
-    const fixture = installS3Fixture(context);
-    const actor = bdd.user();
-    signIn(actor);
-    const client = templateClient();
-
-    const published = await accept(
-      client.publish({
-        headers: webHeaders(),
-        body: await publishBody(actor, fixture),
-      }),
-      [200],
-    );
-    const rebuilt = await uploadTemplateFile(
-      context,
-      actor,
-      fixture,
-      { filename: "package.tar.gz", contentType: PACKAGE_CONTENT_TYPE },
+      "package.tar.gz",
+      GZIP,
       tarGz([
-        { path: "SKILL.md", content: "# Use this template, revised\n" },
-        { path: "design-system.md", content: "Ink on cool paper.\n" },
+        { path: "SKILL.md", content: "# Brand system, revised" },
+        { path: "design-system.md", content: "Use the revised palette." },
       ]),
     );
 
-    const response = await accept(
-      client.replacePackage({
-        headers: webHeaders(),
-        params: { templateId: published.body.id },
-        body: { packageFileId: rebuilt },
-      }),
-      [200],
-    );
-
-    // Rebuilding the guidance is not re-reversing the source, so everything
-    // the catalog shows still describes the file this was compiled from — and
-    // every message already carrying this template keeps pointing at it.
-    expect(response.body).toMatchObject({
-      id: published.body.id,
-      title: published.body.title,
-      kind: published.body.kind,
-      sourceFilename: published.body.sourceFilename,
-      pageCount: published.body.pageCount,
-      visibility: published.body.visibility,
-    });
-  });
-
-  it("returns a conflict if the owner is deleted during bundle publication", async () => {
-    const fixture = installS3Fixture(context);
-    const actor = bdd.user();
-    signIn(actor);
-    const client = templateClient();
-    const published = await accept(
-      client.publish({
-        headers: webHeaders(),
-        body: await publishBody(actor, fixture),
-      }),
-      [200],
-    );
-    const packageFileId = await uploadTemplateFile(
-      context,
-      actor,
-      fixture,
-      { filename: "replacement.tar.gz", contentType: PACKAGE_CONTENT_TYPE },
-      tarGz([
-        ...guidance("presentation"),
-        { path: "revision.txt", content: "Revised package" },
-      ]),
-    );
-    const sendS3 = context.mocks.s3.send.getMockImplementation()!;
-    let deleted = false;
-    onTestFinished(() => {
-      context.mocks.s3.send.mockImplementation(sendS3);
-    });
-    context.mocks.s3.send.mockImplementation(async (command: unknown) => {
-      const result = await sendS3(command);
-      if (!deleted && command instanceof PutObjectCommand) {
-        deleted = true;
-        // The external write has happened, but its response has not returned.
-        // Delete through the real API before repackage can update the owner.
-        await accept(
-          client.delete({
-            headers: webHeaders(),
-            params: { templateId: published.body.id },
-            body: undefined,
-          }),
-          [204],
-        );
-      }
-      return result;
-    });
-    await accept(
-      client.replacePackage({
-        headers: webHeaders(),
-        params: { templateId: published.body.id },
+    const replaced = await accept(
+      templatesApi().replacePackage({
+        headers: signIn(admin),
+        params: { templateId: published.id },
         body: { packageFileId },
       }),
-      [409],
+      [200],
     );
-    expect(deleted).toBeTruthy();
-    await accept(
-      client.replacePackage({
-        headers: webHeaders(),
-        params: { templateId: published.body.id },
-        body: { packageFileId },
-      }),
-      [404],
-    );
+
+    expect(replaced.body).toMatchObject({
+      id: published.id,
+      title: published.title,
+      kind: published.kind,
+      sourceFilename: published.sourceFilename,
+      pageCount: published.pageCount,
+      visibility: published.visibility,
+    });
   });
 
-  it("replaces the stored package rather than adding to it", async () => {
-    const actor = bdd.user();
-    runs.acceptTelemetryIngest();
-    await runs.configureRunnerGroup();
-    await runs.grantProEntitlement(actor);
-    await runs.ensurePersonalSubscriptionModel(actor, {
-      model: "claude-fable-5-1",
-    });
+  it("user-template-publish-022 rejects a deck package that is missing its design-system guidance", async () => {
     const fixture = installS3Fixture(context);
-    const sendS3 = context.mocks.s3.send.getMockImplementation()!;
-    const activeRuns = new Set<string>();
-    const ownedTemplates = new Set<string>();
-    const client = templateClient();
-    onTestFinished(async () => {
-      // Global teardown resets external mocks before this owned cleanup.
-      context.mocks.s3.send.mockImplementation(sendS3);
-      for (const runId of activeRuns) {
-        await runs.requestCancelRun(actor, runId, [200]);
-        await flushWaitUntilForTest();
-      }
-      mocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
-      for (const templateId of ownedTemplates) {
-        await accept(
-          // A fresh client uses the current, un-aborted context signal.
-          templateClient().delete({
-            headers: webHeaders(),
-            params: { templateId },
-            body: undefined,
-          }),
-          [204],
-        );
-      }
-    });
-    signIn(actor);
+    const admin = bdd.user();
+    const inputs = await uploadDeck(admin, fixture, [
+      { path: "SKILL.md", content: "# Brand system" },
+    ]);
 
-    const threeFiles = await uploadTemplateFile(
-      context,
-      actor,
-      fixture,
-      { filename: "package.tar.gz", contentType: PACKAGE_CONTENT_TYPE },
-      tarGz([
-        ...guidance("presentation"),
-        { path: "swatches.md", content: "Retired on the next pass.\n" },
-      ]),
-    );
-    const published = await accept(
-      client.publish({
-        headers: webHeaders(),
-        body: {
-          ...(await publishBody(actor, fixture)),
-          packageFileId: threeFiles,
-        },
-      }),
-      [200],
-    );
-    ownedTemplates.add(published.body.id);
-    const consumedFiles = async () => {
-      const { runId } = await chatEvents.sendChatRun(actor, {
-        prompt: "Use the selected presentation guidance",
-        model: "claude-fable-5-1",
-        template: {
-          type: "custom",
-          selection: { userTemplateId: published.body.id },
-        },
-      });
-      activeRuns.add(runId);
-      const { execution } = await chatEvents.runExecution(runId);
-      expect(execution.appendSystemPrompt).toContain("okou host screenshot");
-      expect(execution.appendSystemPrompt).toContain("previewImageUrl");
-      const bundle = execution.startupInputs.contentBundles.templates?.[0];
-      if (!bundle) {
-        throw new Error("Expected the selected template's immutable bundle");
-      }
-      expect(bundle).toMatchObject({
-        ownerKind: "user-template",
-        templateId: published.body.id,
-      });
-      const files = readTemplateGuidanceBundle(
-        fixture.readSignedObject(bundle.downloadUrl),
-        { sha256: bundle.sha256, archiveBytes: bundle.archiveBytes },
-      )
-        .map((file) => {
-          return { path: file.path, content: file.content.toString("utf8") };
-        })
-        .sort((left, right) => {
-          return left.path.localeCompare(right.path);
-        });
-      await runs.requestCancelRun(actor, runId, [200]);
-      await flushWaitUntilForTest();
-      activeRuns.delete(runId);
-      return files;
-    };
-    await expect(consumedFiles()).resolves.toStrictEqual(
-      [
-        ...guidance("presentation"),
-        { path: "swatches.md", content: "Retired on the next pass.\n" },
-      ].sort((left, right) => {
-        return left.path.localeCompare(right.path);
-      }),
-    );
-
-    const twoFiles = await uploadTemplateFile(
-      context,
-      actor,
-      fixture,
-      { filename: "package.tar.gz", contentType: PACKAGE_CONTENT_TYPE },
-      tarGz(guidance("presentation")),
-    );
-    await accept(
-      client.replacePackage({
-        headers: webHeaders(),
-        params: { templateId: published.body.id },
-        body: { packageFileId: twoFiles },
-      }),
-      [200],
-    );
-
-    // Inspect what a genuine consuming Run receives. The independent stored
-    // file_count metadata assertion was intentionally retired under #37440.
-    const replacementFiles = await consumedFiles();
-    expect(replacementFiles).toStrictEqual(
-      [...guidance("presentation")].sort((left, right) => {
-        return left.path.localeCompare(right.path);
-      }),
-    );
-  });
-
-  it("applies the row's kind to the replacement, not the caller's", async () => {
-    const fixture = installS3Fixture(context);
-    const actor = bdd.user();
-    signIn(actor);
-    const client = templateClient();
-
-    const published = await accept(
-      client.publish({
-        headers: webHeaders(),
-        body: await publishBody(actor, fixture),
-      }),
-      [200],
-    );
-    // A document's package would pass its own rules. This row is a deck, and
-    // the row is what decides: the body says nothing about kind at all.
-    const documentShaped = await uploadTemplateFile(
-      context,
-      actor,
-      fixture,
-      { filename: "package.tar.gz", contentType: PACKAGE_CONTENT_TYPE },
-      tarGz(guidance("document")),
-    );
-
-    const response = await accept(
-      client.replacePackage({
-        headers: webHeaders(),
-        params: { templateId: published.body.id },
-        body: { packageFileId: documentShaped },
+    const refused = await accept(
+      templatesApi().publish({
+        headers: signIn(admin),
+        body: { ...inputs, title: "Brand system" },
       }),
       [400],
     );
-    expect(response.body.error.message).toContain("design-system.md");
+
+    expect(refused.body.error.message).toContain("design-system.md");
   });
 
-  it("hides a colleague's template from a package replacement", async () => {
+  it("user-template-publish-023 keeps a private template out of a colleague's catalog", async () => {
     const fixture = installS3Fixture(context);
     const owner = bdd.user();
-    signIn(owner);
-    const client = templateClient();
-    const published = await accept(
-      client.publish({
-        headers: webHeaders(),
-        body: await publishBody(owner, fixture),
-      }),
-      [200],
-    );
+    const colleague = colleagueOf(owner);
+    const published = await publishDeck(owner, fixture);
+    const api = templatesApi();
 
-    // Shared with the organization first, so the colleague can genuinely read
-    // it. A private row would be refused by the visibility rule before the
-    // ownership check ran, and this test would prove nothing about ownership.
-    await accept(
-      client.update({
-        headers: webHeaders(),
-        params: { templateId: published.body.id },
-        body: { visibility: "organization" },
-      }),
-      [200],
-    );
-
-    const colleague = bdd.user({ orgId: owner.orgId });
-    signIn(colleague);
-    const rebuilt = await uploadTemplateFile(
-      context,
-      colleague,
-      fixture,
-      { filename: "package.tar.gz", contentType: PACKAGE_CONTENT_TYPE },
-      tarGz(guidance("presentation")),
-    );
-
-    // Readable, and still not theirs to rewrite. Answering "you may read this
-    // but not change it" would be a different answer from the one a template
-    // they cannot see gets, so both say missing.
-    const response = await accept(
-      client.replacePackage({
-        headers: webHeaders(),
-        params: { templateId: published.body.id },
-        body: { packageFileId: rebuilt },
-      }),
-      [404],
-    );
-    expect(response.body.error.message).toBe(
-      `User template not found: ${published.body.id}`,
-    );
-  });
-
-  it("leaves every change to the owner, not to everyone who can see it", async () => {
-    const fixture = installS3Fixture(context);
-    const owner = bdd.user();
-    signIn(owner);
-    const client = templateClient();
-    const published = await accept(
-      client.publish({
-        headers: webHeaders(),
-        body: await publishBody(owner, fixture),
-      }),
-      [200],
-    );
-    // Shared, so the colleague genuinely reads it: a private row would be
-    // refused by the visibility rule and prove nothing about ownership.
-    await accept(
-      client.update({
-        headers: webHeaders(),
-        params: { templateId: published.body.id },
-        body: { visibility: "organization" },
-      }),
-      [200],
-    );
-
-    const colleague = bdd.user({ orgId: owner.orgId });
-    signIn(colleague);
-    await accept(
-      client.get({
-        headers: webHeaders(),
-        params: { templateId: published.body.id },
-      }),
-      [200],
-    );
-
-    // Reading it is not owning it. Retracting a colleague's template from the
-    // organization, renaming it, or deleting it are all theirs to refuse.
-    await accept(
-      client.update({
-        headers: webHeaders(),
-        params: { templateId: published.body.id },
-        body: { visibility: "private" },
-      }),
-      [404],
-    );
-    await accept(
-      client.update({
-        headers: webHeaders(),
-        params: { templateId: published.body.id },
-        body: { title: "Renamed by someone else" },
-      }),
-      [404],
-    );
-    await accept(
-      client.delete({
-        headers: webHeaders(),
-        params: { templateId: published.body.id },
-        body: undefined,
-      }),
-      [404],
-    );
-
-    const stillThere = await accept(
-      client.get({
-        headers: webHeaders(),
-        params: { templateId: published.body.id },
-      }),
-      [200],
-    );
-    expect(stillThere.body).toMatchObject({
-      title: published.body.title,
-      visibility: "organization",
+    const headers = signIn(colleague);
+    await expect(api.list({ headers })).resolves.toMatchObject({
+      status: 200,
+      body: [],
     });
-  });
-
-  it("rejects a package that is missing its required guidance", async () => {
-    const fixture = installS3Fixture(context);
-    const actor = bdd.user();
-    signIn(actor);
-    const client = templateClient();
-
-    const response = await accept(
-      client.publish({
-        headers: webHeaders(),
-        body: await publishBody(
-          actor,
-          fixture,
-          tarGz([{ path: "SKILL.md", content: "# Only half\n" }]),
-        ),
-      }),
-      [400],
-    );
-    expect(response.body.error.message).toContain("design-system.md");
-  });
-
-  it("keeps a private template out of a colleague's catalog", async () => {
-    const fixture = installS3Fixture(context);
-    const owner = bdd.user();
-    signIn(owner);
-    const client = templateClient();
-    const published = await accept(
-      client.publish({
-        headers: webHeaders(),
-        body: await publishBody(owner, fixture),
-      }),
-      [200],
-    );
-
-    // A second member of the same organization.
-    const colleague = bdd.user({ orgId: owner.orgId });
-    signIn(colleague);
-
-    const listed = await accept(client.list({ headers: webHeaders() }), [200]);
-    expect(listed.body).toStrictEqual([]);
     await accept(
-      client.get({
-        headers: webHeaders(),
-        params: { templateId: published.body.id },
-      }),
+      api.get({ headers, params: { templateId: published.id } }),
       [404],
     );
   });
 
-  it("shows an organization template to a colleague without letting them manage it", async () => {
+  it("user-template-publish-024 shows an organization template to a colleague who cannot manage it", async () => {
     const fixture = installS3Fixture(context);
     const owner = bdd.user();
-    signIn(owner);
-    const client = templateClient();
-    const published = await accept(
-      client.publish({
-        headers: webHeaders(),
-        body: await publishBody(owner, fixture),
-      }),
-      [200],
-    );
-    await accept(
-      client.update({
-        headers: webHeaders(),
-        params: { templateId: published.body.id },
-        body: { visibility: "organization" },
-      }),
-      [200],
-    );
+    const colleague = colleagueOf(owner);
+    const published = await publishDeck(owner, fixture);
+    await shareWithOrganization(owner, published.id);
+    const params = { templateId: published.id };
+    const api = templatesApi();
 
-    const colleague = bdd.user({ orgId: owner.orgId });
-    signIn(colleague);
-
-    const listed = await accept(client.list({ headers: webHeaders() }), [200]);
-    expect(listed.body).toHaveLength(1);
-    // Readable, attributed to its owner, and not theirs to change.
-    expect(listed.body[0]).toMatchObject({
-      id: published.body.id,
-      visibility: "organization",
-      ownerUserId: owner.userId,
-      canManage: false,
-    });
-    // Management is owner-only, and a non-owner is told nothing more than that
-    // the template is not theirs.
+    const headers = signIn(colleague);
+    const list = await accept(api.list({ headers }), [200]);
+    expect(list.body).toMatchObject([
+      {
+        id: published.id,
+        visibility: "organization",
+        ownerUserId: owner.userId,
+        canManage: false,
+      },
+    ]);
     await accept(
-      client.update({
-        headers: webHeaders(),
-        params: { templateId: published.body.id },
+      api.update({
+        headers,
+        params,
         body: { title: "Renamed by a colleague" },
       }),
       [404],
     );
-    await accept(
-      client.delete({
-        headers: webHeaders(),
-        params: { templateId: published.body.id },
-      }),
-      [404],
-    );
+    await accept(api.delete({ headers, params }), [404]);
   });
 
-  it("names a colleague's template after the person, not the account id", async () => {
+  it("user-template-publish-025 names a colleague's template after its owner rather than the account id", async () => {
     const fixture = installS3Fixture(context);
     const owner = bdd.user();
-    signIn(owner);
-    const client = templateClient();
-    const published = await accept(
-      client.publish({
-        headers: webHeaders(),
-        body: await publishBody(owner, fixture),
-      }),
-      [200],
-    );
-    await accept(
-      client.update({
-        headers: webHeaders(),
-        params: { templateId: published.body.id },
-        body: { visibility: "organization" },
-      }),
-      [200],
-    );
-
-    const colleague = bdd.user({ orgId: owner.orgId });
-    signIn(colleague);
-    // Two members with different names, so the answer has to be the owner's
-    // rather than whichever profile the directory happened to return.
-    mockClerkUsers(context, [
-      clerkProfile(owner.userId, "Mina", "Okafor"),
-      clerkProfile(colleague.userId, "Sam", "Reader"),
+    const colleague = colleagueOf(owner);
+    userDirectory([
+      { user: owner, firstName: "Mina", lastName: "Okafor" },
+      { user: colleague, firstName: "Sam", lastName: "Reader" },
     ]);
+    const published = await publishDeck(owner, fixture);
+    await shareWithOrganization(owner, published.id);
+    const api = templatesApi();
 
-    const listed = await accept(client.list({ headers: webHeaders() }), [200]);
-    expect(listed.body[0]).toMatchObject({
-      ownerUserId: owner.userId,
-      ownerDisplayName: "Mina Okafor",
-    });
+    const headers = signIn(colleague);
+    const list = await accept(api.list({ headers }), [200]);
+    expect(list.body).toMatchObject([
+      { ownerUserId: owner.userId, ownerDisplayName: "Mina Okafor" },
+    ]);
     const detail = await accept(
-      client.get({
-        headers: webHeaders(),
-        params: { templateId: published.body.id },
-      }),
+      api.get({ headers, params: { templateId: published.id } }),
       [200],
     );
-    expect(detail.body).toMatchObject({ ownerDisplayName: "Mina Okafor" });
-  });
-
-  it("still lists a template whose owner the provider cannot name", async () => {
-    const fixture = installS3Fixture(context);
-    const owner = bdd.user();
-    signIn(owner);
-    const client = templateClient();
-    const published = await accept(
-      client.publish({
-        headers: webHeaders(),
-        body: await publishBody(owner, fixture),
-      }),
-      [200],
-    );
-    await accept(
-      client.update({
-        headers: webHeaders(),
-        params: { templateId: published.body.id },
-        body: { visibility: "organization" },
-      }),
-      [200],
-    );
-
-    const colleague = bdd.user({ orgId: owner.orgId });
-    signIn(colleague);
-    // Who owns a template decides nothing about who may read it, so a provider
-    // that cannot answer costs the name and not the row.
-    context.mocks.clerk.users.getUserList.mockRejectedValue(
-      new ClerkRateLimitError("Clerk is rate limiting reads", 30),
-    );
-
-    const listed = await accept(client.list({ headers: webHeaders() }), [200]);
-    expect(listed.body).toHaveLength(1);
-    expect(listed.body[0]).toMatchObject({
-      id: published.body.id,
-      ownerUserId: owner.userId,
-      ownerDisplayName: null,
-      canManage: false,
-    });
+    expect(detail.body.ownerDisplayName).toBe("Mina Okafor");
   });
 });

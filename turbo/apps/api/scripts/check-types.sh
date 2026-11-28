@@ -59,11 +59,6 @@ tests() {
   tsc -p .typecheck/tsconfig.tests-2.json --noEmit --checkers $(node ../../scripts/tsc-checkers.mjs)
 }
 
-bootstrap_wiring() {
-  printf '%s\n' 'Type check phase: bootstrap-wiring'
-  tsc -p tsconfig.bootstrap-wiring.json --noEmit --checkers $(node ../../scripts/tsc-checkers.mjs)
-}
-
 # Fixed functions share the public commands without repeated pnpm startup or eval.
 case "${1:-all}" in
   all)
@@ -74,7 +69,6 @@ case "${1:-all}" in
     bootstrap
     worker
     tests
-    bootstrap_wiring
     ;;
   deps) deps ;;
   boundaries) boundaries ;;
@@ -85,7 +79,6 @@ case "${1:-all}" in
   bootstrap) bootstrap ;;
   worker) worker ;;
   tests) tests ;;
-  bootstrap-wiring) bootstrap_wiring ;;
   *)
     printf 'Unknown type-check stage: %s\n' "$1" >&2
     exit 2

@@ -1,249 +1,75 @@
-import { mcpGetChatThreadOutputSchema } from "@okouai/api-contracts/contracts/mcp-chat-snapshots";
-import { mcpServerContract } from "@okouai/api-contracts/contracts/mcp-server";
+import { randomUUID } from "node:crypto";
 import { modelCatalogContract } from "@okouai/api-contracts/contracts/model-catalog";
-import { userModelPreferenceContract } from "@okouai/api-contracts/contracts/user-model-preference";
-import { http, HttpResponse } from "msw";
-import { generateKeyPairSync, randomUUID, sign } from "node:crypto";
-import { object, unknown as zUnknown } from "zod";
+import { describe, expect, it } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { mockEnv } from "../../../lib/env";
-import { mockNow, now } from "../../../lib/time";
-import { server } from "../../../mocks/server";
-import { flushWaitUntilForTest } from "../../context/wait-until";
-import { mcpServerRoutes } from "../mcp-server";
+import { TEST_WITH_SINGLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE } from "../../../__tests__/test-timeouts";
 import { modelCatalogRoutes } from "../model-catalog";
-import { userModelPreferenceRoutes } from "../user-model-preference";
-import type { ApiTestUser } from "./helpers/api-bdd";
-import { createAuthOrgBddApi } from "./helpers/api-bdd-auth-org";
-import { createChatEventsFixture } from "./helpers/chat-events-fixture";
-import { createRunExecutionCredentials } from "./helpers/run-execution-credentials";
+import { createBddApi } from "./helpers/api-bdd";
+import { mockClaudeCodeTokenEndpoint } from "./helpers/api-bdd-auth-device";
+import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
+import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createRouteMocks } from "./helpers/route-test";
+import { createRunExecutionCredentials } from "./helpers/run-execution-credentials";
 
 const context = testContext();
-const credentials = createRunExecutionCredentials(context);
-const mocks = createRouteMocks(context);
-const authOrgApi = createAuthOrgBddApi(context);
-const {
-  api,
-  chat,
-  chatCallbacks,
-  misc,
-  entitledNativeChatActor,
-  sendChatRun,
-  runExecution,
-  waitForThreadMessages,
-  cancelChatRun,
-  configureSubscriptionPiModel,
-} = createChatEventsFixture(context);
-
-const MCP_RESOURCE = "https://api.mcp.example.test/mcp";
-const MCP_ISSUER = "https://clerk.mcp.example.test";
-const MCP_PROTOCOL_VERSION = "2026-07-28";
-
-/** A signed MCP access token for an existing chat actor. */
-function mcpAccessToken(actor: ApiTestUser): string {
-  const orgId = requireOrgId(actor);
-  mockEnv("MCP_RESOURCE_URL", MCP_RESOURCE);
-  mockEnv("MCP_OAUTH_ISSUER", MCP_ISSUER);
-  const keys = generateKeyPairSync("rsa", { modulusLength: 2048 });
-  const kid = randomUUID();
-  server.use(
-    http.get("https://api.clerk.com/v1/jwks", () => {
-      return HttpResponse.json({
-        keys: [
-          {
-            ...keys.publicKey.export({ format: "jwk" }),
-            kid,
-            alg: "RS256",
-            use: "sig",
-          },
-        ],
-      });
-    }),
-  );
-  context.mocks.clerk.users.getOrganizationMembershipList.mockResolvedValue({
-    data: [
-      { id: randomUUID(), role: "org:member", organization: { id: orgId } },
-    ],
-    totalCount: 1,
-  });
-  const seconds = Math.floor(now() / 1000);
-  const encode = (value: Record<string, unknown>) => {
-    return Buffer.from(JSON.stringify(value)).toString("base64url");
-  };
-  const input = `${encode({ alg: "RS256", kid, typ: "at+jwt" })}.${encode({
-    iss: MCP_ISSUER,
-    aud: MCP_RESOURCE,
-    sub: actor.userId,
-    org_id: orgId,
-    client_id: "mcp_test_client",
-    scope: "user:org:read okou:chat:read",
-    iat: seconds,
-    nbf: seconds - 1,
-    exp: seconds + 3600,
-  })}`;
-  return `${input}.${sign("RSA-SHA256", Buffer.from(input), keys.privateKey).toString("base64url")}`;
-}
-
-/** The persisted creation event returned by the conversation-list aggregation. */
-async function mcpThread(actor: ApiTestUser, threadId: string) {
-  const token = mcpAccessToken(actor);
-  const response = await accept(
-    setupApp({ context, routes: mcpServerRoutes })(mcpServerContract).request({
-      extraHeaders: {
-        authorization: `Bearer ${token}`,
-        accept: "application/json, text/event-stream",
-        "MCP-Protocol-Version": MCP_PROTOCOL_VERSION,
-        "MCP-Method": "tools/call",
-        "MCP-Name": "get_chat_thread_list",
-      },
-      body: {
-        jsonrpc: "2.0",
-        id: 1,
-        method: "tools/call",
-        params: {
-          name: "get_chat_thread_list",
-          arguments: {},
-          _meta: {
-            "io.modelcontextprotocol/protocolVersion": MCP_PROTOCOL_VERSION,
-            "io.modelcontextprotocol/clientCapabilities": {},
-            "io.modelcontextprotocol/clientInfo": {
-              name: "okou-test",
-              version: "1",
-            },
-          },
-        },
-      },
-    }),
-    [200],
-  );
-  const body: unknown = response.body;
-  const frame =
-    typeof body === "string"
-      ? body.split("\n").find((line) => {
-          return line.startsWith("data: ");
-        })
-      : undefined;
-  const rpc: unknown =
-    frame === undefined ? body : JSON.parse(frame.slice("data: ".length));
-  const { result } = object({
-    result: object({ structuredContent: zUnknown() }),
-  }).parse(rpc);
-  const created = mcpGetChatThreadOutputSchema
-    .parse(result.structuredContent)
-    .events.find((event) => {
-      return event.threadId === threadId && event.kind === "created";
-    });
-  if (!created) {
-    throw new Error("Expected the thread's creation event");
-  }
-  return created;
-}
-
-function requireOrgId(actor: ApiTestUser): string {
-  if (!actor.orgId) {
-    throw new Error("Expected an organization-scoped actor");
-  }
-  return actor.orgId;
-}
-
-/** The thread snapshot and its one model event name the final successor. */
-async function expectThreadRewrittenTo(
-  actor: ApiTestUser,
-  threadId: string,
-  successor: string,
-): Promise<void> {
-  await expect(chat.readThreadMetadata(actor, threadId)).resolves.toMatchObject(
-    { selectedModel: successor },
-  );
-  const threadEvents = await chat.requestThreadEvents(actor, {}, [200]);
-  if (threadEvents.status !== 200) {
-    throw new Error("Expected chat thread events to load");
-  }
-  expect(
-    threadEvents.body.events.filter((event) => {
-      return (
-        event.chatThreadId === threadId &&
-        event.kind === "model_selection_updated"
-      );
-    }),
-  ).toStrictEqual([expect.objectContaining({ selectedModel: successor })]);
-}
-
-/** The member's stored default model selection, read through its endpoint. */
-async function memberModelPreference(actor: ApiTestUser) {
-  const response = await accept(
-    setupApp({ context, routes: userModelPreferenceRoutes })(
-      userModelPreferenceContract,
-    ).get({ headers: authOrgApi.authenticate(actor) }),
-    [200],
-  );
-  return response.body;
-}
-
-/** The thread's public events of one kind, in stream order. */
-async function threadEventsOfKind(
-  actor: ApiTestUser,
-  threadId: string,
-  kind: "model_selection_updated" | "service_tier_updated",
-) {
-  const threadEvents = await chat.requestThreadEvents(actor, {}, [200]);
-  if (threadEvents.status !== 200) {
-    throw new Error("Expected chat thread events to load");
-  }
-  return threadEvents.body.events.filter((event) => {
-    return event.chatThreadId === threadId && event.kind === kind;
-  });
-}
-
-function apiClient() {
-  return setupApp({ context, routes: modelCatalogRoutes })(
-    modelCatalogContract,
-  );
-}
+const app = setupApp({ context, routes: modelCatalogRoutes });
+const bdd = createBddApi(context);
+const credentials = createRunExecutionCredentials(context, {
+  preferences: false,
+});
+const headers = Object.freeze({ authorization: "Bearer clerk-session" });
 
 describe("GET /api/model-catalog", () => {
-  it("returns only fixed Auto without a personal subscription", async () => {
-    const actor = authOrgApi.user();
-    mocks.clerk.session(actor.userId, actor.orgId ?? null);
+  it("model-catalog-001 returns only fixed Auto without a personal subscription", async () => {
+    const userId = `user_${randomUUID()}`;
+    const orgId = `org_${randomUUID()}`;
+    createRouteMocks(context).clerk.session(userId, orgId);
+
     const response = await accept(
-      setupApp({ context, routes: modelCatalogRoutes })(
-        modelCatalogContract,
-      ).get({ headers: { authorization: "Bearer clerk-session" } }),
+      app(modelCatalogContract).get({ headers }),
       [200],
     );
+
     expect(response.body.systemDefaultModel).toBe("auto");
     expect(response.body.models).toContainEqual(
-      expect.objectContaining({ model: "auto", displayName: "Auto" }),
-    );
-    expect(
-      response.body.routes.filter((route) => {
-        return route.providerType === "built-in";
-      }),
-    ).toStrictEqual([
       expect.objectContaining({
         model: "auto",
-        providerType: "built-in",
-        concreteProviderType: "openrouter-codex",
-        upstreamModel: "@preset/okou-1-0",
+        displayName: "Auto",
       }),
-    ]);
+    );
+    const builtInRoutes = response.body.routes.filter((route) => {
+      return route.providerType === "built-in";
+    });
+    expect(builtInRoutes).toHaveLength(1);
+    expect(builtInRoutes[0]).toMatchObject({
+      model: "auto",
+      providerType: "built-in",
+      concreteProviderType: "openrouter-codex",
+      upstreamModel: "@preset/okou-1-0",
+    });
   });
 
-  it.each(["okou", "sandbox"] as const)(
-    "allows authenticated %s tokens to read the catalog",
-    async (scope) => {
-      const actor = authOrgApi.user({ orgRole: "org:member" });
-      authOrgApi.mockClerkOrg(actor);
-      const executionCredentials = await credentials.forActor(actor);
-      const token =
-        scope === "okou"
-          ? executionCredentials.token
-          : executionCredentials.sandboxToken;
+  it(
+    "model-catalog-002 allows authenticated okou tokens to read the catalog",
+    { timeout: TEST_WITH_SINGLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const member = bdd.user({ orgRole: "org:member" });
+      const token = await credentials.okouToken(member);
+
+      context.mocks.clerk.authenticateRequest.mockResolvedValue({
+        isAuthenticated: false,
+      });
+      context.mocks.clerk.users.getOrganizationMembershipList.mockResolvedValue(
+        {
+          data: [{ role: "org:member", organization: { id: member.orgId } }],
+        },
+      );
 
       const response = await accept(
-        apiClient().get({ headers: { authorization: `Bearer ${token}` } }),
+        app(modelCatalogContract).get({
+          headers: { authorization: `Bearer ${token}` },
+        }),
         [200],
       );
 
@@ -257,245 +83,69 @@ describe("GET /api/model-catalog", () => {
     },
   );
 
-  it("rejects an expired agent token", async () => {
-    const actor = authOrgApi.user({ orgRole: "org:member" });
-    authOrgApi.mockClerkOrg(actor);
-    const token = await credentials.okouToken(actor);
-    mockNow(now() + 2 * 60 * 60 * 1000 + 1000);
+  it(
+    "model-catalog-005 rejects an agent token whose user is no longer an organization member",
+    { timeout: TEST_WITH_SINGLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const admin = bdd.user({ orgRole: "org:admin" });
+      const member = bdd.user({ orgId: admin.orgId, orgRole: "org:member" });
+      const token = await credentials.okouToken(member);
 
-    const response = await apiClient().get({
-      headers: { authorization: `Bearer ${token}` },
-    });
+      await credentials.removeMember(member, admin);
+      context.mocks.clerk.authenticateRequest.mockResolvedValue({
+        isAuthenticated: false,
+      });
 
-    expect(response.status).toBe(401);
-  });
+      const response = await accept(
+        app(modelCatalogContract).get({
+          headers: { authorization: `Bearer ${token}` },
+        }),
+        [401],
+      );
 
-  it("rejects an agent token whose user is no longer an organization member", async () => {
-    const actor = authOrgApi.user({ orgRole: "org:member" });
-    const token = await credentials.okouToken(actor);
-    await credentials.removeMember(actor);
-
-    const response = await apiClient().get({
-      headers: { authorization: `Bearer ${token}` },
-    });
-
-    expect(response.status).toBe(401);
-  });
-
-  it("requires an authenticated organization session", async () => {
-    const unauthenticated = await apiClient().get({ headers: {} });
-    expect(unauthenticated.status).toBe(401);
-
-    const actor = authOrgApi.user();
-    mocks.clerk.session(actor.userId, null);
-    const withoutOrganization = await apiClient().get({
-      headers: { authorization: "Bearer clerk-session" },
-    });
-    expect(withoutOrganization.status).toBe(401);
-  });
+      expect(response.status).toBe(401);
+    },
+  );
 });
 
 describe("public selections of replaced models", () => {
-  it("normalizes a requested retired model when creating a thread and runs its successor", async () => {
-    const { actor } = await entitledNativeChatActor();
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
-    const thread = await chat.createThread(actor, {
-      model: "claude-fable-5",
-    });
+  it("model-catalog-008 rejects an explicitly requested replacement whose subscription was never connected", async () => {
+    const actor = bdd.user();
+    const runs = createRunsApi(context);
+    const chat = createChatFilesBddApi(context);
+    mockClaudeCodeTokenEndpoint();
+    await Promise.all([
+      runs.grantProEntitlement(actor),
+      runs.createPersonalModelProvider(actor, {
+        type: "claude-code-oauth-token",
+        secret: `claude-token-${randomUUID()}`,
+      }),
+    ]);
 
-    const projected = await mcpThread(actor, thread.id);
-    expect(projected.selectedModel).toBe("claude-fable-5-1");
-
-    const run = await sendChatRun(actor, {
-      threadId: thread.id,
-      prompt: "continue the legacy Fable thread",
-    });
-    const read = await api.readRun(actor, run.runId);
-    expect(read.source.model).toBe("claude-fable-5-1");
-    expect(read.source.providerType).toBe("claude-code-oauth-token");
-    await expect(
-      chat.readThreadMetadata(actor, thread.id),
-    ).resolves.toMatchObject({
-      selectedModel: "claude-fable-5-1",
-    });
-    expect((await mcpThread(actor, thread.id)).selectedModel).toBe(
-      "claude-fable-5-1",
-    );
-    await cancelChatRun(actor, run.runId);
-  }, 90_000);
-
-  it("rejects an explicitly requested replacement whose subscription was never connected", async () => {
-    const { actor } = await entitledNativeChatActor();
     const thread = await chat.createThread(actor, { model: null });
-    const before = await chat.listThreadEvents(actor, thread.id);
-    const sent = await chat.requestSendEvent(
+    const eventsBefore = await chat.listThreadEvents(actor, thread.id);
+
+    const rejected = await chat.requestSendEvent(
       actor,
       {
         threadId: thread.id,
-        prompt: "request a retired Codex model without a Codex account",
+        prompt: "Use retired GPT 5.5",
         model: "gpt-5.5",
-        clientEventId: randomUUID(),
       },
       [400],
     );
-    expect(sent.body).toMatchObject({
+    const [eventsAfter, metadata] = await Promise.all([
+      chat.listThreadEvents(actor, thread.id),
+      chat.readThreadMetadata(actor, thread.id),
+    ]);
+
+    expect(rejected.body).toMatchObject({
       error: {
         message:
           "GPT 5.5 was replaced by GPT 6 Luna, which requires a Codex subscription. Select Auto or connect your Codex subscription.",
       },
     });
-    await flushWaitUntilForTest();
-    expect(
-      (await chat.listThreadEvents(actor, thread.id)).events,
-    ).toStrictEqual(before.events);
-    await expect(
-      chat.readThreadMetadata(actor, thread.id),
-    ).resolves.toMatchObject({ selectedModel: "auto" });
-  }, 90_000);
-
-  it("accepts a pinned model whose retained subscription was disconnected and reports the reconnect error", async () => {
-    const { actor } = await entitledNativeChatActor();
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
-    const active = await sendChatRun(actor, {
-      prompt: "keep the subscription account in use",
-      model: "claude-fable-5-1",
-    });
-    const activeExecution = await runExecution(active.runId);
-    const thread = await chat.createThread(actor, {
-      model: "claude-fable-5-1",
-    });
-    // The running run retains the disconnected account.
-    await misc.deletePersonalModelProvider(
-      actor,
-      "claude-code-oauth-token",
-      [204],
-    );
-
-    const clientEventId = randomUUID();
-    await chat.requestSendEvent(
-      actor,
-      {
-        threadId: thread.id,
-        prompt: "continue through my disconnected subscription",
-        clientEventId,
-      },
-      [201],
-    );
-    await expect(
-      chat.readThreadMetadata(actor, thread.id),
-    ).resolves.toMatchObject({
-      selectedModel: "claude-fable-5-1",
-    });
-    await cancelChatRun(actor, active.runId, activeExecution.sandboxHeaders);
-    await flushWaitUntilForTest();
-    const page = await waitForThreadMessages(actor, thread.id, (events) => {
-      return events.some((event) => {
-        return event.eventType === "output.error";
-      });
-    });
-    expect(page.events).toContainEqual(
-      expect.objectContaining({
-        eventType: "input.rejected",
-        revokesEventId: clientEventId,
-        error: "conflict",
-      }),
-    );
-    expect(page.events).toContainEqual(
-      expect.objectContaining({
-        eventType: "output.error",
-        error: "conflict",
-        content:
-          "The selected subscription account is unavailable. Reconnect it before starting another run.",
-      }),
-    );
-  }, 90_000);
-
-  it("retains the persisted model in raw lifecycle events after its provider is disconnected", async () => {
-    const { actor } = await entitledNativeChatActor();
-    const thread = await chat.createThread(actor, {
-      model: "claude-fable-5-1",
-    });
-    await misc.deletePersonalModelProvider(
-      actor,
-      "claude-code-oauth-token",
-      [204],
-    );
-    const projected = await mcpThread(actor, thread.id);
-    expect(projected.selectedModel).toBe("claude-fable-5-1");
-  }, 90_000);
-
-  it("stores an explicitly requested replaced model as its successor on the thread and member preference", async () => {
-    const { actor } = await entitledNativeChatActor();
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
-    const thread = await chat.createThread(actor, {
-      model: null,
-    });
-
-    const run = await sendChatRun(actor, {
-      threadId: thread.id,
-      prompt: "continue on the retired Fable name",
-      model: "claude-fable-5",
-    });
-
-    const execution = await runExecution(run.runId);
-    expect(execution.execution.modelUsageProvider).toBe("claude-fable-5-1");
-    expect((await api.readRun(actor, run.runId)).source.model).toBe(
-      "claude-fable-5-1",
-    );
-    await expectThreadRewrittenTo(actor, thread.id, "claude-fable-5-1");
-    await expect(memberModelPreference(actor)).resolves.toMatchObject({
-      selectedModel: "claude-fable-5-1",
-    });
-    await cancelChatRun(actor, run.runId, execution.sandboxHeaders);
-  }, 90_000);
-
-  it("clears Fast when an explicitly requested replacement does not offer it", async () => {
-    const { actor } = await entitledNativeChatActor();
-    await configureSubscriptionPiModel(actor);
-    const thread = await chat.createThread(actor, {
-      model: "gpt-6-astra",
-    });
-    await chat.updateThreadModelSelection(actor, thread.id, "gpt-6-astra", {
-      codexServiceTier: "fast",
-    });
-    const tierEvents = await threadEventsOfKind(
-      actor,
-      thread.id,
-      "service_tier_updated",
-    );
-    const modelEvents = await threadEventsOfKind(
-      actor,
-      thread.id,
-      "model_selection_updated",
-    );
-
-    const run = await sendChatRun(actor, {
-      threadId: thread.id,
-      prompt: "continue without Fast",
-      model: "claude-fable-5",
-    });
-
-    expect((await api.readRun(actor, run.runId)).source.model).toBe(
-      "claude-fable-5-1",
-    );
-    await expect(
-      chat.readThreadMetadata(actor, thread.id),
-    ).resolves.toMatchObject({
-      selectedModel: "claude-fable-5-1",
-      serviceTier: null,
-    });
-    await expect(
-      threadEventsOfKind(actor, thread.id, "model_selection_updated"),
-    ).resolves.toStrictEqual([
-      ...modelEvents,
-      expect.objectContaining({ selectedModel: "claude-fable-5-1" }),
-    ]);
-    await expect(
-      threadEventsOfKind(actor, thread.id, "service_tier_updated"),
-    ).resolves.toStrictEqual([
-      ...tierEvents,
-      expect.objectContaining({ serviceTier: null }),
-    ]);
-    await cancelChatRun(actor, run.runId);
-  }, 90_000);
+    expect(eventsAfter).toStrictEqual(eventsBefore);
+    expect(metadata.selectedModel).toBe("auto");
+  });
 });

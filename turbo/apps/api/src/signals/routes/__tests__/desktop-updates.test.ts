@@ -1,42 +1,40 @@
-import { describe, expect, it } from "vitest";
+import { desktopUpdatesContract } from "@okouai/api-contracts/contracts/desktop-updates";
+import { expect, test } from "vitest";
+
 import {
+  accept,
   desktopCompatibility,
   testContext,
 } from "../../../__tests__/test-context";
-
-import { createDesktopUpdatePublicApi } from "./helpers/desktop-update-public";
+import { setupApp } from "../../../__tests__/test-helpers";
+import { desktopUpdateRoutes } from "../desktop-updates";
 
 const context = testContext();
-const { appRequest } = createDesktopUpdatePublicApi(context);
-const shippedDesktopMinimumVersion =
-  desktopCompatibility.minimumSupportedVersion;
 
-// Default Vitest file isolation gives this scenario a fresh module cache.
-describe("desktop update routes", () => {
-  it("exposes the source-controlled floor without authentication and supports disabling it", async () => {
-    desktopCompatibility.minimumSupportedVersion = shippedDesktopMinimumVersion;
-    const shipped = await appRequest("/api/desktop/compatibility");
-    expect(shipped.status).toBe(200);
-    expect(shipped.headers.get("cache-control")).toBe("no-store");
-    await expect(shipped.json()).resolves.toStrictEqual({
-      minimumSupportedVersion: "0.54.0",
-    });
-    desktopCompatibility.minimumSupportedVersion = null;
-    const disabled = await appRequest("/api/desktop/compatibility");
-    expect(disabled.status).toBe(200);
-    expect(disabled.headers.get("cache-control")).toBe("no-store");
-    await expect(disabled.json()).resolves.toStrictEqual({
-      minimumSupportedVersion: null,
-    });
-    desktopCompatibility.minimumSupportedVersion = "0.51.0";
-    const enabled = await appRequest("/api/desktop/compatibility");
-    await expect(enabled.json()).resolves.toStrictEqual({
-      minimumSupportedVersion: "0.51.0",
-    });
-    desktopCompatibility.minimumSupportedVersion = null;
-    const restored = await appRequest("/api/desktop/compatibility");
-    await expect(restored.json()).resolves.toStrictEqual({
-      minimumSupportedVersion: null,
-    });
-  });
+test("desktop-updates-001 exposes the Desktop version floor without signing in and reflects disabling it", async () => {
+  const updates = setupApp({ context, routes: desktopUpdateRoutes })(
+    desktopUpdatesContract,
+  );
+  const readFloor = () => {
+    return accept(updates.compatibility(), [200]);
+  };
+
+  desktopCompatibility.minimumSupportedVersion = "0.54.0";
+  const committed = await readFloor();
+  desktopCompatibility.minimumSupportedVersion = null;
+  const disabled = await readFloor();
+  desktopCompatibility.minimumSupportedVersion = "0.51.0";
+  const lowered = await readFloor();
+  desktopCompatibility.minimumSupportedVersion = null;
+  const disabledAgain = await readFloor();
+
+  expect(
+    [committed, disabled, lowered, disabledAgain].map((response) => {
+      return response.body.minimumSupportedVersion;
+    }),
+  ).toStrictEqual(["0.54.0", null, "0.51.0", null]);
+  for (const response of [committed, disabled]) {
+    expect(response.status).toBe(200);
+    expect(response.headers.get("cache-control")).toBe("no-store");
+  }
 });

@@ -1,221 +1,193 @@
 import { randomUUID } from "node:crypto";
-import { chatEventFromRow } from "@okouai/api-contracts/contracts/chat-event-row-projection";
+
 import { chatEventRowSchema } from "@okouai/api-contracts/contracts/chat-event-rows";
-import {
-  chatThreadEventsContract,
-  type UserMessageDocument,
-} from "@okouai/api-contracts/contracts/chat-threads";
+import { chatThreadEventsContract } from "@okouai/api-contracts/contracts/chat-threads";
 import { describe, expect, it } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
+import { flushWaitUntilForTest } from "../../context/wait-until";
 import { chatThreadRoutes } from "../chat-threads";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createRouteMocks } from "./helpers/route-test";
-import { flushWaitUntilForTest } from "../../context/wait-until";
 
 const context = testContext();
 const bdd = createBddApi(context);
 const chat = createChatFilesBddApi(context);
+const headers = Object.freeze({ authorization: "Bearer clerk-session" });
 
-function authenticate(actor: ApiTestUser) {
+function events(actor: ApiTestUser) {
   createRouteMocks(context).clerk.session(
     actor.userId,
     actor.orgId,
     actor.orgRole,
   );
-  return {
-    authorization: "Bearer clerk-session",
-  };
-}
-
-function eventsClient() {
   return setupApp({ context, routes: chatThreadRoutes })(
     chatThreadEventsContract,
   );
 }
 
-async function sendNoCreditMessage(
+async function sendAuto(
   actor: ApiTestUser,
-  body: {
-    readonly threadId?: string;
-    readonly prompt: string;
-    readonly userMessage?: UserMessageDocument;
-  },
+  body: Parameters<typeof chat.requestSendEvent>[1],
 ): Promise<string> {
-  // Snapshot input needs a no-credit Auto message, not a personal subscription route.
   const sent = await chat.requestSendEvent(actor, body, [201]);
   if (sent.status !== 201) {
-    throw new Error("Expected the no-credit send to be accepted");
+    throw new Error("Expected the prompt to be accepted");
   }
-  // The background pick rejects the input; let it settle before reading.
-  await flushWaitUntilForTest();
   return sent.body.threadId;
 }
 
+/**
+ * An owner's thread with two accepted Auto prompts, the first carrying a
+ * feedback part; the same user also belongs to another workspace. Background
+ * work of both sends has settled so every read sees the same rows.
+ */
+async function threadWithFeedbackPrompts() {
+  const owner = bdd.user();
+  const elsewhere = bdd.user({ userId: owner.userId });
+  const feedback = {
+    type: "feedback" as const,
+    quote: "Earlier",
+    note: [{ type: "text" as const, text: "Be more concise" }],
+    eventId: randomUUID(),
+    range: { start: 0, end: 7 },
+  };
+  const threadId = await sendAuto(owner, {
+    prompt: "first prompt",
+    model: null,
+    userMessage: {
+      version: 1,
+      parts: [{ type: "text", text: "first prompt" }, feedback],
+    },
+  });
+  await sendAuto(owner, { prompt: "second prompt", threadId, model: null });
+  await flushWaitUntilForTest();
+  return { owner, elsewhere, feedback, threadId };
+}
+
+async function coldStartRows(owner: ApiTestUser, threadId: string) {
+  const cold = await accept(
+    events(owner).rows({
+      headers,
+      params: { threadId },
+      query: { sinceSeqId: 0 },
+    }),
+    [200],
+  );
+  const rows = cold.body.rows;
+  const [first, second] = rows;
+  if (!first || !second) {
+    throw new Error("Expected at least two raw rows");
+  }
+  return { rows, first, second };
+}
+
 describe("chat event snapshot read endpoints", () => {
-  it("serves current Raw Event rows from cold-start and paired cursors", async () => {
-    const owner = bdd.user({ orgId: `org_${randomUUID()}` });
+  it("chat-event-snapshot-001 (1/4) serves cold-start rows with the canonical feedback source", async () => {
+    const { owner, feedback, threadId } = await threadWithFeedbackPrompts();
 
-    const marker = `row-parity-${randomUUID()}`;
-    const threadId = await sendNoCreditMessage(owner, {
-      prompt: `${marker} first`,
-      userMessage: {
-        version: 1,
-        parts: [
-          { type: "text", text: `${marker} first` },
-          {
-            type: "feedback",
-            quote: "Raw feedback quote",
-            note: [{ type: "text", text: "Keep the Raw Event location." }],
-            eventId: "raw-feedback-source-event",
-            range: { start: 2, end: 8 },
-          },
-        ],
-      },
-    });
-    await sendNoCreditMessage(owner, {
-      threadId,
-      prompt: `${marker} second`,
-    });
+    const { first } = await coldStartRows(owner, threadId);
 
-    const fromStart = await accept(
-      eventsClient().rows({
-        headers: authenticate(owner),
-        params: { threadId },
-        query: { sinceSeqId: 0 },
-      }),
-      [200],
-    );
-    const otherWorkspace = bdd.user({
-      userId: owner.userId,
-      orgId: `org_${randomUUID()}`,
-    });
-    const deniedRows = await accept(
-      eventsClient().rows({
-        headers: authenticate(otherWorkspace),
-        params: { threadId },
-        query: { sinceSeqId: 0 },
-      }),
-      [404],
-    );
-    const deniedSnapshot = await accept(
-      eventsClient().snapshot({
-        headers: authenticate(otherWorkspace),
-        params: { threadId },
-      }),
-      [404],
-    );
-    expect(deniedRows.body.error.code).toBe("NOT_FOUND");
-    expect(deniedSnapshot.body.error.code).toBe("NOT_FOUND");
-
-    const firstRow = fromStart.body.rows[0];
-    if (firstRow === undefined) {
-      throw new Error("Expected seeded chat events");
-    }
-    const firstSeqId = firstRow.seqId;
-
-    const canonicalInput = fromStart.body.rows
-      .map((row) => {
-        return chatEventFromRow(row);
-      })
-      .find((event) => {
-        return event?.eventType === "input.prompt";
-      });
-    if (canonicalInput?.eventType !== "input.prompt") {
-      throw new Error("Expected the canonical feedback input");
-    }
-    expect(
-      canonicalInput.userMessage.parts.find((part) => {
-        return part.type === "feedback";
-      }),
-    ).toMatchObject({
-      type: "feedback",
-      eventId: "raw-feedback-source-event",
-      range: { start: 2, end: 8 },
-    });
-
-    const rows = await accept(
-      eventsClient().rows({
-        headers: authenticate(owner),
-        params: { threadId },
-        query: {
-          sinceSeqId: firstSeqId,
-          sinceEventId: firstRow.id,
-        },
-      }),
-      [200],
-    );
-    expect(rows.body.cursor).toStrictEqual({
-      lastEventId: rows.body.rows.at(-1)?.id,
-      lastSeqId: rows.body.rows.at(-1)?.seqId,
-    });
-    for (const row of rows.body.rows) {
-      chatEventRowSchema.parse(row);
-      expect(row.chatThreadId).toBe(threadId);
-    }
-
-    const projected = rows.body.rows.map((row) => {
-      return chatEventFromRow(row);
-    });
-    expect(rows.body.rows).toStrictEqual(
-      fromStart.body.rows.filter((row) => {
-        return row.seqId > firstSeqId;
-      }),
-    );
-    expect(projected).toStrictEqual(
-      expect.arrayContaining([
+    expect(first.eventType).toBe("input.prompt");
+    expect(first.payload?.userMessage).toMatchObject({
+      parts: expect.arrayContaining([
         expect.objectContaining({
-          eventType: "input.prompt",
-          userMessage: expect.objectContaining({
-            parts: expect.arrayContaining([
-              expect.objectContaining({
-                type: "text",
-                text: `${marker} second`,
-              }),
-            ]),
-          }),
+          type: "feedback",
+          eventId: feedback.eventId,
+          range: feedback.range,
         }),
       ]),
+    });
+  });
+
+  it("chat-event-snapshot-001 (2/4) pages exactly the later rows from the first row's paired cursor", async () => {
+    const { owner, threadId } = await threadWithFeedbackPrompts();
+    const { rows, first } = await coldStartRows(owner, threadId);
+
+    const paired = await accept(
+      events(owner).rows({
+        headers,
+        params: { threadId },
+        query: { sinceSeqId: first.seqId, sinceEventId: first.id },
+      }),
+      [200],
     );
 
-    expect(fromStart.body.rows).toHaveLength(rows.body.rows.length + 1);
+    expect(paired.body.rows).toStrictEqual(rows.slice(1));
+    for (const row of paired.body.rows) {
+      expect(chatEventRowSchema.safeParse(row).success).toBeTruthy();
+      expect(row.chatThreadId).toBe(threadId);
+    }
+    expect(
+      paired.body.rows.filter((row) => {
+        return row.eventType === "input.prompt";
+      }),
+    ).toHaveLength(1);
+    const last = paired.body.rows.at(-1);
+    if (!last) {
+      throw new Error("Expected rows after the first cursor");
+    }
+    expect(paired.body.cursor).toStrictEqual({
+      lastEventId: last.id,
+      lastSeqId: last.seqId,
+    });
+  });
 
-    const mismatchedPair = await accept(
-      eventsClient().rows({
-        headers: authenticate(owner),
+  it("chat-event-snapshot-001 (3/4) expires mismatched and unknown cursor pairs", async () => {
+    const { owner, threadId } = await threadWithFeedbackPrompts();
+    const { rows, first, second } = await coldStartRows(owner, threadId);
+    const last = rows.at(-1);
+    if (!last) {
+      throw new Error("Expected a final raw row");
+    }
+    const ownerEvents = events(owner);
+
+    const mismatched = await accept(
+      ownerEvents.rows({
+        headers,
         params: { threadId },
-        query: {
-          sinceSeqId: firstSeqId,
-          sinceEventId: randomUUID(),
-        },
+        query: { sinceSeqId: first.seqId, sinceEventId: second.id },
       }),
       [410],
     );
-    expect(mismatchedPair.body).toStrictEqual({
-      error: {
-        message: "Chat events cursor has expired",
-        code: "CHAT_EVENTS_EXPIRED",
-      },
-    });
-
-    const expired = await accept(
-      eventsClient().rows({
-        headers: authenticate(owner),
+    const unknown = await accept(
+      ownerEvents.rows({
+        headers,
         params: { threadId },
-        query: {
-          sinceSeqId: 999_999,
-          sinceEventId: randomUUID(),
-        },
+        query: { sinceSeqId: last.seqId + 1000, sinceEventId: randomUUID() },
       }),
       [410],
     );
-    expect(expired.body).toStrictEqual({
-      error: {
-        message: "Chat events cursor has expired",
+
+    for (const response of [mismatched, unknown]) {
+      expect(response.body.error).toMatchObject({
         code: "CHAT_EVENTS_EXPIRED",
-      },
-    });
-  }, 60_000);
+        message: "Chat events cursor has expired",
+      });
+    }
+  });
+
+  it("chat-event-snapshot-001 (4/4) hides the rows and snapshot from the user's other workspace", async () => {
+    const { elsewhere, threadId } = await threadWithFeedbackPrompts();
+    const otherWorkspace = events(elsewhere);
+
+    const rows = await accept(
+      otherWorkspace.rows({
+        headers,
+        params: { threadId },
+        query: { sinceSeqId: 0 },
+      }),
+      [404],
+    );
+    const snapshot = await accept(
+      otherWorkspace.snapshot({ headers, params: { threadId } }),
+      [404],
+    );
+
+    for (const response of [rows, snapshot]) {
+      expect(response.body.error.code).toBe("NOT_FOUND");
+    }
+  });
 });

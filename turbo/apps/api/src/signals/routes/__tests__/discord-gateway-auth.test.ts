@@ -1,233 +1,131 @@
-import { createHmac, randomBytes, randomUUID } from "node:crypto";
+import { createHmac } from "node:crypto";
 import {
-  DISCORD_GATEWAY_AUTH_TEST_VECTORS,
   DISCORD_GATEWAY_SIGNATURE_HEADER,
   DISCORD_GATEWAY_TIMESTAMP_HEADER,
-  discordGatewaySigningPayload,
+  discordGatewayContract,
+  type DiscordGatewayEnvelope,
 } from "@okouai/api-contracts/contracts/discord-gateway";
+import { describe, expect, it } from "vitest";
 
-import { createApp } from "../../../app-factory";
-import { testContext } from "../../../__tests__/test-context";
-import { mockEnv } from "../../../lib/env";
-import { mockNow, now } from "../../../lib/time";
+import { accept, testContext } from "../../../__tests__/test-context";
+import { setupApp, setupRawAppRequest } from "../../../__tests__/test-helpers";
+import { env } from "../../../lib/env";
+import { now } from "../../../lib/time";
 import { discordGatewayRoutes } from "../discord-gateway";
+import { configureDiscordApp, uniqueDiscordSnowflake } from "./helpers/discord";
 
 const context = testContext();
-const APPLICATION_ID = "111111111111111111";
-const SECRET = randomBytes(32).toString("hex");
 
-function configureGateway(secret = SECRET): void {
-  mockEnv("DISCORD_APPLICATION_ID", APPLICATION_ID);
-  mockEnv("DISCORD_BOT_TOKEN", "synthetic-discord-bot-token");
-  mockEnv("DISCORD_PUBLIC_KEY", "a".repeat(64));
-  mockEnv("DISCORD_GATEWAY_SECRET", secret);
+/** Configures the Discord app and returns its Gateway identity. */
+function configuredGateway() {
+  configureDiscordApp();
+  const applicationId = env("DISCORD_APPLICATION_ID");
+  const secret = env("DISCORD_GATEWAY_SECRET");
+  if (!applicationId || !secret) {
+    throw new Error("Expected the Discord Gateway to be configured");
+  }
+  return { applicationId, secret };
 }
 
-function signature(body: string, timestamp: string): string {
-  return createHmac("sha256", SECRET)
-    .update(discordGatewaySigningPayload(timestamp, body))
-    .digest("hex");
+/** Headers the Gateway signs over `<timestamp>.<body>` with the shared secret. */
+function gatewayHeaders(secret: string, body: string) {
+  const timestamp = Math.floor(now() / 1000).toString();
+  return {
+    [DISCORD_GATEWAY_TIMESTAMP_HEADER]: timestamp,
+    [DISCORD_GATEWAY_SIGNATURE_HEADER]: createHmac("sha256", secret)
+      .update(`${timestamp}.${body}`)
+      .digest("hex"),
+  };
 }
 
-function postRaw(
-  body: string,
-  timestamp: string,
-  signed = signature(body, timestamp),
-) {
-  const app = createApp({
-    signal: context.signal,
-    routes: discordGatewayRoutes,
-  });
-  return app.request("/api/internal/discord/gateway", {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      [DISCORD_GATEWAY_TIMESTAMP_HEADER]: timestamp,
-      [DISCORD_GATEWAY_SIGNATURE_HEADER]: signed,
-    },
-    body,
-  });
-}
-
-function eventBody(
-  payload: Record<string, unknown>,
-  eventType = "MESSAGE_CREATE",
-  eventId = "synthetic-event",
-): string {
-  return JSON.stringify({
+async function submitMessage(overrides: Readonly<Record<string, unknown>>) {
+  const { applicationId, secret } = configuredGateway();
+  const messageId = uniqueDiscordSnowflake();
+  const envelope: DiscordGatewayEnvelope = {
     version: 1,
-    applicationId: APPLICATION_ID,
-    eventType,
-    eventId,
-    payload,
-  });
+    applicationId,
+    eventType: "MESSAGE_CREATE",
+    eventId: `MESSAGE_CREATE:${messageId}`,
+    payload: {
+      id: messageId,
+      channel_id: uniqueDiscordSnowflake(),
+      guild_id: uniqueDiscordSnowflake(),
+      author: { id: uniqueDiscordSnowflake(), username: "member" },
+      content: "hello",
+      mentions: [],
+      attachments: [],
+      timestamp: new Date(now()).toISOString(),
+      type: 0,
+      ...overrides,
+    },
+  };
+  const response = await accept(
+    setupApp({ context, routes: discordGatewayRoutes })(
+      discordGatewayContract,
+    ).post({
+      headers: gatewayHeaders(secret, JSON.stringify(envelope)),
+      body: envelope,
+    }),
+    [200],
+  );
+  return response.body;
 }
 
-function missingGuildId(): string {
-  return String(
-    100_000_000_000_000_000n + BigInt(`0x${randomBytes(7).toString("hex")}`),
-  );
-}
+const UNSUPPORTED_MESSAGE = Object.freeze({
+  ok: true,
+  outcome: "ignored",
+  reason: "unsupported-message",
+});
 
 describe("Discord Gateway authentication and ignored transport events", () => {
-  beforeEach(() => {
-    configureGateway();
-    // Signing and verification must observe the same clock second.
-    mockNow(new Date("2026-10-01T00:00:00.999Z"));
-  });
+  it("discord-gateway-auth-003 rejects a signed event whose bytes changed after signing", async () => {
+    const { applicationId, secret } = configuredGateway();
+    const signedBody = JSON.stringify({
+      version: 1,
+      applicationId,
+      eventType: "GUILD_DELETE",
+      eventId: `GUILD_DELETE:${uniqueDiscordSnowflake()}`,
+      payload: { id: uniqueDiscordSnowflake(), unavailable: true },
+    });
 
-  it.each(DISCORD_GATEWAY_AUTH_TEST_VECTORS)(
-    "accepts the exact shared HMAC vector bytes: $timestamp",
-    async (vector) => {
-      configureGateway(vector.secret);
-      mockNow(Number(vector.timestamp) * 1000);
-      // A different configured app rejects the authenticated request before
-      // any provider identity or database access.
-      mockEnv("DISCORD_APPLICATION_ID", "99999999999999999999");
-      const response = await postRaw(
-        vector.rawBody,
-        vector.timestamp,
-        vector.signature,
-      );
-      expect(response.status).toBe(403);
-      await expect(response.json()).resolves.toStrictEqual({
-        error: { code: "FORBIDDEN", message: "Invalid application" },
-      });
-    },
-  );
+    const response = await setupRawAppRequest({
+      context,
+      routes: discordGatewayRoutes,
+    })("/api/internal/discord/gateway", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        ...gatewayHeaders(secret, signedBody),
+      },
+      body: `${signedBody}\n`,
+    });
 
-  it("rejects signed bodies whose bytes changed", async () => {
-    const body = eventBody(
-      { id: "222222222222222222", unavailable: true },
-      "GUILD_DELETE",
-    );
-    const timestamp = String(Math.floor(now() / 1000));
-    const response = await postRaw(
-      `${body}\n`,
-      timestamp,
-      signature(body, timestamp),
-    );
     expect(response.status).toBe(401);
   });
 
-  it.each([-300, 300])(
-    "accepts a signed timestamp at the past/future window boundary (%s)",
-    async (offset) => {
-      const body = eventBody(
-        { id: "222222222222222222", unavailable: true },
-        "GUILD_DELETE",
-      );
-      const timestamp = String(Math.floor(now() / 1000) + offset);
-      const response = await postRaw(body, timestamp);
-      expect(response.status).toBe(200);
-      await expect(response.json()).resolves.toStrictEqual({
-        ok: true,
-        outcome: "ignored",
-        reason: "guild-unavailable",
-      });
-    },
-  );
-
-  it.each([-301, 301])(
-    "rejects a signed timestamp outside the past/future window (%s)",
-    async (offset) => {
-      const body = eventBody(
-        { id: "222222222222222222", unavailable: true },
-        "GUILD_DELETE",
-      );
-      const timestamp = String(Math.floor(now() / 1000) + offset);
-      const response = await postRaw(body, timestamp);
-      expect(response.status).toBe(401);
-    },
-  );
-
-  it("rejects partially numeric timestamps and malformed signatures", async () => {
-    const body = eventBody({});
-    const timestamp = `${Math.floor(now() / 1000)}suffix`;
-    expect((await postRaw(body, timestamp)).status).toBe(401);
-    expect(
-      (await postRaw(body, String(Math.floor(now() / 1000)), "a")).status,
-    ).toBe(401);
+  it("discord-gateway-auth-011 ignores a message from a bot author", async () => {
+    await expect(
+      submitMessage({
+        author: { id: "333333333333333333", username: "bot", bot: true },
+      }),
+    ).resolves.toMatchObject(UNSUPPORTED_MESSAGE);
   });
 
-  it("rejects a transport-supplied Okou owner", async () => {
-    const body = JSON.stringify({
-      version: 1,
-      applicationId: APPLICATION_ID,
-      eventType: "MESSAGE_CREATE",
-      eventId: "synthetic-event",
-      userId: "untrusted-user",
-      payload: {},
-    });
-    const response = await postRaw(body, String(Math.floor(now() / 1000)));
-    expect(response.status).toBe(400);
+  it("discord-gateway-auth-012 ignores a message from a webhook producer", async () => {
+    await expect(
+      submitMessage({ webhook_id: "444444444444444444" }),
+    ).resolves.toMatchObject(UNSUPPORTED_MESSAGE);
   });
 
-  it("acknowledges a guild removal without account mutations", async () => {
-    const guildId = missingGuildId();
-    const eventId = `GUILD_DELETE:${randomUUID()}:1`;
-    const timestamp = String(Math.floor(now() / 1000));
-    const unavailable = await postRaw(
-      eventBody({ id: guildId, unavailable: true }, "GUILD_DELETE", eventId),
-      timestamp,
+  it("discord-gateway-auth-013 ignores an edited message", async () => {
+    await expect(
+      submitMessage({ edited_timestamp: "2026-09-24T00:00:00Z" }),
+    ).resolves.toMatchObject(UNSUPPORTED_MESSAGE);
+  });
+
+  it("discord-gateway-auth-014 ignores a message of Discord type 6", async () => {
+    await expect(submitMessage({ type: 6 })).resolves.toMatchObject(
+      UNSUPPORTED_MESSAGE,
     );
-    expect(unavailable.status).toBe(200);
-    await expect(unavailable.json()).resolves.toStrictEqual({
-      ok: true,
-      outcome: "ignored",
-      reason: "guild-unavailable",
-    });
-
-    const body = eventBody({ id: guildId }, "GUILD_DELETE", eventId);
-    const accepted = await postRaw(body, timestamp);
-    expect(accepted.status).toBe(200);
-    await expect(accepted.json()).resolves.toStrictEqual({
-      ok: true,
-      outcome: "ignored",
-      reason: "guild-removed",
-    });
-  });
-
-  it.each([
-    { author: { id: "333333333333333333", username: "bot", bot: true } },
-    { webhook_id: "444444444444444444" },
-    { edited_timestamp: "2026-09-24T00:00:00Z" },
-    { type: 6 },
-  ])(
-    "intentionally ignores unsupported message producers or updates: %j",
-    async (patch) => {
-      const body = eventBody({
-        id: "555555555555555555",
-        channel_id: "666666666666666666",
-        author: { id: "333333333333333333", username: "human" },
-        content: "hello",
-        mentions: [],
-        attachments: [],
-        type: 0,
-        ...patch,
-      });
-      const response = await postRaw(body, String(Math.floor(now() / 1000)));
-      expect(response.status).toBe(200);
-      await expect(response.json()).resolves.toStrictEqual({
-        ok: true,
-        outcome: "ignored",
-        reason: "unsupported-message",
-      });
-    },
-  );
-
-  it("rejects an oversized authenticated message body", async () => {
-    const body = eventBody({ content: "x".repeat(1024 * 1024) });
-    const response = await postRaw(body, String(Math.floor(now() / 1000)));
-    expect(response.status).toBe(413);
-  });
-
-  it("does not accept traffic when app configuration is absent", async () => {
-    mockEnv("DISCORD_GATEWAY_SECRET", undefined);
-    const response = await postRaw(
-      eventBody({}),
-      String(Math.floor(now() / 1000)),
-    );
-    expect(response.status).toBe(503);
   });
 });

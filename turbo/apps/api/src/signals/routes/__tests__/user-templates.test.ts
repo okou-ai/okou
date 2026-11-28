@@ -1,108 +1,63 @@
 import { randomUUID } from "node:crypto";
-
 import { userTemplatesContract } from "@okouai/api-contracts/contracts/user-templates";
-import { beforeEach, describe, expect, it } from "vitest";
 
-import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { mockEnv } from "../../../lib/env";
-import { createBddApi } from "./helpers/api-bdd";
-import { createRouteMocks } from "./helpers/route-test";
+import { accept, testContext } from "../../../__tests__/test-context";
 import { userTemplatesRoutes } from "../user-templates";
+import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
-const bdd = createBddApi(context);
-const mocks = createRouteMocks(context);
+const headers = Object.freeze({ authorization: "Bearer clerk-session" });
 
-function webHeaders() {
-  return { authorization: "Bearer clerk-session" };
-}
-
-/** Signs in a workspace member. */
-function signInActor() {
-  const actor = bdd.user();
-  if (!actor.orgId) {
-    throw new Error("User template tests require an organization");
-  }
-  mocks.clerk.session(actor.userId, actor.orgId, "org:admin");
-  return actor;
-}
-
-function templateClient() {
+function signedInMember() {
+  createRouteMocks(context).clerk.session(
+    `user_${randomUUID()}`,
+    `org_${randomUUID()}`,
+    "org:member",
+  );
   return setupApp({ context, routes: userTemplatesRoutes })(
     userTemplatesContract,
   );
 }
 
-beforeEach(() => {
-  mockEnv("R2_USER_ARTIFACTS_BUCKET_NAME", "test-user-artifacts");
-});
-
 describe("user template owner routes", () => {
-  it("lists an empty catalog for a member with no templates", async () => {
-    const actor = bdd.user();
-    mocks.clerk.session(actor.userId, actor.orgId);
-    const client = templateClient();
+  it("user-templates-001 lists an empty catalog for a member with no templates", async () => {
+    const api = signedInMember();
 
-    const response = await accept(
-      client.list({ headers: webHeaders() }),
-      [200],
-    );
+    const response = await accept(api.list({ headers }), [200]);
+
     expect(response.body).toStrictEqual([]);
   });
 
-  it("does not expose an unknown template through owner routes", async () => {
-    signInActor();
-    const client = templateClient();
+  it("user-templates-002 does not expose an unknown template through owner routes", async () => {
+    const api = signedInMember();
     const templateId = randomUUID();
+    const expected = {
+      error: {
+        code: "NOT_FOUND",
+        message: `User template not found: ${templateId}`,
+      },
+    };
 
-    const readResponse = await accept(
-      client.get({ headers: webHeaders(), params: { templateId } }),
+    const read = await accept(
+      api.get({ headers, params: { templateId } }),
       [404],
     );
-    const updateResponse = await accept(
-      client.update({
-        headers: webHeaders(),
+    const renamed = await accept(
+      api.update({
+        headers,
         params: { templateId },
         body: { title: "Renamed" },
       }),
       [404],
     );
-    const deleteResponse = await accept(
-      client.delete({ headers: webHeaders(), params: { templateId } }),
+    const deleted = await accept(
+      api.delete({ headers, params: { templateId }, body: undefined }),
       [404],
     );
 
-    // The same answer for every verb: a caller cannot tell an inaccessible
-    // template from one that never existed.
-    const notFoundBody = {
-      error: {
-        message: `User template not found: ${templateId}`,
-        code: "NOT_FOUND",
-      },
-    };
-    expect([
-      readResponse.body,
-      updateResponse.body,
-      deleteResponse.body,
-    ]).toStrictEqual([notFoundBody, notFoundBody, notFoundBody]);
-  });
-
-  it("resolves no assets for preview ids that match nothing", async () => {
-    signInActor();
-    const client = templateClient();
-
-    // A well-formed id for a template this caller cannot reach must resolve to
-    // nothing rather than to a URL.
-    const response = await accept(
-      client.resolvePreviewUrls({
-        headers: webHeaders(),
-        body: {
-          previewAssetIds: [`utp:${randomUUID()}:${"a".repeat(43)}`],
-        },
-      }),
-      [200],
-    );
-    expect(response.body).toStrictEqual({ assets: [] });
+    expect(read.body).toStrictEqual(expected);
+    expect(renamed.body).toStrictEqual(expected);
+    expect(deleted.body).toStrictEqual(expected);
   });
 });

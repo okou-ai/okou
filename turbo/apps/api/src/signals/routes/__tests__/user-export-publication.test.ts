@@ -1,657 +1,208 @@
-import { instructionsContract } from "@okouai/api-contracts/contracts/instructions";
-import { instructionsRoutes } from "../instructions";
-import { createHash, randomUUID } from "node:crypto";
-import { PutObjectCommand } from "@aws-sdk/client-s3";
-
 import { userExportContract } from "@okouai/api-contracts/contracts/user-export";
-import { cronProcessBackgroundJobsContract } from "@okouai/api-contracts/contracts/cron";
-import {
-  chatThreadEventsContract,
-  chatThreadByIdContract,
-  chatThreadsContract,
-} from "@okouai/api-contracts/contracts/chat-threads";
-import { workflowsCollectionContract } from "@okouai/api-contracts/contracts/workflows";
-import { chatEventRowSchema } from "@okouai/api-contracts/contracts/chat-event-rows";
-import AdmZip from "adm-zip";
-import { object, string } from "zod";
-
+import { createStore } from "ccstate";
+import { strFromU8, unzipSync } from "fflate";
+import { expect, test } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { mockEnv } from "../../../lib/env";
-import { nowDate } from "../../../lib/time";
 import { flushWaitUntilForTest } from "../../context/wait-until";
-import { chatThreadRoutes } from "../chat-threads";
-import { chatThreadCreateRoutes } from "../chat-threads-create";
-import { chatThreadPatchRoutes } from "../chat-threads-patch";
 import { userExportRoutes } from "../user-export";
-import { cronProcessBackgroundJobsRoutes } from "../cron-process-background-jobs";
-import { workflowsRoutes } from "../workflows";
+import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
+import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
+import { createWorkflowsBddApi } from "./helpers/api-bdd-workflows";
 import { installDurableUserExportStorage } from "./helpers/durable-user-export-storage";
 import { mockClerkUsers } from "./helpers/clerk-users";
+import { seedOrgMembership$ } from "./helpers/org-membership";
 import { createRouteMocks } from "./helpers/route-test";
-import {
-  createPublicRunnerMemory,
-  memoryArchive,
-} from "./helpers/public-runner-memory";
 
 const context = testContext();
-const headers = Object.freeze({ authorization: "Bearer clerk-session" });
-const routes = Object.freeze([
-  ...instructionsRoutes,
-  ...chatThreadCreateRoutes,
-  ...chatThreadPatchRoutes,
-  ...workflowsRoutes,
-  ...userExportRoutes,
-]);
-
-function actor(orgId = `org_${randomUUID()}`) {
-  return { userId: `user_${randomUUID()}`, orgId };
-}
-
-function authenticate(user: ReturnType<typeof actor>) {
-  createRouteMocks(context).clerk.session(user.userId, user.orgId);
-}
-
-function initialize(
-  app: Awaited<ReturnType<typeof setupApp>>,
-  users: readonly ReturnType<typeof actor>[],
-) {
-  const profiles = users.map((user) => {
-    return {
-      id: user.userId,
-      firstName: "Export",
-      lastName: "Owner",
-      primaryEmailAddressId: "email",
-      emailAddresses: [
-        { id: "email", emailAddress: `${user.userId}@example.com` },
-      ],
-      privateMetadata: {},
-      publicMetadata: {},
-    };
-  });
-  mockClerkUsers(context, profiles);
-  context.mocks.clerk.users.getOrganizationMembershipList.mockImplementation(
-    (params: unknown) => {
-      const { userId } = object({ userId: string() }).parse(params);
-      const user = users.find((candidate) => {
-        return candidate.userId === userId;
-      });
-      return Promise.resolve({
-        data: user ? [{ organization: { id: user.orgId } }] : [],
-        totalCount: user ? 1 : 0,
-      });
-    },
-  );
-  const storage = installDurableUserExportStorage(context, {
-    prefixes: [
-      "exports/",
-      ...users.map((user) => {
-        return `${user.orgId}/`;
-      }),
-    ],
-  });
-  return { app, storage };
-}
-
-type Fixture = ReturnType<typeof initialize>;
-
-async function startExport(fixture: Fixture, owner: ReturnType<typeof actor>) {
-  authenticate(owner);
-  const started = await accept(
-    fixture.app(userExportContract).post({ headers }),
-    [202],
-  );
-  await flushWaitUntilForTest();
-  return started.body.jobId;
-}
-
-async function status(fixture: Fixture, owner: ReturnType<typeof actor>) {
-  authenticate(owner);
-  return (await accept(fixture.app(userExportContract).get({ headers }), [200]))
-    .body;
-}
-
-function archive(fixture: Fixture, url: string | null | undefined) {
-  if (!url) {
-    throw new Error("Completed export must expose its download URL");
-  }
-  const zip = new AdmZip(fixture.storage.download(url));
-  expect(zip.test()).toBeTruthy();
-  expect(zip.getEntry("README.md")).not.toBeNull();
-  expect(zip.getEntry("restore.py")).not.toBeNull();
-  expect(zip.getEntry("export-manifest.json")).not.toBeNull();
-  return zip;
-}
-
-test("exports PATCH-created drafts with owned thread timestamps and absent draft nulls", async () => {
-  const owner = actor();
-  const peer = actor(owner.orgId);
-  const app = setupApp({ context, routes });
-  const fixture = initialize(app, [owner, peer]);
-  authenticate(owner);
-  const threads = [];
-  for (const title of ["Saved draft", "No draft", "Cleared draft"]) {
-    threads.push(
-      await accept(
-        fixture.app(chatThreadsContract).create({
-          headers,
-          body: { title },
-        }),
-        [201],
-      ),
-    );
-  }
-  const [saved, missing, cleared] = threads;
-  if (!saved || !missing || !cleared) {
-    throw new Error("Expected three owned threads");
-  }
-  const draftUserMessage = {
-    version: 1 as const,
-    parts: [{ type: "text" as const, text: "Keep this unsent draft: 你好" }],
-  };
-  for (const thread of [saved, cleared]) {
-    await accept(
-      fixture.app(chatThreadByIdContract).patch({
-        headers,
-        params: { id: thread.body.id },
-        body: { draftUserMessage, draftAttachments: [] },
-      }),
-      [204],
-    );
-  }
-  await accept(
-    fixture.app(chatThreadByIdContract).patch({
-      headers,
-      params: { id: cleared.body.id },
-      body: { draftUserMessage: null, draftAttachments: null },
-    }),
-    [204],
-  );
-  authenticate(peer);
-  const peerThread = await accept(
-    fixture.app(chatThreadsContract).create({
-      headers,
-      body: { title: "Peer draft" },
-    }),
-    [201],
-  );
-  await accept(
-    fixture.app(chatThreadByIdContract).patch({
-      headers,
-      params: { id: peerThread.body.id },
-      body: { draftUserMessage, draftAttachments: null },
-    }),
-    [204],
-  );
-  const jobId = await startExport(fixture, owner);
-  const ready = await status(fixture, owner);
-  expect(ready.job).toMatchObject({
-    id: jobId,
-    status: "completed",
-    error: null,
-  });
-  const zip = archive(fixture, ready.job?.downloadUrl);
-  const exportedThreads = zip.getEntries().filter((entry) => {
-    return entry.entryName.startsWith("chat-threads/");
-  });
-  expect(
-    exportedThreads
-      .map((entry) => {
-        return entry.entryName;
-      })
-      .sort(),
-  ).toStrictEqual(
-    threads
-      .map((thread) => {
-        return `chat-threads/${thread.body.id}.json`;
-      })
-      .sort(),
-  );
-  for (const thread of threads) {
-    const exported = JSON.parse(
-      zip.readAsText(`chat-threads/${thread.body.id}.json`),
-    );
-    expect(Object.keys(exported)).toStrictEqual([
-      "id",
-      "userId",
-      "title",
-      "orgId",
-      "sourceScheduleRunId",
-      "createdAt",
-      "updatedAt",
-      "lastMessageAt",
-      "lastReadAt",
-      "pinnedAt",
-      "pinOrder",
-      "archived",
-      "renamedAt",
-      "selectedModel",
-      "modelSettings",
-      "codexServiceTier",
-      "draftUserMessage",
-      "draftAttachments",
-    ]);
-    expect(exported).toMatchObject({
-      id: thread.body.id,
-      userId: owner.userId,
-      title: thread.body.title,
-      orgId: owner.orgId,
-      createdAt: thread.body.createdAt,
-      sourceScheduleRunId: null,
-      pinnedAt: null,
-      renamedAt: null,
-      draftUserMessage: thread === saved ? draftUserMessage : null,
-      draftAttachments: thread === saved ? [] : null,
-    });
-    for (const timestamp of [
-      exported.updatedAt,
-      exported.lastMessageAt,
-      exported.lastReadAt,
-    ]) {
-      expect(new Date(timestamp).toISOString()).toBe(timestamp);
-    }
-  }
-  expect(zip.getEntry(`chat-threads/${peerThread.body.id}.json`)).toBeNull();
-  expect((await status(fixture, peer)).job).toBeNull();
-});
-
-test("publishes an owned ZIP, deduplicates concurrent requests and excludes peers", async () => {
-  const owner = actor();
-  const peer = actor(owner.orgId);
-  const outsider = actor();
-  const app = setupApp({ context, routes });
-  const fixture = initialize(app, [owner, peer, outsider]);
-  authenticate(owner);
-  const workflow = await accept(
-    fixture.app(workflowsCollectionContract).create({
-      headers,
-      body: {
-        name: "exported-workflow",
-        instruction: "Use the exported instruction",
-        visibility: "private",
-      },
-    }),
-    [201],
-  );
-  const thread = await accept(
-    fixture.app(chatThreadsContract).create({
-      headers,
-      body: { title: "Exported conversation" },
-    }),
-    [201],
-  );
-  authenticate(owner);
-  const starts = await Promise.all([
-    fixture.app(userExportContract).post({ headers }),
-    fixture.app(userExportContract).post({ headers }),
-  ]);
-  const accepted = starts.map((response) => {
-    expect(response.status).toBe(202);
-    if (response.status !== 202) {
-      throw new Error("Expected accepted export");
-    }
-    return response.body.jobId;
-  });
-  expect(new Set(accepted).size).toBe(1);
-  await flushWaitUntilForTest();
-  const ready = await status(fixture, owner);
-  expect(ready.job).toMatchObject({
-    id: accepted[0],
-    status: "completed",
-    error: null,
-  });
-  const zip = archive(fixture, ready.job?.downloadUrl);
-  expect(
-    JSON.parse(zip.readAsText(`workflows/${workflow.body.id}.json`)),
-  ).toMatchObject({
-    id: workflow.body.id,
-    instruction: "Use the exported instruction",
-  });
-  expect(
-    JSON.parse(zip.readAsText(`chat-threads/${thread.body.id}.json`)),
-  ).toMatchObject({ id: thread.body.id, title: "Exported conversation" });
-  for (const user of [peer, outsider]) {
-    expect((await status(fixture, user)).job).toBeNull();
-  }
-  authenticate(owner);
-  const limited = await accept(
-    fixture.app(userExportContract).post({ headers }),
-    [429],
-  );
-  expect(limited.body.error.code).toBe("RATE_LIMITED");
-});
-
-test("publishes the exact owned memory bytes committed by a genuine Runner execution", async () => {
-  const owner = actor();
-  const app = setupApp({ context, routes });
-  const fixture = initialize(app, [owner]);
-  const carrier = createPublicRunnerMemory(context, owner);
-  await carrier.run(async () => {
-    await carrier.initializeNative();
-    const receivedExecution = await carrier.startExecution(
-      "Write my exported memory",
-    );
-    const content = "Memory from an authenticated Runner";
-    const files = [
-      {
-        path: "notes.md",
-        hash: createHash("sha256").update(content).digest("hex"),
-        size: Buffer.byteLength(content),
-      },
-    ];
-    carrier.installObjects();
-    const prepared = await carrier.webhooks.requestAgentStoragePrepare(
-      {
-        runId: receivedExecution.run.runId,
-        storageId: receivedExecution.memory.storageId,
-        files,
-      },
-      receivedExecution.headers,
-      [200],
-    );
-    if (prepared.status !== 200 || !prepared.body.uploads) {
-      throw new Error("Expected the real memory upload targets");
-    }
-    const bytes = memoryArchive("notes.md", content);
-    carrier.objects.set(prepared.body.uploads.archive.key, bytes);
-    const manifest = Buffer.from(
-      JSON.stringify({
-        version: 1,
-        files,
-        createdAt: nowDate().toISOString(),
-      }),
-    );
-    carrier.objects.set(prepared.body.uploads.manifest.key, manifest);
-    await carrier.webhooks.requestAgentStorageCommit(
-      {
-        runId: receivedExecution.run.runId,
-        storageId: receivedExecution.memory.storageId,
-        versionId: prepared.body.versionId,
-        files,
-      },
-      receivedExecution.headers,
-      [200],
-    );
-    // The existing helper owns the genuine Run's normal cancellation teardown.
-    // Keep its external memory objects, and add the exporter provider boundary.
-    const storage = installDurableUserExportStorage(context, {
-      prefixes: ["exports/", `${owner.orgId}/`],
-    });
-    // The upload targets came from the genuine prepare response. The exporter
-    // needs the provider's ETag/If-Match/range contract for these same bytes.
-    storage.seedObject(prepared.body.uploads.archive.key, bytes);
-    storage.seedObject(prepared.body.uploads.manifest.key, manifest);
-    const exporting = { ...fixture, storage };
-    const jobId = await startExport(exporting, owner);
-    const ready = await status(exporting, owner);
-    expect(ready.job).toMatchObject({ id: jobId, status: "completed" });
-    const zip = archive(exporting, ready.job?.downloadUrl);
-    expect(
-      zip.readFile(
-        `memory/${owner.orgId}/${receivedExecution.memory.storageId}/archive.tar.gz`,
-      ),
-    ).toStrictEqual(bytes);
-  });
-});
-
-test.each([
-  {
-    name: "100-row metadata pages",
-    count: 104,
-    size: 32,
-    firstSize: 32,
-    firstCharacter: "x",
-  },
-  {
-    name: "a large multi-byte output and its short tail",
-    count: 2,
-    size: 32,
-    // About 1.2 MB of UTF-8 text exceeds the exporter's estimated soft page
-    // budget after encoding overhead, while remaining a valid API input.
-    firstSize: 400_000,
-    firstCharacter: "语",
-  },
-])(
-  "exports completed Runner history across $name without losing rows",
-  async ({ count, size, firstSize, firstCharacter }) => {
-    const owner = actor();
-    const app = setupApp({ context, routes });
-    const fixture = initialize(app, [owner]);
-    const carrier = createPublicRunnerMemory(context, owner);
-    await carrier.run(async () => {
-      await carrier.initializeNative();
-      const receivedExecution = await carrier.startExecution(
-        "Export my completed conversation: 你好",
-      );
-      const contents = Array.from({ length: count }, (_, index) => {
-        return (
-          `${String(index).padStart(3, "0")}:` +
-          (index === 0 ? firstCharacter : "x").repeat(
-            index === 0 ? firstSize : size,
-          )
-        );
-      });
-      // Each real request remains below the hosted API's 4.5 MB body ceiling.
-      for (let offset = 0; offset < contents.length; offset += 3) {
-        const eventBody = {
-          runId: receivedExecution.run.runId,
-          events: contents.slice(offset, offset + 3).map((text, index) => {
-            return {
-              type: "assistant",
-              sequenceNumber: offset + index,
-              message: {
-                id: `msg_export_${offset + index}`,
-                content: [{ type: "text", text }],
-              },
-            };
-          }),
-        };
-        expect(Buffer.byteLength(JSON.stringify(eventBody))).toBeLessThan(
-          4_500_000,
-        );
-        await carrier.webhooks.requestAgentEvents(
-          eventBody,
-          receivedExecution.headers,
-          [200],
-        );
-      }
-      await carrier.webhooks.requestAgentComplete(
-        {
-          runId: receivedExecution.run.runId,
-          exitCode: 0,
-          lastEventSequence: count - 1,
-          completion: {
-            cliAgentType: "claude-code",
-            cliAgentSessionId: `export-${receivedExecution.run.runId}`,
-            cliAgentSessionHistoryDisposition: "native_only",
-          },
-        },
-        receivedExecution.headers,
-        [200],
-      );
-      await flushWaitUntilForTest();
-      await expect(
-        carrier.api.readRun(carrier.actor, receivedExecution.run.runId),
-      ).resolves.toMatchObject({ status: "completed" });
-
-      authenticate(owner);
-      const reader = setupApp({ context, routes: chatThreadRoutes })(
-        chatThreadEventsContract,
-      );
-      const expected = [];
-      let cursor: { seqId: number; id: string } | undefined;
-      for (;;) {
-        const page = await accept(
-          reader.rows({
-            headers,
-            params: { threadId: receivedExecution.run.threadId },
-            query: cursor
-              ? { sinceSeqId: cursor.seqId, sinceEventId: cursor.id, limit: 50 }
-              : { sinceSeqId: 0, limit: 50 },
-          }),
-          [200],
-        );
-        expected.push(...page.body.rows);
-        if (!page.body.hasMore) {
-          break;
-        }
-        const last = page.body.rows.at(-1);
-        if (!last) {
-          throw new Error("Expected a nonempty public event page");
-        }
-        cursor = { seqId: last.seqId, id: last.id };
-      }
-      expect(
-        expected
-          .filter((row) => {
-            return row.eventType === "output.message";
-          })
-          .map((row) => {
-            return row.payload?.content;
-          }),
-      ).toStrictEqual(contents);
-      expect(expected).toContainEqual(
-        expect.objectContaining({ eventType: "run.completed", payload: null }),
-      );
-
-      const storage = installDurableUserExportStorage(context, {
-        prefixes: ["exports/", `${owner.orgId}/`],
-      });
-      const exporting = { ...fixture, storage };
-      const jobId = await startExport(exporting, owner);
-      const ready = await status(exporting, owner);
-      expect(ready.job).toMatchObject({
-        id: jobId,
-        status: "completed",
-        error: null,
-      });
-      const zip = archive(exporting, ready.job?.downloadUrl);
-      const tails = zip
-        .getEntries()
-        .filter((entry) => {
-          return entry.entryName.startsWith(
-            `chat-messages/${receivedExecution.run.threadId}/tail/`,
-          );
-        })
-        .sort((left, right) => {
-          return left.entryName.localeCompare(right.entryName);
-        });
-      expect(tails.length).toBeGreaterThan(1);
-      const pages = tails.map((entry) => {
-        return zip
-          .readAsText(entry)
-          .trimEnd()
-          .split("\n")
-          .map((line) => {
-            return chatEventRowSchema.parse(JSON.parse(line));
-          });
-      });
-      const actual = pages.flat();
-      expect(actual).toStrictEqual(expected);
-      const sequenceIds = actual.map((row) => {
-        return row.seqId;
-      });
-      expect(sequenceIds).toStrictEqual(
-        [...sequenceIds].sort((left, right) => {
-          return left - right;
-        }),
-      );
-      if (count === 104) {
-        expect(pages[0]).toHaveLength(100);
-      }
-      expect(
-        new Set(
-          actual.map((row) => {
-            return row.id;
-          }),
-        ).size,
-      ).toBe(actual.length);
-    });
-  },
+const bdd = createBddApi(context);
+const workflows = createWorkflowsBddApi(context);
+const chatFiles = createChatFilesBddApi(context);
+const exportsApi = setupApp({ context, routes: userExportRoutes })(
+  userExportContract,
 );
 
-test("recovers the owner's private Instructions export after an S3 failure without an owner retry", async () => {
-  const owner = actor();
-  const peer = actor(owner.orgId);
-  const app = await setupApp({
+/** Clerk keeps each actor's real profile and workspace membership. */
+async function seedMemberships(actors: readonly ApiTestUser[]) {
+  mockClerkUsers(
     context,
-    routes: [...routes, ...cronProcessBackgroundJobsRoutes],
-    isolatePg: true,
-  });
-  const initial = initialize(app, [owner, peer]);
-  for (const user of [owner, peer]) {
-    authenticate(user);
-    await accept(
-      app(instructionsContract).update({
-        headers,
-        body: {
-          content: user === owner ? "Personal export" : "Peer private content",
-        },
-      }),
-      [200],
-    );
-  }
-  let storageFailures = 0;
-  const storage = installDurableUserExportStorage(context, {
-    prefixes: ["exports/"],
-    afterWrite: (request) => {
-      if (request instanceof PutObjectCommand && storageFailures === 0) {
-        storageFailures += 1;
-        // The real provider kept the bytes, but its successful receipt was lost.
-        // Recovery must resume this export instead of requiring another POST.
-        throw Object.assign(new Error("Temporary export storage failure"), {
-          name: "ServiceUnavailable",
-          $metadata: { httpStatusCode: 503 },
-        });
+    actors.map((actor) => {
+      const emailId = `email_${actor.userId}`;
+      return {
+        id: actor.userId,
+        emailAddresses: [{ id: emailId, emailAddress: actor.email }],
+        primaryEmailAddressId: emailId,
+      };
+    }),
+  );
+  const memberships = createStore();
+  await Promise.all(
+    actors.map((actor) => {
+      if (!actor.orgId) {
+        throw new Error("expected a workspace member");
       }
-      return Promise.resolve();
-    },
-  });
-  const fixture = { ...initial, storage };
-  const jobId = await startExport(fixture, owner);
-  expect(storageFailures).toBe(1);
-  const interrupted = await status(fixture, owner);
-  expect(interrupted.job).toMatchObject({ id: jobId, downloadUrl: null });
-  expect(["pending", "running"]).toContain(interrupted.job?.status);
+      return memberships.set(
+        seedOrgMembership$,
+        { orgId: actor.orgId, userId: actor.userId },
+        context.signal,
+      );
+    }),
+  );
+}
 
-  const cronSecret = "user-export-recovery-cron";
-  mockEnv("CRON_SECRET", cronSecret);
-  // Retry eligibility uses the database clock. Poll the actual scheduled
-  // recovery and owner-visible result without overriding its internal budget.
-  await expect
-    .poll(
-      async () => {
-        await accept(
-          app(cronProcessBackgroundJobsContract).process({
-            headers: { authorization: `Bearer ${cronSecret}` },
-          }),
-          [200],
-        );
-        await flushWaitUntilForTest();
-        return (await status(fixture, owner)).job;
-      },
-      { interval: 1000, timeout: 30_000 },
-    )
-    .toMatchObject({ id: jobId, status: "completed", error: null });
-  const ready = await status(fixture, owner);
-  expect(ready.job).toMatchObject({
-    id: jobId,
+function signIn(actor: ApiTestUser) {
+  createRouteMocks(context).clerk.session(
+    actor.userId,
+    actor.orgId,
+    actor.orgRole,
+  );
+  return { authorization: "Bearer clerk-session" };
+}
+
+function jsonEntry(files: Record<string, Uint8Array>, path: string): unknown {
+  const bytes = files[path];
+  if (!bytes) {
+    throw new Error(`The export has no ${path}`);
+  }
+  return JSON.parse(strFromU8(bytes));
+}
+
+/** The owner's export request(s) are processed, optionally with workflow or thread content. */
+async function ownerExport(options: {
+  readonly concurrent: boolean;
+  readonly includeWorkflow?: boolean;
+  readonly includeThread?: boolean;
+}) {
+  const owner = bdd.user({ orgRole: "org:member" });
+  const peer = bdd.user({ orgId: owner.orgId, orgRole: "org:member" });
+  const outsider = bdd.user({ orgRole: "org:member" });
+  bdd.acceptStorageWrites();
+  const storage = installDurableUserExportStorage(context, { prefixes: [""] });
+  const instruction = "Summarize the exported workflow inputs.";
+  const [workflowId, thread] = await Promise.all([
+    options.includeWorkflow
+      ? workflows.createWorkflow(owner, {
+          name: "exported-workflow",
+          visibility: "private",
+          instruction,
+        })
+      : Promise.resolve(""),
+    options.includeThread
+      ? chatFiles.createThread(owner, { title: "Exported conversation" })
+      : Promise.resolve({ id: "" }),
+    seedMemberships([owner]),
+  ]);
+
+  const headers = signIn(owner);
+  const started = options.concurrent
+    ? await Promise.all([
+        accept(exportsApi.post({ headers, body: undefined }), [202]),
+        accept(exportsApi.post({ headers, body: undefined }), [202]),
+      ])
+    : [await accept(exportsApi.post({ headers, body: undefined }), [202])];
+  await flushWaitUntilForTest();
+  return {
+    owner,
+    peer,
+    outsider,
+    storage,
+    instruction,
+    workflowId,
+    threadId: thread.id,
+    started,
+  };
+}
+
+test("user-export-publication-002 (1/5) deduplicates concurrent export requests into one completed job", async () => {
+  const { owner, started } = await ownerExport({ concurrent: true });
+
+  const status = await accept(
+    exportsApi.get({ headers: signIn(owner) }),
+    [200],
+  );
+
+  const [first, second] = started;
+  expect(second?.body.jobId).toBe(first?.body.jobId);
+  expect(status.body.job).toMatchObject({
+    id: first?.body.jobId,
     status: "completed",
     error: null,
   });
-  const zip = archive(fixture, ready.job?.downloadUrl);
-  expect(
-    JSON.parse(zip.readAsText(`instructions/${owner.orgId}.json`)),
-  ).toMatchObject({ ...owner, content: "Personal export" });
-  expect(
-    zip
-      .getEntries()
-      .filter((entry) => {
-        return entry.entryName.startsWith("instructions/");
-      })
-      .map((entry) => {
-        return entry.entryName;
-      }),
-  ).toStrictEqual([`instructions/${owner.orgId}.json`]);
-  expect((await status(fixture, peer)).job).toBeNull();
-}, 60_000);
+});
+
+test("user-export-publication-002 (2/5) publishes an owned ZIP containing the owner's workflow", async () => {
+  const { owner, storage, instruction, workflowId, started } =
+    await ownerExport({ concurrent: false, includeWorkflow: true });
+
+  const status = await accept(
+    exportsApi.get({ headers: signIn(owner) }),
+    [200],
+  );
+  const downloadUrl = status.body.job?.downloadUrl;
+  if (!downloadUrl) {
+    throw new Error("The completed export has no download URL");
+  }
+  const files = unzipSync(storage.download(downloadUrl));
+
+  expect(status.body.job).toMatchObject({
+    id: started[0]?.body.jobId,
+    status: "completed",
+    error: null,
+  });
+  expect(jsonEntry(files, `workflows/${workflowId}.json`)).toMatchObject({
+    instruction,
+  });
+});
+
+test("user-export-publication-002 (3/5) publishes an owned ZIP containing the owner's chat thread", async () => {
+  const { owner, storage, threadId, started } = await ownerExport({
+    concurrent: false,
+    includeThread: true,
+  });
+
+  const status = await accept(
+    exportsApi.get({ headers: signIn(owner) }),
+    [200],
+  );
+  const downloadUrl = status.body.job?.downloadUrl;
+  if (!downloadUrl) {
+    throw new Error("The completed export has no download URL");
+  }
+  const files = unzipSync(storage.download(downloadUrl));
+
+  expect(status.body.job).toMatchObject({
+    id: started[0]?.body.jobId,
+    status: "completed",
+    error: null,
+  });
+  expect(jsonEntry(files, `chat-threads/${threadId}.json`)).toMatchObject({
+    title: "Exported conversation",
+  });
+});
+
+test("user-export-publication-002 (4/5) hides the export from a same-workspace peer and an outsider", async () => {
+  const { peer, outsider } = await ownerExport({ concurrent: false });
+
+  const peerStatus = await accept(
+    exportsApi.get({ headers: signIn(peer) }),
+    [200],
+  );
+  const outsiderStatus = await accept(
+    exportsApi.get({ headers: signIn(outsider) }),
+    [200],
+  );
+
+  expect(peerStatus.body.job).toBeNull();
+  expect(outsiderStatus.body.job).toBeNull();
+});
+
+test("user-export-publication-002 (5/5) rate-limits another export request from the owner", async () => {
+  const { owner } = await ownerExport({ concurrent: false });
+
+  const again = await accept(
+    exportsApi.post({ headers: signIn(owner), body: undefined }),
+    [429],
+  );
+
+  expect(again.body.error.code).toBe("RATE_LIMITED");
+});

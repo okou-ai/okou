@@ -1,41 +1,17 @@
-import {
-  marketingRewardConsumer,
-  settleMarketingRequest,
-} from "./helpers/marketing-reward-consumer";
-import { switchRecoverySubscription } from "./helpers/subscription-recovery";
-import { mockClerkUsers } from "./helpers/clerk-users";
-import { state, createStore } from "ccstate";
-import { createPublicConnectorActor } from "./helpers/public-connector-actor";
 import { randomUUID } from "node:crypto";
-import { HttpResponse, http } from "msw";
-import { beforeEach, describe, expect, it, onTestFinished } from "vitest";
-import { GET_STARTED_REWARDS_CHANGED_EVENT } from "@okouai/api-contracts/contracts/get-started";
+
 import { billingUsagePackCreditsContract } from "@okouai/api-contracts/contracts/billing";
-import { integrationsPhoneMessageContract } from "@okouai/api-contracts/contracts/integrations";
-import { integrationsAgentPhoneContract } from "@okouai/api-contracts/contracts/integrations-agentphone";
+import { GET_STARTED_REWARDS_CHANGED_EVENT } from "@okouai/api-contracts/contracts/get-started";
+import { HttpResponse, http } from "msw";
+import { describe, expect, it, onTestFinished } from "vitest";
+
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { billingUsagePackCreditsRoutes } from "../billing-usage-pack-credits";
-import { integrationsPhoneMessageRoutes } from "../integrations-phone-message";
-import { integrationsAgentPhoneRoutes } from "../integrations-agentphone";
-import { mockEnv, mockOptionalEnv } from "../../../lib/env";
-import { mockNow, now } from "../../../lib/time";
+import { mockEnv } from "../../../lib/env";
+import { clearMockNow, mockNow, now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
-import { flushWaitUntilForTest } from "../../context/wait-until";
-import {
-  clearAllDetached,
-  createDeferredPromise,
-  joinAll,
-  settle,
-  settleIncludingAbort,
-} from "../../utils";
-import { createFixtureLifecycle } from "./helpers/fixture-lifecycle";
-import {
-  createBddApi,
-  expectApiError,
-  type ApiTestUser,
-} from "./helpers/api-bdd";
-import { findPendingInputEventByText } from "./helpers/chat-event-test-reader";
+import { billingUsagePackCreditsRoutes } from "../billing-usage-pack-credits";
+import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import {
   AGENTPHONE_BDD_AGENT_ID,
   AGENTPHONE_BDD_PHONE_NUMBER,
@@ -43,6283 +19,2100 @@ import {
   createAgentPhoneBddApi,
   uniqueConversationId,
   uniquePhoneHandle,
-  type AgentPhoneProviderSend,
   type AgentPhoneSendCapture,
 } from "./helpers/api-bdd-agentphone";
-import {
-  captureIntegrationInputUploads,
-  expectIntegrationInputPreview,
-  listIntegrationInputFileParts,
-} from "./helpers/integration-input-assets";
-import { createChatCallbacksApi } from "./helpers/api-bdd-chat-callbacks";
-import {
-  createChatFilesBddApi,
-  threadEventCursor,
-} from "./helpers/api-bdd-chat-files";
 import { createBddIntegrationApi } from "./helpers/api-bdd-integrations";
-import { createRunsApi } from "./helpers/api-bdd-runs";
-import { createRunReadsApi } from "./helpers/api-bdd-run-reads";
-import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
-import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
-// INT-03 deep AgentPhone flows: linking through the webhook connect prompt,
-// real run dispatch through the Runner HTTP receiver, and completion replies through
-// typed internal callback dispatch. All state is constructed through public
-// APIs; the only mocked surfaces are the AgentPhone provider, Stripe, Clerk,
-// S3, and Axiom boundaries.
+import {
+  marketingRewardConsumer,
+  settleMarketingRequest,
+} from "./helpers/marketing-reward-consumer";
+import { channelsPublishedTo } from "./helpers/realtime-publications";
+import { createRouteMocks } from "./helpers/route-test";
+import {
+  generatedStripeCustomerId,
+  generatedStripeSubscriptionId,
+  postSubscriptionInvoicePaid,
+} from "./helpers/stripe-billing-webhook";
 
 const context = testContext();
-// The mock CLI observes the same resume intent the real Guest receives.
-const executionNativeSessions$ = state<Readonly<Record<string, string>>>({});
-const nativeSessionStore = createStore();
-beforeEach(() => {
-  nativeSessionStore.set(executionNativeSessions$, {});
-});
-interface LinkedAgentPhoneActor {
-  readonly actor: ApiTestUser & {
-    readonly phoneHistory: { readonly sinceSeqId?: number };
+
+const AGENTPHONE_API_BASE_URL = "https://api.agentphone.test";
+const AUTH_HEADERS = Object.freeze({ authorization: "Bearer clerk-session" });
+
+function expectProp<T extends object, K extends string>(
+  body: T,
+  key: K,
+): Extract<T, Record<K, unknown>> {
+  if (!(key in body)) {
+    throw new Error(`Expected property ${key} on response body`);
+  }
+  const hasKey = (value: T): value is Extract<T, Record<K, unknown>> => {
+    return key in value;
   };
-  readonly ap: ReturnType<typeof createAgentPhoneBddApi>;
-  readonly phone: string;
-  readonly runnerGroup: string;
-  readonly sends: AgentPhoneSendCapture;
-  readonly storage: {
-    addArtifactObject(object: {
-      readonly uploadId: string;
-      readonly filename: string;
-      readonly size: number;
-    }): void;
+  if (!hasKey(body)) {
+    throw new Error(`Expected property ${key} on response body`);
+  }
+  return body;
+}
+
+function expectErrorBody(body: object): {
+  readonly error: { readonly message: string; readonly code: string };
+} {
+  if (
+    !("error" in body) ||
+    typeof body.error !== "object" ||
+    body.error === null ||
+    !("code" in body.error) ||
+    typeof body.error.code !== "string" ||
+    !("message" in body.error) ||
+    typeof body.error.message !== "string"
+  ) {
+    throw new Error("Expected error body");
+  }
+  return { error: { code: body.error.code, message: body.error.message } };
+}
+
+function expectLinkedPhoneHandle(
+  status:
+    | { readonly linked: true; readonly phoneHandle: string }
+    | { readonly linked: false },
+): string {
+  if (!status.linked) {
+    throw new Error("Expected linked AgentPhone status");
+  }
+  return status.phoneHandle;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function firstHttpsUrl(text: string | undefined): URL {
+  if (!text) {
+    throw new Error("Expected message text containing an HTTPS URL");
+  }
+  const token = text.split(/\s+/u).find((part) => {
+    return part.startsWith("https://");
+  });
+  if (!token) {
+    throw new Error(`Expected an HTTPS URL in: ${text}`);
+  }
+  return new URL(token);
+}
+
+function connectRequestFromPrompt(text: string | undefined) {
+  const url = firstHttpsUrl(text);
+  const timestamp = Number(url.searchParams.get("ts") ?? "");
+  if (!Number.isFinite(timestamp)) {
+    throw new Error("Expected finite ts query parameter in connect URL");
+  }
+  return {
+    phoneHandle: url.searchParams.get("handle") ?? "",
+    agentphoneAgentId: url.searchParams.get("agent") ?? "",
+    timestamp,
+    signature: url.searchParams.get("sig") ?? "",
+    channel: url.searchParams.get("channel") ?? undefined,
   };
 }
 
-async function runFiniteAgentPhoneHistory(
-  operation: () => Promise<void>,
-): Promise<void> {
-  const lifecycle = createFixtureLifecycle({
-    async teardown() {
-      const waiting = await settleIncludingAbort(flushWaitUntilForTest);
-      const detached = await settleIncludingAbort(clearAllDetached);
-      const errors = [waiting, detached].flatMap((result) => {
-        return result.ok ? [] : [result.error];
-      });
-      if (errors.length === 1) {
-        throw errors[0];
-      }
-      if (errors.length > 1) {
-        throw new AggregateError(errors, "AgentPhone history cleanup failed");
-      }
-    },
+function setupAgentPhoneSuite() {
+  onTestFinished(() => {
+    clearMockNow();
   });
-  const result = await settleIncludingAbort(() => {
-    return lifecycle.run(operation);
-  });
-  const finished = await settleIncludingAbort(() => {
-    return lifecycle.finish();
-  });
-  const errors = [result, finished].flatMap((outcome) => {
-    return outcome.ok ? [] : [outcome.error];
-  });
-  if (errors.length === 1) {
-    throw errors[0];
-  }
-  if (errors.length > 1) {
-    throw new AggregateError(errors, "AgentPhone history fixture failed");
-  }
-}
-
-async function entitledLinkedActor(
-  phone = uniquePhoneHandle(),
-): Promise<LinkedAgentPhoneActor> {
+  mockEnv("APP_URL", "https://app.okou.test");
+  mockEnv("ENV", "development");
   const bdd = createBddApi(context);
-  const runs = createRunsApi(context);
   const integrations = createBddIntegrationApi(context);
-  const ap = createAgentPhoneBddApi(context);
-
-  const actor = bdd.user();
-  const storage = ap.acceptAgentPhoneObjectStorage();
-  runs.acceptStorageDownloads();
-  runs.acceptTelemetryIngest();
-  context.mocks.ably.publish.mockResolvedValue(undefined);
-  const runnerGroup = await runs.configureRunnerGroup();
+  const agentPhone = createAgentPhoneBddApi(context);
   integrations.configureAgentPhoneProvider();
   integrations.configureAgentPhoneWebhook();
-  const sends = ap.captureAgentPhoneSends();
+  const sends = agentPhone.captureAgentPhoneSends();
+  const reactions = agentPhone.captureAgentPhoneReactions();
 
-  await runs.grantProEntitlement(actor);
-  // Linking does not select a model; both prerequisites finish before ingress.
-  await joinAll([
-    runs.ensurePersonalSubscriptionModel(actor),
-    ap.linkViaWebhookConnectPrompt(actor, phone, sends),
-  ]);
-  const phoneHistory = { sinceSeqId: await threadEventCursor(context, actor) };
-  return {
-    actor: { ...actor, phoneHistory },
-    ap,
-    phone,
-    runnerGroup,
-    sends,
-    storage,
-  };
-}
-
-async function contactCardConversation() {
-  const linked = await entitledLinkedActor();
-  const conversationId = uniqueConversationId();
-  server.use(
-    http.get(
-      `https://api.agentphone.test/v1/conversations/${conversationId}`,
-      () => {
-        return HttpResponse.json({
-          capabilities: { canSendMessages: true, media: true },
-        });
-      },
-    ),
-  );
-  return {
-    ...linked,
-    conversationId,
-    async answer(body: string) {
-      const messageId = await linked.ap.postAgentPhoneInboundMessage({
-        channel: "imessage",
-        from: linked.phone,
-        body,
-        conversationId,
-      });
-      const run = await readDispatchedRun(linked.runnerGroup);
-      await completeSandboxRun(run.sandboxToken, run.runId, 0, {
-        resultText: `Answer: ${body}`,
-      });
-      await flushWaitUntilForTest();
-      return { ...run, messageId };
-    },
-  };
-}
-
-const modelSessionScenarios = [
-  { channel: "sms", withConversation: false },
-  { channel: "imessage", withConversation: true },
-  { channel: "imessage", withConversation: false },
-] as const;
-
-async function modelSessionScenario({
-  channel,
-  withConversation,
-}: (typeof modelSessionScenarios)[number]) {
-  const ap = createAgentPhoneBddApi(context);
-
-  const { actor, phone, runnerGroup, sends } = await entitledLinkedActor();
-
-  await createBddIntegrationApi(context).configureNativeSubscriptionModels(
-    actor,
-  );
-  const conversationId = withConversation ? uniqueConversationId() : undefined;
-  async function send(body: string) {
-    return await ap.postAgentPhoneInboundMessage({
-      channel,
-      from: phone,
-      body,
-      conversationId,
-    });
-  }
-  async function complete(
-    body: string,
-    expectedModel: "claude-fable-5-1" | "gpt-6-astra",
+  async function linkWithCode(
+    actor: ApiTestUser,
+    handle: string,
+    channel: "imessage" | "sms" = "imessage",
   ) {
-    const messageId = await send(body);
-    const run = await readDispatchedRun(runnerGroup);
-    expect(run.cliAgentType).toBe(
-      expectedModel === "gpt-6-astra" ? "codex" : "claude-code",
-    );
-    expect(run.environment).toMatchObject(
-      expectedModel === "gpt-6-astra"
-        ? { OPENAI_MODEL: expectedModel }
-        : { ANTHROPIC_MODEL: expectedModel },
-    );
-    await completeSandboxRun(run.sandboxToken, run.runId, 0, {
-      cliAgentType: run.cliAgentType,
-    });
-    expect(lastSend(sends).body).toBe("Task completed successfully.");
-    if (channel === "imessage") {
-      expect(lastSend(sends)).toMatchObject({
-        toNumber: phone,
-        replyToMessageId: messageId,
-      });
-      expect(lastSend(sends).conversationId).toBeUndefined();
-    } else {
-      expect(lastSend(sends).toNumber).toBe(phone);
-      expect(lastSend(sends).replyToMessageId).toBeUndefined();
-    }
-    const sessionId = await waitForRunSessionIdPresent(actor, run.runId);
-    const chat = createChatFilesBddApi(context);
-    const lifecycle = await chat.requestThreadEvents(
+    const issued = await integrations.requestCreateAgentPhoneLinkCode(
       actor,
-      actor.phoneHistory,
       [200],
     );
-    if (lifecycle.status !== 200) {
-      throw new Error("Expected AgentPhone thread lifecycle events");
-    }
-    const threads = lifecycle.body.events.filter((event) => {
-      return event.kind === "created";
+    await agentPhone.postAgentPhoneInboundMessage({
+      channel,
+      from: handle,
+      body: issued.body.code,
     });
-    const thread = threads.at(-1);
-    if (!thread) {
-      throw new Error("Expected AgentPhone to expose its main DM thread");
-    }
-    const events = await chat.listThreadEvents(actor, thread.chatThreadId);
-    expect(events.events).toContainEqual(
-      expect.objectContaining({ eventType: "input.prompt", runId: run.runId }),
-    );
-    const metadata = await chat.readThreadMetadata(actor, thread.chatThreadId);
-    return {
-      sessionId,
-      cliAgentSessionId: agentPhoneCliAgentSessionIdForRun(run.runId),
-      resumedSessionId: run.resumedSessionId,
-      selectedModel: metadata.selectedModel,
-      threadId: thread.chatThreadId,
-      threadCount: threads.length,
-      serviceTier: run.serviceTier,
-    };
+    return issued.body;
   }
-  return { actor, send, complete, sends, runnerGroup };
-}
 
-async function readDispatchedRun(runnerGroup: string): Promise<{
-  readonly runId: string;
-  readonly sandboxToken: string;
-  readonly prompt: string;
-  readonly appendSystemPrompt: string;
-  readonly okouToken: string | undefined;
-  readonly resumedSessionId: string | undefined;
-  readonly cliAgentType: "claude-code" | "codex";
-  readonly environment: Record<string, string> | null;
-  readonly serviceTier: string | undefined;
-}> {
-  const execution =
-    await createRunsApi(context).nextReceivedExecution(runnerGroup);
-  const runId = execution.runId;
-  if (
-    execution.cliAgentType !== "claude-code" &&
-    execution.cliAgentType !== "codex"
-  ) {
-    throw new Error(
-      `Expected a native AgentPhone execution, got ${execution.cliAgentType}`,
-    );
-  }
-  if (execution.nativeContinuation?.sessionId) {
-    nativeSessionStore.set(executionNativeSessions$, {
-      ...nativeSessionStore.get(executionNativeSessions$),
-      [runId]: execution.nativeContinuation.sessionId,
-    });
-  }
-  return {
-    runId,
-    sandboxToken: execution.sandboxToken,
-    prompt: execution.prompt,
-    appendSystemPrompt: execution.appendSystemPrompt ?? "",
-    okouToken: execution.platformEnvironment.OKOU_TOKEN,
-    resumedSessionId: execution.nativeContinuation?.sessionId ?? undefined,
-    cliAgentType: execution.cliAgentType,
-    environment: execution.environment,
-    serviceTier: execution.platformEnvironment.OKOU_CODEX_SERVICE_TIER,
-  };
-}
-
-function agentPhoneCliAgentSessionIdForRun(runId: string): string {
-  return (
-    nativeSessionStore.get(executionNativeSessions$)[runId] ??
-    `bdd-agentphone-cli-${runId}`
-  );
-}
-
-async function completeSandboxRun(
-  sandboxToken: string,
-  runId: string,
-  exitCode: number,
-  options: {
-    readonly error?: string;
-    readonly failureReason?: string;
-    readonly resultText?: string;
-    readonly cliAgentType?: "claude-code" | "codex";
-  } = {},
-): Promise<void> {
-  const webhooks = createWebhookCallbackApi(context);
-  const sandboxHeaders = { authorization: `Bearer ${sandboxToken}` };
-  if (options.resultText !== undefined) {
-    await webhooks.requestAgentEvents(
-      {
-        runId,
-        events: [
-          {
-            type: "result",
-            sequenceNumber: 0,
-            result: options.resultText,
-          },
-        ],
-      },
-      sandboxHeaders,
-      [200],
-    );
-  }
-  await webhooks.requestAgentComplete(
-    {
-      runId,
-      exitCode,
-      ...(exitCode === 0
-        ? {
-            completion: {
-              cliAgentType: options.cliAgentType ?? "claude-code",
-              cliAgentSessionId: agentPhoneCliAgentSessionIdForRun(runId),
-              cliAgentSessionHistoryDisposition: "native_only",
-            },
-          }
-        : {}),
-      ...(options.error === undefined ? {} : { error: options.error }),
-      ...(options.failureReason === undefined
-        ? {}
-        : { failureReason: options.failureReason }),
-      ...(options.resultText === undefined ? {} : { lastEventSequence: 0 }),
-    },
-    sandboxHeaders,
-    [200],
-  );
-  await clearAllDetached();
-}
-
-function expectConnectedWelcome(
-  sends: readonly AgentPhoneProviderSend[],
-): void {
-  expect(
-    sends.map((send) => {
-      return send.body;
-    }),
-  ).toStrictEqual([
-    expect.stringContaining("Your phone number is now connected to Okou."),
-    expect.stringContaining("connect the tools you already use"),
-    expect.stringContaining("What would you like to start with?"),
-  ]);
-  expect(
-    sends.map((send) => {
-      return send.mediaUrls;
-    }),
-  ).toStrictEqual([[], [], []]);
-}
-
-function lastSend(sends: AgentPhoneSendCapture): AgentPhoneProviderSend {
-  const send = sends.messages.at(-1);
-  if (!send) {
-    throw new Error("Expected a captured AgentPhone provider send");
-  }
-  return send;
-}
-
-async function connectFromReceivedLink(
-  actor: ApiTestUser,
-  prompt: AgentPhoneProviderSend | undefined,
-): Promise<void> {
-  const url = prompt?.body?.match(/https?:\/\/\S+/u)?.[0];
-  if (!url) {
-    throw new Error("Expected a private connection link for the group sender");
-  }
-  const params = new URL(url).searchParams;
-  await createBddIntegrationApi(context).requestConnectAgentPhone(
-    actor,
-    {
-      phoneHandle: params.get("handle") ?? "",
-      agentphoneAgentId: params.get("agent") ?? "",
-      timestamp: Number(params.get("ts")),
-      signature: params.get("sig") ?? "",
-      channel: params.get("channel") ?? undefined,
-    },
-    [200],
-  );
-}
-
-// The surface delivery rules follow the integration block as their own
-// section, so they are part of the caller-supplied tail this test pins.
-const AGENTPHONE_MESSAGING_NOTE =
-  "- Phone messaging and files: use `okou phone --help`. Only your final reply is delivered to the originating conversation, and nothing you produce while the run is in progress is sent on its own, so message commands are for explicit extra messages or file delivery. Use `okou phone download-file -h` for `[Phone file]` blocks. `okou phone upload-file -h` can share a local file when the phone channel supports the requested file delivery. For an explicitly requested iMessage group upload, use `--to <Group ID>`; the connected user must currently belong to that group. Omitting --to sends to the user's own phone.";
-const AGENTPHONE_ARTIFACT_NOTE =
-  "- Private artifacts in the final reply: weigh this only while composing the final reply, never during the run. This upload guidance applies to replies in the phone channel. If the user continues the conversation in Web chat, deliver files there and do not continue uploading to the phone channel unless the user explicitly requests it. A private `/artifacts/...` address is not openable from the phone channel, so a link alone shows the user nothing. When you judge that the phone channel can display that kind of file — a hosted website or HTML page never qualifies — upload it with `okou phone upload-file` so the user has something they can open there. If you upload it, also keep the original private `/artifacts/...` address from before the upload in the final reply, not the address returned by `okou phone upload-file`, so the owner can open the original artifact after returning to the web app.";
-
-function expectIntegrationImmediatelyBeforeRestrictedContent(
-  appendSystemPrompt: string,
-  expectedIntegration: string,
-  expectedThreadContext?: string,
-): void {
-  const restrictedContentIndex = appendSystemPrompt.lastIndexOf(
-    "# Restricted Explicit Content",
-  );
-  expect(restrictedContentIndex).toBeGreaterThan(-1);
-  // The API appends the built-in image model section after the caller's own
-  // prompt, so the integration block is the last caller-supplied section
-  // rather than the last section overall.
-  const imageModelIndex = appendSystemPrompt.lastIndexOf(
-    "\n\n# Built-in image model",
-  );
-  expect(imageModelIndex).toBeGreaterThan(-1);
-  expect(imageModelIndex).toBeLessThan(restrictedContentIndex);
-  const callerPrompt = appendSystemPrompt.slice(0, imageModelIndex).trimEnd();
-  expect(callerPrompt).toContain(
-    [
-      expectedIntegration,
-      "# Integration Note\n\n" + AGENTPHONE_MESSAGING_NOTE,
-    ].join("\n\n"),
-  );
-  const expectedTail = [
-    AGENTPHONE_ARTIFACT_NOTE,
-    ...(expectedThreadContext === undefined ? [] : [expectedThreadContext]),
-  ].join("\n\n");
-  expect(callerPrompt.endsWith(expectedTail)).toBeTruthy();
-}
-
-async function waitForTyping(
-  sends: AgentPhoneSendCapture,
-  expected: readonly string[],
-): Promise<void> {
-  await flushWaitUntilForTest();
-  expect(sends.typing).toStrictEqual(expected);
-}
-
-async function waitForSendCount(
-  sends: AgentPhoneSendCapture,
-  count: number,
-): Promise<void> {
-  await flushWaitUntilForTest();
-  expect(sends.messages.length).toBeGreaterThanOrEqual(count);
-}
-
-async function waitForSendMatching(
-  sends: AgentPhoneSendCapture,
-  startIndex: number,
-  predicate: (send: AgentPhoneProviderSend) => boolean,
-): Promise<AgentPhoneProviderSend> {
-  await flushWaitUntilForTest();
-  const matched = sends.messages.slice(startIndex).find(predicate);
-  expect(matched).toBeDefined();
-  if (!matched) {
-    throw new Error("Expected a matching AgentPhone provider send");
-  }
-  return matched;
-}
-
-async function waitForRunSessionId(
-  actor: ApiTestUser,
-  runId: string,
-  expected: string,
-): Promise<void> {
-  const ap = createAgentPhoneBddApi(context);
-  await flushWaitUntilForTest();
-  await expect(
-    (async () => {
-      return await ap.readRunSessionId(actor, runId);
-    })(),
-  ).resolves.toBe(expected);
-}
-
-async function waitForRunSessionIdPresent(
-  actor: ApiTestUser,
-  runId: string,
-): Promise<string> {
-  const ap = createAgentPhoneBddApi(context);
-  let sessionId: string | undefined;
-  await flushWaitUntilForTest();
-  await expect(
-    (async () => {
-      const result = await settle(ap.readRunSessionId(actor, runId));
-      sessionId = result.ok ? result.value : undefined;
-      return sessionId ?? null;
-    })(),
-  ).resolves.not.toBeNull();
-  if (!sessionId) {
-    throw new Error(`Expected run ${runId} to expose a session id`);
-  }
-  return sessionId;
-}
-
-const MARKDOWN_RUN_OUTPUT = [
-  "# Inbox summary",
-  "",
-  "```",
-  "code line",
-  "```",
-  "",
-  "**Bold** _italic_ `code` ~~strike~~",
-  "",
-  "See [docs](https://okou.ai/docs) and ![chart](https://okou.ai/chart.png)",
-  "",
-  "- first",
-  "* second",
-  "> quoted",
-].join("\n");
-
-const EXPECTED_PLAIN_RUN_OUTPUT = [
-  "Inbox summary",
-  "",
-  "code line",
-  "",
-  "Bold italic code strike",
-  "",
-  "See docs",
-  "https://okou.ai/docs and chart",
-  "https://okou.ai/chart.png",
-  "",
-  "- first",
-  "- second",
-  "quoted",
-].join("\n");
-
-describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
-  it.each(["imessage", "sms"] as const)(
-    "links a %s model failure to its original Web conversation",
-    async (channel) => {
-      mockEnv("OKOU_WEB_URL", "https://app.okou.ai");
-      const { actor, ap, phone, runnerGroup, sends } =
-        await entitledLinkedActor();
-      await ap.postAgentPhoneInboundMessage({
-        channel,
-        from: phone,
-        body: "review this attachment",
-        conversationId: uniqueConversationId(),
-      });
-      const run = await readDispatchedRun(runnerGroup);
-      await completeSandboxRun(run.sandboxToken, run.runId, 1, {
-        error: "Claude account requires verification",
-        failureReason: "account_verification_required",
-      });
-      await flushWaitUntilForTest();
-      const chat = createChatFilesBddApi(context);
-      const lifecycle = await chat.requestThreadEvents(
-        actor,
-        actor.phoneHistory,
-        [200],
-      );
-      if (lifecycle.status !== 200) {
-        throw new Error("Expected the original Web conversation");
-      }
-      const thread = lifecycle.body.events.find((event) => {
-        return event.kind === "created";
-      });
-      if (!thread) {
-        throw new Error("Expected the integration conversation");
-      }
-      const events = await chat.listThreadEvents(actor, thread.chatThreadId);
-      expect(events.events).toContainEqual(
-        expect.objectContaining({ eventType: "run.failed", runId: run.runId }),
-      );
-      expect(lastSend(sends).body).toContain(
-        `Switch this conversation's model in Okou: https://app.okou.ai/chats/${thread.chatThreadId}`,
-      );
-      expect(lastSend(sends).body).toContain(
-        "Send your previous request again after switching.",
-      );
-    },
-  );
-
-  it.each([false, true])(
-    "adds an iMessage reaction with a run token (group: %s)",
-    async (isGroup) => {
-      const { actor, ap, phone, runnerGroup, sends } =
-        await entitledLinkedActor();
-      const reactions = ap.captureAgentPhoneReactions();
-      const messageId = await ap.postAgentPhoneInboundMessage({
-        channel: "imessage",
-        from: phone,
-        body: "@Okou review this plan",
-        conversationId: uniqueConversationId(),
-        isGroup,
-      });
-      const run = await readDispatchedRun(runnerGroup);
-      expect(run.appendSystemPrompt).toContain(`Message ID: ${messageId}`);
-      expect(run.appendSystemPrompt).toContain(
-        "okou phone reaction <message-id>",
-      );
-      expect(run.appendSystemPrompt).toContain(
-        "does not require a separate user request",
-      );
-      if (!run.okouToken) {
-        throw new Error("Expected an execution-issued CLI token");
-      }
-      const client = setupApp({
-        context,
-        routes: integrationsPhoneMessageRoutes,
-      })(integrationsPhoneMessageContract);
-      const result = await accept(
-        client.sendReaction({
-          headers: { authorization: `Bearer ${run.okouToken}` },
-          body: { messageId, reaction: "🔥" },
-        }),
-        [200],
-      );
-      expect(result.body).toMatchObject({
-        ok: true,
-        messageId,
-        reaction: "🔥",
-        channel: "imessage",
-      });
-      expect(result.body.reactionId).toMatch(/^rxn_/u);
-      expect(reactions).toStrictEqual([{ messageId, reaction: "🔥" }]);
-      await completeSandboxRun(run.sandboxToken, run.runId, 0);
-
-      if (isGroup) {
-        // Bot answers archived for the group are also valid reaction targets.
-        await flushWaitUntilForTest();
-        const answerMessageId = lastSend(sends).messageId;
-        await createBddIntegrationApi(context).requestSendPhoneReaction(
-          actor,
-          { messageId: answerMessageId, reaction: "like" },
-          [200],
-        );
-        expect(reactions).toContainEqual({
-          messageId: answerMessageId,
-          reaction: "like",
-        });
-      }
-    },
-  );
-
-  it("lets a recipient add an iMessage reaction to a group message received before connecting", async () => {
-    const { ap, phone, sends } = await entitledLinkedActor();
-    const member = createBddApi(context).user();
-    const memberPhone = uniquePhoneHandle();
-    const reactions = ap.captureAgentPhoneReactions();
-    const messageId = await ap.postAgentPhoneInboundMessage({
-      channel: "imessage",
-      from: phone,
-      body: "The launch went well",
-      conversationId: uniqueConversationId(),
-      isGroup: true,
-      participants: [{ identifier: phone }, { identifier: memberPhone }],
-    });
-    await ap.linkViaWebhookConnectPrompt(member, memberPhone, sends);
-    await createBddIntegrationApi(context).requestSendPhoneReaction(
-      member,
-      { messageId, reaction: "love" },
-      [200],
-    );
-    expect(reactions).toStrictEqual([{ messageId, reaction: "love" }]);
-  });
-
-  it.each(["dm", "group"] as const)(
-    "denies iMessage reactions to another account's %s",
-    async (kind) => {
-      const { actor, ap, phone, sends } = await entitledLinkedActor();
-      const integrations = createBddIntegrationApi(context);
-      const reactions = ap.captureAgentPhoneReactions();
-      const messageId = await ap.postAgentPhoneInboundMessage({
-        channel: "imessage",
-        from: phone,
-        body: "/help",
-        conversationId: uniqueConversationId(),
-        isGroup: kind === "group",
-      });
-      const other = createBddApi(context).user({ orgId: actor.orgId });
-      await ap.linkViaWebhookConnectPrompt(other, uniquePhoneHandle(), sends);
-      for (const requester of [
-        other,
-        { ...actor, orgId: `org_${randomUUID()}` },
-      ]) {
-        await integrations.requestSendPhoneReaction(
-          requester,
-          { messageId, reaction: "like" },
-          [404],
-        );
-      }
-      await integrations.requestSendPhoneReaction(
-        null,
-        { messageId, reaction: "like" },
-        [401],
-      );
-      expect(reactions).toHaveLength(0);
-    },
-  );
-
-  it.each(["departed member", "unlinked phone"] as const)(
-    "denies an iMessage reaction for a %s",
-    async (scenario) => {
-      const { actor, ap, phone } = await entitledLinkedActor();
-      const integrations = createBddIntegrationApi(context);
-      const reactions = ap.captureAgentPhoneReactions();
-      const otherPhone = uniquePhoneHandle();
-      const conversationId = uniqueConversationId();
-      const messageId = await ap.postAgentPhoneInboundMessage({
-        channel: "imessage",
-        from: phone,
-        body: "ordinary group message",
-        conversationId,
-        isGroup: true,
-        participants: [{ identifier: phone }, { identifier: otherPhone }],
-      });
-      if (scenario === "departed member") {
-        server.use(
-          http.get(
-            `https://api.agentphone.test/v1/conversations/${conversationId}`,
-            () => {
-              return HttpResponse.json({ participants: [otherPhone] });
-            },
-          ),
-        );
-      } else {
-        await integrations.requestUnlinkAgentPhone(actor, [204]);
-      }
-      await integrations.requestSendPhoneReaction(
-        actor,
-        { messageId, reaction: "like" },
-        [404],
-      );
-      expect(reactions).toHaveLength(0);
-    },
-  );
-
-  it.each(["sms", "mms"] as const)(
-    "rejects an iMessage reaction to %s",
-    async (channel) => {
-      const { actor, ap, phone } = await entitledLinkedActor();
-      const reactions = ap.captureAgentPhoneReactions();
-      const messageId = await ap.postAgentPhoneInboundMessage({
-        channel,
-        from: phone,
-        body: "/help",
-        conversationId: uniqueConversationId(),
-      });
-      const result = await createBddIntegrationApi(
-        context,
-      ).requestSendPhoneReaction(actor, { messageId, reaction: "like" }, [400]);
-      expect(result.body).toMatchObject({
-        error: { code: "UNSUPPORTED_CHANNEL" },
-      });
-      expect(reactions).toHaveLength(0);
-    },
-  );
-
-  it.each([
-    { providerStatus: 404, expectedStatus: 404 },
-    { providerStatus: 503, expectedStatus: 502 },
-  ] as const)(
-    "denies an iMessage reaction when the roster returns $providerStatus",
-    async ({ providerStatus, expectedStatus }) => {
-      const { actor, ap, phone } = await entitledLinkedActor();
-      const reactions = ap.captureAgentPhoneReactions();
-      const conversationId = uniqueConversationId();
-      const messageId = await ap.postAgentPhoneInboundMessage({
-        channel: "imessage",
-        from: phone,
-        body: "ordinary group message",
-        conversationId,
-        isGroup: true,
-      });
-      server.use(
-        http.get(
-          `https://api.agentphone.test/v1/conversations/${conversationId}`,
-          () => {
-            return HttpResponse.json(
-              { detail: "Roster unavailable" },
-              { status: providerStatus },
-            );
-          },
-        ),
-      );
-      await createBddIntegrationApi(context).requestSendPhoneReaction(
-        actor,
-        { messageId, reaction: "like" },
-        [expectedStatus],
-      );
-      expect(reactions).toHaveLength(0);
-    },
-  );
-
-  it.each([
-    { providerStatus: 400, expectedStatus: 400 },
-    { providerStatus: 404, expectedStatus: 404 },
-    { providerStatus: 503, expectedStatus: 502 },
-    { providerStatus: "network", expectedStatus: 502 },
-  ] as const)(
-    "returns iMessage reaction failures without retrying ($providerStatus)",
-    async ({ providerStatus, expectedStatus }) => {
-      const { actor, ap, phone } = await entitledLinkedActor();
-      const messageId = await ap.postAgentPhoneInboundMessage({
-        channel: "imessage",
-        from: phone,
-        body: "ordinary group message",
-        conversationId: uniqueConversationId(),
-        isGroup: true,
-      });
-      const requests: unknown[] = [];
-      server.use(
-        http.post(
-          `https://api.agentphone.test/v1/messages/:messageId/reactions`,
-          async ({ request }) => {
-            requests.push(await request.json());
-            return providerStatus === "network"
-              ? HttpResponse.error()
-              : HttpResponse.json(
-                  { error: { message: "Reaction unavailable" } },
-                  { status: providerStatus },
-                );
-          },
-        ),
-      );
-      const result = await createBddIntegrationApi(
-        context,
-      ).requestSendPhoneReaction(actor, { messageId, reaction: "🔥" }, [
-        expectedStatus,
-      ]);
-      expect(result.status).toBe(expectedStatus);
-      expect(requests).toStrictEqual([{ reaction: "🔥" }]);
-      if (providerStatus === "network") {
-        expect(result.body).toMatchObject({
-          error: { code: "AGENTPHONE_OUTCOME_UNKNOWN" },
-        });
-      }
-    },
-  );
-
-  it("sends an explicit group message with a run-scoped CLI token and archives it for current members", async () => {
-    const integrations = createBddIntegrationApi(context);
-    const { actor, ap, phone, runnerGroup, sends } =
-      await entitledLinkedActor();
-    const other = createBddApi(context).user();
-    const otherPhone = uniquePhoneHandle();
-    await ap.linkViaWebhookConnectPrompt(other, otherPhone, sends);
-    const conversationId = uniqueConversationId();
-    const groupId = bddGroupId(conversationId);
-    await ap.postAgentPhoneInboundMessage({
-      channel: "imessage",
-      from: phone,
-      body: "@Okou prepare a group update",
-      conversationId,
-      isGroup: true,
-      participants: [{ identifier: phone }, { identifier: otherPhone }],
-    });
-    const run = await readDispatchedRun(runnerGroup);
-    expect(run.appendSystemPrompt).toContain(`Group ID: ${groupId}`);
-    expect(run.appendSystemPrompt).toContain(
-      `okou imessage message send --to ${groupId}`,
-    );
-    expect(run.appendSystemPrompt).toContain("okou imessage group list --help");
-    expect(run.appendSystemPrompt).toContain(
-      "okou imessage group history --help",
-    );
-    if (!run.okouToken) {
-      throw new Error("Expected an execution-issued CLI token");
-    }
-    const groupsClient = setupApp({
-      context,
-      routes: integrationsAgentPhoneRoutes,
-    })(integrationsAgentPhoneContract);
+  function overrideConversationRoster(
+    conversationId: string,
+    participants: readonly string[],
+  ): void {
     server.use(
       http.get(
-        `https://api.agentphone.test/v1/conversations/${conversationId}`,
-        () => {
+        `${AGENTPHONE_API_BASE_URL}/v1/conversations/:id`,
+        ({ params }) => {
+          if (String(params.id) !== conversationId) {
+            return HttpResponse.json({ participants: [] });
+          }
           return HttpResponse.json({
-            id: conversationId,
-            agentId: AGENTPHONE_BDD_AGENT_ID,
-            isGroup: true,
-            groupId,
-            groupName: "Project group",
-            phoneNumber: AGENTPHONE_BDD_PHONE_NUMBER,
-            participants: [
-              { identifier: phone },
-              { identifier: otherPhone },
-              { identifier: AGENTPHONE_BDD_PHONE_NUMBER },
-            ],
+            participants: participants.map((identifier) => {
+              return { identifier, name: null };
+            }),
           });
         },
       ),
     );
-    const listed = await accept(
-      groupsClient.listGroups({
-        headers: { authorization: `Bearer ${run.okouToken}` },
-        query: { limit: 25 },
-      }),
-      [200],
-    );
-    expect(listed.body.groups).toContainEqual({
-      groupId,
-      conversationId,
-      groupName: "Project group",
-      agentphoneAgentId: AGENTPHONE_BDD_AGENT_ID,
-      lastMessageAt: expect.any(String),
+  }
+
+  function mockWorkspaceName(actor: ApiTestUser, name: string): void {
+    context.mocks.clerk.organizations.getOrganization.mockResolvedValue({
+      id: actor.orgId,
+      slug: `org-${(actor.orgId ?? "ws").slice(-8)}`,
+      name,
+      createdBy: actor.userId,
     });
-    const client = setupApp({
-      context,
-      routes: integrationsPhoneMessageRoutes,
-    })(integrationsAgentPhoneContract);
-    mockClerkUsers(context, [
-      {
-        id: actor.userId,
-        firstName: "Linghan",
-        lastName: "Hu",
-        primaryEmailAddressId: "sender-email",
-        emailAddresses: [{ id: "sender-email", emailAddress: actor.email }],
-        imageUrl: "",
-      },
-    ]);
-    const sent = await accept(
-      client.groupMessage({
-        headers: { authorization: `Bearer ${run.okouToken}` },
-        body: { groupId, text: "The group update is ready" },
-      }),
-      [200],
-    );
-    expect(sent.body).toMatchObject({ ok: true, toNumber: groupId });
-    expect(lastSend(sends)).toMatchObject({
-      agentId: AGENTPHONE_BDD_AGENT_ID,
-      toNumber: groupId,
-      body: expect.stringMatching(
-        /^The group update is ready\n\nTriggered by Linghan Hu$/u,
-      ),
-    });
-    for (const member of [actor, other]) {
-      const history = await integrations.requestAgentPhoneGroupHistory(
-        member,
-        { groupId, limit: 100 },
-        [200],
-      );
-      if (history.status !== 200) {
-        throw new Error("Expected authorized group history");
-      }
-      expect(history.body.messages).toContainEqual(
-        expect.objectContaining({
-          id: sent.body.messageId,
-          conversationId,
-          toNumber: groupId,
-          direction: "outbound",
-          channel: "imessage",
-          body: lastSend(sends).body,
-        }),
-      );
+  }
+
+  async function provisionProMember(
+    actor: ApiTestUser,
+    workspaceName?: string,
+  ): Promise<void> {
+    if (!actor.orgId) {
+      throw new Error("Expected organization on Pro member");
     }
-    await completeSandboxRun(run.sandboxToken, run.runId, 0);
+    await postSubscriptionInvoicePaid(context.signal, {
+      orgId: actor.orgId,
+      userId: actor.userId,
+      tier: "pro",
+      customerId: generatedStripeCustomerId(),
+      subscriptionId: generatedStripeSubscriptionId(),
+      currentPeriodEnd: new Date(now() + 30 * 24 * 60 * 60 * 1000),
+    });
+    if (workspaceName) {
+      mockWorkspaceName(actor, workspaceName);
+    }
+  }
+
+  return {
+    bdd,
+    integrations,
+    agentPhone,
+    sends,
+    reactions,
+    linkWithCode,
+    overrideConversationRoster,
+    mockWorkspaceName,
+    provisionProMember,
+  };
+}
+
+function expectThreePartWelcome(
+  messages: AgentPhoneSendCapture["messages"],
+  toHandle: string,
+  firstReplyToMessageId?: string,
+): void {
+  expect(messages).toHaveLength(3);
+  const [first, second, third] = messages;
+  expect(first?.toNumber).toBe(toHandle);
+  expect(first?.conversationId).toBeUndefined();
+  expect(first?.mediaUrl).toBeUndefined();
+  expect(first?.mediaUrls).toStrictEqual([]);
+  expect(first?.body).toContain("Your phone number is now connected to Okou.");
+  if (firstReplyToMessageId !== undefined) {
+    expect(first?.replyToMessageId).toBe(firstReplyToMessageId);
+  }
+  expect(second?.toNumber).toBe(toHandle);
+  expect(second?.conversationId).toBeUndefined();
+  expect(second?.replyToMessageId).toBeUndefined();
+  expect(second?.mediaUrl).toBeUndefined();
+  expect(second?.mediaUrls).toStrictEqual([]);
+  expect(second?.body).toBeTruthy();
+  expect(third?.toNumber).toBe(toHandle);
+  expect(third?.conversationId).toBeUndefined();
+  expect(third?.replyToMessageId).toBeUndefined();
+  expect(third?.mediaUrl).toBeUndefined();
+  expect(third?.mediaUrls).toStrictEqual([]);
+  expect(third?.body).toContain("What would you like to start with?");
+}
+
+describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
+  it("agentphone.bdd-059 links an AgentPhone user through the provider connect prompt", async () => {
+    const suite = setupAgentPhoneSuite();
+    const owner = suite.bdd.user();
+    const phone = uniquePhoneHandle();
+
+    await suite.agentPhone.postAgentPhoneInboundMessage({
+      channel: "sms",
+      from: phone,
+      body: "hi",
+    });
+    const prompt = suite.sends.messages.at(-1);
+    const connectBody = connectRequestFromPrompt(prompt?.body);
+    await suite.integrations.requestConnectAgentPhone(
+      owner,
+      connectBody,
+      [200],
+    );
+
+    expect(suite.sends.messages.at(-1)?.toNumber).toBe(phone);
+    expect(suite.sends.messages.at(-1)?.agentId).toBe(AGENTPHONE_BDD_AGENT_ID);
+    const status = await suite.integrations.getAgentPhoneLinkStatus(owner);
+    expect(status.linked).toBeTruthy();
+    expect(expectLinkedPhoneHandle(status)).toBe(phone);
   });
 
-  it.each(["phone", "email"] as const)(
-    "lets a recipient read history and send with a %s connected later",
-    async (handleType) => {
-      const integrations = createBddIntegrationApi(context);
-      const { ap, phone, sends } = await entitledLinkedActor();
-      const member = createBddApi(context).user();
-      const memberHandle =
-        handleType === "email"
-          ? `bdd-${randomUUID()}@example.com`
-          : uniquePhoneHandle();
-      const conversationId = uniqueConversationId();
-      const groupId = bddGroupId(conversationId);
-      const earlierMessageId = await ap.postAgentPhoneInboundMessage({
-        channel: "imessage",
-        from: phone,
-        body: "Group history from before the member connected",
-        conversationId,
-        isGroup: true,
-        participants: [{ identifier: phone }, { identifier: memberHandle }],
-      });
-
-      const issued = await integrations.requestCreateAgentPhoneLinkCode(
-        member,
-        [200],
-      );
-      await ap.postAgentPhoneInboundMessage({
-        channel: "imessage",
-        from: memberHandle,
-        body: issued.body.code,
-        conversationId: uniqueConversationId(),
-      });
-      const before = await integrations.requestAgentPhoneGroupHistory(
-        member,
-        { groupId, limit: 100 },
-        [200],
-      );
-      expect(before.body).toMatchObject({
-        messages: [
-          {
-            id: earlierMessageId,
-            direction: "inbound",
-            body: "Group history from before the member connected",
-          },
-        ],
-      });
-
-      const sent = await integrations.requestSendAgentPhoneGroupMessage(
-        member,
-        { groupId, text: "Hello from the newly connected member" },
-        [200],
-      );
-      if (sent.status !== 200) {
-        throw new Error("Expected the current member's group send to succeed");
-      }
-      expect(sent.body).toMatchObject({ ok: true, toNumber: groupId });
-      expect(lastSend(sends)).toMatchObject({
-        agentId: AGENTPHONE_BDD_AGENT_ID,
-        toNumber: groupId,
-        body: "Hello from the newly connected member",
-      });
-
-      const after = await integrations.requestAgentPhoneGroupHistory(
-        member,
-        { groupId, limit: 100 },
-        [200],
-      );
-      expect(after.body).toMatchObject({
-        messages: [
-          { id: earlierMessageId, direction: "inbound" },
-          {
-            id: sent.body.messageId,
-            toNumber: groupId,
-            direction: "outbound",
-            body: "Hello from the newly connected member",
-          },
-        ],
-      });
-    },
-  );
-
-  it.each([
-    "unknown group",
-    "foreign workspace",
-    "unrelated user",
-    "unlinked phone",
-    "departed member",
-    "foreign agent",
-  ] as const)("rejects an explicit group send for a %s", async (scenario) => {
-    const integrations = createBddIntegrationApi(context);
-    const { actor, ap, phone, sends } = await entitledLinkedActor();
+  it("agentphone.bdd-005 lets a recipient add an iMessage reaction to a group message received before connecting", async () => {
+    const suite = setupAgentPhoneSuite();
+    const firstUser = suite.bdd.user();
+    const secondUser = suite.bdd.user();
+    const firstPhone = uniquePhoneHandle();
+    const secondPhone = uniquePhoneHandle();
     const conversationId = uniqueConversationId();
-    const groupId = bddGroupId(conversationId);
-    await ap.postAgentPhoneInboundMessage({
+
+    await suite.agentPhone.linkViaWebhookConnectPrompt(
+      firstUser,
+      firstPhone,
+      suite.sends,
+    );
+    const messageId = await suite.agentPhone.postAgentPhoneInboundMessage({
       channel: "imessage",
-      from: phone,
-      body: "ordinary group conversation",
+      from: firstPhone,
+      body: "The launch went well",
       conversationId,
       isGroup: true,
-      participants: [{ identifier: phone }],
+      participants: [
+        { identifier: firstPhone },
+        { identifier: secondPhone },
+        { identifier: AGENTPHONE_BDD_PHONE_NUMBER },
+      ],
     });
-    const sender =
-      scenario === "unrelated user"
-        ? createBddApi(context).user({ orgId: actor.orgId })
-        : actor;
-    if (scenario === "unrelated user") {
-      await ap.linkViaWebhookConnectPrompt(sender, uniquePhoneHandle(), sends);
-    }
-    if (scenario === "unlinked phone") {
-      await integrations.requestUnlinkAgentPhone(actor, [204]);
-    }
-    if (scenario === "departed member") {
-      server.use(
-        http.get(
-          `https://api.agentphone.test/v1/conversations/${conversationId}`,
-          () => {
-            return HttpResponse.json({ participants: [uniquePhoneHandle()] });
-          },
-        ),
-      );
-    }
-    const before = sends.messages.length;
-    const denied = await integrations.requestSendAgentPhoneGroupMessage(
-      scenario === "foreign workspace"
-        ? { ...actor, orgId: `org_${randomUUID()}` }
-        : sender,
+
+    await suite.agentPhone.linkViaWebhookConnectPrompt(
+      secondUser,
+      secondPhone,
+      suite.sends,
+    );
+
+    const response = await suite.integrations.requestSendPhoneReaction(
+      secondUser,
+      { messageId, reaction: "love" },
+      [200],
+    );
+    expect(expectProp(response.body, "ok").ok).toBeTruthy();
+    expect(suite.reactions).toStrictEqual([{ messageId, reaction: "love" }]);
+  });
+
+  it("agentphone.bdd-006 denies iMessage reactions to another account's dm", async () => {
+    const suite = setupAgentPhoneSuite();
+    const owner = suite.bdd.user();
+    const sameOrgPeer = suite.bdd.user({ orgId: owner.orgId });
+    const foreignOrgOwner = suite.bdd.user({ userId: owner.userId });
+    const ownerPhone = uniquePhoneHandle();
+    const peerPhone = uniquePhoneHandle();
+
+    await suite.agentPhone.linkViaWebhookConnectPrompt(
+      owner,
+      ownerPhone,
+      suite.sends,
+    );
+    await suite.agentPhone.linkViaWebhookConnectPrompt(
+      sameOrgPeer,
+      peerPhone,
+      suite.sends,
+    );
+    const messageId = await suite.agentPhone.postAgentPhoneInboundMessage({
+      channel: "imessage",
+      from: ownerPhone,
+      body: "/help",
+    });
+
+    await suite.integrations.requestSendPhoneReaction(
+      sameOrgPeer,
+      { messageId, reaction: "like" },
+      [404],
+    );
+    await suite.integrations.requestSendPhoneReaction(
+      foreignOrgOwner,
+      { messageId, reaction: "like" },
+      [404],
+    );
+    await suite.integrations.requestSendPhoneReaction(
+      null,
+      { messageId, reaction: "like" },
+      [401],
+    );
+    expect(suite.reactions).toHaveLength(0);
+  });
+
+  it("agentphone.bdd-007 denies iMessage reactions to another account's group", async () => {
+    const suite = setupAgentPhoneSuite();
+    const owner = suite.bdd.user();
+    const sameOrgPeer = suite.bdd.user({ orgId: owner.orgId });
+    const foreignOrgOwner = suite.bdd.user({ userId: owner.userId });
+    const ownerPhone = uniquePhoneHandle();
+    const peerPhone = uniquePhoneHandle();
+    const conversationId = uniqueConversationId();
+
+    await suite.agentPhone.linkViaWebhookConnectPrompt(
+      owner,
+      ownerPhone,
+      suite.sends,
+    );
+    await suite.agentPhone.linkViaWebhookConnectPrompt(
+      sameOrgPeer,
+      peerPhone,
+      suite.sends,
+    );
+    const messageId = await suite.agentPhone.postAgentPhoneInboundMessage({
+      channel: "imessage",
+      from: ownerPhone,
+      body: "/help",
+      conversationId,
+      isGroup: true,
+      participants: [
+        { identifier: ownerPhone },
+        { identifier: AGENTPHONE_BDD_PHONE_NUMBER },
+      ],
+    });
+
+    await suite.integrations.requestSendPhoneReaction(
+      sameOrgPeer,
+      { messageId, reaction: "like" },
+      [404],
+    );
+    await suite.integrations.requestSendPhoneReaction(
+      foreignOrgOwner,
+      { messageId, reaction: "like" },
+      [404],
+    );
+    await suite.integrations.requestSendPhoneReaction(
+      null,
+      { messageId, reaction: "like" },
+      [401],
+    );
+    expect(suite.reactions).toHaveLength(0);
+  });
+
+  it("agentphone.bdd-008 denies an iMessage reaction for a departed member", async () => {
+    const suite = setupAgentPhoneSuite();
+    const member = suite.bdd.user();
+    const memberPhone = uniquePhoneHandle();
+    const otherPhone = uniquePhoneHandle();
+    const conversationId = uniqueConversationId();
+
+    await suite.agentPhone.linkViaWebhookConnectPrompt(
+      member,
+      memberPhone,
+      suite.sends,
+    );
+    const messageId = await suite.agentPhone.postAgentPhoneInboundMessage({
+      channel: "imessage",
+      from: memberPhone,
+      body: "Ordinary group update",
+      conversationId,
+      isGroup: true,
+      participants: [
+        { identifier: memberPhone },
+        { identifier: otherPhone },
+        { identifier: AGENTPHONE_BDD_PHONE_NUMBER },
+      ],
+    });
+    suite.overrideConversationRoster(conversationId, [
+      otherPhone,
+      AGENTPHONE_BDD_PHONE_NUMBER,
+    ]);
+
+    await suite.integrations.requestSendPhoneReaction(
+      member,
+      { messageId, reaction: "like" },
+      [404],
+    );
+    expect(suite.reactions).toHaveLength(0);
+  });
+
+  it("agentphone.bdd-010 rejects an iMessage reaction to sms", async () => {
+    const suite = setupAgentPhoneSuite();
+    const member = suite.bdd.user();
+    const phone = uniquePhoneHandle();
+
+    await suite.agentPhone.linkViaWebhookConnectPrompt(
+      member,
+      phone,
+      suite.sends,
+    );
+    const messageId = await suite.agentPhone.postAgentPhoneInboundMessage({
+      channel: "sms",
+      from: phone,
+      body: "/help",
+    });
+
+    const response = await suite.integrations.requestSendPhoneReaction(
+      member,
+      { messageId, reaction: "like" },
+      [400],
+    );
+    expect(expectErrorBody(response.body).error.code).toBe(
+      "UNSUPPORTED_CHANNEL",
+    );
+    expect(suite.reactions).toHaveLength(0);
+  });
+
+  it("agentphone.bdd-019 lets a recipient read history and send with a phone connected later", async () => {
+    const suite = setupAgentPhoneSuite();
+    const firstUser = suite.bdd.user();
+    const secondUser = suite.bdd.user();
+    const firstPhone = uniquePhoneHandle();
+    const secondPhone = uniquePhoneHandle();
+    const conversationId = uniqueConversationId();
+    const groupId = bddGroupId(conversationId);
+
+    await suite.agentPhone.linkViaWebhookConnectPrompt(
+      firstUser,
+      firstPhone,
+      suite.sends,
+    );
+    await suite.agentPhone.postAgentPhoneInboundMessage({
+      channel: "imessage",
+      from: firstPhone,
+      body: "Group history from before the member connected",
+      conversationId,
+      isGroup: true,
+      groupId,
+      participants: [
+        { identifier: firstPhone },
+        { identifier: secondPhone },
+        { identifier: AGENTPHONE_BDD_PHONE_NUMBER },
+      ],
+    });
+
+    await suite.linkWithCode(secondUser, secondPhone, "imessage");
+
+    const beforeSend = await suite.integrations.requestAgentPhoneGroupHistory(
+      secondUser,
+      { groupId, limit: 100 },
+      [200],
+    );
+    expect(
+      expectProp(beforeSend.body, "messages").messages.map((message) => {
+        return message.body;
+      }),
+    ).toStrictEqual(["Group history from before the member connected"]);
+
+    const sent = await suite.integrations.requestSendAgentPhoneGroupMessage(
+      secondUser,
+      { groupId, text: "Hello from the newly connected member" },
+      [200],
+    );
+    expect(expectProp(sent.body, "ok").ok).toBeTruthy();
+    expect(expectProp(sent.body, "toNumber").toNumber).toBe(groupId);
+    expect(suite.sends.messages.at(-1)?.toNumber).toBe(groupId);
+    expect(suite.sends.messages.at(-1)?.body).toBe(
+      "Hello from the newly connected member",
+    );
+
+    const afterSend = await suite.integrations.requestAgentPhoneGroupHistory(
+      secondUser,
+      { groupId, limit: 100 },
+      [200],
+    );
+    expect(
+      expectProp(afterSend.body, "messages").messages.map((message) => {
+        return message.body;
+      }),
+    ).toStrictEqual([
+      "Group history from before the member connected",
+      "Hello from the newly connected member",
+    ]);
+  });
+
+  it("agentphone.bdd-020 lets a recipient read history and send with a email connected later", async () => {
+    const suite = setupAgentPhoneSuite();
+    const firstUser = suite.bdd.user();
+    const secondUser = suite.bdd.user();
+    const firstPhone = uniquePhoneHandle();
+    const secondEmail = `imessage-${randomUUID()}@example.test`;
+    const conversationId = uniqueConversationId();
+    const groupId = bddGroupId(conversationId);
+
+    await suite.agentPhone.linkViaWebhookConnectPrompt(
+      firstUser,
+      firstPhone,
+      suite.sends,
+    );
+    await suite.agentPhone.postAgentPhoneInboundMessage({
+      channel: "imessage",
+      from: firstPhone,
+      body: "Group history from before the member connected",
+      conversationId,
+      isGroup: true,
+      groupId,
+      participants: [
+        { identifier: firstPhone },
+        { identifier: secondEmail },
+        { identifier: AGENTPHONE_BDD_PHONE_NUMBER },
+      ],
+    });
+
+    await suite.linkWithCode(secondUser, secondEmail, "imessage");
+
+    const beforeSend = await suite.integrations.requestAgentPhoneGroupHistory(
+      secondUser,
+      { groupId, limit: 100 },
+      [200],
+    );
+    expect(
+      expectProp(beforeSend.body, "messages").messages.map((message) => {
+        return message.body;
+      }),
+    ).toStrictEqual(["Group history from before the member connected"]);
+
+    const sent = await suite.integrations.requestSendAgentPhoneGroupMessage(
+      secondUser,
+      { groupId, text: "Hello from the newly connected member" },
+      [200],
+    );
+    expect(expectProp(sent.body, "ok").ok).toBeTruthy();
+    expect(expectProp(sent.body, "toNumber").toNumber).toBe(groupId);
+    expect(suite.sends.messages.at(-1)?.toNumber).toBe(groupId);
+    expect(suite.sends.messages.at(-1)?.body).toBe(
+      "Hello from the newly connected member",
+    );
+
+    const afterSend = await suite.integrations.requestAgentPhoneGroupHistory(
+      secondUser,
+      { groupId, limit: 100 },
+      [200],
+    );
+    expect(
+      expectProp(afterSend.body, "messages").messages.map((message) => {
+        return message.body;
+      }),
+    ).toStrictEqual([
+      "Group history from before the member connected",
+      "Hello from the newly connected member",
+    ]);
+  });
+
+  it("agentphone.bdd-021 rejects an explicit group send for a unknown group", async () => {
+    const suite = setupAgentPhoneSuite();
+    const member = suite.bdd.user();
+    const phone = uniquePhoneHandle();
+    const conversationId = uniqueConversationId();
+
+    await suite.agentPhone.linkViaWebhookConnectPrompt(
+      member,
+      phone,
+      suite.sends,
+    );
+    await suite.agentPhone.postAgentPhoneInboundMessage({
+      channel: "imessage",
+      from: phone,
+      body: "Group context",
+      conversationId,
+      isGroup: true,
+      participants: [
+        { identifier: phone },
+        { identifier: AGENTPHONE_BDD_PHONE_NUMBER },
+      ],
+    });
+    const beforeCount = suite.sends.messages.length;
+
+    const response = await suite.integrations.requestSendAgentPhoneGroupMessage(
+      member,
       {
-        groupId:
-          scenario === "unknown group"
-            ? bddGroupId(uniqueConversationId())
-            : groupId,
+        groupId: `grp_unknown_${randomUUID().slice(0, 8)}`,
         text: "This must not be sent",
-        ...(scenario === "foreign agent"
-          ? { agentphoneAgentId: "foreign-agent" }
-          : {}),
       },
       [404],
     );
-    expect(denied.body).toMatchObject({ error: { code: "NOT_FOUND" } });
-    expect(sends.messages).toHaveLength(before);
+    expect(expectErrorBody(response.body).error.code).toBe("NOT_FOUND");
+    expect(suite.sends.messages.slice(beforeCount)).toHaveLength(0);
   });
 
-  it.each([
-    { providerStatus: 404, expectedStatus: 404 },
-    { providerStatus: 503, expectedStatus: 502 },
-  ] as const)(
-    "does not send a group message when roster lookup returns $providerStatus",
-    async ({ providerStatus, expectedStatus }) => {
-      const integrations = createBddIntegrationApi(context);
-      const { actor, ap, phone, sends } = await entitledLinkedActor();
-      const conversationId = uniqueConversationId();
-      const groupId = bddGroupId(conversationId);
-      await ap.postAgentPhoneInboundMessage({
-        channel: "imessage",
-        from: phone,
-        body: "ordinary group conversation",
-        conversationId,
-        isGroup: true,
-      });
-      server.use(
-        http.get(
-          `https://api.agentphone.test/v1/conversations/${conversationId}`,
-          () => {
-            return HttpResponse.json(
-              { detail: "Roster unavailable" },
-              { status: providerStatus },
-            );
-          },
-        ),
-      );
-      const before = sends.messages.length;
-      const failed = await integrations.requestSendAgentPhoneGroupMessage(
-        actor,
-        { groupId, text: "This must not be sent" },
-        [expectedStatus],
-      );
-      expect(failed.status).toBe(expectedStatus);
-      expect(sends.messages).toHaveLength(before);
-    },
-  );
-
-  it("does not retry an uncertain group message or fall back to a DM", async () => {
-    const integrations = createBddIntegrationApi(context);
-    const { actor, ap, phone, sends } = await entitledLinkedActor();
-    const conversationId = uniqueConversationId();
-    const groupId = bddGroupId(conversationId);
-    await ap.postAgentPhoneInboundMessage({
-      channel: "imessage",
-      from: phone,
-      body: "ordinary group conversation",
-      conversationId,
-      isGroup: true,
-    });
-    const attempts: unknown[] = [];
-    server.use(
-      http.post(
-        "https://api.agentphone.test/v1/messages",
-        async ({ request }) => {
-          attempts.push(await request.json());
-          return HttpResponse.json(
-            { detail: "Send outcome unknown" },
-            { status: 503 },
-          );
-        },
-      ),
-    );
-    const before = sends.messages.length;
-    await integrations.requestSendAgentPhoneGroupMessage(
-      actor,
-      { groupId, text: "Group update" },
-      [502],
-    );
-    expect(attempts).toStrictEqual([
-      {
-        agent_id: AGENTPHONE_BDD_AGENT_ID,
-        to_number: groupId,
-        body: "Group update",
-      },
-    ]);
-    expect(sends.messages).toHaveLength(before);
-  });
-
-  it("requires authentication for explicit group sends", async () => {
-    const denied = await createBddIntegrationApi(
-      context,
-    ).requestSendAgentPhoneGroupMessage(
-      null,
-      { groupId: "grp_auth_required", text: "Group update" },
-      [401],
-    );
-    expect(denied.body).toMatchObject({ error: { code: "UNAUTHORIZED" } });
-  });
-
-  it("sends one contact card after a successful text conversation and ignores repeated callbacks", async () => {
-    const chat = await contactCardConversation();
-    const before = chat.sends.messages.length;
-    expect(
-      chat.sends.messages.every((message) => {
-        return message.mediaUrls.length === 0;
-      }),
-    ).toBeTruthy();
-
-    const first = await chat.answer("hello");
-    expect(chat.sends.messages.slice(before)).toMatchObject([
-      { body: "Answer: hello", mediaUrls: [] },
-      {
-        body: "Save Okou to your contacts so you can find this chat anytime.",
-        mediaUrls: [expect.stringMatching(/\/okou\.vcf$/u)],
-        toNumber: chat.phone,
-      },
-    ]);
-    await createWebhookCallbackApi(context).requestAgentComplete(
-      { runId: first.runId, exitCode: 0 },
-      { authorization: `Bearer ${first.sandboxToken}` },
-      [200],
-    );
-    await chat.ap.postAgentPhoneInboundMessage({
-      channel: "imessage",
-      from: chat.phone,
-      body: "hello",
-      messageId: first.messageId,
-      conversationId: chat.conversationId,
-    });
-    await flushWaitUntilForTest();
-    expect(chat.sends.messages).toHaveLength(before + 2);
-    await chat.answer("another question");
-    expect(chat.sends.messages).toHaveLength(before + 3);
-    expect(lastSend(chat.sends).body).toBe("Answer: another question");
-  });
-
-  it.each([
-    { canSendMessages: true, media: false },
-    { canSendMessages: false, media: true },
-    null,
-  ])(
-    "waits for media permission without interrupting the answer: %j",
-    async (capabilities) => {
-      const chat = await contactCardConversation();
-      server.use(
-        http.get(
-          `https://api.agentphone.test/v1/conversations/${chat.conversationId}`,
-          () => {
-            return HttpResponse.json({ capabilities });
-          },
-          { once: true },
-        ),
-      );
-      const before = chat.sends.messages.length;
-      await chat.answer("first question");
-      expect(chat.sends.messages.slice(before)).toMatchObject([
-        { body: "Answer: first question", mediaUrls: [] },
-      ]);
-      await chat.answer("next question");
-      expect(chat.sends.messages.slice(before)).toHaveLength(3);
-      expect(lastSend(chat.sends).mediaUrls).toStrictEqual([
-        expect.stringMatching(/\/okou\.vcf$/u),
-      ]);
-    },
-  );
-
-  it("defers a restricted contact card until a new text interaction without replaying the answer", async () => {
-    const chat = await contactCardConversation();
-    const attempts: unknown[] = [];
-    server.use(
-      http.post(
-        "https://api.agentphone.test/v1/messages",
-        async ({ request }) => {
-          const message: unknown = await request.clone().json();
-          if (
-            typeof message !== "object" ||
-            message === null ||
-            !("media_urls" in message)
-          ) {
-            return;
-          }
-          attempts.push(message);
-          if (attempts.length === 1) {
-            return HttpResponse.json(
-              {
-                error: {
-                  code: "CONVERSATION_CONTENT_RESTRICTED",
-                  message: "Send plain text first",
-                },
-              },
-              { status: 422 },
-            );
-          }
-        },
-      ),
-    );
-    const before = chat.sends.messages.length;
-    const first = await chat.answer("hello");
-    expect(chat.sends.messages.slice(before)).toMatchObject([
-      { body: "Answer: hello" },
-    ]);
-    expect(attempts).toHaveLength(1);
-    await createWebhookCallbackApi(context).requestAgentComplete(
-      { runId: first.runId, exitCode: 0 },
-      { authorization: `Bearer ${first.sandboxToken}` },
-      [200],
-    );
-    await flushWaitUntilForTest();
-    expect(attempts).toHaveLength(1);
-    await chat.answer("please continue");
-    expect(attempts).toHaveLength(2);
-    expect(chat.sends.messages.slice(before)).toMatchObject([
-      { body: "Answer: hello" },
-      { body: "Answer: please continue" },
-      { mediaUrls: [expect.stringMatching(/\/okou\.vcf$/u)] },
-    ]);
-  });
-
-  it("does not retry unrelated contact-card validation failures on later messages", async () => {
-    const chat = await contactCardConversation();
-    const rejected: unknown[] = [];
-    server.use(
-      http.post(
-        "https://api.agentphone.test/v1/messages",
-        async ({ request }) => {
-          const message: unknown = await request.clone().json();
-          if (
-            typeof message === "object" &&
-            message !== null &&
-            "media_urls" in message
-          ) {
-            rejected.push(message);
-            return HttpResponse.json(
-              { error: { code: "VALIDATION_ERROR" } },
-              { status: 422 },
-            );
-          }
-        },
-      ),
-    );
-    const before = chat.sends.messages.length;
-    await chat.answer("first question");
-    await chat.answer("second question");
-    expect(rejected).toHaveLength(1);
-    expect(chat.sends.messages.slice(before)).toMatchObject([
-      { body: "Answer: first question" },
-      { body: "Answer: second question" },
-    ]);
-  });
-
-  it.each([
-    "accepted",
-    "absent",
-    "different-attachment",
-    "missing-conversation",
-  ] as const)(
-    "reconciles an uncertain card against provider history without resending: %s",
-    async (outcome) => {
-      const chat = await contactCardConversation();
-      const attempts: Record<string, unknown>[] = [];
-      const historyReads: string[] = [];
-      server.use(
-        http.post(
-          "https://api.agentphone.test/v1/messages",
-          async ({ request }) => {
-            const message: unknown = await request.clone().json();
-            if (
-              typeof message === "object" &&
-              message !== null &&
-              "media_urls" in message
-            ) {
-              attempts.push(message as Record<string, unknown>);
-              return HttpResponse.error();
-            }
-          },
-        ),
-        http.get(
-          `https://api.agentphone.test/v1/conversations/${chat.conversationId}/messages`,
-          ({ request }) => {
-            historyReads.push(request.url);
-            if (outcome === "missing-conversation") {
-              return new HttpResponse(null, { status: 404 });
-            }
-            const after = new URL(request.url).searchParams.get("after");
-            const message = attempts[0];
-            if (!after || !message) {
-              throw new Error(
-                "Expected a recorded contact-card attempt before reconciliation",
-              );
-            }
-            return HttpResponse.json({
-              data:
-                outcome === "absent"
-                  ? []
-                  : [
-                      {
-                        id: "provider-accepted-contact-card",
-                        body: message.body,
-                        fromNumber: AGENTPHONE_BDD_PHONE_NUMBER,
-                        toNumber: chat.phone,
-                        direction: "outbound",
-                        status: "sent",
-                        mediaUrls:
-                          outcome === "different-attachment"
-                            ? ["https://example.com/other.vcf"]
-                            : message.media_urls,
-                        receivedAt: new Date(
-                          Date.parse(after) + 1,
-                        ).toISOString(),
-                      },
-                    ],
-              hasMore: outcome === "absent",
-            });
-          },
-        ),
-      );
-      const before = chat.sends.messages.length;
-      await chat.answer("first question");
-      await chat.answer("second question");
-      expect(historyReads).toHaveLength(1);
-      await chat.answer("third question");
-      expect(historyReads).toHaveLength(outcome === "accepted" ? 1 : 2);
-      expect(attempts).toHaveLength(1);
-      expect(chat.sends.messages.slice(before)).toMatchObject([
-        { body: "Answer: first question" },
-        { body: "Answer: second question" },
-        { body: "Answer: third question" },
-      ]);
-    },
-  );
-
-  it("keeps answers working when the optional media capability lookup fails", async () => {
-    const chat = await contactCardConversation();
-    server.use(
-      http.get(
-        `https://api.agentphone.test/v1/conversations/${chat.conversationId}`,
-        () => {
-          return HttpResponse.json({ error: "unavailable" }, { status: 503 });
-        },
-        { once: true },
-      ),
-    );
-    const before = chat.sends.messages.length;
-    await chat.answer("first question");
-    expect(chat.sends.messages.slice(before)).toMatchObject([
-      { body: "Answer: first question" },
-    ]);
-    await chat.answer("second question");
-    expect(lastSend(chat.sends).mediaUrls).toHaveLength(1);
-  });
-
-  it.each(["12345678", "/unrecognized_command"])(
-    "waits for an ordinary text interaction after %s",
-    async (body) => {
-      const chat = await contactCardConversation();
-      const before = chat.sends.messages.length;
-      await chat.answer(body);
-      expect(chat.sends.messages.slice(before)).toMatchObject([
-        { body: `Answer: ${body}`, mediaUrls: [] },
-      ]);
-      await chat.answer("hello");
-      expect(lastSend(chat.sends).mediaUrls).toHaveLength(1);
-    },
-  );
-
-  it.each([
-    "failed-run",
-    "failed-reply",
-    "media-only",
-    "group",
-    "help",
-  ] as const)(
-    "keeps the contact card pending after a %s interaction",
-    async (kind) => {
-      const chat = await contactCardConversation();
-      const before = chat.sends.messages.length;
-      const mediaUrl = "https://media.agentphone.test/contact-card-photo.png";
-      if (kind === "media-only") {
-        server.use(
-          http.get(mediaUrl, () => {
-            return new HttpResponse(null, { status: 503 });
-          }),
-        );
-      }
-      await chat.ap.postAgentPhoneInboundMessage({
-        channel: "imessage",
-        from: chat.phone,
-        body:
-          kind === "help"
-            ? "/help"
-            : kind === "media-only"
-              ? ""
-              : "@Okou hello",
-        conversationId:
-          kind === "group" ? uniqueConversationId() : chat.conversationId,
-        isGroup: kind === "group",
-        ...(kind === "media-only" ? { mediaUrl } : {}),
-      });
-      if (kind !== "help") {
-        const run = await readDispatchedRun(chat.runnerGroup);
-        if (kind === "failed-reply") {
-          server.use(
-            http.post(
-              "https://api.agentphone.test/v1/messages",
-              () => {
-                return HttpResponse.json(
-                  { error: "provider unavailable" },
-                  { status: 503 },
-                );
-              },
-              { once: true },
-            ),
-          );
-        }
-        await completeSandboxRun(
-          run.sandboxToken,
-          run.runId,
-          kind === "failed-run" ? 1 : 0,
-        );
-        await flushWaitUntilForTest();
-      }
-      expect(
-        chat.sends.messages.slice(before).every((message) => {
-          return message.mediaUrls.length === 0;
-        }),
-      ).toBeTruthy();
-      await chat.answer("a normal private question");
-      expect(lastSend(chat.sends)).toMatchObject({
-        toNumber: chat.phone,
-        mediaUrls: [expect.stringMatching(/\/okou\.vcf$/u)],
-      });
-    },
-  );
-
-  it("sends one contact card when completion callbacks arrive concurrently", async () => {
-    const chat = await contactCardConversation();
-    await chat.ap.postAgentPhoneInboundMessage({
-      channel: "imessage",
-      from: chat.phone,
-      body: "hello",
-      conversationId: chat.conversationId,
-    });
-    const run = await readDispatchedRun(chat.runnerGroup);
-    const before = chat.sends.messages.length;
-    await Promise.all([
-      completeSandboxRun(run.sandboxToken, run.runId, 0),
-      completeSandboxRun(run.sandboxToken, run.runId, 0),
-    ]);
-    await flushWaitUntilForTest();
-    expect(chat.sends.messages.slice(before)).toMatchObject([
-      { body: "Task completed successfully.", mediaUrls: [] },
-      { mediaUrls: [expect.stringMatching(/\/okou\.vcf$/u)] },
-    ]);
-  });
-
-  it("links a direct-message sender with a one-time connection code", async () => {
-    const bdd = createBddApi(context);
-    const integrations = createBddIntegrationApi(context);
-    const ap = createAgentPhoneBddApi(context);
-    const actor = bdd.user();
+  it("agentphone.bdd-022 rejects an explicit group send for a foreign workspace", async () => {
+    const suite = setupAgentPhoneSuite();
+    const member = suite.bdd.user();
+    const foreignOrgMember = suite.bdd.user({ userId: member.userId });
     const phone = uniquePhoneHandle();
     const conversationId = uniqueConversationId();
-    integrations.configureAgentPhoneProvider();
-    integrations.configureAgentPhoneWebhook();
-    const sends = ap.captureAgentPhoneSends();
-    context.mocks.ably.publish.mockResolvedValue(undefined);
+    const groupId = bddGroupId(conversationId);
 
-    const issued = await integrations.requestCreateAgentPhoneLinkCode(
-      actor,
+    await suite.agentPhone.linkViaWebhookConnectPrompt(
+      member,
+      phone,
+      suite.sends,
+    );
+    await suite.agentPhone.postAgentPhoneInboundMessage({
+      channel: "imessage",
+      from: phone,
+      body: "Group context",
+      conversationId,
+      isGroup: true,
+      groupId,
+      participants: [
+        { identifier: phone },
+        { identifier: AGENTPHONE_BDD_PHONE_NUMBER },
+      ],
+    });
+    const beforeCount = suite.sends.messages.length;
+
+    const response = await suite.integrations.requestSendAgentPhoneGroupMessage(
+      foreignOrgMember,
+      { groupId, text: "This must not be sent" },
+      [404],
+    );
+    expect(expectErrorBody(response.body).error.code).toBe("NOT_FOUND");
+    expect(suite.sends.messages.slice(beforeCount)).toHaveLength(0);
+  });
+
+  it("agentphone.bdd-023 rejects an explicit group send for a unrelated user", async () => {
+    const suite = setupAgentPhoneSuite();
+    const member = suite.bdd.user();
+    const unrelatedUser = suite.bdd.user({ orgId: member.orgId });
+    const memberPhone = uniquePhoneHandle();
+    const unrelatedPhone = uniquePhoneHandle();
+    const conversationId = uniqueConversationId();
+    const groupId = bddGroupId(conversationId);
+
+    await suite.agentPhone.linkViaWebhookConnectPrompt(
+      member,
+      memberPhone,
+      suite.sends,
+    );
+    await suite.agentPhone.linkViaWebhookConnectPrompt(
+      unrelatedUser,
+      unrelatedPhone,
+      suite.sends,
+    );
+    await suite.agentPhone.postAgentPhoneInboundMessage({
+      channel: "imessage",
+      from: memberPhone,
+      body: "Group context",
+      conversationId,
+      isGroup: true,
+      groupId,
+      participants: [
+        { identifier: memberPhone },
+        { identifier: AGENTPHONE_BDD_PHONE_NUMBER },
+      ],
+    });
+    const beforeCount = suite.sends.messages.length;
+
+    const response = await suite.integrations.requestSendAgentPhoneGroupMessage(
+      unrelatedUser,
+      { groupId, text: "This must not be sent" },
+      [404],
+    );
+    expect(expectErrorBody(response.body).error.code).toBe("NOT_FOUND");
+    expect(suite.sends.messages.slice(beforeCount)).toHaveLength(0);
+  });
+
+  it("agentphone.bdd-024 rejects an explicit group send for a unlinked phone", async () => {
+    const suite = setupAgentPhoneSuite();
+    const member = suite.bdd.user();
+    const phone = uniquePhoneHandle();
+    const conversationId = uniqueConversationId();
+    const groupId = bddGroupId(conversationId);
+
+    await suite.agentPhone.linkViaWebhookConnectPrompt(
+      member,
+      phone,
+      suite.sends,
+    );
+    await suite.agentPhone.postAgentPhoneInboundMessage({
+      channel: "imessage",
+      from: phone,
+      body: "Group context",
+      conversationId,
+      isGroup: true,
+      groupId,
+      participants: [
+        { identifier: phone },
+        { identifier: AGENTPHONE_BDD_PHONE_NUMBER },
+      ],
+    });
+    await suite.integrations.requestUnlinkAgentPhone(member, [204]);
+    const beforeCount = suite.sends.messages.length;
+
+    const response = await suite.integrations.requestSendAgentPhoneGroupMessage(
+      member,
+      { groupId, text: "This must not be sent" },
+      [404],
+    );
+    expect(expectErrorBody(response.body).error.code).toBe("NOT_FOUND");
+    expect(suite.sends.messages.slice(beforeCount)).toHaveLength(0);
+  });
+
+  it("agentphone.bdd-025 rejects an explicit group send for a departed member", async () => {
+    const suite = setupAgentPhoneSuite();
+    const member = suite.bdd.user();
+    const phone = uniquePhoneHandle();
+    const unrelatedPhone = uniquePhoneHandle();
+    const conversationId = uniqueConversationId();
+    const groupId = bddGroupId(conversationId);
+
+    await suite.agentPhone.linkViaWebhookConnectPrompt(
+      member,
+      phone,
+      suite.sends,
+    );
+    await suite.agentPhone.postAgentPhoneInboundMessage({
+      channel: "imessage",
+      from: phone,
+      body: "Group context",
+      conversationId,
+      isGroup: true,
+      groupId,
+      participants: [
+        { identifier: phone },
+        { identifier: AGENTPHONE_BDD_PHONE_NUMBER },
+      ],
+    });
+    suite.overrideConversationRoster(conversationId, [
+      unrelatedPhone,
+      AGENTPHONE_BDD_PHONE_NUMBER,
+    ]);
+    const beforeCount = suite.sends.messages.length;
+
+    const response = await suite.integrations.requestSendAgentPhoneGroupMessage(
+      member,
+      { groupId, text: "This must not be sent" },
+      [404],
+    );
+    expect(expectErrorBody(response.body).error.code).toBe("NOT_FOUND");
+    expect(suite.sends.messages.slice(beforeCount)).toHaveLength(0);
+  });
+
+  it("agentphone.bdd-050 links a direct-message sender with a one-time connection code", async () => {
+    const suite = setupAgentPhoneSuite();
+    const member = suite.bdd.user();
+    const firstPhone = uniquePhoneHandle();
+    const secondPhone = uniquePhoneHandle();
+    const issuedAt = now();
+
+    const issued = await suite.integrations.requestCreateAgentPhoneLinkCode(
+      member,
       [200],
     );
-    expect(issued.body.code).toMatch(/^\d{8}$/u);
-    expect(Date.parse(issued.body.expiresAt) - now()).toBeGreaterThan(
+    expect(/^\d{8}$/u.test(issued.body.code)).toBeTruthy();
+    expect(Date.parse(issued.body.expiresAt) - issuedAt).toBeGreaterThan(
       9 * 60 * 1000,
     );
 
-    const beforeCode = sends.messages.length;
-    const inboundMessageId = await ap.postAgentPhoneInboundMessage({
+    const codeMessageId = await suite.agentPhone.postAgentPhoneInboundMessage({
       channel: "imessage",
-      from: phone,
+      from: firstPhone,
       body: issued.body.code,
-      conversationId,
-      isGroup: false,
     });
+    expectThreePartWelcome(suite.sends.messages, firstPhone, codeMessageId);
 
-    // The welcome stays text-only; only the first threads onto the code message.
-    const welcome = sends.messages.slice(beforeCode);
-    expectConnectedWelcome(welcome);
-    expect(
-      welcome.map((send) => {
-        return send.replyToMessageId;
-      }),
-    ).toStrictEqual([inboundMessageId, undefined, undefined]);
-    for (const send of welcome) {
-      expect(send.toNumber).toBe(phone);
-      expect(send.conversationId).toBeUndefined();
-    }
-    await expect(
-      integrations.getAgentPhoneLinkStatus(actor),
-    ).resolves.toMatchObject({ linked: true, phoneHandle: phone });
+    const linkedStatus =
+      await suite.integrations.getAgentPhoneLinkStatus(member);
+    expect(linkedStatus.linked).toBeTruthy();
+    expect(expectLinkedPhoneHandle(linkedStatus)).toBe(firstPhone);
 
-    await ap.postAgentPhoneInboundMessage({
+    const beforeReuse = suite.sends.messages.length;
+    await suite.agentPhone.postAgentPhoneInboundMessage({
       channel: "sms",
-      from: uniquePhoneHandle(),
+      from: secondPhone,
       body: issued.body.code,
     });
-    expect(lastSend(sends).body).toContain("invalid or expired");
-    await expect(
-      integrations.getAgentPhoneLinkStatus(actor),
-    ).resolves.toMatchObject({ linked: true, phoneHandle: phone });
+    const reuseReplies = suite.sends.messages.slice(beforeReuse);
+    expect(reuseReplies).toHaveLength(1);
+    expect(reuseReplies[0]?.toNumber).toBe(secondPhone);
+    expect(reuseReplies[0]?.body).toContain("invalid or expired");
+    const unchangedStatus =
+      await suite.integrations.getAgentPhoneLinkStatus(member);
+    expect(expectLinkedPhoneHandle(unchangedStatus)).toBe(firstPhone);
   });
 
-  it("binds one sender and settles one reward when a connection code is consumed concurrently", async () => {
+  it("agentphone.bdd-051 binds one sender and settles one reward when a connection code is consumed concurrently", async () => {
+    const suite = setupAgentPhoneSuite();
     const consumer = marketingRewardConsumer();
-    const bdd = createBddApi(context);
-    const integrations = createBddIntegrationApi(context);
-    const ap = createAgentPhoneBddApi(context);
-    const actor = bdd.user({ orgRole: "org:member" });
-    const phones = [uniquePhoneHandle(), uniquePhoneHandle()];
-    integrations.configureAgentPhoneProvider();
-    integrations.configureAgentPhoneWebhook();
-    const sends = ap.captureAgentPhoneSends();
-    context.mocks.ably.publish.mockResolvedValue(undefined);
-    const issued = await integrations.requestCreateAgentPhoneLinkCode(
-      actor,
+    const member = suite.bdd.user({ orgRole: "org:member" });
+    const phoneOne = uniquePhoneHandle();
+    const phoneTwo = uniquePhoneHandle();
+    const issued = await suite.integrations.requestCreateAgentPhoneLinkCode(
+      member,
       [200],
     );
 
-    await Promise.all(
-      phones.map(async (phone) => {
-        await ap.postAgentPhoneInboundMessage({
-          channel: "imessage",
-          from: phone,
-          body: issued.body.code,
-          conversationId: uniqueConversationId(),
-          isGroup: false,
-        });
+    await Promise.all([
+      suite.agentPhone.postAgentPhoneInboundMessage({
+        channel: "imessage",
+        from: phoneOne,
+        body: issued.body.code,
       }),
-    );
-
-    const linked = await integrations.getAgentPhoneLinkStatus(actor);
-    if (!linked.linked) {
-      throw new Error("Expected exactly one sender to be linked");
-    }
-    expect(phones).toContain(linked.phoneHandle);
-    expectConnectedWelcome(
-      sends.messages.filter((send) => {
-        return send.toNumber === linked.phoneHandle;
-      }),
-    );
-    const loser = phones.find((phone) => {
-      return phone !== linked.phoneHandle;
-    });
-    expect(
-      sends.messages
-        .filter((send) => {
-          return send.toNumber === loser;
-        })
-        .map((send) => {
-          return send.body;
-        }),
-    ).toStrictEqual([expect.stringContaining("invalid or expired")]);
-    await flushWaitUntilForTest();
-    const facts = consumer.received.filter((event) => {
-      return event.type === "imessage.identity-linked";
-    });
-    expect(facts).toHaveLength(1);
-    for (const fact of facts) {
-      await settleMarketingRequest(context, {
-        version: 1,
-        environment: fact.environment,
-        policy: "get-started-v1",
-        sourceEventId: fact.id,
-        questKey: "imessage",
-        sourceKey: "agentphone-link",
-        rewardKey: `imessage:${fact.userId}:agentphone-link`,
-        orgId: fact.orgId,
-        actorUserId: fact.userId,
-        beneficiaryUserId: fact.userId,
-        rewardTarget: "user",
-        rewardAmount: 1000,
-        completedAt: fact.occurredAt,
-      });
-    }
-    const balance = await accept(
-      setupApp({ context, routes: billingUsagePackCreditsRoutes })(
-        billingUsagePackCreditsContract,
-      ).get({ headers: { authorization: "Bearer clerk-session" } }),
-      [200],
-    );
-    expect(balance.body.bonusCredits).toBe(1000);
-    expect(balance.body.creditGrants).toStrictEqual([
-      expect.objectContaining({
-        grantType: "bonus",
-        amount: 1000,
-        remaining: 1000,
+      suite.agentPhone.postAgentPhoneInboundMessage({
+        channel: "imessage",
+        from: phoneTwo,
+        body: issued.body.code,
       }),
     ]);
-    await expect(
-      integrations.getAgentPhoneLinkStatus(actor),
-    ).resolves.toStrictEqual(linked);
+
+    const status = await suite.integrations.getAgentPhoneLinkStatus(member);
+    expect(status.linked).toBeTruthy();
+    expect([phoneOne, phoneTwo]).toContain(expectLinkedPhoneHandle(status));
+    const winner = expectLinkedPhoneHandle(status);
+    const loser = winner === phoneOne ? phoneTwo : phoneOne;
+
+    const winnerMessages = suite.sends.messages.filter((message) => {
+      return message.toNumber === winner;
+    });
+    const loserMessages = suite.sends.messages.filter((message) => {
+      return message.toNumber === loser;
+    });
+    expectThreePartWelcome(winnerMessages, winner ?? "");
+    expect(loserMessages).toHaveLength(1);
+    expect(loserMessages[0]?.body).toContain("invalid or expired");
+
+    const linkedFacts = consumer.received.filter((event) => {
+      return event.type === "imessage.identity-linked";
+    });
+    expect(linkedFacts).toHaveLength(1);
+    const fact = linkedFacts[0];
+    if (fact?.type !== "imessage.identity-linked") {
+      throw new Error("Expected imessage.identity-linked fact");
+    }
+
+    await settleMarketingRequest(context, {
+      version: 1,
+      environment: fact.environment,
+      policy: "get-started-v1",
+      sourceEventId: fact.id,
+      questKey: "imessage",
+      sourceKey: "agentphone-link",
+      rewardKey: `imessage:${member.userId}:agentphone-link`,
+      orgId: fact.orgId,
+      actorUserId: fact.userId,
+      beneficiaryUserId: fact.userId,
+      rewardTarget: "user",
+      rewardAmount: 1000,
+      completedAt: fact.occurredAt,
+    });
+
+    createRouteMocks(context).clerk.session(
+      member.userId,
+      member.orgId,
+      member.orgRole,
+    );
+    const credits = await accept(
+      setupApp({ context, routes: billingUsagePackCreditsRoutes })(
+        billingUsagePackCreditsContract,
+      ).get({ headers: AUTH_HEADERS }),
+      [200],
+    );
+    expect(credits.body.bonusCredits).toBe(1000);
+    const bonusGrants = credits.body.creditGrants.filter((grant) => {
+      return grant.grantType === "bonus";
+    });
+    expect(bonusGrants).toHaveLength(1);
+    expect(bonusGrants[0]?.remaining).toBe(1000);
+    const finalStatus =
+      await suite.integrations.getAgentPhoneLinkStatus(member);
+    expect(expectLinkedPhoneHandle(finalStatus)).toBe(winner);
   });
 
-  it("sends proactive messages and private files to an email-linked iMessage handle", async () => {
-    const bdd = createBddApi(context);
-    const integrations = createBddIntegrationApi(context);
-    const ap = createAgentPhoneBddApi(context);
-    const actor = bdd.user();
-    const email = `bdd-${randomUUID().slice(0, 8)}@example.com`;
-    integrations.configureAgentPhoneProvider();
-    integrations.configureAgentPhoneWebhook();
-    const sends = ap.captureAgentPhoneSends();
-    const storage = ap.acceptAgentPhoneObjectStorage();
-    context.mocks.ably.publish.mockResolvedValue(undefined);
+  it("agentphone.bdd-052 sends proactive messages and private files to an email-linked iMessage handle", async () => {
+    const suite = setupAgentPhoneSuite();
+    const storage = suite.agentPhone.acceptAgentPhoneObjectStorage();
+    const member = suite.bdd.user();
+    const otherUser = suite.bdd.user({ orgId: member.orgId });
+    const otherOrgMember = suite.bdd.user({ userId: member.userId });
+    const emailHandle = `proactive-${randomUUID()}@example.test`;
 
-    const issued = await integrations.requestCreateAgentPhoneLinkCode(
-      actor,
-      [200],
-    );
-    await ap.postAgentPhoneInboundMessage({
-      channel: "imessage",
-      from: email,
-      body: issued.body.code,
-      conversationId: uniqueConversationId(),
-      isGroup: false,
-    });
-    await expect(
-      integrations.getAgentPhoneLinkStatus(actor),
-    ).resolves.toMatchObject({ linked: true, phoneHandle: email });
+    await suite.linkWithCode(member, emailHandle, "imessage");
+    const status = await suite.integrations.getAgentPhoneLinkStatus(member);
+    expect(status.linked).toBeTruthy();
+    expect(expectLinkedPhoneHandle(status)).toBe(emailHandle);
 
-    const sent = await integrations.requestSendPhoneMessage(
-      actor,
-      { agentphoneAgentId: AGENTPHONE_BDD_AGENT_ID, text: "proactive hello" },
-      [200],
-    );
-    expect(sent.body).toMatchObject({ ok: true, toNumber: email });
-    expect(lastSend(sends)).toMatchObject({
-      agentId: AGENTPHONE_BDD_AGENT_ID,
-      toNumber: email,
-      body: "proactive hello",
-    });
-
-    const sentCount = sends.messages.length;
-    const rejectedSender = await integrations.requestSendPhoneMessage(
-      actor,
-      { agentphoneAgentId: "another-users-phone-agent", text: "blocked" },
-      [404],
-    );
-    expect(rejectedSender.body).toMatchObject({ error: { code: "NOT_FOUND" } });
-    expect(sends.messages).toHaveLength(sentCount);
-
-    const init = await integrations.requestPhoneUploadInit(
-      actor,
-      { filename: "note.txt", contentType: "text/plain", length: 5 },
-      [200],
-    );
-    if (!("uploadId" in init.body)) {
-      throw new Error("Expected the phone upload to initialize");
-    }
-    storage.addArtifactObject({
-      uploadId: init.body.uploadId,
-      filename: "note.txt",
-      size: 5,
-    });
-    const completed = await integrations.requestPhoneUploadComplete(
-      actor,
+    const sentText = await suite.integrations.requestSendPhoneMessage(
+      member,
       {
-        uploadId: init.body.uploadId,
+        text: "proactive hello",
         agentphoneAgentId: AGENTPHONE_BDD_AGENT_ID,
-        caption: "proactive file",
       },
       [200],
     );
-    if (completed.status !== 200) {
-      throw new Error("Expected the phone file to be delivered");
-    }
-    expect(completed.body).toMatchObject({ toNumber: email });
-    const providerSend = lastSend(sends);
-    expect(providerSend).toMatchObject({
-      toNumber: email,
-      body: "proactive file",
-    });
-    if (!providerSend.mediaUrl) {
-      throw new Error("Expected a provider-fetchable phone file");
-    }
-    expect(completed.body.url).toBe(init.body.fileUrl);
-    expect(completed.body.url).toMatch(
-      /^https?:\/\/[^/]+\/artifacts\/[a-z0-9]{10}\.txt$/u,
-    );
-    expect(new URL(providerSend.mediaUrl).searchParams.get("object")).toBe(
-      `test-private-artifacts/private-artifacts/${init.body.uploadId}/note.txt`,
-    );
-    const downloaded = await ap.downloadPhoneFileRaw(
-      "clerk-session",
-      completed.body.messageId,
-    );
-    expect(downloaded.status).toBe(302);
-    expect(downloaded.headers.get("cache-control")).toBe("private, no-store");
-    expect(downloaded.headers.get("x-file-name")).toBe("note.txt");
-    expect(downloaded.headers.get("x-file-mimetype")).toBe("text/plain");
-    expect(downloaded.headers.get("x-file-size")).toBe("5");
-    expect(
-      new URL(downloaded.headers.get("location") ?? "").searchParams.get(
-        "object",
-      ),
-    ).toBe(new URL(providerSend.mediaUrl).searchParams.get("object"));
-    const foreignActor = bdd.user();
-    await integrations.requestPhoneDownloadFile(
-      foreignActor,
-      completed.body.messageId,
-      [404],
-    );
-    await integrations.requestPhoneDownloadFile(
-      { ...actor, orgId: `org_${randomUUID()}` },
-      completed.body.messageId,
-      [404],
-    );
-    context.mocks.s3.send.mockRejectedValue(
-      Object.assign(new Error("Reference no longer exists"), {
-        name: "NoSuchKey",
-      }),
-    );
-    await integrations.requestPhoneDownloadFile(
-      actor,
-      completed.body.messageId,
-      [404],
-    );
-  });
+    expect(expectProp(sentText.body, "toNumber").toNumber).toBe(emailHandle);
+    expect(suite.sends.messages.at(-1)?.body).toBe("proactive hello");
 
-  it("uses linked inbound identity for proactive text and files without an explicit agent id", async () => {
-    const bdd = createBddApi(context);
-    const integrations = createBddIntegrationApi(context);
-    const ap = createAgentPhoneBddApi(context);
-    const actor = bdd.user();
-    const email = `bdd-${randomUUID().slice(0, 8)}@example.com`;
-    integrations.configureAgentPhoneProvider();
-    integrations.configureAgentPhoneWebhook();
-    const sends = ap.captureAgentPhoneSends();
-    const storage = ap.acceptAgentPhoneObjectStorage();
-    context.mocks.ably.publish.mockResolvedValue(undefined);
+    const beforeForeign = suite.sends.messages.length;
+    const foreignAgent = await suite.integrations.requestSendPhoneMessage(
+      member,
+      { text: "nope", agentphoneAgentId: "agt-foreign-agent" },
+      [404],
+    );
+    expect(expectErrorBody(foreignAgent.body).error.code).toBe("NOT_FOUND");
+    expect(suite.sends.messages.slice(beforeForeign)).toHaveLength(0);
 
-    const issued = await integrations.requestCreateAgentPhoneLinkCode(
-      actor,
+    const init = await suite.integrations.requestPhoneUploadInit(
+      member,
+      { filename: "note.txt", contentType: "text/plain", length: 11 },
       [200],
     );
-    await ap.postAgentPhoneInboundMessage({
-      channel: "imessage",
-      from: email,
-      body: issued.body.code,
-      conversationId: uniqueConversationId(),
+    storage.addArtifactObject({
+      uploadId: expectProp(init.body, "uploadId").uploadId,
+      filename: "note.txt",
+      size: 11,
     });
-    await expect(
-      integrations.getAgentPhoneLinkStatus(actor),
-    ).resolves.toMatchObject({
-      linked: true,
-      phoneHandle: email,
-    });
-    await ap.postAgentPhoneInboundMessage({
+    const completed = await suite.integrations.requestPhoneUploadComplete(
+      member,
+      {
+        uploadId: expectProp(init.body, "uploadId").uploadId,
+        caption: "proactive file",
+        agentphoneAgentId: AGENTPHONE_BDD_AGENT_ID,
+      },
+      [200],
+    );
+    expect(expectProp(completed.body, "toNumber").toNumber).toBe(emailHandle);
+    const fileUrlPath = new URL(
+      expectProp(completed.body, "url").url,
+      "https://app.okou.test",
+    ).pathname;
+    expect(fileUrlPath.startsWith("/artifacts/")).toBeTruthy();
+    expect(fileUrlPath.endsWith(".txt")).toBeTruthy();
+    expect(
+      fileUrlPath.slice("/artifacts/".length, -".txt".length),
+    ).toHaveLength(10);
+    const providerFileSend = suite.sends.messages.at(-1);
+    expect(providerFileSend?.toNumber).toBe(emailHandle);
+    expect(providerFileSend?.body).toBe("proactive file");
+    expect(providerFileSend?.mediaUrl).toContain(
+      expectProp(init.body, "uploadId").uploadId,
+    );
+
+    createRouteMocks(context).clerk.session(
+      member.userId,
+      member.orgId,
+      member.orgRole,
+    );
+    const ownerDownload = await suite.agentPhone.downloadPhoneFileRaw(
+      "clerk-session",
+      expectProp(completed.body, "messageId").messageId,
+    );
+    expect(ownerDownload.status).toBe(302);
+    expect(ownerDownload.headers.get("cache-control")).toBe(
+      "private, no-store",
+    );
+    expect(ownerDownload.headers.get("x-file-name")).toBe("note.txt");
+    expect(ownerDownload.headers.get("x-file-mimetype")).toBe("text/plain");
+    expect(ownerDownload.headers.get("x-file-size")).toBe("11");
+    expect(ownerDownload.headers.get("location")).toContain(
+      expectProp(init.body, "uploadId").uploadId,
+    );
+
+    createRouteMocks(context).clerk.session(
+      otherUser.userId,
+      otherUser.orgId,
+      otherUser.orgRole,
+    );
+    const otherUserDownload = await suite.agentPhone.downloadPhoneFileRaw(
+      "clerk-session",
+      expectProp(completed.body, "messageId").messageId,
+    );
+    expect(otherUserDownload.status).toBe(404);
+
+    createRouteMocks(context).clerk.session(
+      otherOrgMember.userId,
+      otherOrgMember.orgId,
+      otherOrgMember.orgRole,
+    );
+    const otherOrgDownload = await suite.agentPhone.downloadPhoneFileRaw(
+      "clerk-session",
+      expectProp(completed.body, "messageId").messageId,
+    );
+    expect(otherOrgDownload.status).toBe(404);
+
+    suite.agentPhone.acceptAgentPhoneObjectStorage();
+    createRouteMocks(context).clerk.session(
+      member.userId,
+      member.orgId,
+      member.orgRole,
+    );
+    const missingDownload = await suite.agentPhone.downloadPhoneFileRaw(
+      "clerk-session",
+      expectProp(completed.body, "messageId").messageId,
+    );
+    expect(missingDownload.status).toBe(404);
+  });
+
+  it("agentphone.bdd-053 uses linked inbound identity for proactive text and files without an explicit agent id", async () => {
+    const suite = setupAgentPhoneSuite();
+    const storage = suite.agentPhone.acceptAgentPhoneObjectStorage();
+    const member = suite.bdd.user();
+    const emailHandle = `linked-id-${randomUUID()}@example.test`;
+
+    await suite.linkWithCode(member, emailHandle, "imessage");
+    await suite.agentPhone.postAgentPhoneInboundMessage({
       channel: "imessage",
-      from: email,
+      from: emailHandle,
       body: "/help",
-      conversationId: uniqueConversationId(),
     });
 
-    const sent = await integrations.requestSendPhoneMessage(
-      actor,
+    const sentText = await suite.integrations.requestSendPhoneMessage(
+      member,
       { text: "hello from linked identity" },
       [200],
     );
-    expect(sent.body).toMatchObject({ ok: true, toNumber: email });
-    expect(lastSend(sends)).toMatchObject({
-      agentId: AGENTPHONE_BDD_AGENT_ID,
-      toNumber: email,
-      body: "hello from linked identity",
-    });
+    expect(expectProp(sentText.body, "toNumber").toNumber).toBe(emailHandle);
+    expect(suite.sends.messages.at(-1)?.agentId).toBe(AGENTPHONE_BDD_AGENT_ID);
+    expect(suite.sends.messages.at(-1)?.body).toBe(
+      "hello from linked identity",
+    );
 
-    const init = await integrations.requestPhoneUploadInit(
-      actor,
+    const init = await suite.integrations.requestPhoneUploadInit(
+      member,
       { filename: "linked.txt", contentType: "text/plain", length: 5 },
       [200],
     );
-    if (!("uploadId" in init.body)) {
-      throw new Error("Expected the phone upload to initialize");
-    }
     storage.addArtifactObject({
-      uploadId: init.body.uploadId,
+      uploadId: expectProp(init.body, "uploadId").uploadId,
       filename: "linked.txt",
       size: 5,
     });
-    const completed = await integrations.requestPhoneUploadComplete(
-      actor,
-      { uploadId: init.body.uploadId, caption: "file from linked identity" },
+    const completed = await suite.integrations.requestPhoneUploadComplete(
+      member,
+      {
+        uploadId: expectProp(init.body, "uploadId").uploadId,
+        caption: "linked file caption",
+      },
       [200],
     );
-    expect(completed.body).toMatchObject({
-      toNumber: email,
-      filename: "linked.txt",
-      mimetype: "text/plain",
-      size: 5,
-      url: init.body.fileUrl,
-    });
-    const providerSend = lastSend(sends);
-    expect(providerSend).toMatchObject({
-      agentId: AGENTPHONE_BDD_AGENT_ID,
-      toNumber: email,
-      body: "file from linked identity",
-    });
-    if (!providerSend.mediaUrl) {
-      throw new Error("Expected a provider-fetchable phone file");
-    }
-    expect(new URL(providerSend.mediaUrl).searchParams.get("object")).toBe(
-      `test-private-artifacts/private-artifacts/${init.body.uploadId}/linked.txt`,
+    expect(expectProp(completed.body, "toNumber").toNumber).toBe(emailHandle);
+    expect(expectProp(completed.body, "filename").filename).toBe("linked.txt");
+    expect(expectProp(completed.body, "mimetype").mimetype).toBe("text/plain");
+    expect(expectProp(completed.body, "size").size).toBe(5);
+    expect(expectProp(completed.body, "url").url).toContain("/artifacts/");
+
+    const providerSend = suite.sends.messages.at(-1);
+    expect(providerSend?.agentId).toBe(AGENTPHONE_BDD_AGENT_ID);
+    expect(providerSend?.body).toBe("linked file caption");
+    expect(providerSend?.mediaUrl).toContain(
+      expectProp(init.body, "uploadId").uploadId,
     );
-    expect(providerSend.mediaUrl).not.toBe(init.body.fileUrl);
+    expect(providerSend?.mediaUrl).not.toBe(
+      expectProp(completed.body, "url").url,
+    );
   });
 
-  it("invalidates a previous connection code when a new one is issued", async () => {
-    const bdd = createBddApi(context);
-    const integrations = createBddIntegrationApi(context);
-    const ap = createAgentPhoneBddApi(context);
-    const actor = bdd.user();
+  it("agentphone.bdd-054 invalidates a previous connection code when a new one is issued", async () => {
+    const suite = setupAgentPhoneSuite();
+    const member = suite.bdd.user();
     const phone = uniquePhoneHandle();
-    integrations.configureAgentPhoneProvider();
-    integrations.configureAgentPhoneWebhook();
-    const sends = ap.captureAgentPhoneSends();
-    context.mocks.ably.publish.mockResolvedValue(undefined);
 
-    const first = await integrations.requestCreateAgentPhoneLinkCode(
-      actor,
+    const first = await suite.integrations.requestCreateAgentPhoneLinkCode(
+      member,
       [200],
     );
-    const second = await integrations.requestCreateAgentPhoneLinkCode(
-      actor,
+    const second = await suite.integrations.requestCreateAgentPhoneLinkCode(
+      member,
       [200],
     );
 
-    await ap.postAgentPhoneInboundMessage({
+    await suite.agentPhone.postAgentPhoneInboundMessage({
       channel: "sms",
       from: phone,
       body: first.body.code,
     });
-    expect(lastSend(sends).body).toContain("invalid or expired");
-    await expect(
-      integrations.getAgentPhoneLinkStatus(actor),
-    ).resolves.toMatchObject({ linked: false });
+    expect(suite.sends.messages.at(-1)?.body).toContain("invalid or expired");
+    expect(
+      (await suite.integrations.getAgentPhoneLinkStatus(member)).linked,
+    ).toBeFalsy();
 
-    const beforeSecond = sends.messages.length;
-    await ap.postAgentPhoneInboundMessage({
+    const beforeSecond = suite.sends.messages.length;
+    await suite.agentPhone.postAgentPhoneInboundMessage({
       channel: "sms",
       from: phone,
       body: second.body.code,
     });
-    expectConnectedWelcome(sends.messages.slice(beforeSecond));
-    await expect(
-      integrations.getAgentPhoneLinkStatus(actor),
-    ).resolves.toMatchObject({ linked: true, phoneHandle: phone });
+    expectThreePartWelcome(suite.sends.messages.slice(beforeSecond), phone);
+    const status = await suite.integrations.getAgentPhoneLinkStatus(member);
+    expect(status.linked).toBeTruthy();
+    expect(expectLinkedPhoneHandle(status)).toBe(phone);
   });
 
-  it("rewards the Get started iMessage quest once per user", async () => {
-    const bdd = createBddApi(context);
-    const integrations = createBddIntegrationApi(context);
-    const ap = createAgentPhoneBddApi(context);
-    // The quest is personal, so a member who is not an admin is offered it.
-    const actor = bdd.user({ orgRole: "org:member" });
-    integrations.configureAgentPhoneProvider();
-    integrations.configureAgentPhoneWebhook();
-    const sends = ap.captureAgentPhoneSends();
-    context.mocks.ably.publish.mockResolvedValue(undefined);
+  it("agentphone.bdd-055 rewards the Get started iMessage quest once per user", async () => {
+    const suite = setupAgentPhoneSuite();
+    const member = suite.bdd.user({ orgRole: "org:member" });
+    const firstPhone = uniquePhoneHandle();
+    const secondPhone = uniquePhoneHandle();
 
-    async function linkWithCode(user: ApiTestUser): Promise<void> {
-      const issued = await integrations.requestCreateAgentPhoneLinkCode(
-        user,
-        [200],
-      );
-      const beforeLink = sends.messages.length;
-      await ap.postAgentPhoneInboundMessage({
-        channel: "imessage",
-        from: uniquePhoneHandle(),
-        body: issued.body.code,
-        isGroup: false,
-      });
-      expectConnectedWelcome(sends.messages.slice(beforeLink));
-    }
-
-    await linkWithCode(actor);
-    await flushWaitUntilForTest();
-    expect(context.mocks.ably.publish).toHaveBeenCalledWith(
-      GET_STARTED_REWARDS_CHANGED_EVENT,
-      null,
+    const firstCode = await suite.integrations.requestCreateAgentPhoneLinkCode(
+      member,
+      [200],
     );
+    const firstMsgId = await suite.agentPhone.postAgentPhoneInboundMessage({
+      channel: "imessage",
+      from: firstPhone,
+      body: firstCode.body.code,
+    });
+    expectThreePartWelcome(suite.sends.messages, firstPhone, firstMsgId);
+    expect(
+      channelsPublishedTo(context.mocks, GET_STARTED_REWARDS_CHANGED_EVENT),
+    ).toContain(`user:${member.userId}`);
 
-    // Unlinking and linking another phone is a new link, not a new reward.
-    await integrations.requestUnlinkAgentPhone(actor, [204]);
-    await linkWithCode(actor);
+    await suite.integrations.requestUnlinkAgentPhone(member, [204]);
+
+    const beforeSecond = suite.sends.messages.length;
+    const secondCode = await suite.integrations.requestCreateAgentPhoneLinkCode(
+      member,
+      [200],
+    );
+    const secondMsgId = await suite.agentPhone.postAgentPhoneInboundMessage({
+      channel: "imessage",
+      from: secondPhone,
+      body: secondCode.body.code,
+    });
+    expectThreePartWelcome(
+      suite.sends.messages.slice(beforeSecond),
+      secondPhone,
+      secondMsgId,
+    );
   });
 
-  it("rejects an expired connection code", async () => {
-    const bdd = createBddApi(context);
-    const integrations = createBddIntegrationApi(context);
-    const ap = createAgentPhoneBddApi(context);
-    const actor = bdd.user();
-    integrations.configureAgentPhoneProvider();
-    integrations.configureAgentPhoneWebhook();
-    const sends = ap.captureAgentPhoneSends();
+  it("agentphone.bdd-056 rejects an expired connection code", async () => {
+    const suite = setupAgentPhoneSuite();
+    const member = suite.bdd.user();
+    const phone = uniquePhoneHandle();
+    const start = now();
+    mockNow(start);
 
-    const issued = await integrations.requestCreateAgentPhoneLinkCode(
-      actor,
+    const issued = await suite.integrations.requestCreateAgentPhoneLinkCode(
+      member,
       [200],
     );
     mockNow(Date.parse(issued.body.expiresAt) + 1);
 
-    await ap.postAgentPhoneInboundMessage({
-      channel: "sms",
-      from: uniquePhoneHandle(),
-      body: issued.body.code,
-    });
-
-    expect(lastSend(sends).body).toContain("invalid or expired");
-    await expect(
-      integrations.getAgentPhoneLinkStatus(actor),
-    ).resolves.toMatchObject({ linked: false });
-  });
-
-  it("runs an all-digit prompt from an already linked sender", async () => {
-    const ap = createAgentPhoneBddApi(context);
-    const { phone, runnerGroup, sends } = await entitledLinkedActor();
-
-    await ap.postAgentPhoneInboundMessage({
+    await suite.agentPhone.postAgentPhoneInboundMessage({
       channel: "sms",
       from: phone,
-      body: "20260920",
-    });
-
-    const run = await readDispatchedRun(runnerGroup);
-    expect(run.prompt).toContain("20260920");
-    await completeSandboxRun(run.sandboxToken, run.runId, 0);
-    expect(lastSend(sends).body).toBe("Task completed successfully.");
-  });
-
-  it("runs a prompt from an already linked mixed-case iMessage email sender", async () => {
-    const bdd = createBddApi(context);
-    const runs = createRunsApi(context);
-    const integrations = createBddIntegrationApi(context);
-    const ap = createAgentPhoneBddApi(context);
-    const actor = bdd.user();
-    const email = `bdd-${randomUUID().slice(0, 8)}@example.com`;
-    ap.acceptAgentPhoneObjectStorage();
-    runs.acceptStorageDownloads();
-    runs.acceptTelemetryIngest();
-    context.mocks.ably.publish.mockResolvedValue(undefined);
-    const runnerGroup = await runs.configureRunnerGroup();
-    integrations.configureAgentPhoneProvider();
-    integrations.configureAgentPhoneWebhook();
-    const sends = ap.captureAgentPhoneSends();
-
-    await runs.grantProEntitlement(actor);
-    await runs.ensurePersonalSubscriptionModel(actor);
-    const issued = await integrations.requestCreateAgentPhoneLinkCode(
-      actor,
-      [200],
-    );
-    await ap.postAgentPhoneInboundMessage({
-      channel: "imessage",
-      from: email,
       body: issued.body.code,
-      conversationId: uniqueConversationId(),
-    });
-    await expect(
-      integrations.getAgentPhoneLinkStatus(actor),
-    ).resolves.toMatchObject({
-      linked: true,
-      phoneHandle: email,
     });
 
-    const sender = ` ${email.toUpperCase()} `;
-    const messageId = await ap.postAgentPhoneInboundMessage({
-      channel: "imessage",
-      from: sender,
-      body: "Summarize my meeting notes",
-      conversationId: uniqueConversationId(),
-    });
-    const run = await readDispatchedRun(runnerGroup);
-    expect(run.prompt).toBe("Summarize my meeting notes");
-    const beforeCompletion = sends.messages.length;
-    await createWebhookCallbackApi(context).requestAgentComplete(
-      {
-        runId: run.runId,
-        exitCode: 0,
-        completion: {
-          cliAgentType: run.cliAgentType,
-          cliAgentSessionId: agentPhoneCliAgentSessionIdForRun(run.runId),
-          cliAgentSessionHistoryDisposition: "native_only",
-        },
-      },
-      { authorization: `Bearer ${run.sandboxToken}` },
-      [200],
-    );
-    await expect
-      .poll(() => {
-        return sends.messages.slice(beforeCompletion).find((send) => {
-          return send.replyToMessageId === messageId;
-        });
-      })
-      .toMatchObject({
-        toNumber: sender,
-        body: "Task completed successfully.",
-      });
-    await expect(
-      integrations.getAgentPhoneLinkStatus(actor),
-    ).resolves.toMatchObject({
-      linked: true,
-      phoneHandle: email,
-    });
+    expect(suite.sends.messages.at(-1)?.body).toContain("invalid or expired");
+    expect(
+      (await suite.integrations.getAgentPhoneLinkStatus(member)).linked,
+    ).toBeFalsy();
   });
 
-  it("links an AgentPhone user through the provider connect prompt", async () => {
-    const integrations = createBddIntegrationApi(context);
-    const ap = createAgentPhoneBddApi(context);
-    const owner = createPublicConnectorActor(context, {
-      optionalEnvironmentNames: [
-        "AGENTPHONE_AGENT_ID",
-        "AGENTPHONE_API_BASE_URL",
-        "AGENTPHONE_API_KEY",
-        "AGENTPHONE_PHONE_NUMBER",
-        "AGENTPHONE_WEBHOOK_SECRET",
-      ],
-    });
-    const actor = owner.actor;
-    await owner.run(async () => {
-      integrations.configureAgentPhoneProvider();
-      integrations.configureAgentPhoneWebhook();
-      const sends = ap.captureAgentPhoneSends();
+  it("agentphone.bdd-063 handles a first-contact link restriction when the plain-text greeting is rejected", async () => {
+    const suite = setupAgentPhoneSuite();
+    const member = suite.bdd.user();
+    await suite.provisionProMember(member);
+    const newPhone = uniquePhoneHandle();
+    const conversationId = uniqueConversationId();
+    const groupId = bddGroupId(conversationId);
+    const privateAttempts: {
+      readonly toNumber: string | undefined;
+      readonly body: string | undefined;
+      readonly replyToMessageId: string | undefined;
+    }[] = [];
+    const delivered: {
+      readonly toNumber: string | undefined;
+      readonly body: string | undefined;
+      readonly replyToMessageId: string | undefined;
+    }[] = [];
 
-      const phone = uniquePhoneHandle();
-      await ap.linkViaWebhookConnectPrompt(actor, phone, sends);
-      await expect(
-        integrations.getAgentPhoneLinkStatus(actor),
-      ).resolves.toMatchObject({ linked: true, phoneHandle: phone });
-    });
-  });
-
-  it.each([
-    { body: "@Okou hello", sender: "phone" },
-    { body: "/connect @Okou", sender: "email" },
-  ] as const)(
-    "connects an unlinked group $sender sender through a private link after $body",
-    async ({ body, sender }) => {
-      const integrations = createBddIntegrationApi(context);
-      const { actor, phone, runnerGroup, sends, ap } =
-        await entitledLinkedActor();
-      await integrations.requestUnlinkAgentPhone(actor, [204]);
-      const handle =
-        sender === "phone" ? phone : `member-${randomUUID()}@example.com`;
-      const conversationId = uniqueConversationId();
-      const groupId = bddGroupId(conversationId);
-      const before = sends.messages.length;
-      const messageId = await ap.postAgentPhoneInboundMessage({
-        channel: "imessage",
-        from: groupId,
-        senderIdentifier: handle,
-        body,
-        conversationId,
-        isGroup: true,
-        participants: [{ identifier: handle }],
-      });
-
-      const prompt = sends.messages[before];
-      expect(prompt).toMatchObject({
-        toNumber: handle,
-        agentId: AGENTPHONE_BDD_AGENT_ID,
-        body: expect.stringContaining("/settings/agentphone?"),
-      });
-      expect(prompt?.replyToMessageId).toBeUndefined();
-      expect(sends.messages[before + 1]).toMatchObject({
-        toNumber: groupId,
-        replyToMessageId: messageId,
-        body: expect.stringContaining(
-          "I've sent you a private connection link",
-        ),
-      });
-      expect(sends.messages[before + 1]?.body).not.toContain(
-        "/settings/agentphone?",
-      );
-
-      await connectFromReceivedLink(actor, prompt);
-      await expect(
-        integrations.getAgentPhoneLinkStatus(actor),
-      ).resolves.toMatchObject({
-        linked: true,
-        phoneHandle: handle,
-      });
-
-      // The next group mention works without first sending a private message.
-      const followUpId = await ap.postAgentPhoneInboundMessage({
-        channel: "imessage",
-        from: groupId,
-        senderIdentifier: handle,
-        body: "@Okou help me now",
-        conversationId,
-        isGroup: true,
-        participants: [{ identifier: handle }],
-      });
-      const run = await readDispatchedRun(runnerGroup);
-      expect(run.prompt).toBe("@Okou help me now");
-      await completeSandboxRun(run.sandboxToken, run.runId, 0);
-      expect(lastSend(sends)).toMatchObject({
-        toNumber: groupId,
-        replyToMessageId: followUpId,
-        body: "Task completed successfully.",
-      });
-    },
-  );
-
-  it.each(["accepted", "rejected"] as const)(
-    "handles a first-contact link restriction when the plain-text greeting is %s",
-    async (greetingDelivery) => {
-      const integrations = createBddIntegrationApi(context);
-      const { actor, sends, ap, runnerGroup } = await entitledLinkedActor();
-      await integrations.requestUnlinkAgentPhone(actor, [204]);
-      const phone = uniquePhoneHandle();
-      const conversationId = uniqueConversationId();
-      const groupId = bddGroupId(conversationId);
-      const before = sends.messages.length;
-      const privateAttempts: unknown[] = [];
-      let hasPrivateReply = false;
-      server.use(
-        http.post(
-          "https://api.agentphone.test/v1/messages",
-          async ({ request }) => {
-            const message: unknown = await request.clone().json();
-            if (
-              typeof message !== "object" ||
-              message === null ||
-              !("to_number" in message) ||
-              message.to_number !== phone ||
-              !("body" in message) ||
-              typeof message.body !== "string"
-            ) {
-              return;
-            }
-            privateAttempts.push(message);
-            if (
-              !hasPrivateReply &&
-              message.body.includes("/settings/agentphone?")
-            ) {
+    server.use(
+      http.post(
+        `${AGENTPHONE_API_BASE_URL}/v1/messages`,
+        async ({ request }) => {
+          const raw: unknown = await request.json();
+          const record = isRecord(raw) ? raw : {};
+          const toNumber =
+            typeof record.to_number === "string" ? record.to_number : undefined;
+          const body =
+            typeof record.body === "string" ? record.body : undefined;
+          const replyToMessageId =
+            typeof record.reply_to_message_id === "string"
+              ? record.reply_to_message_id
+              : undefined;
+          if (toNumber === newPhone) {
+            privateAttempts.push({ toNumber, body, replyToMessageId });
+            if (privateAttempts.length === 1) {
               return HttpResponse.json(
                 {
                   error: {
                     code: "CONVERSATION_CONTENT_RESTRICTED",
-                    message: "Wait for a written reply before sending links",
+                    message: "Links are restricted on first contact",
                   },
                 },
                 { status: 422 },
               );
             }
-            if (!hasPrivateReply && greetingDelivery === "rejected") {
-              return HttpResponse.json(
-                {
-                  error: {
-                    code: "INBOUND_ONLY",
-                    message: "The recipient must message first",
-                  },
+            return HttpResponse.json(
+              {
+                error: {
+                  code: "INBOUND_ONLY",
+                  message: "Inbound only",
                 },
-                { status: 422 },
-              );
-            }
-          },
-        ),
-      );
-
-      const groupMessageId = await ap.postAgentPhoneInboundMessage({
-        channel: "imessage",
-        from: phone,
-        body: "@Okou hello",
-        conversationId,
-        isGroup: true,
-        participants: [{ identifier: phone }],
-      });
-      expect(privateAttempts).toMatchObject([
-        {
-          to_number: phone,
-          body: expect.stringContaining("/settings/agentphone?"),
-        },
-        {
-          to_number: phone,
-          body: expect.stringMatching(
-            /^Hi, I'm Okou\.\n\nYou can text me like a teammate/u,
-          ),
-        },
-      ]);
-      expect(privateAttempts[1]).toMatchObject({
-        body: expect.stringContaining(
-          "Reply here and I'll send you the link to connect your Okou account.",
-        ),
-      });
-      expect(privateAttempts[1]).not.toHaveProperty("reply_to_message_id");
-      expect(lastSend(sends)).toMatchObject({
-        toNumber: groupId,
-        replyToMessageId: groupMessageId,
-        body:
-          greetingDelivery === "accepted"
-            ? "I've sent you a private message. Please reply there so I can send you your connection link."
-            : "Please message this number directly to get your connection link.",
-      });
-      expect(lastSend(sends).body).not.toContain("/settings/agentphone?");
-      await expect(
-        integrations.getAgentPhoneLinkStatus(actor),
-      ).resolves.toMatchObject({ linked: false });
-      if (greetingDelivery === "rejected") {
-        expect(sends.messages.slice(before)).toHaveLength(1);
-        return;
-      }
-      expect(sends.messages[before]).toMatchObject({
-        toNumber: phone,
-        body: expect.stringContaining("Reply here"),
-      });
-
-      hasPrivateReply = true;
-      const privateMessageId = await ap.postAgentPhoneInboundMessage({
-        channel: "imessage",
-        from: phone,
-        body: "hi",
-        conversationId: uniqueConversationId(),
-      });
-      const prompt = lastSend(sends);
-      expect(prompt).toMatchObject({
-        toNumber: phone,
-        replyToMessageId: privateMessageId,
-        body: expect.stringContaining("/settings/agentphone?"),
-      });
-      await connectFromReceivedLink(actor, prompt);
-      await expect(
-        integrations.getAgentPhoneLinkStatus(actor),
-      ).resolves.toMatchObject({
-        linked: true,
-        phoneHandle: phone,
-      });
-
-      const followUpId = await ap.postAgentPhoneInboundMessage({
-        channel: "imessage",
-        from: phone,
-        body: "@Okou help me now",
-        conversationId,
-        isGroup: true,
-        participants: [{ identifier: phone }],
-      });
-      const run = await readDispatchedRun(runnerGroup);
-      await completeSandboxRun(run.sandboxToken, run.runId, 0);
-      expect(lastSend(sends)).toMatchObject({
-        toNumber: groupId,
-        replyToMessageId: followUpId,
-        body: "Task completed successfully.",
-      });
-    },
-  );
-
-  it.each(["quota", "unknown delivery"] as const)(
-    "offers direct-message recovery without retrying a private send after %s failure",
-    async (failure) => {
-      const { phone, sends, ap, actor } = await entitledLinkedActor();
-      await createBddIntegrationApi(context).requestUnlinkAgentPhone(
-        actor,
-        [204],
-      );
-      const conversationId = uniqueConversationId();
-      const groupId = bddGroupId(conversationId);
-      const before = sends.messages.length;
-      const attempts: unknown[] = [];
-      server.use(
-        http.post(
-          "https://api.agentphone.test/v1/messages",
-          async ({ request }) => {
-            const body: unknown = await request.clone().json();
-            if (
-              typeof body === "object" &&
-              body !== null &&
-              "to_number" in body &&
-              body.to_number === phone
-            ) {
-              attempts.push(body);
-              return HttpResponse.json(
-                {
-                  error: {
-                    code:
-                      failure === "quota"
-                        ? "OUTBOUND_LIMIT_REACHED"
-                        : "INTERNAL_ERROR",
-                  },
-                },
-                { status: failure === "quota" ? 429 : 503 },
-              );
-            }
-            return undefined;
-          },
-        ),
-      );
-
-      const messageId = await ap.postAgentPhoneInboundMessage({
-        channel: "imessage",
-        from: phone,
-        body: "@Okou hello",
-        conversationId,
-        isGroup: true,
-        participants: [{ identifier: phone }],
-      });
-      expect(sends.messages.slice(before)).toMatchObject([
-        {
-          toNumber: groupId,
-          replyToMessageId: messageId,
-          body: "Please message this number directly to get your connection link.",
-        },
-      ]);
-      expect(attempts).toHaveLength(1);
-    },
-  );
-
-  it.each(["dispatch context", "typing and plain-text completion"] as const)(
-    "linked iMessage DMs preserve %s",
-    async (scenario) => {
-      mockEnv("APP_URL", "https://app.okou.ai");
-      const webhooks = createWebhookCallbackApi(context);
-      const ap = createAgentPhoneBddApi(context);
-      const chat = createChatFilesBddApi(context);
-      const integrations = createBddIntegrationApi(context);
-      const { actor, phone, runnerGroup, sends } = await entitledLinkedActor();
-      await integrations.enableOkouDebug(actor);
-      const conversationId = uniqueConversationId();
-
-      // Linked DM creates a run and sends a typing indicator.
-      const messageId1 = await ap.postAgentPhoneInboundMessage({
-        channel: "imessage",
-        from: phone,
-        body: "summarize my inbox",
-        conversationId,
-        isGroup: false,
-      });
-      await waitForTyping(sends, [conversationId]);
-
-      if (scenario === "dispatch context") {
-        const lifecycle = await chat.requestThreadEvents(
-          actor,
-          actor.phoneHistory,
-          [200],
-        );
-        if (lifecycle.status !== 200) {
-          throw new Error("Expected AgentPhone thread lifecycle events");
-        }
-        const created = lifecycle.body.events.filter((event) => {
-          return event.kind === "created";
-        });
-        expect(created).toHaveLength(1);
-        const launchThreadId = created[0]?.chatThreadId;
-        if (!launchThreadId) {
-          throw new Error("Expected AgentPhone ingress to own a thread");
-        }
-        const admittedEvents = await chat.listThreadEvents(
-          actor,
-          launchThreadId,
-        );
-        const admittedInput = admittedEvents.events.find((event) => {
-          return (
-            event.eventType === "input.prompt" &&
-            event.userMessage.parts.some((part) => {
-              return part.type === "text" && part.text === "summarize my inbox";
-            })
-          );
-        });
-        expect(
-          admittedInput?.eventType === "input.prompt"
-            ? admittedInput.userMessage.parts.find((part) => {
-                return part.type === "source";
-              })
-            : undefined,
-        ).toStrictEqual({
-          type: "source",
-          kind: "agentphone",
-          href: `sms:${AGENTPHONE_BDD_PHONE_NUMBER}`,
-        });
-      }
-
-      const run1 = await readDispatchedRun(runnerGroup);
-      expect(run1.prompt).toBe("summarize my inbox");
-      if (scenario === "dispatch context") {
-        expectIntegrationImmediatelyBeforeRestrictedContent(
-          run1.appendSystemPrompt,
-          [
-            "# Current Integration",
-            "You are currently running inside: Phone text messaging (iMessage/SMS)",
-            `Shared phone number: ${AGENTPHONE_BDD_PHONE_NUMBER}`,
-            `User phone handle: ${phone}`,
-            `Phone agent ID: ${AGENTPHONE_BDD_AGENT_ID}`,
-            "Channel: imessage",
-            "Conversation type: dm",
-            `Conversation ID: ${conversationId}`,
-            `Message ID: ${messageId1}`,
-          ].join("\n"),
-        );
-
-        await completeSandboxRun(run1.sandboxToken, run1.runId, 0);
-        return;
-      }
-
-      // Agent event dispatch refreshes the iMessage indicator while the run's
-      // AgentPhone callback is still pending.
-      const typingBody = {
-        runId: run1.runId,
-        events: [{ type: "assistant", sequenceNumber: 1 }],
-      };
-      mockNow(now() + 4000);
-      const typingScheduled = await webhooks.requestAgentEvents(
-        typingBody,
-        { authorization: `Bearer ${run1.sandboxToken}` },
-        [200],
-      );
-      expect(typingScheduled.body).toStrictEqual({
-        received: 1,
-        firstSequence: 1,
-        lastSequence: 1,
-      });
-      await waitForTyping(sends, [conversationId, conversationId]);
-
-      // Sandbox progress refreshes the typing indicator through the callback.
-      mockNow(now() + 4000);
-      const heartbeat = await webhooks.requestAgentHeartbeat(
-        { runId: run1.runId },
-        { authorization: `Bearer ${run1.sandboxToken}` },
-        [200],
-      );
-      expect(heartbeat.body).toStrictEqual({
-        ok: true,
-        typingRefreshIntervalSeconds: 4,
-      });
-      await waitForTyping(sends, [
-        conversationId,
-        conversationId,
-        conversationId,
-      ]);
-
-      // Completion converts markdown output to iMessage plain text.
-      const beforeCompletion = sends.messages.length;
-      await completeSandboxRun(run1.sandboxToken, run1.runId, 0, {
-        resultText: MARKDOWN_RUN_OUTPUT,
-      });
-      await waitForSendCount(sends, beforeCompletion + 1);
-      const completionReply = lastSend(sends);
-      expect(completionReply.toNumber).toBe(phone);
-      expect(completionReply.conversationId).toBeUndefined();
-      expect(completionReply.replyToMessageId).toBe(messageId1);
-      expect(completionReply.body).toBe(EXPECTED_PLAIN_RUN_OUTPUT);
-    },
-  );
-
-  it("admits the Phone input while the first typing request is still pending", async () => {
-    const { actor, ap, phone, runnerGroup, sends } =
-      await entitledLinkedActor();
-    const chat = createChatFilesBddApi(context);
-    const conversationId = uniqueConversationId();
-    const typingStarted = createDeferredPromise<void>(context.signal);
-    const releaseTyping = createDeferredPromise<void>(context.signal);
-    server.use(
-      http.post(
-        `https://api.agentphone.test/v1/conversations/${conversationId}/typing`,
-        async () => {
-          typingStarted.resolve();
-          await releaseTyping.promise;
-          return HttpResponse.json({ status: "typing indicator sent" });
-        },
-      ),
-    );
-    const inbound = settle(
-      ap.postAgentPhoneInboundMessage({
-        channel: "imessage",
-        from: phone,
-        body: "Process this while typing is pending",
-        conversationId,
-      }),
-    );
-    onTestFinished(async () => {
-      if (!releaseTyping.settled()) {
-        releaseTyping.resolve();
-      }
-      await inbound;
-    });
-    await typingStarted.promise;
-    await expect
-      .poll(async () => {
-        const lifecycle = await chat.requestThreadEvents(
-          actor,
-          actor.phoneHistory,
-          [200],
-        );
-        if (lifecycle.status !== 200) {
-          throw new Error("Expected Phone thread lifecycle events");
-        }
-        const created = lifecycle.body.events.find((event) => {
-          return event.kind === "created";
-        });
-        if (!created) {
-          return [];
-        }
-        const events = await chat.listThreadEvents(actor, created.chatThreadId);
-        return events.events.flatMap((event) => {
-          return event.eventType === "input.prompt"
-            ? event.userMessage.parts.flatMap((part) => {
-                return part.type === "text" ? [part.text] : [];
-              })
-            : [];
-        });
-      })
-      .toContain("Process this while typing is pending");
-
-    releaseTyping.resolve();
-    expect((await inbound).ok).toBeTruthy();
-    const run = await readDispatchedRun(runnerGroup);
-    const beforeCompletion = sends.messages.length;
-    await completeSandboxRun(run.sandboxToken, run.runId, 0);
-    await waitForSendCount(sends, beforeCompletion + 1);
-    expect(lastSend(sends).toNumber).toBe(phone);
-  });
-
-  it("coalesces Phone typing bursts and refreshes at the next four-second heartbeat", async () => {
-    const { ap, phone, runnerGroup, sends } = await entitledLinkedActor();
-    const webhooks = createWebhookCallbackApi(context);
-    const conversationId = uniqueConversationId();
-    await ap.postAgentPhoneInboundMessage({
-      channel: "imessage",
-      from: phone,
-      body: "Keep typing through progress updates",
-      conversationId,
-    });
-    const run = await readDispatchedRun(runnerGroup);
-    await webhooks.requestAgentEvents(
-      {
-        runId: run.runId,
-        events: [{ type: "assistant", sequenceNumber: 1 }],
-      },
-      { authorization: `Bearer ${run.sandboxToken}` },
-      [200],
-    );
-    const earlyHeartbeat = await webhooks.requestAgentHeartbeat(
-      { runId: run.runId },
-      { authorization: `Bearer ${run.sandboxToken}` },
-      [200],
-    );
-    expect(earlyHeartbeat.body).toStrictEqual({
-      ok: true,
-      typingRefreshIntervalSeconds: 4,
-    });
-    await waitForTyping(sends, [conversationId]);
-
-    mockNow(now() + 4000);
-    await webhooks.requestAgentHeartbeat(
-      { runId: run.runId },
-      { authorization: `Bearer ${run.sandboxToken}` },
-      [200],
-    );
-    await waitForTyping(sends, [conversationId, conversationId]);
-    await completeSandboxRun(run.sandboxToken, run.runId, 0);
-    expect(lastSend(sends).toNumber).toBe(phone);
-  });
-
-  it.each(["server", "network", "timeout"] as const)(
-    "recovers a Phone typing %s failure on the next progress update",
-    async (failure) => {
-      const { ap, phone, runnerGroup, sends } = await entitledLinkedActor();
-      const webhooks = createWebhookCallbackApi(context);
-      const conversationId = uniqueConversationId();
-      let failTyping = true;
-      const acceptedTyping: string[] = [];
-      server.use(
-        http.post(
-          `https://api.agentphone.test/v1/conversations/${conversationId}/typing`,
-          async ({ request }) => {
-            if (failTyping) {
-              if (failure === "timeout") {
-                const aborted = createDeferredPromise<void>(context.signal);
-                if (request.signal.aborted) {
-                  aborted.resolve();
-                } else {
-                  request.signal.addEventListener(
-                    "abort",
-                    () => {
-                      if (!aborted.settled()) {
-                        aborted.resolve();
-                      }
-                    },
-                    { once: true },
-                  );
-                }
-                await aborted.promise;
-              }
-              return failure === "network" || failure === "timeout"
-                ? HttpResponse.error()
-                : HttpResponse.json(
-                    { detail: "temporary failure" },
-                    { status: 503 },
-                  );
-            }
-            acceptedTyping.push(conversationId);
-            return HttpResponse.json({ status: "typing indicator sent" });
-          },
-        ),
-      );
-      await ap.postAgentPhoneInboundMessage({
-        channel: "imessage",
-        from: phone,
-        body: "Recover typing without delaying my reply",
-        conversationId,
-      });
-      const run = await readDispatchedRun(runnerGroup);
-      failTyping = false;
-      await webhooks.requestAgentHeartbeat(
-        { runId: run.runId },
-        { authorization: `Bearer ${run.sandboxToken}` },
-        [200],
-      );
-      await flushWaitUntilForTest();
-      expect(acceptedTyping).toStrictEqual([conversationId]);
-      await completeSandboxRun(run.sandboxToken, run.runId, 0);
-      expect(lastSend(sends).toNumber).toBe(phone);
-    },
-  );
-
-  it("keeps run progress alive when the typing provider fails", async () => {
-    const webhooks = createWebhookCallbackApi(context);
-    const ap = createAgentPhoneBddApi(context);
-    const { phone, runnerGroup, sends } = await entitledLinkedActor();
-    const conversationId = uniqueConversationId();
-    await ap.postAgentPhoneInboundMessage({
-      channel: "imessage",
-      from: phone,
-      body: "check my inbox",
-      conversationId,
-      isGroup: false,
-    });
-    await waitForTyping(sends, [conversationId]);
-    const run = await readDispatchedRun(runnerGroup);
-
-    server.use(
-      http.post(
-        "https://api.agentphone.test/v1/conversations/:id/typing",
-        () => {
-          return HttpResponse.json(
-            { detail: "temporary failure" },
-            { status: 503 },
-          );
-        },
-      ),
-    );
-    mockNow(now() + 4000);
-    const heartbeat = await webhooks.requestAgentHeartbeat(
-      { runId: run.runId },
-      { authorization: `Bearer ${run.sandboxToken}` },
-      [200],
-    );
-    expect(heartbeat.body).toStrictEqual({
-      ok: true,
-      typingRefreshIntervalSeconds: 4,
-    });
-    await flushWaitUntilForTest();
-
-    const beforeCompletion = sends.messages.length;
-    await completeSandboxRun(run.sandboxToken, run.runId, 0);
-    await waitForSendCount(sends, beforeCompletion + 1);
-    expect(lastSend(sends).toNumber).toBe(phone);
-  });
-
-  it("reuses the linked iMessage session for follow-up messages", async () => {
-    const ap = createAgentPhoneBddApi(context);
-    const { actor, phone, runnerGroup, sends } = await entitledLinkedActor();
-    const chatCallbacks = createChatCallbacksApi(context);
-    await chatCallbacks.registerPushSubscription(actor);
-    chatCallbacks.enableVapid();
-    const conversationId = uniqueConversationId();
-
-    const beforeFirstCompletion = sends.messages.length;
-    const messageId1 = await ap.postAgentPhoneInboundMessage({
-      channel: "imessage",
-      from: phone,
-      body: "start session",
-      conversationId,
-      isGroup: false,
-    });
-    const run1 = await readDispatchedRun(runnerGroup);
-    await completeSandboxRun(run1.sandboxToken, run1.runId, 0);
-    await waitForSendCount(sends, beforeFirstCompletion + 1);
-    expect(lastSend(sends).body).toBe("Task completed successfully.");
-    // Session persistence happens in background callback processing, so
-    // wait for the session id to be saved before reading it.
-    const session1 = await waitForRunSessionIdPresent(actor, run1.runId);
-
-    // The follow-up DM reuses the saved session and carries stored context.
-    await ap.postAgentPhoneInboundMessage({
-      channel: "imessage",
-      from: phone,
-      body: "follow up",
-      conversationId,
-      isGroup: false,
-    });
-    const run2 = await readDispatchedRun(runnerGroup);
-    expect(run2.appendSystemPrompt).toContain("# Phone Message Context");
-    expect(run2.appendSystemPrompt).toContain("RELATIVE_INDEX");
-    expect(run2.appendSystemPrompt).toContain(`MSG_ID: ${messageId1}`);
-    expect(run2.appendSystemPrompt).toContain("SENDER: {id: BOT}");
-
-    const beforeRun2Completion = sends.messages.length;
-    await completeSandboxRun(run2.sandboxToken, run2.runId, 0);
-    await waitForSendCount(sends, beforeRun2Completion + 1);
-    expect(lastSend(sends).body).toBe("Task completed successfully.");
-    await waitForRunSessionId(actor, run2.runId, session1);
-    await flushWaitUntilForTest();
-    expect(context.mocks.webpush.sendNotification).not.toHaveBeenCalled();
-  });
-
-  it("keeps one DM thread as its provider conversation changes or disappears", async () => {
-    const { actor, ap, phone, runnerGroup } = await entitledLinkedActor();
-    const chat = createChatFilesBddApi(context);
-    const conversations = [
-      uniqueConversationId(),
-      uniqueConversationId(),
-      undefined,
-    ];
-    let sessionId: string | undefined;
-    for (const [index, conversationId] of conversations.entries()) {
-      const prompt = `continue the same phone thread ${index}`;
-      await ap.postAgentPhoneInboundMessage({
-        channel: conversationId === undefined ? "sms" : "imessage",
-        from: phone,
-        body: prompt,
-        conversationId,
-      });
-      const run = await readDispatchedRun(runnerGroup);
-      expect(run.prompt).toBe(prompt);
-      if (conversationId === undefined) {
-        expect(run.appendSystemPrompt).not.toContain("Conversation ID:");
-      } else {
-        expect(run.appendSystemPrompt).toContain(
-          `Conversation ID: ${conversationId}`,
-        );
-      }
-      await completeSandboxRun(run.sandboxToken, run.runId, 0);
-      const currentSessionId = await waitForRunSessionIdPresent(
-        actor,
-        run.runId,
-      );
-      if (sessionId === undefined) {
-        sessionId = currentSessionId;
-      } else {
-        expect(currentSessionId).toBe(sessionId);
-      }
-    }
-    const lifecycle = await chat.requestThreadEvents(
-      actor,
-      actor.phoneHistory,
-      [200],
-    );
-    if (lifecycle.status !== 200) {
-      throw new Error("Expected the phone thread lifecycle");
-    }
-    expect(
-      lifecycle.body.events.filter((event) => {
-        return event.kind === "created";
-      }),
-    ).toHaveLength(1);
-  });
-
-  it("publishes one thread for distinct concurrent messages to the same phone root", async () => {
-    const { actor, ap, phone, runnerGroup, sends } =
-      await entitledLinkedActor();
-    const chat = createChatFilesBddApi(context);
-    const runs = createRunsApi(context);
-    const prompts = [
-      "first concurrent phone task",
-      "second concurrent phone task",
-    ];
-    const messageIds = await Promise.all(
-      prompts.map((body) => {
-        return ap.postAgentPhoneInboundMessage({
-          channel: "imessage",
-          from: phone,
-          body,
-          conversationId: uniqueConversationId(),
-        });
-      }),
-    );
-    const lifecycle = await chat.requestThreadEvents(
-      actor,
-      actor.phoneHistory,
-      [200],
-    );
-    if (lifecycle.status !== 200) {
-      throw new Error("Expected the concurrent phone thread lifecycle");
-    }
-    const created = lifecycle.body.events.filter((event) => {
-      return event.kind === "created";
-    });
-    expect(created).toHaveLength(1);
-    const thread = created[0];
-    if (!thread) {
-      throw new Error("Expected one published phone thread");
-    }
-    expect(thread).toMatchObject({
-      selectedModel: "claude-fable-5-1",
-      cloudBrowserEnabled: true,
-    });
-    const inputs = await chat.listThreadEvents(actor, thread.chatThreadId);
-    for (const prompt of prompts) {
-      expect(inputs.events).toContainEqual(
-        expect.objectContaining({
-          eventType: "input.prompt",
-          userMessage: {
-            version: 1,
-            parts: expect.arrayContaining([{ type: "text", text: prompt }]),
-          },
-        }),
-      );
-    }
-    const completedPrompts: string[] = [];
-    const sendsBeforeCompletion = sends.messages.length;
-    for (const index of prompts.keys()) {
-      const run = await readDispatchedRun(runnerGroup);
-      completedPrompts[index] = run.prompt;
-      await completeSandboxRun(run.sandboxToken, run.runId, 0);
-    }
-    expect(completedPrompts.sort()).toStrictEqual([...prompts].sort());
-    expect(
-      sends.messages
-        .slice(sendsBeforeCompletion)
-        .map((send) => {
-          return send.replyToMessageId;
-        })
-        .sort(),
-    ).toStrictEqual([...messageIds].sort());
-    await runs.heartbeatRunner(runnerGroup);
-    await flushWaitUntilForTest();
-    expect(runs.unobservedDispatches(runnerGroup)).toHaveLength(0);
-    const finalLifecycle = await chat.requestThreadEvents(
-      actor,
-      actor.phoneHistory,
-      [200],
-    );
-    if (finalLifecycle.status !== 200) {
-      throw new Error("Expected the completed phone thread lifecycle");
-    }
-    expect(
-      finalLifecycle.body.events.filter((event) => {
-        return event.kind === "created";
-      }),
-    ).toStrictEqual(created);
-  });
-
-  it("forwards unrecognized slash commands as agent prompts", async () => {
-    const ap = createAgentPhoneBddApi(context);
-    const { phone, runnerGroup } = await entitledLinkedActor();
-
-    await ap.postAgentPhoneInboundMessage({
-      channel: "imessage",
-      from: phone,
-      body: "/unrecognized_command",
-      conversationId: uniqueConversationId(),
-      isGroup: false,
-    });
-
-    const run = await readDispatchedRun(runnerGroup);
-    expect(run.prompt).toBe("/unrecognized_command");
-  });
-
-  it.each([
-    { model: "gpt-6-astra", label: "ChatGPT (Codex)" },
-    { model: "claude-fable-5-1", label: "Claude" },
-  ] as const)(
-    "offers personal subscription recovery for $label in iMessage",
-    async ({ model, label }) => {
-      const { actor, ap, phone, runnerGroup, sends } =
-        await entitledLinkedActor();
-      await createBddIntegrationApi(context).configureNativeSubscriptionModels(
-        actor,
-      );
-      await createRunsApi(context).updateUserModelPreference(actor, model);
-      await ap.postAgentPhoneInboundMessage({
-        channel: "imessage",
-        from: phone,
-        body: "Finish my report",
-        conversationId: uniqueConversationId(),
-      });
-      const run = await readDispatchedRun(runnerGroup);
-      const beforeCompletion = sends.messages.length;
-      const nativeMessage =
-        "You've hit your usage limit. Try again at 6:17 AM (Asia/Shanghai).";
-      await createWebhookCallbackApi(context).requestAgentComplete(
-        {
-          runId: run.runId,
-          exitCode: 1,
-          error: nativeMessage,
-          failureReason: "usage_limit",
-        },
-        { authorization: `Bearer ${run.sandboxToken}` },
-        [200],
-      );
-      await waitForSendCount(sends, beforeCompletion + 1);
-      const reply = lastSend(sends).body;
-      expect(reply).toContain(`Your ${label} subscription`);
-      expect(reply).not.toContain(nativeMessage);
-      expect(reply).toContain("Wait for your subscription allowance to reset");
-      expect(reply).toContain("?settings=model");
-      expect(reply).toContain('reply "continue"');
-      const typingBeforeRecovery = sends.typing.length;
-      mockNow(now() + 2000);
-      await switchRecoverySubscription(
-        context,
-        actor,
-        label === "Claude" ? "claude-code-oauth-token" : "codex-oauth-token",
-      );
-      await flushWaitUntilForTest();
-      const continued = await readDispatchedRun(runnerGroup);
-      expect(continued.runId).not.toBe(run.runId);
-      expect(continued.prompt).toBe("continue");
-      expect(sends.typing.length).toBeGreaterThan(typingBeforeRecovery);
-    },
-  );
-
-  it("replies to failed linked iMessage runs", async () => {
-    const ap = createAgentPhoneBddApi(context);
-    const { actor, phone, runnerGroup, sends } = await entitledLinkedActor();
-    const chatCallbacks = createChatCallbacksApi(context);
-    await chatCallbacks.registerPushSubscription(actor);
-    chatCallbacks.enableVapid();
-    const conversationId = uniqueConversationId();
-
-    await ap.postAgentPhoneInboundMessage({
-      channel: "imessage",
-      from: phone,
-      body: "now fail",
-      conversationId,
-      isGroup: false,
-    });
-    const run = await readDispatchedRun(runnerGroup);
-    const beforeCompletion = sends.messages.length;
-    await completeSandboxRun(run.sandboxToken, run.runId, 1, {
-      error: "AgentPhone bdd route failure",
-    });
-    await waitForSendCount(sends, beforeCompletion + 1);
-    expect(lastSend(sends).body).toBe(
-      "Oops, something went wrong. Please try again later.",
-    );
-    await flushWaitUntilForTest();
-    expect(context.mocks.webpush.sendNotification).not.toHaveBeenCalled();
-  });
-
-  it.each([
-    { channel: "imessage", isGroup: false },
-    { channel: "imessage", isGroup: true },
-    { channel: "sms", isGroup: false },
-    { channel: "mms", isGroup: false },
-  ] as const)(
-    "offers billing recovery after a run runs out of credits ($channel, group=$isGroup)",
-    async ({ channel, isGroup }) => {
-      const { actor, ap, phone, runnerGroup, sends } =
-        await entitledLinkedActor();
-      const workspaceName = "Finance * Operations";
-      context.mocks.clerk.organizations.getOrganization.mockResolvedValue({
-        id: actor.orgId,
-        name: workspaceName,
-      });
-
-      await ap.postAgentPhoneInboundMessage({
-        channel,
-        from: phone,
-        body: "@Okou finish my report",
-        conversationId: uniqueConversationId(),
-        isGroup,
-      });
-      const run = await readDispatchedRun(runnerGroup);
-      const beforeCompletion = sends.messages.length;
-      await completeSandboxRun(run.sandboxToken, run.runId, 1, {
-        error: "insufficient_credits",
-        failureReason: "insufficient_credits",
-      });
-      await waitForSendCount(sends, beforeCompletion + 1);
-      const reply = lastSend(sends).body;
-      if (isGroup) {
-        expect(reply).not.toContain(workspaceName);
-      } else {
-        expect(reply).toContain(`workspace "${workspaceName}"`);
-        expect(reply).toContain("send /switch");
-      }
-      expect(reply).toContain("Add credits to continue.");
-      expect(reply).toContain("/?settings=billing");
-      expect(reply).not.toContain("billingView=plans");
-
-      const chat = createChatFilesBddApi(context);
-      const lifecycle = await chat.requestThreadEvents(
-        actor,
-        actor.phoneHistory,
-        [200],
-      );
-      if (lifecycle.status !== 200) {
-        throw new Error("Expected AgentPhone thread lifecycle events");
-      }
-      const thread = lifecycle.body.events.find((event) => {
-        return event.kind === "created";
-      });
-      if (!thread) {
-        throw new Error("Expected the Phone chat thread");
-      }
-      const events = await chat.listThreadEvents(actor, thread.chatThreadId);
-      expect(events.events).toContainEqual(
-        expect.objectContaining({
-          eventType: "run.failed",
-          content: "insufficient_credits",
-        }),
-      );
-    },
-  );
-
-  it.each([
-    { role: "org:admin", isGroup: false },
-    { role: "org:member", isGroup: false },
-    { role: "org:admin", isGroup: true },
-  ] as const)(
-    "offers role-aware recovery for a depleted workspace ($role, group=$isGroup)",
-    async ({ role, isGroup }) => {
-      const bdd = createBddApi(context);
-      const integrations = createBddIntegrationApi(context);
-      const ap = createAgentPhoneBddApi(context);
-      const owner = bdd.user();
-      bdd.acceptStorageWrites();
-      context.mocks.ably.publish.mockResolvedValue(undefined);
-      integrations.configureAgentPhoneProvider();
-      integrations.configureAgentPhoneWebhook();
-      const sends = ap.captureAgentPhoneSends();
-      await bdd.bootstrapLimitedFreeOnboarding(owner);
-      const actor =
-        role === "org:admin"
-          ? owner
-          : bdd.user({ orgId: owner.orgId, orgRole: role });
-      const phone = uniquePhoneHandle();
-      await ap.linkViaWebhookConnectPrompt(actor, phone, sends);
-      // Let the public onboarding and connection rewards expire naturally.
-      mockNow(now() + 90 * 24 * 60 * 60 * 1000);
-      const workspaceName = "Original Phone Workspace";
-      context.mocks.clerk.organizations.getOrganization.mockResolvedValue({
-        id: actor.orgId,
-        name: workspaceName,
-      });
-      const conversationId = uniqueConversationId();
-      const beforeSend = sends.messages.length;
-      await ap.postAgentPhoneInboundMessage({
-        channel: "imessage",
-        from: phone,
-        body: "@Okou help me with this report",
-        conversationId,
-        isGroup,
-      });
-      await waitForSendCount(sends, beforeSend + 1);
-      const reply = lastSend(sends).body;
-      if (isGroup) {
-        expect(reply).toContain("Upgrade to Pro");
-        expect(reply).toContain("/?settings=billing&billingView=plans");
-        expect(reply).not.toContain(workspaceName);
-        expect(reply).not.toContain("/switch");
-        await ap.postAgentPhoneInboundMessage({
-          channel: "imessage",
-          from: phone,
-          body: "/switch @Okou",
-          conversationId,
-          isGroup: true,
-        });
-        expect(lastSend(sends).body).toContain("message this number directly");
-        expect(lastSend(sends).body).not.toContain("/settings/agentphone?");
-        const status = await integrations.getAgentPhoneLinkStatus(actor);
-        expect(status.linked).toBeTruthy();
-        return;
-      }
-      expect(reply).toContain(`workspace "${workspaceName}"`);
-      expect(reply).toContain("send /switch");
-      if (role === "org:admin") {
-        expect(reply).toContain("Upgrade to Pro");
-        expect(reply).toContain("/?settings=billing&billingView=plans");
-      } else {
-        expect(reply).toContain("Ask a workspace admin");
-        expect(reply).not.toContain("?settings=billing");
-      }
-
-      const beforeSwitch = sends.messages.length;
-      await ap.postAgentPhoneInboundMessage({
-        channel: "imessage",
-        from: phone,
-        body: "/switch",
-      });
-      expect(sends.messages).toHaveLength(beforeSwitch + 1);
-      expect(lastSend(sends).body).toContain(
-        "Your phone has been disconnected",
-      );
-      const connectUrl = lastSend(sends).body?.match(/https?:\/\/\S+/u)?.[0];
-      if (!connectUrl) {
-        throw new Error("Expected /switch to return a new connection URL");
-      }
-      const status = await integrations.getAgentPhoneLinkStatus(actor);
-      expect(status.linked).toBeFalsy();
-      const destination = bdd.user();
-      const params = new URL(connectUrl).searchParams;
-      await integrations.requestConnectAgentPhone(
-        destination,
-        {
-          phoneHandle: params.get("handle") ?? "",
-          agentphoneAgentId: params.get("agent") ?? "",
-          timestamp: Number(params.get("ts")),
-          signature: params.get("sig") ?? "",
-          channel: params.get("channel") ?? undefined,
-        },
-        [200],
-      );
-      const destinationStatus =
-        await integrations.getAgentPhoneLinkStatus(destination);
-      expect(destinationStatus).toMatchObject({
-        linked: true,
-        phoneHandle: phone,
-      });
-      const originalStatus = await integrations.getAgentPhoneLinkStatus(actor);
-      expect(originalStatus.linked).toBeFalsy();
-    },
-  );
-
-  it("keeps the phone conversation usable after the provider rejects a completion reply", async () => {
-    const { ap, phone, runnerGroup, sends } = await entitledLinkedActor();
-    const webhooks = createWebhookCallbackApi(context);
-    async function complete(runId: string, sandboxToken: string) {
-      await webhooks.requestAgentComplete(
-        {
-          runId,
-          exitCode: 0,
-          completion: {
-            cliAgentType: "claude-code",
-            cliAgentSessionId: agentPhoneCliAgentSessionIdForRun(runId),
-            cliAgentSessionHistoryDisposition: "native_only",
-          },
-        },
-        { authorization: `Bearer ${sandboxToken}` },
-        [200],
-      );
-      await flushWaitUntilForTest();
-    }
-    const conversationId = uniqueConversationId();
-    await ap.postAgentPhoneInboundMessage({
-      channel: "imessage",
-      from: phone,
-      body: "first phone request",
-      conversationId,
-    });
-    const firstRun = await readDispatchedRun(runnerGroup);
-    const beforeCompletion = sends.messages.length;
-    server.use(
-      http.post(
-        "https://api.agentphone.test/v1/messages",
-        () => {
-          return HttpResponse.json(
-            { detail: "Recipient is temporarily unavailable" },
-            { status: 422 },
-          );
-        },
-        { once: true },
-      ),
-    );
-
-    await complete(firstRun.runId, firstRun.sandboxToken);
-    expect(sends.messages).toHaveLength(beforeCompletion);
-    await webhooks.requestAgentComplete(
-      { runId: firstRun.runId, exitCode: 0 },
-      { authorization: `Bearer ${firstRun.sandboxToken}` },
-      [200],
-    );
-    await flushWaitUntilForTest();
-    expect(sends.messages).toHaveLength(beforeCompletion);
-
-    const nextMessageId = await ap.postAgentPhoneInboundMessage({
-      channel: "imessage",
-      from: phone,
-      body: "try the next phone request",
-      conversationId,
-    });
-    const nextRun = await readDispatchedRun(runnerGroup);
-    expect(nextRun.prompt).toBe("try the next phone request");
-    await complete(nextRun.runId, nextRun.sandboxToken);
-    expect(sends.messages).toHaveLength(beforeCompletion + 1);
-    expect(lastSend(sends)).toMatchObject({
-      toNumber: phone,
-      replyToMessageId: nextMessageId,
-      body: "Task completed successfully.",
-    });
-  });
-
-  it("does not send a phone reply after the user deletes the running thread", async () => {
-    const { actor, ap, phone, runnerGroup, sends } =
-      await entitledLinkedActor();
-    const chat = createChatFilesBddApi(context);
-    const webhooks = createWebhookCallbackApi(context);
-    await ap.postAgentPhoneInboundMessage({
-      channel: "imessage",
-      from: phone,
-      body: "delete this phone conversation",
-      conversationId: uniqueConversationId(),
-    });
-    const run = await readDispatchedRun(runnerGroup);
-    const lifecycle = await chat.requestThreadEvents(
-      actor,
-      actor.phoneHistory,
-      [200],
-    );
-    if (lifecycle.status !== 200) {
-      throw new Error("Expected AgentPhone thread lifecycle events");
-    }
-    const thread = lifecycle.body.events.find((event) => {
-      return event.kind === "created";
-    });
-    if (!thread) {
-      throw new Error("Expected the phone conversation's thread");
-    }
-    const beforeDeletion = sends.messages.length;
-
-    await chat.deleteThread(actor, thread.chatThreadId);
-    await webhooks.requestAgentComplete(
-      {
-        runId: run.runId,
-        exitCode: 1,
-        error: "Run ended after its thread was deleted",
-      },
-      { authorization: `Bearer ${run.sandboxToken}` },
-      [200],
-    );
-    await flushWaitUntilForTest();
-    expect(sends.messages).toHaveLength(beforeDeletion);
-    await chat.requestListThreadEvents(actor, thread.chatThreadId, {}, [404]);
-  });
-
-  it("rejects unavailable personal DM input without silently billing Auto", async () => {
-    const integrations = createBddIntegrationApi(context);
-    const runs = createRunsApi(context);
-    const { actor, complete, send, runnerGroup } = await modelSessionScenario({
-      channel: "sms",
-      withConversation: false,
-    });
-    await integrations.updateUserModelPreference(actor, "gpt-6-astra");
-    const preferred = await complete("use my web default", "gpt-6-astra");
-
-    await createMiscRoutesApi(context).deletePersonalModelProvider(
-      actor,
-      "codex-oauth-token",
-      [204],
-    );
-    await expect(
-      integrations.readUserModelPreference(actor),
-    ).resolves.toMatchObject({
-      selectedModel: "auto",
-    });
-
-    await send("use the system default");
-    await runs.heartbeatRunner(runnerGroup);
-    await flushWaitUntilForTest();
-    expect(runs.unobservedDispatches(runnerGroup)).toHaveLength(0);
-    const events = await createChatFilesBddApi(context).listThreadEventRows(
-      actor,
-      preferred.threadId,
-    );
-    expect(events).toContainEqual(
-      expect.objectContaining({ eventType: "input.rejected", runId: null }),
-    );
-    const metadata = await createChatFilesBddApi(context).readThreadMetadata(
-      actor,
-      preferred.threadId,
-    );
-    expect(metadata.selectedModel).toBe("gpt-6-astra");
-  });
-
-  it("keeps the DM service tier captured when its thread was created", async () => {
-    const integrations = createBddIntegrationApi(context);
-    const { actor, complete } = await modelSessionScenario({
-      channel: "sms",
-      withConversation: false,
-    });
-    await integrations.updateUserModelPreference(
-      actor,
-      "gpt-6-astra",
-      "priority",
-    );
-    const fast = await complete("use my web fast preference", "gpt-6-astra");
-    expect(fast.serviceTier).toBe("fast");
-
-    await integrations.updateUserModelPreference(actor, "gpt-6-astra", null);
-    const standard = await complete(
-      "retain this thread's fast service",
-      "gpt-6-astra",
-    );
-    expect(standard.serviceTier).toBe("fast");
-    expect(standard.threadId).toBe(fast.threadId);
-    expect(standard.threadCount).toBe(1);
-    const continued = await complete(
-      "continue with fast service",
-      "gpt-6-astra",
-    );
-    expect(continued.serviceTier).toBe("fast");
-    expect(continued.threadId).toBe(fast.threadId);
-    expect(continued.threadCount).toBe(1);
-  });
-
-  it("shares one canonical session across AgentPhone and web messages on the same thread", async () => {
-    const ap = createAgentPhoneBddApi(context);
-    const chat = createChatFilesBddApi(context);
-    const { actor, phone, runnerGroup, sends } = await entitledLinkedActor();
-    // Ingress-created threads take the same creation-time media pin as web
-    // threads, so this thread is the representative coverage for the ingress
-    // wiring of that pin.
-    const smsMessageId = await ap.postAgentPhoneInboundMessage({
-      channel: "sms",
-      from: phone,
-      body: "start on my phone",
-    });
-    const phoneRun1 = await readDispatchedRun(runnerGroup);
-    expect(phoneRun1.prompt).toBe("start on my phone");
-    expectIntegrationImmediatelyBeforeRestrictedContent(
-      phoneRun1.appendSystemPrompt,
-      [
-        "# Current Integration",
-        "You are currently running inside: Phone text messaging (iMessage/SMS)",
-        `Shared phone number: ${AGENTPHONE_BDD_PHONE_NUMBER}`,
-        `User phone handle: ${phone}`,
-        `Phone agent ID: ${AGENTPHONE_BDD_AGENT_ID}`,
-        "Channel: sms",
-        "Conversation type: dm",
-        `Message ID: ${smsMessageId}`,
-      ].join("\n"),
-    );
-    const beforePhoneCompletion = sends.messages.length;
-    await completeSandboxRun(phoneRun1.sandboxToken, phoneRun1.runId, 0);
-    await waitForSendCount(sends, beforePhoneCompletion + 1);
-    const smsReply = lastSend(sends);
-    expect(smsReply.toNumber).toBe(phone);
-    expect(smsReply.body).toBe("Task completed successfully.");
-    const sharedSession = await waitForRunSessionIdPresent(
-      actor,
-      phoneRun1.runId,
-    );
-
-    const lifecycle = await chat.requestThreadEvents(
-      actor,
-      actor.phoneHistory,
-      [200],
-    );
-    if (lifecycle.status !== 200) {
-      throw new Error("Expected AgentPhone thread lifecycle events");
-    }
-    const created = lifecycle.body.events.filter((event) => {
-      return event.kind === "created";
-    });
-    expect(created).toHaveLength(1);
-    const thread = created[0];
-    if (!thread) {
-      throw new Error("Expected AgentPhone ingress to create a chat thread");
-    }
-    const phoneEvents = await chat.listThreadEvents(actor, thread.chatThreadId);
-    expect(
-      phoneEvents.events.some((event) => {
-        return (
-          event.eventType === "input.prompt" &&
-          event.userMessage.parts.some((part) => {
-            return (
-              part.type === "source" &&
-              part.kind === "agentphone" &&
-              part.href === `sms:${AGENTPHONE_BDD_PHONE_NUMBER}`
+              },
+              { status: 422 },
             );
-          })
-        );
-      }),
-    ).toBeTruthy();
-
-    const webSend = await chat.sendAndLaunch(actor, {
-      threadId: thread.chatThreadId,
-      prompt: "continue from the web",
-    });
-    const webRun = await readDispatchedRun(runnerGroup);
-    expect(webRun.runId).toBe(webSend.runId);
-    const sendsBeforeWebCompletion = sends.messages.length;
-    await completeSandboxRun(webRun.sandboxToken, webRun.runId, 0);
-    expect(sends.messages).toHaveLength(sendsBeforeWebCompletion);
-    await waitForRunSessionId(actor, webRun.runId, sharedSession);
-
-    // Provider history changes prompt context without rotating the canonical
-    // session shared by the phone and web surfaces.
-    await ap.postAgentPhoneInboundMessage({
-      channel: "sms",
-      from: phone,
-      body: "finish back on my phone",
-      recentHistory: [
-        {
-          messageId: "rh-shared-session",
-          content: "provider history before returning to the phone",
-          direction: "inbound",
-          channel: "sms",
-          from: phone,
-          at: "2026-06-01T08:00:00.000Z",
+          }
+          delivered.push({ toNumber, body, replyToMessageId });
+          return HttpResponse.json({
+            id: `apmsg_${randomUUID()}`,
+            status: "sent",
+            channel: "imessage",
+            from_number: AGENTPHONE_BDD_PHONE_NUMBER,
+            to_number: toNumber ?? null,
+            media_urls: [],
+          });
         },
+      ),
+    );
+
+    const groupMessageId = await suite.agentPhone.postAgentPhoneInboundMessage({
+      channel: "imessage",
+      from: newPhone,
+      body: "@Okou hello",
+      conversationId,
+      isGroup: true,
+      groupId,
+      participants: [
+        { identifier: newPhone },
+        { identifier: AGENTPHONE_BDD_PHONE_NUMBER },
       ],
     });
-    const phoneRun2 = await readDispatchedRun(runnerGroup);
-    await completeSandboxRun(phoneRun2.sandboxToken, phoneRun2.runId, 0);
-    await waitForRunSessionId(actor, phoneRun2.runId, sharedSession);
 
-    const finalLifecycle = await chat.requestThreadEvents(
-      actor,
-      actor.phoneHistory,
-      [200],
+    expect(privateAttempts).toHaveLength(2);
+    expect(privateAttempts[0]?.body).toContain("/settings/agentphone?");
+    expect(privateAttempts[1]?.replyToMessageId).toBeUndefined();
+    expect(delivered).toHaveLength(1);
+    expect(delivered[0]?.toNumber).toBe(groupId);
+    expect(delivered[0]?.replyToMessageId).toBe(groupMessageId);
+    expect(delivered[0]?.body).toBe(
+      "Please message this number directly to get your connection link.",
     );
-    if (finalLifecycle.status !== 200) {
-      throw new Error("Expected final AgentPhone thread lifecycle events");
-    }
+    expect(delivered[0]?.body).not.toContain("/settings/agentphone?");
     expect(
-      finalLifecycle.body.events
-        .filter((event) => {
-          return event.kind === "created";
-        })
-        .map((event) => {
-          return event.chatThreadId;
-        }),
-    ).toStrictEqual([thread.chatThreadId]);
+      (await suite.integrations.getAgentPhoneLinkStatus(member)).linked,
+    ).toBeFalsy();
   });
 
-  it("queues AgentPhone messages in FIFO order without loss or duplication", async () => {
-    const runs = createRunsApi(context);
-    const ap = createAgentPhoneBddApi(context);
-    const { actor, phone, runnerGroup } = await entitledLinkedActor();
+  it("agentphone.bdd-085 offers role-aware recovery for a depleted workspace (org:admin, group=false)", async () => {
+    const suite = setupAgentPhoneSuite();
+    const start = now();
+    mockNow(start);
+    const admin = suite.bdd.user({ orgRole: "org:admin" });
+    const otherUser = suite.bdd.user();
+    const phone = uniquePhoneHandle();
 
-    await ap.postAgentPhoneInboundMessage({
-      channel: "sms",
-      from: phone,
-      body: "first queued prompt",
-    });
-    const run1 = await readDispatchedRun(runnerGroup);
-
-    await ap.postAgentPhoneInboundMessage({
-      channel: "sms",
-      from: phone,
-      body: "second queued prompt",
-    });
-    const secondEvent = await findPendingInputEventByText(context, {
-      actor,
-      text: "second queued prompt",
-    });
-    if (!secondEvent) {
-      throw new Error("Expected pending AgentPhone queue item");
-    }
-    await ap.postAgentPhoneInboundMessage({
-      channel: "sms",
-      from: phone,
-      body: "third queued prompt",
-    });
-    await runs.heartbeatRunner(runnerGroup);
-    await flushWaitUntilForTest();
-    expect(runs.unobservedDispatches(runnerGroup)).toHaveLength(0);
-
-    await completeSandboxRun(run1.sandboxToken, run1.runId, 0);
-    const sharedSession = await waitForRunSessionIdPresent(actor, run1.runId);
-    const run2 = await readDispatchedRun(runnerGroup);
-    expect(run2.prompt).toBe("second queued prompt");
-    await completeSandboxRun(run2.sandboxToken, run2.runId, 0);
-    await waitForRunSessionId(actor, run2.runId, sharedSession);
-
-    const run3 = await readDispatchedRun(runnerGroup);
-    expect(run3.prompt).toBe("third queued prompt");
-    await completeSandboxRun(run3.sandboxToken, run3.runId, 0);
-    await waitForRunSessionId(actor, run3.runId, sharedSession);
-
-    await runs.heartbeatRunner(runnerGroup);
-    await flushWaitUntilForTest();
-    expect(runs.unobservedDispatches(runnerGroup)).toHaveLength(0);
-  });
-
-  it("rejects a queued AgentPhone input and replies with the failure when launch preparation fails with debug enabled", async () => {
-    mockEnv("APP_URL", "https://app.okou.ai");
-    const ap = createAgentPhoneBddApi(context);
-    const integrations = createBddIntegrationApi(context);
-    const reads = createRunReadsApi(context);
-    const chat = createChatFilesBddApi(context);
-    const { actor, phone, runnerGroup, sends } = await entitledLinkedActor();
-    await integrations.enableOkouDebug(actor);
-
-    await ap.postAgentPhoneInboundMessage({
-      channel: "sms",
-      from: phone,
-      body: "finish before the queued launch",
-    });
-    const activeRun = await readDispatchedRun(runnerGroup);
-
-    await ap.postAgentPhoneInboundMessage({
-      channel: "sms",
-      from: phone,
-      body: "fail this queued Okou launch",
-    });
-
-    // The replacement API cannot admit queued work without an executor.
-    mockOptionalEnv("RUNNER_DEFAULT_GROUP", undefined);
-    const beforeCompletion = sends.messages.length;
-    await expect(
-      completeSandboxRun(activeRun.sandboxToken, activeRun.runId, 0),
-    ).rejects.toThrow("No executor configured: set RUNNER_DEFAULT_GROUP");
-
-    const completionBodies = sends.messages
-      .slice(beforeCompletion)
-      .map((send) => {
-        return send.body;
-      });
-    expect(completionBodies).toHaveLength(2);
-    expect(completionBodies).toStrictEqual(
-      expect.arrayContaining([
-        "Task completed successfully.",
-        "Oops, something went wrong. Please try again later.",
-      ]),
+    await suite.bdd.provisionWorkspace(admin);
+    suite.mockWorkspaceName(admin, "Original Phone Workspace");
+    await suite.agentPhone.linkViaWebhookConnectPrompt(
+      admin,
+      phone,
+      suite.sends,
     );
-    const runList = await reads.requestListLogs(actor, { limit: 100 }, [200]);
-    expect(runList.body.data).toStrictEqual([
-      expect.objectContaining({ id: activeRun.runId, status: "completed" }),
-    ]);
-    const lifecycle = await chat.requestThreadEvents(
-      actor,
-      actor.phoneHistory,
-      [200],
-    );
-    if (lifecycle.status !== 200) {
-      throw new Error("Expected AgentPhone thread lifecycle events");
-    }
-    const thread = lifecycle.body.events.find((event) => {
-      return event.kind === "created";
-    });
-    if (!thread) {
-      throw new Error("Expected an AgentPhone chat thread");
-    }
-    const messages = await chat.listThreadEvents(actor, thread.chatThreadId);
-    const pending = messages.events.find((event) => {
-      return (
-        event.eventType === "input.prompt" &&
-        event.userMessage.parts.some((part) => {
-          return (
-            part.type === "text" && part.text === "fail this queued Okou launch"
-          );
-        })
-      );
-    });
-    if (!pending) {
-      throw new Error("Expected the original queued input after the failure");
-    }
-    expect(pending.runId).toBeUndefined();
-    // The picked input ends rejected rather than waiting at the queue head.
-    expect(messages.events).toContainEqual(
-      expect.objectContaining({
-        eventType: "input.rejected",
-        revokesEventId: pending.id,
-        error: "internal_error",
-      }),
-    );
-  });
 
-  it("archives group admission-failure replies with the iMessage channel", async () => {
-    mockEnv("APP_URL", "https://app.okou.ai");
-    const integrations = createBddIntegrationApi(context);
-    const { actor, phone, runnerGroup, sends, ap } =
-      await entitledLinkedActor();
-
-    const conversationId = uniqueConversationId();
-    await ap.postAgentPhoneInboundMessage({
+    mockNow(start + 90 * 24 * 60 * 60 * 1000);
+    suite.mockWorkspaceName(admin, "Original Phone Workspace");
+    const beforeHelp = suite.sends.messages.length;
+    await suite.agentPhone.postAgentPhoneInboundMessage({
       channel: "imessage",
       from: phone,
-      body: "@Okou finish before the queued group launch",
-      conversationId,
-      isGroup: true,
-      participants: [{ identifier: phone }],
+      body: "@Okou help me with this report",
     });
-    const activeRun = await readDispatchedRun(runnerGroup);
-    await ap.postAgentPhoneInboundMessage({
+
+    const recoveryReplies = suite.sends.messages.slice(beforeHelp);
+    expect(recoveryReplies).toHaveLength(1);
+    const recoveryText = recoveryReplies[0]?.body ?? "";
+    expect(recoveryText).toContain("Original Phone Workspace");
+    expect(recoveryText).toContain("send /switch");
+    expect(recoveryText).toContain("Upgrade to Pro");
+    expect(recoveryText).toContain("/?settings=billing&billingView=plans");
+
+    const beforeSwitch = suite.sends.messages.length;
+    await suite.agentPhone.postAgentPhoneInboundMessage({
       channel: "imessage",
       from: phone,
-      body: "@Okou fail this queued group launch",
-      conversationId,
-      isGroup: true,
-      participants: [{ identifier: phone }],
+      body: "/switch",
     });
-
-    // The replacement API cannot admit queued work without an executor.
-    mockOptionalEnv("RUNNER_DEFAULT_GROUP", undefined);
-    const beforeCompletion = sends.messages.length;
-    await expect(
-      completeSandboxRun(activeRun.sandboxToken, activeRun.runId, 0),
-    ).rejects.toThrow("No executor configured: set RUNNER_DEFAULT_GROUP");
+    const switchReplies = suite.sends.messages.slice(beforeSwitch);
+    expect(switchReplies).toHaveLength(1);
+    expect(switchReplies[0]?.body).toContain(
+      "Your phone has been disconnected",
+    );
+    expect(switchReplies[0]?.body).toContain("/settings/agentphone?");
     expect(
-      sends.messages.slice(beforeCompletion).map((send) => {
-        return send.body;
-      }),
-    ).toStrictEqual(
-      expect.arrayContaining([
-        "Task completed successfully.",
-        "Oops, something went wrong. Please try again later.",
-      ]),
-    );
+      (await suite.integrations.getAgentPhoneLinkStatus(admin)).linked,
+    ).toBeFalsy();
 
-    const history = await integrations.requestAgentPhoneGroupHistory(
-      actor,
-      { groupId: bddGroupId(conversationId), limit: 100 },
+    const newConnectBody = connectRequestFromPrompt(switchReplies[0]?.body);
+    await suite.integrations.requestConnectAgentPhone(
+      otherUser,
+      newConnectBody,
       [200],
     );
-    if (history.status !== 200) {
-      throw new Error(
-        "Expected iMessage group history after admission failure",
-      );
-    }
-    expect(history.body.messages).toContainEqual(
-      expect.objectContaining({
-        direction: "outbound",
-        channel: "imessage",
-        body: expect.stringContaining("Oops, something went wrong"),
-      }),
-    );
+    const otherStatus =
+      await suite.integrations.getAgentPhoneLinkStatus(otherUser);
+    expect(otherStatus.linked).toBeTruthy();
+    expect(expectLinkedPhoneHandle(otherStatus)).toBe(phone);
+    expect(
+      (await suite.integrations.getAgentPhoneLinkStatus(admin)).linked,
+    ).toBeFalsy();
   });
 
-  it("rejects a queued input whose phone link was removed before admission", async () => {
-    const runs = createRunsApi(context);
-    const ap = createAgentPhoneBddApi(context);
-    const chat = createChatFilesBddApi(context);
-    const integrations = createBddIntegrationApi(context);
-    const { actor, phone, runnerGroup, sends } = await entitledLinkedActor();
+  it("agentphone.bdd-086 offers role-aware recovery for a depleted workspace (org:member, group=false)", async () => {
+    const suite = setupAgentPhoneSuite();
+    const start = now();
+    mockNow(start);
+    const member = suite.bdd.user({ orgRole: "org:member" });
+    const otherUser = suite.bdd.user();
+    const phone = uniquePhoneHandle();
 
-    await ap.postAgentPhoneInboundMessage({
-      channel: "sms",
-      from: phone,
-      body: "finish before the phone link is removed",
-    });
-    const activeRun = await readDispatchedRun(runnerGroup);
-    const queuedPrompt = "reject this input after unlinking";
-    await ap.postAgentPhoneInboundMessage({
-      channel: "sms",
-      from: phone,
-      body: queuedPrompt,
-    });
-    await flushWaitUntilForTest();
+    await suite.bdd.provisionWorkspace(member);
+    suite.mockWorkspaceName(member, "Original Phone Workspace");
+    await suite.agentPhone.linkViaWebhookConnectPrompt(
+      member,
+      phone,
+      suite.sends,
+    );
 
-    const lifecycle = await chat.requestThreadEvents(
-      actor,
-      actor.phoneHistory,
+    mockNow(start + 90 * 24 * 60 * 60 * 1000);
+    suite.mockWorkspaceName(member, "Original Phone Workspace");
+    const beforeHelp = suite.sends.messages.length;
+    await suite.agentPhone.postAgentPhoneInboundMessage({
+      channel: "imessage",
+      from: phone,
+      body: "@Okou help me with this report",
+    });
+
+    const recoveryReplies = suite.sends.messages.slice(beforeHelp);
+    expect(recoveryReplies).toHaveLength(1);
+    const recoveryText = recoveryReplies[0]?.body ?? "";
+    expect(recoveryText).toContain("Original Phone Workspace");
+    expect(recoveryText).toContain("send /switch");
+    expect(recoveryText).toContain("Ask a workspace admin");
+    expect(recoveryText).not.toContain("?settings=billing");
+
+    const beforeSwitch = suite.sends.messages.length;
+    await suite.agentPhone.postAgentPhoneInboundMessage({
+      channel: "imessage",
+      from: phone,
+      body: "/switch",
+    });
+    const switchReplies = suite.sends.messages.slice(beforeSwitch);
+    expect(switchReplies).toHaveLength(1);
+    expect(switchReplies[0]?.body).toContain(
+      "Your phone has been disconnected",
+    );
+    expect(switchReplies[0]?.body).toContain("/settings/agentphone?");
+    expect(
+      (await suite.integrations.getAgentPhoneLinkStatus(member)).linked,
+    ).toBeFalsy();
+
+    const newConnectBody = connectRequestFromPrompt(switchReplies[0]?.body);
+    await suite.integrations.requestConnectAgentPhone(
+      otherUser,
+      newConnectBody,
       [200],
     );
-    if (lifecycle.status !== 200) {
-      throw new Error("Expected AgentPhone thread lifecycle events");
-    }
-    const thread = lifecycle.body.events.find((event) => {
-      return event.kind === "created";
-    });
-    if (!thread) {
-      throw new Error("Expected an AgentPhone chat thread");
-    }
-    const queued = await chat.listThreadEvents(actor, thread.chatThreadId);
-    const pending = queued.events.find((event) => {
-      return (
-        event.eventType === "input.prompt" &&
-        event.userMessage.parts.some((part) => {
-          return part.type === "text" && part.text === queuedPrompt;
-        })
-      );
-    });
-    if (!pending) {
-      throw new Error("Expected the busy thread to retain the queued input");
-    }
-    expect(pending.runId).toBeUndefined();
-    await integrations.requestUnlinkAgentPhone(actor, [204]);
-    const beforeCompletion = sends.messages.length;
-
-    await completeSandboxRun(activeRun.sandboxToken, activeRun.runId, 0);
-
-    const settled = await chat.listThreadEvents(actor, thread.chatThreadId);
-    expect(settled.events).toContainEqual(
-      expect.objectContaining({
-        eventType: "input.rejected",
-        revokesEventId: pending.id,
-        error: "conflict",
-      }),
-    );
-    expect(settled.events).toContainEqual(
-      expect.objectContaining({
-        eventType: "output.error",
-        error: "conflict",
-      }),
-    );
-    expect(sends.messages).toHaveLength(beforeCompletion);
-    await runs.heartbeatRunner(runnerGroup);
-    await flushWaitUntilForTest();
-    expect(runs.unobservedDispatches(runnerGroup)).toHaveLength(0);
+    const otherStatus =
+      await suite.integrations.getAgentPhoneLinkStatus(otherUser);
+    expect(otherStatus.linked).toBeTruthy();
+    expect(expectLinkedPhoneHandle(otherStatus)).toBe(phone);
+    expect(
+      (await suite.integrations.getAgentPhoneLinkStatus(member)).linked,
+    ).toBeFalsy();
   });
 
-  it("deduplicates repeated provider messages and completion callbacks", async () => {
-    mockEnv("APP_URL", "https://app.okou.ai");
-    const runs = createRunsApi(context);
-    const webhooks = createWebhookCallbackApi(context);
-    const ap = createAgentPhoneBddApi(context);
-    const integrations = createBddIntegrationApi(context);
-    const { actor, phone, runnerGroup, sends } = await entitledLinkedActor();
-    await integrations.enableOkouDebug(actor);
-    const messageId = `ap-msg-dedup-${randomUUID()}`;
-    const message = {
-      channel: "sms" as const,
-      from: phone,
-      body: "process exactly once",
-      messageId,
-    };
-
-    await ap.postAgentPhoneInboundMessage({
-      ...message,
-    });
-    await ap.postAgentPhoneInboundMessage({
-      ...message,
-    });
-    const run = await readDispatchedRun(runnerGroup);
-    expect(run.prompt).toBe("process exactly once");
-    await runs.heartbeatRunner(runnerGroup);
-    await flushWaitUntilForTest();
-    expect(runs.unobservedDispatches(runnerGroup)).toHaveLength(0);
-
-    const sendsBeforeCompletion = sends.messages.length;
-    await completeSandboxRun(run.sandboxToken, run.runId, 0);
-    await waitForSendCount(sends, sendsBeforeCompletion + 1);
-    expect(lastSend(sends).body).toBe("Task completed successfully.");
-    const sendsAfterCompletion = sends.messages.length;
-
-    await webhooks.requestAgentComplete(
-      { runId: run.runId, exitCode: 0 },
-      { authorization: `Bearer ${run.sandboxToken}` },
-      [200],
-    );
-    await flushWaitUntilForTest();
-    expect(sends.messages).toHaveLength(sendsAfterCompletion);
-
-    await ap.postAgentPhoneInboundMessage({
-      ...message,
-    });
-    await runs.heartbeatRunner(runnerGroup);
-    await flushWaitUntilForTest();
-    expect(runs.unobservedDispatches(runnerGroup)).toHaveLength(0);
-    expect(sends.messages).toHaveLength(sendsAfterCompletion);
-  });
-
-  it.each(["sms", "imessage"] as const)(
-    "deduplicates concurrent %s ingress by provider message and webhook identities",
-    async (channel) => {
-      const { actor, ap, phone, runnerGroup, sends } =
-        await entitledLinkedActor();
-      const runs = createRunsApi(context);
-      const integrations = createBddIntegrationApi(context);
-      const isGroup = channel === "imessage";
-      const conversationId = uniqueConversationId();
-      const groupId = bddGroupId(conversationId);
-      const messageId = `ap-concurrent-${randomUUID()}`;
-      const webhookId = `evt-concurrent-${randomUUID()}`;
-      const message = {
-        channel,
-        from: phone,
-        body: isGroup
-          ? "@Okou accept this event once"
-          : "accept this event once",
-        messageId,
-        webhookId,
-        conversationId,
-        ...(isGroup
-          ? { isGroup, groupId, participants: [{ identifier: phone }] }
-          : {}),
-      };
-      await Promise.all([
-        ap.postAgentPhoneInboundMessage(message),
-        ap.postAgentPhoneInboundMessage(message),
-      ]);
-      await ap.postAgentPhoneInboundMessage({
-        ...message,
-        webhookId: `${webhookId}-replay`,
-      });
-      await ap.postAgentPhoneInboundMessage({
-        ...message,
-        messageId: `${messageId}-replay`,
-      });
-      const run = await readDispatchedRun(runnerGroup);
-      expect(run.prompt).toBe(message.body);
-      await runs.heartbeatRunner(runnerGroup);
-      await flushWaitUntilForTest();
-      expect(runs.unobservedDispatches(runnerGroup)).toHaveLength(0);
-      if (isGroup) {
-        const history = await integrations.requestAgentPhoneGroupHistory(
-          actor,
-          { groupId, limit: 100 },
-          [200],
-        );
-        expect(
-          history.status === 200 ? history.body.messages : [],
-        ).toMatchObject([{ id: messageId, body: message.body }]);
-        expect(
-          history.status === 200 ? history.body.messages : [],
-        ).toHaveLength(1);
-      }
-      const sendCount = sends.messages.length;
-      await completeSandboxRun(run.sandboxToken, run.runId, 0);
-      await waitForSendCount(sends, sendCount + 1);
-      await ap.postAgentPhoneInboundMessage(message);
-      await runs.heartbeatRunner(runnerGroup);
-      await flushWaitUntilForTest();
-      expect(runs.unobservedDispatches(runnerGroup)).toHaveLength(0);
-      expect(sends.messages).toHaveLength(sendCount + 1);
-    },
-  );
-
-  it("retains a pre-link group message without redispatching provider replays", async () => {
-    const bdd = createBddApi(context);
-    const integrations = createBddIntegrationApi(context);
-    const ap = createAgentPhoneBddApi(context);
-    integrations.configureAgentPhoneProvider();
-    integrations.configureAgentPhoneWebhook();
-    const sends = ap.captureAgentPhoneSends();
-    const actor = bdd.user();
+  it("agentphone.bdd-087 (1/2) offers role-aware upgrade recovery for a depleted workspace admin in an iMessage group", async () => {
+    const suite = setupAgentPhoneSuite();
+    const start = now();
+    mockNow(start);
+    const admin = suite.bdd.user({ orgRole: "org:admin" });
     const phone = uniquePhoneHandle();
     const conversationId = uniqueConversationId();
     const groupId = bddGroupId(conversationId);
-    const message = {
-      channel: "imessage" as const,
+
+    await suite.bdd.provisionWorkspace(admin);
+    suite.mockWorkspaceName(admin, "Original Phone Workspace");
+    await suite.agentPhone.linkViaWebhookConnectPrompt(
+      admin,
+      phone,
+      suite.sends,
+    );
+
+    mockNow(start + 90 * 24 * 60 * 60 * 1000);
+    const beforeHelp = suite.sends.messages.length;
+    await suite.agentPhone.postAgentPhoneInboundMessage({
+      channel: "imessage",
       from: phone,
-      body: "@Okou please connect",
-      messageId: `ap-no-recipients-${randomUUID()}`,
-      webhookId: `evt-no-recipients-${randomUUID()}`,
+      body: "@Okou help me with this report",
       conversationId,
-      groupId,
       isGroup: true,
-      participants: [{ identifier: phone }],
-      receivedAt: new Date(now()).toISOString(),
-    };
-    await Promise.all([
-      ap.postAgentPhoneInboundMessage(message),
-      ap.postAgentPhoneInboundMessage(message),
-    ]);
-    expect(sends.messages).toHaveLength(2);
-    expect(sends.messages[0]).toMatchObject({
-      toNumber: phone,
-      body: expect.stringContaining("/settings/agentphone?"),
-    });
-    expect(sends.messages[0]?.replyToMessageId).toBeUndefined();
-    expect(sends.messages[1]).toMatchObject({
-      toNumber: groupId,
-      replyToMessageId: message.messageId,
-    });
-    await ap.linkViaWebhookConnectPrompt(actor, phone, sends);
-    const sendCount = sends.messages.length;
-    await ap.postAgentPhoneInboundMessage(message);
-    await ap.postAgentPhoneInboundMessage({
-      ...message,
-      messageId: `${message.messageId}-replay`,
-    });
-    expect(sends.messages).toHaveLength(sendCount);
-    const history = await integrations.requestAgentPhoneGroupHistory(
-      actor,
-      { groupId, limit: 100 },
-      [200],
-    );
-    expect(history.status === 200 ? history.body.messages : []).toMatchObject([
-      { id: message.messageId, body: message.body },
-      { direction: "outbound", toNumber: groupId },
-    ]);
-  });
-
-  it("imports phone media into canonical storage and preserves its message text", async () => {
-    const ap = createAgentPhoneBddApi(context);
-    const { actor, phone, runnerGroup } = await entitledLinkedActor();
-    const uploads = captureIntegrationInputUploads(context);
-    const bytes = Buffer.from("phone image bytes");
-    const mediaUrl = "https://media.agentphone.test/canonical-photo.png";
-    let downloads = 0;
-    server.use(
-      http.get(mediaUrl, () => {
-        downloads += 1;
-        return new HttpResponse(bytes, {
-          headers: { "content-type": "image/png" },
-        });
-      }),
-    );
-    const messageId = await ap.postAgentPhoneInboundMessage({
-      channel: "mms",
-      from: phone,
-      body: "inspect imported photo",
-      mediaUrl,
-    });
-    const run = await readDispatchedRun(runnerGroup);
-    expect(run.prompt).toContain(
-      "inspect imported photo\n\n[Web file] canonical-photo.png (image/png)",
-    );
-    expect(run.prompt).not.toContain(mediaUrl);
-    const fileId = run.prompt.match(/ {3}\[ID\] ([^\n]+)/u)?.[1];
-    if (!fileId) {
-      throw new Error("Expected canonical phone file id");
-    }
-    expect(fileId).not.toBe(messageId);
-    await expectIntegrationInputPreview(context, {
-      actor,
-      fileId,
-      bytes,
-      contentType: "image/png",
-      uploads,
-      okouToken: run.okouToken,
-    });
-    expect(downloads).toBe(1);
-    await completeSandboxRun(run.sandboxToken, run.runId, 0);
-    await ap.postAgentPhoneInboundMessage({
-      channel: "mms",
-      from: phone,
-      body: "inspect the same photo again",
-      mediaUrl,
-    });
-    const nextRun = await readDispatchedRun(runnerGroup);
-    expect(nextRun.prompt).toContain(`[ID] ${fileId}`);
-    expect(downloads).toBe(1);
-    expect(uploads).toHaveLength(1);
-    await expect(
-      listIntegrationInputFileParts(context, actor),
-    ).resolves.toStrictEqual([
-      expect.objectContaining({ fileId }),
-      expect.objectContaining({ fileId }),
-    ]);
-    await completeSandboxRun(nextRun.sandboxToken, nextRun.runId, 0);
-  });
-
-  it.each([
-    "https://media.agentphone.test/media-only.png",
-    "https://api.agentphone.ai/v1/messages/apmsg_inbound/media",
-  ])("downloads inbound media from %s", async (mediaUrl) => {
-    const ap = createAgentPhoneBddApi(context);
-    const { phone, runnerGroup } = await entitledLinkedActor();
-    let available = false;
-    server.use(
-      http.get(mediaUrl, () => {
-        return available
-          ? new HttpResponse("incoming bytes", {
-              headers: { "content-type": "image/png" },
-            })
-          : new HttpResponse(null, { status: 503 });
-      }),
-    );
-    const messageId = await ap.postAgentPhoneInboundMessage({
-      channel: "mms",
-      from: phone,
-      body: "",
-      mediaUrl,
-    });
-    const run = await readDispatchedRun(runnerGroup);
-    expect(run.prompt).toContain("[Phone file]");
-    if (!run.okouToken) {
-      throw new Error("Expected an execution-issued Okou token");
-    }
-    available = true;
-    const downloaded = await ap.downloadPhoneFileRaw(run.okouToken, messageId);
-    expect(downloaded.status).toBe(200);
-    expect(downloaded.text).toBe("incoming bytes");
-    await completeSandboxRun(run.sandboxToken, run.runId, 0);
-  });
-
-  it("renders media prompts", async () => {
-    const ap = createAgentPhoneBddApi(context);
-    const { actor, phone, runnerGroup } = await entitledLinkedActor();
-
-    server.use(
-      http.get(
-        "https://media.agentphone.test/photo%20one%2Bfinal%2zraw.png",
-        () => {
-          return new HttpResponse(null, { status: 503 });
-        },
-      ),
-    );
-    // A failed import retains the provider reference and its original filename.
-    const mediaMessageId = await ap.postAgentPhoneInboundMessage({
-      channel: "mms",
-      from: phone,
-      body: "what is in this photo",
-      mediaUrl: "https://media.agentphone.test/photo%20one%2Bfinal%2zraw.png",
-    });
-    const run1 = await readDispatchedRun(runnerGroup);
-    expect(run1.prompt).toBe(
-      [
-        "what is in this photo",
-        `[Phone file] photo one+final%2zraw.png (image/png)\n   [ID] ${mediaMessageId}`,
-      ].join("\n\n"),
-    );
-    await expect(
-      listIntegrationInputFileParts(context, actor),
-    ).resolves.toStrictEqual([
-      expect.objectContaining({
-        fileId: expect.stringMatching(/^[0-9a-f-]{36}$/u),
-        filenameSnapshot: "photo one+final%2zraw.png",
-      }),
-    ]);
-    await completeSandboxRun(run1.sandboxToken, run1.runId, 0);
-  });
-
-  it("renders provider recent history", async () => {
-    const ap = createAgentPhoneBddApi(context);
-    const { phone, runnerGroup } = await entitledLinkedActor();
-
-    // Provider-sent recent history wins over stored context: full entries
-    // keep channel and timestamp lines, media-only entries become file
-    // placeholders, junk entries are dropped.
-    await ap.postAgentPhoneInboundMessage({
-      channel: "sms",
-      from: phone,
-      body: "compare with history",
-      recentHistory: [
-        {
-          messageId: "rh-full",
-          content: "prior context from provider",
-          direction: "inbound",
-          channel: "sms",
-          from: phone,
-          at: "2026-06-01T08:00:00.000Z",
-        },
-        { media_url: "https://media.agentphone.test/history-photo.png" },
-        { direction: "inbound" },
+      groupId,
+      participants: [
+        { identifier: phone },
+        { identifier: AGENTPHONE_BDD_PHONE_NUMBER },
       ],
     });
-    const run = await readDispatchedRun(runnerGroup);
-    expect(run.appendSystemPrompt).toContain("# Phone Message Context");
-    expect(run.appendSystemPrompt).toContain("MSG_ID: rh-full");
-    expect(run.appendSystemPrompt).toContain("prior context from provider");
-    expect(run.appendSystemPrompt).toContain("CHANNEL: sms");
-    expect(run.appendSystemPrompt).toContain("AT: 2026-06-01T08:00:00.000Z");
-    expect(run.appendSystemPrompt).toContain(
-      "[Phone file] https://media.agentphone.test/history-photo.png",
-    );
-    expect(
-      run.appendSystemPrompt.match(/- RELATIVE_INDEX:/gu) ?? [],
-    ).toHaveLength(2);
-    await completeSandboxRun(run.sandboxToken, run.runId, 0);
+
+    const recoveryReplies = suite.sends.messages.slice(beforeHelp);
+    expect(recoveryReplies).toHaveLength(1);
+    const recoveryText = recoveryReplies[0]?.body ?? "";
+    expect(recoveryText).toContain("Upgrade to Pro");
+    expect(recoveryText).toContain("/?settings=billing&billingView=plans");
+    expect(recoveryText).not.toContain("Original Phone Workspace");
+    expect(recoveryText).not.toContain("/switch");
   });
 
-  it("answers help, connect, disconnect, and switch commands over SMS", async () => {
-    const bdd = createBddApi(context);
-    const runs = createRunsApi(context);
-    const integrations = createBddIntegrationApi(context);
-    const ap = createAgentPhoneBddApi(context);
-
-    const actor = bdd.user();
-    context.mocks.clerk.organizations.getOrganization.mockResolvedValue({
-      id: actor.orgId,
-      name: "Operations workspace",
-    });
-    bdd.acceptStorageWrites();
-    context.mocks.ably.publish.mockResolvedValue(undefined);
-    integrations.configureAgentPhoneProvider();
-    integrations.configureAgentPhoneWebhook();
-    const sends = ap.captureAgentPhoneSends();
-    await runs.grantProEntitlement(actor);
-    await runs.ensurePersonalSubscriptionModel(actor);
+  it("agentphone.bdd-087 (2/2) tells the depleted workspace admin to message directly on group /switch and keeps them linked", async () => {
+    const suite = setupAgentPhoneSuite();
+    const start = now();
+    mockNow(start);
+    const admin = suite.bdd.user({ orgRole: "org:admin" });
     const phone = uniquePhoneHandle();
-    await ap.linkViaWebhookConnectPrompt(actor, phone, sends);
-    const welcome = sends.messages.slice(-3);
-    expectConnectedWelcome(welcome);
+    const conversationId = uniqueConversationId();
+    const groupId = bddGroupId(conversationId);
 
-    const SMS_RISK_WARNING =
+    await suite.bdd.provisionWorkspace(admin);
+    suite.mockWorkspaceName(admin, "Original Phone Workspace");
+    await suite.agentPhone.linkViaWebhookConnectPrompt(
+      admin,
+      phone,
+      suite.sends,
+    );
+
+    mockNow(start + 90 * 24 * 60 * 60 * 1000);
+    const beforeSwitch = suite.sends.messages.length;
+    await suite.agentPhone.postAgentPhoneInboundMessage({
+      channel: "imessage",
+      from: phone,
+      body: "/switch @Okou",
+      conversationId,
+      isGroup: true,
+      groupId,
+      participants: [
+        { identifier: phone },
+        { identifier: AGENTPHONE_BDD_PHONE_NUMBER },
+      ],
+    });
+    const switchReplies = suite.sends.messages.slice(beforeSwitch);
+    expect(switchReplies).toHaveLength(1);
+    expect(switchReplies[0]?.body).toContain("message this number directly");
+    expect(switchReplies[0]?.body).not.toContain("/settings/agentphone?");
+    expect(
+      (await suite.integrations.getAgentPhoneLinkStatus(admin)).linked,
+    ).toBeTruthy();
+  });
+
+  it("agentphone.bdd-106 answers help, connect, disconnect, and switch commands over SMS", async () => {
+    const suite = setupAgentPhoneSuite();
+    const member = suite.bdd.user();
+    const phone = uniquePhoneHandle();
+    await suite.provisionProMember(member, "Operations workspace");
+    await suite.agentPhone.linkViaWebhookConnectPrompt(
+      member,
+      phone,
+      suite.sends,
+    );
+    suite.mockWorkspaceName(member, "Operations workspace");
+
+    const smsWarning =
       "Note: SMS and MMS replies may not be delivered reliably.";
 
-    async function commandReply(body: string): Promise<string> {
-      const before = sends.messages.length;
-      await ap.postAgentPhoneInboundMessage({
-        channel: "sms",
-        from: phone,
-        body,
-      });
-      await waitForSendCount(sends, before + 1);
-      const reply = lastSend(sends).body ?? "";
-      return reply;
-    }
+    await suite.agentPhone.postAgentPhoneInboundMessage({
+      channel: "sms",
+      from: phone,
+      body: "/help",
+    });
+    const helpReply = suite.sends.messages.at(-1)?.body ?? "";
+    expect(helpReply).toContain("/connect");
+    expect(helpReply).toContain("/help");
+    expect(helpReply).toContain("/disconnect");
+    expect(helpReply).toContain("/switch");
+    expect(helpReply).toContain(smsWarning);
 
-    const help = await commandReply("/help");
-    expect(help).toContain("Okou text message commands");
-    expect(help).toContain("/connect - Connect this phone number to Okou");
-    expect(help).toContain("/help - Show these commands");
-    expect(help).toContain(
-      "/disconnect - Disconnect this phone number from Okou",
-    );
-    expect(help).toContain(
-      "/switch - Switch to a different Okou account or workspace",
-    );
-    expect(help).toContain(SMS_RISK_WARNING);
+    await suite.agentPhone.postAgentPhoneInboundMessage({
+      channel: "sms",
+      from: phone,
+      body: "/connect",
+    });
+    const connectReply = suite.sends.messages.at(-1)?.body ?? "";
+    expect(connectReply).toContain("You are already connected");
+    expect(connectReply).toContain("Operations workspace");
+    expect(connectReply).toContain("/switch");
+    expect(connectReply).toContain(smsWarning);
 
-    const alreadyConnected = await commandReply("/connect");
-    expect(alreadyConnected).toContain("You are already connected");
-    expect(alreadyConnected).toContain('workspace "Operations workspace"');
-    expect(alreadyConnected).toContain("/switch");
-    expect(alreadyConnected).toContain("start using Okou");
-    expect(alreadyConnected).toContain(SMS_RISK_WARNING);
+    await suite.agentPhone.postAgentPhoneInboundMessage({
+      channel: "sms",
+      from: phone,
+      body: "/disconnect",
+    });
+    expect(
+      (await suite.integrations.getAgentPhoneLinkStatus(member)).linked,
+    ).toBeFalsy();
 
-    const disconnected = await commandReply("/disconnect");
-    expect(disconnected).toContain(
-      "This phone number has been disconnected from Okou.",
-    );
-    const unlinkedStatus = await integrations.getAgentPhoneLinkStatus(actor);
-    expect(unlinkedStatus.linked).toBeFalsy();
-
-    const disconnectAgain = await commandReply("/disconnect");
-    expect(disconnectAgain).toContain(
+    await suite.agentPhone.postAgentPhoneInboundMessage({
+      channel: "sms",
+      from: phone,
+      body: "/disconnect",
+    });
+    expect(suite.sends.messages.at(-1)?.body).toContain(
       "Error: This phone number is not connected.",
     );
 
-    const switchPrompt = await commandReply("/switch");
-    expect(switchPrompt).toContain("Open this link to connect");
-    expect(switchPrompt).toContain("/settings/agentphone?");
-    expect(switchPrompt).toContain(SMS_RISK_WARNING);
+    await suite.agentPhone.postAgentPhoneInboundMessage({
+      channel: "sms",
+      from: phone,
+      body: "/switch",
+    });
+    const switchReply = suite.sends.messages.at(-1)?.body ?? "";
+    expect(switchReply).toContain("/settings/agentphone?");
+    expect(switchReply).toContain(smsWarning);
 
-    const plainPromptUnlinked = await commandReply("hello again");
-    expect(plainPromptUnlinked).toContain(
+    await suite.agentPhone.postAgentPhoneInboundMessage({
+      channel: "sms",
+      from: phone,
+      body: "hello again",
+    });
+    const unlinkedReply = suite.sends.messages.at(-1)?.body ?? "";
+    expect(unlinkedReply).toContain(
       "Click the link below to start using Okou.",
     );
-    expect(plainPromptUnlinked).not.toContain("AgentPhone");
-    expect(plainPromptUnlinked).toContain("/settings/agentphone?");
-    expect(plainPromptUnlinked).not.toContain(SMS_RISK_WARNING);
+    expect(unlinkedReply).toContain("/settings/agentphone?");
+    expect(unlinkedReply).not.toContain("AgentPhone");
+    expect(unlinkedReply).not.toContain(smsWarning);
   });
 
-  it("archives an outbound group reply once with the original recipients across concurrent provider-id replays", async () => {
-    const bdd = createBddApi(context);
-    const integrations = createBddIntegrationApi(context);
-    const ap = createAgentPhoneBddApi(context);
-    integrations.configureAgentPhoneProvider();
-    integrations.configureAgentPhoneWebhook();
-    const sends = ap.captureAgentPhoneSends();
-    const sender = bdd.user();
-    const recipient = bdd.user();
-    const laterRecipient = bdd.user();
-    const senderPhone = uniquePhoneHandle();
-    const recipientPhone = uniquePhoneHandle();
-    const laterPhone = uniquePhoneHandle();
-    await ap.linkViaWebhookConnectPrompt(sender, senderPhone, sends);
-    await ap.linkViaWebhookConnectPrompt(recipient, recipientPhone, sends);
-    await ap.linkViaWebhookConnectPrompt(laterRecipient, laterPhone, sends);
+  it("agentphone.bdd-109 uses message-time participants for history and media regardless of when they connect", async () => {
+    const suite = setupAgentPhoneSuite();
+    const userOne = suite.bdd.user();
+    const userTwo = suite.bdd.user();
+    const userThree = suite.bdd.user();
+    const newcomer = suite.bdd.user();
+    const phoneOne = uniquePhoneHandle();
+    const phoneTwo = uniquePhoneHandle();
+    const phoneThree = uniquePhoneHandle();
+    const newcomerPhone = uniquePhoneHandle();
+    const rosterlessConversation = uniqueConversationId();
+    const rosterlessGroup = bddGroupId(rosterlessConversation);
+    const stableConversation = uniqueConversationId();
+    const stableGroup = bddGroupId(stableConversation);
+    const preLinkConversation = uniqueConversationId();
+    const preLinkGroup = bddGroupId(preLinkConversation);
+    const photoUrl = "https://cdn.agentphone.test/media/group-photo.jpg";
+    const start = now();
+    mockNow(start);
 
-    const conversationId = uniqueConversationId();
-    const groupId = bddGroupId(conversationId);
-    let providerId = `ap-outbound-${randomUUID()}`;
-    let roster = [
-      senderPhone,
-      recipientPhone,
-      recipientPhone,
-      "invalid-handle",
-    ];
-    const requests: unknown[] = [];
     server.use(
-      http.get("https://api.agentphone.test/v1/conversations/:id", () => {
-        return HttpResponse.json({ participants: roster });
-      }),
-      http.post(
-        "https://api.agentphone.test/v1/messages",
-        async ({ request }) => {
-          expect(request.headers.get("authorization")).toBe(
-            "Bearer agentphone-bdd-key",
-          );
-          const body: unknown = await request.json();
-          requests.push(body);
-          return HttpResponse.json({
-            id: providerId,
-            channel: "imessage",
-            to_number: groupId,
-          });
-        },
-      ),
-    );
-    mockNow(now());
-    const sentAt = new Date(now()).toISOString();
-    async function sendHelp() {
-      return await ap.postAgentPhoneInboundMessage({
-        channel: "imessage",
-        from: senderPhone,
-        body: "/help @Okou",
-        conversationId,
-        isGroup: true,
-        participants: [{ identifier: senderPhone }],
-      });
-    }
-    await sendHelp();
-    await flushWaitUntilForTest();
-
-    async function outbound(actor: ApiTestUser) {
-      const history = await integrations.requestAgentPhoneGroupHistory(
-        actor,
-        { groupId, limit: 100 },
-        [200],
-      );
-      if (history.status !== 200) {
-        throw new Error("Expected the member's phone group history");
-      }
-      return history.body.messages.filter((message) => {
-        return message.direction === "outbound";
-      });
-    }
-    const archived = await outbound(sender);
-    expect(archived).toHaveLength(1);
-    expect(archived[0]).toMatchObject({
-      id: providerId,
-      conversationId,
-      fromNumber: AGENTPHONE_BDD_PHONE_NUMBER,
-      toNumber: groupId,
-      channel: "imessage",
-      mediaUrl: null,
-      receivedAt: sentAt,
-    });
-    await expect(outbound(recipient)).resolves.toStrictEqual(archived);
-    await expect(outbound(laterRecipient)).resolves.toStrictEqual([]);
-    await expect(
-      outbound({ ...recipient, orgId: `org_${randomUUID()}` }),
-    ).resolves.toStrictEqual([]);
-
-    roster = [senderPhone, laterPhone];
-    await Promise.all([sendHelp(), sendHelp()]);
-    await flushWaitUntilForTest();
-    expect(requests).toHaveLength(3);
-    for (const request of requests) {
-      expect(request).toMatchObject({
-        agent_id: AGENTPHONE_BDD_AGENT_ID,
-        to_number: groupId,
-        reply_to_message_id: expect.any(String),
-        body: expect.stringContaining("/help"),
-      });
-    }
-    await expect(outbound(sender)).resolves.toStrictEqual(archived);
-    await expect(outbound(recipient)).resolves.toStrictEqual(archived);
-    await expect(outbound(laterRecipient)).resolves.toStrictEqual([]);
-
-    mockNow(now() + 1000);
-    providerId = `ap-outbound-fresh-${randomUUID()}`;
-    await Promise.all([sendHelp(), sendHelp()]);
-    await flushWaitUntilForTest();
-    const newlyArchived = await outbound(laterRecipient);
-    expect(newlyArchived).toHaveLength(1);
-    expect(newlyArchived[0]).toMatchObject({
-      id: providerId,
-      toNumber: groupId,
-      channel: "imessage",
-    });
-    await expect(outbound(sender)).resolves.toStrictEqual([
-      ...archived,
-      ...newlyArchived,
-    ]);
-    await expect(outbound(recipient)).resolves.toStrictEqual(archived);
-    expect(requests).toHaveLength(5);
-  });
-
-  it("passes a group photo and bot reply received before connecting into the recipient's context", async () => {
-    const owner = await entitledLinkedActor();
-    const recipientPhone = uniquePhoneHandle();
-    const conversationId = uniqueConversationId();
-    const groupId = bddGroupId(conversationId);
-    const participants = [
-      { identifier: owner.phone },
-      { identifier: recipientPhone },
-    ];
-    const mediaUrl = "https://files.agentphone.test/pre-link-photo.jpg";
-    server.use(
-      http.get(mediaUrl, () => {
-        return new HttpResponse("pre-link photo bytes", {
-          headers: { "content-type": "image/jpeg" },
+      http.get(photoUrl, () => {
+        return new HttpResponse(new Uint8Array([0xff, 0xd8, 0xff, 0xd9]), {
+          status: 200,
+          headers: { "content-type": "image/jpeg", "content-length": "4" },
         });
       }),
-      http.get(
-        `https://api.agentphone.test/v1/conversations/${conversationId}`,
-        () => {
-          return HttpResponse.json({ participants });
-        },
-      ),
     );
-    const photoId = await owner.ap.postAgentPhoneInboundMessage({
+
+    await suite.linkWithCode(userOne, phoneOne, "imessage");
+    await suite.linkWithCode(userTwo, phoneTwo, "imessage");
+
+    await suite.agentPhone.postAgentPhoneInboundMessage({
       channel: "imessage",
-      from: owner.phone,
-      body: "",
-      mediaUrl,
-      conversationId,
+      from: phoneOne,
+      body: "rosterless note",
+      conversationId: rosterlessConversation,
       isGroup: true,
-      participants,
+      groupId: rosterlessGroup,
+      participants: [],
+      receivedAt: new Date(start + 1000).toISOString(),
     });
-    await owner.ap.postAgentPhoneInboundMessage({
-      channel: "imessage",
-      from: owner.phone,
-      body: "/help @Okou",
-      conversationId,
-      isGroup: true,
-      participants,
-    });
-    const earlierReply = lastSend(owner.sends);
-    expect(earlierReply.toNumber).toBe(groupId);
-
-    mockNow(now() + 1000);
-    const recipient = await entitledLinkedActor(recipientPhone);
-    const integrations = createBddIntegrationApi(context);
-    const history = await integrations.requestAgentPhoneGroupHistory(
-      recipient.actor,
-      { groupId, limit: 100 },
-      [200],
-    );
-    if (history.status !== 200) {
-      throw new Error("Expected the recipient's pre-link group history");
-    }
-    expect(history.body.messages).toStrictEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ id: photoId, mediaUrl }),
-        expect.objectContaining({
-          direction: "outbound",
-          body: earlierReply.body,
-        }),
-      ]),
-    );
-    await recipient.ap.postAgentPhoneInboundMessage({
-      channel: "imessage",
-      from: recipientPhone,
-      body: "@Okou what is in the photo above?",
-      conversationId,
-      isGroup: true,
-      participants,
-    });
-    const run = await readDispatchedRun(recipient.runnerGroup);
-    expect(run.appendSystemPrompt).toContain(
-      `[Phone file] pre-link-photo.jpg (image/jpeg)\n   [ID] ${photoId}`,
-    );
-    const download = await integrations.requestPhoneDownloadFile(
-      recipient.actor,
-      photoId,
-      [200],
-    );
-    expect(download.status).toBe(200);
-    await completeSandboxRun(run.sandboxToken, run.runId, 0);
-  });
-
-  it("uses message-time participants for history and media regardless of when they connect", async () => {
-    await runFiniteAgentPhoneHistory(async () => {
-      const bdd = createBddApi(context);
-      const integrations = createBddIntegrationApi(context);
-      const ap = createAgentPhoneBddApi(context);
-      integrations.configureAgentPhoneProvider();
-      integrations.configureAgentPhoneWebhook();
-      const sends = ap.captureAgentPhoneSends();
-
-      const first = bdd.user();
-      const second = bdd.user();
-      const linkedLater = bdd.user();
-      const joinedLater = bdd.user();
-      await bdd.readMe(first);
-      const firstPhone = uniquePhoneHandle();
-      const secondPhone = uniquePhoneHandle();
-      const laterPhone = uniquePhoneHandle();
-      const newcomerPhone = uniquePhoneHandle();
-      await ap.linkViaWebhookConnectPrompt(first, firstPhone, sends);
-      await ap.linkViaWebhookConnectPrompt(second, secondPhone, sends);
-
-      const conversationId = uniqueConversationId();
-      const stableGroupId = bddGroupId(conversationId);
-
-      const senderOnlyConversationId = uniqueConversationId();
-      const senderOnlyMessageId = `ap-group-history-sender-only-${randomUUID()}`;
-      await ap.postAgentPhoneInboundMessage({
+    await suite.agentPhone.postAgentPhoneInboundMessage(
+      {
         channel: "imessage",
-        from: firstPhone,
-        body: "sender is present even when the provider omits the roster",
-        messageId: senderOnlyMessageId,
-        conversationId: senderOnlyConversationId,
+        from: phoneOne,
+        body: "missing timestamp note",
+        conversationId: stableConversation,
         isGroup: true,
-      });
-      const senderOnlyHistory =
-        await integrations.requestAgentPhoneGroupHistory(
-          first,
-          { groupId: bddGroupId(senderOnlyConversationId), limit: 100 },
-          [200],
-        );
-      expect(
-        senderOnlyHistory.status === 200 ? senderOnlyHistory.body.messages : [],
-      ).toMatchObject([{ id: senderOnlyMessageId }]);
-
-      const missingTimestampConversationId = uniqueConversationId();
-      const missingTimestampMessageId = `ap-group-history-missing-time-${randomUUID()}`;
-      await ap.postAgentPhoneInboundMessage(
-        {
-          channel: "imessage",
-          from: firstPhone,
-          body: "group event without provider message time",
-          messageId: missingTimestampMessageId,
-          conversationId: missingTimestampConversationId,
-          isGroup: true,
-          participants: [{ identifier: firstPhone }],
-          receivedAt: null,
-        },
-        [500],
-      );
-      const missingTimestampHistory =
-        await integrations.requestAgentPhoneGroupHistory(
-          first,
-          {
-            groupId: bddGroupId(missingTimestampConversationId),
-            limit: 100,
-          },
-          [200],
-        );
-      expect(
-        missingTimestampHistory.status === 200
-          ? missingTimestampHistory.body.messages
-          : [],
-      ).toHaveLength(0);
-
-      const noMatchConversationId = uniqueConversationId();
-      const unlinkedMessageId = await ap.postAgentPhoneInboundMessage({
-        channel: "imessage",
-        from: laterPhone,
-        body: "visible on the recipient's phone before connecting Okou",
-        conversationId: noMatchConversationId,
-        isGroup: true,
-        participants: [{ identifier: laterPhone }],
-      });
-
-      const firstMessageId = `ap-group-history-first-${randomUUID()}`;
-      const groupMediaUrl = "https://files.agentphone.test/group-photo.png";
-      const participants = [
-        { identifier: firstPhone },
-        { identifier: secondPhone },
-        { identifier: laterPhone },
-      ];
-      await ap.postAgentPhoneInboundMessage({
-        channel: "imessage",
-        from: firstPhone,
-        body: "first group note",
-        messageId: firstMessageId,
-        conversationId,
-        isGroup: true,
-        participants,
-        mediaUrl: groupMediaUrl,
-      });
-
-      const beforeLaterLink = new Date(now()).toISOString();
-      mockNow(now() + 1000);
-      await ap.linkViaWebhookConnectPrompt(linkedLater, laterPhone, sends);
-      await ap.linkViaWebhookConnectPrompt(joinedLater, newcomerPhone, sends);
-      const delayedMessageId = `ap-group-history-delayed-${randomUUID()}`;
-      await ap.postAgentPhoneInboundMessage({
-        channel: "imessage",
-        from: firstPhone,
-        body: "delivered after linking but sent before it",
-        messageId: delayedMessageId,
-        webhookId: null,
-        conversationId,
-        isGroup: true,
-        participants,
-        receivedAt: beforeLaterLink,
-      });
-      const noMatchHistory = await integrations.requestAgentPhoneGroupHistory(
-        linkedLater,
-        { groupId: bddGroupId(noMatchConversationId), limit: 100 },
-        [200],
-      );
-      expect(
-        noMatchHistory.status === 200 ? noMatchHistory.body.messages : [],
-      ).toMatchObject([{ id: unlinkedMessageId }]);
-      await ap.postAgentPhoneInboundMessage({
-        channel: "imessage",
-        from: firstPhone,
-        body: "first group note",
-        messageId: firstMessageId,
-        conversationId,
-        isGroup: true,
-        participants: [...participants, { identifier: newcomerPhone }],
-      });
-      const secondMessageId = `ap-group-history-second-${randomUUID()}`;
-      await ap.postAgentPhoneInboundMessage({
-        channel: "imessage",
-        from: firstPhone,
-        body: "second group note",
-        messageId: secondMessageId,
-        conversationId,
-        isGroup: true,
+        groupId: stableGroup,
         participants: [
-          { identifier: firstPhone },
-          { identifier: laterPhone },
-          { identifier: newcomerPhone },
+          { identifier: phoneOne },
+          { identifier: AGENTPHONE_BDD_PHONE_NUMBER },
         ],
-      });
-
-      async function visibleIds(actor: ApiTestUser) {
-        const result = await integrations.requestAgentPhoneGroupHistory(
-          actor,
-          { groupId: stableGroupId, limit: 100 },
-          [200],
-        );
-        if (result.status !== 200) {
-          throw new Error("Expected visible iMessage group history");
-        }
-        return result.body.messages.map((message) => {
-          return message.id;
-        });
-      }
-
-      await expect(visibleIds(first)).resolves.toStrictEqual([
-        firstMessageId,
-        delayedMessageId,
-        secondMessageId,
-      ]);
-      await expect(visibleIds(second)).resolves.toStrictEqual([
-        firstMessageId,
-        delayedMessageId,
-      ]);
-      await expect(visibleIds(linkedLater)).resolves.toStrictEqual([
-        firstMessageId,
-        delayedMessageId,
-        secondMessageId,
-      ]);
-      await expect(visibleIds(joinedLater)).resolves.toStrictEqual([
-        secondMessageId,
-      ]);
-
-      server.use(
-        http.get(groupMediaUrl, () => {
-          return new HttpResponse("group-photo-bytes", {
-            headers: { "content-type": "image/png" },
-          });
-        }),
-      );
-      const visibleGroupFile = await integrations.requestPhoneDownloadFile(
-        second,
-        firstMessageId,
-        [200],
-      );
-      expect(visibleGroupFile.status).toBe(200);
-      const preLinkGroupFile = await integrations.requestPhoneDownloadFile(
-        linkedLater,
-        firstMessageId,
-        [200],
-      );
-      expect(preLinkGroupFile.status).toBe(200);
-      const invisibleGroupFile = await integrations.requestPhoneDownloadFile(
-        joinedLater,
-        firstMessageId,
-        [404],
-      );
-      expect(invisibleGroupFile.status).toBe(404);
-
-      const filtered = await integrations.requestAgentPhoneGroupHistory(
-        first,
-        { groupId: stableGroupId, query: "second", limit: 100 },
-        [200],
-      );
-      expect(
-        filtered.status === 200 ? filtered.body.messages : [],
-      ).toMatchObject([{ id: secondMessageId }]);
-
-      const firstPage = await integrations.requestAgentPhoneGroupHistory(
-        first,
-        { groupId: stableGroupId, limit: 1 },
-        [200],
-      );
-      if (firstPage.status !== 200) {
-        throw new Error("Expected first group history page");
-      }
-      expect(firstPage.body.hasMore).toBeTruthy();
-      expect(firstPage.body.nextCursor).toBeTruthy();
-      const secondPage = await integrations.requestAgentPhoneGroupHistory(
-        first,
-        {
-          groupId: stableGroupId,
-          limit: 1,
-          cursor: firstPage.body.nextCursor ?? undefined,
-        },
-        [200],
-      );
-      expect(
-        secondPage.status === 200 ? secondPage.body.messages : [],
-      ).toMatchObject([{ id: delayedMessageId }]);
-    });
-  });
-
-  it("returns 500 and does not dispatch group webhooks without a timestamp", async () => {
-    const integrations = createBddIntegrationApi(context);
-    const ap = createAgentPhoneBddApi(context);
-    integrations.configureAgentPhoneWebhook();
-    const sends = ap.captureAgentPhoneSends();
-    const message = {
-      channel: "imessage" as const,
-      from: uniquePhoneHandle(),
-      body: "@Okou please help me connect",
-      messageId: `ap-group-no-timestamp-${randomUUID()}`,
-      conversationId: uniqueConversationId(),
-      isGroup: true,
-      receivedAt: null,
-    };
-
-    await ap.postAgentPhoneInboundMessage(message, [500]);
-    await ap.postAgentPhoneInboundMessage(message, [500]);
-    await ap.postAgentPhoneInboundMessage(
-      {
-        ...message,
-        messageId: `ap-group-invalid-time-${randomUUID()}`,
-        receivedAt: "October 1, 2026",
+        receivedAt: null,
       },
       [500],
     );
-
-    const aliasConversationId = uniqueConversationId();
-    const aliasSender = uniquePhoneHandle();
-    const alternateTimestampEvent = JSON.stringify({
-      event: "agent.message",
+    await suite.agentPhone.postAgentPhoneInboundMessage({
       channel: "imessage",
-      agentId: AGENTPHONE_BDD_AGENT_ID,
-      data: {
-        messageId: `ap-group-alias-time-${randomUUID()}`,
-        from: aliasSender,
-        senderIdentifier: aliasSender,
-        to: AGENTPHONE_BDD_PHONE_NUMBER,
-        message: "unsupported timestamp alias",
-        conversationId: aliasConversationId,
-        group: {
-          isGroup: true,
-          groupId: bddGroupId(aliasConversationId),
-          participants: [{ identifier: aliasSender }],
-        },
-        received_at: new Date(now()).toISOString(),
-      },
-    });
-    const alternateTimestamp = await ap.postRawAgentPhoneInboundWebhook(
-      alternateTimestampEvent,
-      [500],
-    );
-    expect(alternateTimestamp.body).toBe(
-      "iMessage group webhook is missing receivedAt",
-    );
-    expect(sends.messages).toHaveLength(0);
-  });
-
-  it("acks AgentPhone's documented idless test webhook without processing it", async () => {
-    const runs = createRunsApi(context);
-    const { ap, phone, runnerGroup, sends } = await entitledLinkedActor();
-    const sendsBefore = sends.messages.length;
-    const timestamp = new Date(now()).toISOString();
-    const testWebhook = JSON.stringify({
-      event: "agent.message",
-      channel: "sms",
-      timestamp,
-      agentId: AGENTPHONE_BDD_AGENT_ID,
-      data: {
-        conversationId: uniqueConversationId(),
-        numberId: "num_bdd_test",
-        from: phone,
-        to: AGENTPHONE_BDD_PHONE_NUMBER,
-        message: "Test message",
-        direction: "inbound",
-        receivedAt: timestamp,
-      },
-      conversationState: { testMode: true },
-      recentHistory: [
-        {
-          content: "Earlier test message",
-          direction: "inbound",
-          channel: "sms",
-          at: timestamp,
-        },
+      from: phoneThree,
+      body: "pre-link own message",
+      conversationId: preLinkConversation,
+      isGroup: true,
+      groupId: preLinkGroup,
+      participants: [
+        { identifier: phoneThree },
+        { identifier: AGENTPHONE_BDD_PHONE_NUMBER },
       ],
+      receivedAt: new Date(start + 2000).toISOString(),
     });
-
-    const response = await ap.postRawAgentPhoneInboundWebhook(
-      testWebhook,
-      [200],
-    );
-    expect(response.body).toBe("OK");
-    await runs.heartbeatRunner(runnerGroup);
-    await flushWaitUntilForTest();
-    expect(runs.unobservedDispatches(runnerGroup)).toHaveLength(0);
-    expect(sends.messages).toHaveLength(sendsBefore);
-  });
-
-  it("processes iMessage webhooks with messageId even when testMode is set", async () => {
-    const { ap, phone, runnerGroup, sends } = await entitledLinkedActor();
-    const messageId = `ap-msg-test-mode-${randomUUID()}`;
-    const response = await ap.postRawAgentPhoneInboundWebhook(
-      JSON.stringify({
-        event: "agent.message",
-        channel: "imessage",
-        agentId: AGENTPHONE_BDD_AGENT_ID,
-        timestamp: new Date(now()).toISOString(),
-        data: {
-          messageId,
-          conversationId: uniqueConversationId(),
-          from: phone,
-          to: AGENTPHONE_BDD_PHONE_NUMBER,
-          message: "process this identified message",
-          direction: "inbound",
-          receivedAt: new Date(now()).toISOString(),
-        },
-        conversationState: { testMode: true },
-      }),
-      [200],
-    );
-    expect(response.body).toBe("OK");
-    const run = await readDispatchedRun(runnerGroup);
-    expect(run.prompt).toBe("process this identified message");
-    const sendsBeforeCompletion = sends.messages.length;
-    await completeSandboxRun(run.sandboxToken, run.runId, 0);
-    await waitForSendCount(sends, sendsBeforeCompletion + 1);
-    expect(lastSend(sends)).toMatchObject({
-      toNumber: phone,
-      replyToMessageId: messageId,
-      body: "Task completed successfully.",
-    });
-  });
-
-  it("returns 500 for direct message webhooks without provider message ids", async () => {
-    const integrations = createBddIntegrationApi(context);
-    const ap = createAgentPhoneBddApi(context);
-    integrations.configureAgentPhoneWebhook();
-    const sends = ap.captureAgentPhoneSends();
-
-    for (const channel of ["imessage", "sms"] as const) {
-      await ap.postAgentPhoneInboundMessage(
-        {
-          channel,
-          from: uniquePhoneHandle(),
-          body: "@Okou please help me connect",
-          messageId: null,
-          conversationId: uniqueConversationId(),
-        },
-        [500],
-      );
-    }
-    expect(sends.messages).toHaveLength(0);
-  });
-
-  it.each(["12345", "123456"])(
-    "acks SMS short-code notifications from %s without consuming a connection code or replying",
-    async (shortCode) => {
-      const bdd = createBddApi(context);
-      const integrations = createBddIntegrationApi(context);
-      const ap = createAgentPhoneBddApi(context);
-      const actor = bdd.user();
-      integrations.configureAgentPhoneProvider();
-      integrations.configureAgentPhoneWebhook();
-      context.mocks.ably.publish.mockResolvedValue(undefined);
-      const sends = ap.captureAgentPhoneSends();
-      const issued = await integrations.requestCreateAgentPhoneLinkCode(
-        actor,
-        [200],
-      );
-
-      const response = await ap.postRawAgentPhoneInboundWebhook(
-        JSON.stringify({
-          event: "agent.message",
-          channel: "sms",
-          agentId: AGENTPHONE_BDD_AGENT_ID,
-          data: {
-            messageId: `ap-short-code-${randomUUID()}`,
-            from: shortCode,
-            to: AGENTPHONE_BDD_PHONE_NUMBER,
-            message: issued.body.code,
-          },
-        }),
-        [200],
-      );
-      expect(response.body).toBe("OK");
-      await expect(
-        integrations.getAgentPhoneLinkStatus(actor),
-      ).resolves.toMatchObject({
-        linked: false,
-      });
-      expect(sends.messages).toHaveLength(0);
-
-      const phone = uniquePhoneHandle();
-      await ap.postAgentPhoneInboundMessage({
-        channel: "sms",
-        from: phone,
-        body: issued.body.code,
-      });
-      await expect(
-        integrations.getAgentPhoneLinkStatus(actor),
-      ).resolves.toMatchObject({
-        linked: true,
-        phoneHandle: phone,
-      });
-      expectConnectedWelcome(sends.messages);
-    },
-  );
-
-  it.each([
-    { channel: "sms", from: "not-a-phone-number" },
-    { channel: "sms", from: "sender12345" },
-    { channel: "sms", from: "15555551212" },
-    { channel: "imessage", from: "12345" },
-    { channel: "mms", from: "12345" },
-    { channel: "whatsapp", from: "12345" },
-  ])(
-    "returns 500 for direct messages with an invalid sender: $channel $from",
-    async ({ channel, from }) => {
-      const integrations = createBddIntegrationApi(context);
-      const ap = createAgentPhoneBddApi(context);
-      integrations.configureAgentPhoneWebhook();
-      const invalidSenderEvent = JSON.stringify({
-        event: "agent.message",
-        channel,
-        agentId: AGENTPHONE_BDD_AGENT_ID,
-        data: {
-          messageId: `ap-invalid-sender-${randomUUID()}`,
-          from,
-          to: AGENTPHONE_BDD_PHONE_NUMBER,
-          message: "this sender cannot be routed safely",
-        },
-      });
-
-      const response = await ap.postRawAgentPhoneInboundWebhook(
-        invalidSenderEvent,
-        [500],
-      );
-      expect(response.body).toBe(
-        "AgentPhone message webhook has an invalid sender",
-      );
-    },
-  );
-
-  it("returns 500 for group webhooks without stable provider identities", async () => {
-    const integrations = createBddIntegrationApi(context);
-    const ap = createAgentPhoneBddApi(context);
-    integrations.configureAgentPhoneWebhook();
-    const sends = ap.captureAgentPhoneSends();
-    const baseMessage = {
-      channel: "imessage" as const,
-      from: uniquePhoneHandle(),
-      body: "@Okou please help me connect",
-      conversationId: uniqueConversationId(),
-      isGroup: true,
-    };
-
-    await ap.postAgentPhoneInboundMessage(
-      { ...baseMessage, messageId: null },
-      [500],
-    );
-    await ap.postAgentPhoneInboundMessage(
-      {
-        ...baseMessage,
-        messageId: `ap-group-no-id-${randomUUID()}`,
-        groupId: null,
-      },
-      [500],
-    );
-    await ap.postAgentPhoneInboundMessage(
-      {
-        channel: baseMessage.channel,
-        from: baseMessage.from,
-        body: baseMessage.body,
-        messageId: `ap-group-no-conversation-${randomUUID()}`,
-        isGroup: true,
-      },
-      [500],
-    );
-    await ap.postAgentPhoneInboundMessage(
-      {
-        ...baseMessage,
-        messageId: `ap-group-no-sender-${randomUUID()}`,
-        senderIdentifier: null,
-      },
-      [500],
-    );
-    await ap.postAgentPhoneInboundMessage(
-      {
-        ...baseMessage,
-        messageId: `ap-group-invalid-id-${randomUUID()}`,
-        groupId: "not-a-provider-group-id",
-      },
-      [500],
-    );
-
-    expect(sends.messages).toHaveLength(0);
-  });
-
-  it("delivers a group run reply when the provider roster lookup fails", async () => {
-    const integrations = createBddIntegrationApi(context);
-    const { actor, phone, runnerGroup, sends, ap } =
-      await entitledLinkedActor();
-
-    const conversationId = uniqueConversationId();
-    const groupId = bddGroupId(conversationId);
-    await ap.postAgentPhoneInboundMessage({
+    const firstNoteId = await suite.agentPhone.postAgentPhoneInboundMessage({
       channel: "imessage",
-      from: phone,
-      body: "@Okou summarize this group",
-      conversationId,
+      from: phoneOne,
+      body: "first group note",
+      conversationId: stableConversation,
       isGroup: true,
-      participants: [{ identifier: phone }],
-    });
-    await waitForTyping(sends, [conversationId]);
-    const run = await readDispatchedRun(runnerGroup);
-    expect(run.appendSystemPrompt).toContain(`Group ID: ${groupId}`);
-
-    server.use(
-      http.get("https://api.agentphone.test/v1/conversations/:id", () => {
-        return HttpResponse.json(
-          { detail: "temporary failure" },
-          {
-            status: 503,
-          },
-        );
-      }),
-    );
-    const beforeCompletion = sends.messages.length;
-    await completeSandboxRun(run.sandboxToken, run.runId, 0);
-    await waitForSendCount(sends, beforeCompletion + 1);
-    expect(lastSend(sends).toNumber).toBe(groupId);
-
-    const history = await integrations.requestAgentPhoneGroupHistory(
-      actor,
-      { groupId, limit: 100 },
-      [200],
-    );
-    if (history.status !== 200) {
-      throw new Error("Expected visible group history after the run reply");
-    }
-    expect(
-      history.body.messages.map((message) => {
-        return message.direction;
-      }),
-    ).toStrictEqual(["inbound"]);
-  });
-
-  it("sends group connect replies when roster lookup fails and never archives them", async () => {
-    const integrations = createBddIntegrationApi(context);
-    const { actor, phone, sends, ap } = await entitledLinkedActor();
-
-    const conversationId = uniqueConversationId();
-    const groupId = bddGroupId(conversationId);
-    const unlinkedPhone = uniquePhoneHandle();
-    const participants = [{ identifier: phone }, { identifier: unlinkedPhone }];
-    const before = sends.messages.length;
-    server.use(
-      http.get("https://api.agentphone.test/v1/conversations/:id", () => {
-        return HttpResponse.json(
-          { detail: "temporary failure" },
-          {
-            status: 503,
-          },
-        );
-      }),
-    );
-    await ap.postAgentPhoneInboundMessage({
-      channel: "imessage",
-      from: unlinkedPhone,
-      body: "@Okou please connect this group",
-      conversationId,
-      isGroup: true,
-      participants,
-    });
-    await waitForSendCount(sends, before + 2);
-
-    server.use(
-      http.get("https://api.agentphone.test/v1/conversations/:id", () => {
-        return HttpResponse.json(null);
-      }),
-    );
-    await ap.postAgentPhoneInboundMessage({
-      channel: "imessage",
-      from: unlinkedPhone,
-      body: "@Okou retry the malformed roster response",
-      conversationId,
-      isGroup: true,
-      participants,
-    });
-    await waitForSendCount(sends, before + 4);
-
-    const history = await integrations.requestAgentPhoneGroupHistory(
-      actor,
-      { groupId, limit: 100 },
-      [200],
-    );
-    if (history.status !== 200) {
-      throw new Error("Expected visible group history after roster failures");
-    }
-    expect(
-      history.body.messages.map((message) => {
-        return message.direction;
-      }),
-    ).toStrictEqual(["inbound", "inbound"]);
-  });
-
-  it("rejects group webhooks without a conversation identity before creating a run", async () => {
-    const runs = createRunsApi(context);
-    const integrations = createBddIntegrationApi(context);
-    const { actor, phone, runnerGroup, sends, ap } =
-      await entitledLinkedActor();
-
-    const groupIds = [
-      bddGroupId(uniqueConversationId()),
-      bddGroupId(uniqueConversationId()),
-    ];
-    const sendsBefore = sends.messages.length;
-    for (const [index, groupId] of groupIds.entries()) {
-      await ap.postAgentPhoneInboundMessage(
-        {
-          channel: "imessage",
-          from: phone,
-          body: `@Okou keep group ${index} isolated`,
-          messageId: `missing-conversation-${index}-${randomUUID()}`,
-          groupId,
-          isGroup: true,
-          participants: [{ identifier: phone }],
-        },
-        [500],
-      );
-    }
-
-    await runs.heartbeatRunner(runnerGroup);
-    await flushWaitUntilForTest();
-    expect(runs.unobservedDispatches(runnerGroup)).toHaveLength(0);
-    expect(sends.messages).toHaveLength(sendsBefore);
-    for (const groupId of groupIds) {
-      const history = await integrations.requestAgentPhoneGroupHistory(
-        actor,
-        { groupId, limit: 100 },
-        [200],
-      );
-      if (history.status !== 200) {
-        throw new Error("Expected empty history for an unrouteable group");
-      }
-      expect(history.body.messages).toHaveLength(0);
-    }
-  });
-
-  it("shares a main thread per iMessage group and forks persistent reply threads", async () => {
-    const { actor, phone, runnerGroup, sends, ap } =
-      await entitledLinkedActor();
-    const chat = createChatFilesBddApi(context);
-    const conversationId = uniqueConversationId();
-    const rootPrompt = "@Okou plan the launch";
-    const rootMessageId = await ap.postAgentPhoneInboundMessage({
-      channel: "imessage",
-      from: phone,
-      body: rootPrompt,
-      conversationId,
-      isGroup: true,
-    });
-    const first = await readDispatchedRun(runnerGroup);
-    await completeSandboxRun(first.sandboxToken, first.runId, 0);
-    await flushWaitUntilForTest();
-    const mainAnswerMessageId = lastSend(sends).messageId;
-    const mainSession = await waitForRunSessionIdPresent(actor, first.runId);
-
-    const followUpPrompt = "@Okou review the budget too";
-    await ap.postAgentPhoneInboundMessage({
-      channel: "imessage",
-      from: phone,
-      body: followUpPrompt,
-      conversationId,
-      isGroup: true,
-    });
-    const followUp = await readDispatchedRun(runnerGroup);
-    expect(followUp.resumedSessionId).toBe(mainSession);
-    await completeSandboxRun(followUp.sandboxToken, followUp.runId, 0);
-    await waitForRunSessionId(actor, followUp.runId, mainSession);
-
-    const branchPrompt = "@Okou add a launch date";
-    const branchMessageId = await ap.postAgentPhoneInboundMessage({
-      channel: "imessage",
-      from: phone,
-      body: branchPrompt,
-      conversationId,
-      isGroup: true,
-      replyToMessageId: rootMessageId,
-    });
-    const branch = await readDispatchedRun(runnerGroup);
-    expect(branch.resumedSessionId).toBeUndefined();
-    await completeSandboxRun(branch.sandboxToken, branch.runId, 0);
-    await flushWaitUntilForTest();
-    const branchAnswerMessageId = lastSend(sends).messageId;
-    const branchSession = await waitForRunSessionIdPresent(actor, branch.runId);
-    expect(branchSession).not.toBe(mainSession);
-
-    const replyPrompts = [
-      { body: "@Okou move that date one week later", parent: branchMessageId },
-      { body: "@Okou expand your answer", parent: branchAnswerMessageId },
-      { body: "@Okou list launch risks", parent: rootMessageId },
-    ];
-    for (const { body, parent } of replyPrompts) {
-      await ap.postAgentPhoneInboundMessage({
-        channel: "imessage",
-        from: phone,
-        body,
-        conversationId,
-        isGroup: true,
-        replyToMessageId: parent,
-      });
-      const reply = await readDispatchedRun(runnerGroup);
-      expect(reply.resumedSessionId).toBe(branchSession);
-      await completeSandboxRun(reply.sandboxToken, reply.runId, 0);
-      await waitForRunSessionId(actor, reply.runId, branchSession);
-    }
-
-    const returnPrompt = "@Okou back to the group discussion";
-    await ap.postAgentPhoneInboundMessage({
-      channel: "imessage",
-      from: phone,
-      body: returnPrompt,
-      conversationId,
-      isGroup: true,
-    });
-    const returned = await readDispatchedRun(runnerGroup);
-    expect(returned.resumedSessionId).toBe(mainSession);
-    await completeSandboxRun(returned.sandboxToken, returned.runId, 0);
-    await waitForRunSessionId(actor, returned.runId, mainSession);
-
-    const botReplyPrompt = "@Okou discuss your first answer separately";
-    const otherGroupPrompt = "@Okou discuss another group's plan";
-    for (const message of [
-      {
-        body: botReplyPrompt,
-        conversationId,
-        replyToMessageId: mainAnswerMessageId,
-      },
-      { body: otherGroupPrompt, conversationId: uniqueConversationId() },
-    ]) {
-      await ap.postAgentPhoneInboundMessage({
-        channel: "imessage",
-        from: phone,
-        isGroup: true,
-        ...message,
-      });
-      const run = await readDispatchedRun(runnerGroup);
-      expect(run.resumedSessionId).toBeUndefined();
-      await completeSandboxRun(run.sandboxToken, run.runId, 0);
-      const session = await waitForRunSessionIdPresent(actor, run.runId);
-      expect(session).not.toBe(mainSession);
-      expect(session).not.toBe(branchSession);
-    }
-
-    const lifecycle = await chat.requestThreadEvents(
-      actor,
-      actor.phoneHistory,
-      [200],
-    );
-    if (lifecycle.status !== 200) {
-      throw new Error("Expected iMessage group threads to be listed");
-    }
-    const threads = lifecycle.body.events.filter((event) => {
-      return event.kind === "created";
-    });
-    expect(threads).toHaveLength(4);
-    const threadPrompts = await Promise.all(
-      threads.map(async (thread) => {
-        const history = await chat.listThreadEvents(actor, thread.chatThreadId);
-        return history.events
-          .filter((event) => {
-            return event.eventType === "input.prompt";
-          })
-          .filter((event) => {
-            return event.runId !== undefined;
-          })
-          .flatMap((event) => {
-            return event.userMessage.parts;
-          })
-          .flatMap((part) => {
-            return part.type === "text" ? [part.text] : [];
-          });
-      }),
-    );
-    expect(threadPrompts).toStrictEqual(
-      expect.arrayContaining([
-        [rootPrompt, followUpPrompt, returnPrompt],
-        [
-          branchPrompt,
-          ...replyPrompts.map((reply) => {
-            return reply.body;
-          }),
-        ],
-        [botReplyPrompt],
-        [otherGroupPrompt],
-      ]),
-    );
-  });
-
-  it("anchors iMessage group replies to an ambient message without an existing web thread", async () => {
-    const { actor, phone, runnerGroup, ap } = await entitledLinkedActor();
-    const chat = createChatFilesBddApi(context);
-    const conversationId = uniqueConversationId();
-    const ambientMessageId = await ap.postAgentPhoneInboundMessage({
-      channel: "imessage",
-      from: phone,
-      body: "The launch is scheduled for Friday",
-      conversationId,
-      isGroup: true,
-    });
-    let sessionId: string | undefined;
-    for (const body of ["@Okou summarize this plan", "@Okou list the risks"]) {
-      await ap.postAgentPhoneInboundMessage({
-        channel: "imessage",
-        from: phone,
-        body,
-        conversationId,
-        isGroup: true,
-        replyToMessageId: ambientMessageId,
-      });
-      const run = await readDispatchedRun(runnerGroup);
-      expect(run.resumedSessionId).toBe(sessionId);
-      await completeSandboxRun(run.sandboxToken, run.runId, 0);
-      sessionId = await waitForRunSessionIdPresent(actor, run.runId);
-    }
-    const lifecycle = await chat.requestThreadEvents(
-      actor,
-      actor.phoneHistory,
-      [200],
-    );
-    if (lifecycle.status !== 200) {
-      throw new Error(
-        "Expected the ambient message's reply thread to be listed",
-      );
-    }
-    expect(
-      lifecycle.body.events.filter((event) => {
-        return event.kind === "created";
-      }),
-    ).toHaveLength(1);
-  });
-
-  it("scopes iMessage reply routing to the linked sender and group conversation", async () => {
-    const owner = await entitledLinkedActor();
-    const conversationId = uniqueConversationId();
-    const rootMessageId = await owner.ap.postAgentPhoneInboundMessage({
-      channel: "imessage",
-      from: owner.phone,
-      body: "@Okou keep this owner's thread",
-      conversationId,
-      isGroup: true,
-    });
-    const ownerRun = await readDispatchedRun(owner.runnerGroup);
-    await completeSandboxRun(ownerRun.sandboxToken, ownerRun.runId, 0);
-    const ownerSession = await waitForRunSessionIdPresent(
-      owner.actor,
-      ownerRun.runId,
-    );
-
-    const member = await entitledLinkedActor();
-    for (const { linked, conversation } of [
-      { linked: member, conversation: conversationId },
-      { linked: owner, conversation: uniqueConversationId() },
-    ]) {
-      await linked.ap.postAgentPhoneInboundMessage({
-        channel: "imessage",
-        from: linked.phone,
-        body: "@Okou start my own discussion",
-        conversationId: conversation,
-        isGroup: true,
-        replyToMessageId: rootMessageId,
-      });
-      const run = await readDispatchedRun(member.runnerGroup);
-      expect(run.resumedSessionId).toBeUndefined();
-      await completeSandboxRun(run.sandboxToken, run.runId, 0);
-      const session = await waitForRunSessionIdPresent(linked.actor, run.runId);
-      expect(session).not.toBe(ownerSession);
-    }
-    const chat = createChatFilesBddApi(context);
-    for (const { linked, count } of [
-      { linked: owner, count: 2 },
-      { linked: member, count: 1 },
-    ]) {
-      const lifecycle = await chat.requestThreadEvents(
-        linked.actor,
-        linked.actor.phoneHistory,
-        [200],
-      );
-      if (lifecycle.status !== 200) {
-        throw new Error(
-          "Expected the linked sender's own threads to be listed",
-        );
-      }
-      expect(
-        lifecycle.body.events.filter((event) => {
-          return event.kind === "created";
-        }),
-      ).toHaveLength(count);
-    }
-  });
-
-  it("handles the iMessage group lifecycle: mentions, stored context, ambient silence, and account-command guards", async () => {
-    const runs = createRunsApi(context);
-    const integrations = createBddIntegrationApi(context);
-    const webhooks = createWebhookCallbackApi(context);
-    const { actor, phone, runnerGroup, sends, ap } =
-      await entitledLinkedActor();
-    const conversationId = `${uniqueConversationId()}-${"g".repeat(230)}`;
-    expect(conversationId.length).toBeLessThanOrEqual(255);
-    expect(`group:${conversationId}`.length).toBeGreaterThan(255);
-
-    // A mentioned group message preserves the mention; group context is read
-    // only from locally archived messages visible to the original recipient.
-    const groupMessageId = await ap.postAgentPhoneInboundMessage({
-      channel: "imessage",
-      from: phone,
-      body: "@Okou summarize this thread",
-      conversationId,
-      isGroup: true,
-      recentHistory: [
-        {
-          messageId: "rh-group-prior",
-          content: "Earlier group context",
-          direction: "inbound",
-          channel: "imessage",
-          from: "+15559990000",
-          at: "2026-05-18T00:00:00.000Z",
-        },
+      groupId: stableGroup,
+      mediaUrl: photoUrl,
+      participants: [
+        { identifier: phoneOne },
+        { identifier: phoneTwo },
+        { identifier: phoneThree },
+        { identifier: AGENTPHONE_BDD_PHONE_NUMBER },
       ],
+      receivedAt: new Date(start + 3000).toISOString(),
     });
-    await waitForTyping(sends, [conversationId]);
-    const groupLifecycle = await createChatFilesBddApi(
-      context,
-    ).requestThreadEvents(actor, actor.phoneHistory, [200]);
-    if (groupLifecycle.status !== 200) {
-      throw new Error("Expected AgentPhone thread lifecycle events");
-    }
-    const createdGroupThreads = groupLifecycle.body.events.filter((event) => {
-      return event.kind === "created";
-    });
-    expect(createdGroupThreads).toHaveLength(1);
-    const groupThreadId = createdGroupThreads[0]?.chatThreadId;
-    if (!groupThreadId) {
-      throw new Error("Expected an AgentPhone group chat thread");
-    }
-    const groupEvents = await createChatFilesBddApi(context).listThreadEvents(
-      actor,
-      groupThreadId,
-    );
-    expect(groupEvents.events).toContainEqual(
-      expect.objectContaining({
-        eventType: "input.prompt",
-        userMessage: {
-          version: 1,
-          parts: expect.arrayContaining([
-            { type: "text", text: "@Okou summarize this thread" },
-            { type: "source", kind: "agentphone" },
-          ]),
-        },
-      }),
-    );
-    const run1 = await readDispatchedRun(runnerGroup);
-    expect(run1.prompt).toBe("@Okou summarize this thread");
 
-    // Typing uses the conversation id on ingress and subsequent refreshes,
-    // while the final message below still uses the group id as its address.
-    mockNow(now() + 4000);
-    await webhooks.requestAgentEvents(
-      {
-        runId: run1.runId,
-        events: [{ type: "assistant", sequenceNumber: 1 }],
-      },
-      { authorization: `Bearer ${run1.sandboxToken}` },
-      [200],
-    );
-    await waitForTyping(sends, [conversationId, conversationId]);
-    mockNow(now() + 4000);
-    const heartbeat = await webhooks.requestAgentHeartbeat(
-      { runId: run1.runId },
-      { authorization: `Bearer ${run1.sandboxToken}` },
-      [200],
-    );
-    expect(heartbeat.body).toStrictEqual({
-      ok: true,
-      typingRefreshIntervalSeconds: 4,
+    mockNow(start + 4000);
+    await suite.linkWithCode(userThree, phoneThree, "imessage");
+    await suite.linkWithCode(newcomer, newcomerPhone, "imessage");
+
+    const delayedNoteId = await suite.agentPhone.postAgentPhoneInboundMessage({
+      channel: "imessage",
+      from: phoneOne,
+      body: "delayed group note",
+      conversationId: stableConversation,
+      isGroup: true,
+      groupId: stableGroup,
+      participants: [
+        { identifier: phoneOne },
+        { identifier: phoneTwo },
+        { identifier: phoneThree },
+        { identifier: AGENTPHONE_BDD_PHONE_NUMBER },
+      ],
+      receivedAt: new Date(start + 5000).toISOString(),
     });
-    await waitForTyping(sends, [
-      conversationId,
-      conversationId,
-      conversationId,
+    await suite.agentPhone.postAgentPhoneInboundMessage({
+      channel: "imessage",
+      from: phoneOne,
+      messageId: delayedNoteId,
+      body: "delayed group note",
+      conversationId: stableConversation,
+      isGroup: true,
+      groupId: stableGroup,
+      participants: [
+        { identifier: phoneOne },
+        { identifier: phoneTwo },
+        { identifier: phoneThree },
+        { identifier: AGENTPHONE_BDD_PHONE_NUMBER },
+      ],
+      receivedAt: new Date(start + 5000).toISOString(),
+    });
+    await suite.agentPhone.postAgentPhoneInboundMessage({
+      channel: "imessage",
+      from: phoneOne,
+      body: "second group note",
+      conversationId: stableConversation,
+      isGroup: true,
+      groupId: stableGroup,
+      participants: [
+        { identifier: phoneOne },
+        { identifier: phoneThree },
+        { identifier: newcomerPhone },
+        { identifier: AGENTPHONE_BDD_PHONE_NUMBER },
+      ],
+      receivedAt: new Date(start + 6000).toISOString(),
+    });
+
+    const rosterlessHistory =
+      await suite.integrations.requestAgentPhoneGroupHistory(
+        userOne,
+        { groupId: rosterlessGroup, limit: 100 },
+        [200],
+      );
+    expect(
+      expectProp(rosterlessHistory.body, "messages").messages.map((message) => {
+        return message.body;
+      }),
+    ).toStrictEqual(["rosterless note"]);
+
+    const preLinkHistory =
+      await suite.integrations.requestAgentPhoneGroupHistory(
+        userThree,
+        { groupId: preLinkGroup, limit: 100 },
+        [200],
+      );
+    expect(
+      expectProp(preLinkHistory.body, "messages").messages.map((message) => {
+        return message.body;
+      }),
+    ).toStrictEqual(["pre-link own message"]);
+
+    const firstHistory = await suite.integrations.requestAgentPhoneGroupHistory(
+      userOne,
+      { groupId: stableGroup, limit: 100 },
+      [200],
+    );
+    expect(
+      expectProp(firstHistory.body, "messages").messages.map((message) => {
+        return message.body;
+      }),
+    ).toStrictEqual([
+      "first group note",
+      "delayed group note",
+      "second group note",
     ]);
 
-    // The provider's unfiltered group history is not trusted as local context.
-    expect(run1.appendSystemPrompt).not.toContain("Earlier group context");
-
-    // The provider requires the group id as to_number for a group reply.
-    const beforeGroupCompletion = sends.messages.length;
-    await completeSandboxRun(run1.sandboxToken, run1.runId, 0);
-    await waitForSendCount(sends, beforeGroupCompletion + 1);
-    const groupReply = lastSend(sends);
-    expect(groupReply.conversationId).toBeUndefined();
-    expect(groupReply.replyToMessageId).toBe(groupMessageId);
-    expect(groupReply.toNumber).toBe(bddGroupId(conversationId));
-    expect(groupReply.body).toBe("Task completed successfully.");
-    const groupSession = await waitForRunSessionIdPresent(actor, run1.runId);
-
-    // A reply without provider history renders the stored group
-    // context with sender handles and the bot reply.
-    await ap.postAgentPhoneInboundMessage({
-      channel: "imessage",
-      from: phone,
-      body: "@Okou what changed since then",
-      replyToMessageId: groupMessageId,
-      conversationId,
-      isGroup: true,
-    });
-    const run2 = await readDispatchedRun(runnerGroup);
-    expect(run2.appendSystemPrompt).toContain("# Phone Message Context");
-    expect(run2.appendSystemPrompt).toContain(`SENDER: {id: ${phone}}`);
-    expect(run2.appendSystemPrompt).toContain("SENDER: {id: BOT}");
-    expect(run2.resumedSessionId).toBeUndefined();
-    await completeSandboxRun(run2.sandboxToken, run2.runId, 0);
-    await expect(
-      waitForRunSessionIdPresent(actor, run2.runId),
-    ).resolves.not.toBe(groupSession);
-
-    // Ambient group chatter is stored but never dispatched as a run.
-    await ap.postAgentPhoneInboundMessage({
-      channel: "imessage",
-      from: phone,
-      body: "ambient chatter without a mention",
-      conversationId,
-      isGroup: true,
-    });
-    await runs.heartbeatRunner(runnerGroup);
-    await flushWaitUntilForTest();
-    expect(runs.unobservedDispatches(runnerGroup)).toHaveLength(0);
-
-    // A later direct message must not inherit content from a group chat.
-    await ap.postAgentPhoneInboundMessage({
-      channel: "imessage",
-      from: phone,
-      body: "@Okou respond privately",
-      conversationId: uniqueConversationId(),
-      isGroup: false,
-    });
-    const privateRun = await readDispatchedRun(runnerGroup);
-    expect(privateRun.prompt).toBe("@Okou respond privately");
-    expect(privateRun.appendSystemPrompt).not.toContain(
-      "ambient chatter without a mention",
-    );
-    await completeSandboxRun(privateRun.sandboxToken, privateRun.runId, 0);
-
-    // Conversation-only participants cannot run account commands.
-    const intruder = uniquePhoneHandle();
-    const beforeBlockedCommand = sends.messages.length;
-    await ap.postAgentPhoneInboundMessage({
-      channel: "imessage",
-      from: intruder,
-      body: "/disconnect @Okou",
-      conversationId,
-      isGroup: true,
-    });
-    await waitForSendCount(sends, beforeBlockedCommand + 1);
-    const blockedReply = lastSend(sends);
-    expect(blockedReply.toNumber).toBe(bddGroupId(conversationId));
-    expect(blockedReply.body).toContain("Only the linked sender");
-    expect(blockedReply.body).not.toContain("/settings/agentphone?");
-    const stillLinked = await integrations.getAgentPhoneLinkStatus(actor);
-    expect(stillLinked).toMatchObject({ linked: true, phoneHandle: phone });
-
-    // Unlinked senders receive their signed link privately, with a notice
-    // in the originating group conversation.
-    const stranger = uniquePhoneHandle();
-    const strangerConversationId = uniqueConversationId();
-    const beforeStrangerPrompt = sends.messages.length;
-    const strangerMessageId = await ap.postAgentPhoneInboundMessage({
-      channel: "imessage",
-      from: stranger,
-      body: "@Okou hello",
-      conversationId: strangerConversationId,
-      isGroup: true,
-    });
-    const dmPrompt = await waitForSendMatching(
-      sends,
-      beforeStrangerPrompt,
-      (send) => {
-        return (
-          send.toNumber === bddGroupId(strangerConversationId) &&
-          (send.body?.includes("I've sent you a private connection link") ??
-            false)
-        );
-      },
-    );
-    expect(dmPrompt.toNumber).toBe(bddGroupId(strangerConversationId));
-    expect(dmPrompt.replyToMessageId).toBe(strangerMessageId);
-    expect(sends.messages[beforeStrangerPrompt]).toMatchObject({
-      toNumber: stranger,
-      body: expect.stringContaining("/settings/agentphone?"),
-    });
-    expect(
-      sends.messages[beforeStrangerPrompt]?.replyToMessageId,
-    ).toBeUndefined();
-    expect(dmPrompt.body).not.toContain("/settings/agentphone?");
-
-    // /connect also delivers a private link rather than borrowing the
-    // linked participant's account.
-    const beforeStrangerCommand = sends.messages.length;
-    await ap.postAgentPhoneInboundMessage({
-      channel: "imessage",
-      from: stranger,
-      body: "/connect @Okou",
-      conversationId,
-      isGroup: true,
-    });
-    await waitForSendMatching(sends, beforeStrangerCommand, (send) => {
-      return (
-        send.toNumber === bddGroupId(conversationId) &&
-        (send.body?.includes("I've sent you a private connection link") ??
-          false)
+    const secondHistory =
+      await suite.integrations.requestAgentPhoneGroupHistory(
+        userTwo,
+        { groupId: stableGroup, limit: 100 },
+        [200],
       );
-    });
-
-    // A mention from an unlinked sender in a conversation the linked user
-    // already started never borrows the linked user's account.
-    const beforeBorrowAttempt = sends.messages.length;
-    await ap.postAgentPhoneInboundMessage({
-      channel: "imessage",
-      from: stranger,
-      body: "@Okou run this on the owner's account",
-      conversationId,
-      isGroup: true,
-    });
-    const borrowPrompt = await waitForSendMatching(
-      sends,
-      beforeBorrowAttempt,
-      (send) => {
-        return (
-          send.toNumber === bddGroupId(conversationId) &&
-          (send.body?.includes("I've sent you a private connection link") ??
-            false)
-        );
-      },
-    );
-    expect(borrowPrompt.body).not.toContain("/settings/agentphone?");
-    await runs.heartbeatRunner(runnerGroup);
-    await flushWaitUntilForTest();
-    expect(runs.unobservedDispatches(runnerGroup)).toHaveLength(0);
-    const ownerGroupEvents = await createChatFilesBddApi(
-      context,
-    ).listThreadEvents(actor, groupThreadId);
     expect(
-      ownerGroupEvents.events.some((event) => {
-        return (
-          event.eventType === "input.prompt" &&
-          event.userMessage.parts.some((part) => {
-            return (
-              part.type === "text" &&
-              part.text === "@Okou run this on the owner's account"
-            );
-          })
-        );
+      expectProp(secondHistory.body, "messages").messages.map((message) => {
+        return message.body;
       }),
-    ).toBeFalsy();
-  });
+    ).toStrictEqual(["first group note", "delayed group note"]);
 
-  it("preserves a mention-only iMessage prompt with the preceding task", async () => {
-    const runs = createRunsApi(context);
-    const { phone, runnerGroup, sends, ap } = await entitledLinkedActor();
-    const conversationId = uniqueConversationId();
-    const archivedArticleUrl = "https://example.com/article";
-    const providerOnlyArticleUrl = "https://provider-only.example/article";
-
-    await ap.postAgentPhoneInboundMessage({
-      channel: "imessage",
-      from: phone,
-      body: `Check the broken article at ${archivedArticleUrl}`,
-      conversationId,
-      isGroup: true,
-    });
-
-    // A standalone mention carries locally archived task context, not the
-    // provider's unfiltered recentHistory.
-    const beforeMention = sends.messages.length;
-    await ap.postAgentPhoneInboundMessage({
-      channel: "imessage",
-      from: phone,
-      body: "@okou",
-      recentHistory: [
-        {
-          messageId: "provider-only-article-report",
-          content: `Provider-only task at ${providerOnlyArticleUrl}`,
-          direction: "inbound",
-          channel: "imessage",
-          from: phone,
-          at: "2026-09-07T09:00:00.000Z",
-        },
-      ],
-      conversationId,
-      isGroup: true,
-    });
-    const mentionRun = await readDispatchedRun(runnerGroup);
-    expect(mentionRun.prompt).toBe("@okou");
-    expect(mentionRun.appendSystemPrompt).toContain(archivedArticleUrl);
-    expect(mentionRun.appendSystemPrompt).not.toContain(providerOnlyArticleUrl);
-    await completeSandboxRun(mentionRun.sandboxToken, mentionRun.runId, 0);
-    await waitForSendCount(sends, beforeMention + 1);
-
-    // A provider mention object naming the canonical handle wakes the agent
-    // even when the body carries no handle text.
-    const beforeMentionObject = sends.messages.length;
-    await ap.postAgentPhoneInboundMessage({
-      channel: "imessage",
-      from: phone,
-      body: "and schedule it for Monday",
-      conversationId,
-      isGroup: true,
-      mentions: [{ username: "okou" }],
-    });
-    const mentionObjectRun = await readDispatchedRun(runnerGroup);
-    expect(mentionObjectRun.prompt).toBe("and schedule it for Monday");
-    await completeSandboxRun(
-      mentionObjectRun.sandboxToken,
-      mentionObjectRun.runId,
-      0,
-    );
-    await waitForSendCount(sends, beforeMentionObject + 1);
-
-    // Mentioning the name inside ordinary group chatter does not address it.
-    await ap.postAgentPhoneInboundMessage({
-      channel: "imessage",
-      from: phone,
-      body: "I think okou would probably know",
-      conversationId,
-      isGroup: true,
-    });
-    await runs.heartbeatRunner(runnerGroup);
-    await flushWaitUntilForTest();
-    expect(runs.unobservedDispatches(runnerGroup)).toHaveLength(0);
-  });
-
-  it.each(["Okou hi", "  OKOU，帮我总结", "Okou", "okou would probably know"])(
-    "replies in the group when iMessage drops the at-sign from an opening mention: %s",
-    async (body) => {
-      const ap = createAgentPhoneBddApi(context);
-      const { phone, runnerGroup, sends } = await entitledLinkedActor();
-      const conversationId = uniqueConversationId();
-      // The provider delivers native iMessage mentions as plain display names.
-      const beforeReply = sends.messages.length;
-      const messageId = await ap.postAgentPhoneInboundMessage({
-        channel: "imessage",
-        from: phone,
-        body,
-        conversationId,
-        isGroup: true,
-      });
-      const run = await readDispatchedRun(runnerGroup);
-      expect(run.prompt).toBe(body.trim());
-      await completeSandboxRun(run.sandboxToken, run.runId, 0);
-      await waitForSendCount(sends, beforeReply + 1);
-      expect(lastSend(sends)).toMatchObject({
-        toNumber: bddGroupId(conversationId),
-        replyToMessageId: messageId,
-        body: "Task completed successfully.",
-      });
-    },
-  );
-
-  it("ignores iMessage group text without an opening address", async () => {
-    const runs = createRunsApi(context);
-    const ap = createAgentPhoneBddApi(context);
-    const { phone, runnerGroup, sends } = await entitledLinkedActor();
-    const conversationId = uniqueConversationId();
-    await ap.postAgentPhoneInboundMessage({
-      channel: "imessage",
-      from: phone,
-      body: "Okou establish the group thread",
-      conversationId,
-      isGroup: true,
-    });
-    const initialRun = await readDispatchedRun(runnerGroup);
-    await completeSandboxRun(initialRun.sandboxToken, initialRun.runId, 0);
-    // A URL, a longer name, or an embedded name is not an opening address.
-    const beforeChatter = sends.messages.length;
-    for (const body of [
-      "okou.ai has the answer",
-      "OkouHelper hi",
-      "I think Okou would probably know",
-    ]) {
-      await ap.postAgentPhoneInboundMessage({
-        channel: "imessage",
-        from: phone,
-        body,
-        conversationId,
-        isGroup: true,
-      });
-      await runs.heartbeatRunner(runnerGroup);
-      await flushWaitUntilForTest();
-      expect(runs.unobservedDispatches(runnerGroup)).toHaveLength(0);
-    }
-    expect(sends.messages).toHaveLength(beforeChatter);
-  });
-
-  it("does not send a group reply to one member when the provider group id is missing", async () => {
-    const runs = createRunsApi(context);
-    const ap = createAgentPhoneBddApi(context);
-    const { phone, runnerGroup, sends } = await entitledLinkedActor();
-    const before = sends.messages.length;
-
-    await ap.postAgentPhoneInboundMessage(
-      {
-        channel: "imessage",
-        from: phone,
-        body: "@Okou check this group",
-        conversationId: uniqueConversationId(),
-        isGroup: true,
-        groupId: null,
-      },
-      [500],
-    );
-
-    expect(sends.messages).toHaveLength(before);
-    await runs.heartbeatRunner(runnerGroup);
-    await flushWaitUntilForTest();
-    expect(runs.unobservedDispatches(runnerGroup)).toHaveLength(0);
-  });
-
-  it("tells a group when the org is at its concurrent run limit and starts it once a slot frees up", async () => {
-    // One active run fills the org, independent of the plan's own limit.
-    mockEnv("CONCURRENT_RUN_LIMIT_CAP", "1");
-    const runs = createRunsApi(context);
-    const ap = createAgentPhoneBddApi(context);
-    const chat = createChatFilesBddApi(context);
-    const { actor, phone, runnerGroup, sends } = await entitledLinkedActor();
-    const orgFullNotice =
-      "The workspace has reached its concurrent run limit; this will start automatically when a slot frees up.";
-
-    // With capacity, the direct message starts a run without a wait notice.
-    const beforeActive = sends.messages.length;
-    await ap.postAgentPhoneInboundMessage({
-      channel: "sms",
-      from: phone,
-      body: "occupy the only org run slot",
-    });
-    const activeRun = await readDispatchedRun(runnerGroup);
-    expect(sends.messages.slice(beforeActive)).toHaveLength(0);
-    const beforeGroup = await chat.requestThreadEvents(
-      actor,
-      actor.phoneHistory,
+    const thirdHistory = await suite.integrations.requestAgentPhoneGroupHistory(
+      userThree,
+      { groupId: stableGroup, limit: 100 },
       [200],
     );
-    if (beforeGroup.status !== 200) {
-      throw new Error("Expected AgentPhone thread lifecycle events");
-    }
-    const lastEvent = beforeGroup.body.events.at(-1);
-    if (!lastEvent) {
-      throw new Error("Expected the direct message thread to be listed");
-    }
-
-    // The group mention is a separate thread, so only the org limit holds it.
-    const conversationId = uniqueConversationId();
-    const waitingPrompt = "Okou wait for an org run slot";
-    const waitingMessageId = await ap.postAgentPhoneInboundMessage({
-      channel: "imessage",
-      from: phone,
-      body: waitingPrompt,
-      conversationId,
-      isGroup: true,
-    });
-    await flushWaitUntilForTest();
-
-    expect(sends.messages.slice(beforeActive)).toStrictEqual([
-      expect.objectContaining({
-        toNumber: bddGroupId(conversationId),
-        replyToMessageId: waitingMessageId,
-        body: orgFullNotice,
+    expect(
+      expectProp(thirdHistory.body, "messages").messages.map((message) => {
+        return message.body;
       }),
+    ).toStrictEqual([
+      "first group note",
+      "delayed group note",
+      "second group note",
     ]);
-    const groupLifecycle = await chat.requestThreadEvents(
-      actor,
-      { sinceSeqId: lastEvent.seqId },
+
+    const newcomerHistory =
+      await suite.integrations.requestAgentPhoneGroupHistory(
+        newcomer,
+        { groupId: stableGroup, limit: 100 },
+        [200],
+      );
+    expect(
+      expectProp(newcomerHistory.body, "messages").messages.map((message) => {
+        return message.body;
+      }),
+    ).toStrictEqual(["second group note"]);
+
+    createRouteMocks(context).clerk.session(
+      userTwo.userId,
+      userTwo.orgId,
+      userTwo.orgRole,
+    );
+    expect(
+      (
+        await suite.agentPhone.downloadPhoneFileRaw(
+          "clerk-session",
+          firstNoteId,
+        )
+      ).status,
+    ).toBe(200);
+    createRouteMocks(context).clerk.session(
+      userThree.userId,
+      userThree.orgId,
+      userThree.orgRole,
+    );
+    expect(
+      (
+        await suite.agentPhone.downloadPhoneFileRaw(
+          "clerk-session",
+          firstNoteId,
+        )
+      ).status,
+    ).toBe(200);
+    createRouteMocks(context).clerk.session(
+      newcomer.userId,
+      newcomer.orgId,
+      newcomer.orgRole,
+    );
+    expect(
+      (
+        await suite.agentPhone.downloadPhoneFileRaw(
+          "clerk-session",
+          firstNoteId,
+        )
+      ).status,
+    ).toBe(404);
+
+    const queried = await suite.integrations.requestAgentPhoneGroupHistory(
+      userOne,
+      { groupId: stableGroup, query: "second", limit: 100 },
       [200],
     );
-    if (groupLifecycle.status !== 200) {
-      throw new Error("Expected the group thread to be listed");
-    }
-    const groupThreads = groupLifecycle.body.events.filter((event) => {
-      return event.kind === "created";
-    });
-    expect(groupThreads).toHaveLength(1);
-    const groupThread = groupThreads[0];
-    if (!groupThread) {
-      throw new Error("Expected the group mention to create a thread");
-    }
-    const groupEvents = await chat.listThreadEvents(
-      actor,
-      groupThread.chatThreadId,
+    expect(
+      expectProp(queried.body, "messages").messages.map((message) => {
+        return message.body;
+      }),
+    ).toStrictEqual(["second group note"]);
+
+    const pageOne = await suite.integrations.requestAgentPhoneGroupHistory(
+      userOne,
+      { groupId: stableGroup, limit: 1 },
+      [200],
     );
-    const pending = groupEvents.events.find((event) => {
-      return (
-        event.eventType === "input.prompt" &&
-        event.userMessage.parts.some((part) => {
-          return part.type === "text" && part.text === waitingPrompt;
-        })
-      );
-    });
-    if (!pending) {
-      throw new Error("Expected the group prompt to remain queued");
-    }
+    expect(expectProp(pageOne.body, "hasMore").hasMore).toBeTruthy();
+    expect(expectProp(pageOne.body, "nextCursor").nextCursor).toBeTruthy();
+    const pageTwo = await suite.integrations.requestAgentPhoneGroupHistory(
+      userOne,
+      {
+        groupId: stableGroup,
+        limit: 1,
+        cursor: expectProp(pageOne.body, "nextCursor").nextCursor ?? undefined,
+      },
+      [200],
+    );
     expect(
-      groupEvents.events.some((event) => {
-        return event.revokesEventId === pending.id;
+      expectProp(pageTwo.body, "messages").messages.map((message) => {
+        return message.body;
       }),
-    ).toBeFalsy();
-    expect(
-      groupEvents.events.some((event) => {
-        return "runId" in event && event.runId !== undefined;
-      }),
-    ).toBeFalsy();
-    await runs.heartbeatRunner(runnerGroup);
-    await flushWaitUntilForTest();
-    expect(runs.unobservedDispatches(runnerGroup)).toHaveLength(0);
-
-    // Completing the active run frees the slot and launches the waiting input.
-    await completeSandboxRun(activeRun.sandboxToken, activeRun.runId, 0);
-    const waitingRun = await readDispatchedRun(runnerGroup);
-    expect(waitingRun.prompt).toBe(waitingPrompt);
-    await completeSandboxRun(waitingRun.sandboxToken, waitingRun.runId, 0);
-    expect(
-      sends.messages.filter((send) => {
-        return send.body === orgFullNotice;
-      }),
-    ).toHaveLength(1);
+    ).toStrictEqual(["delayed group note"]);
   });
 
-  it("sends no wait notice when the input joins its thread's running run at the org limit", async () => {
-    // The only org slot is taken by this thread's own run.
-    mockEnv("CONCURRENT_RUN_LIMIT_CAP", "1");
-    const ap = createAgentPhoneBddApi(context);
-    const { phone, runnerGroup, sends } = await entitledLinkedActor();
-    const before = sends.messages.length;
-    await ap.postAgentPhoneInboundMessage({
-      channel: "sms",
-      from: phone,
-      body: "occupy the only org run slot",
-    });
-    const activeRun = await readDispatchedRun(runnerGroup);
-
-    // The follow-up steers into the running run, so it is not waiting on the
-    // organization limit.
-    await ap.postAgentPhoneInboundMessage({
-      channel: "sms",
-      from: phone,
-      body: "follow up while the run is working",
-    });
-    await flushWaitUntilForTest();
-    expect(sends.messages.slice(before)).toStrictEqual([]);
-
-    await completeSandboxRun(activeRun.sandboxToken, activeRun.runId, 0);
-  });
-
-  it.each(["unlink", "switch", "replace"] as const)(
-    "skips completion delivery after the phone link changes through %s",
-    async (method) => {
-      const integrations = createBddIntegrationApi(context);
-      const ap = createAgentPhoneBddApi(context);
-      const { actor, phone, runnerGroup, sends } = await entitledLinkedActor();
-      const dmConversationId = uniqueConversationId();
-      const groupConversationId = uniqueConversationId();
-
-      await ap.postAgentPhoneInboundMessage({
-        channel: "imessage",
-        from: phone,
-        body: "dm before unlink",
-        conversationId: dmConversationId,
-        isGroup: false,
-      });
-      const dmRun = await readDispatchedRun(runnerGroup);
-
-      await ap.postAgentPhoneInboundMessage({
-        channel: "imessage",
-        from: phone,
-        body: "@Okou group before unlink",
-        conversationId: groupConversationId,
-        isGroup: true,
-      });
-      const groupRun = await readDispatchedRun(runnerGroup);
-
-      if (method === "switch") {
-        await ap.postAgentPhoneInboundMessage({
-          channel: "imessage",
-          from: phone,
-          body: "/switch",
-          conversationId: dmConversationId,
-        });
-        expect(lastSend(sends).body).toContain("/settings/agentphone?");
-      } else if (method === "replace") {
-        const proof = await ap.requestConnectLink(uniquePhoneHandle(), sends);
-        await integrations.requestConnectAgentPhone(
-          actor,
-          { ...proof, replacePhoneHandle: phone },
-          [200],
-        );
-      } else {
-        await integrations.requestUnlinkAgentPhone(actor, [204]);
-      }
-      const sendsBeforeCompletion = sends.messages.length;
-
-      // DM stale variant: the handle no longer resolves to the payload link.
-      await completeSandboxRun(dmRun.sandboxToken, dmRun.runId, 0);
-      expect(sends.messages).toHaveLength(sendsBeforeCompletion);
-
-      // Group stale variant: the link row itself is gone.
-      await completeSandboxRun(groupRun.sandboxToken, groupRun.runId, 0);
-      expect(sends.messages).toHaveLength(sendsBeforeCompletion);
-    },
-  );
-
-  it.each([false, true])(
-    "uploads phone media with a real run-scoped agent token (group: %s)",
-    async (isGroup) => {
-      const runs = createRunsApi(context);
-      const integrations = createBddIntegrationApi(context);
-      const { actor, phone, runnerGroup, sends, storage, ap } =
-        await entitledLinkedActor();
-      const conversationId = uniqueConversationId();
-      const groupId = isGroup ? bddGroupId(conversationId) : undefined;
-      if (groupId) {
-        await ap.postAgentPhoneInboundMessage({
-          channel: "imessage",
-          from: phone,
-          body: "shared group attachment context",
-          conversationId,
-          isGroup: true,
-          groupId,
-          participants: [{ identifier: phone }],
-        });
-      }
-
-      const run = await runs.createThreadRun(actor, {
-        prompt: "deliver a phone attachment",
-      });
-      await runs.heartbeatRunner(runnerGroup);
-      const execution = await runs.executionInput(run.runId);
-      const okouToken = execution.platformEnvironment.OKOU_TOKEN;
-      if (!okouToken) {
-        throw new Error("Expected the dispatched Run to expose OKOU_TOKEN");
-      }
-
-      const init = await ap.requestPhoneUploadInitWithToken(
-        okouToken,
-        { filename: "screen shot.png", contentType: "image/png", length: 123 },
-        [200],
-      );
-      expect(init.body).toMatchObject({
-        filename: "screen_shot.png",
-        contentType: "image/png",
-        size: 123,
-      });
-      expect(init.body.uploadUrl).toMatch(/^https?:\/\//u);
-      expect(init.body.fileUrl).toMatch(
-        /^https?:\/\/[^/]+\/artifacts\/[a-z0-9]{10}\.png$/u,
-      );
-
-      storage.addArtifactObject({
-        uploadId: init.body.uploadId,
-        filename: "screen_shot.png",
-        size: 456,
-      });
-      const completed = await ap.requestPhoneUploadCompleteWithToken(
-        okouToken,
-        {
-          uploadId: init.body.uploadId,
-          groupId,
-          agentphoneAgentId: AGENTPHONE_BDD_AGENT_ID,
-          caption: "see attached",
-          contentType: "image/png",
-        },
-        [200],
-      );
-      expect(completed.body).toMatchObject({
-        filename: "screen shot.png",
-        mimetype: "image/png",
-        size: 456,
-        toNumber: groupId ?? phone,
-      });
-      const mediaSend = lastSend(sends);
-      expect(mediaSend.body).toBe("see attached\n\nTriggered by BDD Runner");
-      expect(completed.body.url).toBe(init.body.fileUrl);
-      expect(mediaSend.toNumber).toBe(groupId ?? phone);
-      if (!mediaSend.mediaUrl) {
-        throw new Error("Expected a provider-fetchable phone file");
-      }
-      expect(new URL(mediaSend.mediaUrl).searchParams.get("object")).toBe(
-        `test-private-artifacts/private-artifacts/${init.body.uploadId}/screen_shot.png`,
-      );
-
-      if (groupId) {
-        const history = await integrations.requestAgentPhoneGroupHistory(
-          actor,
-          { groupId, limit: 100 },
-          [200],
-        );
-        expect(
-          history.status === 200 ? history.body.messages : [],
-        ).toContainEqual(
-          expect.objectContaining({
-            id: completed.body.messageId,
-            conversationId,
-            toNumber: groupId,
-            channel: "imessage",
-            mediaUrl: init.body.fileUrl,
-            body: mediaSend.body,
-          }),
-        );
-      }
-
-      const downloaded = await ap.downloadPhoneFileRaw(
-        okouToken,
-        completed.body.messageId,
-      );
-      expect(downloaded.status).toBe(302);
-      expect(downloaded.headers.get("content-type")).toBe("image/png");
-      expect(downloaded.headers.get("x-file-name")).toBe("screen%20shot.png");
-      expect(downloaded.headers.get("x-file-size")).toBe("456");
-      expect(
-        new URL(downloaded.headers.get("location") ?? "").searchParams.get(
-          "object",
-        ),
-      ).toBe(new URL(mediaSend.mediaUrl).searchParams.get("object"));
-
-      const unauthorized = await integrations.requestPhoneDownloadFile(
-        null,
-        completed.body.messageId,
-        [401],
-      );
-      expectApiError(unauthorized.body);
-
-      await completeSandboxRun(execution.sandboxToken, run.runId, 0);
-    },
-  );
-
-  it("requires current group membership and keeps group uploads scoped to the user, organization, agent, and file owner", async () => {
-    const bdd = createBddApi(context);
-    const integrations = createBddIntegrationApi(context);
-    const { actor, phone, sends, storage, ap } = await entitledLinkedActor();
-    const member = bdd.user();
-    const outsider = bdd.user();
+  it("agentphone.bdd-144 requires current group membership and keeps group uploads scoped to the user, organization, agent, and file owner", async () => {
+    const suite = setupAgentPhoneSuite();
+    const storage = suite.agentPhone.acceptAgentPhoneObjectStorage();
+    const owner = suite.bdd.user();
+    const groupMember = suite.bdd.user({ orgId: owner.orgId });
+    const outsider = suite.bdd.user({ orgId: owner.orgId });
+    const foreignOrgOwner = suite.bdd.user({ userId: owner.userId });
+    const ownerPhone = uniquePhoneHandle();
     const memberPhone = uniquePhoneHandle();
     const outsiderPhone = uniquePhoneHandle();
-    await ap.linkViaWebhookConnectPrompt(member, memberPhone, sends);
-    await ap.linkViaWebhookConnectPrompt(outsider, outsiderPhone, sends);
     const conversationId = uniqueConversationId();
     const groupId = bddGroupId(conversationId);
-    await ap.postAgentPhoneInboundMessage({
+
+    await suite.linkWithCode(owner, ownerPhone, "imessage");
+    await suite.linkWithCode(groupMember, memberPhone, "imessage");
+    await suite.linkWithCode(outsider, outsiderPhone, "imessage");
+    await suite.agentPhone.postAgentPhoneInboundMessage({
       channel: "imessage",
-      from: phone,
-      body: "file sharing group",
+      from: ownerPhone,
+      body: "Initial group message",
       conversationId,
       isGroup: true,
-      participants: [{ identifier: phone }, { identifier: memberPhone }],
+      groupId,
+      participants: [
+        { identifier: ownerPhone },
+        { identifier: memberPhone },
+        { identifier: AGENTPHONE_BDD_PHONE_NUMBER },
+      ],
     });
 
-    async function uploadFor(owner: ApiTestUser) {
-      const init = await integrations.requestPhoneUploadInit(
-        owner,
-        {
-          filename: "photo.png",
-          contentType: "image/png",
-          length: 11,
-        },
-        [200],
-      );
-      if (init.status !== 200) {
-        throw new Error("Expected an owned upload URL");
-      }
-      storage.addArtifactObject({
-        uploadId: init.body.uploadId,
-        filename: "photo.png",
-        size: 11,
-      });
-      return { uploadId: init.body.uploadId, groupId, caption: "Group photo" };
-    }
-    const body = await uploadFor(actor);
-    const outsiderBody = await uploadFor(outsider);
-    const sendsBeforeDenials = sends.messages.length;
-    await integrations.requestPhoneUploadComplete(null, body, [401]);
-    await integrations.requestPhoneUploadComplete(member, body, [404]);
-    await integrations.requestPhoneUploadComplete(
+    const ownerUpload = await suite.integrations.requestPhoneUploadInit(
+      owner,
+      { filename: "photo.png", contentType: "image/png", length: 8 },
+      [200],
+    );
+    storage.addArtifactObject({
+      uploadId: expectProp(ownerUpload.body, "uploadId").uploadId,
+      filename: "photo.png",
+      size: 8,
+    });
+    const outsiderUpload = await suite.integrations.requestPhoneUploadInit(
       outsider,
-      outsiderBody,
-      [404],
+      { filename: "photo.png", contentType: "image/png", length: 8 },
+      [200],
     );
-    await integrations.requestPhoneUploadComplete(
-      { ...actor, orgId: `org_${randomUUID()}` },
-      body,
-      [404],
-    );
-    await integrations.requestPhoneUploadComplete(
-      actor,
-      { ...body, agentphoneAgentId: "agt_unrelated" },
-      [404],
-    );
-    expect(sends.messages).toHaveLength(sendsBeforeDenials);
+    storage.addArtifactObject({
+      uploadId: expectProp(outsiderUpload.body, "uploadId").uploadId,
+      filename: "photo.png",
+      size: 8,
+    });
 
-    const conversationUrl = `https://api.agentphone.test/v1/conversations/${conversationId}`;
-    // History visibility survives leaving, but it must not authorize a new send.
-    server.use(
-      http.get(conversationUrl, () => {
-        return HttpResponse.json({ participants: [memberPhone] });
-      }),
+    const beforeDenials = suite.sends.messages.length;
+    await suite.integrations.requestPhoneUploadComplete(
+      null,
+      {
+        uploadId: expectProp(ownerUpload.body, "uploadId").uploadId,
+        groupId,
+        caption: "Group photo",
+      },
+      [401],
     );
-    const removed = await integrations.requestPhoneUploadComplete(
-      actor,
-      body,
+    await suite.integrations.requestPhoneUploadComplete(
+      groupMember,
+      {
+        uploadId: expectProp(ownerUpload.body, "uploadId").uploadId,
+        groupId,
+        caption: "Group photo",
+      },
+      [404],
+    );
+    await suite.integrations.requestPhoneUploadComplete(
+      outsider,
+      {
+        uploadId: expectProp(outsiderUpload.body, "uploadId").uploadId,
+        groupId,
+        caption: "Group photo",
+      },
+      [404],
+    );
+    await suite.integrations.requestPhoneUploadComplete(
+      foreignOrgOwner,
+      {
+        uploadId: expectProp(ownerUpload.body, "uploadId").uploadId,
+        groupId,
+        caption: "Group photo",
+      },
+      [404],
+    );
+    await suite.integrations.requestPhoneUploadComplete(
+      owner,
+      {
+        uploadId: expectProp(ownerUpload.body, "uploadId").uploadId,
+        groupId,
+        caption: "Group photo",
+        agentphoneAgentId: "agt-unrelated",
+      },
+      [404],
+    );
+
+    suite.overrideConversationRoster(conversationId, [
+      memberPhone,
+      AGENTPHONE_BDD_PHONE_NUMBER,
+    ]);
+    await suite.integrations.requestPhoneUploadComplete(
+      owner,
+      {
+        uploadId: expectProp(ownerUpload.body, "uploadId").uploadId,
+        groupId,
+        caption: "Group photo",
+      },
       [403],
     );
-    expectApiError(removed.body);
-    expect(sends.messages).toHaveLength(sendsBeforeDenials);
 
-    for (const status of [404, 503]) {
-      server.use(
-        http.get(conversationUrl, () => {
-          return new HttpResponse(null, { status });
-        }),
-      );
-      await integrations.requestPhoneUploadComplete(actor, body, [
-        status === 404 ? 404 : 502,
-      ]);
-      expect(sends.messages).toHaveLength(sendsBeforeDenials);
-    }
     server.use(
-      http.get(conversationUrl, () => {
+      http.get(`${AGENTPHONE_API_BASE_URL}/v1/conversations/:id`, () => {
+        return HttpResponse.json({ error: "Not found" }, { status: 404 });
+      }),
+    );
+    await suite.integrations.requestPhoneUploadComplete(
+      owner,
+      {
+        uploadId: expectProp(ownerUpload.body, "uploadId").uploadId,
+        groupId,
+        caption: "Group photo",
+      },
+      [404],
+    );
+
+    server.use(
+      http.get(`${AGENTPHONE_API_BASE_URL}/v1/conversations/:id`, () => {
+        return HttpResponse.json({ error: "Unavailable" }, { status: 503 });
+      }),
+    );
+    await suite.integrations.requestPhoneUploadComplete(
+      owner,
+      {
+        uploadId: expectProp(ownerUpload.body, "uploadId").uploadId,
+        groupId,
+        caption: "Group photo",
+      },
+      [502],
+    );
+
+    server.use(
+      http.get(`${AGENTPHONE_API_BASE_URL}/v1/conversations/:id`, () => {
         return HttpResponse.error();
       }),
     );
-    await integrations.requestPhoneUploadComplete(actor, body, [502]);
-    expect(sends.messages).toHaveLength(sendsBeforeDenials);
+    await suite.integrations.requestPhoneUploadComplete(
+      owner,
+      {
+        uploadId: expectProp(ownerUpload.body, "uploadId").uploadId,
+        groupId,
+        caption: "Group photo",
+      },
+      [502],
+    );
+    expect(suite.sends.messages.slice(beforeDenials)).toHaveLength(0);
 
-    server.use(
-      http.get(conversationUrl, () => {
-        return HttpResponse.json({ participants: [phone, memberPhone] });
-      }),
-    );
-    const completed = await integrations.requestPhoneUploadComplete(
-      actor,
-      body,
+    suite.overrideConversationRoster(conversationId, [
+      ownerPhone,
+      memberPhone,
+      AGENTPHONE_BDD_PHONE_NUMBER,
+    ]);
+    const completed = await suite.integrations.requestPhoneUploadComplete(
+      owner,
+      {
+        uploadId: expectProp(ownerUpload.body, "uploadId").uploadId,
+        groupId,
+        caption: "Group photo",
+      },
       [200],
     );
-    if (completed.status !== 200) {
-      throw new Error("Expected an authorized group upload");
-    }
-    expect(completed.body.toNumber).toBe(groupId);
-    expect(lastSend(sends)).toMatchObject({
-      toNumber: groupId,
-      agentId: AGENTPHONE_BDD_AGENT_ID,
-      body: "Group photo",
-      mediaUrl: expect.stringMatching(/^https?:\/\//u),
-    });
-    const memberHistory = await integrations.requestAgentPhoneGroupHistory(
-      member,
-      { groupId, limit: 100 },
-      [200],
+    expect(expectProp(completed.body, "toNumber").toNumber).toBe(groupId);
+    expect(suite.sends.messages.at(-1)?.body).toBe("Group photo");
+    expect(suite.sends.messages.at(-1)?.mediaUrl).toContain(
+      expectProp(ownerUpload.body, "uploadId").uploadId,
     );
+
+    const memberHistory =
+      await suite.integrations.requestAgentPhoneGroupHistory(
+        groupMember,
+        { groupId, limit: 100 },
+        [200],
+      );
     expect(
-      memberHistory.status === 200 ? memberHistory.body.messages : [],
-    ).toContainEqual(
-      expect.objectContaining({
-        id: completed.body.messageId,
-        mediaUrl: completed.body.url,
-        toNumber: groupId,
+      expectProp(memberHistory.body, "messages").messages.some((message) => {
+        return message.body === "Group photo";
       }),
+    ).toBeTruthy();
+
+    const outsiderHistory =
+      await suite.integrations.requestAgentPhoneGroupHistory(
+        outsider,
+        { groupId, limit: 100 },
+        [200],
+      );
+    expect(expectProp(outsiderHistory.body, "messages").messages).toHaveLength(
+      0,
     );
-    const outsiderHistory = await integrations.requestAgentPhoneGroupHistory(
-      outsider,
-      { groupId, limit: 100 },
-      [200],
-    );
-    expect(
-      outsiderHistory.status === 200 ? outsiderHistory.body.messages : [],
-    ).toStrictEqual([]);
   });
 
-  it("guards startLink against foreign-owner handles and provider network failures", async () => {
-    const bdd = createBddApi(context);
-    const integrations = createBddIntegrationApi(context);
-    const ap = createAgentPhoneBddApi(context);
+  it("agentphone.bdd-145 guards startLink against foreign-owner handles and provider network failures", async () => {
+    const suite = setupAgentPhoneSuite();
+    const owner = suite.bdd.user();
+    const rival = suite.bdd.user();
+    const ownerPhone = uniquePhoneHandle();
+    const newPhone = uniquePhoneHandle();
 
-    const owner = bdd.user();
-    bdd.acceptStorageWrites();
-    context.mocks.ably.publish.mockResolvedValue(undefined);
-    integrations.configureAgentPhoneProvider();
-    integrations.configureAgentPhoneWebhook();
-    const sends = ap.captureAgentPhoneSends();
-    const ownedPhone = uniquePhoneHandle();
-    await ap.linkViaWebhookConnectPrompt(owner, ownedPhone, sends);
-
-    const rival = bdd.user();
-    const conflict = await integrations.requestStartAgentPhoneLink(
-      rival,
-      { phoneHandle: ownedPhone },
-      [409],
+    await suite.agentPhone.linkViaWebhookConnectPrompt(
+      owner,
+      ownerPhone,
+      suite.sends,
     );
-    expectApiError(conflict.body);
-    expect(conflict.body.error).toStrictEqual({
-      code: "CONFLICT",
-      message:
-        "This phone number is already connected to another Okou account or organization. Disconnect it first.",
-    });
+
+    const conflictResponse =
+      await suite.integrations.requestStartAgentPhoneLink(
+        rival,
+        { phoneHandle: ownerPhone },
+        [409],
+      );
+    expect(expectErrorBody(conflictResponse.body).error.code).toBe("CONFLICT");
+    expect(expectErrorBody(conflictResponse.body).error.message).toBe(
+      "This phone number is already connected to another Okou account or organization. Disconnect it first.",
+    );
 
     server.use(
-      http.post("https://api.agentphone.test/v1/messages", () => {
+      http.post(`${AGENTPHONE_API_BASE_URL}/v1/messages`, () => {
         return HttpResponse.error();
       }),
     );
-    const unavailable = await integrations.requestStartAgentPhoneLink(
-      rival,
-      { phoneHandle: uniquePhoneHandle() },
-      [503],
+    const unavailableResponse =
+      await suite.integrations.requestStartAgentPhoneLink(
+        rival,
+        { phoneHandle: newPhone },
+        [503],
+      );
+    expect(expectErrorBody(unavailableResponse.body).error.code).toBe(
+      "PROVIDER_UNAVAILABLE",
     );
-    expectApiError(unavailable.body);
-    expect(unavailable.body.error.code).toBe("PROVIDER_UNAVAILABLE");
   });
 });

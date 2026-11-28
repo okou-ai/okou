@@ -1,329 +1,346 @@
-import {
-  WELCOME_THREAD_ASSETS,
-  MY_OKOU_WELCOME_THREAD_ASSETS,
-} from "@okouai/core/welcome-thread-assets";
+import { randomUUID } from "node:crypto";
+
+import { chatEventsContract } from "@okouai/api-contracts/contracts/chat-event-send";
 import {
   chatThreadConnectorSelectionContract,
+  chatThreadEventsContract,
   chatThreadMetadataContract,
   chatThreadModelSelectionContract,
   chatThreadsContract,
 } from "@okouai/api-contracts/contracts/chat-threads";
-import { personalModelProvidersByTypeContract } from "@okouai/api-contracts/contracts/personal-model-providers";
-import { userModelPreferenceContract } from "@okouai/api-contracts/contracts/user-model-preference";
+import {
+  userPreferencesContract,
+  type UserLocale,
+} from "@okouai/api-contracts/contracts/user-preferences";
 import { welcomeChatThreadsContract } from "@okouai/api-contracts/contracts/welcome-chat-threads";
-import { randomUUID } from "node:crypto";
-import { describe, expect, it } from "vitest";
+import {
+  MY_OKOU_WELCOME_THREAD_ASSETS,
+  WELCOME_THREAD_ASSETS,
+} from "@okouai/core/welcome-thread-assets";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
 import { now } from "../../../lib/time";
+import { chatEventsRoutes } from "../chat-events";
 import { chatThreadRoutes } from "../chat-threads";
-import { chatThreadGetRoutes } from "../chat-threads-get";
-import { meModelProvidersDeleteRoutes } from "../me-model-providers-delete";
-import { meModelProvidersListRoutes } from "../me-model-providers-list";
-import { meModelProvidersResetSubscriptionRoutes } from "../me-model-providers-reset-subscription";
-import { meModelProvidersUpsertRoutes } from "../me-model-providers-upsert";
-import { userModelPreferenceRoutes } from "../user-model-preference";
+import { chatThreadConnectorSelectionRoutes } from "../chat-threads-connector-selections";
+import { chatThreadModelSelectionRoutes } from "../chat-threads-model-selection";
+import { userPreferencesRoutes } from "../user-preferences";
 import { welcomeChatThreadRoutes } from "../welcome-chat-threads";
-import { createRunExecutionCredentials } from "./helpers/run-execution-credentials";
-
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
-import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
+import { createAuthDeviceSupportApi } from "./helpers/api-bdd-auth-device-support";
 import { createRunsApi } from "./helpers/api-bdd-runs";
+import { publicPlanLifecycle } from "./helpers/public-plan-lifecycle";
 import { createRouteMocks } from "./helpers/route-test";
 
-const personalModelProviderTestRoutes = Object.freeze([
-  ...meModelProvidersListRoutes,
-  ...meModelProvidersUpsertRoutes,
-  ...meModelProvidersDeleteRoutes,
-  ...meModelProvidersResetSubscriptionRoutes,
-]);
-
 const context = testContext();
-const credentials = createRunExecutionCredentials(context);
+const headers = Object.freeze({ authorization: "Bearer clerk-session" });
+const appUrl = "https://pr-33252-app.omby.ai";
 const bdd = createBddApi(context);
-const chat = createChatFilesBddApi(context);
 const runs = createRunsApi(context);
-const MODEL = "claude-fable-5-1";
+const providers = createAuthDeviceSupportApi(context);
+const appClients = setupApp({
+  context,
+  routes: [
+    ...welcomeChatThreadRoutes,
+    ...chatThreadRoutes,
+    ...chatThreadConnectorSelectionRoutes,
+    ...chatThreadModelSelectionRoutes,
+    ...userPreferencesRoutes,
+    ...chatEventsRoutes,
+  ],
+});
 
-function headers(actor: ApiTestUser) {
+interface Member {
+  readonly userId: string;
+  readonly orgId: string | null;
+  readonly orgRole?: ApiTestUser["orgRole"];
+}
+
+function newMember(): Member {
+  return { userId: `user_${randomUUID()}`, orgId: `org_${randomUUID()}` };
+}
+
+function signIn(member: Member) {
   createRouteMocks(context).clerk.session(
-    actor.userId,
-    actor.orgId,
-    actor.orgRole,
+    member.userId,
+    member.orgId,
+    member.orgRole ?? "org:member",
   );
-  return { authorization: "Bearer clerk-session" };
+  return appClients;
 }
 
-function welcomeClient() {
-  return setupApp({ context, routes: welcomeChatThreadRoutes })(
-    welcomeChatThreadsContract,
-  );
-}
-
-function threadsClient() {
-  return setupApp({ context, routes: chatThreadRoutes })(chatThreadsContract);
-}
-
-function metadataClient() {
-  return setupApp({ context, routes: chatThreadGetRoutes })(
-    chatThreadMetadataContract,
-  );
-}
-
-async function fixture(
-  options: {
-    readonly orgId?: string;
-  } = {},
-) {
-  const actor = bdd.user({ orgId: options.orgId });
-  await runs.grantProEntitlement(actor, {
-    periodEndUnix: Math.floor(now() / 1000) - 90 * 86_400,
-  });
-  return { actor };
-}
-
-async function create(
-  actor: ApiTestUser,
-  clientThreadId: string = randomUUID(),
-) {
-  return await accept(
-    welcomeClient().create({
-      headers: headers(actor),
-      body: { clientThreadId },
+async function createWelcome(member: Member) {
+  const created = await accept(
+    signIn(member)(welcomeChatThreadsContract).create({
+      headers,
+      body: { clientThreadId: randomUUID() },
     }),
     [201],
   );
+  return created.body.id;
 }
 
-async function createdEvents(actor: ApiTestUser, threadId: string) {
-  const result = await accept(
-    threadsClient().events({ headers: headers(actor), query: {} }),
+async function eventRows(member: Member, threadId: string) {
+  const rows = await accept(
+    signIn(member)(chatThreadEventsContract).rows({
+      headers,
+      params: { threadId },
+      query: { sinceSeqId: 0 },
+    }),
     [200],
   );
-  return result.body.events.filter((event) => {
-    return event.chatThreadId === threadId && event.kind === "created";
-  });
+  return rows.body.rows;
+}
+
+async function selectedModel(member: Member, threadId: string) {
+  const read = await accept(
+    signIn(member)(chatThreadMetadataContract).get({
+      headers,
+      params: { id: threadId },
+    }),
+    [200],
+  );
+  return read.body.selectedModel;
+}
+
+/** Create a welcome thread for a new member who chose this locale. */
+async function localizedWelcomeRows(locale: UserLocale) {
+  mockEnv("APP_URL", appUrl);
+  const member = newMember();
+  await accept(
+    signIn(member)(userPreferencesContract).initialize({
+      headers,
+      body: { locale },
+    }),
+    [200],
+  );
+
+  const threadId = await createWelcome(member);
+
+  return await eventRows(member, threadId);
+}
+
+function expectMyOkouWelcome(row: unknown) {
+  const content = JSON.stringify(row);
+  expect(content).toContain("Instructions");
+  expect(content).toContain("Workflow");
+  expect(content).toContain(`${appUrl}/?settings=my-okou&focus=instructions)`);
+  expect(content).toContain(`${appUrl}/?settings=people`);
+  expect(content).toContain(
+    "https://pr-33252-www.omby.ai/en/workflow-automation-examples",
+  );
+  expect(content).not.toContain("{{");
+  for (const url of [
+    WELCOME_THREAD_ASSETS.campaignVisualUrl,
+    WELCOME_THREAD_ASSETS.presentationArtifactUrl,
+    WELCOME_THREAD_ASSETS.websiteArtifactUrl,
+    WELCOME_THREAD_ASSETS.slackSceneUrl,
+    WELCOME_THREAD_ASSETS.telegramSceneUrl,
+    ...Object.values(MY_OKOU_WELCOME_THREAD_ASSETS),
+  ]) {
+    expect(content).toContain(url);
+  }
 }
 
 describe("POST /api/welcome-chat-threads", () => {
-  it("requires authentication", async () => {
-    const clientThreadId = randomUUID();
-    const response = await accept(
-      welcomeClient().create({ headers: {}, body: { clientThreadId } }),
-      [401],
-    );
-    expect(response.status).toBe(401);
+  it("welcome-chat-threads-006 delivers the My Okou welcome in en-US", async () => {
+    const rows = await localizedWelcomeRows("en-US");
+
+    expect(rows).toHaveLength(1);
+    expectMyOkouWelcome(rows[0]);
   });
 
-  it("requires an active workspace", async () => {
-    const clientThreadId = randomUUID();
-    const response = await accept(
-      welcomeClient().create({
-        headers: headers(bdd.user({ orgId: null })),
-        body: { clientThreadId },
-      }),
-      [401],
-    );
-    expect(response.status).toBe(401);
+  it("welcome-chat-threads-007 delivers the My Okou welcome in pt-BR", async () => {
+    const rows = await localizedWelcomeRows("pt-BR");
+
+    expect(rows).toHaveLength(1);
+    expectMyOkouWelcome(rows[0]);
   });
 
-  it("rejects an execution credential after the member leaves the organization", async () => {
-    const actor = bdd.user();
-    const member = bdd.user({ orgId: actor.orgId, orgRole: "org:member" });
-    const token = await credentials.okouToken(member);
-    await credentials.removeMember(member, actor);
-    const clientThreadId = randomUUID();
-    await accept(
-      welcomeClient().create({
-        headers: { authorization: `Bearer ${token}` },
-        body: { clientThreadId },
-      }),
-      [401],
-    );
-    await expect(createdEvents(actor, clientThreadId)).resolves.toStrictEqual(
-      [],
-    );
+  it("welcome-chat-threads-008 delivers the My Okou welcome in ja-JP", async () => {
+    const rows = await localizedWelcomeRows("ja-JP");
+
+    expect(rows).toHaveLength(1);
+    expectMyOkouWelcome(rows[0]);
   });
 
-  it("creates a runless personal welcome with the default model and connector state", async () => {
-    const { actor } = await fixture();
-    await runs.ensurePersonalSubscriptionModel(actor);
-    context.mocks.ably.publish.mockRejectedValue(
-      new Error("Notification unavailable"),
-    );
-    const { body } = await create(actor);
-    const metadata = await accept(
-      metadataClient().get({
-        headers: headers(actor),
-        params: { id: body.id },
-      }),
-      [200],
-    );
-    expect(metadata.body).toMatchObject({
-      id: body.id,
-      title: "Welcome to Okou",
-      selectedModel: MODEL,
-      serviceTier: null,
-      cloudBrowserEnabled: true,
+  it("welcome-chat-threads-015 delivers the My Okou welcome in hi-IN", async () => {
+    const rows = await localizedWelcomeRows("hi-IN");
+
+    expect(rows).toHaveLength(1);
+    expectMyOkouWelcome(rows[0]);
+  });
+
+  it("welcome-chat-threads-016 delivers the My Okou welcome in zh-Hans", async () => {
+    const rows = await localizedWelcomeRows("zh-Hans");
+
+    expect(rows).toHaveLength(1);
+    expectMyOkouWelcome(rows[0]);
+  });
+
+  it("welcome-chat-threads-018 inherits the member's chat model at creation", async () => {
+    const member = bdd.user();
+    bdd.acceptStorageWrites();
+    await runs.ensurePersonalSubscriptionModel(member, {
+      model: "claude-fable-5-1",
     });
-    const rows = await chat.listThreadEventRows(actor, body.id);
+
+    const threadId = await createWelcome(member);
+
+    await expect(selectedModel(member, threadId)).resolves.toBe(
+      "claude-fable-5-1",
+    );
+  });
+
+  it("welcome-chat-threads-005 falls back to the fixed default model without generation credits", async () => {
+    const member = bdd.user();
+    bdd.acceptStorageWrites();
+    await bdd.completeOnboarding(member);
+    await publicPlanLifecycle(context, member, "pro").update("canceled");
+    await runs.ensurePersonalSubscriptionModel(member);
+    const deleted = await providers.deletePersonalModelProvider(
+      member,
+      "claude-code-oauth-token",
+      [204],
+    );
+    expect(deleted.status).toBe(204);
+
+    const threadId = await createWelcome(member);
+
+    await expect(selectedModel(member, threadId)).resolves.toBe("auto");
+    await expect(runs.readBillingStatus(member)).resolves.toMatchObject({
+      credits: 0,
+    });
+    const rows = await eventRows(member, threadId);
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({
       eventType: "output.message",
       runId: null,
-      seqId: 1,
-      contextId: null,
-      runEventId: null,
     });
-    expect(rows[0]?.payload?.content).toContain("# 👋 Hi, I'm Okou");
-    const content = rows[0]?.payload?.content ?? "";
-    expect(content).toContain(
+  });
+
+  async function lapsedProWelcome() {
+    const member = bdd.user();
+    bdd.acceptStorageWrites();
+    await Promise.all([
+      runs.grantProEntitlement(member, {
+        periodEndUnix: Math.floor(now() / 1000) - 90 * 86_400,
+      }),
+      runs.ensurePersonalSubscriptionModel(member, {
+        model: "claude-fable-5-1",
+      }),
+    ]);
+    context.mocks.ably.publish.mockRejectedValue(
+      new Error("Realtime publish unavailable"),
+    );
+    const threadId = await createWelcome(member);
+    return { member, threadId };
+  }
+
+  it("welcome-chat-threads-004 (1/4) creates a runless personal welcome with the default model", async () => {
+    const { member, threadId } = await lapsedProWelcome();
+
+    const [metadata, rows, feed] = await Promise.all([
+      accept(
+        signIn(member)(chatThreadMetadataContract).get({
+          headers,
+          params: { id: threadId },
+        }),
+        [200],
+      ),
+      eventRows(member, threadId),
+      accept(
+        signIn(member)(chatThreadsContract).events({ headers, query: {} }),
+        [200],
+      ),
+    ]);
+    expect(metadata.body).toMatchObject({
+      title: "Welcome to Okou",
+      selectedModel: "claude-fable-5-1",
+      serviceTier: null,
+      cloudBrowserEnabled: true,
+    });
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      eventType: "output.message",
+      seqId: 1,
+      runId: null,
+    });
+    const welcome = JSON.stringify(rows[0]);
+    expect(welcome).toContain("# 👋 Hi, I'm Okou");
+    expect(welcome).toContain(
       "**Your preferences belong in personal Instructions.**",
     );
-    await expect(createdEvents(actor, body.id)).resolves.toHaveLength(1);
-    // The only retry a client performs is a new deliberate action with a new
-    // id, which creates its own thread.
-    const second = await create(actor);
-    expect(second.body.id).not.toBe(body.id);
-    await expect(
-      chat.listThreadEventRows(actor, second.body.id),
-    ).resolves.toHaveLength(1);
-    const selections = await accept(
-      setupApp({ context, routes: chatThreadRoutes })(
-        chatThreadConnectorSelectionContract,
-      ).get({ headers: headers(actor), params: { id: body.id } }),
-      [200],
-    );
-    expect(selections.body.selections).toStrictEqual([]);
-    context.mocks.ably.publish.mockResolvedValue(undefined);
-    await expect(
-      chat.listThreadEventRows(actor, body.id),
-    ).resolves.toStrictEqual(rows);
-    await accept(
-      setupApp({ context, routes: chatThreadRoutes })(
-        chatThreadModelSelectionContract,
-      ).update({
-        headers: headers(actor),
-        params: { id: body.id },
-        body: { model: MODEL },
+    expect(
+      feed.body.events.filter((event) => {
+        return event.kind === "created" && event.chatThreadId === threadId;
+      }),
+    ).toHaveLength(1);
+  });
+
+  it("welcome-chat-threads-004 (2/4) creates a second welcome and reads empty connector selections", async () => {
+    const { member, threadId } = await lapsedProWelcome();
+
+    const [secondId, connectors] = await Promise.all([
+      createWelcome(member),
+      accept(
+        signIn(member)(chatThreadConnectorSelectionContract).get({
+          headers,
+          params: { id: threadId },
+        }),
+        [200],
+      ),
+    ]);
+
+    expect(secondId).not.toBe(threadId);
+    await expect(eventRows(member, secondId)).resolves.toHaveLength(1);
+    expect(connectors.body.selections).toStrictEqual([]);
+  });
+
+  it("welcome-chat-threads-004 (3/4) pins the model on the welcome thread", async () => {
+    const { member, threadId } = await lapsedProWelcome();
+
+    const pinned = await accept(
+      signIn(member)(chatThreadModelSelectionContract).update({
+        headers,
+        params: { id: threadId },
+        body: { model: "claude-fable-5-1" },
       }),
       [204],
     );
-    const sent = await chat.requestSendEvent(
-      actor,
-      { threadId: body.id, prompt: "Tell me about these examples" },
-      [201],
-    );
-    expect(sent.body).toMatchObject({ threadId: body.id });
-    expect((await chat.listThreadEventRows(actor, body.id))[0]).toStrictEqual(
-      rows[0],
-    );
+
+    expect(pinned.status).toBe(204);
   });
 
-  it("falls back to the fixed default model and does not require generation credits", async () => {
-    const { actor } = await fixture();
-    await runs.ensurePersonalSubscriptionModel(actor);
-    await accept(
-      setupApp({ context, routes: personalModelProviderTestRoutes })(
-        personalModelProvidersByTypeContract,
-      ).delete({
-        headers: headers(actor),
-        params: { type: "claude-code-oauth-token" },
-      }),
-      [204],
-    );
-    const before = await runs.readBillingStatus(actor);
-    expect(before.credits).toBe(0);
-    const { body } = await create(actor);
-    const metadata = await accept(
-      metadataClient().get({
-        headers: headers(actor),
-        params: { id: body.id },
-      }),
-      [200],
-    );
-    expect(metadata.body.selectedModel).toBe("auto");
-    expect((await runs.readBillingStatus(actor)).credits).toBe(0);
-    await expect(
-      chat.listThreadEventRows(actor, body.id),
-    ).resolves.toMatchObject([{ eventType: "output.message", runId: null }]);
-  });
+  it("welcome-chat-threads-004 (4/4) accepts a prompt without changing the welcome row", async () => {
+    const { member, threadId } = await lapsedProWelcome();
 
-  it.each([
-    "en-US",
-    "pt-BR",
-    "ja-JP",
-    "ko-KR",
-    "id-ID",
-    "de-DE",
-    "es-ES",
-    "it-IT",
-    "fr-FR",
-    "hi-IN",
-    "zh-Hans",
-    "zh-Hant",
-  ] as const)(
-    "delivers the My Okou welcome by default in %s without legacy media",
-    async (locale) => {
-      const { actor } = await fixture();
-      await bdd.updateUserLocale(actor, locale);
-      mockEnv("APP_URL", "https://pr-33252-app.omby.ai");
-      const { body } = await create(actor);
-      const rows = await chat.listThreadEventRows(actor, body.id);
-      expect(rows).toHaveLength(1);
-      const content = rows[0]?.payload?.content ?? "";
-      expect(content).toContain("Instructions");
-      expect(content).toContain("Workflow");
-      expect(content).toContain(
-        "https://pr-33252-app.omby.ai/?settings=my-okou&focus=instructions)",
-      );
-      expect(content).toContain(
-        "https://pr-33252-app.omby.ai/?settings=people",
-      );
-      expect(content).toContain(
-        "https://pr-33252-www.omby.ai/en/workflow-automation-examples",
-      );
-      expect(content).not.toContain("{{");
-      for (const url of [
-        WELCOME_THREAD_ASSETS.campaignVisualUrl,
-        WELCOME_THREAD_ASSETS.presentationArtifactUrl,
-        WELCOME_THREAD_ASSETS.websiteArtifactUrl,
-        WELCOME_THREAD_ASSETS.slackSceneUrl,
-        WELCOME_THREAD_ASSETS.telegramSceneUrl,
-        ...Object.values(MY_OKOU_WELCOME_THREAD_ASSETS),
-      ]) {
-        expect(content).toContain(url);
-      }
-    },
-  );
-
-  it("inherits the member's chat model at creation", async () => {
-    const { actor } = await fixture();
-    await runs.ensurePersonalSubscriptionModel(actor);
-    await accept(
-      setupApp({ context, routes: userModelPreferenceRoutes })(
-        userModelPreferenceContract,
-      ).update({
-        headers: headers(actor),
+    const sent = await accept(
+      signIn(member)(chatEventsContract).send({
+        headers,
         body: {
-          selectedModel: MODEL,
-          serviceTier: null,
+          prompt: "Thanks, what can you do?",
+          threadId,
+          hasTextContent: true,
+          clientEventId: randomUUID(),
+          userMessage: {
+            version: 1,
+            parts: [{ type: "text", text: "Thanks, what can you do?" }],
+          },
         },
       }),
-      [200],
+      [201],
     );
-    const { body } = await create(actor);
-    const metadata = await accept(
-      metadataClient().get({
-        headers: headers(actor),
-        params: { id: body.id },
-      }),
-      [200],
-    );
-    expect(metadata.body).toMatchObject({
-      selectedModel: MODEL,
+
+    expect(sent.body.threadId).toBe(threadId);
+    const [welcome] = await eventRows(member, threadId);
+    expect(welcome).toMatchObject({
+      eventType: "output.message",
+      seqId: 1,
+      runId: null,
     });
+    expect(JSON.stringify(welcome)).toContain("# 👋 Hi, I'm Okou");
   });
 });

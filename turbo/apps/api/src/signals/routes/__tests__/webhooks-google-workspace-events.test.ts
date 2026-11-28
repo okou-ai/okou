@@ -1,146 +1,212 @@
-import { Buffer } from "node:buffer";
-import { generateKeyPairSync, randomUUID, sign as signData } from "node:crypto";
+import { createSign, generateKeyPairSync, randomUUID } from "node:crypto";
+import { gunzipSync } from "node:zlib";
 
 import {
-  connectorAccountsContract,
-  type ConnectorAccountMutationIntent,
-} from "@okouai/api-contracts/contracts/connector-accounts";
-import { chatThreadConnectorSelectionContract } from "@okouai/api-contracts/contracts/chat-threads";
-import { chatConnectorAccessContract } from "@okouai/api-contracts/contracts/chat-connector-access";
-import { chatConnectorAccessRoutes } from "../chat-connector-access";
+  chatThreadConnectorSelectionContract,
+  chatThreadEventsContract,
+} from "@okouai/api-contracts/contracts/chat-threads";
+import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
+import { builtinConnectorOauthStartContract } from "@okouai/api-contracts/contracts/connectors";
+import { builtinConnectorsSlugCallbackContract } from "@okouai/api-contracts/contracts/connectors-slug-callback";
+import { personalModelProvidersMainContract } from "@okouai/api-contracts/contracts/personal-model-providers";
+import { runnerDispatchEnvelopeSchema } from "@okouai/api-contracts/contracts/runner-dispatch";
+import {
+  runnersHeartbeatContract,
+  type ExecutionContext,
+} from "@okouai/api-contracts/contracts/runners";
+import { userModelPreferenceContract } from "@okouai/api-contracts/contracts/user-model-preference";
+import {
+  webhookCompleteContract,
+  webhookFirewallAuthContract,
+  webhookGoogleWorkspaceEventsContract,
+} from "@okouai/api-contracts/contracts/webhooks";
 import {
   workflowAutomationsContract,
+  workflowsCollectionContract,
   workflowsDetailContract,
 } from "@okouai/api-contracts/contracts/workflows";
 import { HttpResponse, http } from "msw";
-import { onTestFinished } from "vitest";
+import { beforeAll, describe, expect, it, onTestFinished } from "vitest";
 
+import { apiTestS3PresignedUrl } from "../../../__tests__/mocks";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { createApp } from "../../../app-factory";
-import { mockEnv, mockOptionalEnv } from "../../../lib/env";
+import {
+  TEST_WITH_FOUR_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE,
+  TEST_WITH_TRIPLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE,
+} from "../../../__tests__/test-timeouts";
+import { env, mockEnv, mockOptionalEnv, optionalEnv } from "../../../lib/env";
 import { now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import { flushWaitUntilForTest } from "../../context/wait-until";
-import { createDeferredPromise } from "../../utils";
-import type { ApiTestUser } from "./helpers/api-bdd";
-import { createConnectorBddApi } from "./helpers/api-bdd-connectors";
-import { createRunsApi } from "./helpers/api-bdd-runs";
-import { createRunReadsApi } from "./helpers/api-bdd-run-reads";
-import { createWorkflowsBddApi } from "./helpers/api-bdd-workflows";
-import { chatEventDisplayText } from "./helpers/chat-event";
-import { createRouteMocks } from "./helpers/route-test";
-import { installWorkflowVolumeS3Fixture } from "./helpers/workflow-volume-s3";
+import { settleIncludingAbort } from "../../utils";
 import { chatThreadRoutes } from "../chat-threads";
+import { chatThreadConnectorSelectionRoutes } from "../chat-threads-connector-selections";
 import { connectorAccountRoutes } from "../connector-accounts";
+import { builtinConnectorsRoutes } from "../connectors";
+import { builtinConnectorsSlugCallbackRoutes } from "../connectors-slug-callback";
+import { meModelProvidersUpsertRoutes } from "../me-model-providers-upsert";
+import { runnersRoutes } from "../runners";
+import { userModelPreferenceRoutes } from "../user-model-preference";
+import { webhooksAgentCompleteRoutes } from "../webhooks-agent-complete";
+import { webhooksAgentFirewallAuthRoutes } from "../webhooks-agent-firewall-auth";
 import { webhooksGoogleWorkspaceEventsRoutes } from "../webhooks-google-workspace-events";
 import { workflowAutomationsRoutes } from "../workflow-automations";
 import { workflowsRoutes } from "../workflows";
+import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
+import { mockClaudeCodeTokenEndpoint } from "./helpers/api-bdd-auth-device";
+import { createChatCallbacksApi } from "./helpers/api-bdd-chat-callbacks";
+import { secretTemplate } from "./helpers/api-bdd-firewall";
+import { createRunsApi } from "./helpers/api-bdd-runs";
+import { readProjectedChatEvents } from "./helpers/chat-event-test-reader";
+import { mockClerkUsers } from "./helpers/clerk-users";
+import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
-const connectors = createConnectorBddApi(context);
-const mocks = createRouteMocks(context);
-const runs = createRunsApi(context);
-const runReadsApi = createRunReadsApi(context);
-const workflows = createWorkflowsBddApi(context);
 
-const PUSH_AUDIENCE =
-  "https://api.okou.ai/api/webhooks/google-workspace-events";
-const PUSH_SERVICE_ACCOUNT =
-  "google-workspace-events-push@vm0-ai-488909.iam.gserviceaccount.com";
-const OIDC_CERT_KID = "google-workspace-events-test-key";
-const oidcKeyPair = generateKeyPairSync("rsa", { modulusLength: 2048 });
-const oidcPublicKeyPem = oidcKeyPair.publicKey.export({
-  type: "spki",
-  format: "pem",
+const GOOGLE_OAUTH_TOKEN_URL = "https://oauth2.googleapis.com/token";
+const GOOGLE_USERINFO_URL = "https://www.googleapis.com/oauth2/v2/userinfo";
+const WORKSPACE_EVENTS_API = "https://workspaceevents.googleapis.com/v1";
+const MEET_TRANSCRIPT = "google-meet-transcript-generated" as const;
+const MEET_TARGET = Object.freeze({
+  kind: "builtin" as const,
+  connectorSlug: "google-meet" as const,
+});
+const WORKSPACE_PUSH_SERVICE_ACCOUNT =
+  "workspace-events-push@okou-test.iam.gserviceaccount.com";
+const WORKSPACE_CERT_KID = "workspace-events-pubsub-signing-key";
+const SESSION = Object.freeze({ authorization: "Bearer clerk-session" });
+const CLAUDE_MODEL = "claude-fable-5-1";
+
+const workspaceSigningKey = generateKeyPairSync("rsa", {
+  modulusLength: 2048,
 });
 
-type OrgActor = ApiTestUser & { readonly orgId: string };
+const workflowsApi = setupApp({
+  context,
+  routes: workflowsRoutes,
+})(workflowsCollectionContract);
+const workflowsDetailApi = setupApp({
+  context,
+  routes: workflowsRoutes,
+})(workflowsDetailContract);
+const automationsApi = setupApp({
+  context,
+  routes: workflowAutomationsRoutes,
+})(workflowAutomationsContract);
+const accountsApi = setupApp({
+  context,
+  routes: connectorAccountRoutes,
+})(connectorAccountsContract);
+const chatSelectionsApi = setupApp({
+  context,
+  routes: chatThreadConnectorSelectionRoutes,
+})(chatThreadConnectorSelectionContract);
+const chatThreadEventsApi = setupApp({
+  context,
+  routes: chatThreadRoutes,
+})(chatThreadEventsContract);
+const meetOauthStartApi = setupApp({
+  context,
+  routes: builtinConnectorsRoutes,
+})(builtinConnectorOauthStartContract);
+const meetOauthCallbackApi = setupApp({
+  context,
+  routes: builtinConnectorsSlugCallbackRoutes,
+})(builtinConnectorsSlugCallbackContract);
+const workspaceWebhookApi = setupApp({
+  context,
+  routes: webhooksGoogleWorkspaceEventsRoutes,
+})(webhookGoogleWorkspaceEventsContract);
+const personalModelProvidersApi = setupApp({
+  context,
+  routes: meModelProvidersUpsertRoutes,
+})(personalModelProvidersMainContract);
+const runnersHeartbeatApi = setupApp({
+  context,
+  routes: runnersRoutes,
+})(runnersHeartbeatContract);
+const userModelPreferenceApi = setupApp({
+  context,
+  routes: userModelPreferenceRoutes,
+})(userModelPreferenceContract);
+const webhooksAgentCompleteApi = setupApp({
+  context,
+  routes: webhooksAgentCompleteRoutes,
+})(webhookCompleteContract);
+const firewallAuthApi = setupApp({
+  context,
+  routes: webhooksAgentFirewallAuthRoutes,
+})(webhookFirewallAuthContract);
 
-interface GoogleMeetProviderOptions {
-  readonly createStatus?: number;
-  readonly deleteStatus?: number;
-  readonly expireTime?: string;
-  readonly tokenExpiresInSeconds?: number;
-  readonly onDelete?: () => Promise<void>;
-}
-
-interface GoogleMeetProviderRecorder {
-  readonly accounts: Readonly<
-    Record<GoogleMeetProviderAccountKey, GoogleMeetProviderAccountRecorder>
-  >;
-  readonly createdNames: string[];
-  readonly deletedUrls: string[];
-  readonly operations: string[];
-  readonly runnerGroup: string;
-  readonly topicName: string;
-  readonly externalId: string;
-  renewCalls: number;
-  reactivateCalls: number;
-}
-
-type GoogleMeetProviderAccountKey = "primary" | "secondary";
-
-interface GoogleMeetProviderAccountRecorder {
-  readonly accessToken: string;
-  readonly createdNames: string[];
-  readonly deletedUrls: string[];
+interface MeetAccount {
   readonly email: string;
-  readonly externalId: string;
-  readonly key: GoogleMeetProviderAccountKey;
-  readonly operations: string[];
-  renewCalls: number;
-  reactivateCalls: number;
+  readonly accessToken: string;
+  readonly subject: string;
 }
 
-interface GoogleMeetFixture {
-  readonly volumeObjects: Map<string, Buffer>;
-  readonly actor: OrgActor;
-  readonly workflowId: string;
-  readonly connectorId: string;
-  readonly provider: GoogleMeetProviderRecorder;
+interface WorkspaceSubscriptionCall {
+  readonly name: string;
+  readonly token: string;
 }
 
-async function listActiveRuns(actor: OrgActor) {
-  const response = await runReadsApi.requestListLogs(
-    actor,
-    { limit: 20 },
-    [200],
-  );
-  expect(response.body.pagination).toMatchObject({ hasMore: false });
+interface WorkspaceEventsProvider {
+  readonly created: WorkspaceSubscriptionCall[];
+  readonly deleted: WorkspaceSubscriptionCall[];
+  readonly renewed: string[];
+  subscriptionsForToken(token: string): readonly string[];
+}
+
+function bearer(request: Request): string {
+  return request.headers.get("authorization")?.replace(/^Bearer /u, "") ?? "";
+}
+
+function meetAccount(label: string): MeetAccount {
+  const id = randomUUID();
+  const email = `meet-${label}-${id}@example.com`;
   return {
-    runs: response.body.data.filter((run) => {
-      return run.status === "pending" || run.status === "running";
-    }),
+    email,
+    accessToken: `meet-${label}-token-${id}`,
+    subject: `meet-subject-${email}`,
   };
 }
 
-function authHeaders(actor: OrgActor) {
-  mocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
-  return { authorization: "Bearer clerk-session" };
+function visibleMessageText(
+  parts: readonly { readonly type: string; readonly text?: string }[],
+): string {
+  return parts
+    .filter(
+      (part): part is { readonly type: "text"; readonly text: string } => {
+        return part.type === "text" && typeof part.text === "string";
+      },
+    )
+    .map((part) => {
+      return part.text;
+    })
+    .join("");
 }
 
-function automationsClient() {
-  return setupApp({ context, routes: workflowAutomationsRoutes })(
-    workflowAutomationsContract,
+function configureWorkspaceEventsPubSub(): void {
+  mockOptionalEnv(
+    "GOOGLE_WORKSPACE_EVENTS_PUBSUB_TOPIC_NAME",
+    `projects/okou-test/topics/workspace-events-${randomUUID()}`,
   );
-}
-
-function chatThreadConnectorSelectionsClient() {
-  return setupApp({ context, routes: chatThreadRoutes })(
-    chatThreadConnectorSelectionContract,
+  mockOptionalEnv(
+    "GOOGLE_WORKSPACE_EVENTS_PUBSUB_PUSH_AUDIENCE",
+    "https://api.okou.test/api/webhooks/google-workspace-events",
   );
-}
-
-function connectorAccountsClient() {
-  return setupApp({ context, routes: connectorAccountRoutes })(
-    connectorAccountsContract,
+  mockOptionalEnv(
+    "GOOGLE_WORKSPACE_EVENTS_PUBSUB_PUSH_SERVICE_ACCOUNT_EMAIL",
+    WORKSPACE_PUSH_SERVICE_ACCOUNT,
   );
-}
-
-function workflowDetailClient() {
-  return setupApp({ context, routes: workflowsRoutes })(
-    workflowsDetailContract,
+  server.use(
+    http.get("https://www.googleapis.com/oauth2/v1/certs", () => {
+      return HttpResponse.json({
+        [WORKSPACE_CERT_KID]: workspaceSigningKey.publicKey
+          .export({ format: "pem", type: "spki" })
+          .toString(),
+      });
+    }),
   );
 }
 
@@ -148,1075 +214,1075 @@ function encodeJwtPart(value: unknown): string {
   return Buffer.from(JSON.stringify(value), "utf8").toString("base64url");
 }
 
-function signedGoogleIdToken(): string {
-  const issuedAt = Math.floor(now() / 1000);
-  const header = { alg: "RS256", kid: OIDC_CERT_KID, typ: "JWT" };
-  const payload = {
-    aud: PUSH_AUDIENCE,
-    email: PUSH_SERVICE_ACCOUNT,
-    email_verified: true,
-    exp: issuedAt + 600,
-    iat: issuedAt,
-    iss: "https://accounts.google.com",
-    sub: "google-workspace-events-test-subject",
-  };
-  const signedContent = `${encodeJwtPart(header)}.${encodeJwtPart(payload)}`;
-  const signature = signData(
-    "RSA-SHA256",
-    Buffer.from(signedContent, "utf8"),
-    oidcKeyPair.privateKey,
-  );
-  return `${signedContent}.${signature.toString("base64url")}`;
+function workspacePubSubToken(): string {
+  const seconds = Math.floor(now() / 1000);
+  const signingInput = `${encodeJwtPart({ alg: "RS256", typ: "JWT", kid: WORKSPACE_CERT_KID })}.${encodeJwtPart(
+    {
+      iss: "https://accounts.google.com",
+      aud: optionalEnv("GOOGLE_WORKSPACE_EVENTS_PUBSUB_PUSH_AUDIENCE"),
+      sub: "workspace-events-push-service-account",
+      email: WORKSPACE_PUSH_SERVICE_ACCOUNT,
+      email_verified: true,
+      iat: seconds,
+      exp: seconds + 3600,
+    },
+  )}`;
+  const signer = createSign("RSA-SHA256");
+  signer.update(signingInput);
+  return `${signingInput}.${signer.sign(workspaceSigningKey.privateKey).toString("base64url")}`;
 }
 
-function configureGoogleMeetBoundaries(
-  options: GoogleMeetProviderOptions = {},
-): GoogleMeetProviderRecorder {
-  const testId = randomUUID();
-  const account = (
-    key: GoogleMeetProviderAccountKey,
-  ): GoogleMeetProviderAccountRecorder => {
-    return {
-      accessToken: `google-meet-access-${key}-${testId}`,
-      createdNames: [],
-      deletedUrls: [],
-      email: `meet-${key}-${testId}@example.test`,
-      externalId: `google-meet-user-${key}-${testId}`,
-      key,
-      operations: [],
-      renewCalls: 0,
-      reactivateCalls: 0,
-    };
-  };
-  const accounts = {
-    primary: account("primary"),
-    secondary: account("secondary"),
-  } as const;
-  const subscriptionAccounts = new Map<
-    string,
-    GoogleMeetProviderAccountRecorder
-  >();
-  const recorder: GoogleMeetProviderRecorder = {
-    accounts,
-    createdNames: [],
-    deletedUrls: [],
-    operations: [],
-    runnerGroup: `vm0/google-workspace-events-${testId}`,
-    topicName: `projects/vm0-ai-488909/topics/google-workspace-events-${testId}`,
-    externalId: accounts.primary.externalId,
-    renewCalls: 0,
-    reactivateCalls: 0,
-  };
+function mockWorkspaceEventsApi(): WorkspaceEventsProvider {
+  const created: WorkspaceSubscriptionCall[] = [];
+  const deleted: WorkspaceSubscriptionCall[] = [];
+  const renewed: string[] = [];
 
+  server.use(
+    http.get(`${WORKSPACE_EVENTS_API}/subscriptions`, () => {
+      return HttpResponse.json({ subscriptions: [] });
+    }),
+    http.post(`${WORKSPACE_EVENTS_API}/subscriptions`, ({ request }) => {
+      const name = `subscriptions/sub-${randomUUID().slice(0, 8)}`;
+      const token = bearer(request);
+      created.push({ name, token });
+      return HttpResponse.json({
+        done: true,
+        response: {
+          name,
+          state: "ACTIVE",
+          expireTime: new Date(now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+          notificationEndpoint: {
+            pubsubTopic:
+              optionalEnv("GOOGLE_WORKSPACE_EVENTS_PUBSUB_TOPIC_NAME") ?? "",
+          },
+        },
+      });
+    }),
+    http.patch(`${WORKSPACE_EVENTS_API}/subscriptions/:id`, ({ params }) => {
+      const name = `subscriptions/${String(params.id)}`;
+      renewed.push(name);
+      return HttpResponse.json({ done: true, response: { name } });
+    }),
+    http.delete(
+      `${WORKSPACE_EVENTS_API}/subscriptions/:id`,
+      ({ request, params }) => {
+        const name = `subscriptions/${String(params.id)}`;
+        deleted.push({ name, token: bearer(request) });
+        return HttpResponse.json({ done: true });
+      },
+    ),
+  );
+
+  return {
+    created,
+    deleted,
+    renewed,
+    subscriptionsForToken(token: string): readonly string[] {
+      return created
+        .filter((entry) => {
+          return entry.token === token;
+        })
+        .map((entry) => {
+          return entry.name;
+        });
+    },
+  };
+}
+
+function mockGoogleMeetOAuthByCode(
+  accountsByCode: Readonly<Record<string, MeetAccount>>,
+): void {
   mockEnv("OKOU_WEB_URL", "https://www.okou.ai");
   mockOptionalEnv("GOOGLE_OAUTH_CLIENT_ID", "google-client-id");
   mockOptionalEnv("GOOGLE_OAUTH_CLIENT_SECRET", "google-client-secret");
-  mockOptionalEnv("RUNNER_DEFAULT_GROUP", recorder.runnerGroup);
-  mockOptionalEnv(
-    "GOOGLE_WORKSPACE_EVENTS_PUBSUB_TOPIC_NAME",
-    recorder.topicName,
-  );
-  mockOptionalEnv(
-    "GOOGLE_WORKSPACE_EVENTS_PUBSUB_PUSH_AUDIENCE",
-    PUSH_AUDIENCE,
-  );
-  mockOptionalEnv(
-    "GOOGLE_WORKSPACE_EVENTS_PUBSUB_PUSH_SERVICE_ACCOUNT_EMAIL",
-    PUSH_SERVICE_ACCOUNT,
-  );
+
+  const accountsByToken = new Map<string, MeetAccount>();
+  for (const account of Object.values(accountsByCode)) {
+    accountsByToken.set(account.accessToken, account);
+  }
 
   server.use(
-    http.post("https://oauth2.googleapis.com/token", async ({ request }) => {
-      const requestBody = new URLSearchParams(await request.text());
-      const code = requestBody.get("code");
-      const refreshToken = requestBody.get("refresh_token");
-      const requestedAccount = Object.values(accounts).find((candidate) => {
-        return (
-          code === `google-meet-code-${candidate.key}` ||
-          refreshToken === `google-meet-refresh-${candidate.key}-${testId}`
+    http.post(GOOGLE_OAUTH_TOKEN_URL, async ({ request }) => {
+      const body = new URLSearchParams(await request.text());
+      if (body.get("grant_type") !== "authorization_code") {
+        return HttpResponse.json(
+          {
+            error: "invalid_grant",
+            error_description: "Refresh is not granted by this fixture",
+          },
+          { status: 400 },
         );
-      });
-      if (!requestedAccount) {
-        return HttpResponse.text("unknown test Google Meet account", {
-          status: 503,
-        });
+      }
+      const code = body.get("code") ?? "";
+      const account = accountsByCode[code];
+      if (!account) {
+        return HttpResponse.json(
+          { error: "invalid_grant", error_description: "Unknown code" },
+          { status: 400 },
+        );
       }
       return HttpResponse.json({
-        access_token: requestedAccount.accessToken,
-        refresh_token: `google-meet-refresh-${requestedAccount.key}-${testId}`,
-        expires_in: options.tokenExpiresInSeconds ?? 3600,
+        access_token: account.accessToken,
+        refresh_token: `refresh-${account.accessToken}`,
+        expires_in: 3600,
         token_type: "Bearer",
         scope:
           "https://www.googleapis.com/auth/meetings.space.readonly https://www.googleapis.com/auth/userinfo.email",
       });
     }),
-    http.get("https://www.googleapis.com/oauth2/v2/userinfo", ({ request }) => {
-      const requestedAccount = Object.values(accounts).find((candidate) => {
-        return (
-          request.headers.get("authorization") ===
-          `Bearer ${candidate.accessToken}`
-        );
-      });
-      if (!requestedAccount) {
-        return HttpResponse.text("unknown test Google Meet account", {
-          status: 503,
-        });
+    http.get(GOOGLE_USERINFO_URL, ({ request }) => {
+      const account = accountsByToken.get(bearer(request));
+      if (!account) {
+        return HttpResponse.json({ error: "unauthorized" }, { status: 401 });
       }
       return HttpResponse.json({
-        id: requestedAccount.externalId,
-        email: requestedAccount.email,
-        name: `Google Meet ${requestedAccount.key} User`,
+        id: account.subject,
+        email: account.email,
+        name: "BDD Meet User",
       });
     }),
-    http.post(
-      "https://workspaceevents.googleapis.com/v1/subscriptions",
-      async ({ request }) => {
-        const requestText = await request.text();
-        const requestedAccount = Object.values(accounts).find((candidate) => {
-          return (
-            request.headers.get("authorization") ===
-            `Bearer ${candidate.accessToken}`
-          );
-        });
-        if (
-          !requestedAccount ||
-          !requestText.includes(recorder.topicName) ||
-          !requestText.includes(requestedAccount.externalId)
-        ) {
-          return HttpResponse.text("unowned test subscription", {
-            status: 503,
-          });
-        }
-        const call = requestedAccount.createdNames.length + 1;
-        const subscriptionName = `subscriptions/google-meet-${testId}-${requestedAccount.key}-${call}`;
-        subscriptionAccounts.set(subscriptionName, requestedAccount);
-        recorder.createdNames.push(subscriptionName);
-        recorder.operations.push(`create:${subscriptionName}`);
-        requestedAccount.createdNames.push(subscriptionName);
-        requestedAccount.operations.push(`create:${subscriptionName}`);
-        const body: unknown = JSON.parse(requestText);
-        expect(body).toStrictEqual({
-          targetResource: `//cloudidentity.googleapis.com/users/${requestedAccount.externalId}`,
-          eventTypes: ["google.workspace.meet.transcript.v2.fileGenerated"],
-          notificationEndpoint: { pubsubTopic: recorder.topicName },
-          ttl: "604800s",
-        });
-        if (options.createStatus !== undefined) {
-          return HttpResponse.text("create failed", {
-            status: options.createStatus,
-          });
-        }
-        return HttpResponse.json({
-          response: {
-            name: subscriptionName,
-            targetResource: `//cloudidentity.googleapis.com/users/${requestedAccount.externalId}`,
-            eventTypes: ["google.workspace.meet.transcript.v2.fileGenerated"],
-            notificationEndpoint: { pubsubTopic: recorder.topicName },
-            state: "ACTIVE",
-            expireTime: options.expireTime ?? "2099-08-14T00:00:00.000Z",
-          },
-        });
-      },
-    ),
-    http.patch(
-      /^https:\/\/workspaceevents\.googleapis\.com\/v1\/subscriptions\/[^/]+$/,
-      async ({ request }) => {
-        const subscriptionName = new URL(request.url).pathname.slice(
-          "/v1/".length,
-        );
-        const requestedAccount = subscriptionAccounts.get(subscriptionName);
-        if (!requestedAccount) {
-          return HttpResponse.text("unowned test subscription", {
-            status: 503,
-          });
-        }
-        recorder.renewCalls += 1;
-        recorder.operations.push(`renew:${subscriptionName}`);
-        requestedAccount.renewCalls += 1;
-        requestedAccount.operations.push(`renew:${subscriptionName}`);
-        expect(request.headers.get("authorization")).toBe(
-          `Bearer ${requestedAccount.accessToken}`,
-        );
-        expect(new URL(request.url).searchParams.get("updateMask")).toBe("ttl");
-        await expect(request.json()).resolves.toStrictEqual({
-          name: subscriptionName,
-          ttl: "604800s",
-        });
-        return HttpResponse.json({
-          response: {
-            name: subscriptionName,
-            state: "ACTIVE",
-            expireTime: "2099-08-14T00:00:00.000Z",
-          },
-        });
-      },
-    ),
-    http.post(
-      /^https:\/\/workspaceevents\.googleapis\.com\/v1\/subscriptions\/[^/]+:reactivate$/,
-      ({ request }) => {
-        const subscriptionName = new URL(request.url).pathname
-          .slice("/v1/".length)
-          .replace(/:reactivate$/, "");
-        const requestedAccount = subscriptionAccounts.get(subscriptionName);
-        if (!requestedAccount) {
-          return HttpResponse.text("unowned test subscription", {
-            status: 503,
-          });
-        }
-        recorder.reactivateCalls += 1;
-        requestedAccount.reactivateCalls += 1;
-        return HttpResponse.json({
-          response: {
-            name: subscriptionName,
-            state: "ACTIVE",
-            expireTime: "2099-08-14T00:00:00.000Z",
-          },
-        });
-      },
-    ),
-    http.delete(
-      /^https:\/\/workspaceevents\.googleapis\.com\/v1\/subscriptions\/[^/]+$/,
-      async ({ request }) => {
-        const url = new URL(request.url);
-        const subscriptionName = url.pathname.slice("/v1/".length);
-        const requestedAccount = subscriptionAccounts.get(subscriptionName);
-        if (!requestedAccount) {
-          return HttpResponse.text("unowned test subscription", {
-            status: 503,
-          });
-        }
-        recorder.deletedUrls.push(url.toString());
-        recorder.operations.push(`delete-start:${subscriptionName}`);
-        requestedAccount.deletedUrls.push(url.toString());
-        requestedAccount.operations.push(`delete-start:${subscriptionName}`);
-        expect(request.headers.get("authorization")).toBe(
-          `Bearer ${requestedAccount.accessToken}`,
-        );
-        expect(url.searchParams.get("allowMissing")).toBe("true");
-        await options.onDelete?.();
-        recorder.operations.push(`delete-end:${subscriptionName}`);
-        requestedAccount.operations.push(`delete-end:${subscriptionName}`);
-        if (options.deleteStatus !== undefined) {
-          return HttpResponse.text("delete failed", {
-            status: options.deleteStatus,
-          });
-        }
-        return HttpResponse.json({
-          name: `operations/delete-google-meet-${testId}`,
-          done: true,
-        });
-      },
-    ),
-    http.get("https://www.googleapis.com/oauth2/v1/certs", () => {
-      return HttpResponse.json(
-        { [OIDC_CERT_KID]: oidcPublicKeyPem },
-        { headers: { "cache-control": "no-cache" } },
-      );
-    }),
   );
-  return recorder;
 }
 
-async function connectGoogleMeet(
-  actor: OrgActor,
-  provider: GoogleMeetProviderRecorder,
-  accountKey: GoogleMeetProviderAccountKey = "primary",
-  account?: ConnectorAccountMutationIntent,
-): Promise<string> {
-  const started = await connectors.startOauth(
-    actor,
-    "google-meet",
-    "oauth",
-    account,
-  );
-  const state = new URL(started.authorizationUrl).searchParams.get("state");
+async function completeMeetOauth(
+  authorizationUrl: string,
+  code: string,
+): Promise<void> {
+  const state = new URL(authorizationUrl).searchParams.get("state");
   if (!state) {
     throw new Error("Expected Google Meet OAuth state");
   }
-  const callback = await connectors.completeOauthCallbackResult("google-meet", {
-    code: `google-meet-code-${accountKey}`,
-    state,
-  });
-  expect(callback.body, JSON.stringify(callback.body)).toStrictEqual({
-    status: "success",
-    username: `Google Meet ${accountKey} User`,
-  });
-  const accounts = await connectors.listBuiltinConnectorAccounts(
-    actor,
-    "google-meet",
-  );
-  const connectedAccount = accounts.find((candidate) => {
-    return candidate.externalEmail === provider.accounts[accountKey].email;
-  });
-  if (!connectedAccount) {
-    throw new Error(`Expected the ${accountKey} Google Meet connector account`);
-  }
-  return connectedAccount.id;
-}
-
-async function setupFixture(
-  options: GoogleMeetProviderOptions = {},
-): Promise<GoogleMeetFixture> {
-  const provider = configureGoogleMeetBoundaries(options);
-  await runs.registerDirectRunner(provider.runnerGroup);
-  const { actor } = await workflows.setupWorkflowOrg();
-  if (!actor.orgId) {
-    throw new Error("Expected an org-scoped workflow actor");
-  }
-  // Fable keeps Google Meet workflow runs on the native Runner execution route.
-  await runs.ensurePersonalSubscriptionModel(actor, {
-    model: "claude-fable-5-1",
-  });
-  const orgActor: OrgActor = { ...actor, orgId: actor.orgId };
-  const { objects: volumeObjects } = installWorkflowVolumeS3Fixture(context);
-  const workflowId = await workflows.createWorkflow(orgActor, {
-    name: `google-meet-transcript-${randomUUID()}`,
-  });
-  const connectorId = await connectGoogleMeet(orgActor, provider);
-  return {
-    volumeObjects,
-    actor: orgActor,
-    workflowId,
-    connectorId,
-    provider,
-  };
-}
-
-async function createMeetAutomation(
-  fixture: GoogleMeetFixture,
-  enabled?: boolean,
-  workflowId: string = fixture.workflowId,
-) {
-  return await accept(
-    automationsClient().create({
-      headers: authHeaders(fixture.actor),
-      params: { workflowId },
-      body: {
-        kind: "event",
-        eventType: "google-meet-transcript-generated",
-        ...(enabled === undefined ? {} : { enabled }),
-      },
+  const completed = await accept(
+    meetOauthCallbackApi.callback({
+      headers: {},
+      params: { connectorSlug: "google-meet" },
+      query: { code, state, responseMode: "json" },
     }),
-    [201],
+    [200],
   );
+  expect(completed.body.status).toBe("success");
 }
 
-function pubSubPushBody(
-  subscriptionName: string,
-  eventId: string = randomUUID(),
-): string {
+function pushMeetTranscript(subscriptionName: string) {
+  const transcriptName = `conferenceRecords/rec-${randomUUID().slice(0, 8)}/transcripts/tr-${randomUUID().slice(0, 8)}`;
   const cloudEvent = {
-    id: `google-meet-cloud-event-${eventId}`,
+    id: `ce-${randomUUID()}`,
     source: `//workspaceevents.googleapis.com/${subscriptionName}`,
-    subject: `//meet.googleapis.com/conferenceRecords/${eventId}`,
     type: "google.workspace.meet.transcript.v2.fileGenerated",
-    time: "2026-08-14T01:00:00.000Z",
+    time: new Date(now()).toISOString(),
     specversion: "1.0",
     data: {
-      transcript: {
-        name: `conferenceRecords/${eventId}/transcripts/${eventId}`,
-      },
+      transcript: { name: transcriptName },
     },
   };
-  return JSON.stringify({
-    message: {
-      messageId: `google-meet-pubsub-${eventId}`,
-      data: Buffer.from(JSON.stringify(cloudEvent), "utf8").toString("base64"),
-    },
-    subscription:
-      "projects/vm0-ai-488909/subscriptions/google-workspace-events-push",
-  });
-}
-
-async function postWorkspaceEvent(subscriptionName: string): Promise<Response> {
-  return await createApp({
-    signal: context.signal,
-    routes: webhooksGoogleWorkspaceEventsRoutes,
-  }).request("/api/webhooks/google-workspace-events", {
-    method: "POST",
-    headers: {
-      authorization: `Bearer ${signedGoogleIdToken()}`,
-      "content-type": "application/json",
-    },
-    body: pubSubPushBody(subscriptionName),
+  return workspaceWebhookApi.post({
+    body: JSON.stringify({
+      message: {
+        messageId: `pubsub-${randomUUID()}`,
+        data: Buffer.from(JSON.stringify(cloudEvent), "utf8").toString(
+          "base64",
+        ),
+      },
+      subscription: "projects/okou-test/subscriptions/workspace-events-push",
+    }),
+    extraHeaders: { authorization: `Bearer ${workspacePubSubToken()}` },
   });
 }
 
 describe("Google Workspace Events subscription lifecycle", () => {
-  it("dispatches a visible Google Meet transcript message", async () => {
-    const fixture = await setupFixture();
-    const created = await createMeetAutomation(fixture);
-    if (!created.body.chatThreadId) {
-      throw new Error("Expected the automation to bind a chat thread");
-    }
-    const subscriptionName = fixture.provider.createdNames[0];
-    if (!subscriptionName) {
-      throw new Error("Expected a Workspace Events subscription");
-    }
+  const bdd = createBddApi(context);
+  const runsApi = createRunsApi(context);
+  const chatCallbacks = createChatCallbacksApi(context);
 
-    const response = await postWorkspaceEvent(subscriptionName);
-    expect(response.status).toBe(200);
-    await expect(response.json()).resolves.toStrictEqual({
-      success: true,
-      watchStates: 1,
-      dispatched: 1,
-      duplicates: 0,
+  beforeAll(async () => {
+    context.mocks.clerk.authenticateRequest.mockResolvedValue({
+      isAuthenticated: false,
     });
-
-    await flushWaitUntilForTest();
-    const events = await workflows.readThreadEvents(created.body.chatThreadId);
-    const visibleEvent = events.find((event) => {
-      return (
-        event.eventType === "input.automation" ||
-        event.eventType === "input.prompt"
+    const warmupId = randomUUID();
+    const warmed = await settleIncludingAbort(async () => {
+      await Promise.all([
+        accept(
+          workflowsApi.create({
+            headers: {},
+            body: { name: "warmup-meet", visibility: "private" },
+          }),
+          [401],
+        ),
+        accept(
+          workflowsDetailApi.copy({
+            headers: {},
+            params: { workflowId: warmupId },
+            body: {},
+          }),
+          [401],
+        ),
+        accept(
+          automationsApi.get({ headers: {}, params: { id: warmupId } }),
+          [401],
+        ),
+        accept(
+          accountsApi.connections({ headers: {}, query: MEET_TARGET }),
+          [401],
+        ),
+        accept(
+          chatSelectionsApi.get({ headers: {}, params: { id: warmupId } }),
+          [401],
+        ),
+        accept(
+          chatThreadEventsApi.catchUp({
+            headers: {},
+            body: [[warmupId, 0]],
+          }),
+          [401],
+        ),
+        accept(
+          meetOauthStartApi.start({
+            headers: {},
+            params: { connectorSlug: "google-meet" },
+            body: { authMethod: "oauth", account: { intent: "add" } },
+          }),
+          [401],
+        ),
+        accept(
+          workspaceWebhookApi.post({
+            body: "{}",
+          }),
+          [401, 503],
+        ),
+        accept(
+          personalModelProvidersApi.upsert({
+            headers: {},
+            body: { type: "claude-code-oauth-token", secret: "warmup" },
+          }),
+          [401],
+        ),
+        accept(
+          runnersHeartbeatApi.heartbeat({
+            headers: {},
+            body: {
+              runnerId: warmupId,
+              runnerHostname: `runner-${warmupId}.okou.app`,
+              group: "vm0/warmup",
+              snapshotGeneration: 1,
+              snapshotSequence: 1,
+              totalVcpu: 8,
+              totalMemoryMb: 16_384,
+              maxConcurrent: 2,
+              allocatedVcpu: 0,
+              allocatedMemoryMb: 0,
+              runningCount: 0,
+              admittableProfiles: ["vm0/default"],
+              heldSandboxStates: [],
+              heldHomeStates: [],
+              activeReuseProducers: [],
+              mode: "running",
+              ingressServiceActive: true,
+            },
+          }),
+          [401],
+        ),
+        accept(
+          userModelPreferenceApi.update({
+            headers: {},
+            body: { selectedModel: CLAUDE_MODEL, serviceTier: null },
+          }),
+          [401],
+        ),
+        accept(
+          webhooksAgentCompleteApi.complete({
+            headers: {},
+            body: { runId: warmupId, exitCode: 0 },
+          }),
+          [401],
+        ),
+        accept(
+          firewallAuthApi.resolve({
+            headers: {},
+            body: { authHeaders: {} },
+          }),
+          [401],
+        ),
+        bdd.requestReadMe(null, [401]),
+      ]);
+      configureWorkspaceEventsPubSub();
+      await accept(
+        workspaceWebhookApi.post({
+          body: "{}",
+          extraHeaders: { authorization: `Bearer ${workspacePubSubToken()}` },
+        }),
+        [400],
       );
+      server.resetHandlers();
+      runnerDispatchEnvelopeSchema.safeParse({});
     });
-    if (!visibleEvent) {
-      throw new Error("Expected a visible Google Meet automation event");
+    if (!warmed.ok) {
+      throw warmed.error;
     }
-    expect(chatEventDisplayText(visibleEvent)).toBe(
-      "A Google Meet transcript is ready.",
-    );
-    const selections = await accept(
-      chatThreadConnectorSelectionsClient().get({
-        headers: authHeaders(fixture.actor),
-        params: { id: created.body.chatThreadId },
-      }),
-      [200],
-    );
-    expect(selections.body.selections).toStrictEqual([]);
-
-    await accept(
-      automationsClient().delete({
-        headers: authHeaders(fixture.actor),
-        params: { id: created.body.id },
-      }),
-      [204],
-    );
   });
 
-  it("does not create provider state for a disabled automation", async () => {
-    const fixture = await setupFixture();
-    const created = await createMeetAutomation(fixture, false);
+  function createDirectRunnerForMeet() {
+    const group = `vm0/meet-${randomUUID().slice(0, 8)}`;
+    const runnerId = randomUUID();
+    const hostname = `runner-${runnerId}.okou.app`;
+    const acceptedOrder: string[] = [];
+    const acceptedByRunId = new Map<string, ExecutionContext>();
+    const completedRunIds = new Set<string>();
+    const bucket = env("R2_USER_STORAGES_BUCKET_NAME");
+    const kmsKey = env("SECRETS_KMS_KEY_ID");
 
-    expect(created.body.enabled).toBeFalsy();
-    expect(fixture.provider.operations).toStrictEqual([]);
+    chatCallbacks.acceptChatObjectStorage();
+    runsApi.acceptStorageDownloads();
+    runsApi.acceptTelemetryIngest();
+    chatCallbacks.disableVapid();
+    mockClaudeCodeTokenEndpoint();
+    mockOptionalEnv("OPENROUTER_API_KEY", undefined);
+    mockOptionalEnv("RUNNER_DEFAULT_GROUP", group);
 
-    await accept(
-      automationsClient().delete({
-        headers: authHeaders(fixture.actor),
-        params: { id: created.body.id },
-      }),
-      [204],
-    );
-    expect(fixture.provider.operations).toStrictEqual([]);
-  });
-
-  it("rolls back active create and enable when provider setup fails", async () => {
-    const fixture = await setupFixture({ createStatus: 503 });
-    const disabled = await createMeetAutomation(fixture, false);
-
-    const enableFailure = await accept(
-      automationsClient().enable({
-        headers: authHeaders(fixture.actor),
-        params: { id: disabled.body.id },
-      }),
-      [400],
-    );
-    expect(enableFailure.body.error.message).toContain(
-      "Failed to ensure Google Meet Workspace Events subscription",
-    );
-
-    const createFailure = await accept(
-      automationsClient().create({
-        headers: authHeaders(fixture.actor),
-        params: { workflowId: fixture.workflowId },
-        body: {
-          kind: "event",
-          eventType: "google-meet-transcript-generated",
+    server.use(
+      http.post(
+        `https://${hostname}/runners/${runnerId}/control/runs/:runId/dispatch`,
+        async ({ request, params }) => {
+          const encoding = request.headers.get("content-encoding");
+          const rawBytes = Buffer.from(await request.arrayBuffer());
+          const text =
+            encoding === "gzip"
+              ? gunzipSync(rawBytes).toString("utf8")
+              : rawBytes.toString("utf8");
+          const envelope = runnerDispatchEnvelopeSchema.parse(JSON.parse(text));
+          if (
+            envelope.runnerId !== runnerId ||
+            envelope.executionContext.runId !== params.runId
+          ) {
+            throw new Error("Unexpected direct Runner dispatch identity");
+          }
+          acceptedByRunId.set(
+            envelope.executionContext.runId,
+            envelope.executionContext,
+          );
+          acceptedOrder.push(envelope.executionContext.runId);
+          return HttpResponse.json({
+            runnerId,
+            heartbeatGeneration: 1,
+            runId: envelope.executionContext.runId,
+            disposition: "accepted",
+          });
         },
-      }),
-      [400],
-    );
-    expect(createFailure.body.error.message).toContain(
-      "Failed to ensure Google Meet Workspace Events subscription",
+      ),
     );
 
-    const listed = await accept(
-      automationsClient().list({
-        headers: authHeaders(fixture.actor),
-        params: { workflowId: fixture.workflowId },
-      }),
-      [200],
-    );
-    expect(listed.body).toHaveLength(1);
-    expect(listed.body[0]).toMatchObject({
-      id: disabled.body.id,
-      enabled: false,
-    });
-    expect(fixture.provider.createdNames).toHaveLength(2);
-    expect(fixture.provider.deletedUrls).toStrictEqual([]);
-  });
-
-  it("keeps a shared subscription until the last enabled consumer", async () => {
-    const fixture = await setupFixture();
-    const first = await createMeetAutomation(fixture);
-    const second = await createMeetAutomation(fixture);
-    expect(fixture.provider.createdNames).toHaveLength(1);
-
-    await accept(
-      automationsClient().disable({
-        headers: authHeaders(fixture.actor),
-        params: { id: first.body.id },
-      }),
-      [200],
-    );
-    expect(fixture.provider.deletedUrls).toStrictEqual([]);
-
-    await accept(
-      automationsClient().delete({
-        headers: authHeaders(fixture.actor),
-        params: { id: second.body.id },
-      }),
-      [204],
-    );
-    expect(fixture.provider.deletedUrls).toHaveLength(1);
-    expect(fixture.provider.deletedUrls[0]).toContain(
-      `/${fixture.provider.createdNames[0]}?allowMissing=true`,
-    );
-
-    await accept(
-      automationsClient().delete({
-        headers: authHeaders(fixture.actor),
-        params: { id: first.body.id },
-      }),
-      [204],
-    );
-    expect(fixture.provider.deletedUrls).toHaveLength(1);
-  });
-
-  it("isolates simultaneous subscriptions and dispatch by selected account", async () => {
-    const fixture = await setupFixture();
-
-    const primary = await createMeetAutomation(fixture);
-    const secondaryConnectorId = await connectGoogleMeet(
-      fixture.actor,
-      fixture.provider,
-      "secondary",
-      { intent: "add", displayName: "Secondary Google Meet" },
-    );
-    const secondaryWorkflowId = await workflows.createWorkflow(fixture.actor, {
-      name: `google-meet-secondary-${randomUUID()}`,
-    });
-    const secondary = await createMeetAutomation(
-      fixture,
-      true,
-      secondaryWorkflowId,
-    );
-    if (!secondary.body.chatThreadId) {
-      throw new Error("Expected a secondary automation chat thread");
+    async function completeRun(runId: string): Promise<void> {
+      const exec = acceptedByRunId.get(runId);
+      if (!exec) {
+        throw new Error(`Missing execution context for run ${runId}`);
+      }
+      await accept(
+        webhooksAgentCompleteApi.complete({
+          headers: { authorization: `Bearer ${exec.sandboxToken}` },
+          body: {
+            runId,
+            exitCode: 0,
+            completion: {
+              cliAgentType: "claude-code",
+              cliAgentSessionId: `complete-${runId}`,
+              cliAgentSessionHistoryDisposition: "native_only",
+              storageOutputs: [],
+            },
+          },
+        }),
+        [200],
+      );
+      completedRunIds.add(runId);
+      await flushWaitUntilForTest();
     }
-    await accept(
-      chatThreadConnectorSelectionsClient().update({
-        headers: authHeaders(fixture.actor),
-        params: { id: secondary.body.chatThreadId },
-        body: {
-          connectionId: secondaryConnectorId,
-          target: { kind: "builtin", connectorSlug: "google-meet" },
+
+    onTestFinished(async () => {
+      const previousGroup = optionalEnv("RUNNER_DEFAULT_GROUP");
+      mockEnv("R2_USER_STORAGES_BUCKET_NAME", bucket);
+      mockEnv("SECRETS_KMS_KEY_ID", kmsKey);
+      mockOptionalEnv("RUNNER_DEFAULT_GROUP", group);
+      context.mocks.ably.publish.mockResolvedValue(undefined);
+      context.mocks.s3.getSignedUrl.mockImplementation(
+        (_client: unknown, command: unknown) => {
+          return Promise.resolve(apiTestS3PresignedUrl(command));
         },
-      }),
-      [200],
-    );
-    const primarySubscription =
-      fixture.provider.accounts.primary.createdNames[0];
-    const secondarySubscription =
-      fixture.provider.accounts.secondary.createdNames[0];
-    if (!primarySubscription || !secondarySubscription) {
-      throw new Error("Expected one subscription for each Google Meet account");
-    }
-    expect(fixture.provider.accounts.primary.createdNames).toHaveLength(1);
-    expect(fixture.provider.accounts.secondary.createdNames).toHaveLength(1);
-
-    await runs.heartbeatRunner(fixture.provider.runnerGroup);
-    const primaryPush = await postWorkspaceEvent(primarySubscription);
-    expect(primaryPush.status).toBe(200);
-    await expect(primaryPush.json()).resolves.toMatchObject({
-      watchStates: 1,
-      dispatched: 1,
+      );
+      const cleaned = await settleIncludingAbort(async () => {
+        await flushWaitUntilForTest();
+        for (let pass = 0; pass < 6; pass += 1) {
+          const pending = acceptedOrder.filter((runId) => {
+            return !completedRunIds.has(runId);
+          });
+          if (pending.length === 0) {
+            break;
+          }
+          await Promise.all(
+            pending.map((runId) => {
+              return completeRun(runId);
+            }),
+          );
+        }
+      });
+      mockOptionalEnv("RUNNER_DEFAULT_GROUP", previousGroup);
+      if (!cleaned.ok) {
+        throw cleaned.error;
+      }
     });
-    await flushWaitUntilForTest();
-    const primaryRunIds = new Set(
-      (await listActiveRuns(fixture.actor)).runs.map((run) => {
-        return run.id;
-      }),
-    );
-    const secondaryPush = await postWorkspaceEvent(secondarySubscription);
-    expect(secondaryPush.status).toBe(200);
-    await expect(secondaryPush.json()).resolves.toMatchObject({
-      watchStates: 1,
-      dispatched: 1,
-    });
-    await flushWaitUntilForTest();
-    const secondaryRunId = (await listActiveRuns(fixture.actor)).runs.find(
-      (run) => {
-        return !primaryRunIds.has(run.id);
-      },
-    )?.id;
-    if (!secondaryRunId) {
-      throw new Error("Expected a queued run for the secondary account");
-    }
-    const execution = await runs.executionInput(secondaryRunId);
-    expect(
-      Object.values(execution.secretConnectorMetadataMap ?? {}),
-    ).toContainEqual(
-      expect.objectContaining({ sourceId: secondaryConnectorId }),
-    );
 
-    await createMeetAutomation(fixture);
-    expect(fixture.provider.accounts.primary.createdNames).toHaveLength(1);
-    expect(fixture.provider.accounts.secondary.createdNames).toHaveLength(1);
-    expect(primary.body.chatThreadId).not.toBe(secondary.body.chatThreadId);
-  });
-
-  it("does not restore a denied Meet default after deleting the last allowed account", async () => {
-    const fixture = await setupFixture();
-
-    const created = await createMeetAutomation(fixture);
-    const threadId = created.body.chatThreadId;
-    if (!threadId) {
-      throw new Error("Expected a Meet automation Chat");
-    }
-    const primary = await connectors.readDefaultBuiltinAccount(
-      fixture.actor,
-      "google-meet",
-    );
-    const primarySubscription =
-      fixture.provider.accounts.primary.createdNames[0];
-    if (!primarySubscription) {
-      throw new Error("Expected the primary Meet subscription");
-    }
-    const secondaryId = await connectGoogleMeet(
-      fixture.actor,
-      fixture.provider,
-      "secondary",
-      { intent: "add", displayName: "Secondary Google Meet" },
-    );
-    const target = { kind: "builtin", connectorSlug: "google-meet" } as const;
-    const access = setupApp({ context, routes: chatConnectorAccessRoutes })(
-      chatConnectorAccessContract,
-    );
-    const selected = await accept(
-      access.setThreadOverride({
-        headers: authHeaders(fixture.actor),
-        params: { threadId, connectionId: primary.id },
-        body: { target, enabled: false },
-      }),
-      [200],
-    );
-    expect(selected.body.currentConnectionId).toBe(secondaryId);
-    await connectors.deleteBuiltinConnectorAccount(
-      fixture.actor,
-      "google-meet",
-      secondaryId,
-    );
-    const current = await accept(
-      access.getThread({
-        headers: authHeaders(fixture.actor),
-        params: { threadId },
-        query: target,
-      }),
-      [200],
-    );
-    expect(current.body).toMatchObject({
-      currentConnectionId: null,
-      available: false,
-    });
-    const oldSource = await postWorkspaceEvent(primarySubscription);
-    expect(oldSource.status).toBe(200);
-    await expect(oldSource.json()).resolves.toMatchObject({
-      watchStates: 0,
-      dispatched: 0,
-    });
-    await accept(
-      automationsClient().disable({
-        headers: authHeaders(fixture.actor),
-        params: { id: created.body.id },
-      }),
-      [200],
-    );
-    await accept(
-      automationsClient().enable({
-        headers: authHeaders(fixture.actor),
-        params: { id: created.body.id },
-      }),
-      [400],
-    );
-  });
-
-  async function setupCopiedMeetAutomation() {
-    const fixture = await setupFixture();
-    const source = await createMeetAutomation(fixture);
-    if (!source.body.chatThreadId) {
-      throw new Error("Expected a source automation chat thread");
-    }
-    const secondaryConnectorId = await connectGoogleMeet(
-      fixture.actor,
-      fixture.provider,
-      "secondary",
-      { intent: "add", displayName: "Secondary Google Meet" },
-    );
-    await accept(
-      chatThreadConnectorSelectionsClient().update({
-        headers: authHeaders(fixture.actor),
-        params: { id: source.body.chatThreadId },
-        body: {
-          connectionId: secondaryConnectorId,
-          target: { kind: "builtin", connectorSlug: "google-meet" },
-        },
-      }),
-      [200],
-    );
-    const sourceSubscription =
-      fixture.provider.accounts.secondary.createdNames[0];
-    if (!sourceSubscription) {
-      throw new Error("Expected a source-account subscription");
+    async function registerRunner(): Promise<void> {
+      await accept(
+        runnersHeartbeatApi.heartbeat({
+          headers: {
+            authorization: `Bearer vm0_official_${env("OFFICIAL_RUNNER_SECRET")}`,
+          },
+          body: {
+            runnerId,
+            runnerHostname: hostname,
+            group,
+            snapshotGeneration: 1,
+            snapshotSequence: 1,
+            totalVcpu: 16,
+            totalMemoryMb: 32_768,
+            maxConcurrent: 4,
+            allocatedVcpu: 0,
+            allocatedMemoryMb: 0,
+            runningCount: 0,
+            admittableProfiles: ["vm0/default"],
+            heldSandboxStates: [],
+            heldHomeStates: [],
+            activeReuseProducers: [],
+            mode: "running",
+            ingressServiceActive: true,
+          },
+        }),
+        [200],
+      );
     }
 
-    installWorkflowVolumeS3Fixture(context, fixture.volumeObjects);
-    const copied = await accept(
-      workflowDetailClient().copy({
-        headers: authHeaders(fixture.actor),
-        params: { workflowId: fixture.workflowId },
-        body: {},
-      }),
-      [201],
-    );
-    const copiedAutomations = await accept(
-      automationsClient().list({
-        headers: authHeaders(fixture.actor),
-        params: { workflowId: copied.body.id },
-      }),
-      [200],
-    );
-    const copiedSubscription =
-      fixture.provider.accounts.primary.createdNames[1];
-    if (!copiedSubscription) {
-      throw new Error("Expected a destination-default subscription");
-    }
     return {
-      fixture,
-      copiedAutomations,
-      sourceSubscription,
-      copiedSubscription,
+      acceptedOrder,
+      acceptedByRunId,
+      completeRun,
+      registerRunner,
     };
   }
 
-  it("reprojects a copied automation to the destination default account", async () => {
-    const { fixture, copiedAutomations } = await setupCopiedMeetAutomation();
-    expect(copiedAutomations.body).toContainEqual(
-      expect.objectContaining({
-        kind: "event",
-        eventType: "google-meet-transcript-generated",
-        enabled: true,
-      }),
+  function signInMember(actor: ApiTestUser) {
+    const mocks = createRouteMocks(context);
+    mocks.clerk.session(
+      actor.userId,
+      actor.orgId,
+      actor.orgRole ?? "org:admin",
     );
-    expect(fixture.provider.accounts.secondary.deletedUrls).toStrictEqual([]);
-  });
+    const emailId = `email_${actor.userId}`;
+    mockClerkUsers(context, [
+      {
+        id: actor.userId,
+        emailAddresses: [{ id: emailId, emailAddress: actor.email }],
+        primaryEmailAddressId: emailId,
+        firstName: "BDD",
+        lastName: "Meet",
+      },
+    ]);
+    return SESSION;
+  }
 
-  it("dispatches source and copied Google Meet automations independently", async () => {
-    const { sourceSubscription, copiedSubscription } =
-      await setupCopiedMeetAutomation();
-    const sourcePush = await postWorkspaceEvent(sourceSubscription);
-    expect(sourcePush.status).toBe(200);
-    await expect(sourcePush.json()).resolves.toMatchObject({
-      watchStates: 1,
-      dispatched: 1,
-    });
-    const copiedPush = await postWorkspaceEvent(copiedSubscription);
-    expect(copiedPush.status).toBe(200);
-    await expect(copiedPush.json()).resolves.toMatchObject({
-      watchStates: 1,
-      dispatched: 1,
-    });
-  });
+  async function setupMeetRunMember(options: {
+    readonly accounts: readonly MeetAccount[];
+    readonly workflowVisibility?: "private" | "public";
+    readonly extraWorkflows?: number;
+  }) {
+    configureWorkspaceEventsPubSub();
+    const provider = mockWorkspaceEventsApi();
+    const runner = createDirectRunnerForMeet();
+    const actor = bdd.user({ orgRole: "org:admin" });
+    if (!actor.orgId) {
+      throw new Error("Expected org-scoped actor");
+    }
+    const authenticate = () => {
+      return signInMember(actor);
+    };
+    authenticate();
 
-  it("retains the exact subscription after reconnecting the same account", async () => {
-    const fixture = await setupFixture();
-    await createMeetAutomation(fixture);
-    const originalSubscription =
-      fixture.provider.accounts.primary.createdNames[0];
-    if (!originalSubscription) {
-      throw new Error("Expected an original Google Meet subscription");
+    const codeByIndex = options.accounts.map((_, index) => {
+      return `meet-code-${index}-${randomUUID()}`;
+    });
+    const accountsByCode: Record<string, MeetAccount> = {};
+    for (const [index, account] of options.accounts.entries()) {
+      const code = codeByIndex[index];
+      if (code) {
+        accountsByCode[code] = account;
+      }
+    }
+    if (options.accounts.length > 0) {
+      mockGoogleMeetOAuthByCode(accountsByCode);
     }
 
-    const reconnectedConnectorId = await connectGoogleMeet(
-      fixture.actor,
-      fixture.provider,
-      "primary",
-      { intent: "reconnect", connectionId: fixture.connectorId },
-    );
-    expect(reconnectedConnectorId).toBe(fixture.connectorId);
-    expect(fixture.provider.accounts.primary.createdNames).toStrictEqual([
-      originalSubscription,
+    const totalWorkflows = 1 + (options.extraWorkflows ?? 0);
+    const [createdWorkflows, oauthStarts] = await Promise.all([
+      Promise.all(
+        Array.from({ length: totalWorkflows }, (_, index) => {
+          return accept(
+            workflowsApi.create({
+              headers: SESSION,
+              body: {
+                name: `meet-wf-${index}-${randomUUID().slice(0, 8)}`,
+                visibility:
+                  index === 0
+                    ? (options.workflowVisibility ?? "private")
+                    : "private",
+              },
+            }),
+            [201],
+          );
+        }),
+      ),
+      Promise.all(
+        options.accounts.map(() => {
+          return accept(
+            meetOauthStartApi.start({
+              headers: SESSION,
+              params: { connectorSlug: "google-meet" },
+              body: { authMethod: "oauth", account: { intent: "add" } },
+            }),
+            [200],
+          );
+        }),
+      ),
+      bdd.provisionWorkspace(actor),
+      bdd.completeOnboarding(actor),
+      runner.registerRunner(),
+      accept(
+        personalModelProvidersApi.upsert({
+          headers: SESSION,
+          body: {
+            type: "claude-code-oauth-token",
+            secret: `sk-ant-oat01-${randomUUID()}`,
+          },
+        }),
+        [201],
+      ),
     ]);
 
-    const reconnectedPush = await postWorkspaceEvent(originalSubscription);
-    expect(reconnectedPush.status).toBe(200);
-    await expect(reconnectedPush.json()).resolves.toMatchObject({
-      watchStates: 1,
-      dispatched: 1,
-    });
-  });
-
-  it("fails closed and does not retry after provider delete failure", async () => {
-    const fixture = await setupFixture({ deleteStatus: 503 });
-    const created = await createMeetAutomation(fixture);
-    const subscriptionName = fixture.provider.createdNames[0];
-    if (!subscriptionName) {
-      throw new Error("Expected a Workspace Events subscription");
-    }
-
-    await accept(
-      automationsClient().disable({
-        headers: authHeaders(fixture.actor),
-        params: { id: created.body.id },
+    // Complete OAuth callbacks sequentially so the first account is deterministically default.
+    const updatePref = accept(
+      userModelPreferenceApi.update({
+        headers: SESSION,
+        body: { selectedModel: CLAUDE_MODEL, serviceTier: null },
       }),
       [200],
     );
-    expect(fixture.provider.deletedUrls).toHaveLength(1);
-
-    const delayed = await postWorkspaceEvent(subscriptionName);
-    expect(delayed.status).toBe(200);
-    await expect(delayed.json()).resolves.toStrictEqual({
-      success: true,
-      watchStates: 0,
-      dispatched: 0,
-      duplicates: 0,
-    });
-    expect(fixture.provider.createdNames).toHaveLength(1);
-    expect(fixture.provider.renewCalls).toBe(0);
-  });
-
-  it("commits connector deletion before one best-effort provider delete", async () => {
-    const deleteStarted = createDeferredPromise<void>(context.signal);
-    const deleteRelease = createDeferredPromise<void>(context.signal);
-    onTestFinished(() => {
-      if (!deleteRelease.settled()) {
-        deleteRelease.resolve();
+    for (const [index, started] of oauthStarts.entries()) {
+      const code = codeByIndex[index];
+      if (!code) {
+        throw new Error("Missing Google Meet OAuth code");
       }
-    });
-    const fixture = await setupFixture({
-      deleteStatus: 503,
-      tokenExpiresInSeconds: 60,
-      onDelete: async () => {
-        deleteStarted.resolve();
-        await deleteRelease.promise;
-      },
-    });
-    await createMeetAutomation(fixture);
-    const subscriptionName = fixture.provider.createdNames[0];
-    if (!subscriptionName) {
-      throw new Error("Expected a Workspace Events subscription");
+      await completeMeetOauth(started.body.authorizationUrl, code);
     }
-    mockOptionalEnv(
-      "GOOGLE_WORKSPACE_EVENTS_PUBSUB_TOPIC_NAME",
-      `${fixture.provider.topicName}-replacement`,
-    );
+    await updatePref;
 
-    const deletion = connectorAccountsClient().delete({
-      headers: authHeaders(fixture.actor),
-      params: { connectionId: fixture.connectorId },
-      body: { target: { kind: "builtin", connectorSlug: "google-meet" } },
-    });
-    await deleteStarted.promise;
-    const accountsWhileDeleteIsPending =
-      await connectors.listBuiltinConnectorAccounts(
-        fixture.actor,
-        "google-meet",
+    async function listMeetAccounts() {
+      const listed = await accept(
+        accountsApi.connections({
+          headers: authenticate(),
+          query: MEET_TARGET,
+        }),
+        [200],
       );
-    expect(accountsWhileDeleteIsPending).toStrictEqual([]);
-    deleteRelease.resolve();
+      return listed.body.connections;
+    }
 
-    const deleted = await accept(deletion, [200]);
-    expect(deleted.body).toStrictEqual({
-      deletedConnectionId: fixture.connectorId,
-      resolvedSelectionCount: 0,
-      promotedDefaultConnectionId: null,
+    async function addMeetAccount(account: MeetAccount) {
+      const code = `meet-add-${randomUUID()}`;
+      mockGoogleMeetOAuthByCode({ [code]: account });
+      const started = await accept(
+        meetOauthStartApi.start({
+          headers: authenticate(),
+          params: { connectorSlug: "google-meet" },
+          body: { authMethod: "oauth", account: { intent: "add" } },
+        }),
+        [200],
+      );
+      await completeMeetOauth(started.body.authorizationUrl, code);
+      await flushWaitUntilForTest();
+    }
+
+    return {
+      actor,
+      provider,
+      runner,
+      workflowIds: createdWorkflows.map((wf) => {
+        return wf.body.id;
+      }),
+      authenticate,
+      listMeetAccounts,
+      addMeetAccount,
+    };
+  }
+
+  async function resolveRunMeetAuthorization(
+    execution: ExecutionContext,
+  ): Promise<{ readonly sourceId: string; readonly authorization: string }> {
+    const meetTarget = execution.connectorRuntimeTargets?.find((target) => {
+      return (
+        target.kind === "builtin" && target.connectorSlug === "google-meet"
+      );
     });
-    expect(fixture.provider.deletedUrls).toHaveLength(1);
-    expect(fixture.provider.deletedUrls[0]).toContain(
-      `/${subscriptionName}?allowMissing=true`,
-    );
-    const automations = await accept(
-      automationsClient().list({
-        headers: authHeaders(fixture.actor),
-        params: { workflowId: fixture.workflowId },
+    if (!meetTarget?.sourceId) {
+      throw new Error("Expected Google Meet runtime target on dispatched run");
+    }
+    const resolved = await accept(
+      firewallAuthApi.resolve({
+        headers: { authorization: `Bearer ${execution.firewallToken}` },
+        body: {
+          authHeaders: {
+            Authorization: `Bearer ${secretTemplate("GOOGLE_MEET_TOKEN")}`,
+          },
+          secretConnectorMap: { GOOGLE_MEET_TOKEN: "google-meet" },
+          secretConnectorMetadataMap: {
+            GOOGLE_MEET_TOKEN: {
+              sourceType: "connector",
+              sourceId: meetTarget.sourceId,
+            },
+          },
+        },
       }),
       [200],
     );
-    const automation = automations.body[0];
-    if (!automation) {
-      throw new Error("Expected the Google Meet automation");
-    }
-    await accept(
-      automationsClient().delete({
-        headers: authHeaders(fixture.actor),
-        params: { id: automation.id },
-      }),
-      [204],
-    );
-  });
+    return {
+      sourceId: meetTarget.sourceId,
+      authorization: resolved.body.headers.Authorization ?? "",
+    };
+  }
 
-  it("promotes a sibling account and repairs after deleting and re-adding accounts", async () => {
-    const fixture = await setupFixture();
-    await createMeetAutomation(fixture);
-    const primarySubscription =
-      fixture.provider.accounts.primary.createdNames[0];
-    if (!primarySubscription) {
-      throw new Error("Expected a primary Google Meet subscription");
-    }
-    const secondaryConnectorId = await connectGoogleMeet(
-      fixture.actor,
-      fixture.provider,
-      "secondary",
-      { intent: "add", displayName: "Secondary Google Meet" },
-    );
-
-    const deletedPrimary = await accept(
-      connectorAccountsClient().delete({
-        headers: authHeaders(fixture.actor),
-        params: { connectionId: fixture.connectorId },
-        body: { target: { kind: "builtin", connectorSlug: "google-meet" } },
-      }),
-      [200],
-    );
-    expect(deletedPrimary.body).toStrictEqual({
-      deletedConnectionId: fixture.connectorId,
-      resolvedSelectionCount: 0,
-      promotedDefaultConnectionId: secondaryConnectorId,
-    });
-    const secondarySubscription =
-      fixture.provider.accounts.secondary.createdNames[0];
-    if (!secondarySubscription) {
-      throw new Error("Expected a promoted-account subscription");
-    }
-    expect(fixture.provider.accounts.primary.deletedUrls).toHaveLength(1);
-
-    const delayedPrimary = await postWorkspaceEvent(primarySubscription);
-    expect(delayedPrimary.status).toBe(200);
-    await expect(delayedPrimary.json()).resolves.toMatchObject({
-      watchStates: 0,
-      dispatched: 0,
-    });
-    const promotedPush = await postWorkspaceEvent(secondarySubscription);
-    expect(promotedPush.status).toBe(200);
-    await expect(promotedPush.json()).resolves.toMatchObject({
-      watchStates: 1,
-      dispatched: 1,
-    });
-    // The push acknowledges enqueueing; finish its run launch before changing
-    // the connector accounts that project onto the same automation.
-    await flushWaitUntilForTest();
-
-    const deletedLast = await accept(
-      connectorAccountsClient().delete({
-        headers: authHeaders(fixture.actor),
-        params: { connectionId: secondaryConnectorId },
-        body: { target: { kind: "builtin", connectorSlug: "google-meet" } },
-      }),
-      [200],
-    );
-    expect(deletedLast.body).toStrictEqual({
-      deletedConnectionId: secondaryConnectorId,
-      resolvedSelectionCount: 0,
-      promotedDefaultConnectionId: null,
-    });
-    expect(fixture.provider.accounts.secondary.deletedUrls).toHaveLength(1);
-
-    const readdedConnectorId = await connectGoogleMeet(
-      fixture.actor,
-      fixture.provider,
-      "primary",
-    );
-    expect(readdedConnectorId).not.toBe(fixture.connectorId);
-    expect(fixture.provider.accounts.primary.createdNames).toHaveLength(2);
-    const readdedSubscription =
-      fixture.provider.accounts.primary.createdNames[1];
-    if (!readdedSubscription) {
-      throw new Error("Expected a re-added-account subscription");
-    }
-    const readdedPush = await postWorkspaceEvent(readdedSubscription);
-    expect(readdedPush.status).toBe(200);
-    await expect(readdedPush.json()).resolves.toMatchObject({
-      watchStates: 1,
-      dispatched: 1,
-    });
-  });
-
-  it("keeps a consumer enabled during last-consumer cleanup subscribed", async () => {
-    const deleteStarted = createDeferredPromise<void>(context.signal);
-    const deleteRelease = createDeferredPromise<void>(context.signal);
-    onTestFinished(() => {
-      if (!deleteRelease.settled()) {
-        deleteRelease.resolve();
+  it(
+    "webhooks-google-workspace-events-001 dispatches a visible Google Meet transcript message",
+    { timeout: TEST_WITH_TRIPLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const primary = meetAccount("primary");
+      const { provider, runner, workflowIds, authenticate } =
+        await setupMeetRunMember({ accounts: [primary] });
+      const workflowId = workflowIds[0];
+      if (!workflowId) {
+        throw new Error("Expected workflowId");
       }
-    });
-    const fixture = await setupFixture({
-      onDelete: async () => {
-        if (!deleteStarted.settled()) {
-          deleteStarted.resolve();
-        }
-        await deleteRelease.promise;
-      },
-    });
-    const active = await createMeetAutomation(fixture);
-    const disabled = await createMeetAutomation(fixture, false);
 
-    const disableRequest = automationsClient().disable({
-      headers: authHeaders(fixture.actor),
-      params: { id: active.body.id },
-    });
-    await deleteStarted.promise;
-    // Remote cleanup happens after the local decision; enabling another
-    // consumer does not wait for it and prepares its own subscription.
-    await accept(
-      automationsClient().enable({
-        headers: authHeaders(fixture.actor),
-        params: { id: disabled.body.id },
-      }),
-      [200],
-    );
-    deleteRelease.resolve();
-    await accept(disableRequest, [200]);
+      const created = await accept(
+        automationsApi.create({
+          headers: authenticate(),
+          params: { workflowId },
+          body: { kind: "event", eventType: MEET_TRANSCRIPT },
+        }),
+        [201],
+      );
+      await flushWaitUntilForTest();
+      const threadId = created.body.chatThreadId;
+      const [subscription] = provider.subscriptionsForToken(
+        primary.accessToken,
+      );
+      if (!threadId || !subscription) {
+        throw new Error("Expected Meet automation thread and subscription");
+      }
 
-    expect(fixture.provider.createdNames).toHaveLength(2);
-    expect(fixture.provider.deletedUrls).toHaveLength(1);
-    expect(fixture.provider.deletedUrls[0]).toContain(
-      `/${fixture.provider.createdNames[0]}?allowMissing=true`,
-    );
-    const listed = await accept(
-      automationsClient().list({
-        headers: authHeaders(fixture.actor),
-        params: { workflowId: fixture.workflowId },
-      }),
-      [200],
-    );
-    expect(
-      listed.body.find((automation) => {
-        return automation.id === disabled.body.id;
-      })?.enabled,
-    ).toBeTruthy();
+      const pushed = await accept(pushMeetTranscript(subscription), [200]);
+      await flushWaitUntilForTest();
 
-    await accept(
-      automationsClient().disable({
-        headers: authHeaders(fixture.actor),
-        params: { id: disabled.body.id },
-      }),
-      [200],
-    );
-    expect(fixture.provider.deletedUrls).toHaveLength(2);
-    expect(fixture.provider.deletedUrls[1]).toContain(
-      `/${fixture.provider.createdNames[1]}?allowMissing=true`,
-    );
-  });
+      expect(pushed.body).toStrictEqual({
+        success: true,
+        watchStates: 1,
+        dispatched: 1,
+        duplicates: 0,
+      });
+      expect(runner.acceptedOrder).toHaveLength(1);
+
+      const [events, selections, deleted] = await Promise.all([
+        readProjectedChatEvents(context, {
+          threadId,
+          headers: authenticate(),
+        }),
+        accept(
+          chatSelectionsApi.get({
+            headers: authenticate(),
+            params: { id: threadId },
+          }),
+          [200],
+        ),
+        accept(
+          automationsApi.delete({
+            headers: authenticate(),
+            params: { id: created.body.id },
+            body: undefined,
+          }),
+          [204],
+        ),
+      ]);
+      const visibleTexts = events
+        .filter((event) => {
+          return event.eventType === "input.automation";
+        })
+        .map((event) => {
+          return visibleMessageText(event.userMessage?.parts ?? []);
+        });
+      expect(visibleTexts).toContain("A Google Meet transcript is ready.");
+      expect(selections.body.selections).toStrictEqual([]);
+      expect(selections.body.selectedConnections).toStrictEqual([]);
+      expect(deleted.status).toBe(204);
+    },
+  );
+
+  it(
+    "webhooks-google-workspace-events-005 isolates simultaneous subscriptions and dispatch by selected account",
+    { timeout: TEST_WITH_FOUR_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const primary = meetAccount("iso-primary");
+      const secondary = meetAccount("iso-secondary");
+      const { provider, runner, workflowIds, authenticate, listMeetAccounts } =
+        await setupMeetRunMember({
+          accounts: [primary, secondary],
+          extraWorkflows: 1,
+        });
+      const [firstWorkflowId, secondWorkflowId] = workflowIds;
+      if (!firstWorkflowId || !secondWorkflowId) {
+        throw new Error("Expected two workflows");
+      }
+
+      const [firstAuto, accounts] = await Promise.all([
+        accept(
+          automationsApi.create({
+            headers: authenticate(),
+            params: { workflowId: firstWorkflowId },
+            body: { kind: "event", eventType: MEET_TRANSCRIPT },
+          }),
+          [201],
+        ),
+        listMeetAccounts(),
+      ]);
+      const secondAuto = await accept(
+        automationsApi.create({
+          headers: authenticate(),
+          params: { workflowId: secondWorkflowId },
+          body: { kind: "event", eventType: MEET_TRANSCRIPT },
+        }),
+        [201],
+      );
+      const firstThreadId = firstAuto.body.chatThreadId;
+      const secondThreadId = secondAuto.body.chatThreadId;
+      const secondaryConn = accounts.find((account) => {
+        return account.externalEmail === secondary.email;
+      });
+      if (!firstThreadId || !secondThreadId || !secondaryConn) {
+        throw new Error("Expected threads and secondary Meet connection");
+      }
+      expect(firstThreadId).not.toBe(secondThreadId);
+
+      await accept(
+        chatSelectionsApi.update({
+          headers: authenticate(),
+          params: { id: secondThreadId },
+          body: { target: MEET_TARGET, connectionId: secondaryConn.id },
+        }),
+        [200],
+      );
+      await flushWaitUntilForTest();
+
+      const primarySubs = provider.subscriptionsForToken(primary.accessToken);
+      const secondarySubs = provider.subscriptionsForToken(
+        secondary.accessToken,
+      );
+      expect(primarySubs).toHaveLength(1);
+      expect(secondarySubs).toHaveLength(1);
+      const [primarySub] = primarySubs;
+      const [secondarySub] = secondarySubs;
+      if (!primarySub || !secondarySub) {
+        throw new Error("Expected both subscriptions");
+      }
+
+      const primaryPush = await accept(pushMeetTranscript(primarySub), [200]);
+      await flushWaitUntilForTest();
+      expect(primaryPush.body).toStrictEqual({
+        success: true,
+        watchStates: 1,
+        dispatched: 1,
+        duplicates: 0,
+      });
+
+      const secondaryPush = await accept(
+        pushMeetTranscript(secondarySub),
+        [200],
+      );
+      await flushWaitUntilForTest();
+      expect(secondaryPush.body).toStrictEqual({
+        success: true,
+        watchStates: 1,
+        dispatched: 1,
+        duplicates: 0,
+      });
+      expect(runner.acceptedOrder).toHaveLength(2);
+
+      const secondaryRunId = runner.acceptedOrder[1] ?? "";
+      const secondaryExec = runner.acceptedByRunId.get(secondaryRunId);
+      if (!secondaryExec) {
+        throw new Error("Expected secondary execution context");
+      }
+      const [resolvedSecret] = await Promise.all([
+        resolveRunMeetAuthorization(secondaryExec),
+        accept(
+          automationsApi.create({
+            headers: authenticate(),
+            params: { workflowId: firstWorkflowId },
+            body: { kind: "event", eventType: MEET_TRANSCRIPT },
+          }),
+          [201],
+        ),
+      ]);
+      await flushWaitUntilForTest();
+
+      expect(resolvedSecret).toStrictEqual({
+        sourceId: secondaryConn.id,
+        authorization: `Bearer ${secondary.accessToken}`,
+      });
+      expect(provider.subscriptionsForToken(primary.accessToken)).toHaveLength(
+        1,
+      );
+      expect(
+        provider.subscriptionsForToken(secondary.accessToken),
+      ).toHaveLength(1);
+      expect(provider.created).toHaveLength(2);
+    },
+  );
+
+  it(
+    "webhooks-google-workspace-events-008 dispatches source and copied Google Meet automations independently",
+    { timeout: TEST_WITH_TRIPLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const primary = meetAccount("copy-primary");
+      const secondary = meetAccount("copy-secondary");
+      const { provider, runner, workflowIds, authenticate, listMeetAccounts } =
+        await setupMeetRunMember({
+          accounts: [primary, secondary],
+          workflowVisibility: "public",
+        });
+      const sourceWorkflowId = workflowIds[0];
+      if (!sourceWorkflowId) {
+        throw new Error("Expected source workflowId");
+      }
+
+      const [sourceAuto, accounts] = await Promise.all([
+        accept(
+          automationsApi.create({
+            headers: authenticate(),
+            params: { workflowId: sourceWorkflowId },
+            body: { kind: "event", eventType: MEET_TRANSCRIPT },
+          }),
+          [201],
+        ),
+        listMeetAccounts(),
+      ]);
+      const sourceThreadId = sourceAuto.body.chatThreadId;
+      const secondaryConn = accounts.find((account) => {
+        return account.externalEmail === secondary.email;
+      });
+      if (!sourceThreadId || !secondaryConn) {
+        throw new Error("Expected source thread and secondary Meet connection");
+      }
+
+      await accept(
+        chatSelectionsApi.update({
+          headers: authenticate(),
+          params: { id: sourceThreadId },
+          body: { target: MEET_TARGET, connectionId: secondaryConn.id },
+        }),
+        [200],
+      );
+      await flushWaitUntilForTest();
+
+      const copiedWorkflow = await accept(
+        workflowsDetailApi.copy({
+          headers: authenticate(),
+          params: { workflowId: sourceWorkflowId },
+          body: {},
+        }),
+        [201],
+      );
+      await flushWaitUntilForTest();
+      expect(copiedWorkflow.body.id).not.toBe(sourceWorkflowId);
+
+      const sourceSub = provider
+        .subscriptionsForToken(secondary.accessToken)
+        .at(-1);
+      const copiedSub = provider
+        .subscriptionsForToken(primary.accessToken)
+        .at(-1);
+      if (!sourceSub || !copiedSub) {
+        throw new Error("Expected source and copied Meet subscriptions");
+      }
+      expect(sourceSub).not.toBe(copiedSub);
+
+      const sourcePush = await accept(pushMeetTranscript(sourceSub), [200]);
+      await flushWaitUntilForTest();
+      expect(sourcePush.body).toStrictEqual({
+        success: true,
+        watchStates: 1,
+        dispatched: 1,
+        duplicates: 0,
+      });
+
+      const copiedPush = await accept(pushMeetTranscript(copiedSub), [200]);
+      await flushWaitUntilForTest();
+      expect(copiedPush.body).toStrictEqual({
+        success: true,
+        watchStates: 1,
+        dispatched: 1,
+        duplicates: 0,
+      });
+      expect(runner.acceptedOrder.length).toBeGreaterThanOrEqual(1);
+    },
+  );
+
+  it(
+    "webhooks-google-workspace-events-012 promotes a sibling account and repairs after deleting and re-adding accounts",
+    { timeout: TEST_WITH_FOUR_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const primary = meetAccount("promote-primary");
+      const secondary = meetAccount("promote-secondary");
+      const {
+        provider,
+        runner,
+        workflowIds,
+        authenticate,
+        listMeetAccounts,
+        addMeetAccount,
+      } = await setupMeetRunMember({ accounts: [primary, secondary] });
+      const workflowId = workflowIds[0];
+      if (!workflowId) {
+        throw new Error("Expected workflowId");
+      }
+
+      const [, accounts] = await Promise.all([
+        accept(
+          automationsApi.create({
+            headers: authenticate(),
+            params: { workflowId },
+            body: { kind: "event", eventType: MEET_TRANSCRIPT },
+          }),
+          [201],
+        ),
+        listMeetAccounts(),
+      ]);
+      await flushWaitUntilForTest();
+      const primaryConn = accounts.find((account) => {
+        return account.externalEmail === primary.email;
+      });
+      const secondaryConn = accounts.find((account) => {
+        return account.externalEmail === secondary.email;
+      });
+      const [firstPrimarySub] = provider.subscriptionsForToken(
+        primary.accessToken,
+      );
+      if (!primaryConn || !secondaryConn || !firstPrimarySub) {
+        throw new Error("Expected primary, secondary, and first subscription");
+      }
+
+      const deletedPrimary = await accept(
+        accountsApi.delete({
+          headers: authenticate(),
+          params: { connectionId: primaryConn.id },
+          body: { target: MEET_TARGET },
+        }),
+        [200],
+      );
+      await flushWaitUntilForTest();
+      expect(deletedPrimary.body).toStrictEqual({
+        deletedConnectionId: primaryConn.id,
+        resolvedSelectionCount: 0,
+        promotedDefaultConnectionId: secondaryConn.id,
+      });
+      const [secondarySub] = provider.subscriptionsForToken(
+        secondary.accessToken,
+      );
+      if (!secondarySub) {
+        throw new Error("Expected promoted secondary subscription");
+      }
+      expect(
+        provider.deleted.map((entry) => {
+          return entry.name;
+        }),
+      ).toContain(firstPrimarySub);
+
+      const oldPush = await accept(pushMeetTranscript(firstPrimarySub), [200]);
+      expect(oldPush.body).toStrictEqual({
+        success: true,
+        watchStates: 0,
+        dispatched: 0,
+        duplicates: 0,
+      });
+
+      const promotedPush = await accept(
+        pushMeetTranscript(secondarySub),
+        [200],
+      );
+      await flushWaitUntilForTest();
+      expect(promotedPush.body).toStrictEqual({
+        success: true,
+        watchStates: 1,
+        dispatched: 1,
+        duplicates: 0,
+      });
+      expect(runner.acceptedOrder).toHaveLength(1);
+      const [, deletedSecondary] = await Promise.all([
+        runner.completeRun(runner.acceptedOrder[0] ?? ""),
+        accept(
+          accountsApi.delete({
+            headers: authenticate(),
+            params: { connectionId: secondaryConn.id },
+            body: { target: MEET_TARGET },
+          }),
+          [200],
+        ),
+      ]);
+      await flushWaitUntilForTest();
+      expect(deletedSecondary.body).toStrictEqual({
+        deletedConnectionId: secondaryConn.id,
+        resolvedSelectionCount: 0,
+        promotedDefaultConnectionId: null,
+      });
+      expect(
+        provider.deleted.map((entry) => {
+          return entry.name;
+        }),
+      ).toContain(secondarySub);
+
+      const readdedPrimary: MeetAccount = {
+        email: primary.email,
+        subject: primary.subject,
+        accessToken: `meet-readded-token-${randomUUID()}`,
+      };
+      await addMeetAccount(readdedPrimary);
+
+      const accountsAfterReadd = await listMeetAccounts();
+      expect(accountsAfterReadd).toHaveLength(1);
+      const [readdedConn] = accountsAfterReadd;
+      if (!readdedConn) {
+        throw new Error("Expected re-added primary Meet connection");
+      }
+      expect(readdedConn.id).not.toBe(primaryConn.id);
+
+      const [readdedSub] = provider.subscriptionsForToken(
+        readdedPrimary.accessToken,
+      );
+      if (!readdedSub) {
+        throw new Error("Expected second primary subscription after re-add");
+      }
+      expect(readdedSub).not.toBe(firstPrimarySub);
+
+      const readdedPush = await accept(pushMeetTranscript(readdedSub), [200]);
+      await flushWaitUntilForTest();
+      expect(readdedPush.body).toStrictEqual({
+        success: true,
+        watchStates: 1,
+        dispatched: 1,
+        duplicates: 0,
+      });
+      expect(runner.acceptedOrder).toHaveLength(2);
+    },
+  );
 });

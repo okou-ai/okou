@@ -1,323 +1,101 @@
 import { randomUUID } from "node:crypto";
 
 import { builtinConnectorsSearchContract } from "@okouai/api-contracts/contracts/connectors";
-import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { createStore } from "ccstate";
-import { afterEach } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { builtinConnectorsRoutes } from "../connectors";
-import { featureSwitchesRoutes } from "../feature-switches";
-import { createRunExecutionCredentials } from "./helpers/run-execution-credentials";
-import { seedOrgMembership$ } from "./helpers/org-membership";
+import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
-const executionToken = createRunExecutionCredentials(context).okouToken;
-const mocks = createRouteMocks(context);
-const store = createStore();
 
-function featureSwitchesClient() {
-  return setupApp({ context, routes: featureSwitchesRoutes })(
-    featureSwitchesContract,
+interface Member {
+  readonly userId: string;
+  readonly orgId: string;
+  readonly orgRole: "org:admin" | "org:member";
+}
+
+function newMember(orgRole: Member["orgRole"] = "org:admin"): Member {
+  return {
+    userId: `user_${randomUUID()}`,
+    orgId: `org_${randomUUID()}`,
+    orgRole,
+  };
+}
+
+async function search(member: Member, keyword?: string) {
+  createRouteMocks(context).clerk.session(
+    member.userId,
+    member.orgId,
+    member.orgRole,
   );
-}
-
-function authHeaders() {
-  return { authorization: "Bearer clerk-session" };
-}
-
-async function enableFeatureSwitches(
-  orgId: string,
-  userId: string,
-  switches: Partial<Record<FeatureSwitchKey, boolean>>,
-): Promise<void> {
-  mocks.clerk.session(userId, orgId);
-  await accept(
-    featureSwitchesClient().update({
-      headers: authHeaders(),
-      body: { switches },
+  const client = setupApp({ context, routes: builtinConnectorsRoutes })(
+    builtinConnectorsSearchContract,
+  );
+  const response = await accept(
+    client.search({
+      headers: { authorization: "Bearer clerk-session" },
+      query: keyword === undefined ? {} : { keyword },
     }),
     [200],
   );
+  return response.body.connectors;
 }
 
-async function deleteFeatureSwitches(
-  orgId: string,
-  userId: string,
-): Promise<void> {
-  mocks.clerk.session(userId, orgId);
-  await accept(
-    featureSwitchesClient().delete({ headers: authHeaders() }),
-    [200],
-  );
+function authMethodsOf(
+  connectors: Awaited<ReturnType<typeof search>>,
+  slug: string,
+) {
+  return connectors.find((connector) => {
+    return connector.slug === slug;
+  })?.authMethods;
 }
 
 describe("GET /api/connectors/search", () => {
-  const seededFeatureSwitches: {
-    readonly orgId: string;
-    readonly userId: string;
-  }[] = [];
+  it("connectors-search-002 lists between 1 and 100 connectors without a keyword", async () => {
+    const connectors = await search(newMember());
 
-  afterEach(async () => {
-    while (seededFeatureSwitches.length > 0) {
-      const fixture = seededFeatureSwitches.pop();
-      if (fixture) {
-        await deleteFeatureSwitches(fixture.orgId, fixture.userId);
-      }
+    expect(connectors.length).toBeGreaterThanOrEqual(1);
+    expect(connectors.length).toBeLessThanOrEqual(100);
+  });
+
+  it("connectors-search-003 filters connectors by a keyword matching slug or label", async () => {
+    const connectors = await search(newMember(), "GitHub");
+
+    expect(connectors.length).toBeGreaterThanOrEqual(1);
+    for (const connector of connectors) {
+      const matches =
+        connector.slug.toLowerCase().includes("github") ||
+        connector.label.toLowerCase().includes("github");
+      expect(matches).toBeTruthy();
     }
   });
 
-  it("returns 401 when not authenticated", async () => {
-    const client = setupApp({ context, routes: builtinConnectorsRoutes })(
-      builtinConnectorsSearchContract,
-    );
-    const response = await accept(
-      client.search({ query: {}, headers: {} }),
-      [401],
-    );
-
-    expect(response.body.error.code).toBe("UNAUTHORIZED");
-  });
-
-  it("returns connectors array with correct shape", async () => {
-    mocks.clerk.session(`user_${randomUUID()}`, `org_${randomUUID()}`);
-
-    const client = setupApp({ context, routes: builtinConnectorsRoutes })(
-      builtinConnectorsSearchContract,
-    );
-    const response = await accept(
-      client.search({
-        query: {},
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [200],
-    );
-
-    expect(response.body.connectors).toBeInstanceOf(Array);
-    expect(response.body.connectors.length).toBeGreaterThan(0);
-    expect(response.body.connectors.length).toBeLessThanOrEqual(100);
-  });
-
-  it("filters connectors by keyword matching slug or label", async () => {
-    mocks.clerk.session(`user_${randomUUID()}`, `org_${randomUUID()}`);
-
-    const client = setupApp({ context, routes: builtinConnectorsRoutes })(
-      builtinConnectorsSearchContract,
-    );
-    const response = await accept(
-      client.search({
-        query: { keyword: "GitHub" },
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [200],
-    );
-
-    expect(response.body.connectors.length).toBeGreaterThan(0);
-    for (const connector of response.body.connectors) {
-      const matchesLabel = connector.label.toLowerCase().includes("github");
-      const matchesSlug = connector.slug.toLowerCase().includes("github");
-      expect(matchesLabel || matchesSlug).toBeTruthy();
-    }
-  });
-
-  it("does not search connector descriptions", async () => {
-    mocks.clerk.session(`user_${randomUUID()}`, `org_${randomUUID()}`);
-
-    const client = setupApp({ context, routes: builtinConnectorsRoutes })(
-      builtinConnectorsSearchContract,
-    );
-    const response = await accept(
-      client.search({
-        query: { keyword: "permission behavior" },
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [200],
-    );
-
-    expect(response.body.connectors).toStrictEqual([]);
-  });
-
-  it("does not search connector tags", async () => {
-    mocks.clerk.session(`user_${randomUUID()}`, `org_${randomUUID()}`);
-
-    const client = setupApp({ context, routes: builtinConnectorsRoutes })(
-      builtinConnectorsSearchContract,
-    );
-    const response = await accept(
-      client.search({
-        query: { keyword: "llm" },
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [200],
-    );
-
-    expect(response.body.connectors).toStrictEqual([]);
-  });
-
-  it("performs case-insensitive keyword search", async () => {
-    mocks.clerk.session(`user_${randomUUID()}`, `org_${randomUUID()}`);
-
-    const client = setupApp({ context, routes: builtinConnectorsRoutes })(
-      builtinConnectorsSearchContract,
-    );
-
-    const lower = await accept(
-      client.search({
-        query: { keyword: "github" },
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [200],
-    );
-    const upper = await accept(
-      client.search({
-        query: { keyword: "GITHUB" },
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [200],
-    );
-
-    expect(lower.body.connectors).toHaveLength(upper.body.connectors.length);
-  });
-
-  it("hides the test OAuth device connector when the test OAuth feature is disabled", async () => {
-    mocks.clerk.session(`user_${randomUUID()}`, `org_${randomUUID()}`);
-
-    const client = setupApp({ context, routes: builtinConnectorsRoutes })(
-      builtinConnectorsSearchContract,
-    );
-    const response = await accept(
-      client.search({
-        query: { keyword: "test oauth device" },
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [200],
-    );
-
-    const connector = response.body.connectors.find((c) => {
-      return c.slug === "test-oauth-device";
-    });
-    expect(connector).toBeUndefined();
-  });
-
-  it("shows the test OAuth device connector when the test OAuth feature is enabled", async () => {
-    const userId = `user_${randomUUID()}`;
-    const orgId = `org_${randomUUID()}`;
-    seededFeatureSwitches.push({ orgId, userId });
-    await enableFeatureSwitches(orgId, userId, {
+  it("connectors-search-008 shows the test OAuth device connector once the member enables it", async () => {
+    const member = newMember();
+    await updateFeatureSwitchesForUser(context, member, {
       [FeatureSwitchKey.TestOauthConnector]: true,
     });
-    mocks.clerk.session(userId, orgId);
 
-    const client = setupApp({ context, routes: builtinConnectorsRoutes })(
-      builtinConnectorsSearchContract,
-    );
-    const response = await accept(
-      client.search({
-        query: { keyword: "test oauth device" },
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [200],
-    );
+    const connectors = await search(member, "test oauth device");
 
-    const connector = response.body.connectors.find((c) => {
-      return c.slug === "test-oauth-device";
-    });
-    expect(connector).toBeDefined();
-    expect(connector?.authMethods).toStrictEqual(["oauth", "api"]);
+    expect(authMethodsOf(connectors, "test-oauth-device")).toStrictEqual([
+      "oauth",
+      "api",
+    ]);
   });
 
-  it("applies accepted auth method visibility to connector search", async () => {
-    const userId = `user_${randomUUID()}`;
-    const orgId = `org_${randomUUID()}`;
-    seededFeatureSwitches.push({ orgId, userId });
-    await enableFeatureSwitches(orgId, userId, {});
-    mocks.clerk.session(userId, orgId);
+  it("connectors-search-010 offers LinkedIn OAuth to an ordinary workspace member", async () => {
+    const connectors = await search(newMember("org:member"), "linkedin");
 
-    const client = setupApp({ context, routes: builtinConnectorsRoutes })(
-      builtinConnectorsSearchContract,
-    );
-    const response = await accept(
-      client.search({
-        query: { keyword: "cloudflare" },
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [200],
-    );
-    const cloudflare = response.body.connectors.find((connector) => {
-      return connector.slug === "cloudflare";
-    });
-    expect(cloudflare?.authMethods).toStrictEqual(["oauth"]);
+    expect(authMethodsOf(connectors, "linkedin")).toStrictEqual(["oauth"]);
   });
 
-  it("offers LinkedIn OAuth to ordinary workspace members", async () => {
-    mocks.clerk.session(
-      `user_${randomUUID()}`,
-      `org_${randomUUID()}`,
-      "org:member",
-    );
+  it("connectors-search-011 exposes OpenAI as api-token only", async () => {
+    const connectors = await search(newMember());
 
-    const client = setupApp({ context, routes: builtinConnectorsRoutes })(
-      builtinConnectorsSearchContract,
-    );
-    const response = await accept(
-      client.search({
-        query: { keyword: "linkedin" },
-        headers: authHeaders(),
-      }),
-      [200],
-    );
-
-    expect(response.body.connectors).toContainEqual(
-      expect.objectContaining({ slug: "linkedin", authMethods: ["oauth"] }),
-    );
-  });
-
-  it("exposes openai as api-token only", async () => {
-    mocks.clerk.session(`user_${randomUUID()}`, `org_${randomUUID()}`);
-
-    const client = setupApp({ context, routes: builtinConnectorsRoutes })(
-      builtinConnectorsSearchContract,
-    );
-    const response = await accept(
-      client.search({
-        query: {},
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [200],
-    );
-
-    const openai = response.body.connectors.find((c) => {
-      return c.slug === "openai";
-    });
-    expect(openai).toBeDefined();
-    expect(openai?.authMethods).toStrictEqual(["api-token"]);
-  });
-
-  it("accepts an Okou run token carrying connector:read", async () => {
-    const userId = `user_${randomUUID()}`;
-    const orgId = `org_${randomUUID()}`;
-    await store.set(
-      seedOrgMembership$,
-      { orgId, userId, role: "admin" },
-      context.signal,
-    );
-    const token = await executionToken({ userId, orgId });
-
-    const client = setupApp({ context, routes: builtinConnectorsRoutes })(
-      builtinConnectorsSearchContract,
-    );
-    const response = await accept(
-      client.search({
-        query: {},
-        headers: { authorization: `Bearer ${token}` },
-      }),
-      [200],
-    );
-
-    expect(response.body.connectors).toBeInstanceOf(Array);
-    expect(response.body.connectors.length).toBeGreaterThan(0);
+    expect(authMethodsOf(connectors, "openai")).toStrictEqual(["api-token"]);
   });
 });

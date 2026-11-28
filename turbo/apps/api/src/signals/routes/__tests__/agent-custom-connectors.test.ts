@@ -1,88 +1,51 @@
-import { testContext } from "../../../__tests__/test-context";
-import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
+import { customConnectorByIdContract } from "@okouai/api-contracts/contracts/custom-connectors";
+import { expect, test } from "vitest";
+
+import { accept, testContext } from "../../../__tests__/test-context";
+import { setupApp } from "../../../__tests__/test-helpers";
+import { customConnectorsGetRoutes } from "../custom-connectors-get";
+import { createBddApi } from "./helpers/api-bdd";
 import {
   createConnectorBddApi,
   manualHttpCustomConnectorCreateBody,
 } from "./helpers/api-bdd-connectors";
+import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
 const bdd = createBddApi(context);
 const connectors = createConnectorBddApi(context);
 
-async function createUnconfiguredCustomConnector(
-  actor: ApiTestUser,
-  slug: string,
-) {
-  return await connectors.createCustomConnector(
-    actor,
+test("agent-custom-connectors-001 returns the permission bundle of a custom connector", async () => {
+  const member = bdd.user();
+  const connector = await connectors.createCustomConnector(
+    member,
     manualHttpCustomConnectorCreateBody({
-      displayName: `Connector ${slug}`,
-      slug: `_${slug}`,
-      prefixTemplates: [`https://${slug}.example.test`],
-    }),
-  );
-}
-
-async function createCustomConnector(actor: ApiTestUser, slug: string) {
-  const connector = await createUnconfiguredCustomConnector(actor, slug);
-  await connectors.setCustomConnectorSecret(
-    actor,
-    connector.id,
-    `${slug}-secret`,
-  );
-  return connector;
-}
-
-async function createPermissionedCustomConnector(
-  actor: ApiTestUser,
-  slug: string,
-) {
-  return await connectors.createCustomConnector(
-    actor,
-    manualHttpCustomConnectorCreateBody({
-      displayName: `Connector ${slug}`,
-      slug: `_${slug}`,
-      prefixTemplates: [`https://${slug}.example.test`],
+      displayName: "Slack relay",
+      prefixTemplates: ["https://slack-relay.example.test/"],
       permissionBundleRef: "builtin:slack@1",
     }),
   );
-}
 
-describe("GET /api/custom-connectors/:id/permissions", () => {
-  it("returns permission metadata for a custom connector with a bundle", async () => {
-    const actor = bdd.user();
-    const connector = await createPermissionedCustomConnector(
-      actor,
-      "permission-metadata",
-    );
+  createRouteMocks(context).clerk.session(
+    member.userId,
+    member.orgId,
+    member.orgRole,
+  );
+  const response = await accept(
+    setupApp({ context, routes: customConnectorsGetRoutes })(
+      customConnectorByIdContract,
+    ).permissions({
+      params: { id: connector.id },
+      headers: { authorization: "Bearer clerk-session" },
+    }),
+    [200],
+  );
 
-    const response = await connectors.readCustomConnectorPermissions(
-      actor,
-      connector.id,
-    );
-
-    expect(response.ref).toBe("builtin:slack@1");
-    expect(response.permissions).toContainEqual(
-      expect.objectContaining({ name: "chat:write" }),
-    );
-    expect(response.defaultPolicies["chat:write"]).toBe("deny");
-  });
-
-  it("returns 404 when the custom connector has no permission bundle", async () => {
-    const actor = bdd.user();
-    const connector = await createCustomConnector(actor, "no-permissions");
-
-    const response = await connectors.requestCustomConnectorPermissions(
-      actor,
-      connector.id,
-      [404],
-    );
-
-    expect(response.body).toStrictEqual({
-      error: {
-        message: "Custom connector permission bundle not found",
-        code: "NOT_FOUND",
-      },
-    });
-  });
+  expect(response.body.ref).toBe("builtin:slack@1");
+  expect(
+    response.body.permissions.map((p) => {
+      return p.name;
+    }),
+  ).toContain("chat:write");
+  expect(response.body.defaultPolicies["chat:write"]).toBe("deny");
 });

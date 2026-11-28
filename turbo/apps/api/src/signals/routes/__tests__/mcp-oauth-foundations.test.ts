@@ -1,434 +1,121 @@
-import { Buffer } from "node:buffer";
-import { randomUUID } from "node:crypto";
-
-import { CUSTOM_CONNECTOR_AUTOMATIC_OAUTH_ERROR_CODES } from "@okouai/api-contracts/contracts/custom-connectors";
-import { mcpOAuthContract } from "@okouai/api-contracts/contracts/mcp-oauth";
-import { HttpResponse, http } from "msw";
-import { afterEach, describe, expect, it, onTestFinished } from "vitest";
-
-import { accept, testContext } from "../../../__tests__/test-context";
-import { setupApp } from "../../../__tests__/test-helpers";
-import { mockEnv } from "../../../lib/env";
-import { server } from "../../../mocks/server";
-import { createDeferredPromise } from "../../utils";
-import { flushWaitUntilForTest } from "../../context/wait-until";
-import { mcpOAuthClientMetadataRoutes } from "../mcp-oauth-client-metadata";
 import { createBddApi } from "./helpers/api-bdd";
+import { setupApp } from "../../../__tests__/test-helpers";
+import { randomUUID } from "node:crypto";
+import { http, HttpResponse } from "msw";
+import { describe, expect, it } from "vitest";
+import { mcpOAuthContract } from "@okouai/api-contracts/contracts/mcp-oauth";
+import { testContext, accept } from "../../../__tests__/test-context";
+import { server } from "../../../mocks/server";
+import { mockEnv } from "../../../lib/env";
+import { mcpOAuthClientMetadataRoutes } from "../mcp-oauth-client-metadata";
 import {
   createConnectorBddApi,
   mockAutomaticMcpOAuthProvider,
 } from "./helpers/api-bdd-connectors";
-import { createFirewallApi, secretTemplate } from "./helpers/api-bdd-firewall";
-import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
-import { createRunsApi } from "./helpers/api-bdd-runs";
-import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
 
 const context = testContext();
+const bdd = createBddApi(context);
+const connectors = createConnectorBddApi(context);
 
-function metadataClient(baseUrl = "http://api.test") {
-  return setupApp({
-    baseUrl,
-    context,
-    routes: mcpOAuthClientMetadataRoutes,
-  })(mcpOAuthContract);
+type ProviderOptions = Parameters<typeof mockAutomaticMcpOAuthProvider>[1];
+
+function uniqueEndpoint(): string {
+  return `https://automatic-mcp-${randomUUID()}.example.test/server`;
+}
+
+function uniqueIssuer(): string {
+  return `https://issuer-${randomUUID()}.example.test`;
+}
+
+/** CIMD client IDs must be HTTPS, so publish them from the hosted API origin. */
+function useHostedApiOrigin(): void {
+  mockEnv("OKOU_API_BACKEND_URL", "https://api.okou.ai");
+}
+
+function installProvider(options: ProviderOptions) {
+  useHostedApiOrigin();
+  return mockAutomaticMcpOAuthProvider(context, {
+    endpoint: uniqueEndpoint(),
+    issuer: uniqueIssuer(),
+    ...options,
+  });
+}
+
+async function createAutomaticConnector(
+  admin: ReturnType<typeof bdd.user>,
+  endpoint: string,
+) {
+  return await connectors.createCustomConnector(admin, {
+    kind: "mcp",
+    displayName: "Automatic research",
+    endpoint,
+    transport: "streamable-http",
+    authMode: "automatic",
+    fields: [],
+    headerInjections: [],
+    queryInjections: [],
+  });
+}
+
+function stateOf(authorizationUrl: string): string {
+  const state = new URL(authorizationUrl).searchParams.get("state");
+  if (!state) {
+    throw new Error("Expected OAuth state");
+  }
+  return state;
+}
+
+async function authorizationScopeFor(options: ProviderOptions) {
+  const provider = installProvider(options);
+  const admin = bdd.user();
+  const connector = await createAutomaticConnector(admin, provider.endpoint);
+  const authorizationUrl = await connectors.startCustomConnectorOAuth2(
+    admin,
+    connector.id,
+  );
+  return {
+    provider,
+    params: new URL(authorizationUrl).searchParams,
+  };
+}
+
+async function connectMixedConnector(registration: "cimd" | "dcr") {
+  const provider = installProvider({
+    registration,
+    authentication: "mixed",
+    metadataScopes: ["read", "write"],
+  });
+  const admin = bdd.user();
+  const connector = await createAutomaticConnector(admin, provider.endpoint);
+  const authorizationUrl = await connectors.startCustomConnectorOAuth2(
+    admin,
+    connector.id,
+  );
+  const params = new URL(authorizationUrl).searchParams;
+  const completed =
+    await connectors.completeCustomConnectorOAuth2CallbackResult({
+      state: stateOf(authorizationUrl),
+      code: `code-${randomUUID()}`,
+      iss: provider.issuer,
+    });
+  const accounts = await connectors.listCustomConnectorAccounts(
+    admin,
+    connector.id,
+  );
+  return { params, completed, accounts };
 }
 
 describe("MCP OAuth foundations", () => {
-  const oauthCleanups: (() => Promise<void>)[] = [];
-
-  async function automaticOAuthFixture(
-    options: Partial<Parameters<typeof mockAutomaticMcpOAuthProvider>[1]> = {},
-  ) {
+  it("mcp-oauth-foundations-015 publishes the Okou client metadata document from configured origins", async () => {
     mockEnv("OKOU_API_BACKEND_URL", "https://api.okou.ai");
     mockEnv("OKOU_WEB_URL", "https://www.okou.ai");
     mockEnv("APP_URL", "https://app.okou.ai");
-    const provider = mockAutomaticMcpOAuthProvider(context, {
-      registration: "cimd",
-      ...options,
-    });
-    const bdd = createBddApi(context);
-    const connectors = createConnectorBddApi(context);
-    bdd.acceptStorageWrites();
-    const actor = bdd.user({ orgRole: "org:admin" });
+    const client = setupApp({
+      context,
+      routes: mcpOAuthClientMetadataRoutes,
+    })(mcpOAuthContract);
 
-    const connector = await connectors.createCustomConnector(actor, {
-      kind: "mcp",
-      displayName: "OAuth transport boundaries",
-      endpoint: provider.endpoint,
-      transport: "streamable-http",
-      fields: [],
-      headerInjections: [],
-      queryInjections: [],
-      authMode: "automatic",
-    });
-    oauthCleanups.push(async () => {
-      await connectors.deleteCustomConnector(actor, connector.id);
-    });
-    return {
-      actor,
-      connector,
-      connectors,
-      provider,
-      resourceMetadata: {
-        resource: provider.endpoint,
-        authorization_servers: [provider.issuer],
-      },
-      async start(
-        resourceMetadataUrl: string,
-        statuses: readonly (200 | 400)[],
-      ) {
-        server.use(
-          http.post(provider.endpoint, () => {
-            return new HttpResponse(null, {
-              status: 401,
-              headers: {
-                "www-authenticate": `Bearer resource_metadata="${resourceMetadataUrl}", scope="read write"`,
-              },
-            });
-          }),
-        );
-        return await connectors.requestStartCustomConnectorOAuth2(
-          actor,
-          connector.id,
-          statuses,
-        );
-      },
-    };
-  }
-
-  function automaticOAuthFailure(code: string) {
-    return {
-      error: {
-        code,
-        message:
-          "Automatic MCP OAuth setup failed. Check the server's OAuth configuration or choose another authentication method.",
-      },
-    };
-  }
-
-  afterEach(async () => {
-    for (const cleanup of oauthCleanups.splice(0).reverse()) {
-      await cleanup();
-    }
-  });
-
-  it.each([
-    {
-      name: "adds AS-only offline access without other AS permissions",
-      registration: "cimd",
-      challengeScope: "graph:read",
-      authorizationServerScopes: [
-        "graph:read",
-        "media:read",
-        "offline_access",
-        "admin",
-      ],
-      grantTypesSupported: ["authorization_code", "refresh_token"],
-      expectedScope: "graph:read offline_access",
-    },
-    {
-      name: "uses resource scopes when the challenge has no scope",
-      registration: "cimd",
-      challengeScope: null,
-      authorizationServerScopes: ["graph:read", "media:read", "offline_access"],
-      grantTypesSupported: ["authorization_code", "refresh_token"],
-      expectedScope: "graph:read media:read offline_access",
-    },
-    {
-      name: "does not duplicate offline access already requested",
-      registration: "cimd",
-      challengeScope: "graph:read offline_access graph:read",
-      authorizationServerScopes: ["graph:read", "offline_access"],
-      grantTypesSupported: ["authorization_code", "refresh_token"],
-      expectedScope: "graph:read offline_access",
-    },
-    {
-      name: "does not add offline access without AS scope support",
-      registration: "cimd",
-      challengeScope: "graph:read",
-      authorizationServerScopes: ["graph:read", "admin"],
-      grantTypesSupported: ["authorization_code", "refresh_token"],
-      expectedScope: "graph:read",
-    },
-    {
-      name: "does not add offline access when AS scopes are omitted",
-      registration: "cimd",
-      challengeScope: "graph:read",
-      authorizationServerScopes: undefined,
-      grantTypesSupported: ["authorization_code", "refresh_token"],
-      expectedScope: "graph:read",
-    },
-    {
-      name: "does not add offline access without refresh grant support",
-      registration: "cimd",
-      challengeScope: "graph:read",
-      authorizationServerScopes: ["graph:read", "offline_access"],
-      grantTypesSupported: ["authorization_code"],
-      expectedScope: "graph:read",
-    },
-    {
-      name: "respects the non-refresh default for omitted grant types",
-      registration: "cimd",
-      challengeScope: "graph:read",
-      authorizationServerScopes: ["graph:read", "offline_access"],
-      grantTypesSupported: null,
-      expectedScope: "graph:read",
-    },
-    {
-      name: "requests offline access in DCR as well as authorization",
-      registration: "dcr",
-      challengeScope: "graph:read",
-      authorizationServerScopes: ["graph:read", "offline_access", "admin"],
-      grantTypesSupported: ["authorization_code", "refresh_token"],
-      expectedScope: "graph:read offline_access",
-    },
-  ] as const)("$name", async ({ name: _name, expectedScope, ...options }) => {
-    const oauth = await automaticOAuthFixture({
-      ...options,
-      metadataScopes: ["graph:read", "media:read"],
-    });
-    const authorizationUrl = await oauth.connectors.startCustomConnectorOAuth2(
-      oauth.actor,
-      oauth.connector.id,
-    );
-
-    expect(new URL(authorizationUrl).searchParams.get("scope")).toBe(
-      expectedScope,
-    );
-    if (options.registration === "dcr") {
-      expect(oauth.provider.registrationBodies).toHaveLength(1);
-      expect(oauth.provider.registrationBodies[0]).toMatchObject({
-        scope: expectedScope,
-      });
-    }
-  });
-
-  it("preserves provider defaults when no resource scopes are advertised", async () => {
-    const oauth = await automaticOAuthFixture({
-      challengeScope: null,
-      metadataScopes: [],
-      authorizationServerScopes: ["offline_access", "admin"],
-    });
-    const authorizationUrl = await oauth.connectors.startCustomConnectorOAuth2(
-      oauth.actor,
-      oauth.connector.id,
-    );
-
-    expect(new URL(authorizationUrl).searchParams.get("scope")).toBeNull();
-  });
-
-  it.each(["cimd", "dcr"] as const)(
-    "authorizes mixed custom MCP through %s despite public initialization",
-    async (registration) => {
-      const oauth = await automaticOAuthFixture({
-        registration,
-        authentication: "mixed",
-        metadataScopes: ["read", "write"],
-        initialExpiresIn: 3600,
-      });
-      const authorizationUrl =
-        await oauth.connectors.startCustomConnectorOAuth2(
-          oauth.actor,
-          oauth.connector.id,
-        );
-      const url = new URL(authorizationUrl);
-      expect(url.searchParams.get("scope")).toBe("read write");
-      expect(url.searchParams.get("client_id")).toBe(
-        registration === "cimd"
-          ? "https://api.okou.ai/api/oauth/mcp/client-metadata/okou.json"
-          : "automatic-dcr-client",
-      );
-      const state = url.searchParams.get("state");
-      if (!state) {
-        throw new Error("Expected OAuth state");
-      }
-      const completed =
-        await oauth.connectors.completeCustomConnectorOAuth2CallbackResult({
-          state,
-          code: randomUUID(),
-          iss: oauth.provider.issuer,
-        });
-      expect(completed.body.status).toBe("success");
-      await expect(
-        oauth.connectors.listCustomConnectorAccounts(
-          oauth.actor,
-          oauth.connector.id,
-        ),
-      ).resolves.toMatchObject([
-        { connectionStatus: "connected", oauthScopes: ["read", "write"] },
-      ]);
-    },
-  );
-
-  it("preserves a custom OAuth account when reconnect metadata is unavailable", async () => {
-    const oauth = await automaticOAuthFixture({
-      authentication: "mixed",
-      initialExpiresIn: 3600,
-    });
-    const authorizationUrl = await oauth.connectors.startCustomConnectorOAuth2(
-      oauth.actor,
-      oauth.connector.id,
-    );
-    const state = new URL(authorizationUrl).searchParams.get("state");
-    if (!state) {
-      throw new Error("Expected OAuth state");
-    }
-    await oauth.connectors.completeCustomConnectorOAuth2CallbackResult({
-      state,
-      code: randomUUID(),
-      iss: oauth.provider.issuer,
-    });
-    const original = await oauth.connectors.listCustomConnectorAccounts(
-      oauth.actor,
-      oauth.connector.id,
-    );
-    const [account] = original;
-    if (!account) {
-      throw new Error("Expected an OAuth account");
-    }
-    mockAutomaticMcpOAuthProvider(context, {
-      registration: "cimd",
-      authentication: "mixed",
-      resourceMetadataStatus: 503,
-    });
-    await oauth.connectors.requestStartCustomConnectorOAuth2(
-      oauth.actor,
-      oauth.connector.id,
-      [502],
-      { intent: "reconnect", connectionId: account.id },
-    );
-    await expect(
-      oauth.connectors.listCustomConnectorAccounts(
-        oauth.actor,
-        oauth.connector.id,
-      ),
-    ).resolves.toStrictEqual(original);
-  });
-
-  it("preserves custom OAuth accepted while an anonymous reconnect was discovering metadata", async () => {
-    const oauth = await automaticOAuthFixture({
-      registration: "none",
-      authentication: "none",
-    });
-    await oauth.connectors.requestStartCustomConnectorOAuth2(
-      oauth.actor,
-      oauth.connector.id,
-      [200],
-    );
-    const [account] = await oauth.connectors.listCustomConnectorAccounts(
-      oauth.actor,
-      oauth.connector.id,
-    );
-    if (!account) {
-      throw new Error("Expected a public account");
-    }
-    const intent = { intent: "reconnect" as const, connectionId: account.id };
-    const requested = createDeferredPromise<void>(context.signal);
-    const release = createDeferredPromise<void>(context.signal);
-    onTestFinished(() => {
-      if (!release.settled()) {
-        release.resolve(undefined);
-      }
-    });
-    server.use(
-      http.get(
-        new URL(
-          "/.well-known/oauth-protected-resource",
-          oauth.provider.endpoint,
-        ).href,
-        async () => {
-          requested.resolve(undefined);
-          await release.promise;
-          return new HttpResponse(null, { status: 503 });
-        },
-      ),
-    );
-    const pending = Promise.allSettled([
-      oauth.connectors.requestStartCustomConnectorOAuth2(
-        oauth.actor,
-        oauth.connector.id,
-        [409],
-        intent,
-      ),
-    ]);
-    await requested.promise;
-    const provider = mockAutomaticMcpOAuthProvider(context, {
-      registration: "cimd",
-      authentication: "mixed",
-      initialExpiresIn: 3600,
-    });
-    const url = await oauth.connectors.startCustomConnectorOAuth2(
-      oauth.actor,
-      oauth.connector.id,
-      intent,
-    );
-    const state = new URL(url).searchParams.get("state");
-    if (!state) {
-      throw new Error("Expected OAuth state");
-    }
-    await oauth.connectors.completeCustomConnectorOAuth2CallbackResult({
-      state,
-      code: randomUUID(),
-      iss: provider.issuer,
-    });
-    const upgraded = await oauth.connectors.listCustomConnectorAccounts(
-      oauth.actor,
-      oauth.connector.id,
-    );
-    expect(upgraded).toMatchObject([{ oauthScopes: ["read", "write"] }]);
-    release.resolve(undefined);
-    const [finished] = await pending;
-    if (finished.status === "rejected") {
-      throw finished.reason;
-    }
-    await expect(
-      oauth.connectors.listCustomConnectorAccounts(
-        oauth.actor,
-        oauth.connector.id,
-      ),
-    ).resolves.toStrictEqual(upgraded);
-  });
-
-  it("connects a public custom MCP when optional metadata is an HTML page", async () => {
-    const oauth = await automaticOAuthFixture({
-      registration: "none",
-      authentication: "none",
-    });
-    server.use(
-      http.get(
-        new URL(
-          "/.well-known/oauth-protected-resource",
-          oauth.provider.endpoint,
-        ).href,
-        () => {
-          return new HttpResponse("<!doctype html><title>Not found</title>", {
-            headers: { "content-type": "text/html" },
-          });
-        },
-      ),
-    );
-    const response = await oauth.connectors.requestStartCustomConnectorOAuth2(
-      oauth.actor,
-      oauth.connector.id,
-      [200],
-    );
-    expect(response.body).toMatchObject({ result: "connected" });
-    await expect(
-      oauth.connectors.listCustomConnectorAccounts(
-        oauth.actor,
-        oauth.connector.id,
-      ),
-    ).resolves.toMatchObject([
-      { connectionStatus: "connected", oauthScopes: null },
-    ]);
-  });
-
-  it("publishes exact public Okou client metadata from configured origins", async () => {
-    mockEnv("OKOU_API_BACKEND_URL", "https://api.okou.ai");
-    mockEnv("OKOU_WEB_URL", "https://www.okou.ai");
-    mockEnv("APP_URL", "https://app.okou.ai");
-
-    const response = await accept(metadataClient().okouClientMetadata(), [200]);
+    const response = await accept(client.okouClientMetadata(), [200]);
 
     expect(response.body).toStrictEqual({
       client_id: "https://api.okou.ai/api/oauth/mcp/client-metadata/okou.json",
@@ -445,201 +132,323 @@ describe("MCP OAuth foundations", () => {
     });
   });
 
-  it("does not let the request host change the Okou client identity", async () => {
-    mockEnv("OKOU_API_BACKEND_URL", "https://api.okou.ai");
-    mockEnv("OKOU_WEB_URL", "https://www.okou.ai");
-    mockEnv("APP_URL", "https://app.okou.ai");
+  it("mcp-oauth-foundations-001 adds offline access offered only by the authorization server to the challenge scope", async () => {
+    const { params } = await authorizationScopeFor({
+      registration: "cimd",
+      authentication: "oauth",
+      challengeScope: "graph:read",
+      metadataScopes: ["graph:read", "media:read"],
+      authorizationServerScopes: [
+        "graph:read",
+        "media:read",
+        "offline_access",
+        "admin",
+      ],
+    });
 
-    const response = await accept(
-      metadataClient("https://attacker.example.com").okouClientMetadata(),
+    expect(params.get("scope")).toBe("graph:read offline_access");
+  });
+
+  it("mcp-oauth-foundations-002 uses the resource scopes when the challenge has none", async () => {
+    const { params } = await authorizationScopeFor({
+      registration: "cimd",
+      authentication: "oauth",
+      challengeScope: null,
+      metadataScopes: ["graph:read", "media:read"],
+      authorizationServerScopes: ["graph:read", "media:read", "offline_access"],
+    });
+
+    expect(params.get("scope")).toBe("graph:read media:read offline_access");
+  });
+
+  it("mcp-oauth-foundations-004 does not add offline access the authorization server does not offer", async () => {
+    const { params } = await authorizationScopeFor({
+      registration: "cimd",
+      authentication: "oauth",
+      challengeScope: "graph:read",
+      authorizationServerScopes: ["graph:read", "admin"],
+    });
+
+    expect(params.get("scope")).toBe("graph:read");
+  });
+
+  it("mcp-oauth-foundations-008 registers the DCR client with the same offline-access scope", async () => {
+    const { params, provider } = await authorizationScopeFor({
+      registration: "dcr",
+      authentication: "oauth",
+      challengeScope: "graph:read",
+      authorizationServerScopes: ["graph:read", "offline_access", "admin"],
+    });
+
+    expect(params.get("scope")).toBe("graph:read offline_access");
+    expect(provider.registrationBodies).toHaveLength(1);
+    expect(provider.registrationBodies[0]?.scope).toBe(
+      "graph:read offline_access",
+    );
+  });
+
+  it("mcp-oauth-foundations-009 leaves the scope to the provider when no resource scopes are advertised", async () => {
+    const { params } = await authorizationScopeFor({
+      registration: "cimd",
+      authentication: "oauth",
+      challengeScope: null,
+      metadataScopes: [],
+      authorizationServerScopes: ["offline_access", "admin"],
+    });
+
+    expect(params.has("scope")).toBeFalsy();
+  });
+
+  it("mcp-oauth-foundations-010 connects a publicly initializable MCP server through CIMD", async () => {
+    const { params, completed, accounts } = await connectMixedConnector("cimd");
+
+    expect(params.get("scope")).toBe("read write");
+    expect(params.get("client_id")).toBe(
+      "https://api.okou.ai/api/oauth/mcp/client-metadata/okou.json",
+    );
+    expect(completed.body.status).toBe("success");
+    expect(accounts).toHaveLength(1);
+    expect(accounts[0]).toMatchObject({
+      connectionStatus: "connected",
+      oauthScopes: ["read", "write"],
+    });
+  });
+
+  it("mcp-oauth-foundations-011 connects a publicly initializable MCP server through DCR", async () => {
+    const { params, completed, accounts } = await connectMixedConnector("dcr");
+
+    expect(params.get("scope")).toBe("read write");
+    expect(params.get("client_id")).toBe("automatic-dcr-client");
+    expect(completed.body.status).toBe("success");
+    expect(accounts).toHaveLength(1);
+    expect(accounts[0]).toMatchObject({
+      connectionStatus: "connected",
+      oauthScopes: ["read", "write"],
+    });
+  });
+
+  it("mcp-oauth-foundations-012 keeps the connected account when reconnect metadata is unavailable", async () => {
+    const endpoint = uniqueEndpoint();
+    const issuer = uniqueIssuer();
+    useHostedApiOrigin();
+    const provider = mockAutomaticMcpOAuthProvider(context, {
+      registration: "cimd",
+      authentication: "oauth",
+      endpoint,
+      issuer,
+    });
+    const admin = bdd.user();
+    const connector = await createAutomaticConnector(admin, endpoint);
+    const authorizationUrl = await connectors.startCustomConnectorOAuth2(
+      admin,
+      connector.id,
+    );
+    const completed =
+      await connectors.completeCustomConnectorOAuth2CallbackResult({
+        state: stateOf(authorizationUrl),
+        code: `code-${randomUUID()}`,
+        iss: provider.issuer,
+      });
+    expect(completed.body.status).toBe("success");
+    const before = await connectors.listCustomConnectorAccounts(
+      admin,
+      connector.id,
+    );
+    const [account] = before;
+    if (!account) {
+      throw new Error("Expected a connected account");
+    }
+
+    mockAutomaticMcpOAuthProvider(context, {
+      registration: "cimd",
+      authentication: "oauth",
+      endpoint,
+      issuer,
+      resourceMetadataStatus: 503,
+    });
+    const reconnect = await connectors.requestStartCustomConnectorOAuth2(
+      admin,
+      connector.id,
+      [502],
+      { intent: "reconnect", connectionId: account.id },
+    );
+
+    expect(reconnect.status).toBe(502);
+    await expect(
+      connectors.listCustomConnectorAccounts(admin, connector.id),
+    ).resolves.toStrictEqual(before);
+  });
+
+  it("mcp-oauth-foundations-014 connects a public MCP server whose optional metadata is an HTML page", async () => {
+    const provider = installProvider({
+      registration: "none",
+      authentication: "none",
+    });
+    server.use(
+      http.get(
+        new URL("/.well-known/oauth-protected-resource", provider.endpoint)
+          .href,
+        () => {
+          return new HttpResponse("<!doctype html><title>Docs</title>", {
+            status: 200,
+            headers: { "content-type": "text/html" },
+          });
+        },
+      ),
+    );
+    const admin = bdd.user();
+    const connector = await createAutomaticConnector(admin, provider.endpoint);
+
+    const response = await connectors.requestStartCustomConnectorOAuth2(
+      admin,
+      connector.id,
       [200],
     );
 
-    expect(response.body.client_id).toBe(
-      "https://api.okou.ai/api/oauth/mcp/client-metadata/okou.json",
-    );
-    expect(response.body.client_uri).toBe("https://app.okou.ai/");
-    expect(response.body.redirect_uris).toStrictEqual([
-      "https://app.okou.ai/connectors/custom/callback",
-      "https://api.okou.ai/api/connectors/automatic/callback",
-    ]);
-  });
-
-  it.each([
-    "http://oauth.example.com/metadata",
-    "https://user:password@oauth.example.com/metadata",
-    "https://oauth.example.com/metadata#fragment",
-  ])("rejects unsafe OAuth URL %s", async (url) => {
-    const oauth = await automaticOAuthFixture();
-
-    const response = await oauth.start(url, [400]);
-
-    expect(response.status).toBe(400);
-    expect(response.body).toStrictEqual(
-      automaticOAuthFailure(
-        new URL(url).username
-          ? CUSTOM_CONNECTOR_AUTOMATIC_OAUTH_ERROR_CODES.DISCOVERY_INVALID
-          : CUSTOM_CONNECTOR_AUTOMATIC_OAUTH_ERROR_CODES.UNSAFE_URL,
-      ),
-    );
-    expect(oauth.provider.tokenBodies).toStrictEqual([]);
-  });
-
-  it.each([
-    "https://oauth.example.com",
-    "https://localhost",
-    "https://10.0.0.1",
-    "https://[fd00::1]",
-  ])("follows three metadata redirects from %s", async (origin) => {
-    const oauth = await automaticOAuthFixture();
-    const metadataSteps: number[] = [];
-    server.use(
-      http.get("*/redirect/:step", ({ params, request }) => {
-        expect(new URL(request.url).origin).toBe(origin);
-        const step = Number(params.step);
-        metadataSteps.push(step);
-        return step < 3
-          ? new HttpResponse(null, {
-              status: 302,
-              headers: { location: `/redirect/${step + 1}` },
-            })
-          : HttpResponse.json(oauth.resourceMetadata);
-      }),
-    );
-
-    const response = await oauth.start(`${origin}/redirect/0`, [200]);
-
     expect(response.status).toBe(200);
-    expect(response.body).toStrictEqual({
-      result: "authorization",
-      authorizationUrl: expect.stringMatching(
-        /^https:\/\/automatic-issuer\.example\.test\/authorize\?/u,
-      ),
-      connectionId: expect.any(String),
-      oauthAttemptId: expect.any(String),
+    if (!("result" in response.body)) {
+      throw new Error("Expected an OAuth start result");
+    }
+    expect(response.body.result).toBe("connected");
+    const accounts = await connectors.listCustomConnectorAccounts(
+      admin,
+      connector.id,
+    );
+    expect(accounts).toHaveLength(1);
+    expect(accounts[0]).toMatchObject({
+      connectionStatus: "connected",
+      oauthScopes: null,
     });
-    expect(metadataSteps).toStrictEqual([0, 1, 2, 3]);
-    expect(oauth.provider.tokenBodies).toStrictEqual([]);
   });
 
-  it("rejects a fourth metadata redirect", async () => {
-    const oauth = await automaticOAuthFixture();
-    const metadataSteps: number[] = [];
+  it("mcp-oauth-foundations-017 rejects an insecure resource metadata URL before any token request", async () => {
+    const provider = installProvider({
+      registration: "cimd",
+      authentication: "oauth",
+      challengeHeader:
+        'Bearer resource_metadata="http://oauth.example.com/metadata", scope="read write"',
+    });
+    const admin = bdd.user();
+    const connector = await createAutomaticConnector(admin, provider.endpoint);
+
+    const response = await connectors.requestStartCustomConnectorOAuth2(
+      admin,
+      connector.id,
+      [400],
+    );
+
+    expect(response.body).toStrictEqual({
+      error: {
+        code: "MCP_OAUTH_UNSAFE_URL",
+        message:
+          "Automatic MCP OAuth setup failed. Check the server's OAuth configuration or choose another authentication method.",
+      },
+    });
+    expect(provider.tokenBodies).toHaveLength(0);
+  });
+
+  it("mcp-oauth-foundations-020 follows three same-origin metadata redirects", async () => {
+    const issuer = uniqueIssuer();
+    const endpoint = uniqueEndpoint();
+    useHostedApiOrigin();
+    const provider = mockAutomaticMcpOAuthProvider(context, {
+      registration: "cimd",
+      authentication: "oauth",
+      endpoint,
+      issuer,
+      challengeHeader:
+        'Bearer resource_metadata="https://oauth.example.com/redirect/0", scope="read write"',
+    });
+    const fetchedSteps: number[] = [];
     server.use(
       http.get("https://oauth.example.com/redirect/:step", ({ params }) => {
         const step = Number(params.step);
-        metadataSteps.push(step);
-        return step < 4
-          ? new HttpResponse(null, {
-              status: 302,
-              headers: { location: `/redirect/${step + 1}` },
-            })
-          : HttpResponse.json(oauth.resourceMetadata);
-      }),
-    );
-
-    const response = await oauth.start(
-      "https://oauth.example.com/redirect/0",
-      [400],
-    );
-
-    expect(response.status).toBe(400);
-    expect(response.body).toStrictEqual(
-      automaticOAuthFailure(
-        CUSTOM_CONNECTOR_AUTOMATIC_OAUTH_ERROR_CODES.DISCOVERY_INVALID,
-      ),
-    );
-    expect(metadataSteps).toStrictEqual([0, 1, 2, 3]);
-    expect(oauth.provider.tokenBodies).toStrictEqual([]);
-  });
-
-  it("revalidates a metadata redirect target before fetching it", async () => {
-    const oauth = await automaticOAuthFixture();
-    let downgradedRequests = 0;
-    server.use(
-      http.get("https://oauth.example.com/redirect", () => {
-        return new HttpResponse(null, {
-          status: 302,
-          headers: { location: "http://oauth.example.com/metadata" },
+        fetchedSteps.push(step);
+        if (step < 3) {
+          return new HttpResponse(null, {
+            status: 302,
+            headers: {
+              location: `https://oauth.example.com/redirect/${step + 1}`,
+            },
+          });
+        }
+        return HttpResponse.json({
+          resource: endpoint,
+          authorization_servers: [issuer],
+          scopes_supported: ["read", "write"],
         });
       }),
-      http.get("http://oauth.example.com/metadata", () => {
-        downgradedRequests += 1;
-        return HttpResponse.json(oauth.resourceMetadata);
-      }),
+    );
+    const admin = bdd.user();
+    const connector = await createAutomaticConnector(admin, endpoint);
+
+    const response = await connectors.requestStartCustomConnectorOAuth2(
+      admin,
+      connector.id,
+      [200],
     );
 
-    const response = await oauth.start(
-      "https://oauth.example.com/redirect",
-      [400],
+    if (
+      !("result" in response.body) ||
+      response.body.result !== "authorization"
+    ) {
+      throw new Error("Expected an OAuth authorization start");
+    }
+    const authorizationUrl = new URL(response.body.authorizationUrl);
+    expect(`${authorizationUrl.origin}${authorizationUrl.pathname}`).toBe(
+      `${issuer}/authorize`,
     );
-
-    expect(response.status).toBe(400);
-    expect(response.body).toStrictEqual(
-      automaticOAuthFailure(
-        CUSTOM_CONNECTOR_AUTOMATIC_OAUTH_ERROR_CODES.UNSAFE_URL,
-      ),
-    );
-    expect(downgradedRequests).toBe(0);
-    expect(oauth.provider.tokenBodies).toStrictEqual([]);
+    expect(response.body.connectionId).toBeTruthy();
+    expect(response.body.oauthAttemptId).toBeTruthy();
+    expect(fetchedSteps).toStrictEqual([0, 1, 2, 3]);
+    expect(provider.tokenBodies).toHaveLength(0);
   });
 
-  it("removes authorization before a metadata redirect", async () => {
-    const oauth = await automaticOAuthFixture({
+  it("mcp-oauth-foundations-026 drops the bearer token when userinfo redirects to another origin", async () => {
+    const provider = installProvider({
+      registration: "cimd",
+      authentication: "oauth",
       initialAccessToken: "secret",
       userInfoEndpoint: "https://oauth.example.com/redirect",
-      identity: {
-        subject: "redirect-user",
-        tokenUsername: "id-token-only-name",
-      },
+      identity: { subject: "redirect-user" },
     });
-    const authorizations: (string | null)[] = [];
+    const userInfoAuthorizations: (string | null)[] = [];
     server.use(
       http.get("https://oauth.example.com/redirect", ({ request }) => {
-        authorizations.push(request.headers.get("authorization"));
-        return request.headers.get("authorization") === "Bearer secret"
-          ? new HttpResponse(null, {
-              status: 302,
-              headers: {
-                location: "https://metadata.example.com/document",
-              },
-            })
-          : new HttpResponse(null, { status: 400 });
+        userInfoAuthorizations.push(request.headers.get("authorization"));
+        return new HttpResponse(null, {
+          status: 302,
+          headers: { location: "https://metadata.example.com/document" },
+        });
       }),
       http.get("https://metadata.example.com/document", ({ request }) => {
-        authorizations.push(request.headers.get("authorization"));
+        userInfoAuthorizations.push(request.headers.get("authorization"));
         return HttpResponse.json({
           sub: "redirect-user",
           preferred_username: "redirect-userinfo-name",
-          authorization: request.headers.get("authorization"),
         });
       }),
     );
-
-    const authorizationUrl = await oauth.connectors.startCustomConnectorOAuth2(
-      oauth.actor,
-      oauth.connector.id,
+    const admin = bdd.user();
+    const connector = await createAutomaticConnector(admin, provider.endpoint);
+    const authorizationUrl = await connectors.startCustomConnectorOAuth2(
+      admin,
+      connector.id,
     );
-    const state = new URL(authorizationUrl).searchParams.get("state");
-    if (!state) {
-      throw new Error("Expected automatic OAuth authorization state");
-    }
-    const response =
-      await oauth.connectors.completeCustomConnectorOAuth2CallbackResult({
-        code: "redirect-identity-code",
-        state,
-        iss: oauth.provider.issuer,
+
+    const completed =
+      await connectors.completeCustomConnectorOAuth2CallbackResult({
+        state: stateOf(authorizationUrl),
+        code: `code-${randomUUID()}`,
+        iss: provider.issuer,
       });
 
-    expect(response.status).toBe(200);
-    expect(response.body).toStrictEqual({
-      status: "success",
-      username: null,
-    });
-    expect(authorizations).toStrictEqual(["Bearer secret", null]);
-    const accounts = await oauth.connectors.listCustomConnectorAccounts(
-      oauth.actor,
-      oauth.connector.id,
+    expect(completed.status).toBe(200);
+    expect(completed.body).toStrictEqual({ status: "success", username: null });
+    expect(userInfoAuthorizations).toStrictEqual(["Bearer secret", null]);
+    const accounts = await connectors.listCustomConnectorAccounts(
+      admin,
+      connector.id,
     );
     expect(accounts).toHaveLength(1);
     expect(accounts[0]).toMatchObject({
@@ -647,224 +456,5 @@ describe("MCP OAuth foundations", () => {
       externalUsername: "redirect-userinfo-name",
       externalEmail: null,
     });
-  });
-
-  it("rejects token and DCR POST redirects without replay", async () => {
-    mockEnv("APP_URL", "https://app.okou.ai");
-    mockEnv("OKOU_WEB_URL", "https://www.okou.ai");
-    const runnerSecret = "b".repeat(64);
-    mockEnv("OFFICIAL_RUNNER_SECRET", runnerSecret);
-    useSecretKmsProbe();
-    const bdd = createBddApi(context);
-    const connectors = createConnectorBddApi(context);
-    const runs = createRunsApi(context);
-    const firewall = createFirewallApi(context);
-    const actor = bdd.user({ orgRole: "org:admin" });
-    bdd.acceptStorageWrites();
-    runs.acceptStorageDownloads();
-    runs.acceptTelemetryIngest();
-    const runnerIdentity = {
-      runnerId: randomUUID(),
-      heartbeatGeneration: 5_000_000_000,
-    };
-    const runnerHeaders = {
-      authorization: `Bearer vm0_official_${runnerSecret}`,
-    };
-    await runs.configureRunnerGroup({
-      runnerIdentity,
-      heartbeatAuthorization: runnerHeaders.authorization,
-    });
-    await runs.grantProEntitlement(actor);
-    await runs.ensurePersonalSubscriptionModel(actor, {
-      model: "claude-fable-5-1",
-    });
-
-    const tokenRequests: {
-      readonly body: string;
-      readonly authorization: string | null;
-      readonly contentType: string | null;
-    }[] = [];
-    let redirectedRequests = 0;
-    server.use(
-      http.post("https://oauth.example.com/token", async ({ request }) => {
-        const body = await request.text();
-        tokenRequests.push({
-          body,
-          authorization: request.headers.get("authorization"),
-          contentType: request.headers.get("content-type"),
-        });
-        if (new URLSearchParams(body).get("grant_type") !== "refresh_token") {
-          return HttpResponse.json({
-            access_token: "initial-access-token",
-            refresh_token: "secret",
-            token_type: "Bearer",
-            expires_in: 3600,
-            scope: "read",
-          });
-        }
-        return new HttpResponse(null, {
-          status: 307,
-          headers: { location: "/redirected-token" },
-        });
-      }),
-      http.post("https://oauth.example.com/redirected-token", () => {
-        redirectedRequests += 1;
-        return HttpResponse.json({
-          access_token: "forbidden-replayed-access-token",
-          token_type: "Bearer",
-          expires_in: 3600,
-        });
-      }),
-    );
-    const connector = await connectors.createCustomConnector(actor, {
-      displayName: "OAuth refresh redirect boundary",
-      prefixTemplates: [`https://${randomUUID()}.example.test/v1/`],
-      fields: [],
-      headerInjections: [
-        {
-          name: "Authorization",
-          valueTemplate: "Bearer {{oauth.access_token}}",
-        },
-      ],
-      queryInjections: [],
-      authMode: "oauth",
-      oauthConfig: {
-        providerAdapter: "standard",
-        clientId: "redirect-client",
-        clientSecret: "redirect-secret",
-        authorizationUrl: "https://oauth.example.com/authorize",
-        tokenUrl: "https://oauth.example.com/token",
-        tokenEndpointAuthMethod: "client_secret_basic",
-        pkceMethod: "none",
-        scopes: ["read"],
-        authorizationParams: {},
-      },
-    });
-    oauthCleanups.push(async () => {
-      await connectors.deleteCustomConnector(actor, connector.id);
-    });
-    const authorizationUrl = await connectors.startCustomConnectorOAuth2(
-      actor,
-      connector.id,
-    );
-    const state = new URL(authorizationUrl).searchParams.get("state");
-    if (!state) {
-      throw new Error("Expected configured OAuth authorization state");
-    }
-    const connected =
-      await connectors.completeCustomConnectorOAuth2CallbackResult({
-        code: "refresh-redirect-code",
-        state,
-      });
-    expect(connected.body).toStrictEqual({ status: "success", username: null });
-    const accounts = await connectors.listCustomConnectorAccounts(
-      actor,
-      connector.id,
-    );
-    expect(accounts).toHaveLength(1);
-    const account = accounts[0];
-    if (!account) {
-      throw new Error("Expected the publicly authorized OAuth account");
-    }
-    const run = await runs.createThreadRun(actor, {
-      prompt: "Resolve my configured OAuth connector",
-    });
-    const input = await runs.executionInput(run.runId);
-    oauthCleanups.push(async () => {
-      await runs.requestCancelRun(actor, run.runId, [200]);
-      await createWebhookCallbackApi(context).requestAgentComplete(
-        { runId: run.runId, exitCode: 137 },
-        { authorization: `Bearer ${input.sandboxToken}` },
-        [200],
-      );
-      await flushWaitUntilForTest();
-    });
-    await expect(runs.readRun(actor, run.runId)).resolves.toMatchObject({
-      status: "running",
-    });
-    await flushWaitUntilForTest();
-    tokenRequests.length = 0;
-    const internalName = `custom_connector_${connector.id.replaceAll("-", "")}`;
-    const secretKey = `CUSTOM_${connector.id.replaceAll("-", "")}_S___OAUTH_ACCESS_TOKEN`;
-    const response = await firewall.requestFirewallAuth(
-      { authorization: `Bearer ${input.firewallToken}` },
-      {
-        authHeaders: { Authorization: `Bearer ${secretTemplate(secretKey)}` },
-        matchedFirewall: {
-          name: internalName,
-          apiId: `${internalName}:0`,
-          customConnectorId: connector.id,
-          sourceId: account.id,
-          routingVariables: {},
-        },
-        forceRefresh: true,
-      },
-      [502],
-    );
-
-    expect(response.status).toBe(502);
-    expect(response.body).toStrictEqual({
-      error: {
-        code: "TOKEN_REFRESH_FAILED",
-        message: `Access token refresh failed for: ${connector.id}. The upstream provider may be temporarily unavailable.`,
-        connectors: [connector.id],
-        failureReason: "upstream_provider",
-      },
-    });
-    expect(tokenRequests).toStrictEqual([
-      {
-        body: "grant_type=refresh_token&refresh_token=secret",
-        authorization: `Basic ${Buffer.from("redirect-client:redirect-secret").toString("base64")}`,
-        contentType: "application/x-www-form-urlencoded",
-      },
-    ]);
-    expect(redirectedRequests).toBe(0);
-  });
-
-  it("enforces header and response body size limits", async () => {
-    const oauth = await automaticOAuthFixture();
-    const emptyMetadata = { ...oauth.resourceMetadata, resource_name: "" };
-    const oversizedMetadata = JSON.stringify({
-      ...emptyMetadata,
-      resource_name: "x".repeat(
-        64 * 1024 + 1 - Buffer.byteLength(JSON.stringify(emptyMetadata)),
-      ),
-    });
-    expect(Buffer.byteLength(oversizedMetadata)).toBe(64 * 1024 + 1);
-    server.use(
-      http.get("https://oauth.example.com/large-header", () => {
-        return HttpResponse.json(oauth.resourceMetadata, {
-          headers: { "x-large": "x".repeat(17 * 1024) },
-        });
-      }),
-      http.get("https://oauth.example.com/large-body", () => {
-        return HttpResponse.text(oversizedMetadata, {
-          headers: { "content-type": "application/json" },
-        });
-      }),
-    );
-
-    const header = await oauth.start(
-      "https://oauth.example.com/large-header",
-      [400],
-    );
-    const body = await oauth.start(
-      "https://oauth.example.com/large-body",
-      [400],
-    );
-
-    expect(header.status).toBe(400);
-    expect(header.body).toStrictEqual(
-      automaticOAuthFailure(
-        CUSTOM_CONNECTOR_AUTOMATIC_OAUTH_ERROR_CODES.DISCOVERY_INVALID,
-      ),
-    );
-    expect(body.status).toBe(400);
-    expect(body.body).toStrictEqual(
-      automaticOAuthFailure(
-        CUSTOM_CONNECTOR_AUTOMATIC_OAUTH_ERROR_CODES.DISCOVERY_INVALID,
-      ),
-    );
-    expect(oauth.provider.tokenBodies).toStrictEqual([]);
   });
 });

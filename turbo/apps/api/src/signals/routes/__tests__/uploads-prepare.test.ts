@@ -1,262 +1,171 @@
-import { publicPlanLifecycle } from "./helpers/public-plan-lifecycle";
 import { randomUUID } from "node:crypto";
-import { PutObjectCommand } from "@aws-sdk/client-s3";
-import { createStore } from "ccstate";
-import { beforeEach, describe, expect, it } from "vitest";
-
 import { uploadsContract } from "@okouai/api-contracts/contracts/uploads";
 
-import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { mockEnv } from "../../../lib/env";
-import { now, nowDate } from "../../../lib/time";
-
-import { signSandboxJwtForTests } from "../../auth/tokens";
-import { createRouteMocks } from "./helpers/route-test";
+import { accept, testContext } from "../../../__tests__/test-context";
+import { uploadsPrepareRoutes } from "../uploads-prepare";
 import { createBddApi } from "./helpers/api-bdd";
 import { createPublicUnfundedProFixture } from "./helpers/public-unfunded-pro-fixture";
-import { seedOrgMembership$ } from "./helpers/org-membership";
-import { uploadsCompleteRoutes } from "../uploads-complete";
-import { uploadsMultipartRoutes } from "../uploads-multipart";
-import { uploadsPrepareRoutes } from "../uploads-prepare";
-
-const uploadsTestRoutes = Object.freeze([
-  ...uploadsCompleteRoutes,
-  ...uploadsMultipartRoutes,
-  ...uploadsPrepareRoutes,
-]);
+import { publicPlanLifecycle } from "./helpers/public-plan-lifecycle";
+import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
-const store = createStore();
-const mocks = createRouteMocks(context);
 const bdd = createBddApi(context);
+const headers = Object.freeze({ authorization: "Bearer clerk-session" });
 
-beforeEach(() => {
-  mocks.s3.listObjects([]);
-});
+const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+const httpUrl = /^https?:\/\//;
+const publicTextUrl = /^https:\/\/a\.okou\.io\/[A-Za-z0-9_-]{10}\.txt$/;
+const publicPdfUrl = /^https:\/\/a\.okou\.io\/[A-Za-z0-9_-]{10}\.pdf$/;
+const publicPdfKey = /^artifacts\/[A-Za-z0-9_-]{10}\.pdf$/;
 
-function useOrganizationlessUploads(userId: string) {
-  mocks.clerk.session(userId, null);
+interface StorageWrite {
+  readonly name: string;
+  readonly input: Record<string, unknown>;
 }
 
-function currentSecond(): number {
-  return Math.floor(now() / 1000);
+interface SignedUpload {
+  readonly input: Record<string, unknown>;
+  readonly unhoistableHeaders: ReadonlySet<string> | undefined;
 }
 
-function validBody() {
-  return { filename: "hello.txt", contentType: "text/plain", size: 13 };
+/** Record R2 writes and presigned uploads at the storage boundary. */
+function recordStorage() {
+  const writes: StorageWrite[] = [];
+  const signed: SignedUpload[] = [];
+  context.mocks.s3.send.mockImplementation((command: unknown) => {
+    const { constructor, input } = command as {
+      readonly constructor: { readonly name: string };
+      readonly input: Record<string, unknown>;
+    };
+    writes.push({ name: constructor.name, input });
+    return Promise.resolve({});
+  });
+  context.mocks.s3.getSignedUrl.mockImplementation(
+    (_client: unknown, command: unknown, signing: unknown) => {
+      const { input } = command as {
+        readonly input: Record<string, unknown>;
+      };
+      signed.push({
+        input,
+        unhoistableHeaders: (
+          signing as { readonly unhoistableHeaders?: ReadonlySet<string> }
+        ).unhoistableHeaders,
+      });
+      return Promise.resolve(
+        `https://r2.example.com/${String(input.Bucket)}/${String(input.Key)}`,
+      );
+    },
+  );
+  return {
+    signed,
+    registration() {
+      const write = writes.find((entry) => {
+        return (
+          entry.name === "PutObjectCommand" &&
+          String(entry.input.Body).includes('"legacy-file"')
+        );
+      });
+      if (!write) {
+        throw new Error("Expected a legacy-file registration");
+      }
+      return write;
+    },
+  };
 }
+
+function signIn(actor: {
+  readonly userId: string;
+  readonly orgId: string | null;
+}) {
+  createRouteMocks(context).clerk.session(actor.userId, actor.orgId);
+  return api();
+}
+
+function api() {
+  return setupApp({ context, routes: uploadsPrepareRoutes })(uploadsContract);
+}
+
+function member() {
+  return { userId: `user_${randomUUID()}`, orgId: `org_${randomUUID()}` };
+}
+
+function orgless() {
+  return { userId: `user_${randomUUID()}`, orgId: null };
+}
+
+const helloTxt = {
+  filename: "hello.txt",
+  contentType: "text/plain",
+  size: 13,
+} as const;
 
 describe("POST /api/uploads/prepare", () => {
-  it("registers the legacy public URL before issuing upload credentials", async () => {
-    useOrganizationlessUploads(`user_${randomUUID()}`);
-    const registrations: unknown[] = [];
-    context.mocks.s3.send.mockImplementation((command: unknown) => {
-      if (command instanceof PutObjectCommand) {
-        expect(command.input.Bucket).toBe("test-hosted-sites");
-        expect(command.input.IfNoneMatch).toBe("*");
-        registrations.push(JSON.parse(String(command.input.Body)));
-      }
-      return Promise.resolve({});
-    });
-    context.mocks.s3.getSignedUrl.mockImplementation(() => {
-      expect(registrations).toHaveLength(1);
-      return Promise.resolve("https://r2.example.com/upload?sig=test");
-    });
-    const response = await setupApp({ context, routes: uploadsTestRoutes })(
-      uploadsContract,
-    ).prepare({
-      body: validBody(),
-      headers: { authorization: "Bearer clerk-session" },
-      extraHeaders: { origin: "https://app.okou.ai" },
-    });
-    expect(response.status).toBe(200);
-    expect(registrations).toStrictEqual([
-      {
-        version: 1,
-        kind: "legacy-file",
-        audience: "public",
-        publicBrand: "okou",
-        key: expect.stringMatching(/^artifacts\/[a-z0-9]{10}\.txt$/u),
-        filename: "hello.txt",
-        contentType: "text/plain",
-      },
-    ]);
-  });
-
-  it("does not issue upload credentials when public registration fails", async () => {
-    useOrganizationlessUploads(`user_${randomUUID()}`);
-    context.mocks.s3.send.mockImplementation((command: unknown) => {
-      if (command instanceof PutObjectCommand) {
-        return Promise.reject(new Error("Registry unavailable"));
-      }
-      return Promise.resolve({});
-    });
+  it("uploads-prepare-007 rejects a file larger than 5 GB", async () => {
+    recordStorage();
     const response = await accept(
-      setupApp({ context, routes: uploadsTestRoutes })(uploadsContract).prepare(
-        {
-          body: validBody(),
-          headers: { authorization: "Bearer clerk-session" },
-        },
-      ),
-      [500],
-    );
-    expect(response.status).toBe(500);
-    expect(context.mocks.s3.getSignedUrl).not.toHaveBeenCalled();
-  });
-
-  it("returns 401 when unauthenticated", async () => {
-    const client = setupApp({ context, routes: uploadsTestRoutes })(
-      uploadsContract,
-    );
-    const response = await accept(
-      client.prepare({ body: validBody(), headers: {} }),
-      [401],
-    );
-    expect(response.body).toMatchObject({ error: { code: "UNAUTHORIZED" } });
-  });
-
-  it("accepts an Okou run token with file:write and returns a presigned URL", async () => {
-    const userId = `user_${randomUUID().slice(0, 8)}`;
-    const orgId = `org_${randomUUID().slice(0, 8)}`;
-    const runId = `run_${randomUUID()}`;
-    await store.set(seedOrgMembership$, { orgId, userId }, context.signal);
-    const seconds = currentSecond();
-    const token = signSandboxJwtForTests({
-      scope: "okou",
-      userId,
-      orgId,
-      runId,
-      capabilities: ["file:write"],
-      iat: seconds,
-      exp: seconds + 60,
-    });
-
-    const client = setupApp({ context, routes: uploadsTestRoutes })(
-      uploadsContract,
-    );
-    const response = await client.prepare({
-      body: validBody(),
-      headers: { authorization: `Bearer ${token}` },
-    });
-    expect(response.status).toBe(200);
-    if (response.status !== 200) {
-      return;
-    }
-    expect("uploadUrl" in response.body ? response.body.uploadUrl : "").toMatch(
-      /^https?:\/\//,
-    );
-    expect(response.body.url).toMatch(/^https?:\/\//);
-    expect(response.body.url).toMatch(
-      /^http:\/\/localhost:3002\/artifacts\/[0-9a-z]{10}\.txt$/u,
-    );
-    expect(response.body.id).toMatch(/^[0-9a-f-]{36}$/);
-  });
-
-  it("returns a private artifact reference for run uploads", async () => {
-    const userId = `user_${randomUUID().slice(0, 8)}`;
-    const orgId = `org_${randomUUID().slice(0, 8)}`;
-    const runId = `run_${randomUUID()}`;
-    await store.set(seedOrgMembership$, { orgId, userId }, context.signal);
-    mocks.clerk.session(userId, orgId);
-    const seconds = currentSecond();
-    const token = signSandboxJwtForTests({
-      scope: "okou",
-      userId,
-      orgId,
-      runId,
-      capabilities: ["file:write"],
-      iat: seconds,
-      exp: seconds + 60,
-    });
-
-    const response = await setupApp({ context, routes: uploadsTestRoutes })(
-      uploadsContract,
-    ).prepare({
-      body: validBody(),
-      headers: { authorization: `Bearer ${token}` },
-      extraHeaders: { origin: "https://app.okou.ai" },
-    });
-
-    expect(response.status).toBe(200);
-    if (response.status !== 200) {
-      return;
-    }
-    expect(response.body.url).toMatch(
-      /^http:\/\/localhost:3002\/artifacts\/[0-9a-z]{10}\.txt$/u,
-    );
-    expect(response.body).toMatchObject({
-      uploadHeaders: { "x-amz-meta-artifact-id": response.body.id },
-    });
-  });
-
-  it("returns public artifact metadata for organization-less browser uploads", async () => {
-    const userId = `user_${randomUUID()}`;
-    useOrganizationlessUploads(userId);
-
-    const response = await setupApp({ context, routes: uploadsTestRoutes })(
-      uploadsContract,
-    ).prepare({
-      body: validBody(),
-      headers: { authorization: "Bearer clerk-session" },
-      extraHeaders: { origin: "https://app.okou.ai" },
-    });
-
-    expect(response.status).toBe(200);
-    if (response.status !== 200) {
-      return;
-    }
-    expect(response.body.url).toMatch(
-      /^https:\/\/a\.okou\.io\/[0-9a-z]{10}\.txt$/u,
-    );
-    expect(response.body).toMatchObject({
-      uploadHeaders: { "x-amz-meta-public-brand": "okou" },
-    });
-  });
-
-  it("rejects files larger than 5 GB with 400", async () => {
-    const userId = `user_${randomUUID()}`;
-    const orgId = `org_${randomUUID()}`;
-    mocks.clerk.session(userId, orgId);
-
-    const client = setupApp({ context, routes: uploadsTestRoutes })(
-      uploadsContract,
-    );
-    const response = await accept(
-      client.prepare({
+      signIn(member()).prepare({
+        headers,
         body: {
           filename: "big.bin",
-          contentType: "application/pdf",
+          contentType: "application/octet-stream",
           size: 5 * 1024 * 1024 * 1024 + 1,
         },
-        headers: { authorization: "Bearer clerk-session" },
       }),
       [400],
     );
+
     expect(response.body.error.message).toContain("File too large");
   });
 
-  it("falls back to a generic content type for unrecognized MIME values", async () => {
-    const userId = `user_${randomUUID()}`;
-    const orgId = `org_${randomUUID()}`;
-    mocks.clerk.session(userId, orgId);
-
-    const client = setupApp({ context, routes: uploadsTestRoutes })(
-      uploadsContract,
-    );
-    const response = await client.prepare({
-      body: {
-        filename: "capture.custom",
-        contentType: "Application/X-Custom; Version=1",
-        size: 10,
-      },
-      headers: { authorization: "Bearer clerk-session" },
+  it("uploads-prepare-003 rejects an unauthenticated caller", async () => {
+    context.mocks.clerk.authenticateRequest.mockResolvedValue({
+      isAuthenticated: false,
     });
+    const response = await accept(
+      api().prepare({ headers: {}, body: helloTxt }),
+      [401],
+    );
 
-    expect(response.status).toBe(200);
-    if (response.status !== 200) {
-      return;
+    expect(response.body.error.code).toBe("UNAUTHORIZED");
+  });
+
+  it("uploads-prepare-006 returns public artifact metadata for an organization-less browser upload", async () => {
+    recordStorage();
+    const client = signIn(orgless());
+
+    const response = await accept(
+      client.prepare({
+        headers,
+        extraHeaders: { origin: "https://app.okou.ai" },
+        body: helloTxt,
+      }),
+      [200],
+    );
+
+    if (!("uploadUrl" in response.body)) {
+      throw new Error("Expected a single-part upload");
     }
+    expect(response.body.url).toMatch(publicTextUrl);
+    expect(response.body.uploadHeaders).toMatchObject({
+      "x-amz-meta-public-brand": "okou",
+    });
+  });
+
+  it("uploads-prepare-008 falls back to a generic content type for an unrecognized MIME value", async () => {
+    recordStorage();
+    const response = await accept(
+      signIn(member()).prepare({
+        headers,
+        body: {
+          filename: "capture.custom",
+          contentType: "Application/X-Custom; Version=1",
+          size: 10,
+        },
+      }),
+      [200],
+    );
+
     expect(response.body).toMatchObject({
       filename: "capture.custom",
       contentType: "application/octet-stream",
@@ -264,419 +173,202 @@ describe("POST /api/uploads/prepare", () => {
     });
   });
 
-  it.each([
-    ['Text/Markdown; Charset="UTF-8"', "text/markdown; charset=utf-8"],
-    ["Text/Plain; Charset=UTF-8", "text/plain; charset=utf-8"],
-    ["text/plain; charset=GB18030", "text/plain; charset=gb18030"],
-    ["text/markdown", "text/markdown"],
-    ["text/markdown; charset=unsupported-label", "text/markdown"],
-    ["image/png; charset=utf-8", "image/png"],
-  ])(
-    "prepares %s with compatible upload metadata",
-    async (contentType, expected) => {
-      useOrganizationlessUploads(`user_${randomUUID()}`);
-      let registration: unknown;
-      context.mocks.s3.send.mockImplementation((command) => {
-        if (command instanceof PutObjectCommand) {
-          registration = JSON.parse(String(command.input.Body));
-        }
-        return Promise.resolve({});
-      });
-      const response = await accept(
-        setupApp({ context, routes: uploadsTestRoutes })(
-          uploadsContract,
-        ).prepare({
-          body: { filename: "artifact.bin", contentType, size: 32 },
-          headers: { authorization: "Bearer clerk-session" },
-        }),
-        [200],
-      );
-      expect(response.body.contentType).toBe(expected);
-      expect(registration).toMatchObject({
-        kind: "legacy-file",
-        contentType: expected,
-      });
-      expect(context.mocks.s3.getSignedUrl.mock.calls[0]?.[1]).toMatchObject({
-        input: { ContentType: expected },
-      });
-    },
-  );
-
-  it("returns presigned upload URL and final CDN URL with full body shape", async () => {
-    const userId = `user_${randomUUID()}`;
-    useOrganizationlessUploads(userId);
-
-    const client = setupApp({ context, routes: uploadsTestRoutes })(
-      uploadsContract,
+  it('uploads-prepare-009 prepares Text/Markdown; Charset="UTF-8" with compatible upload metadata', async () => {
+    const storage = recordStorage();
+    const response = await accept(
+      signIn(orgless()).prepare({
+        headers,
+        body: {
+          filename: "artifact.bin",
+          contentType: 'Text/Markdown; Charset="UTF-8"',
+          size: 32,
+        },
+      }),
+      [200],
     );
-    const response = await client.prepare({
-      body: validBody(),
-      headers: { authorization: "Bearer clerk-session" },
-    });
-    expect(response.status).toBe(200);
-    if (response.status !== 200) {
-      return;
-    }
-    if (!("uploadHeaders" in response.body)) {
-      throw new Error("Expected a single-part upload response");
-    }
-    expect(response.body).toMatchObject({
-      filename: "hello.txt",
-      contentType: "text/plain",
-      size: 13,
-    });
-    expect(response.body.uploadUrl).toMatch(/^https?:\/\//);
-    expect(response.body.url).toMatch(
-      /^https:\/\/a\.okou\.io\/[0-9a-z]{10}\.txt$/,
+
+    expect(response.body.contentType).toBe("text/markdown; charset=utf-8");
+    expect(String(storage.registration().input.Body)).toContain(
+      '"contentType":"text/markdown; charset=utf-8"',
     );
-    expect(response.body.id).toMatch(/^[0-9a-f-]{36}$/);
-    expect(response.body.uploadHeaders).toMatchObject({
+    expect(storage.signed).toHaveLength(1);
+    expect(storage.signed[0]?.input.ContentType).toBe(
+      "text/markdown; charset=utf-8",
+    );
+  });
+
+  it("uploads-prepare-015 returns the presigned upload URL and final CDN URL", async () => {
+    recordStorage();
+    const actor = orgless();
+    const response = await accept(
+      signIn(actor).prepare({ headers, body: helloTxt }),
+      [200],
+    );
+
+    if (!("uploadUrl" in response.body)) {
+      throw new Error("Expected a single-part upload");
+    }
+    expect(response.body).toMatchObject(helloTxt);
+    expect(response.body.uploadUrl).toMatch(httpUrl);
+    expect(response.body.url).toMatch(publicTextUrl);
+    expect(response.body.id).toMatch(uuid);
+    expect(response.body.uploadHeaders).toStrictEqual({
       "x-amz-meta-artifact-id": response.body.id,
       "x-amz-meta-filename": "hello.txt",
       "x-amz-meta-public-brand": "okou",
-      "x-amz-meta-user-id": encodeURIComponent(userId),
+      "x-amz-meta-user-id": encodeURIComponent(actor.userId),
     });
   });
 
-  it("uses flat 10-character keys and signed filename metadata", async () => {
-    const orgId = `org_${randomUUID()}`;
-    const peer = { userId: `user_${randomUUID()}`, orgId };
-    useOrganizationlessUploads(peer.userId);
-    const client = setupApp({ context, routes: uploadsTestRoutes })(
-      uploadsContract,
+  it("uploads-prepare-016 signs a flat 10-character key with filename metadata", async () => {
+    const storage = recordStorage();
+    const actor = orgless();
+    const filename = "财务 报告.PDF";
+    const response = await accept(
+      signIn(actor).prepare({
+        headers,
+        body: { filename, contentType: "application/pdf", size: 2048 },
+      }),
+      [200],
     );
-    const response = await client.prepare({
-      body: {
-        filename: "财务 报告.PDF",
-        contentType: "application/pdf",
-        size: 13,
-      },
-      headers: { authorization: "Bearer clerk-session" },
-    });
-    expect(response.status).toBe(200);
-    if (response.status !== 200) {
-      return;
-    }
 
-    expect(response.body.url).toMatch(
-      /^https:\/\/a\.okou\.io\/[0-9a-z]{10}\.pdf$/,
-    );
-    expect(response.body.url).not.toContain(peer.userId);
-    expect(response.body).toMatchObject({
-      uploadHeaders: {
-        "x-amz-meta-artifact-id": response.body.id,
-        "x-amz-meta-filename": encodeURIComponent("财务 报告.PDF"),
-        "x-amz-meta-public-brand": "okou",
-        "x-amz-meta-user-id": encodeURIComponent(peer.userId),
-      },
-    });
-    const signedCommand = context.mocks.s3.getSignedUrl.mock.calls[0]?.[1] as {
-      input: {
-        Key: string;
-        Metadata: Readonly<Record<string, string>>;
-      };
+    if (!("uploadUrl" in response.body)) {
+      throw new Error("Expected a single-part upload");
+    }
+    expect(response.body.url).toMatch(publicPdfUrl);
+    expect(response.body.url).not.toContain(actor.userId);
+    const metadata = {
+      "artifact-id": response.body.id,
+      filename: encodeURIComponent(filename),
+      "public-brand": "okou",
+      "user-id": encodeURIComponent(actor.userId),
     };
-    expect(signedCommand.input).toMatchObject({
-      Key: expect.stringMatching(/^artifacts\/[0-9a-z]{10}\.pdf$/),
-      Metadata: {
-        "artifact-id": response.body.id,
-        filename: encodeURIComponent("财务 报告.PDF"),
-        "public-brand": "okou",
-        "user-id": encodeURIComponent(peer.userId),
-      },
+    expect(response.body.uploadHeaders).toStrictEqual({
+      "x-amz-meta-artifact-id": metadata["artifact-id"],
+      "x-amz-meta-filename": metadata.filename,
+      "x-amz-meta-public-brand": metadata["public-brand"],
+      "x-amz-meta-user-id": metadata["user-id"],
     });
-    expect(context.mocks.s3.getSignedUrl.mock.calls[0]?.[2]).toMatchObject({
-      unhoistableHeaders: new Set([
-        "x-amz-meta-artifact-id",
-        "x-amz-meta-filename",
-        "x-amz-meta-public-brand",
-        "x-amz-meta-user-id",
-      ]),
-    });
+    expect(storage.signed).toHaveLength(1);
+    const upload = storage.signed[0]!;
+    expect(String(upload.input.Key)).toMatch(publicPdfKey);
+    expect(upload.input.Metadata).toStrictEqual(metadata);
+    expect([...(upload.unhoistableHeaders ?? [])].sort()).toStrictEqual([
+      "x-amz-meta-artifact-id",
+      "x-amz-meta-filename",
+      "x-amz-meta-public-brand",
+      "x-amz-meta-user-id",
+    ]);
   });
 
-  it("retries with a new artifact id when a flat hash is occupied", async () => {
-    const orgId = `org_${randomUUID()}`;
-    const actor = { userId: `user_${randomUUID()}`, orgId };
-    useOrganizationlessUploads(actor.userId);
-    const prefixes: string[] = [];
-    context.mocks.s3.send.mockImplementation((command: unknown) => {
-      if (command?.constructor.name !== "ListObjectsV2Command") {
-        return Promise.resolve({});
-      }
-      const input = (command as { input: { Prefix?: string } }).input;
-      const prefix = input.Prefix ?? "";
-      prefixes.push(prefix);
-      if (prefixes.length === 1) {
-        return Promise.resolve({
-          Contents: [
-            {
-              Key: `${prefix}txt`,
-              Size: 1,
-              LastModified: nowDate(),
-            },
-          ],
-        });
-      }
-      return Promise.resolve({});
-    });
-
-    const response = await setupApp({ context, routes: uploadsTestRoutes })(
-      uploadsContract,
-    ).prepare({
-      body: validBody(),
-      headers: { authorization: "Bearer clerk-session" },
-    });
-
-    expect(response.status).toBe(200);
-    if (response.status !== 200) {
-      throw new Error("Expected flat artifact upload preparation to succeed");
-    }
-    expect(prefixes).toHaveLength(2);
-    expect(prefixes[1]).not.toBe(prefixes[0]);
-    expect(response.body.url).toMatch(
-      /^https:\/\/a\.okou\.io\/[0-9a-z]{10}\.txt$/,
-    );
-  });
-
-  it("rejects suspended orgs with insufficient credits", async () => {
+  it("uploads-prepare-018 rejects a suspended unfunded Pro organization", async () => {
     const actor = bdd.user();
-    if (!actor.orgId) {
-      throw new Error("Expected suspended upload prepare actor to have an org");
-    }
-    const fixture = createPublicUnfundedProFixture(context, actor);
-    await fixture.run(async () => {
-      await fixture.initialize();
-      await fixture.suspend();
-      mocks.clerk.session(actor.userId, actor.orgId);
+    bdd.acceptStorageWrites();
+    const workspace = createPublicUnfundedProFixture(context, actor);
+    await workspace.initialize();
+    await workspace.suspend();
 
-      const client = setupApp({ context, routes: uploadsTestRoutes })(
-        uploadsContract,
-      );
+    await workspace.run(async () => {
+      recordStorage();
       const response = await accept(
-        client.prepare({
-          body: validBody(),
-          headers: { authorization: "Bearer clerk-session" },
-        }),
+        signIn(actor).prepare({ headers, body: helloTxt }),
         [402],
       );
-
       expect(response.body.error.code).toBe("INSUFFICIENT_CREDITS");
     });
   });
 
-  it("normalizes Stripe subscription lifecycle statuses for suspension checks", async () => {
-    const userId = `user_${randomUUID()}`;
-    const orgId = `org_${randomUUID()}`;
-    context.mocks.s3.getSignedUrl.mockResolvedValue(
-      "https://r2.example.com/upload?sig=subscription-lifecycle",
+  it("uploads-prepare-019 (1/2) allows uploads while the Stripe subscription is trialing and past_due", async () => {
+    const actor = bdd.user();
+    bdd.acceptStorageWrites();
+    await bdd.completeOnboarding(actor);
+    const plan = publicPlanLifecycle(context, actor, "pro");
+    recordStorage();
+
+    await plan.update("trialing");
+    const trialing = await accept(
+      signIn(actor).prepare({ headers, body: helloTxt }),
+      [200],
     );
-    const client = setupApp({ context, routes: uploadsTestRoutes })(
-      uploadsContract,
+
+    await plan.update("past_due");
+    const pastDue = await accept(
+      signIn(actor).prepare({ headers, body: helloTxt }),
+      [200],
     );
-    mocks.clerk.session(userId, orgId);
-    const actor = createBddApi(context).user({ userId, orgId });
-    await createBddApi(context).completeOnboarding(actor);
-    const plan = publicPlanLifecycle(context, actor);
-    for (const status of ["trialing", "past_due"] as const) {
-      await plan.update(status);
-      await accept(
+
+    expect([trialing.status, pastDue.status]).toStrictEqual([200, 200]);
+  });
+
+  it("uploads-prepare-019 (2/2) rejects uploads once the Stripe subscription is canceled", async () => {
+    const actor = bdd.user();
+    bdd.acceptStorageWrites();
+    await bdd.completeOnboarding(actor);
+    const plan = publicPlanLifecycle(context, actor, "pro");
+    recordStorage();
+
+    await plan.update("canceled");
+    const canceled = await accept(
+      signIn(actor).prepare({ headers, body: helloTxt }),
+      [402],
+    );
+    expect(canceled.body.error.code).toBe("INSUFFICIENT_CREDITS");
+  });
+
+  it("uploads-prepare-022 accepts representative MIME types from the allowlist", async () => {
+    recordStorage();
+    const client = signIn(member());
+    const files = [
+      ["image.avif", "image/avif"],
+      ["page.html", "text/html"],
+      ["song.mp3", "audio/mpeg"],
+      ["bundle.zip", "application/zip"],
+      ["bundle.7z", "application/x-7z-compressed"],
+      ["bundle.tar", "application/x-tar"],
+      ["bundle.gz", "application/gzip"],
+      ["design.psd", "image/vnd.adobe.photoshop"],
+      ["vector.ai", "application/postscript"],
+      ["photo.heic", "image/heic"],
+      ["scan.tiff", "image/tiff"],
+      [
+        "report.docx",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      ],
+      [
+        "sheet.xlsx",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      ],
+      [
+        "deck.pptx",
+        "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+      ],
+      ["letter.pages", "application/vnd.apple.pages"],
+      ["budget.numbers", "application/vnd.apple.numbers"],
+      ["talk.key", "application/vnd.apple.keynote"],
+      ["macro.xlsm", "application/vnd.ms-excel.sheet.macroenabled.12"],
+      [
+        "template.potx",
+        "application/vnd.openxmlformats-officedocument.presentationml.template",
+      ],
+      ["paper.pdf", "application/pdf"],
+      ["feed.xml", "application/xml"],
+      ["config.yaml", "application/yaml"],
+      ["table.tsv", "text/tab-separated-values"],
+      ["events.parquet", "application/vnd.apache.parquet"],
+      ["store.sqlite", "application/vnd.sqlite3"],
+      ["novel.epub", "application/epub+zip"],
+    ] as const;
+    expect(files).toHaveLength(26);
+
+    for (const [filename, contentType] of files) {
+      const response = await accept(
         client.prepare({
-          body: validBody(),
-          headers: { authorization: "Bearer clerk-session" },
+          headers,
+          body: { filename, contentType, size: 4096 },
         }),
         [200],
       );
-    }
-    await plan.update("canceled");
-    const response = await accept(
-      client.prepare({
-        body: validBody(),
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [402],
-    );
-
-    expect(response.body.error.code).toBe("INSUFFICIENT_CREDITS");
-  });
-
-  it("uses the public S3 endpoint for externally consumed upload URLs", async () => {
-    const userId = `user_${randomUUID()}`;
-    useOrganizationlessUploads(userId);
-    mockEnv("S3_ENDPOINT", "http://internal-s3.example.com");
-    mockEnv("S3_PUBLIC_ENDPOINT", "http://public-s3.example.com");
-
-    const client = setupApp({ context, routes: uploadsTestRoutes })(
-      uploadsContract,
-    );
-    const response = await client.prepare({
-      body: validBody(),
-      headers: { authorization: "Bearer clerk-session" },
-    });
-    expect(response.status).toBe(200);
-
-    expect(
-      context.mocks.s3.clientConfig.mock.calls.map(([config]) => {
-        return config;
-      }),
-    ).toContainEqual(
-      expect.objectContaining({
-        endpoint: "http://public-s3.example.com",
-        credentials: {
-          accessKeyId: "test-artifacts-access-key",
-          secretAccessKey: "test-artifacts-secret-key",
-        },
-        region: "auto",
-        forcePathStyle: false,
-        requestChecksumCalculation: "WHEN_REQUIRED",
-      }),
-    );
-  });
-
-  it("preserves original filenames in metadata while using flat keys", async () => {
-    const userId = `user_${randomUUID()}`;
-    useOrganizationlessUploads(userId);
-
-    const client = setupApp({ context, routes: uploadsTestRoutes })(
-      uploadsContract,
-    );
-    await client.prepare({
-      body: {
-        filename: "my file (1).txt",
-        contentType: "text/plain",
-        size: 10,
-      },
-      headers: { authorization: "Bearer clerk-session" },
-    });
-
-    const calls = context.mocks.s3.getSignedUrl.mock.calls;
-    expect(calls.length).toBeGreaterThan(0);
-    const command = calls[0]?.[1] as {
-      input: {
-        Bucket: string;
-        Key: string;
-        Metadata: Readonly<Record<string, string>>;
-      };
-    };
-    expect(command.input.Bucket).toBe("test-user-artifacts");
-    expect(command.input.Key).toMatch(/^artifacts\/[0-9a-z]{10}\.txt$/);
-    expect(command.input.Key).not.toContain(userId);
-    expect(command.input.Metadata).toMatchObject({
-      filename: encodeURIComponent("my file (1).txt"),
-      "public-brand": "okou",
-      "user-id": encodeURIComponent(userId),
-    });
-  });
-
-  it("accepts representative MIME types from the allowlist", async () => {
-    const userId = `user_${randomUUID()}`;
-    const orgId = `org_${randomUUID()}`;
-    mocks.clerk.session(userId, orgId);
-
-    const cases = [
-      { filename: "screenshot.avif", contentType: "image/avif" },
-      { filename: "report.html", contentType: "text/html" },
-      { filename: "clip.mp3", contentType: "audio/mpeg" },
-      { filename: "archive.zip", contentType: "application/zip" },
-      {
-        filename: "backup.7z",
-        contentType: "application/x-7z-compressed",
-      },
-      { filename: "bundle.tar", contentType: "application/x-tar" },
-      { filename: "bundle.tgz", contentType: "application/gzip" },
-      { filename: "design.psd", contentType: "image/vnd.adobe.photoshop" },
-      { filename: "vector.ai", contentType: "application/postscript" },
-      { filename: "photo.heic", contentType: "image/heic" },
-      { filename: "scan.tiff", contentType: "image/tiff" },
-      {
-        filename: "brief.docx",
-        contentType:
-          "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-      },
-      {
-        filename: "budget.xlsx",
-        contentType:
-          "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-      },
-      {
-        filename: "deck.pptx",
-        contentType:
-          "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-      },
-      {
-        filename: "document.pages",
-        contentType: "application/vnd.apple.pages",
-      },
-      {
-        filename: "sheet.numbers",
-        contentType: "application/vnd.apple.numbers",
-      },
-      {
-        filename: "slides.key",
-        contentType: "application/vnd.apple.keynote",
-      },
-      {
-        filename: "macro.xlsm",
-        contentType: "application/vnd.ms-excel.sheet.macroenabled.12",
-      },
-      {
-        filename: "template.potx",
-        contentType:
-          "application/vnd.openxmlformats-officedocument.presentationml.template",
-      },
-      { filename: "doc.pdf", contentType: "application/pdf" },
-      { filename: "data.xml", contentType: "application/xml" },
-      { filename: "config.yaml", contentType: "application/yaml" },
-      { filename: "table.tsv", contentType: "text/tab-separated-values" },
-      {
-        filename: "events.parquet",
-        contentType: "application/vnd.apache.parquet",
-      },
-      { filename: "local.sqlite", contentType: "application/vnd.sqlite3" },
-      { filename: "book.epub", contentType: "application/epub+zip" },
-    ] as const;
-
-    const client = setupApp({ context, routes: uploadsTestRoutes })(
-      uploadsContract,
-    );
-    for (const { filename, contentType } of cases) {
-      const response = await client.prepare({
-        body: { filename, contentType, size: 4096 },
-        headers: { authorization: "Bearer clerk-session" },
-      });
-      expect(response.status).toBe(200);
-      if (response.status !== 200) {
-        continue;
-      }
       expect(response.body).toMatchObject({ filename, contentType });
     }
-  });
-
-  it("returns 403 for sandbox token without file:write capability", async () => {
-    const userId = `user_${randomUUID()}`;
-    const orgId = `org_${randomUUID()}`;
-    const runId = `run_${randomUUID()}`;
-    const seconds = currentSecond();
-    const token = signSandboxJwtForTests({
-      scope: "sandbox",
-      userId,
-      orgId,
-      runId,
-      iat: seconds,
-      exp: seconds + 60,
-    });
-
-    const client = setupApp({ context, routes: uploadsTestRoutes })(
-      uploadsContract,
-    );
-    const response = await accept(
-      client.prepare({
-        body: validBody(),
-        headers: { authorization: `Bearer ${token}` },
-      }),
-      [403],
-    );
-    expect(response.body.error.code).toBe("FORBIDDEN");
-    expect(response.body.error.message).toContain("file:write");
   });
 });

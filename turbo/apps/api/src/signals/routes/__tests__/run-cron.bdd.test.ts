@@ -1,238 +1,176 @@
 import { randomUUID } from "node:crypto";
 
-import { describe, expect, it } from "vitest";
+import { runnerRealtimeTokenContract } from "@okouai/api-contracts/contracts/realtime";
+import { runnersHeartbeatContract } from "@okouai/api-contracts/contracts/runners";
 
-import { testContext } from "../../../__tests__/test-context";
-import { now } from "../../../lib/time";
-import {
-  createBddApi,
-  expectApiError,
-  type ApiTestUser,
-} from "./helpers/api-bdd";
+import { accept, testContext } from "../../../__tests__/test-context";
+import { setupApp } from "../../../__tests__/test-helpers";
+import { env } from "../../../lib/env";
+import { nowDate } from "../../../lib/time";
+import { runnersRoutes } from "../runners";
+import { createBddApi } from "./helpers/api-bdd";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 
-/**
- * helper gap:
- * - RUN-02 exhaustive connector credential, secret, variable, grant, custom
- *   connector, and skill setup still needs public API helper coverage before
- *   the old DB fixture matrix can be ported without DB writes. This file covers
- *   model-provider setup through API routes and run-context GET boundaries.
- * - RUN-01/RUN-03/CHAIN-RUN successful dispatch is covered by
- *   run-lifecycle.bdd.cases.ts via the public Stripe invoice.paid entitlement
- *   helper (grantProEntitlement); this file keeps the unauthenticated and
- *   malformed admission boundaries plus runner auth surfaces.
- * - RUN-04 persisted runner log ingestion needs callback/event API helpers.
- *   Output publication through the sandbox webhook is covered by
- *   run-lifecycle-completion.bdd.test.ts; missing-run GET boundaries stay here.
- * - SCHED-02 sync-skills publication and retry are covered by
- *   cron-sync-skills.test.ts with external GitHub/S3 fixtures. This file keeps
- *   shared cron auth rejection without running global sweeps here.
- */
-
 const context = testContext();
+const bdd = createBddApi(context);
+const runs = createRunsApi(context);
 
-async function prepareNoCreditAdmission(actor: ApiTestUser): Promise<void> {
-  const bdd = createBddApi(context);
-  bdd.acceptStorageWrites();
+function officialRunnerHeaders() {
+  return {
+    authorization: `Bearer vm0_official_${env("OFFICIAL_RUNNER_SECRET")}`,
+  };
+}
 
-  const api = createRunsApi(context);
-  await api.ensurePersonalSubscriptionModel(actor);
+function runnersClient() {
+  return setupApp({ context, routes: runnersRoutes });
 }
 
 describe("RUN-01..04 and CHAIN-RUN: run admission, runner, and visible reads", () => {
-  it("sets up run prerequisites through APIs and exposes the no-credit admission boundary", async () => {
-    const bdd = createBddApi(context);
-    const api = createRunsApi(context);
-    const actor = bdd.user();
-    await prepareNoCreditAdmission(actor);
+  it("run-cron.bdd-002 accepts an official runner heartbeat that reports a held reusable sandbox", async () => {
+    const group = `vm0/cron-${randomUUID().slice(0, 8)}`;
 
-    await expect(
-      api.readThreadRunRejection(actor, {
-        prompt: "Produce a concise status report.",
-      }),
-    ).resolves.toBe("insufficient_credits");
-
-    const queue = await api.readRunQueue(actor);
-    expect(queue.body.concurrency.active).toBe(0);
-
-    const runnerGroup = await api.configureRunnerGroup();
-    const heartbeat = await api.heartbeatRunner(runnerGroup);
-    expect(heartbeat.body.ok).toBeTruthy();
-
-    const missingRunId = randomUUID();
-    const missingRun = await api.requestReadRun(actor, missingRunId, [404]);
-    expectApiError(missingRun.body);
-    expect(missingRun.body.error.code).toBe("NOT_FOUND");
-
-    const missingContext = await api.requestRunContext(
-      actor,
-      missingRunId,
-      [404],
-    );
-    expectApiError(missingContext.body);
-    expect(missingContext.body.error.code).toBe("NOT_FOUND");
-  });
-
-  it("keeps official runner held-sandbox heartbeat visible through public endpoints", async () => {
-    const api = createRunsApi(context);
-    await api.configureRunnerGroup();
-    const heldSandboxStates = [
-      {
-        reuseKey: "thread:cron-bdd-held",
-        lastCompletedAt: new Date(now()).toISOString(),
-        reusableSandbox: {
-          sourceRunId: "33333333-3333-4333-8333-333333333333",
-          profile: "vm0/default",
+    const response = await accept(
+      runnersClient()(runnersHeartbeatContract).heartbeat({
+        headers: officialRunnerHeaders(),
+        body: {
+          runnerId: randomUUID(),
+          runnerHostname: "runner-held.okou.app",
+          group,
+          snapshotGeneration: 1,
+          snapshotSequence: 1,
+          totalVcpu: 8,
+          totalMemoryMb: 16_384,
+          maxConcurrent: 2,
+          allocatedVcpu: 0,
+          allocatedMemoryMb: 0,
+          runningCount: 0,
+          admittableProfiles: ["vm0/default"],
+          heldSandboxStates: [
+            {
+              reuseKey: `thread:${randomUUID()}`,
+              lastCompletedAt: nowDate().toISOString(),
+              reusableSandbox: {
+                profile: "vm0/default",
+                sourceRunId: randomUUID(),
+              },
+            },
+          ],
+          heldHomeStates: [],
+          activeReuseProducers: [],
+          ingressServiceActive: true,
+          mode: "running",
         },
-      },
-    ];
-
-    const heartbeat = await api.requestHeartbeatRunner(true, [200], {
-      heldSandboxStates,
-    });
-    if (heartbeat.status !== 200) {
-      throw new Error(
-        `Expected runner heartbeat to succeed, got ${heartbeat.status}`,
-      );
-    }
-    expect(heartbeat.body.ok).toBeTruthy();
-  });
-
-  it("rejects runner metadata reads at unauthenticated and missing boundaries", async () => {
-    const bdd = createBddApi(context);
-    const api = createRunsApi(context);
-    const actor = bdd.user();
-    const missingRunId = randomUUID();
-
-    const unauthenticatedRunner = await api.requestRunRunner(
-      null,
-      missingRunId,
-      [401],
-    );
-    expectApiError(unauthenticatedRunner.body);
-    expect(unauthenticatedRunner.body.error.code).toBe("UNAUTHORIZED");
-
-    const missingRunner = await api.requestRunRunner(
-      actor,
-      missingRunId,
-      [404],
-    );
-    expectApiError(missingRunner.body);
-    expect(missingRunner.body.error.code).toBe("NOT_FOUND");
-  });
-
-  it("rejects unauthenticated and unauthorized runner, queue, read, context, and cancel requests", async () => {
-    const bdd = createBddApi(context);
-    const api = createRunsApi(context);
-    const actor = bdd.user();
-    const missingRunId = randomUUID();
-
-    const unauthenticatedQueue = await api.requestReadRunQueue(null, [401]);
-    expectApiError(unauthenticatedQueue.body);
-    expect(unauthenticatedQueue.body.error.code).toBe("UNAUTHORIZED");
-
-    const unauthenticatedRead = await api.requestReadRun(
-      null,
-      missingRunId,
-      [401],
-    );
-    expectApiError(unauthenticatedRead.body);
-    expect(unauthenticatedRead.body.error.code).toBe("UNAUTHORIZED");
-
-    const unauthenticatedCancel = await api.requestCancelRun(
-      null,
-      missingRunId,
-      [401],
-    );
-    expectApiError(unauthenticatedCancel.body);
-    expect(unauthenticatedCancel.body.error.code).toBe("UNAUTHORIZED");
-
-    const missingCancel = await api.requestCancelRun(
-      actor,
-      missingRunId,
-      [404],
-    );
-    expectApiError(missingCancel.body);
-    expect(missingCancel.body.error.code).toBe("NOT_FOUND");
-
-    const unauthenticatedHeartbeat = await api.requestHeartbeatRunner(
-      false,
-      [401],
-    );
-    expectApiError(unauthenticatedHeartbeat.body);
-    expect(unauthenticatedHeartbeat.body.error.code).toBe("UNAUTHORIZED");
-
-    const invalidHeartbeatGroup = await api.requestHeartbeatRunner(
-      true,
-      [400],
-      { group: "other/test" },
-    );
-    expectApiError(invalidHeartbeatGroup.body);
-    expect(invalidHeartbeatGroup.body.error.code).toBe("BAD_REQUEST");
-  });
-
-  it("issues runner realtime tokens only for authenticated vm0 runner groups", async () => {
-    const api = createRunsApi(context);
-
-    const unauthenticated = await api.requestRunnerRealtimeToken(
-      false,
-      { group: "vm0/test" },
-      [401],
-    );
-    expectApiError(unauthenticated.body);
-    expect(unauthenticated.body.error.code).toBe("UNAUTHORIZED");
-
-    const forbiddenGroup = await api.requestRunnerRealtimeToken(
-      true,
-      { group: "other/test" },
-      [403],
-    );
-    expectApiError(forbiddenGroup.body);
-    expect(forbiddenGroup.body.error.code).toBe("FORBIDDEN");
-
-    const capability = JSON.stringify({
-      "runner-group:vm0/test": ["subscribe"],
-    });
-    context.mocks.ably.createTokenRequest.mockResolvedValueOnce({
-      keyName: "ably-key",
-      timestamp: now(),
-      capability,
-      nonce: "nonce",
-      mac: "mac",
-    });
-
-    const token = await api.requestRunnerRealtimeToken(
-      true,
-      { group: "vm0/test" },
+      }),
       [200],
     );
-    if (token.status !== 200) {
-      throw new Error("Expected runner realtime token request to succeed");
-    }
-    expect(token.body.capability).toBe(capability);
+
+    expect(response.body).toStrictEqual({ ok: true });
+  });
+
+  it("run-cron.bdd-005 issues runner realtime tokens only to authenticated runners for vm0 groups", async () => {
+    const issued = {
+      keyName: "app.key",
+      ttl: 3_600_000,
+      timestamp: 1_700_000_000_000,
+      capability: '{"runner-group:vm0/test":["subscribe"]}',
+      nonce: "nonce",
+      mac: "mac",
+    };
+    context.mocks.ably.createTokenRequest.mockResolvedValue(issued);
+    const client = runnersClient()(runnerRealtimeTokenContract);
+
+    const anonymous = await accept(
+      client.create({ headers: {}, body: { group: "vm0/test" } }),
+      [401],
+    );
+    const otherGroup = await accept(
+      client.create({
+        headers: officialRunnerHeaders(),
+        body: { group: "other/test" },
+      }),
+      [403],
+    );
+    const official = await accept(
+      client.create({
+        headers: officialRunnerHeaders(),
+        body: { group: "vm0/test" },
+      }),
+      [200],
+    );
+
+    expect(anonymous.body.error.code).toBe("UNAUTHORIZED");
+    expect(otherGroup.body.error.code).toBe("FORBIDDEN");
+    expect(official.body).toStrictEqual(issued);
     expect(context.mocks.ably.createTokenRequest).toHaveBeenCalledTimes(1);
     expect(context.mocks.ably.createTokenRequest).toHaveBeenCalledWith({
-      capability: {
-        "runner-group:vm0/test": ["subscribe"],
-      },
-      ttl: 60 * 60 * 1000,
+      capability: { "runner-group:vm0/test": ["subscribe"] },
+      ttl: 3_600_000,
     });
   });
-});
 
-// Workflow schedule lifecycle and execution coverage lives in
-// zero-workflow-automations.test.ts and zero-workflow-automation-scheduler.test.ts.
-// Shared cron authorization is covered in global-sweep-contracts.test.ts.
+  it("run-cron.bdd-001 (1/4) accepts a member's chat message but rejects its Run without credits", async () => {
+    const { member } = await uncreditedMemberWithRunnerGroup();
 
-describe("SCHED-02: cron routes", () => {
-  it("rejects invalid cron auth on shared cron routes", async () => {
-    const api = createRunsApi(context);
+    const rejection = await runs.readThreadRunRejection(member, {
+      prompt: "Summarize today's work",
+    });
 
-    const invalidCronRoutes = await api.requestSharedCronRoutesWithoutAuth();
-    expect(
-      Object.values(invalidCronRoutes).every((response) => {
-        return response.status === 401;
-      }),
-    ).toBeTruthy();
+    expect(rejection).toBe("insufficient_credits");
+  });
+
+  it("run-cron.bdd-001 (2/4) shows no active Run in the queue and accepts the Runner heartbeat", async () => {
+    const { member, group } = await uncreditedMemberWithRunnerGroup();
+    await runs.readThreadRunRejection(member, {
+      prompt: "Summarize today's work",
+    });
+
+    const queue = await runs.readRunQueue(member);
+    const heartbeat = await runs.heartbeatRunner(group);
+
+    expect(queue.body).toMatchObject({
+      concurrency: { active: 0 },
+      runningTasks: [],
+    });
+    expect(heartbeat.body).toStrictEqual({ ok: true });
+  });
+
+  it("run-cron.bdd-001 (3/4) answers a read of a missing Run with not found", async () => {
+    const { member, group } = await uncreditedMemberWithRunnerGroup();
+    await runs.readThreadRunRejection(member, {
+      prompt: "Summarize today's work",
+    });
+    await runs.heartbeatRunner(group);
+    const missingRunId = randomUUID();
+
+    const run = await runs.requestReadRun(member, missingRunId, [404]);
+
+    expect(run.body).toMatchObject({ error: { code: "NOT_FOUND" } });
+  });
+
+  it("run-cron.bdd-001 (4/4) answers a read of a missing Run context with not found", async () => {
+    const { member, group } = await uncreditedMemberWithRunnerGroup();
+    await runs.readThreadRunRejection(member, {
+      prompt: "Summarize today's work",
+    });
+    await runs.heartbeatRunner(group);
+    const missingRunId = randomUUID();
+
+    const runContext = await runs.requestRunContext(
+      member,
+      missingRunId,
+      [404],
+    );
+
+    expect(runContext.body).toMatchObject({ error: { code: "NOT_FOUND" } });
   });
 });
+
+/** A member with a personal subscription model but no credits, and a Runner group. */
+async function uncreditedMemberWithRunnerGroup() {
+  const member = bdd.user();
+  const [group] = await Promise.all([
+    runs.configureRunnerGroup({ registerRunner: false }),
+    runs.ensurePersonalSubscriptionModel(member),
+  ]);
+  return { member, group };
+}

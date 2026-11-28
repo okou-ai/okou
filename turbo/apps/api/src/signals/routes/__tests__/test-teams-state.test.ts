@@ -1,26 +1,31 @@
-import { connectTeamsAccountForTest } from "./helpers/teams-account";
-import { randomUUID } from "node:crypto";
+import {
+  chatThreadMetadataContract,
+  chatThreadsContract,
+} from "@okouai/api-contracts/contracts/chat-threads";
+import { teamsBotIngressResponseSchema } from "@okouai/api-contracts/contracts/teams-bot";
+import { teamsConnectContract } from "@okouai/api-contracts/contracts/teams-connect";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { createStore } from "ccstate";
+import { HttpResponse, http } from "msw";
+import { describe, expect, it } from "vitest";
 
-import { http, HttpResponse } from "msw";
-import { beforeEach, describe, expect, it } from "vitest";
-import { uuid } from "zod";
-
-import { testContext } from "../../../__tests__/test-context";
-import { env, mockEnv, mockOptionalEnv } from "../../../lib/env";
+import { accept, testContext } from "../../../__tests__/test-context";
+import { setupApp } from "../../../__tests__/test-helpers";
+import { mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { server } from "../../../mocks/server";
 import { flushWaitUntilForTest } from "../../context/wait-until";
-import { createFixtureTracker, createRouteMocks } from "./helpers/route-test";
+import { chatThreadRoutes } from "../chat-threads";
+import { teamsConnectRoutes } from "../teams-connect";
 import { createBddApi } from "./helpers/api-bdd";
-import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createRunReadsApi } from "./helpers/api-bdd-run-reads";
-import { createRunsApi } from "./helpers/api-bdd-runs";
-import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
-import { chatEventDisplayText } from "./helpers/chat-event";
-import { createPublicTeamsDispatchFixture } from "./helpers/public-teams-dispatch-fixture";
+import { readProjectedChatEvents } from "./helpers/chat-event-test-reader";
+import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
+import { seedOrgMembership$ } from "./helpers/org-membership";
+import { createRouteMocks } from "./helpers/route-test";
+import { connectTeamsAccountForTest } from "./helpers/teams-account";
 import {
   installTeamsForTest,
   postTeamsActivityForTest,
-  removeTeamsForTest,
   setupTeamsConnectTestEnv,
   teamsConnectFixture,
   teamsMessageActivityForTest,
@@ -28,342 +33,450 @@ import {
 } from "./helpers/teams-connect";
 
 const context = testContext();
-const TEAMS_TOKEN_URL = "https://teams-auth.test/token";
+const bdd = createBddApi(context);
+const reads = createRunReadsApi(context);
+const routes = createRouteMocks(context);
+const threadsApi = setupApp({ context, routes: chatThreadRoutes });
+const chatThreads = threadsApi(chatThreadsContract);
+const teamsConnect = setupApp({ context, routes: teamsConnectRoutes })(
+  teamsConnectContract,
+);
+const SESSION = Object.freeze({ authorization: "Bearer clerk-session" });
 
-async function readJson<T>(response: Response): Promise<T> {
-  return (await response.json()) as T;
+async function recordTeamsNotice(
+  notices: string[],
+  request: Request,
+): Promise<void> {
+  const body = (await request.json()) as {
+    readonly text?: string;
+    readonly attachments?: readonly {
+      readonly contentType: string;
+      readonly content: {
+        readonly body?: readonly {
+          readonly type: string;
+          readonly text?: string;
+        }[];
+      };
+    }[];
+  };
+  if (body.text) {
+    notices.push(body.text);
+  }
+  for (const attachment of body.attachments ?? []) {
+    if (attachment.contentType === "application/vnd.microsoft.card.adaptive") {
+      for (const item of attachment.content.body ?? []) {
+        if (item.type === "TextBlock" && item.text) {
+          notices.push(item.text);
+        }
+      }
+    }
+  }
 }
 
-interface PublicTeamsFixture {
-  readonly installation: TeamsConnectFixture;
-  readonly kmsKeyId: string | undefined;
-  readonly storageBucket: string;
-  readonly subscriptionId: string;
-}
-
-function configurePublicTeamsMocks(fixture: TeamsConnectFixture): void {
+function configureTeamsHandlers(
+  installation: TeamsConnectFixture,
+  notices: string[],
+): void {
   setupTeamsConnectTestEnv();
+  const tokenUrl = "https://teams-auth.test/token";
+  const graphTokenUrl = "https://teams-graph-token.okou.test/oauth2/token";
   mockEnv("MICROSOFT_TEAMS_BOT_APP_PASSWORD", "teams-app-password");
-  mockOptionalEnv("MICROSOFT_TEAMS_BOT_TOKEN_URL", TEAMS_TOKEN_URL);
-  context.mocks.s3.send.mockResolvedValue({});
+  mockOptionalEnv("MICROSOFT_TEAMS_BOT_TOKEN_URL", tokenUrl);
+  mockOptionalEnv("MICROSOFT_TEAMS_GRAPH_TOKEN_URL", graphTokenUrl);
+  context.mocks.ably.publish.mockResolvedValue(undefined);
   server.use(
-    http.post(TEAMS_TOKEN_URL, () => {
+    http.post(tokenUrl, () => {
       return HttpResponse.json({
         access_token: "teams-token",
         token_type: "Bearer",
         expires_in: 3600,
       });
     }),
-    http.post(`${fixture.serviceUrl}v3/conversations`, () => {
-      return HttpResponse.json({ id: `a:welcome-${fixture.fixtureId}` });
+    http.post(graphTokenUrl, () => {
+      return HttpResponse.json({
+        access_token: "teams-graph-token",
+        token_type: "Bearer",
+        expires_in: 3600,
+      });
     }),
     http.post(
-      `${fixture.serviceUrl}v3/conversations/:conversationId/activities`,
+      `https://login.microsoftonline.com/${installation.teamsTenantId}/oauth2/v2.0/token`,
       () => {
+        return HttpResponse.json({
+          access_token: "teams-graph-token",
+          token_type: "Bearer",
+          expires_in: 3600,
+        });
+      },
+    ),
+    http.get(
+      `https://graph.microsoft.com/v1.0/users/${encodeURIComponent(installation.teamsAadObjectId)}/teamwork/installedApps`,
+      () => {
+        return HttpResponse.json({
+          value: [
+            {
+              id: `app-install-${installation.fixtureId}`,
+              teamsApp: {
+                externalId: "00000000-0000-0000-0000-000000000001",
+              },
+            },
+          ],
+        });
+      },
+    ),
+    http.get(
+      `https://graph.microsoft.com/v1.0/users/${encodeURIComponent(installation.teamsAadObjectId)}/teamwork/installedApps/app-install-${installation.fixtureId}/chat`,
+      () => {
+        return HttpResponse.json({
+          id: `chat-${installation.fixtureId}`,
+          chatType: "oneOnOne",
+        });
+      },
+    ),
+    http.get(
+      `https://graph.microsoft.com/v1.0/chats/${encodeURIComponent(`chat-${installation.fixtureId}`)}/messages`,
+      () => {
+        return HttpResponse.json({ value: [] });
+      },
+    ),
+    http.get(
+      `${installation.serviceUrl}v3/conversations/:conversationId/members/:userId`,
+      () => {
+        return HttpResponse.json({
+          id: installation.teamsUserId,
+          tenantId: installation.teamsTenantId,
+          aadObjectId: installation.teamsAadObjectId,
+        });
+      },
+    ),
+    http.post(`${installation.serviceUrl}v3/conversations`, () => {
+      return HttpResponse.json({
+        id: `a:welcome-${installation.fixtureId}`,
+      });
+    }),
+    http.post(
+      `${installation.serviceUrl}v3/conversations/:conversationId/activities`,
+      async ({ request }) => {
+        await recordTeamsNotice(notices, request);
         return HttpResponse.json({ id: "typing-activity" });
       },
     ),
     http.post(
-      `${fixture.serviceUrl}v3/conversations/:conversationId/activities/:activityId`,
-      () => {
+      `${installation.serviceUrl}v3/conversations/:conversationId/activities/:activityId`,
+      async ({ request }) => {
+        await recordTeamsNotice(notices, request);
         return HttpResponse.json({ id: "reply-activity" });
       },
     ),
+    http.put(
+      `${installation.serviceUrl}v3/conversations/:conversationId/activities/:activityId/reactions/:reaction`,
+      () => {
+        return new HttpResponse(null, { status: 204 });
+      },
+    ),
+    http.delete(
+      `${installation.serviceUrl}v3/conversations/:conversationId/activities/:activityId/reactions/:reaction`,
+      () => {
+        return new HttpResponse(null, { status: 204 });
+      },
+    ),
+    http.get(
+      "https://graph.microsoft.com/v1.0/teams/:teamId/channels/:channelId/messages/:messageId",
+      () => {
+        return HttpResponse.json({
+          id: installation.teamsThreadId,
+          createdDateTime: "2026-06-30T09:05:00.000Z",
+          body: { contentType: "text", content: "Release checklist" },
+          from: {
+            user: {
+              id: installation.teamsAadObjectId,
+              displayName: "Ada Lovelace",
+            },
+          },
+        });
+      },
+    ),
+    http.get(
+      "https://graph.microsoft.com/v1.0/teams/:teamId/channels/:channelId/messages/:messageId/replies",
+      () => {
+        return HttpResponse.json({ value: [] });
+      },
+    ),
+    http.get(
+      "https://graph.microsoft.com/v1.0/teams/:teamId/channels/:channelId/messages",
+      () => {
+        return HttpResponse.json({ value: [] });
+      },
+    ),
+    http.get("https://graph.microsoft.com/v1.0/users/:userId", () => {
+      return HttpResponse.json({
+        id: installation.teamsAadObjectId,
+        displayName: "Ada Lovelace",
+        userPrincipalName: installation.teamsUserPrincipalName,
+        mail: installation.teamsUserPrincipalName,
+      });
+    }),
   );
 }
 
-async function deletePublicTeamsFixture(
-  owned: PublicTeamsFixture,
-): Promise<void> {
-  const fixture = owned.installation;
-  const bdd = createBddApi(context);
-  const actor = bdd.user({ userId: fixture.userId, orgId: fixture.orgId });
-  const runs = createRunsApi(context);
-  const reads = createRunReadsApi(context);
-  configurePublicTeamsMocks(fixture);
-  mockEnv("SECRETS_KMS_KEY_ID", owned.kmsKeyId);
-  mockEnv("R2_USER_STORAGES_BUCKET_NAME", owned.storageBucket);
-  context.mocks.ably.publish.mockResolvedValue(undefined);
-  runs.acceptStorageDownloads();
-
-  const listed = await reads.requestListLogs(actor, { limit: 50 }, [200]);
-  for (const run of listed.body.data) {
-    if (run.status === "pending" || run.status === "running") {
-      await runs.requestCancelRun(actor, run.id, [200]);
-    }
+async function createInstalledTeamsMember(options: {
+  readonly onboarded: boolean;
+}) {
+  const installation = teamsConnectFixture();
+  const actor = bdd.user({
+    userId: installation.userId,
+    orgId: installation.orgId,
+  });
+  const notices: string[] = [];
+  configureTeamsHandlers(installation, notices);
+  if (options.onboarded) {
+    await bdd.bootstrapLimitedFreeOnboarding(actor);
   }
+  await installTeamsForTest(context.signal, installation);
+  await connectTeamsAccountForTest(context, installation, {
+    displayName: "Teams User",
+    learnSender: false,
+  });
   await flushWaitUntilForTest();
-  // This case never claims its Run, so cancellation needs no Runner ACK.
-  await removeTeamsForTest(context.signal, fixture);
-  await flushWaitUntilForTest();
-
-  context.mocks.stripe.subscriptions.list.mockResolvedValue({
-    data: [],
-    has_more: false,
-  });
-  context.mocks.stripe.invoices.list.mockResolvedValue({
-    data: [],
-    has_more: false,
-  });
-  context.mocks.stripe.subscriptions.retrieve.mockResolvedValue({
-    id: owned.subscriptionId,
-    status: "active",
-    metadata: {},
-    items: { data: [{ price: { id: "price_bdd_pro" } }] },
-  });
-  context.mocks.stripe.subscriptions.update.mockResolvedValue({
-    id: owned.subscriptionId,
-  });
-  context.mocks.stripe.subscriptions.cancel.mockResolvedValue({
-    id: owned.subscriptionId,
-    status: "canceled",
-  });
-  const webhooks = createWebhookCallbackApi(context);
-  webhooks.configureClerkWebhookSecret();
-  webhooks.verifyNextClerkWebhook({
-    type: "organization.deleted",
-    data: { id: fixture.orgId },
-  });
-  await webhooks.requestClerkWebhook("{}", {}, [200]);
-  await flushWaitUntilForTest();
-
-  // Clerk deletion stops active work without purging UUID-owned resources.
+  return { installation, actor, notices };
 }
 
-const trackPublicTeamsFixture = createFixtureTracker(deletePublicTeamsFixture);
+function authFor(installation: TeamsConnectFixture) {
+  routes.clerk.session(installation.userId, installation.orgId, "org:admin");
+  return SESSION;
+}
 
-describe("Teams message launch context", () => {
-  it("dispatches a Teams message with its public launch context", async () => {
-    const scenario = createPublicTeamsDispatchFixture(context);
-    await scenario.run(async () => {
-      const owned = await scenario.create({
-        onboarded: true,
-        paidNative: true,
-      });
-      const fixture = owned.installation;
-      await expect(scenario.status(owned)).resolves.toMatchObject({
-        isInstalled: true,
-        isConnected: true,
-        tenantId: fixture.teamsTenantId,
-      });
-      server.use(
-        http.post(
-          `https://login.microsoftonline.com/${fixture.teamsTenantId}/oauth2/v2.0/token`,
-          () => {
-            return HttpResponse.json({
-              access_token: "teams-graph-token",
-              token_type: "Bearer",
-              expires_in: 3600,
-            });
-          },
-        ),
-        http.get(
-          "https://graph.microsoft.com/v1.0/users/:userId/teamwork/installedApps",
-          () => {
-            return HttpResponse.json({ value: [] });
-          },
-        ),
-      );
-      await scenario.dispatch(owned, "hello from teams diagnostics");
+async function postPersonalTeamsMessage(
+  installation: TeamsConnectFixture,
+  text: string,
+) {
+  const response = await postTeamsActivityForTest({
+    signal: context.signal,
+    activity: teamsMessageActivityForTest(installation, {
+      id: "activity-e2e",
+      conversation: {
+        id: "19:e2e-dm@thread.v2",
+        conversationType: "personal",
+      },
+      channelData: {
+        tenant: {
+          id: installation.teamsTenantId,
+          name: installation.teamsTenantName,
+        },
+      },
+      from: {
+        id: installation.teamsUserId,
+        name: "Teams User",
+        aadObjectId: installation.teamsAadObjectId,
+        userPrincipalName: installation.teamsUserPrincipalName,
+      },
+      text,
+      entities: [],
+      replyToId: null,
+    }),
+  });
+  expect(response.status).toBe(200);
+  const body = (await response.json()) as {
+    readonly ok: boolean;
+    readonly activity: {
+      readonly kind: string;
+      readonly conversationType: string;
+      readonly tenantId: string;
+      readonly text: string;
+    };
+    readonly connectUrl: string;
+  };
+  expect(body).toMatchObject({
+    ok: true,
+    activity: {
+      kind: "message",
+      conversationType: "personal",
+      tenantId: installation.teamsTenantId,
+      text,
+    },
+  });
+  const connectUrl = new URL(body.connectUrl);
+  expect(connectUrl.pathname).toBe("/settings/teams");
+  expect(connectUrl.searchParams.get("tenantId")).toBe(
+    installation.teamsTenantId,
+  );
+  await flushWaitUntilForTest();
+}
 
-      const reads = createRunReadsApi(context);
-      const listed = await reads.requestListLogs(
-        owned.actor,
-        { limit: 50 },
-        [200],
-      );
-      expect(listed.body.data).toContainEqual(
-        expect.objectContaining({
-          status: "running",
-          triggerSource: "teams",
-          prompt: "hello from teams diagnostics",
-        }),
-      );
-      const teamsRun = listed.body.data.find((run) => {
-        return run.prompt === "hello from teams diagnostics";
-      });
-      if (!teamsRun) {
-        throw new Error("Expected the Teams message to launch a Run");
-      }
-      const detail = await reads.requestReadLogById(
-        owned.actor,
-        teamsRun.id,
-        [200],
-      );
-      expect(detail.body).toMatchObject({
-        status: "running",
-        triggerSource: "teams",
-        prompt: "hello from teams diagnostics",
-      });
-      const execution = await createRunsApi(context).executionInput(
-        teamsRun.id,
-      );
-      expect(execution.appendSystemPrompt).toContain(
-        `Tenant ID: ${fixture.teamsTenantId}`,
-      );
-      expect(execution.appendSystemPrompt).toContain(
-        "Conversation ID: 19:e2e-dm@thread.v2",
-      );
-      expect(execution.appendSystemPrompt).toContain(
-        "Conversation type: personal",
-      );
-      expect(execution.appendSystemPrompt).toContain("Thread ID: activity-e2e");
-      expect(execution.appendSystemPrompt).toContain(
-        "Activity ID: activity-e2e",
-      );
+async function createChannelMentionThread() {
+  const fixture = teamsConnectFixture();
+  const notices: string[] = [];
+  configureTeamsHandlers(fixture, notices);
+  await Promise.all([
+    createStore().set(
+      seedOrgMembership$,
+      {
+        userId: fixture.userId,
+        orgId: fixture.orgId,
+        role: "admin",
+        name: "Teams workspace",
+      },
+      context.signal,
+    ),
+    updateFeatureSwitchesForUser(
+      context,
+      { userId: fixture.userId, orgId: fixture.orgId, orgRole: "org:admin" },
+      { [FeatureSwitchKey.OkouDebug]: true },
+    ),
+    installTeamsForTest(context.signal, fixture),
+  ]);
+  await connectTeamsAccountForTest(context, fixture, {
+    displayName: "Ada Lovelace",
+    learnSender: false,
+  });
 
-      const chat = createChatFilesBddApi(context);
-      const page = await chat.listThreadEvents(
-        owned.actor,
-        uuid().parse(execution.platformEnvironment.OKOU_CHAT_THREAD_ID),
-      );
-      const input = page.events.find((event) => {
-        return (
-          event.eventType === "input.prompt" && event.runId === teamsRun.id
-        );
-      });
-      if (input?.eventType !== "input.prompt") {
-        throw new Error("Expected the Teams input associated with its Run");
-      }
-      expect(chatEventDisplayText(input)).toBe("hello from teams diagnostics");
-      expect(input.userMessage?.parts).toContainEqual({
-        type: "source",
-        kind: "teams",
-        href: `https://teams.microsoft.com/l/message/${encodeURIComponent("19:e2e-dm@thread.v2")}/activity-e2e?tenantId=${encodeURIComponent(fixture.teamsTenantId)}&context=${encodeURIComponent(JSON.stringify({ contextType: "chat" }))}`,
-      });
+  const response = await postTeamsActivityForTest({
+    signal: context.signal,
+    activity: teamsMessageActivityForTest(fixture, {
+      text: "<at>Nova</at> deploy the preview",
+    }),
+  });
+  expect(response.status).toBe(200);
+  teamsBotIngressResponseSchema.parse(await response.json());
+  await flushWaitUntilForTest();
+
+  const lifecycle = await accept(
+    chatThreads.events({ headers: authFor(fixture), query: {} }),
+    [200],
+  );
+  const createdEvent = lifecycle.body.events.find((event) => {
+    return event.kind === "created";
+  });
+  if (!createdEvent) {
+    throw new Error("Expected a created thread lifecycle event");
+  }
+  return { fixture, chatThreadId: createdEvent.chatThreadId };
+}
+
+describe("Teams webhook dispatch", () => {
+  it("test-teams-state-003 (1/4) reports installed and connected status for the connected un-onboarded member", async () => {
+    const member = await createInstalledTeamsMember({ onboarded: false });
+
+    const status = await accept(
+      teamsConnect.getStatus({ headers: authFor(member.installation) }),
+      [200],
+    );
+    expect(status.body).toMatchObject({
+      isInstalled: true,
+      isConnected: true,
+      tenantId: member.installation.teamsTenantId,
     });
+  });
+
+  it("test-teams-state-003 (2/4) reports installed and not connected status after the onboarded member disconnects", async () => {
+    const member = await createInstalledTeamsMember({ onboarded: true });
+    await accept(
+      teamsConnect.disconnect({
+        headers: authFor(member.installation),
+        query: {},
+      }),
+      [200],
+    );
+
+    const status = await accept(
+      teamsConnect.getStatus({ headers: authFor(member.installation) }),
+      [200],
+    );
+    expect(status.body).toMatchObject({
+      isInstalled: true,
+      isConnected: false,
+      tenantId: member.installation.teamsTenantId,
+    });
+  });
+
+  it("test-teams-state-003 (3/4) rejects an unlinked Teams user with a connect notice and keeps the Run list empty", async () => {
+    const member = await createInstalledTeamsMember({ onboarded: true });
+    await accept(
+      teamsConnect.disconnect({
+        headers: authFor(member.installation),
+        query: {},
+      }),
+      [200],
+    );
+
+    await postPersonalTeamsMessage(
+      member.installation,
+      "hello while disconnected",
+    );
+    expect(member.notices).toContain(
+      "Please connect your account to use Okou in this Teams workspace.",
+    );
+
+    const logs = await reads.requestListLogs(
+      member.actor,
+      { limit: 20 },
+      [200],
+    );
+    expect(logs.body.data).toStrictEqual([]);
+  });
+
+  it("test-teams-state-003 (4/4) dispatches a personal message and creates a thread for a connected member", async () => {
+    const member = await createInstalledTeamsMember({ onboarded: false });
+
+    await postPersonalTeamsMessage(
+      member.installation,
+      "hello from connected teams user",
+    );
+
+    const events = await accept(
+      chatThreads.events({
+        headers: authFor(member.installation),
+        query: {},
+      }),
+      [200],
+    );
+    expect(
+      events.body.events.some((event) => {
+        return event.kind === "created";
+      }),
+    ).toBeTruthy();
   });
 });
 
-describe("Teams webhook dispatch", () => {
-  beforeEach(() => {
-    context.mocks.clerk.users.getUserList.mockReset();
-    context.mocks.clerk.users.getOrganizationMembershipList.mockReset();
-  });
+describe("Teams chat callbacks", () => {
+  it("internal-callbacks-teams-010 (1/2) enables cloud browser on the thread created by a Teams bot mention", async () => {
+    const { fixture, chatThreadId } = await createChannelMentionThread();
 
-  it("drains a persisted Teams message when realtime publishing fails", async () => {
-    const fixture = teamsConnectFixture();
-    const owned = await trackPublicTeamsFixture(
-      Promise.resolve({
-        installation: fixture,
-        kmsKeyId: env("SECRETS_KMS_KEY_ID"),
-        storageBucket: env("R2_USER_STORAGES_BUCKET_NAME"),
-        subscriptionId: `sub_teams_realtime_${randomUUID()}`,
+    const metadata = await accept(
+      threadsApi(chatThreadMetadataContract).get({
+        headers: authFor(fixture),
+        params: { id: chatThreadId },
       }),
-    );
-    const bdd = createBddApi(context);
-    const actor = bdd.user({ userId: fixture.userId, orgId: fixture.orgId });
-    const runs = createRunsApi(context);
-    configurePublicTeamsMocks(fixture);
-    runs.acceptStorageDownloads();
-    await runs.configureRunnerGroup();
-    await bdd.bootstrapLimitedFreeOnboarding(actor);
-    await runs.grantProEntitlement(actor, {
-      subscriptionId: owned.subscriptionId,
-    });
-    await runs.ensurePersonalSubscriptionModel(actor, {
-      model: "claude-fable-5-1",
-    });
-    await installTeamsForTest(context.signal, fixture);
-    createRouteMocks(context).clerk.session(
-      fixture.userId,
-      fixture.orgId,
-      "org:admin",
-    );
-    await connectTeamsAccountForTest(context, fixture, { learnSender: false });
-    await flushWaitUntilForTest();
-
-    context.mocks.ably.publish.mockClear();
-    const publishError = new Error("Ably channel rate limit exceeded");
-    context.mocks.ably.publish.mockRejectedValue(publishError);
-
-    const response = await postTeamsActivityForTest({
-      signal: context.signal,
-      activity: teamsMessageActivityForTest(fixture, {
-        id: "activity-e2e",
-        conversation: {
-          id: "19:e2e-dm@thread.v2",
-          conversationType: "personal",
-        },
-        channelData: {
-          tenant: {
-            id: fixture.teamsTenantId,
-            name: fixture.teamsTenantName,
-          },
-        },
-        from: {
-          id: fixture.teamsUserId,
-          name: "Teams User",
-          aadObjectId: fixture.teamsAadObjectId,
-          userPrincipalName: fixture.teamsUserPrincipalName,
-        },
-        text: "dispatch despite realtime failure",
-        entities: [],
-        replyToId: null,
-      }),
-    });
-    expect(response.status).toBe(200);
-    await expect(readJson(response)).resolves.toMatchObject({ ok: true });
-    await flushWaitUntilForTest();
-
-    const listed = await createRunReadsApi(context).requestListLogs(
-      actor,
-      { limit: 50 },
       [200],
     );
-    expect(listed.body.data).toStrictEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          status: "running",
-          triggerSource: "teams",
-          prompt: "dispatch despite realtime failure",
-        }),
-      ]),
-    );
-    expect(context.mocks.ably.publish).toHaveBeenCalledWith(
-      "threadListChanged",
-      null,
-    );
+    expect(metadata.body.cloudBrowserEnabled).toBeTruthy();
   });
 
-  it("rejects unlinked users and dispatches for a connected member", async () => {
-    const scenario = createPublicTeamsDispatchFixture(context);
-    await scenario.run(async () => {
-      const unlinked = await scenario.create({ onboarded: true });
-      await scenario.disconnect(unlinked);
-      await expect(scenario.status(unlinked)).resolves.toMatchObject({
-        isInstalled: true,
-        isConnected: false,
-        tenantId: unlinked.installation.teamsTenantId,
-      });
-      await scenario.dispatch(unlinked, "unlinked teams");
-      expect(unlinked.notices).toContain(
-        "Please connect your account to use Okou in this Teams workspace.",
-      );
-      const reads = createRunReadsApi(context);
-      expect(
-        (await reads.requestListLogs(unlinked.actor, { limit: 50 }, [200])).body
-          .data,
-      ).toStrictEqual([]);
+  it("internal-callbacks-teams-010 (2/2) preserves Teams canonical input with normalized mention text and source link", async () => {
+    const { fixture, chatThreadId } = await createChannelMentionThread();
 
-      const missingDefault = await scenario.create({ onboarded: false });
-      await expect(scenario.status(missingDefault)).resolves.toMatchObject({
-        isInstalled: true,
-        isConnected: true,
-        tenantId: missingDefault.installation.teamsTenantId,
-      });
-      await scenario.dispatch(missingDefault, "missing default teams");
-      const chat = createChatFilesBddApi(context);
-      const events = await chat.requestThreadEvents(
-        missingDefault.actor,
-        {},
-        [200],
-      );
-      expect(events.body).toMatchObject({
-        events: expect.arrayContaining([
-          expect.objectContaining({ kind: "created" }),
-        ]),
-      });
+    const events = await readProjectedChatEvents(context, {
+      threadId: chatThreadId,
+      headers: authFor(fixture),
     });
+    const promptEvent = events.find((event) => {
+      return event.eventType === "input.prompt";
+    });
+    if (!promptEvent || promptEvent.eventType !== "input.prompt") {
+      throw new Error("Expected an input.prompt event");
+    }
+    expect(promptEvent.content).toBeNull();
+    expect(promptEvent.userMessage.version).toBe(1);
+    expect(promptEvent.userMessage.parts).toStrictEqual([
+      {
+        type: "text",
+        text: "@Nova deploy the preview",
+      },
+      {
+        type: "source",
+        kind: "teams",
+        href: `https://teams.microsoft.com/l/message/${encodeURIComponent(fixture.teamsChannelId)}/${encodeURIComponent(fixture.teamsActivityId)}?tenantId=${encodeURIComponent(fixture.teamsTenantId)}`,
+      },
+    ]);
   });
 });

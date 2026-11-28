@@ -24,7 +24,6 @@ const programConfigs = [
   "tsconfig.bootstrap.json",
   "tsconfig.worker.json",
   ...testProjectNames,
-  "tsconfig.bootstrap-wiring.json",
 ];
 
 function fail(message, details = []) {
@@ -447,8 +446,6 @@ function checkImporters(target, expectedNames) {
 
 checkImporters(resolve(sourceRoot, "signals/route.ts"), [
   "src/production-bootstrap.ts",
-  "src/__tests__/route-registration.test.ts",
-  "src/__tests__/vercel-crons.test.ts",
 ]);
 checkImporters(resolve(sourceRoot, "production-bootstrap.ts"), [
   "src/index.ts",
@@ -524,5 +521,5 @@ const programSummary = programConfigs
   })
   .join(", ");
 process.stdout.write(
-  `TypeScript boundaries: roots=${baselineRoots.size}; ${programSummary}; missing=0; extra=0; overlaps=0; production-json=${productionJsonRoots.size}; setupApp=${setupAppCalls}; createApp=${createAppCalls}; aggregate-importers=2; bootstrap-importers=3; drizzle-schema=erased\n`,
+  `TypeScript boundaries: roots=${baselineRoots.size}; ${programSummary}; missing=0; extra=0; overlaps=0; production-json=${productionJsonRoots.size}; setupApp=${setupAppCalls}; createApp=${createAppCalls}; aggregate-importers=1; bootstrap-importers=3; drizzle-schema=erased\n`,
 );

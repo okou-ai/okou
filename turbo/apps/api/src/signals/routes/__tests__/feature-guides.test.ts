@@ -1,727 +1,465 @@
-import { randomUUID } from "node:crypto";
-import { createStore } from "ccstate";
-import { expect, test } from "vitest";
+import { setupApp } from "../../../__tests__/test-helpers";
+import { createRouteMocks } from "./helpers/route-test";
+import { randomInt, randomUUID } from "node:crypto";
 import {
   featureGuidesContract,
+  type FeatureGuideContent,
   type ImportFeatureGuide,
 } from "@okouai/api-contracts/contracts/feature-guides";
-import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { accept, testContext } from "../../../__tests__/test-context";
-import { setupApp, setupRawAppRequest } from "../../../__tests__/test-helpers";
-import { mockNow } from "../../../lib/time";
+import { describe, expect, it } from "vitest";
+
+import { testContext, accept } from "../../../__tests__/test-context";
 import { mockOptionalEnv } from "../../../lib/env";
+import { mockNow } from "../../../lib/time";
+import { createUniqueStaffOrgIdFixture } from "../../../test-fixtures/staff-org";
 import { featureGuidesRoutes } from "../feature-guides";
-import { featureSwitchesRoutes } from "../feature-switches";
-import { seedOrgMembership$ } from "./helpers/org-membership";
-import { createRouteMocks } from "./helpers/route-test";
+import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 
 const context = testContext();
-const store = createStore();
-const mocks = createRouteMocks(context);
 const headers = Object.freeze({ authorization: "Bearer clerk-session" });
-const STAFF_ORG = "org_3ANttyrbWYJk6JKRSTRLEsbsDLe";
-const NOW = Date.parse("2026-10-28T00:00:00.000Z");
+const BASE = Date.parse("2026-10-28T00:00:00Z");
 
-function clients() {
-  const client = setupApp({
-    context,
-    routes: [...featureGuidesRoutes, ...featureSwitchesRoutes],
-  });
+interface Actor {
+  readonly userId: string;
+  readonly orgId: string;
+}
+
+function actor(orgId = `org_${randomUUID()}`): Actor {
+  return { userId: `user_${randomUUID()}`, orgId };
+}
+
+function signIn(who: Actor) {
+  createRouteMocks(context).clerk.session(who.userId, who.orgId, "org:member");
+}
+
+function guides() {
+  return setupApp({ context, routes: featureGuidesRoutes })(
+    featureGuidesContract,
+  );
+}
+
+function content(
+  title = "What's new",
+  items: FeatureGuideContent["items"] = [
+    {
+      featureId: "discord",
+      title: "Chat from Discord",
+      description: "Connect Discord to talk to your agent.",
+      media: {
+        type: "image",
+        url: "https://cdn.okou.test/discord.png",
+        alt: "Discord",
+      },
+      action: { type: "connect-discord", label: "Connect Discord" },
+    },
+    {
+      featureId: "artifacts",
+      title: "Artifacts",
+      description: "Browse everything your agent made.",
+      media: {
+        type: "image",
+        url: "https://cdn.okou.test/artifacts.png",
+        alt: "Artifacts",
+      },
+      action: { type: "open-artifacts", label: "Open artifacts" },
+    },
+    {
+      featureId: "chats",
+      title: "Chats",
+      description: "Pick up any conversation.",
+      media: {
+        type: "image",
+        url: "https://cdn.okou.test/chats.png",
+        alt: "Chats",
+      },
+      action: { type: "open-chats", label: "Open chats" },
+    },
+  ],
+): FeatureGuideContent {
   return {
-    guide: client(featureGuidesContract),
-    switches: client(featureSwitchesContract),
+    schemaVersion: 1,
+    title,
+    description: "Fresh features for your workspace.",
+    items,
   };
 }
 
-async function identity(
-  orgId = `org_${randomUUID()}`,
-  userId = `user_${randomUUID()}`,
-) {
-  await store.set(
-    seedOrgMembership$,
-    { orgId, userId, role: "admin" },
-    context.signal,
-  );
-  mocks.clerk.session(userId, orgId);
-  return { orgId, userId };
-}
-function signIn(owner: { orgId: string; userId: string }) {
-  mocks.clerk.session(owner.userId, owner.orgId);
-}
-async function setTestSwitch(value: boolean) {
-  await accept(
-    clients().switches.update({
-      headers,
-      body: { switches: { [FeatureSwitchKey.Dummy]: value } },
-    }),
-    [200],
-  );
-}
-function draft(
-  overrides: Partial<ImportFeatureGuide> = {},
-): ImportFeatureGuide {
-  return {
-    editionId: `guide-${randomUUID()}`,
-    startsAt: "2026-01-01T00:00:00.000Z",
-    expiresAt: null,
-    content: {
-      schemaVersion: 1,
-      title: "This month's new ways to work",
-      description: "A short product update",
-      items: [
-        {
-          featureId: "report",
-          title: "Prepare a report",
-          description: "Get from notes to a useful summary",
-          prompt: "Prepare a report from my notes",
-        },
-      ],
-    },
-    ...overrides,
-  };
-}
-async function prepare(input = draft()) {
-  const staff = await identity(STAFF_ORG);
-  const imported = await accept(
-    clients().guide.import({ headers, body: input }),
-    [200],
-  );
-  return { staff, input, ...imported.body };
-}
-async function publish(prepared: Awaited<ReturnType<typeof prepare>>) {
-  signIn(prepared.staff);
-  await accept(
-    clients().guide.publish({
-      headers,
-      params: { editionId: prepared.editionId },
-      body: { revisionId: prepared.revisionId },
-    }),
-    [200],
-  );
-}
-async function current() {
-  return (await accept(clients().guide.current({ headers }), [200])).body
-    .edition;
+function editionId() {
+  return `guide-${randomUUID()}`;
 }
 
-test("delivers published guides to eligible members", async () => {
-  await setupApp({
-    context,
-    routes: [...featureGuidesRoutes, ...featureSwitchesRoutes],
-    isolatePg: true,
-  });
-  mockNow(NOW);
-  const viewer = await identity();
-  const prepared = await prepare(
-    draft({
-      audience: { users: [viewer] },
-      content: {
-        schemaVersion: 1,
-        title: "Product update",
-        description: "Explore the latest capabilities",
-        items: (
-          ["connect-discord", "open-artifacts", "open-chats"] as const
-        ).map((type) => {
-          return {
-            featureId: type,
-            title: "Explore an update",
-            description: "A new way to work",
-            media: {
-              type: "image",
-              url: "https://example.com/guide.png",
-              alt: "A feature illustration",
-            },
-            action: { type, label: "Open feature" },
-          };
-        }),
-      },
-    }),
-  );
-  signIn(viewer);
-  await expect(current()).resolves.toBeNull();
-  await publish(prepared);
-  signIn(viewer);
-  await expect(current()).resolves.toMatchObject({
-    id: prepared.editionId,
-    revisionId: prepared.revisionId,
-    content: prepared.input.content,
-  });
-});
+const staff = actor(createUniqueStaffOrgIdFixture());
 
-test("filters bound items by effective switches and leaves empty bindings unrestricted", async () => {
-  const viewer = await identity();
-  const peer = await identity(viewer.orgId);
-  const input = draft({ audience: { users: [viewer, peer] } });
-  const prepared = await prepare({
-    ...input,
-    content: {
-      ...input.content,
-      items: input.content.items.flatMap((item) => {
-        return [
-          { ...item, featureId: "null", featureSwitch: null },
-          { ...item, featureId: "empty", featureSwitch: "" },
-          { ...item, featureId: "my-okou", featureSwitch: "singleAgent" },
-          {
-            ...item,
-            featureId: "conditional",
-            featureSwitch: FeatureSwitchKey.Dummy,
-          },
-          {
-            ...item,
-            featureId: "unavailable",
-            featureSwitch: "unavailable-switch",
-          },
-        ];
-      }),
-    },
-  });
-  await publish(prepared);
-  signIn(viewer);
-  await expect(current()).resolves.toMatchObject({
-    content: { items: prepared.input.content.items.slice(0, 4) },
-  });
-
-  signIn(peer);
-  await setTestSwitch(false);
-  await expect(current()).resolves.toMatchObject({
-    content: { items: prepared.input.content.items.slice(0, 3) },
-  });
-  await setTestSwitch(true);
-  await expect(current()).resolves.toMatchObject({
-    content: { items: prepared.input.content.items.slice(0, 4) },
-  });
-  await setTestSwitch(false);
-  await expect(current()).resolves.toMatchObject({
-    content: { items: prepared.input.content.items.slice(0, 3) },
-  });
-});
-
-test("suppresses an entirely gated edition without revealing a backlog or consuming its receipt", async () => {
-  mockNow(NOW);
-  const viewer = await identity();
-  const older = await prepare(draft({ audience: { users: [viewer] } }));
-  await publish(older);
-  mockNow(NOW + 1000);
-  const input = draft({ audience: { users: [viewer] } });
-  const prepared = await prepare({
-    ...input,
-    content: {
-      ...input.content,
-      items: input.content.items.map((item) => {
-        return { ...item, featureSwitch: FeatureSwitchKey.Dummy };
-      }),
-    },
-  });
-  await publish(prepared);
-  signIn(viewer);
-  await setTestSwitch(false);
-  await expect(current()).resolves.toBeNull();
-  mockOptionalEnv("ENV", "preview");
-  const preview = await accept(
-    clients().guide.current({ headers, query: { preview: "1" } }),
+async function importGuide(input: ImportFeatureGuide) {
+  signIn(staff);
+  const response = await accept(
+    guides().import({ headers, body: input }),
     [200],
   );
-  expect(preview.body.edition).toBeNull();
-  await setTestSwitch(true);
-  await expect(current()).resolves.toMatchObject({
-    id: prepared.editionId,
-    content: prepared.input.content,
-  });
+  return response.body;
+}
+
+async function publish(id: string, revisionId: string | null) {
+  signIn(staff);
   await accept(
-    clients().guide.seen({
+    guides().publish({
       headers,
-      params: { editionId: prepared.editionId },
-      body: { revisionId: prepared.revisionId },
-    }),
-    [200],
-  );
-  await setTestSwitch(false);
-  await expect(current()).resolves.toBeNull();
-  await setTestSwitch(true);
-  await expect(current()).resolves.toBeNull();
-});
-
-test("persists seen status per user and edition across workspaces and content revisions", async () => {
-  mockNow(NOW);
-  const viewer = await identity();
-  const peer = await identity(viewer.orgId);
-  const otherOrgId = `org_${randomUUID()}`;
-  const prepared = await prepare(
-    draft({
-      audience: {
-        users: [viewer, peer, { orgId: otherOrgId, userId: viewer.userId }],
-      },
-    }),
-  );
-  await publish(prepared);
-  signIn(viewer);
-  await expect(current()).resolves.not.toBeNull();
-  await accept(
-    clients().guide.seen({
-      headers,
-      params: { editionId: prepared.editionId },
-      body: { revisionId: prepared.revisionId },
-    }),
-    [200],
-  );
-  await expect(current()).resolves.toBeNull();
-  await identity(otherOrgId, viewer.userId);
-  await expect(current()).resolves.toBeNull();
-  signIn(peer);
-  await expect(current()).resolves.not.toBeNull();
-  signIn(prepared.staff);
-  const changed = await accept(
-    clients().guide.import({
-      headers,
-      body: {
-        ...prepared.input,
-        content: { ...prepared.input.content, title: "A corrected title" },
-      },
-    }),
-    [200],
-  );
-  await accept(
-    clients().guide.publish({
-      headers,
-      params: { editionId: prepared.editionId },
-      body: { revisionId: changed.body.revisionId },
-    }),
-    [200],
-  );
-  signIn(viewer);
-  await expect(current()).resolves.toBeNull();
-  signIn(peer);
-  await expect(current()).resolves.toMatchObject({
-    content: { title: "A corrected title" },
-  });
-});
-
-test("delivers an organization audience to its members without exposing the audience", async () => {
-  const viewer = await identity();
-  const otherOrg = await identity();
-  const prepared = await prepare(
-    draft({ audience: { orgIds: [viewer.orgId, otherOrg.orgId] } }),
-  );
-  await publish(prepared);
-  signIn(viewer);
-  await expect(current()).resolves.toStrictEqual({
-    id: prepared.editionId,
-    revisionId: prepared.revisionId,
-    content: prepared.input.content,
-  });
-  await identity(viewer.orgId);
-  await expect(current()).resolves.toMatchObject({ id: prepared.editionId });
-  signIn(otherOrg);
-  await expect(current()).resolves.toMatchObject({ id: prepared.editionId });
-  await identity();
-  await expect(current()).resolves.toBeNull();
-  mockOptionalEnv("ENV", "preview");
-  const preview = await accept(
-    clients().guide.current({ headers, query: { preview: "1" } }),
-    [200],
-  );
-  expect(preview.body.edition).toBeNull();
-  await accept(
-    clients().guide.seen({
-      headers,
-      params: { editionId: prepared.editionId },
-      body: { revisionId: prepared.revisionId },
-    }),
-    [404],
-  );
-});
-
-test("matches targeted users by organization and user together and unions organization targets", async () => {
-  const viewer = await identity();
-  const otherUser = await identity();
-  const wholeOrg = await identity();
-  const prepared = await prepare(
-    draft({
-      audience: {
-        orgIds: [wholeOrg.orgId],
-        users: [viewer, otherUser],
-      },
-    }),
-  );
-  await publish(prepared);
-  await identity(viewer.orgId);
-  await expect(current()).resolves.toBeNull();
-  await identity(otherUser.orgId, viewer.userId);
-  await expect(current()).resolves.toBeNull();
-  await accept(
-    clients().guide.seen({
-      headers,
-      params: { editionId: prepared.editionId },
-      body: { revisionId: prepared.revisionId },
-    }),
-    [404],
-  );
-  signIn(otherUser);
-  await expect(current()).resolves.toMatchObject({ id: prepared.editionId });
-  await identity(wholeOrg.orgId);
-  await expect(current()).resolves.toMatchObject({ id: prepared.editionId });
-  signIn(viewer);
-  await expect(current()).resolves.toMatchObject({ id: prepared.editionId });
-  await accept(
-    clients().guide.seen({
-      headers,
-      params: { editionId: prepared.editionId },
-      body: { revisionId: prepared.revisionId },
-    }),
-    [200],
-  );
-  await expect(current()).resolves.toBeNull();
-  mockOptionalEnv("ENV", "preview");
-  const preview = await accept(
-    clients().guide.current({ headers, query: { preview: "1" } }),
-    [200],
-  );
-  expect(preview.body).toStrictEqual({
-    edition: {
-      id: prepared.editionId,
-      revisionId: prepared.revisionId,
-      content: prepared.input.content,
-    },
-    preview: true,
-  });
-  await expect(current()).resolves.toBeNull();
-});
-
-test("selects the latest eligible edition per audience without resurfacing seen backlogs", async () => {
-  await setupApp({
-    context,
-    routes: [...featureGuidesRoutes, ...featureSwitchesRoutes],
-    isolatePg: true,
-  });
-  mockNow(NOW);
-  const global = await prepare();
-  await publish(global);
-  const firstViewer = await identity();
-  const secondViewer = await identity();
-  mockNow(NOW + 1000);
-  const first = await prepare(draft({ audience: { users: [firstViewer] } }));
-  await publish(first);
-  mockNow(NOW + 2000);
-  const second = await prepare(
-    draft({ audience: { orgIds: [secondViewer.orgId] } }),
-  );
-  await publish(second);
-  signIn(firstViewer);
-  await expect(current()).resolves.toMatchObject({ id: first.editionId });
-  await accept(
-    clients().guide.seen({
-      headers,
-      params: { editionId: first.editionId },
-      body: { revisionId: first.revisionId },
-    }),
-    [200],
-  );
-  await expect(current()).resolves.toBeNull();
-  signIn(secondViewer);
-  await expect(current()).resolves.toMatchObject({ id: second.editionId });
-  await identity();
-  await expect(current()).resolves.toMatchObject({ id: global.editionId });
-});
-
-test("publishes audience changes only through a new immutable revision and preserves seen receipts", async () => {
-  const viewer = await identity();
-  const prepared = await prepare(draft({ audience: { users: [viewer] } }));
-  await publish(prepared);
-  const repeated = await accept(
-    clients().guide.import({ headers, body: prepared.input }),
-    [200],
-  );
-  expect(repeated.body.revisionId).toBe(prepared.revisionId);
-  const changed = await accept(
-    clients().guide.import({
-      headers,
-      body: { ...prepared.input, audience: { orgIds: [viewer.orgId] } },
-    }),
-    [200],
-  );
-  expect(changed.body.revisionId).not.toBe(prepared.revisionId);
-  const peer = await identity(viewer.orgId);
-  await expect(current()).resolves.toBeNull();
-  signIn(viewer);
-  await accept(
-    clients().guide.seen({
-      headers,
-      params: { editionId: prepared.editionId },
-      body: { revisionId: prepared.revisionId },
-    }),
-    [200],
-  );
-  await publish({ ...prepared, revisionId: changed.body.revisionId });
-  signIn(viewer);
-  await expect(current()).resolves.toBeNull();
-  signIn(peer);
-  await expect(current()).resolves.toMatchObject({
-    id: prepared.editionId,
-    revisionId: changed.body.revisionId,
-  });
-});
-
-test.each([
-  { name: "null", audience: null },
-  { name: "unscoped user", audience: { users: [{ userId: "user_target" }] } },
-])(
-  "rejects a $name audience instead of broadening delivery",
-  async ({ audience }) => {
-    await identity(STAFF_ORG);
-    const request = setupRawAppRequest({
-      context,
-      routes: featureGuidesRoutes,
-    });
-    const response = await request("/api/internal/feature-guides", {
-      method: "POST",
-      headers: { ...headers, "content-type": "application/json" },
-      body: JSON.stringify({ ...draft(), audience }),
-    });
-    expect(response.status).toBe(400);
-  },
-);
-
-test("a seen edition does not reveal an older backlog and a new edition can appear", async () => {
-  mockNow(NOW);
-  const viewer = await identity();
-  const older = await prepare(draft({ audience: { users: [viewer] } }));
-  await publish(older);
-  mockNow(NOW + 1000);
-  const newer = await prepare(draft({ audience: { users: [viewer] } }));
-  await publish(newer);
-  signIn(viewer);
-  await expect(current()).resolves.toMatchObject({ id: newer.editionId });
-  await accept(
-    clients().guide.seen({
-      headers,
-      params: { editionId: newer.editionId },
-      body: { revisionId: newer.revisionId },
-    }),
-    [200],
-  );
-  await expect(current()).resolves.toBeNull();
-  mockNow(NOW + 2000);
-  const next = await prepare(draft({ audience: { users: [viewer] } }));
-  await publish(next);
-  signIn(viewer);
-  await expect(current()).resolves.toMatchObject({ id: next.editionId });
-});
-
-test("keeps drafts immutable and publishes only the selected revision", async () => {
-  const viewer = await identity();
-  const prepared = await prepare(draft({ audience: { users: [viewer] } }));
-  const repeated = await accept(
-    clients().guide.import({ headers, body: prepared.input }),
-    [200],
-  );
-  expect(repeated.body).toStrictEqual({
-    editionId: prepared.editionId,
-    revisionId: prepared.revisionId,
-  });
-  const changed = await accept(
-    clients().guide.import({
-      headers,
-      body: {
-        ...prepared.input,
-        content: {
-          ...prepared.input.content,
-          items: prepared.input.content.items.map((item) => {
-            return { ...item, featureSwitch: FeatureSwitchKey.Dummy };
-          }),
-        },
-      },
-    }),
-    [200],
-  );
-  expect(changed.body.revisionId).not.toBe(prepared.revisionId);
-  await publish(prepared);
-  signIn(viewer);
-  await expect(current()).resolves.toMatchObject({
-    revisionId: prepared.revisionId,
-    content: prepared.input.content,
-  });
-  signIn(prepared.staff);
-  await accept(
-    clients().guide.publish({
-      headers,
-      params: { editionId: prepared.editionId },
-      body: { revisionId: null },
-    }),
-    [200],
-  );
-  signIn(viewer);
-  await expect(current()).resolves.toBeNull();
-});
-
-test("respects scheduled and expired publication windows for targeted editions", async () => {
-  mockNow(NOW);
-  const viewer = await identity();
-  const prepared = await prepare(
-    draft({
-      audience: { users: [viewer] },
-      startsAt: new Date(NOW + 1000).toISOString(),
-      expiresAt: new Date(NOW + 2000).toISOString(),
-    }),
-  );
-  await publish(prepared);
-  signIn(viewer);
-  await expect(current()).resolves.toBeNull();
-  mockNow(NOW + 1000);
-  await expect(current()).resolves.toMatchObject({ id: prepared.editionId });
-  mockNow(NOW + 2000);
-  await expect(current()).resolves.toBeNull();
-});
-
-test("requires hard staff authorization for importing and publishing", async () => {
-  const viewer = await identity();
-  const imported = await accept(
-    clients().guide.import({
-      headers,
-      body: draft({ audience: { users: [viewer] } }),
-    }),
-    [403],
-  );
-  expect(imported.status).toBe(403);
-  const published = await accept(
-    clients().guide.publish({
-      headers,
-      params: { editionId: "unknown-edition" },
-      body: { revisionId: null },
-    }),
-    [403],
-  );
-  expect(published.status).toBe(403);
-});
-
-test("does not mark an unpublished revision as seen", async () => {
-  const prepared = await prepare();
-  await identity();
-  const rejected = await accept(
-    clients().guide.seen({
-      headers,
-      params: { editionId: prepared.editionId },
-      body: { revisionId: prepared.revisionId },
-    }),
-    [404],
-  );
-  expect(rejected.status).toBe(404);
-});
-
-test("requires a session and validates content, audiences and publication windows", async () => {
-  const signedOut = await accept(
-    clients().guide.current({ headers: {} }),
-    [401],
-  );
-  expect(signedOut.status).toBe(401);
-  await identity(STAFF_ORG);
-  const input = draft();
-  await accept(
-    clients().guide.import({
-      headers,
-      body: { ...input, audience: {} },
-    }),
-    [400],
-  );
-  await accept(
-    clients().guide.import({
-      headers,
-      body: {
-        ...input,
-        startsAt: "2026-02-01T00:00:00.000Z",
-        expiresAt: "2026-01-01T00:00:00.000Z",
-      },
-    }),
-    [400],
-  );
-  await accept(
-    clients().guide.import({
-      headers,
-      body: {
-        ...input,
-        content: {
-          ...input.content,
-          items: [
-            {
-              featureId: "unsafe",
-              title: "Unsafe",
-              description: "Unsafe media",
-              media: {
-                type: "image",
-                url: "javascript:alert(1)",
-                alt: "Unsafe",
-              },
-            },
-          ],
-        },
-      },
-    }),
-    [400],
-  );
-});
-
-test("rejects guide replay in production deployments", async () => {
-  await identity();
-  mockOptionalEnv("ENV", "production");
-  const rejected = await accept(
-    clients().guide.current({ headers, query: { preview: "1" } }),
-    [403],
-  );
-  expect(rejected.status).toBe(403);
-});
-
-test("previews the illustrated My Okou guide without publishing or acknowledging an edition", async () => {
-  mockOptionalEnv("ENV", "preview");
-  await identity();
-  const query = { preview: "1", edition: "single-agent-2026-11-16" } as const;
-  const preview = await accept(
-    clients().guide.current({ headers, query }),
-    [200],
-  );
-  expect(preview.body).toMatchObject({
-    preview: true,
-    edition: {
-      id: query.edition,
-      content: {
-        items: [
-          {
-            title: "One Okou. Your subagents, now projects",
-            media: {
-              type: "illustration",
-              characterUrl: expect.stringMatching(/^https:\/\//u),
-              scene: { type: "projects" },
-            },
-          },
-          {
-            title: "Your instructions are now in Settings",
-            media: {
-              type: "illustration",
-              scene: {
-                type: "instructions",
-                location: ["Settings", "Personal", "My Okou"],
-              },
-            },
-          },
-          {
-            title: "Your workflows, in one place",
-            media: { type: "illustration", scene: { type: "workflows" } },
-          },
-        ],
-      },
-    },
-  });
-  const revisionId = preview.body.edition?.revisionId;
-  if (!revisionId) {
-    throw new Error("Expected a preview revision");
-  }
-  await accept(
-    clients().guide.seen({
-      headers,
-      params: { editionId: query.edition },
+      params: { editionId: id },
       body: { revisionId },
     }),
-    [404],
+    [200],
   );
-  mockOptionalEnv("ENV", "production");
-  await accept(clients().guide.current({ headers, query }), [403]);
+}
+
+/** Staff imports and publishes an edition at the current clock. */
+async function published(
+  input: Omit<ImportFeatureGuide, "startsAt" | "expiresAt"> & {
+    readonly startsAt?: string;
+    readonly expiresAt?: string | null;
+  },
+) {
+  const imported = await importGuide({
+    startsAt: new Date(BASE).toISOString(),
+    expiresAt: null,
+    ...input,
+  });
+  await publish(imported.editionId, imported.revisionId);
+  return imported;
+}
+
+async function current(who: Actor, preview = false) {
+  signIn(who);
+  const response = await accept(
+    guides().current({
+      headers,
+      query: preview ? { preview: "1" } : undefined,
+    }),
+    [200],
+  );
+  return response.body;
+}
+
+async function currentEdition(who: Actor) {
+  return (await current(who)).edition;
+}
+
+async function markSeen(
+  who: Actor,
+  id: string,
+  revisionId: string,
+  status: 200 | 404 = 200,
+) {
+  signIn(who);
+  await accept(
+    guides().seen({ headers, params: { editionId: id }, body: { revisionId } }),
+    [status],
+  );
+}
+
+function featureIds(edition: { content: FeatureGuideContent } | null) {
+  return (edition?.content.items ?? []).map((item) => {
+    return item.featureId;
+  });
+}
+
+describe("feature guides", () => {
+  it("feature-guides-014 requires hard staff authorization for importing and publishing", async () => {
+    const member = actor();
+    signIn(member);
+
+    const [imported, publishedEdition] = await Promise.all([
+      guides().import({
+        headers,
+        body: {
+          editionId: editionId(),
+          content: content(),
+          startsAt: new Date(BASE).toISOString(),
+          expiresAt: null,
+        },
+      }),
+      guides().publish({
+        headers,
+        params: { editionId: editionId() },
+        body: { revisionId: randomUUID() },
+      }),
+    ]);
+
+    expect([imported.status, publishedEdition.status]).toStrictEqual([
+      403, 403,
+    ]);
+  });
+
+  it("feature-guides-001 delivers published guides to eligible members", async () => {
+    mockNow(new Date(BASE));
+    const member = actor();
+    const guide = content();
+    const imported = await importGuide({
+      editionId: editionId(),
+      content: guide,
+      audience: { users: [{ orgId: member.orgId, userId: member.userId }] },
+      startsAt: new Date(BASE).toISOString(),
+      expiresAt: null,
+    });
+
+    await expect(currentEdition(member)).resolves.toBeNull();
+    await publish(imported.editionId, imported.revisionId);
+
+    await expect(currentEdition(member)).resolves.toStrictEqual({
+      id: imported.editionId,
+      revisionId: imported.revisionId,
+      content: guide,
+    });
+  });
+
+  it("feature-guides-002 filters bound items by effective switches and leaves empty bindings unrestricted", async () => {
+    mockNow(new Date(BASE));
+    const first = actor();
+    const peer = actor(first.orgId);
+    const item = (featureId: string, featureSwitch: string | null) => {
+      return {
+        featureId,
+        featureSwitch,
+        title: `Feature ${featureId}`,
+        description: "A bound feature.",
+      };
+    };
+    await published({
+      editionId: editionId(),
+      content: content("Switch bound", [
+        item("unbound", null),
+        item("empty", ""),
+        item("single-agent", "singleAgent"),
+        item("dummy", FeatureSwitchKey.Dummy),
+        item("unknown", "unknownFeatureSwitch"),
+      ]),
+      audience: {
+        users: [
+          { orgId: first.orgId, userId: first.userId },
+          { orgId: peer.orgId, userId: peer.userId },
+        ],
+      },
+    });
+    const all = ["unbound", "empty", "single-agent", "dummy"];
+    const withoutDummy = ["unbound", "empty", "single-agent"];
+
+    expect(featureIds(await currentEdition(first))).toStrictEqual(all);
+    const seenByPeer = [];
+    for (const enabled of [false, true, false]) {
+      await updateFeatureSwitchesForUser(context, peer, {
+        [FeatureSwitchKey.Dummy]: enabled,
+      });
+      seenByPeer.push(featureIds(await currentEdition(peer)));
+    }
+    expect(seenByPeer).toStrictEqual([withoutDummy, all, withoutDummy]);
+  });
+
+  it("feature-guides-004 persists seen status per user and edition across workspaces and content revisions", async () => {
+    mockNow(new Date(BASE));
+    const member = actor();
+    const peer = actor(member.orgId);
+    const memberElsewhere = {
+      userId: member.userId,
+      orgId: `org_${randomUUID()}`,
+    };
+    const id = editionId();
+    const audience = {
+      users: [member, peer, memberElsewhere].map((who) => {
+        return { orgId: who.orgId, userId: who.userId };
+      }),
+    };
+    const original = await published({
+      editionId: id,
+      content: content(),
+      audience,
+    });
+
+    await expect(currentEdition(member)).resolves.toMatchObject({ id });
+    await markSeen(member, id, original.revisionId);
+    await expect(currentEdition(member)).resolves.toBeNull();
+    await expect(currentEdition(memberElsewhere)).resolves.toBeNull();
+    await expect(currentEdition(peer)).resolves.toMatchObject({ id });
+
+    await published({
+      editionId: id,
+      content: content("Corrected title"),
+      audience,
+    });
+    await expect(currentEdition(member)).resolves.toBeNull();
+    const corrected = await currentEdition(peer);
+    expect(corrected?.content.title).toBe("Corrected title");
+  });
+
+  it("feature-guides-005 delivers an organization audience to its members without exposing the audience", async () => {
+    mockNow(new Date(BASE));
+    const first = actor();
+    const colleague = actor(first.orgId);
+    const second = actor();
+    const unrelated = actor();
+    const guide = content();
+    const imported = await published({
+      editionId: editionId(),
+      content: guide,
+      audience: { orgIds: [first.orgId, second.orgId] },
+    });
+
+    await expect(current(first)).resolves.toStrictEqual({
+      edition: {
+        id: imported.editionId,
+        revisionId: imported.revisionId,
+        content: guide,
+      },
+    });
+    await expect(currentEdition(colleague)).resolves.toMatchObject({
+      id: imported.editionId,
+    });
+    await expect(currentEdition(second)).resolves.toMatchObject({
+      id: imported.editionId,
+    });
+    await expect(currentEdition(unrelated)).resolves.toBeNull();
+    mockOptionalEnv("ENV", "preview");
+    await expect(current(unrelated, true)).resolves.toMatchObject({
+      edition: null,
+    });
+    await markSeen(unrelated, imported.editionId, imported.revisionId, 404);
+  });
+
+  it("feature-guides-006 matches targeted users by organization and user together and unions organization targets", async () => {
+    mockNow(new Date(BASE));
+    const firstTarget = actor();
+    const secondTarget = actor();
+    const wholeWorkspaceMember = actor();
+    const firstTargetColleague = actor(firstTarget.orgId);
+    const firstTargetInSecond = {
+      userId: firstTarget.userId,
+      orgId: secondTarget.orgId,
+    };
+    const guide = content();
+    const imported = await published({
+      editionId: editionId(),
+      content: guide,
+      audience: {
+        orgIds: [wholeWorkspaceMember.orgId],
+        users: [firstTarget, secondTarget].map((who) => {
+          return { orgId: who.orgId, userId: who.userId };
+        }),
+      },
+    });
+    const { editionId: id, revisionId } = imported;
+
+    for (const outsider of [firstTargetColleague, firstTargetInSecond]) {
+      await expect(currentEdition(outsider)).resolves.toBeNull();
+      await markSeen(outsider, id, revisionId, 404);
+    }
+    for (const target of [secondTarget, wholeWorkspaceMember, firstTarget]) {
+      await expect(currentEdition(target)).resolves.toMatchObject({ id });
+    }
+    await markSeen(firstTarget, id, revisionId);
+    await expect(currentEdition(firstTarget)).resolves.toBeNull();
+    mockOptionalEnv("ENV", "preview");
+    await expect(current(firstTarget, true)).resolves.toStrictEqual({
+      edition: { id, revisionId, content: guide },
+      preview: true,
+    });
+    await expect(currentEdition(firstTarget)).resolves.toBeNull();
+  });
+
+  it("feature-guides-007 selects the latest eligible edition per audience without resurfacing seen backlogs", async () => {
+    // A private publication window keeps this global edition from reaching other cases.
+    const base =
+      Date.parse("2031-01-01T00:00:00Z") + randomInt(0, 1_000_000) * 60_000;
+    const window = {
+      startsAt: new Date(base).toISOString(),
+      expiresAt: new Date(base + 60_000).toISOString(),
+    };
+    const first = actor();
+    const second = actor();
+    const untargeted = actor();
+    mockNow(new Date(base));
+    const global = await published({
+      editionId: editionId(),
+      content: content("Global"),
+      ...window,
+    });
+    mockNow(new Date(base + 1000));
+    const forFirst = await published({
+      editionId: editionId(),
+      content: content("For the first member"),
+      audience: { users: [{ orgId: first.orgId, userId: first.userId }] },
+      ...window,
+    });
+    mockNow(new Date(base + 3000));
+    const forSecond = await published({
+      editionId: editionId(),
+      content: content("For the second workspace"),
+      audience: { orgIds: [second.orgId] },
+      ...window,
+    });
+
+    await expect(currentEdition(first)).resolves.toMatchObject({
+      id: forFirst.editionId,
+    });
+    await markSeen(first, forFirst.editionId, forFirst.revisionId);
+    await expect(currentEdition(first)).resolves.toBeNull();
+    await expect(currentEdition(second)).resolves.toMatchObject({
+      id: forSecond.editionId,
+    });
+    await expect(currentEdition(untargeted)).resolves.toMatchObject({
+      id: global.editionId,
+    });
+  });
+
+  it("feature-guides-012 keeps drafts immutable and publishes only the selected revision", async () => {
+    mockNow(new Date(BASE));
+    const member = actor();
+    const guide = content();
+    const input = {
+      editionId: editionId(),
+      content: guide,
+      audience: { users: [{ orgId: member.orgId, userId: member.userId }] },
+      startsAt: new Date(BASE).toISOString(),
+      expiresAt: null,
+    };
+    const original = await importGuide(input);
+    await expect(importGuide(input)).resolves.toStrictEqual(original);
+    const changed = await importGuide({
+      ...input,
+      content: content(
+        guide.title,
+        guide.items.map((item) => {
+          return { ...item, featureSwitch: FeatureSwitchKey.Dummy };
+        }),
+      ),
+    });
+    expect(changed.editionId).toBe(original.editionId);
+    expect(changed.revisionId).not.toBe(original.revisionId);
+
+    await publish(original.editionId, original.revisionId);
+    await expect(currentEdition(member)).resolves.toStrictEqual({
+      id: original.editionId,
+      revisionId: original.revisionId,
+      content: guide,
+    });
+    await publish(original.editionId, null);
+    await expect(currentEdition(member)).resolves.toBeNull();
+  });
+
+  it("feature-guides-013 respects scheduled and expired publication windows for targeted editions", async () => {
+    mockNow(new Date(BASE));
+    const member = actor();
+    const imported = await published({
+      editionId: editionId(),
+      content: content(),
+      audience: { users: [{ orgId: member.orgId, userId: member.userId }] },
+      startsAt: new Date(BASE + 1000).toISOString(),
+      expiresAt: new Date(BASE + 2000).toISOString(),
+    });
+
+    const reads = [];
+    for (const at of [BASE, BASE + 1000, BASE + 2000]) {
+      mockNow(new Date(at));
+      reads.push((await currentEdition(member))?.id ?? null);
+    }
+    expect(reads).toStrictEqual([null, imported.editionId, null]);
+  });
 });

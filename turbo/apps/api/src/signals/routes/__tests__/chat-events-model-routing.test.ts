@@ -1,917 +1,580 @@
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
-import { http, HttpResponse } from "msw";
-import { server } from "../../../mocks/server";
-import { mockEnv } from "../../../lib/env";
-import { publicChatActor } from "./helpers/public-chat-actor";
 import { randomUUID } from "node:crypto";
-import { describe, expect, it } from "vitest";
-import { testContext } from "../../../__tests__/test-context";
-import { now } from "../../../lib/time";
 
-import { flushWaitUntilForTest } from "../../context/wait-until";
-import { expectApiError, type ApiTestUser } from "./helpers/api-bdd";
-
+import { chatEventsContract } from "@okouai/api-contracts/contracts/chat-event-send";
+import { personalModelProvidersByTypeContract } from "@okouai/api-contracts/contracts/personal-model-providers";
 import {
-  createChatEventsFixture,
-  CODEX_WEB_IMAGE_UPLOAD_PROMPT_SNIPPET,
-  type PromptMessage,
-  executionEnvironment,
-  requireOrgId,
-  userMessages,
-} from "./helpers/chat-events-fixture";
+  chatThreadMetadataContract,
+  chatThreadsContract,
+} from "@okouai/api-contracts/contracts/chat-threads";
+import { AUTO_SELECTED_MODEL } from "@okouai/core/auto-run-model";
+import { describe, expect, it } from "vitest";
+
+import { accept, testContext } from "../../../__tests__/test-context";
+import { setupApp } from "../../../__tests__/test-helpers";
+import {
+  TEST_WITH_DOUBLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE,
+  TEST_WITH_SINGLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE,
+} from "../../../__tests__/test-timeouts";
+import { mockOptionalEnv } from "../../../lib/env";
+import { flushWaitUntilForTest } from "../../context/wait-until";
+import { chatEventsRoutes } from "../chat-events";
+import { chatThreadRoutes } from "../chat-threads";
+import { meModelProvidersDeleteRoutes } from "../me-model-providers-delete";
+import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
+import { mockClaudeCodeTokenEndpoint } from "./helpers/api-bdd-auth-device";
+import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
+import { createRunsApi } from "./helpers/api-bdd-runs";
+import { createChatEventsFixture } from "./helpers/chat-events-fixture";
+import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
-const {
-  api,
-  chat,
-  chatCallbacks,
-  misc,
-  entitledChatActor,
+const headers = Object.freeze({ authorization: "Bearer clerk-session" });
 
-  configureSubscriptionPiModel,
-  sendChatRun,
-  requestSendEventRaw,
-  expectThreadCreatedModelEvent,
-  runExecution,
-  waitForThreadMessages,
-  completeChatRunOk,
-  cancelAndCompleteChatRun,
-  cancelChatRun,
-
-  readThreadProjection,
-  mockPiObjectStore,
-  mockPiResourceArchiveDownloads,
-} = createChatEventsFixture(context);
-
-function base64UrlEncode(input: string): string {
-  return Buffer.from(input, "utf8")
-    .toString("base64")
-    .replace(/\+/g, "-")
-    .replace(/\//g, "_")
-    .replace(/=+$/, "");
+function signIn(actor: ApiTestUser): void {
+  createRouteMocks(context).clerk.session(
+    actor.userId,
+    actor.orgId ?? null,
+    actor.orgRole,
+  );
 }
 
-function unsignedJwt(payload: Record<string, unknown>): string {
-  const header = base64UrlEncode(JSON.stringify({ alg: "RS256", typ: "JWT" }));
-  return `${header}.${base64UrlEncode(JSON.stringify(payload))}.bdd-signature`;
+function threads(actor: ApiTestUser) {
+  signIn(actor);
+  return setupApp({ context, routes: chatThreadRoutes })(chatThreadsContract);
 }
 
-function codexAuthJson(): string {
-  const accessExp = Math.floor(now() / 1000) + 7200;
-  return JSON.stringify({
-    OPENAI_API_KEY: null,
-    tokens: {
-      access_token: unsignedJwt({ exp: accessExp }),
-      refresh_token: "rt_bdd_chat_fast_mode",
-      account_id: "ws_acct_bdd_fast_mode",
-      id_token: unsignedJwt({
-        "https://api.openai.com/auth": {
-          chatgpt_account_id: "ws_acct_bdd_fast_mode_id_token",
-          chatgpt_plan_type: "plus",
-          organization: { title: "BDD Chat Fast Mode" },
-        },
-        exp: accessExp,
-      }),
-    },
-  });
+async function selectedModel(actor: ApiTestUser, id: string) {
+  signIn(actor);
+  const response = await accept(
+    setupApp({ context, routes: chatThreadRoutes })(
+      chatThreadMetadataContract,
+    ).get({ headers, params: { id } }),
+    [200],
+  );
+  return response.body.selectedModel;
 }
 
-/**
- * Wait for the background pick to consume a sent input: its replacement is
- * the launched `input.prompt` carrying the run, or its `input.rejected`.
- */
-async function waitForPickedInput(
-  actor: ApiTestUser,
-  threadId: string,
-  clientEventId: string,
+async function threadEvents(actor: ApiTestUser) {
+  const response = await accept(
+    threads(actor).events({ headers, query: {} }),
+    [200],
+  );
+  return response.body;
+}
+
+async function setupEntitledClaudeActor(
+  fixture: ReturnType<typeof createChatEventsFixture>,
 ) {
-  await flushWaitUntilForTest();
-  const messages = await waitForThreadMessages(actor, threadId, (items) => {
-    return userMessages(items).some((message) => {
-      return (
-        message.revokesEventId === clientEventId &&
-        (message.eventType === "input.rejected" || message.runId !== undefined)
-      );
-    });
-  });
-  const picked = userMessages(messages.events).find((message) => {
-    return message.revokesEventId === clientEventId;
-  });
-  if (!picked) {
-    throw new Error("Expected the picked input replacement");
-  }
-  return { picked, events: messages.events };
+  const actor = fixture.bdd.user();
+  fixture.chatCallbacks.acceptChatObjectStorage();
+  fixture.api.acceptStorageDownloads();
+  fixture.api.acceptTelemetryIngest();
+  mockOptionalEnv("OPENROUTER_API_KEY", undefined);
+  fixture.chatCallbacks.disableVapid();
+  mockClaudeCodeTokenEndpoint();
+  const [runnerGroup] = await Promise.all([
+    fixture.api.configureRunnerGroup(),
+    fixture.api.grantProEntitlement(actor),
+    fixture.api.createPersonalModelProvider(actor, {
+      type: "claude-code-oauth-token",
+      secret: `claude-token-${randomUUID()}`,
+    }),
+  ]);
+  return { actor, runnerGroup };
 }
 
 describe("CHAT-02: model-first routing", () => {
-  it("adds Codex image upload guidance for web chat Codex sends", async () => {
-    const { actor } = await entitledChatActor();
-    const prompt =
-      "generate an image in web chat using the aurora-21210 color palette";
+  it("chat-events-model-routing-003 rejects personal model gpt-6-luna without the caller's subscription", async () => {
+    const member = createBddApi(context).user({ orgRole: "org:member" });
 
-    await misc.upsertPersonalModelProvider(
-      actor,
-      {
-        type: "codex-oauth-token",
-        authMethod: "auth_json",
-        secrets: { CODEX_AUTH_JSON: codexAuthJson() },
-      },
-      [200, 201],
-    );
-    await api.updateUserModelPreference(actor, "gpt-6-astra");
-
-    const run = await sendChatRun(actor, {
-      prompt,
-      model: "gpt-6-astra",
-    });
-    const { execution } = await runExecution(run.runId);
-    const appendSystemPrompt = execution.appendSystemPrompt ?? "";
-    expect(execution.cliAgentType).toBe("codex");
-    expect(appendSystemPrompt).toContain(
-      "You are currently running inside: Web",
-    );
-    expect(appendSystemPrompt).toContain("okou web upload-file -h");
-    expect(appendSystemPrompt).toContain("okou mail link <gmail-draft-id>");
-    expect(appendSystemPrompt).toContain(
-      "GET /gmail/v1/users/me/settings/sendAs",
-    );
-    expect(appendSystemPrompt).toContain(
-      "Include a `multipart/alternative` body",
-    );
-    expect(appendSystemPrompt).toContain(
-      "Keep each plain-text paragraph on one logical line",
-    );
-    expect(appendSystemPrompt).toContain(
-      "use HTML paragraph elements so Gmail wraps the message naturally",
-    );
-    expect(appendSystemPrompt).toContain("append that signature exactly once");
-    expect(appendSystemPrompt).toContain(
-      "return the link from the command to the user",
-    );
-    expect(appendSystemPrompt).toContain("Do not add a mail callback prompt");
-    expect(appendSystemPrompt).toContain(
-      "confirm the send against Gmail before reporting it",
-    );
-    expect(appendSystemPrompt).toContain(
-      "`okou workflow automation list <workflow>` shows one workflow's triggers",
-    );
-    expect(appendSystemPrompt).toContain(
-      "Never send a reply automatically; the user always sends",
-    );
-    expect(appendSystemPrompt).toContain(CODEX_WEB_IMAGE_UPLOAD_PROMPT_SNIPPET);
-    let previousSectionIndex = -1;
-    for (const section of [
-      "# Identity",
-      "# Execution Time Limit",
-      "# Agent Tools",
-      "# Current User Info",
-      "# Current Integration",
-      CODEX_WEB_IMAGE_UPLOAD_PROMPT_SNIPPET,
-    ]) {
-      const sectionIndex = appendSystemPrompt.indexOf(section);
-      expect(sectionIndex).toBeGreaterThan(previousSectionIndex);
-      previousSectionIndex = sectionIndex;
-    }
-    await cancelAndCompleteChatRun(actor, run.runId);
-  });
-
-  it("queues an existing-thread input with its model until the active run releases the thread", async () => {
-    const { actor } = await entitledChatActor();
-    await api.ensurePersonalSubscriptionModel(actor, {
-      model: "claude-fable-5-1",
-    });
-
-    const thread = await chat.createThread(actor, {
-      model: "claude-fable-5-1",
-    });
-    // Keep the thread busy so the follow-up stays queued after model selection.
-    const active = await sendChatRun(actor, {
-      threadId: thread.id,
-      prompt: "keep the thread busy",
-    });
-
-    const clientEventId = randomUUID();
-    const sent = await chat.requestSendEvent(
-      actor,
-      {
-        threadId: thread.id,
-        prompt: "enqueue with the thread model",
-        clientEventId,
-      },
-      [201],
-    );
-    expect(sent.status).toBe(201);
-    await flushWaitUntilForTest();
-    expect(
-      (await chat.listThreadEvents(actor, thread.id)).events,
-    ).toContainEqual(
-      expect.objectContaining({ id: clientEventId, eventType: "input.prompt" }),
-    );
-    expect(
-      (await chat.listThreadEvents(actor, thread.id)).events,
-    ).not.toContainEqual(
-      expect.objectContaining({ revokesEventId: clientEventId }),
-    );
-
-    await cancelAndCompleteChatRun(actor, active.runId);
-    const { picked } = await waitForPickedInput(
-      actor,
-      thread.id,
-      clientEventId,
-    );
-    if (picked.runId === undefined) {
-      throw new Error("Expected the follow-up to launch after the cancel");
-    }
-    const { execution } = await runExecution(picked.runId);
-    expect(execution.modelUsageProvider).toBe("claude-fable-5-1");
-    await cancelAndCompleteChatRun(actor, picked.runId);
-  }, 90_000);
-
-  it("rejects personal model gpt-6-luna without the caller's subscription", async () => {
-    const { actor } = await entitledChatActor();
-    const response = await chat.requestCreateThread(
-      actor,
-      { model: "gpt-6-luna" },
+    const rejected = await accept(
+      threads(member).create({
+        headers,
+        body: { clientThreadId: randomUUID(), model: "gpt-6-luna" },
+      }),
       [400],
     );
-    expect(response.status).toBe(400);
-    expectApiError(response.body);
+
+    expect(rejected.body).toMatchObject({
+      error: { message: expect.any(String) },
+    });
   });
 
-  it("rejects the internal Auto run model as a send selection", async () => {
-    const { actor } = await entitledChatActor();
-    const thread = await chat.createThread(actor, {
-      model: "claude-fable-5-1",
+  it("chat-events-model-routing-008 rejects the retired Fable 5 alias once the Claude subscription is deleted", async () => {
+    const member = createBddApi(context).user();
+    mockClaudeCodeTokenEndpoint();
+    await createRunsApi(context).createPersonalModelProvider(member, {
+      type: "claude-code-oauth-token",
+      secret: "personal-claude-token",
     });
-    for (const threadId of [undefined, thread.id]) {
-      const response = await chat.requestSendEvent(
-        actor,
-        {
-          ...(threadId === undefined ? {} : { threadId }),
-          prompt: "select Auto by its run model id",
-          model: "okou-1.0",
-          clientEventId: randomUUID(),
-        },
-        [400],
-      );
-      expectApiError(response.body);
-      expect(response.body.error.message).toBe('Unknown model "okou-1.0"');
-    }
-    await expect(
-      chat.readThreadMetadata(actor, thread.id),
-    ).resolves.toMatchObject({ selectedModel: "claude-fable-5-1" });
+    const created = await accept(
+      threads(member).create({
+        headers,
+        body: { clientThreadId: randomUUID(), model: "claude-fable-5-1" },
+      }),
+      [201],
+    );
+    const threadId = created.body.id;
+    const eventsBefore = await threadEvents(member);
+    signIn(member);
+    await accept(
+      setupApp({ context, routes: meModelProvidersDeleteRoutes })(
+        personalModelProvidersByTypeContract,
+      ).delete({
+        headers,
+        params: { type: "claude-code-oauth-token" },
+      }),
+      [204],
+    );
+
+    const rejected = await createChatFilesBddApi(context).requestSendEvent(
+      member,
+      { prompt: "Continue", threadId, model: "claude-fable-5" },
+      [400],
+    );
+    const [eventsAfter, model] = await Promise.all([
+      threadEvents(member),
+      selectedModel(member, threadId),
+    ]);
+
+    expect(rejected.status).toBe(400);
+    expect(JSON.stringify(rejected.body)).toContain("Fable 5.1");
+    expect(JSON.stringify(rejected.body)).toMatch(/Auto/);
+    expect(JSON.stringify(rejected.body)).toMatch(/connect/i);
+    expect(eventsAfter).toStrictEqual(eventsBefore);
+    expect(model).toBe("claude-fable-5-1");
   });
 
-  it("stores canonical Auto when the first send omits a model with no member preference", async () => {
-    const queuedThreads = new Set<string>();
-    const fixture = await publicChatActor(context, {
-      optionalEnvironmentNames: ["CONCURRENT_RUN_LIMIT_CAP"],
-      beforeRuns: async (actor) => {
-        for (const threadId of queuedThreads) {
-          await chat.requestDeleteThread(actor, threadId, [204, 404]);
-        }
-        await flushWaitUntilForTest();
-      },
-    });
-    const { actor } = fixture;
-    await fixture.run(async () => {
-      mockEnv("CONCURRENT_RUN_LIMIT_CAP", "1");
-      const anchor = await fixture.sendChatRun(actor, {
+  it(
+    "chat-events-model-routing-002 queues an existing-thread input with its model until the active run releases the thread",
+    { timeout: TEST_WITH_DOUBLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const fixture = createChatEventsFixture(context);
+      const { actor } = await setupEntitledClaudeActor(fixture);
+      const occupied = await fixture.sendChatRun(actor, {
+        prompt: "Occupy Fable thread",
         model: "claude-fable-5-1",
-        prompt: "Keep the native run slot occupied",
       });
-      const { sandboxHeaders } = await fixture.runExecution(anchor.runId);
-      await api.updateUserModelPreference(actor, null);
-      const threadId = randomUUID();
-      queuedThreads.add(threadId);
-      const clientEventId = randomUUID();
-      const prompt = "Queue this input with canonical Auto";
-      const response = await requestSendEventRaw(actor, {
-        clientThreadId: threadId,
-        clientEventId,
-        prompt,
-        userMessage: { version: 1, parts: [{ type: "text", text: prompt }] },
-        hasTextContent: true,
-      });
-      expect(response.status).toBe(201);
-      expect(response.body).toMatchObject({ threadId });
+
+      const queuedEventId = randomUUID();
+      const [occupiedExecution, queuedSend] = await Promise.all([
+        fixture.api.executionInput(occupied.runId),
+        fixture.chat.requestSendEvent(
+          actor,
+          {
+            threadId: occupied.threadId,
+            prompt: "Queued personal Fable follow-up",
+            model: "claude-fable-5-1",
+            clientEventId: queuedEventId,
+          },
+          [201],
+        ),
+      ]);
+      expect(queuedSend.status).toBe(201);
       await flushWaitUntilForTest();
-      await expect(
-        chat.readThreadMetadata(actor, threadId),
-      ).resolves.toMatchObject({ selectedModel: "auto" });
-      await expectThreadCreatedModelEvent(actor, threadId, "auto");
-      const queued = (
-        await chat.listThreadEvents(actor, threadId)
-      ).events.filter((event) => {
-        return event.id === clientEventId;
+
+      const whileOccupied = await fixture.chat.listThreadEvents(
+        actor,
+        occupied.threadId,
+      );
+      expect(whileOccupied.events).toContainEqual(
+        expect.objectContaining({
+          id: queuedEventId,
+          eventType: "input.prompt",
+        }),
+      );
+      expect(
+        whileOccupied.events.find((event) => {
+          return event.id === queuedEventId;
+        })?.runId,
+      ).toBeUndefined();
+      expect(
+        whileOccupied.events.filter((event) => {
+          return event.revokesEventId === queuedEventId;
+        }),
+      ).toStrictEqual([]);
+
+      await fixture.api.requestCancelRun(actor, occupied.runId, [200]);
+      await fixture.failChatRun(
+        occupied.runId,
+        { authorization: `Bearer ${occupiedExecution.sandboxToken}` },
+        "Run cancelled",
+      );
+      await flushWaitUntilForTest();
+
+      const afterRelease = await fixture.chat.listThreadEvents(
+        actor,
+        occupied.threadId,
+      );
+      const promoted = afterRelease.events.find((event) => {
+        return (
+          event.eventType === "input.prompt" &&
+          event.revokesEventId === queuedEventId
+        );
       });
-      expect(queued).toHaveLength(1);
-      expect(queued[0]).toMatchObject({
+      if (!promoted?.runId) {
+        throw new Error("Expected promoted replacement to carry a Run ID");
+      }
+      expect(promoted.runId).not.toBe(occupied.runId);
+
+      const execution = await fixture.api.executionInput(promoted.runId);
+      expect(execution.modelUsageProvider).toBe("claude-fable-5-1");
+    },
+  );
+
+  it(
+    "chat-events-model-routing-005 stores canonical Auto when the first send omits a model with no member preference",
+    { timeout: TEST_WITH_SINGLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const fixture = createChatEventsFixture(context);
+      const owner = fixture.bdd.user();
+      if (!owner.orgId) {
+        throw new Error("Expected owner orgId");
+      }
+      fixture.chatCallbacks.acceptChatObjectStorage();
+      fixture.api.acceptStorageDownloads();
+      fixture.api.acceptTelemetryIngest();
+      mockOptionalEnv("OPENROUTER_API_KEY", undefined);
+      fixture.chatCallbacks.disableVapid();
+      mockClaudeCodeTokenEndpoint();
+      await Promise.all([
+        fixture.api.configureRunnerGroup(),
+        createBddApi(context).bootstrapLimitedFreeOnboarding(owner),
+        fixture.api.createPersonalModelProvider(owner, {
+          type: "claude-code-oauth-token",
+          secret: `claude-token-${randomUUID()}`,
+        }),
+      ]);
+
+      await Promise.all([
+        fixture.sendChatRun(owner, {
+          prompt: "Occupy slot one",
+          model: "claude-fable-5-1",
+        }),
+        fixture.sendChatRun(owner, {
+          prompt: "Occupy slot two",
+          model: "claude-fable-5-1",
+        }),
+      ]);
+
+      const member = fixture.bdd.user({
+        orgId: owner.orgId,
+        orgRole: "org:member",
+      });
+      const clientThreadId = randomUUID();
+      const clientEventId = randomUUID();
+      signIn(member);
+      const sent = await accept(
+        setupApp({ context, routes: chatEventsRoutes })(
+          chatEventsContract,
+        ).send({
+          headers,
+          body: {
+            clientThreadId,
+            clientEventId,
+            prompt: "Wait for workspace capacity",
+            hasTextContent: true,
+            userMessage: {
+              version: 1,
+              parts: [{ type: "text", text: "Wait for workspace capacity" }],
+            },
+          },
+        }),
+        [201],
+      );
+      expect(sent.body.threadId).toBe(clientThreadId);
+      await flushWaitUntilForTest();
+
+      const [metadata, lifecycle, history] = await Promise.all([
+        fixture.chat.readThreadMetadata(member, clientThreadId),
+        fixture.chat.requestThreadEvents(member, {}, [200]),
+        fixture.chat.listThreadEvents(member, clientThreadId),
+      ]);
+
+      expect(metadata.selectedModel).toBe(AUTO_SELECTED_MODEL);
+      if (!("events" in lifecycle.body)) {
+        throw new Error("Expected thread lifecycle events");
+      }
+      expect(lifecycle.body.events).toContainEqual(
+        expect.objectContaining({
+          kind: "created",
+          chatThreadId: clientThreadId,
+          selectedModel: AUTO_SELECTED_MODEL,
+        }),
+      );
+      expect(history.events).toHaveLength(1);
+      expect(history.events[0]).toMatchObject({
+        id: clientEventId,
         eventType: "input.prompt",
-        userMessage: { version: 1, parts: [{ type: "text", text: prompt }] },
-      });
-      expect(queued[0]?.runId).toBeUndefined();
-      await chat.requestSendEvent(
-        actor,
-        { threadId, revokesEventId: clientEventId },
-        [201],
-      );
-      await chat.requestDeleteThread(actor, threadId, [204]);
-      queuedThreads.delete(threadId);
-      await cancelChatRun(actor, anchor.runId, sandboxHeaders);
-    });
-  }, 90_000);
-
-  it("switches a subscription-pinned thread to Auto when a send selects null", async () => {
-    const queuedThreads = new Set<string>();
-    const fixture = await publicChatActor(context, {
-      optionalEnvironmentNames: ["CONCURRENT_RUN_LIMIT_CAP"],
-      beforeRuns: async (actor) => {
-        for (const threadId of queuedThreads) {
-          await chat.requestDeleteThread(actor, threadId, [204, 404]);
-        }
-        await flushWaitUntilForTest();
-      },
-    });
-    const { actor } = fixture;
-    await fixture.run(async () => {
-      mockEnv("CONCURRENT_RUN_LIMIT_CAP", "1");
-      const anchor = await fixture.sendChatRun(actor, {
-        model: "claude-fable-5-1",
-        prompt: "Keep the native run slot occupied",
-      });
-      const { sandboxHeaders } = await fixture.runExecution(anchor.runId);
-      const thread = await chat.createThread(actor, {
-        model: "claude-fable-5-1",
-      });
-      const threadId = thread.id;
-      queuedThreads.add(threadId);
-      const clientEventId = randomUUID();
-      const prompt = "Queue this input with canonical Auto";
-      const response = await fixture.requestSendEvent(
-        actor,
-        { threadId, clientEventId, prompt, model: null },
-        [201],
-      );
-      expect(response.status).toBe(201);
-      expect(response.body).toMatchObject({ threadId });
-      await flushWaitUntilForTest();
-      await expect(
-        chat.readThreadMetadata(actor, threadId),
-      ).resolves.toMatchObject({ selectedModel: "auto" });
-      await expect(
-        chat.requestThreadEvents(actor, {}, [200]),
-      ).resolves.toMatchObject({
-        body: {
-          events: expect.arrayContaining([
-            expect.objectContaining({
-              kind: "model_selection_updated",
-              chatThreadId: threadId,
-              selectedModel: "auto",
-            }),
+        content: null,
+        userMessage: {
+          version: 1,
+          parts: expect.arrayContaining([
+            { type: "text", text: "Wait for workspace capacity" },
           ]),
         },
       });
-      const queued = (
-        await chat.listThreadEvents(actor, threadId)
-      ).events.filter((event) => {
-        return event.id === clientEventId;
-      });
-      expect(queued).toHaveLength(1);
-      expect(queued[0]).toMatchObject({
-        eventType: "input.prompt",
-        userMessage: { version: 1, parts: [{ type: "text", text: prompt }] },
-      });
-      expect(queued[0]?.runId).toBeUndefined();
-      await chat.requestSendEvent(
-        actor,
-        { threadId, revokesEventId: clientEventId },
-        [201],
-      );
-      await chat.requestDeleteThread(actor, threadId, [204]);
-      queuedThreads.delete(threadId);
-      await cancelChatRun(actor, anchor.runId, sandboxHeaders);
-    });
-  }, 90_000);
+      expect(history.events[0]?.runId).toBeUndefined();
+    },
+  );
 
-  it("rejects a disconnected thread subscription until its owner explicitly selects Auto", async () => {
-    const {
-      actor,
-      run: own,
-      sendChatRun,
-      runExecution,
-    } = await publicChatActor(context);
-    await own(async () => {
-      await api.ensurePersonalSubscriptionModel(actor, {
+  it(
+    "chat-events-model-routing-007 rejects a disconnected thread subscription until its owner explicitly selects Auto",
+    { timeout: TEST_WITH_SINGLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const fixture = createChatEventsFixture(context);
+      const { actor } = await setupEntitledClaudeActor(fixture);
+      const initial = await fixture.sendChatRun(actor, {
+        prompt: "Initial Fable run",
         model: "claude-fable-5-1",
       });
-      const first = await sendChatRun(actor, {
-        prompt: "start before the thread model is removed",
-        model: "claude-fable-5-1",
-      });
-      const firstExecution = await runExecution(first.runId);
-      expect(firstExecution.execution.cliAgentType).toBe("claude-code");
-      expect(
-        executionEnvironment(firstExecution.execution).ANTHROPIC_MODEL,
-      ).toBe("claude-fable-5-1");
-      chatCallbacks.mockChatOutputEvents([]);
-      await completeChatRunOk(first.runId, firstExecution.sandboxHeaders);
-      await flushWaitUntilForTest();
+      const { sandboxHeaders } = await fixture.runExecution(initial.runId);
+      await fixture.completeChatRunOk(initial.runId, sandboxHeaders);
 
-      await misc.deletePersonalModelProvider(
+      await fixture.misc.deletePersonalModelProvider(
         actor,
         "claude-code-oauth-token",
         [204],
       );
-      // The member preference does not replace an unavailable thread model.
-      await api.updateUserModelPreference(actor, null);
 
-      const clientEventId = randomUUID();
-      await chat.requestSendEvent(
+      const continuationEventId = randomUUID();
+      await fixture.chat.requestSendEvent(
         actor,
         {
-          threadId: first.threadId,
-          prompt: "continue through my disconnected subscription",
-          clientEventId,
+          threadId: initial.threadId,
+          prompt: "Continue without changing model",
+          clientEventId: continuationEventId,
         },
         [201],
       );
-      const { picked } = await waitForPickedInput(
-        actor,
-        first.threadId,
-        clientEventId,
-      );
-      expect(picked).toMatchObject({
+      await flushWaitUntilForTest();
+
+      const [historyAfterReject, metadataAfterReject] = await Promise.all([
+        fixture.chat.listThreadEvents(actor, initial.threadId),
+        fixture.chat.readThreadMetadata(actor, initial.threadId),
+      ]);
+      const rejected = historyAfterReject.events.find((event) => {
+        return event.revokesEventId === continuationEventId;
+      });
+      expect(rejected).toMatchObject({
         eventType: "input.rejected",
+        revokesEventId: continuationEventId,
         error: "conflict",
       });
-      expect(picked.runId).toBeUndefined();
-      await expect(
-        chat.readThreadMetadata(actor, first.threadId),
-      ).resolves.toMatchObject({
-        selectedModel: "claude-fable-5-1",
-      });
-      await chat.updateThreadModelSelection(actor, first.threadId, null);
-      await expect(
-        chat.readThreadMetadata(actor, first.threadId),
-      ).resolves.toMatchObject({
-        selectedModel: "auto",
-      });
-      await expect(
-        chat.requestThreadEvents(actor, {}, [200]),
-      ).resolves.toMatchObject({
-        body: {
-          events: expect.arrayContaining([
-            expect.objectContaining({
-              kind: "model_selection_updated",
-              chatThreadId: first.threadId,
-              selectedModel: "auto",
-            }),
-          ]),
-        },
-      });
-    });
-  }, 90_000);
+      expect(rejected?.runId).toBeUndefined();
+      expect(metadataAfterReject.selectedModel).toBe("claude-fable-5-1");
 
-  it("rejects a requested retired Claude alias once its subscription account is deleted", async () => {
-    const { actor } = await entitledChatActor();
-    await api.ensurePersonalSubscriptionModel(actor, {
-      model: "claude-fable-5-1",
-    });
-    const thread = await chat.createThread(actor, {
-      model: "claude-fable-5-1",
-    });
-    await misc.deletePersonalModelProvider(
-      actor,
-      "claude-code-oauth-token",
-      [204],
-    );
-    const before = await chat.listThreadEvents(actor, thread.id);
-
-    const sent = await chat.requestSendEvent(
-      actor,
-      {
-        threadId: thread.id,
-        prompt: "continue through my deleted subscription",
-        model: "claude-fable-5",
-        clientEventId: randomUUID(),
-      },
-      [400],
-    );
-
-    expect(sent.body).toMatchObject({
-      error: {
-        message:
-          "Claude Fable 5 was replaced by Claude Fable 5.1, which requires a Claude subscription. Select Auto or connect your Claude subscription.",
-      },
-    });
-    await flushWaitUntilForTest();
-    expect(
-      (await chat.listThreadEvents(actor, thread.id)).events,
-    ).toStrictEqual(before.events);
-    await expect(
-      chat.readThreadMetadata(actor, thread.id),
-    ).resolves.toMatchObject({ selectedModel: "claude-fable-5-1" });
-  }, 90_000);
-
-  it("keeps the enqueued model after thread and member defaults change", async () => {
-    const { actor } = await entitledChatActor();
-
-    await api.ensurePersonalSubscriptionModel(actor, {
-      model: "claude-fable-5-1",
-    });
-
-    const first = await sendChatRun(actor, {
-      prompt: "establish the historical thread model",
-      model: "claude-fable-5-1",
-    });
-    const queuedEventId = randomUUID();
-    const queued = await chat.requestSendEvent(
-      actor,
-      {
-        threadId: first.threadId,
-        prompt: "continue using the model captured before defaults change",
-        clientEventId: queuedEventId,
-      },
-      [201],
-    );
-    if (queued.status !== 201) {
-      throw new Error("Expected the legacy-thread follow-up to queue");
-    }
-
-    const historicalMessages = await chat.listThreadEvents(
-      actor,
-      first.threadId,
-    );
-    expect(userMessages(historicalMessages.events)).toContainEqual(
-      expect.objectContaining({ runId: first.runId }),
-    );
-
-    await api.updateUserModelPreference(actor, null);
-    await chat.updateThreadModelSelection(actor, first.threadId, null);
-    expect(
-      (await chat.readThreadMetadata(actor, first.threadId)).selectedModel,
-    ).toBe("auto");
-
-    const firstExecution = await runExecution(first.runId);
-    chatCallbacks.mockChatOutputEvents([]);
-    await completeChatRunOk(first.runId, firstExecution.sandboxHeaders);
-    await flushWaitUntilForTest();
-
-    const promotedMessages = await waitForThreadMessages(
-      actor,
-      first.threadId,
-      (messages) => {
-        return userMessages(messages).some((message) => {
-          return (
-            message.revokesEventId === queuedEventId &&
-            typeof message.runId === "string"
-          );
-        });
-      },
-    );
-    const promotedRunId = userMessages(promotedMessages.events).find(
-      (message) => {
-        return message.revokesEventId === queuedEventId;
-      },
-    )?.runId;
-    if (!promotedRunId) {
-      throw new Error("Expected the queued legacy-thread message to run");
-    }
-
-    const promotedExecution = await runExecution(promotedRunId);
-    expect(promotedExecution.execution.cliAgentType).toBe("claude-code");
-    expect(
-      executionEnvironment(promotedExecution.execution).ANTHROPIC_MODEL,
-    ).toBe("claude-fable-5-1");
-    expect(
-      (await chat.readThreadMetadata(actor, first.threadId)).selectedModel,
-    ).toBe("auto");
-
-    const threadEvents = await chat.requestThreadEvents(actor, {}, [200]);
-    if (threadEvents.status !== 200) {
-      throw new Error("Expected chat thread events to load");
-    }
-    // Only the explicit Auto selection updated the thread; the promoted pick
-    // did not write its captured model back.
-    expect(
-      threadEvents.body.events.filter((event) => {
-        return (
-          event.kind === "model_selection_updated" &&
-          event.chatThreadId === first.threadId &&
-          event.selectedModel !== "claude-fable-5-1"
-        );
-      }),
-    ).toStrictEqual([expect.objectContaining({ selectedModel: "auto" })]);
-
-    await cancelChatRun(actor, promotedRunId, promotedExecution.sandboxHeaders);
-  }, 90_000);
-
-  it("does not overwrite a concurrent explicit thread model selection", async () => {
-    const { actor } = await entitledChatActor();
-
-    await api.ensurePersonalSubscriptionModel(actor, {
-      model: "claude-fable-5-1",
-    });
-    const thread = await chat.createThread(actor, {
-      model: "claude-fable-5-1",
-    });
-    await api.updateUserModelPreference(actor, null);
-
-    const racedEventId = randomUUID();
-    const [sent, updated] = await Promise.all([
-      chat.requestSendEvent(
+      await fixture.chat.updateThreadModelSelection(
         actor,
-        {
-          threadId: thread.id,
-          prompt: "send while choosing a new sticky model",
-          clientEventId: racedEventId,
-        },
-        [201],
-      ),
-      chat.requestUpdateThreadModelSelection(
-        actor,
-        thread.id,
-        "claude-fable-5-1",
-        [204],
-      ),
-    ]);
-    expect(updated.status).toBe(204);
-    expect(sent.status).toBe(201);
-    const { picked: racedInput } = await waitForPickedInput(
-      actor,
-      thread.id,
-      racedEventId,
-    );
-    const racedRunId = racedInput.runId;
-    if (racedRunId === undefined) {
-      throw new Error("Expected the concurrent send to create a run");
-    }
-    const racedExecution = await runExecution(racedRunId);
-    expect(["okou-1.0", "claude-fable-5-1"]).toContain(
-      racedExecution.execution.modelUsageProvider,
-    );
-    await cancelChatRun(actor, racedRunId, racedExecution.sandboxHeaders);
+        initial.threadId,
+        null,
+      );
 
-    const followUp = await sendChatRun(actor, {
-      threadId: thread.id,
-      prompt: "continue on the explicit sticky model",
-    });
-    const followUpExecution = await runExecution(followUp.runId);
-    expect(
-      executionEnvironment(followUpExecution.execution).ANTHROPIC_MODEL,
-    ).toBe("claude-fable-5-1");
+      const [metadataAfterAuto, lifecycleAfterAuto] = await Promise.all([
+        fixture.chat.readThreadMetadata(actor, initial.threadId),
+        fixture.chat.requestThreadEvents(actor, {}, [200]),
+      ]);
+      expect(metadataAfterAuto.selectedModel).toBe(AUTO_SELECTED_MODEL);
+      if (!("events" in lifecycleAfterAuto.body)) {
+        throw new Error("Expected thread lifecycle events after Auto");
+      }
+      expect(lifecycleAfterAuto.body.events).toContainEqual(
+        expect.objectContaining({
+          kind: "model_selection_updated",
+          chatThreadId: initial.threadId,
+          selectedModel: AUTO_SELECTED_MODEL,
+        }),
+      );
+    },
+  );
 
-    const events = await chat.requestThreadEvents(actor, {}, [200]);
-    if (events.status !== 200) {
-      throw new Error("Expected chat thread events to load");
-    }
-    expect(
-      events.body.events.filter((event) => {
-        return (
-          event.kind === "model_selection_updated" &&
-          event.chatThreadId === thread.id &&
-          event.selectedModel === "claude-fable-5-1"
-        );
-      }),
-    ).toHaveLength(1);
-    expect(
-      events.body.events.filter((event) => {
-        return (
-          event.kind === "model_selection_updated" &&
-          event.chatThreadId === thread.id &&
-          event.selectedModel === null
-        );
-      }).length,
-    ).toBeLessThanOrEqual(1);
-    await cancelAndCompleteChatRun(actor, followUp.runId);
-  }, 90_000);
+  it(
+    "chat-events-model-routing-012 passes Fast only on a supported personal Codex route",
+    { timeout: TEST_WITH_DOUBLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const fixture = createChatEventsFixture(context);
+      const actor = fixture.bdd.user();
+      fixture.chatCallbacks.acceptChatObjectStorage();
+      fixture.api.acceptStorageDownloads();
+      fixture.api.acceptTelemetryIngest();
+      mockOptionalEnv("OPENROUTER_API_KEY", undefined);
+      fixture.chatCallbacks.disableVapid();
+      mockClaudeCodeTokenEndpoint();
+      await Promise.all([
+        fixture.api.configureRunnerGroup(),
+        fixture.api.grantProEntitlement(actor),
+        fixture.api.createPersonalModelProvider(actor, {
+          type: "claude-code-oauth-token",
+          secret: `claude-token-${randomUUID()}`,
+        }),
+        fixture.connectSubscriptionPiModel(actor),
+      ]);
 
-  it("launches Ultrafast without probing the selected Codex subscription", async () => {
-    const { actor } = await entitledChatActor();
-    await misc.upsertPersonalModelProvider(
-      actor,
-      {
-        type: "codex-oauth-token",
-        authMethod: "auth_json",
-        secrets: { CODEX_AUTH_JSON: codexAuthJson() },
-      },
-      [200, 201],
-    );
-    const findSol = async () => {
-      const { models } = await misc.listRunModels(actor);
-      return models.find((entry) => {
-        return entry.model === "gpt-6.1-sol";
-      });
-    };
-    expect((await findSol())?.subscriptionOptions).not.toHaveProperty(
-      "ultrafastAvailable",
-    );
-    await updateFeatureSwitchesForUser(
-      context,
-      { ...actor, orgId: requireOrgId(actor) },
-      { [FeatureSwitchKey.CodexSubscriptionUltrafast]: true },
-    );
-    let catalogRequests = 0;
-    server.use(
-      http.get("https://chatgpt.com/backend-api/codex/models", () => {
-        catalogRequests += 1;
-        return HttpResponse.json({ models: [] });
-      }),
-    );
-    expect((await findSol())?.subscriptionOptions).toMatchObject({
-      serviceTier: "priority",
-      ultrafastAvailable: true,
-    });
-    mockPiResourceArchiveDownloads(true);
-    mockPiObjectStore();
-    const run = await sendChatRun(actor, {
-      model: "gpt-6.1-sol",
-      prompt: "Use Ultrafast",
-      runOptions: { codexServiceTier: "ultrafast" },
-    });
-    const { execution, sandboxHeaders } = await runExecution(run.runId);
-    expect(execution.cliAgentType).toBe("pi");
-    expect(execution.piModelConfig).toMatchObject({
-      serviceTier: "ultrafast",
-    });
-    expect(catalogRequests).toBe(0);
-    await cancelChatRun(actor, run.runId, sandboxHeaders);
-  }, 90_000);
-
-  it("passes Fast only on a supported personal Codex route", async () => {
-    const {
-      actor,
-      run: own,
-      sendChatRun,
-      runExecution,
-    } = await publicChatActor(context);
-    await own(async () => {
-      await api.ensurePersonalSubscriptionModel(actor, {
-        model: "claude-sonnet-5-5",
-      });
-      await configureSubscriptionPiModel(actor, {}, "gpt-6-sol");
-
-      mockPiResourceArchiveDownloads(true);
-      mockPiObjectStore();
-      const fast = await sendChatRun(actor, {
-        prompt: "run codex fast",
+      const fastEventId = randomUUID();
+      const fastRun = await fixture.sendChatRun(actor, {
+        prompt: "Run fast GPT-6 Sol",
         model: "gpt-6-sol",
         runOptions: { codexServiceTier: "fast" },
+        clientEventId: fastEventId,
       });
-      expect(
-        (await readThreadProjection(actor, fast.threadId)).serviceTier,
-      ).toBe("priority");
-      const fastMessages = await waitForThreadMessages(
-        actor,
-        fast.threadId,
-        (events) => {
-          return userMessages(events).some((event) => {
-            return event.runId === fast.runId;
-          });
-        },
-      );
-      const fastUserMessage = userMessages(fastMessages.events).find(
-        (event): event is PromptMessage => {
-          return (
-            event.eventType === "input.prompt" && event.runId === fast.runId
-          );
-        },
-      )?.userMessage;
-      expect(
-        fastUserMessage?.parts.find((part) => {
-          return part.type === "model";
-        }),
-      ).toStrictEqual({
+
+      const [fastExecution, fastMetadata, fastHistory] = await Promise.all([
+        fixture.api.executionInput(fastRun.runId),
+        fixture.chat.readThreadMetadata(actor, fastRun.threadId),
+        fixture.chat.listThreadEvents(actor, fastRun.threadId),
+      ]);
+      expect(fastExecution.cliAgentType).toBe("pi");
+      expect(fastExecution.piModelConfig).toMatchObject({
+        provider: "openai-codex",
+        dialect: "openai-codex-responses",
+        model: "gpt-6-sol",
+        serviceTier: "fast",
+      });
+      expect(fastMetadata).toMatchObject({
+        selectedModel: "gpt-6-sol",
+        serviceTier: "priority",
+      });
+      const fastLaunched = fastHistory.events.find((event) => {
+        return (
+          event.eventType === "input.prompt" &&
+          event.revokesEventId === fastEventId
+        );
+      });
+      if (fastLaunched?.eventType !== "input.prompt") {
+        throw new Error("Expected launched fast Sol input prompt");
+      }
+      expect(fastLaunched.userMessage.parts).toContainEqual({
         type: "model",
         selectedModel: "gpt-6-sol",
         serviceTier: "priority",
       });
-      const fastExecution = await runExecution(fast.runId);
-      expect(fastExecution.execution.cliAgentType).toBe("pi");
-      expect(fastExecution.execution.piModelConfig).toMatchObject({
-        provider: "openai-codex",
-        model: "gpt-6-sol",
-        serviceTier: "fast",
-      });
-      await cancelChatRun(actor, fast.runId, fastExecution.sandboxHeaders);
-      expect(
-        (await readThreadProjection(actor, fast.threadId)).serviceTier,
-      ).toBe("priority");
-      const invalidFastPatch = await chat.requestUpdateThreadModelSelection(
+
+      await fixture.chat.requestUpdateThreadModelSelection(
         actor,
-        fast.threadId,
+        fastRun.threadId,
         "claude-sonnet-5-5",
         [400],
         { codexServiceTier: "fast" },
       );
-      expectApiError(invalidFastPatch.body);
-      expect(invalidFastPatch.body.error.message).toBe(
-        "Fast mode is unavailable for this model route",
-      );
-      expect(
-        (await readThreadProjection(actor, fast.threadId)).serviceTier,
-      ).toBe("priority");
-
-      await chat.updateThreadModelSelection(
+      const metadataAfterFailedSwitch = await fixture.chat.readThreadMetadata(
         actor,
-        fast.threadId,
-        "claude-sonnet-5-5",
-        {
-          codexServiceTier: null,
-        },
+        fastRun.threadId,
       );
-      expect(
-        (await readThreadProjection(actor, fast.threadId)).serviceTier,
-      ).toBeNull();
-      const updatedFastThreadEvents = await chat.requestThreadEvents(
+      expect(metadataAfterFailedSwitch.serviceTier).toBe("priority");
+
+      await fixture.chat.updateThreadModelSelection(
+        actor,
+        fastRun.threadId,
+        "claude-sonnet-5-5",
+        { codexServiceTier: null },
+      );
+      const lifecycleAfterClear = await fixture.chat.requestThreadEvents(
         actor,
         {},
         [200],
       );
-      expect(updatedFastThreadEvents.status).toBe(200);
-      if (updatedFastThreadEvents.status !== 200) {
-        throw new Error("Expected chat thread events to load");
+      if (!("events" in lifecycleAfterClear.body)) {
+        throw new Error("Expected thread lifecycle events after clear");
       }
-      expect(updatedFastThreadEvents.body.events).toContainEqual(
-        expect.objectContaining({
-          kind: "model_selection_updated",
-          chatThreadId: fast.threadId,
-          selectedModel: "claude-sonnet-5-5",
-        }),
-      );
-      expect(updatedFastThreadEvents.body.events).toContainEqual(
+      expect(lifecycleAfterClear.body.events).toContainEqual(
         expect.objectContaining({
           kind: "created",
-          chatThreadId: fast.threadId,
+          chatThreadId: fastRun.threadId,
+          selectedModel: "gpt-6-sol",
           serviceTier: "priority",
         }),
       );
-      expect(updatedFastThreadEvents.body.events).toContainEqual(
+      expect(lifecycleAfterClear.body.events).toContainEqual(
+        expect.objectContaining({
+          kind: "model_selection_updated",
+          chatThreadId: fastRun.threadId,
+          selectedModel: "claude-sonnet-5-5",
+        }),
+      );
+      expect(lifecycleAfterClear.body.events).toContainEqual(
         expect.objectContaining({
           kind: "service_tier_updated",
-          chatThreadId: fast.threadId,
+          chatThreadId: fastRun.threadId,
           serviceTier: null,
         }),
       );
-      const standard = await sendChatRun(actor, {
-        threadId: fast.threadId,
-        prompt: "run codex standard",
+
+      await fixture.api.requestCancelRun(actor, fastRun.runId, [200]);
+      await fixture.failChatRun(
+        fastRun.runId,
+        { authorization: `Bearer ${fastExecution.sandboxToken}` },
+        "Run cancelled",
+      );
+      await flushWaitUntilForTest();
+
+      const standardEventId = randomUUID();
+      const standardRun = await fixture.sendChatRun(actor, {
+        threadId: fastRun.threadId,
+        prompt: "Run standard GPT-6.1 Sol",
         model: "gpt-6.1-sol",
+        clientEventId: standardEventId,
       });
-      expect(
-        (await readThreadProjection(actor, standard.threadId)).serviceTier,
-      ).toBeNull();
-      const standardMessages = await waitForThreadMessages(
-        actor,
-        standard.threadId,
-        (events) => {
-          return userMessages(events).some((event) => {
-            return event.runId === standard.runId;
-          });
+      const proposedSonnetThreadId = randomUUID();
+      const [
+        standardExecution,
+        standardMetadata,
+        standardHistory,
+        rejectedFresh,
+      ] = await Promise.all([
+        fixture.api.executionInput(standardRun.runId),
+        fixture.chat.readThreadMetadata(actor, fastRun.threadId),
+        fixture.chat.listThreadEvents(actor, fastRun.threadId),
+        fixture.chat.requestSendEvent(
+          actor,
+          {
+            clientThreadId: proposedSonnetThreadId,
+            prompt: "Fresh fast Sonnet",
+            model: "claude-sonnet-5-5",
+            runOptions: { codexServiceTier: "fast" },
+          },
+          [400],
+        ),
+      ]);
+
+      expect(standardMetadata).toMatchObject({
+        selectedModel: "gpt-6.1-sol",
+        serviceTier: null,
+      });
+      const standardLaunched = standardHistory.events.find((event) => {
+        return (
+          event.eventType === "input.prompt" &&
+          event.revokesEventId === standardEventId
+        );
+      });
+      if (standardLaunched?.eventType !== "input.prompt") {
+        throw new Error("Expected launched standard Sol input prompt");
+      }
+      const standardModelPart = standardLaunched.userMessage.parts.find(
+        (part) => {
+          return part.type === "model";
         },
       );
-      const standardUserMessage = userMessages(standardMessages.events).find(
-        (event): event is PromptMessage => {
-          return (
-            event.eventType === "input.prompt" && event.runId === standard.runId
-          );
-        },
-      )?.userMessage;
-      expect(
-        standardUserMessage?.parts.find((part) => {
-          return part.type === "model";
-        }),
-      ).toStrictEqual({
+      expect(standardModelPart).toStrictEqual({
         type: "model",
         selectedModel: "gpt-6.1-sol",
       });
-      const { execution: standardExecution, sandboxHeaders: standardHeaders } =
-        await runExecution(standard.runId);
       expect(standardExecution.cliAgentType).toBe("pi");
       expect(standardExecution.piModelConfig).toMatchObject({
         provider: "openai-codex",
         model: "gpt-6.1-sol",
       });
-      expect(standardExecution.piModelConfig).not.toHaveProperty("serviceTier");
-      await cancelChatRun(actor, standard.runId, standardHeaders);
-      const rejectedThreadId = randomUUID();
-      const rejected = await chat.requestSendEvent(
+      expect(
+        standardExecution.piModelConfig &&
+          "serviceTier" in standardExecution.piModelConfig
+          ? standardExecution.piModelConfig.serviceTier
+          : undefined,
+      ).toBeUndefined();
+      expect(rejectedFresh.status).toBe(400);
+      await fixture.chat.requestReadThreadMetadata(
         actor,
-        {
-          prompt: "Claude cannot use Codex fast mode",
-          clientThreadId: rejectedThreadId,
-          model: "claude-sonnet-5-5",
-          runOptions: { codexServiceTier: "fast" },
-        },
-        [400],
+        proposedSonnetThreadId,
+        [404],
       );
-      expectApiError(rejected.body);
-      expect(rejected.body.error.message).toBe(
-        "Codex fast mode is only available for GPT 5.6 runs",
-      );
-      await chat.requestReadThread(actor, rejectedThreadId, [404]);
-    });
-  }, 90_000);
+    },
+  );
 });

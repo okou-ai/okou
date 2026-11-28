@@ -1,221 +1,123 @@
-import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
-import { createRouteMocks } from "./helpers/route-test";
 import { randomUUID } from "node:crypto";
 import {
   workflowsCollectionContract,
   workflowsDetailContract,
 } from "@okouai/api-contracts/contracts/workflows";
-import { onTestFinished } from "vitest";
-import { accept, testContext } from "../../../__tests__/test-context";
+import { expect, test } from "vitest";
 import { setupApp } from "../../../__tests__/test-helpers";
+import { accept, testContext } from "../../../__tests__/test-context";
 import { createDeferredPromise } from "../../utils";
 import { workflowsRoutes } from "../workflows";
-import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
+import { createRouteMocks } from "./helpers/route-test";
 import { installWorkflowVolumeS3Fixture } from "./helpers/workflow-volume-s3";
 
 const context = testContext();
-const bdd = createBddApi(context);
-function headers(actor: ApiTestUser) {
+const headers = Object.freeze({ authorization: "Bearer clerk-session" });
+const app = setupApp({ context, routes: workflowsRoutes });
+const rethrowingApp = setupApp({
+  context,
+  routes: workflowsRoutes,
+  rethrowErrors: true,
+});
+const files = Object.freeze([{ path: "reference.md", content: "附件" }]);
+
+function signIn() {
   createRouteMocks(context).clerk.session(
-    actor.userId,
-    actor.orgId,
-    actor.orgRole,
+    `user_${randomUUID()}`,
+    `org_${randomUUID()}`,
   );
-  return { authorization: "Bearer clerk-session" };
-}
-function collection(signal = context.signal, rethrowErrors = false) {
-  return setupApp({ context, routes: workflowsRoutes, signal, rethrowErrors })(
-    workflowsCollectionContract,
-  );
-}
-function detail() {
-  return setupApp({ context, routes: workflowsRoutes })(
-    workflowsDetailContract,
-  );
-}
-async function fixture() {
-  const actor = bdd.user();
-  bdd.acceptStorageWrites();
-  await bdd.bootstrapLimitedFreeOnboarding(actor);
-  const s3 = installWorkflowVolumeS3Fixture(context);
-  const body = {
-    name: `atomic-${randomUUID().slice(0, 8)}`,
-    instruction: "Read the attached reference",
-    files: [{ path: "reference.md", content: "附件" }],
-  };
-  return { actor, s3, body };
 }
 
-test("keeps a Workflow unlisted until its attachment is ready and publishes readable contents", async () => {
-  const { actor, s3, body } = await fixture();
-  const entered = createDeferredPromise<void>(context.signal);
-  const released = createDeferredPromise<void>(context.signal);
-  s3.beforeNextArchiveWrite(async () => {
-    entered.resolve();
-    await released.promise;
-  });
-  const pending = collection().create({ headers: headers(actor), body });
-  onTestFinished(async () => {
-    if (!released.settled()) {
-      released.resolve();
-    }
-    await pending;
-  });
-  await entered.promise;
-  const before = await accept(
-    collection().list({ headers: headers(actor) }),
-    [200],
-  );
-  expect(
-    before.body.some((workflow) => {
-      return workflow.name === body.name;
-    }),
-  ).toBeFalsy();
-  released.resolve();
-  const created = await accept(pending, [201]);
-  const read = await accept(
-    detail().get({
-      headers: headers(actor),
-      params: { workflowId: created.body.id },
-    }),
-    [200],
-  );
-  expect(read.body).toMatchObject({
-    instruction: body.instruction,
-    fileContents: body.files,
-  });
-});
+function workflowName() {
+  return `flow-${randomUUID().slice(0, 8)}`;
+}
 
-test("publishes one readable Workflow for duplicate creates", async () => {
-  const { actor, s3, body } = await fixture();
-  const entered = createDeferredPromise<void>(context.signal);
-  const released = createDeferredPromise<void>(context.signal);
-  s3.beforeNextArchiveWrite(async () => {
-    entered.resolve();
-    await released.promise;
+function create(
+  name: string,
+  body: { files: { path: string; content: string }[] },
+) {
+  return app(workflowsCollectionContract).create({
+    headers,
+    body: { name, instruction: "Read the attached reference", ...body },
   });
-  const first = collection().create({ headers: headers(actor), body });
-  onTestFinished(async () => {
-    if (!released.settled()) {
-      released.resolve();
-    }
-    await first;
-  });
-  await entered.promise;
-  const winner = await accept(
-    collection().create({ headers: headers(actor), body }),
-    [201],
-  );
-  released.resolve();
-  await accept(first, [409]);
-  const read = await accept(
-    detail().get({
-      headers: headers(actor),
-      params: { workflowId: winner.body.id },
-    }),
+}
+
+async function readWorkflow(workflowId: string) {
+  return await accept(
+    app(workflowsDetailContract).get({ headers, params: { workflowId } }),
     [200],
   );
-  expect(read.body.fileContents).toStrictEqual(body.files);
-});
+}
 
-test("keeps the name available after an aborted attachment upload", async () => {
-  const { actor, s3, body } = await fixture();
-  const controller = new AbortController();
-  onTestFinished(() => {
-    return controller.abort();
-  });
-  s3.afterNextArchiveWrite(() => {
-    controller.abort();
-  });
+test("workflows-creation-005 does not reserve a name when attachment files conflict with a directory", async () => {
+  signIn();
+  const storage = installWorkflowVolumeS3Fixture(context);
+  const name = workflowName();
+
   await expect(
-    collection(controller.signal, true).create({
-      headers: headers(actor),
-      body,
-    }),
-  ).rejects.toMatchObject({ name: "AbortError" });
-  const created = await accept(
-    collection().create({ headers: headers(actor), body }),
-    [201],
-  );
-  const read = await accept(
-    detail().get({
-      headers: headers(actor),
-      params: { workflowId: created.body.id },
-    }),
-    [200],
-  );
-  expect(read.body.fileContents).toStrictEqual(body.files);
-});
-
-test("preserves the original upload error and another Workflow's files", async () => {
-  const { actor, s3, body } = await fixture();
-  const existing = await accept(
-    collection().create({ headers: headers(actor), body }),
-    [201],
-  );
-  s3.beforeNextArchiveWrite(() => {
-    throw new Error("Original provider upload failure");
-  });
-  await expect(
-    collection(context.signal, true).create({
-      headers: headers(actor),
-      body: { ...body, name: `failed-${randomUUID().slice(0, 8)}` },
-    }),
-  ).rejects.toThrow("Original provider upload failure");
-  const read = await accept(
-    detail().get({
-      headers: headers(actor),
-      params: { workflowId: existing.body.id },
-    }),
-    [200],
-  );
-  expect(read.body.fileContents).toStrictEqual(body.files);
-});
-
-test("does not reserve a Workflow name when its files conflict with a directory", async () => {
-  const { actor, s3, body } = await fixture();
-  await expect(
-    collection(context.signal, true).create({
-      headers: headers(actor),
+    rethrowingApp(workflowsCollectionContract).create({
+      headers,
       body: {
-        ...body,
+        name,
         files: [
           { path: "reference", content: "file" },
-          { path: "reference/nested.md", content: "child" },
+          { path: "reference/nested.md", content: "nested" },
         ],
       },
     }),
   ).rejects.toThrow("Workflow attachment file conflicts with a directory");
-  expect(s3.writes).toHaveLength(0);
-  await accept(collection().create({ headers: headers(actor), body }), [201]);
+  expect(storage.writes).toHaveLength(0);
+
+  await accept(create(name, { files: [...files] }), [201]);
 });
 
-test("publishes without linking a chat deleted while the attachment upload is in flight", async () => {
-  const { actor, s3, body } = await fixture();
-  const chat = createChatFilesBddApi(context);
-  const thread = await chat.createThread(actor, {
-    title: "Workflow discussion",
+test("workflows-creation-001 keeps a Workflow unlisted until its attachment is stored", async () => {
+  signIn();
+  const storage = installWorkflowVolumeS3Fixture(context);
+  const name = workflowName();
+  const writing = createDeferredPromise<void>(context.signal);
+  const release = createDeferredPromise<void>(context.signal);
+  storage.beforeNextArchiveWrite(async () => {
+    writing.resolve();
+    await release.promise;
   });
-  const entered = createDeferredPromise<void>(context.signal);
-  const released = createDeferredPromise<void>(context.signal);
-  s3.beforeNextArchiveWrite(async () => {
-    entered.resolve();
-    await released.promise;
+
+  const creating = create(name, { files: [...files] });
+  await writing.promise;
+  const listed = await accept(
+    app(workflowsCollectionContract).list({ headers, query: {} }),
+    [200],
+  );
+  release.resolve();
+  const created = await accept(creating, [201]);
+  const read = await readWorkflow(created.body.id);
+
+  expect(
+    listed.body.map((workflow) => {
+      return workflow.name;
+    }),
+  ).not.toContain(name);
+  expect(read.body.instruction).toBe("Read the attached reference");
+  expect(read.body.fileContents).toStrictEqual(files);
+});
+
+test("workflows-creation-002 publishes one readable Workflow for duplicate creates", async () => {
+  signIn();
+  const storage = installWorkflowVolumeS3Fixture(context);
+  const name = workflowName();
+  const writing = createDeferredPromise<void>(context.signal);
+  const release = createDeferredPromise<void>(context.signal);
+  storage.beforeNextArchiveWrite(async () => {
+    writing.resolve();
+    await release.promise;
   });
-  const pending = collection().create({
-    headers: headers(actor),
-    body: { ...body, chatThreadId: thread.id },
-  });
-  onTestFinished(async () => {
-    if (!released.settled()) {
-      released.resolve();
-    }
-    await pending;
-  });
-  await entered.promise;
-  await chat.deleteThread(actor, thread.id);
-  released.resolve();
-  const created = await accept(pending, [201]);
-  await chat.requestReadThread(actor, thread.id, [404]);
-  expect(created.body.name).toBe(body.name);
+
+  const first = create(name, { files: [...files] });
+  await writing.promise;
+  const second = await accept(create(name, { files: [...files] }), [201]);
+  release.resolve();
+  await accept(first, [409]);
+  const read = await readWorkflow(second.body.id);
+
+  expect(read.body.fileContents).toStrictEqual(files);
 });

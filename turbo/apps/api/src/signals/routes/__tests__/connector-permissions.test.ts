@@ -1,15 +1,11 @@
 import { randomUUID } from "node:crypto";
-import { describe, expect, it } from "vitest";
 import { chatConnectorAccessContract } from "@okouai/api-contracts/contracts/chat-connector-access";
+import { connectorPermissionsContract } from "@okouai/api-contracts/contracts/connector-permissions";
 import {
   connectorAccountsContract,
   type ConnectorAccountTarget,
 } from "@okouai/api-contracts/contracts/connector-accounts";
-import {
-  connectorPermissionsContract,
-  type ApplyConnectorPermissions,
-} from "@okouai/api-contracts/contracts/connector-permissions";
-import { UNKNOWN_PERMISSION_GRANT } from "@okouai/connectors/firewall-types";
+import { describe, expect, it } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
@@ -17,432 +13,371 @@ import { mockNow } from "../../../lib/time";
 import { chatConnectorAccessRoutes } from "../chat-connector-access";
 import { connectorAccountRoutes } from "../connector-accounts";
 import { connectorPermissionsRoutes } from "../connector-permissions";
-import { createBddApi } from "./helpers/api-bdd";
+import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import {
   createConnectorBddApi,
   manualHttpCustomConnectorCreateBody,
   mockSlackConnectorOAuth,
 } from "./helpers/api-bdd-connectors";
-import { createRunExecutionCredentials } from "./helpers/run-execution-credentials";
+import { createChatConnectorAccessApi } from "./helpers/chat-connector-access";
 import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
 const bdd = createBddApi(context);
-const chat = createChatFilesBddApi(context);
 const connectors = createConnectorBddApi(context);
-const tokenFor = createRunExecutionCredentials(context).okouToken;
-const mocks = createRouteMocks(context);
-const headers = Object.freeze({ authorization: "Bearer clerk-session" });
-const slack = { kind: "builtin", connectorSlug: "slack" } as const;
-const openai = { kind: "builtin", connectorSlug: "openai" } as const;
+const chats = createChatFilesBddApi(context);
+const access = createChatConnectorAccessApi(context);
 
-function client() {
+const FALLBACK = "__unknown__";
+const openaiTarget: ConnectorAccountTarget = Object.freeze({
+  kind: "builtin",
+  connectorSlug: "openai",
+});
+
+function permissionsClient() {
   return setupApp({ context, routes: connectorPermissionsRoutes })(
     connectorPermissionsContract,
   );
 }
-function access() {
-  return setupApp({ context, routes: chatConnectorAccessRoutes })(
-    chatConnectorAccessContract,
+
+function sessionHeaders(actor: ApiTestUser) {
+  createRouteMocks(context).clerk.session(
+    actor.userId,
+    actor.orgId,
+    actor.orgRole,
   );
-}
-function accounts() {
-  return setupApp({ context, routes: connectorAccountRoutes })(
-    connectorAccountsContract,
-  );
-}
-function session(actor: ReturnType<typeof bdd.user>) {
-  mocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
-}
-function member(actor = bdd.user()) {
-  session(actor);
-  return actor;
-}
-async function read(target: ConnectorAccountTarget) {
-  return (await accept(client().get({ headers, query: target }), [200])).body;
-}
-async function save(body: ApplyConnectorPermissions) {
-  return (await accept(client().apply({ headers, body }), [200])).body;
-}
-async function addOpenAi(actor: ReturnType<typeof bdd.user>) {
-  await connectors.connectManualGrant(actor, "openai", "api-token", {
-    apiKey: "test-permission-key",
-  });
-  session(actor);
+  return { authorization: "Bearer clerk-session" };
 }
 
-describe("Member connector permissions", () => {
-  it("applies the same one-hour deadline to both permissions in a member patch", async () => {
-    const actor = member();
-    mockSlackConnectorOAuth();
-    const start = await connectors.startOauth(actor, "slack", "oauth");
-    const state = new URL(start.authorizationUrl).searchParams.get("state");
-    if (!state) {
-      throw new Error("Expected OAuth state");
+async function connectOpenAi(actor: ApiTestUser) {
+  await connectors.requestManualGrant(
+    actor,
+    "openai",
+    "api-token",
+    { apiKey: `sk-${randomUUID()}` },
+    { statuses: [200] },
+  );
+}
+
+async function readGrants(actor: ApiTestUser, target: ConnectorAccountTarget) {
+  const response = await accept(
+    permissionsClient().get({ headers: sessionHeaders(actor), query: target }),
+    [200],
+  );
+  return response.body.grants;
+}
+
+async function readThreadAccess(
+  actor: ApiTestUser,
+  threadId: string,
+  target: ConnectorAccountTarget,
+) {
+  const response = await accept(
+    setupApp({ context, routes: chatConnectorAccessRoutes })(
+      chatConnectorAccessContract,
+    ).getThread({
+      headers: sessionHeaders(actor),
+      params: { threadId },
+      query: target,
+    }),
+    [200],
+  );
+  return response.body;
+}
+
+describe("member connector permissions", () => {
+  it("connector-permissions-004 keeps fallback rules separate per member and organization without a Chat", async () => {
+    const start = Date.parse("2026-06-01T08:00:00.000Z");
+    mockNow(start);
+    const original = bdd.user();
+    const colleague = bdd.user({
+      orgId: original.orgId,
+      orgRole: "org:member",
+    });
+    const elsewhere = bdd.user({ userId: original.userId });
+    const unconnected = bdd.user({
+      orgId: original.orgId,
+      orgRole: "org:member",
+    });
+    await connectOpenAi(original);
+    await connectOpenAi(colleague);
+    await connectOpenAi(elsewhere);
+
+    const choices = [
+      [original, { permission: FALLBACK, action: "deny" }],
+      [colleague, { permission: FALLBACK, action: "allow", expiresIn: "1h" }],
+      [elsewhere, { permission: FALLBACK, action: "allow", expiresIn: "24h" }],
+    ] as const;
+    for (const [actor, grant] of choices) {
+      await accept(
+        permissionsClient().apply({
+          headers: sessionHeaders(actor),
+          body: { target: openaiTarget, mode: "replace", grants: [grant] },
+        }),
+        [200],
+      );
     }
-    await connectors.completeOauthCallback("slack", {
-      state,
-      code: randomUUID(),
-    });
-    session(actor);
 
-    const startedAt = Date.parse("2026-11-05T12:00:00Z");
-    const deadline = startedAt + 60 * 60 * 1000;
-    const permissions = ["chat:write", "conversations:read"];
-    mockNow(startedAt);
-    const result = await save({
-      target: slack,
-      mode: "patch",
-      grants: permissions.map((permission) => {
-        return { permission, action: "allow", expiresIn: "1h" };
-      }),
-    });
-    const expected = permissions.map((permission) => {
-      return {
-        permission,
+    await expect(readGrants(original, openaiTarget)).resolves.toStrictEqual([
+      { permission: FALLBACK, action: "deny", expiresAt: null },
+    ]);
+    await expect(readGrants(colleague, openaiTarget)).resolves.toStrictEqual([
+      {
+        permission: FALLBACK,
         action: "allow",
-        expiresAt: new Date(deadline).toISOString(),
-      };
-    });
-    expect(result.grants).toHaveLength(2);
-    expect(result.grants).toStrictEqual(expect.arrayContaining(expected));
-    mockNow(deadline - 1);
-    expect((await read(slack)).grants).toStrictEqual(
-      expect.arrayContaining(expected),
-    );
-    mockNow(deadline);
-    expect((await read(slack)).grants).toStrictEqual([]);
-  });
+        expiresAt: new Date(start + 60 * 60 * 1000).toISOString(),
+      },
+    ]);
+    await expect(readGrants(elsewhere, openaiTarget)).resolves.toStrictEqual([
+      {
+        permission: FALLBACK,
+        action: "allow",
+        expiresAt: new Date(start + 24 * 60 * 60 * 1000).toISOString(),
+      },
+    ]);
 
-  it("starts from connector defaults, shares rules across Chats/Agents and preserves deny, expiry and reset", async () => {
-    const actor = member();
-    bdd.acceptStorageWrites();
-    const firstChat = await chat.createThread(actor, {});
-    const secondChat = await chat.createThread(actor, {});
-    mockSlackConnectorOAuth();
-    const start = await connectors.startOauth(actor, "slack", "oauth");
-    const state = new URL(start.authorizationUrl).searchParams.get("state");
-    if (!state) {
-      throw new Error("Expected OAuth state");
-    }
-    await connectors.completeOauthCallback("slack", {
-      state,
-      code: "member-permission-code",
-    });
-    const account = await connectors.readDefaultBuiltinAccount(actor, "slack");
-    if (!account) {
-      throw new Error("Expected the saved Slack account");
-    }
-    session(actor);
-    mockNow(new Date("2026-11-02T12:00:00Z"));
-    await expect(read(slack)).resolves.toStrictEqual({
-      target: slack,
-      grants: [],
-    });
-    const initial = await save({
-      target: slack,
-      mode: "replace",
-      grants: [
-        { permission: "conversations:read", action: "allow", expiresIn: "1h" },
-        { permission: "chat:write", action: "deny" },
-        { permission: UNKNOWN_PERMISSION_GRANT, action: "deny" },
-      ],
-    });
-    expect(initial.grants).toHaveLength(3);
-    expect(initial.grants).toStrictEqual(
-      expect.arrayContaining([
-        {
-          permission: "conversations:read",
-          action: "allow",
-          expiresAt: "2026-11-02T13:00:00.000Z",
-        },
-        { permission: "chat:write", action: "deny", expiresAt: null },
-        {
-          permission: UNKNOWN_PERMISSION_GRANT,
-          action: "deny",
-          expiresAt: null,
-        },
-      ]),
-    );
-    await accept(
-      access().setThreadOverride({
-        headers,
-        params: { threadId: firstChat.id, connectionId: account.id },
-        body: { target: slack, enabled: false },
+    const missingRead = await accept(
+      permissionsClient().get({
+        headers: sessionHeaders(unconnected),
+        query: openaiTarget,
       }),
-      [200],
+      [404],
     );
-    expect(
-      (
-        await accept(
-          access().getThread({
-            headers,
-            params: { threadId: firstChat.id },
-            query: slack,
-          }),
-          [200],
-        )
-      ).body.available,
-    ).toBeFalsy();
-    expect(
-      (
-        await accept(
-          access().getThread({
-            headers,
-            params: { threadId: secondChat.id },
-            query: slack,
-          }),
-          [200],
-        )
-      ).body.available,
-    ).toBeTruthy();
-    await expect(read(slack)).resolves.toStrictEqual(initial);
-    await expect(read(slack)).resolves.toStrictEqual(initial);
-    mockNow(new Date("2026-11-02T12:15:00Z"));
-    const edited = await save({
-      target: slack,
-      mode: "patch",
-      grants: [{ permission: "chat:write", action: "allow", expiresIn: "1h" }],
-    });
-    expect(edited.grants).toContainEqual({
-      permission: "conversations:read",
-      action: "allow",
-      expiresAt: "2026-11-02T13:00:00.000Z",
-    });
-    mockNow(new Date("2026-11-02T13:01:00Z"));
-    const expired = await read(slack);
-    expect(expired.grants).toHaveLength(2);
-    expect(expired.grants).toStrictEqual(
-      expect.arrayContaining([
-        {
-          permission: UNKNOWN_PERMISSION_GRANT,
-          action: "deny",
-          expiresAt: null,
+    expect(missingRead.status).toBe(404);
+    const missingWrite = await accept(
+      permissionsClient().apply({
+        headers: sessionHeaders(unconnected),
+        body: {
+          target: openaiTarget,
+          mode: "replace",
+          grants: [{ permission: FALLBACK, action: "deny" }],
         },
-        {
-          permission: "chat:write",
-          action: "allow",
-          expiresAt: "2026-11-02T13:15:00.000Z",
-        },
-      ]),
+      }),
+      [404],
     );
-    await expect(
-      save({ target: slack, mode: "replace", grants: [] }),
-    ).resolves.toStrictEqual({ target: slack, grants: [] });
-    await expect(read(slack)).resolves.toStrictEqual({
-      target: slack,
-      grants: [],
-    });
+    expect(missingWrite.status).toBe(404);
   });
 
-  it("shares custom rules across accounts and permits editing with all accounts disabled", async () => {
-    const actor = member();
-    bdd.acceptStorageWrites();
-    const thread = await chat.createThread(actor, {});
-    const definition = await connectors.createCustomConnector(
-      actor,
+  it("connector-permissions-003 keeps custom connector rules editable when every account is unavailable", async () => {
+    const admin = bdd.user();
+    const member = bdd.user({ orgId: admin.orgId, orgRole: "org:member" });
+    const connector = await connectors.createCustomConnector(
+      admin,
       manualHttpCustomConnectorCreateBody({
-        displayName: "Member permissions",
-        slug: `_member-permissions-${randomUUID()}`,
-        prefixTemplates: ["https://member-permissions.example.test/"],
+        displayName: "Slack bundle relay",
+        prefixTemplates: ["https://slack-relay.example.test/"],
         permissionBundleRef: "builtin:slack@1",
       }),
     );
-    const target = {
+    const target: ConnectorAccountTarget = {
       kind: "custom",
-      customConnectorId: definition.id,
-    } as const;
-    const first = await connectors.setCustomConnectorValues(
-      actor,
-      definition.id,
-      [{ key: "secret", kind: "secret", value: "custom-A" }],
+      customConnectorId: connector.id,
+    };
+    const firstAccount = await connectors.setCustomConnectorValues(
+      member,
+      connector.id,
+      [{ key: "secret", kind: "secret", value: `first-${randomUUID()}` }],
+    );
+    const secondAccount = await connectors.setCustomConnectorValues(
+      member,
+      connector.id,
+      [{ key: "secret", kind: "secret", value: `second-${randomUUID()}` }],
       { intent: "add" },
     );
-    const second = await connectors.setCustomConnectorValues(
-      actor,
-      definition.id,
-      [{ key: "secret", kind: "secret", value: "custom-B" }],
-      { intent: "add" },
-    );
-    session(actor);
-    await expect(read(target)).resolves.toStrictEqual({ target, grants: [] });
-    const rules = await save({
+    const thread = await chats.createThread(member, { model: null });
+    await expect(readGrants(member, target)).resolves.toStrictEqual([]);
+
+    const deny = [
+      { permission: "chat:write", action: "deny", expiresAt: null },
+    ];
+    const saved = await access.applyPermissions(member, {
       target,
       mode: "replace",
       grants: [{ permission: "chat:write", action: "deny" }],
     });
-    await accept(
-      access().setThreadCurrent({
-        headers,
+    expect(saved.grants).toStrictEqual(deny);
+
+    const second = { connectionId: secondAccount.connectionId, target };
+    const selected = await accept(
+      setupApp({ context, routes: chatConnectorAccessRoutes })(
+        chatConnectorAccessContract,
+      ).setThreadCurrent({
+        headers: sessionHeaders(member),
         params: { threadId: thread.id },
-        body: { target, connectionId: second.connectionId },
+        body: second,
       }),
       [200],
     );
-    expect(
-      (
-        await accept(
-          access().getThread({
-            headers,
-            params: { threadId: thread.id },
-            query: target,
-          }),
-          [200],
-        )
-      ).body.currentConnectionId,
-    ).toBe(second.connectionId);
-    await expect(read(target)).resolves.toStrictEqual(rules);
-    await accept(
-      access().updateAccountDefault({
-        headers,
-        params: { connectionId: second.connectionId },
-        body: { target, enabled: false },
-      }),
-      [200],
-    );
+    expect(selected.body.currentConnectionId).toBe(second.connectionId);
+    await expect(readGrants(member, target)).resolves.toStrictEqual(deny);
+
+    await access.setDefault(member, second, false);
     const removed = await accept(
-      accounts().delete({
-        headers,
-        params: { connectionId: first.connectionId },
+      setupApp({ context, routes: connectorAccountRoutes })(
+        connectorAccountsContract,
+      ).delete({
+        headers: sessionHeaders(member),
+        params: { connectionId: firstAccount.connectionId },
         body: { target },
       }),
       [200],
     );
     expect(removed.body.promotedDefaultConnectionId).toBeNull();
-    expect(
-      (
-        await accept(
-          access().getThread({
-            headers,
-            params: { threadId: thread.id },
-            query: target,
-          }),
-          [200],
-        )
-      ).body.available,
-    ).toBeFalsy();
-    await expect(read(target)).resolves.toStrictEqual(rules);
-    const edited = await save({
+    await expect(readGrants(member, target)).resolves.toStrictEqual(deny);
+
+    const allow = [
+      { permission: "conversations:read", action: "allow", expiresAt: null },
+    ];
+    const replaced = await access.applyPermissions(member, {
       target,
       mode: "replace",
       grants: [{ permission: "conversations:read", action: "allow" }],
     });
-    expect(edited).toStrictEqual({
-      target,
-      grants: [
-        { permission: "conversations:read", action: "allow", expiresAt: null },
-      ],
-    });
-    await accept(
-      client().apply({
-        headers,
+    expect(replaced.grants).toStrictEqual(allow);
+    const rejected = await accept(
+      permissionsClient().apply({
+        headers: sessionHeaders(member),
         body: {
           target,
           mode: "patch",
-          grants: [{ permission: "not-a-slack-permission", action: "allow" }],
+          grants: [{ permission: "slack:not-a-permission", action: "allow" }],
         },
       }),
       [400],
     );
-    await expect(read(target)).resolves.toStrictEqual(edited);
+    expect(rejected.status).toBe(400);
+    await expect(readGrants(member, target)).resolves.toStrictEqual(allow);
     expect(
-      (
-        await accept(
-          access().getThread({
-            headers,
-            params: { threadId: thread.id },
-            query: target,
-          }),
-          [200],
-        )
-      ).body.available,
+      (await readThreadAccess(member, thread.id, target)).available,
     ).toBeFalsy();
   });
 
-  it("isolates member and organization grants for the same connector without requiring a Chat", async () => {
-    const actor = member();
-    await addOpenAi(actor);
-    const own = await save({
-      target: openai,
-      mode: "replace",
-      grants: [{ permission: UNKNOWN_PERMISSION_GRANT, action: "deny" }],
-    });
-    const otherMember = member(bdd.user({ orgId: actor.orgId }));
-    await addOpenAi(otherMember);
-    const otherRules = await save({
-      target: openai,
-      mode: "replace",
-      grants: [
-        {
-          permission: UNKNOWN_PERMISSION_GRANT,
-          action: "allow",
-          expiresIn: "1h",
-        },
-      ],
-    });
-    const otherOrg = member(bdd.user({ userId: actor.userId }));
-    await addOpenAi(otherOrg);
-    const orgRules = await save({
-      target: openai,
-      mode: "replace",
-      grants: [
-        {
-          permission: UNKNOWN_PERMISSION_GRANT,
-          action: "allow",
-          expiresIn: "24h",
-        },
-      ],
-    });
-    session(actor);
-    await expect(read(openai)).resolves.toStrictEqual(own);
-    session(otherMember);
-    await expect(read(openai)).resolves.toStrictEqual(otherRules);
-    session(otherOrg);
-    await expect(read(openai)).resolves.toStrictEqual(orgRules);
-    member();
-    await accept(client().get({ headers, query: openai }), [404]);
-    await accept(
-      client().apply({
-        headers,
-        body: { target: openai, mode: "replace", grants: [] },
-      }),
-      [404],
+  it("connector-permissions-002 (1/2) shares the saved Slack rules across Chats while one Chat disables the account", async () => {
+    const { owner, secondChat, saved, overridden } =
+      await slackRulesWithFirstChatDisabled();
+
+    expect(byPermission(saved.grants)).toStrictEqual(INITIAL_SLACK_GRANTS);
+    expect(overridden.available).toBeFalsy();
+    const secondAccess = await readThreadAccess(
+      owner,
+      secondChat.id,
+      slackTarget,
+    );
+    expect(secondAccess.available).toBeTruthy();
+    expect(byPermission(await readGrants(owner, slackTarget))).toStrictEqual(
+      INITIAL_SLACK_GRANTS,
     );
   });
 
-  it("rejects a real Run credential before it can change shared rules", async () => {
-    const actor = member();
-    await addOpenAi(actor);
+  it("connector-permissions-002 (2/2) keeps the read deadline on patch, drops it after expiry and clears every grant", async () => {
+    const { owner } = await slackRulesWithFirstChatDisabled();
 
-    bdd.acceptStorageWrites();
-    const token = await tokenFor(actor);
-    await accept(
-      client().apply({
-        headers: { authorization: `Bearer ${token}` },
-        body: {
-          target: openai,
-          mode: "replace",
-          grants: [{ permission: UNKNOWN_PERMISSION_GRANT, action: "allow" }],
-        },
-      }),
-      [403],
+    const patched = await patchLaterChatWrite(owner);
+    expect(byPermission(patched.grants)).toStrictEqual(
+      byPermission([
+        { permission: FALLBACK, action: "deny", expiresAt: null },
+        LATER_CHAT_WRITE,
+        READ_ALLOW,
+      ]),
     );
-    session(actor);
-    await expect(read(openai)).resolves.toStrictEqual({
-      target: openai,
+
+    mockNow(SLACK_RULES_START + HOUR + 1);
+    expect(byPermission(await readGrants(owner, slackTarget))).toStrictEqual(
+      byPermission([
+        { permission: FALLBACK, action: "deny", expiresAt: null },
+        LATER_CHAT_WRITE,
+      ]),
+    );
+
+    const cleared = await access.applyPermissions(owner, {
+      target: slackTarget,
+      mode: "replace",
       grants: [],
     });
-    expect(
-      (
-        await save({
-          target: openai,
-          mode: "replace",
-          grants: [{ permission: UNKNOWN_PERMISSION_GRANT, action: "deny" }],
-        })
-      ).grants,
-    ).toStrictEqual([
-      { permission: UNKNOWN_PERMISSION_GRANT, action: "deny", expiresAt: null },
-    ]);
+    expect(cleared.grants).toStrictEqual([]);
+    await expect(readGrants(owner, slackTarget)).resolves.toStrictEqual([]);
   });
 });
+
+const slackTarget: ConnectorAccountTarget = Object.freeze({
+  kind: "builtin",
+  connectorSlug: "slack",
+});
+const HOUR = 60 * 60 * 1000;
+const SLACK_RULES_START = Date.parse("2026-06-01T08:00:00.000Z");
+const PATCHED_AT = SLACK_RULES_START + 10 * 60 * 1000;
+const READ_ALLOW = Object.freeze({
+  permission: "conversations:read",
+  action: "allow",
+  expiresAt: new Date(SLACK_RULES_START + HOUR).toISOString(),
+});
+const LATER_CHAT_WRITE = Object.freeze({
+  permission: "chat:write",
+  action: "allow",
+  expiresAt: new Date(PATCHED_AT + HOUR).toISOString(),
+});
+const INITIAL_SLACK_GRANTS = byPermission([
+  { permission: FALLBACK, action: "deny", expiresAt: null },
+  { permission: "chat:write", action: "deny", expiresAt: null },
+  READ_ALLOW,
+]);
+
+function byPermission<T extends { readonly permission: string }>(
+  grants: readonly T[],
+): T[] {
+  return [...grants].sort((left, right) => {
+    return left.permission.localeCompare(right.permission);
+  });
+}
+
+async function connectSlack(actor: ApiTestUser) {
+  mockSlackConnectorOAuth();
+  const started = await connectors.startOauth(actor, "slack", "oauth");
+  const state = new URL(started.authorizationUrl).searchParams.get("state");
+  if (!state) {
+    throw new Error("Expected Slack authorization state");
+  }
+  const completed = await connectors.completeOauthCallbackResult("slack", {
+    state,
+    code: `code-${randomUUID()}`,
+  });
+  expect(completed.body.status).toBe("success");
+  return await connectors.readDefaultBuiltinAccount(actor, "slack");
+}
+
+/** A member with two Chats and a Slack account saves rules, then disables it in the first Chat. */
+async function slackRulesWithFirstChatDisabled() {
+  mockNow(SLACK_RULES_START);
+  const owner = bdd.user();
+  const [account, firstChat, secondChat] = await Promise.all([
+    connectSlack(owner),
+    chats.createThread(owner, { model: null }),
+    chats.createThread(owner, { model: null }),
+  ]);
+  const saved = await access.applyPermissions(owner, {
+    target: slackTarget,
+    mode: "replace",
+    grants: [
+      { permission: "conversations:read", action: "allow", expiresIn: "1h" },
+      { permission: "chat:write", action: "deny" },
+      { permission: FALLBACK, action: "deny" },
+    ],
+  });
+  const overridden = await access.setThreadOverride(
+    owner,
+    firstChat.id,
+    { target: slackTarget, connectionId: account.id },
+    false,
+  );
+  return { owner, secondChat, saved, overridden };
+}
+
+async function patchLaterChatWrite(owner: ApiTestUser) {
+  mockNow(PATCHED_AT);
+  return await access.applyPermissions(owner, {
+    target: slackTarget,
+    mode: "patch",
+    grants: [{ permission: "chat:write", action: "allow", expiresIn: "1h" }],
+  });
+}

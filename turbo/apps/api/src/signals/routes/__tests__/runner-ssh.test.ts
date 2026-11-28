@@ -1,1789 +1,2194 @@
-import { createSshExecutionApi } from "./helpers/ssh-execution";
-import { inlineSshKey, sshCredentialId } from "./helpers/ssh-credential";
 import { randomUUID } from "node:crypto";
-
+import { chatEventsContract } from "@okouai/api-contracts/contracts/chat-event-send";
 import { chatRemoteAccessContract } from "@okouai/api-contracts/contracts/chat-remote-access";
+import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
+import { logsListContract } from "@okouai/api-contracts/contracts/logs";
+import { remoteDevicesContract } from "@okouai/api-contracts/contracts/remote-devices";
 import {
-  runnerSshContract,
-  type RunnerSshResolveRequest,
-  type RunnerSshObservationRequest,
-} from "@okouai/api-contracts/contracts/runner-ssh";
+  runsByIdContract,
+  runsCancelContract,
+} from "@okouai/api-contracts/contracts/run-routes";
+import { runnerSshContract } from "@okouai/api-contracts/contracts/runner-ssh";
+import { runnersHeartbeatContract } from "@okouai/api-contracts/contracts/runners";
+import { sshHostsContract } from "@okouai/api-contracts/contracts/ssh-access";
 import { sshConnectionsContract } from "@okouai/api-contracts/contracts/ssh-connections";
-import { sshCredentialsContract } from "@okouai/api-contracts/contracts/ssh-credentials";
-import { afterEach, beforeEach, describe, expect, it, test } from "vitest";
+import {
+  webhookClerkContract,
+  webhookCompleteContract,
+  webhookEventsContract,
+  webhookStripeContract,
+} from "@okouai/api-contracts/contracts/webhooks";
+import {
+  workflowAutomationsContract,
+  workflowsCollectionContract,
+} from "@okouai/api-contracts/contracts/workflows";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import {
+  afterEach,
+  beforeAll,
+  describe,
+  expect,
+  it,
+  onTestFinished,
+} from "vitest";
 
-import { accept, testContext } from "../../../__tests__/test-context";
-import { setupApp, setupRawAppRequest } from "../../../__tests__/test-helpers";
-import { mockEnv } from "../../../lib/env";
-import { now, nowDate } from "../../../lib/time";
-import { createDeferredPromise, joinAll, onRejection } from "../../utils";
-import { runnerSshRoutes } from "../runner-ssh";
-import { chatRemoteAccessRoutes } from "../chat-remote-access";
-import { sshConnectionsRoutes } from "../ssh-connections";
-import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
-import { createAuthOrgBddApi } from "./helpers/api-bdd-auth-org";
-import { createRouteMocks } from "./helpers/route-test";
-import { createBddApi } from "./helpers/api-bdd";
-import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
-import { createRunsApi } from "./helpers/api-bdd-runs";
-import { createPublicRemoteAccessRunApi } from "./helpers/public-remote-access-run";
+import {
+  accept,
+  testContext,
+  type TestContext,
+} from "../../../__tests__/test-context";
+import { setupApp } from "../../../__tests__/test-helpers";
+import {
+  TEST_WITH_DOUBLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE,
+  TEST_WITH_SINGLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE,
+  TEST_WITH_TRIPLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE,
+} from "../../../__tests__/test-timeouts";
+import { env, mockOptionalEnv, optionalEnv } from "../../../lib/env";
+import { clearMockNow, mockNow, now, nowDate } from "../../../lib/time";
 import { flushWaitUntilForTest } from "../../context/wait-until";
+import { settleIncludingAbort } from "../../utils";
+import { chatEventsRoutes } from "../chat-events";
+import { chatRemoteAccessRoutes } from "../chat-remote-access";
+import { featureSwitchesRoutes } from "../feature-switches";
+import { logsRoutes } from "../logs";
+import { remoteDevicesRoutes } from "../remote-devices";
+import { runnerSshRoutes } from "../runner-ssh";
+import { runnersRoutes } from "../runners";
+import { runsRoutes } from "../runs";
+import { runsCancelRoutes } from "../runs-cancel";
+import { sshAccessRoutes } from "../ssh-access";
+import { sshConnectionsRoutes } from "../ssh-connections";
+import { webhooksAgentCompleteRoutes } from "../webhooks-agent-complete";
+import { webhooksAgentEventsRoutes } from "../webhooks-agent-events";
+import { webhooksClerkRoutes } from "../webhooks-clerk";
+import { webhooksStripeRoutes } from "../webhooks-stripe";
+import { workflowAutomationsRoutes } from "../workflow-automations";
+import { workflowsRoutes } from "../workflows";
+import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
+import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
+import { createRunsApi } from "./helpers/api-bdd-runs";
+import {
+  createWebhookCallbackApi,
+  deliverOrganizationCreated,
+} from "./helpers/api-bdd-webhooks";
+import { createWorkflowsBddApi } from "./helpers/api-bdd-workflows";
+import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
+import { holdDownloadSigning } from "./helpers/hold-download-signing";
+import { createRouteMocks } from "./helpers/route-test";
+import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
+import { inlineSshKey } from "./helpers/ssh-credential";
 
-const context = testContext();
-const mocks = createRouteMocks(context);
-const sessionHeaders = Object.freeze({ authorization: "Bearer clerk-session" });
-const runnerSecret = "a".repeat(64);
-const runnerHeaders = Object.freeze({
-  authorization: `Bearer vm0_official_${runnerSecret}`,
+const SESSION_HEADERS = Object.freeze({
+  authorization: "Bearer clerk-session",
 });
-const hostKey = Object.freeze({
+const POLICY_HEADER = Object.freeze({
+  "X-Okou-Remote-Device-Policy": "1",
+});
+const OBSERVED_HOST_KEY = Object.freeze({
   algorithm: "ssh-ed25519" as const,
-  fingerprint: `SHA256:${Buffer.alloc(32, 1).toString("base64url").replaceAll("-", "+").replaceAll("_", "/")}`,
+  fingerprint: `SHA256:${"A".repeat(42)}A`,
 });
-const otherHostKey = Object.freeze({
-  ...hostKey,
-  fingerprint: `SHA256:${Buffer.alloc(32, 2).toString("base64").replace(/=+$/u, "")}`,
-});
-const privateKey = "  private-key-canary\n";
-const passphrase = " passphrase-canary ";
-interface Owner {
-  readonly userId: string;
-  readonly orgId: string;
+
+interface RealtimePublication {
+  readonly channel: string;
+  readonly topic: string;
+  readonly payload: unknown;
 }
 
-function client() {
-  return setupApp({ context, routes: runnerSshRoutes })(runnerSshContract);
-}
-function config() {
-  return setupApp({ context, routes: sshConnectionsRoutes })(
-    sshConnectionsContract,
-  );
-}
-function authenticate(owner: Owner) {
-  mocks.clerk.session(owner.userId, owner.orgId);
-}
-
-async function enableHostDefault(owner: Owner, connectionId: string) {
-  authenticate(owner);
-  const remote = setupApp({ context, routes: chatRemoteAccessRoutes })(
-    chatRemoteAccessContract,
-  );
-  await accept(
-    remote.updateHostDefault({
-      headers: sessionHeaders,
-      params: { protocol: "ssh", connectionId },
-      body: { enabled: true },
-    }),
-    [200],
-  );
-}
-
-async function setThreadHostOverride(f: Fixture, enabled: boolean | null) {
-  if (!f.threadId) {
-    throw new Error("Missing fixture chat thread");
-  }
-  authenticate(f);
-  const remote = setupApp({ context, routes: chatRemoteAccessRoutes })(
-    chatRemoteAccessContract,
-  );
-  const params = {
-    threadId: f.threadId,
-    protocol: "ssh" as const,
-    connectionId: f.connectionId,
-  };
-  if (enabled === null) {
-    await accept(
-      remote.clearThreadOverride({ headers: sessionHeaders, params }),
-      [200],
-    );
-  } else {
-    await accept(
-      remote.setThreadOverride({
-        headers: sessionHeaders,
-        params,
-        body: { enabled },
-      }),
-      [200],
-    );
-  }
-}
-interface Fixture extends Owner {
-  readonly connectionCreatedAt: string;
+interface TrackedRun {
+  readonly actor: ApiTestUser;
   readonly runId: string;
-  readonly threadId?: string;
-  readonly sandboxToken: string;
+  sandboxToken: string | undefined;
+  done: boolean;
+}
+
+interface DispatchedRun {
+  readonly runId: string;
+  readonly threadId: string;
+  readonly cliAgentType: "claude-code" | "codex" | "pi" | "antigravity";
   readonly runnerIdentity: {
-    runnerId: string;
-    heartbeatGeneration: number;
+    readonly runnerId: string;
+    readonly heartbeatGeneration: number;
   };
-  readonly connectionId: string;
-  readonly credentialId: string;
+  readonly sandboxToken: string;
+  readonly agentToken: string;
 }
 
-const ordinary = createSshExecutionApi(context, {
-  runnerHeaders,
-  authenticate,
-});
+function asCliAgentType(
+  value: string,
+): "claude-code" | "codex" | "pi" | "antigravity" {
+  if (
+    value === "claude-code" ||
+    value === "codex" ||
+    value === "pi" ||
+    value === "antigravity"
+  ) {
+    return value;
+  }
+  throw new Error(`Unexpected cliAgentType: ${value}`);
+}
 
-async function ordinaryFixture(group?: string) {
-  const owner = {
-    orgId: `org_ssh_execution_${randomUUID()}`,
-    userId: `user_ssh_execution_${randomUUID()}`,
-  };
-  authenticate(owner);
-  const connection = await accept(
-    config().create({
-      headers: sessionHeaders,
-      body: {
-        id: randomUUID(),
-        displayName: "SSH fixture",
-        host: "ssh.example.com",
-        credential: inlineSshKey("deploy", privateKey, passphrase),
-      },
-    }),
-    [201],
-  );
-  await enableHostDefault(owner, connection.body.id);
-  const runtime = await ordinary.runtime(
-    owner,
-    group === undefined ? {} : { group },
-  );
+function requireOrgOwner(actor: ApiTestUser) {
+  if (!actor.orgId) {
+    throw new Error("Expected an organization member");
+  }
   return {
-    ...runtime,
-    connectionId: connection.body.id,
-    connectionCreatedAt: connection.body.createdAt,
-    credentialId: sshCredentialId(connection.body),
+    orgId: actor.orgId,
+    userId: actor.userId,
+    orgRole: actor.orgRole ?? ("org:admin" as const),
   };
 }
 
-function useExecutionFixture() {
-  const executionRunCleanups: (() => Promise<void>)[] = [];
-  // Finish owned Run cancellation before the parent context tears down its signal/mocks.
-  afterEach(async () => {
-    const cleanups = executionRunCleanups.splice(0);
-    if (cleanups.length === 0) {
-      await flushWaitUntilForTest();
-      return;
-    }
-    // The notification-failure case owns its fault only until the assertion completes.
-    context.mocks.ably.publish.mockResolvedValue(undefined);
-    for (const cleanup of cleanups) {
-      await cleanup();
-      await flushWaitUntilForTest();
+function sessionHeadersFor(context: TestContext, actor: ApiTestUser) {
+  createRouteMocks(context).clerk.session(
+    actor.userId,
+    actor.orgId,
+    actor.orgRole,
+  );
+  return SESSION_HEADERS;
+}
+
+function officialRunnerHeaders() {
+  return {
+    authorization: `Bearer vm0_official_${env("OFFICIAL_RUNNER_SECRET")}`,
+  };
+}
+
+function clearRealtimePublications(context: TestContext): void {
+  context.mocks.ably.channelGet.mockClear();
+  context.mocks.ably.publish.mockClear();
+}
+
+function sortedRealtimePublications(
+  context: TestContext,
+): readonly RealtimePublication[] {
+  const gets = context.mocks.ably.channelGet.mock;
+  const publishes = context.mocks.ably.publish.mock;
+  return publishes.calls
+    .map((call, index) => {
+      const publishedAt = publishes.invocationCallOrder[index] ?? 0;
+      let channel = "";
+      for (const [getIndex, order] of gets.invocationCallOrder.entries()) {
+        if (order < publishedAt) {
+          channel = String(gets.calls[getIndex]?.[0] ?? "");
+        }
+      }
+      return {
+        channel,
+        topic: String(call[0] ?? ""),
+        payload: call[1],
+      };
+    })
+    .sort((left, right) => {
+      const leftKey = `${left.channel}|${left.topic}|${JSON.stringify(left.payload)}`;
+      const rightKey = `${right.channel}|${right.topic}|${JSON.stringify(right.payload)}`;
+      return leftKey.localeCompare(rightKey);
+    });
+}
+
+function sortPublications(
+  items: readonly RealtimePublication[],
+): readonly RealtimePublication[] {
+  return [...items].sort((left, right) => {
+    const leftKey = `${left.channel}|${left.topic}|${JSON.stringify(left.payload)}`;
+    const rightKey = `${right.channel}|${right.topic}|${JSON.stringify(right.payload)}`;
+    return leftKey.localeCompare(rightKey);
+  });
+}
+
+describe("runner-ssh authority, invalidation and observations", () => {
+  const context = testContext();
+  const bdd = createBddApi(context);
+  const runs = createRunsApi(context);
+  const chats = createChatFilesBddApi(context);
+  const webhooks = createWebhookCallbackApi(context);
+  const workflows = createWorkflowsBddApi(context);
+
+  const sshConnectionsApi = setupApp({
+    context,
+    routes: sshConnectionsRoutes,
+  })(sshConnectionsContract);
+  const chatRemoteAccessApi = setupApp({
+    context,
+    routes: chatRemoteAccessRoutes,
+  })(chatRemoteAccessContract);
+  const runnerSshApi = setupApp({
+    context,
+    routes: runnerSshRoutes,
+  })(runnerSshContract);
+  const sshAccessApi = setupApp({
+    context,
+    routes: sshAccessRoutes,
+  })(sshHostsContract);
+  const remoteDevicesApi = setupApp({
+    context,
+    routes: remoteDevicesRoutes,
+  })(remoteDevicesContract);
+  const featureSwitchesApi = setupApp({
+    context,
+    routes: featureSwitchesRoutes,
+  })(featureSwitchesContract);
+  const chatEventsApi = setupApp({
+    context,
+    routes: chatEventsRoutes,
+  })(chatEventsContract);
+  const runnersHeartbeatApi = setupApp({
+    context,
+    routes: runnersRoutes,
+  })(runnersHeartbeatContract);
+  const runsByIdApi = setupApp({
+    context,
+    routes: runsRoutes,
+  })(runsByIdContract);
+  const runsCancelApi = setupApp({
+    context,
+    routes: runsCancelRoutes,
+  })(runsCancelContract);
+  const webhookCompleteApi = setupApp({
+    context,
+    routes: webhooksAgentCompleteRoutes,
+  })(webhookCompleteContract);
+  const webhookEventsApi = setupApp({
+    context,
+    routes: webhooksAgentEventsRoutes,
+  })(webhookEventsContract);
+  const webhookClerkApi = setupApp({
+    context,
+    routes: webhooksClerkRoutes,
+  })(webhookClerkContract);
+  const webhookStripeApi = setupApp({
+    context,
+    routes: webhooksStripeRoutes,
+  })(webhookStripeContract);
+  const workflowsApi = setupApp({
+    context,
+    routes: workflowsRoutes,
+  })(workflowsCollectionContract);
+  const workflowAutomationsApi = setupApp({
+    context,
+    routes: workflowAutomationsRoutes,
+  })(workflowAutomationsContract);
+  const logsApi = setupApp({
+    context,
+    routes: logsRoutes,
+  })(logsListContract);
+
+  beforeAll(async () => {
+    const previousClerkSecret = optionalEnv("CLERK_WEBHOOK_SIGNING_SECRET");
+    const previousStripeSecret = optionalEnv("STRIPE_WEBHOOK_SECRET");
+    mockOptionalEnv("CLERK_WEBHOOK_SIGNING_SECRET", "whsec_warmup");
+    mockOptionalEnv("STRIPE_WEBHOOK_SECRET", "whsec_warmup");
+    context.mocks.clerk.verifyWebhook.mockRejectedValueOnce(
+      new Error("warmup"),
+    );
+    context.mocks.clerk.authenticateRequest.mockResolvedValue({
+      isAuthenticated: false,
+    });
+    const warmupId = randomUUID();
+    const warmed = await settleIncludingAbort(async () => {
+      await Promise.all([
+        accept(
+          webhookClerkApi.post({
+            body: "{}",
+            extraHeaders: {},
+          }),
+          [401],
+        ),
+        accept(
+          webhookStripeApi.post({
+            body: "{}",
+            extraHeaders: {},
+          }),
+          [401],
+        ),
+        accept(sshConnectionsApi.list({ headers: {} }), [401]),
+        accept(chatRemoteAccessApi.listHostDefaults({ headers: {} }), [401]),
+        accept(
+          runnerSshApi.resolve({
+            headers: {},
+            params: { runId: warmupId },
+            body: {
+              connectionId: warmupId,
+              runnerIdentity: { runnerId: warmupId, heartbeatGeneration: 1 },
+            },
+          }),
+          [401],
+        ),
+        accept(sshAccessApi.list({ headers: {} }), [401]),
+        accept(remoteDevicesApi.list({ headers: {} }), [401]),
+        accept(featureSwitchesApi.get({ headers: {} }), [401]),
+        accept(
+          chatEventsApi.send({
+            headers: {},
+            body: {
+              prompt: "warmup",
+              hasTextContent: true,
+              userMessage: {
+                version: 1,
+                parts: [{ type: "text", text: "warmup" }],
+              },
+            },
+          }),
+          [401],
+        ),
+        accept(
+          runnersHeartbeatApi.heartbeat({
+            headers: {},
+            body: {
+              runnerId: warmupId,
+              group: "vm0/warmup",
+              snapshotGeneration: 1,
+              snapshotSequence: 1,
+              totalVcpu: 8,
+              totalMemoryMb: 16_384,
+              maxConcurrent: 2,
+              allocatedVcpu: 0,
+              allocatedMemoryMb: 0,
+              runningCount: 0,
+              admittableProfiles: ["vm0/default"],
+              heldSandboxStates: [],
+              heldHomeStates: [],
+              activeReuseProducers: [],
+              mode: "running",
+            },
+          }),
+          [401],
+        ),
+        accept(
+          runsByIdApi.getById({ headers: {}, params: { id: warmupId } }),
+          [401],
+        ),
+        accept(
+          runsCancelApi.cancel({ headers: {}, params: { id: warmupId } }),
+          [401],
+        ),
+        accept(
+          webhookCompleteApi.complete({
+            headers: {},
+            body: { runId: warmupId, exitCode: 0 },
+          }),
+          [401],
+        ),
+        accept(
+          webhookEventsApi.send({
+            headers: {},
+            body: {
+              runId: warmupId,
+              events: [{ type: "system", sequenceNumber: 0 }],
+            },
+          }),
+          [401],
+        ),
+        accept(workflowsApi.list({ headers: {} }), [401]),
+        accept(
+          workflowAutomationsApi.get({ headers: {}, params: { id: warmupId } }),
+          [401],
+        ),
+      ]);
+    });
+    mockOptionalEnv("CLERK_WEBHOOK_SIGNING_SECRET", previousClerkSecret);
+    mockOptionalEnv("STRIPE_WEBHOOK_SECRET", previousStripeSecret);
+    if (!warmed.ok) {
+      throw warmed.error;
     }
   });
 
-  /** A running chat Run and owner-configured host, through production routes. */
-  async function executionFixture(): Promise<Fixture> {
-    const bdd = createBddApi(context);
-    const runs = createRunsApi(context);
-    const actor = bdd.user();
-    if (!actor.orgId) {
-      throw new Error("Expected an SSH owner organization");
-    }
-    const owner = { orgId: actor.orgId, userId: actor.userId };
+  afterEach(() => {
+    clearMockNow();
+  });
+
+  function createRunTracker() {
+    const tracked: TrackedRun[] = [];
+
+    onTestFinished(async () => {
+      clearMockNow();
+      useSecretKmsProbe();
+      context.mocks.ably.publish.mockResolvedValue(undefined);
+      const errors: unknown[] = [];
+      const initialFlush = await settleIncludingAbort(flushWaitUntilForTest);
+      if (!initialFlush.ok) {
+        errors.push(initialFlush.error);
+      }
+      const pendingCompletions: Promise<unknown>[] = [];
+      for (const entry of tracked) {
+        if (entry.done) {
+          continue;
+        }
+        const cleaned = await settleIncludingAbort(async () => {
+          const current = await runs.readRun(entry.actor, entry.runId);
+          if (["queued", "pending", "running"].includes(current.status)) {
+            await runs.requestCancelRun(entry.actor, entry.runId, [200]);
+          }
+          if (
+            entry.sandboxToken &&
+            !["completed", "failed", "timeout"].includes(current.status)
+          ) {
+            pendingCompletions.push(
+              webhooks.requestAgentComplete(
+                {
+                  runId: entry.runId,
+                  exitCode: 1,
+                  error: "Run cancelled by test cleanup",
+                  failureReason: "execution_timeout",
+                },
+                { authorization: `Bearer ${entry.sandboxToken}` },
+                [200],
+              ),
+            );
+          }
+          entry.done = true;
+        });
+        if (!cleaned.ok) {
+          errors.push(cleaned.error);
+        }
+      }
+      if (pendingCompletions.length > 0) {
+        const completed = await settleIncludingAbort(() => {
+          return Promise.all(pendingCompletions);
+        });
+        if (!completed.ok) {
+          errors.push(completed.error);
+        }
+      }
+      const finalFlush = await settleIncludingAbort(flushWaitUntilForTest);
+      if (!finalFlush.ok) {
+        errors.push(finalFlush.error);
+      }
+      if (errors.length === 1) {
+        throw errors[0];
+      }
+      if (errors.length > 1) {
+        throw new AggregateError(errors, "Runner SSH test cleanup failed");
+      }
+    });
+
+    return {
+      track(actor: ApiTestUser, runId: string, sandboxToken?: string) {
+        const existing = tracked.find((entry) => {
+          return entry.runId === runId;
+        });
+        if (existing) {
+          if (sandboxToken) {
+            existing.sandboxToken = sandboxToken;
+          }
+          return existing;
+        }
+        const entry: TrackedRun = {
+          actor,
+          runId,
+          sandboxToken,
+          done: false,
+        };
+        tracked.push(entry);
+        return entry;
+      },
+      markDone(runId: string) {
+        const entry = tracked.find((candidate) => {
+          return candidate.runId === runId;
+        });
+        if (entry) {
+          entry.done = true;
+        }
+      },
+    };
+  }
+
+  function prepareRunMocks() {
+    const kmsProbe = useSecretKmsProbe();
     bdd.acceptStorageWrites();
     runs.acceptStorageDownloads();
     runs.acceptTelemetryIngest();
-    const runnerIdentity = {
-      runnerId: randomUUID(),
-      heartbeatGeneration: 5_000_000_000,
-    };
-    await runs.configureRunnerGroup({
-      runnerIdentity,
-      heartbeatAuthorization: runnerHeaders.authorization,
-    });
-    await runs.grantProEntitlement(actor);
-    await runs.ensurePersonalSubscriptionModel(actor, {
-      model: "claude-fable-5-1",
-    });
-    authenticate(owner);
-    const connection = await accept(
-      config().create({
-        headers: sessionHeaders,
-        body: {
-          id: randomUUID(),
-          displayName: "SSH execution Run",
-          host: "ssh.example.com",
-          credential: inlineSshKey("deploy", privateKey, passphrase),
-        },
-      }),
+    mockOptionalEnv("OPENROUTER_API_KEY", "bdd-runner-ssh-key");
+    return kmsProbe;
+  }
+
+  async function launchChatRun(
+    tracker: ReturnType<typeof createRunTracker>,
+    actor: ApiTestUser,
+    runnerGroup: string,
+    prompt: string,
+  ): Promise<DispatchedRun> {
+    const sent = await chats.requestSendEvent(
+      actor,
+      {
+        prompt,
+        clientEventId: randomUUID(),
+        model: null,
+      },
       [201],
     );
-    await enableHostDefault(owner, connection.body.id);
-    const { runId, threadId } = await runs.createThreadRun(actor, {
-      prompt: "Use my configured SSH host",
-    });
-    const input = await runs.executionInput(runId);
-    executionRunCleanups.push(async () => {
-      await runs.requestCancelRun(actor, runId, [200]);
-      await createWebhookCallbackApi(context).requestAgentComplete(
-        { runId, exitCode: 137 },
-        { authorization: `Bearer ${input.sandboxToken}` },
-        [200],
-      );
-    });
-    // Preserve the process-generation bigint boundary with a real heartbeat and dispatch.
-    const sandboxToken = input.sandboxToken;
-    if (!sandboxToken) {
-      throw new Error("Expected execution input to include its sandbox token");
+    if (!("threadId" in sent.body)) {
+      throw new Error("Expected chat send to return a threadId");
     }
-    await expect(runs.readRun(actor, runId)).resolves.toMatchObject({
-      status: "running",
-    });
-    authenticate(owner);
+    await flushWaitUntilForTest();
+    const dispatch = runs.receivedDispatches(runnerGroup).at(-1);
+    const agentToken =
+      dispatch?.executionContext.platformEnvironment.OKOU_TOKEN;
+    if (!dispatch || !agentToken) {
+      throw new Error("Expected a dispatched active Run");
+    }
+    const runId = dispatch.executionContext.runId;
+    const sandboxToken = dispatch.executionContext.sandboxToken;
+    tracker.track(actor, runId, sandboxToken);
     return {
-      ...owner,
       runId,
-      threadId,
-      runnerIdentity,
+      threadId: sent.body.threadId,
+      cliAgentType: asCliAgentType(dispatch.executionContext.cliAgentType),
+      runnerIdentity: {
+        runnerId: dispatch.runnerId,
+        heartbeatGeneration: dispatch.heartbeatGeneration,
+      },
       sandboxToken,
-      connectionId: connection.body.id,
-      connectionCreatedAt: connection.body.createdAt,
-      credentialId: sshCredentialId(connection.body),
+      agentToken,
     };
   }
 
-  return executionFixture;
-}
-
-describe("SSH authority invalidation", () => {
-  afterEach(ordinary.cleanup);
-  const executionFixture = useExecutionFixture();
-
-  it("notifies all active owner Runs after committed edits, rotations, reset and deletion", async () => {
-    const group = `vm0/bdd-${randomUUID().slice(0, 8)}`;
-    const f = await ordinaryFixture(group);
-    const secondRun = await ordinary.runtime(f, { group });
-    const completed = await ordinary.runtime(f, { group });
-    await ordinary.complete(completed);
-    await ordinaryFixture();
-    authenticate(f);
-    const expected = [f.runId, secondRun.runId].map((runId) => {
-      return [
-        "ssh-authority-invalidated",
-        { runId, connectionId: f.connectionId },
-      ];
-    });
-    const updates = [
-      { host: "changed.example.com" },
-      {
-        credential: inlineSshKey(
-          "deploy",
-          "rotated-private-key",
-          "rotated-passphrase",
-        ),
-      },
-    ];
-    let generation = 1;
-    for (const update of updates) {
-      context.mocks.ably.publish.mockClear();
-      context.mocks.ably.channelGet.mockClear();
-      const changed = await accept(
-        config().update({
-          headers: sessionHeaders,
-          params: { connectionId: f.connectionId },
-          body: {
-            expectedGeneration: generation,
-            ...update,
-          },
-        }),
-        [200],
-      );
-      generation = changed.body.generation;
-      expect(context.mocks.ably.publish.mock.calls).toHaveLength(3);
-      expect(context.mocks.ably.publish.mock.calls).toStrictEqual(
-        expect.arrayContaining([
-          ["ssh:changed", { orgId: f.orgId }],
-          ...expected,
-        ]),
-      );
-      expect(context.mocks.ably.channelGet.mock.calls).toStrictEqual([
-        [`user:${f.userId}`],
-        [`runner-group:${group}`],
-        [`runner-group:${group}`],
-      ]);
-    }
-    context.mocks.ably.publish.mockClear();
-    const reset = await accept(
-      config().resetHostKey({
-        headers: sessionHeaders,
-        params: { connectionId: f.connectionId },
-        body: { expectedGeneration: generation },
-      }),
-      [200],
-    );
-    expect(context.mocks.ably.publish.mock.calls).toHaveLength(3);
-    expect(context.mocks.ably.publish.mock.calls).toStrictEqual(
-      expect.arrayContaining([
-        ["ssh:changed", { orgId: f.orgId }],
-        ...expected,
-      ]),
-    );
-    context.mocks.ably.publish.mockClear();
-    await accept(
-      config().delete({
-        headers: sessionHeaders,
-        params: { connectionId: f.connectionId },
-        body: { expectedGeneration: reset.body.generation },
-      }),
-      [204],
-    );
-    expect(context.mocks.ably.publish.mock.calls).toHaveLength(3);
-    expect(context.mocks.ably.publish.mock.calls).toStrictEqual(
-      expect.arrayContaining([
-        ["ssh:changed", { orgId: f.orgId }],
-        ...expected,
-      ]),
-    );
-    const listed = await accept(
-      config().list({ headers: sessionHeaders }),
-      [200],
-    );
-    expect(listed.body.connections).toStrictEqual([]);
-  });
-
-  it("keeps committed mutations successful when notification delivery fails", async () => {
-    const f = await executionFixture();
-    context.mocks.ably.publish.mockClear();
-    context.mocks.ably.publish.mockRejectedValue(
-      new Error("Synthetic Ably publish failure"),
-    );
-    const changed = await accept(
-      config().update({
-        headers: sessionHeaders,
-        params: { connectionId: f.connectionId },
-        body: {
-          expectedGeneration: 1,
-          credential: inlineSshKey("new-login", privateKey, passphrase),
-        },
-      }),
-      [200],
-    );
-    expect(changed.body.generation).toBe(2);
-    const listed = await accept(
-      config().list({ headers: sessionHeaders }),
-      [200],
-    );
-    expect(listed.body.connections).toStrictEqual([
-      expect.objectContaining({
-        id: f.connectionId,
-        generation: 2,
-        username: "new-login",
-      }),
-    ]);
-    expect(context.mocks.ably.publish.mock.calls).toStrictEqual([
-      ["ssh:changed", { orgId: f.orgId }],
-      [
-        "ssh-authority-invalidated",
-        { runId: f.runId, connectionId: f.connectionId },
-      ],
-    ]);
-  });
-
-  it("resolves the current host credentials after overlapping low-frequency edits", async () => {
-    const f = await executionFixture();
-    context.mocks.ably.publish.mockClear();
-    const outcomes = await Promise.all(
-      ["first-login", "second-login"].map(async (username) => {
-        return await accept(
-          config().update({
-            headers: sessionHeaders,
-            params: { connectionId: f.connectionId },
-            body: {
-              expectedGeneration: 1,
-              credential: inlineSshKey(username, privateKey, passphrase),
-            },
-          }),
-          [200, 409],
+  async function launchChatRuns(
+    tracker: ReturnType<typeof createRunTracker>,
+    actor: ApiTestUser,
+    runnerGroup: string,
+    prompts: readonly [string, string],
+  ): Promise<readonly [DispatchedRun, DispatchedRun]> {
+    const [firstSent, secondSent] = await Promise.all(
+      prompts.map((prompt) => {
+        return chats.requestSendEvent(
+          actor,
+          { prompt, clientEventId: randomUUID(), model: null },
+          [201],
         );
       }),
     );
-    expect(
-      outcomes.some((result) => {
-        return result.status === 200;
-      }),
-    ).toBeTruthy();
-    const current = (await list(f)).find((host) => {
-      return host.id === f.connectionId;
-    });
-    if (!current) {
-      throw new Error("Expected the edited host to remain configured");
+    if (
+      !firstSent ||
+      !secondSent ||
+      !("threadId" in firstSent.body) ||
+      !("threadId" in secondSent.body)
+    ) {
+      throw new Error("Expected concurrent chat sends to return threadIds");
     }
-    expect(current.username).toBeOneOf(["first-login", "second-login"]);
-    await expect(resolve(f)).resolves.toMatchObject({
-      outcome: "resolved",
-      username: current.username,
-      generation: current.generation,
-    });
-  });
-});
-
-async function resolve(
-  f: Fixture,
-  override: Partial<RunnerSshResolveRequest> = {},
-) {
-  const r = await accept(
-    client().resolve({
-      params: { runId: f.runId },
-      headers: runnerHeaders,
-      body: {
-        connectionId: f.connectionId,
-        runnerIdentity: f.runnerIdentity,
-        ...override,
-      },
-    }),
-    [200],
-  );
-  return r.body;
-}
-async function pin(
-  f: Fixture,
-  expectedGeneration = 1,
-  observedHostKey = hostKey,
-) {
-  const r = await accept(
-    client().pin({
-      params: { runId: f.runId },
-      headers: runnerHeaders,
-      body: {
-        connectionId: f.connectionId,
-        runnerIdentity: f.runnerIdentity,
-        expectedGeneration,
-        observedHostKey,
-      },
-    }),
-    [200],
-  );
-  return r.body;
-}
-async function list(f: Fixture) {
-  authenticate(f);
-  return (await accept(config().list({ headers: sessionHeaders }), [200])).body
-    .connections;
-}
-
-async function reviewedConnection(f: Fixture) {
-  const connection = (await list(f)).find((host) => {
-    return host.id === f.connectionId;
-  });
-  if (!connection) {
-    throw new Error("Expected the fixture's SSH host");
-  }
-  return connection;
-}
-
-beforeEach(() => {
-  mockEnv("OFFICIAL_RUNNER_SECRET", runnerSecret);
-  useSecretKmsProbe();
-});
-
-function createPublicHostApi() {
-  const selectedRuns = createPublicRemoteAccessRunApi(context);
-  async function cleanupSelectedRuns() {
-    await selectedRuns.cleanup();
-  }
-  async function publicHostRun(defaultEnabled = true) {
-    const owner = {
-      orgId: `org_ssh_public_${randomUUID()}`,
-      userId: `user_ssh_public_${randomUUID()}`,
-    };
-    const run = await selectedRuns.start(owner);
-    const execution = await selectedRuns.executionInput(run, runnerHeaders);
-    authenticate(owner);
-    const connection = await accept(
-      config().create({
-        headers: sessionHeaders,
-        body: {
-          id: randomUUID(),
-          displayName: "SSH owner host",
-          host: "ssh.example.com",
-          credential: inlineSshKey("deploy", privateKey, passphrase),
-        },
-      }),
-      [201],
-    );
-    if (defaultEnabled) {
-      await enableHostDefault(owner, connection.body.id);
-    }
-    return {
-      ...execution,
-      connectionId: connection.body.id,
-      connectionCreatedAt: connection.body.createdAt,
-      credentialId: sshCredentialId(connection.body),
-    };
-  }
-
-  return {
-    runtime: publicHostRun,
-    cleanup: cleanupSelectedRuns,
-    runs: selectedRuns,
-  };
-}
-const selected = createPublicHostApi();
-
-describe("chat thread SSH authority", () => {
-  afterEach(selected.cleanup);
-  it("uses current per-host defaults and overrides for a dispatched chat Run", async () => {
-    const f = await selected.runtime(false);
-    if (!f.threadId) {
-      throw new Error("Missing fixture chat thread");
-    }
-    const threadId = f.threadId;
-    authenticate(f);
-    const remote = setupApp({ context, routes: chatRemoteAccessRoutes })(
-      chatRemoteAccessContract,
-    );
-    const host = { protocol: "ssh" as const, connectionId: f.connectionId };
-    await expect(resolve(f)).resolves.toStrictEqual({ outcome: "unavailable" });
-    await accept(
-      remote.updateHostDefault({
-        headers: sessionHeaders,
-        params: host,
-        body: { enabled: true },
-      }),
-      [200],
-    );
-    await expect(resolve(f)).resolves.toMatchObject({ outcome: "resolved" });
-    const params = { threadId, ...host };
-    context.mocks.ably.publish.mockClear();
-    await accept(
-      remote.setThreadOverride({
-        headers: sessionHeaders,
-        params,
-        body: { enabled: false },
-      }),
-      [200],
-    );
-    expect(context.mocks.ably.publish.mock.calls).toStrictEqual(
-      expect.arrayContaining([
-        ["ssh:changed", { orgId: f.orgId }],
-        [
-          "ssh-authority-invalidated",
-          { runId: f.runId, connectionId: f.connectionId },
-        ],
-      ]),
-    );
-    await expect(resolve(f)).resolves.toStrictEqual({ outcome: "unavailable" });
-    await expect(pin(f)).resolves.toStrictEqual({ outcome: "unavailable" });
-    await accept(
-      remote.setThreadOverride({
-        headers: sessionHeaders,
-        params,
-        body: { enabled: true },
-      }),
-      [200],
-    );
-    await accept(
-      remote.updateHostDefault({
-        headers: sessionHeaders,
-        params: host,
-        body: { enabled: false },
-      }),
-      [200],
-    );
-    await expect(resolve(f)).resolves.toMatchObject({ outcome: "resolved" });
-    await accept(
-      remote.clearThreadOverride({ headers: sessionHeaders, params }),
-      [200],
-    );
-    await expect(resolve(f)).resolves.toStrictEqual({ outcome: "unavailable" });
-  });
-});
-
-describe("shared credential runtime authority", () => {
-  const executionFixture = useExecutionFixture();
-
-  it("rotates every referencing host, preserves pins, invalidates the Run, and rebinds only one host", async () => {
-    const f = await executionFixture();
-    const credentials = setupApp({ context, routes: sshConnectionsRoutes })(
-      sshCredentialsContract,
-    );
-    const params = { credentialId: f.credentialId };
-    const shared = await accept(
-      config().create({
-        headers: sessionHeaders,
-        body: {
-          id: randomUUID(),
-          displayName: "Shared host",
-          host: "shared.example.com",
-          credential: { id: f.credentialId },
-        },
-      }),
-      [201],
-    );
-    await enableHostDefault(f, shared.body.id);
-    const unrelated = await accept(
-      config().create({
-        headers: sessionHeaders,
-        body: {
-          id: randomUUID(),
-          displayName: "Unrelated",
-          host: "unrelated.example.com",
-          credential: inlineSshKey("other", "unrelated-key"),
-        },
-      }),
-      [201],
-    );
-    await enableHostDefault(f, unrelated.body.id);
-    await pin(f);
-    const before = await list(f);
-    context.mocks.ably.publish.mockClear();
-    await accept(
-      credentials.update({
-        headers: sessionHeaders,
-        params,
-        body: { expectedRevision: 1, name: "Renamed login" },
-      }),
-      [200],
-    );
-    const renamed = await list(f);
-    expect(
-      renamed.map(({ generation }) => {
-        return generation;
-      }),
-    ).toStrictEqual(
-      before.map(({ generation }) => {
-        return generation;
-      }),
-    );
-    expect(context.mocks.ably.publish.mock.calls).toStrictEqual([
-      ["ssh:changed", { orgId: f.orgId }],
-    ]);
-
-    context.mocks.ably.publish.mockClear();
-    const password = "  password-canary\n";
-    await accept(
-      credentials.update({
-        headers: sessionHeaders,
-        params,
-        body: {
-          expectedRevision: 2,
-          username: "operator",
-          authentication: { method: "password", password },
-        },
-      }),
-      [200],
-    );
-    expect(context.mocks.ably.publish.mock.calls).toStrictEqual([
-      ["ssh:changed", { orgId: f.orgId }],
-      ["ssh-authority-invalidated", { runId: f.runId, connectionId: null }],
-    ]);
-    const rotated = await list(f);
-    for (const host of rotated) {
-      const previous = before.find(({ id }) => {
-        return id === host.id;
+    await flushWaitUntilForTest();
+    const dispatches = runs.receivedDispatches(runnerGroup);
+    const findFor = (prompt: string, threadId: string): DispatchedRun => {
+      const dispatch = [...dispatches].reverse().find((candidate) => {
+        return candidate.executionContext.prompt === prompt;
       });
-      expect(host.generation).toBe(
-        (previous?.generation ?? 0) +
-          ("credentialId" in host && host.credentialId === f.credentialId
-            ? 1
-            : 0),
-      );
-      expect(host.learnedHostKey).toStrictEqual(previous?.learnedHostKey);
+      const agentToken =
+        dispatch?.executionContext.platformEnvironment.OKOU_TOKEN;
+      if (!dispatch || !agentToken) {
+        throw new Error(`Expected a dispatched active Run for "${prompt}"`);
+      }
+      const runId = dispatch.executionContext.runId;
+      const sandboxToken = dispatch.executionContext.sandboxToken;
+      tracker.track(actor, runId, sandboxToken);
+      return {
+        runId,
+        threadId,
+        cliAgentType: asCliAgentType(dispatch.executionContext.cliAgentType),
+        runnerIdentity: {
+          runnerId: dispatch.runnerId,
+          heartbeatGeneration: dispatch.heartbeatGeneration,
+        },
+        sandboxToken,
+        agentToken,
+      };
+    };
+    return [
+      findFor(prompts[0], firstSent.body.threadId),
+      findFor(prompts[1], secondSent.body.threadId),
+    ];
+  }
+
+  async function completeRunOk(
+    tracker: ReturnType<typeof createRunTracker>,
+    run: Pick<
+      DispatchedRun,
+      "runId" | "threadId" | "cliAgentType" | "sandboxToken"
+    >,
+  ): Promise<void> {
+    const sandboxHeaders = { authorization: `Bearer ${run.sandboxToken}` };
+    await webhooks.requestAgentEvents(
+      {
+        runId: run.runId,
+        events: [{ type: "system", sequenceNumber: 0 }],
+      },
+      sandboxHeaders,
+      [200],
+    );
+    const completed = await webhooks.requestAgentComplete(
+      {
+        runId: run.runId,
+        exitCode: 0,
+        lastEventSequence: 0,
+        completion: {
+          cliAgentType: run.cliAgentType,
+          cliAgentSessionId:
+            run.cliAgentType === "pi"
+              ? run.threadId
+              : `runner-ssh-${run.runId}`,
+          cliAgentSessionHistoryDisposition: "native_only",
+        },
+      },
+      sandboxHeaders,
+      [200],
+    );
+    if (!("status" in completed.body)) {
+      throw new Error("Expected completion response to include status");
     }
-    for (const connectionId of [f.connectionId, shared.body.id]) {
-      const resolved = await resolve(f, { connectionId });
-      expect(resolved).toMatchObject({
-        outcome: "resolved_password",
-        username: "operator",
-        password,
-      });
-      expect(resolved).not.toHaveProperty("privateKey");
-      expect(resolved).not.toHaveProperty("passphrase");
-    }
-    await expect(
-      resolve(f, { connectionId: unrelated.body.id }),
-    ).resolves.toMatchObject({
-      outcome: "resolved",
-      username: "other",
-      privateKey: "unrelated-key",
-    });
-    const stalePin = await pin({ ...f, connectionId: shared.body.id }, 1);
-    expect(stalePin.outcome).toBe("configuration_changed");
-    const staleObservation = await accept(
-      client().observe({
-        params: { runId: f.runId },
-        headers: runnerHeaders,
-        body: {
-          connectionId: shared.body.id,
-          runnerIdentity: f.runnerIdentity,
-          expectedGeneration: 1,
-          expectedCreatedAt: f.connectionCreatedAt,
-          observedAt: nowDate().toISOString(),
-          failureReason: "authentication_failed",
-        },
-      }),
-      [200],
-    );
-    expect(staleObservation.body.outcome).toBe("ignored");
+    expect(completed.body.status).toBe("completed");
+    tracker.markDone(run.runId);
+    await flushWaitUntilForTest();
+  }
 
-    await accept(
-      config().update({
-        headers: sessionHeaders,
-        params: { connectionId: shared.body.id },
-        body: {
-          expectedGeneration: 2,
-          credential: { id: sshCredentialId(unrelated.body) },
-        },
-      }),
-      [200],
-    );
-    await expect(
-      resolve(f, { connectionId: shared.body.id }),
-    ).resolves.toMatchObject({
-      outcome: "resolved",
-      generation: 3,
-      username: "other",
-      privateKey: "unrelated-key",
-    });
-    await expect(resolve(f)).resolves.toMatchObject({
-      outcome: "resolved_password",
-      password,
-    });
-    await accept(
-      credentials.update({
-        headers: sessionHeaders,
-        params,
-        body: {
-          expectedRevision: 3,
-          authentication: {
-            method: "private_key",
-            privateKey: "new-key",
-            passphrase: null,
-          },
-        },
-      }),
-      [200],
-    );
-    const restored = await resolve(f);
-    expect(restored).toMatchObject({
-      outcome: "resolved",
-      username: "operator",
-      privateKey: "new-key",
-      passphrase: null,
-    });
-    expect(restored).not.toHaveProperty("password");
-    await expect(
-      resolve(f, { connectionId: shared.body.id }),
-    ).resolves.toMatchObject({
-      outcome: "resolved",
-      generation: 3,
-      privateKey: "unrelated-key",
-    });
-  });
-});
-
-describe("SSH connection observations", () => {
-  afterEach(ordinary.cleanup);
-  const executionFixture = useExecutionFixture();
-
-  async function observe(
-    f: Fixture,
-    overrides: Partial<RunnerSshObservationRequest> = {},
+  async function createSshHost(
+    actor: ApiTestUser,
+    options: {
+      readonly displayName: string;
+      readonly host: string;
+      readonly username?: string;
+      readonly privateKey?: string;
+      readonly enableDefault?: boolean;
+    },
   ) {
-    return (
+    const headers = sessionHeadersFor(context, actor);
+    const created = await accept(
+      sshConnectionsApi.create({
+        headers,
+        body: {
+          id: randomUUID(),
+          displayName: options.displayName,
+          host: options.host,
+          credential: inlineSshKey(
+            options.username ?? "deploy",
+            options.privateKey ?? `key-${randomUUID()}`,
+          ),
+        },
+      }),
+      [201],
+    );
+    if (options.enableDefault !== false) {
       await accept(
-        client().observe({
-          params: { runId: f.runId },
-          headers: runnerHeaders,
-          body: {
-            connectionId: f.connectionId,
-            runnerIdentity: f.runnerIdentity,
-            expectedGeneration: 1,
-            expectedCreatedAt: f.connectionCreatedAt,
-            observedAt: nowDate().toISOString(),
-            failureReason: "authentication_failed",
-            ...overrides,
-          },
+        chatRemoteAccessApi.updateHostDefault({
+          headers,
+          params: { protocol: "ssh", connectionId: created.body.id },
+          body: { enabled: true },
         }),
         [200],
-      )
-    ).body;
-  }
-
-  async function observations(f: Owner) {
-    authenticate(f);
-    return (
-      await accept(config().observations({ headers: sessionHeaders }), [200])
-    ).body.observations;
-  }
-
-  it("ignores delayed evidence when a deleted SSH ID is recreated", async () => {
-    const f = await executionFixture();
-    const failedAt = new Date(now() - 1000).toISOString();
-    await expect(observe(f, { observedAt: failedAt })).resolves.toStrictEqual({
-      outcome: "recorded",
-    });
-    await accept(
-      config().delete({
-        headers: sessionHeaders,
-        params: { connectionId: f.connectionId },
-        body: { expectedGeneration: (await reviewedConnection(f)).generation },
-      }),
-      [204],
-    );
-    const replacement = await accept(
-      config().create({
-        headers: sessionHeaders,
-        body: {
-          id: f.connectionId,
-          displayName: "Replacement SSH host",
-          host: "replacement.example.com",
-          credential: inlineSshKey("deploy", "replacement-private-key"),
-        },
-      }),
-      [201],
-    );
-    expect(replacement.body.generation).toBe(1);
-    expect(replacement.body.createdAt).not.toBe(f.connectionCreatedAt);
-    expect(replacement.body.createdAt).toMatch(/\.\d{6}Z$/u);
-    await enableHostDefault(f, f.connectionId);
-    await expect(observations(f)).resolves.toStrictEqual([]);
-    await expect(observe(f, { observedAt: failedAt })).resolves.toStrictEqual({
-      outcome: "ignored",
-    });
-    const recoveredAt = nowDate().toISOString();
-    await expect(
-      observe(f, {
-        expectedCreatedAt: replacement.body.createdAt,
-        observedAt: recoveredAt,
-        failureReason: null,
-      }),
-    ).resolves.toStrictEqual({ outcome: "recorded" });
-    await expect(observe(f, { observedAt: failedAt })).resolves.toStrictEqual({
-      outcome: "ignored",
-    });
-    await expect(observations(f)).resolves.toStrictEqual([
-      {
-        connectionId: f.connectionId,
-        connectionCreatedAt: replacement.body.createdAt,
-        generation: 1,
-        observedAt: recoveredAt,
-        failureReason: null,
-      },
-    ]);
-  });
-
-  it.each(["deploy", "ubuntu"])(
-    "isolates credentials, trust and observations for a shared endpoint with sibling username %s",
-    async (username) => {
-      const f = await executionFixture();
-      const additional = await accept(
-        config().create({
-          headers: sessionHeaders,
-          body: {
-            id: randomUUID(),
-            displayName: "Independent login",
-            host: "SSH.example.com.",
-            credential: inlineSshKey(
-              username,
-              "sibling-private-key",
-              "sibling-passphrase",
-            ),
-          },
-        }),
-        [201],
       );
-      await enableHostDefault(f, additional.body.id);
-      const sibling = {
-        ...f,
-        connectionId: additional.body.id,
-        connectionCreatedAt: additional.body.createdAt,
-      };
-      const siblingCredential = await resolve(sibling);
-      expect(siblingCredential).toMatchObject({
-        outcome: "resolved",
-        host: "ssh.example.com",
-        port: 22,
-        username,
-        privateKey: "sibling-private-key",
-        passphrase: "sibling-passphrase",
-        generation: 1,
-        learnedHostKey: null,
-      });
-      await expect(resolve(f)).resolves.toMatchObject({
-        outcome: "resolved",
-        username: "deploy",
-        privateKey,
-        passphrase,
-      });
+    }
+    return created.body;
+  }
 
-      const observedAt = nowDate().toISOString();
-      await expect(observe(f, { observedAt })).resolves.toStrictEqual({
-        outcome: "recorded",
-      });
-      await expect(observe(sibling, { observedAt })).resolves.toStrictEqual({
-        outcome: "recorded",
-      });
-      await expect(observations(f)).resolves.toHaveLength(2);
-      await expect(pin(f)).resolves.toStrictEqual({
-        outcome: "pinned",
-        generation: 2,
-      });
-      await expect(resolve(sibling)).resolves.toStrictEqual(siblingCredential);
-      const siblingObservations = [
+  it(
+    "runner-ssh-001 (1/2) notifies every active owner Run and skips completed Runs on edit, rotation, reset and delete",
+    { timeout: TEST_WITH_TRIPLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      prepareRunMocks();
+      const tracker = createRunTracker();
+      const owner = bdd.user({ orgRole: "org:admin" });
+      const ownerIdentity = requireOrgOwner(owner);
+
+      const [runnerGroup, , host] = await Promise.all([
+        runs.configureRunnerGroup({ maxConcurrent: 4 }),
+        deliverOrganizationCreated(context, owner),
+        createSshHost(owner, {
+          displayName: "Primary Bastion",
+          host: "bastion.example.com",
+          username: "deploy",
+        }),
+      ]);
+
+      const [completedRun, activeRun1] = await launchChatRuns(
+        tracker,
+        owner,
+        runnerGroup,
+        ["Run that finishes before SSH edits", "First active SSH Run"],
+      );
+      await completeRunOk(tracker, completedRun);
+
+      const activeRun2 = await launchChatRun(
+        tracker,
+        owner,
+        runnerGroup,
+        "Second active SSH Run",
+      );
+
+      const expectedPublications = sortPublications([
         {
-          connectionId: sibling.connectionId,
-          connectionCreatedAt: sibling.connectionCreatedAt,
-          generation: 1,
-          observedAt,
-          failureReason: "authentication_failed",
+          channel: `user:${ownerIdentity.userId}`,
+          topic: "ssh:changed",
+          payload: { orgId: ownerIdentity.orgId },
         },
-      ];
-      await expect(observations(f)).resolves.toStrictEqual(siblingObservations);
+        {
+          channel: `runner-group:${runnerGroup}`,
+          topic: "ssh-authority-invalidated",
+          payload: { runId: activeRun1.runId, connectionId: host.id },
+        },
+        {
+          channel: `runner-group:${runnerGroup}`,
+          topic: "ssh-authority-invalidated",
+          payload: { runId: activeRun2.runId, connectionId: host.id },
+        },
+      ]);
 
-      await accept(
-        config().update({
-          headers: sessionHeaders,
-          params: { connectionId: f.connectionId },
+      const ownerHeaders = sessionHeadersFor(context, owner);
+      await flushWaitUntilForTest();
+
+      clearRealtimePublications(context);
+      const editedHost = await accept(
+        sshConnectionsApi.update({
+          headers: ownerHeaders,
+          params: { connectionId: host.id },
+          body: { expectedGeneration: 1, host: "bastion-v2.example.com" },
+        }),
+        [200],
+      );
+      expect(editedHost.body.generation).toBe(2);
+      await flushWaitUntilForTest();
+      expect(sortedRealtimePublications(context)).toStrictEqual(
+        expectedPublications,
+      );
+
+      clearRealtimePublications(context);
+      const rotated = await accept(
+        sshConnectionsApi.update({
+          headers: ownerHeaders,
+          params: { connectionId: host.id },
           body: {
             expectedGeneration: 2,
-            credential: inlineSshKey(
-              "rotated-login",
-              "rotated-private-key",
-              "rotated-passphrase",
-            ),
+            credential: inlineSshKey("deploy-rotated", `key-${randomUUID()}`),
           },
         }),
         [200],
       );
-      await expect(resolve(f)).resolves.toMatchObject({
-        outcome: "resolved",
-        username: "rotated-login",
-        privateKey: "rotated-private-key",
-        passphrase: "rotated-passphrase",
-        learnedHostKey: hostKey,
-        generation: 3,
-      });
-      await expect(resolve(sibling)).resolves.toStrictEqual(siblingCredential);
-      await expect(observations(f)).resolves.toStrictEqual(siblingObservations);
+      expect(rotated.body.generation).toBe(3);
+      await flushWaitUntilForTest();
+      expect(sortedRealtimePublications(context)).toStrictEqual(
+        expectedPublications,
+      );
 
-      await accept(
-        config().resetHostKey({
-          headers: sessionHeaders,
-          params: { connectionId: f.connectionId },
+      clearRealtimePublications(context);
+      const reset = await accept(
+        sshConnectionsApi.resetHostKey({
+          headers: ownerHeaders,
+          params: { connectionId: host.id },
           body: { expectedGeneration: 3 },
         }),
         [200],
       );
-      await expect(resolve(f)).resolves.toMatchObject({
-        outcome: "resolved",
-        learnedHostKey: null,
-        generation: 4,
-      });
-      await expect(resolve(sibling)).resolves.toStrictEqual(siblingCredential);
+      expect(reset.body.generation).toBe(4);
+      await flushWaitUntilForTest();
+      expect(sortedRealtimePublications(context)).toStrictEqual(
+        expectedPublications,
+      );
 
+      clearRealtimePublications(context);
       await accept(
-        config().delete({
-          headers: sessionHeaders,
-          params: { connectionId: f.connectionId },
-          body: {
-            expectedGeneration: (await reviewedConnection(f)).generation,
-          },
+        sshConnectionsApi.delete({
+          headers: ownerHeaders,
+          params: { connectionId: host.id },
+          body: { expectedGeneration: 4 },
         }),
         [204],
       );
-      await expect(resolve(f)).resolves.toStrictEqual({
-        outcome: "unavailable",
-      });
-      await expect(resolve(sibling)).resolves.toStrictEqual(siblingCredential);
-      await expect(observations(f)).resolves.toStrictEqual(siblingObservations);
-      await expect(list(f)).resolves.toMatchObject([
-        { id: additional.body.id },
-      ]);
+      await flushWaitUntilForTest();
+      expect(sortedRealtimePublications(context)).toStrictEqual(
+        expectedPublications,
+      );
+
+      const finalList = await accept(
+        sshConnectionsApi.list({ headers: ownerHeaders }),
+        [200],
+      );
+      expect(finalList.body.connections).toStrictEqual([]);
     },
   );
 
-  it("records bounded owner-only failures and recovery without changing configuration or invalidating credentials", async () => {
-    const f = await executionFixture();
-    const original = await list(f);
-    const resolved = await accept(
-      client().resolve({
-        params: { runId: f.runId },
-        headers: runnerHeaders,
-        body: {
-          connectionId: f.connectionId,
-          runnerIdentity: f.runnerIdentity,
-        },
-      }),
-      [200],
-    );
-    expect(resolved.headers.get("X-SSH-Connection-Created-At")).toBe(
-      f.connectionCreatedAt,
-    );
-    expect(f.connectionCreatedAt).toMatch(/\.\d{6}Z$/u);
-    const otherInstance = f.connectionCreatedAt.replace(
-      /(\d)Z$/u,
-      (_, digit: string) => {
-        return `${(Number(digit) + 1) % 10}Z`;
-      },
-    );
-    expect(new Date(otherInstance).getTime()).toBe(
-      new Date(f.connectionCreatedAt).getTime(),
-    );
-    await expect(
-      observe(f, { expectedCreatedAt: otherInstance }),
-    ).resolves.toStrictEqual({ outcome: "ignored" });
-    await expect(observations(f)).resolves.toStrictEqual([]);
-    const kms = useSecretKmsProbe();
-    context.mocks.ably.publish.mockClear();
-    const failedAt = new Date(now() - 1000).toISOString();
-    await expect(observe(f, { observedAt: failedAt })).resolves.toStrictEqual({
-      outcome: "recorded",
-    });
-    await expect(observations(f)).resolves.toStrictEqual([
-      {
-        connectionId: f.connectionId,
-        connectionCreatedAt: f.connectionCreatedAt,
-        generation: 1,
-        observedAt: failedAt,
-        failureReason: "authentication_failed",
-      },
-    ]);
-    await expect(list(f)).resolves.toStrictEqual(original);
-    expect(kms.decryptCalls).toBe(0);
-    expect(context.mocks.ably.publish.mock.calls).toStrictEqual([
-      ["ssh:changed", { orgId: f.orgId }],
-    ]);
-    const other = await executionFixture();
-    await expect(observations(other)).resolves.toStrictEqual([]);
-    const recoveredAt = nowDate().toISOString();
-    await expect(
-      observe(f, { observedAt: recoveredAt, failureReason: null }),
-    ).resolves.toStrictEqual({ outcome: "recorded" });
-    await expect(observations(f)).resolves.toStrictEqual([
-      {
-        connectionId: f.connectionId,
-        connectionCreatedAt: f.connectionCreatedAt,
-        generation: 1,
-        observedAt: recoveredAt,
-        failureReason: null,
-      },
-    ]);
-    await expect(observe(f, { observedAt: failedAt })).resolves.toStrictEqual({
-      outcome: "ignored",
-    });
-    await expect(
-      observe(f, { observedAt: recoveredAt }),
-    ).resolves.toStrictEqual({
-      outcome: "ignored",
-    });
-    await expect(
-      observe(f, {
-        observedAt: new Date(now() + 120_000).toISOString(),
-      }),
-    ).resolves.toStrictEqual({ outcome: "ignored" });
-    expect((await observations(f))[0]?.failureReason).toBeNull();
-    const healthyAt = new Date(now() + 1000).toISOString();
-    await expect(
-      observe(f, {
-        observedAt: healthyAt,
-        failureReason: null,
-      }),
-    ).resolves.toStrictEqual({ outcome: "recorded" });
-    expect((await observations(f))[0]).toMatchObject({
-      observedAt: healthyAt,
-      failureReason: null,
-    });
-    await expect(list(f)).resolves.toStrictEqual(original);
-  });
+  it(
+    "runner-ssh-001 (2/2) isolates SSH invalidation publications from another owner sharing the Runner group",
+    { timeout: TEST_WITH_DOUBLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      prepareRunMocks();
+      const tracker = createRunTracker();
+      const ownerA = bdd.user({ orgRole: "org:admin" });
+      const ownerB = bdd.user({ orgRole: "org:admin" });
+      const identityA = requireOrgOwner(ownerA);
 
-  it("fences configuration changes and uses the post-TOFU generation", async () => {
-    const f = await executionFixture();
-    await observe(f);
-    await expect(pin(f)).resolves.toStrictEqual({
-      outcome: "pinned",
-      generation: 2,
-    });
-    await expect(observations(f)).resolves.toStrictEqual([]);
-    await expect(observe(f)).resolves.toStrictEqual({ outcome: "ignored" });
-    await expect(observe(f, { expectedGeneration: 2 })).resolves.toStrictEqual({
-      outcome: "recorded",
-    });
-    expect((await observations(f))[0]?.generation).toBe(2);
-    await accept(
-      config().update({
-        headers: sessionHeaders,
-        params: { connectionId: f.connectionId },
-        body: {
-          expectedGeneration: 2,
-          credential: inlineSshKey("deploy", "replacement"),
-        },
-      }),
-      [200],
-    );
-    await expect(observations(f)).resolves.toStrictEqual([]);
-    await expect(observe(f, { expectedGeneration: 2 })).resolves.toStrictEqual({
-      outcome: "ignored",
-    });
-    await expect(observe(f, { expectedGeneration: 3 })).resolves.toStrictEqual({
-      outcome: "recorded",
-    });
-    await accept(
-      config().delete({
-        headers: sessionHeaders,
-        params: { connectionId: f.connectionId },
-        body: { expectedGeneration: (await reviewedConnection(f)).generation },
-      }),
-      [204],
-    );
-    await expect(observations(f)).resolves.toStrictEqual([]);
-    await expect(observe(f, { expectedGeneration: 3 })).resolves.toStrictEqual({
-      outcome: "unavailable",
-    });
-  });
+      const [runnerGroup, , hostA] = await Promise.all([
+        runs.configureRunnerGroup({ maxConcurrent: 4 }),
+        deliverOrganizationCreated(context, ownerA),
+        createSshHost(ownerA, {
+          displayName: "Owner A Host",
+          host: "owner-a.example.com",
+        }),
+      ]);
+      const [, hostB] = await Promise.all([
+        deliverOrganizationCreated(context, ownerB),
+        createSshHost(ownerB, {
+          displayName: "Owner B Host",
+          host: "owner-b.example.com",
+        }),
+      ]);
 
-  it("requires official authentication and current winning-runner, owner, Run and chat authority", async () => {
-    const f = await ordinaryFixture();
-    const body = {
-      connectionId: f.connectionId,
-      runnerIdentity: f.runnerIdentity,
-      expectedGeneration: 1,
-      expectedCreatedAt: f.connectionCreatedAt,
-      observedAt: nowDate().toISOString(),
-      failureReason: null,
-    };
-    for (const headers of [
-      sessionHeaders,
-      { authorization: `Bearer ${f.sandboxToken}` },
-      { authorization: "Bearer vm0_official_wrong" },
-    ]) {
-      expect(
-        (await client().observe({ params: { runId: f.runId }, headers, body }))
-          .status,
-      ).toBe(401);
-    }
-    await expect(
-      observe(f, {
-        runnerIdentity: { ...f.runnerIdentity, runnerId: randomUUID() },
-      }),
-    ).resolves.toStrictEqual({ outcome: "unavailable" });
-    await expect(
-      observe(f, {
-        runnerIdentity: { ...f.runnerIdentity, heartbeatGeneration: 1 },
-      }),
-    ).resolves.toStrictEqual({ outcome: "unavailable" });
-    const other = await ordinaryFixture();
-    await expect(
-      observe(f, { connectionId: other.connectionId }),
-    ).resolves.toStrictEqual({ outcome: "unavailable" });
-    const completed = await ordinaryFixture();
-    await ordinary.complete(completed);
-    await expect(observe(completed)).resolves.toStrictEqual({
-      outcome: "unavailable",
-    });
-    await setThreadHostOverride(f, false);
-    await expect(observe(f)).resolves.toStrictEqual({ outcome: "unavailable" });
-    await setThreadHostOverride(f, null);
-    await expect(observe(f)).resolves.toStrictEqual({ outcome: "recorded" });
-    authenticate(f);
-    expect(
-      (await config().observations({ headers: sessionHeaders })).status,
-    ).toBe(200);
-  });
-
-  it("rejects diagnostic text and command outcomes instead of storing them as connection failures", async () => {
-    const f = await executionFixture();
-    const raw = setupRawAppRequest({ context, routes: runnerSshRoutes });
-    const body = {
-      connectionId: f.connectionId,
-      runnerIdentity: f.runnerIdentity,
-      expectedGeneration: 1,
-      expectedCreatedAt: f.connectionCreatedAt,
-      observedAt: nowDate().toISOString(),
-      failureReason: null,
-    };
-    for (const extra of [
-      { error: privateKey },
-      { command: "id" },
-      { failureReason: "exec_rejected" },
-      { failureReason: "cancelled" },
-      { expectedGeneration: 0 },
-    ]) {
-      const response = await raw(
-        `/api/runners/runs/${f.runId}/ssh/observations`,
-        {
-          method: "POST",
-          headers: { ...runnerHeaders, "content-type": "application/json" },
-          body: JSON.stringify({ ...body, ...extra }),
-        },
+      const runA = await launchChatRun(
+        tracker,
+        ownerA,
+        runnerGroup,
+        "Owner A active Run",
       );
-      expect(response.status).toBe(400);
-    }
-    await expect(observations(f)).resolves.toStrictEqual([]);
-  });
-});
+      await launchChatRun(tracker, ownerB, runnerGroup, "Owner B active Run");
 
-describe("official Runner SSH authority", () => {
-  const executionFixture = useExecutionFixture();
-  const publicRuns = createPublicRemoteAccessRunApi(context);
-  afterEach(async () => {
-    await publicRuns.cleanup();
-    await selected.cleanup();
-  });
-
-  it("allows an ordinary owner and preserves a pinned connection", async () => {
-    const f = await executionFixture();
-    await expect(resolve(f)).resolves.toMatchObject({ outcome: "resolved" });
-    await expect(pin(f)).resolves.toMatchObject({ outcome: "pinned" });
-    expect((await list(f))[0]?.learnedHostKey).toStrictEqual(hostKey);
-    const kms = useSecretKmsProbe();
-    await expect(resolve(f)).resolves.toMatchObject({ outcome: "resolved" });
-    expect(kms.decryptCalls).toBe(2);
-  });
-
-  it("only delivers the exact current credential to the winning official process", async () => {
-    const f = await executionFixture();
-    const kms = useSecretKmsProbe();
-    await expect(resolve(f)).resolves.toStrictEqual({
-      outcome: "resolved",
-      host: "ssh.example.com",
-      port: 22,
-      username: "deploy",
-      generation: 1,
-      learnedHostKey: null,
-      privateKey,
-      passphrase,
-    });
-    expect(kms.decryptCalls).toBe(2);
-    const response = await client().resolve({
-      params: { runId: f.runId },
-      headers: runnerHeaders,
-      body: { connectionId: f.connectionId, runnerIdentity: f.runnerIdentity },
-    });
-    expect(response.headers.get("cache-control")).toBe("no-store");
-    expect(JSON.stringify(await list(f))).not.toContain("canary");
-  });
-
-  it("rejects unauthenticated, session, guest and local Runner credentials before decryption", async () => {
-    const f = await executionFixture();
-    const kms = useSecretKmsProbe();
-    for (const authorization of [
-      undefined,
-      "Bearer vm0_official_wrong",
-      "Bearer clerk-session",
-      `Bearer ${f.sandboxToken}`,
-    ]) {
-      const r = await client().resolve({
-        params: { runId: f.runId },
-        headers: { authorization },
-        body: {
-          connectionId: f.connectionId,
-          runnerIdentity: f.runnerIdentity,
+      const expectedPublications = sortPublications([
+        {
+          channel: `user:${identityA.userId}`,
+          topic: "ssh:changed",
+          payload: { orgId: identityA.orgId },
         },
-      });
-      expect(r.status).toBe(401);
-    }
-    const authApi = createAuthOrgBddApi(context);
-    const actor = authApi.user();
-    authApi.mockClerkOrg(actor);
-    const pat = await authApi.createCliToken(actor);
-    const rejected = await client().pin({
-      params: { runId: f.runId },
-      headers: { authorization: `Bearer ${pat.token}` },
-      body: {
-        connectionId: f.connectionId,
-        runnerIdentity: f.runnerIdentity,
-        expectedGeneration: 1,
-        observedHostKey: hostKey,
-      },
-    });
-    expect(rejected.status).toBe(403);
-    expect(kms.decryptCalls).toBe(0);
-    expect((await list(f))[0]?.learnedHostKey).toBeNull();
-  });
-
-  it("returns indistinguishable unavailable for wrong claims and hidden or missing connections", async () => {
-    const f = await selected.runtime();
-    const foreign = await selected.runtime();
-    const kms = useSecretKmsProbe();
-    for (const override of [
-      { connectionId: randomUUID() },
-      { connectionId: foreign.connectionId },
-      { runnerIdentity: { ...f.runnerIdentity, runnerId: randomUUID() } },
-      { runnerIdentity: { ...f.runnerIdentity, heartbeatGeneration: 8 } },
-    ]) {
-      await expect(resolve(f, override)).resolves.toStrictEqual({
-        outcome: "unavailable",
-      });
-    }
-    await expect(resolve({ ...f, runId: randomUUID() })).resolves.toStrictEqual(
-      {
-        outcome: "unavailable",
-      },
-    );
-    expect(kms.decryptCalls).toBe(0);
-    await expect(
-      pin({ ...f, connectionId: foreign.connectionId }),
-    ).resolves.toStrictEqual({ outcome: "unavailable" });
-    expect((await list(foreign))[0]?.learnedHostKey).toBeNull();
-    // Same user, different organization must not grant access.
-    const hiddenOwner = { ...f, orgId: `org_hidden_${randomUUID()}` };
-    authenticate(hiddenOwner);
-    const hidden = await accept(
-      config().create({
-        headers: sessionHeaders,
-        body: {
-          id: randomUUID(),
-          displayName: "Hidden host",
-          host: "hidden.example.com",
-          credential: inlineSshKey("deploy", privateKey),
+        {
+          channel: `runner-group:${runnerGroup}`,
+          topic: "ssh-authority-invalidated",
+          payload: { runId: runA.runId, connectionId: hostA.id },
         },
-      }),
-      [201],
-    );
-    await expect(
-      resolve(f, { connectionId: hidden.body.id }),
-    ).resolves.toStrictEqual({ outcome: "unavailable" });
-    await expect(
-      pin({ ...f, connectionId: hidden.body.id }),
-    ).resolves.toStrictEqual({ outcome: "unavailable" });
-    expect(kms.decryptCalls).toBe(0);
-  });
+      ]);
 
-  it("denies a pending Run and each real terminal state without decrypting credentials", async () => {
-    const f = await selected.runtime();
-    const pending = await selected.runs.start(f);
-    let kms = useSecretKmsProbe();
-    await expect(
-      resolve({ ...f, runId: pending.runId }),
-    ).resolves.toStrictEqual({ outcome: "unavailable" });
-    await expect(pin({ ...f, runId: pending.runId })).resolves.toStrictEqual({
-      outcome: "unavailable",
-    });
-    expect(kms.decryptCalls).toBe(0);
-    for (const status of ["completed", "cancelled", "failed"] as const) {
-      const run = await selected.runs.start(f);
-      const execution = await selected.runs.executionInput(run, runnerHeaders);
-      await selected.runs.finish(execution, status);
-      kms = useSecretKmsProbe();
-      await expect(resolve({ ...f, ...execution })).resolves.toStrictEqual({
-        outcome: "unavailable",
-      });
-      await expect(pin({ ...f, ...execution })).resolves.toStrictEqual({
-        outcome: "unavailable",
-      });
-      expect(kms.decryptCalls).toBe(0);
-    }
-  });
+      const headersA = sessionHeadersFor(context, ownerA);
+      await flushWaitUntilForTest();
 
-  it("checks current chat access and credential existence on every call", async () => {
-    const owner = {
-      orgId: `org_ssh_event_${randomUUID()}`,
-      userId: `user_ssh_event_${randomUUID()}`,
-    };
-    authenticate(owner);
-    const connection = await accept(
-      config().create({
-        headers: sessionHeaders,
-        body: {
-          id: randomUUID(),
-          displayName: "SSH fixture",
-          host: "ssh.example.com",
-          credential: inlineSshKey("deploy", privateKey, passphrase),
-        },
-      }),
-      [201],
-    );
-    await enableHostDefault(owner, connection.body.id);
-    const run = await publicRuns.start(owner, "automation-event");
-    const runtime = await publicRuns.executionInput(run, runnerHeaders);
-    const f = {
-      ...runtime,
-      connectionId: connection.body.id,
-      connectionCreatedAt: connection.body.createdAt,
-      credentialId: sshCredentialId(connection.body),
-    };
-    const kms = useSecretKmsProbe();
-    authenticate(f);
-    const remote = setupApp({ context, routes: chatRemoteAccessRoutes })(
-      chatRemoteAccessContract,
-    );
-    const params = { protocol: "ssh" as const, connectionId: f.connectionId };
-    await accept(
-      remote.updateHostDefault({
-        headers: sessionHeaders,
-        params,
-        body: { enabled: false },
-      }),
-      [200],
-    );
-    await expect(resolve(f)).resolves.toStrictEqual({ outcome: "unavailable" });
-    await expect(pin(f)).resolves.toStrictEqual({ outcome: "unavailable" });
-    await accept(
-      remote.updateHostDefault({
-        headers: sessionHeaders,
-        params,
-        body: { enabled: true },
-      }),
-      [200],
-    );
-    authenticate(f);
-    await accept(
-      config().delete({
-        headers: sessionHeaders,
-        params: { connectionId: f.connectionId },
-        body: { expectedGeneration: (await reviewedConnection(f)).generation },
-      }),
-      [204],
-    );
-    await expect(resolve(f)).resolves.toStrictEqual({ outcome: "unavailable" });
-    await expect(pin(f)).resolves.toStrictEqual({ outcome: "unavailable" });
-    expect(kms.decryptCalls).toBe(0);
-  });
-
-  it("reflects credential rotation and deletion without a cached admission", async () => {
-    const f = await executionFixture();
-    await expect(pin(f)).resolves.toStrictEqual({
-      outcome: "pinned",
-      generation: 2,
-    });
-    authenticate(f);
-    await accept(
-      config().update({
-        params: { connectionId: f.connectionId },
-        headers: sessionHeaders,
-        body: {
-          expectedGeneration: 2,
-          credential: inlineSshKey("new-user", "rotated-key"),
-        },
-      }),
-      [200],
-    );
-    await expect(resolve(f)).resolves.toMatchObject({
-      outcome: "resolved",
-      generation: 3,
-      username: "new-user",
-      privateKey: "rotated-key",
-      passphrase: null,
-      learnedHostKey: hostKey,
-    });
-    await expect(pin(f)).resolves.toStrictEqual({
-      outcome: "configuration_changed",
-    });
-    authenticate(f);
-    await accept(
-      config().delete({
-        params: { connectionId: f.connectionId },
-        headers: sessionHeaders,
-        body: { expectedGeneration: (await reviewedConnection(f)).generation },
-      }),
-      [204],
-    );
-    const kms = useSecretKmsProbe();
-    await expect(resolve(f)).resolves.toStrictEqual({ outcome: "unavailable" });
-    await expect(pin(f)).resolves.toStrictEqual({ outcome: "unavailable" });
-    expect(kms.decryptCalls).toBe(0);
-  });
-
-  it("pins exactly once for concurrent equal observations and only accepts expected plus one", async () => {
-    const f = await executionFixture();
-    const kms = useSecretKmsProbe();
-    context.mocks.ably.publish.mockClear();
-    const outcomes = await Promise.all([pin(f), pin(f), pin(f)]);
-    expect(context.mocks.ably.publish.mock.calls).toStrictEqual([
-      ["ssh:changed", { orgId: f.orgId }],
-    ]);
-    expect(
-      outcomes.filter((r) => {
-        return r.outcome === "pinned";
-      }),
-    ).toHaveLength(1);
-    expect(
-      outcomes.filter((r) => {
-        return r.outcome === "matched";
-      }),
-    ).toHaveLength(2);
-    await expect(pin(f, 2)).resolves.toStrictEqual({
-      outcome: "configuration_changed",
-    });
-    await expect(pin(f, 3)).resolves.toStrictEqual({
-      outcome: "configuration_changed",
-    });
-    expect(kms.decryptCalls).toBe(0);
-    expect((await list(f))[0]).toMatchObject({
-      generation: 2,
-      learnedHostKey: hostKey,
-    });
-  });
-
-  it("never overwrites trust when concurrent first observations disagree", async () => {
-    const f = await executionFixture();
-    const result = await Promise.all([pin(f), pin(f, 1, otherHostKey)]);
-    expect(
-      result
-        .map((r) => {
-          return r.outcome;
-        })
-        .sort(),
-    ).toStrictEqual(["host_key_mismatch", "pinned"]);
-    const winner = result[0]?.outcome === "pinned" ? hostKey : otherHostKey;
-    expect((await list(f))[0]).toMatchObject({
-      generation: 2,
-      learnedHostKey: winner,
-    });
-    const loser = winner === hostKey ? otherHostKey : hostKey;
-    await expect(pin(f, 999, loser)).resolves.toStrictEqual({
-      outcome: "host_key_mismatch",
-    });
-  });
-
-  it("rejects stale endpoint edits and resets instead of silently repinning", async () => {
-    const f = await executionFixture();
-    authenticate(f);
-    await accept(
-      config().update({
-        params: { connectionId: f.connectionId },
-        headers: sessionHeaders,
-        body: {
-          expectedGeneration: 1,
-          host: "new.example.com",
-        },
-      }),
-      [200],
-    );
-    await expect(pin(f, 1)).resolves.toStrictEqual({
-      outcome: "configuration_changed",
-    });
-    await expect(pin(f, 2)).resolves.toStrictEqual({
-      outcome: "pinned",
-      generation: 3,
-    });
-    authenticate(f);
-    await accept(
-      config().resetHostKey({
-        params: { connectionId: f.connectionId },
-        headers: sessionHeaders,
-        body: { expectedGeneration: 3 },
-      }),
-      [200],
-    );
-    await expect(pin(f, 2)).resolves.toStrictEqual({
-      outcome: "configuration_changed",
-    });
-    await expect(pin(f, 4)).resolves.toStrictEqual({
-      outcome: "pinned",
-      generation: 5,
-    });
-    await expect(pin(f, 2)).resolves.toStrictEqual({
-      outcome: "configuration_changed",
-    });
-    expect((await list(f))[0]).toMatchObject({
-      generation: 5,
-      learnedHostKey: hostKey,
-    });
-  });
-
-  it("rejects malformed or extra authority fields before sensitive work", async () => {
-    const f = await executionFixture();
-    const kms = useSecretKmsProbe();
-    const raw = setupRawAppRequest({ context, routes: runnerSshRoutes });
-    const base = {
-      connectionId: f.connectionId,
-      runnerIdentity: f.runnerIdentity,
-    };
-    for (const body of [
-      { ...base, host: "attacker.example" },
-      { ...base, command: "id" },
-      { ...base, userId: f.userId },
-      {
-        ...base,
-        runnerIdentity: { ...f.runnerIdentity, heartbeatGeneration: 0 },
-      },
-    ]) {
-      const result = await raw(`/api/runners/runs/${f.runId}/ssh/resolve`, {
-        method: "POST",
-        headers: { ...runnerHeaders, "content-type": "application/json" },
-        body: JSON.stringify(body),
-      });
-      expect(result.status).toBe(400);
-    }
-    const invalidPin = await raw(`/api/runners/runs/${f.runId}/ssh/pin`, {
-      method: "POST",
-      headers: { ...runnerHeaders, "content-type": "application/json" },
-      body: JSON.stringify({
-        ...base,
-        expectedGeneration: 1,
-        observedHostKey: { algorithm: "ssh-dss", fingerprint: "bad" },
-      }),
-    });
-    expect(invalidPin.status).toBe(400);
-    expect(kms.decryptCalls).toBe(0);
-    expect((await list(f))[0]?.learnedHostKey).toBeNull();
-  });
-
-  it("surfaces KMS failure and does not pin as a side effect of resolving", async () => {
-    const f = await executionFixture();
-    useSecretKmsProbe(undefined, () => {
-      return Promise.reject(new Error("KMS unavailable"));
-    });
-    const result = await client().resolve({
-      params: { runId: f.runId },
-      headers: runnerHeaders,
-      body: { connectionId: f.connectionId, runnerIdentity: f.runnerIdentity },
-    });
-    expect(result.status).toBe(500);
-    expect((await list(f))[0]?.learnedHostKey).toBeNull();
-  });
-
-  it("does not hold authorization locks across KMS or pretend to claw back an in-flight handoff", async () => {
-    const f = await executionFixture();
-    const entered = createDeferredPromise<void>(context.signal);
-    const release = createDeferredPromise<Uint8Array>(context.signal);
-    useSecretKmsProbe(undefined, (_request, call) => {
-      if (call === 1) {
-        entered.resolve(undefined);
-        return release.promise;
-      }
-      return undefined;
-    });
-    const pending = resolve(f);
-    await entered.promise;
-    const finishHandoff = async () => {
-      release.resolve(Buffer.from("0123456789abcdef0123456789abcdef"));
-      await pending;
-    };
-    await onRejection(
-      (async () => {
-        await setThreadHostOverride(f, false);
-        await expect(resolve(f)).resolves.toStrictEqual({
-          outcome: "unavailable",
-        });
-      })(),
-      finishHandoff,
-    );
-    await finishHandoff();
-    await expect(pending).resolves.toMatchObject({
-      outcome: "resolved",
-      privateKey,
-    });
-    await expect(pin(f)).resolves.toStrictEqual({ outcome: "unavailable" });
-  });
-});
-
-const mutationExecutionFixture = useExecutionFixture();
-
-test("concurrent winning-Runner pins publish exactly one trust generation", async () => {
-  const f = await mutationExecutionFixture();
-  const [before] = await list(f);
-  if (!before) {
-    throw new Error("Expected the selected SSH Host");
-  }
-  const results = await joinAll([pin(f), pin(f)]);
-  expect(
-    results
-      .map((result) => {
-        return result.outcome;
-      })
-      .sort(),
-  ).toStrictEqual(["matched", "pinned"]);
-  for (const result of results) {
-    expect(result).toStrictEqual({ outcome: result.outcome, generation: 2 });
-  }
-  const [after] = await list(f);
-  if (!after) {
-    throw new Error("Expected the pinned SSH Host");
-  }
-  expect(after).toStrictEqual({
-    ...before,
-    generation: 2,
-    learnedHostKey: hostKey,
-    updatedAt: after.updatedAt,
-  });
-});
-
-test("overlapping winning-Runner observations retain the newest clock without changing Host metadata", async () => {
-  const f = await mutationExecutionFixture();
-  const before = await list(f);
-  const newer = nowDate().toISOString();
-  const older = new Date(now() - 1000).toISOString();
-  const observe = async (
-    observedAt: string,
-    failureReason: "authentication_failed" | null,
-  ) => {
-    return (
+      clearRealtimePublications(context);
       await accept(
-        client().observe({
-          params: { runId: f.runId },
-          headers: runnerHeaders,
+        sshConnectionsApi.update({
+          headers: headersA,
+          params: { connectionId: hostA.id },
+          body: { expectedGeneration: 1, host: "owner-a-v2.example.com" },
+        }),
+        [200],
+      );
+      await flushWaitUntilForTest();
+      expect(sortedRealtimePublications(context)).toStrictEqual(
+        expectedPublications,
+      );
+
+      clearRealtimePublications(context);
+      await accept(
+        sshConnectionsApi.update({
+          headers: headersA,
+          params: { connectionId: hostA.id },
           body: {
-            connectionId: f.connectionId,
-            runnerIdentity: f.runnerIdentity,
-            expectedGeneration: 1,
-            expectedCreatedAt: f.connectionCreatedAt,
-            observedAt,
-            failureReason,
+            expectedGeneration: 2,
+            credential: inlineSshKey("deploy-next", `key-${randomUUID()}`),
           },
         }),
         [200],
-      )
-    ).body;
-  };
-  const [oldResult, newResult] = await joinAll([
-    observe(older, "authentication_failed"),
-    observe(newer, null),
-  ]);
-  expect(["recorded", "ignored"]).toContain(oldResult.outcome);
-  expect(newResult).toStrictEqual({ outcome: "recorded" });
-  authenticate(f);
-  const result = await accept(
-    config().observations({ headers: sessionHeaders }),
-    [200],
-  );
-  expect(result.body.observations).toStrictEqual([
-    {
-      connectionId: f.connectionId,
-      connectionCreatedAt: f.connectionCreatedAt,
-      generation: 1,
-      observedAt: newer,
-      failureReason: null,
-    },
-  ]);
-  await expect(list(f)).resolves.toStrictEqual(before);
-});
-
-test.each(["insert", "replace", "remove"] as const)(
-  "ssh override %s revocation preserves metadata and refuses the winning Runner",
-  async (operation) => {
-    const f = await mutationExecutionFixture();
-    if (operation !== "insert") {
-      authenticate(f);
-      const remote = setupApp({ context, routes: chatRemoteAccessRoutes })(
-        chatRemoteAccessContract,
       );
+      await flushWaitUntilForTest();
+      expect(sortedRealtimePublications(context)).toStrictEqual(
+        expectedPublications,
+      );
+
+      clearRealtimePublications(context);
       await accept(
-        remote.updateHostDefault({
-          headers: sessionHeaders,
-          params: { protocol: "ssh", connectionId: f.connectionId },
+        sshConnectionsApi.resetHostKey({
+          headers: headersA,
+          params: { connectionId: hostA.id },
+          body: { expectedGeneration: 3 },
+        }),
+        [200],
+      );
+      await flushWaitUntilForTest();
+      expect(sortedRealtimePublications(context)).toStrictEqual(
+        expectedPublications,
+      );
+
+      clearRealtimePublications(context);
+      await accept(
+        sshConnectionsApi.delete({
+          headers: headersA,
+          params: { connectionId: hostA.id },
+          body: { expectedGeneration: 4 },
+        }),
+        [204],
+      );
+      await flushWaitUntilForTest();
+      expect(sortedRealtimePublications(context)).toStrictEqual(
+        expectedPublications,
+      );
+
+      const listA = await accept(
+        sshConnectionsApi.list({ headers: headersA }),
+        [200],
+      );
+      expect(listA.body.connections).toStrictEqual([]);
+
+      const listB = await accept(
+        sshConnectionsApi.list({ headers: sessionHeadersFor(context, ownerB) }),
+        [200],
+      );
+      expect(listB.body.connections).toContainEqual(
+        expect.objectContaining({ id: hostB.id, host: "owner-b.example.com" }),
+      );
+    },
+  );
+
+  it(
+    "runner-ssh-017 (1/2) denies a pending Run and a completed Run without decrypting credentials",
+    { timeout: TEST_WITH_DOUBLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const kmsProbe = prepareRunMocks();
+      const tracker = createRunTracker();
+      const owner = bdd.user({ orgRole: "org:admin" });
+
+      const runnerIdentity = {
+        runnerId: randomUUID(),
+        heartbeatGeneration: 3,
+      };
+      const [runnerGroup, , host] = await Promise.all([
+        runs.configureRunnerGroup({ maxConcurrent: 4, runnerIdentity }),
+        deliverOrganizationCreated(context, owner),
+        createSshHost(owner, {
+          displayName: "Lifecycle Host",
+          host: "lifecycle.example.com",
+        }),
+        bdd.updatePersonalInstructions(
+          owner,
+          `Pending SSH hold ${randomUUID()}`,
+        ),
+      ]);
+      const runnerHeaders = officialRunnerHeaders();
+
+      const pendingHold = holdDownloadSigning(context);
+      const pendingClientEventId = randomUUID();
+      const pendingSent = await chats.requestSendEvent(
+        owner,
+        {
+          prompt: "Pending SSH Run",
+          clientEventId: pendingClientEventId,
+          model: null,
+        },
+        [201],
+      );
+      if (!("threadId" in pendingSent.body)) {
+        throw new Error("Expected pending chat send to return a threadId");
+      }
+      await pendingHold.waitForPending();
+      const pendingEvents = await chats.listThreadEvents(
+        owner,
+        pendingSent.body.threadId,
+      );
+      const pendingRunId = pendingEvents.events.find((event) => {
+        return event.revokesEventId === pendingClientEventId;
+      })?.runId;
+      if (!pendingRunId) {
+        throw new Error("Expected a committed pending Run id");
+      }
+      const pendingRunState = await runs.readRun(owner, pendingRunId);
+      expect(pendingRunState.status).toBe("pending");
+
+      const [pendingResolve, pendingPin] = await Promise.all([
+        accept(
+          runnerSshApi.resolve({
+            headers: runnerHeaders,
+            params: { runId: pendingRunId },
+            body: {
+              connectionId: host.id,
+              runnerIdentity,
+            },
+          }),
+          [200],
+        ),
+        accept(
+          runnerSshApi.pin({
+            headers: runnerHeaders,
+            params: { runId: pendingRunId },
+            body: {
+              connectionId: host.id,
+              runnerIdentity,
+              expectedGeneration: 1,
+              observedHostKey: OBSERVED_HOST_KEY,
+            },
+          }),
+          [200],
+        ),
+      ]);
+      expect(pendingResolve.body).toStrictEqual({ outcome: "unavailable" });
+      expect(pendingPin.body).toStrictEqual({ outcome: "unavailable" });
+
+      pendingHold.release();
+      await flushWaitUntilForTest();
+      const pendingDispatch = runs.dispatchedRun(pendingRunId);
+      tracker.track(
+        owner,
+        pendingRunId,
+        pendingDispatch.executionContext.sandboxToken,
+      );
+
+      const completedRun = await launchChatRun(
+        tracker,
+        owner,
+        runnerGroup,
+        "Completed SSH Run",
+      );
+      await completeRunOk(tracker, completedRun);
+
+      const [completedResolve, completedPin] = await Promise.all([
+        accept(
+          runnerSshApi.resolve({
+            headers: runnerHeaders,
+            params: { runId: completedRun.runId },
+            body: {
+              connectionId: host.id,
+              runnerIdentity: completedRun.runnerIdentity,
+            },
+          }),
+          [200],
+        ),
+        accept(
+          runnerSshApi.pin({
+            headers: runnerHeaders,
+            params: { runId: completedRun.runId },
+            body: {
+              connectionId: host.id,
+              runnerIdentity: completedRun.runnerIdentity,
+              expectedGeneration: 1,
+              observedHostKey: OBSERVED_HOST_KEY,
+            },
+          }),
+          [200],
+        ),
+      ]);
+      expect(completedResolve.body).toStrictEqual({ outcome: "unavailable" });
+      expect(completedPin.body).toStrictEqual({ outcome: "unavailable" });
+      expect(kmsProbe.decryptCalls).toBe(0);
+    },
+  );
+
+  it(
+    "runner-ssh-017 (2/2) denies a cancelled Run and a failed Run without decrypting credentials",
+    { timeout: TEST_WITH_DOUBLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const kmsProbe = prepareRunMocks();
+      const tracker = createRunTracker();
+      const owner = bdd.user({ orgRole: "org:admin" });
+
+      const [runnerGroup] = await Promise.all([
+        runs.configureRunnerGroup({ maxConcurrent: 4 }),
+        deliverOrganizationCreated(context, owner),
+      ]);
+
+      const host = await createSshHost(owner, {
+        displayName: "Terminal Host",
+        host: "terminal.example.com",
+      });
+      const runnerHeaders = officialRunnerHeaders();
+
+      const cancelledRun = await launchChatRun(
+        tracker,
+        owner,
+        runnerGroup,
+        "Run to cancel",
+      );
+      await runs.requestCancelRun(owner, cancelledRun.runId, [200]);
+      await flushWaitUntilForTest();
+      const cancelledState = await runs.readRun(owner, cancelledRun.runId);
+      expect(cancelledState.status).toBe("cancelled");
+
+      const [cancelledResolve, cancelledPin] = await Promise.all([
+        accept(
+          runnerSshApi.resolve({
+            headers: runnerHeaders,
+            params: { runId: cancelledRun.runId },
+            body: {
+              connectionId: host.id,
+              runnerIdentity: cancelledRun.runnerIdentity,
+            },
+          }),
+          [200],
+        ),
+        accept(
+          runnerSshApi.pin({
+            headers: runnerHeaders,
+            params: { runId: cancelledRun.runId },
+            body: {
+              connectionId: host.id,
+              runnerIdentity: cancelledRun.runnerIdentity,
+              expectedGeneration: 1,
+              observedHostKey: OBSERVED_HOST_KEY,
+            },
+          }),
+          [200],
+        ),
+      ]);
+      expect(cancelledResolve.body).toStrictEqual({ outcome: "unavailable" });
+      expect(cancelledPin.body).toStrictEqual({ outcome: "unavailable" });
+
+      await webhooks.requestAgentComplete(
+        {
+          runId: cancelledRun.runId,
+          exitCode: 1,
+          error: "Run cancelled",
+          failureReason: "execution_timeout",
+        },
+        { authorization: `Bearer ${cancelledRun.sandboxToken}` },
+        [200],
+      );
+      tracker.markDone(cancelledRun.runId);
+      await flushWaitUntilForTest();
+
+      const failedRun = await launchChatRun(
+        tracker,
+        owner,
+        runnerGroup,
+        "Run that fails",
+      );
+      await webhooks.requestAgentComplete(
+        {
+          runId: failedRun.runId,
+          exitCode: 1,
+          error: "Execution timed out",
+          failureReason: "execution_timeout",
+        },
+        { authorization: `Bearer ${failedRun.sandboxToken}` },
+        [200],
+      );
+      tracker.markDone(failedRun.runId);
+      await flushWaitUntilForTest();
+      const failedState = await runs.readRun(owner, failedRun.runId);
+      expect(failedState.status).toBe("failed");
+
+      const [failedResolve, failedPin] = await Promise.all([
+        accept(
+          runnerSshApi.resolve({
+            headers: runnerHeaders,
+            params: { runId: failedRun.runId },
+            body: {
+              connectionId: host.id,
+              runnerIdentity: failedRun.runnerIdentity,
+            },
+          }),
+          [200],
+        ),
+        accept(
+          runnerSshApi.pin({
+            headers: runnerHeaders,
+            params: { runId: failedRun.runId },
+            body: {
+              connectionId: host.id,
+              runnerIdentity: failedRun.runnerIdentity,
+              expectedGeneration: 1,
+              observedHostKey: OBSERVED_HOST_KEY,
+            },
+          }),
+          [200],
+        ),
+      ]);
+      expect(failedResolve.body).toStrictEqual({ outcome: "unavailable" });
+      expect(failedPin.body).toStrictEqual({ outcome: "unavailable" });
+      expect(kmsProbe.decryptCalls).toBe(0);
+    },
+  );
+
+  it(
+    "runner-ssh-011 requires official Runner auth and current winning-runner, owner, Run, chat and device authority for observations",
+    { timeout: TEST_WITH_DOUBLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      prepareRunMocks();
+      const tracker = createRunTracker();
+      const owner1 = bdd.user({ orgRole: "org:admin" });
+      const owner2 = bdd.user({ orgRole: "org:admin" });
+      const owner3 = bdd.user({ orgRole: "org:admin" });
+      const owner1Identity = requireOrgOwner(owner1);
+
+      const runnerIdentity = {
+        runnerId: randomUUID(),
+        heartbeatGeneration: 5,
+      };
+      const [runnerGroup, , host1] = await Promise.all([
+        runs.configureRunnerGroup({ maxConcurrent: 4, runnerIdentity }),
+        deliverOrganizationCreated(context, owner1),
+        createSshHost(owner1, {
+          displayName: "Observed Host",
+          host: "observed.example.com",
+        }),
+      ]);
+      const [, host2] = await Promise.all([
+        deliverOrganizationCreated(context, owner3),
+        createSshHost(owner2, {
+          displayName: "Foreign Host",
+          host: "foreign.example.com",
+        }),
+      ]);
+      const host3 = await createSshHost(owner3, {
+        displayName: "Completed Owner Host",
+        host: "completed-owner.example.com",
+      });
+
+      const activeRun = await launchChatRun(
+        tracker,
+        owner1,
+        runnerGroup,
+        "Active observation Run",
+      );
+      const completedRun = await launchChatRun(
+        tracker,
+        owner3,
+        runnerGroup,
+        "Completed observation Run",
+      );
+      await completeRunOk(tracker, completedRun);
+
+      const baseTime = now();
+      mockNow(baseTime - 2000);
+      const firstObservedAt = nowDate().toISOString();
+      const validObserveBody = {
+        connectionId: host1.id,
+        runnerIdentity: activeRun.runnerIdentity,
+        expectedGeneration: 1,
+        expectedCreatedAt: host1.createdAt,
+        observedAt: firstObservedAt,
+        failureReason: "authentication_failed" as const,
+      };
+
+      const owner1Headers = sessionHeadersFor(context, owner1);
+      const wrongSecretHeaders = {
+        authorization: `Bearer vm0_official_${"0".repeat(64)}`,
+      };
+      const [sessionRejected, sandboxRejected, wrongSecretRejected] =
+        await Promise.all([
+          accept(
+            runnerSshApi.observe({
+              headers: owner1Headers,
+              params: { runId: activeRun.runId },
+              body: validObserveBody,
+            }),
+            [401],
+          ),
+          accept(
+            runnerSshApi.observe({
+              headers: { authorization: `Bearer ${activeRun.sandboxToken}` },
+              params: { runId: activeRun.runId },
+              body: validObserveBody,
+            }),
+            [401],
+          ),
+          accept(
+            runnerSshApi.observe({
+              headers: wrongSecretHeaders,
+              params: { runId: activeRun.runId },
+              body: validObserveBody,
+            }),
+            [401],
+          ),
+        ]);
+      expect(sessionRejected.status).toBe(401);
+      expect(sandboxRejected.status).toBe(401);
+      expect(wrongSecretRejected.status).toBe(401);
+
+      const runnerHeaders = officialRunnerHeaders();
+      const [
+        wrongRunnerId,
+        olderGeneration,
+        foreignConnection,
+        completedRunObserve,
+      ] = await Promise.all([
+        accept(
+          runnerSshApi.observe({
+            headers: runnerHeaders,
+            params: { runId: activeRun.runId },
+            body: {
+              ...validObserveBody,
+              runnerIdentity: {
+                runnerId: randomUUID(),
+                heartbeatGeneration:
+                  activeRun.runnerIdentity.heartbeatGeneration,
+              },
+            },
+          }),
+          [200],
+        ),
+        accept(
+          runnerSshApi.observe({
+            headers: runnerHeaders,
+            params: { runId: activeRun.runId },
+            body: {
+              ...validObserveBody,
+              runnerIdentity: {
+                runnerId: activeRun.runnerIdentity.runnerId,
+                heartbeatGeneration:
+                  activeRun.runnerIdentity.heartbeatGeneration - 1,
+              },
+            },
+          }),
+          [200],
+        ),
+        accept(
+          runnerSshApi.observe({
+            headers: runnerHeaders,
+            params: { runId: activeRun.runId },
+            body: {
+              ...validObserveBody,
+              connectionId: host2.id,
+              expectedCreatedAt: host2.createdAt,
+            },
+          }),
+          [200],
+        ),
+        accept(
+          runnerSshApi.observe({
+            headers: runnerHeaders,
+            params: { runId: completedRun.runId },
+            body: {
+              connectionId: host3.id,
+              runnerIdentity: completedRun.runnerIdentity,
+              expectedGeneration: 1,
+              expectedCreatedAt: host3.createdAt,
+              observedAt: firstObservedAt,
+              failureReason: "authentication_failed",
+            },
+          }),
+          [200],
+        ),
+      ]);
+      expect(wrongRunnerId.body).toStrictEqual({ outcome: "unavailable" });
+      expect(olderGeneration.body).toStrictEqual({ outcome: "unavailable" });
+      expect(foreignConnection.body).toStrictEqual({ outcome: "unavailable" });
+      expect(completedRunObserve.body).toStrictEqual({
+        outcome: "unavailable",
+      });
+
+      await accept(
+        chatRemoteAccessApi.setThreadOverride({
+          headers: sessionHeadersFor(context, owner1),
+          params: {
+            threadId: activeRun.threadId,
+            protocol: "ssh",
+            connectionId: host1.id,
+          },
           body: { enabled: false },
         }),
         [200],
       );
-      await setThreadHostOverride(f, true);
-    }
-    const before = await list(f);
-    await setThreadHostOverride(f, operation === "remove" ? null : false);
-    const kms = useSecretKmsProbe();
-    await expect(resolve(f)).resolves.toStrictEqual({ outcome: "unavailable" });
-    await expect(pin(f)).resolves.toStrictEqual({ outcome: "unavailable" });
-    const observed = await accept(
-      client().observe({
-        params: { runId: f.runId },
-        headers: runnerHeaders,
-        body: {
-          connectionId: f.connectionId,
-          runnerIdentity: f.runnerIdentity,
-          expectedGeneration: 1,
-          expectedCreatedAt: f.connectionCreatedAt,
-          observedAt: nowDate().toISOString(),
+      const disabledOverrideObserve = await accept(
+        runnerSshApi.observe({
+          headers: runnerHeaders,
+          params: { runId: activeRun.runId },
+          body: validObserveBody,
+        }),
+        [200],
+      );
+      expect(disabledOverrideObserve.body).toStrictEqual({
+        outcome: "unavailable",
+      });
+
+      await accept(
+        chatRemoteAccessApi.clearThreadOverride({
+          headers: sessionHeadersFor(context, owner1),
+          params: {
+            threadId: activeRun.threadId,
+            protocol: "ssh",
+            connectionId: host1.id,
+          },
+        }),
+        [200],
+      );
+      const recordedObserve = await accept(
+        runnerSshApi.observe({
+          headers: runnerHeaders,
+          params: { runId: activeRun.runId },
+          body: validObserveBody,
+        }),
+        [200],
+      );
+      expect(recordedObserve.body).toStrictEqual({ outcome: "recorded" });
+
+      const ownerObservations = await accept(
+        sshConnectionsApi.observations({
+          headers: sessionHeadersFor(context, owner1),
+        }),
+        [200],
+      );
+      expect(ownerObservations.body.observations).toStrictEqual([
+        expect.objectContaining({
+          connectionId: host1.id,
+          generation: 1,
           failureReason: "authentication_failed",
-        },
-      }),
-      [200],
-    );
-    expect(observed.body).toStrictEqual({ outcome: "unavailable" });
-    expect(kms.decryptCalls).toBe(0);
-    await expect(list(f)).resolves.toStrictEqual(before);
-  },
-);
+        }),
+      ]);
+
+      // Verify #50892 live remote device policy on observation admission.
+      await updateFeatureSwitchesForUser(context, owner1Identity, {
+        [FeatureSwitchKey.RemoteDevices]: true,
+      });
+      const directory = await accept(
+        remoteDevicesApi.list({ headers: sessionHeadersFor(context, owner1) }),
+        [200],
+      );
+      const device = directory.body.devices.find((candidate) => {
+        return candidate.channels.some((channel) => {
+          return channel.kind === "ssh" && channel.id === host1.id;
+        });
+      });
+      if (!device) {
+        throw new Error("Expected companion Remote Device for SSH host");
+      }
+
+      mockNow(baseTime);
+      const recoveryObservedAt = nowDate().toISOString();
+      const recoveryBody = {
+        ...validObserveBody,
+        observedAt: recoveryObservedAt,
+        failureReason: null,
+      };
+      const [missingPolicyObserve, deniedDeviceObserve] = await Promise.all([
+        accept(
+          runnerSshApi.observe({
+            headers: runnerHeaders,
+            params: { runId: activeRun.runId },
+            body: recoveryBody,
+          }),
+          [200],
+        ),
+        accept(
+          runnerSshApi.observe({
+            headers: runnerHeaders,
+            extraHeaders: POLICY_HEADER,
+            params: { runId: activeRun.runId },
+            body: recoveryBody,
+          }),
+          [200],
+        ),
+      ]);
+      expect(missingPolicyObserve.body).toStrictEqual({
+        outcome: "unavailable",
+      });
+      expect(deniedDeviceObserve.body).toStrictEqual({
+        outcome: "unavailable",
+      });
+
+      await accept(
+        remoteDevicesApi.setAccess({
+          headers: sessionHeadersFor(context, owner1),
+          params: { deviceId: device.id },
+          body: { mode: "always" },
+        }),
+        [200],
+      );
+      const allowedDeviceObserve = await accept(
+        runnerSshApi.observe({
+          headers: runnerHeaders,
+          extraHeaders: POLICY_HEADER,
+          params: { runId: activeRun.runId },
+          body: recoveryBody,
+        }),
+        [200],
+      );
+      expect(allowedDeviceObserve.body).toStrictEqual({ outcome: "recorded" });
+      clearMockNow();
+    },
+  );
+
+  it(
+    "runner-ssh-016 returns indistinguishable unavailable for wrong claims and foreign or hidden-org connections",
+    { timeout: TEST_WITH_DOUBLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const kmsProbe = prepareRunMocks();
+      const tracker = createRunTracker();
+      const owner = bdd.user({ orgRole: "org:admin" });
+      const foreignOwner = bdd.user({ orgRole: "org:admin" });
+      const sameUserOtherOrg = bdd.user({
+        userId: owner.userId,
+        orgRole: "org:admin",
+      });
+
+      const runnerIdentity = {
+        runnerId: randomUUID(),
+        heartbeatGeneration: 2,
+      };
+      const [runnerGroup, , ownedHost] = await Promise.all([
+        runs.configureRunnerGroup({ maxConcurrent: 4, runnerIdentity }),
+        deliverOrganizationCreated(context, owner),
+        createSshHost(owner, {
+          displayName: "Owned Host",
+          host: "owned.example.com",
+        }),
+      ]);
+      const [, foreignHost] = await Promise.all([
+        deliverOrganizationCreated(context, foreignOwner),
+        createSshHost(foreignOwner, {
+          displayName: "Foreign Host",
+          host: "foreign.example.com",
+        }),
+      ]);
+      const hiddenHost = await createSshHost(sameUserOtherOrg, {
+        displayName: "Other Org Host",
+        host: "other-org.example.com",
+      });
+
+      const ownerRun = await launchChatRun(
+        tracker,
+        owner,
+        runnerGroup,
+        "Owner active SSH Run",
+      );
+      await launchChatRun(
+        tracker,
+        foreignOwner,
+        runnerGroup,
+        "Foreign active SSH Run",
+      );
+
+      const runnerHeaders = officialRunnerHeaders();
+      const results = await Promise.all([
+        accept(
+          runnerSshApi.resolve({
+            headers: runnerHeaders,
+            params: { runId: ownerRun.runId },
+            body: {
+              connectionId: randomUUID(),
+              runnerIdentity: ownerRun.runnerIdentity,
+            },
+          }),
+          [200],
+        ),
+        accept(
+          runnerSshApi.resolve({
+            headers: runnerHeaders,
+            params: { runId: ownerRun.runId },
+            body: {
+              connectionId: foreignHost.id,
+              runnerIdentity: ownerRun.runnerIdentity,
+            },
+          }),
+          [200],
+        ),
+        accept(
+          runnerSshApi.resolve({
+            headers: runnerHeaders,
+            params: { runId: ownerRun.runId },
+            body: {
+              connectionId: ownedHost.id,
+              runnerIdentity: {
+                runnerId: randomUUID(),
+                heartbeatGeneration:
+                  ownerRun.runnerIdentity.heartbeatGeneration,
+              },
+            },
+          }),
+          [200],
+        ),
+        accept(
+          runnerSshApi.resolve({
+            headers: runnerHeaders,
+            params: { runId: ownerRun.runId },
+            body: {
+              connectionId: ownedHost.id,
+              runnerIdentity: {
+                runnerId: ownerRun.runnerIdentity.runnerId,
+                heartbeatGeneration: 8,
+              },
+            },
+          }),
+          [200],
+        ),
+        accept(
+          runnerSshApi.resolve({
+            headers: runnerHeaders,
+            params: { runId: randomUUID() },
+            body: {
+              connectionId: ownedHost.id,
+              runnerIdentity: ownerRun.runnerIdentity,
+            },
+          }),
+          [200],
+        ),
+        accept(
+          runnerSshApi.resolve({
+            headers: runnerHeaders,
+            params: { runId: ownerRun.runId },
+            body: {
+              connectionId: hiddenHost.id,
+              runnerIdentity: ownerRun.runnerIdentity,
+            },
+          }),
+          [200],
+        ),
+        accept(
+          runnerSshApi.pin({
+            headers: runnerHeaders,
+            params: { runId: ownerRun.runId },
+            body: {
+              connectionId: foreignHost.id,
+              runnerIdentity: ownerRun.runnerIdentity,
+              expectedGeneration: 1,
+              observedHostKey: OBSERVED_HOST_KEY,
+            },
+          }),
+          [200],
+        ),
+        accept(
+          runnerSshApi.pin({
+            headers: runnerHeaders,
+            params: { runId: ownerRun.runId },
+            body: {
+              connectionId: hiddenHost.id,
+              runnerIdentity: ownerRun.runnerIdentity,
+              expectedGeneration: 1,
+              observedHostKey: OBSERVED_HOST_KEY,
+            },
+          }),
+          [200],
+        ),
+      ]);
+
+      for (const response of results) {
+        expect(response.body).toStrictEqual({ outcome: "unavailable" });
+      }
+      expect(kmsProbe.decryptCalls).toBe(0);
+
+      const foreignList = await accept(
+        sshConnectionsApi.list({
+          headers: sessionHeadersFor(context, foreignOwner),
+        }),
+        [200],
+      );
+      expect(foreignList.body.connections).toContainEqual(
+        expect.objectContaining({
+          id: foreignHost.id,
+          learnedHostKey: null,
+        }),
+      );
+    },
+  );
+
+  it(
+    "runner-ssh-018 checks current chat access, deletion and device policy on every event-automation Runner call",
+    { timeout: TEST_WITH_DOUBLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const kmsProbe = prepareRunMocks();
+      const tracker = createRunTracker();
+      const owner = bdd.user({ orgRole: "org:admin" });
+      const ownerIdentity = requireOrgOwner(owner);
+
+      const [runnerGroup] = await Promise.all([
+        runs.configureRunnerGroup({ maxConcurrent: 4 }),
+        runs.grantProEntitlement(owner, { tier: "team" }),
+      ]);
+
+      const [host, workflowId] = await Promise.all([
+        createSshHost(owner, {
+          displayName: "Automation Target",
+          host: "automation.example.com",
+        }),
+        workflows.createWorkflow(owner, {
+          name: `runner-ssh-event-${randomUUID().slice(0, 8)}`,
+          visibility: "private",
+          instruction: "Use authorized SSH hosts.",
+        }),
+      ]);
+      const ownerHeaders = sessionHeadersFor(context, owner);
+      const automation = await accept(
+        workflowAutomationsApi.create({
+          headers: ownerHeaders,
+          params: { workflowId },
+          body: {
+            kind: "event",
+            eventType: "webhook-received",
+            enabled: true,
+          },
+        }),
+        [201],
+      );
+      const started = await accept(
+        workflowAutomationsApi.run({
+          headers: ownerHeaders,
+          params: { id: automation.body.id },
+        }),
+        [201],
+      );
+      expect(started.body.chatThreadId).toStrictEqual(expect.any(String));
+      await flushWaitUntilForTest();
+
+      const dispatch = runs.receivedDispatches(runnerGroup).at(-1);
+      if (!dispatch) {
+        throw new Error("Expected a dispatched event-automation Run");
+      }
+      const runId = dispatch.executionContext.runId;
+      const runnerIdentity = {
+        runnerId: dispatch.runnerId,
+        heartbeatGeneration: dispatch.heartbeatGeneration,
+      };
+      tracker.track(owner, runId, dispatch.executionContext.sandboxToken);
+
+      const logs = await accept(
+        logsApi.list({
+          headers: sessionHeadersFor(context, owner),
+          query: { limit: 50 },
+        }),
+        [200],
+      );
+      expect(logs.body.data).toContainEqual(
+        expect.objectContaining({
+          id: runId,
+          triggerSource: "automation-event",
+        }),
+      );
+
+      await accept(
+        chatRemoteAccessApi.updateHostDefault({
+          headers: sessionHeadersFor(context, owner),
+          params: { protocol: "ssh", connectionId: host.id },
+          body: { enabled: false },
+        }),
+        [200],
+      );
+
+      const runnerHeaders = officialRunnerHeaders();
+      const [disabledResolve, disabledPin] = await Promise.all([
+        accept(
+          runnerSshApi.resolve({
+            headers: runnerHeaders,
+            params: { runId },
+            body: { connectionId: host.id, runnerIdentity },
+          }),
+          [200],
+        ),
+        accept(
+          runnerSshApi.pin({
+            headers: runnerHeaders,
+            params: { runId },
+            body: {
+              connectionId: host.id,
+              runnerIdentity,
+              expectedGeneration: 1,
+              observedHostKey: OBSERVED_HOST_KEY,
+            },
+          }),
+          [200],
+        ),
+      ]);
+      expect(disabledResolve.body).toStrictEqual({ outcome: "unavailable" });
+      expect(disabledPin.body).toStrictEqual({ outcome: "unavailable" });
+
+      await accept(
+        chatRemoteAccessApi.updateHostDefault({
+          headers: sessionHeadersFor(context, owner),
+          params: { protocol: "ssh", connectionId: host.id },
+          body: { enabled: true },
+        }),
+        [200],
+      );
+      await accept(
+        sshConnectionsApi.delete({
+          headers: sessionHeadersFor(context, owner),
+          params: { connectionId: host.id },
+          body: { expectedGeneration: 1 },
+        }),
+        [204],
+      );
+
+      const [deletedResolve, deletedPin] = await Promise.all([
+        accept(
+          runnerSshApi.resolve({
+            headers: runnerHeaders,
+            params: { runId },
+            body: { connectionId: host.id, runnerIdentity },
+          }),
+          [200],
+        ),
+        accept(
+          runnerSshApi.pin({
+            headers: runnerHeaders,
+            params: { runId },
+            body: {
+              connectionId: host.id,
+              runnerIdentity,
+              expectedGeneration: 1,
+              observedHostKey: OBSERVED_HOST_KEY,
+            },
+          }),
+          [200],
+        ),
+      ]);
+      expect(deletedResolve.body).toStrictEqual({ outcome: "unavailable" });
+      expect(deletedPin.body).toStrictEqual({ outcome: "unavailable" });
+
+      // Verify #50892 live device denial on the same event-automation Run with zero decryption.
+      const deviceHost = await createSshHost(owner, {
+        displayName: "Device-Gated Automation Host",
+        host: "device-gated.example.com",
+        enableDefault: true,
+      });
+      await updateFeatureSwitchesForUser(context, ownerIdentity, {
+        [FeatureSwitchKey.RemoteDevices]: true,
+      });
+      const [deviceDeniedResolve, deviceDeniedPin] = await Promise.all([
+        accept(
+          runnerSshApi.resolve({
+            headers: runnerHeaders,
+            extraHeaders: POLICY_HEADER,
+            params: { runId },
+            body: { connectionId: deviceHost.id, runnerIdentity },
+          }),
+          [200],
+        ),
+        accept(
+          runnerSshApi.pin({
+            headers: runnerHeaders,
+            extraHeaders: POLICY_HEADER,
+            params: { runId },
+            body: {
+              connectionId: deviceHost.id,
+              runnerIdentity,
+              expectedGeneration: 1,
+              observedHostKey: OBSERVED_HOST_KEY,
+            },
+          }),
+          [200],
+        ),
+      ]);
+      expect(deviceDeniedResolve.body).toStrictEqual({
+        outcome: "unavailable",
+      });
+      expect(deviceDeniedPin.body).toStrictEqual({ outcome: "unavailable" });
+      expect(kmsProbe.decryptCalls).toBe(0);
+    },
+  );
+
+  it(
+    "runner-ssh-004 enforces current per-host defaults, thread overrides and live remote device policy for a dispatched chat Run",
+    { timeout: TEST_WITH_SINGLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      prepareRunMocks();
+      const tracker = createRunTracker();
+      const owner = bdd.user({ orgRole: "org:admin" });
+      const ownerIdentity = requireOrgOwner(owner);
+
+      const privateKey = `key-${randomUUID()}`;
+      const [runnerGroup, , host] = await Promise.all([
+        runs.configureRunnerGroup({ maxConcurrent: 4 }),
+        deliverOrganizationCreated(context, owner),
+        createSshHost(owner, {
+          displayName: "Toggled Host",
+          host: "toggled.example.com",
+          username: "deploy",
+          privateKey,
+          enableDefault: false,
+        }),
+      ]);
+
+      const activeRun = await launchChatRun(
+        tracker,
+        owner,
+        runnerGroup,
+        "Run toggling SSH defaults and overrides",
+      );
+      const runnerHeaders = officialRunnerHeaders();
+
+      const beforeDefaultOn = await accept(
+        runnerSshApi.resolve({
+          headers: runnerHeaders,
+          params: { runId: activeRun.runId },
+          body: {
+            connectionId: host.id,
+            runnerIdentity: activeRun.runnerIdentity,
+          },
+        }),
+        [200],
+      );
+      expect(beforeDefaultOn.body).toStrictEqual({ outcome: "unavailable" });
+
+      await accept(
+        chatRemoteAccessApi.updateHostDefault({
+          headers: sessionHeadersFor(context, owner),
+          params: { protocol: "ssh", connectionId: host.id },
+          body: { enabled: true },
+        }),
+        [200],
+      );
+      const withDefaultOn = await accept(
+        runnerSshApi.resolve({
+          headers: runnerHeaders,
+          params: { runId: activeRun.runId },
+          body: {
+            connectionId: host.id,
+            runnerIdentity: activeRun.runnerIdentity,
+          },
+        }),
+        [200],
+      );
+      expect(withDefaultOn.body).toStrictEqual({
+        outcome: "resolved",
+        host: "toggled.example.com",
+        port: 22,
+        username: "deploy",
+        generation: 1,
+        learnedHostKey: null,
+        privateKey,
+        passphrase: null,
+      });
+
+      await flushWaitUntilForTest();
+      clearRealtimePublications(context);
+      await accept(
+        chatRemoteAccessApi.setThreadOverride({
+          headers: sessionHeadersFor(context, owner),
+          params: {
+            threadId: activeRun.threadId,
+            protocol: "ssh",
+            connectionId: host.id,
+          },
+          body: { enabled: false },
+        }),
+        [200],
+      );
+      await flushWaitUntilForTest();
+      expect(sortedRealtimePublications(context)).toStrictEqual(
+        sortPublications([
+          {
+            channel: `user:${ownerIdentity.userId}`,
+            topic: "ssh:changed",
+            payload: { orgId: ownerIdentity.orgId },
+          },
+          {
+            channel: `runner-group:${runnerGroup}`,
+            topic: "ssh-authority-invalidated",
+            payload: { runId: activeRun.runId, connectionId: host.id },
+          },
+        ]),
+      );
+
+      const [overrideDisabledResolve, overrideDisabledPin] = await Promise.all([
+        accept(
+          runnerSshApi.resolve({
+            headers: runnerHeaders,
+            params: { runId: activeRun.runId },
+            body: {
+              connectionId: host.id,
+              runnerIdentity: activeRun.runnerIdentity,
+            },
+          }),
+          [200],
+        ),
+        accept(
+          runnerSshApi.pin({
+            headers: runnerHeaders,
+            params: { runId: activeRun.runId },
+            body: {
+              connectionId: host.id,
+              runnerIdentity: activeRun.runnerIdentity,
+              expectedGeneration: 1,
+              observedHostKey: OBSERVED_HOST_KEY,
+            },
+          }),
+          [200],
+        ),
+      ]);
+      expect(overrideDisabledResolve.body).toStrictEqual({
+        outcome: "unavailable",
+      });
+      expect(overrideDisabledPin.body).toStrictEqual({
+        outcome: "unavailable",
+      });
+
+      await accept(
+        chatRemoteAccessApi.updateHostDefault({
+          headers: sessionHeadersFor(context, owner),
+          params: { protocol: "ssh", connectionId: host.id },
+          body: { enabled: false },
+        }),
+        [200],
+      );
+      await accept(
+        chatRemoteAccessApi.setThreadOverride({
+          headers: sessionHeadersFor(context, owner),
+          params: {
+            threadId: activeRun.threadId,
+            protocol: "ssh",
+            connectionId: host.id,
+          },
+          body: { enabled: true },
+        }),
+        [200],
+      );
+      const withOverrideOn = await accept(
+        runnerSshApi.resolve({
+          headers: runnerHeaders,
+          params: { runId: activeRun.runId },
+          body: {
+            connectionId: host.id,
+            runnerIdentity: activeRun.runnerIdentity,
+          },
+        }),
+        [200],
+      );
+      expect(withOverrideOn.body).toMatchObject({
+        outcome: "resolved",
+        host: "toggled.example.com",
+        username: "deploy",
+      });
+
+      await accept(
+        chatRemoteAccessApi.clearThreadOverride({
+          headers: sessionHeadersFor(context, owner),
+          params: {
+            threadId: activeRun.threadId,
+            protocol: "ssh",
+            connectionId: host.id,
+          },
+        }),
+        [200],
+      );
+      const afterClearOverride = await accept(
+        runnerSshApi.resolve({
+          headers: runnerHeaders,
+          params: { runId: activeRun.runId },
+          body: {
+            connectionId: host.id,
+            runnerIdentity: activeRun.runnerIdentity,
+          },
+        }),
+        [200],
+      );
+      expect(afterClearOverride.body).toStrictEqual({ outcome: "unavailable" });
+
+      // Opt into #50892 live remote device policy and verify inventory + Runner enforcement.
+      await updateFeatureSwitchesForUser(context, ownerIdentity, {
+        [FeatureSwitchKey.RemoteDevices]: true,
+      });
+      await accept(
+        chatRemoteAccessApi.updateHostDefault({
+          headers: sessionHeadersFor(context, owner),
+          params: { protocol: "ssh", connectionId: host.id },
+          body: { enabled: true },
+        }),
+        [404],
+      );
+
+      const directory = await accept(
+        remoteDevicesApi.list({ headers: sessionHeadersFor(context, owner) }),
+        [200],
+      );
+      const device = directory.body.devices.find((candidate) => {
+        return candidate.channels.some((channel) => {
+          return channel.kind === "ssh" && channel.id === host.id;
+        });
+      });
+      if (!device) {
+        throw new Error("Expected companion Remote Device for SSH host");
+      }
+
+      context.mocks.clerk.authenticateRequest.mockResolvedValue({
+        isAuthenticated: false,
+      });
+      const runHeaders = { authorization: `Bearer ${activeRun.agentToken}` };
+      const [deniedInventory, deniedPolicyResolve] = await Promise.all([
+        accept(sshAccessApi.list({ headers: runHeaders }), [200]),
+        accept(
+          runnerSshApi.resolve({
+            headers: runnerHeaders,
+            extraHeaders: POLICY_HEADER,
+            params: { runId: activeRun.runId },
+            body: {
+              connectionId: host.id,
+              runnerIdentity: activeRun.runnerIdentity,
+            },
+          }),
+          [200],
+        ),
+      ]);
+      expect(deniedInventory.body.hosts).toStrictEqual([]);
+      expect(deniedPolicyResolve.body).toStrictEqual({
+        outcome: "unavailable",
+      });
+
+      await accept(
+        remoteDevicesApi.approve({
+          headers: sessionHeadersFor(context, owner),
+          params: { threadId: activeRun.threadId },
+          body: { deviceId: device.id },
+        }),
+        [200],
+      );
+      context.mocks.clerk.authenticateRequest.mockResolvedValue({
+        isAuthenticated: false,
+      });
+      const [allowedInventory, legacyRunnerResolve, policyRunnerResolve] =
+        await Promise.all([
+          accept(sshAccessApi.list({ headers: runHeaders }), [200]),
+          accept(
+            runnerSshApi.resolve({
+              headers: runnerHeaders,
+              params: { runId: activeRun.runId },
+              body: {
+                connectionId: host.id,
+                runnerIdentity: activeRun.runnerIdentity,
+              },
+            }),
+            [200],
+          ),
+          accept(
+            runnerSshApi.resolve({
+              headers: runnerHeaders,
+              extraHeaders: POLICY_HEADER,
+              params: { runId: activeRun.runId },
+              body: {
+                connectionId: host.id,
+                runnerIdentity: activeRun.runnerIdentity,
+              },
+            }),
+            [200],
+          ),
+        ]);
+      expect(allowedInventory.body.hosts).toContainEqual(
+        expect.objectContaining({ id: host.id, host: "toggled.example.com" }),
+      );
+      expect(legacyRunnerResolve.body).toStrictEqual({
+        outcome: "unavailable",
+      });
+      expect(
+        policyRunnerResolve.headers.get("x-okou-remote-device-policy"),
+      ).toBe("1");
+      expect(policyRunnerResolve.body).toMatchObject({
+        outcome: "resolved",
+        host: "toggled.example.com",
+        username: "deploy",
+      });
+
+      await accept(
+        remoteDevicesApi.setAccess({
+          headers: sessionHeadersFor(context, owner),
+          params: { deviceId: device.id },
+          body: { mode: "denied" },
+        }),
+        [200],
+      );
+      const [revokedResolve, revokedPin] = await Promise.all([
+        accept(
+          runnerSshApi.resolve({
+            headers: runnerHeaders,
+            extraHeaders: POLICY_HEADER,
+            params: { runId: activeRun.runId },
+            body: {
+              connectionId: host.id,
+              runnerIdentity: activeRun.runnerIdentity,
+            },
+          }),
+          [200],
+        ),
+        accept(
+          runnerSshApi.pin({
+            headers: runnerHeaders,
+            extraHeaders: POLICY_HEADER,
+            params: { runId: activeRun.runId },
+            body: {
+              connectionId: host.id,
+              runnerIdentity: activeRun.runnerIdentity,
+              expectedGeneration: 1,
+              observedHostKey: OBSERVED_HOST_KEY,
+            },
+          }),
+          [200],
+        ),
+      ]);
+      expect(revokedResolve.body).toStrictEqual({ outcome: "unavailable" });
+      expect(revokedPin.body).toStrictEqual({ outcome: "unavailable" });
+    },
+  );
+});

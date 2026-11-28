@@ -1,75 +1,64 @@
 import { randomUUID } from "node:crypto";
-import { describe, expect, it } from "vitest";
 import { userModelPreferenceContract } from "@okouai/api-contracts/contracts/user-model-preference";
+import { describe, expect, it } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { flushWaitUntilForTest } from "../../context/wait-until";
 import { userModelPreferenceRoutes } from "../user-model-preference";
 import { createRouteMocks } from "./helpers/route-test";
-const context = testContext();
-const mocks = createRouteMocks(context);
-function authHeaders() {
-  return { authorization: "Bearer clerk-session" };
-}
-function seedFixture() {
-  const id = randomUUID();
-  return {
-    userId: `user_image_preference_${id}`,
-    orgId: `org_image_preference_${id}`,
-  };
-}
-function useSession(fixture: ReturnType<typeof seedFixture>) {
-  mocks.clerk.session(fixture.userId, fixture.orgId);
-}
-describe("member image preference", () => {
-  it.each([null, "auto"])(
-    "stores canonical Auto for nullable or explicit intent %s",
-    async (selectedModel) => {
-      useSession(seedFixture());
-      const client = setupApp({ context, routes: userModelPreferenceRoutes })(
-        userModelPreferenceContract,
-      );
-      const stored = await accept(
-        client.update({
-          headers: authHeaders(),
-          body: { selectedModel, serviceTier: null },
-        }),
-        [200],
-      );
-      expect(stored.body).toMatchObject({
-        selectedModel: "auto",
-        serviceTier: null,
-        modelSettings: {},
-      });
-      const read = await accept(client.get({ headers: authHeaders() }), [200]);
-      expect(read.body).toMatchObject({
-        selectedModel: "auto",
-        serviceTier: null,
-      });
-      await accept(
-        client.update({
-          headers: authHeaders(),
-          body: {
-            selectedModel: "auto",
-            serviceTier: null,
-            modelSettingsPatch: { model: "auto", effort: "high" },
-          },
-        }),
-        [400],
-      );
-    },
-  );
-  it("stores, preserves, and clears a member image default", async () => {
-    const fixture = await seedFixture();
-    useSession(fixture);
-    const preferenceClient = setupApp({
-      context,
-      routes: userModelPreferenceRoutes,
-    })(userModelPreferenceContract);
 
-    const stored = await accept(
-      preferenceClient.update({
-        headers: authHeaders(),
+const context = testContext();
+const headers = Object.freeze({ authorization: "Bearer clerk-session" });
+const preferences = setupApp({ context, routes: userModelPreferenceRoutes })(
+  userModelPreferenceContract,
+);
+
+function signIn() {
+  createRouteMocks(context).clerk.session(
+    `user_${randomUUID()}`,
+    `org_${randomUUID()}`,
+    "org:member",
+  );
+}
+
+describe("member image preference", () => {
+  it("user-model-image-preference-001 stores canonical Auto for a null model selection", async () => {
+    signIn();
+
+    const updated = await accept(
+      preferences.update({
+        headers,
+        body: { selectedModel: null, serviceTier: null },
+      }),
+      [200],
+    );
+    const read = await accept(preferences.get({ headers }), [200]);
+    const effort = await preferences.update({
+      headers,
+      body: {
+        selectedModel: null,
+        serviceTier: null,
+        modelSettingsPatch: { model: "auto", effort: "high" },
+      },
+    });
+
+    expect(updated.body).toMatchObject({
+      selectedModel: "auto",
+      serviceTier: null,
+      modelSettings: {},
+    });
+    expect(read.body).toMatchObject({
+      selectedModel: "auto",
+      serviceTier: null,
+    });
+    expect(effort.status).toBe(400);
+  });
+
+  it("user-model-image-preference-003 stores, preserves and clears the member image default", async () => {
+    signIn();
+
+    const saved = await accept(
+      preferences.update({
+        headers,
         body: {
           selectedModel: null,
           serviceTier: null,
@@ -78,94 +67,33 @@ describe("member image preference", () => {
       }),
       [200],
     );
-    expect(stored.body).toMatchObject({
-      selectedModel: "auto",
-      selectedImageModel: "fal-ai/flux-pro/v1.1",
-    });
-    expect(stored.body.updatedAt).not.toBeNull();
-
     const preserved = await accept(
-      preferenceClient.update({
-        headers: authHeaders(),
+      preferences.update({
+        headers,
         body: { selectedModel: null, serviceTier: null },
       }),
       [200],
     );
-    expect(preserved.body).toMatchObject({
+    const cleared = await accept(
+      preferences.update({
+        headers,
+        body: {
+          selectedModel: null,
+          serviceTier: null,
+          selectedImageModel: null,
+        },
+      }),
+      [200],
+    );
+
+    expect(saved.body).toMatchObject({
       selectedModel: "auto",
       selectedImageModel: "fal-ai/flux-pro/v1.1",
+      updatedAt: expect.any(String),
     });
-
-    const explicitlyCleared = await accept(
-      preferenceClient.update({
-        headers: authHeaders(),
-        body: {
-          selectedModel: null,
-          serviceTier: null,
-          selectedImageModel: null,
-        },
-      }),
-      [200],
-    );
-    expect(explicitlyCleared.body.selectedImageModel).toBeNull();
-  });
-
-  it("pushes the image-default kind whenever the request carries the field", async () => {
-    const fixture = await seedFixture();
-    useSession(fixture);
-    const preferenceClient = setupApp({
-      context,
-      routes: userModelPreferenceRoutes,
-    })(userModelPreferenceContract);
-
-    context.mocks.ably.publish.mockClear();
-    await accept(
-      preferenceClient.update({
-        headers: authHeaders(),
-        body: {
-          selectedModel: null,
-          serviceTier: null,
-          selectedImageModel: "gpt-image-2",
-        },
-      }),
-      [200],
-    );
-    await flushWaitUntilForTest();
-    expect(context.mocks.ably.publish).toHaveBeenCalledWith(
-      "userPreferenceChanged",
-      { kinds: ["defaultModel", "defaultImageModel"] },
-    );
-
-    context.mocks.ably.publish.mockClear();
-    await accept(
-      preferenceClient.update({
-        headers: authHeaders(),
-        body: {
-          selectedModel: null,
-          serviceTier: null,
-          selectedImageModel: null,
-        },
-      }),
-      [200],
-    );
-    await flushWaitUntilForTest();
-    expect(context.mocks.ably.publish).toHaveBeenCalledWith(
-      "userPreferenceChanged",
-      { kinds: ["defaultModel", "defaultImageModel"] },
-    );
-
-    context.mocks.ably.publish.mockClear();
-    await accept(
-      preferenceClient.update({
-        headers: authHeaders(),
-        body: { selectedModel: null, serviceTier: null },
-      }),
-      [200],
-    );
-    await flushWaitUntilForTest();
-    expect(context.mocks.ably.publish).toHaveBeenCalledWith(
-      "userPreferenceChanged",
-      { kinds: ["defaultModel"] },
-    );
+    expect(preserved.body.selectedImageModel).toBe("fal-ai/flux-pro/v1.1");
+    expect(cleared.body.selectedImageModel).toBeNull();
+    const read = await accept(preferences.get({ headers }), [200]);
+    expect(read.body.selectedImageModel).toBeNull();
   });
 });

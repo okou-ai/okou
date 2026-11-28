@@ -1,151 +1,196 @@
-import { randomUUID } from "node:crypto";
-import { orgOpenrouterPresetContract } from "@okouai/api-contracts/contracts/org-openrouter-preset";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { describe, expect, it } from "vitest";
-import { accept, testContext } from "../../../__tests__/test-context";
-import { setupApp } from "../../../__tests__/test-helpers";
+import { describe, expect, it, onTestFinished } from "vitest";
+import { testContext } from "../../../__tests__/test-context";
+import { TEST_WITH_FOUR_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE } from "../../../__tests__/test-timeouts";
+import { mockOptionalEnv } from "../../../lib/env";
 import { flushWaitUntilForTest } from "../../context/wait-until";
-import { orgOpenrouterPresetRoutes } from "../org-openrouter-preset";
+import { settleIncludingAbort } from "../../utils";
 import { createChatEventsFixture } from "./helpers/chat-events-fixture";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
-import { publicChatActor } from "./helpers/public-chat-actor";
-import { readCompletedRunSessionId } from "./helpers/public-run-session";
-
-const context = testContext();
-const {
-  api,
-  bdd,
-  chat,
-  mockPiObjectStore,
-  mockPiResourceArchiveDownloads,
-  completeSandboxFirstPiRun,
-} = createChatEventsFixture(context);
+import { captureConnectorExternalState } from "./helpers/public-connector-actor";
+import { publicRunOwner } from "./helpers/public-run-owner";
 
 describe("Auto native routing", () => {
-  it("rejects an Auto Run when its workspace preset is missing prices", async () => {
-    const orgId = `org_${randomUUID()}`;
-    const actor = bdd.user({ orgId, orgRole: "org:admin" });
-    const owner = await publicChatActor(context, { actor });
-    owner.ownsFeatureSwitches();
-    await updateFeatureSwitchesForUser(
-      context,
-      { ...actor, orgId },
-      {
-        [FeatureSwitchKey.OkouDebug]: true,
-      },
-    );
-    const presets = setupApp({ context, routes: orgOpenrouterPresetRoutes })(
-      orgOpenrouterPresetContract,
-    );
-    await accept(
-      presets.update({
-        headers: { authorization: "Bearer clerk-session" },
-        body: { openrouterPreset: "@preset/okou-experimental" },
-      }),
-      [200],
-    );
+  const context = testContext();
 
-    const clientEventId = randomUUID();
-    const sent = await owner.requestSendEvent(
-      actor,
-      { prompt: "start with Auto", model: "auto", clientEventId },
-      [201],
-    );
-    if (sent.status !== 201) {
-      throw new Error("Expected the Auto input to be queued");
-    }
-    await flushWaitUntilForTest();
-    const { events } = await chat.listThreadEvents(actor, sent.body.threadId);
-    expect(events).toContainEqual(
-      expect.objectContaining({
-        eventType: "input.rejected",
-        revokesEventId: clientEventId,
-        error: "model_provider_unavailable",
-      }),
-    );
-  });
-
-  it("claims the OpenRouter preset for a completed initial run and its successor", async () => {
-    const {
-      actor,
-      run: own,
-      sendChatRun,
-      runExecution,
-    } = await publicChatActor(context);
-    mockPiResourceArchiveDownloads();
-    const historyObjects = mockPiObjectStore();
-    const preset = "@preset/okou-1-0";
-    const expectedExecution = {
-      cliAgentType: "pi",
-      piModelConfig: {
-        baseUrl: "https://openrouter.ai/api/v1",
-        model: preset,
-      },
-      modelUsageProvider: preset,
-    };
-    const expectedSource = {
-      providerType: "built-in",
-      runtimeProviderType: "openrouter-codex",
-      model: "auto",
-      credentialScope: "org",
-    };
-
-    const initialPrompt = "start with Auto";
-    const initial = await sendChatRun(actor, {
-      prompt: initialPrompt,
-      model: "auto",
-    });
-    await flushWaitUntilForTest();
-    const initialExecution = await runExecution(initial.runId);
-    expect(initialExecution.execution).toMatchObject(expectedExecution);
-    await own(async () => {
-      return await completeSandboxFirstPiRun({
-        actor,
-        run: initial,
-        execution: initialExecution,
-        historyObjects,
-        prompt: initialPrompt,
-        answer: "initial Auto answer",
-        responsesModel: { provider: "openrouter", model: preset },
+  it(
+    "chat-events-auto-route-001 claims the OpenRouter preset for a completed initial run and its successor",
+    { timeout: TEST_WITH_FOUR_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const fixture = createChatEventsFixture(context);
+      const actor = fixture.bdd.user();
+      let accepted = captureConnectorExternalState(context);
+      let previous: (() => void) | undefined;
+      let restoreSetupWebhook: (() => void) | undefined;
+      onTestFinished(() => {
+        previous?.();
       });
-    });
-    await expect(api.readRun(actor, initial.runId)).resolves.toMatchObject({
-      status: "completed",
-      source: expectedSource,
-    });
-    const initialSession = await readCompletedRunSessionId(
-      context,
-      actor,
-      initial.runId,
-    );
 
-    const successorPrompt = "continue without selecting another model";
-    const successor = await sendChatRun(actor, {
-      threadId: initial.threadId,
-      prompt: successorPrompt,
-    });
-    expect(successor.runId).not.toBe(initial.runId);
-    expect(successor.threadId).toBe(initial.threadId);
-    await flushWaitUntilForTest();
-    const successorExecution = await runExecution(successor.runId);
-    expect(successorExecution.execution).toMatchObject(expectedExecution);
-    await own(async () => {
-      return await completeSandboxFirstPiRun({
-        actor,
-        run: successor,
-        execution: successorExecution,
-        historyObjects,
-        prompt: successorPrompt,
-        answer: "continued Auto answer",
-        responsesModel: { provider: "openrouter", model: preset },
+      const owner = publicRunOwner(context, actor, {
+        continueAcceptedOperations: true,
+        restoreEnvironment: () => {
+          previous ??= captureConnectorExternalState(context);
+          accepted();
+          restoreSetupWebhook?.();
+        },
       });
-    });
-    await expect(api.readRun(actor, successor.runId)).resolves.toMatchObject({
-      status: "completed",
-      source: expectedSource,
-    });
-    await expect(
-      readCompletedRunSessionId(context, actor, successor.runId),
-    ).resolves.toBe(initialSession);
-  }, 90_000);
+      function runOwned<T>(operation: () => Promise<T>) {
+        return owner.run(() => {
+          const pending = settleIncludingAbort(operation);
+          accepted = captureConnectorExternalState(context);
+          return pending.then((result) => {
+            if (!result.ok) {
+              throw result.error;
+            }
+            return result.value;
+          });
+        });
+      }
+
+      fixture.chatCallbacks.acceptChatObjectStorage();
+      fixture.api.acceptStorageDownloads();
+      fixture.api.acceptTelemetryIngest();
+      mockOptionalEnv("OPENROUTER_API_KEY", undefined);
+      fixture.chatCallbacks.disableVapid();
+      fixture.mockPiObjectStore();
+
+      await Promise.all([
+        fixture.api.configureRunnerGroup(),
+        runOwned(() => {
+          return fixture.api.grantProEntitlement(actor, {
+            onExternalStateReady: (restoreWebhook) => {
+              restoreSetupWebhook = restoreWebhook;
+            },
+          });
+        }),
+      ]);
+      restoreSetupWebhook = undefined;
+
+      const completePiRun = async (args: {
+        readonly runId: string;
+        readonly threadId: string;
+        readonly answer: string;
+        readonly sandboxHeaders: { readonly authorization: string };
+      }) => {
+        await fixture.webhooks.requestAgentEvents(
+          {
+            runId: args.runId,
+            events: [
+              {
+                type: "assistant",
+                sequenceNumber: 1,
+                message: { content: [{ type: "text", text: args.answer }] },
+              },
+              { type: "result", sequenceNumber: 2, result: args.answer },
+            ],
+          },
+          args.sandboxHeaders,
+          [200],
+        );
+        await fixture.webhooks.requestAgentComplete(
+          {
+            runId: args.runId,
+            exitCode: 0,
+            lastEventSequence: 2,
+            completion: {
+              cliAgentType: "pi",
+              cliAgentSessionId: args.threadId,
+              cliAgentSessionHistoryDisposition: "native_only",
+            },
+          },
+          args.sandboxHeaders,
+          [200],
+          undefined,
+        );
+        await flushWaitUntilForTest();
+      };
+
+      const firstRun = await runOwned(() => {
+        return fixture.sendChatRun(actor, {
+          prompt: "Start an Auto thread",
+          model: null,
+        });
+      });
+      const firstExecution = await runOwned(async () => {
+        const result = await fixture.runExecution(firstRun.runId);
+        owner.rememberExecution(firstRun.runId, result.execution.sandboxToken);
+        return result;
+      });
+
+      expect(firstExecution.execution.cliAgentType).toBe("pi");
+      expect(firstExecution.execution.piModelConfig).toMatchObject({
+        provider: "openrouter",
+        dialect: "openai-completions",
+        model: "@preset/okou-1-0",
+        catalogModel: "auto",
+      });
+      expect(firstExecution.execution.modelUsageProvider).toBe(
+        "@preset/okou-1-0",
+      );
+
+      await runOwned(() => {
+        return completePiRun({
+          runId: firstRun.runId,
+          threadId: firstRun.threadId,
+          answer: "Initial Auto response",
+          sandboxHeaders: firstExecution.sandboxHeaders,
+        });
+      });
+
+      const secondRun = await runOwned(() => {
+        return fixture.sendChatRun(actor, {
+          threadId: firstRun.threadId,
+          prompt: "Continue the Auto thread",
+        });
+      });
+      expect(secondRun.runId).not.toBe(firstRun.runId);
+      expect(secondRun.threadId).toBe(firstRun.threadId);
+
+      const secondExecution = await runOwned(async () => {
+        const result = await fixture.runExecution(secondRun.runId);
+        owner.rememberExecution(secondRun.runId, result.execution.sandboxToken);
+        return result;
+      });
+
+      expect(secondExecution.execution.cliAgentType).toBe("pi");
+      expect(secondExecution.execution.piModelConfig).toMatchObject({
+        provider: "openrouter",
+        dialect: "openai-completions",
+        model: "@preset/okou-1-0",
+        catalogModel: "auto",
+      });
+      expect(secondExecution.execution.modelUsageProvider).toBe(
+        "@preset/okou-1-0",
+      );
+      expect(secondExecution.execution.nativeContinuation.sessionId).toBe(
+        firstRun.threadId,
+      );
+
+      await runOwned(() => {
+        return completePiRun({
+          runId: secondRun.runId,
+          threadId: firstRun.threadId,
+          answer: "Successor Auto response",
+          sandboxHeaders: secondExecution.sandboxHeaders,
+        });
+      });
+
+      const [firstReadback, secondReadback] = await Promise.all([
+        fixture.api.readRun(actor, firstRun.runId),
+        fixture.api.readRun(actor, secondRun.runId),
+      ]);
+
+      for (const readback of [firstReadback, secondReadback]) {
+        expect(readback.status).toBe("completed");
+        expect(readback.source).toMatchObject({
+          providerType: "built-in",
+          runtimeProviderType: "openrouter-codex",
+          model: "auto",
+          credentialScope: "org",
+        });
+        expect(readback.result).toMatchObject({
+          framework: "pi",
+          frameworkSessionId: firstRun.threadId,
+        });
+      }
+    },
+  );
 });

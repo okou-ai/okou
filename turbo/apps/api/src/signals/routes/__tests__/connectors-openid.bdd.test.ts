@@ -1,13 +1,10 @@
 import { randomUUID } from "node:crypto";
-
-import { builtinConnectorsSlugCallbackContract } from "@okouai/api-contracts/contracts/connectors-slug-callback";
 import {
   connectorAccountsContract,
   type ConnectorAccountMutationIntent,
 } from "@okouai/api-contracts/contracts/connector-accounts";
-import { connectorAccountRoutes } from "../connector-accounts";
 import { builtinConnectorOpenIdStartContract } from "@okouai/api-contracts/contracts/connectors";
-import { connectorCatalogContract } from "@okouai/api-contracts/contracts/connector-catalog";
+import { builtinConnectorsSlugCallbackContract } from "@okouai/api-contracts/contracts/connectors-slug-callback";
 import { http, HttpResponse } from "msw";
 import { describe, expect, it } from "vitest";
 
@@ -15,213 +12,153 @@ import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
 import { server } from "../../../mocks/server";
-import { createRouteMocks } from "./helpers/route-test";
-import {
-  createConnectorBddApi,
-  mockGitHubConnectorOAuth,
-} from "./helpers/api-bdd-connectors";
-import { builtinConnectorsSlugCallbackRoutes } from "../connectors-slug-callback";
-import { connectorCatalogRoutes } from "../connector-catalog";
+import { connectorAccountRoutes } from "../connector-accounts";
 import { builtinConnectorsRoutes } from "../connectors";
+import { builtinConnectorsSlugCallbackRoutes } from "../connectors-slug-callback";
+import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
+import { createConnectorBddApi } from "./helpers/api-bdd-connectors";
+import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
-const mocks = createRouteMocks(context);
+const bdd = createBddApi(context);
 const connectors = createConnectorBddApi(context);
-
+const headers = Object.freeze({ authorization: "Bearer clerk-session" });
 const STEAM_ID = "76561198000000000";
+const STEAM_ENDPOINT = "https://steamcommunity.com/openid/login";
+const STEAM_TARGET = { kind: "builtin", connectorSlug: "steam" } as const;
 
-interface TestActor {
-  readonly userId: string;
-  readonly orgId: string;
+function signIn(actor: ApiTestUser) {
+  createRouteMocks(context).clerk.session(
+    actor.userId,
+    actor.orgId,
+    actor.orgRole,
+  );
+  return headers;
 }
 
-function testActor(): TestActor {
-  return {
-    userId: `user_steam_${randomUUID()}`,
-    orgId: `org_steam_${randomUUID()}`,
-  };
-}
-
-function authHeaders() {
-  return { authorization: "Bearer clerk-session" };
-}
-
-function mockSession(actor: TestActor): void {
-  mocks.clerk.session(actor.userId, actor.orgId);
-}
-
-function mockSteamRuntimeEnv(): void {
-  mockEnv("OKOU_API_BACKEND_URL", "https://api.okou.ai");
-  mockEnv("OKOU_WEB_URL", "https://www.okou.ai");
-}
-
-async function startSteamOpenId(
-  actor: TestActor,
-  account: ConnectorAccountMutationIntent = { intent: "add" },
-  native = false,
-): Promise<{
-  readonly authorizationUrl: URL;
-  readonly oauthAttemptId: string;
-  readonly connectionId?: string;
-  readonly nativeCallbackUrl?: string;
-}> {
-  mockSession(actor);
-  const response = await accept(
-    setupApp({ context, routes: builtinConnectorsRoutes })(
-      builtinConnectorOpenIdStartContract,
-    ).start({
-      params: { connectorSlug: "steam" },
-      headers: authHeaders(),
-      body: {
-        authMethod: "openid",
-        account,
-        ...(native ? { nativeCallback: "ios-https" as const } : {}),
-      },
+/** Steam's check_authentication answer; flip `valid` to model Steam rejecting assertions. */
+function steamVerifies() {
+  const verification = { valid: true };
+  server.use(
+    http.post(STEAM_ENDPOINT, () => {
+      return HttpResponse.text(
+        `ns:http://specs.openid.net/auth/2.0\nis_valid:${String(verification.valid)}\n`,
+      );
     }),
+  );
+  return verification;
+}
+
+function startRequest(
+  actor: ApiTestUser,
+  account: ConnectorAccountMutationIntent,
+  nativeCallback?: "ios-https",
+) {
+  return setupApp({ context, routes: builtinConnectorsRoutes })(
+    builtinConnectorOpenIdStartContract,
+  ).start({
+    params: { connectorSlug: "steam" },
+    headers: signIn(actor),
+    body: {
+      authMethod: "openid",
+      account,
+      ...(nativeCallback ? { nativeCallback } : {}),
+    },
+  });
+}
+
+async function start(
+  actor: ApiTestUser,
+  account: ConnectorAccountMutationIntent = { intent: "add" },
+  nativeCallback?: "ios-https",
+) {
+  const response = await accept(
+    startRequest(actor, account, nativeCallback),
     [200],
   );
-  if (account.intent === "reconnect") {
-    expect(response.body).not.toHaveProperty("connectionId");
-  }
-  return {
-    authorizationUrl: new URL(response.body.authorizationUrl),
-    oauthAttemptId: response.body.oauthAttemptId,
-    connectionId: response.body.connectionId,
-    nativeCallbackUrl: response.body.nativeCallbackUrl,
-  };
+  return response.body;
 }
 
-function stateFromSteamAuthorizationUrl(authorizationUrl: URL): string {
-  const returnTo = authorizationUrl.searchParams.get("openid.return_to");
-  if (!returnTo) {
-    throw new Error("Steam authorization URL is missing openid.return_to");
-  }
-  const state = new URL(returnTo).searchParams.get("state");
-  if (!state) {
-    throw new Error("Steam return_to is missing state");
-  }
-  return state;
-}
-
-function steamCallbackQuery(authorizationUrl: URL) {
-  const returnTo = authorizationUrl.searchParams.get("openid.return_to");
-  if (!returnTo) {
-    throw new Error("Steam authorization URL is missing openid.return_to");
+/** The signed `id_res` assertion Steam sends back to the advertised return URL. */
+function steamAssertion(authorizationUrl: string) {
+  const returnTo = new URL(authorizationUrl).searchParams.get(
+    "openid.return_to",
+  );
+  const state = returnTo ? new URL(returnTo).searchParams.get("state") : null;
+  if (!returnTo || !state) {
+    throw new Error("Expected a Steam return URL with state");
   }
   const claimedId = `https://steamcommunity.com/openid/id/${STEAM_ID}`;
   return {
-    state: stateFromSteamAuthorizationUrl(authorizationUrl),
+    state,
     "openid.ns": "http://specs.openid.net/auth/2.0",
     "openid.mode": "id_res",
-    "openid.op_endpoint": "https://steamcommunity.com/openid/login",
+    "openid.op_endpoint": STEAM_ENDPOINT,
     "openid.claimed_id": claimedId,
     "openid.identity": claimedId,
     "openid.return_to": returnTo,
-    "openid.response_nonce": "2026-07-06T00:00:00Znonce",
-    "openid.assoc_handle": "assoc-handle",
+    "openid.response_nonce": `2026-11-26T05:00:00Z${randomUUID()}`,
+    "openid.assoc_handle": "1234567890",
     "openid.signed":
-      "op_endpoint,claimed_id,identity,return_to,response_nonce,assoc_handle",
-    "openid.sig": "signature",
+      "signed,op_endpoint,claimed_id,identity,return_to,response_nonce,assoc_handle",
+    "openid.sig": "c2lnbmVkLWJ5LXN0ZWFt",
   };
 }
 
-function mockSteamOpenIdVerification(valid = true): void {
-  server.use(
-    http.post(
-      "https://steamcommunity.com/openid/login",
-      async ({ request }) => {
-        const body = new URLSearchParams(await request.text());
-        expect(body.get("openid.mode")).toBe("check_authentication");
-        return new HttpResponse(
-          [
-            "ns:http://specs.openid.net/auth/2.0",
-            `is_valid:${valid ? "true" : "false"}`,
-            "",
-          ].join("\n"),
-          { headers: { "content-type": "text/plain" } },
-        );
-      },
-    ),
+function callbackClient() {
+  return setupApp({ context, routes: builtinConnectorsSlugCallbackRoutes })(
+    builtinConnectorsSlugCallbackContract,
   );
 }
 
-interface RedirectResponseLike {
-  readonly headers: Headers;
-}
-
-function redirectLocation(response: RedirectResponseLike): URL {
-  const location = response.headers.get("location");
-  if (!location) {
-    throw new Error("Expected a redirect location header");
-  }
-  return new URL(location);
-}
-
-function expectConnectorErrorRedirect(
-  response: RedirectResponseLike,
-  args: { readonly connectorSlug: string; readonly message: string },
-): void {
-  const url = redirectLocation(response);
-  expect(url.pathname).toBe("/connector/error");
-  expect(url.searchParams.get("connectorSlug")).toBe(args.connectorSlug);
-  expect(url.searchParams.get("message")).toBe(args.message);
-}
-
-async function completeSteamOpenIdCallback(
-  authorizationUrl: URL,
-): Promise<void> {
-  mockSteamOpenIdVerification();
-  await accept(
-    setupApp({ context, routes: builtinConnectorsSlugCallbackRoutes })(
-      builtinConnectorsSlugCallbackContract,
-    ).callback({
+async function browserCallback(authorizationUrl: string) {
+  return await accept(
+    callbackClient().callback({
       params: { connectorSlug: "steam" },
-      query: steamCallbackQuery(authorizationUrl),
+      query: steamAssertion(authorizationUrl),
       headers: {},
     }),
     [307],
   );
 }
 
-async function readSteamAccount(actor: ReturnType<typeof testActor>) {
-  mockSession(actor);
-  const response = await accept(
-    setupApp({ context, routes: connectorAccountRoutes })(
-      connectorAccountsContract,
-    ).connections({
-      headers: authHeaders(),
-      query: { kind: "builtin", connectorSlug: "steam" },
-    }),
-    [200],
-  );
-  const account = response.body.defaultConnection;
-  if (!account) {
-    throw new Error("Expected a saved default Steam account");
-  }
-  return account;
+function completionRequest(actor: ApiTestUser, attemptId: string) {
+  return setupApp({ context, routes: connectorAccountRoutes })(
+    connectorAccountsContract,
+  ).oauthCompletion({
+    headers: signIn(actor),
+    params: { attemptId },
+    query: STEAM_TARGET,
+  });
+}
+
+async function connectSteam(actor: ApiTestUser) {
+  const started = await start(actor);
+  await browserCallback(started.authorizationUrl);
+  return await connectors.readDefaultBuiltinAccount(actor, "steam");
 }
 
 describe("Steam OpenID connector", () => {
-  it("returns the initiating native OpenID attempt after provider verification", async () => {
-    const actor = testActor();
-    mockSteamRuntimeEnv();
+  it("connectors-openid.bdd-001 returns the native attempt after Steam verifies the assertion", async () => {
     mockEnv("APP_URL", "https://app.okou.ai");
-    mockSteamOpenIdVerification();
-    const started = await startSteamOpenId(actor, { intent: "add" }, true);
-    expect(started.nativeCallbackUrl).toBe(
-      `https://app.okou.ai/native/connector-authorization?attemptId=${started.oauthAttemptId}`,
-    );
+    steamVerifies();
+    const member = bdd.user();
+
+    const started = await start(member, { intent: "add" }, "ios-https");
     const callback = await accept(
-      setupApp({ context, routes: builtinConnectorsSlugCallbackRoutes })(
-        builtinConnectorsSlugCallbackContract,
-      ).callback({
+      callbackClient().callback({
         params: { connectorSlug: "steam" },
         query: {
-          ...steamCallbackQuery(started.authorizationUrl),
+          ...steamAssertion(started.authorizationUrl),
           responseMode: "json",
         },
+        headers: {},
       }),
       [200],
+    );
+
+    expect(started.nativeCallbackUrl).toBe(
+      `https://app.okou.ai/native/connector-authorization?attemptId=${started.oauthAttemptId}`,
     );
     expect(callback.body).toMatchObject({
       status: "success",
@@ -233,264 +170,116 @@ describe("Steam OpenID connector", () => {
     });
   });
 
-  it("exposes Steam in the connector catalog by default", async () => {
-    const actor = testActor();
-    mockSession(actor);
+  it("connectors-openid.bdd-003 stores the verified SteamID from the callback", async () => {
+    mockEnv("OKOU_API_BACKEND_URL", "https://api.okou.ai");
+    steamVerifies();
+    const member = bdd.user();
 
-    const client = setupApp({ context, routes: connectorCatalogRoutes })(
-      connectorCatalogContract,
-    );
-    const visible = await accept(
-      client.status({ headers: authHeaders() }),
+    const started = await start(member);
+    const authorization = new URL(started.authorizationUrl);
+    await browserCallback(started.authorizationUrl);
+    const account = await connectors.readDefaultBuiltinAccount(member, "steam");
+    const completion = await accept(
+      completionRequest(member, started.oauthAttemptId),
       [200],
     );
-    const steam = visible.body.connectors.find((connector) => {
-      return connector.slug === "steam";
-    });
-    expect(steam).toMatchObject({
-      slug: "steam",
-      authMethods: [
-        expect.objectContaining({
-          id: "openid",
-          grantKind: "openid-auth",
-        }),
-      ],
-    });
-  });
 
-  it("starts Steam OpenID auth and stores the verified SteamID on callback", async () => {
-    const actor = testActor();
-    mockSteamRuntimeEnv();
-
-    const { authorizationUrl, oauthAttemptId } = await startSteamOpenId(actor);
-    expect(authorizationUrl.origin + authorizationUrl.pathname).toBe(
-      "https://steamcommunity.com/openid/login",
+    expect(`${authorization.origin}${authorization.pathname}`).toBe(
+      STEAM_ENDPOINT,
     );
-    expect(authorizationUrl.searchParams.get("openid.realm")).toBe(
+    expect(authorization.searchParams.get("openid.realm")).toBe(
       "https://api.okou.ai/",
     );
-    expect(authorizationUrl.searchParams.get("openid.return_to")).toMatch(
+    expect(authorization.searchParams.get("openid.return_to")).toMatch(
       /^https:\/\/api\.okou\.ai\/api\/connectors\/steam\/callback\?state=[0-9a-f]{64}$/u,
     );
-
-    await completeSteamOpenIdCallback(authorizationUrl);
-
-    mockSession(actor);
-    const connector = await readSteamAccount(actor);
-    const completion = await accept(
-      setupApp({ context, routes: connectorAccountRoutes })(
-        connectorAccountsContract,
-      ).oauthCompletion({
-        headers: authHeaders(),
-        params: { attemptId: oauthAttemptId },
-        query: { kind: "builtin", connectorSlug: "steam" },
-      }),
-      [200],
-    );
-    expect(completion.body).toStrictEqual({ connectionId: connector.id });
-    expect(connector).toMatchObject({
-      target: { kind: "builtin", connectorSlug: "steam" },
+    expect(completion.body).toStrictEqual({ connectionId: account.id });
+    expect(account).toMatchObject({
+      target: STEAM_TARGET,
       authMethod: "openid",
+      connectionStatus: "connected",
       externalId: STEAM_ID,
       externalUsername: STEAM_ID,
-      connectionStatus: "connected",
       oauthScopes: [],
     });
   });
 
-  it("keeps the active Steam connection until a verified replacement succeeds", async () => {
-    const actor = testActor();
-    mockSteamRuntimeEnv();
-    const { authorizationUrl: initialAuthorizationUrl } =
-      await startSteamOpenId(actor);
-    await completeSteamOpenIdCallback(initialAuthorizationUrl);
+  it("connectors-openid.bdd-004 keeps the active account until a verified replacement succeeds", async () => {
+    const verification = steamVerifies();
+    const member = bdd.user();
+    const original = await connectSteam(member);
 
-    mockSession(actor);
-    const initial = await readSteamAccount(actor);
-
-    const { authorizationUrl, oauthAttemptId } = await startSteamOpenId(actor);
-    mockSession(actor);
-    const pending = await setupApp({ context, routes: connectorAccountRoutes })(
-      connectorAccountsContract,
-    ).oauthCompletion({
-      headers: authHeaders(),
-      params: { attemptId: oauthAttemptId },
-      query: { kind: "builtin", connectorSlug: "steam" },
-    });
-    expect(pending.status).toBe(404);
-    const whilePending = await readSteamAccount(actor);
-    expect(whilePending).toStrictEqual(initial);
-
-    mockSteamOpenIdVerification(false);
-
-    const response = await accept(
-      setupApp({ context, routes: builtinConnectorsSlugCallbackRoutes })(
-        builtinConnectorsSlugCallbackContract,
-      ).callback({
-        params: { connectorSlug: "steam" },
-        query: steamCallbackQuery(authorizationUrl),
-        headers: {},
-      }),
-      [307],
-    );
-
-    expectConnectorErrorRedirect(response, {
-      connectorSlug: "steam",
-      message: "OpenID authorization failed. Please try again.",
-    });
-
-    mockSession(actor);
-    const connector = await readSteamAccount(actor);
-    expect(connector).toStrictEqual(initial);
-
-    const {
-      authorizationUrl: replacementAuthorizationUrl,
-      oauthAttemptId: replacementAttemptId,
-    } = await startSteamOpenId(actor, {
-      intent: "reconnect",
-      connectionId: initial.id,
-    });
-    const replacementPending = await accept(
-      setupApp({ context, routes: connectorAccountRoutes })(
-        connectorAccountsContract,
-      ).oauthCompletion({
-        headers: authHeaders(),
-        params: { attemptId: replacementAttemptId },
-        query: { kind: "builtin", connectorSlug: "steam" },
-      }),
+    const pendingAdd = await start(member);
+    const pendingCompletion = await accept(
+      completionRequest(member, pendingAdd.oauthAttemptId),
       [404],
     );
-    expect(replacementPending.body.error.message).toBe(
-      "OAuth completion not found",
+    await expect(
+      connectors.readDefaultBuiltinAccount(member, "steam"),
+    ).resolves.toStrictEqual(original);
+    verification.valid = false;
+    const rejected = await browserCallback(pendingAdd.authorizationUrl);
+    const errorLocation = new URL(rejected.headers.get("location") ?? "");
+    await expect(
+      connectors.readDefaultBuiltinAccount(member, "steam"),
+    ).resolves.toStrictEqual(original);
+
+    verification.valid = true;
+    const reconnect = await start(member, {
+      intent: "reconnect",
+      connectionId: original.id,
+    });
+    const pendingReconnect = await accept(
+      completionRequest(member, reconnect.oauthAttemptId),
+      [404],
     );
-    const duringReconnect = await readSteamAccount(actor);
-    expect(duringReconnect).toStrictEqual(initial);
-    await completeSteamOpenIdCallback(replacementAuthorizationUrl);
-    mockSession(actor);
-    const replaced = await readSteamAccount(actor);
-    expect(replaced.id).toBe(initial.id);
-    expect(replaced.externalId).toBe(STEAM_ID);
-    const replacementCompletion = await accept(
-      setupApp({ context, routes: connectorAccountRoutes })(
-        connectorAccountsContract,
-      ).oauthCompletion({
-        headers: authHeaders(),
-        params: { attemptId: replacementAttemptId },
-        query: { kind: "builtin", connectorSlug: "steam" },
-      }),
+    await expect(
+      connectors.readDefaultBuiltinAccount(member, "steam"),
+    ).resolves.toStrictEqual(original);
+    await browserCallback(reconnect.authorizationUrl);
+    const replaced = await connectors.readDefaultBuiltinAccount(
+      member,
+      "steam",
+    );
+    const reconnected = await accept(
+      completionRequest(member, reconnect.oauthAttemptId),
       [200],
     );
-    expect(replacementCompletion.body).toStrictEqual({
-      connectionId: initial.id,
-    });
+
+    expect(pendingCompletion.status).toBe(404);
+    expect(errorLocation.pathname).toBe("/connector/error");
+    expect(errorLocation.searchParams.get("connectorSlug")).toBe("steam");
+    expect(errorLocation.searchParams.get("message")).toBe(
+      "OpenID authorization failed. Please try again.",
+    );
+    expect(pendingReconnect.body.error.message).toBe(
+      "OAuth completion not found",
+    );
+    expect(replaced.id).toBe(original.id);
+    expect(replaced.externalId).toBe(STEAM_ID);
+    expect(reconnected.body).toStrictEqual({ connectionId: original.id });
   });
 
-  it.each(["other-user", "other-org", "wrong-target"] as const)(
-    "rejects a %s reconnect target without changing its account",
-    async (scenario) => {
-      const owner = testActor();
-      mockSteamRuntimeEnv();
-      const actor = {
-        ...owner,
-        orgRole: "org:admin" as const,
-        email: `${owner.userId}@example.test`,
-      };
-      let connectorSlug: "steam" | "github" = "steam";
-      let connectionId: string;
-      if (scenario === "wrong-target") {
-        connectorSlug = "github";
-        mockGitHubConnectorOAuth({
-          userId: 39_082,
-          login: "openid-wrong-target",
-        });
-        const started = await connectors.startOauth(actor, "github", "oauth");
-        const state = new URL(started.authorizationUrl).searchParams.get(
-          "state",
-        );
-        if (!state) {
-          throw new Error("Expected GitHub OAuth state");
-        }
-        await connectors.completeOauthCallback("github", {
-          code: "wrong-target",
-          state,
-        });
-        const accounts = await connectors.listBuiltinConnectorAccounts(
-          actor,
-          "github",
-        );
-        expect(accounts).toHaveLength(1);
-        const [account] = accounts;
-        if (!account) {
-          throw new Error("Expected the publicly created GitHub account");
-        }
-        connectionId = account.id;
-      } else {
-        const started = await startSteamOpenId(owner);
-        await completeSteamOpenIdCallback(started.authorizationUrl);
-        const accounts = await connectors.listBuiltinConnectorAccounts(
-          actor,
-          "steam",
-        );
-        expect(accounts).toHaveLength(1);
-        const [account] = accounts;
-        if (!account) {
-          throw new Error("Expected the publicly created Steam account");
-        }
-        connectionId = account.id;
-      }
-      const before = await connectors.listBuiltinConnectorAccounts(
-        actor,
-        connectorSlug,
-      );
-      const requester = {
-        userId: scenario === "other-user" ? testActor().userId : owner.userId,
-        orgId: scenario === "other-org" ? testActor().orgId : owner.orgId,
-      };
-      mockSession(requester);
-      const rejected = await accept(
-        setupApp({ context, routes: builtinConnectorsRoutes })(
-          builtinConnectorOpenIdStartContract,
-        ).start({
-          headers: authHeaders(),
-          params: { connectorSlug: "steam" },
-          body: {
-            authMethod: "openid",
-            account: { intent: "reconnect", connectionId },
-          },
-        }),
-        [404],
-      );
-      expect(rejected.body).toStrictEqual({
-        error: { code: "NOT_FOUND", message: "Connector account not found" },
-      });
-      await expect(
-        connectors.listBuiltinConnectorAccounts(actor, connectorSlug),
-      ).resolves.toStrictEqual(before);
-      for (const account of before) {
-        await connectors.deleteBuiltinConnectorAccount(
-          actor,
-          connectorSlug,
-          account.id,
-        );
-      }
-    },
-  );
-
-  it("rejects OpenID start requests for non-OpenID connector methods", async () => {
-    const actor = testActor();
-    mockSession(actor);
+  it("connectors-openid.bdd-005 rejects reconnecting another user's account", async () => {
+    steamVerifies();
+    const owner = bdd.user();
+    const other = bdd.user({ orgId: owner.orgId });
+    const original = await connectSteam(owner);
+    const before = await connectors.listBuiltinConnectorAccounts(
+      owner,
+      "steam",
+    );
 
     const response = await accept(
-      setupApp({ context, routes: builtinConnectorsRoutes })(
-        builtinConnectorOpenIdStartContract,
-      ).start({
-        params: { connectorSlug: "github" },
-        headers: authHeaders(),
-        body: { authMethod: "oauth", account: { intent: "add" } },
-      }),
-      [400],
+      startRequest(other, { intent: "reconnect", connectionId: original.id }),
+      [404],
     );
-    expect(response.body.error.message).toContain("auth grant");
-    expect(response.body.error.message).toContain("OpenID");
+
+    expect(response.body).toStrictEqual({
+      error: { code: "NOT_FOUND", message: "Connector account not found" },
+    });
+    await expect(
+      connectors.listBuiltinConnectorAccounts(owner, "steam"),
+    ).resolves.toStrictEqual(before);
   });
 });

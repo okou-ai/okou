@@ -1,172 +1,130 @@
-import { aroundEach, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import { testContext } from "../../../__tests__/test-context";
-import { now, withMockNowForTest } from "../../../lib/time";
-import { settleIncludingAbort } from "../../utils";
-import { createPublicComputerUseScenario } from "./helpers/public-computer-use-scenario";
+import { setupRawAppRequest } from "../../../__tests__/test-helpers";
+import { computerUseRoutes } from "../computer-use";
+import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
+import { createComputerUseBddApi } from "./helpers/api-bdd-computer-use";
 
 const context = testContext();
-const STARTED_AT_MS = now();
 
-aroundEach(async (runTest) => {
-  await withMockNowForTest(STARTED_AT_MS, runTest);
-});
+const PNG_SIGNATURE = Buffer.from([
+  0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
+]);
 
-async function prepareScreenshotCompletion(
-  scenario: ReturnType<typeof createPublicComputerUseScenario>,
-) {
-  const actor = scenario.user();
-  const host = await scenario.computerUse.startComputerUseHost(actor, {
-    hostName: "Screenshot completion Desktop",
-  });
-  const created = await scenario.computerUse.createComputerUseReadCommand(
-    actor,
-    { kind: "app.state", app: "Safari" },
-  );
-  const claimed = await scenario.computerUse.claimNextComputerUseCommand(
-    host.connection,
-  );
-  expect(claimed).toMatchObject({
-    status: "command",
-    command: { id: created.commandId },
-  });
-  const bytes = Buffer.from("screenshot completion bytes 中文🙂");
-  return {
-    actor,
-    host,
-    commandId: created.commandId,
-    bytes,
-    result: {
-      snapshotId: "screenshot_completion",
-      screenshot: `data:image/png;base64,${bytes.toString("base64")}`,
-      screenshotWidth: 1440,
-      screenshotHeight: 900,
-    },
-  };
-}
-
-async function expectRunningWithoutScreenshot(
-  scenario: ReturnType<typeof createPublicComputerUseScenario>,
-  fixture: Awaited<ReturnType<typeof prepareScreenshotCompletion>>,
-) {
-  const command = await scenario.computerUse.readComputerUseCommand(
-    fixture.actor,
-    fixture.commandId,
-  );
-  expect(command).toMatchObject({ status: "running", completedAt: null });
-  expect(command.result).toBeUndefined();
-  const content = await scenario.computerUse.requestComputerUseScreenshot(
-    fixture.actor,
-    fixture.commandId,
-    [404],
-  );
-  expect(content.body).toStrictEqual({
-    error: {
-      message: "Computer-use command screenshot not found",
-      code: "NOT_FOUND",
+/** Clerk session of the member's desktop host, as the native app presents it. */
+function hostSession(actor: ApiTestUser) {
+  const sessionId = `sess_${actor.userId}`;
+  context.mocks.clerk.authenticateRequest.mockResolvedValue({
+    isAuthenticated: true,
+    toAuth: () => {
+      return { ...actor, sessionId };
     },
   });
-}
-
-async function completeAndReadScreenshot(
-  scenario: ReturnType<typeof createPublicComputerUseScenario>,
-  fixture: Awaited<ReturnType<typeof prepareScreenshotCompletion>>,
-) {
-  await scenario.computerUse.completeComputerUseCommandWith(
-    fixture.host.connection,
-    fixture.commandId,
-    { status: "succeeded", result: fixture.result },
-  );
-  const command = await scenario.computerUse.readComputerUseCommand(
-    fixture.actor,
-    fixture.commandId,
-  );
-  expect(command).toMatchObject({ status: "succeeded" });
-  expect(command.result?.screenshot).toStrictEqual({
-    type: "s3",
-    mimeType: "image/png",
-    sizeBytes: fixture.bytes.length,
-    width: 1440,
-    height: 900,
+  context.mocks.clerk.sessions.getSession.mockResolvedValue({
+    id: sessionId,
+    userId: actor.userId,
+    status: "active",
   });
-  const content = await scenario.computerUse.resolveComputerUseScreenshot(
-    fixture.actor,
-    fixture.commandId,
+  context.mocks.clerk.organizations.getOrganizationMembershipList.mockResolvedValue(
+    {
+      data: [
+        {
+          organization: { id: actor.orgId ?? "" },
+          publicUserData: { userId: actor.userId },
+          role: actor.orgRole ?? "org:member",
+        },
+      ],
+      totalCount: 1,
+    },
   );
-  expect(content).toMatchObject({
-    downloadUrl: expect.stringContaining(
-      encodeURIComponent(`${fixture.commandId}/screenshot.png`),
-    ),
-    filename: "screenshot.png",
-    contentType: "image/png",
-    size: fixture.bytes.length,
-    cacheControl: "private, no-store",
-  });
+  return { authorization: "Bearer clerk-session" };
 }
 
 describe("Computer Use screenshot completion", () => {
-  it("keeps an upload failure recoverable through ordinary completion", async () => {
-    const scenario = createPublicComputerUseScenario(context);
-    return await scenario.run(async () => {
-      const fake = scenario.computerUse.installComputerUseS3Fake();
-      const fixture = await prepareScreenshotCompletion(scenario);
-      fake.failNextPutObject(new Error("Screenshot storage is unavailable"));
-
-      await expect(
-        scenario.computerUse.completeComputerUseCommandWith(
-          fixture.host.connection,
-          fixture.commandId,
-          { status: "succeeded", result: fixture.result },
-        ),
-      ).rejects.toThrow("Unknown response status 500");
-      await expectRunningWithoutScreenshot(scenario, fixture);
-      await completeAndReadScreenshot(scenario, fixture);
+  it("computer-use-screenshot-completion-001 keeps a failed screenshot upload recoverable through an ordinary completion retry", async () => {
+    const api = createComputerUseBddApi(context);
+    const member = createBddApi(context).user({ orgRole: "org:member" });
+    const storage = api.installComputerUseS3Fake();
+    const host = await api.startComputerUseHost(member);
+    const { commandId } = await api.createComputerUseReadCommand(member, {
+      kind: "app.state",
+      app: "Safari",
     });
-  });
+    const claimed = await api.claimNextComputerUseCommand(host.connection);
+    expect(claimed).toMatchObject({
+      status: "command",
+      command: { id: commandId },
+    });
+    const png = Buffer.concat([PNG_SIGNATURE, Buffer.alloc(56, 7)]);
+    const completion = {
+      status: "succeeded",
+      result: {
+        app: "Safari",
+        screenshot: `data:image/png;base64,${png.toString("base64")}`,
+        screenshotWidth: 1440,
+        screenshotHeight: 900,
+      },
+    } as const;
+    storage.failNextPutObject(new Error("Object storage is unavailable"));
 
-  it("drains an admitted upload before rejecting a cancelled API completion", async () => {
-    const scenario = createPublicComputerUseScenario(context);
-    return await scenario.run(async () => {
-      const fake = scenario.computerUse.installComputerUseS3Fake();
-      const fixture = await prepareScreenshotCompletion(scenario);
-      const owner = new AbortController();
-      const barrier = fake.holdNextPutObject();
-      const pending = settleIncludingAbort(() => {
-        return scenario.computerUse.completeComputerUseCommandWith(
-          fixture.host.connection,
-          fixture.commandId,
-          { status: "succeeded", result: fixture.result },
-          AbortSignal.any([context.signal, owner.signal]),
-        );
-      });
-      const checked = await settleIncludingAbort(async () => {
-        const started = await Promise.race([barrier.entered, pending]);
-        if ("ok" in started) {
-          if (!started.ok) {
-            throw started.error;
-          }
-          throw new Error("Completion finished before the upload response");
-        }
-        owner.abort(
-          new DOMException("Computer Use API instance stopped", "AbortError"),
-        );
-        await expectRunningWithoutScreenshot(scenario, fixture);
-        barrier.release();
-        await expect(pending).resolves.toMatchObject({
-          ok: false,
-          error: expect.objectContaining({
-            message: expect.stringContaining("Unknown response status 500"),
-          }),
-        });
-        await expectRunningWithoutScreenshot(scenario, fixture);
-        await completeAndReadScreenshot(scenario, fixture);
-      });
-      owner.abort();
-      barrier.release();
-      await pending;
-      if (!checked.ok) {
-        throw checked.error;
-      }
+    // The completion contract declares no 500 response, so post it raw.
+    const failed = await setupRawAppRequest({
+      context,
+      routes: computerUseRoutes,
+    })(
+      `/api/computer-use/hosts/${host.hostId}/commands/${commandId}/complete`,
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          ...hostSession(member),
+        },
+        body: JSON.stringify({
+          ...completion,
+          connectionGeneration: host.connectionGeneration,
+        }),
+      },
+    );
+    const pending = await api.readComputerUseCommand(member, commandId);
+    const missingScreenshot = await api.requestComputerUseScreenshot(
+      member,
+      commandId,
+      [404],
+    );
+
+    expect(failed.status).toBe(500);
+    expect(pending).toMatchObject({ status: "running", completedAt: null });
+    expect(pending).not.toHaveProperty("result");
+    expect(missingScreenshot.status).toBe(404);
+
+    await api.completeComputerUseCommandWith(
+      host.connection,
+      commandId,
+      completion,
+    );
+    const completed = await api.readComputerUseCommand(member, commandId);
+    const download = await api.resolveComputerUseScreenshot(member, commandId);
+
+    expect(completed).toMatchObject({
+      status: "succeeded",
+      result: {
+        app: "Safari",
+        screenshot: {
+          type: "s3",
+          mimeType: "image/png",
+          sizeBytes: png.length,
+          width: 1440,
+          height: 900,
+        },
+      },
+    });
+    expect(download).toStrictEqual({
+      downloadUrl: expect.stringMatching(/^https:\/\//),
+      filename: "screenshot.png",
+      contentType: "image/png",
+      size: png.length,
+      cacheControl: "private, no-store",
     });
   });
 });

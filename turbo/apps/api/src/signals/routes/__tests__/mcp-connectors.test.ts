@@ -1,64 +1,416 @@
-import { chatThreadsContract } from "@okouai/api-contracts/contracts/chat-threads";
-import { chatConnectorAccessContract } from "@okouai/api-contracts/contracts/chat-connector-access";
 import { randomUUID } from "node:crypto";
-import { chatThreadCreateRoutes } from "../chat-threads-create";
-import { okouTokenFromExecution } from "./helpers/chat-events-fixture";
-import { publicChatActor } from "./helpers/public-chat-actor";
 
-import {
-  connectorAccountsContract,
-  type ConnectorAccountSelection,
-} from "@okouai/api-contracts/contracts/connector-accounts";
-import type { CreateCustomConnectorBody } from "@okouai/api-contracts/contracts/custom-connectors";
+import { chatConnectorAccessContract } from "@okouai/api-contracts/contracts/chat-connector-access";
+import { chatEventsContract } from "@okouai/api-contracts/contracts/chat-event-send";
+import { chatThreadsContract } from "@okouai/api-contracts/contracts/chat-threads";
+import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
+import { customConnectorOAuth2Contract } from "@okouai/api-contracts/contracts/custom-connectors";
 import { mcpConnectorsContract } from "@okouai/api-contracts/contracts/mcp-connectors";
-import { afterEach } from "vitest";
+import {
+  runsByIdContract,
+  runsCancelContract,
+} from "@okouai/api-contracts/contracts/run-routes";
+import {
+  runWebhookContract,
+  webhookClerkContract,
+  webhookCompleteContract,
+} from "@okouai/api-contracts/contracts/webhooks";
+import type { ExecutionFirewallEntry } from "@okouai/connectors/firewall-types";
+import { http, HttpResponse } from "msw";
+import { beforeAll, describe, expect, it, onTestFinished } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { mockEnv } from "../../../lib/env";
+import {
+  TEST_WITH_DOUBLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE,
+  TEST_WITH_SINGLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE,
+  TEST_WITH_TRIPLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE,
+} from "../../../__tests__/test-timeouts";
+import { env, mockEnv, mockOptionalEnv, optionalEnv } from "../../../lib/env";
+import { clearMockNow, mockNow, now } from "../../../lib/time";
+import { server } from "../../../mocks/server";
 import { flushWaitUntilForTest } from "../../context/wait-until";
-import { connectorAccountRoutes } from "../connector-accounts";
+import { settleIncludingAbort } from "../../utils";
 import { chatConnectorAccessRoutes } from "../chat-connector-access";
+import { chatEventsRoutes } from "../chat-events";
+import { chatThreadRoutes } from "../chat-threads";
+import { connectorAccountRoutes } from "../connector-accounts";
+import { customConnectorOAuth2Routes } from "../custom-connectors-oauth2";
 import { mcpConnectorsRoutes } from "../mcp-connectors";
+import { runsRoutes } from "../runs";
+import { runsCancelRoutes } from "../runs-cancel";
+import { webhooksAgentCompleteRoutes } from "../webhooks-agent-complete";
+import { webhooksAgentFirewallAuthRoutes } from "../webhooks-agent-firewall-auth";
+import { webhooksClerkRoutes } from "../webhooks-clerk";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
-import { mockClerkMembership } from "./helpers/api-bdd-clerk";
+import { createChatCallbacksApi } from "./helpers/api-bdd-chat-callbacks";
 import {
   createConnectorBddApi,
-  manualHttpCustomConnectorCreateBody,
   mockAutomaticMcpOAuthProvider,
 } from "./helpers/api-bdd-connectors";
 import { createRunsApi } from "./helpers/api-bdd-runs";
-import { createFirewallApi, secretTemplate } from "./helpers/api-bdd-firewall";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
+import { okouTokenFromExecution } from "./helpers/chat-events-fixture";
 import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
 const bdd = createBddApi(context);
 const connectors = createConnectorBddApi(context);
-const runs = createRunsApi(context);
-const mocks = createRouteMocks(context);
+const chatCallbacks = createChatCallbacksApi(context);
+const runsApi = createRunsApi(context);
+const webhooksApi = createWebhookCallbackApi(context);
 
-type McpCreateBody = Extract<
-  CreateCustomConnectorBody,
-  { readonly kind: "mcp" }
+type RunnerExecutionInput = Awaited<
+  ReturnType<typeof runsApi.nextReceivedExecution>
 >;
 
-function manualMcpConnectorBody(args: {
-  readonly slug: string;
+const RUN_SESSION_HEADERS = { authorization: "Bearer run-session" } as const;
+
+const mcpApi = setupApp({ context, routes: mcpConnectorsRoutes })(
+  mcpConnectorsContract,
+);
+const chatEventsApi = setupApp({ context, routes: chatEventsRoutes })(
+  chatEventsContract,
+);
+const chatThreadsApi = setupApp({ context, routes: chatThreadRoutes })(
+  chatThreadsContract,
+);
+const chatConnectorAccessApi = setupApp({
+  context,
+  routes: chatConnectorAccessRoutes,
+})(chatConnectorAccessContract);
+const connectorAccountsApi = setupApp({
+  context,
+  routes: connectorAccountRoutes,
+})(connectorAccountsContract);
+const customOAuth2Api = setupApp({
+  context,
+  routes: customConnectorOAuth2Routes,
+})(customConnectorOAuth2Contract);
+const runByIdApi = setupApp({ context, routes: runsRoutes })(runsByIdContract);
+const runCancelApi = setupApp({ context, routes: runsCancelRoutes })(
+  runsCancelContract,
+);
+const runAgentCompleteApi = setupApp({
+  context,
+  routes: webhooksAgentCompleteRoutes,
+})(webhookCompleteContract);
+const runFirewallAuthApi = setupApp({
+  context,
+  routes: webhooksAgentFirewallAuthRoutes,
+})(runWebhookContract);
+const runClerkWebhookApi = setupApp({
+  context,
+  routes: webhooksClerkRoutes,
+})(webhookClerkContract);
+
+function bearerHeaders(token: string) {
+  return { authorization: `Bearer ${token}` };
+}
+
+function signInRunActor(actor: ApiTestUser) {
+  const mocks = createRouteMocks(context);
+  mocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
+  const memberships = actor.orgId
+    ? [
+        {
+          id: `membership-${actor.userId}-${actor.orgId}`,
+          createdAt: Date.parse("2020-01-01T00:00:00.000Z"),
+          role: actor.orgRole ?? "org:admin",
+          organization: { id: actor.orgId },
+          publicUserData: { userId: actor.userId },
+        },
+      ]
+    : [];
+  context.mocks.clerk.users.getOrganizationMembershipList.mockResolvedValue({
+    data: memberships,
+  });
+  context.mocks.clerk.organizations.getOrganizationMembershipList.mockResolvedValue(
+    { data: memberships },
+  );
+  return RUN_SESSION_HEADERS;
+}
+
+function acceptRunAblyBatchPublish(): void {
+  server.use(
+    http.post("https://rest.ably.io/messages", () => {
+      return HttpResponse.json([{ channel: "ok", messageId: randomUUID() }], {
+        status: 201,
+      });
+    }),
+  );
+}
+
+function oauthStateFromUrl(authorizationUrl: string): string {
+  const state = new URL(authorizationUrl).searchParams.get("state");
+  if (!state) {
+    throw new Error(`Expected state parameter in ${authorizationUrl}`);
+  }
+  return state;
+}
+
+function firstInlineCustomFirewallApi(
+  firewalls: readonly ExecutionFirewallEntry[] | undefined,
+  customConnectorId: string,
+) {
+  for (const entry of firewalls ?? []) {
+    if (
+      entry.kind === "inline" &&
+      entry.customConnectorId === customConnectorId
+    ) {
+      const [firstApi] = entry.firewall.apis;
+      if (firstApi) {
+        return { firewall: entry.firewall, api: firstApi };
+      }
+    }
+  }
+  throw new Error(
+    `Expected inline firewall API for custom connector ${customConnectorId}`,
+  );
+}
+
+interface TrackedMcpRun {
+  readonly runId: string;
+  readonly sandboxToken: string;
+  readonly issuedAtMs: number;
+  done: boolean;
+}
+
+interface StartedMcpRun {
+  readonly runId: string;
+  readonly threadId: string;
+  readonly execution: RunnerExecutionInput;
+  readonly okouToken: string;
+  readonly tracked: TrackedMcpRun;
+}
+
+function prepareMcpRunEnv(actor = bdd.user({ orgRole: "org:admin" })) {
+  if (!actor.orgId) {
+    throw new Error("Expected org-scoped actor");
+  }
+  const orgId = actor.orgId;
+  chatCallbacks.acceptChatObjectStorage();
+  runsApi.acceptStorageDownloads();
+  runsApi.acceptTelemetryIngest();
+  chatCallbacks.disableVapid();
+  acceptRunAblyBatchPublish();
+  mockOptionalEnv("OPENROUTER_API_KEY", undefined);
+
+  const trackedRuns: TrackedMcpRun[] = [];
+  const bucket = env("R2_USER_STORAGES_BUCKET_NAME");
+  const kmsKey = env("SECRETS_KMS_KEY_ID");
+
+  const runnerIdentity = {
+    runnerId: randomUUID(),
+    heartbeatGeneration: 1,
+  };
+  const runnerHostname = `runner-${runnerIdentity.runnerId}.okou.app`;
+
+  webhooksApi.configureClerkWebhookSecret();
+  webhooksApi.verifyNextClerkWebhook({
+    type: "organization.created",
+    data: { id: orgId, created_by: actor.userId, created_at: now() },
+  });
+
+  const runnerGroupPromise = runsApi.configureRunnerGroup({
+    runnerIdentity,
+    hostname: runnerHostname,
+  });
+  const orgCreatedPromise = accept(
+    runClerkWebhookApi.post({ body: "{}", extraHeaders: {} }),
+    [200],
+  );
+  let resolvedRunnerGroup: string | undefined;
+
+  onTestFinished(async () => {
+    const previousRunnerGroup = optionalEnv("RUNNER_DEFAULT_GROUP");
+    mockEnv("R2_USER_STORAGES_BUCKET_NAME", bucket);
+    mockEnv("SECRETS_KMS_KEY_ID", kmsKey);
+    if (resolvedRunnerGroup !== undefined) {
+      mockOptionalEnv("RUNNER_DEFAULT_GROUP", resolvedRunnerGroup);
+    }
+    context.mocks.ably.publish.mockResolvedValue(undefined);
+    acceptRunAblyBatchPublish();
+    const result = await settleIncludingAbort(async () => {
+      await Promise.allSettled([runnerGroupPromise, orgCreatedPromise]);
+      await flushWaitUntilForTest();
+      const activeRuns = trackedRuns.filter((tracked) => {
+        return !tracked.done;
+      });
+      if (activeRuns.length > 0) {
+        const ownerHeaders = signInRunActor(actor);
+        const groupedByTime = new Map<number, TrackedMcpRun[]>();
+        for (const tracked of activeRuns) {
+          const group = groupedByTime.get(tracked.issuedAtMs) ?? [];
+          group.push(tracked);
+          groupedByTime.set(tracked.issuedAtMs, group);
+        }
+        for (const [issuedAtMs, group] of groupedByTime) {
+          mockNow(issuedAtMs);
+          await Promise.all(
+            group.map(async (tracked) => {
+              const current = await accept(
+                runByIdApi.getById({
+                  headers: ownerHeaders,
+                  params: { id: tracked.runId },
+                }),
+                [200],
+              );
+              if (
+                ["queued", "pending", "running"].includes(current.body.status)
+              ) {
+                await accept(
+                  runCancelApi.cancel({
+                    headers: ownerHeaders,
+                    params: { id: tracked.runId },
+                  }),
+                  [200],
+                );
+              }
+              if (
+                !["completed", "failed", "timeout"].includes(
+                  current.body.status,
+                )
+              ) {
+                await accept(
+                  runAgentCompleteApi.complete({
+                    headers: bearerHeaders(tracked.sandboxToken),
+                    body: {
+                      runId: tracked.runId,
+                      exitCode: 137,
+                      error: "Run cancelled by test cleanup",
+                    },
+                  }),
+                  [200],
+                );
+              }
+              tracked.done = true;
+            }),
+          );
+        }
+      }
+      await flushWaitUntilForTest();
+    });
+    mockOptionalEnv("RUNNER_DEFAULT_GROUP", previousRunnerGroup);
+    clearMockNow();
+    if (!result.ok) {
+      throw result.error;
+    }
+  });
+
+  async function awaitBootstrap(): Promise<string> {
+    if (resolvedRunnerGroup !== undefined) {
+      return resolvedRunnerGroup;
+    }
+    const [runnerGroup] = await Promise.all([
+      runnerGroupPromise,
+      orgCreatedPromise,
+    ]);
+    resolvedRunnerGroup = runnerGroup;
+    return runnerGroup;
+  }
+
+  async function createThread(title = "MCP thread"): Promise<string> {
+    await awaitBootstrap();
+    const created = await accept(
+      chatThreadsApi.create({
+        headers: signInRunActor(actor),
+        body: { title },
+      }),
+      [201],
+    );
+    return created.body.id;
+  }
+
+  async function startRun(options?: {
+    readonly threadId?: string;
+    readonly prompt?: string;
+  }): Promise<StartedMcpRun> {
+    const runnerGroup = await awaitBootstrap();
+    const issuedAtMs = now();
+    const prompt = options?.prompt ?? "Inspect MCP connectors";
+    const sent = await accept(
+      chatEventsApi.send({
+        headers: signInRunActor(actor),
+        body: {
+          ...(options?.threadId ? { threadId: options.threadId } : {}),
+          prompt,
+          model: null,
+          clientEventId: randomUUID(),
+          userMessage: {
+            version: 1,
+            parts: [{ type: "text", text: prompt }],
+          },
+          hasTextContent: true,
+        },
+      }),
+      [201],
+    );
+    await flushWaitUntilForTest();
+    const execution = await runsApi.nextReceivedExecution(runnerGroup);
+    const tracked: TrackedMcpRun = {
+      runId: execution.runId,
+      sandboxToken: execution.sandboxToken,
+      issuedAtMs,
+      done: false,
+    };
+    trackedRuns.push(tracked);
+    return {
+      runId: execution.runId,
+      threadId: sent.body.threadId,
+      execution,
+      okouToken: okouTokenFromExecution(execution),
+      tracked,
+    };
+  }
+
+  async function cancelAndAcknowledge(started: StartedMcpRun): Promise<void> {
+    await accept(
+      runCancelApi.cancel({
+        headers: signInRunActor(actor),
+        params: { id: started.runId },
+      }),
+      [200],
+    );
+    await accept(
+      runAgentCompleteApi.complete({
+        headers: bearerHeaders(started.execution.sandboxToken),
+        body: {
+          runId: started.runId,
+          exitCode: 137,
+          error: "Run cancelled",
+        },
+      }),
+      [200],
+    );
+    started.tracked.done = true;
+  }
+
+  return {
+    actor,
+    orgId,
+    createThread,
+    startRun,
+    cancelAndAcknowledge,
+  };
+}
+
+function manualMcpBody(args: {
   readonly displayName: string;
   readonly endpoint: string;
-}): McpCreateBody {
+  readonly storageVersion?: number;
+}) {
   return {
-    kind: "mcp",
-    slug: args.slug,
+    kind: "mcp" as const,
     displayName: args.displayName,
     endpoint: args.endpoint,
-    transport: "streamable-http",
+    transport: "streamable-http" as const,
+    authMode: "manual" as const,
     fields: [
       {
         key: "secret",
-        label: "API token",
-        kind: "secret",
+        label: "API Secret",
+        kind: "secret" as const,
         required: true,
       },
     ],
@@ -69,566 +421,640 @@ function manualMcpConnectorBody(args: {
       },
     ],
     queryInjections: [],
-    authMode: "manual",
+    ...(args.storageVersion === undefined
+      ? {}
+      : { storageVersion: args.storageVersion }),
   };
 }
 
-function client() {
-  return setupApp({ context, routes: mcpConnectorsRoutes })(
-    mcpConnectorsContract,
-  );
-}
-
-function accountClient() {
-  return setupApp({ context, routes: connectorAccountRoutes })(
-    connectorAccountsContract,
-  );
-}
-
-function headers(token: string): { readonly authorization: string } {
-  return { authorization: `Bearer ${token}` };
-}
-
-async function createRunForAgent(
-  owned: Awaited<ReturnType<typeof publicChatActor>>,
-  selections: readonly ConnectorAccountSelection[] = [],
-) {
-  const { actor } = owned;
-  mocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
-  const thread = await accept(
-    setupApp({ context, routes: chatThreadCreateRoutes })(
-      chatThreadsContract,
-    ).create({
-      headers: headers("clerk-session"),
-      body: {},
-    }),
-    [201],
-  );
-  const chatAccess = setupApp({ context, routes: chatConnectorAccessRoutes })(
-    chatConnectorAccessContract,
-  );
-  for (const selection of selections) {
-    await accept(
-      chatAccess.setThreadCurrent({
-        headers: headers("clerk-session"),
-        params: { threadId: thread.body.id },
-        body: selection,
-      }),
-      [200],
-    );
-  }
-  const run = await owned.sendChatRun(actor, {
-    threadId: thread.body.id,
-    prompt: "Discover MCP connectors",
+beforeAll(async () => {
+  context.mocks.clerk.authenticateRequest.mockResolvedValue({
+    isAuthenticated: false,
   });
-  const execution = await owned.runExecution(run.runId);
-  return { ...run, token: okouTokenFromExecution(execution.execution) };
-}
-
-function requireConnectedAccountId(
-  connector: Awaited<ReturnType<typeof connectors.setCustomConnectorValues>>,
-): string {
-  if (!connector.connectionId) {
-    throw new Error("Expected a connected Custom connector account");
+  const missingId = randomUUID();
+  const warmed = await settleIncludingAbort(async () => {
+    await Promise.all([
+      accept(mcpApi.list({ headers: {} }), [401]),
+      accept(
+        mcpApi.reauthorizeOAuth({
+          headers: {},
+          body: {
+            target: { kind: "custom", customConnectorId: missingId },
+            scopes: ["read"],
+          },
+        }),
+        [401],
+      ),
+      accept(
+        chatThreadsApi.create({ headers: {}, body: { title: "w" } }),
+        [401],
+      ),
+      accept(
+        chatConnectorAccessApi.setThreadCurrent({
+          headers: {},
+          params: { threadId: missingId },
+          body: {
+            target: { kind: "custom", customConnectorId: missingId },
+            connectionId: missingId,
+          },
+        }),
+        [401],
+      ),
+      accept(
+        connectorAccountsApi.delete({
+          headers: {},
+          params: { connectionId: missingId },
+          body: { target: { kind: "custom", customConnectorId: missingId } },
+        }),
+        [401],
+      ),
+      accept(
+        customOAuth2Api.start({
+          headers: {},
+          params: { id: missingId },
+          body: { account: { intent: "add" } },
+        }),
+        [401],
+      ),
+      accept(
+        chatEventsApi.send({
+          headers: {},
+          body: {
+            prompt: "warmup",
+            clientEventId: randomUUID(),
+            userMessage: {
+              version: 1,
+              parts: [{ type: "text", text: "warmup" }],
+            },
+            hasTextContent: true,
+          },
+        }),
+        [401],
+      ),
+      accept(
+        runByIdApi.getById({ headers: {}, params: { id: missingId } }),
+        [401],
+      ),
+      accept(
+        runCancelApi.cancel({ headers: {}, params: { id: missingId } }),
+        [401],
+      ),
+      accept(
+        runAgentCompleteApi.complete({
+          headers: {},
+          body: { runId: missingId, exitCode: 0 },
+        }),
+        [401],
+      ),
+      accept(
+        runFirewallAuthApi.firewallAuth({
+          headers: {},
+          body: { authHeaders: {} },
+        }),
+        [401],
+      ),
+    ]);
+  });
+  if (!warmed.ok) {
+    throw warmed.error;
   }
-  return connector.connectionId;
-}
-
-function stateFromAuthorizationUrl(authorizationUrl: string): string {
-  const state = new URL(authorizationUrl).searchParams.get("state");
-  if (!state) {
-    throw new Error("Expected connector authorization URL to include state");
-  }
-  return state;
-}
+});
 
 describe("GET /api/mcp-connectors", () => {
-  it("uses the Chat's exact selected account and discovers newly connected MCPs", async () => {
-    const owned = await publicChatActor(context);
-    await owned.run(async () => {
-      const { actor } = owned;
+  it("mcp-connectors-004 requires an agent token to read connectors", async () => {
+    const admin = bdd.user();
 
-      const selected = await connectors.createCustomConnector(
-        actor,
-        manualMcpConnectorBody({
-          slug: "_selected-mcp",
-          displayName: "Selected MCP",
-          endpoint: "https://selected-mcp.example.test/server",
-        }),
-      );
-      const defaultAccountId = requireConnectedAccountId(
-        await connectors.setCustomConnectorValues(actor, selected.id, [
-          { key: "secret", kind: "secret", value: "default-v1" },
-        ]),
-      );
-      const selectedAccountId = requireConnectedAccountId(
-        await connectors.setCustomConnectorValues(
+    context.mocks.clerk.authenticateRequest.mockResolvedValue({
+      isAuthenticated: false,
+    });
+    const anonymous = await accept(mcpApi.list({ headers: {} }), [401]);
+    createRouteMocks(context).clerk.session(
+      admin.userId,
+      admin.orgId,
+      admin.orgRole,
+    );
+    const session = await accept(
+      mcpApi.list({ headers: { authorization: "Bearer clerk-session" } }),
+      [403],
+    );
+
+    expect(anonymous.status).toBe(401);
+    expect(session.status).toBe(403);
+  });
+
+  it(
+    "mcp-connectors-001 uses the Chat's exact selected account and discovers newly connected MCPs",
+    { timeout: TEST_WITH_TRIPLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const envSetup = prepareMcpRunEnv();
+      const { actor } = envSetup;
+      const selectedEndpoint = `https://selected-mcp-${randomUUID().slice(0, 8)}.example.test/mcp`;
+      const postStartEndpoint = `https://post-start-mcp-${randomUUID().slice(0, 8)}.example.test/mcp`;
+      const httpPrefix = `https://signed-http-${randomUUID().slice(0, 8)}.example.test/v1`;
+
+      const [selectedMcp, httpConnector, threadId] = await Promise.all([
+        connectors.createCustomConnector(
           actor,
-          selected.id,
-          [{ key: "secret", kind: "secret", value: "selected-v1" }],
-          { intent: "add", displayName: "Run account" },
+          manualMcpBody({
+            displayName: "Selected MCP",
+            endpoint: selectedEndpoint,
+          }),
         ),
-      );
-      const signedHttp = await connectors.createCustomConnector(
-        actor,
-        manualHttpCustomConnectorCreateBody({
-          slug: "_signed-http",
+        connectors.createCustomConnector(actor, {
           displayName: "Signed HTTP",
-          prefixTemplates: ["https://signed-http.example.test/v1/"],
+          prefixTemplates: [httpPrefix],
+          authMode: "manual",
+          fields: [
+            {
+              key: "secret",
+              label: "Secret",
+              kind: "secret",
+              required: true,
+            },
+          ],
+          headerInjections: [
+            {
+              name: "Authorization",
+              valueTemplate: "Bearer {{secrets.secret}}",
+            },
+          ],
+          queryInjections: [],
         }),
-      );
-      const signedHttpAccountId = requireConnectedAccountId(
-        await connectors.setCustomConnectorValues(actor, signedHttp.id, [
-          { key: "secret", kind: "secret", value: "signed-http" },
-        ]),
-      );
-      const run = await createRunForAgent(owned, [
-        {
-          connectionId: selectedAccountId,
-          target: { kind: "custom", customConnectorId: selected.id },
-        },
-        {
-          connectionId: signedHttpAccountId,
-          target: { kind: "custom", customConnectorId: signedHttp.id },
-        },
+        envSetup.createThread("Exact MCP account thread"),
       ]);
 
-      const initialSelected = await accept(
-        client().list({ headers: headers(run.token) }),
+      const defaultMcpAccount = await connectors.setCustomConnectorValues(
+        actor,
+        selectedMcp.id,
+        [{ key: "secret", kind: "secret", value: "default-mcp-secret" }],
+        { intent: "add", displayName: "Default account" },
+      );
+      const runMcpAccount = await connectors.setCustomConnectorValues(
+        actor,
+        selectedMcp.id,
+        [{ key: "secret", kind: "secret", value: "run-mcp-secret" }],
+        { intent: "add", displayName: "Run account" },
+      );
+      const httpAccount = await connectors.setCustomConnectorValues(
+        actor,
+        httpConnector.id,
+        [{ key: "secret", kind: "secret", value: "http-secret" }],
+        { intent: "add" },
+      );
+
+      await Promise.all([
+        accept(
+          chatConnectorAccessApi.setThreadCurrent({
+            headers: signInRunActor(actor),
+            params: { threadId },
+            body: {
+              target: { kind: "custom", customConnectorId: selectedMcp.id },
+              connectionId: runMcpAccount.connectionId,
+            },
+          }),
+          [200],
+        ),
+        accept(
+          chatConnectorAccessApi.setThreadCurrent({
+            headers: signInRunActor(actor),
+            params: { threadId },
+            body: {
+              target: { kind: "custom", customConnectorId: httpConnector.id },
+              connectionId: httpAccount.connectionId,
+            },
+          }),
+          [200],
+        ),
+      ]);
+
+      const started = await envSetup.startRun({
+        threadId,
+        prompt: "List exact MCP accounts",
+      });
+
+      const firstList = await accept(
+        mcpApi.list({ headers: bearerHeaders(started.okouToken) }),
         [200],
       );
-      expect(initialSelected.body.connectors).toStrictEqual([
-        {
-          target: { kind: "custom", customConnectorId: selected.id },
-          connectionId: selectedAccountId,
-          slug: "_selected-mcp",
-          displayName: "Selected MCP",
+      expect(firstList.body.connectors).toStrictEqual([
+        expect.objectContaining({
+          target: { kind: "custom", customConnectorId: selectedMcp.id },
+          connectionId: runMcpAccount.connectionId,
+          slug: selectedMcp.slug,
+          endpoint: selectedEndpoint,
           transport: "streamable-http",
-          endpoint: "https://selected-mcp.example.test/server",
           runtimeAvailable: true,
           connectionStatus: "connected",
-          reconnectReason: null,
           missingRequiredFields: [],
           configuredFieldKeys: ["secret"],
-        },
+        }),
       ]);
 
-      await connectors.updateCustomConnector(actor, selected.id, {
-        ...manualMcpConnectorBody({
-          slug: "_selected-mcp",
+      await connectors.updateCustomConnector(
+        actor,
+        selectedMcp.id,
+        manualMcpBody({
           displayName: "Selected MCP",
-          endpoint: "https://selected-mcp.example.test/server",
-        }),
-        storageVersion: 2,
-      });
-      await connectors.setCustomConnectorValues(
-        actor,
-        selected.id,
-        [{ key: "secret", kind: "secret", value: "default-v2" }],
-        { intent: "reconnect", connectionId: defaultAccountId },
-      );
-      const postStart = await connectors.createCustomConnector(
-        actor,
-        manualMcpConnectorBody({
-          slug: "_post-start-mcp",
-          displayName: "Post-start MCP",
-          endpoint: "https://post-start-mcp.example.test/server",
+          endpoint: selectedEndpoint,
+          storageVersion: 2,
         }),
       );
-      const postStartAccountId = requireConnectedAccountId(
-        await connectors.setCustomConnectorValues(actor, postStart.id, [
-          { key: "secret", kind: "secret", value: "post-start" },
-        ]),
+      const [postStartMcp] = await Promise.all([
+        connectors.createCustomConnector(
+          actor,
+          manualMcpBody({
+            displayName: "Post Start MCP",
+            endpoint: postStartEndpoint,
+          }),
+        ),
+        connectors.setCustomConnectorValues(
+          actor,
+          selectedMcp.id,
+          [{ key: "secret", kind: "secret", value: "default-mcp-v2" }],
+          { intent: "reconnect", connectionId: defaultMcpAccount.connectionId },
+        ),
+      ]);
+      const postStartAccount = await connectors.setCustomConnectorValues(
+        actor,
+        postStartMcp.id,
+        [{ key: "secret", kind: "secret", value: "post-start-secret" }],
+        { intent: "add" },
       );
-      const connectedMcp = {
-        target: { kind: "custom", customConnectorId: postStart.id },
-        connectionId: postStartAccountId,
-        slug: "_post-start-mcp",
-        displayName: "Post-start MCP",
-        transport: "streamable-http",
-        endpoint: "https://post-start-mcp.example.test/server",
-        runtimeAvailable: true,
-        connectionStatus: "connected",
-        reconnectReason: null,
-        missingRequiredFields: [],
-        configuredFieldKeys: ["secret"],
-      };
-      mockClerkMembership(context, actor, "org:admin");
 
-      const staleSelected = await accept(
-        client().list({
-          headers: headers(run.token),
-        }),
+      const secondList = await accept(
+        mcpApi.list({ headers: bearerHeaders(started.okouToken) }),
         [200],
       );
-      expect(staleSelected.body).toStrictEqual({
-        connectors: [
-          connectedMcp,
-          {
-            target: { kind: "custom", customConnectorId: selected.id },
-            connectionId: selectedAccountId,
-            slug: "_selected-mcp",
-            displayName: "Selected MCP",
-            transport: "streamable-http",
-            endpoint: "https://selected-mcp.example.test/server",
+      expect(secondList.body.connectors).toStrictEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            target: { kind: "custom", customConnectorId: postStartMcp.id },
+            connectionId: postStartAccount.connectionId,
+            endpoint: postStartEndpoint,
+            runtimeAvailable: true,
+            connectionStatus: "connected",
+          }),
+          expect.objectContaining({
+            target: { kind: "custom", customConnectorId: selectedMcp.id },
+            connectionId: runMcpAccount.connectionId,
             runtimeAvailable: false,
             connectionStatus: "reconnect-required",
             reconnectReason: "configuration_invalid",
             missingRequiredFields: ["secret"],
             configuredFieldKeys: [],
-          },
-        ],
-      });
-
-      await connectors.updateCustomConnector(actor, selected.id, {
-        ...manualMcpConnectorBody({
-          slug: "_selected-mcp",
-          displayName: "Selected MCP",
-          endpoint: "https://selected-mcp.example.test/server",
-        }),
-        storageVersion: 3,
-      });
-      await connectors.setCustomConnectorValues(
-        actor,
-        selected.id,
-        [{ key: "secret", kind: "secret", value: "selected-v3" }],
-        { intent: "reconnect", connectionId: selectedAccountId },
-      );
-      const currentSelected = await accept(
-        client().list({
-          headers: headers(run.token),
-        }),
-        [200],
-      );
-      expect(currentSelected.body.connectors).toStrictEqual([
-        connectedMcp,
-        {
-          target: { kind: "custom", customConnectorId: selected.id },
-          connectionId: selectedAccountId,
-          slug: "_selected-mcp",
-          displayName: "Selected MCP",
-          transport: "streamable-http",
-          endpoint: "https://selected-mcp.example.test/server",
-          runtimeAvailable: true,
-          connectionStatus: "connected",
-          reconnectReason: null,
-          missingRequiredFields: [],
-          configuredFieldKeys: ["secret"],
-        },
-      ]);
-    });
-  });
-
-  it("removes a no-auth MCP from the running Run when its only account is deleted", async () => {
-    const owned = await publicChatActor(context);
-    await owned.run(async () => {
-      const { actor } = owned;
-
-      const body = {
-        kind: "mcp",
-        slug: "_public-mcp",
-        displayName: "Public MCP",
-        endpoint: "https://public-mcp.example.test/server",
-        transport: "streamable-http",
-        fields: [],
-        headerInjections: [],
-        queryInjections: [],
-        authMode: "none",
-      } satisfies McpCreateBody;
-      const connector = await connectors.createCustomConnector(actor, body);
-      const connectionId = requireConnectedAccountId(
-        await connectors.setCustomConnectorValues(actor, connector.id, []),
-      );
-      const run = await createRunForAgent(owned);
-      const token = run.token;
-      const target = {
-        kind: "custom",
-        customConnectorId: connector.id,
-      } as const;
-      const registration = {
-        ...target,
-        sourceId: connectionId,
-        baseUrlVars: {},
-      };
-      const initial = await accept(
-        client().list({ headers: headers(token) }),
-        [200],
-      );
-      expect(initial.body.connectors).toStrictEqual([
-        expect.objectContaining({
-          target,
-          connectionId,
-          runtimeAvailable: true,
-        }),
-      ]);
-      await expect(
-        runs.syncConnectorRuntime(run.runId, { targets: [registration] }),
-      ).resolves.toStrictEqual([
-        expect.objectContaining({
-          target,
-          state: "available",
-          accountBinding: { connectionId, baseUrlVars: {} },
-        }),
-      ]);
-      await connectors.deleteCustomConnectorAccount(
-        actor,
-        connector.id,
-        connectionId,
-      );
-      const response = await accept(
-        client().list({ headers: headers(token) }),
-        [200],
-      );
-      expect(response.body.connectors).toStrictEqual([]);
-      await expect(
-        runs.syncConnectorRuntime(run.runId, { targets: [registration] }),
-      ).resolves.toStrictEqual([
-        { target, state: "absent", reason: "connector-unavailable" },
-      ]);
-    });
-  });
-
-  it("follows the Chat's allowed replacement when its current account is deleted", async () => {
-    const owned = await publicChatActor(context);
-    await owned.run(async () => {
-      const { actor } = owned;
-
-      const selected = await connectors.createCustomConnector(
-        actor,
-        manualMcpConnectorBody({
-          slug: "_deleted-exact-mcp",
-          displayName: "Deleted exact MCP",
-          endpoint: "https://deleted-exact-mcp.example.test/server",
-        }),
-      );
-      const exactAccountId = requireConnectedAccountId(
-        await connectors.setCustomConnectorValues(actor, selected.id, [
-          { key: "secret", kind: "secret", value: "exact" },
+          }),
         ]),
       );
-      const replacementAccountId = requireConnectedAccountId(
-        await connectors.setCustomConnectorValues(
-          actor,
-          selected.id,
-          [{ key: "secret", kind: "secret", value: "healthy-sibling" }],
-          { intent: "add", displayName: "Healthy sibling" },
-        ),
+      expect(secondList.body.connectors).toHaveLength(2);
+
+      await connectors.updateCustomConnector(
+        actor,
+        selectedMcp.id,
+        manualMcpBody({
+          displayName: "Selected MCP",
+          endpoint: selectedEndpoint,
+          storageVersion: 3,
+        }),
       );
-      const target = {
-        kind: "custom",
-        customConnectorId: selected.id,
-      } as const;
-      const run = await createRunForAgent(owned, [
-        { target, connectionId: exactAccountId },
+      await connectors.setCustomConnectorValues(
+        actor,
+        selectedMcp.id,
+        [{ key: "secret", kind: "secret", value: "run-mcp-v3" }],
+        { intent: "reconnect", connectionId: runMcpAccount.connectionId },
+      );
+
+      const thirdList = await accept(
+        mcpApi.list({ headers: bearerHeaders(started.okouToken) }),
+        [200],
+      );
+      expect(thirdList.body.connectors).toHaveLength(2);
+      expect(thirdList.body.connectors).toStrictEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            target: { kind: "custom", customConnectorId: postStartMcp.id },
+            connectionId: postStartAccount.connectionId,
+            runtimeAvailable: true,
+            connectionStatus: "connected",
+          }),
+          expect.objectContaining({
+            target: { kind: "custom", customConnectorId: selectedMcp.id },
+            connectionId: runMcpAccount.connectionId,
+            runtimeAvailable: true,
+            connectionStatus: "connected",
+            missingRequiredFields: [],
+            configuredFieldKeys: ["secret"],
+          }),
+        ]),
+      );
+    },
+  );
+
+  it(
+    "mcp-connectors-003 follows the Chat's allowed replacement when its current account is deleted",
+    { timeout: TEST_WITH_SINGLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const envSetup = prepareMcpRunEnv();
+      const { actor } = envSetup;
+      const endpoint = `https://replacement-mcp-${randomUUID().slice(0, 8)}.example.test/mcp`;
+
+      const [mcpConnector, threadId] = await Promise.all([
+        connectors.createCustomConnector(
+          actor,
+          manualMcpBody({ displayName: "Replacement MCP", endpoint }),
+        ),
+        envSetup.createThread("Replacement MCP thread"),
       ]);
-      mocks.clerk.session(actor.userId, actor.orgId, "org:admin");
-      mockClerkMembership(context, actor, "org:admin");
+
+      const exactAccount = await connectors.setCustomConnectorValues(
+        actor,
+        mcpConnector.id,
+        [{ key: "secret", kind: "secret", value: "exact-secret" }],
+        { intent: "add", displayName: "Exact account" },
+      );
+      const siblingAccount = await connectors.setCustomConnectorValues(
+        actor,
+        mcpConnector.id,
+        [{ key: "secret", kind: "secret", value: "sibling-secret" }],
+        { intent: "add", displayName: "Healthy sibling" },
+      );
 
       await accept(
-        accountClient().delete({
-          headers: headers("clerk-session"),
-          params: { connectionId: exactAccountId },
+        chatConnectorAccessApi.setThreadCurrent({
+          headers: signInRunActor(actor),
+          params: { threadId },
           body: {
-            target: { kind: "custom", customConnectorId: selected.id },
+            target: { kind: "custom", customConnectorId: mcpConnector.id },
+            connectionId: exactAccount.connectionId,
           },
         }),
         [200],
       );
-      const deleted = await accept(
-        client().list({
-          headers: headers(run.token),
+
+      const started = await envSetup.startRun({
+        threadId,
+        prompt: "Follow MCP account replacement",
+      });
+
+      await accept(
+        connectorAccountsApi.delete({
+          headers: signInRunActor(actor),
+          params: { connectionId: exactAccount.connectionId },
+          body: {
+            target: { kind: "custom", customConnectorId: mcpConnector.id },
+          },
         }),
         [200],
       );
-      expect(deleted.body.connectors).toStrictEqual([
+
+      const listed = await accept(
+        mcpApi.list({ headers: bearerHeaders(started.okouToken) }),
+        [200],
+      );
+      expect(listed.body.connectors).toStrictEqual([
         expect.objectContaining({
-          target,
-          connectionId: replacementAccountId,
+          target: { kind: "custom", customConnectorId: mcpConnector.id },
+          connectionId: siblingAccount.connectionId,
           runtimeAvailable: true,
+          connectionStatus: "connected",
         }),
       ]);
-    });
-  });
+    },
+  );
 
-  it("requires agent authentication for connector read", async () => {
-    const actor = bdd.user();
-    mockClerkMembership(context, actor, "org:admin");
+  it(
+    "builtin-mcp-discovery-001 refreshes discovery as Chat accounts become available and are deleted",
+    { timeout: TEST_WITH_DOUBLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const envSetup = prepareMcpRunEnv();
+      const { actor } = envSetup;
 
-    const unauthenticated = await accept(client().list({ headers: {} }), [401]);
-    mocks.clerk.session(actor.userId, actor.orgId, "org:admin");
-    const session = await accept(
-      client().list({ headers: headers("clerk-session") }),
-      [403],
-    );
+      const run1 = await envSetup.startRun({
+        prompt: "Discover builtin manual MCP before connection",
+      });
 
-    expect(unauthenticated.status).toBe(401);
-    expect(session.status).toBe(403);
-  });
+      const emptyList = await accept(
+        mcpApi.list({ headers: bearerHeaders(run1.okouToken) }),
+        [200],
+      );
+      expect(emptyList.body.connectors).toStrictEqual([]);
+
+      const firstManual = await connectors.requestManualGrant(
+        actor,
+        "manual-mcp",
+        "api-token",
+        { apiKey: "builtin-manual-mcp-secret-1" },
+        { statuses: [200] },
+      );
+      if (firstManual.status !== 200) {
+        throw new Error("Expected first builtin manual MCP connection");
+      }
+      const firstId = firstManual.body.connectionId;
+
+      const afterFirstConnect = await accept(
+        mcpApi.list({ headers: bearerHeaders(run1.okouToken) }),
+        [200],
+      );
+      expect(afterFirstConnect.body.connectors).toStrictEqual([
+        expect.objectContaining({
+          target: { kind: "builtin", connectorSlug: "manual-mcp" },
+          connectionId: firstId,
+          runtimeAvailable: true,
+          connectionStatus: "connected",
+        }),
+      ]);
+
+      await envSetup.cancelAndAcknowledge(run1);
+
+      const run2 = await envSetup.startRun({
+        threadId: run1.threadId,
+        prompt: "Discover builtin manual MCP in subsequent run",
+      });
+      const secondRunInitial = await accept(
+        mcpApi.list({ headers: bearerHeaders(run2.okouToken) }),
+        [200],
+      );
+      expect(secondRunInitial.body.connectors).toStrictEqual([
+        expect.objectContaining({
+          target: { kind: "builtin", connectorSlug: "manual-mcp" },
+          connectionId: firstId,
+          runtimeAvailable: true,
+          connectionStatus: "connected",
+        }),
+      ]);
+
+      const siblingManual = await connectors.requestManualGrant(
+        actor,
+        "manual-mcp",
+        "api-token",
+        { apiKey: "builtin-manual-mcp-secret-2" },
+        {
+          statuses: [200],
+          account: { intent: "add", displayName: "Backup MCP" },
+        },
+      );
+      if (siblingManual.status !== 200) {
+        throw new Error("Expected sibling builtin manual MCP connection");
+      }
+      const siblingId = siblingManual.body.connectionId;
+      expect(siblingId).not.toBe(firstId);
+
+      await accept(
+        connectorAccountsApi.delete({
+          headers: signInRunActor(actor),
+          params: { connectionId: firstId },
+          body: { target: { kind: "builtin", connectorSlug: "manual-mcp" } },
+        }),
+        [200],
+      );
+
+      const afterDelete = await accept(
+        mcpApi.list({ headers: bearerHeaders(run2.okouToken) }),
+        [200],
+      );
+      expect(afterDelete.body.connectors).toStrictEqual([
+        expect.objectContaining({
+          target: { kind: "builtin", connectorSlug: "manual-mcp" },
+          connectionId: siblingId,
+          runtimeAvailable: true,
+          connectionStatus: "connected",
+        }),
+      ]);
+    },
+  );
 });
 
 describe("POST /api/mcp-connectors/oauth2/reauthorize", () => {
-  const ownedReauthorizations: {
-    readonly actor: ApiTestUser;
-    connectorId?: string;
-    runId?: string;
-    sandboxToken?: string;
-  }[] = [];
+  it("mcp-connectors-011 requires an agent token to reauthorize connector scopes", async () => {
+    const admin = bdd.user();
+    const body = {
+      target: { kind: "custom" as const, customConnectorId: randomUUID() },
+      scopes: ["admin"],
+    };
 
-  afterEach(async () => {
-    for (const owned of ownedReauthorizations.splice(0)) {
-      const cleanupRuns = createRunsApi(context);
-      if (owned.runId) {
-        const current = await cleanupRuns.readRun(owned.actor, owned.runId);
-        if (
-          current.status === "queued" ||
-          current.status === "pending" ||
-          current.status === "running"
-        ) {
-          await cleanupRuns.requestCancelRun(owned.actor, owned.runId, [200]);
-        }
-        if (
-          owned.sandboxToken &&
-          (current.status === "pending" ||
-            current.status === "running" ||
-            current.status === "cancelled")
-        ) {
-          await createWebhookCallbackApi(context).requestAgentComplete(
-            {
-              runId: owned.runId,
-              exitCode: 1,
-              error: "Run cancelled by test cleanup",
-            },
-            { authorization: `Bearer ${owned.sandboxToken}` },
-            [200],
-          );
-        }
-      }
-      await flushWaitUntilForTest();
+    context.mocks.clerk.authenticateRequest.mockResolvedValue({
+      isAuthenticated: false,
+    });
+    const anonymous = await accept(
+      mcpApi.reauthorizeOAuth({ headers: {}, body }),
+      [401],
+    );
+    createRouteMocks(context).clerk.session(
+      admin.userId,
+      admin.orgId,
+      admin.orgRole,
+    );
+    const session = await accept(
+      mcpApi.reauthorizeOAuth({
+        headers: { authorization: "Bearer clerk-session" },
+        body,
+      }),
+      [403],
+    );
 
-      if (owned.connectorId) {
-        await createConnectorBddApi(context).deleteCustomConnector(
-          owned.actor,
-          owned.connectorId,
-        );
-      }
-      await flushWaitUntilForTest();
-    }
+    expect(anonymous.status).toBe(401);
+    expect(session.status).toBe(403);
   });
 
-  it.each([
-    {
-      registration: "cimd",
-      offlineAccessRegistered: false,
-      dcrTokenEndpointAuthMethod: "none",
-      advertisedMethods: ["none"],
-      requestedMethod: "none",
-    },
-    {
-      registration: "dcr",
-      offlineAccessRegistered: true,
-      dcrTokenEndpointAuthMethod: "client_secret_basic",
-      advertisedMethods: ["none", "client_secret_basic"],
-      requestedMethod: "client_secret_basic",
-    },
-    {
-      registration: "dcr",
-      offlineAccessRegistered: true,
-      dcrTokenEndpointAuthMethod: "client_secret_post",
-      advertisedMethods: ["none", "client_secret_post"],
-      requestedMethod: "client_secret_post",
-    },
-    {
-      registration: "dcr",
-      offlineAccessRegistered: true,
-      dcrTokenEndpointAuthMethod: "none",
-      advertisedMethods: ["client_secret_basic", "client_secret_post"],
-      requestedMethod: "client_secret_basic",
-    },
-    {
-      registration: "dcr",
-      offlineAccessRegistered: false,
-      dcrTokenEndpointAuthMethod: "client_secret_basic",
-      advertisedMethods: ["none", "client_secret_basic"],
-      requestedMethod: "client_secret_basic",
-    },
-  ] as const)(
-    "reauthorizes the parent-resource $registration account with $dcrTokenEndpointAuthMethod and offline access registered=$offlineAccessRegistered",
-    async ({
-      registration,
-      offlineAccessRegistered,
-      dcrTokenEndpointAuthMethod,
-      advertisedMethods,
-      requestedMethod,
-    }) => {
-      bdd.acceptStorageWrites();
-      runs.acceptStorageDownloads();
-      runs.acceptTelemetryIngest();
-      const runnerGroup = await runs.configureRunnerGroup();
+  it(
+    "mcp-connectors-005 reauthorizes the parent-resource cimd account with none and offline access registered=false",
+    { timeout: TEST_WITH_TRIPLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
       mockEnv("OKOU_API_BACKEND_URL", "https://api.okou.ai");
       mockEnv("OKOU_WEB_URL", "https://www.okou.ai");
       mockEnv("APP_URL", "https://app.okou.ai");
-      const resource = "https://automatic-mcp.example.test";
-      const initialDcrClientId = `automatic-dcr-client-${"x".repeat(1024)}`;
-      const replacementDcrClientId = `replacement-dcr-client-${"y".repeat(1024)}`;
+
+      const envSetup = prepareMcpRunEnv();
+      const { actor } = envSetup;
+      const suffix = randomUUID().slice(0, 8);
+      const parentResource = `https://cimd-parent-${suffix}.example.test`;
+      const endpoint = `${parentResource}/mcp`;
+      const primaryIssuer = `https://cimd-idp-a-${suffix}.example.test`;
+      const alternateIssuer = `https://cimd-idp-b-${suffix}.example.test`;
+
       const provider = mockAutomaticMcpOAuthProvider(context, {
-        registration,
-        dcrClientId: initialDcrClientId,
-        dcrTokenEndpointAuthMethod,
-        tokenEndpointAuthMethodsSupported: advertisedMethods,
-        dcrDefaultTokenEndpointAuthMethod: "none",
-        resource,
-        initialExpiresIn: 3600,
+        endpoint,
+        resource: parentResource,
+        issuer: primaryIssuer,
+        registration: "cimd",
+        authentication: "oauth",
+        challengeScope: "read",
+        metadataScopes: ["read", "admin"],
+        authorizationServerScopes: ["read", "admin"],
+        tokenEndpointAuthMethodsSupported: ["none"],
         authorizationCodeScopes: ["read", "read", "read admin offline_access"],
-        authorizationServerScopes: offlineAccessRegistered
-          ? ["read", "write", "offline_access", "unrequested"]
-          : ["read", "write", "unrequested"],
+        initialExpiresIn: 3600,
       });
-      const actor = bdd.user({ orgRole: "org:admin" });
-      const owned: (typeof ownedReauthorizations)[number] = { actor };
-      ownedReauthorizations.push(owned);
-      await runs.grantProEntitlement(actor);
-      await runs.ensurePersonalSubscriptionModel(actor);
+
+      const altTokenBodies: URLSearchParams[] = [];
+      const altAuthHeaders: (string | null)[] = [];
+      server.use(
+        http.get(
+          `${alternateIssuer}/.well-known/oauth-authorization-server`,
+          () => {
+            return HttpResponse.json({
+              issuer: alternateIssuer,
+              authorization_endpoint: `${alternateIssuer}/authorize`,
+              token_endpoint: `${alternateIssuer}/token`,
+              response_types_supported: ["code"],
+              grant_types_supported: ["authorization_code", "refresh_token"],
+              scopes_supported: ["read", "admin", "owner", "offline_access"],
+              code_challenge_methods_supported: ["S256"],
+              token_endpoint_auth_methods_supported: ["none"],
+              authorization_response_iss_parameter_supported: true,
+              client_id_metadata_document_supported: true,
+            });
+          },
+        ),
+        http.post(`${alternateIssuer}/token`, async ({ request }) => {
+          altAuthHeaders.push(request.headers.get("authorization"));
+          const body = new URLSearchParams(await request.text());
+          altTokenBodies.push(body);
+          const isRefresh = body.get("grant_type") === "refresh_token";
+          return HttpResponse.json({
+            access_token: isRefresh
+              ? "alt-issuer-refreshed-token"
+              : "alt-issuer-initial-token",
+            refresh_token: "alt-issuer-refresh-token",
+            token_type: "Bearer",
+            expires_in: 3600,
+            scope: "read admin owner offline_access",
+          });
+        }),
+      );
 
       const connector = await connectors.createCustomConnector(actor, {
         kind: "mcp",
-        displayName: "MCP scope reauthorization",
-        endpoint: provider.endpoint,
+        displayName: "CIMD Parent Resource MCP",
+        endpoint,
         transport: "streamable-http",
+        authMode: "automatic",
         fields: [],
         headerInjections: [],
         queryInjections: [],
-        authMode: "automatic",
       });
-      owned.connectorId = connector.id;
-      const firstAuthorization = await connectors.startCustomConnectorOAuth2(
+
+      const pinnedStartUrl = await connectors.startCustomConnectorOAuth2(
         actor,
         connector.id,
-        { intent: "add", displayName: "Pinned account" },
+        { intent: "add", displayName: "Pinned" },
       );
-      const firstState = stateFromAuthorizationUrl(firstAuthorization);
-      expect(new URL(firstAuthorization).searchParams.get("resource")).toBe(
-        resource,
-      );
-      const firstCallback =
-        await connectors.completeCustomConnectorOAuth2Callback({
-          code: "pinned-account-code",
-          state: firstState,
-          iss: provider.issuer,
-        });
-      expect(firstCallback.headers.get("location")).toBe(
-        "https://app.okou.ai/connectors/custom/callback/success",
-      );
-      expect(provider.tokenBodies[0]?.get("resource")).toBe(resource);
-      const secondAuthorization = await connectors.startCustomConnectorOAuth2(
+      await connectors.completeCustomConnectorOAuth2CallbackResult({
+        code: "cimd-pinned-code",
+        state: oauthStateFromUrl(pinnedStartUrl),
+        iss: primaryIssuer,
+      });
+
+      const siblingStartUrl = await connectors.startCustomConnectorOAuth2(
         actor,
         connector.id,
-        { intent: "add", displayName: "Sibling account" },
+        { intent: "add", displayName: "Sibling" },
       );
-      await connectors.completeCustomConnectorOAuth2Callback({
-        code: "sibling-account-code",
-        state: stateFromAuthorizationUrl(secondAuthorization),
-        iss: provider.issuer,
+      await connectors.completeCustomConnectorOAuth2CallbackResult({
+        code: "cimd-sibling-code",
+        state: oauthStateFromUrl(siblingStartUrl),
+        iss: primaryIssuer,
       });
+
       const initialAccounts = await connectors.listCustomConnectorAccounts(
         actor,
         connector.id,
@@ -640,84 +1066,22 @@ describe("POST /api/mcp-connectors/oauth2/reauthorize", () => {
         return !account.isDefault;
       });
       if (!pinnedAccount || !siblingAccount) {
-        throw new Error("Expected default and sibling MCP accounts");
+        throw new Error("Expected pinned and sibling CIMD accounts");
       }
-      const run = await runs.createThreadRun(actor, {
-        prompt: "Use the MCP connector with incremental scope",
+
+      const started = await envSetup.startRun({
+        prompt: "Reauthorize CIMD parent-resource MCP",
       });
-      owned.runId = run.runId;
-      expect(run.status).toBe("running");
-      await runs.heartbeatRunner(runnerGroup);
-      const execution = await runs.executionInput(run.runId);
-      owned.sandboxToken = execution.sandboxToken;
-      const okouToken = execution.platformEnvironment.OKOU_TOKEN;
-      if (!okouToken) {
-        throw new Error("Expected the dispatched Run to include an Okou token");
-      }
-      const firewall = createFirewallApi(context);
-      const connectorKey = connector.id.replaceAll("-", "");
-      const firewallName = `custom_connector_${connectorKey}`;
-      const useAccount = async () => {
-        const refreshed = await firewall.requestFirewallAuth(
-          { authorization: `Bearer ${execution.firewallToken}` },
-          {
-            authHeaders: {
-              Authorization: `Bearer ${secretTemplate(`CUSTOM_${connectorKey}_S___OAUTH_ACCESS_TOKEN`)}`,
-            },
-            matchedFirewall: {
-              name: firewallName,
-              apiId: `${firewallName}:0`,
-              customConnectorId: connector.id,
-              sourceId: pinnedAccount.id,
-              routingVariables: {},
-            },
-            forceRefresh: true,
-          },
-          [200],
-        );
-        expect(refreshed.body).toMatchObject({
-          headers: {
-            Authorization: "Bearer automatic-refreshed-access-token",
-          },
-        });
-      };
-      const registrationCount = provider.registrationBodies.length;
-      if (registration === "dcr") {
-        expect(provider.registrationBodies[0]?.token_endpoint_auth_method).toBe(
-          requestedMethod,
-        );
-      }
-      provider.advertiseAuthorizationServers([
-        provider.issuer,
-        "https://alternate-issuer.example.test",
-      ]);
+
       provider.advertiseAuthorizationServerScopes([
         "read",
         "admin",
         "offline_access",
-        "unrequested",
       ]);
-      if (registration === "dcr" && !offlineAccessRegistered) {
-        const rejected = await accept(
-          client().reauthorizeOAuth({
-            headers: headers(okouToken),
-            body: {
-              target: { kind: "custom", customConnectorId: connector.id },
-              scopes: ["admin"],
-            },
-          }),
-          [409],
-        );
-        expect(rejected.body).toMatchObject({
-          error: { code: "MCP_OAUTH_CLIENT_REGISTRATION_CONFLICT" },
-        });
-        expect(provider.registrationBodies).toHaveLength(registrationCount);
-        return;
-      }
 
-      const response = await accept(
-        client().reauthorizeOAuth({
-          headers: headers(okouToken),
+      const firstReauth = await accept(
+        mcpApi.reauthorizeOAuth({
+          headers: bearerHeaders(started.okouToken),
           body: {
             target: { kind: "custom", customConnectorId: connector.id },
             scopes: ["admin"],
@@ -725,234 +1089,202 @@ describe("POST /api/mcp-connectors/oauth2/reauthorize", () => {
         }),
         [200],
       );
-
-      const authorizationUrl = new URL(response.body.authorizationUrl);
-      expect(authorizationUrl.searchParams.get("resource")).toBe(resource);
-      expect(authorizationUrl.searchParams.get("scope")).toBe(
+      expect(firstReauth.body.kind).toBe("oauth");
+      if (firstReauth.body.kind !== "oauth") {
+        throw new Error("Expected oauth reauthorization response");
+      }
+      expect(Number.isNaN(Date.parse(firstReauth.body.expiresAt))).toBeFalsy();
+      const firstReauthUrl = new URL(firstReauth.body.authorizationUrl);
+      expect(firstReauthUrl.origin).toBe(primaryIssuer);
+      expect(firstReauthUrl.searchParams.get("resource")).toBe(parentResource);
+      expect(firstReauthUrl.searchParams.get("scope")).toBe(
         "read admin offline_access",
       );
-      expect(response.body).toMatchObject({
-        kind: "oauth",
-        expiresAt: expect.any(String),
+      expect(provider.registrationBodies).toStrictEqual([]);
+
+      await connectors.completeCustomConnectorOAuth2CallbackResult({
+        code: "cimd-reauth-admin-code",
+        state: oauthStateFromUrl(firstReauth.body.authorizationUrl),
+        iss: primaryIssuer,
       });
-      expect(provider.registrationBodies).toHaveLength(registrationCount);
-      const reauthorizationState = stateFromAuthorizationUrl(
-        response.body.authorizationUrl,
-      );
-      const reauthorizationCallback =
-        await connectors.completeCustomConnectorOAuth2Callback({
-          code: "scope-upgrade-code",
-          state: reauthorizationState,
-          iss: provider.issuer,
-        });
-      expect(reauthorizationCallback.headers.get("location")).toBe(
-        "https://app.okou.ai/connectors/custom/callback/success",
-      );
-      expect(provider.tokenBodies.at(-1)?.get("resource")).toBe(resource);
-      const upgradedAccounts = await connectors.listCustomConnectorAccounts(
+
+      const afterFirstReauth = await connectors.listCustomConnectorAccounts(
         actor,
         connector.id,
       );
       expect(
-        upgradedAccounts.find((account) => {
+        afterFirstReauth.find((account) => {
           return account.id === pinnedAccount.id;
-        })?.oauthScopes,
-      ).toStrictEqual(["read", "admin", "offline_access"]);
-      expect(
-        upgradedAccounts.find((account) => {
-          return account.id === siblingAccount.id;
-        })?.oauthScopes,
-      ).toStrictEqual(["read"]);
-      await useAccount();
-      const replacementProvider = mockAutomaticMcpOAuthProvider(context, {
-        registration,
-        dcrTokenEndpointAuthMethod,
-        endpoint: provider.endpoint,
-        resource,
-        issuer: "https://alternate-issuer.example.test",
-        dcrClientId: replacementDcrClientId,
-        dcrClientSecret: "replacement-dcr-secret",
-        initialExpiresIn: 3600,
+        }),
+      ).toMatchObject({
+        connectionStatus: "connected",
+        oauthScopes: ["read", "admin", "offline_access"],
       });
-      const changedAuthority = await accept(
-        client().reauthorizeOAuth({
-          headers: headers(okouToken),
+      expect(
+        afterFirstReauth.find((account) => {
+          return account.id === siblingAccount.id;
+        }),
+      ).toMatchObject({
+        connectionStatus: "connected",
+        oauthScopes: ["read"],
+      });
+
+      const inlineTarget = firstInlineCustomFirewallApi(
+        started.execution.firewalls,
+        connector.id,
+      );
+      const firewallBody = {
+        authHeaders: inlineTarget.api.auth.headers ?? {},
+        forceRefresh: true,
+        matchedFirewall: {
+          name: inlineTarget.firewall.name,
+          apiId: inlineTarget.api.id ?? "api-0",
+          base: inlineTarget.api.base,
+          customConnectorId: connector.id,
+          sourceId: pinnedAccount.id,
+          routingVariables: {},
+        },
+      };
+      const firstRefresh = await accept(
+        runFirewallAuthApi.firewallAuth({
+          headers: bearerHeaders(started.execution.firewallToken),
+          body: firewallBody,
+        }),
+        [200],
+      );
+      expect(firstRefresh.body.headers.Authorization).toBe(
+        "Bearer automatic-refreshed-access-token",
+      );
+
+      provider.advertiseAuthorizationServers([alternateIssuer]);
+      const secondReauth = await accept(
+        mcpApi.reauthorizeOAuth({
+          headers: bearerHeaders(started.okouToken),
           body: {
             target: { kind: "custom", customConnectorId: connector.id },
             scopes: ["owner"],
           },
         }),
-        [registration === "dcr" ? 409 : 200],
+        [200],
       );
-      let changedAuthorizationUrl: string;
-      if (changedAuthority.status === 409) {
-        expect(changedAuthority.body).toMatchObject({
-          error: {
-            code: "MCP_OAUTH_BINDING_CHANGED",
-            message: expect.stringContaining("Reconnect"),
-          },
-        });
-        expect(replacementProvider.tokenBodies).toHaveLength(0);
-        expect(replacementProvider.tokenAuthorizationHeaders).toHaveLength(0);
-        changedAuthorizationUrl = await connectors.startCustomConnectorOAuth2(
-          actor,
-          connector.id,
-          { intent: "reconnect", connectionId: pinnedAccount.id },
-        );
-        expect(replacementProvider.registrationBodies).toHaveLength(1);
-        expect(
-          new URL(changedAuthorizationUrl).searchParams.get("client_id"),
-        ).toBe(replacementDcrClientId);
-      } else {
-        changedAuthorizationUrl = changedAuthority.body.authorizationUrl;
+      expect(secondReauth.body.kind).toBe("oauth");
+      if (secondReauth.body.kind !== "oauth") {
+        throw new Error("Expected alternate-issuer oauth reauthorization");
       }
-      expect(new URL(changedAuthorizationUrl).origin).toBe(
-        replacementProvider.issuer,
+      const secondReauthUrl = new URL(secondReauth.body.authorizationUrl);
+      expect(secondReauthUrl.origin).toBe(alternateIssuer);
+
+      await connectors.completeCustomConnectorOAuth2CallbackResult({
+        code: "cimd-reauth-owner-code",
+        state: oauthStateFromUrl(secondReauth.body.authorizationUrl),
+        iss: alternateIssuer,
+      });
+
+      const secondRefresh = await accept(
+        runFirewallAuthApi.firewallAuth({
+          headers: bearerHeaders(started.execution.firewallToken),
+          body: firewallBody,
+        }),
+        [200],
       );
-      const changedCallback =
-        await connectors.completeCustomConnectorOAuth2Callback({
-          code: "changed-authority-code",
-          state: stateFromAuthorizationUrl(changedAuthorizationUrl),
-          iss: replacementProvider.issuer,
-        });
-      expect(changedCallback.headers.get("location")).toBe(
-        "https://app.okou.ai/connectors/custom/callback/success",
-      );
-      expect(replacementProvider.tokenBodies[0]?.get("resource")).toBe(
-        resource,
-      );
-      await useAccount();
-      expect(replacementProvider.tokenBodies.at(-1)?.get("grant_type")).toBe(
-        "refresh_token",
-      );
-      expect(replacementProvider.tokenAuthorizationHeaders).not.toContain(
-        `Basic ${Buffer.from(`${initialDcrClientId}:automatic-dcr-secret`).toString("base64")}`,
+      expect(secondRefresh.body.headers.Authorization).toBe(
+        "Bearer alt-issuer-refreshed-token",
       );
       expect(
-        replacementProvider.tokenBodies.map((body) => {
-          return body.get("client_secret");
+        altTokenBodies.some((body) => {
+          return body.get("grant_type") === "refresh_token";
         }),
-      ).not.toContain("automatic-dcr-secret");
-      const reconnectedAccounts = await connectors.listCustomConnectorAccounts(
+      ).toBeTruthy();
+      expect(
+        altAuthHeaders.every((header) => {
+          return header === null;
+        }),
+      ).toBeTruthy();
+
+      const afterSecondReauth = await connectors.listCustomConnectorAccounts(
         actor,
         connector.id,
       );
       expect(
-        reconnectedAccounts.find((account) => {
+        afterSecondReauth.find((account) => {
           return account.id === pinnedAccount.id;
         }),
-      ).toMatchObject({ connectionStatus: "connected", reconnectReason: null });
+      ).toMatchObject({
+        connectionStatus: "connected",
+      });
       expect(
-        reconnectedAccounts.find((account) => {
+        afterSecondReauth.find((account) => {
           return account.id === siblingAccount.id;
-        })?.oauthScopes,
-      ).toStrictEqual(["read"]);
-      await runs.requestCancelRun(actor, run.runId, [200]);
+        }),
+      ).toMatchObject({
+        connectionStatus: "connected",
+        oauthScopes: ["read"],
+      });
     },
   );
 
-  it("discovers Automatic no-auth accounts without offering OAuth reauthorization", async () => {
-    bdd.acceptStorageWrites();
-    runs.acceptStorageDownloads();
-    runs.acceptTelemetryIngest();
-    const runnerGroup = await runs.configureRunnerGroup();
-    mockEnv("OKOU_API_BACKEND_URL", "https://api.okou.ai");
-    mockEnv("OKOU_WEB_URL", "https://www.okou.ai");
-    mockEnv("APP_URL", "https://app.okou.ai");
-    mockAutomaticMcpOAuthProvider(context, {
-      registration: "cimd",
-      authentication: "none",
-    });
-    const actor = bdd.user({ orgRole: "org:admin" });
-    await runs.grantProEntitlement(actor);
-    await runs.ensurePersonalSubscriptionModel(actor);
+  it(
+    "mcp-connectors-010 discovers Automatic no-auth accounts without offering OAuth reauthorization",
+    { timeout: TEST_WITH_SINGLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      mockEnv("OKOU_API_BACKEND_URL", "https://api.okou.ai");
+      mockEnv("APP_URL", "https://app.okou.ai");
 
-    const connector = await connectors.createCustomConnector(actor, {
-      kind: "mcp",
-      displayName: "MCP no-auth reauthorization",
-      endpoint: "https://automatic-mcp.example.test/server",
-      transport: "streamable-http",
-      fields: [],
-      headerInjections: [],
-      queryInjections: [],
-      authMode: "automatic",
-    });
-    const connected = await connectors.requestStartCustomConnectorOAuth2(
-      actor,
-      connector.id,
-      [200],
-    );
-    if ("error" in connected.body || connected.body.result !== "connected") {
-      throw new Error("Expected Automatic MCP no-auth connection");
-    }
-    const run = await runs.createThreadRun(actor, {
-      prompt: "Use the no-auth MCP connector",
-    });
-    expect(run.status).toBe("running");
-    await runs.heartbeatRunner(runnerGroup);
-    const execution = await runs.executionInput(run.runId);
-    const okouToken = execution.platformEnvironment.OKOU_TOKEN;
-    if (!okouToken) {
-      throw new Error("Expected the dispatched Run to include an Okou token");
-    }
+      const envSetup = prepareMcpRunEnv();
+      const { actor } = envSetup;
+      const endpoint = `https://auto-no-auth-mcp-${randomUUID().slice(0, 8)}.example.test/mcp`;
+      mockAutomaticMcpOAuthProvider(context, {
+        endpoint,
+        registration: "cimd",
+        authentication: "none",
+      });
 
-    const discovery = await accept(
-      client().list({ headers: headers(okouToken) }),
-      [200],
-    );
-    expect(discovery.body.connectors).toStrictEqual([
-      expect.objectContaining({
-        target: { kind: "custom", customConnectorId: connector.id },
-        runtimeAvailable: true,
-      }),
-    ]);
+      const connector = await connectors.createCustomConnector(actor, {
+        kind: "mcp",
+        displayName: "Automatic No-Auth MCP",
+        endpoint,
+        transport: "streamable-http",
+        authMode: "automatic",
+        fields: [],
+        headerInjections: [],
+        queryInjections: [],
+      });
+      const startRes = await connectors.requestStartCustomConnectorOAuth2(
+        actor,
+        connector.id,
+        [200],
+        { intent: "add" },
+      );
+      expect(startRes.body).toMatchObject({ result: "connected" });
 
-    const response = await accept(
-      client().reauthorizeOAuth({
-        headers: headers(okouToken),
-        body: {
+      const started = await envSetup.startRun({
+        prompt: "Inspect Automatic no-auth MCP",
+      });
+
+      const [listed, reauth] = await Promise.all([
+        accept(
+          mcpApi.list({ headers: bearerHeaders(started.okouToken) }),
+          [200],
+        ),
+        accept(
+          mcpApi.reauthorizeOAuth({
+            headers: bearerHeaders(started.okouToken),
+            body: {
+              target: { kind: "custom", customConnectorId: connector.id },
+              scopes: ["admin"],
+            },
+          }),
+          [409],
+        ),
+      ]);
+      expect(listed.body.connectors).toStrictEqual([
+        expect.objectContaining({
           target: { kind: "custom", customConnectorId: connector.id },
-          scopes: ["admin"],
-        },
-      }),
-      [409],
-    );
-
-    expect(response.body.error.code).toBe("CONFLICT");
-    await runs.requestCancelRun(actor, run.runId, [200]);
-  });
-
-  it("requires agent authentication for connector write", async () => {
-    const owned = await publicChatActor(context);
-    await owned.run(async () => {
-      const { actor } = owned;
-      mockClerkMembership(context, actor, "org:admin");
-      const connectorId = randomUUID();
-
-      const unauthenticated = await accept(
-        client().reauthorizeOAuth({
-          headers: {},
-          body: {
-            target: { kind: "custom", customConnectorId: connectorId },
-            scopes: ["admin"],
-          },
+          runtimeAvailable: true,
+          connectionStatus: "connected",
         }),
-        [401],
-      );
-      mocks.clerk.session(actor.userId, actor.orgId, "org:admin");
-      const session = await accept(
-        client().reauthorizeOAuth({
-          headers: headers("clerk-session"),
-          body: {
-            target: { kind: "custom", customConnectorId: connectorId },
-            scopes: ["admin"],
-          },
-        }),
-        [403],
-      );
-
-      expect(unauthenticated.status).toBe(401);
-      expect(session.status).toBe(403);
-    });
-  });
+      ]);
+      expect(reauth.body.error.code).toBe("CONFLICT");
+    },
+  );
 });

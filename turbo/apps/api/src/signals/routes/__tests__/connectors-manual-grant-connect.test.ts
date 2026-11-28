@@ -1,853 +1,109 @@
 import { randomUUID } from "node:crypto";
 
+import { CLIENT_TYPE_CLI } from "@okouai/api-contracts/contracts/client-headers";
 import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
-import {
-  CLIENT_TYPE_APP,
-  CLIENT_TYPE_CLI,
-  CLIENT_TYPE_HEADER,
-} from "@okouai/api-contracts/contracts/client-headers";
 import {
   builtinConnectorManualGrantContract,
   builtinConnectorNoAuthGrantContract,
   builtinConnectorsMainContract,
 } from "@okouai/api-contracts/contracts/connectors";
-import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { afterEach } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { createBddApi } from "./helpers/api-bdd";
-import { createConnectorBddApi } from "./helpers/api-bdd-connectors";
-import { secretTemplate } from "./helpers/api-bdd-firewall";
-import { withConnectorRuntime } from "./helpers/connector-runtime-consumer";
-import { createRouteMocks } from "./helpers/route-test";
+import { TEST_WITH_DOUBLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE } from "../../../__tests__/test-timeouts";
+import { mockOptionalEnv } from "../../../lib/env";
+import { flushWaitUntilForTest } from "../../context/wait-until";
 import { connectorAccountRoutes } from "../connector-accounts";
 import { builtinConnectorsRoutes } from "../connectors";
-import { featureSwitchesRoutes } from "../feature-switches";
+import { createBddApi } from "./helpers/api-bdd";
+import { createFirewallApi, secretTemplate } from "./helpers/api-bdd-firewall";
+import {
+  createChatEventsFixture,
+  executionEnvironment,
+} from "./helpers/chat-events-fixture";
+import { publicRunOwner } from "./helpers/public-run-owner";
+import { channelsPublishedTo } from "./helpers/realtime-publications";
+import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
-const mocks = createRouteMocks(context);
+const headers = Object.freeze({ authorization: "Bearer clerk-session" });
 
-interface AuthenticatedFixture {
-  readonly orgId: string;
+interface Member {
   readonly userId: string;
+  readonly orgId: string;
 }
 
-const CONNECTOR_SLUGS_TO_CLEAN_UP = [
-  "openai",
-  "test-subdomain",
-  "insforge",
-  "lark",
-  "test-oauth",
-  "gitlab",
-  "bentoml",
-  "github",
-] as const;
-
-function authHeaders() {
-  return { authorization: "Bearer clerk-session" };
+function newMember(): Member {
+  return { userId: `user_${randomUUID()}`, orgId: `org_${randomUUID()}` };
 }
 
-function cliAuthHeaders() {
-  return {
-    ...authHeaders(),
-    [CLIENT_TYPE_HEADER]: CLIENT_TYPE_CLI,
-  };
+function signIn(member: Member) {
+  createRouteMocks(context).clerk.session(member.userId, member.orgId);
 }
 
-function appAuthHeaders() {
-  return {
-    ...authHeaders(),
-    [CLIENT_TYPE_HEADER]: CLIENT_TYPE_APP,
-  };
-}
-
-function featureSwitchesClient() {
-  return setupApp({ context, routes: featureSwitchesRoutes })(
-    featureSwitchesContract,
+function manualGrantClient() {
+  return setupApp({ context, routes: builtinConnectorsRoutes })(
+    builtinConnectorManualGrantContract,
   );
 }
 
-function seedAuthenticatedFixture(): AuthenticatedFixture {
-  const fixture = {
-    orgId: `org_${randomUUID()}`,
-    userId: `user_${randomUUID()}`,
-  };
-  mocks.clerk.session(fixture.userId, fixture.orgId);
-  return fixture;
-}
-
-async function updateFeatureSwitches(
-  fixture: AuthenticatedFixture,
-  switches: Partial<Record<FeatureSwitchKey, boolean>>,
-): Promise<void> {
-  mocks.clerk.session(fixture.userId, fixture.orgId);
-  await accept(
-    featureSwitchesClient().update({
-      headers: authHeaders(),
-      body: { switches },
-    }),
-    [200],
-  );
-}
-
-async function deleteFeatureSwitches(
-  fixture: AuthenticatedFixture,
-): Promise<void> {
-  mocks.clerk.session(fixture.userId, fixture.orgId);
-  await accept(
-    featureSwitchesClient().delete({ headers: authHeaders() }),
-    [200],
-  );
-}
-
-async function deleteConnector(
-  fixture: AuthenticatedFixture,
-  connectorSlug: (typeof CONNECTOR_SLUGS_TO_CLEAN_UP)[number],
-): Promise<void> {
-  mocks.clerk.session(fixture.userId, fixture.orgId);
-  const client = setupApp({ context, routes: connectorAccountRoutes })(
+function accountsClient() {
+  return setupApp({ context, routes: connectorAccountRoutes })(
     connectorAccountsContract,
   );
-  while (true) {
-    const listed = await accept(
-      client.connections({
-        headers: authHeaders(),
-        query: { kind: "builtin", connectorSlug, limit: 50 },
-      }),
-      [200],
-    );
-    if (listed.body.connections.length === 0) {
-      return;
-    }
-    for (const connection of listed.body.connections) {
-      await accept(
-        client.delete({
-          headers: authHeaders(),
-          params: { connectionId: connection.id },
-          body: { target: { kind: "builtin", connectorSlug } },
-        }),
-        [200, 404],
-      );
-    }
-  }
 }
 
-async function cleanupFixture(fixture: AuthenticatedFixture): Promise<void> {
-  await deleteFeatureSwitches(fixture);
-  for (const connectorSlug of CONNECTOR_SLUGS_TO_CLEAN_UP) {
-    await deleteConnector(fixture, connectorSlug);
-  }
-}
+type ManualGrantBody = Parameters<
+  ReturnType<typeof manualGrantClient>["connect"]
+>[0]["body"];
 
-async function readConnector(
-  fixture: AuthenticatedFixture,
-  connectorSlug: (typeof CONNECTOR_SLUGS_TO_CLEAN_UP)[number],
+function manualGrant(
+  member: Member,
+  connectorSlug: string,
+  body: ManualGrantBody,
+  extraHeaders?: Record<string, string>,
 ) {
-  mocks.clerk.session(fixture.userId, fixture.orgId);
+  signIn(member);
+  return manualGrantClient().connect({
+    params: { connectorSlug },
+    headers,
+    body,
+    ...(extraHeaders ? { extraHeaders } : {}),
+  });
+}
+
+async function addOpenAi(member: Member, displayName?: string) {
   const response = await accept(
-    setupApp({ context, routes: connectorAccountRoutes })(
-      connectorAccountsContract,
-    ).connections({
-      query: { kind: "builtin", connectorSlug },
-      headers: authHeaders(),
+    manualGrant(member, "openai", {
+      authMethod: "api-token",
+      account: displayName ? { intent: "add", displayName } : { intent: "add" },
+      values: { apiKey: `sk-${randomUUID()}` },
     }),
     [200],
   );
-  const account = response.body.defaultConnection;
-  if (!account) {
-    throw new Error("Expected a saved default connector account");
-  }
-  return account;
+  return response.body.connectionId;
+}
+
+async function listAccounts(member: Member, connectorSlug: string) {
+  signIn(member);
+  const response = await accept(
+    accountsClient().connections({
+      headers,
+      query: { kind: "builtin", connectorSlug, limit: 100 },
+    }),
+    [200],
+  );
+  return response.body;
 }
 
 describe("POST /api/connectors/:connectorSlug/manual-grant", () => {
-  const fixtures: AuthenticatedFixture[] = [];
-
-  afterEach(async () => {
-    while (fixtures.length > 0) {
-      const fixture = fixtures.pop();
-      if (fixture) {
-        await cleanupFixture(fixture);
-      }
-    }
-  });
-
-  function seedFixture(): AuthenticatedFixture {
-    const fixture = seedAuthenticatedFixture();
-    fixtures.push(fixture);
-    return fixture;
-  }
-
-  it("returns 401 when not authenticated", async () => {
-    const client = setupApp({ context, routes: builtinConnectorsRoutes })(
-      builtinConnectorManualGrantContract,
-    );
+  it("connectors-manual-grant-connect-018 rejects a connector without a manual grant method", async () => {
     const response = await accept(
-      client.connect({
-        params: { connectorSlug: "openai" },
-        body: {
-          authMethod: "api-token",
-          account: { intent: "add" },
-          values: { apiKey: "sk-test" },
-        },
-        headers: {},
-      }),
-      [401],
-    );
-
-    expect(response.body.error.code).toBe("UNAUTHORIZED");
-  });
-
-  it("returns 401 when the authenticated session has no organization", async () => {
-    mocks.clerk.session(`user_${randomUUID()}`, null);
-
-    const client = setupApp({ context, routes: builtinConnectorsRoutes })(
-      builtinConnectorManualGrantContract,
-    );
-    const response = await accept(
-      client.connect({
-        params: { connectorSlug: "openai" },
-        body: {
-          authMethod: "api-token",
-          account: { intent: "add" },
-          values: { apiKey: "sk-test" },
-        },
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [401],
-    );
-
-    expect(response.body.error.code).toBe("UNAUTHORIZED");
-  });
-
-  it("accepts server-authored identity syntax before catalog rejection", async () => {
-    await seedFixture();
-    const connectorSlug = "server-authored-connector";
-    const authMethod = "server-authored-method";
-    const client = setupApp({ context, routes: builtinConnectorsRoutes })(
-      builtinConnectorManualGrantContract,
-    );
-
-    const response = await accept(
-      client.connect({
-        params: { connectorSlug },
-        body: {
-          authMethod,
-          account: { intent: "add" },
-          values: { apiKey: "secret" },
-        },
-        headers: authHeaders(),
-      }),
-      [400],
-    );
-
-    expect(response.body.error).toStrictEqual({
-      message: `${connectorSlug} connector is not supported`,
-      code: "BAD_REQUEST",
-    });
-  });
-
-  it("allows unlabeled additions before optional post-connect naming", async () => {
-    await seedFixture();
-    const manualClient = setupApp({ context, routes: builtinConnectorsRoutes })(
-      builtinConnectorManualGrantContract,
-    );
-    const noAuthClient = setupApp({ context, routes: builtinConnectorsRoutes })(
-      builtinConnectorNoAuthGrantContract,
-    );
-
-    const manual = await accept(
-      manualClient.connect({
-        params: { connectorSlug: "openai" },
-        body: {
-          authMethod: "api-token",
-          account: { intent: "add" },
-          values: { apiKey: "sk-unlabeled" },
-        },
-        headers: authHeaders(),
-      }),
-      [200],
-    );
-    expect(manual.body).toStrictEqual({ connectionId: expect.any(String) });
-
-    const noAuth = await accept(
-      noAuthClient.connect({
-        params: { connectorSlug: "openai" },
-        body: {
-          authMethod: "api-token",
-          account: { intent: "add" },
-        },
-        headers: authHeaders(),
-      }),
-      [400],
-    );
-    expect(noAuth.body.error.message).toContain(
-      "openai api-token auth method does not use a no-auth grant",
-    );
-
-    const list = await accept(
-      setupApp({ context, routes: builtinConnectorsRoutes })(
-        builtinConnectorsMainContract,
-      ).list({ headers: authHeaders() }),
-      [200],
-    );
-    expect(list.body.connectors).toContainEqual(
-      expect.objectContaining({
-        slug: "openai",
-        connectionStatus: "connected",
-      }),
-    );
-  });
-
-  it("stores App manual grants in connector-owned state", async () => {
-    const fixture = await seedFixture();
-    const client = setupApp({ context, routes: builtinConnectorsRoutes })(
-      builtinConnectorManualGrantContract,
-    );
-
-    const response = await accept(
-      client.connect({
-        params: { connectorSlug: "openai" },
-        body: {
-          authMethod: "api-token",
-          account: { intent: "add" },
-          values: { apiKey: " sk-test\n" },
-        },
-        headers: appAuthHeaders(),
-      }),
-      [200],
-    );
-
-    expect(response.body).toStrictEqual({ connectionId: expect.any(String) });
-    const stored = await readConnector(fixture, "openai");
-    expect(stored).toMatchObject({
-      target: { kind: "builtin", connectorSlug: "openai" },
-      authMethod: "api-token",
-      connectionStatus: "connected",
-    });
-  });
-
-  it("accepts CLI add and reconnect while preserving sibling accounts", async () => {
-    const fixture = await seedFixture();
-    const client = setupApp({ context, routes: builtinConnectorsRoutes })(
-      builtinConnectorManualGrantContract,
-    );
-
-    const added = await accept(
-      client.connect({
-        params: { connectorSlug: "openai" },
-        body: {
-          authMethod: "api-token",
-          account: { intent: "add", displayName: "Work" },
-          values: { apiKey: "sk-first" },
-        },
-        headers: cliAuthHeaders(),
-      }),
-      [200],
-    );
-
-    const reconnected = await accept(
-      client.connect({
-        params: { connectorSlug: "openai" },
-        body: {
-          authMethod: "api-token",
-          account: {
-            intent: "reconnect",
-            connectionId: added.body.connectionId,
-          },
-          values: { apiKey: "sk-reconnected" },
-        },
-        headers: cliAuthHeaders(),
-      }),
-      [200],
-    );
-    expect(reconnected.body.connectionId).toBe(added.body.connectionId);
-
-    const sibling = await accept(
-      client.connect({
-        params: { connectorSlug: "openai" },
-        body: {
-          authMethod: "api-token",
-          account: { intent: "add", displayName: "Personal" },
-          values: { apiKey: "sk-sibling" },
-        },
-        headers: cliAuthHeaders(),
-      }),
-      [200],
-    );
-    expect(sibling.body.connectionId).not.toBe(added.body.connectionId);
-    const accounts = await accept(
-      setupApp({ context, routes: connectorAccountRoutes })(
-        connectorAccountsContract,
-      ).connections({
-        headers: authHeaders(),
-        query: { kind: "builtin", connectorSlug: "openai" },
-      }),
-      [200],
-    );
-    expect(
-      accounts.body.connections.map(({ id }) => {
-        return id;
-      }),
-    ).toStrictEqual(
-      expect.arrayContaining([
-        added.body.connectionId,
-        sibling.body.connectionId,
-      ]),
-    );
-    expect(accounts.body.connections).toHaveLength(2);
-
-    const missing = await accept(
-      client.connect({
-        params: { connectorSlug: "openai" },
-        body: {
-          authMethod: "api-token",
-          account: { intent: "reconnect", connectionId: randomUUID() },
-          values: { apiKey: "sk-missing" },
-        },
-        headers: cliAuthHeaders(),
-      }),
-      [404],
-    );
-    expect(missing.body.error.message).toBe("Connector account not found");
-
-    seedFixture();
-    const wrongOwner = await accept(
-      client.connect({
-        params: { connectorSlug: "openai" },
-        body: {
-          authMethod: "api-token",
-          account: {
-            intent: "reconnect",
-            connectionId: added.body.connectionId,
-          },
-          values: { apiKey: "sk-wrong-owner" },
-        },
-        headers: cliAuthHeaders(),
-      }),
-      [404],
-    );
-    expect(wrongOwner.body.error.message).toBe("Connector account not found");
-
-    mocks.clerk.session(fixture.userId, fixture.orgId);
-    const wrongTarget = await accept(
-      client.connect({
-        params: { connectorSlug: "test-subdomain" },
-        body: {
-          authMethod: "api-token",
-          account: {
-            intent: "reconnect",
-            connectionId: added.body.connectionId,
-          },
-          values: {
-            apiToken: "test-subdomain-token",
-            email: "support@example.com",
-            subdomain: "example",
-          },
-        },
-        headers: cliAuthHeaders(),
-      }),
-      [404],
-    );
-    expect(wrongTarget.body.error.message).toBe("Connector account not found");
-
-    const stored = await readConnector(fixture, "openai");
-    expect(stored.id).toBe(added.body.connectionId);
-  });
-
-  it("allows concurrent first-account adds", async () => {
-    await seedFixture();
-    const client = setupApp({ context, routes: builtinConnectorsRoutes })(
-      builtinConnectorManualGrantContract,
-    );
-    const requests = ["First", "Second"].map((displayName) => {
-      return client.connect({
-        params: { connectorSlug: "openai" },
-        body: {
-          authMethod: "api-token",
-          account: { intent: "add", displayName },
-          values: { apiKey: `sk-${displayName.toLowerCase()}` },
-        },
-        headers: authHeaders(),
-      });
-    });
-
-    const responses = await Promise.all(requests);
-    expect(
-      responses
-        .map((response) => {
-          return response.status;
-        })
-        .sort(),
-    ).toStrictEqual([200, 200]);
-  });
-
-  it("connects Test Subdomain manual grant fields through the API", async () => {
-    const fixture = await seedFixture();
-    const client = setupApp({ context, routes: builtinConnectorsRoutes })(
-      builtinConnectorManualGrantContract,
-    );
-
-    const response = await accept(
-      client.connect({
-        params: { connectorSlug: "test-subdomain" },
-        body: {
-          authMethod: "api-token",
-          account: { intent: "add" },
-          values: {
-            apiToken: " test-subdomain\n-token ",
-            email: " support@example.com ",
-            subdomain: " example ",
-          },
-        },
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [200],
-    );
-
-    expect(response.body).toStrictEqual({ connectionId: expect.any(String) });
-    const stored = await readConnector(fixture, "test-subdomain");
-    expect(stored.authMethod).toBe("api-token");
-
-    expect(stored).toMatchObject({
-      id: response.body.connectionId,
-      connectionStatus: "connected",
-    });
-    const actor = createBddApi(context).user(fixture);
-    expect(JSON.stringify(stored)).not.toContain("test-subdomain-token");
-    await withConnectorRuntime(
-      context,
-      actor,
-      async ({ execution: receivedExecution, resolveAuth }) => {
-        expect(receivedExecution.environment).toMatchObject({
-          SUBDOMAIN_TEST_EMAIL: "support@example.com",
-          SUBDOMAIN_TEST_SUBDOMAIN: "example",
-        });
-        const resolved = await resolveAuth({
-          authHeaders: {
-            Authorization:
-              "Bearer " + secretTemplate("SUBDOMAIN_TEST_API_TOKEN"),
-          },
-        });
-        expect(resolved.headers).toStrictEqual({
-          Authorization: "Bearer test-subdomain-token",
-        });
-      },
-    );
-  });
-
-  it("disconnects a connector and removes its public account and bindings", async () => {
-    const fixture = await seedFixture();
-    const connected = await accept(
-      setupApp({ context, routes: builtinConnectorsRoutes })(
-        builtinConnectorManualGrantContract,
-      ).connect({
-        params: { connectorSlug: "test-subdomain" },
-        body: {
-          authMethod: "api-token",
-          account: { intent: "add" },
-          values: {
-            apiToken: "test-subdomain-token",
-            email: "support@example.com",
-            subdomain: "example",
-          },
-        },
-        headers: authHeaders(),
-      }),
-      [200],
-    );
-
-    await deleteConnector(fixture, "test-subdomain");
-
-    const actor = createBddApi(context).user(fixture);
-    const connectorsApi = createConnectorBddApi(context);
-    expect(connected.body.connectionId).toStrictEqual(expect.any(String));
-    await expect(
-      connectorsApi.listBuiltinConnectorAccounts(actor, "test-subdomain"),
-    ).resolves.toStrictEqual([]);
-  });
-
-  it("normalizes a full URL host field for manual grant connectors", async () => {
-    const fixture = await seedFixture();
-    const client = setupApp({ context, routes: builtinConnectorsRoutes })(
-      builtinConnectorManualGrantContract,
-    );
-
-    const response = await accept(
-      client.connect({
-        params: { connectorSlug: "insforge" },
-        body: {
-          authMethod: "api-token",
-          account: { intent: "add" },
-          values: {
-            apiKey: "ik_test-key",
-            domain: "https://9ksx253h.us-west.insforge.app/api/",
-          },
-        },
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [200],
-    );
-
-    expect(response.body).toStrictEqual({ connectionId: expect.any(String) });
-    const stored = await readConnector(fixture, "insforge");
-    expect(stored.authMethod).toBe("api-token");
-  });
-
-  it("connects Lark app credentials through the API", async () => {
-    const fixture = await seedFixture();
-    const client = setupApp({ context, routes: builtinConnectorsRoutes })(
-      builtinConnectorManualGrantContract,
-    );
-
-    const response = await accept(
-      client.connect({
-        params: { connectorSlug: "lark" },
-        body: {
-          authMethod: "api-token",
-          account: { intent: "add" },
-          values: {
-            appId: " cli_a123 ",
-            appSecret: " lark-app-secret\n",
-          },
-        },
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [200],
-    );
-
-    expect(response.body).toStrictEqual({ connectionId: expect.any(String) });
-    const stored = await readConnector(fixture, "lark");
-    expect(stored.connectionStatus).toBe("connected");
-  });
-
-  it("reconnects Lark manual grant state through the API", async () => {
-    const fixture = await seedFixture();
-    const client = setupApp({ context, routes: builtinConnectorsRoutes })(
-      builtinConnectorManualGrantContract,
-    );
-    await accept(
-      client.connect({
-        params: { connectorSlug: "lark" },
-        body: {
-          authMethod: "api-token",
-          account: { intent: "add" },
-          values: {
-            appId: "cli_old",
-            appSecret: "old-lark-app-secret",
-          },
-        },
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [200],
-    );
-
-    await accept(
-      client.connect({
-        params: { connectorSlug: "lark" },
-        body: {
-          authMethod: "api-token",
-          account: { intent: "add" },
-          values: {
-            appId: "cli_new",
-            appSecret: "new-lark-app-secret",
-          },
-        },
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [200],
-    );
-
-    const stored = await readConnector(fixture, "lark");
-    expect(stored).toMatchObject({
-      authMethod: "api-token",
-      connectionStatus: "connected",
-      reconnectReason: null,
-      tokenExpiresAt: null,
-    });
-  });
-
-  it("replaces stored manual grant state with new manual grant state", async () => {
-    const fixture = await seedFixture();
-    await updateFeatureSwitches(fixture, {
-      [FeatureSwitchKey.TestOauthConnector]: true,
-    });
-    const client = setupApp({ context, routes: builtinConnectorsRoutes })(
-      builtinConnectorManualGrantContract,
-    );
-    await accept(
-      client.connect({
-        params: { connectorSlug: "test-oauth" },
-        body: {
-          authMethod: "api-token",
-          account: { intent: "add" },
-          values: {
-            apiToken: "old-manual-test-oauth-token",
-            inputVariable: "old-input-variable",
-            tenantId: "old-tenant",
-          },
-        },
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [200],
-    );
-
-    await accept(
-      client.connect({
-        params: { connectorSlug: "test-oauth" },
-        body: {
-          authMethod: "api-token",
-          account: { intent: "add" },
-          values: {
-            apiToken: "manual-test-oauth-token",
-            inputVariable: "manual-input-variable",
-            tenantId: "manual-tenant",
-          },
-        },
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [200],
-    );
-
-    const getResponse = await readConnector(fixture, "test-oauth");
-    expect(getResponse.authMethod).toBe("api-token");
-  });
-
-  it("replaces GitLab manual grant when optional fields are omitted", async () => {
-    const fixture = await seedFixture();
-    const client = setupApp({ context, routes: builtinConnectorsRoutes })(
-      builtinConnectorManualGrantContract,
-    );
-    await accept(
-      client.connect({
-        params: { connectorSlug: "gitlab" },
-        body: {
-          authMethod: "api-token",
-          account: { intent: "add" },
-          values: {
-            accessToken: "old-token",
-            host: "gitlab.example.com",
-          },
-        },
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [200],
-    );
-
-    await accept(
-      client.connect({
-        params: { connectorSlug: "gitlab" },
-        body: {
-          authMethod: "api-token",
-          account: { intent: "add" },
-          values: { accessToken: "new-token" },
-        },
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [200],
-    );
-
-    const stored = await readConnector(fixture, "gitlab");
-    expect(stored).toMatchObject({
-      target: { kind: "builtin", connectorSlug: "gitlab" },
-      authMethod: "api-token",
-      connectionStatus: "connected",
-    });
-  });
-
-  it("rejects private field names and identifies the public field id", async () => {
-    await seedFixture();
-    const client = setupApp({ context, routes: builtinConnectorsRoutes })(
-      builtinConnectorManualGrantContract,
-    );
-
-    const response = await accept(
-      client.connect({
-        params: { connectorSlug: "openai" },
-        body: {
-          authMethod: "api-token",
-          account: { intent: "add" },
-          values: { OPENAI_TOKEN: "sk-private" },
-        },
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [400],
-    );
-
-    expect(response.body.error.message).toContain("apiKey");
-    expect(response.body.error.message).not.toContain("OPENAI_TOKEN");
-    expect(response.body.error.message).not.toContain("sk-private");
-  });
-
-  it("rejects unknown public fields without echoing submitted values", async () => {
-    await seedFixture();
-    const client = setupApp({ context, routes: builtinConnectorsRoutes })(
-      builtinConnectorManualGrantContract,
-    );
-
-    const response = await accept(
-      client.connect({
-        params: { connectorSlug: "openai" },
-        body: {
-          authMethod: "api-token",
-          account: { intent: "add" },
-          values: {
-            apiKey: "sk-test",
-            unknownField: "secret-value-should-not-echo",
-          },
-        },
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [400],
-    );
-
-    expect(response.body.error.message).toContain("apiKey");
-    expect(response.body.error.message).not.toContain("unknownField");
-    expect(response.body.error.message).not.toContain(
-      "secret-value-should-not-echo",
-    );
-  });
-
-  it("rejects required fields that sanitize to empty without private field names", async () => {
-    await seedFixture();
-    const client = setupApp({ context, routes: builtinConnectorsRoutes })(
-      builtinConnectorManualGrantContract,
-    );
-
-    const response = await accept(
-      client.connect({
-        params: { connectorSlug: "openai" },
-        body: {
-          authMethod: "api-token",
-          account: { intent: "add" },
-          values: { apiKey: " \n\t " },
-        },
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [400],
-    );
-
-    expect(response.body.error.message).toContain("apiKey");
-    expect(response.body.error.message).not.toContain("OPENAI_TOKEN");
-  });
-
-  it("rejects connectors that do not support manual grant auth", async () => {
-    await seedFixture();
-    const client = setupApp({ context, routes: builtinConnectorsRoutes })(
-      builtinConnectorManualGrantContract,
-    );
-
-    const response = await accept(
-      client.connect({
-        params: { connectorSlug: "github" },
-        body: {
-          authMethod: "api-token",
-          account: { intent: "add" },
-          values: {},
-        },
-        headers: { authorization: "Bearer clerk-session" },
+      manualGrant(newMember(), "github", {
+        authMethod: "api-token",
+        account: { intent: "add" },
+        values: {},
       }),
       [400],
     );
@@ -857,109 +113,369 @@ describe("POST /api/connectors/:connectorSlug/manual-grant", () => {
     );
   });
 
-  it("rejects selected auth methods without manual grants", async () => {
-    await seedFixture();
-    const client = setupApp({ context, routes: builtinConnectorsRoutes })(
-      builtinConnectorManualGrantContract,
+  it("connectors-manual-grant-connect-004 connects an unlabeled account that then appears as connected", async () => {
+    const member = newMember();
+
+    const granted = await accept(
+      manualGrant(member, "openai", {
+        authMethod: "api-token",
+        account: { intent: "add" },
+        values: { apiKey: `sk-${randomUUID()}` },
+      }),
+      [200],
+    );
+    expect(Object.keys(granted.body)).toStrictEqual(["connectionId"]);
+
+    signIn(member);
+    const noAuth = await accept(
+      setupApp({ context, routes: builtinConnectorsRoutes })(
+        builtinConnectorNoAuthGrantContract,
+      ).connect({
+        params: { connectorSlug: "openai" },
+        headers,
+        body: { authMethod: "api-token", account: { intent: "add" } },
+      }),
+      [400],
+    );
+    expect(noAuth.body.error.message).toContain(
+      "openai api-token auth method does not use a no-auth grant",
     );
 
-    const response = await accept(
-      client.connect({
-        params: { connectorSlug: "stripe" },
-        body: {
-          authMethod: "oauth",
-          account: { intent: "add" },
-          values: { apiKey: "sk_test_key" },
+    signIn(member);
+    const listed = await accept(
+      setupApp({ context, routes: builtinConnectorsRoutes })(
+        builtinConnectorsMainContract,
+      ).list({ headers }),
+      [200],
+    );
+    expect(listed.body.connectors).toContainEqual(
+      expect.objectContaining({
+        slug: "openai",
+        connectionStatus: "connected",
+      }),
+    );
+  });
+
+  it("connectors-manual-grant-connect-006 reconnects a CLI account in place and keeps its sibling", async () => {
+    const member = newMember();
+    const stranger = newMember();
+    const cli = { "X-Client-Type": CLIENT_TYPE_CLI };
+
+    const added = await accept(
+      manualGrant(
+        member,
+        "openai",
+        {
+          authMethod: "api-token",
+          account: { intent: "add", displayName: "Work" },
+          values: { apiKey: `sk-${randomUUID()}` },
         },
-        headers: { authorization: "Bearer clerk-session" },
+        cli,
+      ),
+      [200],
+    );
+    const workId = added.body.connectionId;
+
+    const reconnected = await accept(
+      manualGrant(
+        member,
+        "openai",
+        {
+          authMethod: "api-token",
+          account: { intent: "reconnect", connectionId: workId },
+          values: { apiKey: `sk-${randomUUID()}` },
+        },
+        cli,
+      ),
+      [200],
+    );
+    expect(reconnected.body.connectionId).toBe(workId);
+
+    const sibling = await accept(
+      manualGrant(
+        member,
+        "openai",
+        {
+          authMethod: "api-token",
+          account: { intent: "add", displayName: "Personal" },
+          values: { apiKey: `sk-${randomUUID()}` },
+        },
+        cli,
+      ),
+      [200],
+    );
+    expect(sibling.body.connectionId).not.toBe(workId);
+
+    const listed = await listAccounts(member, "openai");
+    expect(
+      listed.connections
+        .map((connection) => {
+          return connection.id;
+        })
+        .sort(),
+    ).toStrictEqual([workId, sibling.body.connectionId].sort());
+
+    const reconnectAttempts = [
+      { actor: member, connectorSlug: "openai", connectionId: randomUUID() },
+      { actor: stranger, connectorSlug: "openai", connectionId: workId },
+      { actor: member, connectorSlug: "test-subdomain", connectionId: workId },
+    ];
+    for (const attempt of reconnectAttempts) {
+      const rejected = await accept(
+        manualGrant(
+          attempt.actor,
+          attempt.connectorSlug,
+          {
+            authMethod: "api-token",
+            account: {
+              intent: "reconnect",
+              connectionId: attempt.connectionId,
+            },
+            values:
+              attempt.connectorSlug === "openai"
+                ? { apiKey: `sk-${randomUUID()}` }
+                : {
+                    apiToken: `token-${randomUUID()}`,
+                    email: "support@example.com",
+                    subdomain: "example",
+                  },
+          },
+          cli,
+        ),
+        [404],
+      );
+      expect(rejected.body.error.message).toBe("Connector account not found");
+    }
+
+    const after = await listAccounts(member, "openai");
+    expect(after.defaultConnection?.id).toBe(workId);
+  });
+
+  it("connectors-manual-grant-connect-009 removes every disconnected Test Subdomain account", async () => {
+    const member = newMember();
+    const connectionId = (
+      await accept(
+        manualGrant(member, "test-subdomain", {
+          authMethod: "api-token",
+          account: { intent: "add" },
+          values: {
+            apiToken: `token-${randomUUID()}`,
+            email: "support@example.com",
+            subdomain: "example",
+          },
+        }),
+        [200],
+      )
+    ).body.connectionId;
+    expect(connectionId).toBeTruthy();
+
+    const before = await listAccounts(member, "test-subdomain");
+    for (const connection of before.connections) {
+      signIn(member);
+      await accept(
+        accountsClient().delete({
+          headers,
+          params: { connectionId: connection.id },
+          body: {
+            target: { kind: "builtin", connectorSlug: "test-subdomain" },
+          },
+        }),
+        [200],
+      );
+    }
+
+    const after = await listAccounts(member, "test-subdomain");
+    expect(after.connections).toStrictEqual([]);
+  });
+
+  it("connectors-manual-grant-connect-010 accepts a full InsForge backend URL", async () => {
+    const member = newMember();
+
+    const response = await accept(
+      manualGrant(member, "insforge", {
+        authMethod: "api-token",
+        account: { intent: "add" },
+        values: {
+          apiKey: `ik-${randomUUID()}`,
+          domain: "https://9ksx253h.us-west.insforge.app/api/",
+        },
+      }),
+      [200],
+    );
+
+    expect(Object.keys(response.body)).toStrictEqual(["connectionId"]);
+    const listed = await listAccounts(member, "insforge");
+    expect(listed.defaultConnection?.authMethod).toBe("api-token");
+  });
+
+  it("connectors-manual-grant-connect-012 replaces Lark app credentials and stays connected", async () => {
+    const member = newMember();
+    await accept(
+      manualGrant(member, "lark", {
+        authMethod: "api-token",
+        account: { intent: "add" },
+        values: { appId: "cli_old", appSecret: `old-${randomUUID()}` },
+      }),
+      [200],
+    );
+
+    await accept(
+      manualGrant(member, "lark", {
+        authMethod: "api-token",
+        account: { intent: "add" },
+        values: { appId: "cli_new", appSecret: `new-${randomUUID()}` },
+      }),
+      [200],
+    );
+
+    const listed = await listAccounts(member, "lark");
+    expect(listed.defaultConnection).toMatchObject({
+      authMethod: "api-token",
+      connectionStatus: "connected",
+      reconnectReason: null,
+      tokenExpiresAt: null,
+    });
+  });
+
+  it("connectors-manual-grant-connect-016 rejects an unknown field without echoing it", async () => {
+    const leaked = `secret-${randomUUID()}`;
+
+    const response = await accept(
+      manualGrant(newMember(), "openai", {
+        authMethod: "api-token",
+        account: { intent: "add" },
+        values: { apiKey: `sk-${randomUUID()}`, unknownField: leaked },
       }),
       [400],
     );
 
-    expect(response.body.error.message).toContain(
-      "stripe oauth auth method does not use a manual grant",
-    );
+    expect(response.body.error.message).toContain("apiKey");
+    expect(response.body.error.message).not.toContain("unknownField");
+    expect(response.body.error.message).not.toContain(leaked);
   });
 
-  it("connects a BentoML account", async () => {
-    await seedFixture();
-    const client = setupApp({ context, routes: builtinConnectorsRoutes })(
-      builtinConnectorManualGrantContract,
-    );
-
+  it("connectors-manual-grant-connect-017 rejects a whitespace-only API key by its public name", async () => {
     const response = await accept(
-      client.connect({
-        params: { connectorSlug: "bentoml" },
-        body: {
-          authMethod: "api-token",
-          account: { intent: "add" },
-          values: {
-            apiToken: "bento-token",
-            endpoint: "https://example.bentoml.test",
-          },
-        },
-        headers: { authorization: "Bearer clerk-session" },
+      manualGrant(newMember(), "openai", {
+        authMethod: "api-token",
+        account: { intent: "add" },
+        values: { apiKey: "   \n  " },
       }),
-      [200],
+      [400],
     );
 
-    expect(response.body).toStrictEqual({ connectionId: expect.any(String) });
+    expect(response.body.error.message).toContain("apiKey");
+    expect(response.body.error.message).not.toContain("OPENAI_TOKEN");
   });
 
-  it("rejects authored-hidden manual grant auth", async () => {
-    await seedFixture();
-    const client = setupApp({ context, routes: builtinConnectorsRoutes })(
-      builtinConnectorManualGrantContract,
-    );
-
+  it("connectors-manual-grant-connect-021 hides an authored-hidden Cloudflare manual grant", async () => {
     const response = await accept(
-      client.connect({
-        params: { connectorSlug: "cloudflare" },
-        body: {
-          authMethod: "api-token",
-          account: { intent: "add" },
-          values: {},
-        },
-        headers: { authorization: "Bearer clerk-session" },
+      manualGrant(newMember(), "cloudflare", {
+        authMethod: "api-token",
+        account: { intent: "add" },
+        values: {},
       }),
       [403],
     );
 
-    expect(response.body.error).toStrictEqual({
-      message: "cloudflare connector is not available",
-      code: "FORBIDDEN",
+    expect(response.body).toStrictEqual({
+      error: {
+        message: "cloudflare connector is not available",
+        code: "FORBIDDEN",
+      },
     });
   });
 
-  it("publishes one connector change event on successful replacement", async () => {
-    const fixture = seedFixture();
-    context.mocks.ably.channelGet.mockClear();
-    context.mocks.ably.publish.mockClear();
-    const client = setupApp({ context, routes: builtinConnectorsRoutes })(
-      builtinConnectorManualGrantContract,
-    );
+  it("connectors-manual-grant-connect-022 notifies only the member once about the new connection", async () => {
+    const member = newMember();
 
-    await accept(
-      client.connect({
-        params: { connectorSlug: "openai" },
-        body: {
-          authMethod: "api-token",
-          account: { intent: "add" },
-          values: { apiKey: "sk-test" },
-        },
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [200],
-    );
+    await addOpenAi(member);
+    await flushWaitUntilForTest();
 
-    expect(context.mocks.ably.channelGet).toHaveBeenCalledTimes(1);
-    expect(context.mocks.ably.channelGet).toHaveBeenCalledWith(
-      `user:${fixture.userId}`,
-    );
-    expect(context.mocks.ably.publish).toHaveBeenCalledTimes(1);
+    expect(
+      channelsPublishedTo(context.mocks, "connector:changed"),
+    ).toStrictEqual([`user:${member.userId}`]);
     expect(context.mocks.ably.publish).toHaveBeenCalledWith(
       "connector:changed",
       { connectorSlug: "openai" },
     );
   });
+
+  it(
+    "connectors-manual-grant-connect-008 connects Test Subdomain manual grant fields through the API",
+    { timeout: TEST_WITH_DOUBLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const fixture = createChatEventsFixture(context);
+      const bdd = createBddApi(context);
+      const actor = bdd.user();
+      if (!actor.orgId) {
+        throw new Error("Expected organization actor");
+      }
+      const member: Member = { userId: actor.userId, orgId: actor.orgId };
+      const owner = publicRunOwner(context, actor);
+      fixture.chatCallbacks.acceptChatObjectStorage();
+      fixture.api.acceptStorageDownloads();
+      fixture.api.acceptTelemetryIngest();
+      mockOptionalEnv("OPENROUTER_API_KEY", undefined);
+      fixture.chatCallbacks.disableVapid();
+
+      const [granted] = await Promise.all([
+        accept(
+          manualGrant(member, "test-subdomain", {
+            authMethod: "api-token",
+            account: { intent: "add" },
+            values: {
+              apiToken: "  test-subdomain-token\n  ",
+              email: "  support@example.com \n",
+              subdomain: "  example \n",
+            },
+          }),
+          [200],
+        ),
+        fixture.api.configureRunnerGroup(),
+        owner.run(() => {
+          return bdd.bootstrapLimitedFreeOnboarding(actor);
+        }),
+      ]);
+      expect(Object.keys(granted.body)).toStrictEqual(["connectionId"]);
+
+      const listed = await listAccounts(member, "test-subdomain");
+      expect(listed.defaultConnection).toMatchObject({
+        id: granted.body.connectionId,
+        authMethod: "api-token",
+        connectionStatus: "connected",
+      });
+      expect(JSON.stringify(listed)).not.toContain("test-subdomain-token");
+
+      const launched = await owner.run(() => {
+        return fixture.sendChatRun(actor, {
+          prompt: "Use test-subdomain connector credentials",
+          model: null,
+        });
+      });
+      const execution = await owner.executionInput(launched.runId);
+      const envMap = executionEnvironment(execution);
+      expect(envMap.SUBDOMAIN_TEST_EMAIL).toBe("support@example.com");
+      expect(envMap.SUBDOMAIN_TEST_SUBDOMAIN).toBe("example");
+
+      const resolved = await createFirewallApi(context).requestFirewallAuth(
+        { authorization: `Bearer ${execution.firewallToken}` },
+        {
+          authHeaders: {
+            Authorization: `Bearer ${secretTemplate("SUBDOMAIN_TEST_API_TOKEN")}`,
+          },
+          secretConnectorMap: execution.secretConnectorMap ?? undefined,
+          secretConnectorMetadataMap:
+            execution.secretConnectorMetadataMap ?? undefined,
+        },
+        [200],
+      );
+      if (!("headers" in resolved.body)) {
+        throw new Error("Expected resolved firewall headers");
+      }
+      expect(resolved.body.headers).toStrictEqual({
+        Authorization: "Bearer test-subdomain-token",
+      });
+    },
+  );
 });

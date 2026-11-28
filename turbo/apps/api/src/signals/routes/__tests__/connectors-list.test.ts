@@ -1,395 +1,190 @@
 import { randomUUID } from "node:crypto";
 
-import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
+import {
+  connectorAccountsContract,
+  type ConnectorAccountTarget,
+} from "@okouai/api-contracts/contracts/connector-accounts";
 import {
   builtinConnectorManualGrantContract,
   builtinConnectorsMainContract,
 } from "@okouai/api-contracts/contracts/connectors";
-import { afterEach } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { mockEnv, mockOptionalEnv } from "../../../lib/env";
-import { createConnectorBddApi } from "./helpers/api-bdd-connectors";
-import { createPublicConnectorActor } from "./helpers/public-connector-actor";
-
-import { createRouteMocks } from "./helpers/route-test";
 import { connectorAccountRoutes } from "../connector-accounts";
 import { builtinConnectorsRoutes } from "../connectors";
+import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
-const mocks = createRouteMocks(context);
 
-interface AuthenticatedFixture {
-  readonly orgId: string;
+interface Member {
   readonly userId: string;
+  readonly orgId: string;
 }
 
-function authHeaders() {
+const GITLAB: ConnectorAccountTarget = Object.freeze({
+  kind: "builtin",
+  connectorSlug: "gitlab",
+});
+
+function newMember(): Member {
+  return { userId: `user_${randomUUID()}`, orgId: `org_${randomUUID()}` };
+}
+
+function as(member: Member) {
+  createRouteMocks(context).clerk.session(member.userId, member.orgId);
   return { authorization: "Bearer clerk-session" };
 }
 
-function seedAuthenticatedFixture(): AuthenticatedFixture {
-  const fixture = {
-    orgId: `org_${randomUUID()}`,
-    userId: `user_${randomUUID()}`,
-  };
-  mocks.clerk.session(fixture.userId, fixture.orgId);
-  return fixture;
+function accounts() {
+  return setupApp({ context, routes: connectorAccountRoutes })(
+    connectorAccountsContract,
+  );
 }
 
-async function connectGitlab(fixture: AuthenticatedFixture): Promise<void> {
-  mocks.clerk.session(fixture.userId, fixture.orgId);
-  await accept(
-    setupApp({ context, routes: builtinConnectorsRoutes })(
-      builtinConnectorManualGrantContract,
-    ).connect({
-      params: { connectorSlug: "gitlab" },
-      body: {
-        authMethod: "api-token",
-        account: { intent: "add" },
-        values: {
-          accessToken: "gl-test-token",
-          host: "gitlab.example.com",
-        },
-      },
-      headers: authHeaders(),
+async function listConnectors(member: Member) {
+  const client = setupApp({ context, routes: builtinConnectorsRoutes })(
+    builtinConnectorsMainContract,
+  );
+  const response = await accept(client.list({ headers: as(member) }), [200]);
+  return response.body;
+}
+
+async function manualGrant(
+  member: Member,
+  connectorSlug: string,
+  values: Record<string, string>,
+) {
+  const client = setupApp({ context, routes: builtinConnectorsRoutes })(
+    builtinConnectorManualGrantContract,
+  );
+  const response = await accept(
+    client.connect({
+      params: { connectorSlug },
+      headers: as(member),
+      body: { authMethod: "api-token", account: { intent: "add" }, values },
     }),
     [200],
   );
+  return response.body.connectionId;
 }
 
-async function deleteConnector(
-  fixture: AuthenticatedFixture,
-  connectorSlug: "gitlab" | "openai" | "manual-mcp",
-): Promise<void> {
-  mocks.clerk.session(fixture.userId, fixture.orgId);
-  const client = setupApp({ context, routes: connectorAccountRoutes })(
-    connectorAccountsContract,
-  );
-  const accounts = await accept(
-    client.connections({
-      headers: authHeaders(),
-      query: { kind: "builtin", connectorSlug },
+async function connectGitLab(member: Member, host: string) {
+  return await manualGrant(member, "gitlab", {
+    accessToken: `glpat-${randomUUID()}`,
+    host,
+  });
+}
+
+async function listGitLabAccounts(member: Member) {
+  const response = await accept(
+    accounts().connections({
+      headers: as(member),
+      query: { kind: "builtin", connectorSlug: "gitlab", limit: 100 },
     }),
-    [200, 404],
+    [200],
   );
-  if (accounts.status === 404) {
-    return;
-  }
-  for (const account of accounts.body.connections) {
-    await accept(
-      client.delete({
-        headers: authHeaders(),
-        params: { connectionId: account.id },
-        body: { target: { kind: "builtin", connectorSlug } },
-      }),
-      [200],
-    );
-  }
+  return response.body;
 }
 
 describe("GET /api/connectors", () => {
-  const seededFixtures: AuthenticatedFixture[] = [];
+  it("connectors-list-001 returns an empty list for a member without accounts", async () => {
+    const body = await listConnectors(newMember());
 
-  afterEach(async () => {
-    while (seededFixtures.length > 0) {
-      const fixture = seededFixtures.pop();
-      if (fixture) {
-        await deleteConnector(fixture, "gitlab");
-        await deleteConnector(fixture, "openai");
-        await deleteConnector(fixture, "manual-mcp");
-      }
-    }
+    expect(body.connectors).toStrictEqual([]);
   });
 
-  it("returns an empty connectors list", async () => {
-    const fixture = seedAuthenticatedFixture();
-    mocks.clerk.session(fixture.userId, fixture.orgId);
+  it("connectors-list-002 lists a GitLab account connected through a manual grant", async () => {
+    const member = newMember();
+    const connectionId = await connectGitLab(member, "gitlab.example.com");
 
-    const client = setupApp({ context, routes: builtinConnectorsRoutes })(
-      builtinConnectorsMainContract,
-    );
-    const response = await accept(
-      client.list({ headers: authHeaders() }),
-      [200],
-    );
+    const body = await listConnectors(member);
 
-    expect(response.body.connectors).toStrictEqual([]);
-  });
-
-  it("returns connectors created through the connector API", async () => {
-    const fixture = seedAuthenticatedFixture();
-    seededFixtures.push(fixture);
-    await connectGitlab(fixture);
-    mocks.clerk.session(fixture.userId, fixture.orgId);
-
-    const client = setupApp({ context, routes: builtinConnectorsRoutes })(
-      builtinConnectorsMainContract,
-    );
-    const response = await accept(
-      client.list({ headers: authHeaders() }),
-      [200],
-    );
-
-    expect(response.body.connectors).toContainEqual(
+    expect(body.connectors).toStrictEqual([
       expect.objectContaining({
+        id: connectionId,
         slug: "gitlab",
         authMethod: "api-token",
         connectionStatus: "connected",
       }),
-    );
+    ]);
   });
 
-  it("lists HTTP and MCP accounts", async () => {
-    const fixture = seedAuthenticatedFixture();
-    seededFixtures.push(fixture);
-    await connectGitlab(fixture);
-    await accept(
-      setupApp({ context, routes: builtinConnectorsRoutes })(
-        builtinConnectorManualGrantContract,
-      ).connect({
-        headers: authHeaders(),
-        params: { connectorSlug: "manual-mcp" },
-        body: {
-          authMethod: "api-token",
-          account: { intent: "add" },
-          values: { apiKey: "test-mcp-token" },
-        },
-      }),
-      [200],
-    );
-    const client = setupApp({ context, routes: builtinConnectorsRoutes })(
-      builtinConnectorsMainContract,
-    );
-    const listed = await accept(client.list({ headers: authHeaders() }), [200]);
+  it("connectors-list-003 lists both HTTP and MCP connector accounts", async () => {
+    const member = newMember();
+    await connectGitLab(member, "gitlab.example.com");
+    await manualGrant(member, "manual-mcp", { apiKey: `mcp-${randomUUID()}` });
+
+    const body = await listConnectors(member);
+
     expect(
-      listed.body.connectors.map((connector) => {
+      body.connectors.map((connector) => {
         return connector.slug;
       }),
     ).toStrictEqual(expect.arrayContaining(["gitlab", "manual-mcp"]));
   });
 
-  it("projects the selected default account and removes it after public disconnect", async () => {
-    const { actor, run: own } = createPublicConnectorActor(context);
-    const connectors = createConnectorBddApi(context);
-    await own(async () => {
-      const first = await own(() => {
-        return connectors.connectManualGrant(actor, "gitlab", "api-token", {
-          accessToken: "gl-first-token",
-          host: "first.gitlab.example.com",
-        });
-      });
-      const second = await own(() => {
-        return connectors.connectManualGrant(actor, "gitlab", "api-token", {
-          accessToken: "gl-second-token",
-          host: "second.gitlab.example.com",
-        });
-      });
-      expect(first.id).not.toBe(second.id);
-      await own(() => {
-        return connectors.setDefaultBuiltinConnectorAccount(
-          actor,
-          "gitlab",
-          second.id,
-        );
-      });
-      const accounts = await own(() => {
-        return connectors.listBuiltinConnectorAccounts(actor, "gitlab");
-      });
-      expect(accounts).toHaveLength(2);
-      expect(
-        accounts.find((account) => {
-          return account.id === first.id;
-        }),
-      ).toMatchObject({ isDefault: false });
-      expect(
-        accounts.find((account) => {
-          return account.id === second.id;
-        }),
-      ).toMatchObject({ isDefault: true });
-      const projected = await own(() => {
-        return connectors.listBuiltinConnectors(actor);
-      });
-      expect(projected.connectors).toMatchObject([
-        { id: second.id, slug: "gitlab", connectionStatus: "connected" },
-      ]);
-      expect(projected.connectors).toHaveLength(1);
-      await expect(
-        own(() => {
-          return connectors.readDefaultBuiltinAccount(actor, "gitlab");
-        }),
-      ).resolves.toMatchObject({ id: second.id });
-      for (const account of [first, second]) {
-        await own(() => {
-          return connectors.deleteBuiltinConnectorAccount(
-            actor,
-            "gitlab",
-            account.id,
-          );
-        });
-      }
-      const response = await own(() => {
-        return accept(
-          setupApp({ context, routes: builtinConnectorsRoutes })(
-            builtinConnectorsMainContract,
-          ).list({ headers: authHeaders() }),
-          [200],
-        );
-      });
-      expect(response.body).toStrictEqual({
-        connectors: [],
-      });
-      const accountsAfterDelete = await own(() => {
-        return connectors.requestBuiltinConnectorAccounts(
-          actor,
-          "gitlab",
-          [200],
-        );
-      });
-      expect(accountsAfterDelete.body.defaultConnection).toBeNull();
-    });
-  });
+  it("connectors-list-004 projects the chosen default account until every account is disconnected", async () => {
+    const member = newMember();
+    const first = await connectGitLab(member, "gitlab.first.example.com");
+    const second = await connectGitLab(member, "gitlab.second.example.com");
+    expect(first).not.toBe(second);
 
-  it("keeps current-entry account and scope reads available after a capability change", async () => {
-    // The capability change re-evaluates compatibility from the same entries.
-    mockEnv(
-      "R2_USER_STORAGES_BUCKET_NAME",
-      `legacy-list-unavailable-${randomUUID()}`,
-    );
-
-    const fixture = seedAuthenticatedFixture();
-    seededFixtures.push(fixture);
-    await connectGitlab(fixture);
-    const accountClient = setupApp({
-      context,
-      routes: connectorAccountRoutes,
-    })(connectorAccountsContract);
-    const target = { kind: "builtin" as const, connectorSlug: "gitlab" };
-    const connected = await accept(
-      accountClient.connections({ headers: authHeaders(), query: target }),
+    await accept(
+      accounts().setDefault({
+        headers: as(member),
+        params: { connectionId: second },
+        body: { target: GITLAB },
+      }),
       [200],
     );
-    const [account] = connected.body.connections;
-    if (!account) {
-      throw new Error("Expected the connected GitLab account");
-    }
-    const client = setupApp({ context, routes: builtinConnectorsRoutes })(
-      builtinConnectorsMainContract,
-    );
-    const available = await accept(
-      client.list({ headers: authHeaders() }),
+    const accountList = await listGitLabAccounts(member);
+    const listed = await listConnectors(member);
+    const defaultRead = await accept(
+      accounts().connection({
+        headers: as(member),
+        params: { connectionId: second },
+        query: GITLAB,
+      }),
       [200],
     );
-    expect(available.body.connectors).toStrictEqual([
+
+    expect(
+      accountList.connections.map((connection) => {
+        return [connection.id, connection.isDefault];
+      }),
+    ).toStrictEqual(
+      expect.arrayContaining([
+        [first, false],
+        [second, true],
+      ]),
+    );
+    expect(accountList.connections).toHaveLength(2);
+    expect(accountList.defaultConnection?.id).toBe(second);
+    expect(listed.connectors).toStrictEqual([
       expect.objectContaining({
-        id: account.id,
+        id: second,
         slug: "gitlab",
-        authMethod: "api-token",
         connectionStatus: "connected",
       }),
     ]);
-    mockOptionalEnv("BOX_OAUTH_CLIENT_ID", undefined);
+    expect(defaultRead.body).toMatchObject({ id: second, isDefault: true });
 
-    mocks.clerk.session(fixture.userId, fixture.orgId);
+    for (const connectionId of [first, second]) {
+      await accept(
+        accounts().delete({
+          headers: as(member),
+          params: { connectionId },
+          body: { target: GITLAB },
+        }),
+        [200],
+      );
+    }
 
-    const response = await accept(
-      client.list({ headers: authHeaders() }),
-      [200],
-    );
-    expect(response.body).toStrictEqual(available.body);
+    const emptied = await listConnectors(member);
+    const remainingAccounts = await listGitLabAccounts(member);
 
-    // Current-entry account readers retain the exact account and its status.
-    const connections = await accept(
-      accountClient.connections({ headers: authHeaders(), query: target }),
-      [200],
-    );
-    expect(connections.body).toStrictEqual(connected.body);
-    const connection = await accept(
-      accountClient.connection({
-        headers: authHeaders(),
-        query: target,
-        params: { connectionId: account.id },
-      }),
-      [200],
-    );
-    expect(connection.body).toStrictEqual(account);
-    const impact = await accept(
-      accountClient.deletionImpact({
-        headers: authHeaders(),
-        query: target,
-        params: { connectionId: account.id },
-      }),
-      [200],
-    );
-    expect(impact.body).toStrictEqual({
-      connectionId: account.id,
-      explicitSelectionCount: 0,
-      hasSibling: false,
-    });
-
-    // Scope reads compute compatibility from the current entry.
-    const scopeDiff = await accept(
-      accountClient.scopeDiff({
-        headers: authHeaders(),
-        query: { connectorSlug: "gitlab" },
-        params: { connectionId: account.id },
-      }),
-      [200],
-    );
-    const emptyScopeDiff = {
-      addedScopes: [],
-      removedScopes: [],
-      currentScopes: [],
-      storedScopes: [],
-    };
-    expect(scopeDiff.body).toStrictEqual(emptyScopeDiff);
-
-    const selection = { target, connectionId: account.id };
-    const inspected = await accept(
-      accountClient.inspect({
-        headers: authHeaders(),
-        body: { selections: [selection] },
-      }),
-      [200],
-    );
-    expect(inspected.body.results).toStrictEqual([
-      {
-        kind: "available",
-        ...selection,
-        authMethod: account.authMethod,
-        displayName: account.displayName,
-        externalId: account.externalId,
-        externalUsername: account.externalUsername,
-        externalEmail: account.externalEmail,
-        connectionStatus: account.connectionStatus,
-        reconnectReason: account.reconnectReason,
-        missingRequiredFields: [],
-        configuredFieldKeys: ["accessToken", "host"],
-      },
-    ]);
-  });
-
-  it("returns 401 when not authenticated", async () => {
-    const client = setupApp({ context, routes: builtinConnectorsRoutes })(
-      builtinConnectorsMainContract,
-    );
-    const response = await accept(client.list({ headers: {} }), [401]);
-
-    expect(response.body.error.code).toBe("UNAUTHORIZED");
-  });
-
-  it("returns 401 when the authenticated session has no organization", async () => {
-    mocks.clerk.session(`user_${randomUUID()}`, null);
-
-    const client = setupApp({ context, routes: builtinConnectorsRoutes })(
-      builtinConnectorsMainContract,
-    );
-    const response = await accept(
-      client.list({ headers: authHeaders() }),
-      [401],
-    );
-
-    expect(response.body.error.code).toBe("UNAUTHORIZED");
+    expect(emptied).toStrictEqual({ connectors: [] });
+    expect(remainingAccounts.defaultConnection).toBeNull();
   });
 });

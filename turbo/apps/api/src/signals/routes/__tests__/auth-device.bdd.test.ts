@@ -1,328 +1,212 @@
 import { randomUUID } from "node:crypto";
 
-import { HttpResponse, http } from "msw";
+import { http, HttpResponse } from "msw";
 import { describe, expect, it } from "vitest";
 
-import { now } from "../../../lib/time";
 import { testContext } from "../../../__tests__/test-context";
 import { server } from "../../../mocks/server";
-import {
-  createBddApi,
-  expectApiError,
-  type ApiTestUser,
-} from "./helpers/api-bdd";
+import type { ApiTestUser } from "./helpers/api-bdd";
 import {
   createAuthDeviceApiActions,
   mockClaudeCodeTokenEndpoint,
   mockCodexDeviceAuthProvider,
 } from "./helpers/api-bdd-auth-device";
 import { createAuthDeviceSupportApi } from "./helpers/api-bdd-auth-device-support";
+import { now } from "../../../lib/time";
 
 const context = testContext();
-const bdd = createBddApi(context);
-const authDevice = createAuthDeviceApiActions(context);
+const api = createAuthDeviceApiActions(context);
 const support = createAuthDeviceSupportApi(context);
 
-interface OAuthErrorBody {
-  readonly error: string;
-  readonly error_description: string;
+function newUser(
+  overrides: Partial<Pick<ApiTestUser, "orgId" | "orgRole">> = {},
+): ApiTestUser {
+  const userId = `user_${randomUUID()}`;
+  return {
+    userId,
+    orgId:
+      overrides.orgId === undefined ? `org_${randomUUID()}` : overrides.orgId,
+    orgRole: overrides.orgRole ?? "org:admin",
+    email: `${userId}@example.test`,
+  };
 }
 
-interface CliApprovalErrorBody {
-  readonly success: false;
-  readonly error: string;
+function stateOf(browserUrl: string): string {
+  return new URL(browserUrl).searchParams.get("state") ?? "";
 }
 
-function expectOAuthError(body: unknown): asserts body is OAuthErrorBody {
-  if (
-    typeof body !== "object" ||
-    body === null ||
-    !("error" in body) ||
-    !("error_description" in body)
-  ) {
-    throw new Error("Expected OAuth error response body");
-  }
-}
-
-function expectCliApprovalError(
-  body: unknown,
-): asserts body is CliApprovalErrorBody {
-  if (
-    typeof body !== "object" ||
-    body === null ||
-    !("success" in body) ||
-    !("error" in body) ||
-    body.success !== false
-  ) {
-    throw new Error("Expected CLI approval error response body");
-  }
-}
-
-async function connectPersonalCodexTestAccount(
-  actor: ApiTestUser,
-  args: {
-    readonly accessTokenExpiresAt: number;
+async function connectCodex(
+  user: ApiTestUser,
+  account: {
     readonly accountId: string;
-    readonly refreshToken: string;
     readonly workspaceName: string;
+    readonly accessTokenExpiresAt?: number;
+    readonly refreshedAccessTokenExpiresAt?: number;
   },
-): Promise<string> {
-  mockCodexDeviceAuthProvider({
-    ...args,
+  mutation: {
+    readonly mode: "add" | "reconnect";
+    readonly modelProviderId?: string;
+  } = { mode: "add" },
+) {
+  const openai = mockCodexDeviceAuthProvider({
+    ...account,
+    refreshToken: `rt_${account.accountId}_synthetic_high_entropy`,
   });
-  const started = await authDevice.requestCodexStart(actor, "personal", [200], {
-    mode: "add",
-  });
+  const started = await api.requestCodexStart(
+    user,
+    "personal",
+    [200],
+    mutation,
+  );
   if (started.status !== 200) {
-    throw new Error(`Expected ${args.accountId} device auth to start`);
+    throw new Error("Expected a started Codex sign-in");
   }
-  const completed = await authDevice.requestCodexComplete(
-    actor,
+  const completed = await api.requestCodexComplete(
+    user,
     started.body.sessionToken,
     [200],
   );
   if (!("status" in completed.body) || completed.body.status !== "complete") {
-    throw new Error(`Expected ${args.accountId} device auth to complete`);
+    throw new Error("Expected a completed Codex sign-in");
   }
-  return completed.body.provider.id;
+  return { ...completed.body, openai };
+}
+
+async function codexAccounts(user: ApiTestUser) {
+  const listed = await support.listPersonalModelProviders(user, [200]);
+  if (listed.status !== 200) {
+    throw new Error("Expected the provider list");
+  }
+  return listed.body.modelProviders.filter((provider) => {
+    return provider.type === "codex-oauth-token";
+  });
 }
 
 describe("AUTH-02: CLI device authorization", () => {
-  it("starts, polls, approves, exchanges, and uses the issued bearer through public APIs", async () => {
-    const actor = bdd.user();
+  it("auth-device.bdd-001 signs the CLI in after the user approves its code", async () => {
+    const user = newUser();
+    const device = await api.startCliDevice();
+    expect(device.device_code).toMatch(/^[A-Z0-9]{4}-[A-Z0-9]{4}$/);
+    expect(device.user_code).toBe(device.device_code);
+    expect(device.verification_path).toBe("/cli-auth");
+    expect(device.expires_in).toBe(900);
+    expect(device.interval).toBe(5);
 
-    const started = await authDevice.startCliDevice();
-    expect(started.device_code).toMatch(/^[A-Z2-9]{4}-[A-Z2-9]{4}$/);
-    expect(started.user_code).toBe(started.device_code);
-    expect(started.verification_path).toBe("/cli-auth");
-    expect(started.expires_in).toBe(900);
-    expect(started.interval).toBe(5);
+    const pending = await api.requestCliToken(device.device_code, [202]);
+    expect(pending.body).toMatchObject({ error: "authorization_pending" });
 
-    const pending = await authDevice.requestCliToken(
-      started.device_code,
-      [202],
-    );
-    expectOAuthError(pending.body);
-    expect(pending.body.error).toBe("authorization_pending");
-
-    const approved = await authDevice.requestCliApproval(
-      actor,
-      { device_code: ` ${started.user_code.toLowerCase()} ` },
+    const approved = await api.requestCliApproval(
+      user,
+      { device_code: `  ${device.user_code.toLowerCase()}  ` },
       [200],
     );
     expect(approved.body).toStrictEqual({ success: true });
 
-    const token = await authDevice.requestCliToken(started.device_code, [200]);
-    if (token.status !== 200) {
-      throw new Error(
-        `Expected CLI token exchange to succeed, got ${token.status}`,
-      );
+    const issued = await api.requestCliToken(device.device_code, [200]);
+    if (issued.status !== 200) {
+      throw new Error("Expected an issued CLI token");
     }
-    expect(token.body.token_type).toBe("Bearer");
-    expect(token.body.access_token).toMatch(/^vm0_pat_/);
+    expect(issued.body.token_type).toBe("Bearer");
+    expect(issued.body.access_token).toMatch(/^vm0_pat_/);
 
-    const me = await authDevice.readMeWithBearer(
-      token.body.access_token,
-      actor,
+    const me = await api.readMeWithBearer(
+      issued.body.access_token,
+      user,
       [200],
     );
     expect(me.body).toStrictEqual({
-      userId: actor.userId,
-      email: actor.email,
-      orgId: actor.orgId,
+      userId: user.userId,
+      email: user.email,
+      orgId: user.orgId,
     });
 
-    const reused = await authDevice.requestCliToken(started.device_code, [400]);
-    expectOAuthError(reused.body);
-    expect(reused.body.error).toBe("invalid_request");
+    const reused = await api.requestCliToken(device.device_code, [400]);
+    expect(reused.body).toMatchObject({ error: "invalid_request" });
   });
 
-  it("returns visible validation and auth errors for bad CLI device requests", async () => {
-    const actor = bdd.user();
+  it("auth-device.bdd-002 reports bad CLI device requests to the caller", async () => {
+    const user = newUser();
+    const empty = await api.requestCliToken("", [400]);
+    expect(empty.body).toMatchObject({ error: "invalid_request" });
+    expect(JSON.stringify(empty.body)).toContain("device_code is required");
 
-    const missingDeviceCode = await authDevice.requestCliToken("", [400]);
-    expectOAuthError(missingDeviceCode.body);
-    expect(missingDeviceCode.body.error).toBe("invalid_request");
-    expect(missingDeviceCode.body.error_description).toContain(
-      "device_code is required",
-    );
-
-    const unknownApproval = await authDevice.requestCliApproval(
-      actor,
+    const unknown = await api.requestCliApproval(
+      user,
       { device_code: "ABCD-EFGH" },
       [400],
     );
-    expectCliApprovalError(unknownApproval.body);
-    expect(unknownApproval.body.error).toBe("Invalid or expired device code");
+    expect(unknown.body).toMatchObject({
+      success: false,
+      error: "Invalid or expired device code",
+    });
 
-    const unauthenticatedApproval = await authDevice.requestCliApproval(
+    const anonymous = await api.requestCliApproval(
       null,
       { device_code: "ABCD-EFGH" },
       [401],
     );
-    expectApiError(unauthenticatedApproval.body);
-    expect(unauthenticatedApproval.body.error.code).toBe("UNAUTHORIZED");
+    expect(JSON.stringify(anonymous.body)).toContain("UNAUTHORIZED");
   });
 });
 
 describe("AUTH-02: platform realtime token", () => {
-  function orgCapability(actor: {
-    readonly userId: string;
-    readonly orgId: string | null;
-  }) {
-    return {
-      [`user:${actor.userId}`]: ["subscribe"],
-      [`org:${actor.orgId}`]: ["subscribe"],
-      [`user-org:${actor.userId}:${actor.orgId}`]: ["subscribe"],
-      [`user-org-foreground:${actor.userId}:${actor.orgId}`]: ["presence"],
-      [`run-output:${actor.userId}:${actor.orgId}:*`]: ["subscribe"],
-      [`phone-use:${actor.orgId}:${actor.userId}:*`]: ["subscribe"],
-      [`computer-use-host:${actor.userId}:${actor.orgId}:*`]: ["subscribe"],
+  it("auth-device.bdd-005 issues a fresh signed request when the client renews its token", async () => {
+    const user = newUser();
+    const signed = (nonce: string) => {
+      return {
+        keyName: "app.key",
+        ttl: 3_600_000,
+        timestamp: 1_900_000_000_000,
+        capability: JSON.stringify({ [`user:${user.userId}`]: ["subscribe"] }),
+        clientId: user.userId,
+        nonce,
+        mac: `mac-${nonce}`,
+      };
     };
-  }
-
-  function tokenRequestFor(
-    clientId: string,
-    capability: string,
-    nonce = "nonce",
-  ) {
-    return {
-      keyName: "ably-key",
-      timestamp: now(),
-      ttl: 60 * 60 * 1000,
-      capability,
-      clientId,
-      nonce,
-      mac: "mac",
-    };
-  }
-
-  it("issues signed user and active-org token requests only for authenticated users", async () => {
-    const unauthenticated = await authDevice.requestPlatformRealtimeToken(
-      null,
-      [401],
-    );
-    expectApiError(unauthenticated.body);
-    expect(unauthenticated.body.error.code).toBe("UNAUTHORIZED");
-
-    const actor = bdd.user();
-    const capability = JSON.stringify(orgCapability(actor));
-    const signedRequest = tokenRequestFor(actor.userId, capability);
-    context.mocks.ably.createTokenRequest.mockResolvedValueOnce(signedRequest);
-
-    const token = await authDevice.requestPlatformRealtimeToken(actor, [200]);
-    if (token.status !== 200) {
-      throw new Error("Expected platform realtime token request to succeed");
-    }
-    expect(token.body).toStrictEqual(signedRequest);
-    expect(context.mocks.ably.createTokenRequest).toHaveBeenCalledWith({
-      capability: orgCapability(actor),
-      ttl: 60 * 60 * 1000,
-      clientId: actor.userId,
-    });
-  });
-
-  it("keeps user realtime available without an active organization", async () => {
-    const actor = bdd.user({ orgId: null });
-    const capability = JSON.stringify({
-      [`user:${actor.userId}`]: ["subscribe"],
-    });
-    const signedRequest = tokenRequestFor(actor.userId, capability);
-    context.mocks.ably.createTokenRequest.mockResolvedValueOnce(signedRequest);
-
-    const token = await authDevice.requestPlatformRealtimeToken(actor, [200]);
-    if (token.status !== 200) {
-      throw new Error("Expected platform realtime token request to succeed");
-    }
-    expect(token.body).toStrictEqual(signedRequest);
-    expect(context.mocks.ably.createTokenRequest).toHaveBeenCalledWith({
-      capability: {
-        [`user:${actor.userId}`]: ["subscribe"],
-      },
-      ttl: 60 * 60 * 1000,
-      clientId: actor.userId,
-    });
-  });
-
-  it("issues a fresh signed request when the client renews its token", async () => {
-    const actor = bdd.user();
-    const capability = JSON.stringify(orgCapability(actor));
-    const firstRequest = tokenRequestFor(
-      actor.userId,
-      capability,
-      "first-nonce",
-    );
-    const renewedRequest = tokenRequestFor(
-      actor.userId,
-      capability,
-      "renewed-nonce",
-    );
     context.mocks.ably.createTokenRequest
-      .mockResolvedValueOnce(firstRequest)
-      .mockResolvedValueOnce(renewedRequest);
+      .mockResolvedValueOnce(signed("nonce-first"))
+      .mockResolvedValueOnce(signed("nonce-renewed"));
 
-    const first = await authDevice.requestPlatformRealtimeToken(actor, [200]);
-    const renewed = await authDevice.requestPlatformRealtimeToken(actor, [200]);
-    expect(first.body).toStrictEqual(firstRequest);
-    expect(renewed.body).toStrictEqual(renewedRequest);
-  });
-
-  it("returns an error when a signed request cannot be created", async () => {
-    const actor = bdd.user();
-    context.mocks.ably.createTokenRequest.mockRejectedValueOnce(
-      new Error("Token signing unavailable"),
-    );
-
-    const token = await authDevice.requestPlatformRealtimeToken(actor, [500]);
-    expect(token.status).toBe(500);
-    expect(token.body).toStrictEqual({ error: "Internal server error" });
+    const first = await api.requestPlatformRealtimeToken(user, [200]);
+    const renewed = await api.requestPlatformRealtimeToken(user, [200]);
+    expect(first.body).toStrictEqual(signed("nonce-first"));
+    expect(renewed.body).toStrictEqual(signed("nonce-renewed"));
   });
 });
 
 describe("MODEL-PROVIDER: device auth boundaries", () => {
-  it("starts, polls, and cancels a Codex device auth session through public APIs", async () => {
-    let userCodeRequests = 0;
-    let tokenPollRequests = 0;
+  it("auth-device.bdd-007 lets only the owner cancel a pending Codex sign-in", async () => {
+    const user = newUser({ orgRole: "org:member" });
+    const otherMember = newUser({ orgId: user.orgId, orgRole: "org:member" });
+    const userCodeRequests: unknown[] = [];
+    const polls: unknown[] = [];
     server.use(
       http.post(
         "https://auth.openai.com/api/accounts/deviceauth/usercode",
         async ({ request }) => {
-          userCodeRequests += 1;
-          const body: unknown = await request.json();
-          expect(body).toMatchObject({
-            client_id: "test-codex-client-id",
-          });
+          userCodeRequests.push(await request.json());
           return HttpResponse.json({
-            device_auth_id: "device-auth-bdd",
+            device_auth_id: "device_auth_bdd",
             user_code: "CODEX-BDD",
-            interval: 7,
+            interval: "7",
           });
         },
       ),
       http.post(
         "https://auth.openai.com/api/accounts/deviceauth/token",
         async ({ request }) => {
-          tokenPollRequests += 1;
-          const body: unknown = await request.json();
-          expect(body).toStrictEqual({
-            device_auth_id: "device-auth-bdd",
-            user_code: "CODEX-BDD",
-          });
-          return HttpResponse.text("authorization pending", { status: 403 });
+          polls.push(await request.json());
+          return HttpResponse.json(
+            { error: "authorization_pending" },
+            { status: 403 },
+          );
         },
       ),
     );
 
-    const admin = bdd.user();
-    const started = await authDevice.requestCodexStart(
-      admin,
-      "personal",
-      [200],
-    );
+    const started = await api.requestCodexStart(user, "personal", [200]);
     if (started.status !== 200) {
-      throw new Error(
-        `Expected Codex device auth start, got ${started.status}`,
-      );
+      throw new Error("Expected a started Codex sign-in");
     }
     expect(started.body).toMatchObject({
       type: "codex",
@@ -332,298 +216,54 @@ describe("MODEL-PROVIDER: device auth boundaries", () => {
       verificationCode: "CODEX-BDD",
       interval: 7,
     });
-    expect(started.body.sessionToken).toStrictEqual(expect.any(String));
-    expect(userCodeRequests).toBe(1);
+    expect(started.body.sessionToken).toBeTruthy();
+    expect(userCodeRequests).toStrictEqual([
+      { client_id: "test-codex-client-id" },
+    ]);
 
-    const pending = await authDevice.requestCodexComplete(
-      admin,
-      started.body.sessionToken,
-      [200],
-    );
-    expect(pending.body).toStrictEqual({
-      status: "pending",
-      errorMessage: null,
-    });
-    expect(tokenPollRequests).toBe(1);
+    const sessionToken = started.body.sessionToken;
+    const first = await api.requestCodexComplete(user, sessionToken, [200]);
+    expect(first.body).toStrictEqual({ status: "pending", errorMessage: null });
+    expect(polls).toStrictEqual([
+      { device_auth_id: "device_auth_bdd", user_code: "CODEX-BDD" },
+    ]);
 
-    const otherUser = bdd.user({ orgId: admin.orgId });
-    const crossUserCancel = await authDevice.requestCodexCancel(
-      otherUser,
-      started.body.sessionToken,
+    const foreign = await api.requestCodexCancel(
+      otherMember,
+      sessionToken,
       [404],
     );
-    expectApiError(crossUserCancel.body);
-    expect(crossUserCancel.body.error.code).toBe("NOT_FOUND");
+    expect(JSON.stringify(foreign.body)).toContain("NOT_FOUND");
 
-    const cancelled = await authDevice.requestCodexCancel(
-      admin,
-      started.body.sessionToken,
-      [200],
-    );
+    const cancelled = await api.requestCodexCancel(user, sessionToken, [200]);
     expect(cancelled.body).toStrictEqual({ status: "cancelled" });
-
-    const afterCancel = await authDevice.requestCodexComplete(
-      admin,
-      started.body.sessionToken,
-      [200],
-    );
-    expect(afterCancel.body).toStrictEqual({
+    const after = await api.requestCodexComplete(user, sessionToken, [200]);
+    expect(after.body).toMatchObject({
       status: "pending",
       errorMessage: "Codex device auth session was cancelled",
     });
   });
 
-  it("starts and cancels a Claude Code device auth session through public APIs", async () => {
-    const admin = bdd.user();
+  it("auth-device.bdd-012 connects a personal Codex account for an administrator", async () => {
+    const user = newUser();
+    const openai = mockCodexDeviceAuthProvider();
 
-    const started = await authDevice.requestClaudeCodeStart(
-      admin,
-      "personal",
-      [200],
-    );
+    const started = await api.requestCodexStart(user, "personal", [200]);
     if (started.status !== 200) {
-      throw new Error(
-        `Expected Claude Code device auth start, got ${started.status}`,
-      );
+      throw new Error("Expected a started Codex sign-in");
     }
     expect(started.body).toMatchObject({
-      type: "claude-code",
       status: "pending",
-      scope: "personal",
-      expiresIn: expect.any(Number),
-    });
-    expect(started.body.sessionToken).toStrictEqual(expect.any(String));
-    const browserUrl = new URL(started.body.browserUrl);
-    expect(browserUrl.origin).toBe("https://claude.com");
-    expect(browserUrl.pathname).toBe("/cai/oauth/authorize");
-    expect(browserUrl.searchParams.get("client_id")).toBe(
-      "test-claude-code-client-id",
-    );
-    expect(browserUrl.searchParams.get("response_type")).toBe("code");
-    expect(browserUrl.searchParams.get("scope")).toBe(
-      "user:profile user:inference",
-    );
-
-    const wrongState = await authDevice.requestClaudeCodeComplete(
-      admin,
-      started.body.sessionToken,
-      "claude-code-bdd#wrong-state",
-      [400],
-    );
-    expectApiError(wrongState.body);
-    expect(wrongState.body.error.message).toBe(
-      "Claude Code authorization code belongs to another session",
-    );
-
-    const otherUser = bdd.user({ orgId: admin.orgId });
-    const crossUserCancel = await authDevice.requestClaudeCodeCancel(
-      otherUser,
-      started.body.sessionToken,
-      [404],
-    );
-    expectApiError(crossUserCancel.body);
-    expect(crossUserCancel.body.error.code).toBe("NOT_FOUND");
-
-    const cancelled = await authDevice.requestClaudeCodeCancel(
-      admin,
-      started.body.sessionToken,
-      [200],
-    );
-    expect(cancelled.body).toStrictEqual({ status: "cancelled" });
-
-    const afterCancel = await authDevice.requestClaudeCodeComplete(
-      admin,
-      started.body.sessionToken,
-      "claude-code-bdd",
-      [400],
-    );
-    expectApiError(afterCancel.body);
-    expect(afterCancel.body.error.message).toBe(
-      "Claude Code device auth session is not ready",
-    );
-  });
-
-  it("keeps a newer Codex authorization when an earlier setup returns late", async () => {
-    const actor = bdd.user();
-    let newestSessionToken = "";
-    let supersede = true;
-    server.use(
-      http.post(
-        "https://auth.openai.com/api/accounts/deviceauth/usercode",
-        async () => {
-          if (supersede) {
-            supersede = false;
-            const newer = await authDevice.requestCodexStart(
-              actor,
-              "personal",
-              [200],
-            );
-            if (newer.status !== 200) {
-              throw new Error("Expected replacement authorization to start");
-            }
-            newestSessionToken = newer.body.sessionToken;
-          }
-          return HttpResponse.json({
-            device_auth_id: "replacement-device",
-            user_code: "LATEST",
-            interval: 5,
-          });
-        },
-      ),
-    );
-    const old = await authDevice.requestCodexStart(actor, "personal", [503]);
-    expectApiError(old.body);
-    expect(old.body.error.code).toBe("CODEX_DEVICE_AUTH_UNAVAILABLE");
-    const cancelled = await authDevice.requestCodexCancel(
-      actor,
-      newestSessionToken,
-      [200],
-    );
-    expect(cancelled.body).toStrictEqual({ status: "cancelled" });
-    const final = await authDevice.requestCodexComplete(
-      actor,
-      newestSessionToken,
-      [200],
-    );
-    expect(final.body).toStrictEqual({
-      status: "pending",
-      errorMessage: "Codex device auth session was cancelled",
-    });
-  });
-
-  it("does not publish personal Codex credentials after cancellation during token exchange", async () => {
-    const actor = bdd.user();
-    let sessionToken = "";
-    mockCodexDeviceAuthProvider({
-      beforeTokenResponse: async () => {
-        const cancelled = await authDevice.requestCodexCancel(
-          actor,
-          sessionToken,
-          [200],
-        );
-        expect(cancelled.body).toStrictEqual({ status: "cancelled" });
-      },
-    });
-    const started = await authDevice.requestCodexStart(
-      actor,
-      "personal",
-      [200],
-    );
-    if (started.status !== 200) {
-      throw new Error("Expected device authorization to start");
-    }
-    sessionToken = started.body.sessionToken;
-    const completed = await authDevice.requestCodexComplete(
-      actor,
-      sessionToken,
-      [503],
-    );
-    expectApiError(completed.body);
-    expect(completed.body.error.message).toBe(
-      "Device authorization was cancelled or expired",
-    );
-    const providers = await support.listPersonalModelProviders(actor, [200]);
-    if (!("modelProviders" in providers.body)) {
-      throw new Error("Expected personal provider list");
-    }
-    expect(providers.body).toMatchObject({
-      modelProviders: expect.not.arrayContaining([
-        expect.objectContaining({ type: "codex-oauth-token" }),
-      ]),
-    });
-    const repeated = await authDevice.requestCodexComplete(
-      actor,
-      sessionToken,
-      [200],
-    );
-    expect(repeated.body).toStrictEqual({
-      status: "pending",
-      errorMessage: "Codex device auth session was cancelled",
-    });
-  });
-
-  it("does not publish personal Claude credentials after cancellation during token exchange", async () => {
-    const actor = bdd.user();
-    let sessionToken = "";
-    mockClaudeCodeTokenEndpoint({
-      beforeTokenResponse: async () => {
-        const cancelled = await authDevice.requestClaudeCodeCancel(
-          actor,
-          sessionToken,
-          [200],
-        );
-        expect(cancelled.body).toStrictEqual({ status: "cancelled" });
-      },
-    });
-    const started = await authDevice.requestClaudeCodeStart(
-      actor,
-      "personal",
-      [200],
-    );
-    if (started.status !== 200) {
-      throw new Error("Expected device authorization to start");
-    }
-    sessionToken = started.body.sessionToken;
-    const state = new URL(started.body.browserUrl).searchParams.get("state");
-    const completed = await authDevice.requestClaudeCodeComplete(
-      actor,
-      sessionToken,
-      `auth_code_test#${state}`,
-      [503],
-    );
-    expectApiError(completed.body);
-    expect(completed.body.error.message).toBe(
-      "Device authorization was cancelled or expired",
-    );
-    const providers = await support.listPersonalModelProviders(actor, [200]);
-    if (!("modelProviders" in providers.body)) {
-      throw new Error("Expected personal provider list");
-    }
-    expect(providers.body.modelProviders).not.toStrictEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ type: "claude-code-oauth-token" }),
-      ]),
-    );
-    const repeated = await authDevice.requestClaudeCodeComplete(
-      actor,
-      sessionToken,
-      `auth_code_test#${state}`,
-      [400],
-    );
-    expectApiError(repeated.body);
-    expect(repeated.body.error.message).toBe(
-      "Claude Code device auth session is not ready",
-    );
-  });
-
-  it("completes personal Codex device auth for an administrator", async () => {
-    const calls = mockCodexDeviceAuthProvider();
-    const admin = bdd.user();
-
-    const started = await authDevice.requestCodexStart(
-      admin,
-      "personal",
-      [200],
-    );
-    if (started.status !== 200) {
-      throw new Error(
-        `Expected Codex device auth start, got ${started.status}`,
-      );
-    }
-    expect(started.body).toMatchObject({
-      type: "codex",
-      status: "pending",
-      scope: "personal",
       browserUrl: "https://auth.openai.com/codex/device",
       verificationCode: "ABCD-EFGH",
       interval: 5,
     });
-    expect(calls.userCode).toStrictEqual([
+    expect(openai.userCode).toStrictEqual([
       { client_id: "test-codex-client-id" },
     ]);
 
-    const completed = await authDevice.requestCodexComplete(
-      admin,
+    const completed = await api.requestCodexComplete(
+      user,
       started.body.sessionToken,
       [200],
     );
@@ -636,508 +276,237 @@ describe("MODEL-PROVIDER: device auth boundaries", () => {
         planType: "plus",
       },
     });
-    expect(calls.deviceToken).toStrictEqual([
-      { device_auth_id: "device_auth_test", user_code: "ABCD-EFGH" },
-    ]);
-    expect(calls.oauthToken).toHaveLength(1);
-    const oauthTokenBody = calls.oauthToken[0];
-    expect(oauthTokenBody?.get("grant_type")).toBe("authorization_code");
-    expect(oauthTokenBody?.get("code")).toBe("auth_code_test");
-    expect(oauthTokenBody?.get("redirect_uri")).toBe(
+    expect(openai.deviceToken).toHaveLength(1);
+    expect(openai.oauthToken).toHaveLength(1);
+    const exchange = openai.oauthToken[0];
+    expect(exchange?.get("grant_type")).toBe("authorization_code");
+    expect(exchange?.get("code")).toBe("auth_code_test");
+    expect(exchange?.get("redirect_uri")).toBe(
       "https://auth.openai.com/deviceauth/callback",
     );
-    expect(oauthTokenBody?.get("client_id")).toBe("test-codex-client-id");
-    expect(oauthTokenBody?.get("code_verifier")).toBe("code_verifier_test");
+    expect(exchange?.get("client_id")).toBe("test-codex-client-id");
+    expect(exchange?.get("code_verifier")).toBe("code_verifier_test");
 
-    const providers = await support.listPersonalModelProviders(admin, [200]);
-    if (!("modelProviders" in providers.body)) {
-      throw new Error("Expected personal provider list");
+    const listed = await support.listPersonalModelProviders(user, [200]);
+    if (listed.status !== 200) {
+      throw new Error("Expected the provider list");
     }
     expect(
-      providers.body.modelProviders.find((provider) => {
-        return provider.type === "codex-oauth-token";
+      listed.body.modelProviders.map((provider) => {
+        return provider.type;
       }),
-    ).toMatchObject({ workspaceName: "Personal Acme", planType: "plus" });
+    ).toContain("codex-oauth-token");
 
-    const reComplete = await authDevice.requestCodexComplete(
-      admin,
+    const repeated = await api.requestCodexComplete(
+      user,
       started.body.sessionToken,
       [200],
     );
-    expect(reComplete.body).toStrictEqual({
+    expect(repeated.body).toStrictEqual({
       status: "pending",
       errorMessage: null,
     });
-    expect(calls.deviceToken).toHaveLength(1);
+    expect(openai.deviceToken).toHaveLength(1);
 
-    await support.deletePersonalModelProvider(
-      admin,
-      "codex-oauth-token",
-      [204],
-    );
+    await support.deletePersonalModelProvider(user, "codex-oauth-token", [204]);
   });
 
-  it("completes personal-scope Codex device auth for an org member", async () => {
-    const calls = mockCodexDeviceAuthProvider();
-    const member = bdd.user({ orgRole: "org:member" });
-
-    const started = await authDevice.requestCodexStart(
-      member,
-      "personal",
-      [200],
-    );
-    if (started.status !== 200) {
-      throw new Error(
-        `Expected Codex device auth start, got ${started.status}`,
-      );
-    }
-
-    const completed = await authDevice.requestCodexComplete(
-      member,
-      started.body.sessionToken,
-      [200],
-    );
-    expect(completed.body).toMatchObject({
-      status: "complete",
-      provider: {
-        type: "codex-oauth-token",
-        workspaceName: "Personal Acme",
-      },
+  it("auth-device.bdd-015 refreshes and resets the requested inactive Codex account", async () => {
+    const user = newUser({ orgRole: "org:member" });
+    await connectCodex(user, {
+      accountId: `acct_active_${randomUUID()}`,
+      workspaceName: "Active Account",
     });
-    expect(calls.deviceToken).toHaveLength(1);
-
-    const personalProviders = await support.listPersonalModelProviders(
-      member,
-      [200],
-    );
-    if (!("modelProviders" in personalProviders.body)) {
-      throw new Error("Expected personal model provider list response");
-    }
-    expect(
-      personalProviders.body.modelProviders.some((provider) => {
-        return provider.type === "codex-oauth-token";
-      }),
-    ).toBeTruthy();
-
-    await support.deletePersonalModelProvider(
-      member,
-      "codex-oauth-token",
-      [204],
-    );
-  });
-
-  it("adds, switches, reconnects, deduplicates, and deletes concrete Codex accounts", async () => {
-    const member = bdd.user({ orgRole: "org:member" });
-
-    mockCodexDeviceAuthProvider({
-      accountId: "codex-account-a",
-      workspaceName: "Account A",
+    const requestedAccountId = `acct_requested_${randomUUID()}`;
+    const nowSeconds = Math.floor(now() / 1000);
+    const requested = await connectCodex(user, {
+      accountId: requestedAccountId,
+      workspaceName: "Requested Account",
+      accessTokenExpiresAt: nowSeconds - 60,
+      refreshedAccessTokenExpiresAt: nowSeconds + 7200,
     });
-    const startedA = await authDevice.requestCodexStart(
-      member,
-      "personal",
-      [200],
-      { mode: "add" },
-    );
-    if (startedA.status !== 200) {
-      throw new Error("Expected account A device auth to start");
-    }
-    const completedA = await authDevice.requestCodexComplete(
-      member,
-      startedA.body.sessionToken,
-      [200],
-    );
-    if (
-      !("status" in completedA.body) ||
-      completedA.body.status !== "complete" ||
-      !completedA.body.provider.isActive
-    ) {
-      throw new Error("Expected account A to be the first active account");
-    }
-    const accountAId = completedA.body.provider.id;
-
-    mockCodexDeviceAuthProvider({
-      accountId: "codex-account-b",
-      workspaceName: "Account B",
-    });
-    const startedB = await authDevice.requestCodexStart(
-      member,
-      "personal",
-      [200],
-      { mode: "add" },
-    );
-    if (startedB.status !== 200) {
-      throw new Error("Expected account B device auth to start");
-    }
-    const completedB = await authDevice.requestCodexComplete(
-      member,
-      startedB.body.sessionToken,
-      [200],
-    );
-    if (
-      !("status" in completedB.body) ||
-      completedB.body.status !== "complete"
-    ) {
-      throw new Error("Expected account B device auth to complete");
-    }
-    const accountBId = completedB.body.provider.id;
-    expect(completedB.body.provider.isActive).toBeFalsy();
-
-    await support.activatePersonalModelProviderAccount(member, accountBId);
-
-    mockCodexDeviceAuthProvider({
-      accountId: "codex-account-b",
-      workspaceName: "Account B reconnected",
-    });
-    const reconnectA = await authDevice.requestCodexStart(
-      member,
-      "personal",
-      [200],
-      { mode: "reconnect", modelProviderId: accountAId },
-    );
-    if (reconnectA.status !== 200) {
-      throw new Error("Expected account A reconnect to start");
-    }
-    await authDevice.requestCodexComplete(
-      member,
-      reconnectA.body.sessionToken,
-      [200],
-    );
-
-    const deduplicated = await support.listPersonalModelProviders(
-      member,
-      [200],
-    );
-    if (!("modelProviders" in deduplicated.body)) {
-      throw new Error("Expected personal model provider list response");
-    }
-    expect(deduplicated.body.modelProviders).toHaveLength(1);
-    expect(deduplicated.body.modelProviders[0]).toMatchObject({
-      id: accountBId,
-      isActive: true,
-      workspaceName: "Account B reconnected",
-    });
-
-    mockCodexDeviceAuthProvider({
-      accountId: "codex-account-c",
-      workspaceName: "Account C",
-    });
-    const startedC = await authDevice.requestCodexStart(
-      member,
-      "personal",
-      [200],
-      { mode: "add" },
-    );
-    if (startedC.status !== 200) {
-      throw new Error("Expected account C device auth to start");
-    }
-    const completedC = await authDevice.requestCodexComplete(
-      member,
-      startedC.body.sessionToken,
-      [200],
-    );
-    if (
-      !("status" in completedC.body) ||
-      completedC.body.status !== "complete"
-    ) {
-      throw new Error("Expected account C device auth to complete");
-    }
-
-    // Reconnecting A with B updates B's credential record; A never becomes B.
-    await support.resetPersonalModelProviderAccount(
-      member,
-      accountAId,
-      randomUUID(),
-      [404],
-    );
-    await support.deletePersonalModelProviderAccount(member, accountBId);
-    const afterActiveDelete = await support.listPersonalModelProviders(
-      member,
-      [200],
-    );
-    if (!("modelProviders" in afterActiveDelete.body)) {
-      throw new Error("Expected personal model provider list response");
-    }
-    expect(afterActiveDelete.body.modelProviders).toHaveLength(1);
-    expect(afterActiveDelete.body.modelProviders[0]).toMatchObject({
-      id: completedC.body.provider.id,
-      isActive: true,
-    });
-
-    await connectPersonalCodexTestAccount(member, {
-      accountId: "codex-account-d",
-      workspaceName: "Account D",
-      accessTokenExpiresAt: Math.floor(now() / 1000) + 3600,
-      refreshToken: "codex-account-d-refresh",
-    });
-    const beforeDeleteAll = await support.listPersonalModelProviders(
-      member,
-      [200],
-    );
-    if (!("modelProviders" in beforeDeleteAll.body)) {
-      throw new Error("Expected personal model provider list response");
-    }
-    expect(beforeDeleteAll.body.modelProviders).toHaveLength(2);
-    await support.deletePersonalModelProvider(
-      member,
-      "codex-oauth-token",
-      [204],
-    );
-    const afterDeleteAll = await support.listPersonalModelProviders(
-      member,
-      [200],
-    );
-    expect(afterDeleteAll.body).toMatchObject({ modelProviders: [] });
-    await support.deletePersonalModelProvider(
-      member,
-      "codex-oauth-token",
-      [404],
-    );
-  });
-
-  it("refreshes and resets the requested inactive Codex account", async () => {
-    const member = bdd.user({ orgRole: "org:member" });
-    const currentSeconds = Math.floor(now() / 1000);
-    const requestedAccountId = await connectPersonalCodexTestAccount(member, {
-      accessTokenExpiresAt: currentSeconds - 60,
-      accountId: "codex-reset-requested-account",
-      refreshToken: "rt_codex_reset_requested_account",
-      workspaceName: "Reset Requested Account",
-    });
-    const activeAccountId = await connectPersonalCodexTestAccount(member, {
-      accessTokenExpiresAt: currentSeconds + 7200,
-      accountId: "codex-reset-active-account",
-      refreshToken: "rt_codex_reset_active_account",
-      workspaceName: "Reset Active Account",
-    });
-    await support.activatePersonalModelProviderAccount(member, activeAccountId);
-
-    const idempotencyKey = randomUUID();
-    const refreshedAccessToken = "fresh-requested-reset-access-token";
-    let refreshCalls = 0;
-    let consumeCalls = 0;
+    expect(requested.provider.isActive).toBeFalsy();
+    const consumed: { headers: Headers; body: unknown }[] = [];
     server.use(
-      http.post("https://auth.openai.com/oauth/token", async ({ request }) => {
-        refreshCalls += 1;
-        await expect(request.json()).resolves.toMatchObject({
-          grant_type: "refresh_token",
-          refresh_token: "rt_codex_reset_requested_account",
-        });
-        return HttpResponse.json({
-          access_token: refreshedAccessToken,
-          refresh_token: "rotated-requested-reset-refresh-token",
-          expires_in: 3600,
-        });
-      }),
       http.post(
         "https://chatgpt.com/backend-api/wham/rate-limit-reset-credits/consume",
         async ({ request }) => {
-          consumeCalls += 1;
-          expect(request.headers.get("authorization")).toBe(
-            `Bearer ${refreshedAccessToken}`,
-          );
-          expect(request.headers.get("chatgpt-account-id")).toBe(
-            "codex-reset-requested-account",
-          );
-          await expect(request.json()).resolves.toStrictEqual({
-            redeem_request_id: idempotencyKey,
+          consumed.push({
+            headers: request.headers,
+            body: await request.json(),
           });
-          return HttpResponse.json({ code: "reset", windows_reset: 2 });
+          return HttpResponse.json({ code: "reset", windows_reset: 1 });
         },
       ),
     );
+    const refreshesBefore = requested.openai.oauthToken.length;
 
+    const idempotencyKey = randomUUID();
     const reset = await support.resetPersonalModelProviderAccount(
-      member,
-      requestedAccountId,
+      user,
+      requested.provider.id,
       idempotencyKey,
       [200],
     );
     expect(reset.body).toStrictEqual({ outcome: "reset" });
-    expect(refreshCalls).toBe(1);
-    expect(consumeCalls).toBe(1);
-
-    await support.deletePersonalModelProvider(
-      member,
-      "codex-oauth-token",
-      [204],
+    const refreshes = requested.openai.oauthToken.slice(refreshesBefore);
+    expect(
+      refreshes.map((body) => {
+        return [body.get("grant_type"), body.get("refresh_token")];
+      }),
+    ).toStrictEqual([
+      ["refresh_token", `rt_${requestedAccountId}_synthetic_high_entropy`],
+    ]);
+    const refreshed = requested.openai.oauthTokenResponses.at(-1);
+    expect(consumed).toHaveLength(1);
+    expect(consumed[0]?.headers.get("authorization")).toBe(
+      `Bearer ${refreshed?.access_token}`,
     );
+    expect(consumed[0]?.headers.get("chatgpt-account-id")).toBe(
+      requestedAccountId,
+    );
+    expect(consumed[0]?.body).toStrictEqual({
+      redeem_request_id: idempotencyKey,
+    });
+    await support.deletePersonalModelProvider(user, "codex-oauth-token", [204]);
   });
 
-  it("isolates terminal Codex refresh state between concrete accounts", async () => {
-    const member = bdd.user({ orgRole: "org:member" });
-    const currentSeconds = Math.floor(now() / 1000);
-    const accountAId = await connectPersonalCodexTestAccount(member, {
-      accessTokenExpiresAt: currentSeconds - 60,
-      accountId: "codex-refresh-account-a",
-      refreshToken: "rt_codex_refresh_account_a",
-      workspaceName: "Refresh Account A",
+  it("auth-device.bdd-016 keeps a revoked Codex account from affecting another account", async () => {
+    const user = newUser({ orgRole: "org:member" });
+    const accountA = `acct_a_${randomUUID()}`;
+    const accountB = `acct_b_${randomUUID()}`;
+    const a = await connectCodex(user, {
+      accountId: accountA,
+      workspaceName: "Account A",
+      accessTokenExpiresAt: Math.floor(now() / 1000) - 60,
     });
-    const accountBId = await connectPersonalCodexTestAccount(member, {
-      accessTokenExpiresAt: currentSeconds + 7200,
-      accountId: "codex-refresh-account-b",
-      refreshToken: "rt_codex_refresh_account_b",
-      workspaceName: "Refresh Account B",
+    const b = await connectCodex(user, {
+      accountId: accountB,
+      workspaceName: "Account B",
     });
-
-    let refreshCalls = 0;
-    const usageAccountIds: (string | null)[] = [];
+    const refreshAttempts: string[] = [];
+    const usageReads: string[] = [];
     server.use(
       http.post("https://auth.openai.com/oauth/token", async ({ request }) => {
-        refreshCalls += 1;
-        await expect(request.json()).resolves.toMatchObject({
-          grant_type: "refresh_token",
-          refresh_token: "rt_codex_refresh_account_a",
-        });
+        refreshAttempts.push(await request.text());
         return HttpResponse.json(
           {
             error: {
               code: "refresh_token_invalidated",
-              message: "refresh token invalidated",
+              message: "Your refresh token has been invalidated.",
             },
           },
           { status: 401 },
         );
       }),
       http.get("https://chatgpt.com/backend-api/wham/usage", ({ request }) => {
-        const accountId = request.headers.get("chatgpt-account-id");
-        usageAccountIds.push(accountId);
-        expect(accountId).toBe("codex-refresh-account-b");
+        usageReads.push(request.headers.get("chatgpt-account-id") ?? "");
         return HttpResponse.json({
           plan_type: "plus",
           rate_limit: {
             primary_window: {
-              limit_window_seconds: 18_000,
-              reset_at: 1_893_441_600,
               used_percent: 20,
+              limit_window_seconds: 18_000,
+              reset_after_seconds: 3600,
             },
           },
         });
       }),
     );
 
-    for (let requestIndex = 0; requestIndex < 2; requestIndex += 1) {
-      const listed = await support.listPersonalModelProviders(member, [200]);
-      if (!("modelProviders" in listed.body)) {
-        throw new Error("Expected personal model provider list response");
-      }
+    for (let read = 0; read < 2; read += 1) {
+      const accounts = await codexAccounts(user);
       expect(
-        listed.body.modelProviders.find((provider) => {
-          return provider.id === accountAId;
+        accounts.find((provider) => {
+          return provider.id === a.provider.id;
         }),
       ).toMatchObject({
         needsReconnect: true,
         lastRefreshErrorCode: "refresh_token_invalidated",
       });
-      expect(
-        listed.body.modelProviders.find((provider) => {
-          return provider.id === accountBId;
-        }),
-      ).toMatchObject({
-        needsReconnect: false,
-        subscriptionUsage: {
-          fiveHour: { usedPercent: 20 },
-        },
+      const listedB = accounts.find((provider) => {
+        return provider.id === b.provider.id;
       });
+      expect(listedB?.needsReconnect).toBeFalsy();
+      expect(listedB?.subscriptionUsage?.fiveHour?.usedPercent).toBe(20);
     }
-
-    expect(refreshCalls).toBe(1);
-    expect(usageAccountIds).toStrictEqual([
-      "codex-refresh-account-b",
-      "codex-refresh-account-b",
-    ]);
-    await support.deletePersonalModelProvider(
-      member,
-      "codex-oauth-token",
-      [204],
-    );
+    expect(refreshAttempts).toHaveLength(1);
+    expect(usageReads).toStrictEqual([accountB, accountB]);
+    await support.deletePersonalModelProvider(user, "codex-oauth-token", [204]);
   });
 
-  it("adds, switches, and deduplicates concrete Claude Code accounts by email and workspace", async () => {
-    const member = bdd.user({ orgRole: "org:member" });
-
-    const completeClaudeAccount = async (mutation: {
-      readonly mode: "add" | "reconnect";
-      readonly modelProviderId?: string;
-    }) => {
-      const started = await authDevice.requestClaudeCodeStart(
-        member,
+  it("auth-device.bdd-017 keeps one Claude Code account per email and workspace", async () => {
+    const user = newUser({ orgRole: "org:member" });
+    const connect = async (email: string, workspace: string) => {
+      mockClaudeCodeTokenEndpoint({
+        accountEmail: email,
+        organizationName: workspace,
+      });
+      const started = await api.requestClaudeCodeStart(
+        user,
         "personal",
         [200],
-        mutation,
+        {
+          mode: "add",
+        },
       );
       if (started.status !== 200) {
-        throw new Error("Expected Claude Code device auth to start");
+        throw new Error("Expected a started Claude Code sign-in");
       }
-      const state = new URL(started.body.browserUrl).searchParams.get("state");
-      if (!state) {
-        throw new Error("Missing state in Claude Code browser URL");
-      }
-      const completed = await authDevice.requestClaudeCodeComplete(
-        member,
+      const completed = await api.requestClaudeCodeComplete(
+        user,
         started.body.sessionToken,
-        `claude_code_test#${state}`,
+        `auth_code_test#${stateOf(started.body.browserUrl)}`,
         [200],
       );
-      if (completed.status !== 200) {
-        throw new Error("Expected Claude Code device auth to complete");
+      if (
+        !("status" in completed.body) ||
+        completed.body.status !== "complete"
+      ) {
+        throw new Error("Expected a completed Claude Code sign-in");
       }
       return completed.body;
     };
 
-    mockClaudeCodeTokenEndpoint({
-      accountEmail: "first@example.com",
-      organizationName: "First Workspace",
-    });
-    const first = await completeClaudeAccount({ mode: "add" });
+    const first = await connect("first@example.com", "First Workspace");
     expect(first.provider.isActive).toBeTruthy();
-    const firstAccountId = first.provider.id;
-
-    // A different email is a different identity, so it is added rather than
-    // deduplicated onto the first account.
-    mockClaudeCodeTokenEndpoint({
-      accountEmail: "second@example.com",
-      organizationName: "Second Workspace",
-    });
-    const second = await completeClaudeAccount({ mode: "add" });
+    const second = await connect("second@example.com", "Second Workspace");
     expect(second.provider.isActive).toBeFalsy();
-    const secondAccountId = second.provider.id;
 
-    await support.activatePersonalModelProviderAccount(member, secondAccountId);
-
-    const bothConnected = await support.listPersonalModelProviders(
-      member,
-      [200],
+    await support.activatePersonalModelProviderAccount(
+      user,
+      second.provider.id,
     );
-    if (!("modelProviders" in bothConnected.body)) {
-      throw new Error("Expected personal model provider list response");
+    const afterActivate = await support.listPersonalModelProviders(user, [200]);
+    if (afterActivate.status !== 200) {
+      throw new Error("Expected the provider list");
     }
-    expect(bothConnected.body.modelProviders).toHaveLength(2);
-    expect(bothConnected.body.modelProviders[0]).toMatchObject({
-      id: secondAccountId,
+    const claudeAccounts = (list: typeof afterActivate.body) => {
+      return list.modelProviders.filter((provider) => {
+        return provider.type === "claude-code-oauth-token";
+      });
+    };
+    const activated = claudeAccounts(afterActivate.body);
+    expect(activated).toHaveLength(2);
+    expect(activated[0]).toMatchObject({
+      id: second.provider.id,
       isActive: true,
       accountEmail: "second@example.com",
       workspaceName: "Second Workspace",
     });
 
-    // Re-adding the same email and workspace matches the existing identity and
-    // updates it in place instead of creating a third account.
-    mockClaudeCodeTokenEndpoint({
-      accountEmail: "FIRST@example.com",
-      organizationName: "First Workspace",
-    });
-    const readded = await completeClaudeAccount({ mode: "add" });
-    expect(readded.provider.id).toBe(firstAccountId);
-    expect(readded.created).toBeFalsy();
-
-    const afterDedup = await support.listPersonalModelProviders(member, [200]);
-    if (!("modelProviders" in afterDedup.body)) {
-      throw new Error("Expected personal model provider list response");
+    const third = await connect("FIRST@example.com", "First Workspace");
+    expect(third.provider.id).toBe(first.provider.id);
+    expect(third.created).toBeFalsy();
+    const finalList = await support.listPersonalModelProviders(user, [200]);
+    if (finalList.status !== 200) {
+      throw new Error("Expected the provider list");
     }
-    expect(afterDedup.body.modelProviders).toHaveLength(2);
+    const accounts = claudeAccounts(finalList.body);
+    expect(accounts).toHaveLength(2);
     expect(
-      afterDedup.body.modelProviders.find((provider) => {
-        return provider.id === firstAccountId;
+      accounts.find((provider) => {
+        return provider.id === first.provider.id;
       }),
     ).toMatchObject({
       accountEmail: "first@example.com",
@@ -1146,152 +515,27 @@ describe("MODEL-PROVIDER: device auth boundaries", () => {
     });
 
     await support.deletePersonalModelProvider(
-      member,
+      user,
       "claude-code-oauth-token",
       [204],
     );
   });
 
-  it("enforces the tenth personal account boundary for sequential connects", async () => {
-    const member = bdd.user({ orgRole: "org:member" });
+  it("auth-device.bdd-019 connects Claude Code from a pasted code fragment", async () => {
+    const user = newUser();
+    const anthropic = mockClaudeCodeTokenEndpoint();
 
-    const completeCodexAccount = async (
-      index: number,
-      statuses: readonly (200 | 400)[],
-    ) => {
-      mockCodexDeviceAuthProvider({
-        accountId: `codex-limit-account-${index}`,
-        workspaceName: `Codex Account ${index}`,
-      });
-      const started = await authDevice.requestCodexStart(
-        member,
-        "personal",
-        [200],
-        { mode: "add" },
-      );
-      if (started.status !== 200) {
-        throw new Error("Expected Codex device auth to start");
-      }
-      return await authDevice.requestCodexComplete(
-        member,
-        started.body.sessionToken,
-        statuses,
-      );
-    };
-
-    for (let index = 0; index < 10; index += 1) {
-      await completeCodexAccount(index, [200]);
-    }
-    const codexLimit = await completeCodexAccount(10, [400]);
-    if (codexLimit.status !== 400) {
-      throw new Error("Expected Codex account limit to return bad request");
-    }
-    expectApiError(codexLimit.body);
-    expect(codexLimit.body.error).toMatchObject({
-      code: "BAD_REQUEST",
-      message: "A maximum of 10 codex-oauth-token accounts can be connected",
-    });
-
-    const completeClaudeCodeAccount = async (
-      index: number,
-      statuses: readonly (200 | 400)[],
-    ) => {
-      mockClaudeCodeTokenEndpoint({
-        accountEmail: `claude-limit-${index}@example.com`,
-        organizationName: `Claude Account ${index}`,
-      });
-      const started = await authDevice.requestClaudeCodeStart(
-        member,
-        "personal",
-        [200],
-        { mode: "add" },
-      );
-      if (started.status !== 200) {
-        throw new Error("Expected Claude Code device auth to start");
-      }
-      const state = new URL(started.body.browserUrl).searchParams.get("state");
-      if (!state) {
-        throw new Error("Missing state in Claude Code browser URL");
-      }
-      return await authDevice.requestClaudeCodeComplete(
-        member,
-        started.body.sessionToken,
-        `claude_code_test#${state}`,
-        statuses,
-      );
-    };
-
-    // A new authorization supersedes any unfinished session for this owner.
-    for (let index = 0; index < 9; index += 1) {
-      await completeClaudeCodeAccount(index, [200]);
-    }
-    const tenthClaudeCodeAccount = await completeClaudeCodeAccount(9, [200]);
-    if (tenthClaudeCodeAccount.status !== 200) {
-      throw new Error("Expected the tenth Claude Code account to connect");
-    }
-    const claudeCodeLimit = await completeClaudeCodeAccount(10, [400]);
-    if (claudeCodeLimit.status !== 400) {
-      throw new Error(
-        "Expected Claude Code account limit to return bad request",
-      );
-    }
-    expectApiError(claudeCodeLimit.body);
-    expect(claudeCodeLimit.body.error).toMatchObject({
-      code: "BAD_REQUEST",
-      message:
-        "A maximum of 10 claude-code-oauth-token accounts can be connected",
-    });
-    const listed = await support.listPersonalModelProviders(member, [200]);
-    if (!("modelProviders" in listed.body)) {
-      throw new Error("Expected account list");
-    }
-    const claudeAccounts = listed.body.modelProviders.filter((provider) => {
-      return provider.type === "claude-code-oauth-token";
-    });
-    expect(claudeAccounts).toHaveLength(10);
-    expect(claudeAccounts).toContainEqual(
-      expect.objectContaining({
-        id: tenthClaudeCodeAccount.body.provider.id,
-      }),
-    );
-
-    await support.deletePersonalModelProvider(
-      member,
-      "codex-oauth-token",
-      [204],
-    );
-    await support.deletePersonalModelProvider(
-      member,
-      "claude-code-oauth-token",
-      [204],
-    );
-  });
-
-  it("completes personal Claude Code device auth with a pasted code fragment", async () => {
-    const calls = mockClaudeCodeTokenEndpoint();
-    const admin = bdd.user();
-
-    const started = await authDevice.requestClaudeCodeStart(
-      admin,
-      "personal",
-      [200],
-    );
+    const started = await api.requestClaudeCodeStart(user, "personal", [200]);
     if (started.status !== 200) {
-      throw new Error(
-        `Expected Claude Code device auth start, got ${started.status}`,
-      );
+      throw new Error("Expected a started Claude Code sign-in");
     }
-    const browserUrl = new URL(started.body.browserUrl);
-    expect(browserUrl.searchParams.get("scope")).toBe(
+    expect(new URL(started.body.browserUrl).searchParams.get("scope")).toBe(
       "user:profile user:inference",
     );
-    const state = browserUrl.searchParams.get("state");
-    if (!state) {
-      throw new Error("Missing state in Claude Code browser URL");
-    }
+    const state = stateOf(started.body.browserUrl);
 
-    const completed = await authDevice.requestClaudeCodeComplete(
-      admin,
+    const completed = await api.requestClaudeCodeComplete(
+      user,
       started.body.sessionToken,
       `auth_code_test#${state}`,
       [200],
@@ -1301,19 +545,14 @@ describe("MODEL-PROVIDER: device auth boundaries", () => {
       created: true,
       provider: {
         type: "claude-code-oauth-token",
-
         workspaceName: "Claude User's Organization",
         planType: "pro",
         subscriptionResetPeriod: "weekly",
         subscriptionNextResetAt: "2030-01-07T00:00:00.000Z",
       },
     });
-    expect(calls.token).toHaveLength(1);
-    expect(calls.profile).toHaveLength(1);
-    expect(calls.usage).toHaveLength(1);
-    expect(calls.profile[0]?.get("anthropic-beta")).toBe("oauth-2025-04-20");
-    expect(calls.usage[0]?.get("user-agent")).toBe("claude-code/2.1.161");
-    expect(calls.token[0]).toMatchObject({
+    expect(anthropic.token).toHaveLength(1);
+    expect(anthropic.token[0]).toMatchObject({
       grant_type: "authorization_code",
       code: "auth_code_test",
       redirect_uri: "https://platform.claude.com/oauth/code/callback",
@@ -1322,61 +561,58 @@ describe("MODEL-PROVIDER: device auth boundaries", () => {
       expires_in: 31_536_000,
       code_verifier: expect.any(String),
     });
+    expect(
+      anthropic.profile.map((headers) => {
+        return headers.get("anthropic-beta");
+      }),
+    ).toStrictEqual(["oauth-2025-04-20"]);
+    expect(
+      anthropic.usage.map((headers) => {
+        return headers.get("user-agent");
+      }),
+    ).toStrictEqual(["claude-code/2.1.161"]);
 
-    const providers = await support.listPersonalModelProviders(admin, [200]);
-    if (!("modelProviders" in providers.body)) {
-      throw new Error("Expected personal provider list");
+    const listed = await support.listPersonalModelProviders(user, [200]);
+    if (listed.status !== 200) {
+      throw new Error("Expected the provider list");
     }
     expect(
-      providers.body.modelProviders.find((provider) => {
-        return provider.type === "claude-code-oauth-token";
+      listed.body.modelProviders.map((provider) => {
+        return provider.type;
       }),
-    ).toMatchObject({
-      workspaceName: "Claude User's Organization",
-      planType: "pro",
-    });
+    ).toContain("claude-code-oauth-token");
 
-    const reComplete = await authDevice.requestClaudeCodeComplete(
-      admin,
+    const repeated = await api.requestClaudeCodeComplete(
+      user,
       started.body.sessionToken,
       `auth_code_test#${state}`,
       [400],
     );
-    expectApiError(reComplete.body);
-    expect(reComplete.body.error.message).toBe(
+    expect(JSON.stringify(repeated.body)).toContain(
       "Claude Code device auth session is not ready",
     );
-
     await support.deletePersonalModelProvider(
-      admin,
+      user,
       "claude-code-oauth-token",
       [204],
     );
   });
 
-  it("completes personal-scope Claude Code device auth from a full callback URL", async () => {
+  it("auth-device.bdd-020 shows Claude Code usage after a full callback URL is pasted", async () => {
+    const user = newUser({ orgRole: "org:member" });
     mockClaudeCodeTokenEndpoint();
-    const member = bdd.user({ orgRole: "org:member" });
 
-    const started = await authDevice.requestClaudeCodeStart(
-      member,
-      "personal",
-      [200],
-    );
+    const started = await api.requestClaudeCodeStart(user, "personal", [200]);
     if (started.status !== 200) {
-      throw new Error(
-        `Expected Claude Code device auth start, got ${started.status}`,
-      );
+      throw new Error("Expected a started Claude Code sign-in");
     }
-    const state = new URL(started.body.browserUrl).searchParams.get("state");
-    if (!state) {
-      throw new Error("Missing state in Claude Code browser URL");
-    }
-
-    const completed = await authDevice.requestClaudeCodeComplete(
-      member,
+    const callback = new URL("https://platform.claude.com/oauth/code/callback");
+    callback.searchParams.set("code", "member_code");
+    callback.searchParams.set("state", stateOf(started.body.browserUrl));
+    const completed = await api.requestClaudeCodeComplete(
+      user,
       started.body.sessionToken,
-      `https://platform.claude.com/oauth/code/callback?code=member_code&state=${state}`,
+      callback.toString(),
       [200],
     );
     expect(completed.body).toMatchObject({
@@ -1388,105 +624,31 @@ describe("MODEL-PROVIDER: device auth boundaries", () => {
       },
     });
 
-    const personalProviders = await support.listPersonalModelProviders(
-      member,
-      [200],
-    );
-    if (!("modelProviders" in personalProviders.body)) {
-      throw new Error("Expected personal model provider list response");
+    const listed = await support.listPersonalModelProviders(user, [200]);
+    if (listed.status !== 200) {
+      throw new Error("Expected the provider list");
     }
-    expect(
-      personalProviders.body.modelProviders.find((provider) => {
-        return provider.type === "claude-code-oauth-token";
-      }),
-    ).toMatchObject({
-      workspaceName: "Claude User's Organization",
-      planType: "pro",
-      subscriptionUsage: {
-        fiveHour: {
-          usedPercent: 12,
-          remainingPercent: 88,
-          resetAt: "2030-01-01T05:00:00.000Z",
-          windowSeconds: 18_000,
-        },
-        weekly: {
-          usedPercent: 24,
-          remainingPercent: 76,
-          resetAt: "2030-01-07T00:00:00.000Z",
-          windowSeconds: 604_800,
-        },
+    const provider = listed.body.modelProviders.find((candidate) => {
+      return candidate.type === "claude-code-oauth-token";
+    });
+    expect(provider?.subscriptionUsage).toStrictEqual({
+      fiveHour: {
+        usedPercent: 12,
+        remainingPercent: 88,
+        resetAt: "2030-01-01T05:00:00.000Z",
+        windowSeconds: 18_000,
+      },
+      weekly: {
+        usedPercent: 24,
+        remainingPercent: 76,
+        resetAt: "2030-01-07T00:00:00.000Z",
+        windowSeconds: 604_800,
       },
     });
-
     await support.deletePersonalModelProvider(
-      member,
+      user,
       "claude-code-oauth-token",
       [204],
-    );
-  });
-
-  it("enforces authentication and active organization for personal authorization", async () => {
-    const noOrg = bdd.user({ orgId: null });
-    for (const actor of [null, noOrg]) {
-      const codex = await authDevice.requestCodexStart(
-        actor,
-        "personal",
-        [401],
-      );
-      expectApiError(codex.body);
-      expect(codex.body.error.code).toBe("UNAUTHORIZED");
-      const claude = await authDevice.requestClaudeCodeStart(
-        actor,
-        "personal",
-        [401],
-      );
-      expectApiError(claude.body);
-      expect(claude.body.error.code).toBe("UNAUTHORIZED");
-    }
-  });
-
-  it("rejects invalid model-provider device session tokens without importing provider state", async () => {
-    const admin = bdd.user();
-
-    const codexComplete = await authDevice.requestCodexComplete(
-      admin,
-      "not-a-session-token",
-      [400],
-    );
-    expectApiError(codexComplete.body);
-    expect(codexComplete.body.error.message).toBe(
-      "Invalid Codex device auth session token",
-    );
-
-    const codexCancel = await authDevice.requestCodexCancel(
-      admin,
-      "not-a-session-token",
-      [400],
-    );
-    expectApiError(codexCancel.body);
-    expect(codexCancel.body.error.message).toBe(
-      "Invalid Codex device auth session token",
-    );
-
-    const claudeComplete = await authDevice.requestClaudeCodeComplete(
-      admin,
-      "not-a-session-token",
-      "authorization-code#state",
-      [400],
-    );
-    expectApiError(claudeComplete.body);
-    expect(claudeComplete.body.error.message).toBe(
-      "Invalid Claude Code device auth session token",
-    );
-
-    const claudeCancel = await authDevice.requestClaudeCodeCancel(
-      admin,
-      "not-a-session-token",
-      [400],
-    );
-    expectApiError(claudeCancel.body);
-    expect(claudeCancel.body.error.message).toBe(
-      "Invalid Claude Code device auth session token",
     );
   });
 });

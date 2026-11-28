@@ -1,6 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { describe, expect, it, onTestFinished } from "vitest";
-
+import { describe, expect, it } from "vitest";
 import { testContext } from "../../../__tests__/test-context";
 import { createBddApi } from "./helpers/api-bdd";
 import {
@@ -11,105 +10,89 @@ import {
 const context = testContext();
 const bdd = createBddApi(context);
 const connectors = createConnectorBddApi(context);
-const joinerHosts = Object.freeze([
-  "xn--mgba3gch31f060k.example",
-  "xn--11b2ezcw70k.example",
-]);
+
+const ENCODED_JOINER_HOST = "xn--mgba3gch31f060k.example";
 
 describe("Custom connector hostname compatibility", () => {
-  it.each(joinerHosts)(
-    "rejects encoded joiner host %s before creating a definition",
-    async (host) => {
-      const actor = bdd.user();
-      const response = await connectors.requestCreateCustomConnector(
-        actor,
-        manualHttpCustomConnectorCreateBody({
-          displayName: "Unsupported joiner",
-          prefixTemplates: [`https://${host}/api/`],
-        }),
-        [400],
-      );
+  it("custom-connector-hostnames-001 rejects an encoded joiner host before creating a definition", async () => {
+    const member = bdd.user();
 
-      expect(response.body).toMatchObject({
-        error: {
-          code: "BAD_REQUEST",
-          message: expect.stringContaining("hostname policy"),
-        },
-      });
-      await expect(
-        connectors.listCustomConnectors(actor),
-      ).resolves.toStrictEqual([]);
-    },
-  );
-
-  it("preserves a usable definition when an encoded joiner update is rejected", async () => {
-    const actor = bdd.user();
-    const body = manualHttpCustomConnectorCreateBody({
-      displayName: "Persian API",
-      prefixTemplates: ["https://xn--mgba3gch31f.example/api/"],
-    });
-    const connector = await connectors.createCustomConnector(actor, body);
-    onTestFinished(async () => {
-      await connectors.deleteCustomConnector(actor, connector.id);
-    });
-
-    const response = await connectors.requestUpdateCustomConnector(
-      actor,
-      connector.id,
-      {
-        ...body,
-        prefixTemplates: ["https://xn--mgba3gch31f060k.example/api/"],
-      },
+    const response = await connectors.requestCreateCustomConnector(
+      member,
+      manualHttpCustomConnectorCreateBody({
+        displayName: "Joiner host",
+        prefixTemplates: [`https://${ENCODED_JOINER_HOST}/`],
+      }),
       [400],
     );
 
-    expect(response.body).toMatchObject({ error: { code: "BAD_REQUEST" } });
+    if (!("error" in response.body)) {
+      throw new Error("Expected an error body");
+    }
+    expect(response.body.error.code).toBe("BAD_REQUEST");
+    expect(response.body.error.message).toContain("hostname policy");
     await expect(
-      connectors.readCustomConnector(actor, connector.id),
-    ).resolves.toMatchObject({
-      displayName: body.displayName,
-      prefixTemplates: body.prefixTemplates,
+      connectors.listCustomConnectors(member),
+    ).resolves.toStrictEqual([]);
+  });
+
+  it("custom-connector-hostnames-003 keeps the usable definition when an encoded joiner update is rejected", async () => {
+    const owner = bdd.user();
+    const displayName = `Bücher ${randomUUID()}`;
+    const original = manualHttpCustomConnectorCreateBody({
+      displayName,
+      prefixTemplates: ["https://bücher.example/api/"],
+    });
+    const connector = await connectors.createCustomConnector(owner, original);
+
+    const response = await connectors.requestUpdateCustomConnector(
+      owner,
+      connector.id,
+      { ...original, prefixTemplates: [`https://${ENCODED_JOINER_HOST}/`] },
+      [400],
+    );
+
+    if (!("error" in response.body)) {
+      throw new Error("Expected an error body");
+    }
+    expect(response.body.error.code).toBe("BAD_REQUEST");
+    const readback = await connectors.readCustomConnector(owner, connector.id);
+    expect(readback.displayName).toBe(displayName);
+    expect(readback).toMatchObject({
+      prefixTemplates: connector.prefixTemplates,
     });
   });
 
-  it.each(joinerHosts)(
-    "rejects encoded joiner host variable %s before saving an account",
-    async (host) => {
-      const actor = bdd.user();
-      const connector = await connectors.createCustomConnector(actor, {
-        slug: `_hostname-${randomUUID()}`,
-        displayName: "Variable hostname",
-        authMode: "manual",
-        prefixTemplates: ["https://{{variables.host}}/api/"],
-        fields: [
-          { key: "host", label: "Host", kind: "variable", required: true },
-        ],
-        headerInjections: [
-          { name: "X-Workspace", valueTemplate: "{{variables.host}}" },
-        ],
-        queryInjections: [],
-      });
-      onTestFinished(async () => {
-        await connectors.deleteCustomConnector(actor, connector.id);
-      });
+  it("custom-connector-hostnames-004 rejects an encoded joiner host variable before saving an account", async () => {
+    const member = bdd.user();
+    const base = manualHttpCustomConnectorCreateBody({
+      displayName: "Regional host",
+      prefixTemplates: ["https://{{variables.host}}/"],
+    });
+    const connector = await connectors.createCustomConnector(member, {
+      ...base,
+      fields: [
+        ...base.fields,
+        { key: "host", label: "Host", kind: "variable", required: true },
+      ],
+    });
 
-      const response = await connectors.requestSetCustomConnectorValues(
-        actor,
-        connector.id,
-        [{ key: "host", kind: "variable", value: host }],
-        [400],
-      );
+    const response = await connectors.requestSetCustomConnectorValues(
+      member,
+      connector.id,
+      [{ key: "host", kind: "variable", value: ENCODED_JOINER_HOST }],
+      [400],
+    );
 
-      expect(response.body).toMatchObject({
-        error: {
-          code: "BAD_REQUEST",
-          message:
-            "Value for variable host is not a valid custom connector hostname",
-        },
-      });
-      await expect(
-        connectors.listCustomConnectorAccounts(actor, connector.id),
-      ).resolves.toStrictEqual([]);
-    },
-  );
+    if (!("error" in response.body)) {
+      throw new Error("Expected an error body");
+    }
+    expect(response.body.error.code).toBe("BAD_REQUEST");
+    expect(response.body.error.message).toBe(
+      "Value for variable host is not a valid custom connector hostname",
+    );
+    await expect(
+      connectors.listCustomConnectorAccounts(member, connector.id),
+    ).resolves.toStrictEqual([]);
+  });
 });

@@ -1,938 +1,1186 @@
-import { createProactiveCronApi } from "./helpers/proactive-cron";
-import { artifactReferencesContract } from "@okouai/api-contracts/contracts/artifact-references";
-import { artifactReferenceRoutes } from "../artifact-references";
-import { artifactReferencePath } from "@okouai/api-contracts/validators/artifact-references";
-import { PRESENTATION_TEMPLATE_PICKER_ITEMS } from "@okouai/core/presentation-template-items";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
+import { Readable } from "node:stream";
 import {
-  CompleteMultipartUploadCommand,
-  CreateMultipartUploadCommand,
-  ListPartsCommand,
+  CopyObjectCommand,
+  DeleteObjectsCommand,
+  GetObjectCommand,
+  HeadObjectCommand,
+  ListObjectsV2Command,
+  PutObjectCommand,
 } from "@aws-sdk/client-s3";
-
-import { hostContract } from "@okouai/api-contracts/contracts/host";
-import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { artifactCatalogContract } from "@okouai/api-contracts/contracts/artifact-catalog";
+import { artifactReferencesContract } from "@okouai/api-contracts/contracts/artifact-references";
+import { chatEventsContract } from "@okouai/api-contracts/contracts/chat-event-send";
 import {
-  artifactCatalogContract,
-  chatArtifactCatalogChangedEvent,
-} from "@okouai/api-contracts/contracts/artifact-catalog";
+  chatThreadArtifactsContract,
+  chatThreadEventsContract,
+} from "@okouai/api-contracts/contracts/chat-threads";
+import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
+import { hostContract } from "@okouai/api-contracts/contracts/host";
 import { sharedThreadsContract } from "@okouai/api-contracts/contracts/shared-threads";
 import { uploadsContract } from "@okouai/api-contracts/contracts/uploads";
-import { morningBriefPreferenceContract } from "@okouai/api-contracts/contracts/morning-brief-preference";
-import { beforeEach, describe, expect, it, onTestFinished } from "vitest";
-import { setupApp } from "../../../__tests__/test-helpers";
-import { hostRoutes } from "../host";
-import { uploadsPrepareRoutes } from "../uploads-prepare";
-import { uploadsMultipartRoutes } from "../uploads-multipart";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { http } from "msw";
+import { beforeAll, describe, expect, it, onTestFinished } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
-import { createAppWithRoutes } from "../../../app-factory-core";
+import { setupApp } from "../../../__tests__/test-helpers";
+import {
+  TEST_WITH_DOUBLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE,
+  TEST_WITH_SINGLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE,
+} from "../../../__tests__/test-timeouts";
 import { mockOptionalEnv } from "../../../lib/env";
-import { mockNow } from "../../../lib/time";
+import { buildArtifactKey } from "../../../lib/file-url";
+import { hostedLinkOrigin } from "../../../lib/link-layout";
+import { clearMockNow, mockNow, now } from "../../../lib/time";
+import { server } from "../../../mocks/server";
+import { createUniqueStaffOrgIdFixture } from "../../../test-fixtures/staff-org";
 import { flushWaitUntilForTest } from "../../context/wait-until";
-import type { RouteEntry } from "../../route-entry";
+import { settleIncludingAbort } from "../../utils";
 import { artifactCatalogRoutes } from "../artifact-catalog";
-import { sharedThreadRoutes } from "../shared-threads";
+import { artifactReferenceRoutes } from "../artifact-references";
+import { chatEventsRoutes } from "../chat-events";
+import { chatThreadRoutes } from "../chat-threads";
 import { featureSwitchesRoutes } from "../feature-switches";
-import { morningBriefPreferenceRoutes } from "../morning-brief-preference";
-import {
-  createBddApi,
-  expectApiError,
-  type ApiTestUser,
-} from "./helpers/api-bdd";
-import { createChatCallbacksApi } from "./helpers/api-bdd-chat-callbacks";
+import { hostRoutes } from "../host";
+import { sharedThreadRoutes } from "../shared-threads";
+import { uploadsCompleteRoutes } from "../uploads-complete";
+import { uploadsPrepareRoutes } from "../uploads-prepare";
+import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
-import {
-  hostedTextFile,
-  installHostedUploadTransport,
-  uploadHostedTextFiles,
-} from "./helpers/api-bdd-host-files";
 import { createHostBddApi } from "./helpers/api-bdd-host";
+import { hostedTextFile } from "./helpers/api-bdd-host-files";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
+import {
+  mockGoogleText,
+  VERTEX_TEXT_URL,
+  vertexTextResponse,
+} from "./helpers/google-text";
 import { createRouteMocks } from "./helpers/route-test";
+import { installSharedThreadStorage } from "./helpers/shared-thread-storage";
 
 const context = testContext();
 const bdd = createBddApi(context);
-const api = createRunsApi(context);
-const chat = createChatFilesBddApi(context);
-const chatCallbacks = createChatCallbacksApi(context);
-const host = createHostBddApi(context);
-const webhooks = createWebhookCallbackApi(context);
-const routeMocks = createRouteMocks(context);
-const sharedThreadTestRoutes: readonly RouteEntry[] = [
-  ...artifactCatalogRoutes,
-  ...sharedThreadRoutes,
-];
-function createCatalogStorage() {
-  let storage:
-    ReturnType<typeof chatCallbacks.acceptChatObjectStorage> | undefined;
-  beforeEach(() => {
-    storage = undefined;
+const headers = Object.freeze({ authorization: "Bearer clerk-session" });
+
+function signIn(actor: ApiTestUser) {
+  createRouteMocks(context).clerk.session(
+    actor.userId,
+    actor.orgId,
+    actor.orgRole,
+  );
+  return headers;
+}
+
+function catalogApi(actor: ApiTestUser) {
+  signIn(actor);
+  return setupApp({ context, routes: artifactCatalogRoutes })(
+    artifactCatalogContract,
+  );
+}
+
+async function grantProPlan(actor: ApiTestUser): Promise<void> {
+  const suffix = randomUUID();
+  const customerId = `cus_pro_${suffix}`;
+  const webhooks = createWebhookCallbackApi(context);
+  webhooks.configureStripeBillingEnv();
+  context.mocks.stripe.customers.retrieve.mockResolvedValue({
+    id: customerId,
+    metadata: { orgId: actor.orgId },
   });
-  return () => {
-    storage ??= chatCallbacks.acceptChatObjectStorage();
-    return storage;
-  };
-}
-const catalogStorage = createCatalogStorage();
-type RunnerExecutionInput = Awaited<ReturnType<typeof api.executionInput>>;
-interface CatalogActor {
-  readonly actor: ApiTestUser;
-  readonly runnerGroup: string;
-  readonly storage: ReturnType<typeof chatCallbacks.acceptChatObjectStorage>;
-}
-
-/**
- * Stage uploaded bytes at the external object-storage boundary. Callers that
- * observe several uploads together supply one store so earlier bytes survive.
- */
-function stageUploadObject(
-  key: string,
-  size: number,
-  storage = catalogStorage(),
-): void {
-  storage.addObject({ bucket: "test-user-artifacts", key, size });
-}
-
-async function catalogActor(
-  displayName: string,
-  actor: ApiTestUser = bdd.user(),
-  options: { readonly bootstrapOrg?: boolean } = {},
-): Promise<CatalogActor> {
-  const storage = catalogStorage();
-  api.acceptStorageDownloads();
-  api.acceptTelemetryIngest();
-  mockOptionalEnv("OPENROUTER_API_KEY", undefined);
-  chatCallbacks.disableVapid();
-  const runnerGroup = await api.configureRunnerGroup();
-  if (options.bootstrapOrg !== false) {
-    await api.grantProEntitlement(actor);
-    // Catalog fixtures complete dispatched native Runner runs, so the owner
-    // selects Fable, whose personal subscription route never uses Pi.
-    await api.ensurePersonalSubscriptionModel(actor, {
-      model: "claude-fable-5-1",
-    });
-  }
-  if (!actor.orgId) {
-    throw new Error("Expected artifact catalog test actor to have an org");
-  }
-
-  return { actor, runnerGroup, storage };
-}
-
-async function sendChatRun(
-  actor: ApiTestUser,
-  body: {
-    readonly prompt: string;
-    readonly threadId?: string;
-  },
-): Promise<{ readonly runId: string; readonly threadId: string }> {
-  const sent = await chat.sendAndLaunch(actor, body);
-  return { runId: sent.runId, threadId: sent.threadId };
-}
-
-async function runExecution(
-  runnerGroup: string,
-  runId: string,
-): Promise<{
-  readonly execution: RunnerExecutionInput;
-  readonly sandboxHeaders: { readonly authorization: string };
-}> {
-  await api.heartbeatRunner(runnerGroup);
-  const execution = await api.executionInput(runId);
-  return {
-    execution,
-    sandboxHeaders: { authorization: `Bearer ${execution.sandboxToken}` },
-  };
-}
-
-function okouTokenFromExecution(execution: RunnerExecutionInput): string {
-  const token = execution.platformEnvironment.OKOU_TOKEN;
-  if (!token || !token.startsWith("vm0_sandbox_")) {
-    throw new Error(
-      "Expected the execution platform environment to carry an OKOU_TOKEN",
-    );
-  }
-  return token;
-}
-
-async function completeChatRunOk(
-  runId: string,
-  sandboxHeaders: { readonly authorization: string },
-  lastEventSequence?: number,
-): Promise<void> {
-  await webhooks.requestAgentComplete(
+  await webhooks.postStripeEvent(
     {
-      runId,
-      exitCode: 0,
-      completion: {
-        cliAgentType: "claude-code",
-        cliAgentSessionId: `bdd-cli-${runId}`,
-        cliAgentSessionHistoryDisposition: "native_only",
-      },
-      ...(lastEventSequence === undefined ? {} : { lastEventSequence }),
-    },
-    sandboxHeaders,
-    [200],
-  );
-}
-
-interface CreatedSharedThreadResult {
-  readonly id: string;
-  readonly headers: Headers;
-}
-
-interface ReadSharedThreadResult {
-  readonly body: unknown;
-  readonly headers: Headers;
-}
-
-function authenticateSharedThread(actor: ApiTestUser) {
-  routeMocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
-  return { authorization: "Bearer clerk-session" };
-}
-
-async function enableArtifactLibrary(actor: ApiTestUser) {
-  await accept(
-    setupApp({ context, routes: featureSwitchesRoutes })(
-      featureSwitchesContract,
-    ).update({
-      headers: authenticateSharedThread(actor),
-      body: { switches: { [FeatureSwitchKey.ArtifactLibrary]: true } },
-    }),
-    [200],
-  );
-}
-
-function sharedThreadTestApp() {
-  return createAppWithRoutes({
-    signal: context.signal,
-    routes: sharedThreadTestRoutes,
-  });
-}
-
-function asRecord(value: unknown): Record<string, unknown> {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) {
-    throw new Error("Expected a JSON object response");
-  }
-  return value as Record<string, unknown>;
-}
-
-interface SharedThreadEventRef {
-  readonly id: string;
-  readonly eventType: string;
-  readonly runId?: string;
-}
-
-async function listSharedThreadEventRefs(
-  actor: ApiTestUser,
-  threadId: string,
-): Promise<readonly SharedThreadEventRef[]> {
-  const page: unknown = await chat.listThreadEvents(actor, threadId);
-  const events = asRecord(page).events;
-  if (!Array.isArray(events)) {
-    throw new Error("Expected chat thread events");
-  }
-  return events.map((value) => {
-    const event = asRecord(value);
-    if (typeof event.id !== "string" || typeof event.eventType !== "string") {
-      throw new Error("Expected a chat event reference");
-    }
-    return {
-      id: event.id,
-      eventType: event.eventType,
-      ...(typeof event.runId === "string" ? { runId: event.runId } : {}),
-    };
-  });
-}
-
-async function createSharedThreadSnapshot(
-  actor: ApiTestUser,
-  threadId: string,
-  eventIds: readonly string[],
-  origin?: string,
-): Promise<CreatedSharedThreadResult> {
-  const response = await sharedThreadTestApp().request(
-    `/api/chat-threads/${threadId}/shared-threads`,
-    {
-      method: "POST",
-      headers: {
-        ...authenticateSharedThread(actor),
-        "content-type": "application/json",
-        ...(origin ? { origin } : {}),
-      },
-      body: JSON.stringify({ eventIds }),
-    },
-  );
-  expect(response.status).toBe(201);
-  const body = asRecord(await response.json());
-  if (typeof body.id !== "string") {
-    throw new Error("Expected shared-thread creation to return an ID");
-  }
-  return { id: body.id, headers: response.headers };
-}
-
-async function readSharedThreadSnapshot(
-  id: string,
-): Promise<ReadSharedThreadResult> {
-  const response = await sharedThreadTestApp().request(
-    `/api/shared-threads/${id}`,
-  );
-  expect(response.status).toBe(200);
-  const body: unknown = await response.json();
-  return { body, headers: response.headers };
-}
-
-async function readSharedThreadMeta(
-  id: string,
-): Promise<ReadSharedThreadResult> {
-  const response = await sharedThreadTestApp().request(
-    `/api/shared-threads/${id}/meta`,
-  );
-  expect(response.status).toBe(200);
-  const body: unknown = await response.json();
-  return { body, headers: response.headers };
-}
-
-async function completeChatRunWithMessage(
-  owner: CatalogActor,
-  runId: string,
-  assistantText: string,
-): Promise<void> {
-  const { sandboxHeaders } = await runExecution(owner.runnerGroup, runId);
-  chatCallbacks.mockChatOutputEvents([
-    {
-      eventType: "assistant",
-      sequenceNumber: 0,
-      eventData: {
-        message: { content: [{ type: "text", text: assistantText }] },
+      id: `evt_pro_${suffix}`,
+      type: "customer.subscription.created",
+      created: Math.floor(now() / 1000),
+      data: {
+        object: {
+          id: `sub_pro_${suffix}`,
+          customer: customerId,
+          status: "active",
+          metadata: {},
+          cancel_at_period_end: false,
+          cancel_at: null,
+          schedule: null,
+          trial_end: null,
+          items: { data: [{ price: { id: "price_bdd_pro" } }] },
+        },
       },
     },
-  ]);
-  const outputEvents = chatCallbacks.consumeMockChatOutputEvents();
-  await webhooks.requestAgentEvents(
-    { runId, events: outputEvents },
-    sandboxHeaders,
     [200],
   );
-  await completeChatRunOk(runId, sandboxHeaders, 0);
-}
-
-interface CatalogFileUpload {
-  readonly filename: string;
-  readonly contentType: string;
-  readonly sizeBytes?: number;
-  readonly fileId?: string;
-  readonly objectStorage?: CatalogActor["storage"];
-}
-
-async function stageAndCompleteFileUpload(
-  owner: CatalogActor,
-  bearer: string,
-  file: CatalogFileUpload,
-): Promise<{ readonly fileId: string; readonly url: string }> {
-  const fileId = file.fileId ?? randomUUID();
-  stageUploadObject(
-    `artifacts/${owner.actor.userId}/${fileId}/${file.filename}`,
-    file.sizeBytes ?? 1024,
-    file.objectStorage,
-  );
-  const completed = await chat.completeUploadWithBearer(
-    bearer,
-    { id: fileId, contentType: file.contentType },
-    [200],
-  );
-  if (completed.status !== 200) {
-    throw new Error("Expected run upload completion to succeed");
-  }
-  return { fileId, url: completed.body.url };
+  await flushWaitUntilForTest();
 }
 
 async function uploadFile(
-  args: CatalogFileUpload & {
-    readonly owner: CatalogActor;
-    readonly prompt: string;
-    readonly threadId?: string;
+  actor: ApiTestUser,
+  file: {
+    readonly filename: string;
+    readonly contentType: string;
+    readonly size: number;
+    readonly purpose?: "artifact";
   },
-): Promise<{
-  readonly fileId: string;
-  readonly url: string;
-  readonly threadId: string;
-}> {
-  const run = await sendChatRun(args.owner.actor, {
-    prompt: args.prompt,
-    ...(args.threadId === undefined ? {} : { threadId: args.threadId }),
-  });
-  const { execution, sandboxHeaders } = await runExecution(
-    args.owner.runnerGroup,
-    run.runId,
+) {
+  context.mocks.s3.getSignedUrl.mockResolvedValue(
+    `https://r2.example.com/uploads/${encodeURIComponent(file.filename)}`,
   );
-  const bearer = `Bearer ${okouTokenFromExecution(execution)}`;
-  const uploaded = await stageAndCompleteFileUpload(args.owner, bearer, args);
-  await completeChatRunOk(run.runId, sandboxHeaders);
-  return { ...uploaded, threadId: run.threadId };
-}
-
-async function publishHostedSite(args: {
-  readonly owner: CatalogActor;
-  readonly site: string;
-  readonly title?: string;
-  readonly artifactKind?: "hosted-site" | "presentation-html";
-  readonly threadId?: string;
-}): Promise<{
-  readonly url: string;
-  readonly artifactUrl: string;
-  readonly siteId: string;
-  readonly publicSlug: string;
-  readonly deploymentId: string;
-  readonly deploymentVersion?: number;
-  readonly runId: string;
-  readonly threadId: string;
-}> {
-  const run = await sendChatRun(args.owner.actor, {
-    prompt: `publish ${args.site}`,
-    ...(args.threadId === undefined ? {} : { threadId: args.threadId }),
-  });
-  const execution = await runExecution(args.owner.runnerGroup, run.runId);
-  const bearer = `Bearer ${okouTokenFromExecution(execution.execution)}`;
-  const body = {
-    site: args.site,
-    title: args.title ?? args.site,
-    artifactKind: args.artifactKind ?? ("hosted-site" as const),
-    spaFallback: false,
-    files: [hostedTextFile("/index.html", `<main>${args.site}</main>`)],
-  };
-
-  installHostedUploadTransport(context, args.owner.storage);
-  const prepared = await chat.prepareHostedSiteWithBearer(bearer, body);
-  await uploadHostedTextFiles(prepared, {
-    "/index.html": `<main>${args.site}</main>`,
-  });
-  await chat.completeHostedSiteWithBearer(bearer, prepared.deploymentId);
-  await completeChatRunOk(run.runId, execution.sandboxHeaders);
-  return {
-    url: prepared.url,
-    artifactUrl:
-      prepared.artifactUrl ?? `https://dpl-${prepared.deploymentId}.okou.app/`,
-    siteId: prepared.siteId,
-    publicSlug: prepared.publicSlug,
-    deploymentId: prepared.deploymentId,
-    ...(prepared.deploymentVersion === undefined
-      ? {}
-      : { deploymentVersion: prepared.deploymentVersion }),
-    runId: run.runId,
-    threadId: run.threadId,
-  };
-}
-
-describe("GET /api/artifacts/by-url", () => {
-  it("reads one owned file from its message links and keeps its metadata private", async () => {
-    const owner = await catalogActor("File details owner");
-    const uploaded = await uploadFile({
-      owner,
-      prompt: "Publish the notes",
-      filename: "notes.md",
-      contentType: "text/markdown",
-    });
-    const client = setupApp({ context, routes: artifactReferenceRoutes })(
-      artifactReferencesContract,
-    );
-    const headers = authenticateSharedThread(owner.actor);
-    for (const url of [
-      uploaded.url,
-      "/api/web/file-url?file_id=" + uploaded.fileId,
-      "http://localhost:3000/api/web/file-url?file_id=" + uploaded.fileId,
-    ]) {
-      const result = await accept(
-        client.byUrl({ headers, query: { url } }),
-        [200],
+  context.mocks.s3.send.mockImplementation((command: unknown) => {
+    const { constructor, input } = command as {
+      readonly constructor: { readonly name: string };
+      readonly input?: { readonly Key?: string };
+    };
+    if (
+      constructor.name === "GetObjectCommand" &&
+      !input?.Key?.startsWith("private-artifacts/")
+    ) {
+      return Promise.reject(
+        Object.assign(new Error("Missing object"), {
+          name: "NoSuchKey",
+        }),
       );
-      expect(result.body).toMatchObject({
-        filename: "notes.md",
-        size: 1024,
-        preview: { kind: "markdown" },
-        owner: { artifactId: expect.any(String) },
+    }
+    if (constructor.name === "HeadObjectCommand") {
+      return Promise.resolve({
+        ContentLength: file.size,
+        ContentType: file.contentType,
       });
     }
-    const other = await catalogActor("Unrelated file reader");
-    await accept(
-      client.byUrl({
-        headers: authenticateSharedThread(other.actor),
-        query: { url: uploaded.url },
-      }),
-      [404],
-    );
+    if (constructor.name === "GetObjectCommand") {
+      return Promise.resolve({
+        ContentLength: file.size,
+        ContentType: file.contentType,
+        Body: Readable.from([Buffer.alloc(Math.max(1, file.size), 0x61)]),
+      });
+    }
+    if (constructor.name === "PutObjectCommand") {
+      return Promise.resolve({ ETag: '"etag-1"' });
+    }
+    return Promise.resolve({});
   });
+  signIn(actor);
+  const client = setupApp({
+    context,
+    routes: [...uploadsPrepareRoutes, ...uploadsCompleteRoutes],
+  })(uploadsContract);
+  const prepared = await accept(
+    client.prepare({
+      headers,
+      body: file,
+    }),
+    [200],
+  );
+  const completed = await accept(
+    client.complete({
+      headers,
+      body: { id: prepared.body.id },
+    }),
+    [200],
+  );
+  return completed.body;
+}
 
-  it("describes an exact public template without granting the reader owner controls", async () => {
-    const owner = await catalogActor("Template reader");
-    const template = PRESENTATION_TEMPLATE_PICKER_ITEMS[0]!;
-    const client = setupApp({ context, routes: artifactReferenceRoutes })(
-      artifactReferencesContract,
-    );
-    const headers = authenticateSharedThread(owner.actor);
-    const detail = await accept(
-      client.byUrl({ headers, query: { url: template.embedUrl } }),
+describe("GET /api/artifacts/catalog", () => {
+  it("artifact-catalog.bdd-025 searches artifact titles literally before applying the page limit", async () => {
+    const member = bdd.user();
+    await grantProPlan(member);
+    await uploadFile(member, {
+      filename: "Launch-Brief.txt",
+      contentType: "text/plain",
+      size: 16,
+      purpose: "artifact",
+    });
+    await uploadFile(member, {
+      filename: "budget.txt",
+      contentType: "text/plain",
+      size: 10,
+      purpose: "artifact",
+    });
+
+    const launchSearch = await accept(
+      catalogApi(member).list({
+        headers,
+        query: { keyword: "launch", limit: 1 },
+      }),
       [200],
     );
-    expect(detail.body.preview).toStrictEqual({
-      kind: "presentation-html",
-      pageUrl: template.embedUrl,
-      coverUrl: template.previewImage,
+    expect(launchSearch.body.nextCursor).toBeNull();
+    expect(launchSearch.body.artifacts).toHaveLength(1);
+    expect(launchSearch.body.artifacts[0]).toMatchObject({
+      kind: "file",
+      title: "Launch-Brief.txt",
     });
-    expect(detail.body.owner).toBeUndefined();
-    await accept(
-      client.byUrl({
+
+    const wildcardSearch = await accept(
+      catalogApi(member).list({
         headers,
-        query: { url: template.embedUrl + ".unlisted" },
+        query: { keyword: "%" },
       }),
-      [404],
+      [200],
     );
+    expect(wildcardSearch.body).toStrictEqual({
+      artifacts: [],
+      nextCursor: null,
+    });
   });
 
-  it("resolves each immutable site publication and the current alias independently", async () => {
-    const owner = await catalogActor("Publication details owner");
-    const site = "artifact-detail-" + randomUUID().slice(0, 8);
-    const first = await publishHostedSite({
-      owner,
-      site,
-      artifactKind: "presentation-html",
+  it("artifact-catalog.bdd-013 catalogues an artifact upload but never a chat attachment", async () => {
+    const member = bdd.user();
+    await grantProPlan(member);
+    const attachment = await uploadFile(member, {
+      filename: "meeting-notes.png",
+      contentType: "image/png",
+      size: 128,
     });
-    const second = await publishHostedSite({
-      owner,
-      site,
-      artifactKind: "presentation-html",
+    await uploadFile(member, {
+      filename: "quarterly-summary.html",
+      contentType: "text/html",
+      size: 64,
+      purpose: "artifact",
     });
-    const catalog = await chat.listArtifactCatalog(owner.actor);
-    const catalogEntry = catalog.artifacts.find((item) => {
-      return item.kind === "presentation";
-    });
-    if (!catalogEntry) {
-      throw new Error("Expected presentation entry in catalog");
-    }
-    const headers = authenticateSharedThread(owner.actor);
-    const client = setupApp({ context, routes: artifactReferenceRoutes })(
-      artifactReferencesContract,
+
+    const beforeSend = await accept(
+      catalogApi(member).list({ headers, query: {} }),
+      [200],
     );
-    for (const [url, expectedPageUrl] of [
-      [first.artifactUrl, first.artifactUrl],
-      [second.artifactUrl, second.artifactUrl],
-      [second.url, second.artifactUrl],
-    ] as const) {
-      const result = await accept(
-        client.byUrl({ headers, query: { url } }),
-        [200],
-      );
-      expect(result.body).toMatchObject({
-        preview: { kind: "presentation-html", pageUrl: expectedPageUrl },
-        owner: { artifactId: catalogEntry.id },
-      });
-    }
+    expect(beforeSend.body.artifacts).toHaveLength(1);
+    expect(beforeSend.body.artifacts[0]).toMatchObject({
+      kind: "file",
+      title: "quarterly-summary.html",
+    });
+
+    signIn(member);
+    await accept(
+      setupApp({ context, routes: chatEventsRoutes })(chatEventsContract).send({
+        headers,
+        body: {
+          prompt: "Please review the attached image",
+          hasTextContent: true,
+          clientEventId: randomUUID(),
+          userMessage: {
+            version: 1,
+            parts: [
+              { type: "text", text: "Please review the attached image" },
+              {
+                type: "file",
+                fileId: attachment.id,
+                filenameSnapshot: attachment.filename,
+                contentType: attachment.contentType,
+              },
+            ],
+          },
+        },
+      }),
+      [201],
+    );
+
+    const afterSend = await accept(
+      catalogApi(member).list({ headers, query: {} }),
+      [200],
+    );
+    expect(afterSend.body.artifacts).toHaveLength(1);
+    expect(afterSend.body.artifacts[0]).toMatchObject({
+      kind: "file",
+      title: "quarterly-summary.html",
+    });
   });
 });
 
-describe("GET /api/artifacts/catalog", () => {
-  it("publishes a readable private video catalog and preserves its original chat on reuse", async () => {
-    const owner = await catalogActor("Private video catalog owner");
-    const first = await sendChatRun(owner.actor, {
-      prompt: "Produce a private video",
-    });
-    const execution = await runExecution(owner.runnerGroup, first.runId);
-    const bearer = `Bearer ${okouTokenFromExecution(execution.execution)}`;
-    installHostedUploadTransport(context, owner.storage);
-    const prepared = await accept(
-      setupApp({ context, routes: uploadsPrepareRoutes })(
-        uploadsContract,
-      ).prepare({
-        headers: { authorization: bearer },
+describe("shared thread routes", () => {
+  async function createSharedPromptArtifact() {
+    const member = bdd.user();
+    await grantProPlan(member);
+    installSharedThreadStorage(context);
+    mockGoogleText();
+    server.use(
+      http.post(VERTEX_TEXT_URL, () => {
+        return vertexTextResponse("Saved conversation");
+      }),
+    );
+
+    const promptEventId = randomUUID();
+    signIn(member);
+    const sent = await accept(
+      setupApp({ context, routes: chatEventsRoutes })(chatEventsContract).send({
+        headers,
         body: {
-          filename: "private-video.mp4",
-          contentType: "video/mp4",
-          size: 11,
-          purpose: "artifact",
+          prompt: "Share this prompt",
+          hasTextContent: true,
+          clientEventId: promptEventId,
+          userMessage: {
+            version: 1,
+            parts: [{ type: "text", text: "Share this prompt" }],
+          },
         },
+      }),
+      [201],
+    );
+    const threadId = sent.body.threadId;
+
+    signIn(member);
+    const shared = await accept(
+      setupApp({ context, routes: sharedThreadRoutes })(
+        sharedThreadsContract,
+      ).create({
+        headers,
+        params: { threadId },
+        body: { eventIds: [promptEventId] },
+      }),
+      [201],
+    );
+
+    const listed = await accept(
+      catalogApi(member).list({ headers, query: { kind: "shared-thread" } }),
+      [200],
+    );
+    expect(listed.body.artifacts).toHaveLength(1);
+    const artifactId = listed.body.artifacts[0]?.id;
+    if (!artifactId) {
+      throw new Error("Expected a shared-thread catalog artifact");
+    }
+    return {
+      member,
+      threadId,
+      promptEventId,
+      sharedId: shared.body.id,
+      artifactId,
+    };
+  }
+
+  it("artifact-catalog.bdd-030 (1/2) deletes the shared-thread artifact and revokes public snapshot and metadata", async () => {
+    const { member, sharedId, artifactId } = await createSharedPromptArtifact();
+
+    await accept(
+      catalogApi(member).delete({ headers, params: { artifactId } }),
+      [200],
+    );
+
+    const afterDelete = await accept(
+      catalogApi(member).list({ headers, query: { kind: "shared-thread" } }),
+      [200],
+    );
+    expect(afterDelete.body).toStrictEqual({ artifacts: [], nextCursor: null });
+
+    context.mocks.clerk.authenticateRequest.mockResolvedValue({
+      isAuthenticated: false,
+    });
+    const publicApi = setupApp({ context, routes: sharedThreadRoutes })(
+      sharedThreadsContract,
+    );
+    await Promise.all([
+      accept(publicApi.get({ params: { id: sharedId } }), [404]),
+      accept(publicApi.meta({ params: { id: sharedId } }), [404]),
+    ]);
+  });
+
+  it("artifact-catalog.bdd-030 (2/2) allows repeated artifact deletion and keeps the source thread prompt", async () => {
+    const { member, threadId, promptEventId, artifactId } =
+      await createSharedPromptArtifact();
+
+    await accept(
+      catalogApi(member).delete({ headers, params: { artifactId } }),
+      [200],
+    );
+    await accept(
+      catalogApi(member).delete({ headers, params: { artifactId } }),
+      [200],
+    );
+
+    signIn(member);
+    const events = await accept(
+      setupApp({ context, routes: chatThreadRoutes })(
+        chatThreadEventsContract,
+      ).rows({
+        headers,
+        params: { threadId },
+        query: { sinceSeqId: 0, limit: 50 },
       }),
       [200],
     );
-    if (!("uploadUrl" in prepared.body)) {
-      throw new Error("Expected a single-part video upload");
-    }
-    const uploaded = await fetch(prepared.body.uploadUrl, {
-      method: "PUT",
-      headers: prepared.body.uploadHeaders,
-      body: "video bytes",
-    });
-    expect(uploaded.status).toBe(200);
-    await flushWaitUntilForTest();
-    const publications: {
-      channel: string | undefined;
-      payload: unknown;
-      catalog: Awaited<ReturnType<typeof chat.listArtifactCatalog>>;
-    }[] = [];
-    context.mocks.ably.publish.mockImplementation(async (topic, payload) => {
-      if (topic === chatArtifactCatalogChangedEvent(first.threadId)) {
-        const channel = context.mocks.ably.channelGet.mock.lastCall?.[0];
-        publications.push({
-          channel,
-          payload,
-          catalog: await chat.listArtifactCatalog(owner.actor, {
-            chatThreadId: first.threadId,
-          }),
-        });
-      }
-    });
-    await chat.completeUploadWithBearer(
-      bearer,
-      { id: prepared.body.id },
-      [200],
-    );
-    await flushWaitUntilForTest();
-    expect(publications.length).toBeGreaterThan(0);
-    for (const publication of publications) {
-      expect(publication).toMatchObject({
-        channel: `user:${owner.actor.userId}`,
-        payload: null,
-        catalog: {
-          artifacts: [
-            { title: "private-video.mp4", sourceUrl: prepared.body.url },
-          ],
-        },
-      });
-    }
-    // The publish-time API response already supplies the original identity.
-    const originalCatalog = publications[0]!.catalog;
-    const artifactId = originalCatalog.artifacts[0]!.id;
-    const reference = artifactReferencePath(
-      prepared.body.id,
-      "private-video.mp4",
-    );
-    const references = setupApp({ context, routes: artifactReferenceRoutes })(
+    expect(
+      events.body.rows.some((row) => {
+        return row.id === promptEventId;
+      }),
+    ).toBeTruthy();
+  });
+});
+
+describe("GET /api/artifacts/by-url", () => {
+  function referencesApi(actor: ApiTestUser) {
+    signIn(actor);
+    return setupApp({ context, routes: artifactReferenceRoutes })(
       artifactReferencesContract,
     );
-    const headers = authenticateSharedThread(owner.actor);
-    for (const url of [
-      reference,
-      "http://localhost:3002" + reference + "#t=3",
-    ]) {
-      const response = await accept(
-        references.byUrl({ headers, query: { url } }),
-        [200],
-      );
-      expect(response.body).toMatchObject({
-        filename: "private-video.mp4",
-        preview: { kind: "video" },
-        owner: { artifactId },
-      });
-      const publicationId = response.body.owner!.publicationId;
-      const status = await accept(
-        references.driveStatus({
-          headers,
-          params: { publicationId },
-          query: { chatThreadId: first.threadId },
-        }),
-        [200],
-      );
-      expect(status.body.googleDriveSync.status).toBe("disconnected");
-    }
-    await expect(
-      chat.getArtifactCatalogEntry(owner.actor, artifactId),
-    ).resolves.toMatchObject({ sourceChatThreadId: first.threadId });
-    await chat.renameThread(
-      owner.actor,
-      first.threadId,
-      "Original video source",
-    );
-    await enableArtifactLibrary(owner.actor);
-    await expect(
-      chat.listArtifactCatalog(owner.actor, { direction: "asc" }),
-    ).resolves.toMatchObject({
-      artifacts: [
-        {
-          id: artifactId,
-          category: "video",
-          sourceChatThread: {
-            id: first.threadId,
-            title: "Original video source",
-          },
-        },
-      ],
-    });
-    await expect(
-      chat.listArtifactCatalog(owner.actor, {
-        direction: "asc",
-        keyword: "Original video source",
-      }),
-    ).resolves.toStrictEqual({ artifacts: [], nextCursor: null });
-    await chat.renameThread(
-      owner.actor,
-      first.threadId,
-      "Current source label",
-    );
-    await chat.requestSetThreadArchived(
-      owner.actor,
-      first.threadId,
-      true,
-      [204],
-    );
-    await expect(
-      chat.listArtifactCatalog(owner.actor, { direction: "asc" }),
-    ).resolves.toMatchObject({
-      artifacts: [
-        {
-          sourceChatThread: {
-            id: first.threadId,
-            title: "Current source label",
-          },
-        },
-      ],
-    });
-    const peer = bdd.user({ orgId: owner.actor.orgId! });
-    await enableArtifactLibrary(peer);
-    await expect(
-      chat.listArtifactCatalog(peer, { direction: "asc" }),
-    ).resolves.toStrictEqual({ artifacts: [], nextCursor: null });
-    await completeChatRunOk(first.runId, execution.sandboxHeaders);
-    const second = await sendChatRun(owner.actor, {
-      prompt: "Reuse the private video",
-    });
-    const secondExecution = await runExecution(owner.runnerGroup, second.runId);
-    const secondBearer = `Bearer ${okouTokenFromExecution(secondExecution.execution)}`;
-    await chat.completeUploadWithBearer(
-      secondBearer,
-      { id: prepared.body.id },
-      [200],
-    );
-    await expect(
-      chat.listArtifactCatalog(owner.actor, { chatThreadId: first.threadId }),
-    ).resolves.toMatchObject({
-      artifacts: [{ id: originalCatalog.artifacts[0]!.id }],
-    });
-    await expect(
-      chat.listArtifactCatalog(owner.actor, { chatThreadId: second.threadId }),
-    ).resolves.toStrictEqual({ artifacts: [], nextCursor: null });
-    await chat.deleteThread(owner.actor, first.threadId);
-    await chat.completeUploadWithBearer(
-      secondBearer,
-      { id: prepared.body.id },
-      [200],
-    );
-    await expect(
-      chat.listArtifactCatalog(owner.actor, { chatThreadId: second.threadId }),
-    ).resolves.toStrictEqual({ artifacts: [], nextCursor: null });
-    await expect(chat.listArtifactCatalog(owner.actor)).resolves.toMatchObject({
-      artifacts: [{ id: originalCatalog.artifacts[0]!.id }],
-    });
-    await expect(
-      chat.getArtifactCatalogEntry(owner.actor, artifactId),
-    ).resolves.not.toHaveProperty("sourceChatThreadId");
-    const withoutSource = await chat.listArtifactCatalog(owner.actor, {
-      direction: "asc",
-      category: "video",
-    });
-    expect(withoutSource.artifacts).toStrictEqual([
-      expect.objectContaining({ id: artifactId, category: "video" }),
-    ]);
-    expect(withoutSource.artifacts[0]).not.toHaveProperty("sourceChatThread");
-    await completeChatRunOk(second.runId, secondExecution.sandboxHeaders);
-  });
+  }
 
-  it("keeps artifacts from a hidden Morning Brief conversation without disclosing its source", async () => {
-    // The production schedule trigger scans all owners, so this case owns its DB.
-    const client = await setupApp({
+  it("pf-054 reads one owned file from its message links and keeps its metadata private", async () => {
+    const owner = bdd.user();
+    const peer = bdd.user({ orgId: owner.orgId });
+    const stored = createHostBddApi(context).captureHostedSitesS3();
+    const fallbackS3 = context.mocks.s3.send.getMockImplementation();
+    context.mocks.s3.send.mockImplementation((command: unknown, ...rest) => {
+      const { constructor } = command as {
+        readonly constructor: { readonly name: string };
+      };
+      if (constructor.name === "HeadObjectCommand") {
+        return Promise.resolve({
+          ContentLength: 24,
+          ContentType: "text/plain",
+        });
+      }
+      if (fallbackS3) {
+        return fallbackS3(command, ...rest);
+      }
+      if (constructor.name === "PutObjectCommand") {
+        return Promise.resolve({ ETag: '"etag-1"' });
+      }
+      return Promise.resolve({});
+    });
+    context.mocks.s3.getSignedUrl.mockResolvedValue(
+      "https://r2.example.com/uploads/private-summary.txt",
+    );
+    signIn(owner);
+    const uploads = setupApp({
       context,
-      isolatePg: true,
-      routes: morningBriefPreferenceRoutes,
-    });
-    mockNow(Date.UTC(2030, 0, 1, 4));
-    const owner = await catalogActor("Hidden source owner");
-    await bdd.updateUserTimezone(owner.actor, "UTC");
-    // Official schedules serve owners who have recently started a manual Run.
-    const manual = await sendChatRun(owner.actor, {
-      prompt: "Start my workday",
-    });
-    const manualExecution = await runExecution(owner.runnerGroup, manual.runId);
-    await completeChatRunOk(manual.runId, manualExecution.sandboxHeaders);
-    const headers = authenticateSharedThread(owner.actor);
-    await accept(
-      client(morningBriefPreferenceContract).update({
-        headers,
-        body: { enabled: true },
-      }),
-      [200],
-    );
-    const cron = createProactiveCronApi(context);
-    mockNow(Date.UTC(2030, 0, 1, 6, 59));
-    await api.registerDirectRunner(owner.runnerGroup);
-    await cron.dispatch();
-    const runId = await cron.latestRun(owner.actor, "Morning Brief");
-    const { execution, sandboxHeaders } = await runExecution(
-      owner.runnerGroup,
-      runId,
-    );
-    const threadId = execution.platformEnvironment.OKOU_CHAT_THREAD_ID;
-    if (!threadId) {
-      throw new Error("Expected the scheduled Morning Brief conversation");
-    }
-    await expect(
-      chat.readThreadMetadata(owner.actor, threadId),
-    ).resolves.toMatchObject({ hidden: true });
-    const bearer = `Bearer ${okouTokenFromExecution(execution)}`;
-    const content = "Official morning brief";
-    installHostedUploadTransport(context, owner.storage);
+      routes: [...uploadsPrepareRoutes, ...uploadsCompleteRoutes],
+    })(uploadsContract);
     const prepared = await accept(
-      setupApp({ context, routes: uploadsPrepareRoutes })(
-        uploadsContract,
-      ).prepare({
-        headers: { authorization: bearer },
+      uploads.prepare({
+        headers,
         body: {
-          filename: "official-brief.txt",
+          filename: "private-summary.txt",
           contentType: "text/plain",
-          size: Buffer.byteLength(content),
+          size: 24,
           purpose: "artifact",
         },
       }),
       [200],
     );
-    if (!("uploadUrl" in prepared.body)) {
-      throw new Error("Expected a single-part Official artifact upload");
-    }
-    const uploaded = await fetch(prepared.body.uploadUrl, {
-      method: "PUT",
-      headers: prepared.body.uploadHeaders,
-      body: content,
-    });
-    expect(uploaded.status).toBe(200);
-    await chat.completeUploadWithBearer(
-      bearer,
-      { id: prepared.body.id },
+    const completed = await accept(
+      uploads.complete({ headers, body: { id: prepared.body.id } }),
       [200],
     );
-    await webhooks.requestAgentComplete(
-      { runId, exitCode: 1, error: "Catalog source visibility inspected" },
-      sandboxHeaders,
-      [200],
-    );
-    // The terminal webhook settles the Morning Brief schedule in the background.
-    await flushWaitUntilForTest();
-    await enableArtifactLibrary(owner.actor);
-    const catalog = await chat.listArtifactCatalog(owner.actor, {
-      direction: "asc",
-      category: "document",
-    });
-    expect(catalog.artifacts).toStrictEqual([
-      expect.objectContaining({
-        title: "official-brief.txt",
-        category: "document",
-      }),
-    ]);
-    expect(catalog.artifacts[0]).not.toHaveProperty("sourceChatThread");
-    await expect(
-      chat.getArtifactCatalogEntry(owner.actor, catalog.artifacts[0]!.id),
-    ).resolves.not.toHaveProperty("sourceChatThreadId");
-    const disabled = await accept(
-      client(morningBriefPreferenceContract).update({
-        headers: authenticateSharedThread(owner.actor),
-        body: { enabled: false },
-      }),
-      [200],
-    );
-    expect(disabled.body).toMatchObject({ enabled: false, status: "paused" });
-  });
+    expect(stored.objects.size).toBeGreaterThanOrEqual(0);
 
-  it("soft-deletes a file artifact from Library without removing underlying file bytes (Principle 4)", async () => {
-    const owner = await catalogActor("Historical artifact deletion");
-    const uploaded = await uploadFile({
-      owner,
-      prompt: "Create a legacy file",
-      filename: "legacy-report.txt",
+    const owned = await accept(
+      referencesApi(owner).byUrl({
+        headers,
+        query: { url: completed.body.url },
+      }),
+      [200],
+    );
+    expect(owned.body).toMatchObject({
+      filename: "private-summary.txt",
       contentType: "text/plain",
     });
-    const listed = await chat.listArtifactCatalog(owner.actor);
-    const entry = listed.artifacts[0];
-    if (!entry) {
-      throw new Error("Expected a file catalog artifact");
-    }
-    const headers = authenticateSharedThread(owner.actor);
-    const client = setupApp({
-      context,
-      routes: artifactCatalogRoutes,
-    });
+
     await accept(
-      client(artifactCatalogContract).delete({
+      referencesApi(peer).byUrl({
         headers,
-        params: { artifactId: entry.id },
+        query: { url: completed.body.url },
+      }),
+      [404],
+    );
+  });
+
+  it("pf-055 describes an exact public template without granting the reader owner controls", async () => {
+    const reader = bdd.user();
+    const templateUrl =
+      "https://static.vm0.io/vm0/welcome-thread/2026-09-17-1e76170cef99/campaign-visual.jpg";
+
+    const resolved = await accept(
+      referencesApi(reader).byUrl({
+        headers,
+        query: { url: templateUrl },
       }),
       [200],
     );
-    expect(owner.storage.deletedKeys).not.toContain(
-      `artifacts/${owner.actor.userId}/${uploaded.fileId}/legacy-report.txt`,
-    );
-    const after = await chat.listArtifactCatalog(owner.actor);
-    expect(after.artifacts).toStrictEqual([]);
+
+    expect(resolved.body).toMatchObject({
+      url: templateUrl,
+      filename: "campaign-visual.jpg",
+      contentType: "image/jpeg",
+    });
+    expect(resolved.body.owner).toBeUndefined();
   });
 
-  it.each(["hosted-site", "presentation-html"] as const)(
-    "deletes a %s and restores the catalog only for a new publication",
-    async (artifactKind) => {
-      const owner = await catalogActor("Hosted artifact deletion");
-      const site = `artifact-delete-${randomUUID().slice(0, 8)}`;
-      await publishHostedSite({ owner, site, artifactKind });
-      const published = await publishHostedSite({ owner, site, artifactKind });
-      const before = await chat.listArtifactCatalog(owner.actor);
-      const entry = before.artifacts[0];
-      if (!entry) {
-        throw new Error("Expected a published catalog artifact");
+  it("pf-056 resolves each immutable site publication and the current alias independently", async () => {
+    const owner = bdd.user();
+    const host = createHostBddApi(context);
+    host.captureHostedSitesS3();
+    const siteSlug = `site-${randomUUID().slice(0, 8)}`;
+
+    const firstPrepared = await host.prepareHostedSite(owner, {
+      site: siteSlug,
+      title: "Release V1",
+      visibility: "private",
+      artifactKind: "hosted-site",
+      spaFallback: false,
+      files: [hostedTextFile("/index.html", "<h1>V1</h1>")],
+    });
+    await host.completeHostedSite(owner, firstPrepared.deploymentId);
+
+    const secondPrepared = await host.prepareHostedSite(owner, {
+      site: siteSlug,
+      title: "Release V2",
+      visibility: "private",
+      artifactKind: "hosted-site",
+      spaFallback: false,
+      files: [hostedTextFile("/index.html", "<h1>V2</h1>")],
+    });
+    const secondCompleted = await host.completeHostedSite(
+      owner,
+      secondPrepared.deploymentId,
+    );
+
+    const firstImmutableUrl = hostedLinkOrigin(
+      "current",
+      `dpl-${firstPrepared.deploymentId}`,
+    );
+    const secondImmutableUrl = hostedLinkOrigin(
+      "current",
+      `dpl-${secondPrepared.deploymentId}`,
+    );
+    const liveAliasUrl = secondCompleted.url;
+
+    const api = referencesApi(owner);
+    const [firstDetail, secondDetail, aliasDetail] = await Promise.all([
+      accept(api.byUrl({ headers, query: { url: firstImmutableUrl } }), [200]),
+      accept(api.byUrl({ headers, query: { url: secondImmutableUrl } }), [200]),
+      accept(api.byUrl({ headers, query: { url: liveAliasUrl } }), [200]),
+    ]);
+
+    expect(firstDetail.body.url).toBe(firstImmutableUrl);
+    expect(secondDetail.body.url).toBe(secondImmutableUrl);
+    expect(aliasDetail.body.url).toBe(secondImmutableUrl);
+    expect(firstDetail.body.owner?.publicationId).toBe(
+      firstPrepared.deploymentId,
+    );
+    expect(secondDetail.body.owner?.publicationId).toBe(
+      secondPrepared.deploymentId,
+    );
+    expect(aliasDetail.body.owner?.publicationId).toBe(
+      secondPrepared.deploymentId,
+    );
+    expect(firstDetail.body.filename).toBe("Release V1.html");
+    expect(secondDetail.body.filename).toBe("Release V1.html");
+    expect(aliasDetail.body.filename).toBe("Release V1.html");
+  });
+});
+
+describe("artifact catalog with dispatched Runs", () => {
+  const runsApi = createRunsApi(context);
+  const chatFilesApi = createChatFilesBddApi(context);
+  const webhooksApi = createWebhookCallbackApi(context);
+  const STAFF_ORG_ID_005 = createUniqueStaffOrgIdFixture();
+  const ARTIFACTS_BUCKET = "test-user-artifacts";
+
+  interface StoredObject {
+    readonly bytes: Buffer;
+    readonly contentType: string;
+    readonly metadata: Readonly<Record<string, string>>;
+  }
+
+  interface TrackedRun {
+    readonly actor: ApiTestUser;
+    readonly runId: string;
+    readonly sandboxToken: string;
+    done: boolean;
+  }
+
+  beforeAll(async () => {
+    await settleIncludingAbort(async () => {
+      const warmupUser = createBddApi(context).user();
+      await runsApi.grantProEntitlement(warmupUser);
+      await runsApi.configureRunnerGroup();
+    });
+  });
+
+  function etagOf(bytes: Buffer): string {
+    return `"${createHash("sha256").update(bytes).digest("hex")}"`;
+  }
+
+  function installArtifactRunS3() {
+    const objects = new Map<string, StoredObject>();
+    const deletes: string[] = [];
+    let sig = 0;
+
+    function objectKey(bucket: string, key: string): string {
+      return `${bucket}/${key}`;
+    }
+
+    function readMetadata(raw: unknown): Readonly<Record<string, string>> {
+      return typeof raw === "object" && raw !== null
+        ? (raw as Readonly<Record<string, string>>)
+        : {};
+    }
+
+    context.mocks.s3.getSignedUrl.mockImplementation((_client, command) => {
+      sig += 1;
+      if (command instanceof PutObjectCommand) {
+        const bucket = command.input.Bucket ?? "";
+        const key = command.input.Key ?? "";
+        const size =
+          typeof command.input.ContentLength === "number"
+            ? command.input.ContentLength
+            : 16;
+        if (bucket && key) {
+          objects.set(objectKey(bucket, key), {
+            bytes: Buffer.alloc(Math.max(1, size), 0x61),
+            contentType:
+              command.input.ContentType ?? "application/octet-stream",
+            metadata: readMetadata(command.input.Metadata),
+          });
+        }
       }
-      const headers = authenticateSharedThread(owner.actor);
-      const client = setupApp({
-        context,
-        routes: [...artifactCatalogRoutes, ...hostRoutes],
+      return Promise.resolve(
+        `https://r2.example.test/signed/${String(sig)}?X-Amz-Signature=bdd`,
+      );
+    });
+
+    function handlePut(command: PutObjectCommand) {
+      const bucket = command.input.Bucket ?? "";
+      const key = command.input.Key ?? "";
+      const fullKey = objectKey(bucket, key);
+      const existing = objects.get(fullKey);
+      if (command.input.IfNoneMatch === "*" && existing !== undefined) {
+        return Promise.reject(
+          Object.assign(new Error("Object already exists"), {
+            name: "PreconditionFailed",
+            $metadata: { httpStatusCode: 412 },
+          }),
+        );
+      }
+      if (
+        command.input.IfMatch !== undefined &&
+        (!existing || etagOf(existing.bytes) !== command.input.IfMatch)
+      ) {
+        return Promise.reject(
+          Object.assign(new Error("Object changed"), {
+            name: "PreconditionFailed",
+            $metadata: { httpStatusCode: 412 },
+          }),
+        );
+      }
+      const rawBody = command.input.Body;
+      const bytes =
+        typeof rawBody === "string"
+          ? Buffer.from(rawBody, "utf8")
+          : rawBody instanceof Uint8Array
+            ? Buffer.from(rawBody)
+            : Buffer.alloc(0);
+      objects.set(fullKey, {
+        bytes,
+        contentType: command.input.ContentType ?? "application/octet-stream",
+        metadata: readMetadata(command.input.Metadata),
       });
-      await accept(
-        client(artifactCatalogContract).delete({
-          headers,
-          params: { artifactId: entry.id },
-        }),
+      return Promise.resolve({ ETag: etagOf(bytes) });
+    }
+
+    function handleCopy(command: CopyObjectCommand) {
+      const source = objects.get(
+        decodeURIComponent(command.input.CopySource ?? ""),
+      );
+      if (!source) {
+        return Promise.reject(
+          Object.assign(new Error("Copy source missing"), {
+            name: "NoSuchKey",
+            $metadata: { httpStatusCode: 404 },
+          }),
+        );
+      }
+      const bucket = command.input.Bucket ?? "";
+      const key = command.input.Key ?? "";
+      objects.set(objectKey(bucket, key), {
+        bytes: Buffer.from(source.bytes),
+        contentType: command.input.ContentType ?? source.contentType,
+        metadata: readMetadata(command.input.Metadata),
+      });
+      return Promise.resolve({});
+    }
+
+    function handleList(command: ListObjectsV2Command) {
+      const bucket = command.input.Bucket ?? "";
+      const prefix = command.input.Prefix ?? "";
+      const bucketPrefix = `${bucket}/`;
+      return Promise.resolve({
+        Contents: [...objects.entries()]
+          .filter(([fullKey]) => {
+            return fullKey.startsWith(`${bucketPrefix}${prefix}`);
+          })
+          .map(([fullKey, obj]) => {
+            return {
+              Key: fullKey.slice(bucketPrefix.length),
+              Size: obj.bytes.length,
+              LastModified: new Date(now()),
+            };
+          }),
+      });
+    }
+
+    function handleHead(command: HeadObjectCommand) {
+      const bucket = command.input.Bucket ?? "";
+      const key = command.input.Key ?? "";
+      const entry = objects.get(objectKey(bucket, key));
+      if (!entry) {
+        return Promise.reject(
+          Object.assign(new Error(`Missing object: ${key}`), {
+            name: "NotFound",
+            $metadata: { httpStatusCode: 404 },
+          }),
+        );
+      }
+      return Promise.resolve({
+        ContentLength: entry.bytes.length,
+        ContentType: entry.contentType,
+        Metadata: entry.metadata,
+        LastModified: new Date(now()),
+      });
+    }
+
+    function handleGet(command: GetObjectCommand) {
+      const bucket = command.input.Bucket ?? "";
+      const key = command.input.Key ?? "";
+      const entry = objects.get(objectKey(bucket, key));
+      if (!entry) {
+        return Promise.reject(
+          Object.assign(new Error(`Missing object: ${key}`), {
+            name: "NoSuchKey",
+            $metadata: { httpStatusCode: 404 },
+          }),
+        );
+      }
+      return Promise.resolve({
+        ContentLength: entry.bytes.length,
+        ContentType: entry.contentType,
+        ETag: etagOf(entry.bytes),
+        Metadata: entry.metadata,
+        Body: Readable.from([entry.bytes]),
+      });
+    }
+
+    context.mocks.s3.send.mockImplementation((command: unknown) => {
+      if (command instanceof PutObjectCommand) {
+        return handlePut(command);
+      }
+      if (command instanceof CopyObjectCommand) {
+        return handleCopy(command);
+      }
+      if (command instanceof DeleteObjectsCommand) {
+        const bucket = command.input.Bucket ?? "";
+        for (const entry of command.input.Delete?.Objects ?? []) {
+          if (typeof entry.Key === "string") {
+            objects.delete(objectKey(bucket, entry.Key));
+            deletes.push(entry.Key);
+          }
+        }
+        return Promise.resolve({});
+      }
+      if (command instanceof ListObjectsV2Command) {
+        return handleList(command);
+      }
+      if (command instanceof HeadObjectCommand) {
+        return handleHead(command);
+      }
+      if (command instanceof GetObjectCommand) {
+        return handleGet(command);
+      }
+      return Promise.resolve({});
+    });
+
+    return {
+      objects,
+      deletes,
+      seedObject(entry: {
+        readonly bucket: string;
+        readonly key: string;
+        readonly body: Buffer;
+        readonly contentType?: string;
+        readonly metadata?: Readonly<Record<string, string>>;
+      }) {
+        objects.set(objectKey(entry.bucket, entry.key), {
+          bytes: entry.body,
+          contentType: entry.contentType ?? "application/octet-stream",
+          metadata: entry.metadata ?? {},
+        });
+      },
+    };
+  }
+
+  function mockMemberships(actors: readonly ApiTestUser[]): void {
+    context.mocks.clerk.users.getOrganizationMembershipList.mockImplementation(
+      (request: unknown) => {
+        const userId =
+          typeof request === "object" &&
+          request !== null &&
+          "userId" in request &&
+          typeof request.userId === "string"
+            ? request.userId
+            : undefined;
+        const actor = actors.find((candidate) => {
+          return candidate.userId === userId;
+        });
+        return Promise.resolve({
+          data: actor?.orgId
+            ? [
+                {
+                  role: actor.orgRole ?? "org:admin",
+                  organization: { id: actor.orgId },
+                },
+              ]
+            : [],
+        });
+      },
+    );
+  }
+
+  function bearerHeaders(token: string) {
+    context.mocks.clerk.authenticateRequest.mockResolvedValue({
+      isAuthenticated: false,
+    });
+    return { authorization: `Bearer ${token}` };
+  }
+
+  function uploadsApi() {
+    return setupApp({
+      context,
+      routes: [...uploadsPrepareRoutes, ...uploadsCompleteRoutes],
+    })(uploadsContract);
+  }
+
+  function hostApi() {
+    return setupApp({ context, routes: hostRoutes })(hostContract);
+  }
+
+  function threadArtifactsApi(actor: ApiTestUser) {
+    signIn(actor);
+    return setupApp({ context, routes: chatThreadRoutes })(
+      chatThreadArtifactsContract,
+    );
+  }
+
+  function featureSwitchesApi(actor: ApiTestUser) {
+    signIn(actor);
+    return setupApp({ context, routes: featureSwitchesRoutes })(
+      featureSwitchesContract,
+    );
+  }
+
+  function createCatalogRunTracker(
+    options: { readonly clockRestoreMs?: number } = {},
+  ) {
+    const tracked: TrackedRun[] = [];
+    let clockRestoreMs = options.clockRestoreMs;
+
+    onTestFinished(async () => {
+      context.mocks.ably.publish.mockResolvedValue(undefined);
+      runsApi.acceptTelemetryIngest();
+      if (clockRestoreMs !== undefined) {
+        mockNow(clockRestoreMs);
+      }
+      const errors: unknown[] = [];
+      const initialFlush = await settleIncludingAbort(flushWaitUntilForTest);
+      if (!initialFlush.ok) {
+        errors.push(initialFlush.error);
+      }
+      for (const entry of tracked) {
+        if (entry.done) {
+          continue;
+        }
+        const cleaned = await settleIncludingAbort(async () => {
+          await runsApi.requestCancelRun(entry.actor, entry.runId, [200, 400]);
+          await webhooksApi.requestAgentComplete(
+            { runId: entry.runId, exitCode: 1, error: "Run cancelled" },
+            { authorization: `Bearer ${entry.sandboxToken}` },
+            [200, 400],
+          );
+          entry.done = true;
+        });
+        if (!cleaned.ok) {
+          errors.push(cleaned.error);
+        }
+      }
+      const finalFlush = await settleIncludingAbort(flushWaitUntilForTest);
+      if (!finalFlush.ok) {
+        errors.push(finalFlush.error);
+      }
+      if (clockRestoreMs !== undefined) {
+        clearMockNow();
+      }
+      if (errors.length === 1) {
+        throw errors[0];
+      }
+      if (errors.length > 1) {
+        throw new AggregateError(errors, "Artifact catalog Run cleanup failed");
+      }
+    });
+
+    return {
+      setClockRestoreMs(ms: number) {
+        clockRestoreMs = ms;
+      },
+      track(
+        actor: ApiTestUser,
+        runId: string,
+        sandboxToken: string,
+      ): TrackedRun {
+        const entry: TrackedRun = { actor, runId, sandboxToken, done: false };
+        tracked.push(entry);
+        return entry;
+      },
+    };
+  }
+
+  async function setupProRunnerActor(
+    options: {
+      readonly orgId?: string;
+      readonly skipPro?: boolean;
+      readonly installS3?: boolean;
+    } = {},
+  ) {
+    const tracker = createCatalogRunTracker();
+    const s3 = options.installS3 === false ? undefined : installArtifactRunS3();
+    const actor = bdd.user({ orgId: options.orgId });
+
+    runsApi.acceptTelemetryIngest();
+    mockOptionalEnv("OPENROUTER_API_KEY", "bdd-issued-credential-key");
+    const runnerGroup = await runsApi.configureRunnerGroup({
+      maxConcurrent: 4,
+    });
+    if (!options.skipPro) {
+      await runsApi.grantProEntitlement(actor);
+    }
+
+    async function launchChatRun(prompt: string) {
+      const thread = await chatFilesApi.createThread(actor, { model: null });
+      const run = await runsApi.createThreadRun(actor, {
+        threadId: thread.id,
+        prompt,
+      });
+      await runsApi.heartbeatRunner(runnerGroup);
+      const execution = await runsApi.executionInput(run.runId);
+      const okouToken = execution.platformEnvironment.OKOU_TOKEN;
+      if (!okouToken) {
+        throw new Error("Expected OKOU_TOKEN on dispatched Run");
+      }
+      const entry = tracker.track(actor, run.runId, execution.sandboxToken);
+      return {
+        runId: run.runId,
+        threadId: run.threadId,
+        okouToken,
+        sandboxToken: execution.sandboxToken,
+        execution,
+        entry,
+      };
+    }
+
+    return { actor, s3, tracker, runnerGroup, launchChatRun };
+  }
+
+  async function runUploadArtifact(
+    actor: ApiTestUser,
+    okouToken: string,
+    file: {
+      readonly filename: string;
+      readonly contentType: string;
+      readonly size: number;
+    },
+  ) {
+    mockMemberships([actor]);
+    const tokenHeaders = bearerHeaders(okouToken);
+    const prepared = await accept(
+      uploadsApi().prepare({
+        headers: tokenHeaders,
+        body: { ...file, purpose: "artifact" },
+      }),
+      [200],
+    );
+    const completed = await accept(
+      uploadsApi().complete({
+        headers: tokenHeaders,
+        body: { id: prepared.body.id },
+      }),
+      [200],
+    );
+    return completed.body;
+  }
+
+  async function publishHostedSiteWithRunToken(
+    actor: ApiTestUser,
+    okouToken: string,
+    args: {
+      readonly site: string;
+      readonly title: string;
+      readonly artifactKind?: "hosted-site" | "presentation-html";
+      readonly visibility?: "private" | "public";
+      readonly html?: string;
+    },
+  ) {
+    mockMemberships([actor]);
+    const tokenHeaders = bearerHeaders(okouToken);
+    const prepared = await accept(
+      hostApi().prepare({
+        headers: tokenHeaders,
+        body: {
+          site: args.site,
+          title: args.title,
+          visibility: args.visibility ?? "public",
+          artifactKind: args.artifactKind ?? "hosted-site",
+          spaFallback: false,
+          files: [
+            hostedTextFile(
+              "/index.html",
+              args.html ?? `<h1>${args.title}</h1>`,
+            ),
+          ],
+        },
+      }),
+      [200],
+    );
+    const completed = await accept(
+      hostApi().complete({
+        headers: tokenHeaders,
+        params: { deploymentId: prepared.body.deploymentId },
+        body: {},
+      }),
+      [200],
+    );
+    return { prepared: prepared.body, completed: completed.body };
+  }
+
+  it(
+    "artifact-catalog.bdd-003 deletes a hosted-site and restores the catalog only for a new publication",
+    { timeout: TEST_WITH_DOUBLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const { actor, launchChatRun } = await setupProRunnerActor();
+      const firstRun = await launchChatRun("Publish site v1");
+      const secondRun = await launchChatRun("Publish site v2");
+      const siteSlug = `site-${randomUUID().slice(0, 8)}`;
+
+      const pub1 = await publishHostedSiteWithRunToken(
+        actor,
+        firstRun.okouToken,
+        { site: siteSlug, title: "Launch site", html: "<h1>V1</h1>" },
+      );
+      await publishHostedSiteWithRunToken(actor, secondRun.okouToken, {
+        site: siteSlug,
+        title: "Launch site",
+        html: "<h1>V2</h1>",
+      });
+
+      const beforeDelete = await accept(
+        catalogApi(actor).list({ headers, query: {} }),
         [200],
       );
-      const after = await chat.listArtifactCatalog(owner.actor);
-      expect(after.artifacts).toStrictEqual([]);
+      expect(beforeDelete.body.artifacts).toHaveLength(1);
+      const artifactId = beforeDelete.body.artifacts[0]?.id;
+      if (!artifactId) {
+        throw new Error("Expected a hosted-site catalog artifact");
+      }
+
+      const deleted = await accept(
+        catalogApi(actor).delete({ headers, params: { artifactId } }),
+        [200],
+      );
+      expect(deleted.body).toStrictEqual({ deleted: true });
+
+      const afterDeleteList = await accept(
+        catalogApi(actor).list({ headers, query: {} }),
+        [200],
+      );
+      expect(afterDeleteList.body).toStrictEqual({
+        artifacts: [],
+        nextCursor: null,
+      });
+
+      const [thread1Artifacts, thread2Artifacts] = await Promise.all([
+        accept(
+          threadArtifactsApi(actor).list({
+            headers,
+            params: { threadId: firstRun.threadId },
+          }),
+          [200],
+        ),
+        accept(
+          threadArtifactsApi(actor).list({
+            headers,
+            params: { threadId: secondRun.threadId },
+          }),
+          [200],
+        ),
+      ]);
+      expect(thread1Artifacts.body).toStrictEqual({ runs: [] });
+      expect(thread2Artifacts.body).toStrictEqual({ runs: [] });
+
       await accept(
-        client(artifactCatalogContract).get({
-          headers,
-          params: { artifactId: entry.id },
-        }),
+        catalogApi(actor).get({ headers, params: { artifactId } }),
         [404],
       );
+
+      signIn(actor);
       await accept(
-        client(hostContract).files({
+        hostApi().files({
           headers,
-          params: { publicSlug: published.publicSlug },
+          params: { publicSlug: pub1.completed.publicSlug },
           query: {},
         }),
         [409],
       );
-      await accept(
-        client(artifactCatalogContract).delete({
-          headers,
-          params: { artifactId: entry.id },
-        }),
+
+      const repeatDelete = await accept(
+        catalogApi(actor).delete({ headers, params: { artifactId } }),
         [200],
       );
-      await publishHostedSite({ owner, site, artifactKind });
-      const restored = await chat.listArtifactCatalog(owner.actor);
-      expect(restored.artifacts).toStrictEqual([
-        expect.objectContaining({ id: entry.id }),
+      expect(repeatDelete.body).toStrictEqual({ deleted: true });
+
+      const pub3 = await publishHostedSiteWithRunToken(
+        actor,
+        secondRun.okouToken,
+        { site: siteSlug, title: "Launch site", html: "<h1>V3</h1>" },
+      );
+      expect(pub3.completed.deploymentVersion).toBe(3);
+
+      const restoredList = await accept(
+        catalogApi(actor).list({ headers, query: {} }),
+        [200],
+      );
+      expect(restoredList.body.artifacts).toHaveLength(1);
+      expect(restoredList.body.artifacts[0]?.id).toBe(artifactId);
+
+      const restoredDetail = await accept(
+        catalogApi(actor).get({ headers, params: { artifactId } }),
+        [200],
+      );
+      expect(restoredDetail.body.kind).toBe("hosted-site");
+      if (restoredDetail.body.kind !== "hosted-site") {
+        throw new Error("Expected hosted-site detail");
+      }
+      expect(restoredDetail.body.site.deploymentVersion).toBe(3);
+
+      const [thread1After, thread2After] = await Promise.all([
+        accept(
+          threadArtifactsApi(actor).list({
+            headers,
+            params: { threadId: firstRun.threadId },
+          }),
+          [200],
+        ),
+        accept(
+          threadArtifactsApi(actor).list({
+            headers,
+            params: { threadId: secondRun.threadId },
+          }),
+          [200],
+        ),
       ]);
-      const detail = await chat.getArtifactCatalogEntry(owner.actor, entry.id);
-      expect(detail).toMatchObject({ site: { deploymentVersion: 3 } });
-      authenticateSharedThread(owner.actor);
+      expect(thread1After.body).toStrictEqual({ runs: [] });
+      expect(thread2After.body).toStrictEqual({ runs: [] });
+
+      signIn(actor);
       await accept(
-        client(hostContract).files({
+        hostApi().files({
           headers,
-          params: { publicSlug: `dpl-${published.deploymentId}` },
+          params: { publicSlug: `dpl-${pub1.completed.deploymentId}` },
           query: {},
         }),
         [409],
@@ -940,1678 +1188,641 @@ describe("GET /api/artifacts/catalog", () => {
     },
   );
 
-  it("shares the explicit site title across Chat and Artifacts and retains renames on redeploy", async () => {
-    const owner = await catalogActor("Site title owner");
-    const site = `title-${randomUUID().slice(0, 8)}`;
-    const published = await publishHostedSite({
-      owner,
-      site,
-      title: "Quarterly sales report",
-    });
-    const catalog = await chat.listArtifactCatalog(owner.actor);
-    const entry = catalog.artifacts.find((artifact) => {
-      return artifact.kind === "hosted-site";
-    });
-    expect(entry).toMatchObject({ title: "Quarterly sales report" });
-    const headers = { authorization: "Bearer clerk-session" };
-    routeMocks.clerk.session(
-      owner.actor.userId,
-      owner.actor.orgId,
-      owner.actor.orgRole,
-    );
-    const renamed = await accept(
-      setupApp({ context, routes: hostRoutes })(hostContract).updateSiteTitle({
-        headers,
-        params: { publicSlug: published.publicSlug },
-        body: { title: "  季度销售报告  " },
-      }),
-      [200],
-    );
-    expect(renamed.body).toStrictEqual({
-      siteId: published.siteId,
-      publicSlug: published.publicSlug,
-      title: "季度销售报告",
-    });
-    await expect(
-      chat.getArtifactCatalogEntry(owner.actor, entry!.id),
-    ).resolves.toMatchObject({
-      title: "季度销售报告",
-      site: { url: published.url, publicSlug: published.publicSlug },
-    });
-    await enableArtifactLibrary(owner.actor);
-    await expect(
-      chat.listArtifactCatalog(owner.actor, { keyword: site }),
-    ).resolves.toStrictEqual({ artifacts: [], nextCursor: null });
-    const titleMatch = await chat.listArtifactCatalog(owner.actor, {
-      keyword: "季度销售",
-      direction: "asc",
-    });
-    expect(titleMatch.artifacts).toStrictEqual([
-      expect.objectContaining({
-        id: entry!.id,
+  it(
+    "artifact-catalog.bdd-005 shares the explicit site title across Artifacts and retains renames on redeploy",
+    { timeout: TEST_WITH_SINGLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const { actor, launchChatRun } = await setupProRunnerActor({
+        orgId: STAFF_ORG_ID_005,
+      });
+      const run = await launchChatRun("Publish quarterly sales report");
+      const siteSlug = `sales-${randomUUID().slice(0, 8)}`;
+
+      const firstPub = await publishHostedSiteWithRunToken(
+        actor,
+        run.okouToken,
+        { site: siteSlug, title: "Quarterly sales report" },
+      );
+
+      const initialList = await accept(
+        catalogApi(actor).list({ headers, query: {} }),
+        [200],
+      );
+      expect(initialList.body.artifacts).toHaveLength(1);
+      const initialEntry = initialList.body.artifacts[0];
+      if (!initialEntry) {
+        throw new Error("Expected hosted-site catalog entry");
+      }
+      expect(initialEntry.title).toBe("Quarterly sales report");
+
+      signIn(actor);
+      const renamed = await accept(
+        hostApi().updateSiteTitle({
+          headers,
+          params: { publicSlug: firstPub.completed.publicSlug },
+          body: { title: " 季度销售报告 " },
+        }),
+        [200],
+      );
+      expect(renamed.body).toMatchObject({
+        siteId: firstPub.completed.siteId,
+        publicSlug: firstPub.completed.publicSlug,
         title: "季度销售报告",
-        category: "website",
-      }),
-    ]);
-    const redeployed = await publishHostedSite({
-      owner,
-      site,
-      title: "Quarterly sales report",
-      threadId: published.threadId,
-    });
-    expect(redeployed.siteId).toBe(published.siteId);
-    const afterRedeploy = await chat.listArtifactCatalog(owner.actor);
-    expect(afterRedeploy.artifacts).toStrictEqual([
-      expect.objectContaining({ id: entry!.id, title: "季度销售报告" }),
-    ]);
-    expect(afterRedeploy.artifacts[0]!.createdAt).toBe(entry!.createdAt);
-  });
+      });
 
-  it("retains a renamed catalog identity when a hosted site becomes a presentation", async () => {
-    const owner = await catalogActor("Renamed presentation owner");
-    const site = `renamed-deck-${randomUUID().slice(0, 8)}`;
-    const published = await publishHostedSite({
-      owner,
-      site,
-      title: "Original site",
-    });
-    const before = await chat.listArtifactCatalog(owner.actor);
-    expect(before.artifacts).toHaveLength(1);
-    const entry = before.artifacts[0]!;
-    routeMocks.clerk.session(
-      owner.actor.userId,
-      owner.actor.orgId,
-      owner.actor.orgRole,
-    );
-    await accept(
-      setupApp({ context, routes: hostRoutes })(hostContract).updateSiteTitle({
-        headers: { authorization: "Bearer clerk-session" },
-        params: { publicSlug: published.publicSlug },
-        body: { title: "保留的报告标题" },
-      }),
-      [200],
-    );
-    const deck = await publishHostedSite({
-      owner,
-      site,
-      title: "Incoming deck title",
-      artifactKind: "presentation-html",
-      threadId: published.threadId,
-    });
-    expect(deck.siteId).toBe(published.siteId);
-    const after = await chat.listArtifactCatalog(owner.actor);
-    expect(after.artifacts).toStrictEqual([
-      expect.objectContaining({
-        id: entry.id,
-        kind: "presentation",
-        title: "保留的报告标题",
-      }),
-    ]);
-    await expect(
-      chat.getArtifactCatalogEntry(owner.actor, entry.id),
-    ).resolves.toMatchObject({
-      id: entry.id,
-      kind: "presentation",
-      title: "保留的报告标题",
-      site: {
-        id: published.siteId,
-        publicSlug: published.publicSlug,
-        url: deck.url,
-      },
-    });
-  });
+      const detail = await accept(
+        catalogApi(actor).get({
+          headers,
+          params: { artifactId: initialEntry.id },
+        }),
+        [200],
+      );
+      expect(detail.body.title).toBe("季度销售报告");
+      if (detail.body.kind !== "hosted-site") {
+        throw new Error("Expected hosted-site detail");
+      }
+      expect(detail.body.site).toMatchObject({
+        id: firstPub.completed.siteId,
+        publicSlug: firstPub.completed.publicSlug,
+        url: firstPub.completed.aliasUrl,
+      });
 
-  it("denies other owners site title edits without changing the title", async () => {
-    const owner = await catalogActor("Site title access owner");
-    const published = await publishHostedSite({
-      owner,
-      site: `title-access-${randomUUID().slice(0, 8)}`,
-      title: "Original report",
-    });
-    const headers = { authorization: "Bearer clerk-session" };
-    const rename = {
-      headers,
-      params: { publicSlug: published.publicSlug },
-      body: { title: "Renamed report" },
-    };
-    for (const actor of [bdd.user({ orgId: owner.actor.orgId }), bdd.user()]) {
-      routeMocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
       await accept(
-        setupApp({ context, routes: hostRoutes })(hostContract).updateSiteTitle(
-          rename,
-        ),
+        featureSwitchesApi(actor).update({
+          headers,
+          body: { switches: { [FeatureSwitchKey.ArtifactLibrary]: true } },
+        }),
+        [200],
+      );
+
+      const slugSearch = await accept(
+        catalogApi(actor).list({
+          headers,
+          query: { keyword: siteSlug },
+        }),
+        [200],
+      );
+      expect(slugSearch.body).toStrictEqual({
+        artifacts: [],
+        nextCursor: null,
+      });
+
+      const titleAscSearch = await accept(
+        catalogApi(actor).list({
+          headers,
+          query: { keyword: "季度销售报告", direction: "asc" },
+        }),
+        [200],
+      );
+      expect(titleAscSearch.body.artifacts).toHaveLength(1);
+      expect(titleAscSearch.body.artifacts[0]).toMatchObject({
+        id: initialEntry.id,
+        title: "季度销售报告",
+      });
+
+      const secondPub = await publishHostedSiteWithRunToken(
+        actor,
+        run.okouToken,
+        {
+          site: siteSlug,
+          title: "Quarterly sales report",
+          html: "<h1>Redeployed</h1>",
+        },
+      );
+      expect(secondPub.completed.siteId).toBe(firstPub.completed.siteId);
+
+      const afterRedeploy = await accept(
+        catalogApi(actor).list({ headers, query: {} }),
+        [200],
+      );
+      expect(afterRedeploy.body.artifacts).toHaveLength(1);
+      expect(afterRedeploy.body.artifacts[0]).toMatchObject({
+        id: initialEntry.id,
+        title: "季度销售报告",
+        createdAt: initialEntry.createdAt,
+      });
+    },
+  );
+
+  it(
+    "artifact-catalog.bdd-007 denies other owners site title edits without changing the title",
+    { timeout: TEST_WITH_SINGLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const { actor, launchChatRun } = await setupProRunnerActor();
+      const sameOrgPeer = bdd.user({ orgId: actor.orgId });
+      const outsider = bdd.user();
+      const run = await launchChatRun("Publish owned report");
+      const siteSlug = `owned-${randomUUID().slice(0, 8)}`;
+
+      const published = await publishHostedSiteWithRunToken(
+        actor,
+        run.okouToken,
+        { site: siteSlug, title: "Original report" },
+      );
+
+      signIn(sameOrgPeer);
+      await accept(
+        hostApi().updateSiteTitle({
+          headers,
+          params: { publicSlug: published.completed.publicSlug },
+          body: { title: "Renamed report" },
+        }),
         [404],
       );
-    }
-    expect(
-      (await chat.listArtifactCatalog(owner.actor)).artifacts,
-    ).toStrictEqual([expect.objectContaining({ title: "Original report" })]);
-  });
 
-  it("lists an uploaded file as one artifact and hides other callers", async () => {
-    const owner = await catalogActor("Artifact catalog owner");
-    const outsider = await catalogActor("Artifact catalog outsider");
-    const uploaded = await uploadFile({
-      owner,
-      prompt: "upload a report",
-      filename: "quarterly-report.txt",
-      contentType: "text/plain",
-      sizeBytes: 256,
-    });
-    await uploadFile({
-      owner: outsider,
-      prompt: "upload another report",
-      filename: "outsider-report.txt",
-      contentType: "text/plain",
-    });
+      signIn(outsider);
+      await accept(
+        hostApi().updateSiteTitle({
+          headers,
+          params: { publicSlug: published.completed.publicSlug },
+          body: { title: "Renamed report" },
+        }),
+        [404],
+      );
 
-    const catalog = await chat.listArtifactCatalog(owner.actor);
+      const catalog = await accept(
+        catalogApi(actor).list({ headers, query: {} }),
+        [200],
+      );
+      expect(catalog.body.artifacts).toHaveLength(1);
+      expect(catalog.body.artifacts[0]?.title).toBe("Original report");
+    },
+  );
 
-    expect(catalog.nextCursor).toBeNull();
-    expect(catalog.artifacts).toStrictEqual([
-      {
-        id: expect.any(String),
+  it(
+    "artifact-catalog.bdd-008 lists an uploaded file as one artifact and hides other callers",
+    { timeout: TEST_WITH_SINGLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const { actor, launchChatRun } = await setupProRunnerActor();
+      const outsider = bdd.user();
+      const run = await launchChatRun("Upload quarterly report");
+
+      const uploaded = await runUploadArtifact(actor, run.okouToken, {
+        filename: "quarterly-report.txt",
+        contentType: "text/plain",
+        size: 256,
+      });
+
+      signIn(outsider);
+      const outsiderPrepared = await accept(
+        uploadsApi().prepare({
+          headers,
+          body: {
+            filename: "outsider-report.txt",
+            contentType: "text/plain",
+            size: 64,
+            purpose: "artifact",
+          },
+        }),
+        [200],
+      );
+      await accept(
+        uploadsApi().complete({
+          headers,
+          body: { id: outsiderPrepared.body.id },
+        }),
+        [200],
+      );
+
+      const list = await accept(
+        catalogApi(actor).list({ headers, query: {} }),
+        [200],
+      );
+      expect(list.body.nextCursor).toBeNull();
+      expect(list.body.artifacts).toHaveLength(1);
+      const entry = list.body.artifacts[0];
+      if (!entry) {
+        throw new Error("Expected uploaded file artifact");
+      }
+      expect(entry).toMatchObject({
         kind: "file",
         title: "quarterly-report.txt",
         sourceUrl: uploaded.url,
         thumbnail: null,
-        visibility: "private",
-        createdAt: expect.any(String),
-        updatedAt: expect.any(String),
-      },
-    ]);
+      });
 
-    const artifactId = catalog.artifacts[0]?.id;
-    if (!artifactId) {
-      throw new Error("Expected the catalog to list the uploaded artifact");
-    }
-    const detail = await chat.getArtifactCatalogEntry(owner.actor, artifactId);
-    if (detail.kind !== "file") {
-      throw new Error("Expected an uploaded file to be catalogued as a file");
-    }
-    expect(detail.file).toStrictEqual({
-      id: expect.any(String),
-      filename: "quarterly-report.txt",
-      contentType: "text/plain",
-      size: 256,
-      url: uploaded.url,
-      previewImageUrl: null,
-    });
-  }, 180_000);
+      const detail = await accept(
+        catalogApi(actor).get({ headers, params: { artifactId: entry.id } }),
+        [200],
+      );
+      expect(detail.body.kind).toBe("file");
+      if (detail.body.kind !== "file") {
+        throw new Error("Expected file detail");
+      }
+      expect(detail.body.file).toMatchObject({
+        filename: "quarterly-report.txt",
+        contentType: "text/plain",
+        size: 256,
+        url: uploaded.url,
+        previewImageUrl: null,
+      });
+    },
+  );
 
-  it("lists native PPTX files as presentations while retaining file-backed detail and deletion", async () => {
-    const owner = await catalogActor("Native PowerPoint catalog owner");
-    const { runId } = await sendChatRun(owner.actor, {
-      prompt: "Publish the presentations and supporting notes",
-    });
-    const { execution, sandboxHeaders } = await runExecution(
-      owner.runnerGroup,
-      runId,
-    );
-    const bearer = `Bearer ${okouTokenFromExecution(execution)}`;
-    const filenames = ["quarterly-review.pptx", "BOARD-UPDATE.PPTX"];
-    for (const filename of filenames) {
-      await stageAndCompleteFileUpload(owner, bearer, {
-        filename,
+  it(
+    "artifact-catalog.bdd-009 lists native PPTX files as presentations while retaining file-backed detail and deletion",
+    { timeout: TEST_WITH_SINGLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const { actor, launchChatRun } = await setupProRunnerActor();
+      const run = await launchChatRun("Upload PPTX and PDF deliverables");
+
+      const deckA = await runUploadArtifact(actor, run.okouToken, {
+        filename: "quarterly-review.pptx",
         contentType: "application/octet-stream",
+        size: 512,
       });
-    }
-    await stageAndCompleteFileUpload(owner, bearer, {
-      filename: "supporting-notes.pdf",
-      contentType: "application/pdf",
-    });
-    await completeChatRunOk(runId, sandboxHeaders);
-
-    const presentations = await chat.listArtifactCatalog(owner.actor, {
-      kind: "presentation",
-    });
-    expect(
-      presentations.artifacts
-        .map((entry) => {
-          return entry.title;
-        })
-        .sort(),
-    ).toStrictEqual(filenames.slice().sort());
-    const files = await chat.listArtifactCatalog(owner.actor, { kind: "file" });
-    expect(files.artifacts).toStrictEqual([
-      expect.objectContaining({ kind: "file", title: "supporting-notes.pdf" }),
-    ]);
-
-    for (const entry of presentations.artifacts) {
-      expect(entry.kind).toBe("presentation");
-      const detail = await chat.getArtifactCatalogEntry(owner.actor, entry.id);
-      expect(detail).toMatchObject({
-        kind: "file",
-        file: { filename: entry.title, url: entry.sourceUrl },
+      const deckB = await runUploadArtifact(actor, run.okouToken, {
+        filename: "BOARD-UPDATE.PPTX",
+        contentType: "application/octet-stream",
+        size: 768,
       });
-      await accept(
-        setupApp({ context, routes: artifactCatalogRoutes })(
-          artifactCatalogContract,
-        ).delete({
-          headers: authenticateSharedThread(owner.actor),
-          params: { artifactId: entry.id },
-        }),
+      await runUploadArtifact(actor, run.okouToken, {
+        filename: "supporting-notes.pdf",
+        contentType: "application/pdf",
+        size: 128,
+      });
+
+      const presentations = await accept(
+        catalogApi(actor).list({ headers, query: { kind: "presentation" } }),
         [200],
       );
-    }
-    await expect(
-      chat.listArtifactCatalog(owner.actor, { kind: "presentation" }),
-    ).resolves.toStrictEqual({ artifacts: [], nextCursor: null });
-    await expect(
-      chat.listArtifactCatalog(owner.actor, { kind: "file" }),
-    ).resolves.toMatchObject({
-      artifacts: [{ kind: "file", title: "supporting-notes.pdf" }],
-    });
-  });
+      expect(presentations.body.artifacts).toHaveLength(2);
+      expect(
+        presentations.body.artifacts
+          .map((item) => {
+            return item.title;
+          })
+          .sort(),
+      ).toStrictEqual(["BOARD-UPDATE.PPTX", "quarterly-review.pptx"]);
 
-  it("keeps completed file lists and catalog filters scoped to their owning thread", async () => {
-    const owner = await catalogActor("File association owner");
-    const outsider = await catalogActor("File association outsider");
-    const first = await uploadFile({
-      owner,
-      prompt: "Publish the first report",
-      filename: "first-thread-report.txt",
-      contentType: "text/plain",
-    });
-    const second = await uploadFile({
-      owner,
-      prompt: "Publish the second report",
-      filename: "second-thread-report.txt",
-      contentType: "text/plain",
-    });
-
-    const firstCatalog = await chat.listArtifactCatalog(owner.actor, {
-      chatThreadId: first.threadId,
-    });
-    expect(firstCatalog.artifacts).toStrictEqual([
-      expect.objectContaining({ title: "first-thread-report.txt" }),
-    ]);
-    const secondCatalog = await chat.listArtifactCatalog(owner.actor, {
-      chatThreadId: second.threadId,
-    });
-    expect(secondCatalog.artifacts).toStrictEqual([
-      expect.objectContaining({ title: "second-thread-report.txt" }),
-    ]);
-    const outsiderFiles = await chat.requestListThreadArtifacts(
-      outsider.actor,
-      first.threadId,
-      [404],
-    );
-    expectApiError(outsiderFiles.body);
-    const outsiderCatalog = await chat.listArtifactCatalog(outsider.actor, {
-      chatThreadId: first.threadId,
-    });
-    expect(outsiderCatalog.artifacts).toStrictEqual([]);
-    // Check each ownership dimension independently, not only a caller whose
-    // user and organization both differ.
-    for (const caller of [
-      bdd.user({ orgId: owner.actor.orgId }),
-      bdd.user({ userId: owner.actor.userId }),
-    ]) {
-      await expect(
-        chat.listArtifactCatalog(caller, { chatThreadId: first.threadId }),
-      ).resolves.toStrictEqual({ artifacts: [], nextCursor: null });
-    }
-  });
-
-  it.each(["single", "multipart"] as const)(
-    "keeps a prepared %s video in its creating thread across completion retries and thread deletion",
-    async (mode) => {
-      const owner = await catalogActor("Prepared video owner");
-      const first = await sendChatRun(owner.actor, {
-        prompt: "Record the sharing demo",
-      });
-      const firstExecution = await runExecution(owner.runnerGroup, first.runId);
-      const firstBearer = `Bearer ${okouTokenFromExecution(firstExecution.execution)}`;
-      const filename = "sharing-demo.mp4";
-      const size = 6 * 1024 * 1024;
-      const storage = context.mocks.s3.send.getMockImplementation()!;
-      context.mocks.s3.send.mockImplementation((command) => {
-        if (command instanceof CreateMultipartUploadCommand) {
-          return Promise.resolve({ UploadId: "demo-upload" });
-        }
-        if (command instanceof ListPartsCommand) {
-          return Promise.resolve({
-            Parts: [
-              { PartNumber: 1, ETag: '"demo-part-1"' },
-              { PartNumber: 2, ETag: '"demo-part-2"' },
-            ],
-            IsTruncated: false,
-          });
-        }
-        if (command instanceof CompleteMultipartUploadCommand) {
-          return Promise.resolve({});
-        }
-        return storage(command);
-      });
-      const prepared = await accept(
-        setupApp({ context, routes: uploadsPrepareRoutes })(
-          uploadsContract,
-        ).prepare({
-          headers: { authorization: firstBearer },
-          body: {
-            filename,
-            contentType: "video/mp4",
-            size,
-            purpose: "artifact",
-            ...(mode === "multipart" ? { multipart: true as const } : {}),
-          },
-        }),
+      const files = await accept(
+        catalogApi(actor).list({ headers, query: { kind: "file" } }),
         [200],
       );
-      owner.storage.addObject({
-        bucket: "test-private-artifacts",
-        key: `private-artifacts/${prepared.body.id}/${filename}`,
-        size,
-      });
-      const upload = { id: prepared.body.id };
-      if ("multipart" in prepared.body) {
+      expect(files.body.artifacts).toHaveLength(1);
+      expect(files.body.artifacts[0]?.title).toBe("supporting-notes.pdf");
+
+      const expectedUrlByTitle = new Map<string, string>([
+        ["quarterly-review.pptx", deckA.url],
+        ["BOARD-UPDATE.PPTX", deckB.url],
+      ]);
+
+      for (const item of presentations.body.artifacts) {
+        const detail = await accept(
+          catalogApi(actor).get({ headers, params: { artifactId: item.id } }),
+          [200],
+        );
+        expect(detail.body.kind).toBe("file");
+        if (detail.body.kind !== "file") {
+          throw new Error("Expected file-backed detail for native PPTX");
+        }
+        expect(detail.body.file.filename).toBe(item.title);
+        expect(detail.body.file.url).toBe(expectedUrlByTitle.get(item.title));
+
         await accept(
-          setupApp({ context, routes: uploadsMultipartRoutes })(
-            uploadsContract,
-          ).completeMultipart({
-            headers: { authorization: firstBearer },
-            body: {
-              id: prepared.body.id,
-              filename,
-              uploadId: prepared.body.multipart.uploadId,
-              partCount: prepared.body.multipart.parts.length,
-            },
+          catalogApi(actor).delete({
+            headers,
+            params: { artifactId: item.id },
           }),
           [200],
         );
       }
-      await chat.completeUploadWithBearer(firstBearer, upload, [200]);
-      const original = await chat.listArtifactCatalog(owner.actor, {
-        chatThreadId: first.threadId,
-      });
-      expect(original.artifacts).toStrictEqual([
-        expect.objectContaining({
-          title: filename,
-          sourceUrl: prepared.body.url,
-        }),
-      ]);
-      await expect(
-        chat.listArtifactCatalog(owner.actor),
-      ).resolves.toStrictEqual(original);
-      await completeChatRunOk(first.runId, firstExecution.sandboxHeaders);
 
-      const second = await sendChatRun(owner.actor, {
-        prompt: "Review the same demo in another conversation",
-      });
-      const secondExecution = await runExecution(
-        owner.runnerGroup,
-        second.runId,
-      );
-      const secondBearer = `Bearer ${okouTokenFromExecution(secondExecution.execution)}`;
-      await chat.completeUploadWithBearer(secondBearer, upload, [200]);
-      const inOriginalThread = await chat.listArtifactCatalog(owner.actor, {
-        chatThreadId: first.threadId,
-      });
-      expect(inOriginalThread.artifacts).toStrictEqual([
-        expect.objectContaining({
-          id: original.artifacts[0]?.id,
-          createdAt: original.artifacts[0]?.createdAt,
-        }),
+      const [presentationsAfter, filesAfter] = await Promise.all([
+        accept(
+          catalogApi(actor).list({ headers, query: { kind: "presentation" } }),
+          [200],
+        ),
+        accept(
+          catalogApi(actor).list({ headers, query: { kind: "file" } }),
+          [200],
+        ),
       ]);
-      await expect(
-        chat.listArtifactCatalog(owner.actor, {
-          chatThreadId: second.threadId,
-        }),
-      ).resolves.toStrictEqual({ artifacts: [], nextCursor: null });
-
-      await chat.deleteThread(owner.actor, first.threadId);
-      await chat.completeUploadWithBearer(secondBearer, upload, [200]);
-      const retained = await chat.listArtifactCatalog(owner.actor);
-      expect(retained.artifacts).toStrictEqual([
-        expect.objectContaining({
-          id: original.artifacts[0]?.id,
-          title: filename,
-        }),
-      ]);
-      await expect(
-        chat.listArtifactCatalog(owner.actor, {
-          chatThreadId: second.threadId,
-        }),
-      ).resolves.toStrictEqual({ artifacts: [], nextCursor: null });
-      await completeChatRunOk(second.runId, secondExecution.sandboxHeaders);
+      expect(presentationsAfter.body.artifacts).toHaveLength(0);
+      expect(filesAfter.body.artifacts).toHaveLength(1);
+      expect(filesAfter.body.artifacts[0]?.title).toBe("supporting-notes.pdf");
     },
   );
 
-  it("catalogues an artifact upload but never a chat attachment", async () => {
-    const owner = await catalogActor("Artifact catalog attachment owner");
-    const storage = chatCallbacks.acceptChatObjectStorage();
-    const stagePrivateObject = (id: string, filename: string, size: number) => {
-      storage.addObject({
-        bucket: "test-private-artifacts",
-        key: `private-artifacts/${id}/${filename}`,
-        size,
+  it(
+    "artifact-catalog.bdd-010 keeps completed file lists and catalog filters scoped to their owning thread",
+    { timeout: TEST_WITH_DOUBLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const { actor, launchChatRun } = await setupProRunnerActor();
+      const outsider = bdd.user();
+      const sameOrgPeer = bdd.user({ orgId: actor.orgId });
+      const sameUserOtherOrg = bdd.user({ userId: actor.userId });
+
+      const firstRun = await launchChatRun("First thread report");
+      const secondRun = await launchChatRun("Second thread report");
+
+      await runUploadArtifact(actor, firstRun.okouToken, {
+        filename: "first-thread-report.txt",
+        contentType: "text/plain",
+        size: 32,
       });
-    };
-
-    // The composer uploads before the user sends, so the attachment exists as
-    // an owned file with no run and no declared purpose.
-    const attachment = await chat.prepareUpload(owner.actor, {
-      filename: "meeting-notes.png",
-      contentType: "image/png",
-      size: 2048,
-    });
-    stagePrivateObject(attachment.id, "meeting-notes.png", 2048);
-    await chat.completeUpload(owner.actor, { id: attachment.id });
-
-    const declaredArtifact = await chat.prepareUpload(owner.actor, {
-      filename: "quarterly-summary.html",
-      contentType: "text/html",
-      size: 4096,
-      purpose: "artifact",
-    });
-    stagePrivateObject(declaredArtifact.id, "quarterly-summary.html", 4096);
-    await chat.completeUpload(owner.actor, { id: declaredArtifact.id });
-
-    const beforeSend = await chat.listArtifactCatalog(owner.actor);
-    expect(beforeSend.artifacts).toStrictEqual([
-      expect.objectContaining({
-        kind: "file",
-        title: "quarterly-summary.html",
-      }),
-    ]);
-
-    // Sending marks the upload as chat input; that must not register it either.
-    await chat.requestSendEvent(
-      owner.actor,
-      {
-        prompt: "Review these notes",
-        userMessage: {
-          version: 1,
-          parts: [
-            {
-              type: "file",
-              fileId: attachment.id,
-              filenameSnapshot: "meeting-notes.png",
-              contentType: "image/png",
-            },
-            { type: "text", text: "Review these notes" },
-          ],
-        },
-      },
-      [201],
-    );
-
-    const afterSend = await chat.listArtifactCatalog(owner.actor);
-    expect(afterSend.artifacts).toStrictEqual([
-      expect.objectContaining({
-        kind: "file",
-        title: "quarterly-summary.html",
-      }),
-    ]);
-  }, 180_000);
-
-  it("keeps repeated projections of one file URL as one artifact", async () => {
-    const owner = await catalogActor("Artifact catalog repeated URL owner");
-    const fileId = randomUUID();
-
-    await uploadFile({
-      owner,
-      prompt: "upload a report for the first run",
-      filename: "repeatable-report.txt",
-      contentType: "text/plain",
-      fileId,
-    });
-    await uploadFile({
-      owner,
-      prompt: "upload the same report for a later run",
-      filename: "repeatable-report.txt",
-      contentType: "text/plain",
-      fileId,
-    });
-
-    const catalog = await chat.listArtifactCatalog(owner.actor);
-
-    expect(catalog.artifacts).toStrictEqual([
-      expect.objectContaining({
-        kind: "file",
-        title: "repeatable-report.txt",
-      }),
-    ]);
-  }, 180_000);
-
-  it.each(["mp4", "webm"])(
-    "lists the source URL for a %s video without a poster",
-    async (container) => {
-      const owner = await catalogActor("Artifact catalog video source owner");
-      const run = await sendChatRun(owner.actor, {
-        prompt: "Upload an artifact through the Runner protocol",
+      await runUploadArtifact(actor, secondRun.okouToken, {
+        filename: "second-thread-report.txt",
+        contentType: "text/plain",
+        size: 48,
       });
-      const { execution: receivedExecution } = await runExecution(
-        owner.runnerGroup,
-        run.runId,
-      );
-      const fileId = randomUUID();
-      stageUploadObject(
-        `artifacts/${owner.actor.userId}/${fileId}/source-fallback.${container}`,
-        1024,
-      );
-      const completed = await chat.completeUploadWithBearer(
-        `Bearer ${okouTokenFromExecution(receivedExecution)}`,
-        { id: fileId, contentType: `video/${container}` },
+
+      const firstCatalog = await accept(
+        catalogApi(actor).list({
+          headers,
+          query: { chatThreadId: firstRun.threadId },
+        }),
         [200],
       );
-      if (completed.status !== 200) {
-        throw new Error("Expected video upload completion to succeed");
+      expect(firstCatalog.body.artifacts).toHaveLength(1);
+      expect(firstCatalog.body.artifacts[0]?.title).toBe(
+        "first-thread-report.txt",
+      );
+
+      const secondCatalog = await accept(
+        catalogApi(actor).list({
+          headers,
+          query: { chatThreadId: secondRun.threadId },
+        }),
+        [200],
+      );
+      expect(secondCatalog.body.artifacts).toHaveLength(1);
+      expect(secondCatalog.body.artifacts[0]?.title).toBe(
+        "second-thread-report.txt",
+      );
+
+      const ownerArtifacts = await accept(
+        threadArtifactsApi(actor).list({
+          headers,
+          params: { threadId: firstRun.threadId },
+        }),
+        [200],
+      );
+      expect(ownerArtifacts.body).toStrictEqual({ runs: [] });
+
+      const outsiderArtifacts = await accept(
+        threadArtifactsApi(outsider).list({
+          headers,
+          params: { threadId: firstRun.threadId },
+        }),
+        [404],
+      );
+      expect(outsiderArtifacts.body.error.code).toBe("NOT_FOUND");
+
+      for (const caller of [outsider, sameOrgPeer, sameUserOtherOrg]) {
+        const foreignCatalog = await accept(
+          catalogApi(caller).list({
+            headers,
+            query: { chatThreadId: firstRun.threadId },
+          }),
+          [200],
+        );
+        expect(foreignCatalog.body).toStrictEqual({
+          artifacts: [],
+          nextCursor: null,
+        });
+      }
+    },
+  );
+
+  it(
+    "artifact-catalog.bdd-014 keeps repeated projections of one file URL as one artifact",
+    { timeout: TEST_WITH_DOUBLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const { actor, s3, launchChatRun } = await setupProRunnerActor();
+      const firstRun = await launchChatRun("First projection");
+      const secondRun = await launchChatRun("Second projection");
+
+      const sharedFileId = randomUUID();
+      s3?.seedObject({
+        bucket: ARTIFACTS_BUCKET,
+        key: buildArtifactKey(
+          actor.userId,
+          sharedFileId,
+          "repeatable-report.txt",
+        ),
+        body: Buffer.from("repeatable content", "utf8"),
+        contentType: "text/plain",
+      });
+
+      mockMemberships([actor]);
+      await accept(
+        uploadsApi().complete({
+          headers: bearerHeaders(firstRun.okouToken),
+          body: { id: sharedFileId },
+        }),
+        [200],
+      );
+      mockMemberships([actor]);
+      await accept(
+        uploadsApi().complete({
+          headers: bearerHeaders(secondRun.okouToken),
+          body: { id: sharedFileId },
+        }),
+        [200],
+      );
+
+      const catalog = await accept(
+        catalogApi(actor).list({ headers, query: {} }),
+        [200],
+      );
+      expect(catalog.body.artifacts).toHaveLength(1);
+      expect(catalog.body.artifacts[0]).toMatchObject({
+        kind: "file",
+        title: "repeatable-report.txt",
+      });
+    },
+  );
+
+  it(
+    "artifact-catalog.bdd-015 lists the source URL for a mp4 video without a poster",
+    { timeout: TEST_WITH_SINGLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const { actor, launchChatRun } = await setupProRunnerActor();
+      const run = await launchChatRun("Upload mp4 video");
+
+      const completed = await runUploadArtifact(actor, run.okouToken, {
+        filename: "source-fallback.mp4",
+        contentType: "video/mp4",
+        size: 1024,
+      });
+
+      const list = await accept(
+        catalogApi(actor).list({ headers, query: {} }),
+        [200],
+      );
+      expect(list.body.artifacts).toHaveLength(1);
+      expect(list.body.artifacts[0]).toMatchObject({
+        kind: "file",
+        title: "source-fallback.mp4",
+        sourceUrl: completed.url,
+        thumbnail: null,
+      });
+
+      const videoFiltered = await accept(
+        catalogApi(actor).list({ headers, query: { kind: "video" } }),
+        [200],
+      );
+      expect(videoFiltered.body.artifacts).toHaveLength(1);
+      expect(videoFiltered.body.artifacts[0]?.title).toBe(
+        "source-fallback.mp4",
+      );
+    },
+  );
+
+  it(
+    "artifact-catalog.bdd-022 catalogues a published deck as a presentation",
+    { timeout: TEST_WITH_SINGLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const { actor, launchChatRun } = await setupProRunnerActor();
+      const run = await launchChatRun("Publish HTML deck");
+      const siteSlug = `deck-${randomUUID().slice(0, 8)}`;
+
+      await publishHostedSiteWithRunToken(actor, run.okouToken, {
+        site: siteSlug,
+        title: "Board Strategy Deck",
+        artifactKind: "presentation-html",
+      });
+
+      const list = await accept(
+        catalogApi(actor).list({ headers, query: { kind: "presentation" } }),
+        [200],
+      );
+      expect(list.body.artifacts).toHaveLength(1);
+      expect(list.body.artifacts[0]).toMatchObject({
+        kind: "presentation",
+        title: "Board Strategy Deck",
+      });
+    },
+  );
+
+  it(
+    "artifact-catalog.bdd-024 filters by kind without leaking other kinds",
+    { timeout: TEST_WITH_SINGLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const { actor, launchChatRun } = await setupProRunnerActor();
+      const run = await launchChatRun("Upload notes and publish site");
+      const siteSlug = `filter-${randomUUID().slice(0, 8)}`;
+
+      await runUploadArtifact(actor, run.okouToken, {
+        filename: "notes.txt",
+        contentType: "text/plain",
+        size: 32,
+      });
+      await publishHostedSiteWithRunToken(actor, run.okouToken, {
+        site: siteSlug,
+        title: "Product Overview",
+      });
+
+      const [fileList, siteList, avatarList, videoList, sharedList] =
+        await Promise.all([
+          accept(
+            catalogApi(actor).list({ headers, query: { kind: "file" } }),
+            [200],
+          ),
+          accept(
+            catalogApi(actor).list({ headers, query: { kind: "hosted-site" } }),
+            [200],
+          ),
+          accept(
+            catalogApi(actor).list({ headers, query: { kind: "avatar" } }),
+            [200],
+          ),
+          accept(
+            catalogApi(actor).list({ headers, query: { kind: "video" } }),
+            [200],
+          ),
+          accept(
+            catalogApi(actor).list({
+              headers,
+              query: { kind: "shared-thread" },
+            }),
+            [200],
+          ),
+        ]);
+
+      expect(fileList.body.artifacts).toHaveLength(1);
+      expect(fileList.body.artifacts[0]?.kind).toBe("file");
+      expect(siteList.body.artifacts).toHaveLength(1);
+      expect(siteList.body.artifacts[0]?.title).toBe("Product Overview");
+      expect(avatarList.body).toStrictEqual({
+        artifacts: [],
+        nextCursor: null,
+      });
+      expect(videoList.body).toStrictEqual({ artifacts: [], nextCursor: null });
+      expect(sharedList.body).toStrictEqual({
+        artifacts: [],
+        nextCursor: null,
+      });
+    },
+  );
+
+  it(
+    "artifact-catalog.bdd-026 paginates a thread and kind filtered catalog without repeats or foreign-thread entries",
+    { timeout: TEST_WITH_DOUBLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const { actor, tracker, launchChatRun } = await setupProRunnerActor();
+      const issuedAt = now();
+      tracker.setClockRestoreMs(issuedAt);
+
+      const firstRun = await launchChatRun("Upload three paged files");
+      const secondRun = await launchChatRun("Upload foreign thread file");
+
+      mockNow(issuedAt + 1000);
+      await runUploadArtifact(actor, firstRun.okouToken, {
+        filename: "page-one.txt",
+        contentType: "text/plain",
+        size: 16,
+      });
+      mockNow(issuedAt + 2000);
+      await runUploadArtifact(actor, firstRun.okouToken, {
+        filename: "page-two.txt",
+        contentType: "text/plain",
+        size: 16,
+      });
+      mockNow(issuedAt + 3000);
+      await runUploadArtifact(actor, firstRun.okouToken, {
+        filename: "page-three.txt",
+        contentType: "text/plain",
+        size: 16,
+      });
+      mockNow(issuedAt + 4000);
+      await runUploadArtifact(actor, secondRun.okouToken, {
+        filename: "page-other-thread.txt",
+        contentType: "text/plain",
+        size: 16,
+      });
+
+      const collected: string[] = [];
+      let cursor: string | undefined;
+      for (let pageIndex = 0; pageIndex < 5; pageIndex += 1) {
+        const page = await accept(
+          catalogApi(actor).list({
+            headers,
+            query: {
+              limit: 1,
+              chatThreadId: firstRun.threadId,
+              kind: "file",
+              ...(cursor === undefined ? {} : { cursor }),
+            },
+          }),
+          [200],
+        );
+        expect(page.body.artifacts.length).toBeLessThanOrEqual(1);
+        for (const item of page.body.artifacts) {
+          collected.push(item.title);
+        }
+        if (page.body.nextCursor === null) {
+          break;
+        }
+        cursor = page.body.nextCursor;
       }
 
-      const catalog = await chat.listArtifactCatalog(owner.actor);
-
-      expect(catalog.artifacts).toStrictEqual([
-        expect.objectContaining({
-          kind: "file",
-          sourceUrl: completed.body.url,
-          thumbnail: null,
-          title: `source-fallback.${container}`,
-        }),
+      expect(collected).toStrictEqual([
+        "page-three.txt",
+        "page-two.txt",
+        "page-one.txt",
       ]);
     },
-    180_000,
   );
-
-  it("keeps owned files and catalog identity after a rejected attempt to delete the backing Agent", async () => {
-    const owner = await catalogActor("Artifact catalog deletion owner");
-    const uploaded = await uploadFile({
-      owner,
-      prompt: "upload an independently owned report",
-      filename: "retained-report.txt",
-      contentType: "text/plain",
-    });
-    const catalog = await chat.listArtifactCatalog(owner.actor);
-    expect(catalog.artifacts).toHaveLength(1);
-    const artifactId = catalog.artifacts[0]?.id;
-    if (!artifactId) {
-      throw new Error("Expected the report artifact");
-    }
-    const detail = await chat.getArtifactCatalogEntry(owner.actor, artifactId);
-
-    await flushWaitUntilForTest();
-
-    await expect(chat.listArtifactCatalog(owner.actor)).resolves.toStrictEqual(
-      catalog,
-    );
-    await expect(
-      chat.getArtifactCatalogEntry(owner.actor, artifactId),
-    ).resolves.toStrictEqual(detail);
-    const file = await chat.resolveWebFileUrl(owner.actor, uploaded.fileId);
-    expect(file.publicUrl).toBe(uploaded.url);
-    await chat.requestWebFileUrl(bdd.user(), uploaded.fileId, [404]);
-  }, 180_000);
-
-  it.each(["user", "organization"] as const)(
-    "preserves unrelated files after %s deletion of an artifact owner",
-    async (kind) => {
-      const owner = await catalogActor("Independent artifact retention owner");
-      const outsider = await catalogActor(
-        "Independent artifact retention outsider",
-      );
-      const objectStorage = chatCallbacks.acceptChatObjectStorage();
-      const uploaded = await uploadFile({
-        owner,
-        prompt: "publish a report before the Clerk deletion event",
-        filename: "account-report.txt",
-        contentType: "text/plain",
-        objectStorage,
-      });
-      const unrelated = await uploadFile({
-        owner: outsider,
-        prompt: "publish an unrelated report",
-        filename: "unrelated-report.txt",
-        contentType: "text/plain",
-        objectStorage,
-      });
-      const catalog = await chat.listArtifactCatalog(owner.actor);
-      const artifactId = catalog.artifacts[0]?.id;
-      if (!artifactId) {
-        throw new Error("Expected a retained artifact after Agent deletion");
-      }
-      await expect(
-        chat.resolveWebFileUrl(owner.actor, uploaded.fileId),
-      ).resolves.toMatchObject({ publicUrl: uploaded.url });
-      await expect(
-        chat.getArtifactCatalogEntry(owner.actor, artifactId),
-      ).resolves.toMatchObject({ id: artifactId });
-      webhooks.configureClerkWebhookSecret();
-      webhooks.verifyNextClerkWebhook({
-        type: kind === "user" ? "user.deleted" : "organization.deleted",
-        data: { id: kind === "user" ? owner.actor.userId : owner.actor.orgId },
-      });
-      await webhooks.requestClerkWebhook("{}", {}, [200]);
-      await flushWaitUntilForTest();
-      const unrelatedFile = await chat.resolveWebFileUrl(
-        outsider.actor,
-        unrelated.fileId,
-      );
-      expect(unrelatedFile.publicUrl).toBe(unrelated.url);
-      expect(
-        (await chat.listArtifactCatalog(outsider.actor)).artifacts,
-      ).toContainEqual(
-        expect.objectContaining({ title: "unrelated-report.txt" }),
-      );
-    },
-    180_000,
-  );
-
-  it("keeps original thread ownership and current projection across redeploy and thread deletion", async () => {
-    const owner = await catalogActor(
-      "Artifact catalog hosted owner",
-      bdd.user(),
-    );
-    const site = `catalog-site-${randomUUID().slice(0, 8)}`;
-    const hosted = await publishHostedSite({ owner, site });
-    const initialCatalog = await chat.listArtifactCatalog(owner.actor, {
-      chatThreadId: hosted.threadId,
-    });
-    const initialArtifact = initialCatalog.artifacts[0];
-    if (!initialArtifact) {
-      throw new Error(
-        "Expected the original thread to own the hosted artifact",
-      );
-    }
-    await flushWaitUntilForTest();
-    context.mocks.ably.publish.mockClear();
-    const second = await publishHostedSite({
-      owner,
-      site,
-    });
-    expect(second.threadId).not.toBe(hosted.threadId);
-    // Redeploying keeps one site; each publication stays its own artifact.
-    expect(second.siteId).toBe(hosted.siteId);
-    expect(second.publicSlug).toBe(site);
-    expect(second.deploymentId).not.toBe(hosted.deploymentId);
-    await flushWaitUntilForTest();
-    expect(context.mocks.ably.publish).toHaveBeenCalledWith(
-      chatArtifactCatalogChangedEvent(hosted.threadId),
-      null,
-    );
-    expect(context.mocks.ably.publish).not.toHaveBeenCalledWith(
-      chatArtifactCatalogChangedEvent(second.threadId),
-      null,
-    );
-
-    const catalog = await chat.listArtifactCatalog(owner.actor);
-
-    // The catalog is keyed by site, so a redeploy updates one entry.
-    expect(
-      catalog.artifacts.map((artifact) => {
-        return { kind: artifact.kind, title: artifact.title };
-      }),
-    ).toStrictEqual([{ kind: "hosted-site", title: site }]);
-
-    const entry = catalog.artifacts[0];
-    if (!entry) {
-      throw new Error("Expected the catalog to list the hosted site");
-    }
-    const detail = await chat.getArtifactCatalogEntry(owner.actor, entry.id);
-    if (detail.kind !== "hosted-site") {
-      throw new Error("Expected a hosted site to be catalogued as hosted-site");
-    }
-    const { sourceChatThreadId, ...detailWithoutSource } = detail;
-    expect(sourceChatThreadId).toBe(hosted.threadId);
-    expect(entry.id).toBe(initialArtifact.id);
-    // The entry follows the site's newest publication.
-    expect(detail.site).toMatchObject({
-      id: hosted.siteId,
-      slug: site,
-      deploymentVersion: 2,
-      entrypoint: "/index.html",
-      spaFallback: false,
-    });
-    await expect(
-      chat.listArtifactCatalog(owner.actor, { chatThreadId: hosted.threadId }),
-    ).resolves.toStrictEqual(catalog);
-    // The latest projection belongs to the second run, but the logical
-    // artifact must not follow that file into the second thread.
-    await expect(
-      chat.listArtifactCatalog(owner.actor, { chatThreadId: second.threadId }),
-    ).resolves.toStrictEqual({ artifacts: [], nextCursor: null });
-
-    await chat.deleteThread(owner.actor, hosted.threadId);
-
-    await expect(
-      chat.listArtifactCatalog(owner.actor, { chatThreadId: hosted.threadId }),
-    ).resolves.toStrictEqual({ artifacts: [], nextCursor: null });
-    await expect(
-      chat.listArtifactCatalog(owner.actor, { chatThreadId: second.threadId }),
-    ).resolves.toStrictEqual({ artifacts: [], nextCursor: null });
-    await expect(chat.listArtifactCatalog(owner.actor)).resolves.toStrictEqual(
-      catalog,
-    );
-    await expect(
-      chat.getArtifactCatalogEntry(owner.actor, entry.id),
-    ).resolves.toStrictEqual(detailWithoutSource);
-
-    // A real later publication must not reattach the artifact after deletion
-    // cleared its original thread, even when the projection stays in B.
-    const third = await publishHostedSite({
-      owner,
-      site,
-      threadId: second.threadId,
-    });
-    expect(third.threadId).toBe(second.threadId);
-    expect(third.siteId).toBe(hosted.siteId);
-    expect(third.deploymentId).not.toBe(second.deploymentId);
-    expect(third.deploymentVersion).toBe(3);
-
-    const republishedCatalog = await chat.listArtifactCatalog(owner.actor);
-    expect(republishedCatalog.nextCursor).toBeNull();
-    expect(republishedCatalog.artifacts).toStrictEqual([
-      expect.objectContaining({
-        id: initialArtifact.id,
-        kind: "hosted-site",
-        title: site,
-      }),
-    ]);
-    const republishedDetail = await chat.getArtifactCatalogEntry(
-      owner.actor,
-      entry.id,
-    );
-    if (republishedDetail.kind !== "hosted-site") {
-      throw new Error(
-        "Expected the republished artifact to remain hosted-site",
-      );
-    }
-    expect(republishedDetail.site).toMatchObject({
-      id: hosted.siteId,
-      slug: site,
-      deploymentVersion: 3,
-      entrypoint: "/index.html",
-      spaFallback: false,
-    });
-    for (const threadId of [hosted.threadId, second.threadId]) {
-      await expect(
-        chat.listArtifactCatalog(owner.actor, { chatThreadId: threadId }),
-      ).resolves.toStrictEqual({ artifacts: [], nextCursor: null });
-    }
-  }, 180_000);
-
-  it("queries and republishes one hosted site across chats and Clerk sessions", async () => {
-    const actor = bdd.user();
-    host.captureHostedSitesS3();
-    const site = `catalog-cross-chat-${randomUUID().slice(0, 8)}`;
-    const body = {
-      site,
-      title: site,
-      artifactKind: "hosted-site" as const,
-      spaFallback: false,
-      visibility: "public" as const,
-      files: [hostedTextFile("/index.html", "<main>first</main>")],
-    };
-    routeMocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
-    const app = setupApp({ context, routes: hostRoutes });
-    const firstResponse = await accept(
-      app(hostContract).prepare({
-        headers: { authorization: "Bearer clerk-session" },
-        body,
-      }),
-      [200],
-    );
-    const first = firstResponse.body;
-    const owner = await catalogActor("Thread-independent hosted owner", actor);
-    host.captureHostedSitesS3();
-    const activeRuns = new Set<string>();
-    onTestFinished(async () => {
-      for (const runId of activeRuns) {
-        await api.requestCancelRun(actor, runId, [200]);
-      }
-      await flushWaitUntilForTest();
-    });
-
-    const firstChat = await sendChatRun(actor, {
-      prompt: "update the existing website",
-    });
-    activeRuns.add(firstChat.runId);
-    const firstExecution = await runExecution(
-      owner.runnerGroup,
-      firstChat.runId,
-    );
-    const firstBearer = {
-      bearerToken: okouTokenFromExecution(firstExecution.execution),
-    };
-    const firstHistory = await host.readHostedSiteDeployments(
-      firstBearer,
-      site,
-    );
-    expect(firstHistory).toMatchObject({ siteId: first.siteId });
-    expect(firstHistory.deployments).toHaveLength(1);
-    const second = await host.prepareHostedSite(firstBearer, {
-      ...body,
-      files: [hostedTextFile("/index.html", "<main>second</main>")],
-    });
-    expect(second).toMatchObject({
-      siteId: first.siteId,
-      publicSlug: first.publicSlug,
-      url: first.url,
-      deploymentVersion: 2,
-    });
-    await completeChatRunOk(firstChat.runId, firstExecution.sandboxHeaders);
-    activeRuns.delete(firstChat.runId);
-
-    const secondChat = await sendChatRun(actor, {
-      prompt: "publish and inspect the same website from another chat",
-    });
-    activeRuns.add(secondChat.runId);
-    expect(secondChat.threadId).not.toBe(firstChat.threadId);
-    const secondExecution = await runExecution(
-      owner.runnerGroup,
-      secondChat.runId,
-    );
-    const secondBearer = {
-      bearerToken: okouTokenFromExecution(secondExecution.execution),
-    };
-    await host.completeHostedSite(secondBearer, first.deploymentId);
-    await host.completeHostedSite(secondBearer, second.deploymentId);
-    const third = await host.prepareHostedSite(secondBearer, {
-      ...body,
-      files: [hostedTextFile("/index.html", "<main>third</main>")],
-    });
-    expect(third).toMatchObject({
-      siteId: first.siteId,
-      publicSlug: first.publicSlug,
-      url: first.url,
-      deploymentVersion: 3,
-    });
-    expect(
-      new Set([first.deploymentId, second.deploymentId, third.deploymentId])
-        .size,
-    ).toBe(3);
-    await host.completeHostedSite(actor, third.deploymentId);
-    await expect(
-      host.completeHostedSite(secondBearer, first.deploymentId),
-    ).resolves.toMatchObject({
-      isActive: false,
-      activeDeploymentVersion: 3,
-    });
-    for (const caller of [actor, secondBearer]) {
-      const history = await host.readHostedSiteDeployments(caller, site);
-      expect(history).toMatchObject({
-        siteId: first.siteId,
-        activeDeploymentId: third.deploymentId,
-      });
-      expect(history.deployments).toHaveLength(3);
-      await expect(
-        host.readHostedSiteFiles(caller, site),
-      ).resolves.toMatchObject({
-        siteId: first.siteId,
-        deploymentId: third.deploymentId,
-        deploymentVersion: 3,
-      });
-      await expect(
-        host.readHostedSiteFiles(caller, site, 1),
-      ).resolves.toMatchObject({
-        deploymentId: first.deploymentId,
-        files: body.files,
-      });
-    }
-
-    const member = bdd.user({ orgId: actor.orgId });
-    const otherOrg = bdd.user({ userId: actor.userId });
-    await api.grantProEntitlement(otherOrg);
-    for (const unauthorized of [member, otherOrg]) {
-      await host.requestHostedSiteDeployments(unauthorized, site, [404]);
-      // Published website files are public; management and completion are not.
-      await expect(
-        host.readHostedSiteFiles(unauthorized, site),
-      ).resolves.toMatchObject({ deploymentId: third.deploymentId });
-      await host.requestCompleteHostedSite(
-        unauthorized,
-        third.deploymentId,
-        [404],
-      );
-    }
-    const denied = await host.requestPrepareHostedSite(member, body, [409]);
-    expectApiError(denied.body);
-    expect(denied.body.error.message).toContain("belongs to another owner");
-
-    const catalog = await chat.listArtifactCatalog(actor);
-    expect(catalog.artifacts).toHaveLength(1);
-    const entry = catalog.artifacts[0];
-    if (!entry) {
-      throw new Error("Expected one hosted site catalog entry");
-    }
-    const detail = await chat.getArtifactCatalogEntry(actor, entry.id);
-    if (detail.kind !== "hosted-site") {
-      throw new Error("Expected a hosted site catalog entry");
-    }
-    expect(detail.site).toMatchObject({
-      id: first.siteId,
-      deploymentVersion: 3,
-    });
-    await completeChatRunOk(secondChat.runId, secondExecution.sandboxHeaders);
-    activeRuns.delete(secondChat.runId);
-  }, 180_000);
-
-  it("catalogues a published deck as a presentation", async () => {
-    const owner = await catalogActor("Artifact catalog deck owner");
-    const site = `catalog-deck-${randomUUID().slice(0, 8)}`;
-    const published = await publishHostedSite({
-      owner,
-      site,
-      artifactKind: "presentation-html",
-    });
-
-    const catalog = await chat.listArtifactCatalog(owner.actor, {
-      kind: "presentation",
-    });
-
-    expect(catalog.artifacts).toHaveLength(1);
-    expect(catalog.artifacts[0]).toMatchObject({
-      kind: "presentation",
-      title: site,
-    });
-    await chat.renameThread(owner.actor, published.threadId, "Deck source");
-    await enableArtifactLibrary(owner.actor);
-    await expect(
-      chat.listArtifactCatalog(owner.actor, {
-        direction: "asc",
-        category: "presentation",
-      }),
-    ).resolves.toMatchObject({
-      artifacts: [
-        {
-          id: catalog.artifacts[0]!.id,
-          kind: "presentation",
-          category: "presentation",
-          sourceChatThread: { id: published.threadId, title: "Deck source" },
-        },
-      ],
-    });
-    await expect(
-      chat.listArtifactCatalog(owner.actor, {
-        direction: "asc",
-        category: "website",
-      }),
-    ).resolves.toStrictEqual({ artifacts: [], nextCursor: null });
-  }, 180_000);
-
-  it("moves a catalog entry to presentation when a deck redeploys the site", async () => {
-    const owner = await catalogActor(
-      "Artifact catalog hosted transition owner",
-      bdd.user(),
-    );
-    const site = `catalog-transition-${randomUUID().slice(0, 8)}`;
-    const hosted = await publishHostedSite({
-      owner,
-      site,
-      artifactKind: "hosted-site",
-    });
-    const presentation = await publishHostedSite({
-      owner,
-      site,
-      artifactKind: "presentation-html",
-      threadId: hosted.threadId,
-    });
-
-    // One name is one site, and its single catalog entry follows the newest
-    // publication's artifact kind.
-    expect(presentation.siteId).toBe(hosted.siteId);
-    expect(presentation.publicSlug).toBe(site);
-    const catalog = await chat.listArtifactCatalog(owner.actor);
-    expect(
-      catalog.artifacts.map((artifact) => {
-        return { kind: artifact.kind, title: artifact.title };
-      }),
-    ).toStrictEqual([{ kind: "presentation", title: site }]);
-  }, 180_000);
-
-  it("filters by kind without leaking other kinds", async () => {
-    const owner = await catalogActor("Artifact catalog filter owner");
-    await uploadFile({
-      owner,
-      prompt: "upload notes",
-      filename: "notes.txt",
-      contentType: "text/plain",
-    });
-    const site = `catalog-filter-${randomUUID().slice(0, 8)}`;
-    await publishHostedSite({ owner, site });
-
-    const files = await chat.listArtifactCatalog(owner.actor, { kind: "file" });
-    const sites = await chat.listArtifactCatalog(owner.actor, {
-      kind: "hosted-site",
-    });
-    for (const kind of ["avatar", "video", "shared-thread"] as const) {
-      await expect(
-        chat.listArtifactCatalog(owner.actor, { kind }),
-      ).resolves.toStrictEqual({ artifacts: [], nextCursor: null });
-    }
-
-    expect(
-      files.artifacts.map((artifact) => {
-        return artifact.kind;
-      }),
-    ).toStrictEqual(["file"]);
-    expect(
-      sites.artifacts.map((artifact) => {
-        return artifact.title;
-      }),
-    ).toStrictEqual([site]);
-  }, 180_000);
-
-  it("searches artifact titles literally before applying the page limit", async () => {
-    const owner = await catalogActor("Artifact catalog search owner");
-    await uploadFile({
-      owner,
-      prompt: "upload launch brief",
-      filename: "Launch-Brief.txt",
-      contentType: "text/plain",
-    });
-    await uploadFile({
-      owner,
-      prompt: "upload budget",
-      filename: "budget.txt",
-      contentType: "text/plain",
-    });
-
-    const result = await chat.listArtifactCatalog(owner.actor, {
-      keyword: "launch",
-      limit: 1,
-    });
-
-    expect(result).toStrictEqual({
-      artifacts: [
-        expect.objectContaining({
-          kind: "file",
-          title: "Launch-Brief.txt",
-        }),
-      ],
-      nextCursor: null,
-    });
-
-    await expect(
-      chat.listArtifactCatalog(owner.actor, { keyword: "%" }),
-    ).resolves.toStrictEqual({ artifacts: [], nextCursor: null });
-  }, 180_000);
-
-  it("paginates a thread and kind filtered catalog without repeats or foreign-thread entries", async () => {
-    const owner = await catalogActor("Artifact catalog paging owner");
-    const created: string[] = [];
-    let threadId: string | undefined;
-    for (const label of ["one", "two", "three"]) {
-      const uploaded = await uploadFile({
-        owner,
-        prompt: `upload ${label}`,
-        filename: `page-${label}.txt`,
-        contentType: "text/plain",
-        threadId,
-      });
-      threadId = uploaded.threadId;
-      created.push(uploaded.fileId);
-    }
-    if (!threadId) {
-      throw new Error("Expected a thread for paginated artifacts");
-    }
-    await uploadFile({
-      owner,
-      prompt: "Publish outside the paginated thread",
-      filename: "page-other-thread.txt",
-      contentType: "text/plain",
-    });
-
-    const collected: string[] = [];
-    let cursor: string | undefined;
-    let pages = 0;
-    do {
-      const page = await chat.listArtifactCatalog(owner.actor, {
-        limit: 1,
-        cursor,
-        chatThreadId: threadId,
-        kind: "file",
-      });
-      expect(page.artifacts.length).toBeLessThanOrEqual(1);
-      collected.push(
-        ...page.artifacts.map((artifact) => {
-          return artifact.title;
-        }),
-      );
-      cursor = page.nextCursor ?? undefined;
-      pages += 1;
-      expect(pages).toBeLessThanOrEqual(10);
-    } while (cursor);
-
-    expect(collected).toStrictEqual([
-      "page-three.txt",
-      "page-two.txt",
-      "page-one.txt",
-    ]);
-    expect(new Set(collected).size).toBe(created.length);
-  }, 180_000);
-
-  it("keeps a Runner output associated with its owning prompt when the run is interrupted", async () => {
-    const owner = await catalogActor("Artifact catalog workflow owner");
-    const run = await sendChatRun(owner.actor, {
-      prompt: "Upload an artifact through the Runner protocol",
-    });
-    const { execution: receivedExecution, sandboxHeaders } = await runExecution(
-      owner.runnerGroup,
-      run.runId,
-    );
-    const fileId = randomUUID();
-    stageUploadObject(
-      `artifacts/${owner.actor.userId}/${fileId}/workflow-output.txt`,
-      128,
-    );
-    await chat.completeUploadWithBearer(
-      `Bearer ${okouTokenFromExecution(receivedExecution)}`,
-      { id: fileId, contentType: "text/plain" },
-      [200],
-    );
-
-    const interruptId = randomUUID();
-    await chat.requestSendEvent(
-      owner.actor,
-      {
-        threadId: run.threadId,
-        interruptsRunId: run.runId,
-        clientEventId: interruptId,
-      },
-      [201],
-    );
-    await flushWaitUntilForTest();
-    await webhooks.requestAgentComplete(
-      { runId: run.runId, exitCode: 1 },
-      sandboxHeaders,
-      [200],
-    );
-    await flushWaitUntilForTest();
-    const { events } = await chat.listThreadEvents(owner.actor, run.threadId);
-    expect(events).toContainEqual(
-      expect.objectContaining({ eventType: "input.prompt", runId: run.runId }),
-    );
-    expect(events).toContainEqual(
-      expect.objectContaining({
-        id: interruptId,
-        eventType: "control.interrupt",
-        interruptsRunId: run.runId,
-      }),
-    );
-    const catalog = await chat.listArtifactCatalog(owner.actor, {
-      chatThreadId: run.threadId,
-    });
-    expect(catalog.artifacts).toStrictEqual([
-      expect.objectContaining({
-        kind: "file",
-        title: "workflow-output.txt",
-      }),
-    ]);
-    await expect(chat.listArtifactCatalog(owner.actor)).resolves.toStrictEqual(
-      catalog,
-    );
-  }, 180_000);
-
-  it("hides an artifact owned by another caller behind a 404", async () => {
-    const owner = await catalogActor("Artifact catalog private owner");
-    const outsider = await catalogActor("Artifact catalog prying outsider");
-    await uploadFile({
-      owner,
-      prompt: "upload a private file",
-      filename: "private.txt",
-      contentType: "text/plain",
-    });
-    const catalog = await chat.listArtifactCatalog(owner.actor);
-    const artifactId = catalog.artifacts[0]?.id;
-    if (!artifactId) {
-      throw new Error("Expected the owner to see their artifact");
-    }
-
-    const denied = await chat.requestArtifactCatalogEntry(
-      outsider.actor,
-      artifactId,
-      [404],
-    );
-
-    if (denied.status !== 404) {
-      throw new Error("Expected a foreign artifact request to 404");
-    }
-    expect(denied.body.error.code).toBe("NOT_FOUND");
-  }, 180_000);
-
-  it("scopes the catalog to one chat thread when chatThreadId is set", async () => {
-    const owner = await catalogActor("Artifact catalog thread owner");
-    const first = await uploadFile({
-      owner,
-      prompt: "upload into the first thread",
-      filename: "first-thread.txt",
-      contentType: "text/plain",
-    });
-    await uploadFile({
-      owner,
-      prompt: "upload into the second thread",
-      filename: "second-thread.txt",
-      contentType: "text/plain",
-    });
-
-    const filtered = await chat.listArtifactCatalog(owner.actor, {
-      chatThreadId: first.threadId,
-    });
-
-    expect(filtered.nextCursor).toBeNull();
-    expect(filtered.artifacts).toStrictEqual([
-      expect.objectContaining({ kind: "file", title: "first-thread.txt" }),
-    ]);
-  }, 180_000);
-});
-
-describe("shared thread routes", () => {
-  it("deleting a shared conversation from artifacts revokes its shared link", async () => {
-    const owner = await catalogActor("Saved conversation deletion");
-    mockOptionalEnv("OPENROUTER_API_KEY", "shared-title-key");
-    const run = await sendChatRun(owner.actor, {
-      prompt: "Save this conversation",
-    });
-    await completeChatRunWithMessage(owner, run.runId, "A shared conversation");
-    chatCallbacks.mockVertexCompletions(() => {
-      return "Saved conversation";
-    });
-    await flushWaitUntilForTest();
-    const events = await listSharedThreadEventRefs(owner.actor, run.threadId);
-    const prompt = events.find((event) => {
-      return event.eventType === "input.prompt" && event.runId === run.runId;
-    });
-    if (!prompt) {
-      throw new Error("Expected a visible prompt");
-    }
-    const shared = await createSharedThreadSnapshot(owner.actor, run.threadId, [
-      prompt.id,
-    ]);
-    await readSharedThreadSnapshot(shared.id);
-    const listed = await chat.listArtifactCatalog(owner.actor, {
-      kind: "shared-thread",
-    });
-    const artifact = listed.artifacts[0];
-    if (!artifact) {
-      throw new Error("Expected a saved shared conversation");
-    }
-    const headers = authenticateSharedThread(owner.actor);
-    const client = setupApp({ context, routes: sharedThreadTestRoutes });
-    await accept(
-      client(artifactCatalogContract).delete({
-        headers,
-        params: { artifactId: artifact.id },
-      }),
-      [200],
-    );
-    const after = await chat.listArtifactCatalog(owner.actor, {
-      kind: "shared-thread",
-    });
-    expect(after.artifacts).toStrictEqual([]);
-    await accept(
-      client(sharedThreadsContract).get({ params: { id: shared.id } }),
-      [404],
-    );
-    await accept(
-      client(sharedThreadsContract).meta({ params: { id: shared.id } }),
-      [404],
-    );
-    await accept(
-      client(artifactCatalogContract).delete({
-        headers,
-        params: { artifactId: artifact.id },
-      }),
-      [200],
-    );
-    const source = await chat.listThreadEvents(owner.actor, run.threadId);
-    expect(asRecord(source).events).toContainEqual(
-      expect.objectContaining({ id: prompt.id }),
-    );
-  });
-
-  it("creates immutable, redacted snapshots from selected visible messages", async () => {
-    const owner = await catalogActor("Shared thread test agent");
-    const run = await sendChatRun(owner.actor, {
-      prompt: "Prepare the private launch plan",
-    });
-    const assistantText = "Here is the **public** launch plan.";
-    await completeChatRunWithMessage(owner, run.runId, assistantText);
-
-    let events: readonly SharedThreadEventRef[] | undefined;
-    await flushWaitUntilForTest();
-    await expect(
-      (async () => {
-        events = await listSharedThreadEventRefs(owner.actor, run.threadId);
-        return events.some((event) => {
-          return (
-            event.eventType === "run.completed" && event.runId === run.runId
-          );
-        });
-      })(),
-    ).resolves.toBeTruthy();
-    if (!events) {
-      throw new Error("Expected completed shared-thread fixture events");
-    }
-    const promptEvent = events.find((event) => {
-      return event.eventType === "input.prompt" && event.runId === run.runId;
-    });
-    const assistantEvent = events.find((event) => {
-      return event.eventType === "output.message";
-    });
-    const nonShareableEvent = events.find((event) => {
-      return event.eventType === "run.completed";
-    });
-    const otherRun = await sendChatRun(owner.actor, {
-      prompt: "This other thread must stay private",
-    });
-    const otherEvents = await listSharedThreadEventRefs(
-      owner.actor,
-      otherRun.threadId,
-    );
-    const otherPromptEvent = otherEvents.find((event) => {
-      return event.eventType === "input.prompt";
-    });
-    if (
-      !promptEvent ||
-      !assistantEvent ||
-      !nonShareableEvent ||
-      !otherPromptEvent
-    ) {
-      throw new Error(
-        "Expected shareable, non-shareable, and cross-thread events",
-      );
-    }
-
-    mockOptionalEnv("OPENROUTER_API_KEY", "shared-title-key");
-    const titlePrompts: string[] = [];
-    chatCallbacks.mockVertexCompletions((body) => {
-      const systemContent = body.messages[0]?.content ?? "";
-      if (systemContent.includes("for this shared conversation")) {
-        titlePrompts.push(body.messages[1]?.content ?? "");
-        return "**Private launch plan**";
-      }
-      return "Generated summary";
-    });
-
-    const eventIds = [
-      randomUUID(),
-      otherPromptEvent.id,
-      nonShareableEvent.id,
-      assistantEvent.id,
-      promptEvent.id,
-      assistantEvent.id,
-    ];
-    const first = await createSharedThreadSnapshot(
-      owner.actor,
-      run.threadId,
-      eventIds,
-      "https://app.okou.ai",
-    );
-    const second = await createSharedThreadSnapshot(
-      owner.actor,
-      run.threadId,
-      eventIds,
-    );
-    expect(titlePrompts).toHaveLength(2);
-    expect(titlePrompts[0]).toContain("Prepare the private launch plan");
-    expect(titlePrompts[0]).toContain(assistantText);
-    expect(titlePrompts[0]).not.toContain(
-      "This other thread must stay private",
-    );
-
-    const publicSnapshot = await readSharedThreadSnapshot(first.id);
-    expect(publicSnapshot.headers.get("cache-control")).toBe("no-store");
-    expect(publicSnapshot.body).toStrictEqual({
-      id: first.id,
-      title: "Private launch plan",
-      messages: [
-        {
-          messageIndex: 0,
-          role: "user",
-          content: "Prepare the private launch plan",
-          runIndex: 0,
-        },
-        {
-          messageIndex: 1,
-          role: "assistant",
-          content: assistantText,
-          runIndex: 0,
-        },
-      ],
-    });
-
-    const metadata = await readSharedThreadMeta(first.id);
-    expect(metadata.body).toStrictEqual({
-      title: "Private launch plan",
-    });
-    expect(metadata.headers.get("cache-control")).toBe("no-store");
-
-    const secondSnapshot = await readSharedThreadSnapshot(second.id);
-    expect(secondSnapshot.body).toMatchObject({ id: second.id });
-
-    const catalog = await chat.listArtifactCatalog(owner.actor, {
-      kind: "shared-thread",
-      chatThreadId: run.threadId,
-    });
-    expect(catalog.artifacts).toHaveLength(2);
-    expect(catalog.artifacts).toStrictEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          kind: "shared-thread",
-          title: "Private launch plan",
-        }),
-      ]),
-    );
-    await enableArtifactLibrary(owner.actor);
-    for (const direction of ["asc", "desc"] as const) {
-      const query = { direction, chatThreadId: run.threadId, limit: 1 };
-      const firstLibraryPage = await chat.listArtifactCatalog(
-        owner.actor,
-        query,
-      );
-      expect(firstLibraryPage.nextCursor).toStrictEqual(expect.any(String));
-      const secondLibraryPage = await chat.listArtifactCatalog(owner.actor, {
-        ...query,
-        cursor: firstLibraryPage.nextCursor!,
-      });
-      expect(secondLibraryPage.nextCursor).toBeNull();
-      const expected = catalog.artifacts.map(({ id }) => {
-        return id;
-      });
-      expect(
-        [...firstLibraryPage.artifacts, ...secondLibraryPage.artifacts].map(
-          ({ id }) => {
-            return id;
-          },
-        ),
-      ).toStrictEqual(direction === "desc" ? expected : expected.reverse());
-    }
-    const artifactId = catalog.artifacts[0]?.id;
-    if (!artifactId) {
-      throw new Error("Expected a shared-thread artifact");
-    }
-    const detail = await chat.getArtifactCatalogEntry(owner.actor, artifactId);
-    expect(detail.kind).toBe("shared-thread");
-    const { sourceChatThreadId, ...detailWithoutSource } = detail;
-    expect(sourceChatThreadId).toBe(run.threadId);
-    // Neither selected message contains a file. The source-thread association
-    // must exist independently of uploaded-file projections.
-    const firstPage = await chat.listArtifactCatalog(owner.actor, {
-      kind: "shared-thread",
-      chatThreadId: run.threadId,
-      limit: 1,
-    });
-    expect(firstPage.artifacts).toHaveLength(1);
-    if (!firstPage.nextCursor) {
-      throw new Error("Expected a second shared-thread artifact page");
-    }
-    const secondPage = await chat.listArtifactCatalog(owner.actor, {
-      kind: "shared-thread",
-      chatThreadId: run.threadId,
-      limit: 1,
-      cursor: firstPage.nextCursor,
-    });
-    expect(secondPage.artifacts).toHaveLength(1);
-    expect(secondPage.nextCursor).toBeNull();
-    expect([...firstPage.artifacts, ...secondPage.artifacts]).toStrictEqual(
-      catalog.artifacts,
-    );
-    for (const query of [
-      { kind: "file" as const, chatThreadId: run.threadId },
-      { kind: "shared-thread" as const, chatThreadId: otherRun.threadId },
-    ]) {
-      await expect(
-        chat.listArtifactCatalog(owner.actor, query),
-      ).resolves.toStrictEqual({ artifacts: [], nextCursor: null });
-    }
-    for (const caller of [
-      bdd.user({ orgId: owner.actor.orgId }),
-      bdd.user({ userId: owner.actor.userId }),
-    ]) {
-      await expect(
-        chat.listArtifactCatalog(caller, {
-          kind: "shared-thread",
-          chatThreadId: run.threadId,
-        }),
-      ).resolves.toStrictEqual({ artifacts: [], nextCursor: null });
-    }
-
-    const directCatalogResponse = await sharedThreadTestApp().request(
-      "/api/artifacts/catalog",
-      { headers: authenticateSharedThread(owner.actor) },
-    );
-    expect(directCatalogResponse.status).toBe(200);
-    const directCatalog = asRecord(await directCatalogResponse.json());
-    expect(directCatalog.artifacts).toStrictEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ kind: "shared-thread" }),
-      ]),
-    );
-    const directDetailResponse = await sharedThreadTestApp().request(
-      `/api/artifacts/catalog/${artifactId}`,
-      { headers: authenticateSharedThread(owner.actor) },
-    );
-    expect(directDetailResponse.status).toBe(200);
-    const directDetail = asRecord(await directDetailResponse.json());
-    expect(directDetail.kind).toBe("shared-thread");
-
-    await chat.deleteThread(owner.actor, run.threadId);
-    const afterSourceDeletion = await readSharedThreadSnapshot(first.id);
-    expect(afterSourceDeletion.body).toStrictEqual(publicSnapshot.body);
-    await expect(
-      chat.listArtifactCatalog(owner.actor, {
-        kind: "shared-thread",
-        chatThreadId: run.threadId,
-      }),
-    ).resolves.toStrictEqual({ artifacts: [], nextCursor: null });
-    await expect(
-      chat.listArtifactCatalog(owner.actor, { kind: "shared-thread" }),
-    ).resolves.toStrictEqual(catalog);
-    await expect(
-      chat.getArtifactCatalogEntry(owner.actor, artifactId),
-    ).resolves.toStrictEqual(detailWithoutSource);
-
-    webhooks.configureClerkWebhookSecret();
-    context.mocks.stripe.subscriptions.list.mockResolvedValue({
-      data: [],
-      has_more: false,
-    });
-    context.mocks.s3.send.mockResolvedValue({ Contents: [] });
-    webhooks.verifyNextClerkWebhook({
-      type: "organization.deleted",
-      data: { id: owner.actor.orgId },
-    });
-    await webhooks.requestClerkWebhook("{}", {}, [200]);
-    await flushWaitUntilForTest();
-
-    const afterOrgDeletionResponse = await sharedThreadTestApp().request(
-      `/api/shared-threads/${first.id}`,
-    );
-    expect(afterOrgDeletionResponse.status).toBe(200);
-    const afterOrgDeletion = await afterOrgDeletionResponse.json();
-    expect(afterOrgDeletion).toStrictEqual(publicSnapshot.body);
-  }, 180_000);
-
-  it("allows API creation while the entry feature switch is disabled", async () => {
-    const owner = await catalogActor("Shared thread feature-switch test agent");
-    mockOptionalEnv("OPENROUTER_API_KEY", "shared-title-key");
-    const run = await sendChatRun(owner.actor, {
-      prompt: "Prepare the private launch plan",
-    });
-    const events = await listSharedThreadEventRefs(owner.actor, run.threadId);
-    const promptEvent = events.find((event) => {
-      return event.eventType === "input.prompt" && event.runId === run.runId;
-    });
-    if (!promptEvent) {
-      throw new Error("Expected an associated prompt event");
-    }
-    chatCallbacks.mockVertexCompletions(() => {
-      return "Private launch plan";
-    });
-
-    const created = await createSharedThreadSnapshot(
-      owner.actor,
-      run.threadId,
-      [promptEvent.id],
-    );
-
-    await expect(readSharedThreadSnapshot(created.id)).resolves.toMatchObject({
-      body: { title: "Private launch plan" },
-    });
-  });
-});
-
-describe("artifact catalog source identity", () => {
-  it("resolves an owned shared conversation without exposing it to other viewers", async () => {
-    const owner = await catalogActor("Shared page artifact owner");
-    const run = await sendChatRun(owner.actor, {
-      prompt: "Share this conversation",
-    });
-    await completeChatRunWithMessage(owner, run.runId, "A shared plan");
-    const events = await listSharedThreadEventRefs(owner.actor, run.threadId);
-    const prompt = events.find((event) => {
-      return event.eventType === "input.prompt" && event.runId === run.runId;
-    });
-    if (!prompt) {
-      throw new Error("Expected a visible prompt");
-    }
-    const shared = await createSharedThreadSnapshot(owner.actor, run.threadId, [
-      prompt.id,
-    ]);
-    const listed = await chat.listArtifactCatalog(owner.actor);
-    const entry = listed.artifacts[0];
-    if (!entry) {
-      throw new Error("Expected an artifact catalog entry");
-    }
-    expect(entry).toMatchObject({
-      kind: "shared-thread",
-      sharedThreadId: shared.id,
-    });
-    const catalog = setupApp({ context, routes: artifactCatalogRoutes })(
-      artifactCatalogContract,
-    );
-    const request = {
-      params: { artifactId: shared.id },
-      query: { sourceKind: "shared-thread" as const },
-    };
-    const resolved = await accept(
-      catalog.get({
-        headers: authenticateSharedThread(owner.actor),
-        ...request,
-      }),
-      [200],
-    );
-    expect(resolved.body).toMatchObject({
-      id: entry.id,
-      kind: "shared-thread",
-      sharedThreadId: shared.id,
-      sharedThread: { id: shared.id },
-    });
-    const byCatalogId = await accept(
-      catalog.get({
-        headers: authenticateSharedThread(owner.actor),
-        params: { artifactId: entry.id },
-      }),
-      [200],
-    );
-    expect(resolved.body).toStrictEqual(byCatalogId.body);
-    for (const viewer of [bdd.user({ orgId: owner.actor.orgId }), bdd.user()]) {
-      await accept(
-        catalog.get({ headers: authenticateSharedThread(viewer), ...request }),
-        [404],
-      );
-    }
-    await accept(catalog.get(request), [401]);
-  });
 });

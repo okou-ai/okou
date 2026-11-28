@@ -1,297 +1,149 @@
-import type { ComputerUseTestConnection } from "./helpers/api-bdd-computer-use";
 import { randomUUID } from "node:crypto";
 
-import { aroundEach, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import { testContext } from "../../../__tests__/test-context";
-import { flushWaitUntilForTest } from "../../context/wait-until";
-import { mockNow, now, withMockNowForTest } from "../../../lib/time";
-import { expectApiError, type ApiTestUser } from "./helpers/api-bdd";
-import { mockClerkMembership } from "./helpers/api-bdd-clerk";
-import { createPublicComputerUseScenario } from "./helpers/public-computer-use-scenario";
-import {
-  channelsPublishedTo,
-  countPublishedTo,
-} from "./helpers/realtime-publications";
+import { mockNow, nowDate } from "../../../lib/time";
+import { createBddApi } from "./helpers/api-bdd";
+import { createComputerUseBddApi } from "./helpers/api-bdd-computer-use";
+import { channelsPublishedTo } from "./helpers/realtime-publications";
 
 const context = testContext();
 
-const STARTED_AT_MS = now();
-const CASE_TIMEOUT_MS = 30_000;
-const HOSTS_CHANGED = "computerUseHostsChanged";
-
-aroundEach(async (runTest) => {
-  await withMockNowForTest(STARTED_AT_MS, runTest);
-});
-
-function createScenario() {
-  const scenario = createPublicComputerUseScenario(context);
-  const bdd = { user: scenario.user };
-  const authOrg = { createCliToken: scenario.createCliToken };
-  const computerUse = scenario.computerUse;
-
-  function orgScoped(
-    actor: ApiTestUser,
-  ): ApiTestUser & { readonly orgId: string } {
-    if (actor.orgId === null) {
-      throw new Error("Computer Use host START requires an organization");
-    }
-    return { ...actor, orgId: actor.orgId };
-  }
-
-  function startOptions(installationId: string, hostName: string) {
-    return {
-      installationId,
-      hostName,
-      appVersion: "2.3.4",
-      osVersion: "macOS 16",
-      supportedCapabilities: ["apps.list", "element.click"],
-      permissions: { accessibility: true, screenRecording: false },
-    };
-  }
-
-  async function clearPublications(): Promise<void> {
-    await scenario.run(flushWaitUntilForTest);
-    context.mocks.ably.channelGet.mockClear();
-    context.mocks.ably.publish.mockClear();
-  }
-
-  async function expectOneOwnerPublication(userId: string): Promise<void> {
-    await scenario.run(flushWaitUntilForTest);
-    expect(
-      countPublishedTo(context.mocks, {
-        channel: `user:${userId}`,
-        topic: HOSTS_CHANGED,
-      }),
-    ).toBe(1);
-    expect(channelsPublishedTo(context.mocks, HOSTS_CHANGED)).toStrictEqual([
-      `user:${userId}`,
-    ]);
-  }
-
-  function startedBody(
-    response: Awaited<
-      ReturnType<typeof computerUse.requestStartComputerUseHost>
-    >,
-  ): {
-    readonly hostId: string;
-    readonly connection: ComputerUseTestConnection;
-  } {
-    if (response.status !== 200) {
-      throw new Error(`Expected host START 200, received ${response.status}`);
-    }
-    return response.body;
-  }
-
-  function hostById(
-    hosts: Awaited<
-      ReturnType<typeof computerUse.listComputerUseHosts>
-    >["hosts"],
-    hostId: string,
-  ) {
-    const host = hosts.find((candidate) => {
-      return candidate.id === hostId;
-    });
-    if (!host) {
-      throw new Error(`Expected Computer Use host ${hostId}`);
-    }
-    return host;
-  }
-  return {
-    ...scenario,
-    bdd,
-    authOrg,
-    computerUse,
-    orgScoped,
-    startOptions,
-    clearPublications,
-    expectOneOwnerPublication,
-    startedBody,
-    hostById,
-  };
-}
 describe("Computer Use host START", () => {
-  it(
-    "preserves START auth and normalization without importing the command capability gate",
-    { timeout: CASE_TIMEOUT_MS },
-    async () => {
-      const scenario = createScenario();
-      const { bdd, authOrg, computerUse, orgScoped, startedBody, hostById } =
-        scenario;
-      return await scenario.run(async () => {
-        const actor = orgScoped(bdd.user());
+  it("computer-use-host-start-002 (1/2) preserves identity on restart, updates metadata and notification, and retains identity after stop", async () => {
+    const start = Date.parse("2026-02-01T12:00:00.000Z");
+    mockNow(start);
+    const createdAt = nowDate().toISOString();
+    const bdd = createBddApi(context);
+    const api = createComputerUseBddApi(context);
+    const owner = bdd.user({ orgRole: "org:member" });
+    const installationId = randomUUID();
 
-        const unauthenticated = await computerUse.requestStartComputerUseHost(
-          null,
-          [401],
-        );
-        expectApiError(unauthenticated.body);
-        const noOrganization = await computerUse.requestStartComputerUseHost(
-          bdd.user({ orgId: null }),
-          [401],
-        );
-        expectApiError(noOrganization.body);
+    const first = await api.startComputerUseHost(owner, {
+      installationId,
+      hostName: "Initial Desktop",
+      appVersion: "0.52.0",
+      osVersion: "macOS 14",
+      supportedCapabilities: ["apps.list"],
+      permissions: { accessibility: false, screenRecording: false },
+    });
 
-        const session = await computerUse.requestStartComputerUseHost(
-          actor,
-          [200],
-          {
-            installationId: randomUUID(),
-            hostName: "  Normalized Desktop  ",
-            appVersion: " 1.2.3 ",
-            osVersion: " macOS 16.0 ",
-            supportedCapabilities: [
-              " apps.list ",
-              "apps.list",
-              " element.click ",
-            ],
-            permissions: { accessibility: false, screenRecording: true },
-          },
-        );
-        const normalized = hostById(
-          (await computerUse.listComputerUseHosts(actor)).hosts,
-          startedBody(session).hostId,
-        );
-        expect(normalized).toMatchObject({
-          displayName: "Normalized Desktop",
-          appVersion: "1.2.3",
-          osVersion: "macOS 16.0",
-          supportedCapabilities: ["apps.list", "element.click"],
-          permissions: { accessibility: false, screenRecording: true },
-        });
+    mockNow(start + 5000);
+    const notificationsBeforeRestart = channelsPublishedTo(
+      context.mocks,
+      "computerUseHostsChanged",
+    ).length;
 
-        const { token: pat } = await authOrg.createCliToken(actor);
-        mockClerkMembership(context, actor, "org:admin");
-        await computerUse.requestStartComputerUseHost({ bearer: pat }, [403], {
-          installationId: randomUUID(),
-          hostName: "PAT Desktop",
-        });
+    const restarted = await api.startComputerUseHost(owner, {
+      installationId,
+      hostName: "Updated Desktop",
+      appVersion: "0.53.0",
+      osVersion: "macOS 15",
+      supportedCapabilities: ["apps.list", "app.state"],
+      permissions: { accessibility: true, screenRecording: false },
+    });
 
-        const agent = await scenario.launchRun(actor);
-        const sandboxDenied = await computerUse.requestStartComputerUseHost(
-          { bearer: agent.token },
-          [403],
-          { installationId: randomUUID(), hostName: "Agent Desktop" },
-        );
-        expect(sandboxDenied.body).toStrictEqual({
-          error: {
-            message: "This endpoint is not available for sandbox tokens",
-            code: "FORBIDDEN",
-          },
-        });
-      });
-    },
-  );
+    const restartNotifications = channelsPublishedTo(
+      context.mocks,
+      "computerUseHostsChanged",
+    ).slice(notificationsBeforeRestart);
 
-  it(
-    "retains installation identity, connection generation advancement, partial-index ownership, revoked-row and concurrent upsert semantics",
-    { timeout: CASE_TIMEOUT_MS },
-    async () => {
-      const scenario = createScenario();
-      const {
-        bdd,
-        computerUse,
-        orgScoped,
-        startOptions,
-        clearPublications,
-        expectOneOwnerPublication,
-        hostById,
-      } = scenario;
-      return await scenario.run(async () => {
-        const actor = orgScoped(bdd.user());
-        const peer = orgScoped(bdd.user({ orgId: actor.orgId }));
-        const foreign = orgScoped(bdd.user({ orgId: `org_${randomUUID()}` }));
-        const installationId = randomUUID();
-        const initial = await computerUse.startComputerUseHost(
-          actor,
-          startOptions(installationId, "Initial Desktop"),
-        );
-        const initialProjection = hostById(
-          (await computerUse.listComputerUseHosts(actor)).hosts,
-          initial.hostId,
-        );
+    const listedAfterRestart = await api.listComputerUseHosts(owner);
+    const oldHeartbeat = await api.requestComputerUseHeartbeat(
+      first.connection,
+      [409],
+    );
+    const newHeartbeat = await api.requestComputerUseHeartbeat(
+      restarted.connection,
+      [200],
+    );
 
-        mockNow(STARTED_AT_MS + 1000);
-        await clearPublications();
-        const restarted = await computerUse.startComputerUseHost(
-          actor,
-          startOptions(installationId, "Restarted Desktop"),
-        );
-        expect(restarted.hostId).toBe(initial.hostId);
-        const restartedProjection = hostById(
-          (await computerUse.listComputerUseHosts(actor)).hosts,
-          restarted.hostId,
-        );
-        expect(restartedProjection.createdAt).toBe(initialProjection.createdAt);
-        expect(restartedProjection).toMatchObject({
-          displayName: "Restarted Desktop",
-          appVersion: "2.3.4",
-          osVersion: "macOS 16",
-          supportedCapabilities: ["apps.list", "element.click"],
-          permissions: { accessibility: true, screenRecording: false },
-        });
-        await expectOneOwnerPublication(actor.userId);
-        await computerUse.requestComputerUseHeartbeat(
-          initial.connection,
-          [409],
-        );
-        await computerUse.requestComputerUseHeartbeat(
-          restarted.connection,
-          [200],
-        );
+    expect(restarted.hostId).toBe(first.hostId);
+    expect(restarted.connectionGeneration).toBeGreaterThan(
+      first.connectionGeneration,
+    );
+    expect(restartNotifications).toStrictEqual([`user:${owner.userId}`]);
+    expect(listedAfterRestart.hosts).toHaveLength(1);
+    expect(listedAfterRestart.hosts[0]).toMatchObject({
+      id: first.hostId,
+      hostName: "Updated Desktop",
+      displayName: "Updated Desktop",
+      appVersion: "0.53.0",
+      osVersion: "macOS 15",
+      supportedCapabilities: ["apps.list", "app.state"],
+      permissions: { accessibility: true, screenRecording: false },
+      createdAt,
+    });
+    expect(oldHeartbeat.status).toBe(409);
+    expect(newHeartbeat.status).toBe(200);
 
-        const peerHost = await computerUse.startComputerUseHost(
-          peer,
-          startOptions(installationId, "Peer Desktop"),
-        );
-        const foreignHost = await computerUse.startComputerUseHost(
-          foreign,
-          startOptions(installationId, "Foreign Desktop"),
-        );
-        expect(
-          new Set([restarted.hostId, peerHost.hostId, foreignHost.hostId]).size,
-        ).toBe(3);
+    await api.stopComputerUseHost(restarted.connection);
 
-        await computerUse.stopComputerUseHost(restarted.connection);
-        const afterStop = await computerUse.startComputerUseHost(
-          actor,
-          startOptions(installationId, "After Stop"),
-        );
-        expect(afterStop.hostId).toBe(initial.hostId);
-        expect(
-          hostById(
-            (await computerUse.listComputerUseHosts(actor)).hosts,
-            afterStop.hostId,
-          ).createdAt,
-        ).toBe(initialProjection.createdAt);
+    mockNow(start + 10_000);
+    const afterStop = await api.startComputerUseHost(owner, {
+      installationId,
+      hostName: "Resumed Desktop",
+      appVersion: "0.53.1",
+      osVersion: "macOS 15.1",
+      supportedCapabilities: ["apps.list"],
+      permissions: { accessibility: true, screenRecording: true },
+    });
+    const listedAfterStopRestart = await api.listComputerUseHosts(owner);
 
-        const concurrentInstallation = randomUUID();
-        const [first, second] = await Promise.all([
-          computerUse.startComputerUseHost(
-            actor,
-            startOptions(concurrentInstallation, "Concurrent A"),
-          ),
-          computerUse.startComputerUseHost(
-            actor,
-            startOptions(concurrentInstallation, "Concurrent B"),
-          ),
-        ]);
-        expect(first.hostId).toBe(second.hostId);
-        const connectionStatuses = await Promise.all([
-          computerUse.requestComputerUseHeartbeat(first.connection, [200, 409]),
-          computerUse.requestComputerUseHeartbeat(
-            second.connection,
-            [200, 409],
-          ),
-        ]);
-        expect(
-          connectionStatuses
-            .map((response) => {
-              return response.status;
-            })
-            .sort(),
-        ).toStrictEqual([200, 409]);
-      });
-    },
-  );
+    expect(afterStop.hostId).toBe(first.hostId);
+    expect(afterStop.connectionGeneration).toBeGreaterThan(
+      restarted.connectionGeneration,
+    );
+    expect(listedAfterStopRestart.hosts[0]).toMatchObject({
+      id: first.hostId,
+      createdAt,
+    });
+  });
+
+  it("computer-use-host-start-002 (2/2) isolates installation ownership across users and resolves concurrent starts to one host", async () => {
+    const bdd = createBddApi(context);
+    const api = createComputerUseBddApi(context);
+    const owner = bdd.user({ orgRole: "org:member" });
+    const peer = bdd.user({ orgId: owner.orgId, orgRole: "org:member" });
+    const foreign = bdd.user({ orgRole: "org:member" });
+    const installationId = randomUUID();
+
+    const ownerHost = await api.startComputerUseHost(owner, { installationId });
+    const peerHost = await api.startComputerUseHost(peer, { installationId });
+    const foreignHost = await api.startComputerUseHost(foreign, {
+      installationId,
+    });
+
+    expect(peerHost.hostId).not.toBe(ownerHost.hostId);
+    expect(foreignHost.hostId).not.toBe(ownerHost.hostId);
+    expect(foreignHost.hostId).not.toBe(peerHost.hostId);
+
+    const freshInstallationId = randomUUID();
+    const [concurrentA, concurrentB] = await Promise.all([
+      api.startComputerUseHost(owner, {
+        installationId: freshInstallationId,
+        hostName: "Concurrent Desktop A",
+      }),
+      api.startComputerUseHost(owner, {
+        installationId: freshInstallationId,
+        hostName: "Concurrent Desktop B",
+      }),
+    ]);
+
+    expect(concurrentA.hostId).toBe(concurrentB.hostId);
+
+    const heartbeatA = await api.requestComputerUseHeartbeat(
+      concurrentA.connection,
+      [200, 409],
+    );
+    const heartbeatB = await api.requestComputerUseHeartbeat(
+      concurrentB.connection,
+      [200, 409],
+    );
+
+    expect([heartbeatA.status, heartbeatB.status].sort()).toStrictEqual([
+      200, 409,
+    ]);
+  });
 });

@@ -1,75 +1,82 @@
-import { randomUUID } from "node:crypto";
-import { describe, expect, it } from "vitest";
-import {
-  personalModelProvidersMainContract,
-  personalModelProvidersByTypeContract,
-} from "@okouai/api-contracts/contracts/personal-model-providers";
-import { accept, testContext } from "../../../__tests__/test-context";
+import { createBddApi } from "./helpers/api-bdd";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { meModelProvidersUpsertRoutes } from "../me-model-providers-upsert";
-import { meModelProvidersDeleteRoutes } from "../me-model-providers-delete";
+import { randomUUID } from "node:crypto";
 import { createRouteMocks } from "./helpers/route-test";
+import {
+  personalModelProvidersByTypeContract,
+  personalModelProvidersMainContract,
+} from "@okouai/api-contracts/contracts/personal-model-providers";
+import { http, HttpResponse } from "msw";
+import { expect, test } from "vitest";
+
+import { testContext, accept } from "../../../__tests__/test-context";
+import { server } from "../../../mocks/server";
+import { flushWaitUntilForTest } from "../../context/wait-until";
+import { meModelProvidersDeleteRoutes } from "../me-model-providers-delete";
+import { meModelProvidersUpsertRoutes } from "../me-model-providers-upsert";
+import { channelsPublishedTo } from "./helpers/realtime-publications";
 
 const context = testContext();
-const mocks = createRouteMocks(context);
-function authHeaders() {
-  return { authorization: "Bearer clerk-session" };
-}
+const bdd = createBddApi(context);
+const headers = Object.freeze({ authorization: "Bearer clerk-session" });
 
-function identity(): { userId: string; orgId: string } {
-  const userId = `user_projection_${randomUUID()}`;
-  const orgId = `org_projection_${randomUUID()}`;
-  mocks.clerk.session(userId, orgId, "org:admin");
-  return { userId, orgId };
-}
-
-describe("personal subscription invalidation", () => {
-  it("publishes account changes only to the owner without account details", async () => {
-    const { userId, orgId } = identity();
-    const client = setupApp({ context, routes: meModelProvidersUpsertRoutes })(
+test("run-model-invalidation-001 notifies only the owner about personal account changes without account details", async () => {
+  server.use(
+    http.get("https://api.anthropic.com/api/oauth/profile", () => {
+      return HttpResponse.json({});
+    }),
+    http.get("https://api.anthropic.com/api/oauth/usage", () => {
+      return HttpResponse.json({});
+    }),
+  );
+  const admin = bdd.user();
+  const orgId = admin.orgId ?? "";
+  createRouteMocks(context).clerk.session(admin.userId, orgId, admin.orgRole);
+  const secret = `sk-ant-oat01-${randomUUID()}`;
+  await accept(
+    setupApp({ context, routes: meModelProvidersUpsertRoutes })(
       personalModelProvidersMainContract,
-    );
-    await accept(
-      client.upsert({
-        headers: authHeaders(),
-        body: {
-          type: "claude-code-oauth-token",
-          secret: "sk-ant-synthetic-projection",
-        },
-      }),
-      [201],
-    );
-    expect(context.mocks.ably.channelGet).toHaveBeenCalledWith(
-      `user:${userId}`,
-    );
-    expect(context.mocks.ably.publish).toHaveBeenCalledWith(
-      "runModelsChanged",
-      null,
-    );
-    expect(context.mocks.ably.channelGet).not.toHaveBeenCalledWith(
-      `org:${orgId}`,
-    );
+    ).upsert({
+      headers,
+      body: { type: "claude-code-oauth-token", secret },
+    }),
+    [201],
+  );
+  await flushWaitUntilForTest();
+  expect(channelsPublishedTo(context.mocks, "runModelsChanged")).toStrictEqual([
+    `user:${admin.userId}`,
+  ]);
+  expect(
+    context.mocks.ably.publish.mock.calls.filter((call) => {
+      return call[0] === "runModelsChanged";
+    }),
+  ).toStrictEqual([["runModelsChanged", null]]);
+  expect(
+    context.mocks.ably.channelGet.mock.calls.some((call) => {
+      return String(call[0]).includes(orgId);
+    }),
+  ).toBeFalsy();
 
-    // Failure to publish must not undo the committed disconnect.
-    context.mocks.ably.publish.mockRejectedValue(
-      new Error("Realtime unavailable"),
-    );
-    const byType = setupApp({ context, routes: meModelProvidersDeleteRoutes })(
-      personalModelProvidersByTypeContract,
-    );
-    await accept(
-      byType.delete({
-        headers: authHeaders(),
-        params: { type: "claude-code-oauth-token" },
-      }),
-      [204],
-    );
-    await accept(
-      byType.delete({
-        headers: authHeaders(),
-        params: { type: "claude-code-oauth-token" },
-      }),
-      [404],
-    );
-  });
+  context.mocks.ably.publish.mockRejectedValue(
+    new Error("realtime provider unavailable"),
+  );
+  const disconnect = setupApp({
+    context,
+    routes: meModelProvidersDeleteRoutes,
+  })(personalModelProvidersByTypeContract);
+  await accept(
+    disconnect.delete({
+      headers,
+      params: { type: "claude-code-oauth-token" },
+    }),
+    [204],
+  );
+  await flushWaitUntilForTest();
+  await accept(
+    disconnect.delete({
+      headers,
+      params: { type: "claude-code-oauth-token" },
+    }),
+    [404],
+  );
 });

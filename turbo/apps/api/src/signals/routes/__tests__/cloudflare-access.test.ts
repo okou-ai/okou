@@ -1,428 +1,135 @@
-import { credentialBackedSshHost } from "./helpers/ssh-credential";
-import { createSshExecutionApi } from "./helpers/ssh-execution";
-import { randomUUID } from "node:crypto";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { cloudflareAccessContract } from "@okouai/api-contracts/contracts/cloudflare-access";
+import { createHash, randomUUID } from "node:crypto";
+
 import { chatRemoteAccessContract } from "@okouai/api-contracts/contracts/chat-remote-access";
-import { sshCredentialsContract } from "@okouai/api-contracts/contracts/ssh-credentials";
-import {
-  sshConnectionsContract,
-  sshConnectionResponseSchema,
-} from "@okouai/api-contracts/contracts/ssh-connections";
+import { cloudflareAccessContract } from "@okouai/api-contracts/contracts/cloudflare-access";
 import { runnerSshContract } from "@okouai/api-contracts/contracts/runner-ssh";
 import { sshHostsContract } from "@okouai/api-contracts/contracts/ssh-access";
+import { sshConnectionsContract } from "@okouai/api-contracts/contracts/ssh-connections";
+import { sshCredentialsContract } from "@okouai/api-contracts/contracts/ssh-credentials";
+import { createStore } from "ccstate";
+import { beforeAll, describe, expect, it } from "vitest";
+
 import { accept, testContext } from "../../../__tests__/test-context";
-import { setupApp, setupRawAppRequest } from "../../../__tests__/test-helpers";
-import { mockEnv } from "../../../lib/env";
+import { setupApp } from "../../../__tests__/test-helpers";
+import {
+  TEST_WITH_DOUBLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE,
+  TEST_WITH_SINGLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE,
+} from "../../../__tests__/test-timeouts";
+import { env, mockOptionalEnv } from "../../../lib/env";
 import { nowDate } from "../../../lib/time";
-import { cloudflareAccessRoutes } from "../cloudflare-access";
+import { flushWaitUntilForTest } from "../../context/wait-until";
 import { chatRemoteAccessRoutes } from "../chat-remote-access";
+import { cloudflareAccessRoutes } from "../cloudflare-access";
 import { runnerSshRoutes } from "../runner-ssh";
-import { sshConnectionsRoutes } from "../ssh-connections";
 import { sshAccessRoutes } from "../ssh-access";
+import { sshConnectionsRoutes } from "../ssh-connections";
+import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
+import { createRunsApi } from "./helpers/api-bdd-runs";
+import { createChatEventsFixture } from "./helpers/chat-events-fixture";
+import { seedOrgMembership$ } from "./helpers/org-membership";
+import { publicRunOwner } from "./helpers/public-run-owner";
+import { channelsPublishedTo } from "./helpers/realtime-publications";
 import { createRouteMocks } from "./helpers/route-test";
 import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
-import { createBddApi } from "./helpers/api-bdd";
-import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
-import { createRunsApi } from "./helpers/api-bdd-runs";
-import { flushWaitUntilForTest } from "../../context/wait-until";
+import { sshCredentialId } from "./helpers/ssh-credential";
 
 const context = testContext();
-const mocks = createRouteMocks(context);
+const clerkDirectory = createStore();
 const headers = Object.freeze({ authorization: "Bearer clerk-session" });
-const runnerSecret = "b".repeat(64);
-const runnerHeaders = Object.freeze({
-  authorization: `Bearer vm0_official_${runnerSecret}`,
-});
-const token = Object.freeze({
-  clientId: "client-id-canary.access",
-  clientSecret: "client-secret-canary",
-});
-const hostKey = Object.freeze({
-  algorithm: "ssh-ed25519" as const,
-  fingerprint: `SHA256:${Buffer.alloc(32, 1).toString("base64").replace(/=+$/u, "")}`,
-});
-type Owner = { orgId: string; userId: string };
+
+interface Actor {
+  readonly userId: string;
+  readonly orgId: string;
+  readonly role: "org:admin" | "org:member";
+}
+
+function actor(role: Actor["role"], orgId = `org_${randomUUID()}`): Actor {
+  return { userId: `user_${randomUUID()}`, orgId, role };
+}
+
+function signIn(user: Actor) {
+  createRouteMocks(context).clerk.session(user.userId, user.orgId, user.role);
+}
+
 const configs = () => {
   return setupApp({ context, routes: cloudflareAccessRoutes })(
     cloudflareAccessContract,
   );
 };
-const connections = () => {
+const hosts = () => {
   return setupApp({ context, routes: sshConnectionsRoutes })(
     sshConnectionsContract,
   );
 };
-const credentials = () => {
+const logins = () => {
   return setupApp({ context, routes: sshConnectionsRoutes })(
     sshCredentialsContract,
   );
 };
-
-async function resources() {
-  return {
-    hosts: (await accept(connections().list({ headers }), [200])).body
-      .connections,
-    credentials: (await accept(credentials().list({ headers }), [200])).body
-      .credentials,
-    configs: (await accept(configs().list({ headers }), [200])).body.configs,
-  };
-}
-
-describe("inline SSH resource creation", () => {
-  const login = {
-    name: "Inline login",
-    username: "deploy",
-    authentication: {
-      method: "password" as const,
-      password: "inline-password-canary",
-    },
-  };
-  const gateway = { name: "Inline gateway", credentials: token };
-
-  it.each(["create", "update"] as const)(
-    "%s independently binds inline and saved resources and returns only resolved metadata",
-    async (operation) => {
-      const o = owner();
-      const existingConfig = await config();
-      const existingHost = await host(existingConfig.id);
-      let current = existingHost;
-      const combinations =
-        operation === "create"
-          ? [
-              [false, false],
-              [true, false],
-              [true, true],
-            ]
-          : [
-              [false, true],
-              [true, false],
-              [true, true],
-            ];
-      for (const [newAccess, newCredential] of combinations) {
-        const before = await resources();
-        context.mocks.ably.publish.mockClear();
-        const fields = {
-          displayName: "Combined host",
-          host: "new.example.com",
-          port: 443,
-          credential: newCredential
-            ? { create: login }
-            : { id: credentialBackedSshHost(existingHost).credentialId },
-          transport: newAccess
-            ? { type: "cloudflare_access" as const, create: gateway }
-            : {
-                type: "cloudflare_access" as const,
-                configId: existingConfig.id,
-              },
-        };
-        const result =
-          operation === "create"
-            ? (
-                await accept(
-                  connections().create({
-                    headers,
-                    body: { id: randomUUID(), ...fields },
-                  }),
-                  [201],
-                )
-              ).body
-            : (
-                await accept(
-                  connections().update({
-                    headers,
-                    params: { connectionId: current.id },
-                    body: {
-                      ...fields,
-                      expectedGeneration: current.generation,
-                    },
-                  }),
-                  [200],
-                )
-              ).body;
-        current = result;
-        const parsed = sshConnectionResponseSchema.parse(result);
-        expect(parsed).toStrictEqual(result);
-        expect(JSON.stringify(result)).not.toContain("canary");
-        expect(result).toMatchObject({
-          transport: {
-            type: "cloudflare_access",
-            configId: expect.any(String),
-          },
-        });
-        expect(context.mocks.ably.publish.mock.calls).toContainEqual([
-          "ssh:changed",
-          { orgId: o.orgId },
-        ]);
-        expect(
-          context.mocks.ably.publish.mock.calls.some(([event]) => {
-            return event === "cloudflare-access:changed";
-          }),
-        ).toBe(newAccess);
-        const after = await resources();
-        expect(after.hosts).toHaveLength(
-          before.hosts.length + (operation === "create" ? 1 : 0),
-        );
-        expect(after.credentials).toHaveLength(
-          before.credentials.length + Number(newCredential),
-        );
-        expect(after.configs).toHaveLength(
-          before.configs.length + Number(newAccess),
-        );
-        expect(after.hosts).toContainEqual(result);
-        expect(
-          after.credentials.find((entry) => {
-            return entry.id === credentialBackedSshHost(result).credentialId;
-          })?.hosts,
-        ).toContainEqual({ id: result.id, displayName: result.displayName });
-        if (!("transport" in parsed) || !("configId" in parsed.transport)) {
-          throw new Error("Missing protected transport");
-        }
-        const selectedConfigId = parsed.transport.configId;
-        expect(
-          after.configs.find((entry) => {
-            return entry.id === selectedConfigId;
-          })?.sshHosts,
-        ).toContainEqual({ id: result.id, displayName: result.displayName });
-      }
-    },
-  );
-
-  it("rejects invalid references, destinations and stale versions without creating either resource", async () => {
-    const other = owner();
-    const otherConfig = await config();
-    const otherHost = await host();
-    owner({ orgId: other.orgId });
-    const existingHost = await host();
-    const initial = await resources();
-    const fields = {
-      displayName: "Rejected host",
-      host: "ssh.example.com",
-      port: 443,
-      credential: { create: login },
-      transport: { type: "cloudflare_access" as const, create: gateway },
-    };
-    for (const credentialId of [
-      randomUUID(),
-      credentialBackedSshHost(otherHost).credentialId,
-    ]) {
-      await accept(
-        connections().create({
-          headers,
-          body: {
-            id: randomUUID(),
-            ...fields,
-            credential: { id: credentialId },
-          },
-        }),
-        [404],
-      );
-      await accept(
-        connections().update({
-          headers,
-          params: { connectionId: existingHost.id },
-          body: {
-            ...fields,
-            expectedGeneration: existingHost.generation,
-            credential: { id: credentialId },
-          },
-        }),
-        [404],
-      );
-    }
-    for (const configId of [randomUUID(), otherConfig.id]) {
-      const transport = { type: "cloudflare_access" as const, configId };
-      await accept(
-        connections().create({
-          headers,
-          body: { id: randomUUID(), ...fields, transport },
-        }),
-        [404],
-      );
-      await accept(
-        connections().update({
-          headers,
-          params: { connectionId: existingHost.id },
-          body: {
-            ...fields,
-            expectedGeneration: existingHost.generation,
-            transport,
-          },
-        }),
-        [404],
-      );
-    }
-    await accept(
-      connections().create({
-        headers,
-        body: { id: randomUUID(), ...fields, host: "127.0.0.1" },
-      }),
-      [400],
-    );
-    await accept(
-      connections().update({
-        headers,
-        params: { connectionId: existingHost.id },
-        body: {
-          ...fields,
-          expectedGeneration: existingHost.generation,
-          port: 22,
-        },
-      }),
-      [400],
-    );
-    await accept(
-      connections().update({
-        headers,
-        params: { connectionId: existingHost.id },
-        body: {
-          ...fields,
-          expectedGeneration: existingHost.generation + 1,
-        },
-      }),
-      [409],
-    );
-    await expect(resources()).resolves.toStrictEqual(initial);
-  });
-
-  it("reports Access not found when its config is deleted while a rebind encrypts a new login", async () => {
-    owner();
-    const deleted = await config();
-    const existingHost = await host();
-    const initial = await resources();
-    useSecretKmsProbe(async (request, callNumber) => {
-      if (callNumber === 1) {
-        await accept(
-          configs().delete({
-            headers,
-            params: { configId: deleted.id },
-            body: { expectedRevision: deleted.revision },
-          }),
-          [204],
-        );
-      }
-      return {
-        keyId: request.keyId,
-        plaintext: Buffer.alloc(32, 7),
-        encryptedDataKey: Buffer.from(`encrypted:${request.keyId}`, "utf8"),
-      };
-    });
-
-    await expect(
-      accept(
-        connections().update({
-          headers,
-          params: { connectionId: existingHost.id },
-          body: {
-            expectedGeneration: existingHost.generation,
-            port: 443,
-            credential: { create: login },
-            transport: { type: "cloudflare_access", configId: deleted.id },
-          },
-        }),
-        [404],
-      ),
-    ).resolves.toMatchObject({
-      body: { error: { code: "CLOUDFLARE_ACCESS_NOT_FOUND" } },
-    });
-    await expect(resources()).resolves.toStrictEqual({
-      ...initial,
-      configs: [],
-    });
-  });
-});
-const runner = () => {
-  return setupApp({ context, routes: runnerSshRoutes })(runnerSshContract);
-};
-function authenticate(
-  owner: Owner,
-  role: "org:admin" | "org:member" = "org:member",
-) {
-  mocks.clerk.session(owner.userId, owner.orgId, role);
-  context.mocks.clerk.users.getOrganizationMembershipList.mockResolvedValue({
-    data: [
-      {
-        role,
-        organization: { id: owner.orgId },
-        publicUserData: { userId: owner.userId },
-      },
-    ],
-  });
-}
-function owner(
-  overrides: Partial<Owner> = {},
-  role: "org:admin" | "org:member" = "org:member",
-) {
-  const result = {
-    orgId: `org_access_${randomUUID()}`,
-    userId: `user_access_${randomUUID()}`,
-    ...overrides,
-  };
-  authenticate(result, role);
-  return result;
-}
-async function config(name = "Service token") {
-  return (
-    await accept(
-      configs().create({
-        headers,
-        body: { id: randomUUID(), name, credentials: token },
-      }),
-      [201],
-    )
-  ).body;
-}
-async function sharedConfig(name = "Shared service token") {
-  return (
-    await accept(
-      configs().create({
-        headers,
-        body: {
-          id: randomUUID(),
-          name,
-          scope: "organization",
-          credentials: token,
-        },
-      }),
-      [201],
-    )
-  ).body;
-}
-async function host(configId?: string) {
-  return (
-    await accept(
-      connections().create({
-        headers,
-        body: {
-          id: randomUUID(),
-          displayName: configId ? "Protected host" : "Direct host",
-          host: "ssh.example.com",
-          port: configId ? 443 : 22,
-          credential: {
-            create: {
-              name: "Login",
-              username: "deploy",
-              authentication: {
-                method: "password",
-                password: "ssh-password-canary",
-              },
-            },
-          },
-          ...(configId
-            ? { transport: { type: "cloudflare_access" as const, configId } }
-            : {}),
-        },
-      }),
-      [201],
-    )
-  ).body;
-}
-async function enableHostDefault(connectionId: string) {
-  const remote = setupApp({ context, routes: chatRemoteAccessRoutes })(
+const remoteAccess = () => {
+  return setupApp({ context, routes: chatRemoteAccessRoutes })(
     chatRemoteAccessContract,
   );
+};
+const runnerSsh = () => {
+  return setupApp({ context, routes: runnerSshRoutes })(runnerSshContract);
+};
+const sshHosts = () => {
+  return setupApp({ context, routes: sshAccessRoutes })(sshHostsContract);
+};
+
+function runnerHeaders() {
+  return {
+    authorization: `Bearer vm0_official_${env("OFFICIAL_RUNNER_SECRET")}`,
+  };
+}
+
+function hostKeyFor(seed: string) {
+  return {
+    algorithm: "ssh-ed25519" as const,
+    fingerprint: `SHA256:${createHash("sha256")
+      .update(seed)
+      .digest("base64")
+      .replace(/=+$/u, "")}`,
+  };
+}
+
+function readRealtimePublications() {
+  const gets = context.mocks.ably.channelGet.mock;
+  const publishes = context.mocks.ably.publish.mock;
+  return publishes.calls.map((call, index) => {
+    const publishedAt = publishes.invocationCallOrder[index] ?? 0;
+    let channel = "";
+    for (const [getIndex, order] of gets.invocationCallOrder.entries()) {
+      if (order < publishedAt) {
+        channel = String(gets.calls[getIndex]?.[0] ?? "");
+      }
+    }
+    return { channel, topic: call[0], payload: call[1] };
+  });
+}
+
+async function seedWorkspaceMember(
+  role: Actor["role"],
+  orgId = `org_${randomUUID()}`,
+): Promise<Actor> {
+  const created = actor(role, orgId);
+  await clerkDirectory.set(
+    seedOrgMembership$,
+    {
+      orgId: created.orgId,
+      userId: created.userId,
+      role: role === "org:admin" ? "admin" : "member",
+    },
+    context.signal,
+  );
+  return created;
+}
+
+async function enableSshDefault(user: Actor, connectionId: string) {
+  signIn(user);
   await accept(
-    remote.updateHostDefault({
+    remoteAccess().updateHostDefault({
       headers,
       params: { protocol: "ssh", connectionId },
       body: { enabled: true },
@@ -430,422 +137,771 @@ async function enableHostDefault(connectionId: string) {
     [200],
   );
 }
-/** Owner configuration needs no Run or Agent when its case never executes a host. */
-async function configuredOwnerFixture(o = owner()) {
-  authenticate(o);
-  const c = await config();
-  const h = await host(c.id);
-  await enableHostDefault(h.id);
-  return { ...o, config: c, host: h };
+
+async function launchActorRun(
+  user: Actor,
+  options: {
+    readonly runnerGroup?: string;
+    readonly runnerIdentity?: {
+      readonly runnerId: string;
+      readonly heartbeatGeneration: number;
+    };
+    readonly bootstrapOrg?: boolean;
+    readonly grantTeam?: boolean;
+  } = {},
+) {
+  const fixture = createChatEventsFixture(context);
+  const bdd = createBddApi(context);
+  const runs = createRunsApi(context);
+  const apiUser: ApiTestUser = bdd.user({
+    userId: user.userId,
+    orgId: user.orgId,
+    orgRole: user.role,
+  });
+  const owner = publicRunOwner(context, apiUser);
+  fixture.chatCallbacks.acceptChatObjectStorage();
+  runs.acceptStorageDownloads();
+  runs.acceptTelemetryIngest();
+  mockOptionalEnv("OPENROUTER_API_KEY", undefined);
+  fixture.chatCallbacks.disableVapid();
+
+  const runnerGroup =
+    options.runnerGroup ??
+    (await runs.configureRunnerGroup({
+      maxConcurrent: 4,
+      ...(options.runnerIdentity
+        ? { runnerIdentity: options.runnerIdentity }
+        : {}),
+    }));
+  if (options.bootstrapOrg !== false) {
+    await owner.run(() => {
+      return bdd.bootstrapLimitedFreeOnboarding(apiUser);
+    });
+    if (options.grantTeam) {
+      await runs.grantProEntitlement(apiUser, { tier: "team" });
+    }
+  } else {
+    await owner.run(() => {
+      return bdd.completeOnboarding(apiUser);
+    });
+  }
+
+  const launched = await owner.run(() => {
+    return fixture.sendChatRun(apiUser, {
+      prompt: "Access my Cloudflare Access SSH host",
+      model: null,
+    });
+  });
+  const execution = await owner.executionInput(launched.runId);
+  const dispatched = runs.dispatchedRun(launched.runId);
+  const okouToken = execution.platformEnvironment.OKOU_TOKEN;
+  if (!okouToken) {
+    throw new Error("Expected OKOU_TOKEN in Run execution input");
+  }
+  return {
+    runId: launched.runId,
+    threadId: launched.threadId,
+    runnerGroup,
+    agentHeaders: { authorization: `Bearer ${okouToken}` },
+    runnerIdentity: {
+      runnerId: dispatched.runnerId,
+      heartbeatGeneration: dispatched.heartbeatGeneration,
+    },
+  };
 }
 
-function useExecutionFixture() {
-  const executionRunCleanups: (() => Promise<void>)[] = [];
+function accessCredentials() {
+  return {
+    clientId: `client-${randomUUID()}`,
+    clientSecret: `secret-${randomUUID()}`,
+  };
+}
 
-  // Finish owned cancellation while the parent context still owns its mocks and signal.
-  afterEach(async () => {
-    for (const cleanup of executionRunCleanups.splice(0)) {
-      await cleanup();
-      await flushWaitUntilForTest();
-    }
+async function createConfig(
+  user: Actor,
+  scope: "personal" | "organization",
+  id: string = randomUUID(),
+) {
+  signIn(user);
+  const created = await accept(
+    configs().create({
+      headers,
+      query: { view: "scoped" },
+      body: {
+        id,
+        name: `Access ${id.slice(0, 8)}`,
+        scope,
+        credentials: accessCredentials(),
+      },
+    }),
+    [201],
+  );
+  return created.body;
+}
+
+function inlinePassword(username: string) {
+  return {
+    create: {
+      name: `${username} login`,
+      username,
+      authentication: {
+        method: "password" as const,
+        password: `password-${randomUUID()}`,
+      },
+    },
+  };
+}
+
+function hostFields() {
+  const id = randomUUID();
+  return {
+    id,
+    displayName: `Host ${id.slice(0, 8)}`,
+    host: `ssh-${id.slice(0, 8)}.example.test`,
+    port: 443,
+  };
+}
+
+async function bindHost(user: Actor, configId: string) {
+  signIn(user);
+  const created = await accept(
+    hosts().create({
+      headers,
+      body: {
+        ...hostFields(),
+        credential: inlinePassword("deploy"),
+        transport: { type: "cloudflare_access", configId },
+      },
+    }),
+    [201],
+  );
+  return created.body;
+}
+
+async function listHosts(user: Actor) {
+  signIn(user);
+  const listed = await accept(hosts().list({ headers }), [200]);
+  return listed.body.connections;
+}
+
+async function listLogins(user: Actor) {
+  signIn(user);
+  const listed = await accept(logins().list({ headers }), [200]);
+  return listed.body.credentials;
+}
+
+async function listConfigs(user: Actor) {
+  signIn(user);
+  const listed = await accept(
+    configs().list({ headers, query: { view: "scoped" } }),
+    [200],
+  );
+  return listed.body.configs;
+}
+
+function accessConfigId(connection: object) {
+  const transport =
+    "transport" in connection ? connection.transport : undefined;
+  if (
+    typeof transport !== "object" ||
+    transport === null ||
+    !("configId" in transport) ||
+    typeof transport.configId !== "string"
+  ) {
+    throw new Error("Expected a Cloudflare Access transport with a config ID");
+  }
+  return transport.configId;
+}
+
+function clearPublications() {
+  context.mocks.ably.publish.mockClear();
+  context.mocks.ably.channelGet.mockClear();
+}
+
+describe("Cloudflare Access owner configuration", () => {
+  beforeAll(() => {
+    setupApp({
+      context,
+      routes: [
+        ...cloudflareAccessRoutes,
+        ...sshConnectionsRoutes,
+        ...chatRemoteAccessRoutes,
+        ...runnerSshRoutes,
+        ...sshAccessRoutes,
+      ],
+    });
   });
 
-  /** Ordinary chat Runs use production launch and dispatch. */
-  return async function executionFixture() {
-    const o = owner();
-    const bdd = createBddApi(context);
-    const runs = createRunsApi(context);
-    const bootstrapActor = bdd.user({ ...o, orgRole: "org:admin" });
-    bdd.acceptStorageWrites();
-    runs.acceptStorageDownloads();
-    runs.acceptTelemetryIngest();
-    const runnerIdentity: {
-      runnerId: string;
-      heartbeatGeneration: number;
-    } = {
-      runnerId: randomUUID(),
-      heartbeatGeneration: 5_000_000_000,
-    };
-    await runs.configureRunnerGroup({
-      runnerIdentity,
-      heartbeatAuthorization: runnerHeaders.authorization,
+  it("cloudflare-access-012 a second workspace user cannot reuse or reach another user's configuration ID", async () => {
+    const owner = actor("org:admin");
+    const other = actor("org:admin", owner.orgId);
+    const config = await createConfig(owner, "personal");
+
+    signIn(other);
+    const conflict = await accept(
+      configs().create({
+        headers,
+        query: { view: "scoped" },
+        body: {
+          id: config.id,
+          name: "Borrowed Access",
+          scope: "personal",
+          credentials: accessCredentials(),
+        },
+      }),
+      [409],
+    );
+    expect(conflict.body.error).toMatchObject({
+      code: "CLOUDFLARE_ACCESS_RESOURCE_ID_CONFLICT",
+      message:
+        "This resource ID cannot be used for this Cloudflare Access configuration.",
     });
-    await runs.grantProEntitlement(bootstrapActor);
-    await runs.ensurePersonalSubscriptionModel(bootstrapActor, {
-      model: "claude-fable-5-1",
-    });
-    // Public host configuration and execution retain the original ordinary-member role.
-    const actor = { ...bootstrapActor, orgRole: "org:member" as const };
-    const configured = await configuredOwnerFixture(o);
-    const { runId } = await runs.createThreadRun(actor, {
-      prompt: "Use my configured Cloudflare Access SSH host",
-    });
-    const input = await runs.executionInput(runId);
-    executionRunCleanups.push(async () => {
-      // Restore test-owned external failures after assertions, without hiding cleanup errors.
-      authenticate(o);
-      useSecretKmsProbe();
-      context.mocks.ably.publish.mockResolvedValue(undefined);
-      await runs.requestCancelRun(actor, runId, [200]);
-      await createWebhookCallbackApi(context).requestAgentComplete(
-        { runId, exitCode: 137 },
-        { authorization: `Bearer ${input.sandboxToken}` },
-        [200],
-      );
-    });
-    const agentToken = input.platformEnvironment.OKOU_TOKEN;
-    if (!agentToken) {
-      throw new Error("Expected the Runner execution to issue its Agent token");
+    await expect(listConfigs(other)).resolves.toStrictEqual([]);
+    signIn(other);
+    await accept(
+      configs().update({
+        headers,
+        query: { view: "scoped" },
+        params: { configId: config.id },
+        body: { expectedRevision: 1, name: "Taken over" },
+      }),
+      [404],
+    );
+    await accept(
+      configs().delete({
+        headers,
+        query: { view: "scoped" },
+        params: { configId: config.id },
+        body: { expectedRevision: 1 },
+      }),
+      [404],
+    );
+    await accept(
+      hosts().create({
+        headers,
+        body: {
+          ...hostFields(),
+          credential: inlinePassword("deploy"),
+          transport: { type: "cloudflare_access", configId: config.id },
+        },
+      }),
+      [404],
+    );
+  });
+
+  it("cloudflare-access-011 shares one configuration across hosts without secret readback and rejects stale or dependent deletion", async () => {
+    const member = actor("org:member");
+    const credentials = accessCredentials();
+    signIn(member);
+    const created = await accept(
+      configs().create({
+        headers,
+        query: { view: "scoped" },
+        body: {
+          id: randomUUID(),
+          name: "Shared Access",
+          scope: "personal",
+          credentials,
+        },
+      }),
+      [201],
+    );
+    const config = created.body;
+    const login = inlinePassword("deploy");
+    const password = login.create.authentication.password;
+    signIn(member);
+    const first = await accept(
+      hosts().create({
+        headers,
+        body: {
+          ...hostFields(),
+          credential: login,
+          transport: { type: "cloudflare_access", configId: config.id },
+        },
+      }),
+      [201],
+    );
+    signIn(member);
+    const second = await accept(
+      hosts().create({
+        headers,
+        body: {
+          ...hostFields(),
+          credential: { id: sshCredentialId(first.body) },
+          transport: { type: "cloudflare_access", configId: config.id },
+        },
+      }),
+      [201],
+    );
+    const bound = [first.body, second.body];
+    const listed = await listConfigs(member);
+    expect(listed).toMatchObject([{ id: config.id }]);
+    expect(
+      listed[0]?.sshHosts
+        .map((host) => {
+          return host.id;
+        })
+        .sort(),
+    ).toStrictEqual(
+      bound
+        .map((host) => {
+          return host.id;
+        })
+        .sort(),
+    );
+    const publicBodies = JSON.stringify([
+      config,
+      listed,
+      bound,
+      await listHosts(member),
+    ]);
+    for (const hidden of [
+      credentials.clientId,
+      credentials.clientSecret,
+      password,
+      "encrypted",
+    ]) {
+      expect(publicBodies).not.toContain(hidden);
     }
-    await expect(runs.readRun(actor, runId)).resolves.toMatchObject({
-      status: "running",
-    });
-    authenticate(o);
-    return {
-      ...configured,
-      runId,
-      runnerIdentity,
-      guestHeaders: { authorization: `Bearer ${agentToken}` },
-      body: { connectionId: configured.host.id, runnerIdentity },
-      params: { runId },
-    };
-  };
-}
 
-const ordinary = createSshExecutionApi(context, {
-  runnerHeaders,
-  authenticate,
-});
-
-async function ordinaryFixture() {
-  const o = owner();
-  const r = await ordinary.runtime(o);
-  const c = await config();
-  const h = await host(c.id);
-  await enableHostDefault(h.id);
-  return {
-    ...o,
-    ...r,
-    config: c,
-    host: h,
-    body: { connectionId: h.id, runnerIdentity: r.runnerIdentity },
-    params: { runId: r.runId },
-  };
-}
-
-async function resolve(
-  f: Awaited<ReturnType<ReturnType<typeof useExecutionFixture>>>,
-) {
-  return (
-    await accept(
-      runner().resolve({
-        headers: runnerHeaders,
-        params: f.params,
-        body: f.body,
-      }),
-      [200],
-    )
-  ).body;
-}
-beforeEach(() => {
-  mockEnv("OFFICIAL_RUNNER_SECRET", runnerSecret);
-  useSecretKmsProbe();
-});
-
-describe("organization Cloudflare Access", () => {
-  afterEach(ordinary.cleanup);
-  const scoped = { view: "scoped" as const };
-
-  it("lists retained hosts as needing rebind and recovers only after an explicit choice", async () => {
-    const admin = owner({}, "org:admin");
-    const shared = await sharedConfig("Shared recovery gateway");
-    const next = await sharedConfig("Next shared gateway");
-    const member = owner({ orgId: admin.orgId });
-    const r = await ordinary.runtime(member);
-    const saved = await host(shared.id);
-    await enableHostDefault(saved.id);
-    const pinned = await accept(
-      runner().pin({
-        headers: runnerHeaders,
-        params: { runId: r.runId },
-        body: {
-          connectionId: saved.id,
-          runnerIdentity: r.runnerIdentity,
-          expectedGeneration: saved.generation,
-          observedHostKey: hostKey,
-        },
-      }),
-      [200],
-    );
-    expect(pinned.body).toMatchObject({ outcome: "pinned" });
-    authenticate(admin, "org:admin");
-    const preview = (
-      await accept(
-        configs().impactPreview({
-          headers,
-          params: { configId: shared.id },
-          query: { operation: "convert" },
-        }),
-        [200],
-      )
-    ).body;
-    expect(preview.otherHostCount).toBe(1);
-    await accept(
-      configs().convertToPersonal({
+    signIn(member);
+    const inUse = await accept(
+      configs().delete({
         headers,
-        params: { configId: shared.id },
-        body: {
-          expectedRevision: preview.expectedRevision,
-          impactSnapshot: preview.impactSnapshot,
-        },
+        query: { view: "scoped" },
+        params: { configId: config.id },
+        body: { expectedRevision: 1 },
       }),
-      [200],
+      [409],
     );
-    authenticate(member);
-    expect(pinned.body).toMatchObject({ generation: saved.generation + 1 });
-    const retainedGeneration = saved.generation + 2;
-    const listed = (await accept(connections().list({ headers }), [200])).body
-      .connections[0];
-    expect(listed).toMatchObject({
-      id: saved.id,
-      host: saved.host,
-      credentialId: credentialBackedSshHost(saved).credentialId,
-      learnedHostKey: hostKey,
-      generation: retainedGeneration,
-      transport: { type: "cloudflare_access", needsRebind: true },
-    });
-    expect(listed).not.toHaveProperty("transport.configId");
-    expect(JSON.stringify(listed)).not.toContain(token.clientSecret);
-
-    const edit = (
-      transport?:
-        { type: "direct" } | { type: "cloudflare_access"; configId: string },
-    ) => {
-      return connections().update({
+    expect(inUse.body.error.code).toBe("CLOUDFLARE_ACCESS_IN_USE");
+    const rename = (expectedRevision: number) => {
+      return configs().update({
         headers,
-        params: { connectionId: saved.id },
-        body: {
-          expectedGeneration: retainedGeneration,
-          displayName: "Retained host",
-          ...(transport ? { transport } : {}),
-        },
+        query: { view: "scoped" },
+        params: { configId: config.id },
+        body: { expectedRevision, name: "Renamed Access" },
       });
     };
-    await expect(accept(edit(), [400])).resolves.toMatchObject({
-      body: { error: { code: "SSH_INVALID_INPUT" } },
-    });
-    await expect(
-      accept(
-        edit({ type: "cloudflare_access", configId: randomUUID() }),
-        [404],
-      ),
-    ).resolves.toMatchObject({
-      body: { error: { code: "CLOUDFLARE_ACCESS_NOT_FOUND" } },
-    });
-    const rebound = await accept(
-      edit({ type: "cloudflare_access", configId: next.id }),
-      [200],
-    );
-    expect(rebound.body).toMatchObject({
-      transport: { type: "cloudflare_access", configId: next.id },
-      host: saved.host,
-      credentialId: credentialBackedSshHost(saved).credentialId,
-      learnedHostKey: hostKey,
-    });
-    authenticate(admin, "org:admin");
-    const nextPreview = (
+    const renamed = await accept(rename(1), [200]);
+    expect(renamed.body).toMatchObject({ revision: 2, generation: 1 });
+    await accept(rename(1), [409]);
+    for (const host of bound) {
       await accept(
-        configs().impactPreview({
+        hosts().delete({
           headers,
-          params: { configId: next.id },
-          query: { operation: "convert" },
+          params: { connectionId: host.id },
+          body: { expectedGeneration: host.generation },
         }),
-        [200],
-      )
-    ).body;
-    await accept(
-      configs().convertToPersonal({
+        [204],
+      );
+    }
+    const remove = (expectedRevision: number) => {
+      return configs().delete({
         headers,
-        params: { configId: next.id },
-        body: {
-          expectedRevision: nextPreview.expectedRevision,
-          impactSnapshot: nextPreview.impactSnapshot,
-        },
-      }),
-      [200],
-    );
-    authenticate(member);
-    const direct = await accept(
-      connections().update({
-        headers,
-        params: { connectionId: saved.id },
-        body: {
-          expectedGeneration: rebound.body.generation + 1,
-          transport: { type: "direct" },
-        },
-      }),
-      [200],
-    );
-    expect(direct.body).not.toHaveProperty("transport");
-    expect(direct.body).toMatchObject({
-      host: saved.host,
-      credentialId: credentialBackedSshHost(saved).credentialId,
-      learnedHostKey: hostKey,
-    });
+        query: { view: "scoped" },
+        params: { configId: config.id },
+        body: { expectedRevision },
+      });
+    };
+    await accept(remove(1), [409]);
+    await accept(remove(2), [204]);
+    await expect(listConfigs(member)).resolves.toStrictEqual([]);
   });
+});
 
-  it("returns scoped configurations and lets members bind shared configurations without seeing other hosts", async () => {
-    const admin = owner({}, "org:admin");
-    const shared = (
-      await accept(
-        configs().create({
+describe("inline SSH resource creation", () => {
+  it("cloudflare-access-001 creates hosts from saved and inline Access and logins and links each host to both", async () => {
+    const member = actor("org:member");
+    const saved = await createConfig(member, "personal");
+    const protectedHost = await bindHost(member, saved.id);
+    const savedLoginId = sshCredentialId(protectedHost);
+    const secrets: string[] = [];
+
+    const combinations = [
+      {
+        credential: { id: savedLoginId },
+        transport: { type: "cloudflare_access" as const, configId: saved.id },
+        newLogin: false,
+        newAccess: false,
+      },
+      {
+        credential: { id: savedLoginId },
+        transport: {
+          type: "cloudflare_access" as const,
+          create: { name: "Inline Access", credentials: accessCredentials() },
+        },
+        newLogin: false,
+        newAccess: true,
+      },
+      {
+        credential: inlinePassword("operator"),
+        transport: {
+          type: "cloudflare_access" as const,
+          create: { name: "Inline Access 2", credentials: accessCredentials() },
+        },
+        newLogin: true,
+        newAccess: true,
+      },
+    ];
+
+    for (const combination of combinations) {
+      const transportCreate =
+        "create" in combination.transport
+          ? combination.transport.create
+          : undefined;
+      if (transportCreate) {
+        secrets.push(
+          transportCreate.credentials.clientId,
+          transportCreate.credentials.clientSecret,
+        );
+      }
+      if ("create" in combination.credential) {
+        const authentication = combination.credential.create.authentication;
+        secrets.push(authentication.password);
+      }
+      const [hostsBefore, loginsBefore, configsBefore] = [
+        await listHosts(member),
+        await listLogins(member),
+        await listConfigs(member),
+      ];
+      clearPublications();
+      signIn(member);
+
+      const created = await accept(
+        hosts().create({
           headers,
-          query: scoped,
           body: {
-            id: randomUUID(),
-            name: "Shared gateway",
-            scope: "organization",
-            credentials: token,
+            ...hostFields(),
+            credential: combination.credential,
+            transport: combination.transport,
           },
         }),
         [201],
-      )
-    ).body;
-    expect(shared).toMatchObject({ scope: "organization", sshHosts: [] });
-    expect(
-      (await accept(configs().list({ headers }), [200])).body.configs,
-    ).toStrictEqual([shared]);
-    const privateConfig = await config("Admin private");
-    expect(privateConfig).toStrictEqual({
-      id: privateConfig.id,
-      name: "Admin private",
-      scope: "personal",
-      revision: 1,
-      generation: 1,
-      createdAt: expect.any(String),
-      updatedAt: expect.any(String),
-      sshHosts: [],
-      vncHosts: [],
-    });
-    expect(
-      (await accept(configs().list({ headers }), [200])).body.configs,
-    ).toStrictEqual(expect.arrayContaining([shared, privateConfig]));
-    const renamedPrivate = await accept(
-      configs().update({
+      );
+
+      const body = JSON.stringify(created.body);
+      for (const secret of secrets) {
+        expect(body).not.toContain(secret);
+      }
+      const configId = accessConfigId(created.body);
+      expect(created.body).toMatchObject({
+        transport: { type: "cloudflare_access", configId },
+      });
+      const userChannel = `user:${member.userId}`;
+      expect(channelsPublishedTo(context.mocks, "ssh:changed")).toContain(
+        userChannel,
+      );
+      const accessChannels = channelsPublishedTo(
+        context.mocks,
+        "cloudflare-access:changed",
+      );
+      if (combination.newAccess) {
+        expect(accessChannels).toContain(userChannel);
+      } else {
+        expect(accessChannels).toStrictEqual([]);
+      }
+
+      const loginId = sshCredentialId(created.body);
+      if (!combination.newLogin) {
+        expect(loginId).toBe(savedLoginId);
+      }
+      if (!combination.newAccess) {
+        expect(configId).toBe(saved.id);
+      }
+      const hostsAfter = await listHosts(member);
+      const loginsAfter = await listLogins(member);
+      const configsAfter = await listConfigs(member);
+      expect(hostsAfter).toHaveLength(hostsBefore.length + 1);
+      expect(loginsAfter).toHaveLength(
+        loginsBefore.length + (combination.newLogin ? 1 : 0),
+      );
+      expect(configsAfter).toHaveLength(
+        configsBefore.length + (combination.newAccess ? 1 : 0),
+      );
+      const login = loginsAfter.find((entry) => {
+        return entry.id === loginId;
+      });
+      expect(
+        login?.hosts.map((host) => {
+          return host.id;
+        }),
+      ).toContain(created.body.id);
+      const config = configsAfter.find((entry) => {
+        return entry.id === configId;
+      });
+      expect(
+        config?.sshHosts.map((host) => {
+          return host.id;
+        }),
+      ).toContain(created.body.id);
+      for (const secret of secrets) {
+        expect(
+          JSON.stringify([hostsAfter, loginsAfter, configsAfter]),
+        ).not.toContain(secret);
+      }
+    }
+  });
+
+  it("cloudflare-access-003 rejects invalid references, destinations and stale versions without creating anything", async () => {
+    const foreignAdmin = actor("org:admin");
+    const foreignConfig = await createConfig(foreignAdmin, "personal");
+    const foreignHost = await bindHost(foreignAdmin, foreignConfig.id);
+    const foreignLoginId = sshCredentialId(foreignHost);
+    const member = actor("org:member");
+    signIn(member);
+    const existing = await accept(
+      hosts().create({
         headers,
-        params: { configId: privateConfig.id },
-        body: { expectedRevision: 1, name: "Renamed private gateway" },
+        body: {
+          ...hostFields(),
+          port: 22,
+          credential: inlinePassword("deploy"),
+          transport: { type: "direct" },
+        },
+      }),
+      [201],
+    );
+    const current = await accept(
+      hosts().update({
+        headers,
+        params: { connectionId: existing.body.id },
+        body: {
+          expectedGeneration: existing.body.generation,
+          displayName: "Build host",
+        },
       }),
       [200],
     );
-    expect(renamedPrivate.body).toStrictEqual({
-      ...privateConfig,
-      name: "Renamed private gateway",
-      revision: 2,
-      updatedAt: expect.any(String),
-    });
-    expect(
-      (await accept(configs().list({ headers }), [200])).body.configs,
-    ).toStrictEqual(expect.arrayContaining([shared, renamedPrivate.body]));
-    expect(
-      (await accept(configs().list({ headers, query: scoped }), [200])).body
-        .configs,
-    ).toContainEqual(renamedPrivate.body);
+    const [hostsBefore, loginsBefore, configsBefore] = [
+      await listHosts(member),
+      await listLogins(member),
+      await listConfigs(member),
+    ];
+    const missingId = randomUUID();
+    const inlineAccess = {
+      type: "cloudflare_access" as const,
+      create: { name: "Inline Access", credentials: accessCredentials() },
+    };
+    signIn(member);
 
-    owner({ orgId: admin.orgId });
-    const firstHost = await host(shared.id);
-    const firstList = (
-      await accept(configs().list({ headers, query: scoped }), [200])
-    ).body.configs;
-    expect(firstList).toMatchObject([
-      {
-        id: shared.id,
-        scope: "organization",
-        sshHosts: [{ id: firstHost.id, displayName: firstHost.displayName }],
-      },
-    ]);
-    expect(JSON.stringify(firstList)).not.toContain(token.clientSecret);
-    expect(
-      firstList.some((entry) => {
-        return entry.id === privateConfig.id;
+    for (const loginId of [missingId, foreignLoginId]) {
+      await accept(
+        hosts().create({
+          headers,
+          body: {
+            ...hostFields(),
+            credential: { id: loginId },
+            transport: inlineAccess,
+          },
+        }),
+        [404],
+      );
+      await accept(
+        hosts().update({
+          headers,
+          params: { connectionId: current.body.id },
+          body: {
+            expectedGeneration: current.body.generation,
+            credential: { id: loginId },
+          },
+        }),
+        [404],
+      );
+    }
+    for (const configId of [missingId, foreignConfig.id]) {
+      await accept(
+        hosts().create({
+          headers,
+          body: {
+            ...hostFields(),
+            credential: inlinePassword("deploy"),
+            transport: { type: "cloudflare_access", configId },
+          },
+        }),
+        [404],
+      );
+      await accept(
+        hosts().update({
+          headers,
+          params: { connectionId: current.body.id },
+          body: {
+            expectedGeneration: current.body.generation,
+            port: 443,
+            transport: { type: "cloudflare_access", configId },
+          },
+        }),
+        [404],
+      );
+    }
+    await accept(
+      hosts().create({
+        headers,
+        body: {
+          ...hostFields(),
+          host: "127.0.0.1",
+          credential: inlinePassword("deploy"),
+          transport: inlineAccess,
+        },
       }),
-    ).toBeFalsy();
+      [400],
+    );
+    await accept(
+      hosts().update({
+        headers,
+        params: { connectionId: current.body.id },
+        body: {
+          expectedGeneration: current.body.generation,
+          host: "127.0.0.1",
+          port: 443,
+          transport: inlineAccess,
+        },
+      }),
+      [400],
+    );
+    await accept(
+      hosts().create({
+        headers,
+        body: {
+          ...hostFields(),
+          port: 22,
+          credential: inlinePassword("deploy"),
+          transport: inlineAccess,
+        },
+      }),
+      [400],
+    );
+    await accept(
+      hosts().update({
+        headers,
+        params: { connectionId: current.body.id },
+        body: {
+          expectedGeneration: current.body.generation,
+          port: 22,
+          transport: inlineAccess,
+        },
+      }),
+      [400],
+    );
+    await accept(
+      hosts().update({
+        headers,
+        params: { connectionId: current.body.id },
+        body: {
+          expectedGeneration: existing.body.generation,
+          displayName: "Stale rename",
+        },
+      }),
+      [409],
+    );
 
-    owner({ orgId: admin.orgId });
-    const secondList = (
-      await accept(configs().list({ headers, query: scoped }), [200])
-    ).body.configs;
-    expect(secondList).toMatchObject([
-      { id: shared.id, scope: "organization", sshHosts: [] },
-    ]);
-    const secondHost = await host(shared.id);
-    const secondUpdatedList = (
-      await accept(configs().list({ headers, query: scoped }), [200])
-    ).body.configs;
-    expect(secondUpdatedList[0]?.sshHosts).toStrictEqual([
-      { id: secondHost.id, displayName: secondHost.displayName },
-    ]);
+    await expect(listHosts(member)).resolves.toStrictEqual(hostsBefore);
+    await expect(listLogins(member)).resolves.toStrictEqual(loginsBefore);
+    await expect(listConfigs(member)).resolves.toStrictEqual(configsBefore);
+  });
+});
 
+describe("organization Cloudflare Access", () => {
+  it("cloudflare-access-006 members bind the shared configuration and see only their own hosts", async () => {
+    const admin = actor("org:admin");
+    const members = [
+      actor("org:member", admin.orgId),
+      actor("org:member", admin.orgId),
+    ];
+    const outsider = actor("org:admin");
+    const shared = await createConfig(admin, "organization");
+    expect(shared).toMatchObject({ scope: "organization", sshHosts: [] });
+    const personal = await createConfig(admin, "personal");
+    expect(personal).toMatchObject({
+      scope: "personal",
+      revision: 1,
+      generation: 1,
+      sshHosts: [],
+      vncHosts: [],
+    });
+    signIn(admin);
+    const adminList = await accept(
+      configs().list({ headers, query: {} }),
+      [200],
+    );
+    expect(
+      adminList.body.configs
+        .map((config) => {
+          return config.id;
+        })
+        .sort(),
+    ).toStrictEqual([shared.id, personal.id].sort());
+    for (const config of [shared, personal]) {
+      const renamed = await accept(
+        configs().update({
+          headers,
+          query: { view: "scoped" },
+          params: { configId: config.id },
+          body: {
+            expectedRevision: 1,
+            name: `Renamed ${config.id.slice(0, 8)}`,
+          },
+        }),
+        [200],
+      );
+      expect(renamed.body.revision).toBe(2);
+    }
+
+    for (const member of members) {
+      const host = await bindHost(member, shared.id);
+      const listed = await listConfigs(member);
+      expect(listed).toMatchObject([
+        { id: shared.id, scope: "organization", sshHosts: [{ id: host.id }] },
+      ]);
+      expect(listed[0]?.sshHosts).toHaveLength(1);
+      expect(JSON.stringify(listed)).not.toContain("secret-");
+    }
+
+    const [member] = members;
+    if (!member) {
+      throw new Error("Expected a workspace member");
+    }
+    signIn(member);
     await accept(
       configs().update({
         headers,
-        query: scoped,
+        query: { view: "scoped" },
         params: { configId: shared.id },
-        body: { expectedRevision: 1, name: "Unauthorized" },
+        body: { expectedRevision: 2, name: "Member rename" },
       }),
       [403],
     );
     await accept(
       configs().delete({
         headers,
-        query: scoped,
+        query: { view: "scoped" },
         params: { configId: shared.id },
-        body: { expectedRevision: 1 },
-      }),
-      [403],
-    );
-    await accept(
-      configs().update({
-        headers,
-        params: { configId: shared.id },
-        body: { expectedRevision: 1, name: "Unauthorized member" },
+        body: { expectedRevision: 2 },
       }),
       [403],
     );
     await accept(
       configs().create({
         headers,
-        query: scoped,
+        query: { view: "scoped" },
         body: {
           id: randomUUID(),
-          name: "Unauthorized",
+          name: "Member organization Access",
           scope: "organization",
-          credentials: token,
+          credentials: accessCredentials(),
         },
       }),
       [403],
     );
 
-    owner();
-    expect(
-      (await accept(configs().list({ headers, query: scoped }), [200])).body
-        .configs,
-    ).toStrictEqual([]);
+    await expect(listConfigs(outsider)).resolves.toStrictEqual([]);
+    signIn(outsider);
     await accept(
-      connections().create({
+      hosts().create({
         headers,
         body: {
-          id: randomUUID(),
-          displayName: "Foreign host",
-          host: "ssh.example.com",
-          port: 443,
-          credential: {
-            create: {
-              name: "Login",
-              username: "deploy",
-              authentication: { method: "password", password: "secret" },
-            },
-          },
+          ...hostFields(),
+          credential: inlinePassword("deploy"),
           transport: { type: "cloudflare_access", configId: shared.id },
         },
       }),
@@ -853,1238 +909,1029 @@ describe("organization Cloudflare Access", () => {
     );
   });
 
-  it("rotates every member host and blocks referenced deletion", async () => {
-    const admin = owner({}, "org:admin");
-    const shared = (
-      await accept(
-        configs().create({
-          headers,
-          query: scoped,
-          body: {
-            id: randomUUID(),
-            name: "Shared gateway",
-            scope: "organization",
-            credentials: token,
-          },
-        }),
-        [201],
-      )
-    ).body;
-    const first = owner({ orgId: admin.orgId });
-    const firstRun = await ordinary.runtime(first);
-    const firstHost = await host(shared.id);
-    const second = owner({ orgId: admin.orgId });
-    const secondRun = await ordinary.runtime(second);
-    const secondHost = await host(shared.id);
-    authenticate(admin, "org:admin");
-    await accept(
-      configs().delete({
-        headers,
-        query: scoped,
-        params: { configId: shared.id },
-        body: { expectedRevision: 1 },
-      }),
-      [409],
-    );
-    context.mocks.ably.publish.mockClear();
-    const rotated = await accept(
-      configs().update({
-        headers,
-        query: scoped,
-        params: { configId: shared.id },
-        body: {
-          expectedRevision: 1,
-          credentials: { ...token, clientSecret: "rotated-canary" },
-        },
-      }),
-      [200],
-    );
-    expect(rotated.body).toMatchObject({
-      scope: "organization",
-      generation: 2,
-      revision: 2,
-      sshHosts: [],
-    });
-    expect(context.mocks.ably.publish.mock.calls).toContainEqual([
-      "cloudflare-access:changed",
-      { orgId: admin.orgId },
-    ]);
-    expect(
-      context.mocks.ably.publish.mock.calls.filter(([topic]) => {
-        return topic === "ssh:changed";
-      }),
-    ).toHaveLength(2);
-    expect(
-      context.mocks.ably.publish.mock.calls.filter(([topic]) => {
-        return topic === "ssh-authority-invalidated";
-      }),
-    ).toStrictEqual(
-      expect.arrayContaining([
-        [
-          "ssh-authority-invalidated",
-          { runId: firstRun.runId, connectionId: firstHost.id },
-        ],
-        [
-          "ssh-authority-invalidated",
-          { runId: secondRun.runId, connectionId: secondHost.id },
-        ],
-      ]),
-    );
-    authenticate(first);
-    const firstHosts = (await accept(connections().list({ headers }), [200]))
-      .body.connections;
-    const reviewedFirst = firstHosts.find((host) => {
-      return host.id === firstHost.id;
-    });
-    expect(reviewedFirst?.generation).toBe(firstHost.generation + 1);
-    if (!reviewedFirst) {
-      throw new Error("Expected the first owner's SSH host");
-    }
-    await accept(
-      connections().delete({
-        headers,
-        params: { connectionId: firstHost.id },
-        body: { expectedGeneration: reviewedFirst.generation },
-      }),
-      [204],
-    );
-    authenticate(second);
-    const secondHosts = (await accept(connections().list({ headers }), [200]))
-      .body.connections;
-    const reviewedSecond = secondHosts.find((host) => {
-      return host.id === secondHost.id;
-    });
-    expect(reviewedSecond?.generation).toBe(secondHost.generation + 1);
-    if (!reviewedSecond) {
-      throw new Error("Expected the second owner's SSH host");
-    }
-    await accept(
-      connections().delete({
-        headers,
-        params: { connectionId: secondHost.id },
-        body: { expectedGeneration: reviewedSecond.generation },
-      }),
-      [204],
-    );
-    authenticate(admin, "org:admin");
-    await accept(
-      configs().delete({
-        headers,
-        query: scoped,
-        params: { configId: shared.id },
-        body: { expectedRevision: 2 },
-      }),
-      [204],
-    );
-  });
-});
-
-describe("Cloudflare Access owner configuration", () => {
-  afterEach(ordinary.cleanup);
-  const executionFixture = useExecutionFixture();
-
-  it("refreshes Access metadata for unreferenced config changes without SSH invalidation", async () => {
-    const o = owner();
-    await ordinary.runtime(o);
-    const assertNotice = () => {
-      expect(context.mocks.ably.publish.mock.calls).toStrictEqual([
-        ["cloudflare-access:changed", { orgId: o.orgId }],
-      ]);
-      expect(context.mocks.ably.channelGet.mock.calls).toStrictEqual([
-        [`user:${o.userId}`],
-      ]);
-    };
-    context.mocks.ably.publish.mockClear();
-    context.mocks.ably.channelGet.mockClear();
-    const c = await config();
-    assertNotice();
-    context.mocks.ably.publish.mockClear();
-    context.mocks.ably.channelGet.mockClear();
-    await accept(
-      configs().update({
-        headers,
-        params: { configId: c.id },
-        body: { expectedRevision: 1, name: "Renamed" },
-      }),
-      [200],
-    );
-    assertNotice();
-    context.mocks.ably.publish.mockClear();
-    context.mocks.ably.channelGet.mockClear();
-    await accept(
-      configs().delete({
-        headers,
-        params: { configId: c.id },
-        body: { expectedRevision: 2 },
-      }),
-      [204],
-    );
-    assertNotice();
-  });
-
-  it("requires a session and rejects unsafe token headers before encryption", async () => {
-    await accept(configs().list({ headers: {} }), [401]);
-    const kms = useSecretKmsProbe();
-    owner();
-    const request = setupRawAppRequest({
-      context,
-      routes: cloudflareAccessRoutes,
-    });
-    for (const value of [
-      "",
-      "a\r\nHost: evil.example",
-      " contains-space",
-      "é",
-      "x".repeat(4097),
-    ]) {
-      const result = await request("/api/cloudflare-access/configs", {
-        method: "POST",
-        headers: { ...headers, "content-type": "application/json" },
-        body: JSON.stringify({
-          id: randomUUID(),
-          name: "Unsafe",
-          credentials: { ...token, clientSecret: value },
-        }),
-      });
-      expect(result.status).toBe(400);
-    }
-    expect(
-      (await accept(configs().list({ headers }), [200])).body.configs,
-    ).toStrictEqual([]);
-    expect(kms.generateDataKeyCalls).toBe(0);
-  });
-
-  it("keeps canonical mutations idempotent and publishes canonical changes", async () => {
-    const o = owner();
-    const id = randomUUID();
-    context.mocks.ably.publish.mockClear();
-    const created = await accept(
-      configs().create({
-        headers,
-        body: { id, name: "Canonical", credentials: token },
-      }),
-      [201],
-    );
-    expect(created.body).toMatchObject({
-      id,
-      name: "Canonical",
-      sshHosts: [],
-    });
-    await accept(
-      configs().create({
-        headers,
-        body: { id, name: "Retry", credentials: token },
-      }),
-      [204],
-    );
-    const persisted = (await accept(configs().list({ headers }), [200])).body
-      .configs[0];
-    expect(persisted).toMatchObject({
-      id,
-      name: "Canonical",
-      sshHosts: [],
-    });
-    const updated = await accept(
-      configs().update({
-        headers,
-        params: { configId: id },
-        body: { expectedRevision: 1, name: "Renamed" },
-      }),
-      [200],
-    );
-    expect(updated.body).toMatchObject({
-      id,
-      name: "Renamed",
-      revision: 2,
-      sshHosts: [],
-    });
-    const canonical = (await accept(configs().list({ headers }), [200])).body
-      .configs[0];
-    expect(canonical).toMatchObject({
-      id,
-      name: "Renamed",
-      revision: 2,
-      sshHosts: [],
-    });
-    await accept(
-      configs().delete({
-        headers,
-        params: { configId: id },
-        body: { expectedRevision: 2 },
-      }),
-      [204],
-    );
-    expect(
-      (await accept(configs().list({ headers }), [200])).body.configs,
-    ).toStrictEqual([]);
-    const ownerEvents = context.mocks.ably.publish.mock.calls.filter(
-      ([event]) => {
-        return event === "cloudflare-access:changed";
-      },
-    );
-    expect(ownerEvents).toStrictEqual(
-      ["create", "update", "delete"].map(() => {
-        return ["cloudflare-access:changed", { orgId: o.orgId }];
-      }),
-    );
-    expect(
-      context.mocks.ably.publish.mock.calls.some(([event]) => {
-        return event === "ssh:changed";
-      }),
-    ).toBeFalsy();
-  });
-
-  it("shares one configuration across hosts without public secret readback and rejects stale/dependent deletion", async () => {
-    const f = await configuredOwnerFixture();
-    const second = await host(f.config.id);
-    const listed = (await accept(configs().list({ headers }), [200])).body;
-    expect(listed.configs[0]?.sshHosts).toStrictEqual(
-      expect.arrayContaining([
-        { id: f.host.id, displayName: f.host.displayName },
-        { id: second.id, displayName: second.displayName },
-      ]),
-    );
-    for (const body of [listed, f.host, f.config]) {
-      const text = JSON.stringify(body);
-      for (const secret of [
-        token.clientId,
-        token.clientSecret,
-        "ssh-password-canary",
-        "encrypted",
-        "vm0secret:",
-      ]) {
-        expect(text).not.toContain(secret);
-      }
-    }
-    const params = { configId: f.config.id };
-    expect(
-      (
+  it(
+    "cloudflare-access-005 lists retained hosts as needing rebind and recovers only after an explicit choice",
+    { timeout: TEST_WITH_DOUBLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      useSecretKmsProbe();
+      const admin = await seedWorkspaceMember("org:admin");
+      const member = await seedWorkspaceMember("org:member", admin.orgId);
+      const firstCreds = accessCredentials();
+      signIn(admin);
+      const first = (
         await accept(
-          configs().delete({ headers, params, body: { expectedRevision: 1 } }),
-          [409],
-        )
-      ).body.error.code,
-    ).toBe("CLOUDFLARE_ACCESS_IN_USE");
-    const renamed = await accept(
-      configs().update({
-        headers,
-        params,
-        body: { expectedRevision: 1, name: "Renamed" },
-      }),
-      [200],
-    );
-    expect(renamed.body).toMatchObject({
-      name: "Renamed",
-      revision: 2,
-      generation: 1,
-    });
-    await accept(
-      configs().update({
-        headers,
-        params,
-        body: { expectedRevision: 1, name: "Stale rename" },
-      }),
-      [409],
-    );
-    for (const connection of [f.host, second]) {
-      await accept(
-        connections().delete({
-          headers,
-          params: { connectionId: connection.id },
-          body: { expectedGeneration: connection.generation },
-        }),
-        [204],
-      );
-    }
-    await accept(
-      configs().delete({ headers, params, body: { expectedRevision: 1 } }),
-      [409],
-    );
-    await accept(
-      configs().delete({ headers, params, body: { expectedRevision: 2 } }),
-      [204],
-    );
-    expect(
-      (await accept(configs().list({ headers }), [200])).body.configs,
-    ).toStrictEqual([]);
-  });
-
-  it.each(["user", "org"] as const)(
-    "isolates foreign %s configuration IDs and metadata",
-    async (dimension) => {
-      const first = owner();
-      const c = await config();
-      owner(
-        dimension === "user"
-          ? { orgId: first.orgId }
-          : { userId: first.userId },
-      );
-      const createBody = {
-        id: c.id,
-        name: "Foreign ID",
-        credentials: token,
-      };
-      expect(
-        (await accept(configs().create({ headers, body: createBody }), [409]))
-          .body.error,
-      ).toStrictEqual({
-        code: "CLOUDFLARE_ACCESS_RESOURCE_ID_CONFLICT",
-        message:
-          "This resource ID cannot be used for this Cloudflare Access configuration.",
-      });
-      expect(
-        (await accept(configs().list({ headers }), [200])).body.configs,
-      ).toStrictEqual([]);
-      await accept(
-        configs().update({
-          headers,
-          params: { configId: c.id },
-          body: { expectedRevision: 1, name: "Foreign" },
-        }),
-        [404],
-      );
-      await accept(
-        configs().delete({
-          headers,
-          params: { configId: c.id },
-          body: { expectedRevision: 1 },
-        }),
-        [404],
-      );
-      const result = await connections().create({
-        headers,
-        body: {
-          id: randomUUID(),
-          displayName: "Foreign binding",
-          host: "ssh.example.com",
-          port: 443,
-          credential: {
-            create: {
-              name: "Login",
-              username: "user",
-              authentication: { method: "password", password: "secret" },
+          configs().create({
+            headers,
+            query: { view: "scoped" },
+            body: {
+              id: randomUUID(),
+              name: "Shared Access One",
+              scope: "organization",
+              credentials: firstCreds,
             },
-          },
-          transport: { type: "cloudflare_access", configId: c.id },
+          }),
+          [201],
+        )
+      ).body;
+      const second = await createConfig(admin, "organization");
+
+      const host = await bindHost(member, first.id);
+      const loginId = sshCredentialId(host);
+      await enableSshDefault(member, host.id);
+      const run = await launchActorRun(member, {
+        runnerIdentity: {
+          runnerId: randomUUID(),
+          heartbeatGeneration: 2,
         },
       });
-      await accept(Promise.resolve(result), [404]);
+      const key = hostKeyFor(`ca-005-${host.id}`);
+      const pin = await accept(
+        runnerSsh().pin({
+          headers: runnerHeaders(),
+          params: { runId: run.runId },
+          body: {
+            connectionId: host.id,
+            runnerIdentity: run.runnerIdentity,
+            expectedGeneration: host.generation,
+            observedHostKey: key,
+          },
+        }),
+        [200],
+      );
+      expect(pin.body).toStrictEqual({
+        outcome: "pinned",
+        generation: host.generation + 1,
+      });
+
+      signIn(admin);
+      const preview1 = (
+        await accept(
+          configs().impactPreview({
+            headers,
+            params: { configId: first.id },
+            query: { operation: "convert" },
+          }),
+          [200],
+        )
+      ).body;
+      expect(preview1.otherHostCount).toBe(1);
+      await accept(
+        configs().convertToPersonal({
+          headers,
+          params: { configId: first.id },
+          body: {
+            expectedRevision: preview1.expectedRevision,
+            impactSnapshot: preview1.impactSnapshot,
+          },
+        }),
+        [200],
+      );
+
+      const [retained] = await listHosts(member);
+      expect(retained).toMatchObject({
+        id: host.id,
+        host: host.host,
+        port: host.port,
+        credentialId: loginId,
+        learnedHostKey: key,
+        generation: host.generation + 2,
+        transport: { type: "cloudflare_access", needsRebind: true },
+      });
+      expect(JSON.stringify(retained)).not.toContain(first.id);
+      expect(JSON.stringify(retained)).not.toContain(firstCreds.clientSecret);
+
+      signIn(member);
+      const genAfterConvert = host.generation + 2;
+      const withoutTransport = await accept(
+        hosts().update({
+          headers,
+          params: { connectionId: host.id },
+          body: {
+            expectedGeneration: genAfterConvert,
+            displayName: "Missing transport edit",
+          },
+        }),
+        [400],
+      );
+      expect(withoutTransport.body.error.code).toBe("SSH_INVALID_INPUT");
+
+      const unknownConfig = await accept(
+        hosts().update({
+          headers,
+          params: { connectionId: host.id },
+          body: {
+            expectedGeneration: genAfterConvert,
+            transport: { type: "cloudflare_access", configId: randomUUID() },
+          },
+        }),
+        [404],
+      );
+      expect(unknownConfig.body.error.code).toBe("CLOUDFLARE_ACCESS_NOT_FOUND");
+
+      const rebound = (
+        await accept(
+          hosts().update({
+            headers,
+            params: { connectionId: host.id },
+            body: {
+              expectedGeneration: genAfterConvert,
+              transport: { type: "cloudflare_access", configId: second.id },
+            },
+          }),
+          [200],
+        )
+      ).body;
+      expect(rebound).toMatchObject({
+        id: host.id,
+        host: host.host,
+        port: host.port,
+        credentialId: loginId,
+        learnedHostKey: key,
+        transport: { type: "cloudflare_access", configId: second.id },
+      });
+
+      signIn(admin);
+      const preview2 = (
+        await accept(
+          configs().impactPreview({
+            headers,
+            params: { configId: second.id },
+            query: { operation: "convert" },
+          }),
+          [200],
+        )
+      ).body;
+      await accept(
+        configs().convertToPersonal({
+          headers,
+          params: { configId: second.id },
+          body: {
+            expectedRevision: preview2.expectedRevision,
+            impactSnapshot: preview2.impactSnapshot,
+          },
+        }),
+        [200],
+      );
+
+      signIn(member);
+      const switchedDirect = (
+        await accept(
+          hosts().update({
+            headers,
+            params: { connectionId: host.id },
+            body: {
+              expectedGeneration: rebound.generation + 1,
+              port: 22,
+              transport: { type: "direct" },
+            },
+          }),
+          [200],
+        )
+      ).body;
+      expect(switchedDirect).toMatchObject({
+        id: host.id,
+        host: host.host,
+        credentialId: loginId,
+        learnedHostKey: key,
+      });
+      expect("transport" in switchedDirect).toBeFalsy();
     },
   );
 
-  it("preserves chat host authority across Access config updates", async () => {
-    const f = await executionFixture();
-    const second = await config("Second");
-    await host(second.id);
-    let revision = f.config.revision;
-    for (const body of [
-      { name: "Renamed" },
-      { credentials: { ...token, clientSecret: "rotated-canary" } },
-    ]) {
-      const updated = await accept(
-        configs().update({
-          headers,
-          params: { configId: f.config.id },
-          body: { expectedRevision: revision, ...body },
-        }),
-        [200],
-      );
-      revision = updated.body.revision;
-      await expect(resolve(f)).resolves.toMatchObject({
-        outcome: "resolved_access",
+  it(
+    "cloudflare-access-007 rotates every member host and blocks referenced deletion",
+    { timeout: TEST_WITH_DOUBLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      useSecretKmsProbe();
+      const admin = await seedWorkspaceMember("org:admin");
+      const memberA = await seedWorkspaceMember("org:member", admin.orgId);
+      const memberB = await seedWorkspaceMember("org:member", admin.orgId);
+      const shared = await createConfig(admin, "organization");
+
+      const hostA = await bindHost(memberA, shared.id);
+      const hostB = await bindHost(memberB, shared.id);
+      await enableSshDefault(memberA, hostA.id);
+      await enableSshDefault(memberB, hostB.id);
+
+      const runA = await launchActorRun(memberA, { grantTeam: true });
+      const runB = await launchActorRun(memberB, {
+        runnerGroup: runA.runnerGroup,
+        bootstrapOrg: false,
       });
-    }
-  });
+
+      signIn(admin);
+      await accept(
+        configs().delete({
+          headers,
+          query: { view: "scoped" },
+          params: { configId: shared.id },
+          body: { expectedRevision: shared.revision },
+        }),
+        [409],
+      );
+
+      await flushWaitUntilForTest();
+      clearPublications();
+
+      signIn(admin);
+      const rotated = (
+        await accept(
+          configs().update({
+            headers,
+            query: { view: "scoped" },
+            params: { configId: shared.id },
+            body: {
+              expectedRevision: shared.revision,
+              credentials: accessCredentials(),
+            },
+          }),
+          [200],
+        )
+      ).body;
+      await flushWaitUntilForTest();
+
+      expect(rotated).toMatchObject({
+        id: shared.id,
+        scope: "organization",
+        generation: 2,
+        revision: 2,
+        sshHosts: [],
+      });
+
+      const publications = readRealtimePublications();
+      expect(
+        publications.filter((entry) => {
+          return entry.topic === "cloudflare-access:changed";
+        }),
+      ).toHaveLength(1);
+      expect(
+        publications.filter((entry) => {
+          return entry.topic === "ssh:changed";
+        }),
+      ).toHaveLength(2);
+      expect(
+        publications.filter((entry) => {
+          return entry.topic === "ssh-authority-invalidated";
+        }),
+      ).toStrictEqual(
+        expect.arrayContaining([
+          {
+            channel: `runner-group:${runA.runnerGroup}`,
+            topic: "ssh-authority-invalidated",
+            payload: { runId: runA.runId, connectionId: hostA.id },
+          },
+          {
+            channel: `runner-group:${runA.runnerGroup}`,
+            topic: "ssh-authority-invalidated",
+            payload: { runId: runB.runId, connectionId: hostB.id },
+          },
+        ]),
+      );
+
+      const [afterA] = await listHosts(memberA);
+      const [afterB] = await listHosts(memberB);
+      expect(afterA?.generation).toBe(hostA.generation + 1);
+      expect(afterB?.generation).toBe(hostB.generation + 1);
+
+      signIn(memberA);
+      await accept(
+        hosts().delete({
+          headers,
+          params: { connectionId: hostA.id },
+          body: { expectedGeneration: hostA.generation + 1 },
+        }),
+        [204],
+      );
+      signIn(memberB);
+      await accept(
+        hosts().delete({
+          headers,
+          params: { connectionId: hostB.id },
+          body: { expectedGeneration: hostB.generation + 1 },
+        }),
+        [204],
+      );
+
+      signIn(admin);
+      await accept(
+        configs().delete({
+          headers,
+          query: { view: "scoped" },
+          params: { configId: shared.id },
+          body: { expectedRevision: 2 },
+        }),
+        [204],
+      );
+    },
+  );
 });
 
 describe("protected SSH authority", () => {
-  afterEach(ordinary.cleanup);
-  const executionFixture = useExecutionFixture();
+  it(
+    "cloudflare-access-014 preserves chat host authority across Access config updates",
+    { timeout: TEST_WITH_SINGLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      useSecretKmsProbe();
+      const member = await seedWorkspaceMember("org:member");
+      const primary = await createConfig(member, "personal");
+      const secondary = await createConfig(member, "personal");
+      const primaryHost = await bindHost(member, primary.id);
+      await bindHost(member, secondary.id);
+      await enableSshDefault(member, primaryHost.id);
+      const run = await launchActorRun(member);
 
-  it("treats a protected host awaiting rebind as unavailable, never Direct", async () => {
-    const kms = useSecretKmsProbe();
-    const admin = owner({}, "org:admin");
-    const shared = await sharedConfig();
-    const member = owner({ orgId: admin.orgId });
-    const r = await ordinary.runtime(member);
-    const protectedHost = await host(shared.id);
-    const f = {
-      ...member,
-      ...r,
-      config: shared,
-      host: protectedHost,
-      body: {
-        connectionId: protectedHost.id,
-        runnerIdentity: r.runnerIdentity,
-      },
-      params: { runId: r.runId },
-    };
-    const readyHost = await host();
-    await enableHostDefault(protectedHost.id);
-    await enableHostDefault(readyHost.id);
-    expect((await resolve(f)).outcome).toBe("resolved_access");
-    const priorDecryptCalls = kms.decryptCalls;
-    authenticate(admin, "org:admin");
-    const preview = (
-      await accept(
-        configs().impactPreview({
+      signIn(member);
+      const renamed = await accept(
+        configs().update({
           headers,
-          params: { configId: shared.id },
-          query: { operation: "convert" },
+          query: { view: "scoped" },
+          params: { configId: primary.id },
+          body: { expectedRevision: 1, name: "Renamed primary" },
         }),
         [200],
-      )
-    ).body;
-    expect(preview.otherHostCount).toBe(1);
-    await accept(
-      configs().convertToPersonal({
-        headers,
-        params: { configId: shared.id },
-        body: {
-          expectedRevision: preview.expectedRevision,
-          impactSnapshot: preview.impactSnapshot,
-        },
-      }),
-      [200],
-    );
-    authenticate(member);
-    const generation = protectedHost.generation + 1;
-    expect(
-      (await accept(connections().list({ headers }), [200])).body.connections,
-    ).toContainEqual(
-      expect.objectContaining({
-        id: protectedHost.id,
-        generation,
-        transport: { type: "cloudflare_access", needsRebind: true },
-      }),
-    );
-    await expect(resolve(f)).resolves.toStrictEqual({ outcome: "unavailable" });
-    const inventory = setupApp({ context, routes: sshAccessRoutes })(
-      sshHostsContract,
-    );
-    expect(
-      (await accept(inventory.list({ headers: f.guestHeaders }), [200])).body
-        .hosts,
-    ).toStrictEqual([
-      {
-        id: readyHost.id,
-        displayName: readyHost.displayName,
-        host: readyHost.host,
-        port: 22,
-        username: "deploy",
-        learnedHostKey: null,
-        availability: { status: "ready" },
-      },
-      {
-        id: f.host.id,
-        displayName: f.host.displayName,
-        host: f.host.host,
-        port: 443,
-        username: "deploy",
-        learnedHostKey: null,
-        availability: { status: "blocked", reason: "needs_rebind" },
-      },
-    ]);
-    await accept(
-      connections().delete({
-        headers,
-        params: { connectionId: readyHost.id },
-        body: { expectedGeneration: readyHost.generation },
-      }),
-      [204],
-    );
-    const blockedOnly = await accept(
-      inventory.list({ headers: f.guestHeaders }),
-      [200],
-    );
-    expect(blockedOnly.body.hosts).toStrictEqual([
-      {
-        id: f.host.id,
-        displayName: f.host.displayName,
-        host: f.host.host,
-        port: 443,
-        username: "deploy",
-        learnedHostKey: null,
-        availability: { status: "blocked", reason: "needs_rebind" },
-      },
-    ]);
-    expect(JSON.stringify(blockedOnly.body)).not.toContain(token.clientSecret);
-    expect(
-      (
-        await accept(
-          runner().pin({
-            headers: runnerHeaders,
-            params: f.params,
-            body: {
-              ...f.body,
-              expectedGeneration: generation,
-              observedHostKey: hostKey,
-            },
-          }),
-          [200],
-        )
-      ).body,
-    ).toStrictEqual({ outcome: "unavailable" });
-    expect(
-      (
-        await accept(
-          runner().observe({
-            headers: runnerHeaders,
-            params: f.params,
-            body: {
-              ...f.body,
-              expectedGeneration: generation,
-              expectedCreatedAt: f.host.createdAt,
-              observedAt: nowDate().toISOString(),
-              failureReason: "access_rejected",
-            },
-          }),
-          [200],
-        )
-      ).body,
-    ).toStrictEqual({ outcome: "unavailable" });
-    expect(kms.decryptCalls).toBe(priorDecryptCalls);
-  });
-
-  it("resolves a same-organization shared Access row for another member", async () => {
-    const first = owner({}, "org:admin");
-    const shared = await sharedConfig();
-    const second = owner({ orgId: first.orgId });
-    const r = await ordinary.runtime(second);
-    const h = await host(shared.id);
-    await enableHostDefault(h.id);
-    const resolved = await accept(
-      runner().resolve({
-        headers: runnerHeaders,
-        params: { runId: r.runId },
-        body: { connectionId: h.id, runnerIdentity: r.runnerIdentity },
-      }),
-      [200],
-    );
-    expect(resolved.body).toMatchObject({
-      outcome: "resolved_access",
-      access: { configId: shared.id },
-    });
-    const inventory = setupApp({ context, routes: sshAccessRoutes })(
-      sshHostsContract,
-    );
-    expect(
-      (
-        await accept(inventory.list({ headers: r.guestHeaders }), [200])
-      ).body.hosts.map(({ id }) => {
-        return id;
-      }),
-    ).toStrictEqual([h.id]);
-  });
-
-  it("uses chat-enabled protected hosts for a later Agent", async () => {
-    const f = await ordinaryFixture();
-    const later = await ordinary.runtime(f);
-    expect(
-      (
-        await accept(
-          runner().resolve({
-            headers: runnerHeaders,
-            params: { runId: later.runId },
-            body: {
-              connectionId: f.host.id,
-              runnerIdentity: later.runnerIdentity,
-            },
-          }),
-          [200],
-        )
-      ).body,
-    ).toMatchObject({
-      outcome: "resolved_access",
-      access: { configId: f.config.id },
-    });
-    expect(
-      (
-        await accept(
-          setupApp({ context, routes: sshAccessRoutes })(sshHostsContract).list(
-            { headers: later.guestHeaders },
-          ),
-          [200],
-        )
-      ).body.hosts.map((h) => {
-        return h.id;
-      }),
-    ).toStrictEqual([f.host.id]);
-  });
-
-  it("uses only the Run owner's protected hosts across members of the same workspace", async () => {
-    const creator = owner();
-    await ordinary.runtime(creator, {});
-    const creatorConfig = await config();
-    const creatorHost = await host(creatorConfig.id);
-    const user = owner({ orgId: creator.orgId });
-    const r = await ordinary.runtime(user, {});
-    const ownConfig = await config();
-    const ownHost = await host(ownConfig.id);
-    await enableHostDefault(ownHost.id);
-    const request = {
-      headers: runnerHeaders,
-      params: { runId: r.runId },
-      body: { connectionId: ownHost.id, runnerIdentity: r.runnerIdentity },
-    };
-    expect((await accept(runner().resolve(request), [200])).body).toMatchObject(
-      {
-        outcome: "resolved_access",
-        access: { configId: ownConfig.id },
-      },
-    );
-    expect(
-      (
-        await accept(
-          runner().resolve({
-            ...request,
-            body: { ...request.body, connectionId: creatorHost.id },
-          }),
-          [200],
-        )
-      ).body,
-    ).toStrictEqual({ outcome: "unavailable" });
-    const inventory = setupApp({ context, routes: sshAccessRoutes })(
-      sshHostsContract,
-    );
-    expect(
-      (
-        await accept(inventory.list({ headers: r.guestHeaders }), [200])
-      ).body.hosts.map((h) => {
-        return h.id;
-      }),
-    ).toStrictEqual([ownHost.id]);
-    authenticate(user);
-    expect((await accept(runner().resolve(request), [200])).body).toMatchObject(
-      { outcome: "resolved_access", access: { configId: ownConfig.id } },
-    );
-    await accept(inventory.list({ headers: r.guestHeaders }), [200]);
-    expect(
-      (
-        await accept(
-          runner().pin({
-            ...request,
-            body: {
-              ...request.body,
-              expectedGeneration: 1,
-              observedHostKey: hostKey,
-            },
-          }),
-          [200],
-        )
-      ).body,
-    ).toMatchObject({ outcome: "pinned" });
-  });
-
-  it("preserves key authentication separately from the Access token", async () => {
-    const f = await executionFixture();
-    await accept(
-      connections().update({
-        headers,
-        params: { connectionId: f.host.id },
-        body: {
-          expectedGeneration: 1,
-          credential: {
-            create: {
-              name: "Key",
-              username: "deploy",
-              authentication: {
-                method: "private_key",
-                privateKey: "private-key-canary",
-                passphrase: " passphrase-canary\n",
-              },
-            },
-          },
-        },
-      }),
-      [200],
-    );
-    await expect(resolve(f)).resolves.toMatchObject({
-      outcome: "resolved_access",
-      authentication: {
-        method: "private_key",
-        privateKey: "private-key-canary",
-        passphrase: " passphrase-canary\n",
-      },
-      access: token,
-    });
-  });
-
-  it("keeps KMS failure an error instead of returning unavailable or Direct authority", async () => {
-    const f = await executionFixture();
-    useSecretKmsProbe(undefined, () => {
-      return Promise.reject(new Error("KMS unavailable"));
-    });
-    const result = await accept(
-      runner().resolve({
-        headers: runnerHeaders,
-        params: f.params,
-        body: f.body,
-      }),
-      [500],
-    );
-    for (const secret of [
-      token.clientId,
-      token.clientSecret,
-      "ssh-password-canary",
-    ]) {
-      expect(JSON.stringify(result.body)).not.toContain(secret);
-    }
-  });
-
-  it("invalidates only protected host IDs on Access credential rotation", async () => {
-    const f = await ordinaryFixture();
-    const second = await host(f.config.id);
-    const direct = await host();
-    await enableHostDefault(direct.id);
-    const otherAgent = await ordinary.runtime(f);
-    const otherOwner = owner({ orgId: f.orgId });
-    await ordinary.runtime(otherOwner);
-    authenticate(f);
-    const notices = () => {
-      return context.mocks.ably.publish.mock.calls.filter(([event]) => {
-        return event === "ssh-authority-invalidated";
-      });
-    };
-    context.mocks.ably.publish.mockClear();
-    await accept(
-      configs().update({
-        headers,
-        params: { configId: f.config.id },
-        body: { expectedRevision: 1, name: "Renamed" },
-      }),
-      [200],
-    );
-    expect(notices()).toStrictEqual([]);
-    expect(context.mocks.ably.publish.mock.calls).toStrictEqual([
-      ["cloudflare-access:changed", { orgId: f.orgId }],
-    ]);
-    context.mocks.ably.publish.mockClear();
-    await accept(
-      configs().update({
-        headers,
-        params: { configId: f.config.id },
-        body: {
-          expectedRevision: 2,
-          credentials: { ...token, clientSecret: "rotated-canary" },
-        },
-      }),
-      [200],
-    );
-    expect(notices()).toHaveLength(4);
-    expect(
-      context.mocks.ably.publish.mock.calls.filter(([event]) => {
-        return event === "ssh:changed";
-      }),
-    ).toStrictEqual([["ssh:changed", { orgId: f.orgId }]]);
-    expect(context.mocks.ably.publish.mock.calls).toContainEqual([
-      "cloudflare-access:changed",
-      { orgId: f.orgId },
-    ]);
-    expect(notices()).toStrictEqual(
-      expect.arrayContaining(
-        [f.runId, otherAgent.runId].flatMap((runId) => {
-          return [f.host.id, second.id].map((connectionId) => {
-            return ["ssh-authority-invalidated", { runId, connectionId }];
-          });
-        }),
-      ),
-    );
-    await expect(resolve(f)).resolves.toMatchObject({
-      outcome: "resolved_access",
-    });
-    expect(
-      (
-        await accept(
-          runner().resolve({
-            headers: runnerHeaders,
-            params: f.params,
-            body: { ...f.body, connectionId: direct.id },
-          }),
-          [200],
-        )
-      ).body,
-    ).toMatchObject({ outcome: "resolved_password" });
-  });
-
-  it("commits token replacement even when realtime publication fails", async () => {
-    const f = await executionFixture();
-    context.mocks.ably.publish.mockRejectedValue(
-      new Error("Realtime unavailable"),
-    );
-    const result = await accept(
-      configs().update({
-        headers,
-        params: { configId: f.config.id },
-        body: {
-          expectedRevision: 1,
-          credentials: { ...token, clientSecret: "rotated-canary" },
-        },
-      }),
-      [200],
-    );
-    expect(result.body).toMatchObject({
-      revision: 2,
-      generation: 2,
-    });
-    await expect(resolve(f)).resolves.toMatchObject({
-      outcome: "resolved_access",
-      generation: 2,
-      access: { generation: 2, clientSecret: "rotated-canary" },
-    });
-  });
-
-  it("rejects foreign Run owners before decrypting protected credentials", async () => {
-    const f = await ordinaryFixture();
-    const foreign = owner({ orgId: f.orgId });
-    const r = await ordinary.runtime(foreign, {});
-    const kms = useSecretKmsProbe();
-    const result = await accept(
-      runner().resolve({
-        headers: runnerHeaders,
-        params: { runId: r.runId },
-        body: { connectionId: f.host.id, runnerIdentity: r.runnerIdentity },
-      }),
-      [200],
-    );
-    expect(result.body).toStrictEqual({ outcome: "unavailable" });
-    expect(kms.decryptCalls).toBe(0);
-  });
-
-  it("hands off two independent credentials only to the winning Runner", async () => {
-    const f = await executionFixture();
-    await expect(resolve(f)).resolves.toMatchObject({
-      outcome: "resolved_access",
-      port: 443,
-      generation: 1,
-      authentication: { method: "password", password: "ssh-password-canary" },
-      access: { ...token, configId: f.config.id, generation: 1 },
-    });
-    for (const runnerIdentity of [
-      { ...f.runnerIdentity, runnerId: randomUUID() },
-      {
-        ...f.runnerIdentity,
-        heartbeatGeneration: f.runnerIdentity.heartbeatGeneration - 1,
-      },
-    ]) {
-      expect(
-        (
-          await accept(
-            runner().resolve({
-              headers: runnerHeaders,
-              params: f.params,
-              body: { ...f.body, runnerIdentity },
-            }),
-            [200],
-          )
-        ).body,
-      ).toStrictEqual({ outcome: "unavailable" });
-    }
-    await accept(
-      runner().resolve({ headers, params: f.params, body: f.body }),
-      [401],
-    );
-    await accept(
-      runner().resolve({
-        headers: f.guestHeaders,
-        params: f.params,
-        body: f.body,
-      }),
-      [401],
-    );
-    const inventory = await accept(
-      setupApp({ context, routes: sshAccessRoutes })(sshHostsContract).list({
-        headers: f.guestHeaders,
-      }),
-      [200],
-    );
-    expect(inventory.body.hosts).toStrictEqual([
-      {
-        id: f.host.id,
-        displayName: f.host.displayName,
-        host: f.host.host,
-        port: 443,
-        username: "deploy",
-        learnedHostKey: null,
-        availability: { status: "ready" },
-      },
-    ]);
-  });
-
-  it("preserves an omitted transport binding and rejects a stale editor without affecting Direct hosts", async () => {
-    const f = await executionFixture();
-    const direct = await host();
-    await enableHostDefault(direct.id);
-    const inventory = setupApp({ context, routes: sshAccessRoutes })(
-      sshHostsContract,
-    );
-    const {
-      body: { hosts: listed },
-    } = await accept(inventory.list({ headers: f.guestHeaders }), [200]);
-    expect(
-      listed.map((row) => {
-        return row.id;
-      }),
-    ).toStrictEqual(expect.arrayContaining([f.host.id, direct.id]));
-
-    const params = { connectionId: f.host.id };
-    const renamed = await accept(
-      connections().update({
-        headers,
-        params,
-        body: {
-          expectedGeneration: 1,
-          displayName: "Renamed host",
-        },
-      }),
-      [200],
-    );
-    expect(renamed.body).toMatchObject({
-      generation: 2,
-      transport: { type: "cloudflare_access", configId: f.config.id },
-    });
-    await accept(
-      connections().update({
-        headers,
-        params,
-        body: {
-          expectedGeneration: 1,
-          transport: { type: "direct" },
-          port: 22,
-        },
-      }),
-      [409],
-    );
-    await expect(resolve(f)).resolves.toMatchObject({
-      outcome: "resolved_access",
-      generation: 2,
-    });
-    const resolved = (
-      await accept(
-        runner().resolve({
-          headers: runnerHeaders,
-          params: f.params,
-          body: { ...f.body, connectionId: direct.id },
-        }),
-        [200],
-      )
-    ).body;
-    expect(resolved).toMatchObject({ outcome: "resolved_password", port: 22 });
-  });
-
-  it("uses chat host permission for inventory, resolve, observe and pin", async () => {
-    const f = await executionFixture();
-    expect((await resolve(f)).outcome).toBe("resolved_access");
-    const inventory = setupApp({ context, routes: sshAccessRoutes })(
-      sshHostsContract,
-    );
-    const listed = await accept(
-      inventory.list({ headers: f.guestHeaders }),
-      [200],
-    );
-    if (listed.status === 200) {
-      expect(listed.body.hosts).toHaveLength(1);
-    }
-    expect(
-      (
-        await accept(
-          runner().observe({
-            headers: runnerHeaders,
-            params: f.params,
-            body: {
-              ...f.body,
-              expectedGeneration: 1,
-              expectedCreatedAt: f.host.createdAt,
-              observedAt: nowDate().toISOString(),
-              failureReason: "access_rejected",
-            },
-          }),
-          [200],
-        )
-      ).body.outcome,
-    ).toBe("recorded");
-    expect(
-      (
-        await accept(
-          runner().pin({
-            headers: runnerHeaders,
-            params: f.params,
-            body: {
-              ...f.body,
-              expectedGeneration: 1,
-              observedHostKey: hostKey,
-            },
-          }),
-          [200],
-        )
-      ).body.outcome,
-    ).toBe("pinned");
-  });
-
-  it("preserves host trust across rotation, protected edits and Access transitions; rejects stale evidence", async () => {
-    const f = await executionFixture();
-    const second = await host(f.config.id);
-    const direct = await host();
-    await accept(
-      runner().pin({
-        headers: runnerHeaders,
-        params: f.params,
-        body: { ...f.body, expectedGeneration: 1, observedHostKey: hostKey },
-      }),
-      [200],
-    );
-    const rotated = await accept(
-      configs().update({
-        headers,
-        params: { configId: f.config.id },
-        body: {
-          expectedRevision: 1,
-          credentials: { ...token, clientSecret: "rotated-canary" },
-        },
-      }),
-      [200],
-    );
-    expect(rotated.body).toMatchObject({ revision: 2, generation: 2 });
-    const listed = (await accept(connections().list({ headers }), [200])).body
-      .connections;
-    expect(
-      listed.find((h) => {
-        return h.id === f.host.id;
-      }),
-    ).toMatchObject({ generation: 3, learnedHostKey: hostKey });
-    expect(
-      listed.find((h) => {
-        return h.id === second.id;
-      }),
-    ).toMatchObject({ generation: 2 });
-    expect(
-      listed.find((h) => {
-        return h.id === direct.id;
-      }),
-    ).toMatchObject({ generation: 1 });
-    expect(
-      (
-        await accept(
-          runner().observe({
-            headers: runnerHeaders,
-            params: f.params,
-            body: {
-              ...f.body,
-              expectedGeneration: 2,
-              expectedCreatedAt: f.host.createdAt,
-              observedAt: nowDate().toISOString(),
-              failureReason: "access_rejected",
-            },
-          }),
-          [200],
-        )
-      ).body.outcome,
-    ).toBe("ignored");
-    const replacement = await config("Replacement");
-    let generation = 3;
-    for (const body of [
-      { host: "changed.example.com" },
-      {
-        transport: {
-          type: "cloudflare_access" as const,
-          configId: replacement.id,
-        },
-      },
-      { transport: { type: "direct" as const }, port: 22 },
-      {
-        transport: {
-          type: "cloudflare_access" as const,
-          configId: replacement.id,
-        },
-        port: 443,
-      },
-    ]) {
-      const edited = await accept(
-        connections().update({
-          headers,
-          params: { connectionId: f.host.id },
+      );
+      expect(renamed.status).toBe(200);
+      const afterRename = await accept(
+        runnerSsh().resolve({
+          headers: runnerHeaders(),
+          params: { runId: run.runId },
           body: {
-            expectedGeneration: generation,
-            ...body,
+            connectionId: primaryHost.id,
+            runnerIdentity: run.runnerIdentity,
           },
         }),
         [200],
       );
-      expect(edited.body.learnedHostKey).toStrictEqual(hostKey);
-      generation = edited.body.generation;
-    }
-    await accept(
-      connections().resetHostKey({
-        headers,
-        params: { connectionId: f.host.id },
-        body: { expectedGeneration: generation },
-      }),
-      [200],
-    );
-    await expect(resolve(f)).resolves.toMatchObject({
-      outcome: "resolved_access",
-      learnedHostKey: null,
-    });
-  });
+      expect(afterRename.body.outcome).toBe("resolved_access");
 
-  it("preserves precise Access-stage evidence instead of misclassifying SSH authentication", async () => {
-    const f = await executionFixture();
-    const body = {
-      ...f.body,
-      expectedGeneration: 1,
-      expectedCreatedAt: f.host.createdAt,
-      observedAt: nowDate().toISOString(),
-      failureReason: "access_rejected" as const,
-    };
-    expect(
-      (
+      signIn(member);
+      const rotatedCreds = accessCredentials();
+      const rotated = await accept(
+        configs().update({
+          headers,
+          query: { view: "scoped" },
+          params: { configId: primary.id },
+          body: { expectedRevision: 2, credentials: rotatedCreds },
+        }),
+        [200],
+      );
+      expect(rotated.status).toBe(200);
+      const afterRotate = await accept(
+        runnerSsh().resolve({
+          headers: runnerHeaders(),
+          params: { runId: run.runId },
+          body: {
+            connectionId: primaryHost.id,
+            runnerIdentity: run.runnerIdentity,
+          },
+        }),
+        [200],
+      );
+      expect(afterRotate.body).toMatchObject({
+        outcome: "resolved_access",
+        access: {
+          configId: primary.id,
+          generation: 2,
+          clientId: rotatedCreds.clientId,
+          clientSecret: rotatedCreds.clientSecret,
+        },
+      });
+    },
+  );
+
+  it(
+    "cloudflare-access-015 treats a protected host awaiting rebind as unavailable, never Direct",
+    { timeout: TEST_WITH_SINGLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const kms = useSecretKmsProbe();
+      const admin = await seedWorkspaceMember("org:admin");
+      const member = await seedWorkspaceMember("org:member", admin.orgId);
+      const sharedCreds = accessCredentials();
+      signIn(admin);
+      const shared = (
         await accept(
-          runner().observe({ headers: runnerHeaders, params: f.params, body }),
+          configs().create({
+            headers,
+            query: { view: "scoped" },
+            body: {
+              id: randomUUID(),
+              name: "Shared convert target",
+              scope: "organization",
+              credentials: sharedCreds,
+            },
+          }),
+          [201],
+        )
+      ).body;
+
+      const protectedHost = await bindHost(member, shared.id);
+      signIn(member);
+      const directHost = (
+        await accept(
+          hosts().create({
+            headers,
+            body: {
+              ...hostFields(),
+              port: 22,
+              credential: inlinePassword("direct"),
+              transport: { type: "direct" },
+            },
+          }),
+          [201],
+        )
+      ).body;
+      await enableSshDefault(member, protectedHost.id);
+      await enableSshDefault(member, directHost.id);
+      const run = await launchActorRun(member);
+
+      const initialResolve = await accept(
+        runnerSsh().resolve({
+          headers: runnerHeaders(),
+          params: { runId: run.runId },
+          body: {
+            connectionId: protectedHost.id,
+            runnerIdentity: run.runnerIdentity,
+          },
+        }),
+        [200],
+      );
+      expect(initialResolve.body.outcome).toBe("resolved_access");
+
+      signIn(admin);
+      const preview = (
+        await accept(
+          configs().impactPreview({
+            headers,
+            params: { configId: shared.id },
+            query: { operation: "convert" },
+          }),
           [200],
         )
-      ).body.outcome,
-    ).toBe("recorded");
-    expect(
-      (await accept(connections().observations({ headers }), [200])).body
-        .observations[0]?.failureReason,
-    ).toBe("access_rejected");
-  });
+      ).body;
+      expect(preview.otherHostCount).toBe(1);
+      await accept(
+        configs().convertToPersonal({
+          headers,
+          params: { configId: shared.id },
+          body: {
+            expectedRevision: preview.expectedRevision,
+            impactSnapshot: preview.impactSnapshot,
+          },
+        }),
+        [200],
+      );
 
-  it("rejects unsafe protected destinations without silently creating Direct hosts", async () => {
-    owner();
-    const c = await config();
-    const request = setupRawAppRequest({
-      context,
-      routes: sshConnectionsRoutes,
-    });
-    for (const destination of [
-      "1.2.3.4",
-      "::1",
-      "localhost",
-      "*.example.com",
-      "https://ssh.example.com/path",
-    ]) {
-      const result = await request("/api/ssh/connections", {
-        method: "POST",
-        headers: { ...headers, "content-type": "application/json" },
-        body: JSON.stringify({
-          displayName: "Bad",
-          host: destination,
-          port: 443,
-          credential: {
-            create: {
-              name: "Login",
-              username: "user",
-              authentication: { method: "password", password: "secret" },
+      const memberHosts = await listHosts(member);
+      const detached = memberHosts.find((entry) => {
+        return entry.id === protectedHost.id;
+      });
+      expect(detached).toMatchObject({
+        id: protectedHost.id,
+        generation: protectedHost.generation + 1,
+        transport: { type: "cloudflare_access", needsRebind: true },
+      });
+
+      const decryptsBefore = kms.decryptCalls;
+      const [resolved, pinned, observed] = await Promise.all([
+        accept(
+          runnerSsh().resolve({
+            headers: runnerHeaders(),
+            params: { runId: run.runId },
+            body: {
+              connectionId: protectedHost.id,
+              runnerIdentity: run.runnerIdentity,
+            },
+          }),
+          [200],
+        ),
+        accept(
+          runnerSsh().pin({
+            headers: runnerHeaders(),
+            params: { runId: run.runId },
+            body: {
+              connectionId: protectedHost.id,
+              runnerIdentity: run.runnerIdentity,
+              expectedGeneration: protectedHost.generation + 1,
+              observedHostKey: hostKeyFor(`ca-015-${protectedHost.id}`),
+            },
+          }),
+          [200],
+        ),
+        accept(
+          runnerSsh().observe({
+            headers: runnerHeaders(),
+            params: { runId: run.runId },
+            body: {
+              connectionId: protectedHost.id,
+              runnerIdentity: run.runnerIdentity,
+              expectedGeneration: protectedHost.generation + 1,
+              expectedCreatedAt: protectedHost.createdAt,
+              observedAt: nowDate().toISOString(),
+              failureReason: null,
+            },
+          }),
+          [200],
+        ),
+      ]);
+      expect(resolved.body).toStrictEqual({ outcome: "unavailable" });
+      expect(pinned.body).toStrictEqual({ outcome: "unavailable" });
+      expect(observed.body).toStrictEqual({ outcome: "unavailable" });
+      expect(kms.decryptCalls).toBe(decryptsBefore);
+
+      const inventoryBefore = await accept(
+        sshHosts().list({ headers: run.agentHeaders }),
+        [200],
+      );
+      expect(inventoryBefore.body.hosts).toStrictEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            id: directHost.id,
+            availability: { status: "ready" },
+          }),
+          expect.objectContaining({
+            id: protectedHost.id,
+            availability: { status: "blocked", reason: "needs_rebind" },
+          }),
+        ]),
+      );
+      expect(JSON.stringify(inventoryBefore.body)).not.toContain(
+        sharedCreds.clientSecret,
+      );
+
+      signIn(member);
+      await accept(
+        hosts().delete({
+          headers,
+          params: { connectionId: directHost.id },
+          body: { expectedGeneration: directHost.generation },
+        }),
+        [204],
+      );
+      const inventoryAfter = await accept(
+        sshHosts().list({ headers: run.agentHeaders }),
+        [200],
+      );
+      expect(inventoryAfter.body.hosts).toStrictEqual([
+        expect.objectContaining({
+          id: protectedHost.id,
+          availability: { status: "blocked", reason: "needs_rebind" },
+        }),
+      ]);
+      expect(kms.decryptCalls).toBe(decryptsBefore);
+    },
+  );
+
+  it(
+    "cloudflare-access-016 resolves a same-organization shared Access row for another member",
+    { timeout: TEST_WITH_SINGLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      useSecretKmsProbe();
+      const admin = await seedWorkspaceMember("org:admin");
+      const member = await seedWorkspaceMember("org:member", admin.orgId);
+      const shared = await createConfig(admin, "organization");
+      const host = await bindHost(member, shared.id);
+      await enableSshDefault(member, host.id);
+      const run = await launchActorRun(member, {
+        runnerIdentity: {
+          runnerId: randomUUID(),
+          heartbeatGeneration: 2,
+        },
+      });
+
+      const [resolved, inventory] = await Promise.all([
+        accept(
+          runnerSsh().resolve({
+            headers: runnerHeaders(),
+            params: { runId: run.runId },
+            body: {
+              connectionId: host.id,
+              runnerIdentity: run.runnerIdentity,
+            },
+          }),
+          [200],
+        ),
+        accept(sshHosts().list({ headers: run.agentHeaders }), [200]),
+      ]);
+      expect(resolved.body).toMatchObject({
+        outcome: "resolved_access",
+        access: expect.objectContaining({ configId: shared.id }),
+      });
+      expect(inventory.body.hosts).toStrictEqual([
+        expect.objectContaining({ id: host.id }),
+      ]);
+    },
+  );
+
+  it(
+    "cloudflare-access-017 uses chat-enabled protected hosts for a later Agent",
+    { timeout: TEST_WITH_DOUBLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      useSecretKmsProbe();
+      const member = await seedWorkspaceMember("org:member");
+      const personal = await createConfig(member, "personal");
+      const host = await bindHost(member, personal.id);
+      await enableSshDefault(member, host.id);
+
+      const firstRun = await launchActorRun(member, { grantTeam: true });
+      const laterRun = await launchActorRun(member, {
+        runnerGroup: firstRun.runnerGroup,
+        bootstrapOrg: false,
+      });
+
+      const [resolved, inventory] = await Promise.all([
+        accept(
+          runnerSsh().resolve({
+            headers: runnerHeaders(),
+            params: { runId: laterRun.runId },
+            body: {
+              connectionId: host.id,
+              runnerIdentity: laterRun.runnerIdentity,
+            },
+          }),
+          [200],
+        ),
+        accept(sshHosts().list({ headers: laterRun.agentHeaders }), [200]),
+      ]);
+      expect(resolved.body).toMatchObject({
+        outcome: "resolved_access",
+        access: expect.objectContaining({ configId: personal.id }),
+      });
+      expect(inventory.body.hosts).toStrictEqual([
+        expect.objectContaining({ id: host.id }),
+      ]);
+    },
+  );
+
+  it(
+    "cloudflare-access-018 uses only the Run owner's protected hosts across members of the same workspace",
+    { timeout: TEST_WITH_DOUBLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      useSecretKmsProbe();
+      const firstMember = await seedWorkspaceMember("org:admin");
+      const secondMember = await seedWorkspaceMember(
+        "org:member",
+        firstMember.orgId,
+      );
+      const firstConfig = await createConfig(firstMember, "personal");
+      const secondConfig = await createConfig(secondMember, "personal");
+      const firstHost = await bindHost(firstMember, firstConfig.id);
+      const secondHost = await bindHost(secondMember, secondConfig.id);
+      await enableSshDefault(secondMember, secondHost.id);
+
+      const firstRun = await launchActorRun(firstMember, { grantTeam: true });
+      const secondRun = await launchActorRun(secondMember, {
+        runnerGroup: firstRun.runnerGroup,
+        bootstrapOrg: false,
+      });
+
+      const [ownResolve, foreignResolve, inventory] = await Promise.all([
+        accept(
+          runnerSsh().resolve({
+            headers: runnerHeaders(),
+            params: { runId: secondRun.runId },
+            body: {
+              connectionId: secondHost.id,
+              runnerIdentity: secondRun.runnerIdentity,
+            },
+          }),
+          [200],
+        ),
+        accept(
+          runnerSsh().resolve({
+            headers: runnerHeaders(),
+            params: { runId: secondRun.runId },
+            body: {
+              connectionId: firstHost.id,
+              runnerIdentity: secondRun.runnerIdentity,
+            },
+          }),
+          [200],
+        ),
+        accept(sshHosts().list({ headers: secondRun.agentHeaders }), [200]),
+      ]);
+      expect(ownResolve.body).toMatchObject({
+        outcome: "resolved_access",
+        access: expect.objectContaining({ configId: secondConfig.id }),
+      });
+      expect(foreignResolve.body).toStrictEqual({ outcome: "unavailable" });
+      expect(inventory.body.hosts).toStrictEqual([
+        expect.objectContaining({ id: secondHost.id }),
+      ]);
+
+      const [resolvedAgain, pinned] = await Promise.all([
+        accept(
+          runnerSsh().resolve({
+            headers: runnerHeaders(),
+            params: { runId: secondRun.runId },
+            body: {
+              connectionId: secondHost.id,
+              runnerIdentity: secondRun.runnerIdentity,
+            },
+          }),
+          [200],
+        ),
+        accept(
+          runnerSsh().pin({
+            headers: runnerHeaders(),
+            params: { runId: secondRun.runId },
+            body: {
+              connectionId: secondHost.id,
+              runnerIdentity: secondRun.runnerIdentity,
+              expectedGeneration: secondHost.generation,
+              observedHostKey: hostKeyFor(`ca-018-${secondHost.id}`),
+            },
+          }),
+          [200],
+        ),
+      ]);
+      expect(resolvedAgain.body.outcome).toBe("resolved_access");
+      expect(pinned.body).toStrictEqual({
+        outcome: "pinned",
+        generation: secondHost.generation + 1,
+      });
+    },
+  );
+
+  it(
+    "cloudflare-access-019 preserves key authentication separately from the Access token",
+    { timeout: TEST_WITH_SINGLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      useSecretKmsProbe();
+      const member = await seedWorkspaceMember("org:member");
+      const creds = accessCredentials();
+      signIn(member);
+      const personal = (
+        await accept(
+          configs().create({
+            headers,
+            query: { view: "scoped" },
+            body: {
+              id: randomUUID(),
+              name: "Key auth Access",
+              scope: "personal",
+              credentials: creds,
+            },
+          }),
+          [201],
+        )
+      ).body;
+      const host = await bindHost(member, personal.id);
+      await enableSshDefault(member, host.id);
+      const run = await launchActorRun(member, {
+        runnerIdentity: {
+          runnerId: randomUUID(),
+          heartbeatGeneration: 2,
+        },
+      });
+
+      const privateKey = `-----BEGIN OPENSSH PRIVATE KEY-----\nkey-${randomUUID()}\n-----END OPENSSH PRIVATE KEY-----`;
+      const passphrase = "  padded-passphrase-value  \n";
+      signIn(member);
+      const updated = await accept(
+        hosts().update({
+          headers,
+          params: { connectionId: host.id },
+          body: {
+            expectedGeneration: host.generation,
+            credential: {
+              create: {
+                name: "Inline key login",
+                username: "keyops",
+                authentication: {
+                  method: "private_key",
+                  privateKey,
+                  passphrase,
+                },
+              },
             },
           },
-          transport: { type: "cloudflare_access", configId: c.id },
         }),
+        [200],
+      );
+      expect(updated.status).toBe(200);
+
+      const resolved = await accept(
+        runnerSsh().resolve({
+          headers: runnerHeaders(),
+          params: { runId: run.runId },
+          body: {
+            connectionId: host.id,
+            runnerIdentity: run.runnerIdentity,
+          },
+        }),
+        [200],
+      );
+      expect(resolved.body).toMatchObject({
+        outcome: "resolved_access",
+        username: "keyops",
+        authentication: {
+          method: "private_key",
+          privateKey,
+          passphrase,
+        },
+        access: {
+          configId: personal.id,
+          generation: 1,
+          clientId: creds.clientId,
+          clientSecret: creds.clientSecret,
+        },
       });
-      expect(result.status).toBe(400);
-    }
-    expect(
-      (await accept(connections().list({ headers }), [200])).body.connections,
-    ).toStrictEqual([]);
-  });
+    },
+  );
+
+  it(
+    "cloudflare-access-024 hands off two independent credentials only to the winning Runner",
+    { timeout: TEST_WITH_SINGLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      useSecretKmsProbe();
+      const member = await seedWorkspaceMember("org:member");
+      const creds = accessCredentials();
+      signIn(member);
+      const personal = (
+        await accept(
+          configs().create({
+            headers,
+            query: { view: "scoped" },
+            body: {
+              id: randomUUID(),
+              name: "Winning runner Access",
+              scope: "personal",
+              credentials: creds,
+            },
+          }),
+          [201],
+        )
+      ).body;
+      const password = `pw-${randomUUID()}`;
+      const host = (
+        await accept(
+          hosts().create({
+            headers,
+            body: {
+              ...hostFields(),
+              credential: {
+                create: {
+                  name: "Deploy password",
+                  username: "deploy",
+                  authentication: { method: "password", password },
+                },
+              },
+              transport: { type: "cloudflare_access", configId: personal.id },
+            },
+          }),
+          [201],
+        )
+      ).body;
+      await enableSshDefault(member, host.id);
+      const run = await launchActorRun(member, {
+        runnerIdentity: {
+          runnerId: randomUUID(),
+          heartbeatGeneration: 2,
+        },
+      });
+
+      signIn(member);
+      const [
+        winning,
+        otherRunner,
+        olderHeartbeat,
+        memberSession,
+        agentTokenAttempt,
+        inventory,
+      ] = await Promise.all([
+        accept(
+          runnerSsh().resolve({
+            headers: runnerHeaders(),
+            params: { runId: run.runId },
+            body: {
+              connectionId: host.id,
+              runnerIdentity: run.runnerIdentity,
+            },
+          }),
+          [200],
+        ),
+        accept(
+          runnerSsh().resolve({
+            headers: runnerHeaders(),
+            params: { runId: run.runId },
+            body: {
+              connectionId: host.id,
+              runnerIdentity: {
+                runnerId: randomUUID(),
+                heartbeatGeneration: run.runnerIdentity.heartbeatGeneration,
+              },
+            },
+          }),
+          [200],
+        ),
+        accept(
+          runnerSsh().resolve({
+            headers: runnerHeaders(),
+            params: { runId: run.runId },
+            body: {
+              connectionId: host.id,
+              runnerIdentity: {
+                runnerId: run.runnerIdentity.runnerId,
+                heartbeatGeneration: run.runnerIdentity.heartbeatGeneration - 1,
+              },
+            },
+          }),
+          [200],
+        ),
+        accept(
+          runnerSsh().resolve({
+            headers,
+            params: { runId: run.runId },
+            body: {
+              connectionId: host.id,
+              runnerIdentity: run.runnerIdentity,
+            },
+          }),
+          [401],
+        ),
+        accept(
+          runnerSsh().resolve({
+            headers: run.agentHeaders,
+            params: { runId: run.runId },
+            body: {
+              connectionId: host.id,
+              runnerIdentity: run.runnerIdentity,
+            },
+          }),
+          [401],
+        ),
+        accept(sshHosts().list({ headers: run.agentHeaders }), [200]),
+      ]);
+
+      expect(winning.body).toMatchObject({
+        outcome: "resolved_access",
+        port: 443,
+        generation: 1,
+        username: "deploy",
+        authentication: { method: "password", password },
+        access: {
+          configId: personal.id,
+          generation: 1,
+          clientId: creds.clientId,
+          clientSecret: creds.clientSecret,
+        },
+      });
+      expect(otherRunner.body).toStrictEqual({ outcome: "unavailable" });
+      expect(olderHeartbeat.body).toStrictEqual({ outcome: "unavailable" });
+      expect(memberSession.status).toBe(401);
+      expect(agentTokenAttempt.status).toBe(401);
+      expect(inventory.body.hosts).toStrictEqual([
+        expect.objectContaining({
+          id: host.id,
+          port: 443,
+          username: "deploy",
+          learnedHostKey: null,
+          availability: { status: "ready" },
+        }),
+      ]);
+    },
+  );
+
+  it(
+    "cloudflare-access-028 preserves precise Access-stage evidence instead of misclassifying SSH authentication",
+    { timeout: TEST_WITH_SINGLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      useSecretKmsProbe();
+      const member = await seedWorkspaceMember("org:member");
+      const personal = await createConfig(member, "personal");
+      const host = await bindHost(member, personal.id);
+      await enableSshDefault(member, host.id);
+      const run = await launchActorRun(member, {
+        runnerIdentity: {
+          runnerId: randomUUID(),
+          heartbeatGeneration: 2,
+        },
+      });
+
+      const observed = await accept(
+        runnerSsh().observe({
+          headers: runnerHeaders(),
+          params: { runId: run.runId },
+          body: {
+            connectionId: host.id,
+            runnerIdentity: run.runnerIdentity,
+            expectedGeneration: host.generation,
+            expectedCreatedAt: host.createdAt,
+            observedAt: nowDate().toISOString(),
+            failureReason: "access_rejected",
+          },
+        }),
+        [200],
+      );
+      expect(observed.body).toStrictEqual({ outcome: "recorded" });
+
+      signIn(member);
+      const listed = (await accept(hosts().observations({ headers }), [200]))
+        .body.observations;
+      expect(listed[0]).toMatchObject({
+        connectionId: host.id,
+        failureReason: "access_rejected",
+      });
+    },
+  );
 });

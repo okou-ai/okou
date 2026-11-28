@@ -1,304 +1,320 @@
-import { randomUUID } from "node:crypto";
-
+import { slackConnectContract } from "@okouai/api-contracts/contracts/slack-connect";
 import { describe, expect, it } from "vitest";
 
-import { testContext } from "../../../__tests__/test-context";
-import { mockNow, now } from "../../../lib/time";
-import { createDeferredPromise } from "../../utils";
-import {
-  createAuthOrgBddApi,
-  type ApiTestUser,
-} from "./helpers/api-bdd-auth-org";
+import { accept, testContext } from "../../../__tests__/test-context";
+import { setupApp } from "../../../__tests__/test-helpers";
+import { slackConnectRoutes } from "../slack-connect";
+import { expectApiError, type ApiTestUser } from "./helpers/api-bdd";
+import { createAuthOrgBddApi } from "./helpers/api-bdd-auth-org";
 import { createBddIntegrationApi } from "./helpers/api-bdd-integrations";
-import { createRunsApi } from "./helpers/api-bdd-runs";
-import { expectApiError } from "./helpers/api-bdd";
-import { ClerkTransportTestError } from "./helpers/clerk-transport-error";
+import { createRouteMocks } from "./helpers/route-test";
+import { createPublicSlackOrgApi } from "./helpers/slack-public-install";
 
-/*
-ORG-01/02/03, TEAM, and AGENT-02 integration chains:
-- Org/member/Slack-connection state is asserted through follow-up
-  GET /org, listMembers, listOrgs, Slack connect-status reads, and response
-  messages; onboarding state through onboarding status and agents list.
-- Boundary-call asserts are kept only where contract-critical: the Clerk
-  `updateOrganizationLogo(orgId, {file})` shape, the `updateOrganization`
-  call shape and the membership_requests REST call-count 0 for non-admin
-  callers (security guarantee).
-- Per-route 401 / no-org / sandbox-token-rejection matrices are consolidated:
-  one representative per distinct inner-handler statement, plus two
-  representative sandbox rejections in the run-scoped token chain.
-- A missing billing:read case is not constructible because
-  `generateOkouToken` grants that capability unconditionally.
-*/
-
-const context = testContext();
-const api = createAuthOrgBddApi(context);
-
-class ClerkApiResponseTestError extends Error {
-  static readonly kind = "ClerkAPIResponseError";
-
-  constructor(
-    readonly retryAfter: number,
-    readonly status = 429,
-  ) {
-    super(`Clerk Backend API request failed with status ${status}`);
-  }
-}
-
-function shortId(): string {
-  return randomUUID().replace(/-/g, "").slice(0, 10);
-}
-
-function slug(prefix: string): string {
-  return `${prefix}-${shortId()}`;
-}
-
-function orgIdOf(actor: ApiTestUser): string {
-  if (!actor.orgId) {
-    throw new Error("Expected actor to have an organization");
-  }
-  return actor.orgId;
-}
-
-async function onboardAdmin(
-  admin: ApiTestUser,
-  options: {
-    readonly slug?: string;
-    readonly name?: string;
-  } = {},
-): Promise<void> {
-  const orgState: { slug?: string; name?: string } = {};
-  if (options.slug !== undefined) {
-    orgState.slug = options.slug;
-  }
-  if (options.name !== undefined) {
-    orgState.name = options.name;
-  }
-  api.mockClerkOrg(admin, orgState);
-  const bootstrap = await api.bootstrapLimitedFreeOnboarding(admin);
-  if (bootstrap.status !== 200) {
-    throw new Error(
-      `Expected onboarding bootstrap to succeed, got ${bootstrap.status}`,
-    );
-  }
-}
-
-function pngLogoFile(): File {
-  return new File([new Uint8Array([137, 80, 78, 71])], "logo.png", {
-    type: "image/png",
-  });
-}
-
-function logoForm(file: File): FormData {
+function logoFormData(
+  bytes: Uint8Array<ArrayBuffer>,
+  filename: string,
+  type: string,
+): FormData {
   const form = new FormData();
-  form.append("file", file);
+  form.append("file", new File([bytes], filename, { type }));
   return form;
 }
 
-describe("ORG-00: user-level organization creation count", () => {
-  it("counts owned workspaces independently of the active workspace", async () => {
-    const actor = api.user();
+describe("org-team.bdd", () => {
+  const context = testContext();
+
+  async function onboardedOrgWithMember(
+    api: ReturnType<typeof createAuthOrgBddApi>,
+  ): Promise<{
+    readonly admin: ApiTestUser;
+    readonly member: ApiTestUser;
+    readonly orgId: string;
+  }> {
+    const admin = api.user({ orgRole: "org:admin" });
+    const member = api.user({ orgId: admin.orgId, orgRole: "org:member" });
+    const orgId = admin.orgId;
+    if (!orgId) {
+      throw new Error("Expected admin orgId");
+    }
+
+    await api.bootstrapLimitedFreeOnboarding(admin);
+    api.mockClerkOrg(admin, {
+      name: "BDD R5 Org",
+      members: [
+        { actor: admin, role: "org:admin" },
+        { actor: member, role: "org:member" },
+      ],
+    });
+    await api.listMembers(admin);
+    return { admin, member, orgId };
+  }
+
+  function mockClerkOrgRename(
+    admin: ApiTestUser,
+    orgId: string,
+    onRename: (nextName: string) => void,
+  ): void {
+    context.mocks.clerk.organizations.updateOrganization.mockImplementation(
+      (targetOrgId: unknown, payload: unknown) => {
+        const nextName =
+          typeof payload === "object" &&
+          payload !== null &&
+          "name" in payload &&
+          typeof payload.name === "string"
+            ? payload.name
+            : "";
+        onRename(nextName);
+        return Promise.resolve({
+          id: typeof targetOrgId === "string" ? targetOrgId : orgId,
+          slug: `bdd-${orgId.slice(-8).toLowerCase()}`,
+          name: nextName,
+          createdBy: admin.userId,
+        });
+      },
+    );
+  }
+
+  it("org-team.bdd-001 counts owned workspaces independently of the active workspace", async () => {
+    const api = createAuthOrgBddApi(context);
+    const activeOrgId = "org_active_owned_by_other";
+    const ownedOrgId = "org_second_owned_by_user";
+    const user = api.user({ orgId: activeOrgId, orgRole: "org:member" });
+    const otherCreator = api.user({ orgId: activeOrgId, orgRole: "org:admin" });
+
     context.mocks.clerk.users.getOrganizationMembershipList.mockResolvedValue({
       data: [
         {
+          role: "org:member",
           organization: {
-            id: orgIdOf(actor),
-            createdBy: "other-user",
+            id: activeOrgId,
+            slug: "active-other",
+            name: "Active Other Org",
+            createdBy: otherCreator.userId,
           },
+          publicUserData: { userId: user.userId },
         },
         {
+          role: "org:admin",
           organization: {
-            id: "org_owned",
-            createdBy: actor.userId,
+            id: ownedOrgId,
+            slug: "owned-second",
+            name: "Owned Second Org",
+            createdBy: user.userId,
           },
+          publicUserData: { userId: user.userId },
         },
       ],
-      totalCount: 2,
     });
 
-    await expect(api.readCreatedOrganizationsCount(actor)).resolves.toBe(1);
+    const count = await api.readCreatedOrganizationsCount(user);
+    expect(count).toBe(1);
   });
-});
 
-describe("ORG-01: org logo lifecycle through the Clerk boundary", () => {
-  it("serves, uploads, and removes the org logo across auth, validation, and clerk error arms [ORG-LOGO-A]", async () => {
-    const admin = api.user();
-    const member = api.user({ orgId: admin.orgId, orgRole: "org:member" });
-    const noOrg = api.user({ orgId: null });
-    const orgId = orgIdOf(admin);
+  it("org-team.bdd-002 (1/2) serves the org logo across image, empty, auth, and not-found read arms", async () => {
+    const api = createAuthOrgBddApi(context);
+    const admin = api.user({ orgRole: "org:admin" });
+    const noOrgUser = api.user({ orgId: null });
+    const orgId = admin.orgId;
+    if (!orgId) {
+      throw new Error("Expected admin orgId");
+    }
 
-    // GET happy path + ""→null arm. First test in the file: install the
-    // Clerk logo boundary explicitly before any call.
-    api.mockClerkOrgLogo("get", {
-      imageUrl: "https://img.clerk.test/org-logo.png",
-      hasImage: true,
-    });
-    const logo = await api.requestReadOrgLogo(admin, [200]);
-    expect(logo.body).toStrictEqual({
+    let lookedUpOrgId: string | undefined;
+    context.mocks.clerk.organizations.getOrganization.mockImplementation(
+      (args: unknown) => {
+        if (
+          typeof args === "object" &&
+          args !== null &&
+          "organizationId" in args &&
+          typeof args.organizationId === "string"
+        ) {
+          lookedUpOrgId = args.organizationId;
+        }
+        return Promise.resolve({
+          imageUrl: "https://img.clerk.test/org-logo.png",
+          hasImage: true,
+        });
+      },
+    );
+
+    const readWithImage = await api.requestReadOrgLogo(admin, [200]);
+    expect(readWithImage.body).toStrictEqual({
       logoUrl: "https://img.clerk.test/org-logo.png",
       hasImage: true,
     });
-    expect(
-      context.mocks.clerk.organizations.getOrganization,
-    ).toHaveBeenCalledWith({ organizationId: orgId });
+    expect(lookedUpOrgId).toBe(orgId);
 
     api.mockClerkOrgLogo("get", { imageUrl: "", hasImage: false });
-    const clearedLogo = await api.requestReadOrgLogo(admin, [200]);
-    expect(clearedLogo.body).toStrictEqual({ logoUrl: null, hasImage: false });
+    const readEmpty = await api.requestReadOrgLogo(admin, [200]);
+    expect(readEmpty.body).toStrictEqual({ logoUrl: null, hasImage: false });
 
-    // GET auth arms.
-    const unauthenticatedGet = await api.requestReadOrgLogo(null, [401]);
-    expectApiError(unauthenticatedGet.body);
-    expect(unauthenticatedGet.body.error.code).toBe("UNAUTHORIZED");
-    const noOrgGet = await api.requestReadOrgLogo(noOrg, [404]);
-    expect(noOrgGet.body).toStrictEqual({
-      error: { message: "Org not found", code: "BAD_REQUEST" },
-    });
+    const readAnon = await api.requestReadOrgLogo(null, [401]);
+    expectApiError(readAnon.body);
+    expect(readAnon.body.error.code).toBe("UNAUTHORIZED");
 
-    // GET Clerk lookup failures map to the same 404.
+    const readNoOrg = await api.requestReadOrgLogo(noOrgUser, [404]);
+    expectApiError(readNoOrg.body);
+    expect(readNoOrg.body.error.message).toBe("Org not found");
+
     api.mockClerkLogoError("get", "NotFoundError");
-    const getNotFound = await api.requestReadOrgLogo(admin, [404]);
-    expect(getNotFound.body).toStrictEqual({
-      error: { message: "Org not found", code: "BAD_REQUEST" },
-    });
+    const readNotFound = await api.requestReadOrgLogo(admin, [404]);
+    expectApiError(readNotFound.body);
+    expect(readNotFound.body.error.message).toBe("Org not found");
+  });
 
-    // POST happy path asserts the Clerk boundary call shape.
-    api.mockClerkOrgLogo("upload", {
-      imageUrl: "https://img.clerk.test/new-logo.png",
-      hasImage: true,
-    });
-    const file = pngLogoFile();
-    const uploaded = await api.requestUploadOrgLogo(
+  it("org-team.bdd-002 (2/2) uploads and clears the org logo across auth, validation, and clerk error arms", async () => {
+    const api = createAuthOrgBddApi(context);
+    const admin = api.user({ orgRole: "org:admin" });
+    const member = api.user({ orgId: admin.orgId, orgRole: "org:member" });
+    const noOrgUser = api.user({ orgId: null });
+    const orgId = admin.orgId;
+    if (!orgId) {
+      throw new Error("Expected admin orgId");
+    }
+
+    let uploadedOrgId: string | undefined;
+    let uploadedFile:
+      | { readonly name: string; readonly size: number; readonly type: string }
+      | undefined;
+    const captureLogoUpload = (imageUrl: string, hasImage: boolean) => {
+      context.mocks.clerk.organizations.updateOrganizationLogo.mockImplementation(
+        (targetOrgId: unknown, payload: unknown) => {
+          if (typeof targetOrgId === "string") {
+            uploadedOrgId = targetOrgId;
+          }
+          if (
+            typeof payload === "object" &&
+            payload !== null &&
+            "file" in payload &&
+            payload.file instanceof File
+          ) {
+            uploadedFile = {
+              name: payload.file.name,
+              size: payload.file.size,
+              type: payload.file.type,
+            };
+          }
+          return Promise.resolve({ imageUrl, hasImage });
+        },
+      );
+    };
+
+    const pngBytes = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]);
+    captureLogoUpload("https://img.clerk.test/uploaded.png", true);
+    const pngUpload = await api.requestUploadOrgLogo(
       admin,
-      logoForm(file),
+      logoFormData(pngBytes, "brand.png", "image/png"),
       [200],
     );
-    expect(uploaded.body).toStrictEqual({
-      logoUrl: "https://img.clerk.test/new-logo.png",
+    expect(pngUpload.body).toStrictEqual({
+      logoUrl: "https://img.clerk.test/uploaded.png",
       hasImage: true,
     });
-    expect(
-      context.mocks.clerk.organizations.updateOrganizationLogo,
-    ).toHaveBeenCalledWith(orgId, {
-      file: expect.objectContaining({
-        name: file.name,
-        size: file.size,
-        type: file.type,
-      }),
+    expect(uploadedOrgId).toBe(orgId);
+    expect(uploadedFile).toStrictEqual({
+      name: "brand.png",
+      size: pngBytes.byteLength,
+      type: "image/png",
     });
-    const webpFile = new File([new Uint8Array([1, 2])], "logo.webp", {
+
+    const webpBytes = new Uint8Array([82, 73, 70, 70, 12, 0, 0, 0]);
+    captureLogoUpload("https://img.clerk.test/uploaded.webp", true);
+    const webpUpload = await api.requestUploadOrgLogo(
+      admin,
+      logoFormData(webpBytes, "brand.webp", "image/webp"),
+      [200],
+    );
+    expect(webpUpload.body).toStrictEqual({
+      logoUrl: "https://img.clerk.test/uploaded.webp",
+      hasImage: true,
+    });
+    expect(uploadedOrgId).toBe(orgId);
+    expect(uploadedFile).toStrictEqual({
+      name: "brand.webp",
+      size: webpBytes.byteLength,
       type: "image/webp",
     });
-    const uploadedWebp = await api.requestUploadOrgLogo(
-      admin,
-      logoForm(webpFile),
-      [200],
-    );
-    expect(uploadedWebp.body).toStrictEqual({
-      logoUrl: "https://img.clerk.test/new-logo.png",
-      hasImage: true,
-    });
-    expect(
-      context.mocks.clerk.organizations.updateOrganizationLogo,
-    ).toHaveBeenCalledWith(orgId, {
-      file: expect.objectContaining({
-        name: webpFile.name,
-        size: webpFile.size,
-        type: "image/webp",
-      }),
-    });
-    api.mockClerkOrgLogo("upload", { imageUrl: "", hasImage: false });
-    const uploadedCleared = await api.requestUploadOrgLogo(
-      admin,
-      logoForm(pngLogoFile()),
-      [200],
-    );
-    expect(uploadedCleared.body).toStrictEqual({
-      logoUrl: null,
-      hasImage: false,
-    });
 
-    // POST auth arms.
-    const unauthenticatedPost = await api.requestUploadOrgLogo(
+    captureLogoUpload("", false);
+    const clearUpload = await api.requestUploadOrgLogo(
+      admin,
+      logoFormData(pngBytes, "clear.png", "image/png"),
+      [200],
+    );
+    expect(clearUpload.body).toStrictEqual({ logoUrl: null, hasImage: false });
+
+    const anonUpload = await api.requestUploadOrgLogo(
       null,
-      logoForm(pngLogoFile()),
+      logoFormData(pngBytes, "brand.png", "image/png"),
       [401],
     );
-    expect(unauthenticatedPost.body).toStrictEqual({
-      error: { message: "Not authenticated", code: "UNAUTHORIZED" },
-    });
-    const noOrgPost = await api.requestUploadOrgLogo(
-      noOrg,
-      logoForm(pngLogoFile()),
+    expectApiError(anonUpload.body);
+    expect(anonUpload.body.error.message).toBe("Not authenticated");
+
+    const noOrgUpload = await api.requestUploadOrgLogo(
+      noOrgUser,
+      logoFormData(pngBytes, "brand.png", "image/png"),
       [404],
     );
-    expect(noOrgPost.body).toStrictEqual({
-      error: { message: "Org not found", code: "BAD_REQUEST" },
-    });
-    const memberPost = await api.requestUploadOrgLogo(
+    expectApiError(noOrgUpload.body);
+    expect(noOrgUpload.body.error.message).toBe("Org not found");
+
+    const memberUpload = await api.requestUploadOrgLogo(
       member,
-      logoForm(pngLogoFile()),
+      logoFormData(pngBytes, "brand.png", "image/png"),
       [403],
     );
-    expect(memberPost.body).toStrictEqual({
-      error: {
-        message: "Only admins can upload the logo",
-        code: "BAD_REQUEST",
-      },
-    });
-
-    const oversized = new File(
-      [new Uint8Array(2 * 1024 * 1024 + 1)],
-      "logo.png",
-      { type: "image/png" },
+    expectApiError(memberUpload.body);
+    expect(memberUpload.body.error.message).toBe(
+      "Only admins can upload the logo",
     );
-    const tooLarge = await api.requestUploadOrgLogo(
+
+    const oversized = new Uint8Array(2 * 1024 * 1024 + 1);
+    const oversizeUpload = await api.requestUploadOrgLogo(
       admin,
-      logoForm(oversized),
+      logoFormData(oversized, "huge.png", "image/png"),
       [400],
     );
-    expect(tooLarge.body).toStrictEqual({
-      error: { message: "File too large (max 2 MB)", code: "BAD_REQUEST" },
-    });
-    const textFile = new File(["plain"], "logo.txt", { type: "text/plain" });
-    const unsupported = await api.requestUploadOrgLogo(
+    expectApiError(oversizeUpload.body);
+    expect(oversizeUpload.body.error.message).toBe("File too large (max 2 MB)");
+
+    const textBytes = new Uint8Array([104, 101, 108, 108, 111]);
+    const textUpload = await api.requestUploadOrgLogo(
       admin,
-      logoForm(textFile),
+      logoFormData(textBytes, "notes.txt", "text/plain"),
       [400],
     );
-    expect(unsupported.body).toStrictEqual({
-      error: {
-        message: "Unsupported file type: text/plain",
-        code: "BAD_REQUEST",
-      },
-    });
+    expectApiError(textUpload.body);
+    expect(textUpload.body.error.message).toBe(
+      "Unsupported file type: text/plain",
+    );
 
-    // POST Clerk failures.
     api.mockClerkLogoError("upload", "NotFoundError");
-    const postNotFound = await api.requestUploadOrgLogo(
+    const uploadNotFound = await api.requestUploadOrgLogo(
       admin,
-      logoForm(pngLogoFile()),
+      logoFormData(pngBytes, "brand.png", "image/png"),
       [404],
     );
-    expect(postNotFound.body).toStrictEqual({
-      error: { message: "Org not found", code: "BAD_REQUEST" },
-    });
+    expectApiError(uploadNotFound.body);
+    expect(uploadNotFound.body.error.message).toBe("Org not found");
+
     api.mockClerkLogoError("upload", "ForbiddenError");
-    const postForbidden = await api.requestUploadOrgLogo(
+    const uploadForbidden = await api.requestUploadOrgLogo(
       admin,
-      logoForm(pngLogoFile()),
+      logoFormData(pngBytes, "brand.png", "image/png"),
       [403],
     );
-    expect(postForbidden.body).toStrictEqual({
-      error: { message: "Access denied", code: "BAD_REQUEST" },
-    });
+    expectApiError(uploadForbidden.body);
+    expect(uploadForbidden.body.error.message).toBe("Access denied");
   });
-});
 
-describe("ORG-01: org update and delete error matrix", () => {
-  it("maps no-org, rename, admin-leave, and delete failure arms [ORG-UPDATE-B]", async () => {
-    const noOrg = api.user({ orgId: null });
+  it("org-team.bdd-003 (1/2) maps no-org update, admin rename, and admin leave failure arms", async () => {
+    const api = createAuthOrgBddApi(context);
+    const noOrgUser = api.user({ orgId: null });
+    const { admin, orgId } = await onboardedOrgWithMember(api);
+
     const noOrgUpdate = await api.requestUpdateOrg(
-      noOrg,
+      noOrgUser,
       { name: "No Org Rename" },
       [400],
     );
@@ -307,55 +323,43 @@ describe("ORG-01: org update and delete error matrix", () => {
       "No organization is selected for this request",
     );
 
-    const admin = api.user();
-    const baseSlug = slug("bdd-r5-org");
-    api.acceptStorageWrites();
-    await onboardAdmin(admin, { slug: baseSlug, name: "BDD R5 Org" });
-    api.mockClerkOrg(admin, { slug: baseSlug, name: "BDD R5 Org" });
-
-    // A name update reaches Clerk and returns the refreshed org.
-    api.mockClerkOrg(admin, { slug: baseSlug, name: "BDD R5 Org Renamed" });
-    const renamed = await api.requestUpdateOrg(
-      admin,
-      { name: "BDD R5 Org Renamed" },
-      [200],
-    );
-    expect(renamed.body).toMatchObject({
-      id: admin.orgId,
-      name: "BDD R5 Org Renamed",
+    let updatedClerkName: string | undefined;
+    mockClerkOrgRename(admin, orgId, (nextName) => {
+      updatedClerkName = nextName;
     });
-    expect(
-      context.mocks.clerk.organizations.updateOrganization,
-    ).toHaveBeenCalledWith(admin.orgId, { name: "BDD R5 Org Renamed" });
+
+    const renamed = await api.updateOrg(admin, { name: "BDD R5 Org Renamed" });
+    expect(renamed.id).toBe(orgId);
+    expect(renamed.name).toBe("BDD R5 Org Renamed");
+    expect(updatedClerkName).toBe("BDD R5 Org Renamed");
 
     const adminLeave = await api.requestLeaveOrg(admin, [403]);
     expectApiError(adminLeave.body);
     expect(adminLeave.body.error.message).toBe(
       "Admins cannot leave the organization",
     );
+  });
 
-    // Delete failure arms: member caller, CLI PAT caller, a confirmation that
-    // is not the literal, and an org whose identity is gone on the Clerk side.
-    const memberCaller = api.user({
-      orgId: admin.orgId,
-      orgRole: "org:member",
+  it("org-team.bdd-003 (2/2) maps member, CLI token, bad confirmation, and orphaned org delete failure arms", async () => {
+    const api = createAuthOrgBddApi(context);
+    const { admin, member, orgId } = await onboardedOrgWithMember(api);
+    const orphanedAdmin = api.user({ orgRole: "org:admin" });
+
+    mockClerkOrgRename(admin, orgId, () => {
+      // Name verified through GET /api/org after rejected delete attempts.
     });
-    const memberDelete = await api.requestDeleteOrg(memberCaller, [403]);
+    await api.updateOrg(admin, { name: "BDD R5 Org Renamed" });
+    const { token: cliToken } = await api.createCliToken(admin);
+
+    const memberDelete = await api.requestDeleteOrg(member, [403]);
     expectApiError(memberDelete.body);
     expect(memberDelete.body.error.message).toBe(
       "Only admins can delete the organization",
     );
 
-    // Deleting a workspace is session-only. A CLI PAT was the one credential
-    // that still reached this route, so an admin's PAT must now be refused
-    // before the handler runs.
-    const adminCliToken = await api.createCliToken(admin);
-    api.mockClerkOrg(admin, { slug: baseSlug, name: "BDD R5 Org" });
-    const patDelete = await api.requestDeleteOrgWithBearer(
-      adminCliToken.token,
-      [403],
-    );
-    expect(patDelete.body).toMatchObject({ error: { code: "FORBIDDEN" } });
+    const cliDelete = await api.requestDeleteOrgWithBearer(cliToken, [403]);
+    expectApiError(cliDelete.body);
+    expect(cliDelete.body.error.code).toBe("FORBIDDEN");
 
     const wrongConfirm = await api.requestRawJson(
       admin,
@@ -364,619 +368,284 @@ describe("ORG-01: org update and delete error matrix", () => {
       { confirm: "delete" },
       [400],
     );
-    expect(wrongConfirm.body).toMatchObject({ error: { code: "BAD_REQUEST" } });
+    expectApiError(wrongConfirm.body);
+    expect(wrongConfirm.body.error.code).toBe("BAD_REQUEST");
 
-    const stillThere = await api.readOrg(admin);
-    expect(stillThere.name).toBe("BDD R5 Org Renamed");
+    const currentOrg = await api.readOrg(admin);
+    expect(currentOrg.name).toBe("BDD R5 Org Renamed");
 
-    const orphanAdmin = api.user();
-    context.mocks.clerk.organizations.getOrganization.mockRejectedValue({
-      statusCode: 404,
-    });
-    const missingIdentity = await api.requestDeleteOrg(orphanAdmin, [404]);
-    expect(missingIdentity.body).toStrictEqual({
+    const notFoundError = new Error("Clerk org missing");
+    notFoundError.name = "NotFoundError";
+    context.mocks.clerk.organizations.getOrganization.mockRejectedValue(
+      notFoundError,
+    );
+    const orphanedDelete = await api.requestDeleteOrg(orphanedAdmin, [404]);
+    expect(orphanedDelete.body).toStrictEqual({
       error: { message: "Resource not found", code: "NOT_FOUND" },
     });
   });
 
-  it.each([
-    ["5xx", new ClerkApiResponseTestError(1, 521)],
-    ["transport", new ClerkTransportTestError()],
-  ])("does not retry Clerk %s mutation failures", async (_name, failure) => {
-    const admin = api.user();
-    const baseSlug = slug("bdd-r5-org-mutation");
-    api.acceptStorageWrites();
-    await onboardAdmin(admin, { slug: baseSlug, name: "BDD R5 Org" });
-    context.mocks.clerk.organizations.updateOrganization.mockClear();
-    context.mocks.clerk.organizations.updateOrganization.mockRejectedValue(
-      failure,
-    );
+  it("org-team.bdd-010 enforces role, self, nonmember, and clerk-failure arms across member routes", async () => {
+    const api = createAuthOrgBddApi(context);
+    const admin = api.user({ orgRole: "org:admin" });
+    const member = api.user({ orgId: admin.orgId, orgRole: "org:member" });
+    const secondAdmin = api.user({ orgId: admin.orgId, orgRole: "org:admin" });
+    const stranger = api.user({ orgRole: "org:admin" });
+    const orgId = admin.orgId;
+    if (!orgId) {
+      throw new Error("Expected admin orgId");
+    }
 
-    const response = await api.requestUpdateOrg(
-      admin,
-      { name: "Unavailable Rename" },
-      [500],
-    );
+    await api.bootstrapLimitedFreeOnboarding(admin);
+    const pendingInvitation = {
+      id: "inv_pending_1",
+      email: "invitee@example.test",
+      role: "org:member" as const,
+    };
+    api.mockClerkOrg(admin, {
+      members: [
+        { actor: admin, role: "org:admin" },
+        { actor: member, role: "org:member" },
+      ],
+      pendingInvitations: [pendingInvitation],
+    });
+    api.mockClerkUsers([admin, member, secondAdmin, stranger]);
 
-    expect(response.status).toBe(500);
-    expect(
-      context.mocks.clerk.organizations.updateOrganization,
-    ).toHaveBeenCalledOnce();
-    expect(context.mocks.signalTimers.delay).not.toHaveBeenCalled();
-  });
-});
-
-describe("ORG-02: membership admin matrix", () => {
-  it("retries Clerk 5xx reads and immediately exposes rate limits", async () => {
-    const admin = api.user();
-    const orgId = orgIdOf(admin);
-    api.mockClerkOrg(admin);
-    context.mocks.signalTimers.delay.mockResolvedValue(undefined);
-
-    context.mocks.clerk.organizations.getOrganizationMembershipList
-      .mockRejectedValueOnce(new ClerkApiResponseTestError(2))
-      .mockResolvedValue({
-        data: [
-          {
-            role: "org:admin",
-            publicUserData: { userId: admin.userId },
-            createdAt: now(),
-          },
-        ],
-      });
-
-    const rateLimited = await api.requestListMembers(admin, [503]);
-    expect(rateLimited.headers.get("Retry-After")).toBe("2");
-    expect(
-      context.mocks.clerk.organizations.getOrganizationMembershipList,
-    ).toHaveBeenCalledTimes(1);
-    expect(context.mocks.signalTimers.delay).not.toHaveBeenCalled();
-
-    context.mocks.clerk.organizations.getOrganizationMembershipList.mockClear();
-    context.mocks.signalTimers.delay.mockClear();
-    context.mocks.clerk.organizations.getOrganizationMembershipList
-      .mockRejectedValueOnce(new ClerkApiResponseTestError(1, 521))
-      .mockResolvedValue({
-        data: [
-          {
-            role: "org:admin",
-            publicUserData: { userId: admin.userId },
-            createdAt: now(),
-          },
-        ],
-      });
-
-    const recoveredUnavailable = await api.requestListMembers(admin, [200]);
-    expect(recoveredUnavailable.body.members).toHaveLength(1);
-    expect(
-      context.mocks.clerk.organizations.getOrganizationMembershipList,
-    ).toHaveBeenCalledTimes(2);
-    expect(context.mocks.signalTimers.delay).toHaveBeenCalledOnce();
-    const [providerWaitMs, providerDelayOptions] =
-      context.mocks.signalTimers.delay.mock.calls[0] ?? [];
-    expect(providerWaitMs).toBeGreaterThanOrEqual(1000);
-    expect(providerWaitMs).toBeLessThanOrEqual(1250);
-    expect(providerDelayOptions).toMatchObject({
-      signal: expect.any(AbortSignal),
+    const counters = api.mockClerkMembershipRequestHandlers(orgId, {
+      listStatus: 404,
+      acceptStatus: 404,
+      rejectStatus: 404,
     });
 
-    context.mocks.clerk.organizations.getOrganizationMembershipList.mockReset();
-    context.mocks.signalTimers.delay.mockClear();
-    context.mocks.clerk.organizations.getOrganizationMembershipList.mockRejectedValue(
-      new ClerkApiResponseTestError(1, 521),
-    );
-
-    const unavailable = await api.requestListMembers(admin, [500]);
-    expect(unavailable.status).toBe(500);
-    expect(
-      context.mocks.clerk.organizations.getOrganizationMembershipList,
-    ).toHaveBeenCalledTimes(3);
-    expect(context.mocks.signalTimers.delay).toHaveBeenCalledTimes(2);
-
-    api.mockClerkOrg(admin);
-    context.mocks.signalTimers.delay.mockClear();
-    const requests = api.mockClerkMembershipRequestHandlers(orgId, {
-      listStatus: 429,
-      retryAfterSeconds: 7,
-    });
-    const exhausted = await api.requestListMembers(admin, [503]);
-
-    expect(exhausted.body).toStrictEqual({
-      error: {
-        message: "Organization members are temporarily unavailable",
-        code: "PROVIDER_UNAVAILABLE",
-      },
-    });
-    expect(exhausted.headers.get("Retry-After")).toBe("7");
-    expect(exhausted.headers.get("Cache-Control")).toBe("no-store");
-    expect(requests.listCalls()).toBe(1);
-    expect(context.mocks.signalTimers.delay).not.toHaveBeenCalled();
-  });
-
-  it("does not retry Clerk 4xx or malformed read failures", async () => {
-    const admin = api.user();
-    api.mockClerkOrg(admin);
-    context.mocks.clerk.organizations.getOrganizationMembershipList.mockRejectedValue(
-      new ClerkApiResponseTestError(1, 404),
-    );
-
-    const response = await api.requestListMembers(admin, [500]);
-
-    expect(response.status).toBe(500);
-    expect(
-      context.mocks.clerk.organizations.getOrganizationMembershipList,
-    ).toHaveBeenCalledOnce();
-    expect(context.mocks.signalTimers.delay).not.toHaveBeenCalled();
-
-    api.mockClerkOrg(admin);
-    context.mocks.clerk.organizations.getOrganizationMembershipList.mockClear();
-    context.mocks.clerk.organizations.getOrganizationMembershipList.mockRejectedValue(
-      { status: 521 },
-    );
-
-    const malformed = await api.requestListMembers(admin, [500]);
-
-    expect(malformed.status).toBe(500);
-    expect(
-      context.mocks.clerk.organizations.getOrganizationMembershipList,
-    ).toHaveBeenCalledOnce();
-    expect(context.mocks.signalTimers.delay).not.toHaveBeenCalled();
-  });
-
-  it("stops sibling Clerk work on the first directory rate limit", async () => {
-    const admin = api.user();
-    api.mockClerkOrg(admin);
-    const invitationPage = createDeferredPromise<{
-      readonly data: readonly {
-        readonly id: string;
-        readonly emailAddress: string;
-        readonly role: string;
-        readonly createdAt: number;
-      }[];
-    }>(context.signal);
-    const retryStarted = createDeferredPromise<void>(context.signal);
-    let siblingDelayAborted = false;
-    context.mocks.signalTimers.delay.mockImplementation((_ms, options) => {
-      const signal = options?.signal;
-      if (!signal) {
-        throw new Error("Expected retry delay to receive an abort signal");
-      }
-      signal.throwIfAborted();
-      const deferred = createDeferredPromise<void>(signal);
-      signal.addEventListener(
-        "abort",
-        () => {
-          siblingDelayAborted = true;
-        },
-        { once: true },
-      );
-      retryStarted.resolve();
-      return deferred.promise;
-    });
-    context.mocks.clerk.organizations.getOrganization.mockRejectedValueOnce(
-      new ClerkApiResponseTestError(1, 521),
-    );
-    context.mocks.clerk.organizations.getOrganizationMembershipList.mockImplementation(
-      async () => {
-        await retryStarted.promise;
-        throw new ClerkApiResponseTestError(1);
-      },
-    );
-    context.mocks.clerk.organizations.getOrganizationInvitationList.mockReturnValueOnce(
-      invitationPage.promise,
-    );
-
-    const exhausted = await api.requestListMembers(admin, [503]);
-
-    expect(exhausted.headers.get("Retry-After")).toBe("1");
-    expect(
-      context.mocks.clerk.organizations.getOrganizationMembershipList,
-    ).toHaveBeenCalledTimes(1);
-    expect(
-      context.mocks.clerk.organizations.getOrganization,
-    ).toHaveBeenCalledTimes(1);
-    expect(siblingDelayAborted).toBeTruthy();
-
-    invitationPage.resolve({
-      data: Array.from({ length: 100 }, (_, index) => {
-        return {
-          id: `inv_${index}`,
-          emailAddress: `pending-${index}@example.com`,
-          role: "org:member",
-          createdAt: now(),
-        };
-      }),
-    });
-    await invitationPage.promise;
-    expect(
-      context.mocks.clerk.organizations.getOrganizationInvitationList,
-    ).toHaveBeenCalledTimes(1);
-  });
-
-  it("shares the 5xx retry deadline across organization member reads", async () => {
-    const admin = api.user();
-    api.mockClerkOrg(admin);
-    context.mocks.signalTimers.delay.mockImplementation(() => {
-      // Scheduling can resume later than the requested backoff.
-      mockNow(now() + 14_500);
-      return Promise.resolve();
-    });
-    context.mocks.clerk.organizations.getOrganizationMembershipList
-      .mockRejectedValueOnce(new ClerkApiResponseTestError(1, 521))
-      .mockResolvedValue({
-        data: [
-          {
-            role: "org:admin",
-            publicUserData: { userId: admin.userId },
-            createdAt: now(),
-          },
-        ],
-      });
-    context.mocks.clerk.users.getUserList.mockRejectedValue(
-      new ClerkApiResponseTestError(1, 521),
-    );
-
-    const exhausted = await api.requestListMembers(admin, [500]);
-
-    expect(exhausted.status).toBe(500);
-    expect(
-      context.mocks.clerk.organizations.getOrganizationMembershipList,
-    ).toHaveBeenCalledTimes(2);
-    expect(context.mocks.clerk.users.getUserList).toHaveBeenCalledTimes(1);
-    expect(context.mocks.signalTimers.delay).toHaveBeenCalledTimes(1);
-  });
-
-  it("enforces role, self, nonmember, and clerk-failure arms across member routes [ORG-MEMBERS-C]", async () => {
-    const admin = api.user();
-    const orgId = orgIdOf(admin);
-    const member = api.user({
-      orgId,
-      orgRole: "org:member",
-      email: `member-${shortId()}@example.test`,
-    });
-    const secondAdmin = api.user({
-      orgId,
-      email: `second-admin-${shortId()}@example.test`,
-    });
-    const requester = api.user({
-      orgId,
-      orgRole: "org:member",
-      email: `requester-${shortId()}@example.test`,
-    });
-    api.acceptStorageWrites();
-    await onboardAdmin(admin, { slug: slug("bdd-r5-members") });
-
-    const orgMembers = [
-      { actor: admin, role: "org:admin" as const },
-      { actor: member, role: "org:member" as const },
-    ];
-    api.mockClerkOrg(admin, { members: orgMembers });
-
-    // updateRole arms.
-    const memberRole = await api.requestUpdateMemberRole(
+    const memberRoleUpdate = await api.requestUpdateMemberRole(
       member,
       { email: admin.email, role: "member" },
       [403],
     );
-    expect(memberRole.body).toStrictEqual({
-      error: { message: "Access denied", code: "FORBIDDEN" },
-    });
-    const soloDemote = await api.requestUpdateMemberRole(
-      admin,
-      { email: admin.email, role: "member" },
-      [400],
-    );
-    expect(soloDemote.body).toStrictEqual({
-      error: { message: "Invalid request", code: "BAD_REQUEST" },
-    });
-    api.mockClerkOrg(admin, {
-      members: [
-        { actor: admin, role: "org:admin" },
-        { actor: secondAdmin, role: "org:admin" },
-        { actor: member, role: "org:member" },
-      ],
-    });
-    const demoted = await api.updateMemberRole(admin, {
-      email: admin.email,
-      role: "member",
-    });
-    expect(demoted).toStrictEqual({
-      message: `Updated role for ${admin.email}`,
-    });
+    expectApiError(memberRoleUpdate.body);
+    expect(memberRoleUpdate.body.error.message).toBe("Access denied");
 
-    // removeMember arms.
     const memberRemove = await api.requestRemoveMember(
       member,
       { email: admin.email },
       [403],
     );
-    expect(memberRemove.body).toStrictEqual({
-      error: { message: "Access denied", code: "FORBIDDEN" },
-    });
+    expectApiError(memberRemove.body);
+    expect(memberRemove.body.error.message).toBe("Access denied");
+
+    const memberRevoke = await api.requestRevokeInvitation(
+      member,
+      pendingInvitation.id,
+      [403],
+    );
+    expectApiError(memberRevoke.body);
+    expect(memberRevoke.body.error.message).toBe("Access denied");
+
+    const memberAccept = await api.requestAcceptMembershipRequest(
+      member,
+      { requestId: "req_1" },
+      [403],
+    );
+    expectApiError(memberAccept.body);
+    expect(memberAccept.body.error.message).toBe("Access denied");
+
+    const memberReject = await api.requestRejectMembershipRequest(
+      member,
+      { requestId: "req_1" },
+      [403],
+    );
+    expectApiError(memberReject.body);
+    expect(memberReject.body.error.message).toBe("Access denied");
+
+    expect(counters.acceptCalls()).toBe(0);
+    expect(counters.rejectCalls()).toBe(0);
+
+    const soleAdminDemote = await api.requestUpdateMemberRole(
+      admin,
+      { email: admin.email, role: "member" },
+      [400],
+    );
+    expectApiError(soleAdminDemote.body);
+    expect(soleAdminDemote.body.error.message).toBe("Invalid request");
+
     const selfRemove = await api.requestRemoveMember(
       admin,
       { email: admin.email },
       [400],
     );
-    expect(selfRemove.body).toStrictEqual({
-      error: { message: "Invalid request", code: "BAD_REQUEST" },
-    });
-    const stranger = api.user({
-      email: `stranger-${shortId()}@example.test`,
-    });
-    api.mockClerkUsers([admin, secondAdmin, member, stranger]);
-    const notMember = await api.requestRemoveMember(
+    expectApiError(selfRemove.body);
+    expect(selfRemove.body.error.message).toBe("Invalid request");
+
+    const strangerRemove = await api.requestRemoveMember(
       admin,
       { email: stranger.email },
       [404],
     );
-    expect(notMember.body).toStrictEqual({
-      error: { message: "Resource not found", code: "NOT_FOUND" },
-    });
+    expectApiError(strangerRemove.body);
+    expect(strangerRemove.body.error.message).toBe("Resource not found");
 
-    // invite arms.
-    const memberRevoke = await api.requestRevokeInvitation(
-      member,
-      `inv_${shortId()}`,
-      [403],
-    );
-    expect(memberRevoke.body).toStrictEqual({
-      error: { message: "Access denied", code: "FORBIDDEN" },
-    });
-
-    // Membership-request call counters verify that non-admin callers never reach Clerk.
-    const requestId = `req_${shortId()}`;
-    const failingActions = api.mockClerkMembershipRequestHandlers(orgId, {
-      acceptStatus: 404,
-      rejectStatus: 404,
-    });
-    const memberAccept = await api.requestAcceptMembershipRequest(
-      member,
-      { requestId },
-      [403],
-    );
-    expect(memberAccept.body).toStrictEqual({
-      error: { message: "Access denied", code: "FORBIDDEN" },
-    });
-    const memberReject = await api.requestRejectMembershipRequest(
-      member,
-      { requestId },
-      [403],
-    );
-    expect(memberReject.body).toStrictEqual({
-      error: { message: "Access denied", code: "FORBIDDEN" },
-    });
-    expect(failingActions.acceptCalls()).toBe(0);
-    expect(failingActions.rejectCalls()).toBe(0);
-
-    const failedAccept = await api.requestAcceptMembershipRequest(
+    const adminAccept = await api.requestAcceptMembershipRequest(
       admin,
-      { requestId },
+      { requestId: "req_missing" },
       [400],
     );
-    expect(failedAccept.body).toStrictEqual({
-      error: { message: "Invalid request", code: "BAD_REQUEST" },
-    });
-    const failedReject = await api.requestRejectMembershipRequest(
+    expectApiError(adminAccept.body);
+    expect(adminAccept.body.error.message).toBe("Invalid request");
+
+    const adminReject = await api.requestRejectMembershipRequest(
       admin,
-      { requestId },
+      { requestId: "req_missing" },
       [400],
     );
-    expect(failedReject.body).toStrictEqual({
-      error: { message: "Invalid request", code: "BAD_REQUEST" },
-    });
-    expect(failingActions.acceptCalls()).toBe(1);
-    expect(failingActions.rejectCalls()).toBe(1);
+    expectApiError(adminReject.body);
+    expect(adminReject.body.error.message).toBe("Invalid request");
 
-    // listMembers tolerates a Clerk org without the membership_requests
-    // feature (REST 404 → empty list).
-    const inviteId = `inv_${shortId()}`;
-    api.mockClerkOrg(admin, {
-      members: orgMembers,
-      pendingInvitations: [
-        { id: inviteId, email: `invitee-${shortId()}@example.test` },
-      ],
-      membershipRequests: [{ id: requestId, actor: requester }],
-    });
-    const featureDisabled = api.mockClerkMembershipRequestHandlers(orgId, {
+    const adminListing = await api.listMembers(admin);
+    expect(adminListing.role).toBe("admin");
+    expect(adminListing.pendingInvitations).toStrictEqual([
+      expect.objectContaining({
+        id: pendingInvitation.id,
+        email: pendingInvitation.email,
+      }),
+    ]);
+    expect(adminListing.membershipRequests).toStrictEqual([]);
+
+    const memberListCounters = api.mockClerkMembershipRequestHandlers(orgId, {
       listStatus: 404,
     });
-    const adminList = await api.listMembers(admin);
-    expect(adminList.role).toBe("admin");
-    expect(adminList.pendingInvitations?.[0]?.id).toBe(inviteId);
-    expect(adminList.membershipRequests).toStrictEqual([]);
-    expect(featureDisabled.listCalls()).toBe(1);
+    const memberListing = await api.listMembers(member);
+    expect(memberListing.role).toBe("member");
+    expect(memberListing.pendingInvitations).toStrictEqual([]);
+    expect(memberListing.membershipRequests).toStrictEqual([]);
+    expect(memberListCounters.listCalls()).toBe(0);
 
-    // Members never see invitations or membership requests, and the REST
-    // membership_requests endpoint is never called for them.
-    const memberView = api.mockClerkMembershipRequestHandlers(orgId, {
-      requests: [{ id: requestId, actor: requester }],
-    });
-    const memberList = await api.listMembers(member);
-    expect(memberList.role).toBe("member");
-    expect(memberList.pendingInvitations).toStrictEqual([]);
-    expect(memberList.membershipRequests).toStrictEqual([]);
-    expect(memberView.listCalls()).toBe(0);
-  });
-});
-
-describe("ORG-02: member cleanup detaches Slack connections", () => {
-  it("disconnects slack-linked members on leave, removal, and org deletion [ORG-SLACK-D]", async () => {
-    const integrations = createBddIntegrationApi(context);
-    const admin = api.user();
-    const member = api.user({
-      orgId: admin.orgId,
-      orgRole: "org:member",
-      email: `member-${shortId()}@example.test`,
-    });
-    const secondMember = api.user({
-      orgId: admin.orgId,
-      orgRole: "org:member",
-      email: `member2-${shortId()}@example.test`,
-    });
-    api.acceptStorageWrites();
-    integrations.configureSlackAppMocks();
-    await onboardAdmin(admin, { slug: slug("bdd-r5-slack") });
-    const install = await integrations.installSlackWorkspace(admin);
-
-    await integrations.connectSlackUser(member, {
-      workspaceId: install.teamId,
-      slackUserId: `U_LEAVE_${shortId().toUpperCase()}`,
-    });
-    const connected = await integrations.requestSlackConnectStatus(
-      member,
-      [200],
-    );
-    expect(connected.body).toMatchObject({ isConnected: true });
-
-    api.mockClerkOrg(member, {
-      members: [
-        { actor: admin, role: "org:admin" },
-        { actor: member, role: "org:member" },
-      ],
-    });
-    await expect(api.leaveOrg(member)).resolves.toStrictEqual({
-      message: "Left org",
-    });
-    const afterLeave = await integrations.requestSlackConnectStatus(
-      member,
-      [200],
-    );
-    expect(afterLeave.body).toMatchObject({ isConnected: false });
-
-    await integrations.connectSlackUser(secondMember, {
-      workspaceId: install.teamId,
-      slackUserId: `U_REMOVE_${shortId().toUpperCase()}`,
-    });
-    const secondConnected = await integrations.requestSlackConnectStatus(
-      secondMember,
-      [200],
-    );
-    expect(secondConnected.body).toMatchObject({ isConnected: true });
     api.mockClerkOrg(admin, {
       members: [
         { actor: admin, role: "org:admin" },
-        { actor: secondMember, role: "org:member" },
-      ],
-    });
-    await expect(
-      api.removeMember(admin, { email: secondMember.email }),
-    ).resolves.toStrictEqual({
-      message: `Removed ${secondMember.email} from org`,
-    });
-    const afterRemove = await integrations.requestSlackConnectStatus(
-      secondMember,
-      [200],
-    );
-    expect(afterRemove.body).toMatchObject({ isConnected: false });
-
-    // Deleting an org sweeps every member's Slack connection.
-    const secondAdmin = api.user();
-    const thirdMember = api.user({
-      orgId: secondAdmin.orgId,
-      orgRole: "org:member",
-      email: `member3-${shortId()}@example.test`,
-    });
-    const secondInstall = await integrations.installSlackWorkspace(secondAdmin);
-    await integrations.connectSlackUser(thirdMember, {
-      workspaceId: secondInstall.teamId,
-      slackUserId: `U_DELETE_${shortId().toUpperCase()}`,
-    });
-    const thirdConnected = await integrations.requestSlackConnectStatus(
-      thirdMember,
-      [200],
-    );
-    expect(thirdConnected.body).toMatchObject({ isConnected: true });
-    api.mockClerkOrg(secondAdmin, {
-      slug: slug("bdd-r5-del"),
-      members: [
         { actor: secondAdmin, role: "org:admin" },
-        { actor: thirdMember, role: "org:member" },
+        { actor: member, role: "org:member" },
       ],
+      pendingInvitations: [pendingInvitation],
     });
-    await expect(api.deleteOrg(secondAdmin)).resolves.toStrictEqual({
-      message: "Organization deleted",
+    const demoted = await api.updateMemberRole(admin, {
+      email: admin.email,
+      role: "member",
     });
-    const afterDelete = await integrations.requestSlackConnectStatus(
-      thirdMember,
+    expect(demoted.message).toBe(`Updated role for ${admin.email}`);
+  });
+
+  const slackConnectApi = setupApp({ context, routes: slackConnectRoutes })(
+    slackConnectContract,
+  );
+
+  async function readSlackConnected(actor: ApiTestUser): Promise<boolean> {
+    createRouteMocks(context).clerk.session(
+      actor.userId,
+      actor.orgId,
+      actor.orgRole,
+    );
+    const response = await accept(
+      slackConnectApi.getStatus({
+        headers: { authorization: "Bearer clerk-session" },
+      }),
       [200],
     );
-    expect(afterDelete.body).toMatchObject({ isConnected: false });
-  });
-});
+    return response.body.isConnected;
+  }
 
-describe("AUTH-02/ORG-01: run-scoped agent tokens on org routes", () => {
-  it("serves the org read to a dispatched Run's agent token and rejects member reads and org writes [ORG-TOKEN-G]", async () => {
-    const runs = createRunsApi(context);
-    const admin = api.user();
-    api.acceptStorageWrites();
-    runs.acceptStorageDownloads();
-    runs.acceptTelemetryIngest();
-    const runnerGroup = await runs.configureRunnerGroup();
-    await runs.grantProEntitlement(admin);
-    await runs.ensurePersonalSubscriptionModel(admin);
+  it("org-team.bdd-011 (1/3) disconnects a slack-linked member on org deletion", async () => {
+    const api = createAuthOrgBddApi(context);
+    const integrations = createBddIntegrationApi(context);
+    const slackOrg = createPublicSlackOrgApi(context);
+    integrations.configureSlackAppMocks();
 
-    const created = await runs.createThreadRun(admin, {
-      prompt: "exercise org reads with the run Okou token",
-    });
-    await runs.heartbeatRunner(runnerGroup);
-    const execution = await runs.executionInput(created.runId);
-    const okouToken = execution.platformEnvironment.OKOU_TOKEN;
-    if (!okouToken) {
-      throw new Error(
-        "Expected execution.platformEnvironment.OKOU_TOKEN to carry the run-scoped Okou token",
-      );
+    const admin = api.user({ orgRole: "org:admin" });
+    const orgId = admin.orgId;
+    if (!orgId) {
+      throw new Error("Expected orgId");
     }
-    expect(okouToken).toMatch(/^vm0_sandbox_/);
 
-    const orgSlug = slug("bdd-r5-token");
-    api.mockClerkOrg(admin, { slug: orgSlug, name: "BDD Token Org" });
-    const orgRead = await api.requestReadOrgWithBearer(okouToken, [200]);
-    expect(orgRead.body).toMatchObject({
-      id: admin.orgId,
-      role: "admin",
-    });
+    await Promise.all([
+      api.bootstrapLimitedFreeOnboarding(admin),
+      slackOrg.installForOrg({ orgId, installer: admin }),
+    ]);
 
-    // Member listing is deliberately not an agent surface (#25011): the route
-    // declares no capability, so a sandbox token is rejected like the writes.
-    const membersRejected = await api.requestListMembersWithBearer(
-      okouToken,
-      [403],
-    );
-    expect(membersRejected.body).toStrictEqual({
-      error: {
-        message: "This endpoint is not available for sandbox tokens",
-        code: "FORBIDDEN",
-      },
-    });
+    await expect(readSlackConnected(admin)).resolves.toBeTruthy();
 
-    // Representative sandbox-token write rejections (the remaining org
-    // routes share the same authRoute statement).
-    const updateRejected = await api.requestUpdateOrgWithBearer(
-      okouToken,
-      { name: "Token Rename" },
-      [403],
-    );
-    expect(updateRejected.body).toStrictEqual({
-      error: {
-        message: "This endpoint is not available for sandbox tokens",
-        code: "FORBIDDEN",
-      },
+    api.mockClerkOrg(admin, {
+      members: [{ actor: admin, role: "org:admin" }],
     });
-    const logoRejected = await api.requestUploadOrgLogo(
-      { bearerToken: okouToken },
-      logoForm(pngLogoFile()),
-      [403],
-    );
-    expect(logoRejected.body).toStrictEqual({
-      error: {
-        message: "This endpoint is not available for sandbox tokens",
-        code: "FORBIDDEN",
-      },
-    });
+    const deleted = await api.deleteOrg(admin);
+    expect(deleted.message).toBe("Organization deleted");
 
-    await runs.requestCancelRun(admin, created.runId, [200]);
-    const cancelled = await runs.readRun(admin, created.runId);
-    expect(cancelled.status).toBe("cancelled");
+    await expect(readSlackConnected(admin)).resolves.toBeFalsy();
+  });
+
+  it("org-team.bdd-011 (2/3) disconnects a slack-linked member on admin removal", async () => {
+    const api = createAuthOrgBddApi(context);
+    const integrations = createBddIntegrationApi(context);
+    const slackOrg = createPublicSlackOrgApi(context);
+    integrations.configureSlackAppMocks();
+
+    const admin = api.user({ orgRole: "org:admin" });
+    const targetAdmin = api.user({ orgId: admin.orgId, orgRole: "org:admin" });
+    const orgId = admin.orgId;
+    if (!orgId) {
+      throw new Error("Expected orgId");
+    }
+
+    await Promise.all([
+      api.bootstrapLimitedFreeOnboarding(targetAdmin),
+      slackOrg.installForOrg({ orgId, installer: targetAdmin }),
+    ]);
+
+    await expect(readSlackConnected(targetAdmin)).resolves.toBeTruthy();
+
+    api.mockClerkOrg(admin, {
+      members: [
+        { actor: admin, role: "org:admin" },
+        { actor: targetAdmin, role: "org:admin" },
+      ],
+    });
+    const removed = await api.removeMember(admin, { email: targetAdmin.email });
+    expect(removed.message).toBe(`Removed ${targetAdmin.email} from org`);
+
+    await expect(readSlackConnected(targetAdmin)).resolves.toBeFalsy();
+  });
+
+  it("org-team.bdd-011 (3/3) disconnects a slack-linked member on org leave", async () => {
+    const api = createAuthOrgBddApi(context);
+    const integrations = createBddIntegrationApi(context);
+    const slackOrg = createPublicSlackOrgApi(context);
+    integrations.configureSlackAppMocks();
+
+    const admin = api.user({ orgRole: "org:admin" });
+    const installer = api.user({
+      orgId: admin.orgId,
+      orgRole: "org:admin",
+    });
+    const leavingMember: ApiTestUser = { ...installer, orgRole: "org:member" };
+    const orgId = admin.orgId;
+    if (!orgId) {
+      throw new Error("Expected orgId");
+    }
+
+    await Promise.all([
+      api.bootstrapLimitedFreeOnboarding(installer),
+      slackOrg.installForOrg({ orgId, installer }),
+    ]);
+
+    await expect(readSlackConnected(leavingMember)).resolves.toBeTruthy();
+
+    api.mockClerkOrg(admin, {
+      members: [
+        { actor: admin, role: "org:admin" },
+        { actor: leavingMember, role: "org:member" },
+      ],
+    });
+    const left = await api.leaveOrg(leavingMember);
+    expect(left.message).toBe("Left org");
+
+    await expect(readSlackConnected(leavingMember)).resolves.toBeFalsy();
   });
 });

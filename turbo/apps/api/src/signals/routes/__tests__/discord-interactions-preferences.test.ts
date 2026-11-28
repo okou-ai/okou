@@ -1,604 +1,429 @@
-import {
-  generateKeyPairSync,
-  randomBytes,
-  randomUUID,
-  sign,
-} from "node:crypto";
-
-import {
-  discordInteractionsContract,
-  type DiscordCommandInteraction,
-  type DiscordComponentInteraction,
-} from "@okouai/api-contracts/contracts/discord-interactions";
+import { generateKeyPairSync, randomUUID, sign } from "node:crypto";
+import { discordInteractionsContract } from "@okouai/api-contracts/contracts/discord-interactions";
 import { integrationsDiscordContract } from "@okouai/api-contracts/contracts/integrations-discord";
 import { http, HttpResponse } from "msw";
-import { beforeEach, describe, expect, it, onTestFinished } from "vitest";
-import {
-  array,
-  discriminatedUnion,
-  literal,
-  object,
-  string,
-  url,
-  type infer as zInfer,
-} from "zod";
+import { describe, expect, it } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { mockEnv } from "../../../lib/env";
-import { mockNow, now } from "../../../lib/time";
+import { env, mockEnv } from "../../../lib/env";
+import { now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { discordInteractionsRoutes } from "../discord-interactions";
 import { integrationsDiscordRoutes } from "../integrations-discord";
-
 import { createAuthOrgBddApi } from "./helpers/api-bdd-auth-org";
+import { mockDiscordProvider } from "./helpers/discord-fixture";
+import { createRouteMocks } from "./helpers/route-test";
 import {
-  removePublicDiscordBinding,
-  mockDiscordApplication,
-  mockDiscordMemberships,
+  configureDiscordApp,
   createPublicDiscordBinding,
+  mockDiscordMemberships,
   uniqueDiscordSnowflake,
 } from "./helpers/discord";
-import { DISCORD_TEST_APPLICATION_ID } from "./helpers/discord-fixture";
 
 const context = testContext();
-const accountApi = createAuthOrgBddApi(context);
-const keys = generateKeyPairSync("ed25519");
-const publicKey = keys.publicKey
-  .export({ format: "der", type: "spki" })
-  .subarray(-32)
-  .toString("hex");
-const applicationId = DISCORD_TEST_APPLICATION_ID;
+const authOrg = createAuthOrgBddApi(context);
 
-const messageComponentSchema = discriminatedUnion("type", [
-  object({
-    type: literal(2),
-    custom_id: string().max(100).optional(),
-    url: url().optional(),
-    label: string(),
-  }),
-  object({
-    type: literal(3),
-    custom_id: string().max(100),
-    min_values: literal(1),
-    max_values: literal(1),
-    options: array(
-      object({
-        label: string(),
-        value: string(),
-        default: literal(true).optional(),
-      }),
-    ).max(25),
-  }),
-]);
-
-const privateMessageSchema = object({
-  content: string(),
-  components: array(
-    object({
-      type: literal(1),
-      components: array(messageComponentSchema),
-    }),
-  ),
-  allowed_mentions: object({ parse: array(string()) }),
-});
-
-type PrivateMessage = zInfer<typeof privateMessageSchema>;
-
-interface DiscordSender {
-  readonly discordUserId: string;
-  readonly channelId: string;
-  readonly guildId?: string;
-}
-
-function actor(
-  orgId = `org_discord_${randomUUID()}`,
-  userId = `user_discord_${randomUUID()}`,
-) {
-  return {
-    userId,
+/** A provisioned workspace whose admin installs Okou in a Discord server. */
+async function linkedWorkspace() {
+  const userId = `user_${randomUUID()}`;
+  const orgId = `org_${randomUUID()}`;
+  await authOrg.provisionWorkspace(
+    authOrg.user({ userId, orgId, orgRole: "org:admin" }),
+  );
+  mockDiscordMemberships(context, [{ userId, orgId, orgRole: "org:admin" }]);
+  return await createPublicDiscordBinding(context, {
     orgId,
-    orgRole: "org:admin" as const,
-    email: `${randomUUID()}@example.test`,
-  };
-}
-
-type Actor = ReturnType<typeof actor>;
-
-async function fixture(
-  owner = actor(),
-  discordUserId = uniqueDiscordSnowflake(),
-) {
-  mockDiscordMemberships(context, [owner]);
-  const binding = await createPublicDiscordBinding(context, {
+    userId,
+    orgRole: "org:admin",
     flow: "install",
-    userId: owner.userId,
-    orgId: owner.orgId,
-    orgRole: owner.orgRole,
-    botUserId: applicationId,
-    discordUserId,
-    guildName: `Guild ${owner.orgId}`,
   });
-  onTestFinished(async () => {
-    mockDiscordMemberships(context, [owner]);
-    await removePublicDiscordBinding(context, binding);
-  });
-  return {
-    owner,
-    binding,
-    channelId: uniqueDiscordSnowflake(),
-  };
 }
 
-type Fixture = Awaited<ReturnType<typeof fixture>> & {
-  readonly parentChannelId?: string;
-};
-
-function guildSender(scope: Fixture): DiscordSender {
-  return {
-    discordUserId: scope.binding.discordUserId,
-    guildId: scope.binding.guildId,
-    channelId: scope.channelId,
-  };
-}
-
-function commandPayload(
-  sender: DiscordSender,
-  name: DiscordCommandInteraction["data"]["name"],
-): DiscordCommandInteraction {
-  return {
-    id: uniqueDiscordSnowflake(),
-    application_id: applicationId,
-    token: randomUUID(),
-    type: 2,
-    version: 1,
-    channel_id: sender.channelId,
-    ...(sender.guildId
-      ? {
-          guild_id: sender.guildId,
-          member: { user: { id: sender.discordUserId } },
-        }
-      : { user: { id: sender.discordUserId } }),
-    data: {
-      id: uniqueDiscordSnowflake(),
-      type: 1,
-      name,
-    },
-  };
-}
-
-function selectPayload(
-  sender: DiscordSender,
-  customId: string,
-  value: string,
-): DiscordComponentInteraction {
-  return {
-    ...commandPayload(sender, "connect"),
-    type: 3,
-    data: { component_type: 3, custom_id: customId, values: [value] },
-  };
-}
-
-function selectMenu(message: PrivateMessage) {
-  const component = message.components
-    .flatMap((row) => {
-      return row.components;
-    })
-    .find((entry) => {
-      return entry.type === 3;
-    });
-  if (!component || component.type !== 3) {
-    throw new Error(
-      "Expected the private Discord response to contain a select menu",
-    );
+/** Discord app with a generated Ed25519 key; private replies are captured. */
+function configureDiscordInteractions() {
+  configureDiscordApp();
+  const { publicKey, privateKey } = generateKeyPairSync("ed25519");
+  mockEnv(
+    "DISCORD_PUBLIC_KEY",
+    publicKey
+      .export({ format: "der", type: "spki" })
+      .subarray(-32)
+      .toString("hex"),
+  );
+  const applicationId = env("DISCORD_APPLICATION_ID");
+  if (!applicationId) {
+    throw new Error("Expected the Discord application to be configured");
   }
-  return component;
-}
-
-function preselected(message: PrivateMessage): string[] {
-  return selectMenu(message)
-    .options.filter((option) => {
-      return option.default;
-    })
-    .map((option) => {
-      return option.value;
-    });
-}
-
-function discordHttp(fixtures: readonly Fixture[], dm?: DiscordSender) {
-  const byGuild = new Map(
-    fixtures.map((scope) => {
-      return [scope.binding.guildId, scope] as const;
-    }),
-  );
-  const byChannel = new Map(
-    fixtures.map((scope) => {
-      return [scope.channelId, scope] as const;
-    }),
-  );
-  const messages = new Map<string, PrivateMessage>();
-  const channels = new Map<string, string>();
-  const callbacks = new Map<string, unknown>();
-  const guildOwnerId = uniqueDiscordSnowflake();
+  const replies: unknown[] = [];
   server.use(
-    http.get("https://discord.com/api/v10/users/@me", () => {
-      return HttpResponse.json({
-        id: applicationId,
-        username: "okou",
-        bot: true,
-      });
-    }),
-    http.get(
-      "https://discord.com/api/v10/channels/:channelId",
-      ({ params }) => {
-        if (dm && params.channelId === dm.channelId) {
-          return HttpResponse.json({
-            id: dm.channelId,
-            type: 1,
-            recipients: [{ id: dm.discordUserId, username: "sender" }],
-          });
-        }
-        const scope =
-          byChannel.get(String(params.channelId)) ??
-          fixtures.find((value) => {
-            return value.parentChannelId === String(params.channelId);
-          });
-        if (!scope) {
-          return HttpResponse.json(
-            { code: 10_003, message: "Unknown Channel" },
-            { status: 404 },
-          );
-        }
-        return HttpResponse.json({
-          id: String(params.channelId),
-          type:
-            scope.parentChannelId && params.channelId === scope.channelId
-              ? 11
-              : 0,
-          ...(scope.parentChannelId && params.channelId === scope.channelId
-            ? {
-                parent_id: scope.parentChannelId,
-                thread_metadata: {
-                  archived: false,
-                  locked: false,
-                  auto_archive_duration: 60,
-                  archive_timestamp: new Date(now()).toISOString(),
-                },
-              }
-            : {}),
-          guild_id: scope.binding.guildId,
-          permission_overwrites: [],
-        });
-      },
-    ),
-    http.get("https://discord.com/api/v10/guilds/:guildId", ({ params }) => {
-      const scope = byGuild.get(String(params.guildId));
-      if (!scope) {
-        return HttpResponse.json(
-          { code: 10_004, message: "Unknown Guild" },
-          { status: 404 },
-        );
-      }
-      return HttpResponse.json({
-        id: scope.binding.guildId,
-        name: "Test guild",
-        owner_id: guildOwnerId,
-      });
-    }),
-    http.get(
-      "https://discord.com/api/v10/guilds/:guildId/roles",
-      ({ params }) => {
-        const scope = byGuild.get(String(params.guildId));
-        if (!scope) {
-          return HttpResponse.json(
-            { code: 10_004, message: "Unknown Guild" },
-            { status: 404 },
-          );
-        }
-        return HttpResponse.json([
-          {
-            id: scope.binding.guildId,
-            name: "@everyone",
-            permissions: "274877975552",
-            position: 0,
-          },
-        ]);
-      },
-    ),
-    http.get(
-      "https://discord.com/api/v10/guilds/:guildId/members/:userId",
-      ({ params }) => {
-        const scope = byGuild.get(String(params.guildId));
-        const userId = String(params.userId);
-        if (
-          !scope ||
-          (userId !== scope.binding.discordUserId && userId !== applicationId)
-        ) {
-          return HttpResponse.json(
-            { code: 10_007, message: "Unknown Member" },
-            { status: 404 },
-          );
-        }
-        return HttpResponse.json({
-          user: {
-            id: userId,
-            username: userId === applicationId ? "okou" : "sender",
-            bot: userId === applicationId,
-          },
-          roles: [],
-        });
-      },
-    ),
     http.post(
-      "https://discord.com/api/v10/interactions/:id/:token/callback",
-      async ({ request, params }) => {
-        callbacks.set(String(params.token), await request.json());
+      "https://discord.com/api/v10/interactions/:interactionId/:token/callback",
+      () => {
         return new HttpResponse(null, { status: 204 });
       },
     ),
     http.patch(
-      "https://discord.com/api/v10/webhooks/:applicationId/:token/messages/@original",
-      async ({ request, params }) => {
-        const message = privateMessageSchema.parse(await request.json());
-        messages.set(String(params.token), message);
+      `https://discord.com/api/v10/webhooks/${applicationId}/:token/messages/@original`,
+      async ({ request }) => {
+        const body: unknown = await request.json();
+        replies.push(body);
         return HttpResponse.json({
           id: uniqueDiscordSnowflake(),
-          channel_id: channels.get(String(params.token)),
-          author: { id: applicationId, username: "okou", bot: true },
-          content: message.content,
+          channel_id: uniqueDiscordSnowflake(),
+          author: { id: applicationId, username: "Okou", bot: true },
+          content: "",
           timestamp: new Date(now()).toISOString(),
           attachments: [],
         });
       },
     ),
   );
-  return {
-    async send(
-      payload: DiscordCommandInteraction | DiscordComponentInteraction,
-    ): Promise<PrivateMessage> {
-      channels.set(payload.token, payload.channel_id);
-      const body = JSON.stringify(payload);
-      const timestamp = String(Math.floor(now() / 1000));
-      const signature = sign(
-        null,
-        Buffer.from(`${timestamp}${body}`),
-        keys.privateKey,
-      ).toString("hex");
-      await accept(
-        setupApp({ context, routes: discordInteractionsRoutes })(
-          discordInteractionsContract,
-        ).post({
-          body,
-          headers: {
-            "content-type": "application/json",
-            "x-signature-timestamp": timestamp,
-            "x-signature-ed25519": signature,
-          },
-        }),
-        [202],
-      );
-      await flushWaitUntilForTest();
-      const message = messages.get(payload.token);
-      if (!message) {
-        throw new Error(
-          "Expected Discord to edit the acknowledged interaction",
-        );
-      }
-      expect(message.allowed_mentions.parse).toStrictEqual([]);
-      // Discord shows a private loading reply for a command, while a
-      // component update later edits the message holding that component.
-      expect(callbacks.get(payload.token)).toStrictEqual(
-        payload.type === 3 ? { type: 6 } : { type: 5, data: { flags: 64 } },
-      );
-      return message;
+
+  async function post(interaction: Readonly<Record<string, unknown>>) {
+    const body = JSON.stringify(interaction);
+    const timestamp = String(Math.floor(now() / 1000));
+    const signature = sign(
+      null,
+      Buffer.from(`${timestamp}${body}`, "utf8"),
+      privateKey,
+    ).toString("hex");
+    await accept(
+      setupApp({ context, routes: discordInteractionsRoutes })(
+        discordInteractionsContract,
+      ).post({
+        body,
+        headers: {
+          "content-type": "application/json",
+          "x-signature-ed25519": signature,
+          "x-signature-timestamp": timestamp,
+        },
+      }),
+      [202],
+    );
+    await flushWaitUntilForTest();
+    return replies.at(-1);
+  }
+
+  function slashCommand(
+    name: "connect" | "disconnect",
+    sender: {
+      readonly discordUserId: string;
+      readonly channelId: string;
+      readonly guildId?: string;
     },
-    callbacks,
-  };
+  ) {
+    const user = { id: sender.discordUserId };
+    return {
+      id: uniqueDiscordSnowflake(),
+      application_id: applicationId,
+      token: `interaction-token-${randomUUID()}`,
+      version: 1,
+      channel_id: sender.channelId,
+      ...(sender.guildId
+        ? { guild_id: sender.guildId, member: { user } }
+        : { user }),
+      type: 2,
+      data: { id: uniqueDiscordSnowflake(), type: 1, name },
+    };
+  }
+
+  return { post, slashCommand };
 }
 
-async function readStatus(owner: Actor) {
+const STALE_CONTROL =
+  "This control has expired or your access has changed. Run the command again.";
+
+/** One Okou user linked to two workspaces through the same Discord identity. */
+async function twoLinkedWorkspaces() {
+  const userId = `user_${randomUUID()}`;
+  const discordUserId = uniqueDiscordSnowflake();
+  const firstActor = {
+    userId,
+    orgId: `org_${randomUUID()}`,
+    orgRole: "org:admin" as const,
+  };
+  const secondActor = {
+    userId,
+    orgId: `org_${randomUUID()}`,
+    orgRole: "org:admin" as const,
+  };
+  const actors = [firstActor, secondActor];
+  for (const actor of actors) {
+    await authOrg.provisionWorkspace(authOrg.user(actor));
+  }
+  mockDiscordMemberships(context, actors);
+  const first = await createPublicDiscordBinding(context, {
+    ...firstActor,
+    flow: "install",
+    discordUserId,
+  });
+  const second = await createPublicDiscordBinding(context, {
+    ...secondActor,
+    flow: "install",
+    discordUserId,
+  });
+  return { first, second, provider: mockDiscordProvider(first) };
+}
+
+async function discordStatus(actor: { userId: string; orgId: string }) {
+  createRouteMocks(context).clerk.session(actor.userId, actor.orgId);
   const response = await accept(
     setupApp({ context, routes: integrationsDiscordRoutes })(
       integrationsDiscordContract,
-    ).getStatus({ headers: accountApi.authenticate(owner) }),
+    ).getStatus({ headers: { authorization: "Bearer clerk-session" } }),
     [200],
   );
   return response.body;
 }
 
-async function disconnect(owner: Actor): Promise<void> {
-  await accept(
-    setupApp({ context, routes: integrationsDiscordRoutes })(
-      integrationsDiscordContract,
-    ).disconnect({
-      headers: accountApi.authenticate(owner),
-      query: {},
-    }),
-    [200],
-  );
+interface WorkspaceMenu {
+  readonly customId: string;
+  readonly options: readonly { value: string; default?: boolean }[];
 }
 
-beforeEach(() => {
-  mockEnv("DISCORD_APPLICATION_ID", applicationId);
-  mockEnv("DISCORD_PUBLIC_KEY", publicKey);
-  mockEnv("DISCORD_BOT_TOKEN", randomBytes(32).toString("hex"));
-  mockEnv("DISCORD_GATEWAY_SECRET", randomBytes(32).toString("hex"));
-  mockDiscordApplication(0);
-  accountApi.acceptStorageWrites();
-});
+function workspaceMenu(reply: unknown): WorkspaceMenu {
+  if (
+    typeof reply === "object" &&
+    reply !== null &&
+    "components" in reply &&
+    Array.isArray(reply.components)
+  ) {
+    const [row]: unknown[] = reply.components;
+    if (
+      typeof row === "object" &&
+      row !== null &&
+      "components" in row &&
+      Array.isArray(row.components)
+    ) {
+      const [menu]: unknown[] = row.components;
+      if (
+        typeof menu === "object" &&
+        menu !== null &&
+        "custom_id" in menu &&
+        typeof menu.custom_id === "string" &&
+        "options" in menu &&
+        Array.isArray(menu.options)
+      ) {
+        return { customId: menu.custom_id, options: menu.options };
+      }
+    }
+  }
+  throw new Error(`Expected a workspace menu, got ${JSON.stringify(reply)}`);
+}
+
+function optionValues(menu: WorkspaceMenu): string[] {
+  return menu.options
+    .map((option) => {
+      return option.value;
+    })
+    .sort();
+}
+
+function defaultValues(menu: WorkspaceMenu): string[] {
+  return menu.options.flatMap((option) => {
+    return option.default ? [option.value] : [];
+  });
+}
+
+/** Two linked workspaces and the menu returned by `/connect` from a DM or guild. */
+async function workspaceChoice(where: "dm" | "guild") {
+  const discord = configureDiscordInteractions();
+  const { first, second, provider } = await twoLinkedWorkspaces();
+  const sender =
+    where === "dm"
+      ? { discordUserId: first.discordUserId, channelId: provider.dmChannelId }
+      : {
+          discordUserId: first.discordUserId,
+          channelId: provider.guildChannelId,
+          guildId: first.guildId,
+        };
+  const command = discord.slashCommand("connect", sender);
+  const picker = await discord.post(command);
+  return {
+    discord,
+    first,
+    second,
+    sender,
+    command,
+    picker,
+    menu: workspaceMenu(picker),
+  };
+}
+
+/** The menu choice Discord submits from the same channel as the command. */
+function menuChoice(
+  command: Readonly<Record<string, unknown>>,
+  customId: string,
+  value: string,
+) {
+  return {
+    ...command,
+    id: uniqueDiscordSnowflake(),
+    token: `interaction-token-${randomUUID()}`,
+    type: 3,
+    data: { component_type: 3, custom_id: customId, values: [value] },
+  };
+}
 
 describe("Discord account preferences through private controls", () => {
-  it("disconnects only the invoked workspace and exposes that change through status", async () => {
-    const first = await fixture();
-    const second = await fixture(
-      actor(undefined, first.owner.userId),
-      first.binding.discordUserId,
-    );
-    mockDiscordMemberships(context, [first.owner, second.owner]);
-    const discord = discordHttp([first, second]);
-    const sender = guildSender(first);
-    const menu = selectMenu(
-      await discord.send(commandPayload(sender, "connect")),
-    );
-    await discord.send(
-      selectPayload(sender, menu.custom_id, first.binding.connectionId),
+  it("discord-interactions-preferences-002 tells a member linked to one workspace that they are already connected", async () => {
+    const discord = configureDiscordInteractions();
+    const binding = await linkedWorkspace();
+    const provider = mockDiscordProvider(binding);
+
+    const reply = await discord.post(
+      discord.slashCommand("connect", {
+        discordUserId: binding.discordUserId,
+        channelId: provider.guildChannelId,
+        guildId: binding.guildId,
+      }),
     );
 
-    const message = await discord.send(commandPayload(sender, "disconnect"));
-
-    expect(message.content).toContain("disconnected from this workspace");
-    expect((await readStatus(first.owner)).isConnected).toBeFalsy();
-    expect((await readStatus(second.owner)).isConnected).toBeTruthy();
+    expect(reply).toMatchObject({
+      content: expect.stringContaining("You are already connected to Okou."),
+    });
+    expect(reply).not.toHaveProperty("components.0");
   });
 
-  it.each(["server", "DM"])(
-    "shows the account connection status in a %s with one workspace",
-    async (surface) => {
-      const scope = await fixture();
-      const sender = {
-        discordUserId: scope.binding.discordUserId,
-        channelId: scope.channelId,
-        ...(surface === "server" ? { guildId: scope.binding.guildId } : {}),
-      };
-      const discord = discordHttp(
-        [scope],
-        surface === "DM" ? sender : undefined,
-      );
-      const message = await discord.send(commandPayload(sender, "connect"));
+  it("discord-interactions-preferences-004 (1/3) asks a DM sender to choose between both workspaces", async () => {
+    const { first, second, menu, picker } = await workspaceChoice("dm");
 
-      expect(message.content).toContain("You are already connected to Okou.");
-      expect(message.components).toStrictEqual([]);
-    },
-  );
-
-  it.each(["DM", "guild"] as const)(
-    "requires and saves an explicit workspace choice in a %s",
-    async (surface) => {
-      const first = await fixture();
-      const second = await fixture(
-        actor(undefined, first.owner.userId),
-        first.binding.discordUserId,
-      );
-      mockDiscordMemberships(context, [first.owner, second.owner]);
-      const sender =
-        surface === "guild"
-          ? guildSender(first)
-          : {
-              discordUserId: first.binding.discordUserId,
-              channelId: uniqueDiscordSnowflake(),
-            };
-      const discord = discordHttp(
-        [first, second],
-        surface === "DM" ? sender : undefined,
-      );
-
-      const undecided = await discord.send(commandPayload(sender, "connect"));
-      const choice = selectMenu(undecided);
-      expect(undecided.content).toContain("Choose your workspace for Discord");
-      expect(
-        new Set(
-          choice.options.map((option) => {
-            return option.value;
-          }),
-        ),
-      ).toStrictEqual(
-        new Set([first.binding.connectionId, second.binding.connectionId]),
-      );
-      expect(
-        (await readStatus(first.owner)).dmSelectionConnectionId,
-      ).toBeNull();
-
-      const selected = await discord.send(
-        selectPayload(sender, choice.custom_id, second.binding.connectionId),
-      );
-
-      expect(selected.content).toContain("Workspace selected for Discord");
-      expect((await readStatus(second.owner)).dmSelectionConnectionId).toBe(
-        second.binding.connectionId,
-      );
-      expect(
-        preselected(await discord.send(commandPayload(sender, "connect"))),
-      ).toStrictEqual([second.binding.connectionId]);
-    },
-  );
-
-  it.each([
-    "sender",
-    "channel",
-    "expired",
-    "disconnect",
-    "membership",
-  ] as const)(
-    "keeps the selected DM workspace when an org control changes %s authority",
-    async (changed) => {
-      const first = await fixture();
-      const second = await fixture(
-        actor(undefined, first.owner.userId),
-        first.binding.discordUserId,
-      );
-      mockDiscordMemberships(context, [first.owner, second.owner]);
-      const sender = {
-        discordUserId: first.binding.discordUserId,
-        channelId: uniqueDiscordSnowflake(),
-      };
-      const discord = discordHttp([first, second], sender);
-      const menu = selectMenu(
-        await discord.send(commandPayload(sender, "connect")),
-      );
-      await discord.send(
-        selectPayload(sender, menu.custom_id, first.binding.connectionId),
-      );
-      if (changed === "disconnect") {
-        await disconnect(second.owner);
-      } else if (changed === "membership") {
-        mockDiscordMemberships(context, [first.owner]);
-      } else if (changed === "expired") {
-        mockNow(now() + 15 * 60 * 1000);
-      }
-      const moved = {
-        ...sender,
-        ...(changed === "sender"
-          ? { discordUserId: uniqueDiscordSnowflake() }
-          : {}),
-        ...(changed === "channel"
-          ? { channelId: uniqueDiscordSnowflake() }
-          : {}),
-      };
-      const rejected = await discord.send(
-        selectPayload(moved, menu.custom_id, second.binding.connectionId),
-      );
-
-      expect(rejected.content).toContain("expired or your access has changed");
-      expect((await readStatus(first.owner)).dmSelectionConnectionId).toBe(
-        first.binding.connectionId,
-      );
-    },
-  );
-
-  it("preselects the selected DM workspace", async () => {
-    const first = await fixture();
-    const second = await fixture(
-      actor(undefined, first.owner.userId),
-      first.binding.discordUserId,
+    expect(picker).toMatchObject({
+      content: expect.stringContaining("Choose your workspace for Discord."),
+    });
+    expect(optionValues(menu)).toStrictEqual(
+      [first.connectionId, second.connectionId].sort(),
     );
-    mockDiscordMemberships(context, [first.owner, second.owner]);
-    const sender = {
-      discordUserId: first.binding.discordUserId,
-      channelId: uniqueDiscordSnowflake(),
-    };
-    const discord = discordHttp([first, second], sender);
-    const workspaces = await discord.send(commandPayload(sender, "connect"));
-    expect(preselected(workspaces)).toStrictEqual([]);
-    await discord.send(
-      selectPayload(
-        sender,
-        selectMenu(workspaces).custom_id,
-        first.binding.connectionId,
+    expect(defaultValues(menu)).toStrictEqual([]);
+    await expect(discordStatus(second)).resolves.toMatchObject({
+      dmSelectionConnectionId: null,
+    });
+  });
+
+  it("discord-interactions-preferences-004 (2/3) saves the second workspace chosen from a DM", async () => {
+    const { discord, second, menu, command } = await workspaceChoice("dm");
+
+    const selected = await discord.post(
+      menuChoice(command, menu.customId, second.connectionId),
+    );
+
+    expect(selected).toMatchObject({
+      content: expect.stringContaining("Workspace selected for Discord."),
+    });
+    await expect(discordStatus(second)).resolves.toMatchObject({
+      dmSelectionConnectionId: second.connectionId,
+    });
+  });
+
+  it("discord-interactions-preferences-004 (3/3) preselects the saved workspace in the next DM menu", async () => {
+    const { discord, second, menu, command, sender } =
+      await workspaceChoice("dm");
+    await discord.post(menuChoice(command, menu.customId, second.connectionId));
+
+    const again = workspaceMenu(
+      await discord.post(discord.slashCommand("connect", sender)),
+    );
+
+    expect(defaultValues(again)).toStrictEqual([second.connectionId]);
+  });
+
+  it("discord-interactions-preferences-005 (1/3) asks a guild sender to choose between both workspaces", async () => {
+    const { first, second, menu, picker } = await workspaceChoice("guild");
+
+    expect(picker).toMatchObject({
+      content: expect.stringContaining("Choose your workspace for Discord."),
+    });
+    expect(optionValues(menu)).toStrictEqual(
+      [first.connectionId, second.connectionId].sort(),
+    );
+    expect(defaultValues(menu)).toStrictEqual([]);
+    await expect(discordStatus(second)).resolves.toMatchObject({
+      dmSelectionConnectionId: null,
+    });
+  });
+
+  it("discord-interactions-preferences-005 (2/3) saves the second workspace chosen from a guild", async () => {
+    const { discord, second, menu, command } = await workspaceChoice("guild");
+
+    const selected = await discord.post(
+      menuChoice(command, menu.customId, second.connectionId),
+    );
+
+    expect(selected).toMatchObject({
+      content: expect.stringContaining("Workspace selected for Discord."),
+    });
+    await expect(discordStatus(second)).resolves.toMatchObject({
+      dmSelectionConnectionId: second.connectionId,
+    });
+  });
+
+  it("discord-interactions-preferences-005 (3/3) preselects the saved workspace in the next guild menu", async () => {
+    const { discord, second, menu, command, sender } =
+      await workspaceChoice("guild");
+    await discord.post(menuChoice(command, menu.customId, second.connectionId));
+
+    const again = workspaceMenu(
+      await discord.post(discord.slashCommand("connect", sender)),
+    );
+
+    expect(defaultValues(again)).toStrictEqual([second.connectionId]);
+  });
+
+  it("discord-interactions-preferences-001 disconnects only the selected workspace", async () => {
+    const { discord, first, second, menu, command, sender } =
+      await workspaceChoice("dm");
+    await discord.post(menuChoice(command, menu.customId, first.connectionId));
+
+    const reply = await discord.post(
+      discord.slashCommand("disconnect", sender),
+    );
+
+    expect(reply).toMatchObject({
+      content: expect.stringContaining(
+        "You have been disconnected from this workspace",
       ),
+    });
+    await expect(discordStatus(first)).resolves.toMatchObject({
+      isConnected: false,
+    });
+    await expect(discordStatus(second)).resolves.toMatchObject({
+      isConnected: true,
+    });
+  });
+
+  it("discord-interactions-preferences-006 keeps the saved DM workspace when another sender submits the control", async () => {
+    const { discord, first, second, menu, command } =
+      await workspaceChoice("dm");
+    await discord.post(menuChoice(command, menu.customId, first.connectionId));
+
+    const reply = await discord.post({
+      ...menuChoice(command, menu.customId, second.connectionId),
+      user: { id: uniqueDiscordSnowflake() },
+    });
+
+    expect(reply).toMatchObject({ content: STALE_CONTROL });
+    await expect(discordStatus(first)).resolves.toMatchObject({
+      dmSelectionConnectionId: first.connectionId,
+    });
+  });
+
+  it("discord-interactions-preferences-010 keeps the saved DM workspace after the user leaves the other workspace", async () => {
+    const { discord, first, second, menu, command } =
+      await workspaceChoice("dm");
+    await discord.post(menuChoice(command, menu.customId, first.connectionId));
+    mockDiscordMemberships(context, [
+      { userId: first.userId, orgId: first.orgId, orgRole: "org:admin" },
+    ]);
+
+    const reply = await discord.post(
+      menuChoice(command, menu.customId, second.connectionId),
     );
-    expect(
-      preselected(await discord.send(commandPayload(sender, "connect"))),
-    ).toStrictEqual([first.binding.connectionId]);
+
+    expect(reply).toMatchObject({ content: STALE_CONTROL });
+    await expect(discordStatus(first)).resolves.toMatchObject({
+      dmSelectionConnectionId: first.connectionId,
+    });
   });
 });

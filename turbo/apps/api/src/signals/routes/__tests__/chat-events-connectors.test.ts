@@ -1,830 +1,1288 @@
-import { createChatConnectorAccessApi } from "./helpers/chat-connector-access";
 import { randomUUID } from "node:crypto";
-import { chatThreadConnectorSelectionContract } from "@okouai/api-contracts/contracts/chat-threads";
+import { chatConnectorAccessContract } from "@okouai/api-contracts/contracts/chat-connector-access";
+import {
+  chatEventsContract,
+  chatThreadConnectorSelectionContract,
+  chatThreadsContract,
+} from "@okouai/api-contracts/contracts/chat-threads";
 import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
-import { describe, expect, it, beforeEach, onTestFinished } from "vitest";
+import { connectorPermissionsContract } from "@okouai/api-contracts/contracts/connector-permissions";
+import { builtinConnectorManualGrantContract } from "@okouai/api-contracts/contracts/connectors";
+import {
+  customConnectorByIdContract,
+  customConnectorValuesContract,
+  customConnectorsContract,
+} from "@okouai/api-contracts/contracts/custom-connectors";
+import { onboardingCompleteContract } from "@okouai/api-contracts/contracts/onboarding";
+import { personalModelProvidersMainContract } from "@okouai/api-contracts/contracts/personal-model-providers";
+import {
+  runsByIdContract,
+  runsCancelContract,
+} from "@okouai/api-contracts/contracts/run-routes";
+import { runnersHeartbeatContract } from "@okouai/api-contracts/contracts/runners";
+import { userModelPreferenceContract } from "@okouai/api-contracts/contracts/user-model-preference";
+import {
+  runWebhookContract,
+  webhookClerkContract,
+  webhookCompleteContract,
+} from "@okouai/api-contracts/contracts/webhooks";
+import { UNKNOWN_PERMISSION_GRANT } from "@okouai/connectors/firewall-types";
+import { beforeAll, describe, expect, it, onTestFinished } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { env, mockEnv } from "../../../lib/env";
-import { flushWaitUntilForTest } from "../../context/wait-until";
-import { chatThreadRoutes } from "../chat-threads";
-import { connectorAccountRoutes } from "../connector-accounts";
-import type { ApiTestUser } from "./helpers/api-bdd";
-import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
-import { createFirewallApi, secretTemplate } from "./helpers/api-bdd-firewall";
-import { manualHttpCustomConnectorCreateBody } from "./helpers/api-bdd-connectors";
-import { publicChatActor } from "./helpers/public-chat-actor";
 import {
-  createChatEventsFixture,
-  type EntitledChatActor,
-} from "./helpers/chat-events-fixture";
+  TEST_WITH_DOUBLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE,
+  TEST_WITH_SINGLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE,
+} from "../../../__tests__/test-timeouts";
+import { env, mockEnv, mockOptionalEnv, optionalEnv } from "../../../lib/env";
+import { now } from "../../../lib/time";
+import { flushWaitUntilForTest } from "../../context/wait-until";
+import { settleIncludingAbort } from "../../utils";
+import { chatConnectorAccessRoutes } from "../chat-connector-access";
+import { chatEventsRoutes } from "../chat-events";
+import { chatThreadConnectorSelectionRoutes } from "../chat-threads-connector-selections";
+import { chatThreadCreateRoutes } from "../chat-threads-create";
+import { connectorAccountRoutes } from "../connector-accounts";
+import { connectorPermissionsRoutes } from "../connector-permissions";
+import { builtinConnectorsRoutes } from "../connectors";
+import { customConnectorsRoutes } from "../custom-connectors";
+import { meModelProvidersUpsertRoutes } from "../me-model-providers-upsert";
+import { onboardingCompleteRoutes } from "../onboarding-complete";
+import { runnersRoutes } from "../runners";
+import { runsRoutes } from "../runs";
+import { runsCancelRoutes } from "../runs-cancel";
+import { userModelPreferenceRoutes } from "../user-model-preference";
+import { webhooksAgentCompleteRoutes } from "../webhooks-agent-complete";
+import { webhooksAgentFirewallAuthRoutes } from "../webhooks-agent-firewall-auth";
+import { webhooksClerkRoutes } from "../webhooks-clerk";
+import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
+import { mockClaudeCodeTokenEndpoint } from "./helpers/api-bdd-auth-device";
+import { createChatCallbacksApi } from "./helpers/api-bdd-chat-callbacks";
+import { secretTemplate } from "./helpers/api-bdd-firewall";
+import { createRunsApi } from "./helpers/api-bdd-runs";
+import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
+import type { RunnerExecutionInput } from "./helpers/chat-events-fixture";
+import { createRouteMocks } from "./helpers/route-test";
+import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
 
 const context = testContext();
-const {
-  api,
-  chat,
-  connectors,
-  entitledChatActor: createEntitledChatActor,
-  sendChatRun,
-  runExecution,
-  completeChatRunOk,
-  cancelAndCompleteChatRun,
-  cancelChatRun,
-  sessionHeaders,
-} = createChatEventsFixture(context);
+const bdd = createBddApi(context);
+const runs = createRunsApi(context);
+const chatCallbacks = createChatCallbacksApi(context);
+const webhooks = createWebhookCallbackApi(context);
 
-// Connector selection tests observe claimable native runs; Sonnet's Pi route
-// can finish API-first before these Runner assertions execute.
-async function entitledChatActor() {
-  const result = await createEntitledChatActor();
-  await api.updateUserModelPreference(result.actor, "claude-fable-5-1");
-  return result;
-}
+const SESSION_HEADERS = Object.freeze({
+  authorization: "Bearer clerk-session",
+});
+const OPENAI_TARGET = Object.freeze({
+  kind: "builtin" as const,
+  connectorSlug: "openai" as const,
+});
+const FIGMA_TARGET = Object.freeze({
+  kind: "builtin" as const,
+  connectorSlug: "figma" as const,
+});
 
-function chatThreadConnectorSelectionsClient() {
-  return setupApp({ context, routes: chatThreadRoutes })(
-    chatThreadConnectorSelectionContract,
-  );
-}
+const app = setupApp({
+  context,
+  routes: [
+    ...chatThreadCreateRoutes,
+    ...chatThreadConnectorSelectionRoutes,
+    ...chatEventsRoutes,
+    ...chatConnectorAccessRoutes,
+    ...connectorAccountRoutes,
+    ...builtinConnectorsRoutes,
+    ...connectorPermissionsRoutes,
+    ...customConnectorsRoutes,
+    ...meModelProvidersUpsertRoutes,
+    ...onboardingCompleteRoutes,
+    ...runnersRoutes,
+    ...runsRoutes,
+    ...runsCancelRoutes,
+    ...userModelPreferenceRoutes,
+    ...webhooksAgentCompleteRoutes,
+    ...webhooksAgentFirewallAuthRoutes,
+    ...webhooksClerkRoutes,
+  ],
+});
 
-interface SelectedThreadConnectorFixture extends EntitledChatActor {
-  readonly connectionId: string;
-  readonly threadId: string;
-}
+const threadsApi = app(chatThreadsContract);
+const threadConnectorSelectionApi = app(chatThreadConnectorSelectionContract);
+const chatEventsApi = app(chatEventsContract);
+const accessApi = app(chatConnectorAccessContract);
+const connectorAccountsApi = app(connectorAccountsContract);
+const builtinManualGrantApi = app(builtinConnectorManualGrantContract);
+const permissionsApi = app(connectorPermissionsContract);
+const customConnectorsApi = app(customConnectorsContract);
+const customConnectorByIdApi = app(customConnectorByIdContract);
+const customConnectorValuesApi = app(customConnectorValuesContract);
+const personalModelProvidersApi = app(personalModelProvidersMainContract);
+const onboardingCompleteApi = app(onboardingCompleteContract);
+const runnerHeartbeatApi = app(runnersHeartbeatContract);
+const runsByIdApi = app(runsByIdContract);
+const runsCancelApi = app(runsCancelContract);
+const userModelPreferenceApi = app(userModelPreferenceContract);
+const agentCompleteApi = app(webhookCompleteContract);
+const firewallAuthApi = app(runWebhookContract);
+const clerkWebhookApi = app(webhookClerkContract);
 
-async function selectedThreadConnectorFixture(
-  title: string,
-): Promise<SelectedThreadConnectorFixture> {
-  const entitled = await entitledChatActor();
-  const connection = await connectors.connectManualGrant(
-    entitled.actor,
-    "openai",
-    "api-token",
-    { apiKey: `thread-runtime-overlap-${randomUUID()}` },
-  );
-  const thread = await chat.createThread(entitled.actor, {
-    title,
+beforeAll(async () => {
+  context.mocks.clerk.authenticateRequest.mockResolvedValue({
+    isAuthenticated: false,
   });
-  await accept(
-    chatThreadConnectorSelectionsClient().update({
-      headers: sessionHeaders(entitled.actor),
-      params: { id: thread.id },
+  context.mocks.clerk.verifyWebhook.mockRejectedValueOnce(new Error("warmup"));
+  mockOptionalEnv("CLERK_WEBHOOK_SIGNING_SECRET", "whsec_warmup");
+  const missingId = randomUUID();
+  await Promise.all([
+    accept(threadsApi.create({ headers: {}, body: { model: null } }), [401]),
+    accept(
+      threadConnectorSelectionApi.get({
+        headers: {},
+        params: { id: missingId },
+      }),
+      [401],
+    ),
+    accept(
+      threadConnectorSelectionApi.update({
+        headers: {},
+        params: { id: missingId },
+        body: { target: OPENAI_TARGET, connectionId: missingId },
+      }),
+      [401],
+    ),
+    accept(
+      chatEventsApi.send({
+        headers: {},
+        body: {
+          prompt: "warmup",
+          hasTextContent: true,
+          userMessage: {
+            version: 1,
+            parts: [{ type: "text", text: "warmup" }],
+          },
+        },
+      }),
+      [401],
+    ),
+    accept(
+      accessApi.updateAccountDefault({
+        headers: {},
+        params: { connectionId: missingId },
+        body: { target: OPENAI_TARGET, enabled: false },
+      }),
+      [401],
+    ),
+    accept(
+      connectorAccountsApi.inspect({
+        headers: {},
+        body: {
+          selections: [{ target: OPENAI_TARGET, connectionId: missingId }],
+        },
+      }),
+      [401],
+    ),
+    accept(
+      builtinManualGrantApi.connect({
+        headers: {},
+        params: { connectorSlug: "openai" },
+        body: {
+          authMethod: "api-token",
+          values: { apiKey: "warmup" },
+          account: { intent: "add", displayName: "Warmup" },
+        },
+      }),
+      [401],
+    ),
+    accept(
+      permissionsApi.apply({
+        headers: {},
+        body: {
+          target: FIGMA_TARGET,
+          mode: "replace",
+          grants: [],
+        },
+      }),
+      [401],
+    ),
+    accept(
+      customConnectorsApi.create({
+        headers: {},
+        body: {
+          displayName: "Warmup HTTP",
+          prefixTemplates: ["https://warmup.example.test/api"],
+          fields: [
+            {
+              key: "secret",
+              label: "Secret",
+              kind: "secret",
+              required: true,
+            },
+          ],
+          headerInjections: [
+            {
+              name: "Authorization",
+              valueTemplate: "Bearer {{secrets.secret}}",
+            },
+          ],
+          queryInjections: [],
+        },
+      }),
+      [401],
+    ),
+    accept(
+      customConnectorByIdApi.update({
+        headers: {},
+        params: { id: missingId },
+        body: {
+          displayName: "Warmup HTTP",
+          prefixTemplates: ["https://warmup.example.test/api"],
+          fields: [
+            {
+              key: "secret",
+              label: "Secret",
+              kind: "secret",
+              required: true,
+            },
+          ],
+          headerInjections: [
+            {
+              name: "Authorization",
+              valueTemplate: "Bearer {{secrets.secret}}",
+            },
+          ],
+          queryInjections: [],
+        },
+      }),
+      [401],
+    ),
+    accept(
+      customConnectorValuesApi.set({
+        headers: {},
+        params: { id: missingId },
+        body: {
+          values: [{ key: "secret", kind: "secret", value: "warmup" }],
+          account: { intent: "add", displayName: "Warmup" },
+        },
+      }),
+      [401],
+    ),
+    accept(
+      personalModelProvidersApi.upsert({
+        headers: {},
+        body: {
+          type: "claude-code-oauth-token",
+          secret: "warmup-token",
+        },
+      }),
+      [401],
+    ),
+    accept(
+      onboardingCompleteApi.complete({
+        headers: {},
+        body: {},
+      }),
+      [401],
+    ),
+    accept(
+      runnerHeartbeatApi.heartbeat({
+        headers: {},
+        body: {
+          runnerId: missingId,
+          group: "vm0/warmup",
+          snapshotGeneration: 1,
+          snapshotSequence: 1,
+          totalVcpu: 1,
+          totalMemoryMb: 1024,
+          maxConcurrent: 1,
+          allocatedVcpu: 0,
+          allocatedMemoryMb: 0,
+          runningCount: 0,
+          admittableProfiles: ["vm0/default"],
+          heldSandboxStates: [],
+          heldHomeStates: [],
+          activeReuseProducers: [],
+          mode: "running",
+        },
+      }),
+      [401],
+    ),
+    accept(
+      runsByIdApi.getById({ headers: {}, params: { id: missingId } }),
+      [401],
+    ),
+    accept(
+      runsCancelApi.cancel({ headers: {}, params: { id: missingId } }),
+      [401],
+    ),
+    accept(
+      userModelPreferenceApi.update({
+        headers: {},
+        body: { selectedModel: "claude-fable-5-1", serviceTier: null },
+      }),
+      [401],
+    ),
+    accept(
+      agentCompleteApi.complete({
+        headers: {},
+        body: { runId: missingId, exitCode: 1, error: "warmup" },
+      }),
+      [401],
+    ),
+    accept(
+      firewallAuthApi.firewallAuth({
+        headers: {},
+        body: { authHeaders: {} },
+      }),
+      [401],
+    ),
+    accept(
+      clerkWebhookApi.post({
+        body: "{}",
+        extraHeaders: {},
+      }),
+      [401],
+    ),
+  ]);
+});
+
+function signIn(actor: ApiTestUser) {
+  createRouteMocks(context).clerk.session(
+    actor.userId,
+    actor.orgId,
+    actor.orgRole,
+  );
+  return SESSION_HEADERS;
+}
+
+function bearerHeaders(token: string) {
+  return { authorization: `Bearer ${token}` };
+}
+
+async function connectOpenAiAccount(
+  actor: ApiTestUser,
+  displayName: string,
+  apiKey: string,
+): Promise<string> {
+  const connected = await accept(
+    builtinManualGrantApi.connect({
+      headers: signIn(actor),
+      params: { connectorSlug: "openai" },
       body: {
-        connectionId: connection.id,
-        target: { kind: "builtin", connectorSlug: "openai" },
+        authMethod: "api-token",
+        values: { apiKey },
+        account: { intent: "add", displayName },
       },
     }),
     [200],
   );
-  return {
-    ...entitled,
-    connectionId: connection.id,
-    threadId: thread.id,
-  };
+  return connected.body.connectionId;
 }
 
-async function configurePersonalRuntimeContext(
+async function connectFigmaAccount(
   actor: ApiTestUser,
-): Promise<void> {
-  await api.ensurePersonalSubscriptionModel(actor, {
-    model: "claude-fable-5-1",
-  });
+  displayName: string,
+  accessToken: string,
+): Promise<string> {
+  const connected = await accept(
+    builtinManualGrantApi.connect({
+      headers: signIn(actor),
+      params: { connectorSlug: "figma" },
+      body: {
+        authMethod: "api-token",
+        values: { accessToken },
+        account: { intent: "add", displayName },
+      },
+    }),
+    [200],
+  );
+  return connected.body.connectionId;
 }
 
-describe("chat connector credential placeholders", () => {
-  it("keeps firewall-only credentials deferred during Run preparation", async () => {
-    const { actor } = await entitledChatActor();
-    const figma = await connectors.connectManualGrant(
-      actor,
-      "figma",
-      "api-token",
-      { accessToken: "firewall-figma" },
-    );
-    await connectors.connectManualGrant(actor, "gitlab", "api-token", {
-      accessToken: "firewall-gitlab",
-    });
-    const kms = useSecretKmsProbe();
-    const run = await sendChatRun(actor, {
-      model: "claude-fable-5-1",
-      prompt: "Use my firewall-only connectors",
-    });
-    const { execution, sandboxHeaders } = await runExecution(run.runId);
-    expect(kms.decryptCalls).toBe(0);
-    expect(execution.environment).toMatchObject({
-      FIGMA_TOKEN: "fixture-figma-token",
-    });
-    expect(execution.secretConnectorMetadataMap?.FIGMA_TOKEN).toMatchObject({
-      sourceId: figma.id,
-      sourceType: "connector",
-    });
-    await cancelChatRun(actor, run.runId, sandboxHeaders);
+interface TrackedRun {
+  readonly runId: string;
+  completed: boolean;
+}
+
+interface StartedRun {
+  readonly runId: string;
+  readonly execution: RunnerExecutionInput;
+  readonly tracked: TrackedRun;
+}
+
+function prepareRunEnvironment() {
+  const actor = bdd.user();
+  if (!actor.orgId) {
+    throw new Error("Expected a workspace actor with an organization");
+  }
+  chatCallbacks.acceptChatObjectStorage();
+  runs.acceptStorageDownloads();
+  runs.acceptTelemetryIngest();
+  chatCallbacks.disableVapid();
+  mockOptionalEnv("OPENROUTER_API_KEY", undefined);
+
+  const trackedRuns: TrackedRun[] = [];
+  const bucket = env("R2_USER_STORAGES_BUCKET_NAME");
+  const kmsKey = env("SECRETS_KMS_KEY_ID");
+
+  webhooks.configureClerkWebhookSecret();
+  webhooks.verifyNextClerkWebhook({
+    type: "organization.created",
+    data: { id: actor.orgId, created_by: actor.userId, created_at: now() },
   });
 
-  it("dispatches every connector secret as a placeholder and resolves values on demand", async () => {
-    const { actor } = await entitledChatActor();
-    const openai = await connectors.connectManualGrant(
-      actor,
-      "openai",
-      "api-token",
-      { apiKey: "request-time-openai-token" },
-    );
-    await connectors.connectManualGrant(actor, "figma", "api-token", {
-      accessToken: "deferred-figma-token",
-    });
-    const kms = useSecretKmsProbe();
-    const run = await sendChatRun(actor, {
-      model: "claude-fable-5-1",
-      prompt: "Use request-time connector credentials",
-    });
-    const { execution, sandboxHeaders } = await runExecution(run.runId);
-    expect(kms.decryptCalls).toBe(0);
-    expect(execution.environment).toMatchObject({
-      OPENAI_TOKEN: expect.stringMatching(/.+/),
-      FIGMA_TOKEN: "fixture-figma-token",
-    });
-    expect(JSON.stringify(execution)).not.toContain(
-      "request-time-openai-token",
-    );
-    expect(execution.secretConnectorMetadataMap?.OPENAI_TOKEN).toMatchObject({
-      sourceId: openai.id,
-    });
-    const resolved = await createFirewallApi(context).requestFirewallAuth(
-      { authorization: `Bearer ${execution.firewallToken}` },
-      {
-        secretConnectorMap: execution.secretConnectorMap ?? undefined,
-        secretConnectorMetadataMap:
-          execution.secretConnectorMetadataMap ?? undefined,
-        authHeaders: {
-          Authorization: `Bearer ${secretTemplate("OPENAI_TOKEN")}`,
-        },
-      },
-      [200],
-    );
-    expect(resolved.body).toMatchObject({
-      headers: { Authorization: "Bearer request-time-openai-token" },
-    });
-    const deferred = await createFirewallApi(context).requestFirewallAuth(
-      { authorization: `Bearer ${execution.firewallToken}` },
-      {
-        authHeaders: {
-          Authorization: `Bearer ${secretTemplate("FIGMA_TOKEN")}`,
-        },
-        secretConnectorMap: execution.secretConnectorMap ?? undefined,
-        secretConnectorMetadataMap:
-          execution.secretConnectorMetadataMap ?? undefined,
-      },
-      [200],
-    );
-    expect(deferred.body).toMatchObject({
-      headers: { Authorization: "Bearer deferred-figma-token" },
-    });
-    await cancelChatRun(actor, run.runId, sandboxHeaders);
-  });
+  const runnerGroupPromise = runs.configureRunnerGroup();
+  const orgCreatedPromise = accept(
+    clerkWebhookApi.post({ body: "{}", extraHeaders: {} }),
+    [200],
+  );
+  let resolvedRunnerGroup: string | undefined;
 
-  it("isolates an undecryptable unselected account from request-time selected account auth", async () => {
-    const { actor } = await entitledChatActor();
-    let badAccount = true;
-    const kms = useSecretKmsProbe(
-      (request) => {
-        return badAccount
-          ? Promise.resolve({
-              keyId: request.keyId,
-              plaintext: Buffer.from("0123456789abcdef0123456789abcdef"),
-              encryptedDataKey: Buffer.from("unavailable-account-key"),
-            })
-          : undefined;
-      },
-      (request) => {
-        return Buffer.from(request.ciphertext).toString() ===
-          "unavailable-account-key"
-          ? Promise.reject(new Error("KMS account key unavailable"))
-          : undefined;
-      },
-    );
-    await connectors.connectManualGrant(actor, "openai", "api-token", {
-      apiKey: "bad-account-token",
-    });
-    badAccount = false;
-    const good = await connectors.connectManualGrant(
-      actor,
-      "openai",
-      "api-token",
-      { apiKey: "good-account-token" },
-    );
-    const thread = await chat.createThread(actor, {
-      title: "Credential failure isolation",
-    });
-    await accept(
-      chatThreadConnectorSelectionsClient().update({
-        headers: sessionHeaders(actor),
-        params: { id: thread.id },
-        body: {
-          connectionId: good.id,
-          target: { kind: "builtin", connectorSlug: "openai" },
-        },
-      }),
-      [200],
-    );
-    const beforeLaunch = kms.decryptCalls;
-    const run = await sendChatRun(actor, {
-      threadId: thread.id,
-      model: "claude-fable-5-1",
-      prompt: "Use only my selected healthy account",
-    });
-    const { execution, sandboxHeaders } = await runExecution(run.runId);
-    expect(kms.decryptCalls).toBe(beforeLaunch);
-    expect(execution.secretConnectorMetadataMap?.OPENAI_TOKEN).toMatchObject({
-      sourceId: good.id,
-    });
-    const resolved = await createFirewallApi(context).requestFirewallAuth(
-      { authorization: `Bearer ${execution.firewallToken}` },
-      {
-        secretConnectorMap: execution.secretConnectorMap ?? undefined,
-        secretConnectorMetadataMap:
-          execution.secretConnectorMetadataMap ?? undefined,
-        authHeaders: {
-          Authorization: `Bearer ${secretTemplate("OPENAI_TOKEN")}`,
-        },
-      },
-      [200],
-    );
-    expect(resolved.body).toMatchObject({
-      headers: { Authorization: "Bearer good-account-token" },
-    });
-    await cancelChatRun(actor, run.runId, sandboxHeaders);
-  });
-});
-
-describe("CHAT-02: thread connector account selection", () => {
-  it("inspects and runs with the thread's selected builtin account", async () => {
-    const fixture = await selectedThreadConnectorFixture(
-      "Scoped thread catalog selection",
-    );
-
-    const selections = await accept(
-      chatThreadConnectorSelectionsClient().get({
-        headers: sessionHeaders(fixture.actor),
-        params: { id: fixture.threadId },
-      }),
-      [200],
-    );
-    expect(selections.body.selections).toStrictEqual([
-      {
-        connectionId: fixture.connectionId,
-        target: { kind: "builtin", connectorSlug: "openai" },
-      },
-    ]);
-    const inspection = await accept(
-      setupApp({ context, routes: connectorAccountRoutes })(
-        connectorAccountsContract,
-      ).inspect({
-        headers: sessionHeaders(fixture.actor),
-        body: { selections: selections.body.selections },
-      }),
-      [200],
-    );
-    expect(inspection.body.results).toMatchObject([
-      {
-        kind: "available",
-        connectionId: fixture.connectionId,
-        target: { kind: "builtin", connectorSlug: "openai" },
-      },
-    ]);
-    const run = await sendChatRun(fixture.actor, {
-      threadId: fixture.threadId,
-      prompt: "Use the selected account from its current projection",
-    });
-    const execution = await runExecution(run.runId);
-    expect(
-      execution.execution.secretConnectorMetadataMap?.OPENAI_TOKEN,
-    ).toMatchObject({ sourceId: fixture.connectionId });
-    await cancelChatRun(fixture.actor, run.runId, execution.sandboxHeaders);
-  });
-
-  describe("with a thread with a selected connector", () => {
-    async function prepareScenario() {
-      const fixture = await selectedThreadConnectorFixture(
-        "Out-of-scope thread catalog selection",
-      );
-      return { fixture };
+  onTestFinished(async () => {
+    const previousRunnerGroup = optionalEnv("RUNNER_DEFAULT_GROUP");
+    mockEnv("R2_USER_STORAGES_BUCKET_NAME", bucket);
+    mockEnv("SECRETS_KMS_KEY_ID", kmsKey);
+    if (resolvedRunnerGroup !== undefined) {
+      mockOptionalEnv("RUNNER_DEFAULT_GROUP", resolvedRunnerGroup);
     }
-    let preparedScenario: Awaited<ReturnType<typeof prepareScenario>>;
-    beforeEach(async () => {
-      preparedScenario = await prepareScenario();
-    });
-    it("does not expose a disabled connector and resumes with it after enabling", async () => {
-      const { fixture } = preparedScenario;
-      const access = createChatConnectorAccessApi(context);
-      const selection = {
-        target: { kind: "builtin", connectorSlug: "openai" },
-        connectionId: fixture.connectionId,
-      } as const;
-      await access.setDefault(fixture.actor, selection, false);
-      const run = await sendChatRun(fixture.actor, {
-        threadId: fixture.threadId,
-        prompt: "Do not use the disabled account",
+    context.mocks.ably.publish.mockResolvedValue(undefined);
+    const result = await settleIncludingAbort(async () => {
+      const activeRuns = trackedRuns.filter((tracked) => {
+        return !tracked.completed;
       });
-      const execution = await runExecution(run.runId);
-      expect(
-        execution.execution.secretConnectorMetadataMap?.OPENAI_TOKEN,
-      ).toBeUndefined();
-      await cancelChatRun(fixture.actor, run.runId, execution.sandboxHeaders);
-      await access.setDefault(fixture.actor, selection, true);
-      const reauthorized = await sendChatRun(fixture.actor, {
-        threadId: fixture.threadId,
-        prompt: "Use the preserved account after reauthorization",
-      });
-      const reauthorizedExecution = await runExecution(reauthorized.runId);
-      expect(
-        reauthorizedExecution.execution.secretConnectorMetadataMap
-          ?.OPENAI_TOKEN,
-      ).toMatchObject({ sourceId: fixture.connectionId });
-      await cancelChatRun(
-        fixture.actor,
-        reauthorized.runId,
-        reauthorizedExecution.sandboxHeaders,
-      );
-    });
-  });
-
-  it("uses the selected connector with the personal subscription model", async () => {
-    const fixture = await selectedThreadConnectorFixture(
-      "Runtime context thread",
-    );
-    await configurePersonalRuntimeContext(fixture.actor);
-    const run = await sendChatRun(fixture.actor, {
-      threadId: fixture.threadId,
-      prompt: "Use the selected connector with my subscription",
-    });
-    const execution = await runExecution(run.runId);
-    expect(execution.execution.environment).toMatchObject({
-      ANTHROPIC_MODEL: "claude-fable-5-1",
-    });
-    expect(
-      execution.execution.secretConnectorMetadataMap?.OPENAI_TOKEN,
-    ).toMatchObject({ sourceId: fixture.connectionId });
-    await cancelChatRun(fixture.actor, run.runId, execution.sandboxHeaders);
-  });
-
-  it.each(["revocation", "reauthorization"] as const)(
-    "uses the default connector account across %s without an override",
-    async (transition) => {
-      const { actor } = await entitledChatActor();
-      if (!actor.orgId) {
-        throw new Error("Expected an organization-scoped chat actor");
-      }
-      const connection = await connectors.connectManualGrant(
-        actor,
-        "openai",
-        "api-token",
-        { apiKey: "thread-selected-openai-key" },
-      );
-
-      let threadId: string;
-      if (transition === "revocation") {
-        context.mocks.ably.publish.mockClear();
-        const authorized = await sendChatRun(actor, {
-          prompt: "Use my OpenAI connector account",
-        });
-        const { execution, sandboxHeaders } = await runExecution(
-          authorized.runId,
-        );
-        expect(
-          execution.secretConnectorMetadataMap?.OPENAI_TOKEN,
-        ).toMatchObject({
-          sourceId: connection.id,
-        });
-
-        const selections = await accept(
-          chatThreadConnectorSelectionsClient().get({
-            headers: sessionHeaders(actor),
-            params: { id: authorized.threadId },
+      if (activeRuns.length > 0) {
+        const ownerHeaders = signIn(actor);
+        await Promise.all(
+          activeRuns.map(async (tracked) => {
+            const current = await accept(
+              runsByIdApi.getById({
+                headers: ownerHeaders,
+                params: { id: tracked.runId },
+              }),
+              [200],
+            );
+            if (
+              ["queued", "pending", "running"].includes(current.body.status)
+            ) {
+              await accept(
+                runsCancelApi.cancel({
+                  headers: ownerHeaders,
+                  params: { id: tracked.runId },
+                }),
+                [200],
+              );
+            }
           }),
-          [200],
         );
-        expect(selections.body.selections).toStrictEqual([]);
-        expect(context.mocks.ably.publish).not.toHaveBeenCalledWith(
-          `chatThreadDetailChanged:${authorized.threadId}`,
-          null,
-        );
-
-        await completeChatRunOk(authorized.runId, sandboxHeaders);
-        await flushWaitUntilForTest();
-        threadId = authorized.threadId;
-      } else {
-        const thread = await chat.createThread(actor, {
-          title: "Connector reauthorization",
-        });
-        threadId = thread.id;
       }
+      await flushWaitUntilForTest();
+    });
+    mockOptionalEnv("RUNNER_DEFAULT_GROUP", previousRunnerGroup);
+    if (!result.ok) {
+      throw result.error;
+    }
+  });
 
-      const access = createChatConnectorAccessApi(context);
-      const selection = {
-        target: { kind: "builtin", connectorSlug: "openai" },
-        connectionId: connection.id,
-      } as const;
-      await access.setDefault(actor, selection, false);
-      const unauthorized = await sendChatRun(actor, {
+  async function awaitBootstrap() {
+    const [runnerGroup] = await Promise.all([
+      runnerGroupPromise,
+      orgCreatedPromise,
+    ]);
+    resolvedRunnerGroup = runnerGroup;
+    return runnerGroup;
+  }
+
+  async function startRun(
+    threadId: string,
+    prompt: string,
+    model: string | null = null,
+  ): Promise<StartedRun> {
+    const runnerGroup = resolvedRunnerGroup ?? (await awaitBootstrap());
+    await accept(
+      chatEventsApi.send({
+        headers: signIn(actor),
+        body: {
+          threadId,
+          prompt,
+          model,
+          clientEventId: randomUUID(),
+          userMessage: {
+            version: 1,
+            parts: [{ type: "text", text: prompt }],
+          },
+          hasTextContent: true,
+        },
+      }),
+      [201],
+    );
+    const execution = await runs.nextReceivedExecution(runnerGroup);
+    const tracked: TrackedRun = {
+      runId: execution.runId,
+      completed: false,
+    };
+    trackedRuns.push(tracked);
+    return { runId: execution.runId, execution, tracked };
+  }
+
+  async function completeRunOk(started: StartedRun): Promise<void> {
+    const cliAgentType =
+      started.execution.cliAgentType === "pi" ||
+      started.execution.cliAgentType === "codex" ||
+      started.execution.cliAgentType === "claude-code"
+        ? started.execution.cliAgentType
+        : "claude-code";
+    await accept(
+      agentCompleteApi.complete({
+        headers: bearerHeaders(started.execution.sandboxToken),
+        body: {
+          runId: started.runId,
+          exitCode: 0,
+          completion: {
+            cliAgentType,
+            cliAgentSessionId:
+              started.execution.piSessionId ?? `bdd-cli-${started.runId}`,
+            cliAgentSessionHistoryDisposition: "native_only",
+          },
+        },
+      }),
+      [200],
+    );
+    started.tracked.completed = true;
+  }
+
+  return { actor, awaitBootstrap, startRun, completeRunOk };
+}
+
+function findInlineFirewall(
+  execution: RunnerExecutionInput,
+  customConnectorId: string,
+) {
+  const entry = execution.firewalls?.find((firewall) => {
+    return (
+      firewall.kind === "inline" &&
+      firewall.customConnectorId === customConnectorId
+    );
+  });
+  if (!entry || entry.kind !== "inline") {
+    throw new Error(
+      `Expected inline firewall for custom connector ${customConnectorId}`,
+    );
+  }
+  return entry;
+}
+
+describe("Chat events connectors", () => {
+  it(
+    "chat-events-connectors-007 uses the default OpenAI account without persisting selection or invalidation and omits it when revoked",
+    { timeout: TEST_WITH_DOUBLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const { actor, awaitBootstrap, startRun, completeRunOk } =
+        prepareRunEnvironment();
+      const ownerHeaders = signIn(actor);
+      const openAiSecret = "sk-openai-default-revoke-secret";
+
+      const [, thread, defaultOpenAiId] = await Promise.all([
+        awaitBootstrap(),
+        accept(
+          threadsApi.create({ headers: ownerHeaders, body: { model: null } }),
+          [201],
+        ),
+        connectOpenAiAccount(actor, "Default OpenAI", openAiSecret),
+      ]);
+      const threadId = thread.body.id;
+
+      const firstRun = await startRun(
         threadId,
-        prompt: "Continue while OpenAI is unauthorized",
-      });
-      const unauthorizedExecution = await runExecution(unauthorized.runId);
-      expect(
-        unauthorizedExecution.execution.secretConnectorMetadataMap
-          ?.OPENAI_TOKEN,
-      ).toBeUndefined();
-      await completeChatRunOk(
-        unauthorized.runId,
-        unauthorizedExecution.sandboxHeaders,
+        "Run with default OpenAI account",
       );
+      expect(firstRun.execution.environment?.OPENAI_TOKEN).toBeTruthy();
+      expect(firstRun.execution.secretConnectorMap?.OPENAI_TOKEN).toBe(
+        "openai",
+      );
+      expect(
+        firstRun.execution.secretConnectorMetadataMap?.OPENAI_TOKEN,
+      ).toStrictEqual({
+        sourceType: "connector",
+        sourceId: defaultOpenAiId,
+      });
+      expect(JSON.stringify(firstRun.execution)).not.toContain(openAiSecret);
+
+      await completeRunOk(firstRun);
       await flushWaitUntilForTest();
 
-      if (transition === "revocation") {
-        return;
-      }
-
-      await access.setDefault(actor, selection, true);
-      const reauthorized = await sendChatRun(actor, {
-        threadId,
-        prompt: "Continue after OpenAI is authorized again",
-      });
-      const reauthorizedExecution = await runExecution(reauthorized.runId);
+      const selectionsAfterFirst = await accept(
+        threadConnectorSelectionApi.get({
+          headers: ownerHeaders,
+          params: { id: threadId },
+        }),
+        [200],
+      );
+      expect(selectionsAfterFirst.body.selections).toStrictEqual([]);
+      expect(selectionsAfterFirst.body.selectedConnections).toStrictEqual([]);
       expect(
-        reauthorizedExecution.execution.secretConnectorMetadataMap
-          ?.OPENAI_TOKEN,
-      ).toMatchObject({ sourceId: connection.id });
-      await cancelAndCompleteChatRun(actor, reauthorized.runId);
+        context.mocks.ably.publish.mock.calls.filter((call) => {
+          return call[0] === `chatThreadDetailChanged:${threadId}`;
+        }),
+      ).toStrictEqual([]);
+
+      await accept(
+        accessApi.updateAccountDefault({
+          headers: ownerHeaders,
+          params: { connectionId: defaultOpenAiId },
+          body: { target: OPENAI_TARGET, enabled: false },
+        }),
+        [200],
+      );
+
+      const secondRun = await startRun(
+        threadId,
+        "Continue thread after revoking default OpenAI allowance",
+      );
+      expect(secondRun.execution.environment?.OPENAI_TOKEN).toBeUndefined();
+      expect(
+        secondRun.execution.secretConnectorMap?.OPENAI_TOKEN,
+      ).toBeUndefined();
+      expect(
+        secondRun.execution.secretConnectorMetadataMap?.OPENAI_TOKEN,
+      ).toBeUndefined();
+      expect(JSON.stringify(secondRun.execution)).not.toContain(openAiSecret);
     },
   );
 
-  it("uses default custom HTTP and MCP accounts without persisting overrides", async () => {
-    const { actor } = await entitledChatActor();
-    const storage = context.mocks.s3.send.getMockImplementation();
-    const storageBucket = env("R2_USER_STORAGES_BUCKET_NAME");
-    const kmsKeyId = env("SECRETS_KMS_KEY_ID");
-    const connectorIds: string[] = [];
-    let cleanupRun: (() => Promise<void>) | undefined;
-    let cleaned = false;
-    const cleanup = async () => {
-      if (cleaned) {
-        return;
-      }
-      if (!storage) {
-        throw new Error("Expected the owned Agent's storage implementation");
-      }
-      context.mocks.s3.send.mockImplementation(storage);
-      mockEnv("R2_USER_STORAGES_BUCKET_NAME", storageBucket);
-      mockEnv("SECRETS_KMS_KEY_ID", kmsKeyId);
-      await cleanupRun?.();
-      for (const connectorId of connectorIds) {
-        await connectors.deleteCustomConnector(actor, connectorId);
-      }
-      cleaned = true;
-    };
-    onTestFinished(cleanup);
-    const orgId = actor.orgId;
-    if (!orgId) {
-      throw new Error("Expected an organization-scoped chat actor");
-    }
-    const httpConnector = await connectors.createCustomConnector(
-      actor,
-      manualHttpCustomConnectorCreateBody({
-        slug: `_thread-http-runtime-${randomUUID()}`,
-        displayName: "Thread HTTP runtime connector",
-        prefixTemplates: ["https://thread-http-runtime.example.test/v1/"],
-        permissionBundleRef: "builtin:slack@1",
-      }),
-    );
-    connectorIds.push(httpConnector.id);
-    const mcpConnector = await connectors.createCustomConnector(actor, {
-      kind: "mcp",
-      slug: `_thread-mcp-runtime-${randomUUID()}`,
-      displayName: "Thread MCP runtime connector",
-      endpoint: "https://thread-mcp-runtime.example.test/server",
-      transport: "streamable-http",
-      fields: [
-        {
-          key: "secret",
-          label: "API token",
-          kind: "secret",
-          required: true,
-        },
-      ],
-      headerInjections: [
-        {
-          name: "Authorization",
-          valueTemplate: "Bearer {{secrets.secret}}",
-        },
-      ],
-      queryInjections: [],
-      authMode: "manual",
-    });
-    connectorIds.push(mcpConnector.id);
-    await connectors.setCustomConnectorSecret(
-      actor,
-      httpConnector.id,
-      "thread-http-runtime-secret",
-    );
-    await connectors.setCustomConnectorSecret(
-      actor,
-      mcpConnector.id,
-      "thread-mcp-runtime-secret",
-    );
-    const httpAccounts = await connectors.listCustomConnectorAccounts(
-      actor,
-      httpConnector.id,
-    );
-    const mcpAccounts = await connectors.listCustomConnectorAccounts(
-      actor,
-      mcpConnector.id,
-    );
-    const httpConnectorId = httpAccounts.find((account) => {
-      return account.isDefault;
-    })?.id;
-    const mcpConnectorId = mcpAccounts.find((account) => {
-      return account.isDefault;
-    })?.id;
-    if (!httpConnectorId || !mcpConnectorId) {
-      throw new Error("Expected custom HTTP and MCP connector accounts");
-    }
+  it(
+    "chat-events-connectors-005 omits a disabled selected OpenAI account and restores it after reenabling",
+    { timeout: TEST_WITH_DOUBLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const { actor, awaitBootstrap, startRun, completeRunOk } =
+        prepareRunEnvironment();
+      const ownerHeaders = signIn(actor);
+      const openAiSecret = "sk-openai-toggle-secret";
 
-    const run = await sendChatRun(actor, {
-      prompt: "Use my selected HTTP and MCP connector accounts",
-    });
-    cleanupRun = async () => {
-      await api.requestCancelRun(actor, run.runId, [200]);
-      await flushWaitUntilForTest();
-    };
-    const execution = await runExecution(run.runId);
-    cleanupRun = async () => {
-      await cancelChatRun(actor, run.runId, execution.sandboxHeaders);
-    };
-    const targets = [
-      {
-        kind: "custom",
-        customConnectorId: httpConnector.id,
-        baseUrlVars: {},
-        sourceId: httpConnectorId,
-      },
-      {
-        kind: "custom",
-        customConnectorId: mcpConnector.id,
-        baseUrlVars: {},
-        sourceId: mcpConnectorId,
-      },
-    ].sort((left, right) => {
-      return left.customConnectorId.localeCompare(right.customConnectorId);
-    });
-    expect(execution.execution.connectorRuntimeTargets).toStrictEqual(targets);
-    const firewalls = execution.execution.firewalls?.filter((entry) => {
-      return entry.kind === "inline" && entry.customConnectorId;
-    });
-    expect(firewalls).toMatchObject(
-      targets.map((target) => {
-        return {
-          kind: "inline",
-          customConnectorId: target.customConnectorId,
-          sourceId: target.sourceId,
-        };
-      }),
-    );
-    const firewall = createFirewallApi(context);
-    for (const entry of firewalls ?? []) {
-      if (entry.kind !== "inline") {
-        throw new Error("Expected a custom inline firewall");
-      }
-      const api = entry.firewall.apis[0];
-      if (!api?.id) {
-        throw new Error("Expected the custom firewall API identity");
-      }
-      const auth = await firewall.requestFirewallAuth(
-        { authorization: `Bearer ${execution.execution.firewallToken}` },
-        {
-          authHeaders: api.auth.headers ?? {},
-          matchedFirewall: {
-            name: entry.firewall.name,
-            apiId: api.id,
-            customConnectorId: entry.customConnectorId,
-            sourceId: entry.sourceId,
-            routingVariables: {},
-          },
-        },
-        [200],
-      );
-      expect(auth.body).toMatchObject({
-        headers: {
-          Authorization:
-            entry.customConnectorId === httpConnector.id
-              ? "Bearer thread-http-runtime-secret"
-              : "Bearer thread-mcp-runtime-secret",
-        },
-      });
-    }
-    expect(
-      execution.execution.networkPolicies?.[
-        `custom_connector_${httpConnector.id.replaceAll("-", "")}`
-      ],
-    ).toMatchObject({ unknownPolicy: "deny" });
-    const selections = await accept(
-      chatThreadConnectorSelectionsClient().get({
-        headers: sessionHeaders(actor),
-        params: { id: run.threadId },
-      }),
-      [200],
-    );
-    expect(selections.body.selections).toStrictEqual([]);
-    await cleanup();
-  });
-
-  it("omits a custom connector whose current account cannot render the updated host template", async () => {
-    const fixture = await publicChatActor(context);
-    const { actor, run: own } = fixture;
-    const body = {
-      ...manualHttpCustomConnectorCreateBody({
-        slug: `_host-fallback-${randomUUID()}`,
-        displayName: "Host template fallback",
-        prefixTemplates: ["https://fallback.example.test/"],
-      }),
-      fields: [
-        { key: "secret", label: "Secret", kind: "secret", required: true },
-        { key: "tenant", label: "Tenant", kind: "variable", required: true },
-      ],
-    } satisfies Parameters<typeof connectors.createCustomConnector>[1];
-    const custom = await own(() => {
-      return connectors.createCustomConnector(actor, body);
-    });
-    await own(() => {
-      return connectors.setCustomConnectorValues(actor, custom.id, [
-        { key: "secret", kind: "secret", value: "fallback-account-secret" },
-        { key: "tenant", kind: "variable", value: "healthy" },
+      const [, thread, openAiId] = await Promise.all([
+        awaitBootstrap(),
+        accept(
+          threadsApi.create({ headers: ownerHeaders, body: { model: null } }),
+          [201],
+        ),
+        connectOpenAiAccount(actor, "Selected OpenAI", openAiSecret),
       ]);
-    });
-    const preferred = await own(() => {
-      return connectors.setCustomConnectorValues(
-        actor,
-        custom.id,
-        [
-          { key: "secret", kind: "secret", value: "preferred-account-secret" },
-          { key: "tenant", kind: "variable", value: "not/a/hostname" },
-        ],
-        { intent: "add", displayName: "Preferred account" },
-      );
-    });
-    const thread = await own(() => {
-      return chat.createThread(actor, {});
-    });
-    await own(() => {
-      return accept(
-        chatThreadConnectorSelectionsClient().update({
-          headers: sessionHeaders(actor),
-          params: { id: thread.id },
-          body: {
-            connectionId: preferred.connectionId,
-            target: { kind: "custom", customConnectorId: custom.id },
-          },
+      const threadId = thread.body.id;
+
+      await accept(
+        threadConnectorSelectionApi.update({
+          headers: ownerHeaders,
+          params: { id: threadId },
+          body: { target: OPENAI_TARGET, connectionId: openAiId },
         }),
         [200],
       );
-    });
-    await own(() => {
-      return connectors.updateCustomConnector(actor, custom.id, {
-        ...body,
-        prefixTemplates: [
-          "https://{{variables.tenant}}.fallback.example.test/",
-        ],
-      });
-    });
-    const run = await fixture.sendChatRun(actor, {
-      threadId: thread.id,
-      model: "claude-fable-5-1",
-      prompt: "Use the available custom account after the host template update",
-    });
-    const { execution } = await fixture.runExecution(run.runId);
-    expect(execution.connectorRuntimeTargets).toStrictEqual([]);
-    expect(execution.firewalls).not.toContainEqual(
-      expect.objectContaining({ kind: "inline", customConnectorId: custom.id }),
-    );
-  });
 
-  it("starts the run when a selected custom connector becomes unavailable", async () => {
-    const fixture = await publicChatActor(context);
-    const { actor, run: own } = fixture;
-    const orgId = actor.orgId;
-    if (!orgId) {
-      throw new Error("Expected an organization-scoped chat actor");
-    }
-    const customConnector = await own(() => {
-      return connectors.createCustomConnector(
-        actor,
-        manualHttpCustomConnectorCreateBody({
-          slug: `_thread-runtime-${randomUUID()}`,
-          displayName: "Thread runtime connector",
-          prefixTemplates: ["https://thread-runtime.example.test/v1/"],
+      await accept(
+        accessApi.updateAccountDefault({
+          headers: ownerHeaders,
+          params: { connectionId: openAiId },
+          body: { target: OPENAI_TARGET, enabled: false },
         }),
+        [200],
       );
-    });
-    await own(() => {
-      return connectors.setCustomConnectorSecret(
-        actor,
-        customConnector.id,
-        "thread-runtime-secret",
-      );
-    });
-    const [connection] = await own(() => {
-      return connectors.listCustomConnectorAccounts(actor, customConnector.id);
-    });
-    if (!connection) {
-      throw new Error("Expected the public custom connector account");
-    }
-    const connectorId = connection.id;
 
-    const first = await fixture.sendChatRun(actor, {
-      prompt: "Use my default custom connector account",
-    });
-    await own(() => {
-      return accept(
-        chatThreadConnectorSelectionsClient().update({
-          headers: sessionHeaders(actor),
-          params: { id: first.threadId },
-          body: {
-            connectionId: connectorId,
-            target: {
-              kind: "custom",
-              customConnectorId: customConnector.id,
+      const disabledRun = await startRun(
+        threadId,
+        "Run while selected OpenAI account is disabled",
+      );
+      expect(disabledRun.execution.environment?.OPENAI_TOKEN).toBeUndefined();
+      expect(
+        disabledRun.execution.secretConnectorMap?.OPENAI_TOKEN,
+      ).toBeUndefined();
+      expect(
+        disabledRun.execution.secretConnectorMetadataMap?.OPENAI_TOKEN,
+      ).toBeUndefined();
+      expect(JSON.stringify(disabledRun.execution)).not.toContain(openAiSecret);
+
+      await Promise.all([
+        completeRunOk(disabledRun),
+        accept(
+          accessApi.updateAccountDefault({
+            headers: ownerHeaders,
+            params: { connectionId: openAiId },
+            body: { target: OPENAI_TARGET, enabled: true },
+          }),
+          [200],
+        ),
+      ]);
+
+      const reenabledRun = await startRun(
+        threadId,
+        "Run after reenabling selected OpenAI account",
+      );
+      expect(reenabledRun.execution.environment?.OPENAI_TOKEN).toBeTruthy();
+      expect(reenabledRun.execution.secretConnectorMap?.OPENAI_TOKEN).toBe(
+        "openai",
+      );
+      expect(
+        reenabledRun.execution.secretConnectorMetadataMap?.OPENAI_TOKEN,
+      ).toStrictEqual({
+        sourceType: "connector",
+        sourceId: openAiId,
+      });
+      expect(JSON.stringify(reenabledRun.execution)).not.toContain(
+        openAiSecret,
+      );
+    },
+  );
+
+  it(
+    "chat-events-connectors-002 dispatches placeholders without KMS decrypt before use and resolves OpenAI and Figma headers on demand",
+    { timeout: TEST_WITH_SINGLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const kmsProbe = useSecretKmsProbe();
+      mockClaudeCodeTokenEndpoint();
+      const { actor, awaitBootstrap, startRun } = prepareRunEnvironment();
+      const ownerHeaders = signIn(actor);
+      const openAiSecret = "sk-openai-placeholder-secret";
+      const figmaSecret = "figd-placeholder-secret";
+
+      const [, openAiId, figmaId] = await Promise.all([
+        awaitBootstrap(),
+        connectOpenAiAccount(actor, "OpenAI Primary", openAiSecret),
+        connectFigmaAccount(actor, "Figma Primary", figmaSecret),
+        accept(
+          onboardingCompleteApi.complete({ headers: ownerHeaders, body: {} }),
+          [200],
+        ),
+        accept(
+          personalModelProvidersApi.upsert({
+            headers: ownerHeaders,
+            body: {
+              type: "claude-code-oauth-token",
+              secret: "bdd-fable-oauth-token",
             },
-          },
-        }),
-        [200],
-      );
-    });
-    const availableSelection = await own(() => {
-      return accept(
-        chatThreadConnectorSelectionsClient().get({
-          headers: sessionHeaders(actor),
-          params: { id: first.threadId },
-        }),
-        [200],
-      );
-    });
-    expect(availableSelection.body.selectedConnections).toMatchObject([
-      {
-        id: connectorId,
-        target: { kind: "custom", customConnectorId: customConnector.id },
-        connectionStatus: "connected",
-      },
-    ]);
-    const firstExecution = await fixture.runExecution(first.runId);
-    await own(() => {
-      return cancelChatRun(actor, first.runId, firstExecution.sandboxHeaders);
-    });
-    await own(() => {
-      return connectors.updateCustomConnector(actor, customConnector.id, {
-        ...manualHttpCustomConnectorCreateBody({
-          slug: `_thread-runtime-${randomUUID()}`,
-          displayName: "Thread runtime connector",
-          prefixTemplates: ["https://thread-runtime.example.test/v1/"],
-        }),
-        fields: [
-          {
-            key: "replacement_key",
-            label: "Replacement key",
-            kind: "secret",
-            required: true,
-          },
-        ],
-        headerInjections: [
-          {
-            name: "Authorization",
-            valueTemplate: "Bearer {{secrets.replacement_key}}",
-          },
-        ],
-      });
-    });
+          }),
+          [200, 201],
+        ),
+      ]);
 
-    const fallback = await fixture.sendChatRun(actor, {
-      threadId: first.threadId,
-      prompt: "Continue despite the unavailable connector account",
-    });
-    const execution = await fixture.runExecution(fallback.runId);
-    expect(execution.execution.connectorRuntimeTargets).not.toContainEqual(
-      expect.objectContaining({ customConnectorId: customConnector.id }),
-    );
-    const selections = await own(() => {
-      return accept(
-        chatThreadConnectorSelectionsClient().get({
-          headers: sessionHeaders(actor),
-          params: { id: first.threadId },
+      const [, thread] = await Promise.all([
+        accept(
+          userModelPreferenceApi.update({
+            headers: ownerHeaders,
+            body: { selectedModel: "claude-fable-5-1", serviceTier: null },
+          }),
+          [200],
+        ),
+        accept(
+          threadsApi.create({
+            headers: ownerHeaders,
+            body: { model: "claude-fable-5-1" },
+          }),
+          [201],
+        ),
+      ]);
+
+      const { execution } = await startRun(
+        thread.body.id,
+        "Resolve OpenAI and Figma credentials on demand",
+        "claude-fable-5-1",
+      );
+
+      expect(kmsProbe.decryptCalls).toBe(0);
+      expect(execution.environment?.OPENAI_TOKEN).toBeTruthy();
+      expect(execution.environment?.OPENAI_TOKEN).not.toBe(openAiSecret);
+      expect(execution.environment?.FIGMA_TOKEN).toBe("fixture-figma-token");
+      expect(execution.secretConnectorMap).toMatchObject({
+        OPENAI_TOKEN: "openai",
+        FIGMA_TOKEN: "figma",
+      });
+      expect(execution.secretConnectorMetadataMap).toMatchObject({
+        OPENAI_TOKEN: {
+          sourceType: "connector",
+          sourceId: openAiId,
+        },
+        FIGMA_TOKEN: {
+          sourceType: "connector",
+          sourceId: figmaId,
+        },
+      });
+      const serializedExecution = JSON.stringify(execution);
+      expect(serializedExecution).not.toContain(openAiSecret);
+      expect(serializedExecution).not.toContain(figmaSecret);
+
+      const [openAiResolved, figmaResolved] = await Promise.all([
+        accept(
+          firewallAuthApi.firewallAuth({
+            headers: bearerHeaders(execution.firewallToken),
+            body: {
+              authHeaders: {
+                Authorization: `Bearer ${secretTemplate("OPENAI_TOKEN")}`,
+              },
+              secretConnectorMap: execution.secretConnectorMap ?? undefined,
+              secretConnectorMetadataMap:
+                execution.secretConnectorMetadataMap ?? undefined,
+            },
+          }),
+          [200],
+        ),
+        accept(
+          firewallAuthApi.firewallAuth({
+            headers: bearerHeaders(execution.firewallToken),
+            body: {
+              authHeaders: {
+                Authorization: `Bearer ${secretTemplate("FIGMA_TOKEN")}`,
+              },
+              secretConnectorMap: execution.secretConnectorMap ?? undefined,
+              secretConnectorMetadataMap:
+                execution.secretConnectorMetadataMap ?? undefined,
+            },
+          }),
+          [200],
+        ),
+      ]);
+
+      expect(openAiResolved.body.headers).toStrictEqual({
+        Authorization: `Bearer ${openAiSecret}`,
+      });
+      expect(figmaResolved.body.headers).toStrictEqual({
+        Authorization: `Bearer ${figmaSecret}`,
+      });
+      expect(kmsProbe.decryptCalls).toBeGreaterThan(0);
+    },
+  );
+
+  it(
+    "chat-events-connectors-004 reads and inspects the explicitly selected OpenAI account and dispatches it as the credential source",
+    { timeout: TEST_WITH_SINGLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const { actor, awaitBootstrap, startRun } = prepareRunEnvironment();
+      const ownerHeaders = signIn(actor);
+      const defaultSecret = "sk-openai-default-unselected";
+      const selectedSecret = "sk-openai-explicit-selected";
+
+      const [, thread] = await Promise.all([
+        awaitBootstrap(),
+        accept(
+          threadsApi.create({ headers: ownerHeaders, body: { model: null } }),
+          [201],
+        ),
+        connectOpenAiAccount(actor, "Default OpenAI", defaultSecret),
+      ]);
+      const threadId = thread.body.id;
+
+      const selectedOpenAiId = await connectOpenAiAccount(
+        actor,
+        "Selected OpenAI",
+        selectedSecret,
+      );
+
+      await accept(
+        threadConnectorSelectionApi.update({
+          headers: ownerHeaders,
+          params: { id: threadId },
+          body: { target: OPENAI_TARGET, connectionId: selectedOpenAiId },
         }),
         [200],
       );
-    });
-    expect(selections.body.selections).toContainEqual({
-      connectionId: connectorId,
-      target: { kind: "custom", customConnectorId: customConnector.id },
-    });
-    await own(() => {
-      return cancelChatRun(actor, fallback.runId, execution.sandboxHeaders);
-    });
-  });
+
+      const selectionsRead = await accept(
+        threadConnectorSelectionApi.get({
+          headers: ownerHeaders,
+          params: { id: threadId },
+        }),
+        [200],
+      );
+      expect(selectionsRead.body.selections).toStrictEqual([
+        { target: OPENAI_TARGET, connectionId: selectedOpenAiId },
+      ]);
+
+      const [inspected, started] = await Promise.all([
+        accept(
+          connectorAccountsApi.inspect({
+            headers: ownerHeaders,
+            body: { selections: selectionsRead.body.selections },
+          }),
+          [200],
+        ),
+        startRun(threadId, "Run with explicitly selected OpenAI account"),
+      ]);
+
+      expect(inspected.body.results).toStrictEqual([
+        expect.objectContaining({
+          kind: "available",
+          connectionId: selectedOpenAiId,
+          target: OPENAI_TARGET,
+          displayName: "Selected OpenAI",
+        }),
+      ]);
+      expect(started.execution.environment?.OPENAI_TOKEN).toBeTruthy();
+      expect(started.execution.secretConnectorMap?.OPENAI_TOKEN).toBe("openai");
+      expect(
+        started.execution.secretConnectorMetadataMap?.OPENAI_TOKEN,
+      ).toStrictEqual({
+        sourceType: "connector",
+        sourceId: selectedOpenAiId,
+      });
+      const serialized = JSON.stringify(started.execution);
+      expect(serialized).not.toContain(defaultSecret);
+      expect(serialized).not.toContain(selectedSecret);
+    },
+  );
+
+  it(
+    "chat-events-connectors-009 dispatches default custom HTTP and MCP accounts with denied unknown HTTP permissions and no stored overrides",
+    { timeout: TEST_WITH_SINGLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const { actor, awaitBootstrap, startRun } = prepareRunEnvironment();
+      const ownerHeaders = signIn(actor);
+      const httpSecret = "custom-http-default-secret";
+      const mcpSecret = "custom-mcp-default-secret";
+
+      const [, thread, httpCreated, mcpCreated] = await Promise.all([
+        awaitBootstrap(),
+        accept(
+          threadsApi.create({ headers: ownerHeaders, body: { model: null } }),
+          [201],
+        ),
+        accept(
+          customConnectorsApi.create({
+            headers: ownerHeaders,
+            body: {
+              displayName: "Custom HTTP API",
+              prefixTemplates: ["https://custom-http.example.test/api"],
+              fields: [
+                {
+                  key: "secret",
+                  label: "Secret",
+                  kind: "secret",
+                  required: true,
+                },
+              ],
+              headerInjections: [
+                {
+                  name: "Authorization",
+                  valueTemplate: "Bearer {{secrets.secret}}",
+                },
+              ],
+              queryInjections: [],
+            },
+          }),
+          [201],
+        ),
+        accept(
+          customConnectorsApi.create({
+            headers: ownerHeaders,
+            body: {
+              kind: "mcp",
+              displayName: "Custom MCP Server",
+              endpoint: "https://custom-mcp.example.test/mcp",
+              transport: "streamable-http",
+              authMode: "manual",
+              fields: [
+                {
+                  key: "secret",
+                  label: "Secret",
+                  kind: "secret",
+                  required: true,
+                },
+              ],
+              headerInjections: [
+                {
+                  name: "Authorization",
+                  valueTemplate: "Bearer {{secrets.secret}}",
+                },
+              ],
+              queryInjections: [],
+            },
+          }),
+          [201],
+        ),
+      ]);
+
+      const threadId = thread.body.id;
+      const httpConnectorId = httpCreated.body.id;
+      const mcpConnectorId = mcpCreated.body.id;
+
+      const [httpAccount, mcpAccount] = await Promise.all([
+        accept(
+          customConnectorValuesApi.set({
+            headers: ownerHeaders,
+            params: { id: httpConnectorId },
+            body: {
+              values: [{ key: "secret", kind: "secret", value: httpSecret }],
+              account: { intent: "add", displayName: "Default HTTP" },
+            },
+          }),
+          [200],
+        ),
+        accept(
+          customConnectorValuesApi.set({
+            headers: ownerHeaders,
+            params: { id: mcpConnectorId },
+            body: {
+              values: [{ key: "secret", kind: "secret", value: mcpSecret }],
+              account: { intent: "add", displayName: "Default MCP" },
+            },
+          }),
+          [200],
+        ),
+      ]);
+
+      const httpConnectionId = httpAccount.body.connectionId;
+      const mcpConnectionId = mcpAccount.body.connectionId;
+
+      await accept(
+        permissionsApi.apply({
+          headers: ownerHeaders,
+          body: {
+            target: { kind: "custom", customConnectorId: httpConnectorId },
+            mode: "replace",
+            grants: [{ permission: UNKNOWN_PERMISSION_GRANT, action: "deny" }],
+          },
+        }),
+        [200],
+      );
+
+      const { execution } = await startRun(
+        threadId,
+        "Run with default custom HTTP and MCP accounts",
+      );
+
+      const expectedTargets = [
+        {
+          kind: "custom" as const,
+          customConnectorId: httpConnectorId,
+          baseUrlVars: {},
+          sourceId: httpConnectionId,
+        },
+        {
+          kind: "custom" as const,
+          customConnectorId: mcpConnectorId,
+          baseUrlVars: {},
+          sourceId: mcpConnectionId,
+        },
+      ].sort((left, right) => {
+        return left.customConnectorId.localeCompare(right.customConnectorId);
+      });
+      expect(execution.connectorRuntimeTargets).toStrictEqual(expectedTargets);
+
+      const httpInline = findInlineFirewall(execution, httpConnectorId);
+      const mcpInline = findInlineFirewall(execution, mcpConnectorId);
+      expect(httpInline.sourceId).toBe(httpConnectionId);
+      expect(mcpInline.sourceId).toBe(mcpConnectionId);
+      expect(
+        execution.networkPolicies?.[httpInline.firewall.name]?.unknownPolicy,
+      ).toBe("deny");
+
+      const serialized = JSON.stringify(execution);
+      expect(serialized).not.toContain(httpSecret);
+      expect(serialized).not.toContain(mcpSecret);
+
+      const httpApi = httpInline.firewall.apis[0];
+      const mcpApi = mcpInline.firewall.apis[0];
+      if (!httpApi?.id || !mcpApi?.id) {
+        throw new Error("Expected custom HTTP and MCP inline firewall APIs");
+      }
+
+      const [httpResolved, mcpResolved, selectionsRead] = await Promise.all([
+        accept(
+          firewallAuthApi.firewallAuth({
+            headers: bearerHeaders(execution.firewallToken),
+            body: {
+              authHeaders: httpApi.auth.headers ?? {},
+              matchedFirewall: {
+                name: httpInline.firewall.name,
+                apiId: httpApi.id,
+                base: httpApi.base,
+                customConnectorId: httpConnectorId,
+                sourceId: httpInline.sourceId,
+                routingVariables: {},
+              },
+            },
+          }),
+          [200],
+        ),
+        accept(
+          firewallAuthApi.firewallAuth({
+            headers: bearerHeaders(execution.firewallToken),
+            body: {
+              authHeaders: mcpApi.auth.headers ?? {},
+              matchedFirewall: {
+                name: mcpInline.firewall.name,
+                apiId: mcpApi.id,
+                base: mcpApi.base,
+                customConnectorId: mcpConnectorId,
+                sourceId: mcpInline.sourceId,
+                routingVariables: {},
+              },
+            },
+          }),
+          [200],
+        ),
+        accept(
+          threadConnectorSelectionApi.get({
+            headers: ownerHeaders,
+            params: { id: threadId },
+          }),
+          [200],
+        ),
+      ]);
+
+      expect(httpResolved.body.headers).toStrictEqual({
+        Authorization: `Bearer ${httpSecret}`,
+      });
+      expect(mcpResolved.body.headers).toStrictEqual({
+        Authorization: `Bearer ${mcpSecret}`,
+      });
+      expect(selectionsRead.body.selections).toStrictEqual([]);
+      expect(selectionsRead.body.selectedConnections).toStrictEqual([]);
+    },
+  );
+
+  it(
+    "chat-events-connectors-011 starts the Run omitting an unavailable selected custom connector while retaining the stored thread selection",
+    { timeout: TEST_WITH_SINGLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const { actor, awaitBootstrap, startRun } = prepareRunEnvironment();
+      const ownerHeaders = signIn(actor);
+
+      const [, thread, created] = await Promise.all([
+        awaitBootstrap(),
+        accept(
+          threadsApi.create({ headers: ownerHeaders, body: { model: null } }),
+          [201],
+        ),
+        accept(
+          customConnectorsApi.create({
+            headers: ownerHeaders,
+            body: {
+              displayName: "Selected Custom HTTP",
+              prefixTemplates: ["https://selected-custom.example.test/api"],
+              fields: [
+                {
+                  key: "secret",
+                  label: "Secret",
+                  kind: "secret",
+                  required: true,
+                },
+              ],
+              headerInjections: [
+                {
+                  name: "Authorization",
+                  valueTemplate: "Bearer {{secrets.secret}}",
+                },
+              ],
+              queryInjections: [],
+            },
+          }),
+          [201],
+        ),
+      ]);
+
+      const threadId = thread.body.id;
+      const customConnectorId = created.body.id;
+      const customTarget = { kind: "custom" as const, customConnectorId };
+
+      const connected = await accept(
+        customConnectorValuesApi.set({
+          headers: ownerHeaders,
+          params: { id: customConnectorId },
+          body: {
+            values: [
+              {
+                key: "secret",
+                kind: "secret",
+                value: "initial-custom-secret",
+              },
+            ],
+            account: { intent: "add", displayName: "Initial Custom Account" },
+          },
+        }),
+        [200],
+      );
+      const connectionId = connected.body.connectionId;
+
+      await accept(
+        threadConnectorSelectionApi.update({
+          headers: ownerHeaders,
+          params: { id: threadId },
+          body: { target: customTarget, connectionId },
+        }),
+        [200],
+      );
+
+      const initialSelection = await accept(
+        threadConnectorSelectionApi.get({
+          headers: ownerHeaders,
+          params: { id: threadId },
+        }),
+        [200],
+      );
+      expect(initialSelection.body.selectedConnections).toContainEqual(
+        expect.objectContaining({
+          id: connectionId,
+          target: customTarget,
+          connectionStatus: "connected",
+        }),
+      );
+
+      await accept(
+        customConnectorByIdApi.update({
+          headers: ownerHeaders,
+          params: { id: customConnectorId },
+          body: {
+            displayName: "Selected Custom HTTP",
+            prefixTemplates: ["https://selected-custom.example.test/api"],
+            fields: [
+              {
+                key: "replacement_secret",
+                label: "Replacement Secret",
+                kind: "secret",
+                required: true,
+              },
+            ],
+            headerInjections: [
+              {
+                name: "Authorization",
+                valueTemplate: "Bearer {{secrets.replacement_secret}}",
+              },
+            ],
+            queryInjections: [],
+          },
+        }),
+        [200],
+      );
+
+      const { execution } = await startRun(
+        threadId,
+        "Continue chat after selected custom connector loses required credential",
+      );
+
+      expect(execution.connectorRuntimeTargets).toStrictEqual([]);
+      expect(
+        (execution.firewalls ?? []).filter((firewall) => {
+          return (
+            firewall.kind === "inline" &&
+            firewall.customConnectorId === customConnectorId
+          );
+        }),
+      ).toStrictEqual([]);
+
+      const retainedSelection = await accept(
+        threadConnectorSelectionApi.get({
+          headers: ownerHeaders,
+          params: { id: threadId },
+        }),
+        [200],
+      );
+      expect(retainedSelection.body.selections).toStrictEqual([
+        { target: customTarget, connectionId },
+      ]);
+      expect(retainedSelection.body.selectedConnections).toContainEqual(
+        expect.objectContaining({
+          id: connectionId,
+          target: customTarget,
+          connectionStatus: "reconnect-required",
+          missingRequiredFields: ["replacement_secret"],
+        }),
+      );
+    },
+  );
 });

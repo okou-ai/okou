@@ -1,451 +1,355 @@
-import { publicPlanLifecycle } from "./helpers/public-plan-lifecycle";
 import { randomUUID } from "node:crypto";
 
 import { billingStatusContract } from "@okouai/api-contracts/contracts/billing";
-import { createStore } from "ccstate";
-import StripeSDK from "stripe";
-import { beforeEach } from "vitest";
-import {
-  okouTokenFromExecution,
-  createChatEventsFixture,
-} from "./helpers/chat-events-fixture";
+import { onboardingCompleteContract } from "@okouai/api-contracts/contracts/onboarding";
+import { webhookStripeContract } from "@okouai/api-contracts/contracts/webhooks";
+import Stripe from "stripe";
+import { describe, expect, it } from "vitest";
 
+import { apiTestEnvironment } from "../../../__tests__/test-environment";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv, mockOptionalEnv } from "../../../lib/env";
-
-import { mockStripeClient } from "../../external/stripe-client";
+import { mockNow, now } from "../../../lib/time";
 import { billingStatusRoutes } from "../billing-status";
-import { createBddApi } from "./helpers/api-bdd";
+import { onboardingCompleteRoutes } from "../onboarding-complete";
+import { webhooksStripeRoutes } from "../webhooks-stripe";
+import { mockClerkUsers } from "./helpers/clerk-users";
+import { createRouteMocks } from "./helpers/route-test";
 import {
-  deleteBillingStatusOrg$,
-  seedBillingStatusOrg$,
-  type BillingStatusFixture,
-} from "./helpers/billing-status";
-import { createPublicUnfundedProFixture } from "./helpers/public-unfunded-pro-fixture";
-import { createFixtureTracker, createRouteMocks } from "./helpers/route-test";
+  createBillingWebhookFixture,
+  generatedStripeCustomerId,
+  generatedStripeSubscriptionId,
+  postBillingDowngradeCheckoutCompleted,
+  postConcurrencyEntitlementsInvoicePaid,
+  postCreditPurchaseInvoicePaid,
+  postSubscriptionInvoicePaid,
+  TEST_PRICE_CONCURRENCY,
+  type BillingWebhookFixture,
+} from "./helpers/stripe-billing-webhook";
 
 const context = testContext();
-const store = createStore();
-const mocks = createRouteMocks(context);
+const headers = Object.freeze({ authorization: "Bearer clerk-session" });
 
-beforeEach(() => {
-  mockOptionalEnv("STRIPE_SECRET_KEY", undefined);
+const app = setupApp({
+  context,
+  routes: [
+    ...billingStatusRoutes,
+    ...onboardingCompleteRoutes,
+    ...webhooksStripeRoutes,
+  ],
 });
+const billingStatus = app(billingStatusContract);
+const onboardingComplete = app(onboardingCompleteContract);
+const stripeWebhook = app(webhookStripeContract);
+
+function signIn(
+  actor: BillingWebhookFixture,
+  role: "org:admin" | "org:member" = "org:admin",
+): void {
+  createRouteMocks(context).clerk.session(actor.userId, actor.orgId, role);
+}
+
+function disableStripeBilling(): void {
+  mockOptionalEnv("STRIPE_SECRET_KEY", undefined);
+}
+
+async function readBillingStatus() {
+  return (await accept(billingStatus.get({ headers }), [200])).body;
+}
+
+async function completeOnboarding(actor: BillingWebhookFixture): Promise<void> {
+  mockClerkUsers(context, [{ id: actor.userId, createdAt: 0 }]);
+  signIn(actor);
+  await accept(onboardingComplete.complete({ headers, body: {} }), [200]);
+}
+
+async function deliverStripeEvent(
+  event: Readonly<Record<string, unknown>>,
+): Promise<void> {
+  mockOptionalEnv("STRIPE_WEBHOOK_SECRET", "whsec_billing_status_test");
+  const stripeEvent = {
+    id: `evt_${randomUUID()}`,
+    created: Math.floor(now() / 1000),
+    ...event,
+  };
+  context.mocks.stripe.webhooks.constructEventAsync.mockReturnValueOnce(
+    stripeEvent,
+  );
+  await accept(
+    stripeWebhook.post({
+      body: JSON.stringify(stripeEvent),
+      extraHeaders: { "stripe-signature": "t=1,v1=billing-status-test" },
+    }),
+    [200],
+  );
+}
 
 describe("GET /api/billing/status", () => {
-  const track = createFixtureTracker<BillingStatusFixture>((fixture) => {
-    return store.set(deleteBillingStatusOrg$, fixture, context.signal);
+  it("billing-status-018 returns 200 for a non-admin member", async () => {
+    const actor = createBillingWebhookFixture();
+    await postCreditPurchaseInvoicePaid(context.signal, {
+      orgId: actor.orgId,
+      credits: 100_000,
+    });
+    disableStripeBilling();
+    signIn(actor, "org:member");
+
+    const response = await accept(billingStatus.get({ headers }), [200]);
+
+    expect(response.status).toBe(200);
+    expect(response.body.credits).toBe(100_000);
   });
 
-  it("returns 401 when not authenticated", async () => {
-    const client = setupApp({ context, routes: billingStatusRoutes })(
-      billingStatusContract,
-    );
+  it("billing-status-004 returns billing status for an authenticated user without a subscription", async () => {
+    const actor = createBillingWebhookFixture();
+    await postCreditPurchaseInvoicePaid(context.signal, {
+      orgId: actor.orgId,
+      credits: 100_000,
+    });
+    disableStripeBilling();
+    signIn(actor);
 
-    const response = await accept(client.get({ headers: {} }), [401]);
-
-    expect(response.body.error.code).toBe("UNAUTHORIZED");
+    await expect(readBillingStatus()).resolves.toMatchObject({
+      tier: "limited-free-1",
+      status: "active",
+      concurrencyLimit: 2,
+      restrictedBuiltInModels: true,
+      credits: 100_000,
+      onboardingPaymentPending: false,
+      hasSubscription: false,
+      subscriptionStatus: null,
+      currentPeriodEnd: null,
+    });
   });
 
-  it("returns 401 when the user has no active org", async () => {
-    const userId = `user_${randomUUID()}`;
-    mocks.clerk.session(userId, null);
+  it("billing-status-003 keeps billing status isolated across successive organization requests", async () => {
+    const orgA = createBillingWebhookFixture();
+    const orgB = createBillingWebhookFixture();
+    await completeOnboarding(orgA);
+    await completeOnboarding(orgB);
+    await postSubscriptionInvoicePaid(context.signal, {
+      ...orgA,
+      tier: "pro",
+      customerId: generatedStripeCustomerId(),
+      subscriptionId: generatedStripeSubscriptionId(),
+      currentPeriodEnd: new Date("2099-04-20T00:00:00.000Z"),
+    });
+    await postSubscriptionInvoicePaid(context.signal, {
+      ...orgB,
+      tier: "team",
+      customerId: generatedStripeCustomerId(),
+      subscriptionId: generatedStripeSubscriptionId(),
+      currentPeriodEnd: new Date("2099-04-20T00:00:00.000Z"),
+    });
+    disableStripeBilling();
 
-    const client = setupApp({ context, routes: billingStatusRoutes })(
-      billingStatusContract,
-    );
+    signIn(orgA);
+    const firstA = await readBillingStatus();
+    signIn(orgB);
+    const responseB = await readBillingStatus();
+    signIn(orgA);
+    const secondA = await readBillingStatus();
 
-    const response = await accept(
-      client.get({ headers: { authorization: "Bearer clerk-session" } }),
-      [401],
-    );
+    expect(firstA).toMatchObject({ tier: "pro", status: "active" });
+    expect(responseB).toMatchObject({ tier: "team", status: "active" });
+    expect(secondA).toMatchObject({ tier: "pro", status: "active" });
+  });
 
-    expect(response.body).toStrictEqual({
-      error: {
-        message: "Not authenticated",
-        code: "UNAUTHORIZED",
+  it("billing-status-006 returns billing status for a subscribed organization", async () => {
+    const actor = createBillingWebhookFixture();
+    const periodEnd = new Date("2099-04-20T00:00:00.000Z");
+    await postSubscriptionInvoicePaid(context.signal, {
+      ...actor,
+      tier: "pro",
+      customerId: generatedStripeCustomerId(),
+      subscriptionId: generatedStripeSubscriptionId(),
+      currentPeriodEnd: periodEnd,
+    });
+    await postCreditPurchaseInvoicePaid(context.signal, {
+      orgId: actor.orgId,
+      credits: 80_000,
+    });
+    disableStripeBilling();
+    signIn(actor);
+
+    await expect(readBillingStatus()).resolves.toMatchObject({
+      tier: "pro",
+      status: "active",
+      credits: 100_000,
+      subscriptionStatus: "active",
+      currentPeriodEnd: periodEnd.toISOString(),
+      cancelAtPeriodEnd: false,
+      scheduledChange: null,
+      canRestorePlan: false,
+      hasSubscription: true,
+    });
+  });
+
+  it("billing-status-007 does not report a canceled plan as an active subscription", async () => {
+    const actor = createBillingWebhookFixture();
+    await postSubscriptionInvoicePaid(context.signal, {
+      ...actor,
+      tier: "pro",
+      customerId: generatedStripeCustomerId(),
+      subscriptionId: generatedStripeSubscriptionId(),
+      status: "canceled",
+      currentPeriodEnd: new Date("2099-04-20T00:00:00.000Z"),
+    });
+    disableStripeBilling();
+    signIn(actor);
+
+    await expect(readBillingStatus()).resolves.toMatchObject({
+      subscriptionStatus: "canceled",
+      hasSubscription: false,
+    });
+  });
+
+  it("billing-status-009 reflects normal subscription activation and cancellation without enabling package controls", async () => {
+    const actor = createBillingWebhookFixture();
+    const customerId = generatedStripeCustomerId();
+    const subscriptionId = generatedStripeSubscriptionId();
+    const proPriceId = apiTestEnvironment.OKOU_PRICE_PRO;
+    context.mocks.stripe.customers.retrieve.mockResolvedValue({
+      id: customerId,
+      metadata: { orgId: actor.orgId },
+    });
+    const baseSubscription = {
+      id: subscriptionId,
+      customer: customerId,
+      metadata: {},
+      cancel_at_period_end: false,
+      cancel_at: null,
+      schedule: null,
+      trial_end: null,
+      items: {
+        data: [{ price: { id: proPriceId } }],
+      },
+    };
+    await deliverStripeEvent({
+      type: "customer.subscription.created",
+      data: {
+        object: {
+          ...baseSubscription,
+          status: "active",
+        },
       },
     });
-  });
+    disableStripeBilling();
+    signIn(actor);
 
-  it("keeps billing status isolated across successive organization requests", async () => {
-    const bdd = createBddApi(context);
-    const actorA = bdd.user();
-    const actorB = bdd.user();
-    await bdd.completeOnboarding(actorA);
-    await bdd.completeOnboarding(actorB);
-    await publicPlanLifecycle(context, actorA, "pro").update("active");
-    await publicPlanLifecycle(context, actorB, "team").update("active");
-    mockOptionalEnv("STRIPE_SECRET_KEY", undefined);
+    const activeStatus = await readBillingStatus();
 
-    const client = setupApp({ context, routes: billingStatusRoutes })(
-      billingStatusContract,
-    );
-
-    mocks.clerk.session(actorA.userId, actorA.orgId);
-    const firstA = await accept(
-      client.get({ headers: { authorization: "Bearer clerk-session" } }),
-      [200],
-    );
-    expect(firstA.body).toMatchObject({ tier: "pro", status: "active" });
-
-    mocks.clerk.session(actorB.userId, actorB.orgId);
-    const responseB = await accept(
-      client.get({ headers: { authorization: "Bearer clerk-session" } }),
-      [200],
-    );
-    expect(responseB.body).toMatchObject({ tier: "team", status: "active" });
-
-    mocks.clerk.session(actorA.userId, actorA.orgId);
-    const secondA = await accept(
-      client.get({ headers: { authorization: "Bearer clerk-session" } }),
-      [200],
-    );
-    expect(secondA.body).toMatchObject({ tier: "pro", status: "active" });
-  });
-
-  it("returns billing status for authenticated user", async () => {
-    const fixture = await track(
-      store.set(seedBillingStatusOrg$, { credits: 100_000 }, context.signal),
-    );
-    mocks.clerk.session(fixture.userId, fixture.orgId);
-
-    const client = setupApp({ context, routes: billingStatusRoutes })(
-      billingStatusContract,
-    );
-
-    const response = await accept(
-      client.get({ headers: { authorization: "Bearer clerk-session" } }),
-      [200],
-    );
-
-    expect(response.body.tier).toBe("limited-free-1");
-    expect(response.body.status).toBe("active");
-    expect(response.body.concurrencyLimit).toBe(2);
-    expect(response.body.restrictedBuiltInModels).toBeTruthy();
-    expect(response.body.credits).toBe(100_000);
-    expect(response.body.onboardingPaymentPending).toBeFalsy();
-    expect(response.body.hasSubscription).toBeFalsy();
-    expect(response.body.subscriptionStatus).toBeNull();
-    expect(response.body.currentPeriodEnd).toBeNull();
-  });
-
-  it("returns billing status for agent tokens with billing read capability", async () => {
-    const fixture = await track(
-      store.set(seedBillingStatusOrg$, { credits: 100_000 }, context.signal),
-    );
-    const chat = createChatEventsFixture(context);
-    const { actor } = await chat.entitledNativeChatActor({
-      userId: fixture.userId,
-      orgId: fixture.orgId,
-    });
-    const run = await chat.sendChatRun(actor, {
-      prompt: "Read billing status",
-    });
-    const execution = await chat.runExecution(run.runId);
-    const token = okouTokenFromExecution(execution.execution);
-
-    const client = setupApp({ context, routes: billingStatusRoutes })(
-      billingStatusContract,
-    );
-
-    const response = await accept(
-      client.get({ headers: { authorization: `Bearer ${token}` } }),
-      [200],
-    );
-
-    expect(response.body.credits).toBe(120_000);
-    await chat.cancelChatRun(actor, run.runId, execution.sandboxHeaders);
-  });
-
-  it("returns correct data for subscribed org", async () => {
-    const periodEnd = new Date("2099-04-20T00:00:00Z");
-    const fixture = await track(
-      store.set(
-        seedBillingStatusOrg$,
-        {
-          credits: 100_000,
-          subscription: {
-            tier: "pro",
-            status: "active",
-            currentPeriodEnd: periodEnd,
-            stripeCustomerId: `cus_${randomUUID()}`,
-            stripeSubscriptionId: `sub_${randomUUID()}`,
-          },
+    await deliverStripeEvent({
+      type: "customer.subscription.updated",
+      data: {
+        object: {
+          ...baseSubscription,
+          status: "canceled",
         },
-        context.signal,
-      ),
-    );
-    mocks.clerk.session(fixture.userId, fixture.orgId);
+      },
+    });
+    const canceledStatus = await readBillingStatus();
 
-    const client = setupApp({ context, routes: billingStatusRoutes })(
-      billingStatusContract,
-    );
-
-    const response = await accept(
-      client.get({ headers: { authorization: "Bearer clerk-session" } }),
-      [200],
-    );
-
-    expect(response.body.tier).toBe("pro");
-    expect(response.body.status).toBe("active");
-    expect(response.body.credits).toBe(100_000);
-    expect(response.body.subscriptionStatus).toBe("active");
-    expect(response.body.currentPeriodEnd).toBe(periodEnd.toISOString());
-    expect(response.body.cancelAtPeriodEnd).toBeFalsy();
-    expect(response.body.scheduledChange).toBeNull();
-    expect(response.body.canRestorePlan).toBeFalsy();
-    expect(response.body.hasSubscription).toBeTruthy();
-  });
-
-  it.each(["canceled", "incomplete_expired"])(
-    "does not report a %s plan as a subscription",
-    async (status) => {
-      const fixture = await track(
-        store.set(
-          seedBillingStatusOrg$,
-          {
-            subscription: {
-              tier: "pro",
-              status,
-              currentPeriodEnd: new Date("2099-04-20T00:00:00Z"),
-              stripeCustomerId: `cus_${randomUUID()}`,
-              stripeSubscriptionId: `sub_${randomUUID()}`,
-            },
-          },
-          context.signal,
-        ),
-      );
-      mocks.clerk.session(fixture.userId, fixture.orgId);
-
-      const response = await accept(
-        setupApp({ context, routes: billingStatusRoutes })(
-          billingStatusContract,
-        ).get({
-          headers: { authorization: "Bearer clerk-session" },
-        }),
-        [200],
-      );
-
-      expect(response.body.subscriptionStatus).toBe(status);
-      expect(response.body.hasSubscription).toBeFalsy();
-    },
-  );
-
-  it("reflects normal subscription activation and cancellation without enabling package controls", async () => {
-    const actor = createBddApi(context).user();
-    const fixture = createPublicUnfundedProFixture(context, actor);
-    await fixture.initialize();
-    await fixture.run(async () => {
-      const readStatus = async () => {
-        mocks.clerk.session(actor.userId, actor.orgId);
-        return await accept(
-          setupApp({ context, routes: billingStatusRoutes })(
-            billingStatusContract,
-          ).get({
-            headers: { authorization: "Bearer clerk-session" },
-          }),
-          [200],
-        );
-      };
-      expect((await readStatus()).body).toMatchObject({
-        status: "active",
-        showUsagePack: false,
-      });
-      await fixture.suspend();
-      expect((await readStatus()).body).toMatchObject({
-        status: "suspended",
-        showUsagePack: false,
-      });
+    expect(activeStatus).toMatchObject({
+      status: "active",
+      showUsagePack: false,
+    });
+    expect(canceledStatus).toMatchObject({
+      status: "suspended",
+      showUsagePack: false,
     });
   });
 
-  it.each([
-    { status: "active", hasSubscription: true },
-    { status: "canceled", hasSubscription: false },
-  ])(
-    "reports $status concurrency subscription availability",
-    async ({ status, hasSubscription }) => {
-      const fixture = await track(
-        store.set(
-          seedBillingStatusOrg$,
-          {
-            concurrencyEntitlements: [
-              {
-                stripeSubscriptionId: `sub_${randomUUID()}`,
-                slots: 2,
-                startsAt: new Date("2026-01-01T00:00:00Z"),
-                expiresAt: new Date("2099-04-20T00:00:00Z"),
-                subscriptionStatus: status,
-              },
-            ],
-          },
-          context.signal,
-        ),
-      );
-      mocks.clerk.session(fixture.userId, fixture.orgId);
-
-      const response = await accept(
-        setupApp({ context, routes: billingStatusRoutes })(
-          billingStatusContract,
-        ).get({
-          headers: { authorization: "Bearer clerk-session" },
-        }),
-        [200],
-      );
-
-      expect(response.body.hasSubscription).toBe(hasSubscription);
-    },
-  );
-
-  it("returns finite concurrency limit when the concurrency cap is disabled", async () => {
-    mockEnv("CONCURRENT_RUN_LIMIT_CAP", "0");
-    const fixture = await track(
-      store.set(
-        seedBillingStatusOrg$,
-        {
-          subscription: {
-            tier: "pro",
-            status: "active",
-            currentPeriodEnd: new Date("2099-04-20T00:00:00Z"),
-            stripeCustomerId: `cus_${randomUUID()}`,
-            stripeSubscriptionId: `sub_${randomUUID()}`,
-          },
-        },
-        context.signal,
-      ),
-    );
-    mocks.clerk.session(fixture.userId, fixture.orgId);
-
-    const client = setupApp({ context, routes: billingStatusRoutes })(
-      billingStatusContract,
-    );
-
-    const response = await accept(
-      client.get({ headers: { authorization: "Bearer clerk-session" } }),
-      [200],
-    );
-
-    expect(response.body.concurrencyLimit).toBe(3);
-    expect(Number.isFinite(response.body.concurrencyLimit)).toBeTruthy();
-  });
-
-  it("returns Team capabilities and the current Stripe concurrency price", async () => {
+  it("billing-status-013 returns Team capabilities and the current Stripe concurrency price", async () => {
     mockEnv("CONCURRENT_RUN_LIMIT_CAP", "3");
-    const concurrencyPriceId = `price_concurrency_${randomUUID()}`;
-    const userId = `user_${randomUUID()}`;
-    const orgId = `org_${randomUUID()}`;
-    const actor = createBddApi(context).user({ userId, orgId });
-    await createBddApi(context).completeOnboarding(actor);
-    await publicPlanLifecycle(context, actor, "team").update("active");
-    mockEnv("OKOU_PRICE_CONCURRENCY", concurrencyPriceId);
-    mockOptionalEnv("STRIPE_SECRET_KEY", "sk_test_billing_status");
-    mockStripeClient(context.mocks.stripe as unknown as StripeSDK);
-    context.mocks.stripe.prices.retrieve.mockResolvedValue({
-      id: concurrencyPriceId,
+    const actor = createBillingWebhookFixture();
+    await completeOnboarding(actor);
+    await postSubscriptionInvoicePaid(context.signal, {
+      ...actor,
+      tier: "team",
+      customerId: generatedStripeCustomerId(),
+      subscriptionId: generatedStripeSubscriptionId(),
+      currentPeriodEnd: new Date("2099-04-20T00:00:00.000Z"),
+    });
+    mockOptionalEnv("STRIPE_SECRET_KEY", apiTestEnvironment.STRIPE_SECRET_KEY);
+    context.mocks.stripe.prices.retrieve.mockResolvedValueOnce({
+      id: TEST_PRICE_CONCURRENCY,
       active: true,
       currency: "usd",
-      type: "recurring",
       unit_amount: 4200,
+      type: "recurring",
       recurring: { interval: "month", interval_count: 1 },
-      product: "prod_concurrency",
     });
-    mocks.clerk.session(userId, orgId);
+    signIn(actor);
 
-    const response = await accept(
-      setupApp({ context, routes: billingStatusRoutes })(
-        billingStatusContract,
-      ).get({
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [200],
-    );
-
-    expect(response.body.tier).toBe("team");
-    expect(response.body.canBuyConcurrency).toBeTruthy();
-    expect(response.body.canBuyCredits).toBeTruthy();
-    expect(response.body.showUsagePack).toBeFalsy();
-    expect(response.body.status).toBe("active");
-    expect(response.body.autoRechargeAllowed).toBeTruthy();
-    expect(response.body.restrictedBuiltInModels).toBeFalsy();
-    expect(response.body.workflowWebhookAutomationAllowed).toBeTruthy();
-    expect(response.body.concurrencyLimit).toBe(3);
-    expect(response.body.concurrencyUnitAmountCents).toBe(4200);
+    const withPrice = await readBillingStatus();
 
     context.mocks.stripe.prices.retrieve.mockRejectedValueOnce(
-      new StripeSDK.errors.StripeInvalidRequestError({
+      new Stripe.errors.StripeInvalidRequestError({
         type: "invalid_request_error",
         code: "resource_missing",
         message: "No such price",
       }),
     );
-    const missingPriceResponse = await accept(
-      setupApp({ context, routes: billingStatusRoutes })(
-        billingStatusContract,
-      ).get({
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [200],
-    );
-    expect(missingPriceResponse.body).not.toHaveProperty(
-      "concurrencyUnitAmountCents",
-    );
+    const withoutPrice = await readBillingStatus();
+
+    expect(withPrice).toMatchObject({
+      tier: "team",
+      status: "active",
+      canBuyConcurrency: true,
+      canBuyCredits: true,
+      autoRechargeAllowed: true,
+      workflowWebhookAutomationAllowed: true,
+      showUsagePack: false,
+      restrictedBuiltInModels: false,
+      concurrencyLimit: 3,
+      concurrencyUnitAmountCents: 4200,
+    });
+    expect("concurrencyUnitAmountCents" in withoutPrice).toBeFalsy();
   });
 
-  it("includes active concurrency subscription slots", async () => {
-    const currentPeriodEnd = new Date("2099-04-20T00:00:00Z");
-    const concurrencySubscriptionId = `sub_${randomUUID()}`;
-    const fixture = await track(
-      store.set(
-        seedBillingStatusOrg$,
+  it("billing-status-014 includes active concurrency subscription slots", async () => {
+    const actor = createBillingWebhookFixture();
+    const customerId = generatedStripeCustomerId();
+    const concurrencySubscriptionId = generatedStripeSubscriptionId();
+    await postSubscriptionInvoicePaid(context.signal, {
+      ...actor,
+      tier: "team",
+      customerId,
+      subscriptionId: generatedStripeSubscriptionId(),
+      currentPeriodEnd: new Date("2099-04-20T00:00:00.000Z"),
+    });
+    await postConcurrencyEntitlementsInvoicePaid(context.signal, {
+      ...actor,
+      customerId,
+      subscriptionId: concurrencySubscriptionId,
+      cancelAtPeriodEnd: true,
+      lines: [
         {
-          credits: 120_000,
-          subscription: {
-            tier: "team",
-            status: "active",
-            currentPeriodEnd,
-            stripeCustomerId: `cus_${randomUUID()}`,
-            stripeSubscriptionId: `sub_${randomUUID()}`,
-          },
-          concurrencyEntitlements: [
-            {
-              stripeSubscriptionId: concurrencySubscriptionId,
-              slots: 2,
-              startsAt: new Date("2026-01-01T00:00:00Z"),
-              expiresAt: new Date("2099-05-20T00:00:00Z"),
-              cancelAtPeriodEnd: true,
-            },
-            {
-              stripeSubscriptionId: concurrencySubscriptionId,
-              slots: 1,
-              startsAt: new Date("2026-01-01T00:00:00Z"),
-              expiresAt: new Date("2099-06-20T00:00:00Z"),
-            },
-            {
-              stripeSubscriptionId: concurrencySubscriptionId,
-              slots: 5,
-              startsAt: new Date("2025-01-01T00:00:00Z"),
-              expiresAt: new Date("2026-01-01T00:00:00Z"),
-            },
-          ],
+          slots: 2,
+          startsAt: new Date("2099-04-20T00:00:00.000Z"),
+          expiresAt: new Date("2099-05-20T00:00:00.000Z"),
         },
-        context.signal,
-      ),
-    );
-    mocks.clerk.session(fixture.userId, fixture.orgId);
+        {
+          slots: 1,
+          startsAt: new Date("2099-05-20T00:00:00.000Z"),
+          expiresAt: new Date("2099-06-20T00:00:00.000Z"),
+        },
+        {
+          slots: 5,
+          startsAt: new Date("2025-12-01T00:00:00.000Z"),
+          expiresAt: new Date("2026-01-01T00:00:00.000Z"),
+        },
+      ],
+    });
+    disableStripeBilling();
+    signIn(actor);
 
-    const client = setupApp({ context, routes: billingStatusRoutes })(
-      billingStatusContract,
-    );
+    const body = await readBillingStatus();
 
-    const response = await accept(
-      client.get({ headers: { authorization: "Bearer clerk-session" } }),
-      [200],
-    );
-
-    expect(response.body.concurrencyLimit).toBe(13);
-    expect(response.body.concurrencySubscriptions).toStrictEqual([
+    expect(body.concurrencyLimit).toBe(13);
+    expect(body.concurrencySubscriptions).toStrictEqual([
       {
         id: concurrencySubscriptionId,
         quantity: 3,
@@ -455,472 +359,183 @@ describe("GET /api/billing/status", () => {
     ]);
   });
 
-  it("excludes canceled concurrency subscriptions from status", async () => {
-    const currentPeriodEnd = new Date("2099-04-20T00:00:00Z");
-    const fixture = await track(
-      store.set(
-        seedBillingStatusOrg$,
-        {
-          credits: 120_000,
-          subscription: {
-            tier: "team",
-            status: "active",
-            currentPeriodEnd,
-            stripeCustomerId: `cus_${randomUUID()}`,
-            stripeSubscriptionId: `sub_${randomUUID()}`,
-          },
-          concurrencyEntitlements: [
-            {
-              stripeSubscriptionId: `sub_${randomUUID()}`,
-              slots: 2,
-              startsAt: new Date("2026-01-01T00:00:00Z"),
-              expiresAt: new Date("2099-05-20T00:00:00Z"),
-              subscriptionStatus: "canceled",
-            },
-          ],
-        },
-        context.signal,
-      ),
-    );
-    mocks.clerk.session(fixture.userId, fixture.orgId);
-
-    const client = setupApp({ context, routes: billingStatusRoutes })(
-      billingStatusContract,
-    );
-
-    const response = await accept(
-      client.get({ headers: { authorization: "Bearer clerk-session" } }),
-      [200],
-    );
-
-    expect(response.body.concurrencyLimit).toBe(10);
-    expect(response.body.concurrencySubscriptions).toStrictEqual([]);
-  });
-
-  it("returns cancelAtPeriodEnd true when set", async () => {
-    const periodEnd = new Date("2099-04-20T00:00:00Z");
-    const fixture = await track(
-      store.set(
-        seedBillingStatusOrg$,
-        {
-          subscription: {
-            tier: "pro",
-            status: "active",
-            currentPeriodEnd: periodEnd,
-            cancelAtPeriodEnd: true,
-            stripeCustomerId: `cus_${randomUUID()}`,
-            stripeSubscriptionId: `sub_${randomUUID()}`,
-          },
-        },
-        context.signal,
-      ),
-    );
-    mocks.clerk.session(fixture.userId, fixture.orgId);
-
-    const client = setupApp({ context, routes: billingStatusRoutes })(
-      billingStatusContract,
-    );
-
-    const response = await accept(
-      client.get({ headers: { authorization: "Bearer clerk-session" } }),
-      [200],
-    );
-
-    expect(response.body.cancelAtPeriodEnd).toBeTruthy();
-    expect(response.body.hasSubscription).toBeTruthy();
-    expect(response.body.scheduledChange).toStrictEqual({
-      type: "cancel",
-      targetTier: "limited-free-1",
-      effectiveDate: periodEnd.toISOString(),
+  it("billing-status-016 returns cancelAtPeriodEnd and cancel schedule details when set", async () => {
+    const actor = createBillingWebhookFixture();
+    const periodEnd = new Date("2099-04-20T00:00:00.000Z");
+    await postSubscriptionInvoicePaid(context.signal, {
+      ...actor,
+      tier: "pro",
+      customerId: generatedStripeCustomerId(),
+      subscriptionId: generatedStripeSubscriptionId(),
+      currentPeriodEnd: periodEnd,
+      cancelAtPeriodEnd: true,
     });
-    expect(response.body.canRestorePlan).toBeTruthy();
+    disableStripeBilling();
+    signIn(actor);
+
+    await expect(readBillingStatus()).resolves.toMatchObject({
+      cancelAtPeriodEnd: true,
+      hasSubscription: true,
+      scheduledChange: {
+        type: "cancel",
+        targetTier: "limited-free-1",
+        effectiveDate: periodEnd.toISOString(),
+      },
+      canRestorePlan: true,
+    });
   });
 
-  it("returns scheduled downgrade details when set", async () => {
-    const periodEnd = new Date("2099-04-20T00:00:00Z");
-    const fixture = await track(
-      store.set(
-        seedBillingStatusOrg$,
-        {
-          subscription: {
-            tier: "team",
-            status: "active",
-            currentPeriodEnd: periodEnd,
-            cancelAtPeriodEnd: false,
-            stripeCustomerId: `cus_${randomUUID()}`,
-            stripeSubscriptionId: `sub_${randomUUID()}`,
-            pendingSubscriptionScheduleId: `sched_${randomUUID()}`,
-            pendingSubscriptionTargetTier: "pro",
-            pendingSubscriptionChangeAt: periodEnd,
-          },
-        },
-        context.signal,
-      ),
-    );
-    mocks.clerk.session(fixture.userId, fixture.orgId);
-
-    const client = setupApp({ context, routes: billingStatusRoutes })(
-      billingStatusContract,
-    );
-
-    const response = await accept(
-      client.get({ headers: { authorization: "Bearer clerk-session" } }),
-      [200],
-    );
-
-    expect(response.body.cancelAtPeriodEnd).toBeFalsy();
-    expect(response.body.scheduledChange).toStrictEqual({
-      type: "downgrade",
+  it("billing-status-017 returns scheduled downgrade details when set", async () => {
+    const actor = createBillingWebhookFixture();
+    const customerId = generatedStripeCustomerId();
+    const subscriptionId = generatedStripeSubscriptionId();
+    const periodEnd = new Date("2099-04-20T00:00:00.000Z");
+    await postSubscriptionInvoicePaid(context.signal, {
+      ...actor,
+      tier: "team",
+      customerId,
+      subscriptionId,
+      currentPeriodEnd: periodEnd,
+      cancelAtPeriodEnd: false,
+    });
+    await postBillingDowngradeCheckoutCompleted(context.signal, {
+      ...actor,
+      tier: "team",
+      customerId,
+      subscriptionId,
+      currentPeriodEnd: periodEnd,
       targetTier: "pro",
-      effectiveDate: periodEnd.toISOString(),
+      scheduleId: `sub_sched_${randomUUID().slice(0, 8)}`,
     });
-    expect(response.body.canRestorePlan).toBeTruthy();
+    disableStripeBilling();
+    signIn(actor);
+
+    await expect(readBillingStatus()).resolves.toMatchObject({
+      cancelAtPeriodEnd: false,
+      scheduledChange: {
+        type: "downgrade",
+        targetTier: "pro",
+        effectiveDate: periodEnd.toISOString(),
+      },
+      canRestorePlan: true,
+    });
   });
 
-  it("returns 200 for non-admin member", async () => {
-    const fixture = await track(
-      store.set(seedBillingStatusOrg$, { credits: 100_000 }, context.signal),
-    );
-    mocks.clerk.session(fixture.userId, fixture.orgId, "org:member");
+  it("billing-status-019 includes creditExpiry data and renewal grant for a paid organization", async () => {
+    const actor = createBillingWebhookFixture();
+    await postSubscriptionInvoicePaid(context.signal, {
+      ...actor,
+      tier: "pro",
+      customerId: generatedStripeCustomerId(),
+      subscriptionId: generatedStripeSubscriptionId(),
+      currentPeriodEnd: new Date("2099-04-20T00:00:00.000Z"),
+    });
+    disableStripeBilling();
+    signIn(actor);
 
-    const client = setupApp({ context, routes: billingStatusRoutes })(
-      billingStatusContract,
-    );
+    const body = await readBillingStatus();
 
-    const response = await accept(
-      client.get({ headers: { authorization: "Bearer clerk-session" } }),
-      [200],
-    );
-
-    expect(response.status).toBe(200);
-  });
-
-  it("includes creditExpiry data for paid org with expires records", async () => {
-    const periodEnd = new Date("2099-04-20T00:00:00Z");
-    const expiryDate = new Date("2099-05-20T00:00:00Z");
-    const fixture = await track(
-      store.set(
-        seedBillingStatusOrg$,
-        {
-          subscription: {
-            tier: "pro",
-            status: "active",
-            currentPeriodEnd: periodEnd,
-            stripeCustomerId: `cus_${randomUUID()}`,
-            stripeSubscriptionId: `sub_${randomUUID()}`,
-          },
-        },
-        context.signal,
-      ),
-    );
-    mocks.clerk.session(fixture.userId, fixture.orgId);
-
-    const client = setupApp({ context, routes: billingStatusRoutes })(
-      billingStatusContract,
-    );
-
-    const response = await accept(
-      client.get({ headers: { authorization: "Bearer clerk-session" } }),
-      [200],
-    );
-
-    expect(response.body.creditExpiry.expiringNextCycle).toBe(20_000);
-    expect(response.body.creditExpiry.nextExpiryDate).toBe(
-      expiryDate.toISOString(),
-    );
-    expect(response.body.creditGrants).toStrictEqual([
+    expect(body.creditExpiry).toStrictEqual({
+      expiringNextCycle: 20_000,
+      nextExpiryDate: "2099-05-20T00:00:00.000Z",
+    });
+    expect(body.creditGrants).toStrictEqual([
       expect.objectContaining({
         source: "subscription_renewal",
         label: "Pro plan",
         amount: 20_000,
         remaining: 20_000,
-        expiresAt: expiryDate.toISOString(),
+        expiresAt: "2099-05-20T00:00:00.000Z",
       }),
     ]);
   });
 
-  it("returns zero creditExpiry without active credit grants", async () => {
-    const fixture = await track(
-      store.set(seedBillingStatusOrg$, {}, context.signal),
-    );
-    mocks.clerk.session(fixture.userId, fixture.orgId);
+  it("billing-status-021 displays credits minus not-yet-settled expired amount", async () => {
+    mockNow(Date.parse("2026-02-01T00:00:00.000Z"));
+    const actor = createBillingWebhookFixture();
+    await postCreditPurchaseInvoicePaid(context.signal, {
+      orgId: actor.orgId,
+      credits: 100_000,
+      expiresAt: new Date("2099-12-31T00:00:00.000Z"),
+    });
+    await postCreditPurchaseInvoicePaid(context.signal, {
+      orgId: actor.orgId,
+      credits: 3000,
+      expiresAt: new Date("2026-03-01T00:00:00.000Z"),
+    });
+    mockNow(Date.parse("2026-03-02T00:00:00.000Z"));
+    disableStripeBilling();
+    signIn(actor);
 
-    const client = setupApp({ context, routes: billingStatusRoutes })(
-      billingStatusContract,
-    );
+    const body = await readBillingStatus();
 
-    const response = await accept(
-      client.get({ headers: { authorization: "Bearer clerk-session" } }),
-      [200],
-    );
-
-    expect(response.body.creditExpiry.expiringNextCycle).toBe(0);
-    expect(response.body.creditExpiry.nextExpiryDate).toBeNull();
+    expect(body.credits).toBe(100_000);
   });
 
-  it("displays credits minus not-yet-settled expired amount", async () => {
-    // Dormant non-subscription org: a 3k purchase grant is past its
-    // expiresAt but the inflated ledger has not yet been settled, so the
-    // /status endpoint must subtract the expired amount before reporting.
-    const pastDate = new Date("2026-03-01T00:00:00Z");
-    const fixture = await track(
-      store.set(
-        seedBillingStatusOrg$,
-        {
-          credits: 103_000,
-          expiresRecords: [
-            {
-              source: "credit_purchase",
-              amount: 3000,
-              expiresAt: pastDate,
-            },
-          ],
+  it("billing-status-025 maps one_time_purchase records to the Promotional segment", async () => {
+    const actor = createBillingWebhookFixture();
+    mockEnv(
+      "OKOU_ONE_TIME_CAMPAIGN",
+      JSON.stringify({
+        ZERO100: {
+          priceId: "price_test_zero100",
+          couponId: "coupon_test_zero100",
         },
-        context.signal,
-      ),
-    );
-    mocks.clerk.session(fixture.userId, fixture.orgId);
-
-    const client = setupApp({ context, routes: billingStatusRoutes })(
-      billingStatusContract,
-    );
-
-    const response = await accept(
-      client.get({ headers: { authorization: "Bearer clerk-session" } }),
-      [200],
-    );
-
-    // 103_000 ledger credits - 3000 expired credits = 100_000 displayed.
-    expect(response.body.credits).toBe(100_000);
-  });
-
-  it("maps pay-as-you-go expires records to Pay as you go segment", async () => {
-    const fixture = await track(
-      store.set(
-        seedBillingStatusOrg$,
-        {
-          credits: 40_000,
-          subscription: {
-            tier: "pro",
-            status: "active",
-            currentPeriodEnd: new Date("2099-05-20T00:00:00Z"),
-            stripeCustomerId: `cus_${randomUUID()}`,
-            stripeSubscriptionId: `sub_${randomUUID()}`,
-          },
-          expiresRecords: [
-            {
-              source: "subscription_renewal",
-              amount: 20_000,
-              expiresAt: new Date("2099-06-20T00:00:00Z"),
-            },
-            {
-              source: "credit_purchase",
-              amount: 10_000,
-              expiresAt: new Date("2999-12-31T00:00:00Z"),
-            },
-            {
-              source: "auto_recharge",
-              amount: 10_000,
-              expiresAt: new Date("2999-12-31T00:00:00Z"),
-            },
-          ],
-        },
-        context.signal,
-      ),
-    );
-    mocks.clerk.session(fixture.userId, fixture.orgId);
-
-    const client = setupApp({ context, routes: billingStatusRoutes })(
-      billingStatusContract,
-    );
-
-    const response = await accept(
-      client.get({ headers: { authorization: "Bearer clerk-session" } }),
-      [200],
-    );
-
-    const payg = response.body.creditBreakdown.find((segment) => {
-      return segment.category === "payAsYouGo";
-    });
-    expect(payg).toStrictEqual({
-      category: "payAsYouGo",
-      label: "Pay as you go",
-      credits: 20_000,
-    });
-    expect(
-      response.body.creditGrants.filter((grant) => {
-        return (
-          grant.source === "auto_recharge" || grant.source === "credit_purchase"
-        );
       }),
-    ).toHaveLength(2);
-  });
-
-  it("maps subscription_renewal at Pro amount to Pro plan segment", async () => {
-    const fixture = await track(
-      store.set(
-        seedBillingStatusOrg$,
-        {
-          credits: 20_000,
-          subscription: {
-            tier: "pro",
-            status: "active",
-            currentPeriodEnd: new Date("2099-05-20T00:00:00Z"),
-            stripeCustomerId: `cus_${randomUUID()}`,
-            stripeSubscriptionId: `sub_${randomUUID()}`,
+    );
+    await deliverStripeEvent({
+      type: "checkout.session.completed",
+      created: Math.floor(Date.parse("2099-12-01T00:00:00.000Z") / 1000),
+      data: {
+        object: {
+          id: `cs_zero100_${randomUUID().slice(0, 8)}`,
+          invoice: null,
+          subscription: null,
+          customer: null,
+          mode: "payment",
+          payment_status: "paid",
+          amount_subtotal: 0,
+          amount_total: 0,
+          metadata: {
+            purpose: "one_time_purchase",
+            orgId: actor.orgId,
+            campaignKey: "ZERO100",
           },
-          expiresRecords: [
-            {
-              source: "subscription_renewal",
-              amount: 20_000,
-              expiresAt: new Date("2099-06-20T00:00:00Z"),
-            },
-          ],
         },
-        context.signal,
-      ),
-    );
-    mocks.clerk.session(fixture.userId, fixture.orgId);
-
-    const client = setupApp({ context, routes: billingStatusRoutes })(
-      billingStatusContract,
-    );
-
-    const response = await accept(
-      client.get({ headers: { authorization: "Bearer clerk-session" } }),
-      [200],
-    );
-
-    expect(response.body.creditBreakdown).toStrictEqual([
-      {
-        category: "plan",
-        label: "Pro plan",
-        credits: 20_000,
-        tier: "pro",
       },
-    ]);
-  });
-
-  it("maps subscription_renewal at Team amount to Team plan segment", async () => {
-    const fixture = await track(
-      store.set(
-        seedBillingStatusOrg$,
-        {
-          credits: 120_000,
-          subscription: {
-            tier: "team",
-            status: "active",
-            currentPeriodEnd: new Date("2099-05-20T00:00:00Z"),
-            stripeCustomerId: `cus_${randomUUID()}`,
-            stripeSubscriptionId: `sub_${randomUUID()}`,
-          },
-          expiresRecords: [
-            {
-              source: "subscription_renewal",
-              amount: 120_000,
-              expiresAt: new Date("2099-06-20T00:00:00Z"),
-            },
-          ],
-        },
-        context.signal,
-      ),
-    );
-    mocks.clerk.session(fixture.userId, fixture.orgId);
-
-    const client = setupApp({ context, routes: billingStatusRoutes })(
-      billingStatusContract,
-    );
-
-    const response = await accept(
-      client.get({ headers: { authorization: "Bearer clerk-session" } }),
-      [200],
-    );
-
-    expect(response.body.creditBreakdown).toStrictEqual([
-      {
-        category: "plan",
-        label: "Team plan",
-        credits: 120_000,
-        tier: "team",
-      },
-    ]);
-  });
-
-  it("maps one_time_purchase records to Promotional segment", async () => {
-    const fixture = await track(
-      store.set(
-        seedBillingStatusOrg$,
-        {
-          credits: 100_000,
-          expiresRecords: [
-            {
-              source: "one_time_purchase",
-              amount: 100_000,
-              expiresAt: new Date("2099-12-31T00:00:00Z"),
-            },
-          ],
-        },
-        context.signal,
-      ),
-    );
-    mocks.clerk.session(fixture.userId, fixture.orgId);
-
-    const client = setupApp({ context, routes: billingStatusRoutes })(
-      billingStatusContract,
-    );
-
-    const response = await accept(
-      client.get({ headers: { authorization: "Bearer clerk-session" } }),
-      [200],
-    );
-
-    const promo = response.body.creditBreakdown.find((segment) => {
-      return segment.category === "promotional";
     });
-    expect(promo).toStrictEqual({
+    disableStripeBilling();
+    signIn(actor);
+
+    const body = await readBillingStatus();
+
+    expect(body.creditBreakdown).toContainEqual({
       category: "promotional",
       label: "Promotional",
       credits: 100_000,
     });
   });
 
-  it("surfaces paid-tier credit purchases as Pay as you go", async () => {
-    // Paid-tier org with a plan renewal plus an extra credit purchase.
-    const fixture = await track(
-      store.set(
-        seedBillingStatusOrg$,
-        {
-          credits: 25_000,
-          subscription: {
-            tier: "pro",
-            status: "active",
-            currentPeriodEnd: new Date("2099-05-20T00:00:00Z"),
-            stripeCustomerId: `cus_${randomUUID()}`,
-            stripeSubscriptionId: `sub_${randomUUID()}`,
-          },
-          expiresRecords: [
-            {
-              source: "subscription_renewal",
-              amount: 20_000,
-              expiresAt: new Date("2099-06-20T00:00:00Z"),
-            },
-          ],
-        },
-        context.signal,
-      ),
-    );
-    mocks.clerk.session(fixture.userId, fixture.orgId);
+  it("billing-status-026 surfaces paid-tier credit purchases as Pay as you go", async () => {
+    const actor = createBillingWebhookFixture();
+    await postSubscriptionInvoicePaid(context.signal, {
+      ...actor,
+      tier: "pro",
+      customerId: generatedStripeCustomerId(),
+      subscriptionId: generatedStripeSubscriptionId(),
+      currentPeriodEnd: new Date("2099-05-20T00:00:00.000Z"),
+    });
+    await postCreditPurchaseInvoicePaid(context.signal, {
+      orgId: actor.orgId,
+      credits: 5000,
+      expiresAt: new Date("2099-12-31T00:00:00.000Z"),
+    });
+    disableStripeBilling();
+    signIn(actor);
 
-    const client = setupApp({ context, routes: billingStatusRoutes })(
-      billingStatusContract,
-    );
+    const body = await readBillingStatus();
 
-    const response = await accept(
-      client.get({ headers: { authorization: "Bearer clerk-session" } }),
-      [200],
-    );
-
-    expect(response.body.creditBreakdown).toStrictEqual([
+    expect(body.creditBreakdown).toStrictEqual([
       {
         category: "plan",
         label: "Pro plan",
@@ -934,37 +549,85 @@ describe("GET /api/billing/status", () => {
       },
     ]);
     expect(
-      response.body.creditGrants.some((grant) => {
+      body.creditGrants.some((grant) => {
         return grant.source === "auto_recharge";
       }),
     ).toBeFalsy();
   });
 
-  it("returns defaults when org row does not exist", async () => {
-    const userId = `user_${randomUUID()}`;
-    const orgId = `org_${randomUUID()}`;
-    mocks.clerk.session(userId, orgId);
-    mockEnv("OKOU_PRICE_CONCURRENCY", `price_concurrency_${randomUUID()}`);
-    mockOptionalEnv("STRIPE_SECRET_KEY", "sk_test_billing_status");
-    mockStripeClient(context.mocks.stripe as unknown as StripeSDK);
-    context.mocks.stripe.prices.retrieve.mockRejectedValue(
-      new Error("Concurrency price must not be read for a missing org"),
-    );
+  it("billing-status-010 reports active concurrency subscription availability without a plan subscription", async () => {
+    const actor = createBillingWebhookFixture();
+    await postConcurrencyEntitlementsInvoicePaid(context.signal, {
+      ...actor,
+      customerId: generatedStripeCustomerId(),
+      subscriptionId: generatedStripeSubscriptionId(),
+      subscriptionStatus: "active",
+      lines: [
+        {
+          slots: 2,
+          startsAt: new Date("2026-01-01T00:00:00.000Z"),
+          expiresAt: new Date("2099-04-20T00:00:00.000Z"),
+        },
+      ],
+    });
+    disableStripeBilling();
+    signIn(actor);
 
-    const client = setupApp({ context, routes: billingStatusRoutes })(
-      billingStatusContract,
-    );
+    const body = await readBillingStatus();
 
-    const response = await accept(
-      client.get({ headers: { authorization: "Bearer clerk-session" } }),
-      [200],
-    );
+    expect(body.hasSubscription).toBeTruthy();
+  });
 
-    expect(response.body.tier).toBe("limited-free-1");
-    expect(response.body.status).toBe("suspended");
-    expect(response.body.credits).toBe(0);
-    expect(response.body.hasSubscription).toBeFalsy();
-    expect(response.body.canBuyConcurrency).toBeFalsy();
-    expect(response.body).not.toHaveProperty("concurrencyUnitAmountCents");
+  it("billing-status-015 excludes canceled concurrency subscriptions from status", async () => {
+    const actor = createBillingWebhookFixture();
+    const customerId = generatedStripeCustomerId();
+    await postSubscriptionInvoicePaid(context.signal, {
+      ...actor,
+      tier: "team",
+      customerId,
+      subscriptionId: generatedStripeSubscriptionId(),
+      currentPeriodEnd: new Date("2099-04-20T00:00:00.000Z"),
+    });
+    await postConcurrencyEntitlementsInvoicePaid(context.signal, {
+      ...actor,
+      customerId,
+      subscriptionId: generatedStripeSubscriptionId(),
+      subscriptionStatus: "canceled",
+      lines: [
+        {
+          slots: 2,
+          startsAt: new Date("2026-01-01T00:00:00.000Z"),
+          expiresAt: new Date("2099-04-20T00:00:00.000Z"),
+        },
+      ],
+    });
+    disableStripeBilling();
+    signIn(actor);
+
+    const body = await readBillingStatus();
+
+    expect(body.concurrencyLimit).toBe(10);
+    expect(body.concurrencySubscriptions).toStrictEqual([]);
+  });
+
+  it("billing-status-027 returns defaults when org billing row does not exist", async () => {
+    const actor = createBillingWebhookFixture();
+    mockOptionalEnv("STRIPE_SECRET_KEY", apiTestEnvironment.STRIPE_SECRET_KEY);
+    mockEnv("OKOU_PRICE_CONCURRENCY", TEST_PRICE_CONCURRENCY);
+    context.mocks.stripe.prices.retrieve.mockRejectedValueOnce(
+      new Error("Stripe unavailable"),
+    );
+    signIn(actor);
+
+    const body = await readBillingStatus();
+
+    expect(body).toMatchObject({
+      tier: "limited-free-1",
+      status: "suspended",
+      credits: 0,
+      hasSubscription: false,
+      canBuyConcurrency: false,
+    });
+    expect("concurrencyUnitAmountCents" in body).toBeFalsy();
   });
 });

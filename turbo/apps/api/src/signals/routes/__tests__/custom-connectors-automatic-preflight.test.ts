@@ -1,438 +1,401 @@
+import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { randomUUID } from "node:crypto";
+import { describe, expect, it } from "vitest";
 
-import {
-  CUSTOM_CONNECTOR_AUTOMATIC_OAUTH_ERROR_CODES,
-  customConnectorsContract,
-} from "@okouai/api-contracts/contracts/custom-connectors";
-import { HttpResponse, http } from "msw";
-import { describe, expect, it, onTestFinished } from "vitest";
-import { number, object, string, union } from "zod";
-
-import { accept, testContext } from "../../../__tests__/test-context";
-import { setupApp } from "../../../__tests__/test-helpers";
+import { testContext } from "../../../__tests__/test-context";
 import { mockEnv } from "../../../lib/env";
-import { server } from "../../../mocks/server";
-import { customConnectorsRoutes } from "../custom-connectors";
-import { createBddApi } from "./helpers/api-bdd";
 import {
   createConnectorBddApi,
   mockAutomaticMcpOAuthProvider,
 } from "./helpers/api-bdd-connectors";
-import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
+const bdd = createBddApi(context);
 const connectors = createConnectorBddApi(context);
 
-async function fixture(
-  registration: "cimd" | "dcr" | "none",
-  endpoint?: string,
-  resource?: string,
+type Registration = "cimd" | "dcr" | "none";
+
+function uniqueHost(label = "automatic-mcp"): string {
+  return `${label}-${randomUUID()}.example.test`;
+}
+
+function installProvider(
+  registration: Registration,
+  options: { readonly endpoint?: string; readonly resource?: string } = {},
 ) {
-  mockEnv("APP_URL", "https://app.okou.ai");
-  mockEnv("OKOU_API_BACKEND_URL", "https://api.okou.ai");
-  mockEnv("OKOU_WEB_URL", "https://www.okou.ai");
-  const provider = mockAutomaticMcpOAuthProvider(context, {
+  if (registration === "cimd") {
+    // CIMD client IDs must be HTTPS, so publish them from the hosted API origin.
+    mockEnv("OKOU_API_BACKEND_URL", "https://api.okou.ai");
+  }
+  return mockAutomaticMcpOAuthProvider(context, {
     registration,
-    ...(endpoint === undefined ? {} : { endpoint }),
-    ...(resource === undefined ? {} : { resource }),
-    ...(registration === "none" ? { authentication: "none" } : {}),
+    authentication: registration === "none" ? "none" : "oauth",
+    endpoint: options.endpoint ?? `https://${uniqueHost()}/server`,
+    issuer: `https://${uniqueHost("issuer")}`,
+    ...(options.resource === undefined ? {} : { resource: options.resource }),
   });
-  const bdd = createBddApi(context);
-  const actor = bdd.user({ orgRole: "org:admin" });
-  createRouteMocks(context).clerk.session(
-    actor.userId,
-    actor.orgId,
-    actor.orgRole,
-  );
-  const definition = {
-    kind: "mcp" as const,
-    displayName: "Automatic preflight lifecycle",
-    endpoint: provider.endpoint,
-    transport: "streamable-http" as const,
+}
+
+async function createAutomaticConnector(actor: ApiTestUser, endpoint: string) {
+  return await connectors.createCustomConnector(actor, {
+    kind: "mcp",
+    displayName: `Automatic ${randomUUID().slice(0, 8)}`,
+    endpoint,
+    transport: "streamable-http",
+    authMode: "automatic",
     fields: [],
     headerInjections: [],
     queryInjections: [],
-    authMode: "automatic" as const,
-  };
-  const client = setupApp({ context, routes: customConnectorsRoutes })(
-    customConnectorsContract,
-  );
-  const created = await accept(
-    client.create({
-      headers: { authorization: "Bearer clerk-session" },
-      body: definition,
-    }),
-    [201],
-  );
-  return { actor, bdd, provider, connector: created.body, definition };
+  });
 }
 
-async function complete(authorizationUrl: string, issuer: string) {
+function stateOf(authorizationUrl: string): string {
   const state = new URL(authorizationUrl).searchParams.get("state");
   if (!state) {
-    throw new Error("Expected an OAuth authorization state");
+    throw new Error("Expected OAuth state");
   }
-  const callback = await connectors.completeCustomConnectorOAuth2CallbackResult(
-    {
-      state,
-      code: randomUUID(),
-      iss: issuer,
-    },
+  return state;
+}
+
+async function consent(
+  provider: ReturnType<typeof installProvider>,
+  authorizationUrl: string,
+) {
+  return await connectors.completeCustomConnectorOAuth2CallbackResult({
+    state: stateOf(authorizationUrl),
+    code: `code-${randomUUID()}`,
+    iss: provider.issuer,
+  });
+}
+
+/** Connects through the parent resource the provider advertises. */
+async function connectWithParentResource(
+  registration: "cimd" | "dcr",
+  resourceOf: (origin: string) => string,
+) {
+  const origin = `https://${uniqueHost()}`;
+  const endpoint = `${origin}/tenant/mcp?profile=full`;
+  const resource = resourceOf(origin);
+  const provider = installProvider(registration, { endpoint, resource });
+  const admin = bdd.user();
+  const connector = await createAutomaticConnector(admin, endpoint);
+  const authorizationUrl = await connectors.startCustomConnectorOAuth2(
+    admin,
+    connector.id,
   );
-  expect(callback.body.status).toBe("success");
+  const completed = await consent(provider, authorizationUrl);
+  const accounts = await connectors.listCustomConnectorAccounts(
+    admin,
+    connector.id,
+  );
+  return {
+    probedEndpoints: [...new Set(provider.endpointRequests)],
+    authorizationResource: new URL(authorizationUrl).searchParams.get(
+      "resource",
+    ),
+    tokenResources: provider.tokenBodies.map((body) => {
+      return body.get("resource");
+    }),
+    callbackStatus: completed.body.status,
+    accounts: accounts.map((account) => {
+      return {
+        connectionStatus: account.connectionStatus,
+        oauthScopes: account.oauthScopes,
+      };
+    }),
+    expected: { endpoint, resource },
+  };
+}
+
+async function rejectIncompatibleResource(
+  resource: (origin: string) => string,
+) {
+  const origin = `https://${uniqueHost()}`;
+  const endpoint = `${origin}/tenant/mcp`;
+  const provider = installProvider("dcr", {
+    endpoint,
+    resource: resource(origin),
+  });
+  const admin = bdd.user();
+  const connector = await createAutomaticConnector(admin, endpoint);
+  const started = await connectors.requestStartCustomConnectorOAuth2(
+    admin,
+    connector.id,
+    [400],
+  );
+  const accounts = await connectors.listCustomConnectorAccounts(
+    admin,
+    connector.id,
+  );
+  return {
+    code: "error" in started.body ? started.body.error.code : null,
+    tokenRequests: provider.tokenBodies.length,
+    accounts: accounts.length,
+  };
+}
+
+/** Starts an add or reconnect and completes consent when the provider needs it. */
+async function connectAccount(
+  provider: ReturnType<typeof installProvider>,
+  actor: ApiTestUser,
+  connectorId: string,
+  account: Parameters<typeof connectors.requestStartCustomConnectorOAuth2>[3],
+  registration: Registration,
+): Promise<string> {
+  const started = await connectors.requestStartCustomConnectorOAuth2(
+    actor,
+    connectorId,
+    [200],
+    account,
+  );
+  if (!("result" in started.body)) {
+    throw new Error("Expected a successful start");
+  }
+  if (started.body.result === "connected") {
+    expect(registration).toBe("none");
+    return started.body.connectionId;
+  }
+  expect(registration).not.toBe("none");
+  const completed = await consent(provider, started.body.authorizationUrl);
+  expect(completed.body.status).toBe("success");
+  const accounts = await connectors.listCustomConnectorAccounts(
+    actor,
+    connectorId,
+  );
+  const [only] = accounts;
+  if (!only) {
+    throw new Error("Expected a connected account");
+  }
+  return only.id;
+}
+
+async function reconnectOnlyExactAccount(registration: Registration) {
+  const provider = installProvider(registration);
+  const admin = bdd.user();
+  const member = bdd.user({
+    orgId: admin.orgId ?? undefined,
+    orgRole: "org:member",
+  });
+  const outsider = bdd.user();
+  const connector = await createAutomaticConnector(admin, provider.endpoint);
+  const otherDefinition = await createAutomaticConnector(
+    admin,
+    provider.endpoint,
+  );
+  const accountId = await connectAccount(
+    provider,
+    admin,
+    connector.id,
+    { intent: "add" },
+    registration,
+  );
+
+  const mismatched = [
+    { actor: member, connectorId: connector.id, connectionId: accountId },
+    { actor: outsider, connectorId: connector.id, connectionId: accountId },
+    { actor: admin, connectorId: otherDefinition.id, connectionId: accountId },
+    { actor: admin, connectorId: connector.id, connectionId: randomUUID() },
+  ];
+  const codes: (string | null)[] = [];
+  for (const attempt of mismatched) {
+    const response = await connectors.requestStartCustomConnectorOAuth2(
+      attempt.actor,
+      attempt.connectorId,
+      [404],
+      { intent: "reconnect", connectionId: attempt.connectionId },
+    );
+    codes.push("error" in response.body ? response.body.error.code : null);
+  }
+  expect(codes).toStrictEqual([
+    "NOT_FOUND",
+    "NOT_FOUND",
+    "NOT_FOUND",
+    "NOT_FOUND",
+  ]);
+
+  const reconnectedId = await connectAccount(
+    provider,
+    admin,
+    connector.id,
+    { intent: "reconnect", connectionId: accountId },
+    registration,
+  );
+  expect(reconnectedId).toBe(accountId);
+  await expect(
+    connectors.listCustomConnectorAccounts(admin, connector.id),
+  ).resolves.toMatchObject([{ id: accountId, connectionStatus: "connected" }]);
+  await expect(
+    connectors.listCustomConnectorAccounts(member, connector.id),
+  ).resolves.toStrictEqual([]);
+}
+
+async function consentAfterDefinitionDeleted(registration: "cimd" | "dcr") {
+  const provider = installProvider(registration);
+  const admin = bdd.user();
+  const connector = await createAutomaticConnector(admin, provider.endpoint);
+  const authorizationUrl = await connectors.startCustomConnectorOAuth2(
+    admin,
+    connector.id,
+  );
+  await connectors.deleteCustomConnector(admin, connector.id);
+  const completed = await consent(provider, authorizationUrl);
+  const remaining = await connectors.listCustomConnectors(admin);
+  return {
+    callback: completed.body,
+    tokenRequests: provider.tokenBodies.length,
+    remaining,
+  };
 }
 
 describe("Automatic custom connector preflight", () => {
-  it.each([
-    {
-      registration: "cimd",
-      resource: "https://automatic-mcp.example.test/tenant",
-    },
-    { registration: "dcr", resource: "https://automatic-mcp.example.test" },
-  ] as const)(
-    "connects $registration with a parent resource and preserves the transport query",
-    async ({ registration, resource }) => {
-      const endpoint =
-        "https://automatic-mcp.example.test/tenant/mcp?profile=full";
-      const { actor, connector, provider } = await fixture(
-        registration,
-        endpoint,
-        resource,
-      );
-      onTestFinished(async () => {
-        await connectors.deleteCustomConnector(actor, connector.id);
-      });
-      const authorization = await connectors.startCustomConnectorOAuth2(
-        actor,
-        connector.id,
-      );
-      expect(new URL(authorization).searchParams.get("resource")).toBe(
-        resource,
-      );
-      await complete(authorization, provider.issuer);
-      await expect(
-        connectors.listCustomConnectorAccounts(actor, connector.id),
-      ).resolves.toMatchObject([
+  it("custom-connectors-automatic-preflight-003 rejects a protected resource on another origin before granting an account", async () => {
+    await expect(
+      rejectIncompatibleResource(() => {
+        return `https://${uniqueHost("foreign-mcp")}/`;
+      }),
+    ).resolves.toStrictEqual({
+      code: "MCP_OAUTH_DISCOVERY_INVALID",
+      tokenRequests: 0,
+      accounts: 0,
+    });
+  });
+
+  it("custom-connectors-automatic-preflight-006 rejects a protected resource on a different path before granting an account", async () => {
+    await expect(
+      rejectIncompatibleResource((origin) => {
+        return `${origin}/other`;
+      }),
+    ).resolves.toStrictEqual({
+      code: "MCP_OAUTH_DISCOVERY_INVALID",
+      tokenRequests: 0,
+      accounts: 0,
+    });
+  });
+
+  it("custom-connectors-automatic-preflight-001 connects cimd through a parent resource and keeps the transport query", async () => {
+    const result = await connectWithParentResource("cimd", (origin) => {
+      return `${origin}/tenant`;
+    });
+    expect(result).toStrictEqual({
+      probedEndpoints: [result.expected.endpoint],
+      authorizationResource: result.expected.resource,
+      tokenResources: [result.expected.resource],
+      callbackStatus: "success",
+      accounts: [
         { connectionStatus: "connected", oauthScopes: ["read", "write"] },
-      ]);
-      expect(provider.tokenBodies[0]?.get("resource")).toBe(resource);
-      expect(new Set(provider.endpointRequests)).toStrictEqual(
-        new Set([endpoint]),
-      );
-    },
-  );
+      ],
+      expected: result.expected,
+    });
+  });
 
-  it.each([
-    "https://foreign-mcp.example.test/",
-    "https://automatic-mcp.example.test:8443/tenant",
-    "https://automatic-mcp.example.test/ten",
-    "https://automatic-mcp.example.test/other",
-    "https://automatic-mcp.example.test/tenant/mcp/child",
-    "https://automatic-mcp.example.test/tenant#fragment",
-    "https://automatic-mcp.example.test/tenant#",
-    "https://user:password@automatic-mcp.example.test/tenant",
-  ])(
-    "rejects an incompatible protected resource %s before granting an account",
-    async (resource) => {
-      const { actor, connector, provider } = await fixture(
-        "cimd",
-        "https://automatic-mcp.example.test/tenant/mcp",
-        resource,
-      );
-      onTestFinished(async () => {
-        await connectors.deleteCustomConnector(actor, connector.id);
-      });
-      const rejected = await connectors.requestStartCustomConnectorOAuth2(
-        actor,
-        connector.id,
-        [400],
-      );
-      expect(rejected.body).toMatchObject({
-        error: {
-          code: CUSTOM_CONNECTOR_AUTOMATIC_OAUTH_ERROR_CODES.DISCOVERY_INVALID,
-        },
-      });
-      await expect(
-        connectors.listCustomConnectorAccounts(actor, connector.id),
-      ).resolves.toStrictEqual([]);
-      expect(provider.tokenBodies).toHaveLength(0);
-    },
-  );
+  it("custom-connectors-automatic-preflight-002 connects dcr through an origin resource and keeps the transport query", async () => {
+    const result = await connectWithParentResource("dcr", (origin) => {
+      return origin;
+    });
+    expect(result).toStrictEqual({
+      probedEndpoints: [result.expected.endpoint],
+      authorizationResource: result.expected.resource,
+      tokenResources: [result.expected.resource],
+      callbackStatus: "success",
+      accounts: [
+        { connectionStatus: "connected", oauthScopes: ["read", "write"] },
+      ],
+      expected: result.expected,
+    });
+  });
 
-  it("preserves endpoint queries through OAuth discovery and connection", async () => {
-    const endpoint =
-      "https://automatic-mcp.example.test/server?hl=en&tag=one&tag=two&empty=&encoded=a%20b&literal=a+b";
-    const { actor, connector, provider } = await fixture("cimd", endpoint);
+  it("custom-connectors-automatic-preflight-011 keeps the exact endpoint query through discovery and connection", async () => {
+    const endpoint = `https://${uniqueHost()}/server?lang=en&tag=a&tag=b&empty=&q=hello%20world&plus=a+b`;
+    const provider = installProvider("dcr", { endpoint });
+    const admin = bdd.user();
+    const connector = await createAutomaticConnector(admin, endpoint);
     const started = await connectors.requestStartCustomConnectorOAuth2(
-      actor,
+      admin,
       connector.id,
       [200],
     );
-    if (started.status !== 200 || started.body.result !== "authorization") {
-      throw new Error("Expected an Automatic OAuth authorization URL");
+    if (
+      !("result" in started.body) ||
+      started.body.result !== "authorization"
+    ) {
+      throw new Error("Expected an authorization start");
     }
+    const authorizationUrl = started.body.authorizationUrl;
+    const completed = await consent(provider, authorizationUrl);
+    expect(completed.body.status).toBe("success");
+    expect([...new Set(provider.endpointRequests)]).toStrictEqual([endpoint]);
+    expect(new URL(authorizationUrl).searchParams.get("resource")).toBe(
+      endpoint,
+    );
     expect(
-      new URL(started.body.authorizationUrl).searchParams.get("resource"),
-    ).toBe(endpoint);
-    await complete(started.body.authorizationUrl, provider.issuer);
-    const accounts = await connectors.listCustomConnectorAccounts(
-      actor,
-      connector.id,
-    );
-    expect(accounts).toHaveLength(1);
-    expect(new Set(provider.endpointRequests)).toStrictEqual(
-      new Set([endpoint]),
-    );
-    expect(provider.tokenBodies[0]?.get("resource")).toBe(endpoint);
+      provider.tokenBodies.map((body) => {
+        return body.get("resource");
+      }),
+    ).toStrictEqual([endpoint]);
+    await expect(
+      connectors.listCustomConnectorAccounts(admin, connector.id),
+    ).resolves.toHaveLength(1);
   });
 
-  it.each(["cimd", "dcr", "none"] as const)(
-    "adds and reconnects %s accounts only for the exact user, org and definition",
-    async (registration) => {
-      const { actor, bdd, connector, definition, provider } =
-        await fixture(registration);
-      const first = await connectors.requestStartCustomConnectorOAuth2(
-        actor,
-        connector.id,
-        [200],
-      );
-      if (first.status !== 200) {
-        throw new Error("Expected a successful Automatic OAuth start");
-      }
-      if (first.body.result === "authorization") {
-        await complete(first.body.authorizationUrl, provider.issuer);
-      } else {
-        expect(first.body.result).toBe("connected");
-      }
-      const [account] = await connectors.listCustomConnectorAccounts(
-        actor,
-        connector.id,
-      );
-      if (!account) {
-        throw new Error("Expected the publicly connected account");
-      }
-      const reconnect = {
-        intent: "reconnect" as const,
-        connectionId: account.id,
-      };
-      const peer = bdd.user({ orgId: actor.orgId, orgRole: "org:member" });
-      const otherOrg = bdd.user({ orgRole: "org:admin" });
-      const otherDefinition = await connectors.createCustomConnector(actor, {
-        ...definition,
-        displayName: "Another definition",
-      });
-      for (const [caller, definitionId, mutation] of [
-        [peer, connector.id, reconnect],
-        [otherOrg, connector.id, reconnect],
-        [actor, otherDefinition.id, reconnect],
-        [actor, connector.id, { ...reconnect, connectionId: randomUUID() }],
-      ] as const) {
-        const denied = await connectors.requestStartCustomConnectorOAuth2(
-          caller,
-          definitionId,
-          [404],
-          mutation,
-        );
-        expect(denied.body).toMatchObject({ error: { code: "NOT_FOUND" } });
-      }
-      const own = await connectors.requestStartCustomConnectorOAuth2(
-        actor,
-        connector.id,
-        [200],
-        reconnect,
-      );
-      if (own.status !== 200) {
-        throw new Error("Expected a successful Automatic OAuth reconnect");
-      }
-      if (own.body.result === "authorization") {
-        await complete(own.body.authorizationUrl, provider.issuer);
-      } else {
-        expect(own.body.result).toBe("connected");
-      }
-      await expect(
-        connectors.listCustomConnectorAccounts(actor, connector.id),
-      ).resolves.toMatchObject([
-        { id: account.id, connectionStatus: "connected" },
-      ]);
-      await expect(
-        connectors.listCustomConnectorAccounts(peer, connector.id),
-      ).resolves.toStrictEqual([]);
-    },
-  );
+  it("custom-connectors-automatic-preflight-012 reconnects a cimd account only for its exact user, org and definition", async () => {
+    await expect(reconnectOnlyExactAccount("cimd")).resolves.toBeUndefined();
+  });
 
-  it.each(["cimd", "dcr", "none"] as const)(
-    "rejects a definition changed while the %s provider prepares authorization",
-    async (registration) => {
-      const { actor, connector, definition, provider } =
-        await fixture(registration);
-      let changed = false;
-      server.use(
-        http.post(provider.endpoint, async ({ request }) => {
-          const message = object({
-            method: string(),
-            id: union([number(), string()]).optional(),
-          })
-            .passthrough()
-            .parse(await request.json());
-          if (!changed) {
-            changed = true;
-            const updated = await connectors.updateCustomConnector(
-              actor,
-              connector.id,
-              {
-                ...definition,
-                endpoint: "https://replacement-mcp.example.test/server",
-              },
-            );
-            expect(updated.storageVersion).toBe(2);
-          }
-          if (registration === "none") {
-            return message.method === "initialize"
-              ? HttpResponse.json({
-                  jsonrpc: "2.0",
-                  id: message.id,
-                  result: {
-                    protocolVersion: "2025-06-18",
-                    capabilities: {},
-                    serverInfo: { name: "No-auth MCP", version: "1.0.0" },
-                  },
-                })
-              : new HttpResponse(null, { status: 202 });
-          }
-          return new HttpResponse(null, {
-            status: 401,
-            headers: {
-              "www-authenticate": `Bearer resource_metadata="${new URL("/oauth-resource", provider.endpoint).href}", scope="read write"`,
-            },
-          });
-        }),
-      );
-      const failed = await connectors.requestStartCustomConnectorOAuth2(
-        actor,
-        connector.id,
-        [500],
-      );
-      expect(failed.body).toStrictEqual({ error: "Internal server error" });
-      expect(provider.registrationBodies).toHaveLength(
-        registration === "dcr" ? 1 : 0,
-      );
-      await expect(
-        connectors.listCustomConnectorAccounts(actor, connector.id),
-      ).resolves.toStrictEqual([]);
-      await expect(
-        connectors.readCustomConnector(actor, connector.id),
-      ).resolves.toMatchObject({
-        storageVersion: 2,
-      });
-    },
-  );
+  it("custom-connectors-automatic-preflight-013 reconnects a dcr account only for its exact user, org and definition", async () => {
+    await expect(reconnectOnlyExactAccount("dcr")).resolves.toBeUndefined();
+  });
 
-  it.each(["cimd", "dcr"] as const)(
-    "rejects %s consent after the user deletes its definition",
-    async (registration) => {
-      const { actor, connector, provider } = await fixture(registration);
-      const authorizationUrl = await connectors.startCustomConnectorOAuth2(
-        actor,
-        connector.id,
-      );
-      const state = new URL(authorizationUrl).searchParams.get("state");
-      if (!state) {
-        throw new Error("Expected an OAuth authorization state");
-      }
-      await connectors.deleteCustomConnector(actor, connector.id);
-      const callback =
-        await connectors.completeCustomConnectorOAuth2CallbackResult({
-          state,
-          code: randomUUID(),
-          iss: provider.issuer,
-        });
-      expect(callback.body).toStrictEqual({
+  it("custom-connectors-automatic-preflight-014 reconnects a no-auth account only for its exact user, org and definition", async () => {
+    await expect(reconnectOnlyExactAccount("none")).resolves.toBeUndefined();
+  });
+
+  it("custom-connectors-automatic-preflight-018 rejects cimd consent after the owner deletes the definition", async () => {
+    await expect(consentAfterDefinitionDeleted("cimd")).resolves.toStrictEqual({
+      callback: {
         status: "error",
         message: "Invalid OAuth state - please try again",
-      });
-      expect(provider.tokenBodies).toHaveLength(0);
-      await expect(
-        connectors.listCustomConnectors(actor),
-      ).resolves.toStrictEqual([]);
-    },
-  );
-
-  it("rejects a reconnect account deleted while its provider prepares consent", async () => {
-    const { actor, connector, provider } = await fixture("cimd");
-    await complete(
-      await connectors.startCustomConnectorOAuth2(actor, connector.id),
-      provider.issuer,
-    );
-    const [account] = await connectors.listCustomConnectorAccounts(
-      actor,
-      connector.id,
-    );
-    if (!account) {
-      throw new Error("Expected the publicly connected account");
-    }
-    server.use(
-      http.post(provider.endpoint, async () => {
-        await connectors.deleteCustomConnectorAccount(
-          actor,
-          connector.id,
-          account.id,
-        );
-        return new HttpResponse(null, {
-          status: 401,
-          headers: {
-            "www-authenticate": `Bearer resource_metadata="${new URL("/oauth-resource", provider.endpoint).href}", scope="read write"`,
-          },
-        });
-      }),
-    );
-    const failed = await connectors.requestStartCustomConnectorOAuth2(
-      actor,
-      connector.id,
-      [404],
-      { intent: "reconnect", connectionId: account.id },
-    );
-    expect(failed.body).toMatchObject({ error: { code: "NOT_FOUND" } });
-    await expect(
-      connectors.listCustomConnectorAccounts(actor, connector.id),
-    ).resolves.toStrictEqual([]);
+      },
+      tokenRequests: 0,
+      remaining: [],
+    });
   });
 
-  it("rejects consent for a reconnect account deleted after authorization starts", async () => {
-    const { actor, connector, provider } = await fixture("cimd");
-    await complete(
-      await connectors.startCustomConnectorOAuth2(actor, connector.id),
-      provider.issuer,
-    );
-    const [account] = await connectors.listCustomConnectorAccounts(
-      actor,
+  it("custom-connectors-automatic-preflight-019 rejects dcr consent after the owner deletes the definition", async () => {
+    await expect(consentAfterDefinitionDeleted("dcr")).resolves.toStrictEqual({
+      callback: {
+        status: "error",
+        message: "Invalid OAuth state - please try again",
+      },
+      tokenRequests: 0,
+      remaining: [],
+    });
+  });
+
+  it("custom-connectors-automatic-preflight-021 rejects consent for a reconnect account deleted after authorization starts", async () => {
+    const provider = installProvider("dcr");
+    const admin = bdd.user();
+    const connector = await createAutomaticConnector(admin, provider.endpoint);
+    const accountId = await connectAccount(
+      provider,
+      admin,
       connector.id,
+      { intent: "add" },
+      "dcr",
     );
-    if (!account) {
-      throw new Error("Expected the publicly connected account");
-    }
     const authorizationUrl = await connectors.startCustomConnectorOAuth2(
-      actor,
+      admin,
       connector.id,
-      { intent: "reconnect", connectionId: account.id },
+      { intent: "reconnect", connectionId: accountId },
     );
-    const state = new URL(authorizationUrl).searchParams.get("state");
-    if (!state) {
-      throw new Error("Expected an OAuth authorization state");
-    }
     await connectors.deleteCustomConnectorAccount(
-      actor,
+      admin,
       connector.id,
-      account.id,
+      accountId,
     );
-    const callback =
-      await connectors.completeCustomConnectorOAuth2CallbackResult({
-        state,
-        code: randomUUID(),
-        iss: provider.issuer,
-      });
-    expect(callback.body).toMatchObject({ status: "error" });
+    const completed = await consent(provider, authorizationUrl);
+    expect(completed.body.status).toBe("error");
     await expect(
-      connectors.listCustomConnectorAccounts(actor, connector.id),
+      connectors.listCustomConnectorAccounts(admin, connector.id),
     ).resolves.toStrictEqual([]);
   });
 });

@@ -1,36 +1,53 @@
-import {
-  customConnectorOAuth2Contract,
-  type CreateCustomConnectorBody,
-} from "@okouai/api-contracts/contracts/custom-connectors";
-import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
-import { setupApp } from "../../../__tests__/test-helpers";
-import { customConnectorOAuth2Routes } from "../custom-connectors-oauth2";
-import { connectorAccountRoutes } from "../connector-accounts";
 import { randomUUID } from "node:crypto";
-
-import { afterEach, describe, expect, it } from "vitest";
+import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
+import { customConnectorOAuth2Contract } from "@okouai/api-contracts/contracts/custom-connectors";
+import { describe, expect, it } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
+import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
-import { flushWaitUntilForTest } from "../../context/wait-until";
+import { connectorAccountRoutes } from "../connector-accounts";
+import { customConnectorOAuth2Routes } from "../custom-connectors-oauth2";
+import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import {
   createConnectorBddApi,
   mockCustomConnectorOAuth2Provider,
 } from "./helpers/api-bdd-connectors";
-import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
-import { createPublicConnectorActor } from "./helpers/public-connector-actor";
+import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
+const bdd = createBddApi(context);
 const connectors = createConnectorBddApi(context);
+const headers = Object.freeze({ authorization: "Bearer clerk-session" });
+const APP_CALLBACK = "https://app.okou.ai/connectors/custom/callback";
 
-type CustomOAuthProvider = ReturnType<typeof mockCustomConnectorOAuth2Provider>;
+type Provider = ReturnType<typeof mockCustomConnectorOAuth2Provider>;
 
-function customOAuthConnectorBody(
-  provider: CustomOAuthProvider,
-): CreateCustomConnectorBody {
-  return {
-    displayName: `Branded OAuth ${randomUUID()}`,
-    prefixTemplates: [`https://${randomUUID()}.branded-oauth.example.test/v1/`],
+function signIn(actor: ApiTestUser) {
+  createRouteMocks(context).clerk.session(
+    actor.userId,
+    actor.orgId,
+    actor.orgRole,
+  );
+  return headers;
+}
+
+function useHostedOrigins() {
+  mockEnv("APP_URL", "https://app.okou.ai");
+  mockEnv("OKOU_API_BACKEND_URL", "https://api.okou.ai");
+}
+
+async function createStaticOAuthConnector(
+  owner: ApiTestUser,
+  provider: Provider,
+  options: {
+    readonly clientId?: string;
+    readonly authorizationParams?: Readonly<Record<string, string>>;
+  } = {},
+) {
+  return await connectors.createCustomConnector(owner, {
+    displayName: "Static OAuth",
+    prefixTemplates: [`https://static-${randomUUID()}.example.test/`],
     fields: [],
     headerInjections: [
       {
@@ -42,444 +59,206 @@ function customOAuthConnectorBody(
     authMode: "oauth",
     oauthConfig: {
       providerAdapter: "standard",
-      clientId: "branded-oauth-client-id",
-      clientSecret: "branded-oauth-client-secret",
+      clientId: options.clientId ?? "static-client-id",
+      clientSecret: "static-client-secret",
       authorizationUrl: provider.authorizationUrl,
       tokenUrl: provider.tokenUrl,
       tokenEndpointAuthMethod: "client_secret_post",
-      pkceMethod: "none",
+      pkceMethod: "S256",
       scopes: ["read"],
-      authorizationParams: {},
+      authorizationParams: { ...options.authorizationParams },
     },
-  };
+  });
 }
 
-function authorizationState(authorizationUrl: URL): string {
-  const state = authorizationUrl.searchParams.get("state");
+function oauthClient() {
+  return setupApp({ context, routes: customConnectorOAuth2Routes })(
+    customConnectorOAuth2Contract,
+  );
+}
+
+async function startAuthorization(
+  owner: ApiTestUser,
+  connectorId: string,
+  native = false,
+) {
+  const response = await accept(
+    oauthClient().start({
+      params: { id: connectorId },
+      headers: {
+        ...signIn(owner),
+        ...(native
+          ? { "x-okou-native-connector-callback": "ios-https" as const }
+          : {}),
+      },
+      body: { account: { intent: "add" } },
+    }),
+    [200],
+  );
+  if (response.body.result !== "authorization") {
+    throw new Error("Expected a custom OAuth authorization redirect");
+  }
+  return response.body;
+}
+
+function stateOf(authorizationUrl: string): string {
+  const state = new URL(authorizationUrl).searchParams.get("state");
   if (!state) {
-    throw new Error("Expected custom connector OAuth state");
+    throw new Error("Expected OAuth state");
   }
   return state;
 }
 
-function redirectLocation(response: { readonly headers: Headers }): URL {
-  const location = response.headers.get("location");
-  if (!location) {
-    throw new Error("Expected custom connector OAuth redirect");
-  }
-  return new URL(location);
-}
-
-async function createCustomOAuthConnector(
-  actor: ApiTestUser,
-  provider: CustomOAuthProvider,
-) {
-  return await connectors.createCustomConnector(
-    actor,
-    customOAuthConnectorBody(provider),
-  );
-}
-
 describe("Custom connector OAuth callbacks", () => {
-  const ownedConnectors: {
-    readonly actor: ApiTestUser;
-    readonly connectorId: string;
-  }[] = [];
+  it("custom-connectors-oauth2-003 lists the editable OAuth configuration without the client secret", async () => {
+    const provider = mockCustomConnectorOAuth2Provider(context);
+    const owner = bdd.user();
+    const created = await createStaticOAuthConnector(owner, provider, {
+      authorizationParams: {
+        audience: "https://static-api.example.test",
+        prompt: "consent",
+      },
+    });
 
-  afterEach(async () => {
-    for (const { actor, connectorId } of ownedConnectors.splice(0)) {
-      await createConnectorBddApi(context).deleteCustomConnector(
-        actor,
-        connectorId,
-      );
-      await flushWaitUntilForTest();
-    }
+    const listed = await connectors.listCustomConnectors(owner);
+    const detail = await connectors.readCustomConnector(owner, created.id);
+
+    expect(
+      listed.find((connector) => {
+        return connector.id === created.id;
+      }),
+    ).toStrictEqual(detail);
+    expect(detail).toMatchObject({
+      oauthConfig: {
+        providerAdapter: "standard",
+        clientId: "static-client-id",
+        authorizationUrl: provider.authorizationUrl,
+        tokenUrl: provider.tokenUrl,
+        tokenEndpointAuthMethod: "client_secret_post",
+        pkceMethod: "S256",
+        scopes: ["read"],
+        authorizationParams: {
+          audience: "https://static-api.example.test",
+          prompt: "consent",
+        },
+      },
+    });
+    expect(JSON.stringify(detail)).not.toContain("static-client-secret");
   });
 
-  it("keeps a direct native custom OAuth denial on its connector result page", async () => {
-    mockEnv("APP_URL", "https://app.okou.ai");
+  it("custom-connectors-oauth2-001 returns a consented attempt to iOS", async () => {
+    useHostedOrigins();
     const provider = mockCustomConnectorOAuth2Provider(context, {
       initialScope: "read",
     });
-    const actor = createBddApi(context).user({ orgRole: "org:admin" });
-    const connector = await createCustomOAuthConnector(actor, provider);
-    ownedConnectors.push({ actor, connectorId: connector.id });
-    const started = await accept(
-      setupApp({ context, routes: customConnectorOAuth2Routes })(
-        customConnectorOAuth2Contract,
-      ).start({
-        headers: {
-          authorization: "Bearer clerk-session",
-          "x-okou-native-connector-callback": "ios-https",
-        },
-        params: { id: connector.id },
-        body: { account: { intent: "add" } },
+    const owner = bdd.user();
+    const connector = await createStaticOAuthConnector(owner, provider);
+
+    const started = await startAuthorization(owner, connector.id, true);
+    const callback =
+      await connectors.completeCustomConnectorOAuth2CallbackResult({
+        state: stateOf(started.authorizationUrl),
+        code: `code-${randomUUID()}`,
+      });
+    const receipt = await accept(
+      setupApp({ context, routes: connectorAccountRoutes })(
+        connectorAccountsContract,
+      ).oauthCompletion({
+        headers: signIn(owner),
+        params: { attemptId: started.oauthAttemptId },
+        query: { kind: "custom", customConnectorId: connector.id },
       }),
       [200],
     );
-    if (started.body.result !== "authorization") {
-      throw new Error("Expected authorization");
-    }
-    const state = authorizationState(new URL(started.body.authorizationUrl));
-    const result = await connectors.completeCustomConnectorOAuth2Callback({
-      state,
-      error: "access_denied",
-    });
-    const destination = redirectLocation(result);
-    expect(destination.origin).toBe("https://app.okou.ai");
-    expect(destination.pathname).toBe("/connectors/custom/callback/error");
-    expect(destination.searchParams.get("nativeAppAttemptId")).toBe(
-      started.body.oauthAttemptId,
-    );
-    expect(destination.searchParams.get("message")).toBeTruthy();
-  });
 
-  it.each([false, true])(
-    "returns a custom OAuth attempt to iOS after consent or refusal (denied=%s)",
-    async (denied) => {
-      mockEnv("APP_URL", "https://app.okou.ai");
-      const provider = mockCustomConnectorOAuth2Provider(context, {
-        initialScope: "read",
-      });
-      const actor = createBddApi(context).user({ orgRole: "org:admin" });
-      const connector = await createCustomOAuthConnector(actor, provider);
-      ownedConnectors.push({ actor, connectorId: connector.id });
-      const client = setupApp({
-        context,
-        routes: [...customConnectorOAuth2Routes, ...connectorAccountRoutes],
-      });
-      // The public actor remains authenticated after creating the definition.
-      const headers = {
-        authorization: "Bearer clerk-session",
-        "x-okou-native-connector-callback": "ios-https" as const,
-      };
-      const started = await accept(
-        client(customConnectorOAuth2Contract).start({
-          headers,
-          params: { id: connector.id },
-          body: { account: { intent: "add" } },
-        }),
-        [200],
-      );
-      if (started.body.result !== "authorization") {
-        throw new Error("Expected authorization");
-      }
-      expect(started.body.nativeCallbackUrl).toBe(
-        `https://app.okou.ai/native/connector-authorization?attemptId=${started.body.oauthAttemptId}`,
-      );
-      const state = authorizationState(new URL(started.body.authorizationUrl));
-      const result = await accept(
-        client(customConnectorOAuth2Contract).callback({
-          query: {
-            state,
-            ...(denied ? { error: "access_denied" } : { code: "valid-code" }),
-            responseMode: "json",
-          },
-        }),
-        [200],
-      );
-      expect(result.body).toMatchObject({
-        status: denied ? "error" : "success",
-        nativeAppReturn: {
-          platform: "ios",
-          attemptId: started.body.oauthAttemptId,
-          httpsHost: "app.okou.ai",
-        },
-      });
-      const receipt = await client(connectorAccountsContract).oauthCompletion({
-        headers,
-        params: { attemptId: started.body.oauthAttemptId },
-        query: { kind: "custom", customConnectorId: connector.id },
-      });
-      expect(receipt.status).toBe(denied ? 404 : 200);
-    },
-  );
-  it("preserves editable OAuth configuration in the list without exposing the client secret", async () => {
-    const provider = mockCustomConnectorOAuth2Provider(context, {
-      initialScope: "read",
-    });
-    const actor = createBddApi(context).user({ orgRole: "org:admin" });
-    const input = customOAuthConnectorBody(provider);
-    if (input.authMode !== "oauth" || !input.oauthConfig) {
-      throw new Error("Expected an OAuth definition");
-    }
-    const oauthConfig = {
-      ...input.oauthConfig,
-      authorizationParams: {
-        audience: "https://resource.example.test",
-        prompt: "consent",
+    expect(started.nativeCallbackUrl).toBe(
+      `https://app.okou.ai/native/connector-authorization?attemptId=${started.oauthAttemptId}`,
+    );
+    expect(callback.body).toMatchObject({
+      status: "success",
+      nativeAppReturn: {
+        platform: "ios",
+        attemptId: started.oauthAttemptId,
+        httpsHost: "app.okou.ai",
       },
-    };
-    const connector = await connectors.createCustomConnector(actor, {
-      ...input,
-      oauthConfig,
     });
-    ownedConnectors.push({ actor, connectorId: connector.id });
-    const listed = await connectors.listCustomConnectors(actor);
-    const listedConnector = listed.find((item) => {
-      return item.id === connector.id;
-    });
-    expect(listedConnector).toStrictEqual(
-      await connectors.readCustomConnector(actor, connector.id),
-    );
-    expect(listedConnector).toHaveProperty("oauthConfig", {
-      providerAdapter: oauthConfig.providerAdapter,
-      clientId: oauthConfig.clientId,
-      authorizationUrl: oauthConfig.authorizationUrl,
-      tokenUrl: oauthConfig.tokenUrl,
-      tokenEndpointAuthMethod: oauthConfig.tokenEndpointAuthMethod,
-      pkceMethod: oauthConfig.pkceMethod,
-      scopes: oauthConfig.scopes,
-      authorizationParams: oauthConfig.authorizationParams,
-    });
-    expect(JSON.stringify(listed)).not.toContain(oauthConfig.clientSecret);
+    expect(receipt.status).toBe(200);
   });
 
-  it("uses the configured Okou App callback for authorization and token exchange", async () => {
-    const apiOrigin = "https://api.okou.ai";
-    const appOrigin = "https://app.okou.ai";
-    mockEnv("APP_URL", "https://app.okou.ai");
+  it("custom-connectors-oauth2-004 uses the Okou App callback for authorization and token exchange", async () => {
+    useHostedOrigins();
     const provider = mockCustomConnectorOAuth2Provider(context, {
       initialScope: "read",
     });
-    const actor = createBddApi(context).user({ orgRole: "org:admin" });
-    const connector = await createCustomOAuthConnector(actor, provider);
-    ownedConnectors.push({ actor, connectorId: connector.id });
-    const callbackUri = `${appOrigin}/connectors/custom/callback`;
+    const owner = bdd.user();
+    const connector = await createStaticOAuthConnector(owner, provider);
 
-    const authorizationUrl = new URL(
-      await connectors.startCustomConnectorOAuth2AtBaseUrl(
-        actor,
-        connector.id,
-        apiOrigin,
-      ),
-    );
-    expect(authorizationUrl.searchParams.get("redirect_uri")).toBe(callbackUri);
-    const state = authorizationState(authorizationUrl);
-    expect(state).toMatch(/^[0-9a-f]{64}$/u);
+    const started = await startAuthorization(owner, connector.id);
+    const authorization = new URL(started.authorizationUrl);
     const callback = await connectors.completeCustomConnectorOAuth2Callback(
-      { code: `${actor.userId}-code`, state },
-      { baseUrl: apiOrigin },
+      { state: stateOf(started.authorizationUrl), code: "consented-code" },
+      { baseUrl: "https://api.okou.ai" },
     );
-    expect(redirectLocation(callback).toString()).toBe(
-      `${callbackUri}/success`,
+    const accounts = await connectors.listCustomConnectorAccounts(
+      owner,
+      connector.id,
     );
-    expect(provider.tokenBodies).toHaveLength(1);
-    expect(provider.tokenBodies[0]?.get("redirect_uri")).toBe(callbackUri);
-    await expect(
-      connectors.listCustomConnectorAccounts(actor, connector.id),
-    ).resolves.toMatchObject([
-      {
-        target: { kind: "custom", customConnectorId: connector.id },
-        authMethod: "oauth",
-        connectionStatus: "connected",
-        externalId: null,
-        externalUsername: null,
-        externalEmail: null,
-      },
-    ]);
+
+    expect(authorization.searchParams.get("redirect_uri")).toBe(APP_CALLBACK);
+    expect(authorization.searchParams.get("state")).toMatch(/^[0-9a-f]{64}$/u);
+    expect(callback.headers.get("location")).toBe(`${APP_CALLBACK}/success`);
+    expect(
+      provider.tokenBodies.map((body) => {
+        return body.get("redirect_uri");
+      }),
+    ).toStrictEqual([APP_CALLBACK]);
+    expect(accounts).toHaveLength(1);
+    expect(accounts[0]).toMatchObject({
+      authMethod: "oauth",
+      connectionStatus: "connected",
+      externalId: null,
+      externalUsername: null,
+      externalEmail: null,
+    });
   });
 
-  it("persists verified OIDC identity for a static custom OAuth grant", async () => {
-    mockEnv("APP_URL", "https://app.okou.ai");
+  it("custom-connectors-oauth2-005 stores the verified OIDC identity of the grant", async () => {
     const provider = mockCustomConnectorOAuth2Provider(context, {
       initialScope: "read",
       identity: {
-        subject: "static-custom-user-123",
-        tokenUsername: "static-token-user",
-        tokenEmail: "static-token-user@example.test",
-        userInfoUsername: "static-userinfo-user",
-        userInfoEmail: "static-userinfo-user@example.test",
+        subject: "verified-subject-1",
+        tokenUsername: "token-name",
+        tokenEmail: "token@example.test",
+        userInfoUsername: "userinfo-name",
+        userInfoEmail: "userinfo@example.test",
       },
     });
-    const actor = createBddApi(context).user({ orgRole: "org:admin" });
-    const connector = await createCustomOAuthConnector(actor, provider);
-    const authorizationUrl = new URL(
-      await connectors.startCustomConnectorOAuth2AtBaseUrl(
-        actor,
-        connector.id,
-        "https://api.okou.ai",
-      ),
-    );
-    expect(authorizationUrl.searchParams.get("scope")).toBe("read");
+    const owner = bdd.user();
+    const connector = await createStaticOAuthConnector(owner, provider, {
+      clientId: "branded-oauth-client-id",
+    });
 
-    await connectors.completeCustomConnectorOAuth2Callback(
-      {
-        code: "static-custom-identity-code",
-        state: authorizationState(authorizationUrl),
-      },
-      { baseUrl: "https://api.okou.ai" },
+    const started = await startAuthorization(owner, connector.id);
+    const callback =
+      await connectors.completeCustomConnectorOAuth2CallbackResult({
+        state: stateOf(started.authorizationUrl),
+        code: `code-${randomUUID()}`,
+      });
+    const accounts = await connectors.listCustomConnectorAccounts(
+      owner,
+      connector.id,
     );
 
-    await expect(
-      connectors.listCustomConnectorAccounts(actor, connector.id),
-    ).resolves.toMatchObject([
-      {
-        externalId: "static-custom-user-123",
-        externalUsername: "static-userinfo-user",
-        externalEmail: "static-userinfo-user@example.test",
-        oauthScopes: ["read"],
-      },
-    ]);
-
-    await connectors.deleteCustomConnector(actor, connector.id);
-  });
-
-  it("does not derive the provider callback from an untrusted API host", async () => {
-    mockEnv("APP_URL", "https://app.okou.ai");
-    const provider = mockCustomConnectorOAuth2Provider(context, {
-      initialScope: "read",
-    });
-    const actor = createBddApi(context).user({ orgRole: "org:admin" });
-    const connector = await createCustomOAuthConnector(actor, provider);
-    const callbackUri = "https://app.okou.ai/connectors/custom/callback";
-
-    const authorizationUrl = new URL(
-      await connectors.startCustomConnectorOAuth2AtBaseUrl(
-        actor,
-        connector.id,
-        "https://api.okou.ai.attacker.example",
-      ),
+    expect(new URL(started.authorizationUrl).searchParams.get("scope")).toBe(
+      "read",
     );
-    expect(authorizationUrl.searchParams.get("redirect_uri")).toBe(callbackUri);
-    const state = authorizationState(authorizationUrl);
-    expect(state).toMatch(/^[0-9a-f]{64}$/u);
-
-    await connectors.completeCustomConnectorOAuth2Callback(
-      { code: "untrusted-host-code", state },
-      { baseUrl: "https://api.okou.ai.attacker.example" },
-    );
-    expect(provider.tokenBodies).toHaveLength(1);
-    expect(provider.tokenBodies[0]?.get("redirect_uri")).toBe(callbackUri);
-
-    await connectors.deleteCustomConnector(actor, connector.id);
-  });
-
-  it("completes a canonical custom OAuth state callback", async () => {
-    mockEnv("APP_URL", "https://app.okou.ai");
-    const provider = mockCustomConnectorOAuth2Provider(context, {
-      initialScope: "read",
-    });
-    const owner = createPublicConnectorActor(context);
-    const { actor, run: own } = owner;
-    await own(async () => {
-      const connector = await own(() => {
-        return createCustomOAuthConnector(actor, provider);
-      });
-      const redirectUri = "https://app.okou.ai/connectors/custom/callback";
-      const authorization = new URL(
-        await own(() => {
-          return connectors.startCustomConnectorOAuth2AtBaseUrl(
-            actor,
-            connector.id,
-            "https://api.okou.ai",
-          );
-        }),
-      );
-      const state = authorizationState(authorization);
-      expect(state).toMatch(/^[0-9a-f]{64}$/u);
-
-      const callback = await own(() => {
-        return connectors.completeCustomConnectorOAuth2Callback(
-          { code: "canonical-okou-code", state },
-          { baseUrl: "https://api.okou.ai" },
-        );
-      });
-      expect(redirectLocation(callback).toString()).toBe(
-        `${redirectUri}/success`,
-      );
-      expect(provider.tokenBodies).toHaveLength(1);
-      expect(provider.tokenBodies[0]?.get("redirect_uri")).toBe(redirectUri);
-
-      await own(() => {
-        return connectors.deleteCustomConnector(actor, connector.id);
-      });
-    });
-  });
-
-  it("completes an in-flight OAuth authorization and uses a new plain nonce on reconnect", async () => {
-    mockEnv("APP_URL", "https://app.okou.ai");
-    const provider = mockCustomConnectorOAuth2Provider(context, {
-      initialScope: "read",
-    });
-    const owner = createPublicConnectorActor(context);
-    const { actor, run: own } = owner;
-    await own(async () => {
-      owner.ownsFeatureSwitches();
-      await own(() => {
-        return connectors.updateFeatureSwitches(actor, {});
-      });
-      const connector = await own(() => {
-        return createCustomOAuthConnector(actor, provider);
-      });
-      const initialRedirectUri =
-        "https://app.okou.ai/connectors/custom/callback";
-      const authorization = new URL(
-        await own(() => {
-          return connectors.startCustomConnectorOAuth2AtBaseUrl(
-            actor,
-            connector.id,
-            "https://api.okou.ai",
-          );
-        }),
-      );
-      const state = authorizationState(authorization);
-      expect(state).toMatch(/^[0-9a-f]{64}$/u);
-
-      const initialCallback = await own(() => {
-        return connectors.completeCustomConnectorOAuth2Callback(
-          { code: "initial-okou-code", state },
-          { baseUrl: "https://api.okou.ai" },
-        );
-      });
-      expect(redirectLocation(initialCallback).toString()).toBe(
-        "https://app.okou.ai/connectors/custom/callback/success",
-      );
-      expect(provider.tokenBodies[0]?.get("redirect_uri")).toBe(
-        initialRedirectUri,
-      );
-
-      const [account] = await own(() => {
-        return connectors.listCustomConnectorAccounts(actor, connector.id);
-      });
-      if (!account) {
-        throw new Error("Expected initial OAuth callback to create an account");
-      }
-      const reconnectAuthorization = new URL(
-        await own(() => {
-          return connectors.startCustomConnectorOAuth2AtBaseUrl(
-            actor,
-            connector.id,
-            "https://api.okou.ai",
-            { intent: "reconnect", connectionId: account.id },
-          );
-        }),
-      );
-      expect(authorizationState(reconnectAuthorization)).toMatch(
-        /^[0-9a-f]{64}$/u,
-      );
-      const okouRedirectUri = "https://app.okou.ai/connectors/custom/callback";
-      expect(reconnectAuthorization.searchParams.get("redirect_uri")).toBe(
-        okouRedirectUri,
-      );
-
-      await own(() => {
-        return connectors.completeCustomConnectorOAuth2Callback(
-          {
-            code: "reconnected-okou-code",
-            state: authorizationState(reconnectAuthorization),
-          },
-          { baseUrl: "https://api.okou.ai" },
-        );
-      });
-      expect(provider.tokenBodies).toHaveLength(2);
-      expect(provider.tokenBodies[1]?.get("redirect_uri")).toBe(
-        okouRedirectUri,
-      );
-
-      await own(() => {
-        return connectors.deleteCustomConnector(actor, connector.id);
-      });
+    expect(callback.body.status).toBe("success");
+    expect(accounts).toHaveLength(1);
+    expect(accounts[0]).toMatchObject({
+      externalId: "verified-subject-1",
+      externalUsername: "userinfo-name",
+      externalEmail: "userinfo@example.test",
+      oauthScopes: ["read"],
     });
   });
 });

@@ -1,318 +1,285 @@
-import {
-  mockGoogleText,
-  VERTEX_TEXT_URL,
-  vertexTextRequest,
-} from "./helpers/google-text";
 import { randomUUID } from "node:crypto";
-
-import { onboardingRecommendationContract } from "@okouai/api-contracts/contracts/onboarding";
 import { http, HttpResponse } from "msw";
-import { describe, expect, it } from "vitest";
-
+import { builtinConnectorOauthStartContract } from "@okouai/api-contracts/contracts/connectors";
+import { builtinConnectorsSlugCallbackContract } from "@okouai/api-contracts/contracts/connectors-slug-callback";
+import { onboardingRecommendationContract } from "@okouai/api-contracts/contracts/onboarding";
+import { expect, test } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { server } from "../../../mocks/server";
 import { flushWaitUntilForTest } from "../../context/wait-until";
-import { createBddApi } from "./helpers/api-bdd";
+import { builtinConnectorsRoutes } from "../connectors";
+import { builtinConnectorsSlugCallbackRoutes } from "../connectors-slug-callback";
+import { onboardingRecommendationRoutes } from "../onboarding-recommendations";
+import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import {
-  createConnectorBddApi,
   mockGitHubConnectorOAuth,
   mockGmailConnectorOAuth,
 } from "./helpers/api-bdd-connectors";
+import {
+  mockGoogleText,
+  VERTEX_TEXT_URL,
+  vertexTextRequest,
+  vertexTextResponse,
+} from "./helpers/google-text";
 import { createRouteMocks } from "./helpers/route-test";
-import { onboardingRecommendationRoutes } from "../onboarding-recommendations";
 
 const context = testContext();
-const mocks = createRouteMocks(context);
-const bdd = createBddApi(context);
-const connectorsApi = createConnectorBddApi(context);
-
-const GMAIL_LABEL_URL =
-  "https://gmail.googleapis.com/gmail/v1/users/me/labels/INBOX";
-const GMAIL_MESSAGES_URL =
-  "https://gmail.googleapis.com/gmail/v1/users/me/messages";
-const GITHUB_REPOSITORIES_URL = "https://api.github.com/user/repos";
-const GOOGLE_GENERATION_URL = VERTEX_TEXT_URL;
+const recommendations = setupApp({
+  context,
+  routes: onboardingRecommendationRoutes,
+})(onboardingRecommendationContract);
+const oauthStart = setupApp({
+  context,
+  routes: builtinConnectorsRoutes,
+})(builtinConnectorOauthStartContract);
+const oauthCallback = setupApp({
+  context,
+  routes: builtinConnectorsSlugCallbackRoutes,
+})(builtinConnectorsSlugCallbackContract);
 
 function authHeaders() {
   return { authorization: "Bearer clerk-session" };
 }
 
-function apiClient() {
-  return setupApp({ context, routes: onboardingRecommendationRoutes })(
-    onboardingRecommendationContract,
+function expectedRecommendation() {
+  return {
+    kind: "task" as const,
+    title: "Prepare replies to important client emails",
+    outcome: "Draft replies for the client threads waiting on you.",
+    prompt:
+      "Review my recent client emails and draft replies to the important ones.",
+    profile: {
+      overview: "Runs business operations with an active client inbox.",
+      professionalIdentity: ["Business operator"],
+      communicationStyle: [] as string[],
+      priorities: ["Answer client email promptly"],
+    },
+  };
+}
+
+test("onboarding-recommendations-001 starts an owned job and shows its bounded status only to the owner", async () => {
+  const orgId = `org_${randomUUID()}`;
+  const ownerId = `user_${randomUUID()}`;
+  const peerId = `user_${randomUUID()}`;
+  const mocks = createRouteMocks(context);
+  mocks.clerk.session(ownerId, orgId);
+
+  const started = await accept(
+    recommendations.start({
+      headers: authHeaders(),
+      body: { industry: "operations", locale: "en-US" },
+    }),
+    [202],
+  );
+  const owner = await accept(
+    recommendations.get({
+      headers: authHeaders(),
+      params: { jobId: started.body.jobId },
+    }),
+    [200],
+  );
+  mocks.clerk.session(peerId, orgId, "org:member");
+  const peer = await accept(
+    recommendations.get({
+      headers: authHeaders(),
+      params: { jobId: started.body.jobId },
+    }),
+    [404],
+  );
+
+  expect(started.body).toStrictEqual({
+    jobId: started.body.jobId,
+    status: "pending",
+  });
+  expect(owner.body).toStrictEqual({
+    jobId: started.body.jobId,
+    status: expect.stringMatching(/^(pending|running|failed)$/),
+  });
+  expect(peer.body.error.code).toBe("NOT_FOUND");
+  for (const response of [started, owner, peer]) {
+    expect(response.headers.get("cache-control")).toBe("private, no-store");
+  }
+});
+
+async function connect(actor: ApiTestUser, connectorSlug: "gmail" | "github") {
+  createRouteMocks(context).clerk.session(
+    actor.userId,
+    actor.orgId,
+    actor.orgRole,
+  );
+  const started = await accept(
+    oauthStart.start({
+      headers: authHeaders(),
+      params: { connectorSlug },
+      body: { authMethod: "oauth", account: { intent: "add" } },
+    }),
+    [200],
+  );
+  const state = new URL(started.body.authorizationUrl).searchParams.get(
+    "state",
+  );
+  if (!state) {
+    throw new Error("Expected OAuth state");
+  }
+  const result = await accept(
+    oauthCallback.callback({
+      headers: {},
+      params: { connectorSlug },
+      query: { state, code: `code-${randomUUID()}`, responseMode: "json" },
+    }),
+    [200],
+  );
+  expect(result.body.status).toBe("success");
+}
+
+function mockGmailInbox() {
+  server.use(
+    http.get(
+      "https://gmail.googleapis.com/gmail/v1/users/me/labels/INBOX",
+      () => {
+        return HttpResponse.json({ messagesTotal: 120, messagesUnread: 7 });
+      },
+    ),
+    http.get("https://gmail.googleapis.com/gmail/v1/users/me/messages", () => {
+      return HttpResponse.json({ messages: [{ id: "message-1" }] });
+    }),
+    http.get(
+      "https://gmail.googleapis.com/gmail/v1/users/me/messages/message-1",
+      () => {
+        return HttpResponse.json({
+          id: "message-1",
+          payload: {
+            headers: [
+              {
+                name: "Subject",
+                value:
+                  "Reply to ceo@client.example.com about https://deals.example.com/q4",
+              },
+              { name: "From", value: "Client CEO <ceo@client.example.com>" },
+            ],
+          },
+        });
+      },
+    ),
+    http.get("https://api.github.com/user/repos", () => {
+      return HttpResponse.json(
+        { message: "Service unavailable" },
+        { status: 503 },
+      );
+    }),
   );
 }
 
-describe("onboarding recommendations", () => {
-  it("starts an owned durable job and exposes only its bounded status", async () => {
-    const userId = `user_onboarding_recommendation_${randomUUID()}`;
-    const orgId = `org_onboarding_recommendation_${randomUUID()}`;
-    mocks.clerk.session(userId, orgId);
+interface CapturedModelRequest {
+  url: string;
+  body: unknown;
+  raw: string;
+}
 
-    const started = await accept(
-      apiClient().start({
-        headers: authHeaders(),
-        body: { industry: "operations", locale: "en-US" },
-      }),
-      [202],
-    );
-
-    expect(started.body).toStrictEqual({
-      jobId: expect.any(String),
-      status: "pending",
-    });
-    expect(started.headers.get("cache-control")).toBe("private, no-store");
-
-    const status = await accept(
-      apiClient().get({
-        headers: authHeaders(),
-        params: { jobId: started.body.jobId },
-      }),
-      [200],
-    );
-    expect(status.body.jobId).toBe(started.body.jobId);
-    expect(status.headers.get("cache-control")).toBe("private, no-store");
-    expect(["pending", "running", "failed"]).toContain(status.body.status);
-    expect(status.body).not.toHaveProperty("error");
-
-    const otherUserId = `user_onboarding_recommendation_other_${randomUUID()}`;
-    mocks.clerk.session(otherUserId, orgId);
-    const hidden = await accept(
-      apiClient().get({
-        headers: authHeaders(),
-        params: { jobId: started.body.jobId },
-      }),
-      [404],
-    );
-    expect(hidden.body.error.code).toBe("NOT_FOUND");
-    expect(hidden.headers.get("cache-control")).toBe("private, no-store");
-  });
-
-  it.each([false, true])(
-    "preserves authorized context when another source fails (Gmail revoked during read: %s)",
-    async (revokeGmail) => {
-      bdd.acceptStorageWrites();
-      const actor = bdd.user({
-        userId: `user_onboarding_recommendation_context_${randomUUID()}`,
-        orgId: `org_onboarding_recommendation_context_${randomUUID()}`,
-        orgRole: "org:admin",
-      });
-      if (!actor.orgId) {
-        throw new Error("Expected an organization actor");
-      }
-      await bdd.provisionWorkspace(actor);
-
-      mockGmailConnectorOAuth({
-        accessToken: "gmail-context-access-token",
-        email: "owner@example.test",
-        subject: `gmail-context-${randomUUID()}`,
-      });
-      const oauth = await connectorsApi.startOauth(actor, "gmail", "oauth");
-      const state = new URL(oauth.authorizationUrl).searchParams.get("state");
-      if (!state) {
-        throw new Error("Expected a Gmail OAuth state");
-      }
-      await connectorsApi.completeOauthCallback("gmail", {
-        code: "gmail-context-code",
-        state,
-      });
-
-      mockGitHubConnectorOAuth({
-        userId: 424_242,
-        login: `onboarding-context-${randomUUID()}`,
-      });
-      const githubOauth = await connectorsApi.startOauth(
-        actor,
-        "github",
-        "oauth",
-      );
-      const githubState = new URL(
-        githubOauth.authorizationUrl,
-      ).searchParams.get("state");
-      if (!githubState) {
-        throw new Error("Expected a GitHub OAuth state");
-      }
-      await connectorsApi.completeOauthCallback("github", {
-        code: "github-context-code",
-        state: githubState,
-      });
-
-      mockGoogleText();
-      let modelRequest = "";
-      server.use(
-        http.get(GMAIL_LABEL_URL, async ({ request }) => {
-          expect(request.headers.get("authorization")).toBe(
-            "Bearer gmail-context-access-token",
-          );
-          if (revokeGmail) {
-            await connectorsApi.deleteDefaultBuiltinConnectorAccount(
-              actor,
-              "gmail",
-            );
-          }
-          return HttpResponse.json({
-            messagesTotal: 42,
-            messagesUnread: 7,
-          });
-        }),
-        http.get(GMAIL_MESSAGES_URL, ({ request }) => {
-          expect(new URL(request.url).searchParams.get("maxResults")).toBe("5");
-          return HttpResponse.json({
-            messages: [{ id: "message-1", threadId: "thread-1" }],
-          });
-        }),
-        http.get(`${GMAIL_MESSAGES_URL}/:messageId`, ({ params }) => {
-          expect(params.messageId).toBe("message-1");
-          return HttpResponse.json({
-            id: "message-1",
-            payload: {
-              headers: [
-                {
-                  name: "Subject",
-                  value:
-                    "Follow up with alice@example.com at https://private.example.test/plan",
-                },
-                { name: "From", value: "Alice <alice@example.com>" },
-                { name: "Date", value: "Mon, 22 Sep 2026 08:00:00 GMT" },
-              ],
-            },
-          });
-        }),
-        http.get(GITHUB_REPOSITORIES_URL, () => {
-          return HttpResponse.json(
-            { message: "temporary repository failure" },
-            { status: 503 },
-          );
-        }),
-        http.post(GOOGLE_GENERATION_URL, async ({ request }) => {
-          const body = vertexTextRequest(await request.json(), request.url);
-          expect(body.model).toBe("gemini-3.1-flash-lite");
-          expect(body.generationConfig).toMatchObject({
-            responseMimeType: "application/json",
-            thinkingConfig: { thinkingLevel: "MINIMAL" },
-            responseJsonSchema: { type: "object" },
-          });
-          modelRequest = JSON.stringify(body);
-          return HttpResponse.json({
-            candidates: [
-              {
-                finishReason: "STOP",
-                content: {
-                  parts: [
-                    {
-                      text: JSON.stringify({
-                        kind: "task",
-                        title: "Clear the important replies",
-                        outcome: "Three priority drafts ready for review",
-                        prompt:
-                          "Review my recent Gmail workload and draft the replies that need attention.",
-                        profile: {
-                          overview:
-                            "Your inbox shows a steady flow of work that needs follow-up.",
-                          professionalIdentity: [],
-                          communicationStyle: [],
-                          priorities: ["Keep up with important replies"],
-                        },
-                      }),
-                    },
-                  ],
-                },
-              },
-            ],
-            usageMetadata: {
-              promptTokenCount: 100,
-              candidatesTokenCount: 25,
-              totalTokenCount: 125,
-            },
-          });
-        }),
-      );
-
-      mocks.clerk.session(actor.userId, actor.orgId, "org:admin");
-      const started = await accept(
-        apiClient().start({
-          headers: authHeaders(),
-          body: { industry: "operations", locale: "en-US" },
-        }),
-        [202],
-      );
-      await flushWaitUntilForTest();
-      const status = await accept(
-        apiClient().get({
-          headers: authHeaders(),
-          params: { jobId: started.body.jobId },
-        }),
-        [200],
-      );
-
-      expect(status.body).toStrictEqual({
-        jobId: started.body.jobId,
-        status: "completed",
-        recommendation: {
-          kind: "task",
-          title: "Clear the important replies",
-          outcome: "Three priority drafts ready for review",
-          prompt:
-            "Review my recent Gmail workload and draft the replies that need attention.",
-          profile: {
-            overview:
-              "Your inbox shows a steady flow of work that needs follow-up.",
-            professionalIdentity: [],
-            communicationStyle: [],
-            priorities: ["Keep up with important replies"],
-          },
-        },
-      });
-      const modelBody = JSON.parse(modelRequest) as {
-        readonly messages: readonly {
-          readonly role: string;
-          readonly content: string;
-        }[];
-      };
-      const contextMessage = modelBody.messages.find(({ role }) => {
-        return role === "user";
-      });
-      if (!contextMessage) {
-        throw new Error("Expected the model context message");
-      }
-      expect(JSON.parse(contextMessage.content)).toMatchObject({
-        industry: "operations",
-        selectedPositioning: {
-          name: "Business & operations",
-          summary: "Business owners, assistants & operators",
-        },
-        connectedContext: expect.arrayContaining([
-          {
-            sourceSlug: "github",
-            facts: [],
-            capabilities: expect.arrayContaining([
-              "read repositories and work items",
-            ]),
-          },
-        ]),
-        unavailableSourceSlugs: revokeGmail
-          ? expect.arrayContaining(["gmail", "github"])
-          : ["github"],
-      });
-      if (revokeGmail) {
-        expect(JSON.parse(contextMessage.content)).toMatchObject({
-          connectedContext: expect.arrayContaining([
-            { sourceSlug: "gmail", facts: [], capabilities: expect.any(Array) },
-          ]),
-        });
-      } else {
-        expect(modelRequest).toContain("[email]");
-        expect(modelRequest).toContain("[link]");
-      }
-      expect(modelRequest).toContain('"profile"');
-      expect(modelRequest).toContain(
-        "Combine it with connectedContext when writing the profile",
-      );
-      expect(modelRequest).not.toContain("alice@example.com");
-      expect(modelRequest).not.toContain("private.example.test");
-      expect(modelRequest).not.toContain("gmail-context-access-token");
-      expect(modelRequest).not.toContain("github-access-github-context-code");
-    },
+function mockRecommendationModel() {
+  mockGoogleText();
+  const captured: { latest?: CapturedModelRequest } = {};
+  server.use(
+    http.post(VERTEX_TEXT_URL, async ({ request }) => {
+      const raw = await request.text();
+      captured.latest = { url: request.url, body: JSON.parse(raw), raw };
+      return vertexTextResponse(JSON.stringify(expectedRecommendation()));
+    }),
   );
+  return captured;
+}
+
+async function runGmailWithFailingGithubRecommendation() {
+  mockGmailConnectorOAuth();
+  mockGitHubConnectorOAuth();
+  const admin = createBddApi(context).user();
+  await Promise.all([connect(admin, "gmail"), connect(admin, "github")]);
+  mockGmailInbox();
+  const captured = mockRecommendationModel();
+  createRouteMocks(context).clerk.session(
+    admin.userId,
+    admin.orgId,
+    admin.orgRole,
+  );
+  const started = await accept(
+    recommendations.start({
+      headers: authHeaders(),
+      body: { industry: "operations", locale: "en-US" },
+    }),
+    [202],
+  );
+  await flushWaitUntilForTest();
+  return { started, captured };
+}
+
+test("onboarding-recommendations-002 (1/2) returns the completed recommendation when GitHub fails and Gmail succeeds", async () => {
+  const { started } = await runGmailWithFailingGithubRecommendation();
+
+  const read = await accept(
+    recommendations.get({
+      headers: authHeaders(),
+      params: { jobId: started.body.jobId },
+    }),
+    [200],
+  );
+
+  expect(read.body).toStrictEqual({
+    jobId: started.body.jobId,
+    status: "completed",
+    recommendation: expectedRecommendation(),
+  });
+});
+
+test("onboarding-recommendations-002 (2/2) sends redacted Gmail context and unavailable GitHub status to Gemini without credentials", async () => {
+  const { captured } = await runGmailWithFailingGithubRecommendation();
+
+  const model = captured.latest;
+  if (!model) {
+    throw new Error("Expected recommendation model request");
+  }
+  const wire = vertexTextRequest(model.body, model.url);
+  expect(wire.model).toBe("gemini-3.1-flash-lite");
+  expect(wire.generationConfig).toMatchObject({
+    thinkingConfig: { thinkingLevel: "MINIMAL" },
+    responseMimeType: "application/json",
+  });
+  const userMessage = wire.messages.find((message) => {
+    return message.role === "user";
+  });
+  const parsedPayload = JSON.parse(userMessage?.content ?? "null") as {
+    readonly connectedContext?: readonly unknown[];
+  };
+  expect(parsedPayload.connectedContext).toHaveLength(2);
+  expect(parsedPayload).toStrictEqual({
+    industry: "operations",
+    selectedPositioning: expect.objectContaining({
+      name: "Business & operations",
+    }),
+    connectedContext: expect.arrayContaining([
+      {
+        sourceSlug: "github",
+        facts: [],
+        capabilities: expect.arrayContaining([expect.any(String)]),
+      },
+      {
+        sourceSlug: "gmail",
+        facts: [
+          "Inbox contains 120 messages, with 7 unread.",
+          "Recent email subject: Reply to [email] about [link] (from client.example.com)",
+        ],
+        capabilities: expect.arrayContaining([expect.any(String)]),
+      },
+    ]),
+    unavailableSourceSlugs: ["github"],
+  });
+  for (const secret of [
+    "gmail-access-token",
+    "gmail-refresh-token",
+    "github-access-",
+    "ceo@client.example.com",
+    "https://deals.example.com",
+  ]) {
+    expect(model.raw).not.toContain(secret);
+  }
 });

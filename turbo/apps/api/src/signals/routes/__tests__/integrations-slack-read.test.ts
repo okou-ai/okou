@@ -1,871 +1,227 @@
 import { integrationsSlackReadContract } from "@okouai/api-contracts/contracts/integrations-slack-read";
-import { createStore } from "ccstate";
-import { http, HttpResponse } from "msw";
-import { randomUUID } from "node:crypto";
+import { HttpResponse, http } from "msw";
 import { describe, expect, it } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { server } from "../../../mocks/server";
+import { flushWaitUntilForTest } from "../../context/wait-until";
 import { integrationsSlackReadRoutes } from "../integrations-slack-read";
-import { createRunExecutionCredentials } from "./helpers/run-execution-credentials";
+import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createBddIntegrationApi } from "./helpers/api-bdd-integrations";
-import { createFixtureTracker, createRouteMocks } from "./helpers/route-test";
-import { seedOrgMembership$ } from "./helpers/org-membership";
-import {
-  createPublicSlackOrgApi,
-  uniqueSlackUserId,
-} from "./helpers/slack-public-install";
+import { createRouteMocks } from "./helpers/route-test";
+import { uniqueSlackUserId } from "./helpers/slack-public-install";
 
-// Connecting a Slack user resolves the built-in Slack connector OAuth method.
 const context = testContext();
-const executionToken = createRunExecutionCredentials(context).okouToken;
-const store = createStore();
-const slackOrgs = createPublicSlackOrgApi(context);
-const SLACK_USER_CONVERSATIONS_URL =
-  "https://slack.com/api/users.conversations";
-const SLACK_HISTORY_URL = "https://slack.com/api/conversations.history";
-const SLACK_REPLIES_URL = "https://slack.com/api/conversations.replies";
-const THREAD_TS = "1750000000.000001";
+const bdd = createBddApi(context);
+const integrations = createBddIntegrationApi(context);
+const routeMocks = createRouteMocks(context);
+const slackRead = setupApp({ context, routes: integrationsSlackReadRoutes })(
+  integrationsSlackReadContract,
+);
 
-async function fixture(
-  options: {
-    installed?: boolean;
-    connected?: boolean;
-  } = {},
-) {
-  const orgId = `org_${randomUUID()}`;
-  const userId = `user_${randomUUID()}`;
-  const botToken = `xoxb-test-${randomUUID()}`;
-  const installation =
-    options.installed === false
-      ? null
-      : await slackOrgs.installForOrg({ orgId, botToken });
-  const connection =
-    installation && options.connected !== false
-      ? await slackOrgs.connectMember({
-          orgId,
-          userId,
-          slackWorkspaceId: installation.slackWorkspaceId,
-        })
-      : null;
-  // The OAuth flows authenticate other Clerk sessions; restore the member
-  // the Okou token authenticates as.
-  await store.set(
-    seedOrgMembership$,
-    { userId, orgId, role: "admin" },
-    context.signal,
-  );
-  const token = await executionToken({ userId, orgId });
+const NOT_CONNECTED_ERROR = Object.freeze({
+  error: Object.freeze({
+    code: "NOT_FOUND",
+    message:
+      "Your Slack account is not connected to this organization. Connect it from Settings > Slack before reading conversations.",
+  }),
+});
+
+function signIn(actor: ApiTestUser): { authorization: string } {
+  routeMocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
+  return { authorization: "Bearer clerk-session" };
+}
+
+function expectedGeneralChannel(teamId: string) {
   return {
-    client: setupApp({ context, routes: integrationsSlackReadRoutes })(
-      integrationsSlackReadContract,
-    ),
-    botToken,
-    installation,
-    slackUserId: connection?.slackUserId ?? null,
-    headers: { authorization: `Bearer ${token}` },
+    channels: [
+      {
+        id: "C001",
+        name: "general",
+        isPrivate: false,
+        isMember: true,
+        channelUrl: `https://slack.com/app_redirect?team=${teamId}&channel=C001`,
+      },
+    ],
+    nextCursor: null,
   };
 }
 
-function allowSharedConversation(conversationId: string): void {
+interface SlackListCall {
+  readonly authorization: string | null;
+  readonly user: string | null;
+}
+
+function mockSharedGeneralChannel(): SlackListCall[] {
+  const calls: SlackListCall[] = [];
   server.use(
-    http.get(SLACK_USER_CONVERSATIONS_URL, () => {
+    http.get("https://slack.com/api/users.conversations", ({ request }) => {
+      calls.push({
+        authorization: request.headers.get("authorization"),
+        user: new URL(request.url).searchParams.get("user"),
+      });
       return HttpResponse.json({
         ok: true,
-        channels: [{ id: conversationId }],
+        channels: [{ id: "C001", name: "general", is_private: false }],
         response_metadata: { next_cursor: "" },
       });
     }),
   );
+  return calls;
+}
+
+async function installConnectedOrg() {
+  const actor = bdd.user({ orgRole: "org:admin" });
+  const orgId = actor.orgId;
+  if (!orgId) {
+    throw new Error("Expected admin actor to have an orgId");
+  }
+  const slackUserId = uniqueSlackUserId();
+  const { teamId } = await integrations.installSlackWorkspace(actor, {
+    installerSlackUserId: slackUserId,
+  });
+  return {
+    actor,
+    orgId,
+    slackWorkspaceId: teamId,
+    slackUserId,
+    botToken: `xoxb-bdd-${teamId}`,
+  };
 }
 
 describe("Slack bot channel discovery and history", () => {
-  const track = createFixtureTracker<{
-    readonly teamId: string;
-    readonly installerSlackUserId: string;
-  }>((installation) => {
-    return slackOrgs.uninstallWorkspace(installation.teamId);
+  it("integrations-slack-read-001 (1/4) rejects a user whose organization has no Slack installation", async () => {
+    const uninstalledUser = bdd.user({ orgRole: "org:admin" });
+    const slackCalls = mockSharedGeneralChannel();
+
+    const uninstalledRead = await accept(
+      slackRead.listChannels({
+        headers: signIn(uninstalledUser),
+        query: { limit: 10 },
+      }),
+      [404],
+    );
+    expect(uninstalledRead.body).toStrictEqual(NOT_CONNECTED_ERROR);
+    expect(slackCalls).toStrictEqual([]);
   });
 
-  it("keeps successive read requests scoped to their user and organization", async () => {
-    const integrations = createBddIntegrationApi(context);
-    const mocks = createRouteMocks(context);
-    const first = integrations.user();
-    const second = integrations.user({
-      orgId: first.orgId,
-      orgRole: "org:member",
-    });
-    const other = integrations.user();
-    const uninstalled = integrations.user();
+  it("integrations-slack-read-001 (2/4) returns workspace A channels for admin A and rejects an unconnected member", async () => {
     integrations.configureSlackAppMocks();
-    const installationA = await track(
-      integrations.installSlackWorkspace(first),
-    );
-    const installationB = await track(
-      integrations.installSlackWorkspace(other),
-    );
-    const client = setupApp({ context, routes: integrationsSlackReadRoutes })(
-      integrationsSlackReadContract,
-    );
-    const request = {
-      headers: { authorization: "Bearer clerk-session" },
-      query: { limit: 10 },
-    };
-    const requests: { token: string | null; user: string | null }[] = [];
-    server.use(
-      http.get(SLACK_USER_CONVERSATIONS_URL, ({ request }) => {
-        requests.push({
-          token: request.headers.get("authorization"),
-          user: new URL(request.url).searchParams.get("user"),
-        });
-        return HttpResponse.json({
-          ok: true,
-          channels: [{ id: "C001", name: "general", is_private: false }],
-          response_metadata: { next_cursor: "" },
-        });
-      }),
-    );
-    const bodyA = {
-      channels: [
-        {
-          id: "C001",
-          name: "general",
-          isPrivate: false,
-          isMember: true,
-          channelUrl: `https://slack.com/app_redirect?team=${installationA.teamId}&channel=C001`,
-        },
-      ],
-      nextCursor: null,
-    };
-    mocks.clerk.session(first.userId, first.orgId, first.orgRole);
-    expect(
-      (await accept(client.listChannels(request), [200])).body,
-    ).toStrictEqual(bodyA);
-    mocks.clerk.session(second.userId, second.orgId, second.orgRole);
-    const disconnected = await accept(client.listChannels(request), [404]);
-    expect(disconnected.body).toStrictEqual({
-      error: {
-        code: "NOT_FOUND",
-        message:
-          "Your Slack account is not connected to this organization. Connect it from Settings > Slack before reading conversations.",
-      },
-    });
-    expect(requests).toHaveLength(1);
+    const orgA = await installConnectedOrg();
+    const memberA = bdd.user({ orgId: orgA.orgId, orgRole: "org:member" });
+    await flushWaitUntilForTest();
+    const slackCalls = mockSharedGeneralChannel();
 
-    const secondSlackUserId = uniqueSlackUserId();
-    await integrations.connectSlackUser(second, {
-      workspaceId: installationA.teamId,
-      slackUserId: secondSlackUserId,
-    });
-    mocks.clerk.session(second.userId, second.orgId, second.orgRole);
-    expect(
-      (await accept(client.listChannels(request), [200])).body,
-    ).toStrictEqual(bodyA);
-    mocks.clerk.session(other.userId, other.orgId, other.orgRole);
-    expect(
-      (await accept(client.listChannels(request), [200])).body,
-    ).toStrictEqual({
-      channels: [
-        {
-          id: "C001",
-          name: "general",
-          isPrivate: false,
-          isMember: true,
-          channelUrl: `https://slack.com/app_redirect?team=${installationB.teamId}&channel=C001`,
-        },
-      ],
-      nextCursor: null,
-    });
-    mocks.clerk.session(
-      uninstalled.userId,
-      uninstalled.orgId,
-      uninstalled.orgRole,
+    const adminAFirst = await accept(
+      slackRead.listChannels({
+        headers: signIn(orgA.actor),
+        query: { limit: 10 },
+      }),
+      [200],
     );
-    const missing = await accept(client.listChannels(request), [404]);
-    expect(missing.body).toStrictEqual({
-      error: {
-        code: "NOT_FOUND",
-        message:
-          "Your Slack account is not connected to this organization. Connect it from Settings > Slack before reading conversations.",
-      },
-    });
-    expect(requests).toHaveLength(3);
-    mocks.clerk.session(first.userId, first.orgId, first.orgRole);
-    expect(
-      (await accept(client.listChannels(request), [200])).body,
-    ).toStrictEqual(bodyA);
-    expect(requests).toStrictEqual([
-      {
-        token: `Bearer xoxb-bdd-${installationA.teamId}`,
-        user: installationA.installerSlackUserId,
-      },
-      {
-        token: `Bearer xoxb-bdd-${installationA.teamId}`,
-        user: secondSlackUserId,
-      },
-      {
-        token: `Bearer xoxb-bdd-${installationB.teamId}`,
-        user: installationB.installerSlackUserId,
-      },
-      {
-        token: `Bearer xoxb-bdd-${installationA.teamId}`,
-        user: installationA.installerSlackUserId,
-      },
+    expect(adminAFirst.body).toStrictEqual(
+      expectedGeneralChannel(orgA.slackWorkspaceId),
+    );
+
+    const unconnectedMember = await accept(
+      slackRead.listChannels({
+        headers: signIn(memberA),
+        query: { limit: 10 },
+      }),
+      [404],
+    );
+    expect(unconnectedMember.body).toStrictEqual(NOT_CONNECTED_ERROR);
+
+    expect(slackCalls).toStrictEqual([
+      { authorization: `Bearer ${orgA.botToken}`, user: orgA.slackUserId },
     ]);
   });
 
-  it("lists only channels shared by the connected Slack user and bot", async () => {
-    const { client, headers, botToken, installation, slackUserId } =
-      await fixture();
-    let requestedToken: string | null = null;
-    let query: URLSearchParams | undefined;
-    server.use(
-      http.get(SLACK_USER_CONVERSATIONS_URL, ({ request }) => {
-        requestedToken = request.headers.get("authorization");
-        query = new URL(request.url).searchParams;
-        return HttpResponse.json({
-          ok: true,
-          channels: [
-            { id: "C123", name: "general", is_private: false },
-            { id: "C456", name: "private", is_private: true },
-          ],
-          response_metadata: { next_cursor: "next-page" },
-        });
-      }),
-    );
-    const response = await accept(
-      client.listChannels({
-        headers,
-        query: { limit: 20, cursor: "previous-page" },
+  it("integrations-slack-read-001 (3/4) scopes workspace A reads for the newly connected member and back to admin A", async () => {
+    integrations.configureSlackAppMocks();
+    const orgA = await installConnectedOrg();
+    const memberA = bdd.user({ orgId: orgA.orgId, orgRole: "org:member" });
+    const memberSlackUserId = uniqueSlackUserId();
+    await integrations.connectSlackUser(memberA, {
+      workspaceId: orgA.slackWorkspaceId,
+      slackUserId: memberSlackUserId,
+    });
+    await flushWaitUntilForTest();
+    const slackCalls = mockSharedGeneralChannel();
+
+    const connectedMember = await accept(
+      slackRead.listChannels({
+        headers: signIn(memberA),
+        query: { limit: 10 },
       }),
       [200],
     );
-    expect(requestedToken).toBe(`Bearer ${botToken}`);
-    expect(Object.fromEntries(query ?? [])).toStrictEqual({
-      limit: "20",
-      cursor: "previous-page",
-      user: slackUserId,
-      types: "public_channel,private_channel",
-      exclude_archived: "true",
-    });
-    expect(response.body).toStrictEqual({
-      channels: [
-        {
-          id: "C123",
-          name: "general",
-          isPrivate: false,
-          isMember: true,
-          channelUrl: `https://slack.com/app_redirect?team=${installation?.slackWorkspaceId}&channel=C123`,
-        },
-        {
-          id: "C456",
-          name: "private",
-          isPrivate: true,
-          isMember: true,
-          channelUrl: `https://slack.com/app_redirect?team=${installation?.slackWorkspaceId}&channel=C456`,
-        },
-      ],
-      nextCursor: "next-page",
-    });
-  });
-
-  it("preserves continuation for an empty channel page", async () => {
-    const { client, headers } = await fixture();
-    server.use(
-      http.get(SLACK_USER_CONVERSATIONS_URL, () => {
-        return HttpResponse.json({
-          ok: true,
-          channels: [],
-          response_metadata: { next_cursor: "more-channels" },
-        });
-      }),
-    );
-    const response = await accept(
-      client.listChannels({ headers, query: { limit: 10 } }),
-      [200],
-    );
-    expect(response.body).toStrictEqual({
-      channels: [],
-      nextCursor: "more-channels",
-    });
-  });
-
-  it.each([
-    ["C123", "public_channel,private_channel"],
-    ["G123", "public_channel,private_channel"],
-    ["D123", "im"],
-  ])(
-    "authorizes shared conversation %s before reading one history page",
-    async (channel, expectedTypes) => {
-      const { client, headers, botToken, slackUserId } = await fixture();
-      let membershipQuery: URLSearchParams | undefined;
-      let received: URLSearchParams | undefined;
-      let requestedToken: string | null = null;
-      const messages = [
-        {
-          type: "message",
-          ts: "1750000001.000001",
-          user: "U123",
-          text: "A report",
-          thread_ts: "1750000001.000001",
-          reply_count: 2,
-          files: [{ id: "F123", name: "report.pdf" }],
-        },
-      ];
-      server.use(
-        http.get(SLACK_USER_CONVERSATIONS_URL, ({ request }) => {
-          membershipQuery = new URL(request.url).searchParams;
-          return HttpResponse.json({
-            ok: true,
-            channels: [{ id: channel }],
-            response_metadata: { next_cursor: "" },
-          });
-        }),
-        http.get(SLACK_HISTORY_URL, ({ request }) => {
-          received = new URL(request.url).searchParams;
-          requestedToken = request.headers.get("authorization");
-          return HttpResponse.json({
-            ok: true,
-            messages,
-            has_more: true,
-            response_metadata: { next_cursor: "next+page=" },
-          });
-        }),
-      );
-      const response = await accept(
-        client.history({
-          headers,
-          query: {
-            channel,
-            limit: 15,
-            oldest: "1750000000.000001",
-            latest: "1750100000.000001",
-            cursor: "previous+page=",
-          },
-        }),
-        [200],
-      );
-      expect(Object.fromEntries(membershipQuery ?? [])).toStrictEqual({
-        user: slackUserId,
-        types: expectedTypes,
-        limit: "200",
-      });
-      expect(Object.fromEntries(received ?? [])).toStrictEqual({
-        channel,
-        limit: "15",
-        oldest: "1750000000.000001",
-        latest: "1750100000.000001",
-        cursor: "previous+page=",
-      });
-      expect(requestedToken).toBe(`Bearer ${botToken}`);
-      expect(response.body).toMatchObject({
-        channel,
-        messages,
-        hasMore: true,
-        nextCursor: "next+page=",
-      });
-    },
-  );
-
-  it("continues shared-membership pagination before reading history", async () => {
-    const { client, headers } = await fixture();
-    const membershipCursors: (string | null)[] = [];
-    server.use(
-      http.get(SLACK_USER_CONVERSATIONS_URL, ({ request }) => {
-        const cursor = new URL(request.url).searchParams.get("cursor");
-        membershipCursors.push(cursor);
-        return cursor
-          ? HttpResponse.json({
-              ok: true,
-              channels: [{ id: "CTARGET" }],
-              response_metadata: { next_cursor: "" },
-            })
-          : HttpResponse.json({
-              ok: true,
-              channels: [{ id: "COTHER" }],
-              response_metadata: { next_cursor: "membership-page-2" },
-            });
-      }),
-      http.get(SLACK_HISTORY_URL, () => {
-        return HttpResponse.json({ ok: true, messages: [] });
-      }),
+    expect(connectedMember.body).toStrictEqual(
+      expectedGeneralChannel(orgA.slackWorkspaceId),
     );
 
-    const response = await accept(
-      client.history({ headers, query: { channel: "CTARGET", limit: 15 } }),
-      [200],
-    );
-
-    expect(response.body.messages).toStrictEqual([]);
-    expect(membershipCursors).toStrictEqual([null, "membership-page-2"]);
-  });
-
-  it("does not read a bot DM that is not shared with the connected user", async () => {
-    const { client, headers } = await fixture();
-    let historyRequested = false;
-    server.use(
-      http.get(SLACK_USER_CONVERSATIONS_URL, () => {
-        return HttpResponse.json({
-          ok: true,
-          channels: [],
-          response_metadata: { next_cursor: "" },
-        });
-      }),
-      http.get(SLACK_HISTORY_URL, () => {
-        historyRequested = true;
-        return HttpResponse.json({ ok: true, messages: [] });
-      }),
-    );
-
-    const response = await accept(
-      client.history({ headers, query: { channel: "DOTHER", limit: 15 } }),
-      [404],
-    );
-
-    expect(response.body.error).toStrictEqual({
-      code: "NOT_FOUND",
-      message:
-        "This Slack conversation does not exist or is not shared by your connected Slack account and Okou.",
-    });
-    expect(historyRequested).toBeFalsy();
-  });
-
-  it("returns an actionable channel URL if the bot leaves after authorization", async () => {
-    const { client, headers, installation } = await fixture();
-    allowSharedConversation("C123");
-    server.use(
-      http.get("https://slack.com/api/conversations.history", () => {
-        return HttpResponse.json({ ok: false, error: "not_in_channel" });
-      }),
-    );
-    const response = await accept(
-      client.history({ headers, query: { channel: "C123", limit: 15 } }),
-      [403],
-    );
-    expect(response.body.error.code).toBe("BOT_NOT_IN_CHANNEL");
-    expect(response.body.error.channelUrl).toBe(
-      `https://slack.com/app_redirect?team=${installation?.slackWorkspaceId}&channel=C123`,
-    );
-    expect(response.body.error.message).toContain("Agents & apps");
-    expect(response.body.error.message).toContain("then retry");
-  });
-
-  it("does not claim an inaccessible channel is known to exist", async () => {
-    const { client, headers } = await fixture();
-    allowSharedConversation("C123");
-    server.use(
-      http.get("https://slack.com/api/conversations.history", () => {
-        return HttpResponse.json({ ok: false, error: "channel_not_found" });
-      }),
-    );
-    const response = await accept(
-      client.history({ headers, query: { channel: "C123", limit: 15 } }),
-      [404],
-    );
-    expect(response.body.error.code).toBe("SLACK_CHANNEL_NOT_FOUND");
-    expect(response.body.error.message).toContain(
-      "does not exist or is not accessible",
-    );
-  });
-
-  it.each(["not_in_channel", "channel_not_found"])(
-    "does not suggest channel invitations for inaccessible DMs (%s)",
-    async (error) => {
-      const { client, headers } = await fixture();
-      allowSharedConversation("D123");
-      server.use(
-        http.get("https://slack.com/api/conversations.history", () => {
-          return HttpResponse.json({ ok: false, error });
-        }),
-      );
-      const response = await accept(
-        client.history({ headers, query: { channel: "D123", limit: 15 } }),
-        [404],
-      );
-      expect(response.body.error.message).toContain(
-        "Only direct messages involving Okou",
-      );
-      expect(response.body.error.message).not.toContain("Agents & apps");
-      expect(response.body.error.channelUrl).toBeUndefined();
-    },
-  );
-
-  it("reports a missing scope while checking shared DM membership", async () => {
-    const { client, headers } = await fixture();
-    server.use(
-      http.get(SLACK_USER_CONVERSATIONS_URL, () => {
-        return HttpResponse.json({
-          ok: false,
-          error: "missing_scope",
-          needed: "im:read",
-        });
-      }),
-    );
-    const response = await accept(
-      client.history({ headers, query: { channel: "D123", limit: 15 } }),
-      [403],
-    );
-    expect(response.body.error.code).toBe("SLACK_MISSING_SCOPE");
-    expect(response.body.error.message).toContain(
-      "update the Okou app installation",
-    );
-  });
-
-  it("propagates Slack's retry duration instead of retrying in the request", async () => {
-    const { client, headers } = await fixture();
-    allowSharedConversation("C123");
-    server.use(
-      http.get("https://slack.com/api/conversations.history", () => {
-        return new HttpResponse(null, {
-          status: 429,
-          headers: { "Retry-After": "60" },
-        });
-      }),
-    );
-    const response = await accept(
-      client.history({ headers, query: { channel: "C123", limit: 15 } }),
-      [429],
-    );
-    expect(response.headers.get("Retry-After")).toBe("60");
-    expect(response.body.error).toMatchObject({
-      code: "SLACK_RATE_LIMITED",
-      retryAfterSeconds: 60,
-    });
-  });
-
-  it("does not reuse a Slack installation from another organization", async () => {
-    await fixture();
-    const { client, headers } = await fixture({ installed: false });
-    const response = await accept(
-      client.history({ headers, query: { channel: "C123", limit: 15 } }),
-      [404],
-    );
-    expect(response.body.error.message).toContain(
-      "Your Slack account is not connected to this organization",
-    );
-  });
-});
-
-describe("Slack bot thread replies", () => {
-  it.each([
-    ["C123", "public_channel,private_channel"],
-    ["G123", "public_channel,private_channel"],
-    ["D123", "im"],
-  ])(
-    "reads one page in shared conversation %s using the organization bot",
-    async (channel, types) => {
-      const { client, headers, botToken, slackUserId } = await fixture();
-      const parent = {
-        type: "message",
-        ts: THREAD_TS,
-        text: "Project update",
-        reply_count: 2,
-        reply_users: ["U123", "B123"],
-      };
-      const reply = {
-        type: "message",
-        ts: "1750000001.000001",
-        user: "U123",
-        text: "Here is the report",
-        thread_ts: THREAD_TS,
-        blocks: [
-          {
-            type: "section",
-            text: { type: "mrkdwn", text: "Here is the report" },
-          },
-        ],
-        files: [{ id: "F123", name: "report.pdf" }],
-      };
-      let membershipQuery: URLSearchParams | undefined;
-      const requests: {
-        token: string | null;
-        query: Record<string, string>;
-      }[] = [];
-      server.use(
-        http.get(SLACK_USER_CONVERSATIONS_URL, ({ request }) => {
-          membershipQuery = new URL(request.url).searchParams;
-          return HttpResponse.json({ ok: true, channels: [{ id: channel }] });
-        }),
-        http.get(SLACK_REPLIES_URL, ({ request }) => {
-          const query = new URL(request.url).searchParams;
-          requests.push({
-            token: request.headers.get("authorization"),
-            query: Object.fromEntries(query),
-          });
-          return HttpResponse.json(
-            query.has("cursor")
-              ? {
-                  ok: true,
-                  messages: [reply],
-                  has_more: false,
-                  response_metadata: { next_cursor: "" },
-                }
-              : {
-                  ok: true,
-                  messages: [parent],
-                  has_more: false,
-                  response_metadata: { next_cursor: "next+page=" },
-                },
-          );
-        }),
-      );
-      const first = await accept(
-        client.replies({
-          headers,
-          query: { channel, thread: THREAD_TS, limit: 1 },
-        }),
-        [200],
-      );
-      expect(first.body).toMatchObject({
-        channel,
-        thread: THREAD_TS,
-        messages: [parent],
-        hasMore: true,
-        nextCursor: "next+page=",
-      });
-      const second = await accept(
-        client.replies({
-          headers,
-          query: {
-            channel,
-            thread: THREAD_TS,
-            limit: 1,
-            cursor: first.body.nextCursor ?? undefined,
-          },
-        }),
-        [200],
-      );
-      expect(second.body).toMatchObject({
-        channel,
-        thread: THREAD_TS,
-        messages: [reply],
-        hasMore: false,
-        nextCursor: null,
-      });
-      expect(Object.fromEntries(membershipQuery ?? [])).toStrictEqual({
-        user: slackUserId,
-        types,
-        limit: "200",
-      });
-      expect(requests).toStrictEqual([
-        {
-          token: `Bearer ${botToken}`,
-          query: { channel, ts: THREAD_TS, limit: "1" },
-        },
-        {
-          token: `Bearer ${botToken}`,
-          query: { channel, ts: THREAD_TS, limit: "1", cursor: "next+page=" },
-        },
-      ]);
-    },
-  );
-
-  it("keeps time filters and Slack's has_more when a filtered page has no cursor", async () => {
-    const { client, headers } = await fixture();
-    allowSharedConversation("C123");
-    let received: URLSearchParams | undefined;
-    server.use(
-      http.get(SLACK_REPLIES_URL, ({ request }) => {
-        received = new URL(request.url).searchParams;
-        return HttpResponse.json({ ok: true, messages: [], has_more: true });
-      }),
-    );
-    const response = await accept(
-      client.replies({
-        headers,
-        query: {
-          channel: "C123",
-          thread: THREAD_TS,
-          limit: 15,
-          oldest: "1750000001.000001",
-          latest: "1750100000.000001",
-          cursor: "previous-page",
-        },
+    const adminAAgain = await accept(
+      slackRead.listChannels({
+        headers: signIn(orgA.actor),
+        query: { limit: 10 },
       }),
       [200],
     );
-    expect(Object.fromEntries(received ?? [])).toStrictEqual({
-      channel: "C123",
-      ts: THREAD_TS,
-      limit: "15",
-      oldest: "1750000001.000001",
-      latest: "1750100000.000001",
-      cursor: "previous-page",
-    });
-    expect(response.body).toMatchObject({
-      messages: [],
-      hasMore: true,
-      nextCursor: null,
-    });
+    expect(adminAAgain.body).toStrictEqual(
+      expectedGeneralChannel(orgA.slackWorkspaceId),
+    );
+
+    expect(slackCalls).toStrictEqual([
+      { authorization: `Bearer ${orgA.botToken}`, user: memberSlackUserId },
+      { authorization: `Bearer ${orgA.botToken}`, user: orgA.slackUserId },
+    ]);
   });
 
-  it("returns only the parent for a message with no replies", async () => {
-    const { client, headers } = await fixture();
-    allowSharedConversation("C123");
-    const parent = { type: "message", ts: THREAD_TS, text: "Project update" };
-    server.use(
-      http.get(SLACK_REPLIES_URL, () => {
-        return HttpResponse.json({ ok: true, messages: [parent] });
-      }),
-    );
-    const response = await accept(
-      client.replies({
-        headers,
-        query: { channel: "C123", thread: THREAD_TS, limit: 15 },
+  it("integrations-slack-read-001 (4/4) isolates successive reads between workspace A and workspace B", async () => {
+    integrations.configureSlackAppMocks();
+    const orgA = await installConnectedOrg();
+    const orgB = await installConnectedOrg();
+    await flushWaitUntilForTest();
+    const slackCalls = mockSharedGeneralChannel();
+
+    const adminAFirst = await accept(
+      slackRead.listChannels({
+        headers: signIn(orgA.actor),
+        query: { limit: 10 },
       }),
       [200],
     );
-    expect(response.body).toMatchObject({
-      messages: [parent],
-      hasMore: false,
-      nextCursor: null,
-    });
-  });
-
-  it.each(["COTHER", "DOTHER", "GMPIM"])(
-    "does not expose a thread in an unshared channel, another user's DM or group DM (%s)",
-    async (channel) => {
-      const { client, headers, slackUserId } = await fixture();
-      let repliesRequested = false;
-      const membershipCursors: (string | null)[] = [];
-      server.use(
-        http.get(SLACK_USER_CONVERSATIONS_URL, ({ request }) => {
-          const query = new URL(request.url).searchParams;
-          expect(query.get("user")).toBe(slackUserId);
-          expect(query.get("types")).toBe(
-            channel.startsWith("D") ? "im" : "public_channel,private_channel",
-          );
-          membershipCursors.push(query.get("cursor"));
-          return HttpResponse.json({
-            ok: true,
-            channels: [{ id: "CSHARED" }],
-            response_metadata: {
-              next_cursor: query.has("cursor") ? "" : "page-2",
-            },
-          });
-        }),
-        http.get(SLACK_REPLIES_URL, () => {
-          repliesRequested = true;
-          return HttpResponse.json({ ok: true, messages: [] });
-        }),
-      );
-      const response = await accept(
-        client.replies({
-          headers,
-          query: { channel, thread: THREAD_TS, limit: 15 },
-        }),
-        [404],
-      );
-      expect(response.body.error.message).toContain(
-        "does not exist or is not shared",
-      );
-      expect(repliesRequested).toBeFalsy();
-      expect(membershipCursors).toStrictEqual([null, "page-2"]);
-    },
-  );
-
-  it.each([
-    {
-      options: { installed: false },
-      status: 404,
-      message: "Your Slack account is not connected to this organization",
-    },
-    {
-      options: { connected: false },
-      status: 404,
-      message: "Slack account is not connected",
-    },
-  ] as const)(
-    "enforces the read boundary: $message",
-    async ({ options, status, message }) => {
-      await fixture();
-      const { client, headers } = await fixture(options);
-      const response = await accept(
-        client.replies({
-          headers,
-          query: { channel: "C123", thread: THREAD_TS, limit: 15 },
-        }),
-        [status],
-      );
-      expect(response.body.error.message).toContain(message);
-    },
-  );
-
-  it.each([{ oldest: "20", latest: "10" }])(
-    "rejects invalid reply queries before reading Slack: %j",
-    async (query) => {
-      const { client, headers } = await fixture();
-      const response = await accept(
-        client.replies({
-          headers,
-          query: { channel: "C123", thread: THREAD_TS, limit: 15, ...query },
-        }),
-        [400],
-      );
-      expect(response.body.error.code).toBe("BAD_REQUEST");
-    },
-  );
-
-  it.each([
-    ["thread_not_found", 404, "SLACK_THREAD_NOT_FOUND"],
-    ["invalid_ts", 400, "BAD_REQUEST"],
-    ["invalid_timestamp", 400, "BAD_REQUEST"],
-    ["invalid_cursor", 400, "BAD_REQUEST"],
-    ["invalid_ts_oldest", 400, "BAD_REQUEST"],
-    ["invalid_ts_latest", 400, "BAD_REQUEST"],
-    ["missing_scope", 403, "SLACK_MISSING_SCOPE"],
-    ["not_in_channel", 403, "BOT_NOT_IN_CHANNEL"],
-    ["channel_not_found", 404, "SLACK_CHANNEL_NOT_FOUND"],
-    ["no_permission", 403, "FORBIDDEN"],
-    ["method_not_supported_for_channel_type", 400, "BAD_REQUEST"],
-    ["service_unavailable", 502, "SLACK_ERROR"],
-  ] as const)(
-    "reports Slack %s without misclassifying it as OAuth authorization",
-    async (error, status, code) => {
-      const { client, headers } = await fixture();
-      allowSharedConversation("C123");
-      server.use(
-        http.get(SLACK_REPLIES_URL, () => {
-          return HttpResponse.json({ ok: false, error });
-        }),
-      );
-      const response = await accept(
-        client.replies({
-          headers,
-          query: { channel: "C123", thread: THREAD_TS, limit: 15 },
-        }),
-        [status],
-      );
-      expect(response.body.error.code).toBe(code);
-    },
-  );
-
-  it("preserves Retry-After without retrying the thread read", async () => {
-    const { client, headers } = await fixture();
-    allowSharedConversation("C123");
-    let requests = 0;
-    server.use(
-      http.get(SLACK_REPLIES_URL, () => {
-        requests++;
-        return new HttpResponse(null, {
-          status: 429,
-          headers: { "Retry-After": "60" },
-        });
-      }),
+    expect(adminAFirst.body).toStrictEqual(
+      expectedGeneralChannel(orgA.slackWorkspaceId),
     );
-    const response = await accept(
-      client.replies({
-        headers,
-        query: { channel: "C123", thread: THREAD_TS, limit: 15 },
+
+    const adminBRead = await accept(
+      slackRead.listChannels({
+        headers: signIn(orgB.actor),
+        query: { limit: 10 },
       }),
-      [429],
+      [200],
     );
-    expect(response.headers.get("Retry-After")).toBe("60");
-    expect(response.body.error).toMatchObject({
-      code: "SLACK_RATE_LIMITED",
-      retryAfterSeconds: 60,
-    });
-    expect(requests).toBe(1);
+    expect(adminBRead.body).toStrictEqual(
+      expectedGeneralChannel(orgB.slackWorkspaceId),
+    );
+
+    const adminAAgain = await accept(
+      slackRead.listChannels({
+        headers: signIn(orgA.actor),
+        query: { limit: 10 },
+      }),
+      [200],
+    );
+    expect(adminAAgain.body).toStrictEqual(
+      expectedGeneralChannel(orgA.slackWorkspaceId),
+    );
+
+    expect(slackCalls).toStrictEqual([
+      { authorization: `Bearer ${orgA.botToken}`, user: orgA.slackUserId },
+      { authorization: `Bearer ${orgB.botToken}`, user: orgB.slackUserId },
+      { authorization: `Bearer ${orgA.botToken}`, user: orgA.slackUserId },
+    ]);
   });
 });

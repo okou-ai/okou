@@ -1,128 +1,115 @@
 import { randomUUID } from "node:crypto";
-import { describe, expect, it } from "vitest";
-import { chatThreadsContract } from "@okouai/api-contracts/contracts/chat-threads";
+
 import { modelCatalogContract } from "@okouai/api-contracts/contracts/model-catalog";
-import { runModelsMainContract } from "@okouai/api-contracts/contracts/run-models";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { describe, expect, it } from "vitest";
+
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { createUniqueStaffOrgIdFixture } from "../../../test-fixtures/staff-org";
-import { chatThreadCreateRoutes } from "../chat-threads-create";
+import { flushWaitUntilForTest } from "../../context/wait-until";
 import { modelCatalogRoutes } from "../model-catalog";
-import { runModelsRoutes } from "../run-models";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
+import { countPublishedTo } from "./helpers/realtime-publications";
 import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
-const clerk = createRouteMocks(context).clerk;
-const headers = Object.freeze({ authorization: "Bearer clerk-session" });
-const key = FeatureSwitchKey.GeminiAntigravity;
-const models: readonly string[] = Object.freeze([
-  "gemini-4-neon",
-  "gemini-4-carbon",
-  "gemini-4-hydrogen",
-]);
+// The staff organization identity only selects the production staff gate;
+// every case uses its own members inside it.
+const staffOrgId = createUniqueStaffOrgIdFixture();
+const PILOT_EFFORTS = {
+  "gemini-4-neon": ["low", "medium", "high", "xhigh"],
+  "gemini-4-carbon": ["low", "medium", "high"],
+  "gemini-4-hydrogen": ["low", "medium", "high", "xhigh"],
+} as const;
+const PILOT_MODELS = Object.keys(PILOT_EFFORTS);
 
-async function pilotCatalog() {
-  const client = setupApp({ context, routes: modelCatalogRoutes })(
-    modelCatalogContract,
+interface Member {
+  readonly userId: string;
+  readonly orgId: string;
+}
+
+async function readCatalog(member: Member) {
+  createRouteMocks(context).clerk.session(member.userId, member.orgId);
+  const response = await accept(
+    setupApp({ context, routes: modelCatalogRoutes })(modelCatalogContract).get(
+      { headers: { authorization: "Bearer clerk-session" } },
+    ),
+    [200],
   );
-  const { body } = await accept(client.get({ headers }), [200]);
-  return {
-    models: body.models.filter((entry) => {
-      return models.includes(entry.model);
+  return response.body;
+}
+
+async function pilotModelsSeenBy(member: Member) {
+  const catalog = await readCatalog(member);
+  return [
+    ...catalog.models.map((row) => {
+      return row.model;
     }),
-    routes: body.routes.filter((route) => {
-      return models.includes(route.model);
+    ...catalog.routes.map((route) => {
+      return route.model;
     }),
-  };
+  ].filter((model) => {
+    return PILOT_MODELS.includes(model);
+  });
 }
 
 describe("staff Antigravity model catalog", () => {
-  it("shows the three models and their effort options only to the opted-in member", async () => {
-    const staff = {
-      orgId: createUniqueStaffOrgIdFixture(),
-      userId: `user_${randomUUID()}`,
+  it("model-catalog-antigravity-001 shows the three pilot models only to the opted-in staff member", async () => {
+    const member = { userId: `user_${randomUUID()}`, orgId: staffOrgId };
+    const peer = { userId: `user_${randomUUID()}`, orgId: staffOrgId };
+    const outsideStaff = {
+      userId: member.userId,
+      orgId: `org_${randomUUID()}`,
     };
-    const hidden = { models: [], routes: [] };
-    clerk.session(staff.userId, staff.orgId, "org:member");
-    await expect(pilotCatalog()).resolves.toStrictEqual(hidden);
-    await updateFeatureSwitchesForUser(context, staff, { [key]: true });
-    expect(context.mocks.ably.channelGet).toHaveBeenCalledWith(
-      `user:${staff.userId}`,
-    );
+    await expect(pilotModelsSeenBy(member)).resolves.toStrictEqual([]);
+
+    await updateFeatureSwitchesForUser(context, member, {
+      [FeatureSwitchKey.GeminiAntigravity]: true,
+    });
+    await flushWaitUntilForTest();
+
+    expect(
+      countPublishedTo(context.mocks, {
+        channel: `user:${member.userId}`,
+        topic: "runModelsChanged",
+      }),
+    ).toBe(1);
     expect(context.mocks.ably.publish).toHaveBeenCalledWith(
       "runModelsChanged",
       null,
     );
-    const pilot = await pilotCatalog();
+    await expect(pilotModelsSeenBy(peer)).resolves.toStrictEqual([]);
+    await expect(pilotModelsSeenBy(outsideStaff)).resolves.toStrictEqual([]);
+
+    const catalog = await readCatalog(member);
     expect(
-      pilot.models.map((row) => {
-        return row.model;
-      }),
-    ).toStrictEqual(models);
-    expect(pilot.routes).toHaveLength(3);
-    for (const model of models) {
-      expect(pilot.routes).toContainEqual(
+      catalog.models
+        .filter((row) => {
+          return PILOT_MODELS.includes(row.model);
+        })
+        .map((row) => {
+          return row.displayName;
+        }),
+    ).toStrictEqual(["Gemini 4 Neon", "Gemini 4 Carbon", "Gemini 4 Hydrogen"]);
+    for (const [model, efforts] of Object.entries(PILOT_EFFORTS)) {
+      const routes = catalog.routes.filter((route) => {
+        return route.model === model;
+      });
+      // Current production (#50982) enables the routes for opted-in staff.
+      expect(routes).toStrictEqual([
         expect.objectContaining({
-          model,
-          upstreamModel: model,
           providerType: "antigravity",
           subscriptionType: "antigravity",
-          concreteProviderType: "antigravity",
+          upstreamModel: model,
           enabled: true,
-          defaultEffort: "medium",
-          efforts:
-            model === "gemini-4-carbon"
-              ? ["low", "medium", "high"]
-              : ["low", "medium", "high", "xhigh"],
           serviceTiers: [],
+          defaultServiceTier: null,
+          efforts,
+          defaultEffort: "medium",
           piRuntimeCapable: false,
         }),
-      );
-    }
-    clerk.session(`user_${randomUUID()}`, staff.orgId, "org:member");
-    await expect(pilotCatalog()).resolves.toStrictEqual(hidden);
-    clerk.session(staff.userId, `org_${randomUUID()}`, "org:admin");
-    await expect(pilotCatalog()).resolves.toStrictEqual(hidden);
-    await updateFeatureSwitchesForUser(context, staff, { [key]: false });
-    await expect(pilotCatalog()).resolves.toStrictEqual(hidden);
-  });
-
-  it("keeps an unbound Google selection out of runnable models and rejects a direct thread request", async () => {
-    const staff = {
-      orgId: createUniqueStaffOrgIdFixture(),
-      userId: `user_${randomUUID()}`,
-    };
-    const threads = setupApp({ context, routes: chatThreadCreateRoutes })(
-      chatThreadsContract,
-    );
-    const available = setupApp({ context, routes: runModelsRoutes })(
-      runModelsMainContract,
-    );
-    clerk.session(staff.userId, staff.orgId, "org:member");
-    const denied = await accept(
-      threads.create({ headers, body: { model: "gemini-4-neon" } }),
-      [400],
-    );
-    expect(denied.body.error.message).toBe(
-      "Select Auto or a model from your connected personal subscription",
-    );
-    await updateFeatureSwitchesForUser(context, staff, { [key]: true });
-    const { body } = await accept(available.list({ headers }), [200]);
-    expect(
-      body.models.map((entry) => {
-        return entry.model;
-      }),
-    ).toStrictEqual(["auto"]);
-    for (const model of models) {
-      const response = await accept(
-        threads.create({ headers, body: { model } }),
-        [400],
-      );
-      expect(response.body.error.message).toBe(
-        "This model requires a connected personal Google AI subscription.",
-      );
+      ]);
     }
   });
 });

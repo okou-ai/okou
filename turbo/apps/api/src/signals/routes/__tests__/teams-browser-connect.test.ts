@@ -1,62 +1,82 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { randomUUID } from "node:crypto";
+import { teamsBrowserConnectContract } from "@okouai/api-contracts/contracts/teams-browser-connect";
+import { createStore } from "ccstate";
+import { describe, expect, it } from "vitest";
 
-import { createAppWithRoutes } from "../../../app-factory-core";
-import { testContext } from "../../../__tests__/test-context";
+import { accept, testContext } from "../../../__tests__/test-context";
+import { setupApp } from "../../../__tests__/test-helpers";
+import { mockEnv } from "../../../lib/env";
 import { teamsBrowserConnectRoutes } from "../teams-browser-connect";
+import { seedOrgMembership$ } from "./helpers/org-membership";
 import { createRouteMocks } from "./helpers/route-test";
-import {
-  setupTeamsConnectTestEnv,
-  teamsConnectFixture,
-} from "./helpers/teams-connect";
 
 const context = testContext();
-const mocks = createRouteMocks(context);
-const CONNECT_PATH = "http://api.test/api/teams/connect";
-const APP_ORIGIN = "https://app.okou.test";
-
-async function requestConnect(
-  url: string,
-  headers: RequestInit["headers"] = {},
-) {
-  return await createAppWithRoutes({
-    signal: context.signal,
-    routes: teamsBrowserConnectRoutes,
-  }).request(url, { headers });
-}
+const memberships = createStore();
 
 describe("GET /api/teams/connect", () => {
-  beforeEach(() => {
-    setupTeamsConnectTestEnv(APP_ORIGIN);
+  it("teams-browser-connect-001 sends a signed-out browser to app sign-in and back to the connect URL", async () => {
+    const appOrigin = "https://app-teams-connect.okou.test";
+    const apiOrigin = "https://api-teams-connect.okou.test";
+    mockEnv("APP_URL", appOrigin);
+    context.mocks.clerk.authenticateRequest.mockResolvedValue({
+      isAuthenticated: false,
+    });
+    const query = {
+      tenantId: `tenant-${randomUUID()}`,
+      teamsUserId: `29:user-${randomUUID()}`,
+    };
+
+    const response = await accept(
+      setupApp({
+        context,
+        routes: teamsBrowserConnectRoutes,
+        baseUrl: apiOrigin,
+      })(teamsBrowserConnectContract).connect({ query }),
+      [307],
+    );
+
+    const location = new URL(response.headers.get("location") ?? "");
+    expect(location.origin).toBe(appOrigin);
+    expect(location.pathname).toBe("/sign-in");
+    expect(location.searchParams.get("redirect_url")).toBe(
+      `${apiOrigin}/api/teams/connect?${new URLSearchParams(query).toString()}`,
+    );
   });
 
-  it("redirects unauthenticated users to app sign-in with redirect_url", async () => {
-    const response = await requestConnect(CONNECT_PATH);
-    expect(response.status).toBe(307);
-    const url = new URL(response.headers.get("location")!);
-    expect(url.origin).toBe(APP_ORIGIN);
-    expect(url.pathname).toBe("/sign-in");
-    expect(url.searchParams.get("redirect_url")).toBe(CONNECT_PATH);
-  });
+  it("teams-browser-connect-002 sends the signed-in member to Microsoft OAuth for their active account", async () => {
+    const apiOrigin = "https://api-teams-connect.okou.test";
+    mockEnv("OKOU_API_BACKEND_URL", apiOrigin);
+    const member = {
+      userId: `user_${randomUUID()}`,
+      orgId: `org_${randomUUID()}`,
+    };
+    await memberships.set(seedOrgMembership$, member, context.signal);
+    createRouteMocks(context).clerk.session(
+      member.userId,
+      member.orgId,
+      "org:member",
+    );
 
-  it("verifies a provider link through Microsoft OAuth for the active account", async () => {
-    const fixture = teamsConnectFixture();
-    mocks.clerk.session(fixture.userId, fixture.orgId, "org:member");
-    const response = await requestConnect(
-      `${CONNECT_PATH}?${new URLSearchParams({
-        tenantId: fixture.teamsTenantId,
-        teamsUserId: fixture.teamsUserId,
-        orgId: "receiving-installation-org",
-      })}`,
-      { authorization: "Bearer clerk-session" },
+    const response = await accept(
+      setupApp({ context, routes: teamsBrowserConnectRoutes })(
+        teamsBrowserConnectContract,
+      ).connect({
+        query: {
+          tenantId: `tenant-${randomUUID()}`,
+          teamsUserId: `29:user-${randomUUID()}`,
+          orgId: `org_${randomUUID()}`,
+        },
+        extraHeaders: { authorization: "Bearer clerk-session" },
+      }),
+      [307],
     );
-    expect(response.status).toBe(307);
-    const url = new URL(response.headers.get("location")!);
-    expect(url.origin + url.pathname).toBe(
-      "https://api.okou.test/api/teams/oauth/connect",
-    );
-    expect(Object.fromEntries(url.searchParams)).toStrictEqual({
-      orgId: fixture.orgId,
-      userId: fixture.userId,
+
+    const location = new URL(response.headers.get("location") ?? "");
+    expect(location.origin).toBe(apiOrigin);
+    expect(location.pathname).toBe("/api/teams/oauth/connect");
+    expect(Object.fromEntries(location.searchParams)).toStrictEqual({
+      orgId: member.orgId,
+      userId: member.userId,
     });
   });
 });

@@ -1,163 +1,190 @@
-import { describe, expect, it } from "vitest";
+import { BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
+import { expect, test } from "vitest";
+
+import { testContext } from "../../__tests__/test-context";
 import {
   renderAgentMorningBriefEmail,
   renderAgentNotificationEmail,
 } from "../agent-notification-email-renderer";
 
-describe("pure agent notification email rendering", () => {
-  it.each([renderAgentNotificationEmail, renderAgentMorningBriefEmail])(
-    "preserves non-default and nested list numbering in either notification purpose",
-    (render) => {
-      const email = render(
-        {
-          subject: "Next steps",
-          text: "## Continue\n3. Third step\n4. Fourth step\n\n## Zero-based\n0. Zero step\n1. First step\n\n## Nested\n1. Outer step\n\n   5. Nested step\n   6. Next nested step",
-          runUrl: "https://app.okou.ai/activities/run-1",
-          manageUrl: "https://app.okou.ai/?settings=preference",
-        },
-        "https://app.okou.ai/unsubscribe",
-      );
-      expect(email.html).toContain('<ol start="3"');
-      expect(email.html).toContain('<ol start="0"');
-      expect(email.html).toContain('<ol start="5"');
-      expect(email.html).not.toContain("<pre");
-      expect(email.text).toContain("3. Third step");
-      expect(email.text).toContain("0. Zero step");
-      expect(email.text).toContain("5. Nested step");
-    },
+testContext();
+
+const RUN_URL = "https://app.okou.ai/threads/thread-1/runs/run-1";
+const UNSUBSCRIBE_URL = "https://app.okou.ai/notifications/unsubscribe/token-1";
+const MANAGE_URL = "https://app.okou.ai/automations/morning-brief";
+
+function renderRegular(text: string, subject = "Agent update") {
+  return renderAgentNotificationEmail(
+    { subject, text, runUrl: RUN_URL },
+    UNSUBSCRIBE_URL,
+  );
+}
+
+test("agent-notification-email-renderer-001 keeps non-default and nested ordered list numbers", () => {
+  const email = renderRegular(
+    [
+      "3. Third step",
+      "4. Fourth step",
+      "",
+      "Next section",
+      "",
+      "0. Zeroth step",
+      "   5. Nested fifth",
+      "   6. Nested sixth",
+    ].join("\n"),
   );
 
-  it("validates entity-decoded links and keeps raw HTML, images and task markers inert", () => {
-    const email = renderAgentNotificationEmail(
-      {
-        subject: "Safe content",
-        text: [
-          "[safe](https&#58;//example.com/?a=1&amp;b=2) [mail](mailto:hello@example.com)",
-          "[script](javascript&#58;alert(1)) [data](data:text/html,test) [relative](/private) [http](http://example.com)",
-          "[control](java&#x09;script:alert(1)) [hostless](https:example.com) [mail-host](mailto://example.com)",
-          "![**<img src=x onerror=alert(1)>** &amp; visible](https://example.com/pixel.png)",
-          '<script>alert(1)</script>\n<a href="https://raw.example.com">raw</a>',
-          "- [x] Completed\n- [ ] Pending",
-          "https://bare.example.com",
-        ].join("\n\n"),
-        runUrl: "https://app.okou.ai/activities/run-1",
-      },
-      "https://app.okou.ai/unsubscribe",
-    );
-    expect(email.html).toContain('href="https://example.com/?a=1&amp;b=2"');
-    expect(email.html).toContain('href="mailto:hello@example.com"');
-    expect(email.text).toContain("script data relative http");
-    expect(email.text).toContain("control hostless mail-host");
-    expect(email.html).not.toMatch(
-      /href="(?:javascript:|data:|http:|\/private|mailto:\/\/)/u,
-    );
-    expect(email.html).not.toContain("<script>");
-    expect(email.html).not.toContain("<img");
-    expect(email.html).not.toContain("<input");
-    expect(email.html).not.toContain("pixel.png");
-    expect(email.html).not.toContain('href="https://raw.example.com"');
-    expect(email.html).not.toContain('href="https://bare.example.com"');
-    expect(email.text).toContain("<img src=x onerror=alert(1)> & visible");
-    expect(email.text).toContain("[x] Completed");
-    expect(email.text).toContain("[ ] Pending");
-  });
+  expect(email.html).toContain('<ol start="3"');
+  expect(email.html).toContain('<ol start="0"');
+  expect(email.html).toContain('<ol start="5"');
+  expect(email.html).not.toContain("<pre");
+  expect(email.text).toContain("3. Third step");
+  expect(email.text).toContain("0. Zeroth step");
+  expect(email.text).toContain("5. Nested fifth");
+});
 
-  it("keeps styled tables, code, emphasis and quotes in the email Markdown subset", () => {
-    const email = renderAgentNotificationEmail(
-      {
-        subject: "Project update",
-        text: [
-          "## Status\n**Ready** and *reviewed*, ~~blocked~~.",
-          "| Task | State |\n| --- | --- |\n| Launch | Ready |",
-          "> Share with the team.",
-          "Use `<tag>&value`.",
-          "```mermaid\ngraph TD; A-->B\n```",
-        ].join("\n\n"),
-        runUrl: "https://app.okou.ai/activities/run-1",
-      },
-      "https://app.okou.ai/unsubscribe",
-    );
-    expect(email.html).toContain('<table role="presentation" width="100%"');
-    expect(email.html).toContain('<thead style="background-color:#faf5f3">');
-    expect(email.html).toContain(
-      '<strong style="font-weight:700">Ready</strong>',
-    );
-    expect(email.html).toContain('<em style="font-style:italic">reviewed</em>');
-    expect(email.html).toContain(
-      '<s style="text-decoration:line-through">blocked</s>',
-    );
-    expect(email.html).toContain("<blockquote style=");
-    expect(email.html).toContain("&lt;tag&gt;&amp;value");
-    expect(email.html).toContain("graph TD; A--&gt;B");
-    expect(email.text).toContain("Launch");
-    expect(email.text).toContain("Share with the team.");
-  });
-
-  it("renders Markdown, preserves safe links, strips tracking images and unsafe anchors, and includes provenance and opt-out", () => {
-    const email = renderAgentNotificationEmail(
-      {
-        subject: "Update <today>",
-        text: "## Today\n**Useful** [link](https://example.com) ![tracker](https://example.com/pixel.png) [unsafe](javascript:alert(1))\n<script>alert(1)</script>",
-        runUrl: "https://app.okou.ai/activities/run-1",
-      },
-      "https://app.okou.ai/unsubscribe?token=test",
-    );
-    expect(email.html).toContain("Update &lt;today&gt;");
-    expect(email.html).toContain('href="https://example.com"');
-    expect(email.html).not.toContain("<script>");
-    expect(email.html).not.toContain('href="javascript:');
-    expect(email.html).not.toContain("pixel.png");
-    expect(email.html).toContain('href="https://app.okou.ai/activities/run-1"');
-    expect(email.html).toContain(
-      'href="https://app.okou.ai/unsubscribe?token=test"',
-    );
-    expect(email.text).toContain("Useful");
-    expect(email.text).toContain("Unsubscribe");
-  });
-
-  it("uses the original Morning Brief rendering, artwork, management and unsubscribe controls", () => {
-    const props = {
-      subject: "Morning Brief",
-      text: "## Today\n**Useful** [link](https://example.com) ![tracker](https://example.com/pixel.png) [unsafe](javascript:alert(1))",
-      runUrl: "https://app.okou.ai/activities/run-1",
-      manageUrl: "https://app.okou.ai/?settings=preference&focus=morning-brief",
-    };
-    const unsubscribeUrl = "https://app.okou.ai/email/unsubscribe?token=test";
-    const email = renderAgentMorningBriefEmail(props, unsubscribeUrl);
-    expect(email.html).toContain('src="https://a.okou.io/vfv041yxil.png"');
-    expect(email.text).toContain("Manage");
-    expect(email.text).toContain(props.manageUrl);
-    expect(email.text).toContain("Unsubscribe");
-    expect(email.text).toContain("Sent by an Okou automation");
-    expect(email.html).not.toContain("pixel.png");
-    expect(email.html).not.toContain('href="javascript:');
-
-    const ordinary = renderAgentNotificationEmail(props, unsubscribeUrl);
-    expect(ordinary.html).toContain("<h1");
-    expect(ordinary.text).toContain("Sent by your Okou agent");
-    expect(ordinary.text).not.toContain("Manage");
-    expect(ordinary.html).not.toContain("vfv041yxil.png");
-  });
-
-  it.each([renderAgentNotificationEmail, renderAgentMorningBriefEmail])(
-    "bounds HTML expansion for either notification purpose",
-    (render) => {
-      const text = "- x\n".repeat(1900);
-      const email = render(
-        {
-          subject: "Update",
-          text,
-          runUrl: "https://app.okou.ai/activities/run-1",
-          manageUrl:
-            "https://app.okou.ai/?settings=preference&focus=morning-brief",
-        },
-        "https://app.okou.ai/unsubscribe",
-      );
-      expect(Buffer.byteLength(email.html, "utf8")).toBeLessThanOrEqual(
-        96 * 1024,
-      );
-      expect(email.html).toContain("<pre");
-      expect(email.text).toContain("Open in");
-    },
+test("agent-notification-email-renderer-003 links only decoded HTTPS and mail targets and keeps raw HTML, images and tasks inert", () => {
+  const email = renderRegular(
+    [
+      "[Guide](https&#x3A;//docs.example.com/guide?x=1&amp;y=2)",
+      "",
+      "[Mail us](mailto:team@example.com)",
+      "",
+      "[Script link](javascript&#58;alert(1)) [Plain HTTP](http://insecure.example/page) [Broken](https://)",
+      "",
+      "![Tracking pixel](https://tracker.example/pixel.gif)",
+      "",
+      '<a href="https://raw.example/anchor">raw anchor</a>',
+      "",
+      "Visit https://bare.example/path today",
+      "",
+      "- [x] Shipped task",
+      "- [ ] Open task",
+    ].join("\n"),
   );
+
+  expect(email.html).toContain(
+    'href="https://docs.example.com/guide?x=1&amp;y=2"',
+  );
+  expect(email.html).toContain('href="mailto:team@example.com"');
+  for (const label of ["Script link", "Plain HTTP", "Broken"]) {
+    expect(email.html).toContain(label);
+  }
+  expect(email.html).not.toContain("javascript");
+  expect(email.html).not.toContain('href="http://insecure.example');
+  expect(email.html).not.toContain('href="https://"');
+  expect(email.html).not.toContain("tracker.example");
+  expect(email.html).not.toContain("<img");
+  expect(email.html).not.toContain("<input");
+  expect(email.html).toContain("&lt;a href=");
+  expect(email.html).not.toContain('href="https://raw.example/anchor"');
+  expect(email.html).toContain("https://bare.example/path");
+  expect(email.html).not.toContain('href="https://bare.example/path"');
+  expect(email.text).toContain("Tracking pixel");
+  expect(email.text).toContain("[x] Shipped task");
+  expect(email.text).toContain("[ ] Open task");
+});
+
+test("agent-notification-email-renderer-004 keeps styled tables, emphasis, quotes and escaped code", () => {
+  const email = renderRegular(
+    [
+      "| Metric | Value |",
+      "| --- | --- |",
+      "| Revenue | 42 |",
+      "",
+      "**Bold claim** and *gentle note* and ~~old plan~~",
+      "",
+      "> Quoted insight",
+      "",
+      "Use `a <b> & c` carefully",
+      "",
+      "```mermaid",
+      "graph TD; A-->B",
+      "```",
+    ].join("\n"),
+  );
+
+  expect(email.html).toContain(
+    '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:100%;table-layout:fixed',
+  );
+  expect(email.html).toMatch(
+    /<thead style="[^"]+"><tr>\s*<th style="[^"]+">Metric<\/th>/,
+  );
+  expect(email.html).toContain(
+    '<strong style="font-weight:700">Bold claim</strong>',
+  );
+  expect(email.html).toContain(
+    '<em style="font-style:italic">gentle note</em>',
+  );
+  expect(email.html).toContain(
+    '<s style="text-decoration:line-through">old plan</s>',
+  );
+  expect(email.html).toMatch(
+    /<blockquote style="[^"]+">\s*<p[^>]*>Quoted insight<\/p>/,
+  );
+  expect(email.html).toContain("a &lt;b&gt; &amp; c");
+  expect(email.html).toContain("A--&gt;B");
+  expect(email.text).toContain("Revenue");
+  expect(email.text).toContain("42");
+  expect(email.text).toContain("Quoted insight");
+});
+
+test("agent-notification-email-renderer-005 escapes the subject, keeps safe links and strips pixels, unsafe anchors and scripts", () => {
+  const email = renderRegular(
+    [
+      "**Important** update for you",
+      "",
+      "[Read the report](https://safe.example/report)",
+      "",
+      "![pixel](https://tracker.example/open.gif)",
+      "",
+      "[Click me](javascript:alert(1)) [Data](data:text/html,hi)",
+      "",
+      "<script>alert(1)</script>",
+    ].join("\n"),
+    "Weekly <report> & notes",
+  );
+
+  expect(email.html).toContain("Weekly &lt;report&gt; &amp; notes");
+  expect(email.html).not.toContain("Weekly <report>");
+  expect(email.html).toContain('href="https://safe.example/report"');
+  expect(email.html).toContain(`href="${RUN_URL}"`);
+  expect(email.html).toContain(`href="${UNSUBSCRIBE_URL}"`);
+  expect(email.html).not.toContain("<script");
+  expect(email.html).not.toContain("javascript:");
+  expect(email.html).not.toContain('href="data:');
+  expect(email.html).not.toContain("tracker.example");
+  expect(email.text).toContain("Important");
+  expect(email.text).toContain("Unsubscribe");
+});
+
+test("agent-notification-email-renderer-006 renders the Morning Brief artwork and controls only for the Brief", () => {
+  const subject = "Your morning brief";
+  const text = [
+    "## Today",
+    "",
+    "[Calendar](https://calendar.example/today)",
+    "",
+    "![pixel](https://tracker.example/brief.gif)",
+    "",
+    "[Unsafe](javascript:alert(1))",
+  ].join("\n");
+
+  const brief = renderAgentMorningBriefEmail(
+    { subject, text, runUrl: RUN_URL, manageUrl: MANAGE_URL },
+    UNSUBSCRIBE_URL,
+  );
+  const regular = renderRegular(text, subject);
+
+  const assistant = BRAND_PRESENTATION.assistantName;
+  expect(brief.html).toContain('<img src="https://a.okou.io/vfv041yxil.png"');
+  expect(brief.html).toContain(`href="${MANAGE_URL}"`);
+  expect(brief.html).toContain(">Unsubscribe</a>");
+  expect(brief.html).toContain(`Sent by an ${assistant} automation`);
+  expect(brief.html).not.toContain("tracker.example");
+  expect(brief.html).not.toContain("javascript:");
+  expect(regular.html).toContain(`>${subject}</h1>`);
+  expect(regular.html).toContain(`Sent by your ${assistant} agent`);
+  expect(regular.html).not.toContain("https://a.okou.io/vfv041yxil.png");
+  expect(regular.html).not.toContain(">Manage</a>");
 });

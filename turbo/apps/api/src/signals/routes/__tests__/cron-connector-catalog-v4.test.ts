@@ -1,625 +1,308 @@
 import { createHash, randomUUID } from "node:crypto";
-
+import { Readable } from "node:stream";
+import { GetObjectCommand } from "@aws-sdk/client-s3";
 import { connectorCatalogContract } from "@okouai/api-contracts/contracts/connector-catalog";
-import { builtinConnectorsSearchContract } from "@okouai/api-contracts/contracts/connectors";
-import { cronConnectorCatalogContract } from "@okouai/api-contracts/contracts/cron";
+import {
+  builtinConnectorManualGrantContract,
+  builtinConnectorsSearchContract,
+} from "@okouai/api-contracts/contracts/connectors";
 import { customConnectorsContract } from "@okouai/api-contracts/contracts/custom-connectors";
-import { beforeEach, describe, expect, it } from "vitest";
-
+import { cronConnectorCatalogContract } from "@okouai/api-contracts/contracts/cron";
+import {
+  CONNECTOR_CATALOG_ACTIVE_KEY,
+  SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION,
+} from "@okouai/connectors/connector-catalog/artifacts/artifacts";
+import { describe, expect, it } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { mockEnv } from "../../../lib/env";
+import { TEST_WITH_DOUBLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE } from "../../../__tests__/test-timeouts";
+import { env, mockOptionalEnv } from "../../../lib/env";
 import { connectorCatalogRoutes } from "../connector-catalog";
 import { builtinConnectorsRoutes } from "../connectors";
 import { cronConnectorCatalogRoutes } from "../cron-connector-catalog";
 import { customConnectorsRoutes } from "../custom-connectors";
-import {
-  createConnectorBddApi,
-  manualHttpCustomConnectorCreateBody,
-} from "./helpers/api-bdd-connectors";
+import { createBddApi } from "./helpers/api-bdd";
 import { createFirewallApi, secretTemplate } from "./helpers/api-bdd-firewall";
-import { createRunsApi } from "./helpers/api-bdd-runs";
-import { publicChatActor } from "./helpers/public-chat-actor";
-import { completePublicClaudeRun } from "./helpers/public-native-run";
+import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
+import { createChatEventsFixture } from "./helpers/chat-events-fixture";
+import { publicRunOwner } from "./helpers/public-run-owner";
 import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
-const mocks = createRouteMocks(context);
-const CRON_SECRET = "v4-catalog-cron-secret";
-const CATALOG_VERSION = "2026-09-17.fixture";
-const cronHeaders = { authorization: `Bearer ${CRON_SECRET}` } as const;
-const sessionHeaders = { authorization: "Bearer clerk-session" } as const;
+const headers = Object.freeze({ authorization: "Bearer clerk-session" });
 
-function digest(bytes: Uint8Array): string {
-  return `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
-}
-
-function bytes(value: unknown): Buffer {
-  return Buffer.from(`${JSON.stringify(value)}\n`);
-}
-
-function httpConnector(
-  slug: string,
-  label: string,
-  tokenName = "FIXTURE_TOKEN",
-) {
-  return {
-    slug,
-    label,
-    description: "Catalog generation test service",
-    category: "testing",
-    generation: [],
-    tags: [],
-    authMethods: [
-      {
-        id: "api-token",
-        label: "API Token",
-        description: null,
-        visible: true,
-        storage: { version: 1, secrets: [tokenName], variables: [] },
-        grant: {
-          kind: "manual",
-          fields: [
-            {
-              privateName: tokenName,
-              publicId: "credential",
-              label: "Credential",
-              required: true,
-              placeholder: null,
-              storage: "secret",
-            },
-          ],
-        },
-        access: {
-          kind: "static",
-          envBindings: { [tokenName]: `$secrets.${tokenName}` },
-        },
-        revoke: { kind: "none" },
-      },
-    ],
-    icon: { key: "test/catalog-service.svg", invertInDarkMode: false },
-    skill: { kind: "none" },
-    firewall: { kind: "none" },
-  };
-}
-
-function mcpConnector(slug = "plaud-mcp", tokenName = "NOTES_ACCESS_TOKEN") {
-  const tokenBindings = { accessToken: `$secrets.${tokenName}` };
-  return {
-    ...httpConnector(slug, "Notes"),
-    mcp: {
-      transport: "streamable-http",
-      endpoint: "https://notes.example.com/mcp",
-    },
-    authMethods: [
-      {
-        id: "automatic",
-        label: "Connect",
-        description: null,
-        visible: true,
-        storage: {
-          version: 1,
-          secrets: [tokenName],
-          variables: [],
-        },
-        grant: {
-          kind: "automatic",
-          callbackOrigin: "api",
-          outputs: tokenBindings,
-        },
-        access: {
-          kind: "automatic",
-          inputs: tokenBindings,
-          outputs: tokenBindings,
-        },
-        revoke: { kind: "none" },
-      },
-    ],
-    firewall: {
-      kind: "generated",
-      billable: false,
-      config: {
-        description: "Notes",
-        apis: [
-          { base: "https://notes.example.com/mcp", auth: {}, permissions: [] },
-        ],
-      },
-      categories: null,
-      defaultAllowed: null,
-      defaultUnknownPolicy: "allow",
-    },
-  };
-}
-
-function release(args: {
-  readonly version?: string;
-  readonly label?: string;
-  readonly httpSlug?: string;
-  readonly mcpSlug?: string;
-  readonly skill?: ReturnType<typeof bundledSkill>;
-  readonly mutate?: (catalog: Record<string, unknown>) => void;
-}) {
-  const version = args.version ?? CATALOG_VERSION;
-  const catalog: Record<string, unknown> = {
-    artifactSchemaVersion: 4,
-    catalogVersion: version,
-    categoryMetadata: {
-      categories: [
-        {
-          id: "testing",
-          label: "Testing",
-          menuLabel: "Testing",
-          groupId: null,
-        },
-      ],
-      groups: [],
-    },
-    connectors: [
-      {
-        ...httpConnector(
-          args.httpSlug ?? "catalog-service",
-          args.label ?? "HTTP",
-        ),
-        ...(args.skill ? { skill: args.skill } : {}),
-      },
-      mcpConnector(args.mcpSlug),
-    ],
-  };
-  args.mutate?.(catalog);
-  const catalogBytes = bytes(catalog);
-  const catalogKey = `connectors/v4/releases/${version}/catalog.json`;
-  const catalogDigest = digest(catalogBytes);
-  const pointer = {
-    catalogVersion: version,
-    catalogKey,
-    catalogDigest,
-  };
-  return {
-    pointer,
-    objects: new Map([
-      ["connectors/v4/active.json", bytes(pointer)],
-      [catalogKey, catalogBytes],
-    ]),
-  };
-}
-
-function bundledSkill(layout: "legacy" | "contracted") {
-  const versionId = createHash("sha256").update(randomUUID()).digest("hex");
-  const skill = {
-    kind: "bundled" as const,
-    versionId,
-    size: 32,
-    archiveSize: 128,
-    fileCount: 1,
-  };
-  if (layout === "contracted") {
-    return skill;
-  }
-  const storageName = "connector-skill@catalog-service";
-  return {
-    ...skill,
-    storageName,
-    storageVersionPrefix: `__system__/volume/${storageName}/${versionId}`,
-  };
-}
-
-function preparationReceipt(
-  catalogDigest: string,
-  skill: ReturnType<typeof bundledSkill>,
-  sourceVersionId = skill.versionId,
-) {
-  return {
-    key: `connectors/skill-bundles/v1/${catalogDigest.slice(7)}.json`,
-    bytes: bytes({
-      version: 1,
-      catalogDigest,
-      skills: [
-        {
-          slug: "catalog-service",
-          sourceVersionId,
-          bundle: { sha256: "b".repeat(64), archiveBytes: skill.archiveSize },
-        },
-      ],
-    }),
-  };
-}
-
-function requestedKey(command: unknown): string | undefined {
-  if (
-    typeof command !== "object" ||
-    command === null ||
-    !("input" in command) ||
-    typeof command.input !== "object" ||
-    command.input === null ||
-    !("Key" in command.input) ||
-    typeof command.input.Key !== "string"
-  ) {
-    return undefined;
-  }
-  return command.input.Key;
-}
-
-function serveObjects(objects: ReadonlyMap<string, Buffer>) {
-  const serve = (command: unknown) => {
-    const key = requestedKey(command);
-    if (key === undefined) {
-      return Promise.reject(new Error("Unexpected object request"));
-    }
-    const object = objects.get(key);
-    if (object === undefined) {
-      return Promise.reject(
-        Object.assign(new Error("Object unavailable"), { name: "NoSuchKey" }),
-      );
-    }
-    return Promise.resolve({
-      ContentLength: object.length,
-      Body: {
-        async *[Symbol.asyncIterator]() {
-          yield object;
-        },
-      },
-    });
-  };
-  context.mocks.s3.send.mockImplementation(serve);
-  return serve;
-}
-
-function cronClient() {
-  const app = setupApp({
-    context,
-    routes: cronConnectorCatalogRoutes,
-  });
-  return app(cronConnectorCatalogContract);
-}
-
-function catalogClient() {
-  return setupApp({ context, routes: connectorCatalogRoutes })(
-    connectorCatalogContract,
+function signInAdmin() {
+  createRouteMocks(context).clerk.session(
+    `user_${randomUUID()}`,
+    `org_${randomUUID()}`,
   );
 }
-
-async function sync(client = cronClient()) {
-  return await accept(client.sync({ headers: cronHeaders }), [200]);
-}
-
-async function publicCatalog() {
-  return await accept(catalogClient().list({ headers: sessionHeaders }), [200]);
-}
-
-beforeEach(() => {
-  mockEnv("CRON_SECRET", CRON_SECRET);
-  mockEnv("R2_USER_STORAGES_BUCKET_NAME", `catalog-v4-${randomUUID()}`);
-  mocks.clerk.session(`user_${randomUUID()}`, `org_${randomUUID()}`);
-});
 
 describe("connector catalog v4 preparation", () => {
-  it("keeps a Run operational without exposing a selected connector that has no usable firewall", async () => {
-    const isolatedCron = (
-      await setupApp({
-        context,
-        routes: cronConnectorCatalogRoutes,
-        isolatePg: true,
-      })
-    )(cronConnectorCatalogContract);
-    const candidate = release({});
-    const connectors = createConnectorBddApi(context);
-    const runs = createRunsApi(context);
-    const firewall = createFirewallApi(context);
-    const owned = await publicChatActor(context, {
-      beforeWorkspaceCleanup: async (actor) => {
-        for (const account of await connectors.listBuiltinConnectorAccounts(
-          actor,
-          "catalog-service",
-        )) {
-          await connectors.deleteBuiltinConnectorAccount(
-            actor,
-            "catalog-service",
-            account.id,
-          );
-        }
-      },
-    });
-    await owned.run(async () => {
-      const storage = context.mocks.s3.send.getMockImplementation();
-      if (!storage) {
-        throw new Error("Expected the public Run object-storage provider");
-      }
-      const catalogObjects = serveObjects(candidate.objects);
-      context.mocks.s3.send.mockImplementation(
-        (command: unknown, ...args: unknown[]) => {
-          const key = requestedKey(command);
-          return key !== undefined && candidate.objects.has(key)
-            ? catalogObjects(command)
-            : storage(command, ...args);
-        },
-      );
-      expect((await sync(isolatedCron)).body).toStrictEqual({
-        outcome: "accepted",
-        failureCode: null,
-      });
-      const account = await connectors.connectManualGrant(
-        owned.actor,
-        "catalog-service",
-        "api-token",
-        { credential: "unusable-native-token" },
-      );
-      const run = await owned.sendChatRun(owned.actor, {
-        prompt: "Continue without usable connector authentication",
-      });
-      const { execution, sandboxHeaders } = await owned.runExecution(run.runId);
-      expect(execution.environment?.FIXTURE_TOKEN).toBeTruthy();
-      expect(JSON.stringify(execution)).not.toContain("unusable-native-token");
-      expect(execution.secretConnectorMetadataMap?.FIXTURE_TOKEN).toMatchObject(
-        {
-          sourceType: "connector",
-          sourceId: account.id,
-        },
-      );
-      const model = await firewall.requestFirewallAuth(
-        { authorization: `Bearer ${execution.firewallToken}` },
-        {
-          secretConnectorMap: execution.secretConnectorMap ?? undefined,
-          secretConnectorMetadataMap:
-            execution.secretConnectorMetadataMap ?? undefined,
-          authHeaders: {
-            Authorization: `Bearer ${secretTemplate("CLAUDE_CODE_OAUTH_TOKEN")}`,
-          },
-        },
-        [200],
-      );
-      expect(model.body).toMatchObject({
-        headers: { Authorization: "Bearer bdd-personal-claude-token" },
-      });
-      await completePublicClaudeRun(
-        context,
-        run,
-        sandboxHeaders,
-        "Finished despite unusable connector authentication",
-      );
-      expect((await runs.readRun(owned.actor, run.runId)).status).toBe(
-        "completed",
-      );
-      await expect(
-        connectors.listBuiltinConnectorAccounts(owned.actor, "catalog-service"),
-      ).resolves.toContainEqual(expect.objectContaining({ id: account.id }));
-    });
-  });
-
-  it.each(["legacy", "contracted"] as const)(
-    "keeps the serving catalog until every %s Skill has a preparation receipt",
-    async (layout) => {
-      const client = (
-        await setupApp({
-          context,
-          routes: cronConnectorCatalogRoutes,
-          isolatePg: true,
-        })
-      )(cronConnectorCatalogContract);
-      const skill = bundledSkill(layout);
-      const candidate = release({ skill });
-      const serving = (await publicCatalog()).body;
-      serveObjects(candidate.objects);
-      expect((await sync(client)).body).toStrictEqual({
-        outcome: "rejected",
-        failureCode: "invalid-reference",
-      });
-      expect((await publicCatalog()).body).toStrictEqual(serving);
-      const receipt = preparationReceipt(
-        candidate.pointer.catalogDigest,
-        skill,
-      );
-      candidate.objects.set(receipt.key, receipt.bytes);
-      serveObjects(candidate.objects);
-      expect((await sync(client)).body.outcome).toBe("accepted");
-      expect((await sync(client)).body.outcome).toBe("unchanged");
-      const listed = await publicCatalog();
-      expect(JSON.stringify(listed.body)).toContain("catalog-service");
-    },
-  );
-
-  it.each(["legacy", "contracted"] as const)(
-    "retains the serving catalog when a receipt binds a %s candidate to a different source version",
-    async (layout) => {
-      const serving = (await publicCatalog()).body;
-      const skill = bundledSkill(layout);
-      const candidate = release({ skill, label: "Rejected Skill bundle" });
-      const receipt = preparationReceipt(
-        candidate.pointer.catalogDigest,
-        skill,
-        "e".repeat(64),
-      );
-      candidate.objects.set(receipt.key, receipt.bytes);
-      serveObjects(candidate.objects);
-      expect((await sync()).body).toStrictEqual({
-        outcome: "rejected",
-        failureCode: "invalid-reference",
-      });
-      expect((await publicCatalog()).body).toStrictEqual(serving);
-    },
-  );
-  it("keeps serving the catalog when its source is unavailable", async () => {
-    const serving = (await publicCatalog()).body;
-    serveObjects(new Map());
-    expect((await sync()).body).toStrictEqual({
-      outcome: "rejected",
-      failureCode: "source-unavailable",
-    });
-    expect((await publicCatalog()).body).toStrictEqual(serving);
-  });
-
-  it("dispatches and completes a healthy Run after rejecting malformed catalog auth", async () => {
-    const candidate = release({
-      mutate: (catalog) => {
-        catalog.connectors = [
-          {
-            ...httpConnector("broken-auth", "Broken auth"),
-            firewall: {
-              kind: "generated",
-              billable: false,
-              config: {
-                description: "Malformed provider catalog auth",
-                apis: [
-                  {
-                    base: "https://broken-auth.example.test",
-                    auth: { headers: { Authorization: 42 } },
-                    permissions: [],
-                  },
-                ],
-              },
-              categories: null,
-              defaultAllowed: null,
-              defaultUnknownPolicy: "deny",
-            },
-          },
-        ];
-      },
-    });
-    const connectors = createConnectorBddApi(context);
-    const runs = createRunsApi(context);
-    const owned = await publicChatActor(context, {
-      beforeWorkspaceCleanup: async (actor) => {
-        for (const account of await connectors.listBuiltinConnectorAccounts(
-          actor,
-          "figma",
-        )) {
-          await connectors.deleteBuiltinConnectorAccount(
-            actor,
-            "figma",
-            account.id,
-          );
-        }
-      },
-    });
-    await owned.run(async () => {
-      await connectors.connectManualGrant(owned.actor, "figma", "api-token", {
-        accessToken: "accepted-catalog-figma-token",
-      });
-      const serving = (await publicCatalog()).body;
-      const storage = context.mocks.s3.send.getMockImplementation();
-      if (!storage) {
-        throw new Error("Expected the public Run object-storage provider");
-      }
-      const catalogObjects = serveObjects(candidate.objects);
-      context.mocks.s3.send.mockImplementation(
-        (command: unknown, ...args: unknown[]) => {
-          const key = requestedKey(command);
-          return key !== undefined && candidate.objects.has(key)
-            ? catalogObjects(command)
-            : storage(command, ...args);
-        },
-      );
-      expect((await sync()).body).toStrictEqual({
-        outcome: "rejected",
-        failureCode: "invalid-artifact",
-      });
-      expect((await publicCatalog()).body).toStrictEqual(serving);
-
-      const run = await owned.sendChatRun(owned.actor, {
-        prompt: "Use the accepted connector after a catalog rejection",
-      });
-      const { execution, sandboxHeaders } = await owned.runExecution(run.runId);
-      const auth = await createFirewallApi(context).requestFirewallAuth(
-        { authorization: `Bearer ${execution.firewallToken}` },
-        {
-          secretConnectorMap: execution.secretConnectorMap ?? undefined,
-          secretConnectorMetadataMap:
-            execution.secretConnectorMetadataMap ?? undefined,
-          authHeaders: { "X-Figma-Token": secretTemplate("FIGMA_TOKEN") },
-        },
-        [200],
-      );
-      expect(auth.body).toMatchObject({
-        headers: { "X-Figma-Token": "accepted-catalog-figma-token" },
-      });
-      await completePublicClaudeRun(
-        context,
-        run,
-        sandboxHeaders,
-        "Completed with the accepted catalog",
-      );
-      expect((await runs.readRun(owned.actor, run.runId)).status).toBe(
-        "completed",
-      );
-      expect((await sync()).body).toStrictEqual({
-        outcome: "rejected",
-        failureCode: "invalid-artifact",
-      });
-      expect((await publicCatalog()).body).toStrictEqual(serving);
-    });
-  });
-
-  it("rejects a pointer outside the canonical v4 release namespace", async () => {
-    const candidate = release({ label: "Outside namespace" });
-    const objects = new Map(candidate.objects);
-    objects.set(
-      "connectors/v4/active.json",
-      bytes({
-        ...candidate.pointer,
-        catalogKey: `connectors/v3/releases/${CATALOG_VERSION}/catalog.json`,
-      }),
-    );
-    serveObjects(objects);
-
-    expect((await sync()).body).toStrictEqual({
-      outcome: "rejected",
-      failureCode: "invalid-pointer",
-    });
-    // The rejected candidate never serves.
-    expect(JSON.stringify((await publicCatalog()).body)).not.toContain(
-      "Outside namespace",
-    );
-  });
-
-  it("finds the current Monday MCP connector by name and slug", async () => {
-    const searchClient = setupApp({ context, routes: builtinConnectorsRoutes })(
+  it("cron-connector-catalog-v4-009 finds the current Monday MCP connector by name and slug", async () => {
+    signInAdmin();
+    const search = setupApp({ context, routes: builtinConnectorsRoutes })(
       builtinConnectorsSearchContract,
     );
+    const catalog = setupApp({ context, routes: connectorCatalogRoutes })(
+      connectorCatalogContract,
+    );
+
     for (const keyword of ["Monday.com", "monday-mcp"]) {
       const searched = await accept(
-        searchClient.search({ query: { keyword }, headers: sessionHeaders }),
+        search.search({ headers, query: { keyword } }),
         [200],
       );
-      expect(searched.body.connectors[0]).toMatchObject({ slug: "monday-mcp" });
       const discovered = await accept(
-        catalogClient().discovery({
-          query: { keyword },
-          headers: sessionHeaders,
-        }),
+        catalog.discovery({ headers, query: { keyword } }),
         [200],
       );
-      expect(discovered.body.connectors[0]).toMatchObject({
-        slug: "monday-mcp",
-      });
+
+      expect(searched.body.connectors[0]?.slug).toBe("monday-mcp");
+      expect(discovered.body.connectors[0]?.slug).toBe("monday-mcp");
     }
   });
 
-  it("does not expose an MCP transport as an executable HTTP permission bundle", async () => {
-    const available = await accept(
-      catalogClient().get({
-        headers: sessionHeaders,
-        params: { connectorSlug: "plaud-mcp" },
+  it("cron-connector-catalog-v4-006 keeps serving the catalog when its source is unavailable", async () => {
+    signInAdmin();
+    context.mocks.s3.send.mockRejectedValue(
+      Object.assign(new Error("The specified key does not exist."), {
+        name: "NoSuchKey",
+        $metadata: { httpStatusCode: 404 },
+      }),
+    );
+    const catalog = setupApp({ context, routes: connectorCatalogRoutes })(
+      connectorCatalogContract,
+    );
+    const cron = setupApp({ context, routes: cronConnectorCatalogRoutes })(
+      cronConnectorCatalogContract,
+    );
+
+    const before = await accept(catalog.list({ headers }), [200]);
+    const synced = await accept(
+      cron.sync({
+        headers: { authorization: `Bearer ${env("CRON_SECRET")}` },
       }),
       [200],
     );
-    expect(available.body.connector.authMethods).toContainEqual(
-      expect.objectContaining({ grantKind: "automatic" }),
+    const after = await accept(catalog.list({ headers }), [200]);
+
+    expect(synced.body).toStrictEqual({
+      outcome: "rejected",
+      failureCode: "source-unavailable",
+    });
+    expect(after.body).toStrictEqual(before.body);
+  });
+
+  it("cron-connector-catalog-v4-010 does not expose an MCP transport as an executable HTTP permission bundle", async () => {
+    signInAdmin();
+    const catalog = setupApp({ context, routes: connectorCatalogRoutes })(
+      connectorCatalogContract,
     );
-    const client = setupApp({ context, routes: customConnectorsRoutes })(
-      customConnectorsContract,
+    const customConnectors = setupApp({
+      context,
+      routes: customConnectorsRoutes,
+    })(customConnectorsContract);
+
+    const detail = await accept(
+      catalog.get({ headers, params: { connectorSlug: "plaud-mcp" } }),
+      [200],
     );
-    const response = await accept(
-      client.create({
-        headers: sessionHeaders,
-        body: manualHttpCustomConnectorCreateBody({
-          displayName: "Custom notes API",
-          prefixTemplates: ["https://notes.example.com/mcp"],
+    const created = await accept(
+      customConnectors.create({
+        headers,
+        body: {
+          displayName: "Plaud over HTTP",
+          prefixTemplates: [`https://api-${randomUUID()}.example.test/v1/`],
+          fields: [],
+          headerInjections: [],
+          queryInjections: [],
+          authMode: "none",
           permissionBundleRef: "builtin:plaud-mcp@1",
-        }),
+        },
       }),
       [400],
     );
-    expect(response.body.error.message).toBe(
+
+    expect(
+      detail.body.connector.authMethods.map((method) => {
+        return method.grantKind;
+      }),
+    ).toContain("automatic");
+    expect(created.body.error.message).toBe(
       "Unknown custom connector permission bundle: builtin:plaud-mcp@1",
     );
   });
+
+  it(
+    "cron-connector-catalog-v4-007 dispatches and completes a healthy Run after rejecting malformed catalog auth",
+    { timeout: TEST_WITH_DOUBLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const fixture = createChatEventsFixture(context);
+      const bdd = createBddApi(context);
+      const actor = bdd.user();
+      const owner = publicRunOwner(context, actor);
+      fixture.chatCallbacks.acceptChatObjectStorage();
+      fixture.api.acceptStorageDownloads();
+      fixture.api.acceptTelemetryIngest();
+      mockOptionalEnv("OPENROUTER_API_KEY", undefined);
+      fixture.chatCallbacks.disableVapid();
+
+      const catalogVersion = `20261128-${randomUUID().slice(0, 8)}`;
+      const catalogKey = `connectors/v${SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION}/releases/${catalogVersion}/catalog.json`;
+      const malformedCatalogBytes = Buffer.from(
+        JSON.stringify({
+          artifactSchemaVersion: SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION,
+          catalogVersion,
+          categoryMetadata: {
+            categories: [{ id: "design", label: "Design" }],
+            groups: [],
+          },
+          connectors: [
+            {
+              slug: "malformed-service",
+              firewall: { headers: { Authorization: 12_345 } },
+            },
+          ],
+        }),
+        "utf8",
+      );
+      const catalogDigest = `sha256:${createHash("sha256").update(malformedCatalogBytes).digest("hex")}`;
+      const pointerBytes = Buffer.from(
+        JSON.stringify({ catalogVersion, catalogKey, catalogDigest }),
+        "utf8",
+      );
+
+      const previousS3 = context.mocks.s3.send.getMockImplementation();
+      context.mocks.s3.send.mockImplementation((command: unknown) => {
+        if (command instanceof GetObjectCommand) {
+          if (command.input.Key === CONNECTOR_CATALOG_ACTIVE_KEY) {
+            return Promise.resolve({
+              Body: Readable.from([pointerBytes]),
+              ContentLength: pointerBytes.byteLength,
+            });
+          }
+          if (command.input.Key === catalogKey) {
+            return Promise.resolve({
+              Body: Readable.from([malformedCatalogBytes]),
+              ContentLength: malformedCatalogBytes.byteLength,
+            });
+          }
+        }
+        return previousS3 ? previousS3(command) : Promise.resolve({});
+      });
+
+      const catalog = setupApp({ context, routes: connectorCatalogRoutes })(
+        connectorCatalogContract,
+      );
+      const cron = setupApp({ context, routes: cronConnectorCatalogRoutes })(
+        cronConnectorCatalogContract,
+      );
+      const manualGrant = setupApp({
+        context,
+        routes: builtinConnectorsRoutes,
+      })(builtinConnectorManualGrantContract);
+      const cronHeaders = { authorization: `Bearer ${env("CRON_SECRET")}` };
+
+      createRouteMocks(context).clerk.session(
+        actor.userId,
+        actor.orgId,
+        actor.orgRole,
+      );
+      const [beforeCatalog] = await Promise.all([
+        accept(catalog.list({ headers }), [200]),
+        accept(
+          manualGrant.connect({
+            headers,
+            params: { connectorSlug: "figma" },
+            body: {
+              authMethod: "api-token",
+              values: { accessToken: "accepted-catalog-figma-token" },
+              account: { intent: "add" },
+            },
+          }),
+          [200],
+        ),
+        fixture.api.configureRunnerGroup(),
+        owner.run(() => {
+          return bdd.bootstrapLimitedFreeOnboarding(actor);
+        }),
+      ]);
+
+      const firstSync = await accept(
+        cron.sync({ headers: cronHeaders }),
+        [200],
+      );
+      expect(firstSync.body).toStrictEqual({
+        outcome: "rejected",
+        failureCode: "invalid-artifact",
+      });
+
+      const launched = await owner.run(() => {
+        return fixture.sendChatRun(actor, {
+          prompt: "Use Figma connector after rejected catalog sync",
+          model: null,
+        });
+      });
+      const execution = await owner.executionInput(launched.runId);
+      const resolved = await createFirewallApi(context).requestFirewallAuth(
+        { authorization: `Bearer ${execution.firewallToken}` },
+        {
+          authHeaders: {
+            "X-Figma-Token": secretTemplate("FIGMA_TOKEN"),
+          },
+          secretConnectorMap: execution.secretConnectorMap ?? undefined,
+          secretConnectorMetadataMap:
+            execution.secretConnectorMetadataMap ?? undefined,
+        },
+        [200],
+      );
+      if (!("headers" in resolved.body)) {
+        throw new Error("Expected resolved firewall headers");
+      }
+      expect(resolved.body.headers).toStrictEqual({
+        "X-Figma-Token": "accepted-catalog-figma-token",
+      });
+
+      await createWebhookCallbackApi(context).requestAgentComplete(
+        {
+          runId: launched.runId,
+          exitCode: 0,
+          completion: {
+            cliAgentType:
+              execution.cliAgentType === "pi"
+                ? "pi"
+                : execution.cliAgentType === "codex"
+                  ? "codex"
+                  : "claude-code",
+            cliAgentSessionId: execution.piSessionId ?? launched.threadId,
+            cliAgentSessionHistoryDisposition: "native_only",
+            storageOutputs: [],
+          },
+        },
+        { authorization: `Bearer ${execution.sandboxToken}` },
+        [200],
+      );
+      const completedRun = await owner.run(() => {
+        return fixture.api.readRun(actor, launched.runId);
+      });
+      expect(completedRun.status).toBe("completed");
+
+      const secondSync = await accept(
+        cron.sync({ headers: cronHeaders }),
+        [200],
+      );
+      expect(secondSync.body).toStrictEqual({
+        outcome: "rejected",
+        failureCode: "invalid-artifact",
+      });
+      createRouteMocks(context).clerk.session(
+        actor.userId,
+        actor.orgId,
+        actor.orgRole,
+      );
+      const afterCatalog = await accept(catalog.list({ headers }), [200]);
+      expect(afterCatalog.body).toStrictEqual(beforeCatalog.body);
+    },
+  );
 });

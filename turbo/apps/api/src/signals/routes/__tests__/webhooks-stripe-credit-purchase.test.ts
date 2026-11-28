@@ -1,118 +1,99 @@
+import { createBddApi } from "./helpers/api-bdd";
+import { setupApp } from "../../../__tests__/test-helpers";
 import { randomUUID } from "node:crypto";
-import { onboardingCompleteContract } from "@okouai/api-contracts/contracts/onboarding";
+import { now } from "../../../lib/time";
+import { createRouteMocks } from "./helpers/route-test";
+import { billingStatusContract } from "@okouai/api-contracts/contracts/billing";
+import { webhookStripeContract } from "@okouai/api-contracts/contracts/webhooks";
 import { expect, test } from "vitest";
 
-import { accept, testContext } from "../../../__tests__/test-context";
-import { setupApp } from "../../../__tests__/test-helpers";
-import { now } from "../../../lib/time";
-import { onboardingCompleteRoutes } from "../onboarding-complete";
-import { createBddApi } from "./helpers/api-bdd";
-import { createBillingMediaApi } from "./helpers/api-bdd-billing-media";
-import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
-import { createRouteMocks } from "./helpers/route-test";
+import { testContext, accept } from "../../../__tests__/test-context";
+import { mockOptionalEnv } from "../../../lib/env";
+import { billingStatusRoutes } from "../billing-status";
+import { webhooksStripeRoutes } from "../webhooks-stripe";
 
 const context = testContext();
+const bdd = createBddApi(context);
+const headers = Object.freeze({ authorization: "Bearer clerk-session" });
 
-test("grants a paid credit invoice once across distinct webhook events", async () => {
-  const orgId = `org_${randomUUID()}`;
-  const actor = createBddApi(context).user({ orgId });
-  createRouteMocks(context).clerk.session(actor.userId, orgId, "org:admin");
-  const webhooks = createWebhookCallbackApi(context);
-  webhooks.configureStripeBillingEnv();
-
-  const app = setupApp({
+test("webhooks-stripe-credit-purchase-001 grants a paid credit invoice once across distinct webhook events", async () => {
+  mockOptionalEnv("STRIPE_WEBHOOK_SECRET", "whsec_credit_purchase");
+  const admin = bdd.user();
+  await bdd.bootstrapLimitedFreeOnboarding(admin);
+  const orgId = admin.orgId;
+  if (!orgId) {
+    throw new Error("Expected an organization");
+  }
+  const appFor = setupApp({
     context,
-    routes: onboardingCompleteRoutes,
+    routes: [...billingStatusRoutes, ...webhooksStripeRoutes],
   });
-  const onboarding = await accept(
-    app(onboardingCompleteContract).complete({
-      headers: { authorization: "Bearer clerk-session" },
-      body: {},
-    }),
-    [200],
-  );
-  expect(onboarding.status).toBe(200);
-
-  const billing = createBillingMediaApi(context);
-  const baseline = await billing.readBillingStatus(actor);
-  expect(baseline).toMatchObject({
-    tier: "limited-free-1",
-    canBuyCredits: true,
-    hasSubscription: false,
-  });
-  const baselineGrantIds = new Set(
-    baseline.creditGrants.map((grant) => {
-      return grant.id;
-    }),
-  );
-  const expiresAtSeconds = Math.floor(now() / 1000) + 90 * 24 * 60 * 60;
+  const status = appFor(billingStatusContract);
+  const webhook = appFor(webhookStripeContract);
+  const readStatus = async () => {
+    createRouteMocks(context).clerk.session(admin.userId, orgId, admin.orgRole);
+    return (await accept(status.get({ headers }), [200])).body;
+  };
+  const expiresAt = new Date(now() + 90 * 24 * 60 * 60 * 1000).toISOString();
   const invoice = {
-    id: `in_credit_purchase_${randomUUID()}`,
+    id: `in_credit_${randomUUID().slice(0, 8)}`,
     customer: null,
     subtotal: 10_000,
-    metadata: {
-      type: "credit_purchase",
-      purpose: "credit_purchase",
-      orgId,
-      creditsAmountMode: "amount_subtotal",
-      creditsExpiresAt: String(expiresAtSeconds),
-    },
+    metadata: { type: "credit_purchase", orgId, creditsExpiresAt: expiresAt },
     parent: null,
     lines: { has_more: false, data: [] },
   };
-  const paidEvent = {
-    id: `evt_credit_purchase_${randomUUID()}`,
-    type: "invoice.paid",
-    created: Math.floor(now() / 1000),
-    data: { object: invoice },
+  const deliver = async () => {
+    const event = {
+      id: `evt_${randomUUID()}`,
+      type: "invoice.paid",
+      created: Math.floor(now() / 1000),
+      data: { object: invoice },
+    };
+    context.mocks.stripe.webhooks.constructEventAsync.mockReturnValueOnce(
+      event,
+    );
+    return await accept(
+      webhook.post({
+        body: JSON.stringify(event),
+        extraHeaders: { "stripe-signature": "t=1,v1=credit-purchase" },
+      }),
+      [200],
+    );
   };
-  // Simulate Stripe's signature-verification boundary, then use the public route.
-  webhooks.acceptNextStripeWebhookEvent(paidEvent);
-  const purchased = await webhooks.requestStripeWebhook(
-    JSON.stringify(paidEvent),
-    { "stripe-signature": "t=1,v1=bdd" },
-    [200],
-  );
-  expect(purchased.status).toBe(200);
 
-  const afterPurchase = await billing.readBillingStatus(actor);
-  expect(afterPurchase).toMatchObject({
-    tier: "limited-free-1",
+  const before = await readStatus();
+  expect(before).toMatchObject({
+    canBuyCredits: true,
     hasSubscription: false,
-    autoRechargeAllowed: false,
-    restrictedBuiltInModels: true,
   });
-  expect(afterPurchase.credits).toBe(baseline.credits + 100_000);
-  expect(afterPurchase.creditGrants).toHaveLength(
-    baseline.creditGrants.length + 1,
-  );
-  expect(afterPurchase.creditGrants).toStrictEqual(
-    expect.arrayContaining(baseline.creditGrants),
-  );
-  const addedGrants = afterPurchase.creditGrants.filter((grant) => {
-    return !baselineGrantIds.has(grant.id);
-  });
-  expect(addedGrants).toStrictEqual([
-    expect.objectContaining({
-      source: "credit_purchase",
-      amount: 100_000,
-      remaining: 100_000,
-      expiresAt: new Date(expiresAtSeconds * 1000).toISOString(),
-    }),
-  ]);
 
-  const replayEvent = {
-    ...paidEvent,
-    id: `evt_credit_purchase_replay_${randomUUID()}`,
-  };
-  webhooks.acceptNextStripeWebhookEvent(replayEvent);
-  const replayed = await webhooks.requestStripeWebhook(
-    JSON.stringify(replayEvent),
-    { "stripe-signature": "t=1,v1=bdd" },
-    [200],
+  await deliver();
+  const granted = await readStatus();
+  expect(granted.credits).toBe(before.credits + 100_000);
+  const added = granted.creditGrants.filter((grant) => {
+    return !before.creditGrants.some((previous) => {
+      return previous.id === grant.id;
+    });
+  });
+  expect(added).toHaveLength(1);
+  expect(added[0]).toMatchObject({ amount: 100_000, remaining: 100_000 });
+  expect(Date.parse(added[0]?.expiresAt ?? "")).toBe(Date.parse(expiresAt));
+  expect(granted.creditGrants).toStrictEqual(
+    expect.arrayContaining(before.creditGrants),
   );
-  expect(replayed.status).toBe(200);
-  const afterReplay = await billing.readBillingStatus(actor);
-  expect(afterReplay.credits).toBe(afterPurchase.credits);
-  expect(afterReplay.creditGrants).toStrictEqual(afterPurchase.creditGrants);
+  expect({
+    tier: granted.tier,
+    restrictedBuiltInModels: granted.restrictedBuiltInModels,
+    autoRechargeAllowed: granted.autoRechargeAllowed,
+  }).toStrictEqual({
+    tier: before.tier,
+    restrictedBuiltInModels: before.restrictedBuiltInModels,
+    autoRechargeAllowed: false,
+  });
+
+  await deliver();
+  const replayed = await readStatus();
+  expect(replayed.credits).toBe(granted.credits);
+  expect(replayed.creditGrants).toStrictEqual(granted.creditGrants);
 });

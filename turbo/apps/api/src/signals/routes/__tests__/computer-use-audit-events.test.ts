@@ -1,459 +1,428 @@
-import type { ComputerUseTestConnection } from "./helpers/api-bdd-computer-use";
 import { randomUUID } from "node:crypto";
 
-import type {
-  ComputerUseCommandError,
-  ComputerUseCommandResult,
-} from "@okouai/api-contracts/contracts/computer-use";
-import { aroundEach, describe, expect, it } from "vitest";
+import { computerUseAuditEventsContract } from "@okouai/api-contracts/contracts/computer-use";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { beforeAll, describe, expect, it, onTestFinished } from "vitest";
 
-import { testContext } from "../../../__tests__/test-context";
-import { mockNow, now, withMockNowForTest } from "../../../lib/time";
-import { expectApiError, type ApiTestUser } from "./helpers/api-bdd";
+import {
+  accept,
+  testContext,
+  type TestContext,
+} from "../../../__tests__/test-context";
+import { setupApp } from "../../../__tests__/test-helpers";
+import { TEST_WITH_SINGLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE } from "../../../__tests__/test-timeouts";
+import { mockOptionalEnv } from "../../../lib/env";
+import { clearMockNow, mockNow, now, nowDate } from "../../../lib/time";
+import { flushWaitUntilForTest } from "../../context/wait-until";
+import { computerUseRoutes } from "../computer-use";
+import {
+  createBddApi,
+  expectApiError,
+  type ApiTestUser,
+} from "./helpers/api-bdd";
+import { createAuthOrgBddApi } from "./helpers/api-bdd-auth-org";
+import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { mockClerkMembership } from "./helpers/api-bdd-clerk";
-import { createPublicComputerUseScenario } from "./helpers/public-computer-use-scenario";
+import { createComputerUseBddApi } from "./helpers/api-bdd-computer-use";
+import { createRunsApi } from "./helpers/api-bdd-runs";
+import {
+  createWebhookCallbackApi,
+  deliverOrganizationCreated,
+} from "./helpers/api-bdd-webhooks";
+import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 
 const context = testContext();
 
-const STARTED_AT_MS = now();
-const CASE_TIMEOUT_MS = 30_000;
-
-/** Fails immediately when the operation terminates before its expected gate. */
-aroundEach(async (runTest) => {
-  await withMockNowForTest(STARTED_AT_MS, runTest);
-});
-
-function createScenario() {
-  const scenario = createPublicComputerUseScenario(context);
-  const bdd = { user: scenario.user };
-  const computerUse = scenario.computerUse;
-  const authOrg = { createCliToken: scenario.createCliToken };
-
-  function orgScoped(
-    actor: ApiTestUser,
-  ): ApiTestUser & { readonly orgId: string } {
-    if (actor.orgId === null) {
-      throw new Error("Computer Use audit events require an organization");
-    }
-    return { ...actor, orgId: actor.orgId };
+function requireOrgId(actor: ApiTestUser): string {
+  if (!actor.orgId) {
+    throw new Error("Expected an organization member");
   }
+  return actor.orgId;
+}
 
-  /** Projects one dormant B1 closure and retires exactly that test-owned job. */
-  function clearPublications(): void {
-    context.mocks.ably.publish.mockClear();
+async function launchBoundRun(
+  testCtx: TestContext,
+  actor: ApiTestUser,
+  hostId: string,
+) {
+  const bdd = createBddApi(testCtx);
+  const runs = createRunsApi(testCtx);
+  const chat = createChatFilesBddApi(testCtx);
+  bdd.acceptStorageWrites();
+  runs.acceptStorageDownloads();
+  runs.acceptTelemetryIngest();
+  mockOptionalEnv("OPENROUTER_API_KEY", "bdd-issued-credential-key");
+
+  const [, runnerGroup] = await Promise.all([
+    deliverOrganizationCreated(testCtx, actor),
+    runs.configureRunnerGroup(),
+  ]);
+
+  const sent = await chat.requestSendEvent(
+    actor,
+    {
+      prompt: "Run a computer-use command",
+      model: null,
+      clientEventId: randomUUID(),
+      computerUseHostId: hostId,
+    },
+    [201],
+  );
+  if (sent.status !== 201) {
+    throw new Error("Expected an accepted chat send");
   }
-
-  function expectNoPublications(): void {
-    expect(context.mocks.ably.publish).not.toHaveBeenCalled();
+  await flushWaitUntilForTest();
+  const dispatch = runs.receivedDispatches(runnerGroup).at(-1);
+  if (!dispatch) {
+    throw new Error("Expected a dispatched Run");
   }
-
-  async function startAuditHost(actor: ApiTestUser, hostName: string) {
-    return await computerUse.startComputerUseHost(actor, {
-      installationId: randomUUID(),
-      hostName,
-      supportedCapabilities: [
-        "apps.list",
-        "app.state",
-        "app.open",
-        "element.click",
-      ],
-      permissions: { accessibility: true, screenRecording: true },
-    });
+  const token = dispatch.executionContext.platformEnvironment.OKOU_TOKEN;
+  if (!token) {
+    throw new Error("Expected dispatched Run OKOU_TOKEN");
   }
+  const runId = dispatch.executionContext.runId;
+  const sandboxToken = dispatch.executionContext.sandboxToken;
+  const issuedAt = now();
 
-  async function claimAndComplete(
-    connection: ComputerUseTestConnection,
-    commandId: string,
-    body:
-      | {
-          readonly status: "succeeded";
-          readonly result: ComputerUseCommandResult;
-        }
-      | {
-          readonly status: "failed";
-          readonly error: ComputerUseCommandError;
-        },
-    supportedCapabilities?: readonly string[],
-  ): Promise<void> {
-    const claimed = await computerUse.claimNextComputerUseCommand(
-      connection,
-      supportedCapabilities,
+  onTestFinished(async () => {
+    mockNow(issuedAt);
+    await runs.requestCancelRun(actor, runId, [200, 400]);
+    await createWebhookCallbackApi(testCtx).requestAgentComplete(
+      { runId, exitCode: 1, error: "Run cancelled" },
+      { authorization: `Bearer ${sandboxToken}` },
+      [200, 400],
     );
-    expect(claimed.status).toBe("command");
-    if (claimed.status !== "command") {
-      throw new Error("Expected the audit fixture command to be claimed");
-    }
-    expect(claimed.command.id).toBe(commandId);
-    await computerUse.completeComputerUseCommandWith(
-      connection,
-      commandId,
-      body,
-    );
-  }
+    await flushWaitUntilForTest();
+    clearMockNow();
+  });
 
-  async function createSimpleAuditEvent(actor: ApiTestUser, label: string) {
-    const host = await startAuditHost(actor, `${label} Desktop`);
-    const created = await computerUse.createComputerUseWriteCommand(actor, {
-      kind: "app.open",
-      app: label,
-    });
-    await claimAndComplete(host.connection, created.commandId, {
-      status: "succeeded",
-      result: { app: label, opened: true },
-    });
-    return { host, commandId: created.commandId };
-  }
-  return {
-    ...scenario,
-    bdd,
-    authOrg,
-    computerUse,
-    orgScoped,
-    clearPublications,
-    expectNoPublications,
-    startAuditHost,
-    claimAndComplete,
-    createSimpleAuditEvent,
-  };
+  return { token, runId, sandboxToken, threadId: sent.body.threadId };
 }
 
 describe("Computer Use audit events", () => {
+  beforeAll(async () => {
+    await createRunsApi(context).configureRunnerGroup();
+  });
+
   it(
-    "preserves session, Clerk OAuth session, PAT, organization and sandbox-token auth controls",
-    { timeout: CASE_TIMEOUT_MS },
+    "computer-use-audit-events-001 preserves session, Clerk OAuth session, PAT, organization and sandbox-token auth controls",
+    { timeout: TEST_WITH_SINGLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
     async () => {
-      const scenario = createScenario();
-      const { bdd, authOrg, computerUse, orgScoped, createSimpleAuditEvent } =
-        scenario;
-      return await scenario.run(async () => {
-        const actor = orgScoped(bdd.user());
-        const { host, commandId } = await createSimpleAuditEvent(actor, "Auth");
+      const bdd = createBddApi(context);
+      const authOrg = createAuthOrgBddApi(context);
+      const api = createComputerUseBddApi(context);
+      const member = bdd.user({ orgRole: "org:member" });
+      const memberOrgId = requireOrgId(member);
+      const noOrg = bdd.user({ orgId: null });
 
-        const unauthenticated =
-          await computerUse.requestListComputerUseAuditEvents(null, {}, [401]);
-        expectApiError(unauthenticated.body);
+      const host = await api.startComputerUseHost(member, {
+        hostName: "Audit Auth Desktop",
+      });
+      const run = await launchBoundRun(context, member, host.hostId);
+      const pat = await authOrg.createCliToken(member);
 
-        const noOrganization = bdd.user({ orgId: null });
-        const missingOrganization =
-          await computerUse.requestListComputerUseAuditEvents(
-            noOrganization,
-            {},
-            [401],
-          );
-        expectApiError(missingOrganization.body);
+      const created = await api.createComputerUseWriteCommand(member, {
+        kind: "app.open",
+        app: "Safari",
+      });
+      await api.claimNextComputerUseCommand(host.connection);
+      await api.completeComputerUseCommand(host.connection, created.commandId);
 
-        const session = await computerUse.listComputerUseAuditEvents(actor);
-        expect(
-          session.auditEvents.map((event) => {
-            return event.commandId;
-          }),
-        ).toStrictEqual([commandId]);
+      const anonymous = await api.requestListComputerUseAuditEvents(
+        null,
+        {},
+        [401],
+      );
+      expectApiError(anonymous.body);
 
-        // Clerk OAuth-backed browser sessions reach this route through the same
-        // externally authenticated Clerk request boundary as cookie sessions.
-        const oauthSession = await computerUse.listComputerUseAuditEvents({
-          bearer: "clerk-oauth-session",
-        });
-        expect(oauthSession).toStrictEqual(session);
+      const withoutOrg = await api.requestListComputerUseAuditEvents(
+        noOrg,
+        {},
+        [401],
+      );
+      expectApiError(withoutOrg.body);
 
-        const { token: pat } = await authOrg.createCliToken(actor);
-        mockClerkMembership(context, actor, "org:admin");
-        const personalAccessToken =
-          await computerUse.listComputerUseAuditEvents({
-            bearer: pat,
-          });
-        expect(personalAccessToken).toStrictEqual(session);
+      const sessionEvents = await api.listComputerUseAuditEvents(member);
+      expect(sessionEvents.auditEvents).toHaveLength(1);
+      expect(sessionEvents.auditEvents[0]).toMatchObject({
+        commandId: created.commandId,
+        hostId: host.hostId,
+        kind: "app.open",
+        app: "Safari",
+        event: "completed",
+      });
 
-        const agent = await scenario.launchRun(actor, host.hostId);
-        const agentDenied = await computerUse.requestListComputerUseAuditEvents(
-          { bearer: agent.token },
+      context.mocks.clerk.authenticateRequest.mockResolvedValue({
+        isAuthenticated: true,
+        toAuth: () => {
+          return {
+            tokenType: "oauth_token",
+            userId: member.userId,
+            orgId: member.orgId,
+            orgRole: member.orgRole,
+          };
+        },
+      });
+      const oauthSessionEvents = await accept(
+        setupApp({ context, routes: computerUseRoutes })(
+          computerUseAuditEventsContract,
+        ).list({
+          headers: { authorization: "Bearer clerk-oauth-session" },
+          query: {},
+        }),
+        [200],
+      );
+      expect(oauthSessionEvents.body).toStrictEqual(sessionEvents);
+
+      mockClerkMembership(context, member, "org:member");
+      const patEvents = await api.listComputerUseAuditEvents({
+        bearer: pat.token,
+      });
+      expect(patEvents).toStrictEqual(sessionEvents);
+
+      const sandboxForbidden = {
+        error: {
+          message: "This endpoint is not available for sandbox tokens",
+          code: "FORBIDDEN",
+        },
+      };
+      const agentDenied = await api.requestListComputerUseAuditEvents(
+        { bearer: run.token },
+        {},
+        [403],
+      );
+      expect(agentDenied.body).toStrictEqual(sandboxForbidden);
+
+      const sandboxDenied = await api.requestListComputerUseAuditEvents(
+        { bearer: run.sandboxToken },
+        {},
+        [403],
+      );
+      expect(sandboxDenied.body).toStrictEqual(sandboxForbidden);
+
+      await updateFeatureSwitchesForUser(
+        context,
+        { userId: member.userId, orgId: memberOrgId, orgRole: member.orgRole },
+        { [FeatureSwitchKey.RemoteDevices]: true },
+      );
+      await expect(
+        api.listComputerUseAuditEvents(member),
+      ).resolves.toStrictEqual(sessionEvents);
+      const agentDeniedInDeviceMode =
+        await api.requestListComputerUseAuditEvents(
+          { bearer: run.token },
           {},
           [403],
         );
-        expect(agentDenied.body).toStrictEqual({
-          error: {
-            message: "This endpoint is not available for sandbox tokens",
-            code: "FORBIDDEN",
-          },
-        });
-
-        const sandbox = agent.sandboxToken;
-        const sandboxDenied =
-          await computerUse.requestListComputerUseAuditEvents(
-            { bearer: sandbox },
-            {},
-            [403],
-          );
-        expect(sandboxDenied.body).toStrictEqual(agentDenied.body);
-      });
+      expect(agentDeniedInDeviceMode.body).toStrictEqual(sandboxForbidden);
     },
   );
 
   it(
-    "preserves exact owner isolation, every selector, nulls and complete redacted payloads",
-    { timeout: CASE_TIMEOUT_MS },
+    "computer-use-audit-events-002 preserves exact owner isolation, every selector, nulls and complete redacted payloads",
+    { timeout: TEST_WITH_SINGLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
     async () => {
-      const scenario = createScenario();
-      const {
-        bdd,
-        computerUse,
-        orgScoped,
-        clearPublications,
-        expectNoPublications,
-        startAuditHost,
-        claimAndComplete,
-        createSimpleAuditEvent,
-      } = scenario;
-      return await scenario.run(async () => {
-        const actor = orgScoped(bdd.user());
-        const peer = orgScoped(bdd.user({ orgId: actor.orgId }));
-        const foreign = orgScoped(bdd.user({ orgId: `org_${randomUUID()}` }));
-        const host = await startAuditHost(actor, "Payload Desktop");
-        mockClerkMembership(context, actor, "org:admin");
-        const granted = await scenario.launchRun(actor, host.hostId);
+      const start = Date.parse("2026-02-01T12:00:00.000Z");
+      mockNow(start);
+      const bdd = createBddApi(context);
+      const api = createComputerUseBddApi(context);
+      const member = bdd.user({ orgRole: "org:member" });
+      const peer = bdd.user({ orgId: member.orgId, orgRole: "org:member" });
+      const foreign = bdd.user({ orgRole: "org:member" });
 
-        const succeeded = await computerUse.createComputerUseWriteCommand(
-          { bearer: granted.token },
-          {
-            kind: "element.click",
-            app: "Safari",
-            snapshotId: "snap_audit",
-            elementIndex: 7,
-            button: "left",
-            clickCount: 1,
-          },
-        );
-        await claimAndComplete(host.connection, succeeded.commandId, {
+      const memberHost = await api.startComputerUseHost(member, {
+        hostName: "Member Audit Desktop",
+      });
+      const peerHost = await api.startComputerUseHost(peer, {
+        hostName: "Peer Audit Desktop",
+      });
+      const foreignHost = await api.startComputerUseHost(foreign, {
+        hostName: "Foreign Audit Desktop",
+      });
+
+      const run = await launchBoundRun(context, member, memberHost.hostId);
+
+      mockNow(start + 1000);
+      const clickAt = nowDate().toISOString();
+      mockClerkMembership(context, member, "org:member");
+      const clickCommand = await api.createComputerUseWriteCommand(
+        { bearer: run.token },
+        {
+          kind: "element.click",
+          app: "Safari",
+          snapshotId: "snap_audit_1",
+          elementIndex: 2,
+          button: "left",
+          clickCount: 1,
+        },
+      );
+      await api.claimNextComputerUseCommand(memberHost.connection);
+      const privateAppState = "private-state";
+      await api.completeComputerUseCommandWith(
+        memberHost.connection,
+        clickCommand.commandId,
+        {
           status: "succeeded",
           result: {
-            summary: "Clicked elementIndex=7",
-            elementIndex: 7,
-            dispatchMode: "accessibility_action",
-            dispatchTarget: "element",
-            inputRisk: "targeted_app_action",
-            appState: "private state",
-            truncated: true,
-            truncationReasons: ["max_nodes"],
-            metrics: {
-              helperDurationMs: 42,
-              settle: true,
-              rawNodeCount: 5,
-              nodeCount: 3,
-              appStateChars: 13,
-              visibleElementCount: 2,
-            },
+            app: "Safari",
+            elementIndex: 2,
+            button: "left",
+            clickCount: 1,
+            appState: privateAppState,
+            metrics: { durationMs: 42, retries: 0 },
           },
-        });
+        },
+      );
 
-        mockNow(STARTED_AT_MS + 1000);
-        const failed = await computerUse.createComputerUseWriteCommand(actor, {
-          kind: "app.open",
-          app: "Finder",
-        });
-        await claimAndComplete(host.connection, failed.commandId, {
+      mockNow(start + 2000);
+      const failedAt = nowDate().toISOString();
+      const failedCommand = await api.createComputerUseWriteCommand(member, {
+        kind: "app.open",
+        app: "Finder",
+      });
+      await api.claimNextComputerUseCommand(memberHost.connection);
+      await api.completeComputerUseCommandWith(
+        memberHost.connection,
+        failedCommand.commandId,
+        {
           status: "failed",
-          error: { code: "app_not_found", message: "Finder is unavailable" },
-        });
+          error: {
+            code: "app_not_found",
+            message: "Finder is not available",
+          },
+        },
+      );
 
-        const peerEvent = await createSimpleAuditEvent(peer, "Peer Secret");
-        const foreignEvent = await createSimpleAuditEvent(
-          foreign,
-          "Foreign Secret",
-        );
-        clearPublications();
+      const peerCommand = await api.createComputerUseWriteCommand(peer, {
+        kind: "app.open",
+        app: "PeerSecretApp",
+      });
+      await api.claimNextComputerUseCommand(peerHost.connection);
+      await api.completeComputerUseCommandWith(
+        peerHost.connection,
+        peerCommand.commandId,
+        { status: "succeeded", result: { app: "PeerSecretApp", opened: true } },
+      );
 
-        const all = await computerUse.listComputerUseAuditEvents(actor, {
-          limit: 200,
-        });
-        expect(
-          all.auditEvents.map((event) => {
-            return event.commandId;
-          }),
-        ).toStrictEqual([failed.commandId, succeeded.commandId]);
-        expect(all.auditEvents[0]).toStrictEqual({
+      const foreignCommand = await api.createComputerUseWriteCommand(foreign, {
+        kind: "app.open",
+        app: "ForeignSecretApp",
+      });
+      await api.claimNextComputerUseCommand(foreignHost.connection);
+      await api.completeComputerUseCommandWith(
+        foreignHost.connection,
+        foreignCommand.commandId,
+        {
+          status: "succeeded",
+          result: { app: "ForeignSecretApp", opened: true },
+        },
+      );
+
+      const publishedBeforeRead = context.mocks.ably.publish.mock.calls.length;
+      const batchedBeforeRead =
+        context.mocks.ably.batchPublish.mock.calls.length;
+
+      const full = await api.listComputerUseAuditEvents(member, { limit: 200 });
+      expect(full.auditEvents).toHaveLength(2);
+      expect(full.auditEvents).toStrictEqual([
+        {
           id: expect.any(String),
-          commandId: failed.commandId,
+          commandId: failedCommand.commandId,
           runId: null,
-          hostId: host.hostId,
+          hostId: memberHost.hostId,
           kind: "app.open",
           app: "Finder",
           event: "completed",
           redactedResult: null,
-          error: { code: "app_not_found", message: "Finder is unavailable" },
-          createdAt: new Date(STARTED_AT_MS + 1000).toISOString(),
-        });
-        expect(all.auditEvents[1]).toStrictEqual({
+          error: {
+            code: "app_not_found",
+            message: "Finder is not available",
+          },
+          createdAt: failedAt,
+        },
+        {
           id: expect.any(String),
-          commandId: succeeded.commandId,
-          runId: granted.runId,
-          hostId: host.hostId,
+          commandId: clickCommand.commandId,
+          runId: run.runId,
+          hostId: memberHost.hostId,
           kind: "element.click",
           app: "Safari",
           event: "completed",
           redactedResult: {
-            summary: "Clicked elementIndex=7",
-            elementIndex: 7,
-            dispatchMode: "accessibility_action",
-            dispatchTarget: "element",
-            inputRisk: "targeted_app_action",
-            appStateLength: 13,
-            truncated: true,
-            truncationReasons: ["max_nodes"],
-            metrics: {
-              helperDurationMs: 42,
-              settle: true,
-              rawNodeCount: 5,
-              nodeCount: 3,
-              appStateChars: 13,
-              visibleElementCount: 2,
-            },
+            app: "Safari",
+            button: "left",
+            clickCount: 1,
+            elementIndex: 2,
+            appStateLength: privateAppState.length,
+            metrics: { durationMs: 42, retries: 0 },
           },
           error: null,
-          createdAt: new Date(STARTED_AT_MS).toISOString(),
-        });
-        expect(JSON.stringify(all)).not.toContain("private state");
-        expect(JSON.stringify(all)).not.toContain("Peer Secret");
-        expect(JSON.stringify(all)).not.toContain("Foreign Secret");
+          createdAt: clickAt,
+        },
+      ]);
 
-        const byCommand = await computerUse.listComputerUseAuditEvents(actor, {
-          commandId: succeeded.commandId,
-        });
-        expect(byCommand.auditEvents).toStrictEqual([all.auditEvents[1]]);
-        const byHost = await computerUse.listComputerUseAuditEvents(actor, {
-          hostId: host.hostId,
-        });
-        expect(byHost).toStrictEqual(all);
-        const byRun = await computerUse.listComputerUseAuditEvents(actor, {
-          runId: granted.runId,
-        });
-        expect(byRun.auditEvents).toStrictEqual([all.auditEvents[1]]);
-        const combined = await computerUse.listComputerUseAuditEvents(actor, {
-          commandId: succeeded.commandId,
-          hostId: host.hostId,
-          runId: granted.runId,
-        });
-        expect(combined).toStrictEqual(byRun);
+      const serialized = JSON.stringify(full);
+      expect(serialized).not.toContain(privateAppState);
+      expect(serialized).not.toContain("PeerSecretApp");
+      expect(serialized).not.toContain("ForeignSecretApp");
 
-        for (const conflictingSelectors of [
-          { commandId: failed.commandId, runId: granted.runId },
-          { commandId: succeeded.commandId, hostId: peerEvent.host.hostId },
-          { commandId: peerEvent.commandId, hostId: host.hostId },
-          { commandId: foreignEvent.commandId, hostId: host.hostId },
-        ]) {
-          const intersection = await computerUse.listComputerUseAuditEvents(
-            actor,
-            conflictingSelectors,
-          );
-          expect(intersection.auditEvents).toStrictEqual([]);
-        }
-        const afterConflictingSelectors =
-          await computerUse.listComputerUseAuditEvents(actor);
-        expect(afterConflictingSelectors).toStrictEqual(all);
-
-        for (const foreignSelector of [
-          { commandId: peerEvent.commandId },
-          { hostId: peerEvent.host.hostId },
-          { commandId: foreignEvent.commandId },
-          { hostId: foreignEvent.host.hostId },
-        ]) {
-          const hidden = await computerUse.listComputerUseAuditEvents(
-            actor,
-            foreignSelector,
-          );
-          expect(hidden.auditEvents).toStrictEqual([]);
-        }
-        expectNoPublications();
+      const byHost = await api.listComputerUseAuditEvents(member, {
+        hostId: memberHost.hostId,
       });
-    },
-  );
+      expect(byHost).toStrictEqual(full);
 
-  it(
-    "preserves default 50, explicit limits, max 200, descending order and empty results",
-    { timeout: CASE_TIMEOUT_MS },
-    async () => {
-      const scenario = createScenario();
-      const { bdd, computerUse, orgScoped, startAuditHost, claimAndComplete } =
-        scenario;
-      return await scenario.run(async () => {
-        const actor = orgScoped(bdd.user());
-        const host = await startAuditHost(actor, "Limit Desktop");
-        const commandIds: string[] = [];
-        for (let index = 0; index < 51; index += 1) {
-          mockNow(STARTED_AT_MS + index * 1000);
-          const created = await computerUse.createComputerUseWriteCommand(
-            actor,
-            {
-              kind: "app.open",
-              app: `Limit ${index}`,
-            },
-          );
-          await claimAndComplete(host.connection, created.commandId, {
-            status: "succeeded",
-            result: { app: `Limit ${index}`, opened: true },
-          });
-          commandIds.push(created.commandId);
-        }
-
-        const expectedDescending = [...commandIds].reverse();
-        const defaultPage = await computerUse.listComputerUseAuditEvents(actor);
-        expect(defaultPage.auditEvents).toHaveLength(50);
-        expect(
-          defaultPage.auditEvents.map((event) => {
-            return event.commandId;
-          }),
-        ).toStrictEqual(expectedDescending.slice(0, 50));
-
-        const explicit = await computerUse.listComputerUseAuditEvents(actor, {
-          limit: 7,
-        });
-        expect(
-          explicit.auditEvents.map((event) => {
-            return event.commandId;
-          }),
-        ).toStrictEqual(expectedDescending.slice(0, 7));
-
-        const maximum = await computerUse.listComputerUseAuditEvents(actor, {
-          limit: 200,
-        });
-        expect(
-          maximum.auditEvents.map((event) => {
-            return event.commandId;
-          }),
-        ).toStrictEqual(expectedDescending);
-
-        const empty = await computerUse.listComputerUseAuditEvents(actor, {
-          runId: `missing_${randomUUID()}`,
-        });
-        expect(empty.auditEvents).toStrictEqual([]);
+      const byCommand = await api.listComputerUseAuditEvents(member, {
+        commandId: clickCommand.commandId,
       });
-    },
-  );
+      expect(byCommand.auditEvents).toStrictEqual([full.auditEvents[1]]);
 
-  it(
-    "treats empty optional selectors as unfiltered and accepts a valid command selector",
-    { timeout: CASE_TIMEOUT_MS },
-    async () => {
-      const scenario = createScenario();
-      const { bdd, computerUse, orgScoped, createSimpleAuditEvent } = scenario;
-      return await scenario.run(async () => {
-        const actor = orgScoped(bdd.user());
-        const { commandId } = await createSimpleAuditEvent(actor, "Selector");
-        const unfiltered = await computerUse.listComputerUseAuditEvents(actor);
-        const emptySelectors = await computerUse.listComputerUseAuditEvents(
-          actor,
-          {
-            commandId: "",
-            hostId: "",
-            runId: "",
-          },
-        );
-        expect(emptySelectors).toStrictEqual(unfiltered);
-
-        const selected = await computerUse.listComputerUseAuditEvents(actor, {
-          commandId,
-        });
-        expect(selected.auditEvents).toHaveLength(1);
+      const byRun = await api.listComputerUseAuditEvents(member, {
+        runId: run.runId,
       });
+      expect(byRun).toStrictEqual(byCommand);
+
+      const byAllThree = await api.listComputerUseAuditEvents(member, {
+        commandId: clickCommand.commandId,
+        hostId: memberHost.hostId,
+        runId: run.runId,
+      });
+      expect(byAllThree).toStrictEqual(byRun);
+
+      await expect(
+        api.listComputerUseAuditEvents(member, {
+          commandId: failedCommand.commandId,
+          runId: run.runId,
+        }),
+      ).resolves.toStrictEqual({ auditEvents: [] });
+      await expect(
+        api.listComputerUseAuditEvents(member, {
+          commandId: clickCommand.commandId,
+          hostId: randomUUID(),
+        }),
+      ).resolves.toStrictEqual({ auditEvents: [] });
+      await expect(
+        api.listComputerUseAuditEvents(member, {
+          commandId: peerCommand.commandId,
+        }),
+      ).resolves.toStrictEqual({ auditEvents: [] });
+      await expect(
+        api.listComputerUseAuditEvents(member, { hostId: peerHost.hostId }),
+      ).resolves.toStrictEqual({ auditEvents: [] });
+      await expect(
+        api.listComputerUseAuditEvents(member, {
+          commandId: foreignCommand.commandId,
+        }),
+      ).resolves.toStrictEqual({ auditEvents: [] });
+      await expect(
+        api.listComputerUseAuditEvents(member, { hostId: foreignHost.hostId }),
+      ).resolves.toStrictEqual({ auditEvents: [] });
+
+      expect(
+        context.mocks.ably.publish.mock.calls.slice(publishedBeforeRead),
+      ).toStrictEqual([]);
+      expect(
+        context.mocks.ably.batchPublish.mock.calls.slice(batchedBeforeRead),
+      ).toStrictEqual([]);
     },
   );
 });

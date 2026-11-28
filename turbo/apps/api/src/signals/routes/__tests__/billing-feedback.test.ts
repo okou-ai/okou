@@ -1,343 +1,277 @@
+import { setupApp } from "../../../__tests__/test-helpers";
+import { seedOrgMembership$ } from "./helpers/org-membership";
+import { randomUUID } from "node:crypto";
+import { createStore } from "ccstate";
+import { createRouteMocks } from "./helpers/route-test";
 import {
   billingFeedbackRewardContract,
   billingUsagePackCreditsContract,
 } from "@okouai/api-contracts/contracts/billing";
 import { posthogSurveysContract } from "@okouai/api-contracts/contracts/posthog-surveys";
 import { BILLING_FEEDBACK_SURVEYS } from "@okouai/core/billing-feedback";
-import { accept, testContext } from "../../../__tests__/test-context";
-import { setupApp } from "../../../__tests__/test-helpers";
+import { describe, expect, it } from "vitest";
+
+import { testContext, accept } from "../../../__tests__/test-context";
 import { mockEnv } from "../../../lib/env";
 import { mockNow, now } from "../../../lib/time";
 import { billingFeedbackRoutes } from "../billing-feedback";
 import { billingUsagePackCreditsRoutes } from "../billing-usage-pack-credits";
-import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
-import { createRouteMocks } from "./helpers/route-test";
-import { createRunsApi } from "./helpers/api-bdd-runs";
-import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
+import { publicPlanLifecycle } from "./helpers/public-plan-lifecycle";
 
 const context = testContext();
-const SECRET = "posthog-survey-destination-test-secret-12345678";
-const memberHeaders = Object.freeze({ authorization: "Bearer clerk-session" });
-const destinationHeaders = Object.freeze({ authorization: `Bearer ${SECRET}` });
 
-function signIn(actor: ApiTestUser) {
-  createRouteMocks(context).clerk.session(
-    actor.userId,
-    actor.orgId,
-    actor.orgRole,
-  );
-  context.mocks.clerk.users.getOrganizationMembershipList.mockResolvedValue({
-    data: [{ role: actor.orgRole, organization: { id: actor.orgId } }],
+const DESTINATION_SECRET = "posthog-survey-destination-secret-0123456789";
+const sessionHeaders = Object.freeze({ authorization: "Bearer clerk-session" });
+const destinationHeaders = Object.freeze({
+  authorization: `Bearer ${DESTINATION_SECRET}`,
+});
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+interface Person {
+  readonly userId: string;
+  readonly orgId: string;
+  readonly role: "org:admin" | "org:member";
+}
+
+function feedbackApis() {
+  mockEnv("BILLING_FEEDBACK_WEBHOOK_SECRET", DESTINATION_SECRET);
+  const store = createStore();
+  const appFor = setupApp({
+    context,
+    routes: [...billingFeedbackRoutes, ...billingUsagePackCreditsRoutes],
   });
-}
+  const offers = appFor(billingFeedbackRewardContract);
+  const surveys = appFor(posthogSurveysContract);
+  const credits = appFor(billingUsagePackCreditsContract);
 
-function rewardClient() {
-  return setupApp({ context, routes: billingFeedbackRoutes })(
-    billingFeedbackRewardContract,
-  );
-}
-
-function destination() {
-  return setupApp({ context, routes: billingFeedbackRoutes })(
-    posthogSurveysContract,
-  );
-}
-
-async function balance() {
-  const response = await accept(
-    setupApp({ context, routes: billingUsagePackCreditsRoutes })(
-      billingUsagePackCreditsContract,
-    ).get({ headers: memberHeaders }),
-    [200],
-  );
-  return response.body.bonusCredits;
-}
-
-async function offer(actor: ApiTestUser) {
-  signIn(actor);
-  return (await accept(rewardClient().get({ headers: memberHeaders }), [200]))
-    .body;
-}
-
-function completedResponse(
-  actor: ApiTestUser,
-  token: string | null,
-  surveyId: string = BILLING_FEEDBACK_SURVEYS.credits_exhausted,
-) {
-  if (!actor.orgId || !token) {
-    throw new Error("Expected an eligible organization feedback offer");
+  /** A Clerk member of a Free organization. */
+  async function person(
+    role: Person["role"] = "org:admin",
+    orgId = `org_${randomUUID()}`,
+  ): Promise<Person> {
+    const actor = { userId: `user_${randomUUID()}`, orgId, role };
+    await store.set(
+      seedOrgMembership$,
+      {
+        orgId,
+        userId: actor.userId,
+        role: role === "org:admin" ? "admin" : "member",
+      },
+      context.signal,
+    );
+    return actor;
   }
+
+  function signIn(actor: Person) {
+    createRouteMocks(context).clerk.session(
+      actor.userId,
+      actor.orgId,
+      actor.role,
+    );
+  }
+
+  async function offer(actor: Person) {
+    signIn(actor);
+    return (await accept(offers.get({ headers: sessionHeaders }), [200])).body;
+  }
+
+  async function offerToken(actor: Person): Promise<string> {
+    const body = await offer(actor);
+    expect(body.rewardCredits).toBe(200);
+    if (!body.token) {
+      throw new Error("expected a reward offer token");
+    }
+    return body.token;
+  }
+
+  async function bonusCredits(actor: Person): Promise<number> {
+    signIn(actor);
+    const response = await accept(
+      credits.get({ headers: sessionHeaders }),
+      [200],
+    );
+    return response.body.bonusCredits;
+  }
+
+  function surveyEvent(
+    actor: Person,
+    token: string,
+    overrides: { surveyId?: string; completed?: boolean } = {},
+  ) {
+    return {
+      event: "survey sent" as const,
+      distinct_id: actor.userId,
+      properties: {
+        $survey_id:
+          overrides.surveyId ?? BILLING_FEEDBACK_SURVEYS.credits_exhausted,
+        $survey_completed: overrides.completed ?? true,
+        org_id: actor.orgId,
+        billing_feedback_reward_token: token,
+      },
+    };
+  }
+
+  async function settle(
+    body: ReturnType<typeof surveyEvent>,
+    headers: { authorization: string } = destinationHeaders,
+  ) {
+    return await accept(surveys.reward({ headers, body }), [200, 401]);
+  }
+
+  async function settled(body: ReturnType<typeof surveyEvent>) {
+    const response = await accept(
+      surveys.reward({ headers: destinationHeaders, body }),
+      [200],
+    );
+    return response.body.rewardCredits;
+  }
+
   return {
-    event: "survey sent" as const,
-    distinct_id: actor.userId,
-    properties: {
-      $survey_id: surveyId,
-      $survey_completed: true,
-      org_id: actor.orgId,
-      billing_feedback_reward_token: token,
-    },
+    store,
+    person,
+    offer,
+    offerToken,
+    bonusCredits,
+    surveyEvent,
+    settle,
+    settled,
   };
 }
 
-beforeEach(() => {
-  mockEnv("BILLING_FEEDBACK_WEBHOOK_SECRET", SECRET);
-  context.mocks.ably.publish.mockResolvedValue(undefined);
-});
+describe("billing feedback rewards", () => {
+  it("billing-feedback-006 ignores partial responses and unrelated surveys", async () => {
+    const api = feedbackApis();
+    const admin = await api.person();
+    const token = await api.offerToken(admin);
 
-test.each(Object.values(BILLING_FEEDBACK_SURVEYS))(
-  "settles survey %s once and expires the bonus after 30 days",
-  async (surveyId) => {
-    const actor = createBddApi(context).user();
-    const at = now();
-    mockNow(at);
-    const eligible = await offer(actor);
-    expect(eligible.rewardCredits).toBe(200);
-    const body = completedResponse(actor, eligible.token, surveyId);
-    const before = await balance();
-    const result = await accept(
-      destination().reward({ headers: destinationHeaders, body }),
-      [200],
-    );
-    expect(result.body.rewardCredits).toBe(200);
-    await expect(balance()).resolves.toBe(before + 200);
-    const repeated = await accept(
-      destination().reward({ headers: destinationHeaders, body }),
-      [200],
-    );
-    expect(repeated.body.rewardCredits).toBe(0);
-    await expect(offer(actor)).resolves.toStrictEqual({
-      rewardCredits: 0,
-      token: null,
-    });
-    mockNow(at + 30 * 24 * 60 * 60 * 1000);
-    await expect(balance()).resolves.toBe(before);
-    await expect(offer(actor)).resolves.toStrictEqual({
-      rewardCredits: 0,
-      token: null,
-    });
-  },
-);
+    await expect(
+      api.settled(api.surveyEvent(admin, token, { completed: false })),
+    ).resolves.toBe(0);
+    await expect(
+      api.settled(
+        api.surveyEvent(admin, token, { surveyId: "unrelated-survey" }),
+      ),
+    ).resolves.toBe(0);
 
-test("deduplicates different surveys submitted concurrently by two admins in one organization", async () => {
-  const bdd = createBddApi(context);
-  const first = bdd.user();
-  const second = bdd.user({ orgId: first.orgId });
-  const firstOffer = await offer(first);
-  const secondOffer = await offer(second);
-  context.mocks.clerk.users.getOrganizationMembershipList.mockResolvedValue({
-    data: [{ role: "org:admin", organization: { id: first.orgId } }],
+    await expect(api.bonusCredits(admin)).resolves.toBe(0);
+    await expect(api.offer(admin)).resolves.toMatchObject({
+      rewardCredits: 200,
+    });
   });
-  const outcomes = await Promise.all([
-    destination().reward({
-      headers: destinationHeaders,
-      body: completedResponse(
-        first,
-        firstOffer.token,
-        BILLING_FEEDBACK_SURVEYS.upgrade_dismissed,
+
+  it("billing-feedback-005 rejects a browser claim and an offer replayed for another identity", async () => {
+    const api = feedbackApis();
+    const admin = await api.person();
+    const other = await api.person();
+    const token = await api.offerToken(admin);
+
+    const browserClaim = await api.settle(
+      api.surveyEvent(admin, token),
+      sessionHeaders,
+    );
+    const replayed = await api.settle(api.surveyEvent(other, token));
+
+    expect(browserClaim.status).toBe(401);
+    expect(replayed.status).toBe(401);
+    await expect(api.bonusCredits(admin)).resolves.toBe(0);
+  });
+
+  it("billing-feedback-001 settles a completed survey once and expires the bonus after 30 days", async () => {
+    const start = now();
+    mockNow(start);
+    const api = feedbackApis();
+    const admin = await api.person();
+    const before = await api.bonusCredits(admin);
+    const token = await api.offerToken(admin);
+    const event = api.surveyEvent(admin, token);
+
+    await expect(api.settled(event)).resolves.toBe(200);
+    await expect(api.bonusCredits(admin)).resolves.toBe(before + 200);
+    await expect(api.settled(event)).resolves.toBe(0);
+    await expect(api.offer(admin)).resolves.toStrictEqual({
+      rewardCredits: 0,
+      token: null,
+    });
+
+    mockNow(start + 30 * DAY_MS);
+    await expect(api.bonusCredits(admin)).resolves.toBe(before);
+    await expect(api.offer(admin)).resolves.toStrictEqual({
+      rewardCredits: 0,
+      token: null,
+    });
+  });
+
+  it("billing-feedback-004 rewards one of two concurrent surveys from admins of one organization", async () => {
+    const api = feedbackApis();
+    const first = await api.person();
+    const second = await api.person("org:admin", first.orgId);
+    const firstToken = await api.offerToken(first);
+    const secondToken = await api.offerToken(second);
+
+    const rewards = await Promise.all([
+      api.settled(
+        api.surveyEvent(first, firstToken, {
+          surveyId: BILLING_FEEDBACK_SURVEYS.upgrade_dismissed,
+        }),
       ),
-    }),
-    destination().reward({
-      headers: destinationHeaders,
-      body: completedResponse(
-        second,
-        secondOffer.token,
-        BILLING_FEEDBACK_SURVEYS.checkout_canceled,
+      api.settled(
+        api.surveyEvent(second, secondToken, {
+          surveyId: BILLING_FEEDBACK_SURVEYS.checkout_canceled,
+        }),
       ),
-    }),
-  ]);
-  expect(
-    outcomes
-      .map((outcome) => {
-        if (outcome.status !== 200) {
-          throw new Error("Expected successful settlement");
-        }
-        return outcome.body.rewardCredits;
-      })
-      .sort((a, b) => {
+    ]);
+
+    expect(
+      [...rewards].sort((a, b) => {
         return a - b;
       }),
-  ).toStrictEqual([0, 200]);
-  const thirdSurvey = await accept(
-    destination().reward({
-      headers: destinationHeaders,
-      body: completedResponse(first, firstOffer.token),
-    }),
-    [200],
-  );
-  expect(thirdSurvey.body.rewardCredits).toBe(0);
-  signIn(first);
-  const firstBalance = await balance();
-  signIn(second);
-  expect(firstBalance + (await balance())).toBe(200);
-});
-
-test("rejects direct browser claims and a reward offer reused for another identity", async () => {
-  const bdd = createBddApi(context);
-  const actor = bdd.user();
-  const other = bdd.user();
-  const eligible = await offer(actor);
-  const body = completedResponse(actor, eligible.token);
-  expect(
-    (
-      await accept(
-        destination().reward({ headers: memberHeaders, body }),
-        [401],
-      )
-    ).status,
-  ).toBe(401);
-  const stolen = {
-    ...body,
-    distinct_id: other.userId,
-    properties: { ...body.properties, org_id: other.orgId ?? "" },
-  };
-  expect(
-    (
-      await accept(
-        destination().reward({ headers: destinationHeaders, body: stolen }),
-        [401],
-      )
-    ).status,
-  ).toBe(401);
-  await expect(balance()).resolves.toBe(0);
-});
-
-test("does not reward partial responses or unrelated surveys", async () => {
-  const actor = createBddApi(context).user();
-  const eligible = await offer(actor);
-  const body = completedResponse(actor, eligible.token);
-  for (const properties of [
-    { ...body.properties, $survey_completed: false },
-    { ...body.properties, $survey_id: "unrelated-survey" },
-  ]) {
-    const result = await accept(
-      destination().reward({
-        headers: destinationHeaders,
-        body: { ...body, properties },
-      }),
-      [200],
+    ).toStrictEqual([0, 200]);
+    await expect(api.settled(api.surveyEvent(first, firstToken))).resolves.toBe(
+      0,
     );
-    expect(result.body.rewardCredits).toBe(0);
-  }
-  await expect(balance()).resolves.toBe(0);
-  expect((await offer(actor)).rewardCredits).toBe(200);
-});
-
-test("rechecks current paid eligibility when an offered response arrives after upgrading", async () => {
-  const actor = createBddApi(context).user();
-  const eligible = await offer(actor);
-  await createRunsApi(context).grantProEntitlement(actor, { tier: "pro" });
-  signIn(actor);
-  const before = await balance();
-  const result = await accept(
-    destination().reward({
-      headers: destinationHeaders,
-      body: completedResponse(actor, eligible.token),
-    }),
-    [200],
-  );
-  expect(result.body.rewardCredits).toBe(0);
-  await expect(balance()).resolves.toBe(before);
-  await expect(offer(actor)).resolves.toStrictEqual({
-    rewardCredits: 0,
-    token: null,
+    const total =
+      (await api.bonusCredits(first)) + (await api.bonusCredits(second));
+    expect(total).toBe(200);
   });
-});
 
-test("does not offer a reward to non-admins and rechecks revoked membership on settlement", async () => {
-  const bdd = createBddApi(context);
-  const actor = bdd.user();
-  const member = bdd.user({ orgId: actor.orgId, orgRole: "org:member" });
-  await expect(offer(member)).resolves.toStrictEqual({
-    rewardCredits: 0,
-    token: null,
-  });
-  const eligible = await offer(actor);
-  context.mocks.clerk.users.getOrganizationMembershipList.mockResolvedValue({
-    data: [],
-  });
-  const result = await accept(
-    destination().reward({
-      headers: destinationHeaders,
-      body: completedResponse(actor, eligible.token),
-    }),
-    [200],
-  );
-  expect(result.body.rewardCredits).toBe(0);
-  await expect(balance()).resolves.toBe(0);
-});
-
-test("rejects expired server offers", async () => {
-  const actor = createBddApi(context).user();
-  const at = now();
-  mockNow(at);
-  const eligible = await offer(actor);
-  mockNow(at + 24 * 60 * 60 * 1000);
-  const result = await accept(
-    destination().reward({
-      headers: destinationHeaders,
-      body: completedResponse(actor, eligible.token),
-    }),
-    [401],
-  );
-  expect(result.status).toBe(401);
-  await expect(balance()).resolves.toBe(0);
-});
-
-test("withholds reward offers until trusted PostHog settlement is configured", async () => {
-  mockEnv("BILLING_FEEDBACK_WEBHOOK_SECRET", undefined);
-  const actor = createBddApi(context).user();
-  await expect(offer(actor)).resolves.toStrictEqual({
-    rewardCredits: 0,
-    token: null,
-  });
-});
-
-test("rewards a free workspace that still has credits after canceling checkout", async () => {
-  const bdd = createBddApi(context);
-  const actor = bdd.user();
-  await bdd.completeOnboarding(actor);
-  const webhooks = createWebhookCallbackApi(context);
-  webhooks.configureStripeWebhookSecret();
-  webhooks.acceptNextStripeWebhookEvent({
-    id: `evt_feedback_${actor.userId}`,
-    type: "checkout.session.completed",
-    data: {
-      object: {
-        id: `cs_feedback_${actor.userId}`,
-        invoice: null,
-        subscription: null,
-        customer: null,
-        metadata: {
-          purpose: "credit_purchase",
-          orgId: actor.orgId,
-          creditsAmountMode: "amount_total",
-        },
-        amount_total: 100,
-        payment_status: "paid",
+  it("billing-feedback-007 rechecks paid eligibility for an offer answered after upgrading", async () => {
+    const api = feedbackApis();
+    const admin = await api.person();
+    const token = await api.offerToken(admin);
+    await publicPlanLifecycle(
+      context,
+      {
+        userId: admin.userId,
+        orgId: admin.orgId,
+        orgRole: "org:admin",
+        email: `${admin.userId}@example.test`,
       },
-    },
+      "pro",
+    ).update("active");
+
+    await expect(api.settled(api.surveyEvent(admin, token))).resolves.toBe(0);
+
+    await expect(api.bonusCredits(admin)).resolves.toBe(0);
+    await expect(api.offer(admin)).resolves.toStrictEqual({
+      rewardCredits: 0,
+      token: null,
+    });
   });
-  await webhooks.requestStripeWebhook(
-    "{}",
-    { "stripe-signature": "valid-signature" },
-    [200],
-  );
-  const billing = await createRunsApi(context).readBillingStatus(actor);
-  expect(billing.credits).toBeGreaterThan(0);
-  const eligible = await offer(actor);
-  expect(eligible.rewardCredits).toBe(200);
-  const before = await balance();
-  const result = await accept(
-    destination().reward({
-      headers: destinationHeaders,
-      body: completedResponse(
-        actor,
-        eligible.token,
-        BILLING_FEEDBACK_SURVEYS.checkout_canceled,
-      ),
-    }),
-    [200],
-  );
-  expect(result.body.rewardCredits).toBe(200);
-  await expect(balance()).resolves.toBe(before + 200);
+
+  it("billing-feedback-008 offers nothing to members and rechecks revoked admin membership", async () => {
+    const api = feedbackApis();
+    const admin = await api.person();
+    const member = await api.person("org:member", admin.orgId);
+    const token = await api.offerToken(admin);
+    context.mocks.clerk.users.getOrganizationMembershipList.mockResolvedValue({
+      data: [],
+    });
+
+    await expect(api.offer(member)).resolves.toStrictEqual({
+      rewardCredits: 0,
+      token: null,
+    });
+    await expect(api.settled(api.surveyEvent(admin, token))).resolves.toBe(0);
+    await expect(api.bonusCredits(admin)).resolves.toBe(0);
+  });
 });

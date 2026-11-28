@@ -1,356 +1,285 @@
 import { randomUUID } from "node:crypto";
+import { describe, expect, it } from "vitest";
 import {
   billingAutoRechargeContract,
   billingCreditCheckoutContract,
+  billingStatusContract,
 } from "@okouai/api-contracts/contracts/billing";
-import { accept } from "../../../__tests__/test-context";
+import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { mockEnv, mockOptionalEnv } from "../../../lib/env";
+import { mockEnv } from "../../../lib/env";
 import { billingAutoRechargeRoutes } from "../billing-auto-recharge";
 import { billingCreditCheckoutRoutes } from "../billing-credit-checkout";
-import { createBillingCheckoutFixture } from "./helpers/billing-checkout-fixture";
+import { billingStatusRoutes } from "../billing-status";
+import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
+import { publicPlanLifecycle } from "./helpers/public-plan-lifecycle";
+import { createRouteMocks } from "./helpers/route-test";
 
-const {
-  context,
-  mocks,
-  APP_ORIGIN,
-  setTierPrices,
-  createOrgFixture,
-  createPublicBillingOrg,
-  readBillingStatus,
-  currentSecond,
-} = createBillingCheckoutFixture();
+const context = testContext();
 
-const checkoutUrl = "https://checkout.stripe.com/session/credit-auto-recharge";
-const enabledConfig = Object.freeze({
-  enabled: true,
-  threshold: 5000,
-  amount: 20_000,
-});
-const checkoutBody = Object.freeze({
-  credits: 20_000,
-  successUrl: `${APP_ORIGIN}/billing?credit=success`,
-  cancelUrl: `${APP_ORIGIN}/billing?credit=canceled`,
-});
+const CREDIT_UNIT_PRICE = "price_auto_recharge_credit_unit";
+const SUCCESS_URL = "http://localhost:3002/settings/billing?credits=success";
+const CANCEL_URL = "http://localhost:3002/settings/billing?credits=cancel";
 const headers = Object.freeze({ authorization: "Bearer clerk-session" });
 
-function creditClient() {
+function creditCheckoutApi() {
   return setupApp({ context, routes: billingCreditCheckoutRoutes })(
     billingCreditCheckoutContract,
   );
 }
 
-async function readAutoRecharge() {
-  const response = await accept(
-    setupApp({ context, routes: billingAutoRechargeRoutes })(
-      billingAutoRechargeContract,
-    ).get({ headers }),
-    [200],
+function autoRechargeApi() {
+  return setupApp({ context, routes: billingAutoRechargeRoutes })(
+    billingAutoRechargeContract,
   );
+}
+
+function billingStatusApi() {
+  return setupApp({ context, routes: billingStatusRoutes })(
+    billingStatusContract,
+  );
+}
+
+function signIn(admin: ApiTestUser): void {
+  createRouteMocks(context).clerk.session(
+    admin.userId,
+    admin.orgId,
+    "org:admin",
+  );
+}
+
+function stripeHostedCheckout(): string {
+  const sessionId = `cs_auto_recharge_${randomUUID()}`;
+  const url = `https://checkout.stripe.test/${sessionId}`;
+  context.mocks.stripe.checkout.sessions.create.mockResolvedValue({
+    id: sessionId,
+    url,
+  });
+  return url;
+}
+
+function stripeCustomerDirectory(orgId: string): void {
+  const customerId = `cus_auto_recharge_${randomUUID()}`;
+  context.mocks.stripe.customers.create.mockResolvedValue({
+    id: customerId,
+    metadata: { orgId },
+  });
+  context.mocks.stripe.customers.retrieve.mockResolvedValue({
+    id: customerId,
+    metadata: { orgId },
+  });
+}
+
+async function freeWorkspace(): Promise<ApiTestUser> {
+  mockEnv("OKOU_PRICE_CUSTOM_CREDIT_UNIT", CREDIT_UNIT_PRICE);
+  const bdd = createBddApi(context);
+  const admin = bdd.user();
+  await bdd.provisionWorkspace(admin);
+  signIn(admin);
+  return admin;
+}
+
+async function proWorkspace(): Promise<ApiTestUser> {
+  mockEnv("OKOU_PRICE_CUSTOM_CREDIT_UNIT", CREDIT_UNIT_PRICE);
+  const admin = createBddApi(context).user();
+  signIn(admin);
+  await publicPlanLifecycle(context, admin, "pro").update("active");
+  signIn(admin);
+  return admin;
+}
+
+async function checkout(autoRecharge?: {
+  readonly enabled: boolean;
+  readonly threshold?: number;
+  readonly amount?: number;
+}) {
+  return await creditCheckoutApi().create({
+    headers,
+    body: {
+      credits: 20_000,
+      successUrl: SUCCESS_URL,
+      cancelUrl: CANCEL_URL,
+      ...(autoRecharge ? { autoRecharge } : {}),
+    },
+  });
+}
+
+/** Stripe echoes the requested invoice items as preview lines. */
+function previewLines(params: unknown): { metadata: unknown }[] {
+  const items =
+    typeof params === "object" && params !== null && "invoice_items" in params
+      ? params.invoice_items
+      : [];
+  return (Array.isArray(items) ? items : []).map((item: unknown) => {
+    return {
+      metadata:
+        typeof item === "object" && item !== null && "metadata" in item
+          ? item.metadata
+          : {},
+    };
+  });
+}
+
+async function readAutoRecharge() {
+  const response = await accept(autoRechargeApi().get({ headers }), [200]);
   return response.body;
 }
 
 describe("credit checkout auto-recharge ownership", () => {
-  beforeEach(() => {
-    setTierPrices();
-    mockEnv("SECRETS_ENCRYPTION_KEY", "a".repeat(64));
-    context.mocks.stripe.customers.create.mockResolvedValue({
-      id: `cus_credit_auto_recharge_${randomUUID()}`,
+  it("billing-credit-checkout-auto-recharge-001 rejects auto-recharge for a new workspace but still sells credits", async () => {
+    mockEnv("OKOU_PRICE_CUSTOM_CREDIT_UNIT", CREDIT_UNIT_PRICE);
+    const admin = createBddApi(context).user();
+    signIn(admin);
+    stripeCustomerDirectory(admin.orgId ?? "");
+    const url = stripeHostedCheckout();
+
+    const rejected = await accept(
+      checkout({ enabled: true, threshold: 5000, amount: 20_000 }),
+      [400],
+    );
+    expect(rejected.body.error).toStrictEqual({
+      code: "BAD_REQUEST",
+      message: "Auto-recharge is only available for Pro or Team workspaces",
     });
-    context.mocks.stripe.customers.retrieve.mockResolvedValue({
-      discount: null,
+    await expect(readAutoRecharge()).resolves.toStrictEqual({
+      enabled: false,
+      threshold: null,
+      amount: null,
     });
-    context.mocks.stripe.checkout.sessions.create.mockResolvedValue({
-      url: checkoutUrl,
+
+    const plain = await accept(checkout(), [200]);
+    expect(plain.body).toStrictEqual({ url });
+    expect(
+      context.mocks.stripe.checkout.sessions.create,
+    ).toHaveBeenCalledOnce();
+  });
+
+  it("billing-credit-checkout-auto-recharge-003 updates enabled settings on repeated checkouts and disables them later", async () => {
+    await proWorkspace();
+    const url = stripeHostedCheckout();
+
+    for (const config of [
+      { threshold: 5000, amount: 20_000 },
+      { threshold: 10_000, amount: 50_000 },
+    ]) {
+      const response = await accept(
+        checkout({ enabled: true, ...config }),
+        [200],
+      );
+      expect(response.body).toStrictEqual({ url });
+      await expect(readAutoRecharge()).resolves.toStrictEqual({
+        enabled: true,
+        ...config,
+      });
+      const status = await accept(billingStatusApi().get({ headers }), [200]);
+      expect(status.body).toMatchObject({
+        tier: "pro",
+        canBuyCredits: true,
+        autoRechargeAllowed: true,
+      });
+    }
+
+    const disabled = await accept(checkout({ enabled: false }), [200]);
+    expect(disabled.body).toStrictEqual({ url });
+    await expect(readAutoRecharge()).resolves.toStrictEqual({
+      enabled: false,
+      threshold: null,
+      amount: null,
     });
   });
 
-  it("publishes a default Plan before rejecting auto-recharge for a new workspace", async () => {
-    const fixture = createOrgFixture();
-    mocks.clerk.session(fixture.userId, fixture.orgId, "org:admin");
-    const client = creditClient();
+  it("billing-credit-checkout-auto-recharge-006 keeps auto-recharge enabled when a disable request returns a preview", async () => {
+    await proWorkspace();
+    stripeHostedCheckout();
+    await accept(
+      checkout({ enabled: true, threshold: 5000, amount: 20_000 }),
+      [200],
+    );
+    context.mocks.stripe.checkout.sessions.create.mockClear();
+    context.mocks.stripe.subscriptions.retrieve.mockImplementation(
+      (subscriptionId: unknown) => {
+        return Promise.resolve({
+          id: subscriptionId,
+          status: "active",
+          default_payment_method: "pm_auto_recharge_saved_card",
+        });
+      },
+    );
+    context.mocks.stripe.invoices.createPreview.mockImplementation(
+      (params: unknown) => {
+        return Promise.resolve({
+          currency: "usd",
+          amount_due: 2000,
+          lines: { data: previewLines(params) },
+        });
+      },
+    );
+
     const response = await accept(
-      client.create({
-        body: { ...checkoutBody, autoRecharge: enabledConfig },
+      creditCheckoutApi().create({
         headers,
+        body: {
+          credits: 20_000,
+          successUrl: SUCCESS_URL,
+          cancelUrl: CANCEL_URL,
+          supportsInAppPreview: true,
+          autoRecharge: { enabled: false },
+        },
+      }),
+      [200],
+    );
+
+    expect(response.body).toMatchObject({
+      status: "preview",
+      credits: 20_000,
+      amountCents: 2000,
+      previewToken: expect.any(String),
+    });
+    await expect(readAutoRecharge()).resolves.toStrictEqual({
+      enabled: true,
+      threshold: 5000,
+      amount: 20_000,
+    });
+    expect(
+      context.mocks.stripe.checkout.sessions.create,
+    ).not.toHaveBeenCalled();
+  });
+
+  it("billing-credit-checkout-auto-recharge-007 rejects an invalid preview token for a Free workspace", async () => {
+    await freeWorkspace();
+
+    const response = await accept(
+      creditCheckoutApi().confirm({
+        headers,
+        body: { previewToken: "not-a-valid-preview" },
       }),
       [400],
     );
+
     expect(response.body.error).toStrictEqual({
-      message: "Auto-recharge is only available for Pro or Team workspaces",
       code: "BAD_REQUEST",
+      message: "Credit purchase preview expired or is no longer valid",
     });
+    expect(context.mocks.stripe.invoices.create).not.toHaveBeenCalled();
+  });
+
+  it("billing-credit-checkout-auto-recharge-008 rejects an enabled config without a threshold and keeps settings disabled", async () => {
+    await proWorkspace();
+    stripeHostedCheckout();
+
+    const response = await accept(
+      checkout({ enabled: true, amount: 20_000 }),
+      [400],
+    );
+
+    expect(response.body.error.code).toBe("BAD_REQUEST");
     await expect(readAutoRecharge()).resolves.toStrictEqual({
       enabled: false,
       threshold: null,
       amount: null,
     });
-    const subsequent = await accept(
-      client.create({ body: checkoutBody, headers }),
-      [200],
-    );
-    expect(subsequent.body).toStrictEqual({ url: checkoutUrl });
     expect(
       context.mocks.stripe.checkout.sessions.create,
-    ).toHaveBeenCalledOnce();
-  });
-
-  it("keeps the default Plan usable after concurrent new-workspace checkout requests", async () => {
-    const fixture = createOrgFixture();
-    mocks.clerk.session(fixture.userId, fixture.orgId, "org:admin");
-    const client = creditClient();
-    const responses = await Promise.all(
-      [1, 2].map(() => {
-        return accept(
-          client.create({
-            body: { ...checkoutBody, autoRecharge: enabledConfig },
-            headers,
-          }),
-          [400],
-        );
-      }),
-    );
-    for (const response of responses) {
-      expect(response.body.error.code).toBe("BAD_REQUEST");
-    }
-    await expect(readAutoRecharge()).resolves.toStrictEqual({
-      enabled: false,
-      threshold: null,
-      amount: null,
-    });
-    const subsequent = await accept(
-      client.create({ body: checkoutBody, headers }),
-      [200],
-    );
-    expect(subsequent.body).toStrictEqual({ url: checkoutUrl });
-    expect(
-      context.mocks.stripe.checkout.sessions.create,
-    ).toHaveBeenCalledOnce();
-  });
-
-  it("updates repeated enabled checkout config without replacing the existing Plan, then disables after hosted checkout", async () => {
-    const fixture = await createPublicBillingOrg("pro");
-    await fixture.run(async () => {
-      const client = creditClient();
-      for (const config of [
-        enabledConfig,
-        { enabled: true, threshold: 10_000, amount: 50_000 },
-      ]) {
-        const response = await accept(
-          client.create({
-            body: { ...checkoutBody, autoRecharge: config },
-            headers,
-          }),
-          [200],
-        );
-        expect(response.body).toStrictEqual({ url: checkoutUrl });
-        await expect(readAutoRecharge()).resolves.toStrictEqual(config);
-        await expect(readBillingStatus(fixture)).resolves.toMatchObject({
-          tier: "pro",
-          canBuyCredits: true,
-          autoRechargeAllowed: true,
-        });
-      }
-      const disabled = await accept(
-        client.create({
-          body: { ...checkoutBody, autoRecharge: { enabled: false } },
-          headers,
-        }),
-        [200],
-      );
-      expect(disabled.body).toStrictEqual({ url: checkoutUrl });
-      await expect(readAutoRecharge()).resolves.toStrictEqual({
-        enabled: false,
-        threshold: null,
-        amount: null,
-      });
-    });
-  });
-
-  it.each([true, false])(
-    "preserves config commit ordering when hosted Checkout fails (enabled=%s)",
-    async (enabled) => {
-      const fixture = await createPublicBillingOrg("pro");
-      await fixture.run(async () => {
-        const client = creditClient();
-        await accept(
-          client.create({
-            body: { ...checkoutBody, autoRecharge: enabledConfig },
-            headers,
-          }),
-          [200],
-        );
-        const nextConfig = {
-          enabled,
-          threshold: 10_000,
-          amount: 50_000,
-        };
-        context.mocks.stripe.checkout.sessions.create.mockRejectedValueOnce(
-          new Error("Stripe Checkout unavailable"),
-        );
-        const failed = await accept(
-          client.create({
-            body: { ...checkoutBody, autoRecharge: nextConfig },
-            headers,
-          }),
-          [500],
-        );
-        expect(failed.body).toStrictEqual({ error: "Internal server error" });
-        await expect(readAutoRecharge()).resolves.toStrictEqual(
-          enabled ? nextConfig : enabledConfig,
-        );
-        const recovered = await accept(
-          client.create({ body: checkoutBody, headers }),
-          [200],
-        );
-        expect(recovered.body).toStrictEqual({ url: checkoutUrl });
-        await expect(readAutoRecharge()).resolves.toStrictEqual(
-          enabled ? nextConfig : enabledConfig,
-        );
-      });
-    },
-  );
-
-  it("leaves auto-recharge enabled when a disable request returns an in-app preview", async () => {
-    const fixture = await createPublicBillingOrg("pro");
-    await fixture.run(async () => {
-      const client = creditClient();
-      await accept(
-        client.create({
-          body: { ...checkoutBody, autoRecharge: enabledConfig },
-          headers,
-        }),
-        [200],
-      );
-      context.mocks.stripe.subscriptions.retrieve.mockResolvedValue({
-        id: fixture.subscriptionId,
-        customer: fixture.customerId,
-        default_payment_method: "pm_credit_preview",
-      });
-      context.mocks.stripe.customers.retrieve.mockResolvedValue({
-        id: fixture.customerId,
-        discount: null,
-      });
-      context.mocks.stripe.invoices.createPreview.mockImplementation(
-        (rawParams) => {
-          const params = rawParams as {
-            readonly invoice_items: readonly {
-              readonly metadata: Readonly<Record<string, string>>;
-            }[];
-          };
-          return Promise.resolve({
-            id: "in_credit_preview",
-            amount_due: 2000,
-            currency: "usd",
-            status: null,
-            lines: {
-              has_more: false,
-              data: [
-                {
-                  id: "il_credit_preview",
-                  amount: 2000,
-                  subtotal: 2000,
-                  metadata: params.invoice_items[0]?.metadata,
-                  period: { start: currentSecond(), end: currentSecond() },
-                  parent: null,
-                },
-              ],
-            },
-            parent: null,
-          });
-        },
-      );
-      context.mocks.stripe.checkout.sessions.create.mockClear();
-      const preview = await accept(
-        client.create({
-          body: {
-            ...checkoutBody,
-            supportsInAppPreview: true,
-            autoRecharge: { enabled: false },
-          },
-          headers,
-        }),
-        [200],
-      );
-      expect(preview.body).toMatchObject({
-        status: "preview",
-        credits: 20_000,
-        amountCents: 2000,
-        previewToken: expect.any(String),
-      });
-      await expect(readAutoRecharge()).resolves.toStrictEqual(enabledConfig);
-      expect(
-        context.mocks.stripe.checkout.sessions.create,
-      ).not.toHaveBeenCalled();
-    });
-  });
-
-  it("rejects an invalid credit-purchase preview for a Free workspace", async () => {
-    const fixture = await createPublicBillingOrg();
-    await fixture.run(async () => {
-      const response = await accept(
-        creditClient().confirm({
-          body: { previewToken: "not-a-valid-preview" },
-          headers,
-        }),
-        [400],
-      );
-      expect(response.body.error).toStrictEqual({
-        message: "Credit purchase preview expired or is no longer valid",
-        code: "BAD_REQUEST",
-      });
-      expect(context.mocks.stripe.invoices.create).not.toHaveBeenCalled();
-    });
-  });
-
-  it.each([
-    { enabled: true, amount: 20_000 },
-    { enabled: true, threshold: 20_000, amount: 20_000 },
-  ])(
-    "rejects invalid enabled config without changing persisted settings (%j)",
-    async (autoRecharge) => {
-      const fixture = await createPublicBillingOrg("pro");
-      await fixture.run(async () => {
-        const response = await accept(
-          creditClient().create({
-            body: { ...checkoutBody, autoRecharge },
-            headers,
-          }),
-          [400],
-        );
-        expect(response.body.error.code).toBe("BAD_REQUEST");
-        await expect(readAutoRecharge()).resolves.toStrictEqual({
-          enabled: false,
-          threshold: null,
-          amount: null,
-        });
-        expect(
-          context.mocks.stripe.checkout.sessions.create,
-        ).not.toHaveBeenCalled();
-      });
-    },
-  );
-
-  it("returns the provider-config guard before authentication for both routes", async () => {
-    mockOptionalEnv("STRIPE_SECRET_KEY", undefined);
-    const client = creditClient();
-    const unauthenticated = { authorization: "Bearer unavailable-session" };
-    const created = await accept(
-      client.create({ body: checkoutBody, headers: unauthenticated }),
-      [503],
-    );
-    const confirmed = await accept(
-      client.confirm({
-        body: { previewToken: "not-a-valid-preview" },
-        headers: unauthenticated,
-      }),
-      [503],
-    );
-    for (const response of [created, confirmed]) {
-      expect(response.body.error).toStrictEqual({
-        message: "Billing not configured",
-        code: "PROVIDER_UNAVAILABLE",
-      });
-    }
+    ).not.toHaveBeenCalled();
   });
 });

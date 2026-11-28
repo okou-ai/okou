@@ -1,661 +1,537 @@
 import { randomUUID } from "node:crypto";
-import {
-  GetObjectCommand,
-  HeadObjectCommand,
-  PutObjectCommand,
-} from "@aws-sdk/client-s3";
+import { Readable } from "node:stream";
 import { uploadsContract } from "@okouai/api-contracts/contracts/uploads";
-import { setupApp } from "../../../__tests__/test-helpers";
-import { uploadsPrepareRoutes } from "../uploads-prepare";
-import { createRouteMocks } from "./helpers/route-test";
-
-import { describe, expect, it } from "vitest";
-import type { Capability } from "@okouai/api-contracts/contracts/capabilities";
+import { beforeAll } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
-import { mockEnv } from "../../../lib/env";
-import { buildArtifactKeyV2 } from "../../../lib/file-url";
+import { setupApp } from "../../../__tests__/test-helpers";
+import { TEST_WITH_SINGLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE } from "../../../__tests__/test-timeouts";
+import { buildArtifactKey, buildArtifactKeyV2 } from "../../../lib/file-url";
 import { now } from "../../../lib/time";
-import { signSandboxJwtForTests } from "../../auth/tokens";
 import { flushWaitUntilForTest } from "../../context/wait-until";
-import {
-  createBddApi,
-  expectApiError,
-  type ApiTestUser,
-} from "./helpers/api-bdd";
-import { mockClerkMembership } from "./helpers/api-bdd-clerk";
-import { createChatCallbacksApi } from "./helpers/api-bdd-chat-callbacks";
-import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
+import { uploadsCompleteRoutes } from "../uploads-complete";
+import { uploadsPrepareRoutes } from "../uploads-prepare";
+import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createRunsApi } from "./helpers/api-bdd-runs";
-import { createChatEventsFixture } from "./helpers/chat-events-fixture";
-import { createPublicUnfundedProFixture } from "./helpers/public-unfunded-pro-fixture";
+import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
+import { createRouteMocks } from "./helpers/route-test";
+import { createRunExecutionCredentials } from "./helpers/run-execution-credentials";
 
 const context = testContext();
 const bdd = createBddApi(context);
-const chat = createChatFilesBddApi(context);
-const chatCallbacks = createChatCallbacksApi(context);
-const runsApi = createRunsApi(context);
-const eventsFixture = createChatEventsFixture(context);
+const credentials = createRunExecutionCredentials(context, {
+  preferences: false,
+});
+const headers = Object.freeze({ authorization: "Bearer clerk-session" });
+const ARTIFACTS_BUCKET = "test-user-artifacts";
 
-type ChatObjectStore = ReturnType<typeof chatCallbacks.acceptChatObjectStorage>;
-
-interface RunUploadFixture {
-  readonly actor: ApiTestUser & { readonly orgId: string };
-  readonly runId: string;
-  readonly threadId: string;
-  readonly bearer: string;
-  readonly objectStore: ChatObjectStore;
+interface StoredUploadObject {
+  readonly bucket: string;
+  readonly key: string;
+  readonly body: Buffer;
+  readonly size: number;
+  readonly contentType?: string;
+  readonly metadata?: Readonly<Record<string, string>>;
+  readonly lastModified: Date;
 }
 
-function requireOrgId(actor: ApiTestUser): string {
-  if (!actor.orgId) {
-    throw new Error("Expected upload completion actor to have an org");
-  }
-  return actor.orgId;
+function member() {
+  return { userId: `user_${randomUUID()}`, orgId: `org_${randomUUID()}` };
 }
 
-function currentSecond(): number {
-  return Math.floor(now() / 1000);
+function uploadsClient(actor: {
+  readonly userId: string;
+  readonly orgId: string | null;
+}) {
+  createRouteMocks(context).clerk.session(actor.userId, actor.orgId);
+  return setupApp({
+    context,
+    routes: [...uploadsPrepareRoutes, ...uploadsCompleteRoutes],
+  })(uploadsContract);
 }
 
-function okouToken(args: {
-  userId: string;
-  orgId: string;
-  runId: string;
-  capabilities: readonly Capability[];
-}): string {
-  const seconds = currentSecond();
-  return signSandboxJwtForTests({
-    scope: "okou",
-    userId: args.userId,
-    orgId: args.orgId,
-    runId: args.runId,
-    capabilities: args.capabilities,
-    iat: seconds,
-    exp: seconds + 60,
+function uploadsBearerClient() {
+  context.mocks.clerk.authenticateRequest.mockResolvedValue({
+    isAuthenticated: false,
+  });
+  return setupApp({
+    context,
+    routes: [...uploadsPrepareRoutes, ...uploadsCompleteRoutes],
+  })(uploadsContract);
+}
+
+function mockActorMembership(actor: ApiTestUser): void {
+  context.mocks.clerk.users.getOrganizationMembershipList.mockResolvedValue({
+    data: actor.orgId
+      ? [
+          {
+            role: actor.orgRole ?? "org:admin",
+            organization: { id: actor.orgId },
+          },
+        ]
+      : [],
   });
 }
 
-function okouBearer(
-  capabilities: readonly Capability[] = ["file:write"],
-): string {
-  const actor = bdd.user();
-  const orgId = requireOrgId(actor);
-  mockClerkMembership(context, { ...actor, orgId }, "org:admin");
-  return `Bearer ${okouToken({
-    userId: actor.userId,
-    orgId,
-    runId: randomUUID(),
-    capabilities,
-  })}`;
-}
-
-async function createRunUploadFixture(
-  options: { readonly chatThread?: boolean } = {},
-): Promise<RunUploadFixture> {
-  const actor = bdd.user();
-  const orgId = requireOrgId(actor);
-  const objectStore = chatCallbacks.acceptChatObjectStorage();
-  runsApi.acceptStorageDownloads();
-  runsApi.acceptTelemetryIngest();
-
-  const runnerGroup = await runsApi.configureRunnerGroup();
-  await runsApi.grantProEntitlement(actor);
-  await runsApi.ensurePersonalSubscriptionModel(actor);
-  await runsApi.heartbeatRunner(runnerGroup);
-
-  let runId: string;
-  let threadId: string;
-  if (options.chatThread) {
-    const sent = await chat.sendAndLaunch(actor, {
-      prompt: "produce a thread-linked uploaded artifact",
-    });
-    runId = sent.runId;
-    threadId = sent.threadId;
-  } else {
-    const run = await runsApi.createThreadRun(actor, {
-      prompt: "produce an uploaded artifact",
-    });
-    runId = run.runId;
-    threadId = run.threadId;
-  }
-  const orgActor = { ...actor, orgId };
-  mockClerkMembership(context, orgActor, "org:admin");
-
-  return {
-    actor: orgActor,
-    runId,
-    threadId,
-    bearer: `Bearer ${okouToken({
-      userId: actor.userId,
-      orgId,
-      runId,
-      capabilities: ["file:write"],
-    })}`,
-    objectStore,
-  };
-}
-
-async function prepareOrganizationlessUpload(
-  actor: ApiTestUser,
-  body: { filename: string; contentType: string; size: number },
+function installUploadStorage(
+  initialObjects: readonly {
+    readonly bucket: string;
+    readonly key: string;
+    readonly size: number;
+    readonly contentType?: string;
+    readonly metadata?: Readonly<Record<string, string>>;
+    readonly body?: Buffer;
+  }[] = [],
 ) {
-  createRouteMocks(context).clerk.session(actor.userId, null);
-  const prepared = await accept(
-    setupApp({ context, routes: uploadsPrepareRoutes })(
-      uploadsContract,
-    ).prepare({
-      headers: { authorization: "Bearer clerk-session" },
-      body,
-    }),
-    [200],
-  );
-  return prepared.body;
-}
+  const objects = new Map<string, StoredUploadObject>();
+  const defaultDate = new Date("2026-01-01T00:00:00.000Z");
 
-function addUploadObject(
-  fixture: Pick<RunUploadFixture, "actor" | "objectStore">,
-  fileId: string,
-  filename: string,
-  size = 1234,
-): void {
-  fixture.objectStore.addObject({
-    bucket: "test-user-artifacts",
-    key: `artifacts/${fixture.actor.userId}/${fileId}/${filename}`,
-    size,
+  function putObject(entry: {
+    readonly bucket: string;
+    readonly key: string;
+    readonly size: number;
+    readonly contentType?: string;
+    readonly metadata?: Readonly<Record<string, string>>;
+    readonly body?: Buffer;
+  }): void {
+    objects.set(`${entry.bucket}/${entry.key}`, {
+      bucket: entry.bucket,
+      key: entry.key,
+      body: entry.body ?? Buffer.alloc(0),
+      size: entry.size,
+      contentType: entry.contentType,
+      metadata: entry.metadata,
+      lastModified: defaultDate,
+    });
+  }
+
+  for (const entry of initialObjects) {
+    putObject(entry);
+  }
+
+  context.mocks.s3.getSignedUrl.mockResolvedValue(
+    "https://r2.example.com/uploads/presigned",
+  );
+  function readCommandInput(command: unknown) {
+    if (
+      typeof command !== "object" ||
+      command === null ||
+      !("input" in command) ||
+      typeof command.input !== "object" ||
+      command.input === null
+    ) {
+      return undefined;
+    }
+    return command.input as {
+      readonly Bucket?: unknown;
+      readonly Key?: unknown;
+      readonly Prefix?: unknown;
+      readonly Body?: unknown;
+      readonly ContentType?: unknown;
+      readonly Metadata?: unknown;
+    };
+  }
+
+  function handlePutObject(
+    bucket: string,
+    key: string,
+    input: ReturnType<typeof readCommandInput>,
+  ) {
+    const rawBody = input?.Body;
+    const body =
+      typeof rawBody === "string"
+        ? Buffer.from(rawBody, "utf8")
+        : rawBody instanceof Uint8Array
+          ? Buffer.from(rawBody)
+          : Buffer.alloc(0);
+    const metadata =
+      typeof input?.Metadata === "object" && input.Metadata !== null
+        ? (input.Metadata as Record<string, string>)
+        : undefined;
+    putObject({
+      bucket,
+      key,
+      body,
+      size: body.byteLength,
+      contentType:
+        typeof input?.ContentType === "string" ? input.ContentType : undefined,
+      metadata,
+    });
+    return Promise.resolve({ ETag: '"etag-1"' });
+  }
+
+  function handleGetObject(fullKey: string) {
+    const entry = objects.get(fullKey);
+    if (!entry) {
+      return Promise.reject(
+        Object.assign(new Error(`Missing object: ${fullKey}`), {
+          name: "NoSuchKey",
+          $metadata: { httpStatusCode: 404 },
+        }),
+      );
+    }
+    const stream = Readable.from([entry.body]);
+    return Promise.resolve({
+      ContentLength: entry.size,
+      ContentType: entry.contentType,
+      ETag: '"etag-1"',
+      Body: Object.assign(stream, {
+        transformToString: () => {
+          return Promise.resolve(entry.body.toString("utf8"));
+        },
+      }),
+    });
+  }
+
+  function handleHeadObject(fullKey: string) {
+    const entry = objects.get(fullKey);
+    if (!entry) {
+      return Promise.reject(
+        Object.assign(new Error(`Missing object: ${fullKey}`), {
+          name: "NotFound",
+          $metadata: { httpStatusCode: 404 },
+        }),
+      );
+    }
+    return Promise.resolve({
+      ContentLength: entry.size,
+      ContentType: entry.contentType,
+      LastModified: entry.lastModified,
+      Metadata: entry.metadata ?? {},
+    });
+  }
+
+  function handleListObjects(bucket: string, prefix: string) {
+    const contents = [...objects.values()]
+      .filter((entry) => {
+        return entry.bucket === bucket && entry.key.startsWith(prefix);
+      })
+      .map((entry) => {
+        return {
+          Key: entry.key,
+          Size: entry.size,
+          LastModified: entry.lastModified,
+        };
+      });
+    return Promise.resolve({ Contents: contents });
+  }
+
+  context.mocks.s3.send.mockImplementation((command: unknown) => {
+    const name =
+      typeof command === "object" && command !== null
+        ? command.constructor.name
+        : "";
+    const input = readCommandInput(command);
+    const bucket = typeof input?.Bucket === "string" ? input.Bucket : "";
+    const key = typeof input?.Key === "string" ? input.Key : "";
+    const fullKey = `${bucket}/${key}`;
+
+    if (name === "PutObjectCommand" && bucket && key) {
+      return handlePutObject(bucket, key, input);
+    }
+    if (name === "GetObjectCommand") {
+      return handleGetObject(fullKey);
+    }
+    if (name === "HeadObjectCommand") {
+      return handleHeadObject(fullKey);
+    }
+    if (name === "ListObjectsV2Command") {
+      return handleListObjects(
+        bucket,
+        typeof input?.Prefix === "string" ? input.Prefix : "",
+      );
+    }
+    return Promise.resolve({});
   });
+
+  return { putObject };
 }
 
 describe("POST /api/uploads/complete", () => {
-  it("records a private artifact from an agent run in the catalog with its authenticated URL", async () => {
-    const fixture = await createRunUploadFixture({ chatThread: true });
-    mockEnv("OKOU_API_BACKEND_URL", "https://api.okou.ai");
-    createRouteMocks(context).clerk.session(
-      fixture.actor.userId,
-      fixture.actor.orgId,
+  beforeAll(async () => {
+    await createRunsApi(context).configureRunnerGroup();
+  });
+
+  it("uploads-complete-005 completes an ordinary session upload without a run artifact association", async () => {
+    context.mocks.s3.getSignedUrl.mockResolvedValue(
+      "https://r2.example.com/uploads/plain.txt",
     );
-    const referenceObjects = new Map<string, string>();
-    context.mocks.s3.send.mockImplementation((command) => {
-      if (command instanceof PutObjectCommand && command.input.Key) {
-        referenceObjects.set(
-          command.input.Key,
-          String(command.input.Body ?? ""),
-        );
-        return Promise.resolve({});
-      }
-      if (command instanceof GetObjectCommand && command.input.Key) {
-        const stored = referenceObjects.get(command.input.Key);
-        if (stored !== undefined) {
-          return Promise.resolve({
-            ETag: '"etag"',
-            Body: {
-              async *[Symbol.asyncIterator]() {
-                yield Buffer.from(stored);
-              },
-            },
-          });
-        }
+    context.mocks.s3.send.mockImplementation((command: unknown) => {
+      const { constructor, input } = command as {
+        readonly constructor: { readonly name: string };
+        readonly input?: { readonly Key?: string };
+      };
+      if (
+        constructor.name === "GetObjectCommand" &&
+        !input?.Key?.startsWith("private-artifacts/")
+      ) {
         return Promise.reject(
-          Object.assign(new Error("NoSuchKey"), { name: "NoSuchKey" }),
+          Object.assign(new Error("Missing object"), {
+            name: "NoSuchKey",
+          }),
         );
       }
-      expect(command).toBeInstanceOf(HeadObjectCommand);
-      return Promise.resolve({
-        ContentLength: 1234,
-        ContentType: "text/markdown; charset=utf-8",
-      });
+      if (constructor.name === "HeadObjectCommand") {
+        return Promise.resolve({
+          ContentLength: 5,
+          ContentType: "text/plain",
+        });
+      }
+      if (constructor.name === "GetObjectCommand") {
+        return Promise.resolve({
+          ContentLength: 5,
+          ContentType: "text/plain",
+          Body: Readable.from([Buffer.from("hello")]),
+        });
+      }
+      if (constructor.name === "PutObjectCommand") {
+        return Promise.resolve({ ETag: '"etag-1"' });
+      }
+      return Promise.resolve({});
     });
+
+    const client = uploadsClient(member());
     const prepared = await accept(
-      setupApp({ context, routes: uploadsPrepareRoutes })(
-        uploadsContract,
-      ).prepare({
-        headers: { authorization: fixture.bearer },
+      client.prepare({
+        headers,
         body: {
-          filename: "private-report.md",
-          contentType: "text/markdown; charset=utf-8",
-          size: 1234,
-          purpose: "artifact",
+          filename: "plain.txt",
+          contentType: "text/plain",
+          size: 5,
         },
       }),
       [200],
     );
-    const response = await chat.completeUploadWithBearer(
-      fixture.bearer,
-      { id: prepared.body.id },
-      [200],
-    );
-    expect(response.body).toMatchObject({
-      url: prepared.body.url,
-      contentType: "text/markdown; charset=utf-8",
-    });
-    const catalog = await chat.listArtifactCatalog(fixture.actor, {
-      kind: "file",
-    });
-    const artifact = catalog.artifacts.find((entry) => {
-      return entry.title === "private-report.md";
-    });
-    expect(artifact).toBeDefined();
-    if (!artifact) {
-      throw new Error("Private artifact missing from catalog");
-    }
-    const detail = await chat.getArtifactCatalogEntry(
-      fixture.actor,
-      artifact.id,
-    );
-    expect(detail).toMatchObject({
-      file: {
-        url: prepared.body.url,
-        filename: "private-report.md",
-        contentType: "text/markdown; charset=utf-8",
-      },
-    });
-  });
 
-  it("completes a run-scoped upload after the object exists", async () => {
-    const fixture = await createRunUploadFixture();
-    const fileId = randomUUID();
-    addUploadObject(fixture, fileId, "report.pdf");
-
-    const response = await chat.completeUploadWithBearer(
-      fixture.bearer,
-      { id: fileId },
+    const completed = await accept(
+      client.complete({
+        headers,
+        body: { id: prepared.body.id },
+      }),
       [200],
     );
 
-    expect(response.body).toMatchObject({
-      id: fileId,
-      filename: "report.pdf",
-      contentType: "application/pdf",
-      size: 1234,
-    });
-  });
-
-  it("completes and catalogs an upload when realtime is unavailable", async () => {
-    const fixture = await createRunUploadFixture({ chatThread: true });
-    const fileId = randomUUID();
-    addUploadObject(fixture, fileId, "realtime-independent.pdf");
-    await flushWaitUntilForTest();
-    context.mocks.ably.publish.mockClear();
-    context.mocks.ably.publish.mockRejectedValue(
-      new Error("realtime publication failed"),
-    );
-
-    const response = await chat.completeUploadWithBearer(
-      fixture.bearer,
-      { id: fileId },
-      [200],
-    );
-    await flushWaitUntilForTest();
-
-    expect(response.body).toMatchObject({
-      id: fileId,
-      filename: "realtime-independent.pdf",
-      contentType: "application/pdf",
-      size: 1234,
-    });
-    const catalog = await chat.listArtifactCatalog(fixture.actor, {
-      kind: "file",
-    });
-    expect(catalog.artifacts).toContainEqual(
-      expect.objectContaining({ title: "realtime-independent.pdf" }),
-    );
-  });
-
-  it("associates completed-run uploads with their owning thread and retains files after thread deletion", async () => {
-    const { actor } = await eventsFixture.entitledNativeChatActor();
-    const orgId = requireOrgId(actor);
-    const run = await eventsFixture.sendChatRun(actor, {
-      prompt: "Produce an artifact that finishes uploading after execution.",
-    });
-    const execution = await eventsFixture.runExecution(run.runId);
-    await eventsFixture.completeChatRunOk(run.runId, execution.sandboxHeaders);
-    await flushWaitUntilForTest();
-
-    const objectStore = eventsFixture.chatCallbacks.acceptChatObjectStorage();
-    const uploadFixture = { actor: { ...actor, orgId }, objectStore };
-    const bearer = `Bearer ${okouToken({
-      userId: actor.userId,
-      orgId,
-      runId: run.runId,
-      capabilities: ["file:write"],
-    })}`;
-    const fileId = randomUUID();
-    addUploadObject(uploadFixture, fileId, "completed-run.pdf");
-
-    const completedUpload = await chat.completeUploadWithBearer(
-      bearer,
-      { id: fileId },
-      [200],
-    );
-    await flushWaitUntilForTest();
-    expect(completedUpload.body).toMatchObject({
-      id: fileId,
-      filename: "completed-run.pdf",
-    });
-    const threadCatalog = await chat.listArtifactCatalog(actor, {
-      kind: "file",
-      chatThreadId: run.threadId,
-    });
-    expect(threadCatalog.artifacts).toContainEqual(
-      expect.objectContaining({ title: "completed-run.pdf" }),
-    );
-
-    await chat.deleteThread(actor, run.threadId);
-    await flushWaitUntilForTest();
-    const detachedFileId = randomUUID();
-    addUploadObject(uploadFixture, detachedFileId, "deleted-thread.pdf");
-    const detachedUpload = await chat.completeUploadWithBearer(
-      bearer,
-      { id: detachedFileId },
-      [200],
-    );
-    await flushWaitUntilForTest();
-    expect(detachedUpload.body).toMatchObject({
-      id: detachedFileId,
-      filename: "deleted-thread.pdf",
-    });
-    const catalog = await chat.listArtifactCatalog(actor, { kind: "file" });
-    expect(catalog.artifacts).toStrictEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ title: "completed-run.pdf" }),
-        expect.objectContaining({ title: "deleted-thread.pdf" }),
-      ]),
-    );
-  });
-
-  it("completes an ordinary session upload without a run artifact association", async () => {
-    const actor = bdd.user();
-    const objectStore = chatCallbacks.acceptChatObjectStorage();
-    const fileId = randomUUID();
-    addUploadObject(
-      { actor: { ...actor, orgId: requireOrgId(actor) }, objectStore },
-      fileId,
-      "plain.txt",
-      5,
-    );
-
-    const response = await chat.completeUpload(actor, { id: fileId });
-
-    expect(response).toMatchObject({
-      id: fileId,
+    expect(completed.body).toMatchObject({
+      id: prepared.body.id,
       filename: "plain.txt",
       size: 5,
     });
   });
 
-  it("keeps legacy v2 objects without a layout marker on the legacy CDN", async () => {
-    const fixture = await createRunUploadFixture();
-    const fileId = randomUUID();
-    const key = buildArtifactKeyV2(fileId, "财务 报告.pdf");
-    fixture.objectStore.addObject({
-      bucket: "test-user-artifacts",
-      key,
-      size: 17,
-      contentType: "application/pdf",
-      metadata: {
-        "artifact-id": fileId,
-        filename: encodeURIComponent("财务 报告.pdf"),
-        "user-id": encodeURIComponent(fixture.actor.userId),
-      },
-    });
-    const response = await chat.completeUploadWithBearer(
-      fixture.bearer,
-      { id: fileId },
-      [200],
-    );
+  it(
+    "uploads-complete-007 resolves the CDN from the immutable object layout marker",
+    { timeout: TEST_WITH_SINGLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const actor = bdd.user();
+      const token = await credentials.okouToken(actor);
+      const storage = installUploadStorage();
 
-    expect(response.body).toMatchObject({
-      id: fileId,
-      filename: "财务 报告.pdf",
-      contentType: "application/pdf",
-      size: 17,
-      url: `https://cdn.vm7.io/${key}`,
-    });
-    if ("error" in response.body) {
-      throw new Error("Expected the upload to complete successfully");
-    }
-    expect(response.body.url).toMatch(/^https:\/\/cdn\.vm7\.io\//u);
-  });
+      const prepared = await accept(
+        uploadsClient({ userId: actor.userId, orgId: null }).prepare({
+          headers,
+          body: {
+            filename: "okou-report.pdf",
+            contentType: "application/pdf",
+            size: 256,
+          },
+        }),
+        [200],
+      );
+      storage.putObject({
+        bucket: ARTIFACTS_BUCKET,
+        key: buildArtifactKeyV2(prepared.body.id, "okou-report.pdf"),
+        size: 256,
+        contentType: "application/pdf",
+        metadata: {
+          "artifact-id": prepared.body.id,
+          filename: encodeURIComponent("okou-report.pdf"),
+          "user-id": encodeURIComponent(actor.userId),
+          "public-brand": "okou",
+        },
+      });
+      mockActorMembership(actor);
 
-  it("resolves the CDN from the immutable object layout marker", async () => {
-    const fixture = await createRunUploadFixture();
-    const prepared = await prepareOrganizationlessUpload(fixture.actor, {
-      filename: "okou-report.pdf",
-      contentType: "application/pdf",
-      size: 17,
-    });
-    const key = `artifacts${new URL(prepared.url).pathname}`;
-    fixture.objectStore.addObject({
-      bucket: "test-user-artifacts",
-      key,
-      size: 17,
-      contentType: "application/pdf",
-      metadata: {
-        "artifact-id": prepared.id,
-        filename: "okou-report.pdf",
-        "public-brand": "okou",
-        "user-id": encodeURIComponent(fixture.actor.userId),
-      },
-    });
-
-    const response = await chat.completeUploadWithBearer(
-      fixture.bearer,
-      { id: prepared.id },
-      [200],
-    );
-
-    expect(response.body).toMatchObject({
-      id: prepared.id,
-      filename: "okou-report.pdf",
-      url: expect.stringMatching(/^https:\/\/a\.okou\.io\/[0-9a-z]{10}\.pdf$/u),
-    });
-  });
-
-  it("keeps completion idempotent while an Okou artifact adopts its short URL", async () => {
-    const fixture = await createRunUploadFixture();
-    const prepared = await prepareOrganizationlessUpload(fixture.actor, {
-      filename: "okou-cutover.pdf",
-      contentType: "application/pdf",
-      size: 17,
-    });
-    const key = `artifacts${new URL(prepared.url).pathname}`;
-    fixture.objectStore.addObject({
-      bucket: "test-user-artifacts",
-      key,
-      size: 17,
-      contentType: "application/pdf",
-      metadata: {
-        "artifact-id": prepared.id,
-        filename: "okou-cutover.pdf",
-        "public-brand": "okou",
-        "user-id": encodeURIComponent(fixture.actor.userId),
-      },
-    });
-
-    mockEnv("OKOU_PUBLIC_ARTIFACTS_BASE_URL", "https://cdn.okou.io");
-    const legacy = await chat.completeUploadWithBearer(
-      fixture.bearer,
-      { id: prepared.id },
-      [200],
-    );
-    expect(legacy.body).toMatchObject({
-      url: expect.stringMatching(
-        /^https:\/\/cdn\.okou\.io\/artifacts\/[0-9a-z]{10}\.pdf$/u,
-      ),
-    });
-
-    mockEnv("OKOU_PUBLIC_ARTIFACTS_BASE_URL", "https://a.okou.io");
-    const shortened = await chat.completeUploadWithBearer(
-      fixture.bearer,
-      { id: prepared.id },
-      [200],
-    );
-    expect(shortened.body).toMatchObject({
-      url: expect.stringMatching(/^https:\/\/a\.okou\.io\/[0-9a-z]{10}\.pdf$/u),
-    });
-  });
-
-  it.each([
-    ["text/csv", "text/csv"],
-    ['Text/Markdown; Charset="UTF-8"', "text/markdown; charset=utf-8"],
-  ])(
-    "preserves recognized complete content type %s",
-    async (contentType, expected) => {
-      const fixture = await createRunUploadFixture();
-      const fileId = randomUUID();
-      addUploadObject(fixture, fileId, "data.bin", 9);
-
-      const response = await chat.completeUploadWithBearer(
-        fixture.bearer,
-        { id: fileId, contentType },
+      const completed = await accept(
+        uploadsBearerClient().complete({
+          headers: { authorization: `Bearer ${token}` },
+          body: { id: prepared.body.id },
+        }),
         [200],
       );
 
-      expect(response.body).toMatchObject({
+      expect(completed.body).toMatchObject({
+        id: prepared.body.id,
+        filename: "okou-report.pdf",
+      });
+      const completedUrl = new URL(completed.body.url);
+      expect(completedUrl.origin).toBe("https://a.okou.io");
+      expect(completedUrl.pathname.endsWith(".pdf")).toBeTruthy();
+      expect(completedUrl.pathname.slice(1, -4)).toHaveLength(10);
+    },
+  );
+
+  it(
+    "uploads-complete-011 infers audio content type from uploaded filename",
+    { timeout: TEST_WITH_SINGLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const actor = bdd.user();
+      const token = await credentials.okouToken(actor);
+      const fileId = randomUUID();
+      installUploadStorage([
+        {
+          bucket: ARTIFACTS_BUCKET,
+          key: buildArtifactKey(actor.userId, fileId, "clip.mp3"),
+          size: 2048,
+        },
+      ]);
+      mockActorMembership(actor);
+
+      const completed = await accept(
+        uploadsBearerClient().complete({
+          headers: { authorization: `Bearer ${token}` },
+          body: { id: fileId },
+        }),
+        [200],
+      );
+
+      expect(completed.body).toMatchObject({
         id: fileId,
-        filename: "data.bin",
-        contentType: expected,
+        filename: "clip.mp3",
+        contentType: "audio/mpeg",
+        size: 2048,
       });
     },
   );
 
-  it("infers audio content type from uploaded filename", async () => {
-    const fixture = await createRunUploadFixture();
-    const fileId = randomUUID();
-    addUploadObject(fixture, fileId, "clip.mp3", 2048);
+  it(
+    "uploads-complete-012 is idempotent for repeated completion calls for the same run file",
+    { timeout: TEST_WITH_SINGLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const actor = bdd.user();
+      const token = await credentials.okouToken(actor);
+      const fileId = randomUUID();
+      installUploadStorage([
+        {
+          bucket: ARTIFACTS_BUCKET,
+          key: buildArtifactKey(actor.userId, fileId, "retry.txt"),
+          size: 7,
+        },
+      ]);
+      mockActorMembership(actor);
+      const agentHeaders = { authorization: `Bearer ${token}` };
 
-    const response = await chat.completeUploadWithBearer(
-      fixture.bearer,
-      { id: fileId },
-      [200],
-    );
-
-    expect(response.body).toMatchObject({
-      id: fileId,
-      filename: "clip.mp3",
-      contentType: "audio/mpeg",
-      size: 2048,
-    });
-  });
-
-  it("is idempotent for repeated completion calls for the same run file", async () => {
-    const fixture = await createRunUploadFixture();
-    const fileId = randomUUID();
-    addUploadObject(fixture, fileId, "retry.txt", 7);
-
-    const first = await chat.completeUploadWithBearer(
-      fixture.bearer,
-      { id: fileId },
-      [200],
-    );
-    const second = await chat.completeUploadWithBearer(
-      fixture.bearer,
-      { id: fileId },
-      [200],
-    );
-
-    expect(second.body).toStrictEqual(first.body);
-  });
-
-  it("acknowledges a late upload after its run root was deleted", async () => {
-    const fixture = await createRunUploadFixture();
-    const fileId = randomUUID();
-    addUploadObject(fixture, fileId, "late.txt", 11);
-    await runsApi.requestCancelRun(fixture.actor, fixture.runId, [200]);
-    await flushWaitUntilForTest();
-    await chat.deleteThread(fixture.actor, fixture.threadId);
-
-    const response = await chat.completeUploadWithBearer(
-      fixture.bearer,
-      { id: fileId },
-      [200],
-    );
-
-    expect(response.body).toMatchObject({
-      id: fileId,
-      filename: "late.txt",
-      size: 11,
-    });
-  });
-
-  it("returns 404 when the uploaded object cannot be found", async () => {
-    const fixture = await createRunUploadFixture();
-    const fileId = randomUUID();
-
-    const response = await chat.completeUploadWithBearer(
-      fixture.bearer,
-      { id: fileId },
-      [404],
-    );
-
-    expect(response.body).toStrictEqual({
-      error: { message: "Uploaded file not found", code: "NOT_FOUND" },
-    });
-  });
-
-  it("rejects suspended orgs before completing the upload", async () => {
-    const actor = bdd.user();
-    const fixture = createPublicUnfundedProFixture(context, actor);
-    await fixture.run(async () => {
-      await fixture.initialize();
-      await fixture.suspend();
-
-      const response = await chat.requestCompleteUpload(
-        actor,
-        { id: randomUUID() },
-        [402],
+      const first = await accept(
+        uploadsBearerClient().complete({
+          headers: agentHeaders,
+          body: { id: fileId },
+        }),
+        [200],
+      );
+      const second = await accept(
+        uploadsBearerClient().complete({
+          headers: agentHeaders,
+          body: { id: fileId },
+        }),
+        [200],
       );
 
-      expectApiError(response.body);
-      expect(response.body.error.code).toBe("INSUFFICIENT_CREDITS");
-    });
-  });
+      expect(second.body).toStrictEqual(first.body);
+    },
+  );
 
-  it("returns 401 when the request is unauthenticated", async () => {
-    const response = await chat.requestCompleteUpload(
-      null,
-      { id: randomUUID() },
-      [401],
+  it(
+    "uploads-complete-014 returns 404 when the uploaded object cannot be found",
+    { timeout: TEST_WITH_SINGLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const actor = bdd.user();
+      const token = await credentials.okouToken(actor);
+      installUploadStorage();
+      mockActorMembership(actor);
+
+      const response = await accept(
+        uploadsBearerClient().complete({
+          headers: { authorization: `Bearer ${token}` },
+          body: { id: randomUUID() },
+        }),
+        [404],
+      );
+
+      expect(response.body).toStrictEqual({
+        error: { message: "Uploaded file not found", code: "NOT_FOUND" },
+      });
+    },
+  );
+
+  it("uploads-complete-015 rejects suspended orgs before completing the upload", async () => {
+    const actor = member();
+    const suffix = randomUUID();
+    const customerId = `cus_unfunded_pro_${suffix}`;
+    const subscription = {
+      id: `sub_unfunded_pro_${suffix}`,
+      customer: customerId,
+      status: "active",
+      metadata: {},
+      cancel_at_period_end: false,
+      cancel_at: null,
+      schedule: null,
+      trial_end: null,
+      items: { data: [{ price: { id: "price_bdd_pro" } }] },
+    };
+
+    const webhooks = createWebhookCallbackApi(context);
+    webhooks.configureStripeBillingEnv();
+    context.mocks.stripe.customers.retrieve.mockResolvedValue({
+      id: customerId,
+      metadata: { orgId: actor.orgId },
+    });
+    await webhooks.postStripeEvent(
+      {
+        id: `evt_pro_created_${suffix}`,
+        type: "customer.subscription.created",
+        created: Math.floor(now() / 1000),
+        data: { object: subscription },
+      },
+      [200],
+    );
+    await webhooks.postStripeEvent(
+      {
+        id: `evt_pro_suspended_${suffix}`,
+        type: "customer.subscription.updated",
+        created: Math.floor(now() / 1000),
+        data: { object: { ...subscription, status: "canceled" } },
+      },
+      [200],
+    );
+    await flushWaitUntilForTest();
+
+    const response = await accept(
+      uploadsClient(actor).complete({
+        headers,
+        body: { id: randomUUID() },
+      }),
+      [402],
     );
 
-    expect(response.body).toStrictEqual({
-      error: { message: "Not authenticated", code: "UNAUTHORIZED" },
-    });
+    expect(response.body.error.code).toBe("INSUFFICIENT_CREDITS");
   });
 
-  it("returns 403 for an agent token without file:write capability", async () => {
-    const response = await chat.completeUploadWithBearer(
-      okouBearer(["file:read"]),
-      { id: randomUUID() },
-      [403],
-    );
+  it(
+    "uploads-complete-017 returns 403 for an agent token without file:write capability",
+    { timeout: TEST_WITH_SINGLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const admin = bdd.user({ orgRole: "org:admin" });
+      const sandboxToken = await credentials.sandboxToken(admin);
 
-    expectApiError(response.body);
-    expect(response.body.error.code).toBe("FORBIDDEN");
-    expect(response.body.error.message).toContain("file:write");
-  });
+      const response = await accept(
+        uploadsBearerClient().complete({
+          headers: { authorization: `Bearer ${sandboxToken}` },
+          body: { id: randomUUID() },
+        }),
+        [403],
+      );
 
-  it("falls back to a generic complete content type for unrecognized MIME values", async () => {
-    const actor = bdd.user();
-    const objectStore = chatCallbacks.acceptChatObjectStorage();
-    const fileId = randomUUID();
-    addUploadObject(
-      { actor: { ...actor, orgId: requireOrgId(actor) }, objectStore },
-      fileId,
-      "capture.custom",
-      10,
-    );
-
-    const response = await chat.completeUpload(actor, {
-      id: fileId,
-      contentType: "application/x-custom",
-    });
-
-    expect(response).toMatchObject({
-      id: fileId,
-      filename: "capture.custom",
-      contentType: "application/octet-stream",
-      size: 10,
-    });
-  });
+      expect(response.body.error.code).toBe("FORBIDDEN");
+      expect(response.body.error.message).toContain("file:write");
+    },
+  );
 });

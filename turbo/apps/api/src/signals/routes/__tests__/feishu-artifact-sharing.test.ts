@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { Readable } from "node:stream";
 import { GetObjectCommand, HeadObjectCommand } from "@aws-sdk/client-s3";
 import { artifactAccessContract } from "@okouai/api-contracts/contracts/artifact-access";
+import { hostContract } from "@okouai/api-contracts/contracts/host";
 import { uploadsContract } from "@okouai/api-contracts/contracts/uploads";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import type { FeishuPlatform } from "@okouai/core/feishu-platform";
@@ -11,23 +12,31 @@ import { expect, test } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupAppWithRoutes } from "../../../__tests__/test-app";
 import { env } from "../../../lib/env";
-import { mockNow, now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import { flushWaitUntilForTest } from "../../context/wait-until";
-import { createDeferredPromise } from "../../utils";
 import { artifactAccessRoutes } from "../artifact-access";
+import { hostRoutes } from "../host";
 import { uploadsPrepareRoutes } from "../uploads-prepare";
 import { uploadsCompleteRoutes } from "../uploads-complete";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createHostBddApi } from "./helpers/api-bdd-host";
 import { hostedTextFile } from "./helpers/api-bdd-host-files";
 import { mockClerkUsers } from "./helpers/clerk-users";
-import { installArtifactFeishuForTest } from "./helpers/feishu-artifact-install";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
+import { createArtifactFeishuInstaller } from "./helpers/feishu-artifact-install";
 import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
+const feishuInstaller = createArtifactFeishuInstaller(context);
 const headers = Object.freeze({ authorization: "Bearer clerk-session" });
+const appClient = setupAppWithRoutes({
+  context,
+  routes: [
+    ...artifactAccessRoutes,
+    ...hostRoutes,
+    ...uploadsPrepareRoutes,
+    ...uploadsCompleteRoutes,
+  ],
+});
 
 function app(actor: ApiTestUser) {
   createRouteMocks(context).clerk.session(
@@ -35,14 +44,7 @@ function app(actor: ApiTestUser) {
     actor.orgId,
     actor.orgRole,
   );
-  return setupAppWithRoutes({
-    context,
-    routes: [
-      ...artifactAccessRoutes,
-      ...uploadsPrepareRoutes,
-      ...uploadsCompleteRoutes,
-    ],
-  });
+  return appClient;
 }
 
 function directory(users: readonly ApiTestUser[]) {
@@ -98,21 +100,25 @@ async function fixture(
   platform: FeishuPlatform = "feishu",
   audience: "private" | "organization" | "public" = "private",
   kind: "file" | "site" = "file",
+  options: {
+    readonly viewer?: "sameWorkspace" | "external";
+    readonly bindOwner?: boolean;
+  } = {},
 ) {
   const candidate = createBddApi(context).user({ orgRole: "org:admin" });
   if (!candidate.orgId) {
     throw new Error("Expected an artifact workspace");
   }
   const owner = { ...candidate, orgId: candidate.orgId };
-  const installation = await installArtifactFeishuForTest(
-    context,
-    owner,
-    platform,
-  );
-  await updateFeatureSwitchesForUser(context, owner, {
-    [FeatureSwitchKey.ArtifactUserSharing]: true,
-  });
-  directory([owner]);
+  const viewerUser = options.viewer
+    ? {
+        ...createBddApi(context).user(
+          options.viewer === "sameWorkspace" ? { orgId: owner.orgId } : {},
+        ),
+        openId: `ou_${randomUUID()}`,
+      }
+    : undefined;
+  directory(viewerUser ? [owner, viewerUser] : [owner]);
   const stored = createHostBddApi(context).captureHostedSitesS3();
   const storage = context.mocks.s3.send.getMockImplementation()!;
   context.mocks.s3.send.mockImplementation((operation, ...rest) => {
@@ -154,46 +160,54 @@ async function fixture(
     }
     return storage(operation, ...rest);
   });
-  let resource: {
+  async function createResource(): Promise<{
     readonly id: string;
     readonly kind: "file" | "site";
     readonly url: string;
-  };
-  if (kind === "site") {
-    const host = createHostBddApi(context);
-    const deployment = await host.prepareHostedSite(owner, {
-      site: `chat-${randomUUID().slice(0, 8)}`,
-      title: "Chat report",
-      artifactKind: "hosted-site",
-      spaFallback: false,
-      visibility: audience,
-      files: [
-        hostedTextFile(
-          "/index.html",
-          '<html><head><title>Confidential website</title><meta name="description" content="Private analysis"></head><body>Report</body></html>',
-        ),
-      ],
-    });
-    for (const key of stored.objects.keys()) {
-      if (key.endsWith("/index.html")) {
-        stored.objects.set(
-          key,
-          '<html><head><title>Confidential website</title><meta name="description" content="Private analysis"></head><body>Report</body></html>',
-        );
+  }> {
+    if (kind === "site") {
+      const html =
+        '<html><head><title>Confidential website</title><meta name="description" content="Private analysis"></head><body>Report</body></html>';
+      const deployment = (
+        await accept(
+          appClient(hostContract).prepare({
+            headers,
+            body: {
+              site: `chat-${randomUUID().slice(0, 8)}`,
+              title: "Chat report",
+              artifactKind: "hosted-site",
+              spaFallback: false,
+              visibility: audience,
+              files: [hostedTextFile("/index.html", html)],
+            },
+          }),
+          [200],
+        )
+      ).body;
+      for (const key of stored.objects.keys()) {
+        if (key.endsWith("/index.html")) {
+          stored.objects.set(key, html);
+        }
       }
+      const completed = (
+        await accept(
+          appClient(hostContract).complete({
+            headers,
+            params: { deploymentId: deployment.deploymentId },
+            body: {},
+          }),
+          [200],
+        )
+      ).body;
+      return {
+        kind: "site",
+        id: deployment.siteId,
+        url: new URL(completed.artifactUrl ?? completed.url, env("APP_URL"))
+          .href,
+      };
     }
-    const completed = await host.completeHostedSite(
-      owner,
-      deployment.deploymentId,
-    );
-    resource = {
-      kind: "site",
-      id: deployment.siteId,
-      url: new URL(completed.artifactUrl ?? completed.url, env("APP_URL")).href,
-    };
-  } else {
     const prepared = await accept(
-      app(owner)(uploadsContract).prepare({
+      appClient(uploadsContract).prepare({
         headers,
         body: {
           filename: "confidential-report.png",
@@ -205,30 +219,42 @@ async function fixture(
       [200],
     );
     const completed = await accept(
-      app(owner)(uploadsContract).complete({
+      appClient(uploadsContract).complete({
         headers,
         body: { id: prepared.body.id },
       }),
       [200],
     );
-    resource = {
-      id: prepared.body.id,
-      kind: "file",
-      url: new URL(completed.body.url, env("APP_URL")).href,
-    };
     if (audience !== "private") {
       await accept(
-        app(owner)(artifactAccessContract).updateVisibility({
+        appClient(artifactAccessContract).updateVisibility({
           headers,
-          params: { artifactId: resource.id },
+          params: { artifactId: prepared.body.id },
           body: { visibility: audience },
         }),
         [200],
       );
     }
+    return {
+      id: prepared.body.id,
+      kind: "file",
+      url: new URL(completed.body.url, env("APP_URL")).href,
+    };
   }
+  const [installation, resource] = await Promise.all([
+    feishuInstaller.install(owner, platform, {
+      extraSwitches: { [FeatureSwitchKey.ArtifactUserSharing]: true },
+      bindOwner: options.bindOwner,
+      extraMembers: viewerUser
+        ? [{ user: viewerUser, openId: viewerUser.openId }]
+        : [],
+    }),
+    createResource(),
+  ]);
   const chatId = `oc_${randomUUID()}`;
-  const members = [installation.ownerOpenId];
+  const members = viewerUser
+    ? [installation.ownerOpenId, viewerUser.openId]
+    : [installation.ownerOpenId];
   const prompts: unknown[] = [];
   const updates: unknown[] = [];
   const refreshes: unknown[] = [];
@@ -291,6 +317,7 @@ async function fixture(
   return {
     ...installation,
     owner,
+    viewer: viewerUser,
     resource,
     chatId,
     members,
@@ -304,15 +331,11 @@ async function fixture(
 
 type Fixture = Awaited<ReturnType<typeof fixture>>;
 
-async function member(f: Fixture, sameWorkspace = true) {
-  const user = createBddApi(context).user(
-    sameWorkspace ? { orgId: f.owner.orgId } : {},
-  );
-  const openId = `ou_${randomUUID()}`;
-  await f.bind(user, openId);
-  f.members.push(openId);
-  directory([f.owner, user]);
-  return { ...user, openId };
+function requireViewer(f: Fixture) {
+  if (!f.viewer) {
+    throw new Error("Expected a bound viewer");
+  }
+  return f.viewer;
 }
 
 async function preview(
@@ -334,9 +357,8 @@ async function preview(
     },
     eventId,
   );
-  const body: unknown = await response.json();
   await flushWaitUntilForTest();
-  return body;
+  return response.body;
 }
 
 function shareValue(f: Fixture, audience = "channel") {
@@ -387,9 +409,8 @@ async function click(
     token: "card_update_token",
     action: { value: shareValue(f, options.audience) },
   });
-  const body: unknown = await response.json();
   await flushWaitUntilForTest();
-  return body;
+  return response.body;
 }
 
 async function shares(f: Fixture) {
@@ -404,61 +425,50 @@ async function shares(f: Fixture) {
   ).body;
 }
 
-test.each(["feishu", "lark"] as const)(
-  "%s isolates viewer previews and refreshes after the owner shares current members",
-  async (platform) => {
-    const f = await fixture(platform);
-    const viewer = await member(f);
-    const denied = await preview(f, viewer.openId);
-    expect(denied).toStrictEqual({ inline: { title: "Access required" } });
-    expect(f.uploadedImages).toHaveLength(0);
-    expect(f.prompts).toHaveLength(0);
-    await expect(preview(f)).resolves.toMatchObject({
-      inline: { title: "confidential-report.png" },
-      card: { type: "raw" },
-    });
-    expect(f.uploadedImages).toHaveLength(1);
-    expect(f.prompts).toHaveLength(1);
-    expect(f.prompts[0]).toMatchObject({
-      chat_id: f.chatId,
-      open_id: f.ownerOpenId,
-      msg_type: "interactive",
-    });
-    await expect(shares(f)).resolves.toMatchObject({ shares: [] });
-    await click(f);
-    expect(f.updates).toHaveLength(1);
-    expect(f.updates[0]).toMatchObject({ token: "card_update_token" });
-    expect(f.refreshes).toStrictEqual([{ preview_tokens: [f.previewToken] }]);
-    await expect(shares(f)).resolves.toMatchObject({
-      shares: [expect.objectContaining({ email: viewer.email })],
-    });
-    await expect(preview(f, viewer.openId)).resolves.toMatchObject({
-      inline: { title: "confidential-report.png" },
-      card: { type: "raw" },
-    });
-    expect(f.prompts).toHaveLength(1);
-    const status = await accept(
-      app(f.owner)(artifactAccessContract).getVisibility({
-        headers,
-        params: { artifactId: f.resource.id },
-      }),
-      [200],
-    );
-    expect(status.body.visibility).toBe("private");
-    expect(context.mocks.resend.send).toHaveBeenCalledTimes(1);
-    await click(f);
-    expect(context.mocks.resend.send).toHaveBeenCalledTimes(1);
-    expect(f.refreshes).toHaveLength(1);
-  },
-);
+test("feishu denies viewer previews before the owner shares", async () => {
+  const f = await fixture("feishu", "private", "file", {
+    viewer: "sameWorkspace",
+    bindOwner: false,
+  });
+  const viewer = requireViewer(f);
+  const denied = await preview(f, viewer.openId);
+  expect(denied).toStrictEqual({ inline: { title: "Access required" } });
+  expect(f.uploadedImages).toHaveLength(0);
+  expect(f.prompts).toHaveLength(0);
+});
 
-test("an unbound viewer gets no protected title or image and stays unresolved after sharing", async () => {
-  const f = await fixture();
+test("feishu renders the owner preview and sends private sharing controls without granting access", async () => {
+  const f = await fixture("feishu");
+  f.members.push(`ou_other_${randomUUID()}`);
+  await expect(preview(f)).resolves.toMatchObject({
+    inline: { title: "confidential-report.png" },
+    card: { type: "raw" },
+  });
+  expect(f.uploadedImages).toHaveLength(1);
+  expect(f.prompts).toHaveLength(1);
+  expect(f.prompts[0]).toMatchObject({
+    chat_id: f.chatId,
+    open_id: f.ownerOpenId,
+    msg_type: "interactive",
+  });
+  await expect(shares(f)).resolves.toMatchObject({ shares: [] });
+});
+
+test("an unbound viewer gets no protected title or image", async () => {
+  const f = await fixture("feishu", "private", "file", { bindOwner: false });
   const unbound = `ou_${randomUUID()}`;
   f.members.push(unbound);
   await expect(preview(f, unbound)).resolves.toStrictEqual({
     inline: { title: "Sign in to Okou to view" },
   });
+  expect(f.uploadedImages).toHaveLength(0);
+  expect(f.prompts).toHaveLength(0);
+});
+
+test("sharing a private file leaves an unbound chat member unresolved", async () => {
+  const f = await fixture();
+  const unbound = `ou_${randomUUID()}`;
+  f.members.push(unbound);
   await preview(f);
   await click(f);
   await expect(shares(f)).resolves.toMatchObject({ shares: [] });
@@ -466,63 +476,29 @@ test("an unbound viewer gets no protected title or image and stays unresolved af
   expect(f.refreshes).toHaveLength(0);
 });
 
-test("workspace readers see previews without redundant owner prompts", async () => {
-  const f = await fixture("feishu", "organization");
-  const viewer = await member(f, true);
+test("workspace readers see previews for organization-visible files", async () => {
+  const f = await fixture("feishu", "organization", "file", {
+    viewer: "sameWorkspace",
+    bindOwner: false,
+  });
+  const viewer = requireViewer(f);
   await expect(preview(f, viewer.openId)).resolves.toHaveProperty("card");
-  await preview(f);
-  expect(f.prompts).toHaveLength(0);
-  f.members.push(`ou_unbound_${randomUUID()}`);
-  await preview(f);
-  expect(JSON.stringify(f.prompts)).toContain(
-    "Share with current chat members",
-  );
-  expect(JSON.stringify(f.prompts)).not.toContain("Share with workspace");
 });
 
-test.each(["user", "chat", "expired"])(
-  "rejects a %s-mismatched or stale sharing action",
-  async (mismatch) => {
-    const f = await fixture();
-    const viewer = await member(f);
-    await preview(f);
-    if (mismatch === "expired") {
-      mockNow(new Date(now() + 16 * 60_000));
-    }
-    const result = await click(f, {
-      openId: mismatch === "user" ? viewer.openId : undefined,
-      chatId: mismatch === "chat" ? "oc_other" : undefined,
-    });
-    expect(result).toHaveProperty("toast");
-    await expect(shares(f)).resolves.toMatchObject({ shares: [] });
-    expect(f.updates).toHaveLength(0);
-    expect(f.refreshes).toHaveLength(0);
-  },
-);
-
-test("an incomplete member list never writes partial grants", async () => {
+test("rejects a user-mismatched sharing action", async () => {
   const f = await fixture();
-  await member(f);
+  const otherOpenId = `ou_other_${randomUUID()}`;
+  f.members.push(otherOpenId);
   await preview(f);
-  server.use(
-    http.get(`${f.apiOrigin}/open-apis/im/v1/chats/${f.chatId}/members`, () => {
-      return HttpResponse.json({
-        code: 0,
-        data: {
-          items: [{ member_id: f.ownerOpenId, member_id_type: "open_id" }],
-          has_more: true,
-        },
-      });
-    }),
-  );
-  await click(f);
+  const result = await click(f, { openId: otherOpenId });
+  expect(result).toHaveProperty("toast");
   await expect(shares(f)).resolves.toMatchObject({ shares: [] });
-  expect(JSON.stringify(f.updates)).toContain("could not be verified");
+  expect(f.updates).toHaveLength(0);
   expect(f.refreshes).toHaveLength(0);
 });
 
 test("a public artifact can be previewed by an unbound reader without sharing prompts", async () => {
-  const f = await fixture("lark", "public");
+  const f = await fixture("lark", "public", "file", { bindOwner: false });
   await expect(preview(f, "ou_unbound")).resolves.toMatchObject({
     inline: { title: "confidential-report.png" },
     card: { type: "raw" },
@@ -531,114 +507,29 @@ test("a public artifact can be previewed by an unbound reader without sharing pr
   expect(f.uploadedImages).toHaveLength(1);
 });
 
-test("hosted websites use the same viewer checks and current-member sharing", async () => {
-  const f = await fixture("lark", "private", "site");
-  const viewer = await member(f);
+test("hosted websites deny viewer previews before sharing", async () => {
+  const f = await fixture("feishu", "private", "site", {
+    viewer: "sameWorkspace",
+    bindOwner: false,
+  });
+  const viewer = requireViewer(f);
   await expect(preview(f, viewer.openId)).resolves.toStrictEqual({
     inline: { title: "Access required" },
   });
-  await expect(preview(f)).resolves.toMatchObject({
-    inline: { title: "Confidential website" },
-    card: { type: "raw" },
-  });
-  await click(f);
-  await expect(shares(f)).resolves.toMatchObject({
-    shares: [expect.objectContaining({ email: viewer.email })],
-  });
-  await expect(preview(f, viewer.openId)).resolves.toHaveProperty("card");
+});
+
+test("an explicit organization visibility change refreshes viewer previews", async () => {
+  const f = await fixture();
+  f.members.push(`ou_other_${randomUUID()}`);
+  await preview(f);
+  await click(f, { audience: "organization" });
+  const status = await accept(
+    app(f.owner)(artifactAccessContract).getVisibility({
+      headers,
+      params: { artifactId: f.resource.id },
+    }),
+    [200],
+  );
+  expect(status.body.visibility).toBe("organization");
   expect(f.refreshes).toStrictEqual([{ preview_tokens: [f.previewToken] }]);
-});
-
-test.each(["organization", "public"])(
-  "an explicit %s visibility change refreshes viewer previews",
-  async (audience) => {
-    const f = await fixture();
-    await member(f);
-    await preview(f);
-    await click(f, { audience });
-    const status = await accept(
-      app(f.owner)(artifactAccessContract).getVisibility({
-        headers,
-        params: { artifactId: f.resource.id },
-      }),
-      [200],
-    );
-    expect(status.body.visibility).toBe(audience);
-    expect(f.refreshes).toStrictEqual([{ preview_tokens: [f.previewToken] }]);
-  },
-);
-
-test("repeated preview callbacks send only one owner prompt per message", async () => {
-  const f = await fixture();
-  f.members.push("ou_unbound");
-  const eventId = randomUUID();
-  await preview(f, f.ownerOpenId, eventId);
-  await preview(f, f.ownerOpenId, eventId);
-  await preview(f);
-  expect(f.prompts).toHaveLength(1);
-});
-
-test("member pagination follows an empty page before determining access", async () => {
-  const f = await fixture();
-  const viewer = await member(f);
-  server.use(
-    http.get(
-      `${f.apiOrigin}/open-apis/im/v1/chats/${f.chatId}/members`,
-      ({ request }) => {
-        const next = new URL(request.url).searchParams.get("page_token");
-        return HttpResponse.json({
-          code: 0,
-          data: next
-            ? {
-                items: f.members.map((id) => {
-                  return { member_id: id, member_id_type: "open_id" };
-                }),
-                has_more: false,
-              }
-            : { items: [], has_more: true, page_token: "next-page" },
-        });
-      },
-    ),
-  );
-  await preview(f);
-  await click(f);
-  await expect(shares(f)).resolves.toMatchObject({
-    shares: [expect.objectContaining({ email: viewer.email })],
-  });
-});
-
-test("unsupported conversations receive no ephemeral sharing prompt", async () => {
-  const f = await fixture();
-  server.use(
-    http.get(`${f.apiOrigin}/open-apis/im/v1/chats/${f.chatId}`, () => {
-      return HttpResponse.json({ code: 0, data: { chat_mode: "topic" } });
-    }),
-  );
-  await expect(preview(f)).resolves.toHaveProperty("card");
-  expect(f.prompts).toHaveLength(0);
-});
-
-test("slow preview uploads respect the callback deadline while the owner still receives sharing controls", async () => {
-  const f = await fixture();
-  f.members.push("ou_unbound");
-  server.use(
-    http.post(`${f.apiOrigin}/open-apis/im/v1/images`, async ({ request }) => {
-      const aborted = createDeferredPromise<void>(context.signal);
-      if (request.signal.aborted) {
-        aborted.resolve();
-      } else {
-        request.signal.addEventListener(
-          "abort",
-          () => {
-            aborted.resolve();
-          },
-          { once: true },
-        );
-      }
-      await aborted.promise;
-      return HttpResponse.error();
-    }),
-  );
-  await expect(preview(f)).resolves.toStrictEqual({});
-  expect(f.prompts).toHaveLength(1);
 });

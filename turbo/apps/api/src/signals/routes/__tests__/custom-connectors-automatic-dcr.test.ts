@@ -1,276 +1,120 @@
 import { randomUUID } from "node:crypto";
-
-import type { ConnectorAccountMutationIntent } from "@okouai/api-contracts/contracts/connector-accounts";
-import { CUSTOM_CONNECTOR_AUTOMATIC_OAUTH_ERROR_CODES } from "@okouai/api-contracts/contracts/custom-connectors";
 import { describe, expect, it } from "vitest";
-
 import { testContext } from "../../../__tests__/test-context";
-import { mockEnv } from "../../../lib/env";
 import { mockNow, now } from "../../../lib/time";
-import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
+import { createBddApi } from "./helpers/api-bdd";
 import {
   createConnectorBddApi,
   mockAutomaticMcpOAuthProvider,
 } from "./helpers/api-bdd-connectors";
 
 const context = testContext();
+const bdd = createBddApi(context);
 const connectors = createConnectorBddApi(context);
 
-function configureProvider(
-  options: Parameters<typeof mockAutomaticMcpOAuthProvider>[1] = {
-    registration: "dcr",
-  },
-) {
-  mockEnv("APP_URL", "https://app.okou.ai");
-  mockEnv("OKOU_API_BACKEND_URL", "https://api.okou.ai");
-  mockEnv("OKOU_WEB_URL", "https://www.okou.ai");
-  return mockAutomaticMcpOAuthProvider(context, options);
+const LIFETIME_SECONDS = 600;
+
+function stateOf(authorizationUrl: string): string {
+  const state = new URL(authorizationUrl).searchParams.get("state");
+  if (!state) {
+    throw new Error("Expected OAuth state");
+  }
+  return state;
 }
 
-async function createConnector(actor: ApiTestUser, endpoint: string) {
-  return await connectors.createCustomConnector(actor, {
-    kind: "mcp",
-    displayName: `Automatic DCR ${randomUUID()}`,
+/** The provider at `time` issues each registration a secret that lives ten minutes. */
+function providerAt(endpoint: string, time: number) {
+  mockNow(time);
+  return mockAutomaticMcpOAuthProvider(context, {
+    registration: "dcr",
+    authentication: "oauth",
     endpoint,
+    dcrClientSecretExpiresAt: Math.floor(time / 1000) + LIFETIME_SECONDS,
+  });
+}
+
+/** An admin with an automatic DCR MCP connector and no connected accounts. */
+async function automaticDcrConnector() {
+  const start = now();
+  const endpoint = `https://automatic-mcp-${randomUUID()}.example.test/server`;
+  const first = providerAt(endpoint, start);
+  const admin = bdd.user();
+  const connector = await connectors.createCustomConnector(admin, {
+    kind: "mcp",
+    displayName: "Automatic research",
+    endpoint: first.endpoint,
     transport: "streamable-http",
+    authMode: "automatic",
     fields: [],
     headerInjections: [],
     queryInjections: [],
-    authMode: "automatic",
   });
-}
-
-async function completeAuthorization(authorization: string, issuer: string) {
-  const state = new URL(authorization).searchParams.get("state");
-  if (!state) {
-    throw new Error("Expected custom OAuth authorization state");
-  }
-  const callback = await connectors.completeCustomConnectorOAuth2CallbackResult(
-    {
-      code: randomUUID(),
-      state,
-      iss: issuer,
-    },
-  );
-  expect(callback.body.status).toBe("success");
-}
-
-async function connect(
-  actor: ApiTestUser,
-  connectorId: string,
-  issuer: string,
-  mutation: ConnectorAccountMutationIntent = { intent: "add" },
-) {
-  const authorization = await connectors.startCustomConnectorOAuth2(
-    actor,
-    connectorId,
-    mutation,
-  );
-  await completeAuthorization(authorization, issuer);
-  const [account] = await connectors.listCustomConnectorAccounts(
-    actor,
-    connectorId,
-  );
-  if (!account) {
-    throw new Error("Expected authorized custom connector account");
-  }
-  return account;
+  return { start, endpoint, first, admin, connector };
 }
 
 describe("Custom Automatic OAuth DCR retirement", () => {
-  it.each([false, true])(
-    "reuses a custom Automatic OAuth subject on Add account (overlap=%s)",
-    async (overlap) => {
-      const provider = configureProvider({
-        registration: "dcr",
-        identity: {
-          subject: "custom-same-subject",
-          tokenEmail: "custom@example.test",
-        },
-      });
-      const actor = createBddApi(context).user({ orgRole: "org:admin" });
-      const connector = await createConnector(actor, provider.endpoint);
-      const first = await connect(actor, connector.id, provider.issuer);
-      const authorizations = await Promise.all([
-        connectors.startCustomConnectorOAuth2(actor, connector.id, {
-          intent: "add",
-        }),
-        connectors.startCustomConnectorOAuth2(actor, connector.id, {
-          intent: "add",
-        }),
-      ]);
-      if (overlap) {
-        await Promise.all(
-          authorizations.map(async (authorization) => {
-            await completeAuthorization(authorization, provider.issuer);
-          }),
-        );
-      } else {
-        for (const authorization of authorizations) {
-          await completeAuthorization(authorization, provider.issuer);
-        }
-      }
-      const saved = await connectors.listCustomConnectorAccounts(
-        actor,
-        connector.id,
-      );
-      expect(saved).toHaveLength(1);
-      expect(saved[0]).toMatchObject({
-        id: first.id,
-        externalId: "custom-same-subject",
-        connectionStatus: "connected",
-      });
-      await connectors.deleteCustomConnector(actor, connector.id);
-    },
-  );
-  it("replaces expired registrations with no linked accounts across repeated authorizations", async () => {
-    const startedAt = now();
-    mockNow(startedAt);
-    const initial = configureProvider({
-      registration: "dcr",
-      dcrClientSecretExpiresAt: Math.floor((startedAt + 60_000) / 1000),
-    });
-    const actor = createBddApi(context).user({ orgRole: "org:admin" });
-    const connector = await createConnector(actor, initial.endpoint);
-    await connectors.startCustomConnectorOAuth2(actor, connector.id);
-    await expect(
-      connectors.listCustomConnectorAccounts(actor, connector.id),
-    ).resolves.toStrictEqual([]);
+  it("custom-connectors-automatic-dcr-001 (1/3) registers once on the first start without linking an account", async () => {
+    const { first, admin, connector } = await automaticDcrConnector();
 
-    mockNow(startedAt + 120_000);
-    const second = configureProvider({
-      registration: "dcr",
-      dcrClientSecretExpiresAt: Math.floor((startedAt + 180_000) / 1000),
-    });
-    await connectors.startCustomConnectorOAuth2(actor, connector.id);
-    expect(second.registrationBodies).toHaveLength(1);
-    await expect(
-      connectors.listCustomConnectorAccounts(actor, connector.id),
-    ).resolves.toStrictEqual([]);
+    await connectors.startCustomConnectorOAuth2(admin, connector.id);
 
-    mockNow(startedAt + 240_000);
-    const third = configureProvider();
-    const account = await connect(actor, connector.id, third.issuer);
-    expect(account).toMatchObject({
+    expect(first.registrationBodies).toHaveLength(1);
+    await expect(
+      connectors.listCustomConnectorAccounts(admin, connector.id),
+    ).resolves.toStrictEqual([]);
+  });
+
+  it("custom-connectors-automatic-dcr-001 (2/3) replaces the expired first registration once without linking an account", async () => {
+    const { start, endpoint, admin, connector } = await automaticDcrConnector();
+    await connectors.startCustomConnectorOAuth2(admin, connector.id);
+
+    const replacement = providerAt(
+      endpoint,
+      start + (LIFETIME_SECONDS + 1) * 1000,
+    );
+    await connectors.startCustomConnectorOAuth2(admin, connector.id);
+    expect(replacement.registrationBodies).toHaveLength(1);
+    await expect(
+      connectors.listCustomConnectorAccounts(admin, connector.id),
+    ).resolves.toStrictEqual([]);
+  });
+
+  it("custom-connectors-automatic-dcr-001 (3/3) replaces the second registration once and connects on completion", async () => {
+    const { start, endpoint, first, admin, connector } =
+      await automaticDcrConnector();
+    await connectors.startCustomConnectorOAuth2(admin, connector.id);
+    const replacement = providerAt(
+      endpoint,
+      start + (LIFETIME_SECONDS + 1) * 1000,
+    );
+    await connectors.startCustomConnectorOAuth2(admin, connector.id);
+
+    const final = providerAt(
+      endpoint,
+      start + (LIFETIME_SECONDS * 2 + 2) * 1000,
+    );
+    const authorizationUrl = await connectors.startCustomConnectorOAuth2(
+      admin,
+      connector.id,
+    );
+    expect(final.registrationBodies).toHaveLength(1);
+    expect(first.registrationBodies).toHaveLength(1);
+    expect(replacement.registrationBodies).toHaveLength(1);
+    const completed =
+      await connectors.completeCustomConnectorOAuth2CallbackResult({
+        state: stateOf(authorizationUrl),
+        code: `code-${randomUUID()}`,
+        iss: final.issuer,
+      });
+    expect(completed.body.status).toBe("success");
+    const accounts = await connectors.listCustomConnectorAccounts(
+      admin,
+      connector.id,
+    );
+    expect(accounts).toHaveLength(1);
+    expect(accounts[0]).toMatchObject({
       connectionStatus: "connected",
       reconnectReason: null,
     });
-    expect(third.registrationBodies).toHaveLength(1);
-    await connectors.deleteCustomConnector(actor, connector.id);
-  });
-
-  it("marks only the expired registration's owners for reconnect and restores the selected account", async () => {
-    const startedAt = now();
-    mockNow(startedAt);
-    const initial = configureProvider({
-      registration: "dcr",
-      dcrClientSecretExpiresAt: Math.floor((startedAt + 60_000) / 1000),
-    });
-    const bdd = createBddApi(context);
-    const owner = bdd.user({ orgRole: "org:admin" });
-    const member = bdd.user({ orgId: owner.orgId, orgRole: "org:member" });
-    const peerOwner = bdd.user({ orgRole: "org:admin" });
-    const connector = await createConnector(owner, initial.endpoint);
-    const first = await connect(owner, connector.id, initial.issuer);
-    const second = await connect(member, connector.id, initial.issuer);
-
-    // The same issuer has independent registrations for other connectors/orgs.
-    configureProvider();
-    const sibling = await createConnector(owner, initial.endpoint);
-    const siblingAccount = await connect(owner, sibling.id, initial.issuer);
-    const peer = await createConnector(peerOwner, initial.endpoint);
-    const peerAccount = await connect(peerOwner, peer.id, initial.issuer);
-    const replacement = configureProvider();
-    mockNow(startedAt + 120_000);
-    await connectors.requestStartCustomConnectorOAuth2(
-      peerOwner,
-      connector.id,
-      [404],
-    );
-    expect(replacement.registrationBodies).toHaveLength(0);
-    const authorization = await connectors.startCustomConnectorOAuth2(
-      owner,
-      connector.id,
-      {
-        intent: "reconnect",
-        connectionId: first.id,
-      },
-    );
-    expect(replacement.registrationBodies).toHaveLength(1);
-
-    for (const [actor, account] of [
-      [owner, first],
-      [member, second],
-    ] as const) {
-      await expect(
-        connectors.listCustomConnectorAccounts(actor, connector.id),
-      ).resolves.toMatchObject([
-        {
-          id: account.id,
-          connectionStatus: "reconnect-required",
-          reconnectReason: "authorization_expired_or_revoked",
-          createdAt: account.createdAt,
-          updatedAt: new Date(startedAt + 120_000).toISOString(),
-        },
-      ]);
-    }
-    await expect(
-      connectors.listCustomConnectorAccounts(owner, sibling.id),
-    ).resolves.toStrictEqual([siblingAccount]);
-    await expect(
-      connectors.listCustomConnectorAccounts(peerOwner, peer.id),
-    ).resolves.toStrictEqual([peerAccount]);
-    await completeAuthorization(authorization, replacement.issuer);
-    await expect(
-      connectors.listCustomConnectorAccounts(owner, connector.id),
-    ).resolves.toMatchObject([
-      { id: first.id, connectionStatus: "connected", reconnectReason: null },
-    ]);
-    await expect(
-      connectors.listCustomConnectorAccounts(member, connector.id),
-    ).resolves.toMatchObject([
-      {
-        id: second.id,
-        connectionStatus: "reconnect-required",
-        reconnectReason: "authorization_expired_or_revoked",
-      },
-    ]);
-    await connectors.deleteCustomConnector(owner, connector.id);
-    await connectors.deleteCustomConnector(owner, sibling.id);
-    await connectors.deleteCustomConnector(peerOwner, peer.id);
-  });
-
-  it("preserves connected accounts when replacement registration fails before retirement", async () => {
-    const startedAt = now();
-    mockNow(startedAt);
-    const initial = configureProvider({
-      registration: "dcr",
-      dcrClientSecretExpiresAt: Math.floor((startedAt + 60_000) / 1000),
-    });
-    const actor = createBddApi(context).user({ orgRole: "org:admin" });
-    const connector = await createConnector(actor, initial.endpoint);
-    const account = await connect(actor, connector.id, initial.issuer);
-    mockNow(startedAt + 120_000);
-    configureProvider({ registration: "dcr", dcrFailureStatus: 503 });
-    const failed = await connectors.requestStartCustomConnectorOAuth2(
-      actor,
-      connector.id,
-      [502],
-    );
-    expect(failed.body).toMatchObject({
-      error: {
-        code: CUSTOM_CONNECTOR_AUTOMATIC_OAUTH_ERROR_CODES.PROVIDER_UNAVAILABLE,
-      },
-    });
-    await expect(
-      connectors.listCustomConnectorAccounts(actor, connector.id),
-    ).resolves.toStrictEqual([account]);
-    const replacement = configureProvider();
-    await connect(actor, connector.id, replacement.issuer, {
-      intent: "reconnect",
-      connectionId: account.id,
-    });
-    expect(replacement.registrationBodies).toHaveLength(1);
-    await connectors.deleteCustomConnector(actor, connector.id);
   });
 });

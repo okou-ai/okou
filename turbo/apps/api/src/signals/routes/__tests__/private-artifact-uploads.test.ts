@@ -1,430 +1,661 @@
-import { mockNow } from "../../../lib/time";
-import { artifactReferencesContract } from "@okouai/api-contracts/contracts/artifact-references";
-import { artifactCatalogContract } from "@okouai/api-contracts/contracts/artifact-catalog";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { Readable } from "node:stream";
-import {
-  AbortMultipartUploadCommand,
-  CompleteMultipartUploadCommand,
-  CreateMultipartUploadCommand,
-  GetObjectCommand,
-  HeadObjectCommand,
-  ListObjectsV2Command,
-  ListPartsCommand,
-  PutObjectCommand,
-} from "@aws-sdk/client-s3";
+import { artifactCatalogContract } from "@okouai/api-contracts/contracts/artifact-catalog";
+import { artifactReferencesContract } from "@okouai/api-contracts/contracts/artifact-references";
 import { uploadsContract } from "@okouai/api-contracts/contracts/uploads";
 import { webFilesContract } from "@okouai/api-contracts/contracts/web-files";
-import { beforeEach, describe, expect, it, onTestFinished } from "vitest";
 
-import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { mockEnv } from "../../../lib/env";
-import { uploadsPrepareRoutes } from "../uploads-prepare";
+import { accept, testContext } from "../../../__tests__/test-context";
+import { env } from "../../../lib/env";
+import { mockNow } from "../../../lib/time";
+import { artifactCatalogRoutes } from "../artifact-catalog";
+import { artifactReferenceRoutes } from "../artifact-references";
 import { uploadsCompleteRoutes } from "../uploads-complete";
 import { uploadsMultipartRoutes } from "../uploads-multipart";
+import { uploadsPrepareRoutes } from "../uploads-prepare";
 import { webFileUrlRoutes } from "../web-file-url";
-import { artifactReferenceRoutes } from "../artifact-references";
-import { artifactCatalogRoutes } from "../artifact-catalog";
-import { installSharedThreadStorage } from "./helpers/shared-thread-storage";
 import { createRouteMocks } from "./helpers/route-test";
-import { createDeferredPromise } from "../../utils";
 
 const context = testContext();
-const mocks = createRouteMocks(context);
 const headers = Object.freeze({ authorization: "Bearer clerk-session" });
-const bucket = "test-private-artifacts";
-const body = Object.freeze({
-  filename: "report.html",
-  contentType: "text/html",
-  size: 13,
-});
-const routes = Object.freeze([
-  ...uploadsPrepareRoutes,
-  ...uploadsCompleteRoutes,
-  ...uploadsMultipartRoutes,
-  ...webFileUrlRoutes,
-  ...artifactReferenceRoutes,
-  ...artifactCatalogRoutes,
-]);
+const reportBytes = Buffer.from("<p>report</p>");
 
-function api() {
-  return setupApp({ context, routes });
+interface Actor {
+  readonly userId: string;
+  readonly orgId: string | null;
 }
 
-function mockStoredFile(id: string) {
-  const key = `private-artifacts/${id}/report.html`;
-  const storage = context.mocks.s3.send.getMockImplementation()!;
-  context.mocks.s3.send.mockImplementation((command) => {
-    if (
-      command instanceof GetObjectCommand &&
-      command.input.Key?.startsWith("artifact-references/")
-    ) {
-      return storage(command);
-    }
-    if (
-      command instanceof HeadObjectCommand ||
-      command instanceof GetObjectCommand
-    ) {
-      expect(command.input).toMatchObject({ Bucket: bucket, Key: key });
-      return Promise.resolve({
-        ContentLength: 13,
-        ContentType: "text/html",
-        Metadata: { "artifact-id": id },
-        Body: Readable.from([Buffer.from("private bytes")]),
-      });
-    }
-    throw new Error("Unexpected storage request");
+interface StorageOperation {
+  readonly name: string;
+  readonly bucket: unknown;
+  readonly key: unknown;
+}
+
+interface StoredObject {
+  readonly body: Buffer;
+  readonly size?: number;
+  readonly contentType?: string;
+  readonly metadata?: Record<string, string>;
+}
+
+function member(orgId: string | null = `org_${randomUUID()}`): Actor {
+  return { userId: `user_${randomUUID()}`, orgId };
+}
+
+function as(actor: Actor | null) {
+  if (actor) {
+    createRouteMocks(context).clerk.session(actor.userId, actor.orgId);
+  } else {
+    context.mocks.clerk.authenticateRequest.mockResolvedValue({
+      isAuthenticated: false,
+    });
+  }
+  const app = (routes: Parameters<typeof setupApp>[0]["routes"]) => {
+    return setupApp({ context, routes });
+  };
+  return {
+    uploads: app([
+      ...uploadsPrepareRoutes,
+      ...uploadsCompleteRoutes,
+      ...uploadsMultipartRoutes,
+    ])(uploadsContract),
+    files: app(webFileUrlRoutes)(webFilesContract),
+    catalog: app(artifactCatalogRoutes)(artifactCatalogContract),
+    references: app(artifactReferenceRoutes)(artifactReferencesContract),
+  };
+}
+
+function notFoundError(): Error {
+  return Object.assign(new Error("Not found"), {
+    name: "NotFound",
+    $metadata: { httpStatusCode: 404 },
   });
 }
 
-beforeEach(() => {
-  mockEnv("OKOU_API_BACKEND_URL", "https://api.okou.ai");
-  mocks.clerk.session(`user_${randomUUID()}`, `org_${randomUUID()}`);
-  const references = new Map<string, string>();
-  mocks.s3.listObjects([]);
-  const storage = context.mocks.s3.send.getMockImplementation()!;
-  context.mocks.s3.send.mockImplementation((command) => {
-    if (
-      command instanceof GetObjectCommand &&
-      command.input.Key?.startsWith("artifact-references/")
-    ) {
-      return Promise.resolve({
-        Body: Readable.from([Buffer.from(references.get(command.input.Key)!)]),
-        ETag: '"reference"',
+/** In-memory R2: presigned PUT URLs name the object the browser writes. */
+function installStorage(options: { readonly multipartParts?: number } = {}) {
+  const objects = new Map<string, StoredObject>();
+  const operations: StorageOperation[] = [];
+  const signed: {
+    url: string;
+    operation: string;
+    bucket: string;
+    key: string;
+    expiresIn: number;
+    cacheControl: unknown;
+  }[] = [];
+  const objectKey = (bucket: unknown, key: unknown) => {
+    return `${String(bucket)}/${String(key)}`;
+  };
+
+  context.mocks.s3.getSignedUrl.mockImplementation(
+    (_client: unknown, command: unknown, signing: unknown) => {
+      const { constructor, input } = command as {
+        readonly constructor: { readonly name: string };
+        readonly input: {
+          readonly Bucket: string;
+          readonly Key: string;
+          readonly ResponseCacheControl?: unknown;
+        };
+      };
+      const expiresIn =
+        (signing as { readonly expiresIn?: number } | undefined)?.expiresIn ??
+        0;
+      const url = new URL(
+        `https://r2.example.com/${input.Bucket}/${input.Key}`,
+      );
+      url.searchParams.set("op", constructor.name);
+      url.searchParams.set("X-Amz-Expires", String(expiresIn));
+      url.searchParams.set("n", String(signed.length));
+      signed.push({
+        url: url.toString(),
+        operation: constructor.name,
+        bucket: input.Bucket,
+        key: input.Key,
+        expiresIn,
+        cacheControl: input.ResponseCacheControl,
       });
-    }
-    if (
-      command instanceof PutObjectCommand &&
-      command.input.Key?.startsWith("artifact-references/")
-    ) {
-      references.set(command.input.Key, String(command.input.Body));
-      return Promise.resolve({});
-    }
-    return storage(command);
-  });
-  context.mocks.s3.getSignedUrl.mockResolvedValue(
-    "https://private-r2.example/upload?signature=put",
+      return Promise.resolve(url.toString());
+    },
   );
-});
+
+  context.mocks.s3.send.mockImplementation((command: unknown) => {
+    const { constructor, input } = command as {
+      readonly constructor: { readonly name: string };
+      readonly input: Record<string, unknown>;
+    };
+    const name = constructor.name;
+    operations.push({ name, bucket: input.Bucket, key: input.Key });
+    const id = objectKey(input.Bucket, input.Key);
+    const stored = objects.get(id);
+    switch (name) {
+      case "PutObjectCommand": {
+        if (input.IfNoneMatch === "*" && stored) {
+          return Promise.reject(
+            Object.assign(new Error("Object exists"), {
+              name: "PreconditionFailed",
+            }),
+          );
+        }
+        objects.set(id, {
+          body: Buffer.from(input.Body as string | Uint8Array),
+          contentType: input.ContentType as string | undefined,
+        });
+        return Promise.resolve({ ETag: '"put"' });
+      }
+      case "GetObjectCommand": {
+        if (!stored) {
+          return Promise.reject(
+            Object.assign(new Error("Missing"), { name: "NoSuchKey" }),
+          );
+        }
+        return Promise.resolve({
+          Body: Readable.from([stored.body]),
+          ContentLength: stored.body.byteLength,
+          ContentType: stored.contentType,
+          ETag: `"${createHash("sha256").update(stored.body).digest("hex")}"`,
+        });
+      }
+      case "HeadObjectCommand": {
+        if (!stored) {
+          return Promise.reject(notFoundError());
+        }
+        return Promise.resolve({
+          ContentLength: stored.size ?? stored.body.byteLength,
+          ContentType: stored.contentType,
+          LastModified: new Date("2026-01-01T00:00:00.000Z"),
+          Metadata: stored.metadata ?? {},
+          ETag: '"head"',
+        });
+      }
+      case "CreateMultipartUploadCommand": {
+        return Promise.resolve({ UploadId: "upload-1" });
+      }
+      case "ListPartsCommand": {
+        return Promise.resolve({
+          Parts: Array.from(
+            { length: options.multipartParts ?? 0 },
+            (_, index) => {
+              return { PartNumber: index + 1, ETag: `"etag-${index + 1}"` };
+            },
+          ),
+        });
+      }
+      case "CompleteMultipartUploadCommand": {
+        objects.set(id, {
+          body: Buffer.alloc(0),
+          size: 6 * 1024 * 1024,
+          contentType: "text/html",
+        });
+        return Promise.resolve({});
+      }
+      case "ListObjectsV2Command": {
+        const prefix = `${String(input.Bucket)}/${String(input.Prefix)}`;
+        return Promise.resolve({
+          Contents: [...objects]
+            .filter(([stored]) => {
+              return stored.startsWith(prefix);
+            })
+            .map(([stored, object]) => {
+              return {
+                Key: stored.slice(String(input.Bucket).length + 1),
+                Size: object.body.byteLength,
+                LastModified: new Date("2026-01-01T00:00:00.000Z"),
+              };
+            }),
+        });
+      }
+      default: {
+        return Promise.resolve({});
+      }
+    }
+  });
+
+  return {
+    operations,
+    signed,
+    /** The browser PUTs bytes to a presigned upload URL. */
+    upload(
+      uploadUrl: string,
+      body: Buffer,
+      contentType: string,
+      uploadHeaders: Readonly<Record<string, string>> = {},
+    ) {
+      const target = signed.find((entry) => {
+        return entry.url === uploadUrl;
+      });
+      if (!target) {
+        throw new Error(`Unknown upload URL ${uploadUrl}`);
+      }
+      const metadata = Object.fromEntries(
+        Object.entries(uploadHeaders).map(([name, value]) => {
+          return [name.replace(/^x-amz-meta-/, ""), value];
+        }),
+      );
+      objects.set(objectKey(target.bucket, target.key), {
+        body,
+        contentType,
+        metadata,
+      });
+    },
+  };
+}
+
+type Storage = ReturnType<typeof installStorage>;
+type Api = ReturnType<typeof as>;
+
+async function prepareReport(
+  api: Api,
+  options: { readonly purpose?: "artifact" } = {},
+) {
+  const prepared = await accept(
+    api.uploads.prepare({
+      headers,
+      body: {
+        filename: "report.html",
+        contentType: "text/html",
+        size: reportBytes.byteLength,
+        ...options,
+      },
+    }),
+    [200],
+  );
+  if ("multipart" in prepared.body) {
+    throw new Error("Expected a single-part upload");
+  }
+  return prepared.body;
+}
+
+async function uploadedReport(
+  api: Api,
+  storage: Storage,
+  options: { readonly purpose?: "artifact" } = {},
+) {
+  const prepared = await prepareReport(api, options);
+  storage.upload(
+    prepared.uploadUrl,
+    reportBytes,
+    "text/html",
+    prepared.uploadHeaders,
+  );
+  return prepared;
+}
+
+async function prepareMultipartReport(api: Api) {
+  const prepared = await accept(
+    api.uploads.prepare({
+      headers,
+      body: {
+        filename: "report.html",
+        contentType: "text/html",
+        size: 6 * 1024 * 1024,
+        multipart: true,
+      },
+    }),
+    [200],
+  );
+  if (!("multipart" in prepared.body)) {
+    throw new Error("Expected a multipart upload");
+  }
+  return prepared.body;
+}
+
+const privateHtmlUrl = /\/artifacts\/[A-Za-z0-9_-]{10}\.html$/;
+const privatePngUrl = /\/artifacts\/[A-Za-z0-9_-]{10}\.png$/;
 
 describe("private artifact uploads", () => {
-  it("cancels private completion during storage verification and permits a fresh replay", async () => {
-    const prepared = await accept(
-      api()(uploadsContract).prepare({
-        headers,
-        body: { ...body, purpose: "artifact" },
-      }),
-      [200],
-    );
-    mockStoredFile(prepared.body.id);
-    const owner = new AbortController();
-    const started = createDeferredPromise<void>(context.signal);
-    const release = createDeferredPromise<void>(context.signal);
-    onTestFinished(() => {
-      owner.abort();
-      if (!release.settled()) {
-        release.resolve(undefined);
-      }
+  it("private-artifact-uploads-002 keeps one downloadable catalog artifact after concurrent completion and replay", async () => {
+    const storage = installStorage();
+    const api = as(member());
+    const prepared = await uploadedReport(api, storage, {
+      purpose: "artifact",
     });
-    const storage = context.mocks.s3.send.getMockImplementation()!;
-    context.mocks.s3.send.mockImplementation(async (command) => {
-      if (command instanceof HeadObjectCommand) {
-        started.resolve(undefined);
-        await release.promise;
-      }
-      return await storage(command);
-    });
-    const request = { headers, body: { id: prepared.body.id } };
-    const cancelled = (async () => {
-      await expect(
-        setupApp({
-          context,
-          routes,
-          signal: owner.signal,
-          rethrowErrors: true,
-        })(uploadsContract).complete(request),
-      ).rejects.toMatchObject({ name: "AbortError" });
-    })();
-    await started.promise;
-    owner.abort();
-    release.resolve(undefined);
-    await cancelled;
-    const before = await accept(
-      api()(artifactCatalogContract).list({ headers }),
-      [200],
-    );
-    expect(before.body.artifacts).toStrictEqual([]);
-    context.mocks.s3.send.mockImplementation(storage);
-    await accept(api()(uploadsContract).complete(request), [200]);
-    const after = await accept(
-      api()(artifactCatalogContract).list({ headers }),
-      [200],
-    );
-    expect(after.body.artifacts).toStrictEqual([
-      expect.objectContaining({ kind: "file", title: body.filename }),
-    ]);
-  });
 
-  it("keeps one downloadable catalog artifact after concurrent completion and replay", async () => {
-    const prepared = await accept(
-      api()(uploadsContract).prepare({
-        headers,
-        body: { ...body, purpose: "artifact" },
-      }),
+    const [first, second] = await Promise.all([
+      accept(
+        api.uploads.complete({ headers, body: { id: prepared.id } }),
+        [200],
+      ),
+      accept(
+        api.uploads.complete({ headers, body: { id: prepared.id } }),
+        [200],
+      ),
+    ]);
+    const listed = await accept(
+      api.catalog.list({ headers, query: {} }),
       [200],
     );
-    mockStoredFile(prepared.body.id);
-    const completions = await Promise.all([
-      api()(uploadsContract).complete({
-        headers,
-        body: { id: prepared.body.id },
-      }),
-      api()(uploadsContract).complete({
-        headers,
-        body: { id: prepared.body.id },
-      }),
-    ]);
-    for (const completed of completions) {
-      expect(completed.status).toBe(200);
-      expect(completed.body).toMatchObject({
-        id: prepared.body.id,
-        url: prepared.body.url,
+    await accept(
+      api.uploads.complete({ headers, body: { id: prepared.id } }),
+      [200],
+    );
+    const relisted = await accept(
+      api.catalog.list({ headers, query: {} }),
+      [200],
+    );
+
+    for (const completion of [first, second]) {
+      expect(completion.body).toMatchObject({
+        id: prepared.id,
+        url: prepared.url,
         size: 13,
       });
     }
-    const listed = await accept(
-      api()(artifactCatalogContract).list({ headers }),
-      [200],
-    );
-    expect(listed.body.artifacts).toStrictEqual([
-      expect.objectContaining({ kind: "file", title: body.filename }),
-    ]);
-    const artifact = listed.body.artifacts[0]!;
-    await accept(
-      api()(uploadsContract).complete({
-        headers,
-        body: { id: prepared.body.id },
-      }),
-      [200],
-    );
-    const replayed = await accept(
-      api()(artifactCatalogContract).list({ headers }),
-      [200],
-    );
-    expect(replayed.body.artifacts).toStrictEqual([
+    expect(listed.body.artifacts).toHaveLength(1);
+    const [artifact] = listed.body.artifacts;
+    expect(artifact).toMatchObject({ kind: "file" });
+    expect(relisted.body.artifacts).toStrictEqual([
       expect.objectContaining({
-        id: artifact.id,
-        createdAt: artifact.createdAt,
+        id: artifact!.id,
+        createdAt: artifact!.createdAt,
       }),
     ]);
+
     const detail = await accept(
-      api()(artifactCatalogContract).get({
-        headers,
-        params: { artifactId: artifact.id },
-      }),
+      api.catalog.get({ headers, params: { artifactId: artifact!.id } }),
       [200],
     );
     expect(detail.body).toMatchObject({
       kind: "file",
-      file: { id: prepared.body.id, url: prepared.body.url, size: 13 },
+      file: { id: prepared.id, url: prepared.url, size: 13 },
     });
-    const download = await accept(
-      api()(webFilesContract).fileUrl({
-        headers,
-        query: { file_id: prepared.body.id },
-      }),
+    const fileUrl = await accept(
+      api.files.fileUrl({ headers, query: { file_id: prepared.id } }),
       [200],
     );
-    expect(download.body.downloadUrl).toMatch(/^https:\/\//u);
+    expect(fileUrl.body.downloadUrl).toMatch(/^https:\/\//);
   });
 
-  it.each(["missing", "unknown-size"] as const)(
-    "publishes only verified private bytes after a %s storage response and replay",
-    async (failure) => {
-      const prepared = await accept(
-        api()(uploadsContract).prepare({
-          headers,
-          body: { ...body, purpose: "artifact" },
-        }),
-        [200],
-      );
-      const storage = context.mocks.s3.send.getMockImplementation()!;
-      context.mocks.s3.send.mockImplementation((command) => {
-        if (command instanceof HeadObjectCommand) {
-          if (failure === "missing") {
-            return Promise.reject(
-              Object.assign(new Error("Missing private object"), {
-                name: "NotFound",
-              }),
-            );
-          }
-          return Promise.resolve({ ContentType: body.contentType });
-        }
-        return storage(command);
-      });
-      const failed = await api()(uploadsContract).complete({
-        headers,
-        body: { id: prepared.body.id },
-      });
-      expect(failed.status).toBe(failure === "missing" ? 404 : 500);
-      const unavailable = await accept(
-        api()(artifactCatalogContract).list({ headers }),
-        [200],
-      );
-      expect(unavailable.body.artifacts).toStrictEqual([]);
-      mockStoredFile(prepared.body.id);
-      await accept(
-        api()(uploadsContract).complete({
-          headers,
-          body: { id: prepared.body.id },
-        }),
-        [200],
-      );
-      const recovered = await accept(
-        api()(artifactCatalogContract).list({ headers }),
-        [200],
-      );
-      expect(recovered.body.artifacts).toStrictEqual([
-        expect.objectContaining({ kind: "file", title: body.filename }),
-      ]);
-    },
-  );
+  it("private-artifact-uploads-003 publishes only verified private bytes after a missing storage response and replay", async () => {
+    const storage = installStorage();
+    const api = as(member());
+    const prepared = await prepareReport(api, { purpose: "artifact" });
 
-  it("keeps a guarded upload private through completion", async () => {
-    installSharedThreadStorage(context);
-    const prepared = await accept(
-      api()(uploadsContract).preparePrivate({ headers, body }),
+    const missing = await accept(
+      api.uploads.complete({ headers, body: { id: prepared.id } }),
+      [404],
+    );
+    const before = await accept(
+      api.catalog.list({ headers, query: {} }),
       [200],
     );
-    if (!("uploadUrl" in prepared.body)) {
-      throw new Error("Expected single upload");
-    }
-    expect(prepared.body.url).toMatch(
-      /^http:\/\/localhost:3002\/artifacts\/[a-z0-9]{10}\.html$/u,
-    );
-    await fetch(prepared.body.uploadUrl, {
-      method: "PUT",
-      body: "private bytes",
-    });
-    const completed = await accept(
-      api()(uploadsContract).complete({
-        headers,
-        body: { id: prepared.body.id },
-      }),
-      [200],
-    );
-    expect(completed.body.url).toBe(prepared.body.url);
-    const preview = await accept(
-      api()(webFilesContract).fileUrl({
-        headers,
-        query: { file_id: prepared.body.id },
-      }),
-      [200],
-    );
-    expect(preview.body.publicUrl).toBeNull();
-  });
-
-  it("keeps organization-less public uploads readable", async () => {
-    mocks.clerk.session(`user_${randomUUID()}`, null);
-    installSharedThreadStorage(context);
-    const prepared = await accept(
-      api()(uploadsContract).prepare({ headers, body }),
-      [200],
-    );
-    if (!("uploadUrl" in prepared.body)) {
-      throw new Error("Expected single upload");
-    }
-    await fetch(prepared.body.uploadUrl, {
-      method: "PUT",
-      body: "public bytes",
-    });
+    storage.upload(prepared.uploadUrl, reportBytes, "text/html");
     await accept(
-      api()(uploadsContract).complete({
-        headers,
-        body: { id: prepared.body.id },
-      }),
+      api.uploads.complete({ headers, body: { id: prepared.id } }),
       [200],
     );
-    const preview = await accept(
-      api()(webFilesContract).fileUrl({
-        headers,
-        query: { file_id: prepared.body.id },
-      }),
-      [200],
-    );
-    expect(preview.body.publicUrl).toBe(prepared.body.url);
+    const after = await accept(api.catalog.list({ headers, query: {} }), [200]);
+
+    expect(missing.status).toBe(404);
+    expect(before.body.artifacts).toStrictEqual([]);
+    expect(after.body.artifacts).toStrictEqual([
+      expect.objectContaining({ kind: "file", title: "report.html" }),
+    ]);
   });
 
-  it("previews private bytes uploaded by an older composer without a complete request", async () => {
+  it("private-artifact-uploads-005 keeps a guarded upload private through completion", async () => {
+    const storage = installStorage();
+    const api = as(member());
+
     const prepared = await accept(
-      api()(uploadsContract).prepare({ headers, body }),
-      [200],
-    );
-    mockStoredFile(prepared.body.id);
-    const preview = await accept(
-      api()(artifactReferencesContract).resolve({
+      api.uploads.preparePrivate({
         headers,
-        params: {
-          reference: new URL(prepared.body.url).pathname.slice(
-            "/artifacts/".length,
-          ),
+        body: {
+          filename: "report.html",
+          contentType: "text/html",
+          size: reportBytes.byteLength,
         },
       }),
       [200],
     );
-    expect(preview.body.url).toBe(
-      "https://private-r2.example/upload?signature=put",
+    if ("multipart" in prepared.body) {
+      throw new Error("Expected a single-part upload");
+    }
+    storage.upload(prepared.body.uploadUrl, reportBytes, "text/html");
+    const completed = await accept(
+      api.uploads.complete({ headers, body: { id: prepared.body.id } }),
+      [200],
     );
-    expect(context.mocks.s3.getSignedUrl.mock.calls.at(-1)?.[1]).toMatchObject({
-      input: { Bucket: bucket },
-    });
+    const fileUrl = await accept(
+      api.files.fileUrl({ headers, query: { file_id: prepared.body.id } }),
+      [200],
+    );
+
+    expect(prepared.body.url).toMatch(privateHtmlUrl);
+    expect(completed.body.url).toBe(prepared.body.url);
+    expect(fileUrl.body.publicUrl).toBeNull();
   });
 
-  it("makes attachments and outputs private by default", async () => {
-    const input = await accept(
-      api()(uploadsContract).prepare({
+  it("private-artifact-uploads-008 makes attachments and outputs private by default", async () => {
+    installStorage();
+    const api = as(member());
+    const extraHeaders = { origin: env("APP_URL") };
+
+    const attachment = await accept(
+      api.uploads.prepare({
         headers,
-        body: { filename: "input.png", contentType: "image/png", size: 13 },
+        extraHeaders,
+        body: { filename: "photo.png", contentType: "image/png", size: 10 },
       }),
       [200],
     );
-    expect(input.body.url).toMatch(
-      /^http:\/\/localhost:3002\/artifacts\/[a-z0-9]{10}\.png$/u,
-    );
-    const artifact = await accept(
-      api()(uploadsContract).prepare({
+    const output = await accept(
+      api.uploads.prepare({
         headers,
-        body: { ...body, purpose: "artifact" },
-        extraHeaders: { origin: "https://app.okou.ai" },
+        extraHeaders,
+        body: {
+          filename: "report.html",
+          contentType: "text/html",
+          size: 13,
+          purpose: "artifact",
+        },
       }),
       [200],
     );
-    expect(artifact.body.url).toMatch(
-      /^http:\/\/localhost:3002\/artifacts\/[a-z0-9]{10}\.html$/u,
+
+    expect(attachment.body.url).toMatch(privatePngUrl);
+    expect(output.body.url).toMatch(privateHtmlUrl);
+    for (const url of [attachment.body.url, output.body.url]) {
+      expect(new URL(url).origin).toBe(new URL(env("APP_URL")).origin);
+    }
+  });
+
+  it("private-artifact-uploads-010 enforces owner and organization for complete and multipart operations", async () => {
+    const storage = installStorage();
+    const owner = member();
+    const ownerApi = as(owner);
+    const prepared = await uploadedReport(ownerApi, storage);
+    const completed = await accept(
+      ownerApi.uploads.complete({ headers, body: { id: prepared.id } }),
+      [200],
+    );
+    const ownerFile = await accept(
+      ownerApi.files.fileUrl({ headers, query: { file_id: prepared.id } }),
+      [200],
+    );
+    expect(completed.body.url).toBe(prepared.url);
+    expect(ownerFile.body.publicUrl).toBeNull();
+
+    const multipartBody = {
+      id: prepared.id,
+      filename: "report.html",
+      uploadId: "upload-1",
+    };
+    for (const other of [
+      member(owner.orgId),
+      { userId: owner.userId, orgId: `org_${randomUUID()}` },
+    ]) {
+      const api = as(other);
+      const fileUrl = await accept(
+        api.files.fileUrl({ headers, query: { file_id: prepared.id } }),
+        [404],
+      );
+      expect(fileUrl.body.error.code).toBe("NOT_FOUND");
+      await accept(
+        api.uploads.complete({ headers, body: { id: prepared.id } }),
+        [404],
+      );
+      await accept(
+        api.uploads.completeMultipart({
+          headers,
+          body: { ...multipartBody, partCount: 1 },
+        }),
+        [404],
+      );
+      await accept(
+        api.uploads.abortMultipart({ headers, body: multipartBody }),
+        [404],
+      );
+    }
+
+    const orgless = as({ userId: owner.userId, orgId: null });
+    await accept(
+      orgless.files.fileUrl({ headers, query: { file_id: prepared.id } }),
+      [404],
+    );
+    const anonymous = as(null);
+    await accept(
+      anonymous.files.fileUrl({ headers: {}, query: { file_id: prepared.id } }),
+      [401],
     );
   });
 
-  it("returns stable owner references and signed private download URLs", async () => {
-    const prepared = await accept(
-      api()(uploadsContract).prepare({
-        headers,
-        body,
-        extraHeaders: { origin: "https://app.okou.ai" },
-      }),
-      [200],
-    );
-    const { id, url } = prepared.body;
-    expect(prepared.body).toHaveProperty("uploadUrl");
-    const put = context.mocks.s3.getSignedUrl.mock.calls.at(-1);
-    expect(put?.[2]).toMatchObject({ expiresIn: 172_800 });
-    expect(put?.[1]).toMatchObject({
-      input: { Bucket: bucket, Key: `private-artifacts/${id}/report.html` },
-    });
-    mockStoredFile(id);
+  it("private-artifact-uploads-015 completes multipart uploads in their recorded bucket", async () => {
+    const storage = installStorage({ multipartParts: 2 });
+    const api = as(member());
+    const prepared = await prepareMultipartReport(api);
 
     const completed = await accept(
-      api()(uploadsContract).complete({ headers, body: { id } }),
+      api.uploads.completeMultipart({
+        headers,
+        body: {
+          id: prepared.id,
+          filename: "report.html",
+          uploadId: prepared.multipart.uploadId,
+          partCount: 2,
+        },
+      }),
+      [200],
+    );
+
+    expect(prepared.multipart.uploadId).toBe("upload-1");
+    expect(
+      prepared.multipart.parts.map((part) => {
+        return part.partNumber;
+      }),
+    ).toStrictEqual([1, 2]);
+    expect(completed.body.url).toBe(prepared.url);
+    const objectOperations = storage.operations.filter((operation) => {
+      return !String(operation.key).startsWith("artifact-references/");
+    });
+    expect(objectOperations.length).toBeGreaterThan(0);
+    for (const operation of objectOperations) {
+      expect(operation).toMatchObject({
+        bucket: env("R2_PRIVATE_ARTIFACTS_BUCKET_NAME"),
+        key: `private-artifacts/${prepared.id}/report.html`,
+      });
+    }
+    expect(
+      objectOperations.filter((operation) => {
+        return operation.name === "CompleteMultipartUploadCommand";
+      }),
+    ).toHaveLength(1);
+  });
+
+  it("private-artifact-uploads-016 aborts multipart uploads in their recorded bucket", async () => {
+    const storage = installStorage({ multipartParts: 2 });
+    const api = as(member());
+    const prepared = await prepareMultipartReport(api);
+
+    const aborted = await accept(
+      api.uploads.abortMultipart({
+        headers,
+        body: {
+          id: prepared.id,
+          filename: "report.html",
+          uploadId: prepared.multipart.uploadId,
+        },
+      }),
+      [200],
+    );
+
+    expect(prepared.multipart.uploadId).toBe("upload-1");
+    expect(
+      prepared.multipart.parts.map((part) => {
+        return part.partNumber;
+      }),
+    ).toStrictEqual([1, 2]);
+    expect(aborted.body).toStrictEqual({ id: prepared.id });
+    const objectOperations = storage.operations.filter((operation) => {
+      return !String(operation.key).startsWith("artifact-references/");
+    });
+    for (const operation of objectOperations) {
+      expect(operation).toMatchObject({
+        bucket: env("R2_PRIVATE_ARTIFACTS_BUCKET_NAME"),
+        key: `private-artifacts/${prepared.id}/report.html`,
+      });
+    }
+    expect(
+      objectOperations.filter((operation) => {
+        return operation.name === "AbortMultipartUploadCommand";
+      }),
+    ).toHaveLength(1);
+  });
+
+  it("private-artifact-uploads-006 keeps an organization-less upload publicly readable", async () => {
+    const storage = installStorage();
+    const api = as(member(null));
+    const prepared = await uploadedReport(api, storage);
+
+    await accept(
+      api.uploads.complete({ headers, body: { id: prepared.id } }),
+      [200],
+    );
+    const fileUrl = await accept(
+      api.files.fileUrl({ headers, query: { file_id: prepared.id } }),
+      [200],
+    );
+
+    expect(fileUrl.body.publicUrl).toBe(prepared.url);
+  });
+
+  it("private-artifact-uploads-009 returns stable owner references and refreshes signed private download URLs", async () => {
+    const storage = installStorage();
+    const api = as(member());
+    const twoDaysMs = 172_800 * 1000;
+    const issuedAt = Date.UTC(2026, 0, 2, 3, 4, 5, 678);
+    const issuedSecond = Math.floor(issuedAt / 1000) * 1000;
+    mockNow(issuedAt);
+    const prepared = await accept(
+      api.uploads.prepare({
+        headers,
+        extraHeaders: { origin: env("APP_URL") },
+        body: {
+          filename: "report.html",
+          contentType: "text/html",
+          size: reportBytes.byteLength,
+        },
+      }),
+      [200],
+    );
+    if ("multipart" in prepared.body) {
+      throw new Error("Expected a single-part upload");
+    }
+    const { id, uploadUrl, url } = prepared.body;
+    expect(
+      storage.signed.find((entry) => {
+        return entry.url === uploadUrl;
+      }),
+    ).toMatchObject({
+      bucket: env("R2_PRIVATE_ARTIFACTS_BUCKET_NAME"),
+      key: `private-artifacts/${id}/report.html`,
+      expiresIn: 172_800,
+    });
+    storage.upload(uploadUrl, reportBytes, "text/html");
+
+    const completed = await accept(
+      api.uploads.complete({ headers, body: { id } }),
       [200],
     );
     expect(completed.body).toStrictEqual({
@@ -434,310 +665,52 @@ describe("private artifact uploads", () => {
       contentType: "text/html",
       size: 13,
     });
-    context.mocks.s3.getSignedUrl.mockResolvedValue(
-      "https://private-r2.example/report.html?signature=one",
-    );
-    mockNow(new Date("2026-09-09T12:00:00.123Z"));
-    const preview = await accept(
-      api()(webFilesContract).fileUrl({ headers, query: { file_id: id } }),
+
+    const first = await accept(
+      api.files.fileUrl({ headers, query: { file_id: id } }),
       [200],
     );
-    expect(preview.body).toStrictEqual({
-      url: "https://private-r2.example/report.html?signature=one",
-      downloadUrl: "https://private-r2.example/report.html?signature=one",
+    expect(first.headers.get("cache-control")).toBe("private, no-store");
+    expect(first.body).toMatchObject({
       publicUrl: null,
       previewImageUrl: null,
-      expiresAt: "2026-09-11T12:00:00.000Z",
+      expiresAt: new Date(issuedSecond + twoDaysMs).toISOString(),
     });
-    expect(preview.headers.get("cache-control")).toBe("private, no-store");
-    expect(context.mocks.s3.getSignedUrl).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({
-        input: expect.objectContaining({
-          Bucket: bucket,
-          Key: `private-artifacts/${id}/report.html`,
-          ResponseCacheControl: "private, max-age=31536000, must-revalidate",
-        }),
+    expect(first.body.url).toMatch(/^https:\/\//);
+    expect(
+      storage.signed.find((entry) => {
+        return entry.url === first.body.url;
       }),
-      {
-        expiresIn: 172_800,
-        signingDate: new Date("2026-09-09T12:00:00.000Z"),
-      },
-    );
-    const reference = new URL(url).pathname.slice("/artifacts/".length);
+    ).toMatchObject({
+      bucket: env("R2_PRIVATE_ARTIFACTS_BUCKET_NAME"),
+      key: `private-artifacts/${id}/report.html`,
+      cacheControl: "private, max-age=31536000, must-revalidate",
+    });
+
+    const reference = new URL(url).pathname.split("/").at(-1) ?? "";
     const resolved = await accept(
-      api()(artifactReferencesContract).resolve({
-        headers,
-        params: { reference },
-      }),
+      api.references.read({ headers, params: { reference } }),
       [200],
     );
-    expect(resolved.body.url).toBe(preview.body.url);
-    context.mocks.s3.getSignedUrl.mockResolvedValue(
-      "https://private-r2.example/report.html?signature=two",
+    expect(resolved.body.url).toBe(first.body.url);
+
+    const repeat = await accept(
+      api.files.fileUrl({ headers, query: { file_id: id } }),
+      [200],
     );
+    expect(repeat.body.url).toBe(first.body.url);
+    expect(repeat.body.expiresAt).toBe(first.body.expiresAt);
+    expect(repeat.body.downloadUrl).not.toBe(first.body.downloadUrl);
+
+    const nearExpiry = issuedSecond + twoDaysMs - 30 * 60 * 1000 + 250;
+    mockNow(nearExpiry);
     const refreshed = await accept(
-      api()(webFilesContract).fileUrl({ headers, query: { file_id: id } }),
+      api.files.fileUrl({ headers, query: { file_id: id } }),
       [200],
     );
-    expect(refreshed.body).toStrictEqual({
-      ...preview.body,
-      downloadUrl: "https://private-r2.example/report.html?signature=two",
-    });
-
-    mockNow(new Date("2026-09-11T11:50:00.123Z"));
-    const nearExpiry = await accept(
-      api()(webFilesContract).fileUrl({ headers, query: { file_id: id } }),
-      [200],
+    expect(refreshed.body.url).not.toBe(first.body.url);
+    expect(refreshed.body.expiresAt).toBe(
+      new Date(Math.floor(nearExpiry / 1000) * 1000 + twoDaysMs).toISOString(),
     );
-    expect(nearExpiry.body).toStrictEqual({
-      url: "https://private-r2.example/report.html?signature=two",
-      downloadUrl: "https://private-r2.example/report.html?signature=two",
-      publicUrl: null,
-      previewImageUrl: null,
-      expiresAt: "2026-09-13T11:50:00.000Z",
-    });
-  });
-
-  it("enforces owner and organization for complete and multipart operations", async () => {
-    const userId = `user_${randomUUID()}`;
-    const orgId = `org_${randomUUID()}`;
-    mocks.clerk.session(userId, orgId);
-    const prepared = await accept(
-      api()(uploadsContract).prepare({ headers, body }),
-      [200],
-    );
-    const id = prepared.body.id;
-    mockStoredFile(id);
-    const owner = await accept(
-      api()(webFilesContract).fileUrl({ headers, query: { file_id: id } }),
-      [200],
-    );
-    expect(owner.body.publicUrl).toBeNull();
-    const completed = await accept(
-      api()(uploadsContract).complete({ headers, body: { id } }),
-      [200],
-    );
-    expect(completed.body.url).toBe(prepared.body.url);
-
-    for (const [viewerId, viewerOrg] of [
-      [`user_${randomUUID()}`, orgId],
-      [userId, `org_${randomUUID()}`],
-    ]) {
-      if (!viewerId || !viewerOrg) {
-        throw new Error("Invalid viewer fixture");
-      }
-      mocks.clerk.session(viewerId, viewerOrg);
-      const denied = await accept(
-        api()(webFilesContract).fileUrl({ headers, query: { file_id: id } }),
-        [404],
-      );
-      expect(denied.body.error.code).toBe("NOT_FOUND");
-      await accept(
-        api()(uploadsContract).complete({ headers, body: { id } }),
-        [404],
-      );
-      const multipart = { id, filename: body.filename, uploadId: "upload-1" };
-      await accept(
-        api()(uploadsContract).completeMultipart({
-          headers,
-          body: { ...multipart, partCount: 1 },
-        }),
-        [404],
-      );
-      await accept(
-        api()(uploadsContract).abortMultipart({ headers, body: multipart }),
-        [404],
-      );
-    }
-    mocks.clerk.session(userId, null);
-    await accept(
-      api()(webFilesContract).fileUrl({ headers, query: { file_id: id } }),
-      [404],
-    );
-    context.mocks.clerk.authenticateRequest.mockResolvedValue({
-      isAuthenticated: false,
-      toAuth: () => {
-        return { userId: null };
-      },
-    });
-    await accept(
-      api()(webFilesContract).fileUrl({ headers: {}, query: { file_id: id } }),
-      [401],
-    );
-  });
-
-  it("does not consult public storage when a private object is missing", async () => {
-    const prepared = await accept(
-      api()(uploadsContract).prepare({ headers, body }),
-      [200],
-    );
-    context.mocks.s3.send.mockImplementation((command) => {
-      expect(command).toBeInstanceOf(HeadObjectCommand);
-      return Promise.reject(
-        Object.assign(new Error("Missing private object"), {
-          name: "NotFound",
-        }),
-      );
-    });
-    const missing = await accept(
-      api()(webFilesContract).fileUrl({
-        headers,
-        query: { file_id: prepared.body.id },
-      }),
-      [404],
-    );
-    expect(missing.body.error.code).toBe("NOT_FOUND");
-  });
-
-  it.each([
-    { name: "NoSuchUpload", providerStatus: 404, expectedStatus: 404 },
-    { name: "ProviderNotFound", providerStatus: 404, expectedStatus: 404 },
-    { name: "ServiceUnavailable", providerStatus: 503, expectedStatus: 500 },
-  ] as const)(
-    "keeps private multipart completion unavailable for $name without publishing it",
-    async ({ name, providerStatus, expectedStatus }) => {
-      const storage = context.mocks.s3.send.getMockImplementation()!;
-      context.mocks.s3.send.mockImplementation((command) => {
-        if (command instanceof CreateMultipartUploadCommand) {
-          return Promise.resolve({ UploadId: "unavailable-upload" });
-        }
-        return storage(command);
-      });
-      const prepared = await accept(
-        api()(uploadsContract).prepare({
-          headers,
-          body: {
-            ...body,
-            size: 6 * 1024 * 1024,
-            multipart: true,
-            purpose: "artifact",
-          },
-        }),
-        [200],
-      );
-      context.mocks.s3.send.mockImplementation((command) => {
-        if (command instanceof ListPartsCommand) {
-          return Promise.reject(
-            Object.assign(new Error("Multipart storage unavailable"), {
-              name,
-              $metadata: { httpStatusCode: providerStatus, attempts: 1 },
-            }),
-          );
-        }
-        return storage(command);
-      });
-      const failed = await api()(uploadsContract).completeMultipart({
-        headers,
-        body: {
-          id: prepared.body.id,
-          filename: prepared.body.filename,
-          uploadId: "unavailable-upload",
-          partCount: 2,
-        },
-      });
-      expect(failed.status).toBe(expectedStatus);
-      const catalog = await accept(
-        api()(artifactCatalogContract).list({ headers }),
-        [200],
-      );
-      expect(catalog.body.artifacts).toStrictEqual([]);
-    },
-  );
-
-  it.each(["complete", "abort"] as const)(
-    "%s multipart uploads in their recorded bucket",
-    async (action) => {
-      const storage = context.mocks.s3.send.getMockImplementation()!;
-      context.mocks.s3.send.mockImplementation((command) => {
-        if (
-          command instanceof PutObjectCommand &&
-          command.input.Key?.startsWith("artifact-references/")
-        ) {
-          return storage(command);
-        }
-        if (command instanceof CreateMultipartUploadCommand) {
-          expect(command.input.Bucket).toBe(bucket);
-          return Promise.resolve({ UploadId: "upload-1" });
-        }
-        if (command instanceof ListObjectsV2Command) {
-          return Promise.resolve({ Contents: [] });
-        }
-        throw new Error("Unexpected prepare request");
-      });
-      const prepared = await accept(
-        api()(uploadsContract).prepare({
-          headers,
-          body: { ...body, size: 6 * 1024 * 1024, multipart: true },
-        }),
-        [200],
-      );
-      const id = prepared.body.id;
-      expect(prepared.body).toMatchObject({
-        multipart: {
-          uploadId: "upload-1",
-          parts: [{ partNumber: 1 }, { partNumber: 2 }],
-        },
-      });
-      const identity = { id, filename: body.filename, uploadId: "upload-1" };
-      const multipartActions: string[] = [];
-      context.mocks.s3.send.mockImplementation((command) => {
-        if (
-          command instanceof GetObjectCommand &&
-          command.input.Key?.startsWith("artifact-references/")
-        ) {
-          return storage(command);
-        }
-        if (
-          command instanceof ListPartsCommand ||
-          command instanceof HeadObjectCommand ||
-          command instanceof CompleteMultipartUploadCommand ||
-          command instanceof AbortMultipartUploadCommand
-        ) {
-          expect(command.input).toMatchObject({
-            Bucket: bucket,
-            Key: `private-artifacts/${id}/report.html`,
-          });
-          if (command instanceof CompleteMultipartUploadCommand) {
-            multipartActions.push("complete");
-          }
-          if (command instanceof AbortMultipartUploadCommand) {
-            multipartActions.push("abort");
-          }
-          return Promise.resolve({
-            Parts: [
-              { PartNumber: 1, ETag: "part-1" },
-              { PartNumber: 2, ETag: "part-2" },
-            ],
-            ContentLength: 6 * 1024 * 1024,
-          });
-        }
-        throw new Error("Unexpected multipart request");
-      });
-      if (action === "complete") {
-        const completed = await accept(
-          api()(uploadsContract).completeMultipart({
-            headers,
-            body: { ...identity, partCount: 2 },
-          }),
-          [200],
-        );
-        expect(completed.body.url).toBe(prepared.body.url);
-      } else {
-        const aborted = await accept(
-          api()(uploadsContract).abortMultipart({ headers, body: identity }),
-          [200],
-        );
-        expect(aborted.body.id).toBe(id);
-      }
-      expect(multipartActions).toStrictEqual([action]);
-    },
-  );
-
-  it("fails visibly when private storage credentials are absent", async () => {
-    mockEnv("R2_PRIVATE_ARTIFACTS_ACCESS_KEY_ID", undefined);
-    const failed = await api()(uploadsContract).prepare({ headers, body });
-    expect(failed.status).toBe(500);
-    expect(failed.body).not.toHaveProperty("url");
   });
 });

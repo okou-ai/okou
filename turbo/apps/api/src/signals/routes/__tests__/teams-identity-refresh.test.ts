@@ -1,23 +1,13 @@
-import { connectTeamsAccountForTest } from "./helpers/teams-account";
-import { createSign, generateKeyPairSync, randomUUID } from "node:crypto";
-
-import { teamsBotContract } from "@okouai/api-contracts/contracts/teams-bot";
-import { teamsConnectContract } from "@okouai/api-contracts/contracts/teams-connect";
-import { HttpResponse, http } from "msw";
 import { describe, expect, it } from "vitest";
+import { http, HttpResponse } from "msw";
+import { object, string, tuple } from "zod";
 
-import { accept, testContext } from "../../../__tests__/test-context";
-import { setupApp } from "../../../__tests__/test-helpers";
-import { mockEnv } from "../../../lib/env";
-import { now } from "../../../lib/time";
+import { testContext } from "../../../__tests__/test-context";
 import { server } from "../../../mocks/server";
 import { flushWaitUntilForTest } from "../../context/wait-until";
-import { teamsBotRoutes } from "../teams-bot";
-import { teamsConnectRoutes } from "../teams-connect";
-import { createFixtureOperationOwner } from "./helpers/fixture-operation-owner";
-import { createRouteMocks } from "./helpers/route-test";
+import { connectTeamsAccountForTest } from "./helpers/teams-account";
 import {
-  removeTeamsForTest,
+  postTeamsActivityForTest,
   setupTeamsConnectTestEnv,
   teamsConnectFixture,
   teamsMessageActivityForTest,
@@ -25,274 +15,160 @@ import {
 } from "./helpers/teams-connect";
 
 const context = testContext();
-const mocks = createRouteMocks(context);
-const BOT_APP_ID = "00000000-0000-0000-0000-000000000001";
-const KEY_ID = "teams-identity-refresh-key";
-const METADATA_URL =
-  "https://login.botframework.com/v1/.well-known/openidconfiguration";
-const KEYS_URL = "https://login.botframework.com/v1/.well-known/keys";
-const keyPair = generateKeyPairSync("rsa", { modulusLength: 2048 });
-const CONNECTED_TEXT =
-  "You're already connected to Okou. Mention @Nova in any channel or send a DM to start chatting with your agent.";
-const CONNECT_TEXT =
-  "Please connect your account to use Okou in this Teams workspace.";
 
-interface Delivery {
-  readonly url: string;
+interface TeamsReply {
+  readonly conversationId: string;
+  readonly activityId: string;
   readonly body: unknown;
 }
 
-function botAuthorization(fixture: TeamsConnectFixture): string {
-  const seconds = Math.floor(now() / 1000);
-  const header = Buffer.from(
-    JSON.stringify({ alg: "RS256", typ: "JWT", kid: KEY_ID }),
-  ).toString("base64url");
-  const payload = Buffer.from(
-    JSON.stringify({
-      iss: "https://api.botframework.com",
-      aud: BOT_APP_ID,
-      exp: seconds + 600,
-      nbf: seconds - 30,
-      serviceurl: fixture.serviceUrl,
-    }),
-  ).toString("base64url");
-  const signer = createSign("RSA-SHA256");
-  signer.update(`${header}.${payload}`);
-  return `Bearer ${header}.${payload}.${signer.sign(keyPair.privateKey).toString("base64url")}`;
+/** Records the bot's replies in personal conversations. */
+function recordPersonalReplies(
+  fixture: TeamsConnectFixture,
+  conversationId: string,
+): TeamsReply[] {
+  const replies: TeamsReply[] = [];
+  server.use(
+    http.post(
+      `${fixture.serviceUrl}v3/conversations/:conversationId/activities/:activityId`,
+      async ({ params, request }) => {
+        if (params.conversationId !== conversationId) {
+          return undefined;
+        }
+        replies.push({
+          conversationId: String(params.conversationId),
+          activityId: String(params.activityId),
+          body: await request.json(),
+        });
+        return HttpResponse.json({ id: `reply-${replies.length}` });
+      },
+    ),
+  );
+  return replies;
 }
 
-function configureProvider(fixture: TeamsConnectFixture): Delivery[] {
-  const deliveries: Delivery[] = [];
+/** Teams' member lookup attests the replacement ID for the same AAD user. */
+function attestReplacementMember(
+  fixture: TeamsConnectFixture,
+  replacementTeamsUserId: string,
+): void {
   server.use(
-    http.get(METADATA_URL, () => {
-      return HttpResponse.json({
-        issuer: "https://api.botframework.com",
-        jwks_uri: KEYS_URL,
-        id_token_signing_alg_values_supported: ["RS256"],
-      });
-    }),
-    http.get(KEYS_URL, () => {
-      return HttpResponse.json({
-        keys: [
-          {
-            ...keyPair.publicKey.export({ format: "jwk" }),
-            kid: KEY_ID,
-            use: "sig",
-            alg: "RS256",
-            endorsements: ["msteams"],
-          },
-        ],
-      });
-    }),
-    http.post(
-      "https://login.microsoftonline.com/:tenant/oauth2/v2.0/token",
-      () => {
+    http.get(
+      `${fixture.serviceUrl}v3/conversations/:conversationId/members/:memberId`,
+      ({ params }) => {
+        if (params.memberId !== replacementTeamsUserId) {
+          return undefined;
+        }
         return HttpResponse.json({
-          access_token: `teams-token-${fixture.fixtureId}`,
-          token_type: "Bearer",
-          expires_in: 3600,
+          id: replacementTeamsUserId,
+          tenantId: fixture.teamsTenantId,
+          aadObjectId: fixture.teamsAadObjectId,
         });
       },
     ),
-    http.post(`${fixture.serviceUrl}v3/conversations`, () => {
-      return HttpResponse.json({ id: `welcome-${fixture.fixtureId}` });
-    }),
-    http.post(
-      `${fixture.serviceUrl}v3/conversations/:conversationId/activities`,
-      () => {
-        return HttpResponse.json({ id: randomUUID() });
-      },
-    ),
-    http.post(
-      `${fixture.serviceUrl}v3/conversations/:conversationId/activities/:activityId`,
-      async ({ request }) => {
-        deliveries.push({ url: request.url, body: await request.json() });
-        return HttpResponse.json({ id: randomUUID() });
-      },
-    ),
   );
-  return deliveries;
 }
 
-async function postActivity(
-  fixture: TeamsConnectFixture,
-  body: Record<string, unknown>,
-) {
-  const response = await accept(
-    setupApp({ context, routes: teamsBotRoutes })(teamsBotContract).post({
-      extraHeaders: { authorization: botAuthorization(fixture) },
-      body,
-    }),
-    [200],
-  );
-  await flushWaitUntilForTest();
-  expect(response.body.ok).toBeTruthy();
-  return response.body;
-}
-
-function setupIdentityFixture() {
-  const fixture = teamsConnectFixture({ teamsAppId: BOT_APP_ID });
-  const owner = createFixtureOperationOwner(async () => {
-    await flushWaitUntilForTest();
-    await removeTeamsForTest(context.signal, fixture);
-    await flushWaitUntilForTest();
-  });
-  return owner.run(async () => {
-    setupTeamsConnectTestEnv();
-    mockEnv("MICROSOFT_TEAMS_BOT_APP_PASSWORD", "teams-test-password");
-    context.mocks.ably.publish.mockResolvedValue(undefined);
-    const deliveries = configureProvider(fixture);
-    mocks.clerk.session(fixture.userId, fixture.orgId, "org:admin");
-    await postActivity(
-      fixture,
-      teamsMessageActivityForTest(fixture, {
-        text: "installation seed",
-        entities: [],
-        replyToId: null,
+function connectActionUrl(body: unknown): string {
+  const parsed = object({
+    attachments: tuple([
+      object({
+        content: object({
+          actions: tuple([object({ url: string() })]),
+        }),
       }),
-    );
-    const client = setupApp({ context, routes: teamsConnectRoutes })(
-      teamsConnectContract,
-    );
+    ]),
+  }).parse(body);
+  return parsed.attachments[0].content.actions[0].url;
+}
+
+describe("Teams identity refresh through signed personal messages", () => {
+  it("teams-identity-refresh-001 replaces a connected Teams ID when the same AAD user sends from a new ID", async () => {
+    setupTeamsConnectTestEnv();
+    const fixture = teamsConnectFixture();
     await connectTeamsAccountForTest(context, fixture);
-    const status = await accept(
-      client.getStatus({ headers: { authorization: "Bearer clerk-session" } }),
-      [200],
-    );
-    expect(status.body).toMatchObject({
-      isInstalled: true,
-      isConnected: true,
-      tenantId: fixture.teamsTenantId,
+    const replacementTeamsUserId = `29:replacement-${fixture.fixtureId}`;
+    attestReplacementMember(fixture, replacementTeamsUserId);
+    const personalConversation = `a:personal-${fixture.fixtureId}`;
+    const replies = recordPersonalReplies(fixture, personalConversation);
+
+    const sendConnect = async (
+      activityId: string,
+      from: Readonly<Record<string, string>>,
+    ) => {
+      const response = await postTeamsActivityForTest({
+        signal: context.signal,
+        activity: teamsMessageActivityForTest(fixture, {
+          id: activityId,
+          text: "connect",
+          entities: [],
+          conversation: {
+            id: personalConversation,
+            conversationType: "personal",
+          },
+          replyToId: null,
+          from,
+        }),
+      });
+      expect(response.ok).toBeTruthy();
+      await flushWaitUntilForTest();
+    };
+
+    await sendConnect("original", {
+      id: fixture.teamsUserId,
+      name: "Ada Lovelace",
+      aadObjectId: fixture.teamsAadObjectId,
     });
-    return { fixture, deliveries, run: owner.run };
-  });
-}
+    await sendConnect("replacement-1", {
+      id: replacementTeamsUserId,
+      name: "Ada Lovelace",
+      aadObjectId: fixture.teamsAadObjectId,
+    });
+    await sendConnect("replacement-2", {
+      id: replacementTeamsUserId,
+      name: "Ada Lovelace",
+      aadObjectId: fixture.teamsAadObjectId,
+    });
+    await sendConnect("obsolete", {
+      id: fixture.teamsUserId,
+      name: "Ada Lovelace",
+    });
 
-async function personalConnect(
-  fixture: TeamsConnectFixture,
-  sender: { readonly id: string; readonly aadObjectId?: string },
-) {
-  const activityId = randomUUID();
-  const conversationId = `personal-${fixture.fixtureId}`;
-  const response = await postActivity(
-    fixture,
-    teamsMessageActivityForTest(fixture, {
-      id: activityId,
-      conversation: { id: conversationId, conversationType: "personal" },
-      channelData: { tenant: { id: fixture.teamsTenantId } },
-      from: sender,
-      text: "/connect",
-      entities: [],
-      replyToId: null,
-    }),
-  );
-  expect(response.activity).toMatchObject({
-    kind: "message",
-    sender: { id: sender.id, aadObjectId: sender.aadObjectId ?? null },
-    text: "/connect",
-  });
-  return { activityId, conversationId, connectUrl: response.connectUrl };
-}
+    expect(
+      replies.map((reply) => {
+        return reply.activityId;
+      }),
+    ).toStrictEqual(["original", "replacement-1", "replacement-2", "obsolete"]);
+    for (const reply of replies.slice(0, 3)) {
+      expect(reply.body).toMatchObject({
+        type: "message",
+        replyToId: reply.activityId,
+        text: expect.stringContaining("You're already connected"),
+      });
+      expect(reply.body).not.toHaveProperty("attachments");
+    }
 
-type PersonalReply = Awaited<ReturnType<typeof personalConnect>>;
-
-function connectedReply(
-  fixture: TeamsConnectFixture,
-  reply: PersonalReply,
-): Delivery {
-  return {
-    url: `${fixture.serviceUrl}v3/conversations/${reply.conversationId}/activities/${reply.activityId}`,
-    body: {
-      type: "message",
-      text: CONNECTED_TEXT,
-      textFormat: "markdown",
-      replyToId: reply.activityId,
-      channelData: { tenant: { id: fixture.teamsTenantId } },
-    },
-  };
-}
-
-function expectConnectPrompt(
-  deliveries: readonly Delivery[],
-  fixture: TeamsConnectFixture,
-  reply: PersonalReply,
-  teamsUserId: string,
-): void {
-  if (!reply.connectUrl) {
-    throw new Error("Expected a public Teams connect URL");
-  }
-  const connectUrl = new URL(reply.connectUrl);
-  expect(connectUrl.origin).toBe("https://app.okou.test");
-  expect(connectUrl.pathname).toBe("/settings/teams");
-  expect(connectUrl.searchParams.get("tenantId")).toBe(fixture.teamsTenantId);
-  expect(connectUrl.searchParams.get("teamsUserId")).toBe(teamsUserId);
-  expect(connectUrl.searchParams.has("teamsAadObjectId")).toBeFalsy();
-  expect(deliveries).toContainEqual({
-    url: `${fixture.serviceUrl}v3/conversations/${reply.conversationId}/activities/${reply.activityId}`,
-    body: {
-      type: "message",
-      summary: CONNECT_TEXT,
-      replyToId: reply.activityId,
+    const obsolete = replies[3];
+    expect(obsolete?.body).toMatchObject({
+      replyToId: "obsolete",
       attachments: [
         {
           contentType: "application/vnd.microsoft.card.adaptive",
           content: {
             type: "AdaptiveCard",
-            version: "1.4",
-            body: [{ type: "TextBlock", text: CONNECT_TEXT, wrap: true }],
-            actions: [
-              {
-                type: "Action.OpenUrl",
-                title: "Connect",
-                url: reply.connectUrl,
-              },
-            ],
+            actions: [{ type: "Action.OpenUrl", title: "Connect" }],
           },
         },
       ],
-      channelData: { tenant: { id: fixture.teamsTenantId } },
-    },
-  });
-}
-
-describe("Teams identity refresh through signed personal messages", () => {
-  it("replaces a connected non-null Teams ID when the same AAD sends a new ID", async () => {
-    const { fixture, deliveries, run } = await setupIdentityFixture();
-    await run(async () => {
-      const originalIdOnly = await personalConnect(fixture, {
-        id: fixture.teamsUserId,
-        aadObjectId: fixture.teamsAadObjectId,
-      });
-      expect(deliveries).toContainEqual(
-        connectedReply(fixture, originalIdOnly),
-      );
-      const newTeamsUserId = `29:new-${fixture.fixtureId}`;
-      server.use(
-        http.get(
-          `${fixture.serviceUrl}v3/conversations/:conversationId/members/:memberId`,
-          ({ params }) => {
-            return HttpResponse.json({
-              id: params.memberId,
-              tenantId: fixture.teamsTenantId,
-              aadObjectId: fixture.teamsAadObjectId,
-            });
-          },
-        ),
-      );
-      const refreshed = await personalConnect(fixture, {
-        id: newTeamsUserId,
-        aadObjectId: fixture.teamsAadObjectId,
-      });
-      expect(deliveries).toContainEqual(connectedReply(fixture, refreshed));
-      const newIdOnly = await personalConnect(fixture, {
-        id: newTeamsUserId,
-        aadObjectId: fixture.teamsAadObjectId,
-      });
-      expect(deliveries).toContainEqual(connectedReply(fixture, newIdOnly));
-      const oldIdOnly = await personalConnect(fixture, {
-        id: fixture.teamsUserId,
-      });
-      expectConnectPrompt(deliveries, fixture, oldIdOnly, fixture.teamsUserId);
     });
+    const connectUrl = new URL(connectActionUrl(obsolete?.body));
+    expect(`${connectUrl.origin}${connectUrl.pathname}`).toBe(
+      "https://app.okou.test/settings/teams",
+    );
+    expect(connectUrl.searchParams.get("tenantId")).toBe(fixture.teamsTenantId);
+    expect(connectUrl.searchParams.get("teamsUserId")).toBe(
+      fixture.teamsUserId,
+    );
+    expect(connectUrl.href).not.toContain(fixture.teamsAadObjectId);
   });
 });

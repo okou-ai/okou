@@ -1,964 +1,115 @@
-import { http, HttpResponse } from "msw";
 import { randomUUID } from "node:crypto";
-import { env, mockEnv } from "../../../lib/env";
-import { server } from "../../../mocks/server";
 
-import {
-  connectorCatalogContract,
-  isOneClickConnectorGrantKind,
-} from "@okouai/api-contracts/contracts/connector-catalog";
-import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { createStore } from "ccstate";
-import { afterEach, onTestFinished } from "vitest";
+import { connectorCatalogContract } from "@okouai/api-contracts/contracts/connector-catalog";
+import { DomUtils, parseDocument } from "htmlparser2";
+import { http, HttpResponse } from "msw";
+import { describe, expect, it } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { now, withMockNowForTest } from "../../../lib/time";
+import { mockNow, now } from "../../../lib/time";
+import { server } from "../../../mocks/server";
 import { connectorCatalogRoutes } from "../connector-catalog";
-import { featureSwitchesRoutes } from "../feature-switches";
-import { createBddApi } from "./helpers/api-bdd";
+import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import {
   createConnectorBddApi,
   mockGitHubConnectorOAuth,
   mockStripeCliDashboardAuth,
 } from "./helpers/api-bdd-connectors";
-import { createRunExecutionCredentials } from "./helpers/run-execution-credentials";
 import { assertPublicConnectorCatalogHasNoPrivateFields } from "./helpers/connector-catalog-public-leak";
-import {
-  deleteOrgMembership$,
-  seedOrgMembership$,
-  type OrgMembershipFixture,
-} from "./helpers/org-membership";
 import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
-const executionToken = createRunExecutionCredentials(context).okouToken;
-const mocks = createRouteMocks(context);
-const bdd = createBddApi(context);
-const connectorsApi = createConnectorBddApi(context);
-const store = createStore();
+const headers = Object.freeze({ authorization: "Bearer clerk-session" });
+const INTERNAL_CONNECTOR_SLUGS = Object.freeze([
+  "maskdb",
+  "db9",
+  "drive9",
+  "slock",
+  "runtime",
+]);
+const ONE_CLICK_GRANT_KINDS: readonly string[] = Object.freeze([
+  "auth-code",
+  "external-code",
+  "device-auth",
+]);
 
-async function enableFeatureSwitches(
-  orgId: string,
-  userId: string,
-  switches: Partial<Record<FeatureSwitchKey, boolean>>,
-): Promise<void> {
-  mocks.clerk.session(userId, orgId);
-  const client = setupApp({ context, routes: featureSwitchesRoutes })(
-    featureSwitchesContract,
-  );
-  await accept(
-    client.update({
-      headers: { authorization: "Bearer clerk-session" },
-      body: { switches },
-    }),
-    [200],
+function catalog() {
+  return setupApp({ context, routes: connectorCatalogRoutes })(
+    connectorCatalogContract,
   );
 }
 
-async function deleteFeatureSwitches(
-  orgId: string,
-  userId: string,
-): Promise<void> {
-  mocks.clerk.session(userId, orgId);
-  const client = setupApp({ context, routes: featureSwitchesRoutes })(
-    featureSwitchesContract,
+/** Signs in a fresh workspace member, or the given BDD user. */
+function signIn(actor?: ApiTestUser) {
+  createRouteMocks(context).clerk.session(
+    actor?.userId ?? `user_${randomUUID()}`,
+    actor?.orgId ?? `org_${randomUUID()}`,
   );
-  await accept(
-    client.delete({ headers: { authorization: "Bearer clerk-session" } }),
-    [200],
-  );
+  return headers;
 }
 
-function stateFromAuthorizationUrl(authorizationUrl: string): string {
-  const state = new URL(authorizationUrl).searchParams.get("state");
-  if (!state) {
-    throw new Error("Expected connector authorization URL to include state");
+function rankOf(entry: { readonly popularityRank?: number }): number {
+  return entry.popularityRank ?? Number.MAX_SAFE_INTEGER;
+}
+
+function expectNondecreasingRank(
+  entries: readonly { readonly popularityRank?: number }[],
+) {
+  for (let index = 1; index < entries.length; index += 1) {
+    const previous = entries[index - 1];
+    const current = entries[index];
+    if (!previous || !current) {
+      throw new Error("Expected adjacent catalog entries");
+    }
+    expect(rankOf(current)).toBeGreaterThanOrEqual(rankOf(previous));
   }
-  return state;
 }
 
-describe("GET /api/connector-catalog/:connectorSlug/icon", () => {
-  it("redirects signed-out callers to the published logo and keeps the alias cacheable", async () => {
-    const client = setupApp({ context, routes: connectorCatalogRoutes })(
-      connectorCatalogContract,
-    );
-    const response = await accept(
-      client.icon({ params: { connectorSlug: "github" } }),
-      [302],
-    );
-    expect(response.headers.get("location")).toBe(
-      "https://static.vm0.io/test-fixtures/connectors/github.svg",
-    );
-    expect(response.headers.get("cache-control")).toContain("max-age=");
+async function connectGitHub(owner: ApiTestUser, login: string) {
+  const connectors = createConnectorBddApi(context);
+  mockGitHubConnectorOAuth({ login });
+  const started = await connectors.startOauth(owner, "github", "oauth");
+  const state = new URL(started.authorizationUrl).searchParams.get("state");
+  if (!state) {
+    throw new Error("Expected GitHub authorization state");
+  }
+  await connectors.completeOauthCallback("github", {
+    code: `code-${randomUUID()}`,
+    state,
   });
+}
 
-  it("returns 404 for an unknown logo", async () => {
-    const client = setupApp({ context, routes: connectorCatalogRoutes })(
-      connectorCatalogContract,
+/**
+ * Lists the visible catalog, then reads the exact detail of one contiguous
+ * slice of it; the slices together cover every visible slug.
+ */
+async function readVisibleDetailSlice(slice: number, slices: number) {
+  const list = await accept(catalog().list({ headers: signIn() }), [200]);
+  const size = Math.ceil(list.body.connectors.length / slices);
+  const details: unknown[] = [];
+  for (const connector of list.body.connectors.slice(
+    slice * size,
+    (slice + 1) * size,
+  )) {
+    const detail = await accept(
+      catalog().get({
+        headers: signIn(),
+        params: { connectorSlug: connector.slug },
+      }),
+      [200],
     );
-    const response = await accept(
-      client.icon({ params: { connectorSlug: "unknown-logo" } }),
-      [404],
-    );
-    expect(response.body.error.code).toBe("NOT_FOUND");
-  });
-
-  it.each([
-    ["slack", 'x="-50" y="-50" width="200" height="200"'],
-    ["openai", "@media(prefers-color-scheme:dark){image{filter:invert(1)}}"],
-  ] as const)(
-    "serves the catalog treatment for %s as a standalone image",
-    async (slug, treatment) => {
-      const source =
-        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"><circle cx="10" cy="10" r="5"/></svg>';
-      server.use(
-        http.get(
-          `https://static.vm0.io/test-fixtures/connectors/${slug}.svg`,
-          () => {
-            return new HttpResponse(source, {
-              headers: { "Content-Type": "image/svg+xml" },
-            });
-          },
-        ),
-      );
-      const client = setupApp({ context, routes: connectorCatalogRoutes })(
-        connectorCatalogContract,
-      );
-      const response = await accept(
-        client.icon({ params: { connectorSlug: slug } }),
-        [200],
-      );
-      expect(response.headers.get("content-type")).toBe("image/svg+xml");
-      const svg = await response.body.text();
-      expect(svg).toContain(treatment);
-      expect(svg).toContain(Buffer.from(source).toString("base64"));
-    },
-  );
-});
+    details.push(detail.body);
+  }
+  return { visibleCount: list.body.connectors.length, details };
+}
 
 describe("GET /api/connector-catalog", () => {
-  const seededFeatureSwitches: {
-    readonly orgId: string;
-    readonly userId: string;
-  }[] = [];
-  const seededOrgs: OrgMembershipFixture[] = [];
-
-  async function enableConnectorFeatureSwitches(
-    orgId: string,
-    userId: string,
-    switches: Partial<Record<FeatureSwitchKey, boolean>>,
-  ): Promise<void> {
-    seededFeatureSwitches.push({ orgId, userId });
-    await enableFeatureSwitches(orgId, userId, switches);
-  }
-
-  afterEach(async () => {
-    while (seededFeatureSwitches.length > 0) {
-      const fixture = seededFeatureSwitches.pop();
-      if (fixture) {
-        await deleteFeatureSwitches(fixture.orgId, fixture.userId);
-      }
-    }
-    while (seededOrgs.length > 0) {
-      const fixture = seededOrgs.pop();
-      if (fixture) {
-        await store.set(deleteOrgMembership$, fixture, context.signal);
-      }
-    }
-  });
-
-  it("returns 401 when not authenticated", async () => {
-    const client = setupApp({ context, routes: connectorCatalogRoutes })(
-      connectorCatalogContract,
-    );
-    const response = await accept(client.list({ headers: {} }), [401]);
-
-    expect(response.body.error.code).toBe("UNAUTHORIZED");
-  });
-
-  it("returns 401 when the session has no organization", async () => {
-    mocks.clerk.session(`user_${randomUUID()}`, null);
-
-    const client = setupApp({ context, routes: connectorCatalogRoutes })(
-      connectorCatalogContract,
-    );
+  it("connector-catalog-026 hides the feature-gated test OAuth device connector", async () => {
     const response = await accept(
-      client.list({ headers: { authorization: "Bearer clerk-session" } }),
-      [401],
-    );
-
-    expect(response.body.error.code).toBe("UNAUTHORIZED");
-  });
-
-  it.each([
-    ["posthog", "oauth", "auth-code", true],
-    ["calendly", "oauth", "auth-code", true],
-    ["monday-mcp", "automatic", "automatic", false],
-    ["plaud-mcp", "automatic", "automatic", false],
-  ] as const)(
-    "returns public catalog metadata including %s auth methods",
-    async (connectorSlug, authMethodId, grantKind, supportsRefresh) => {
-      mocks.clerk.session(`user_${randomUUID()}`, `org_${randomUUID()}`);
-
-      const client = setupApp({ context, routes: connectorCatalogRoutes })(
-        connectorCatalogContract,
-      );
-      const response = await accept(
-        client.list({ headers: { authorization: "Bearer clerk-session" } }),
-        [200],
-      );
-
-      assertPublicConnectorCatalogHasNoPrivateFields(response.body);
-      expect(response.body.connectors).toContainEqual(
-        expect.objectContaining({
-          slug: connectorSlug,
-          authMethods: expect.arrayContaining([
-            expect.objectContaining({
-              id: authMethodId,
-              grantKind,
-              supportsRefresh,
-            }),
-          ]),
-        }),
-      );
-    },
-  );
-
-  it("returns compact public connector metadata", async () => {
-    const userId = `user_${randomUUID()}`;
-    const orgId = `org_${randomUUID()}`;
-    mocks.clerk.session(userId, orgId);
-
-    const client = setupApp({ context, routes: connectorCatalogRoutes })(
-      connectorCatalogContract,
-    );
-    const response = await accept(
-      client.list({ headers: { authorization: "Bearer clerk-session" } }),
-      [200],
-    );
-
-    assertPublicConnectorCatalogHasNoPrivateFields(response.body);
-    expect(response.body.connectors.length).toBeGreaterThan(0);
-    const openai = response.body.connectors.find((connector) => {
-      return connector.slug === "openai";
-    });
-    expect(openai?.label).toBe("OpenAI");
-    expect(openai?.generation).toContain("text");
-    expect(openai?.tags).toContain("llm");
-    expect(openai?.authMethods).toStrictEqual([
-      {
-        id: "api-token",
-        label: "API Key",
-        description: expect.any(String),
-        grantKind: "manual",
-        supportsRefresh: false,
-      },
-    ]);
-    expect(openai?.permissionSummary).toStrictEqual({
-      hasPermissions: false,
-      permissionCount: 0,
-      hasCategories: false,
-      hasDefaultPolicyOverrides: false,
-    });
-  });
-
-  it("returns shared public icon descriptors across catalog views", async () => {
-    const userId = `user_${randomUUID()}`;
-    const orgId = `org_${randomUUID()}`;
-    mocks.clerk.session(userId, orgId);
-
-    const client = setupApp({ context, routes: connectorCatalogRoutes })(
-      connectorCatalogContract,
-    );
-    const headers = { authorization: "Bearer clerk-session" };
-    const listResponse = await accept(client.list({ headers }), [200]);
-    const statusResponse = await accept(client.status({ headers }), [200]);
-    const detailResponse = await accept(
-      client.get({ params: { connectorSlug: "openai" }, headers }),
-      [200],
-    );
-
-    const openai = listResponse.body.connectors.find((connector) => {
-      return connector.slug === "openai";
-    });
-    const openaiStatus = statusResponse.body.connectors.find((connector) => {
-      return connector.slug === "openai";
-    });
-    expect(openai?.icon).toStrictEqual({
-      url: "https://static.vm0.io/test-fixtures/connectors/openai.svg",
-      invertInDarkMode: true,
-    });
-    expect(openaiStatus?.icon).toStrictEqual(openai?.icon);
-    expect(detailResponse.body.connector.icon).toStrictEqual(openai?.icon);
-
-    const slack = listResponse.body.connectors.find((connector) => {
-      return connector.slug === "slack";
-    });
-    expect(slack?.icon).toStrictEqual({
-      url: "https://static.vm0.io/test-fixtures/connectors/slack.svg",
-      invertInDarkMode: false,
-      scale: 2,
-    });
-  });
-
-  it("accepts an Okou run token carrying connector:read", async () => {
-    const userId = `user_${randomUUID()}`;
-    const orgId = `org_${randomUUID()}`;
-    seededOrgs.push(
-      await store.set(
-        seedOrgMembership$,
-        { orgId, userId, role: "admin" },
-        context.signal,
-      ),
-    );
-    const token = await executionToken({ userId, orgId });
-
-    const client = setupApp({ context, routes: connectorCatalogRoutes })(
-      connectorCatalogContract,
-    );
-    const response = await accept(
-      client.list({ headers: { authorization: `Bearer ${token}` } }),
-      [200],
-    );
-
-    expect(response.body.connectors.length).toBeGreaterThan(0);
-  });
-
-  it("returns 401 for catalog status when not authenticated", async () => {
-    const client = setupApp({ context, routes: connectorCatalogRoutes })(
-      connectorCatalogContract,
-    );
-    const response = await accept(client.status({ headers: {} }), [401]);
-
-    expect(response.body.error.code).toBe("UNAUTHORIZED");
-  });
-
-  it("returns 401 for catalog status when the session has no organization", async () => {
-    mocks.clerk.session(`user_${randomUUID()}`, null);
-
-    const client = setupApp({ context, routes: connectorCatalogRoutes })(
-      connectorCatalogContract,
-    );
-    const response = await accept(
-      client.status({ headers: { authorization: "Bearer clerk-session" } }),
-      [401],
-    );
-
-    expect(response.body.error.code).toBe("UNAUTHORIZED");
-  });
-
-  it("returns bounded featured connectors and searches only slug or label", async () => {
-    mocks.clerk.session(`user_${randomUUID()}`, `org_${randomUUID()}`);
-
-    const client = setupApp({ context, routes: connectorCatalogRoutes })(
-      connectorCatalogContract,
-    );
-    const headers = { authorization: "Bearer clerk-session" };
-    const featured = await accept(
-      client.discovery({ query: {}, headers }),
-      [200],
-    );
-
-    assertPublicConnectorCatalogHasNoPrivateFields(featured.body);
-    expect(featured.body.connectors.length).toBeGreaterThan(0);
-    expect(featured.body.connectors.length).toBeLessThanOrEqual(100);
-    expect(featured.body.totalConnectorCount).toBeGreaterThanOrEqual(
-      featured.body.connectors.length,
-    );
-
-    const labelOrSlugSearch = await accept(
-      client.discovery({ query: { keyword: "GITHUB" }, headers }),
-      [200],
-    );
-    expect(labelOrSlugSearch.body.connectors.length).toBeGreaterThan(0);
-    for (const connector of labelOrSlugSearch.body.connectors) {
-      expect(
-        connector.slug.toLowerCase().includes("github") ||
-          connector.label.toLowerCase().includes("github"),
-      ).toBeTruthy();
-    }
-
-    const descriptionSearch = await accept(
-      client.discovery({
-        query: { keyword: "permission behavior" },
-        headers,
-      }),
-      [200],
-    );
-    expect(descriptionSearch.body.connectors).toStrictEqual([]);
-  });
-
-  it("orders discovery by rank and gives every category its own slice", async () => {
-    // The endpoint's promise, stated here rather than imported: at most this
-    // many connectors per category, and never a connector Okou runs itself.
-    const DISCOVERY_PER_CATEGORY = 12;
-    const INTERNAL_SLUGS = ["maskdb", "db9", "drive9", "slock", "runtime"];
-
-    mocks.clerk.session(`user_${randomUUID()}`, `org_${randomUUID()}`);
-
-    const client = setupApp({ context, routes: connectorCatalogRoutes })(
-      connectorCatalogContract,
-    );
-    const headers = { authorization: "Bearer clerk-session" };
-    const discovery = await accept(
-      client.discovery({ query: {}, headers }),
-      [200],
-    );
-
-    // Discovery used to answer with one global top-100, so a category holding
-    // a quarter of the catalog crowded the others off the first screen.
-    const counts = discovery.body.categoryConnectorCounts ?? {};
-    const returnedPerCategory = new Map<string, number>();
-    for (const connector of discovery.body.connectors) {
-      returnedPerCategory.set(
-        connector.category,
-        (returnedPerCategory.get(connector.category) ?? 0) + 1,
-      );
-    }
-    for (const [category, returned] of returnedPerCategory) {
-      expect(returned).toBeLessThanOrEqual(DISCOVERY_PER_CATEGORY);
-      expect(counts[category] ?? 0).toBeGreaterThanOrEqual(returned);
-    }
-
-    // Inside a category a ranked connector always precedes an unranked one,
-    // and ranks never go backwards.
-    const seenRankByCategory = new Map<string, number>();
-    for (const connector of discovery.body.connectors) {
-      const rank = connector.popularityRank ?? Number.MAX_SAFE_INTEGER;
-      const previous = seenRankByCategory.get(connector.category);
-      if (previous !== undefined) {
-        expect(rank).toBeGreaterThanOrEqual(previous);
-      }
-      seenRankByCategory.set(connector.category, rank);
-    }
-
-    // Connectors Okou runs for itself never compete for a customer's first
-    // screen, in browse or in search.
-    for (const slug of INTERNAL_SLUGS) {
-      expect(
-        discovery.body.connectors.some((connector) => {
-          return connector.slug === slug;
-        }),
-      ).toBeFalsy();
-    }
-  });
-
-  it("answers a named category with the whole category", async () => {
-    mocks.clerk.session(`user_${randomUUID()}`, `org_${randomUUID()}`);
-
-    const client = setupApp({ context, routes: connectorCatalogRoutes })(
-      connectorCatalogContract,
-    );
-    const headers = { authorization: "Bearer clerk-session" };
-    const browse = await accept(
-      client.discovery({ query: {}, headers }),
-      [200],
-    );
-
-    const counts = browse.body.categoryConnectorCounts ?? {};
-    const [category, total] = Object.entries(counts).reduce(
-      (largest, entry) => {
-        return entry[1] > largest[1] ? entry : largest;
-      },
-      ["", 0],
-    );
-    expect(total).toBeGreaterThan(0);
-
-    const scoped = await accept(
-      client.discovery({ query: { category }, headers }),
-      [200],
-    );
-
-    // The count offered next to a category is what the client uses to invite
-    // the reader in, so entering it has to return everything that was counted
-    // -- not the browse slice, which is what made "329" mean twelve.
-    expect(scoped.body.connectors).toHaveLength(total);
-    for (const connector of scoped.body.connectors) {
-      expect(connector.category).toBe(category);
-    }
-
-    // Still ranked, and still without the connectors Okou runs for itself.
-    const ranks = scoped.body.connectors.map((connector) => {
-      return connector.popularityRank ?? Number.MAX_SAFE_INTEGER;
-    });
-    expect(
-      [...ranks].sort((left, right) => {
-        return left - right;
-      }),
-    ).toStrictEqual(ranks);
-  });
-
-  it("returns public catalog status without private connector fields", async () => {
-    const userId = `user_${randomUUID()}`;
-    const orgId = `org_${randomUUID()}`;
-    mocks.clerk.session(userId, orgId);
-
-    const client = setupApp({ context, routes: connectorCatalogRoutes })(
-      connectorCatalogContract,
-    );
-    const response = await accept(
-      client.status({ headers: { authorization: "Bearer clerk-session" } }),
-      [200],
-    );
-
-    assertPublicConnectorCatalogHasNoPrivateFields(response.body);
-    const openai = response.body.connectors.find((connector) => {
-      return connector.slug === "openai";
-    });
-    expect(openai).toMatchObject({
-      slug: "openai",
-      label: "OpenAI",
-
-      singleAuthCodeAuthMethodId: null,
-      connectNotice: null,
-    });
-    expect(openai?.authMethods).toStrictEqual([
-      {
-        id: "api-token",
-        label: "API Key",
-        description: expect.any(String),
-        grantKind: "manual",
-        supportsRefresh: false,
-        manualFields: [
-          {
-            id: "apiKey",
-            label: "API Key",
-            required: true,
-            placeholder: "sk-...",
-            inputType: "password",
-          },
-        ],
-        startOptions: [],
-      },
-    ]);
-    const neon = response.body.connectors.find((connector) => {
-      return connector.slug === "neon";
-    });
-    expect(
-      neon?.authMethods.map((authMethod) => {
-        return authMethod.id;
-      }),
-    ).toStrictEqual(["api-token"]);
-  });
-
-  it("returns 401 for one-click connectors when not authenticated", async () => {
-    const client = setupApp({ context, routes: connectorCatalogRoutes })(
-      connectorCatalogContract,
-    );
-    const response = await accept(client.oneClick({ headers: {} }), [401]);
-
-    expect(response.body.error.code).toBe("UNAUTHORIZED");
-  });
-
-  it("lists one-click connectors with connection status and without per-connector detail", async () => {
-    const actor = bdd.user();
-    mockGitHubConnectorOAuth();
-    const start = await connectorsApi.startOauth(actor, "github", "oauth");
-    await connectorsApi.completeOauthCallback("github", {
-      code: `github-${randomUUID()}`,
-      state: stateFromAuthorizationUrl(start.authorizationUrl),
-    });
-    mocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
-
-    const client = setupApp({ context, routes: connectorCatalogRoutes })(
-      connectorCatalogContract,
-    );
-    const [oneClick, status] = await Promise.all([
-      accept(
-        client.oneClick({ headers: { authorization: "Bearer clerk-session" } }),
-        [200],
-      ),
-      accept(
-        client.status({ headers: { authorization: "Bearer clerk-session" } }),
-        [200],
-      ),
-    ]);
-
-    assertPublicConnectorCatalogHasNoPrivateFields(oneClick.body);
-    const slugs = oneClick.body.connectors.map((connector) => {
-      return connector.slug;
-    });
-    const expectedSlugs = status.body.connectors.flatMap((connector) => {
-      return connector.authMethods.some((method) => {
-        return isOneClickConnectorGrantKind(method.grantKind);
-      })
-        ? [connector.slug]
-        : [];
-    });
-    expect(slugs).toStrictEqual(expectedSlugs);
-    expect(slugs).toContain("github");
-
-    const github = oneClick.body.connectors.find((connector) => {
-      return connector.slug === "github";
-    });
-    const githubStatus = status.body.connectors.find((connector) => {
-      return connector.slug === "github";
-    });
-    expect(github).toStrictEqual({
-      slug: githubStatus?.slug,
-      label: githubStatus?.label,
-      description: githubStatus?.description,
-      icon: githubStatus?.icon,
-      ...(githubStatus?.popularityRank === undefined
-        ? {}
-        : { popularityRank: githubStatus.popularityRank }),
-      authMethods: githubStatus?.authMethods,
-
-      singleAuthCodeAuthMethodId: "oauth",
-      connectNotice: null,
-    });
-  });
-
-  it("returns connected manual grant status from public API-created state", async () => {
-    const actor = bdd.user();
-    const connection = await connectorsApi.connectManualGrant(
-      actor,
-      "openai",
-      "api-token",
-      {
-        apiKey: "sk-public-status",
-      },
-    );
-    mocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
-
-    const client = setupApp({ context, routes: connectorCatalogRoutes })(
-      connectorCatalogContract,
-    );
-    const response = await accept(
-      client.status({ headers: { authorization: "Bearer clerk-session" } }),
-      [200],
-    );
-
-    assertPublicConnectorCatalogHasNoPrivateFields(response.body);
-    const openai = response.body.connectors.find((connector) => {
-      return connector.slug === "openai";
-    });
-    expect(openai).toMatchObject({
-      slug: "openai",
-    });
-    expect(
-      (await connectorsApi.listBuiltinConnectorAccounts(actor, "openai"))[0],
-    ).toMatchObject({
-      id: connection.id,
-      authMethod: "api-token",
-      externalUsername: null,
-      externalEmail: null,
-      reconnectReason: null,
-    });
-  });
-
-  it("returns connected auth-code status without exposing stored scopes", async () => {
-    const actor = bdd.user();
-    mockGitHubConnectorOAuth();
-    const start = await connectorsApi.startOauth(actor, "github", "oauth");
-    await connectorsApi.completeOauthCallback("github", {
-      code: `github-${randomUUID()}`,
-      state: stateFromAuthorizationUrl(start.authorizationUrl),
-    });
-    mocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
-
-    const client = setupApp({ context, routes: connectorCatalogRoutes })(
-      connectorCatalogContract,
-    );
-    const response = await accept(
-      client.status({ headers: { authorization: "Bearer clerk-session" } }),
-      [200],
-    );
-
-    assertPublicConnectorCatalogHasNoPrivateFields(response.body);
-    const github = response.body.connectors.find((connector) => {
-      return connector.slug === "github";
-    });
-    expect(github).toMatchObject({
-      slug: "github",
-
-      singleAuthCodeAuthMethodId: "oauth",
-    });
-    expect(
-      (await connectorsApi.listBuiltinConnectorAccounts(actor, "github"))[0],
-    ).toMatchObject({
-      authMethod: "oauth",
-      externalUsername: "bdd-github-user",
-    });
-  });
-
-  it("reports a normal empty provider grant without exposing scope storage", async () => {
-    const actor = bdd.user();
-    mockGitHubConnectorOAuth();
-    server.use(
-      http.post("https://github.com/login/oauth/access_token", () => {
-        return HttpResponse.json({
-          access_token: "github-access-token",
-          scope: "",
-          expires_in: 3600,
-        });
-      }),
-    );
-    const kmsKey = env("SECRETS_KMS_KEY_ID");
-    onTestFinished(async () => {
-      mockEnv("SECRETS_KMS_KEY_ID", kmsKey);
-      for (const account of await connectorsApi.listBuiltinConnectorAccounts(
-        actor,
-        "github",
-      )) {
-        await connectorsApi.deleteBuiltinConnectorAccount(
-          actor,
-          "github",
-          account.id,
-        );
-      }
-    });
-    const started = await connectorsApi.requestOauthStart(
-      actor,
-      "github",
-      "oauth",
-      { statuses: [200] },
-    );
-    if (started.status !== 200) {
-      throw new Error("Expected OAuth authorization");
-    }
-    const completed = await connectorsApi.completeOauthCallbackResult(
-      "github",
-      {
-        code: `github-${randomUUID()}`,
-        state: stateFromAuthorizationUrl(started.body.authorizationUrl),
-      },
-    );
-    expect(completed.body.status).toBe("success");
-    mocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
-
-    const client = setupApp({ context, routes: connectorCatalogRoutes })(
-      connectorCatalogContract,
-    );
-    const response = await accept(
-      client.status({ headers: { authorization: "Bearer clerk-session" } }),
-      [200],
-    );
-
-    assertPublicConnectorCatalogHasNoPrivateFields(response.body);
-    const github = response.body.connectors.find((connector) => {
-      return connector.slug === "github";
-    });
-    expect(github).toMatchObject({
-      slug: "github",
-    });
-    expect(
-      (await connectorsApi.listBuiltinConnectorAccounts(actor, "github"))[0],
-    ).toMatchObject({
-      authMethod: "oauth",
-      reconnectReason: null,
-    });
-  });
-
-  it("returns reconnect-required status for expired non-refreshable connectors", async () => {
-    const actor = bdd.user();
-    mockStripeCliDashboardAuth();
-    const kmsKey = env("SECRETS_KMS_KEY_ID");
-    onTestFinished(async () => {
-      mockEnv("SECRETS_KMS_KEY_ID", kmsKey);
-      for (const account of await connectorsApi.listBuiltinConnectorAccounts(
-        actor,
-        "stripe",
-      )) {
-        await connectorsApi.deleteBuiltinConnectorAccount(
-          actor,
-          "stripe",
-          account.id,
-        );
-      }
-    });
-    const startedAt = now();
-    const session = await withMockNowForTest(startedAt, async () => {
-      return await connectorsApi.startDeviceAuth(actor, "stripe", "cli", {
-        mode: "live",
-      });
-    });
-    const completed = await withMockNowForTest(
-      startedAt + session.interval * 1000 + 1,
-      async () => {
-        return await connectorsApi.pollDeviceAuth(
-          actor,
-          "stripe",
-          session.sessionId,
-          session.sessionToken,
-        );
-      },
-    );
-    expect(completed.status).toBe("complete");
-    if (completed.status !== "complete") {
-      throw new Error("Expected successful Stripe CLI device authorization");
-    }
-    expect(completed.account.connectionStatus).toBe("connected");
-    expect(completed.account.tokenExpiresAt).toStrictEqual(expect.any(String));
-    const expiresAt = Date.parse(completed.account.tokenExpiresAt ?? "");
-    expect(expiresAt).toBeGreaterThan(startedAt);
-    mocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
-
-    await withMockNowForTest(expiresAt + 1, async () => {
-      const client = setupApp({ context, routes: connectorCatalogRoutes })(
-        connectorCatalogContract,
-      );
-      const response = await accept(
-        client.status({ headers: { authorization: "Bearer clerk-session" } }),
-        [200],
-      );
-
-      assertPublicConnectorCatalogHasNoPrivateFields(response.body);
-      const stripe = response.body.connectors.find((connector) => {
-        return connector.slug === "stripe";
-      });
-      expect(stripe).toMatchObject({
-        slug: "stripe",
-      });
-      await expect(
-        connectorsApi.readBuiltinConnectorAccount(
-          actor,
-          "stripe",
-          completed.connectionId,
-        ),
-      ).resolves.toMatchObject({
-        authMethod: "cli",
-        reconnectReason: "credential_expired",
-      });
-      expect(
-        (
-          await connectorsApi.readBuiltinConnectorAccount(
-            actor,
-            "stripe",
-            completed.connectionId,
-          )
-        ).tokenExpiresAt,
-      ).toBe(completed.account.tokenExpiresAt);
-    });
-  });
-
-  it("returns connector detail without leaking manual field storage names", async () => {
-    const userId = `user_${randomUUID()}`;
-    const orgId = `org_${randomUUID()}`;
-    mocks.clerk.session(userId, orgId);
-
-    const client = setupApp({ context, routes: connectorCatalogRoutes })(
-      connectorCatalogContract,
-    );
-    const response = await accept(
-      client.get({
-        params: { connectorSlug: "openai" },
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [200],
-    );
-
-    assertPublicConnectorCatalogHasNoPrivateFields(response.body);
-    const apiToken = response.body.connector.authMethods.find((method) => {
-      return method.id === "api-token";
-    });
-    expect(apiToken?.manualFields).toStrictEqual([
-      {
-        id: "apiKey",
-        label: "API Key",
-        required: true,
-        placeholder: "sk-...",
-        inputType: "password",
-      },
-    ]);
-  });
-
-  it("returns exact connector metadata with the current connection status", async () => {
-    const actor = bdd.user();
-    await connectorsApi.connectManualGrant(actor, "openai", "api-token", {
-      apiKey: "sk-public-detail-status",
-    });
-    mocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
-
-    const client = setupApp({ context, routes: connectorCatalogRoutes })(
-      connectorCatalogContract,
-    );
-    const response = await accept(
-      client.get({
-        params: { connectorSlug: "openai" },
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [200],
-    );
-
-    assertPublicConnectorCatalogHasNoPrivateFields(response.body);
-    expect(response.body.connector).toMatchObject({
-      slug: "openai",
-    });
-  });
-
-  it("omits auth text and placeholders derived from private names", async () => {
-    const userId = `user_${randomUUID()}`;
-    const orgId = `org_${randomUUID()}`;
-    mocks.clerk.session(userId, orgId);
-
-    const client = setupApp({ context, routes: connectorCatalogRoutes })(
-      connectorCatalogContract,
-    );
-    const response = await accept(
-      client.get({
-        params: { connectorSlug: "parallel" },
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [200],
-    );
-
-    assertPublicConnectorCatalogHasNoPrivateFields(response.body);
-    const apiToken = response.body.connector.authMethods.find((method) => {
-      return method.id === "api-token";
-    });
-    expect(apiToken?.description).toBeNull();
-    expect(apiToken?.manualFields).toStrictEqual([
-      {
-        id: "apiKey",
-        label: "API Key",
-        required: true,
-        placeholder: null,
-        inputType: "password",
-      },
-    ]);
-  });
-
-  it("returns every visible connector detail without private metadata", async () => {
-    const userId = `user_${randomUUID()}`;
-    const orgId = `org_${randomUUID()}`;
-    mocks.clerk.session(userId, orgId);
-
-    const client = setupApp({ context, routes: connectorCatalogRoutes })(
-      connectorCatalogContract,
-    );
-    const listResponse = await accept(
-      client.list({ headers: { authorization: "Bearer clerk-session" } }),
-      [200],
-    );
-
-    expect(listResponse.body.connectors.length).toBeGreaterThan(0);
-    for (const connector of listResponse.body.connectors) {
-      const detailResponse = await accept(
-        client.get({
-          params: { connectorSlug: connector.slug },
-          headers: { authorization: "Bearer clerk-session" },
-        }),
-        [200],
-      );
-      assertPublicConnectorCatalogHasNoPrivateFields(detailResponse.body);
-    }
-  });
-
-  it("returns 404 for hidden connector catalog slugs", async () => {
-    const userId = `user_${randomUUID()}`;
-    const orgId = `org_${randomUUID()}`;
-    mocks.clerk.session(userId, orgId);
-
-    const client = setupApp({ context, routes: connectorCatalogRoutes })(
-      connectorCatalogContract,
-    );
-    const response = await accept(
-      client.get({
+      catalog().get({
+        headers: signIn(),
         params: { connectorSlug: "test-oauth-device" },
-        headers: { authorization: "Bearer clerk-session" },
       }),
       [404],
     );
@@ -968,153 +119,549 @@ describe("GET /api/connector-catalog", () => {
     );
   });
 
-  it("returns semantic public ids for device-auth start options", async () => {
-    const userId = `user_${randomUUID()}`;
-    const orgId = `org_${randomUUID()}`;
-    await enableConnectorFeatureSwitches(orgId, userId, {
-      [FeatureSwitchKey.TestOauthConnector]: true,
-    });
-    mocks.clerk.session(userId, orgId);
+  it("connector-catalog-007 lists compact public OpenAI metadata", async () => {
+    const response = await accept(catalog().list({ headers: signIn() }), [200]);
 
-    const client = setupApp({ context, routes: connectorCatalogRoutes })(
-      connectorCatalogContract,
-    );
-    const response = await accept(
-      client.get({
-        params: { connectorSlug: "test-oauth-device" },
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [200],
-    );
-
+    expect(response.body.connectors.length).toBeGreaterThan(0);
     assertPublicConnectorCatalogHasNoPrivateFields(response.body);
-    expect(
-      response.body.connector.authMethods.map((method) => {
-        return method.id;
-      }),
-    ).toStrictEqual(["oauth", "api"]);
-    const apiMethod = response.body.connector.authMethods.find((method) => {
-      return method.id === "api";
+    const openai = response.body.connectors.find((connector) => {
+      return connector.slug === "openai";
     });
-    expect(apiMethod?.startOptions).toStrictEqual([
-      {
-        id: "environment",
-        kind: "select",
-        label: "Mode",
-        required: true,
-        defaultValue: "test",
-        options: [
-          { value: "test", label: "Test" },
-          { value: "live", label: "Live" },
-        ],
+    expect(openai).toMatchObject({
+      label: "OpenAI",
+      generation: ["text"],
+      tags: ["llm"],
+      authMethods: [
+        {
+          id: "api-token",
+          label: "API Key",
+          grantKind: "manual",
+          supportsRefresh: false,
+        },
+      ],
+      permissionSummary: {
+        hasPermissions: false,
+        permissionCount: 0,
+        hasCategories: false,
+        hasDefaultPolicyOverrides: false,
       },
-    ]);
+    });
+    expect(openai?.authMethods).toHaveLength(1);
   });
 
-  it("returns the Neon API key method in connector detail", async () => {
-    const userId = `user_${randomUUID()}`;
-    const orgId = `org_${randomUUID()}`;
-    mocks.clerk.session(userId, orgId);
-
-    const client = setupApp({ context, routes: connectorCatalogRoutes })(
-      connectorCatalogContract,
+  it("connector-catalog-008 shares the same public icon descriptor across views", async () => {
+    const list = await accept(catalog().list({ headers: signIn() }), [200]);
+    const status = await accept(catalog().status({ headers: signIn() }), [200]);
+    const detail = await accept(
+      catalog().get({ headers: signIn(), params: { connectorSlug: "openai" } }),
+      [200],
     );
-    const response = await accept(
-      client.get({
-        params: { connectorSlug: "neon" },
-        headers: { authorization: "Bearer clerk-session" },
+
+    const listIcon = list.body.connectors.find((connector) => {
+      return connector.slug === "openai";
+    })?.icon;
+    const statusIcon = status.body.connectors.find((connector) => {
+      return connector.slug === "openai";
+    })?.icon;
+    expect(listIcon?.url).toMatch(/\.svg$/u);
+    expect(listIcon?.invertInDarkMode).toBeTruthy();
+    expect(statusIcon).toStrictEqual(listIcon);
+    expect(detail.body.connector.icon).toStrictEqual(listIcon);
+
+    const slackIcon = list.body.connectors.find((connector) => {
+      return connector.slug === "slack";
+    })?.icon;
+    expect(slackIcon?.url).toMatch(/\.svg$/u);
+    expect(slackIcon?.url).not.toBe(listIcon?.url);
+    expect(slackIcon?.invertInDarkMode).toBeFalsy();
+    expect(slackIcon?.scale).toBe(2);
+  });
+
+  it("connector-catalog-012 browses a bounded featured list and searches only slug or label", async () => {
+    const browse = await accept(
+      catalog().discovery({ headers: signIn(), query: {} }),
+      [200],
+    );
+    const github = await accept(
+      catalog().discovery({ headers: signIn(), query: { keyword: "GITHUB" } }),
+      [200],
+    );
+    const descriptionOnly = await accept(
+      catalog().discovery({
+        headers: signIn(),
+        query: { keyword: "fixture for manual connector behavior" },
       }),
       [200],
     );
 
+    expect(browse.body.connectors.length).toBeGreaterThan(0);
+    expect(browse.body.connectors.length).toBeLessThanOrEqual(100);
+    expect(browse.body.totalConnectorCount).toBeGreaterThanOrEqual(
+      browse.body.connectors.length,
+    );
+    assertPublicConnectorCatalogHasNoPrivateFields(browse.body);
+    expect(github.body.connectors.length).toBeGreaterThan(0);
+    for (const connector of github.body.connectors) {
+      expect(
+        connector.slug.toLowerCase().includes("github") ||
+          connector.label.toLowerCase().includes("github"),
+      ).toBeTruthy();
+    }
+    expect(descriptionOnly.body.connectors).toStrictEqual([]);
+  });
+
+  it("connector-catalog-013 gives every category its own ranked slice", async () => {
+    const response = await accept(
+      catalog().discovery({ headers: signIn(), query: {} }),
+      [200],
+    );
+
+    const byCategory = new Map<string, typeof response.body.connectors>();
+    for (const connector of response.body.connectors) {
+      byCategory.set(connector.category, [
+        ...(byCategory.get(connector.category) ?? []),
+        connector,
+      ]);
+    }
+    expect(byCategory.size).toBeGreaterThan(0);
+    for (const [category, entries] of byCategory) {
+      expect(entries.length).toBeLessThanOrEqual(12);
+      expect(
+        response.body.categoryConnectorCounts?.[category],
+      ).toBeGreaterThanOrEqual(entries.length);
+      expectNondecreasingRank(entries);
+    }
+    const slugs = response.body.connectors.map((connector) => {
+      return connector.slug;
+    });
+    for (const internal of INTERNAL_CONNECTOR_SLUGS) {
+      expect(slugs).not.toContain(internal);
+    }
+  });
+
+  it("connector-catalog-014 answers a named category with the whole category", async () => {
+    const browse = await accept(
+      catalog().discovery({ headers: signIn(), query: {} }),
+      [200],
+    );
+    const [category, total] = Object.entries(
+      browse.body.categoryConnectorCounts ?? {},
+    ).reduce<[string, number]>(
+      (largest, entry) => {
+        return entry[1] > largest[1] ? entry : largest;
+      },
+      ["", -1],
+    );
+    expect(total).toBeGreaterThan(0);
+
+    const scoped = await accept(
+      catalog().discovery({ headers: signIn(), query: { category } }),
+      [200],
+    );
+
+    expect(scoped.body.connectors).toHaveLength(total);
+    for (const connector of scoped.body.connectors) {
+      expect(connector.category).toBe(category);
+    }
+    expectNondecreasingRank(scoped.body.connectors);
+  });
+
+  it("connector-catalog-015 returns public status connect hints", async () => {
+    const response = await accept(
+      catalog().status({ headers: signIn() }),
+      [200],
+    );
+
     assertPublicConnectorCatalogHasNoPrivateFields(response.body);
+    const openai = response.body.connectors.find((connector) => {
+      return connector.slug === "openai";
+    });
+    expect(openai).toMatchObject({
+      singleAuthCodeAuthMethodId: null,
+      connectNotice: null,
+      authMethods: [
+        {
+          id: "api-token",
+          supportsRefresh: false,
+          manualFields: [
+            {
+              id: "apiKey",
+              label: "API Key",
+              required: true,
+              inputType: "password",
+              placeholder: "sk-...",
+            },
+          ],
+          startOptions: [],
+        },
+      ],
+    });
+    expect(openai?.authMethods).toHaveLength(1);
+    expect(openai?.authMethods[0]?.manualFields).toHaveLength(1);
+    const neon = response.body.connectors.find((connector) => {
+      return connector.slug === "neon";
+    });
     expect(
-      response.body.connector.authMethods.map((authMethod) => {
-        return authMethod.id;
+      neon?.authMethods.map((method) => {
+        return method.id;
       }),
     ).toStrictEqual(["api-token"]);
   });
 
-  it("shows Mercury OAuth without the API token method hidden from new connections", async () => {
-    const userId = `user_${randomUUID()}`;
-    const orgId = `org_${randomUUID()}`;
-    mocks.clerk.session(userId, orgId);
+  it("connector-catalog-017 lists one-click connectors matching the status grant kinds", async () => {
+    const owner = createBddApi(context).user();
+    await connectGitHub(owner, "bdd-github-owner");
 
-    const client = setupApp({ context, routes: connectorCatalogRoutes })(
-      connectorCatalogContract,
+    const oneClick = await accept(
+      catalog().oneClick({ headers: signIn(owner) }),
+      [200],
     );
-    const response = await accept(
-      client.get({
-        params: { connectorSlug: "mercury" },
-        headers: { authorization: "Bearer clerk-session" },
-      }),
+    const status = await accept(
+      catalog().status({ headers: signIn(owner) }),
       [200],
     );
 
+    assertPublicConnectorCatalogHasNoPrivateFields(oneClick.body);
     expect(
-      response.body.connector.authMethods.map((authMethod) => {
-        return authMethod.id;
-      }),
-    ).toStrictEqual(["oauth"]);
+      oneClick.body.connectors
+        .map((connector) => {
+          return connector.slug;
+        })
+        .sort(),
+    ).toStrictEqual(
+      status.body.connectors
+        .filter((connector) => {
+          return connector.authMethods.some((method) => {
+            return ONE_CLICK_GRANT_KINDS.includes(method.grantKind);
+          });
+        })
+        .map((connector) => {
+          return connector.slug;
+        })
+        .sort(),
+    );
+    const githubStatus = status.body.connectors.find((connector) => {
+      return connector.slug === "github";
+    });
+    if (!githubStatus) {
+      throw new Error("Expected GitHub in catalog status");
+    }
+    const githubBrief = oneClick.body.connectors.find((connector) => {
+      return connector.slug === "github";
+    });
+    expect(githubBrief).toStrictEqual({
+      slug: "github",
+      label: githubStatus.label,
+      description: githubStatus.description,
+      icon: githubStatus.icon,
+      ...(githubStatus.popularityRank === undefined
+        ? {}
+        : { popularityRank: githubStatus.popularityRank }),
+      authMethods: githubStatus.authMethods,
+      singleAuthCodeAuthMethodId: "oauth",
+      connectNotice: null,
+    });
   });
 
-  it("shows Stripe OAuth alongside the API token and CLI methods", async () => {
-    const userId = `user_${randomUUID()}`;
-    const orgId = `org_${randomUUID()}`;
-    mocks.clerk.session(userId, orgId);
-
-    const client = setupApp({ context, routes: connectorCatalogRoutes })(
-      connectorCatalogContract,
+  it("connector-catalog-018 shows a manual OpenAI connection created through the public grant", async () => {
+    const member = createBddApi(context).user();
+    const connectors = createConnectorBddApi(context);
+    const granted = await connectors.requestManualGrant(
+      member,
+      "openai",
+      "api-token",
+      { apiKey: `sk-${randomUUID()}` },
+      { statuses: [200] },
     );
-    const response = await accept(
-      client.get({
-        params: { connectorSlug: "stripe" },
-        headers: { authorization: "Bearer clerk-session" },
-      }),
+    if (!("connectionId" in granted.body)) {
+      throw new Error("Expected a connected OpenAI account");
+    }
+    const connectionId = granted.body.connectionId;
+
+    const status = await accept(
+      catalog().status({ headers: signIn(member) }),
       [200],
     );
+    const accounts = await connectors.listBuiltinConnectorAccounts(
+      member,
+      "openai",
+    );
 
+    assertPublicConnectorCatalogHasNoPrivateFields(status.body);
     expect(
-      response.body.connector.authMethods.map((authMethod) => {
-        return authMethod.id;
+      status.body.connectors.map((connector) => {
+        return connector.slug;
       }),
-    ).toStrictEqual(["oauth", "api-token", "cli"]);
+    ).toContain("openai");
+    expect(accounts).toStrictEqual([
+      expect.objectContaining({
+        id: connectionId,
+        authMethod: "api-token",
+        externalUsername: null,
+        externalEmail: null,
+        reconnectReason: null,
+      }),
+    ]);
   });
 
-  it("returns public permission detail from accepted firewall metadata", async () => {
-    const userId = `user_${randomUUID()}`;
-    const orgId = `org_${randomUUID()}`;
-    mocks.clerk.session(userId, orgId);
+  it("connector-catalog-019 shows connected GitHub OAuth status without stored scopes", async () => {
+    const member = createBddApi(context).user();
+    await connectGitHub(member, "bdd-github-member");
 
-    const client = setupApp({ context, routes: connectorCatalogRoutes })(
-      connectorCatalogContract,
-    );
-    const response = await accept(
-      client.permissions({
-        params: { connectorSlug: "notion" },
-        headers: { authorization: "Bearer clerk-session" },
-      }),
+    const status = await accept(
+      catalog().status({ headers: signIn(member) }),
       [200],
     );
-    const detailResponse = await accept(
-      client.get({
-        params: { connectorSlug: "notion" },
-        headers: { authorization: "Bearer clerk-session" },
+    const accounts = await createConnectorBddApi(
+      context,
+    ).listBuiltinConnectorAccounts(member, "github");
+
+    assertPublicConnectorCatalogHasNoPrivateFields(status.body);
+    const github = status.body.connectors.find((connector) => {
+      return connector.slug === "github";
+    });
+    expect(github?.singleAuthCodeAuthMethodId).toBe("oauth");
+    expect(JSON.stringify(github)).not.toContain("project");
+    expect(accounts).toStrictEqual([
+      expect.objectContaining({
+        authMethod: "oauth",
+        externalUsername: "bdd-github-member",
       }),
+    ]);
+  });
+
+  it("connector-catalog-021 asks to reconnect an expired Stripe CLI credential", async () => {
+    const member = createBddApi(context).user();
+    const connectors = createConnectorBddApi(context);
+    mockStripeCliDashboardAuth();
+    const startedAt = now();
+    mockNow(startedAt);
+    const started = await connectors.startDeviceAuth(member, "stripe", "cli", {
+      mode: "test",
+    });
+    // The member returns from the provider after the advertised poll interval.
+    mockNow(startedAt + (started.interval + 1) * 1000);
+    const polled = await connectors.pollDeviceAuth(
+      member,
+      "stripe",
+      started.sessionId,
+      started.sessionToken,
+    );
+    if (polled.status !== "complete") {
+      throw new Error("Expected a completed Stripe CLI authorization");
+    }
+    const expiresAt = polled.account.tokenExpiresAt;
+    if (!expiresAt) {
+      throw new Error("Expected a Stripe CLI credential expiry");
+    }
+    expect(polled.account.connectionStatus).toBe("connected");
+    mockNow(Date.parse(expiresAt) + 1);
+
+    const status = await accept(
+      catalog().status({ headers: signIn(member) }),
+      [200],
+    );
+    const account = await connectors.readBuiltinConnectorAccount(
+      member,
+      "stripe",
+      polled.account.id,
+    );
+
+    assertPublicConnectorCatalogHasNoPrivateFields(status.body);
+    expect(
+      status.body.connectors.find((connector) => {
+        return connector.slug === "stripe";
+      }),
+    ).toMatchObject({ slug: "stripe", label: "Stripe" });
+    expect(account).toMatchObject({
+      authMethod: "cli",
+      reconnectReason: "credential_expired",
+      tokenExpiresAt: expiresAt,
+    });
+  });
+
+  it("connector-catalog-022 describes OpenAI manual fields by public name only", async () => {
+    const response = await accept(
+      catalog().get({ headers: signIn(), params: { connectorSlug: "openai" } }),
       [200],
     );
 
     assertPublicConnectorCatalogHasNoPrivateFields(response.body);
-    expect(response.body.permissions.connectorSlug).toBe("notion");
-    expect(response.body.permissions.icon).toStrictEqual(
-      detailResponse.body.connector.icon,
+    expect(JSON.stringify(response.body)).not.toContain("OPENAI_TOKEN");
+    const apiToken = response.body.connector.authMethods.find((method) => {
+      return method.id === "api-token";
+    });
+    expect(apiToken?.manualFields).toStrictEqual([
+      {
+        id: "apiKey",
+        label: "API Key",
+        required: true,
+        inputType: "password",
+        placeholder: "sk-...",
+      },
+    ]);
+  });
+
+  it("connector-catalog-025 (1/6) serves the first sixth of visible connector details without private metadata", async () => {
+    const { visibleCount, details } = await readVisibleDetailSlice(0, 6);
+
+    expect(visibleCount).toBeGreaterThan(0);
+    for (const detail of details) {
+      assertPublicConnectorCatalogHasNoPrivateFields(detail);
+    }
+  });
+
+  it("connector-catalog-025 (2/6) serves the second sixth of visible connector details without private metadata", async () => {
+    const { visibleCount, details } = await readVisibleDetailSlice(1, 6);
+
+    expect(visibleCount).toBeGreaterThan(0);
+    for (const detail of details) {
+      assertPublicConnectorCatalogHasNoPrivateFields(detail);
+    }
+  });
+
+  it("connector-catalog-025 (3/6) serves the third sixth of visible connector details without private metadata", async () => {
+    const { visibleCount, details } = await readVisibleDetailSlice(2, 6);
+
+    expect(visibleCount).toBeGreaterThan(0);
+    for (const detail of details) {
+      assertPublicConnectorCatalogHasNoPrivateFields(detail);
+    }
+  });
+
+  it("connector-catalog-025 (4/6) serves the fourth sixth of visible connector details without private metadata", async () => {
+    const { visibleCount, details } = await readVisibleDetailSlice(3, 6);
+
+    expect(visibleCount).toBeGreaterThan(0);
+    for (const detail of details) {
+      assertPublicConnectorCatalogHasNoPrivateFields(detail);
+    }
+  });
+
+  it("connector-catalog-025 (5/6) serves the fifth sixth of visible connector details without private metadata", async () => {
+    const { visibleCount, details } = await readVisibleDetailSlice(4, 6);
+
+    expect(visibleCount).toBeGreaterThan(0);
+    for (const detail of details) {
+      assertPublicConnectorCatalogHasNoPrivateFields(detail);
+    }
+  });
+
+  it("connector-catalog-025 (6/6) serves the last sixth of visible connector details without private metadata", async () => {
+    const { visibleCount, details } = await readVisibleDetailSlice(5, 6);
+
+    expect(visibleCount).toBeGreaterThan(0);
+    for (const detail of details) {
+      assertPublicConnectorCatalogHasNoPrivateFields(detail);
+    }
+  });
+
+  it("connector-catalog-029 shows Mercury OAuth without its hidden API token method", async () => {
+    const response = await accept(
+      catalog().get({
+        headers: signIn(),
+        params: { connectorSlug: "mercury" },
+      }),
+      [200],
     );
-    expect(response.body.permissions.permissionCount).toBeGreaterThan(0);
-    expect(response.body.permissions.permissions).toHaveLength(
-      response.body.permissions.permissionCount,
+
+    expect(
+      response.body.connector.authMethods.map((method) => {
+        return method.id;
+      }),
+    ).toStrictEqual(["oauth"]);
+  });
+
+  it("connector-catalog-031 returns public Notion permission detail", async () => {
+    const permissions = await accept(
+      catalog().permissions({
+        headers: signIn(),
+        params: { connectorSlug: "notion" },
+      }),
+      [200],
     );
-    expect(response.body.permissions.permissions[0]).not.toHaveProperty(
-      "rules",
+    const detail = await accept(
+      catalog().get({ headers: signIn(), params: { connectorSlug: "notion" } }),
+      [200],
     );
+
+    const body = permissions.body.permissions;
+    expect(body.connectorSlug).toBe("notion");
+    expect(body.icon).toStrictEqual(detail.body.connector.icon);
+    expect(body.permissionCount).toBeGreaterThan(0);
+    expect(body.permissionCount).toBe(body.permissions.length);
+    // A public permission carries only its name and description, never rules.
+    expect(["name", "description"]).toStrictEqual(
+      expect.arrayContaining(Object.keys(body.permissions[0] ?? {})),
+    );
+    assertPublicConnectorCatalogHasNoPrivateFields(permissions.body);
+  });
+
+  it("pf-141 redirects signed-out callers to a plain catalog logo with cache headers", async () => {
+    const listed = await accept(catalog().list({ headers: signIn() }), [200]);
+    const plain = listed.body.connectors.find((connector) => {
+      return (
+        !connector.icon.invertInDarkMode && (connector.icon.scale ?? 1) === 1
+      );
+    });
+    if (!plain) {
+      throw new Error("Expected a connector with an untreated icon");
+    }
+
+    const icon = await accept(
+      catalog().icon({ params: { connectorSlug: plain.slug } }),
+      [302],
+    );
+
+    expect(icon.headers.get("location")).toBe(plain.icon.url);
+    expect(icon.headers.get("cache-control")).toBe("public, max-age=300");
+  });
+
+  it("pf-143 serves the scaled Slack catalog mark as a sandboxed standalone SVG", async () => {
+    const detail = await accept(
+      catalog().get({ headers: signIn(), params: { connectorSlug: "slack" } }),
+      [200],
+    );
+    const sourceSvg =
+      '<svg xmlns="http://www.w3.org/2000/svg"><circle cx="10" cy="10" r="8"/></svg>';
+    server.use(
+      http.get(detail.body.connector.icon.url, () => {
+        return new HttpResponse(sourceSvg, {
+          headers: { "content-type": "image/svg+xml" },
+        });
+      }),
+    );
+
+    const icon = await accept(
+      catalog().icon({ params: { connectorSlug: "slack" } }),
+      [200],
+    );
+
+    expect(icon.headers.get("content-type")).toContain("image/svg+xml");
+    expect(icon.headers.get("cache-control")).toBe("public, max-age=300");
+    expect(icon.headers.get("x-content-type-options")).toBe("nosniff");
+    expect(icon.headers.get("content-security-policy")).toContain("sandbox");
+    const rendered = await icon.body.text();
+    const doc = parseDocument(rendered, { xmlMode: true });
+    const image = DomUtils.findOne(
+      (element) => {
+        return element.name === "image";
+      },
+      doc.children,
+      true,
+    );
+    expect(image?.attribs).toMatchObject({
+      x: "-50",
+      y: "-50",
+      width: "200",
+      height: "200",
+    });
+    const href = image?.attribs.href ?? "";
+    expect(href.startsWith("data:image/svg+xml;base64,")).toBeTruthy();
+    const decoded = Buffer.from(
+      href.slice("data:image/svg+xml;base64,".length),
+      "base64",
+    ).toString("utf8");
+    expect(decoded).toBe(sourceSvg);
   });
 });

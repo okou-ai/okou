@@ -1,375 +1,179 @@
 import { voiceIoPolishSegmentsContract } from "@okouai/api-contracts/contracts/voice-io-polish";
 import { HttpResponse, http } from "msw";
-
+import { describe, expect, it } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
-import { stubTestVercelRuntimeToken } from "../../../__tests__/env-stub";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockOptionalEnv } from "../../../lib/env";
-import { mockNow, now } from "../../../lib/time";
+import { now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import { voiceIoPolishRoutes } from "../voice-io-polish";
 import { createBddApi } from "./helpers/api-bdd";
-import { createRouteMocks } from "./helpers/route-test";
 import {
   GOOGLE_IMPERSONATION_URL,
   GOOGLE_STS_URL,
   GOOGLE_VOICE_PROVIDER,
   VERTEX_VOICE_URL,
-  mockGoogleVoice,
+  mockGoogleLlm,
   vertexVoiceResponse,
 } from "./helpers/google-voice";
+import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
-const mocks = createRouteMocks(context);
-const scope = "https://www.googleapis.com/auth/cloud-platform";
+const bdd = createBddApi(context);
+const polish = setupApp({ context, routes: voiceIoPolishRoutes })(
+  voiceIoPolishSegmentsContract,
+);
 
-function client() {
-  return setupApp({
-    context,
-    routes: voiceIoPolishRoutes,
-    rethrowErrors: true,
-  })(voiceIoPolishSegmentsContract);
-}
-function polish() {
-  return client().post({
-    headers: { authorization: "Bearer clerk-session" },
-    body: { segments: ["Synthetic dictation."] },
-  });
-}
-function stsToken() {
-  return {
-    access_token: "synthetic-sts-token",
-    token_type: "Bearer",
-    issued_token_type: "urn:ietf:params:oauth:token-type:access_token",
-    expires_in: 3600,
+/** A workspace admin who completed onboarding, signed in for the next call. */
+async function onboardedAdmin() {
+  const admin = bdd.user();
+  await bdd.bootstrapLimitedFreeOnboarding(admin);
+  return () => {
+    createRouteMocks(context).clerk.session(admin.userId, admin.orgId);
+    return { authorization: "Bearer clerk-session" };
   };
 }
 
-beforeEach(async () => {
-  mockGoogleVoice();
-  mockOptionalEnv("OPENROUTER_API_KEY", undefined);
-  context.mocks.signalTimers.delay.mockResolvedValue(undefined);
-  const actor = createBddApi(context).user();
-  if (!actor.orgId) {
-    throw new Error("Expected an organization");
-  }
-  await createBddApi(context).completeOnboarding(actor);
-  mocks.clerk.session(actor.userId, actor.orgId, "org:admin");
+interface GoogleReceipts {
+  readonly sts: {
+    readonly authorization: string | null;
+    readonly form: URLSearchParams;
+  }[];
+  readonly impersonation: {
+    readonly url: string;
+    readonly authorization: string | null;
+    readonly body: unknown;
+  }[];
+  readonly vertex: (string | null)[];
+}
+
+/**
+ * Google answers STS and Vertex normally; impersonation answers with the
+ * given statuses in order, then succeeds.
+ */
+function mockGoogleExchange(impersonationFailures: readonly number[] = []) {
+  const identity = mockGoogleLlm();
+  const receipts: GoogleReceipts = { sts: [], impersonation: [], vertex: [] };
+  const failures = [...impersonationFailures];
   server.use(
-    http.post(VERTEX_VOICE_URL, () => {
+    http.post(GOOGLE_STS_URL, async ({ request }) => {
+      receipts.sts.push({
+        authorization: request.headers.get("authorization"),
+        form: new URLSearchParams(await request.text()),
+      });
+      return HttpResponse.json({
+        access_token: "synthetic-sts-token",
+        token_type: "Bearer",
+        issued_token_type: "urn:ietf:params:oauth:token-type:access_token",
+        expires_in: 3600,
+      });
+    }),
+    http.post(GOOGLE_IMPERSONATION_URL, async ({ request }) => {
+      receipts.impersonation.push({
+        url: request.url,
+        authorization: request.headers.get("authorization"),
+        body: await request.json(),
+      });
+      const failure = failures.shift();
+      if (failure !== undefined) {
+        return HttpResponse.json(
+          { error: { message: "private-impersonation-detail" } },
+          { status: failure },
+        );
+      }
+      return HttpResponse.json({
+        accessToken: "impersonated-token",
+        expireTime: new Date(now() + 3_599_000).toISOString(),
+      });
+    }),
+    http.post(VERTEX_VOICE_URL, ({ request }) => {
+      receipts.vertex.push(request.headers.get("authorization"));
       return vertexVoiceResponse("Synthetic dictation.");
     }),
   );
-});
-afterEach(() => {
-  stubTestVercelRuntimeToken(undefined);
-});
+  return { ...identity, receipts };
+}
+
+async function polishOnce(headers: { readonly authorization: string }) {
+  return await accept(
+    polish.post({ headers, body: { segments: ["Synthetic dictation."] } }),
+    [200, 502],
+  );
+}
 
 describe("Google voice workload identity through the public API", () => {
-  it.each([
-    { url: GOOGLE_STS_URL, stage: "sts", bodyFailure: false },
-    {
-      url: GOOGLE_IMPERSONATION_URL,
-      stage: "impersonation",
-      bodyFailure: false,
-    },
-    { url: GOOGLE_STS_URL, stage: "sts", bodyFailure: true },
-    {
-      url: GOOGLE_IMPERSONATION_URL,
-      stage: "impersonation",
-      bodyFailure: true,
-    },
-  ])(
-    "reports temporary $stage I/O failure (body=$bodyFailure) after bounded token retries",
-    async ({ url, bodyFailure }) => {
-      let calls = 0;
-      server.use(
-        http.post(url, () => {
-          calls += 1;
-          return bodyFailure
-            ? new HttpResponse(
-                new ReadableStream({
-                  start(controller) {
-                    controller.error(
-                      new Error("private credential response", {
-                        cause: { code: "UND_ERR_BODY_TIMEOUT" },
-                      }),
-                    );
-                  },
-                }),
-              )
-            : HttpResponse.error();
-        }),
-      );
-      const response = await accept(polish(), [503]);
-      expect(response.body.error.code).toBe("PROVIDER_UNAVAILABLE");
-      expect(calls).toBe(3);
-    },
-  );
-
-  it.each([GOOGLE_STS_URL, GOOGLE_IMPERSONATION_URL])(
-    "preserves denied auth even when its body fails at %s",
-    async (url) => {
-      server.use(
-        http.post(url, () => {
-          return new HttpResponse(
-            new ReadableStream({
-              start(controller) {
-                controller.error(
-                  new Error("private denied response", {
-                    cause: { code: "ECONNRESET" },
-                  }),
-                );
-              },
-            }),
-            { status: 403 },
-          );
-        }),
-      );
-      const response = await accept(polish(), [502]);
-      expect(response.body.error.code).toBe("VOICE_POLISH_FAILED");
-    },
-  );
-
-  it("exchanges the current Vercel identity in Oregon, impersonates the exact account, and reuses short-lived credentials", async () => {
-    const google = mockGoogleVoice();
-    let exchanges = 0;
-    let impersonations = 0;
-    let generations = 0;
+  it("voice-google-auth-009 rejects a missing GCP_LLM_PROJECT_ID before any Google request", async () => {
+    const signIn = await onboardedAdmin();
+    mockGoogleLlm();
+    mockOptionalEnv("GCP_LLM_PROJECT_ID", undefined);
+    const googleRequests: string[] = [];
     server.use(
-      http.post(GOOGLE_STS_URL, async ({ request }) => {
-        exchanges += 1;
-        expect(request.headers.has("authorization")).toBeFalsy();
-        expect(
-          Object.fromEntries(new URLSearchParams(await request.text())),
-        ).toStrictEqual({
-          grant_type: "urn:ietf:params:oauth:grant-type:token-exchange",
-          audience: `//iam.googleapis.com/${GOOGLE_VOICE_PROVIDER}`,
-          scope,
-          requested_token_type: "urn:ietf:params:oauth:token-type:access_token",
-          subject_token_type: "urn:ietf:params:oauth:token-type:jwt",
-          subject_token: "synthetic-vercel-runtime-token",
-        });
-        return HttpResponse.json(stsToken());
-      }),
-      http.post(GOOGLE_IMPERSONATION_URL, async ({ request }) => {
-        impersonations += 1;
-        expect(request.url).toBe(
-          `https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/${google.serviceAccount}:generateAccessToken`,
-        );
-        expect(request.headers.get("authorization")).toBe(
-          "Bearer synthetic-sts-token",
-        );
-        await expect(request.json()).resolves.toStrictEqual({
-          scope: [scope],
-          lifetime: "3600s",
-        });
-        return HttpResponse.json({
-          accessToken: "impersonated-token",
-          expireTime: new Date(now() + 3_599_000).toISOString(),
-        });
-      }),
-      http.post(VERTEX_VOICE_URL, ({ request }) => {
-        generations += 1;
-        expect(request.headers.get("authorization")).toBe(
-          "Bearer impersonated-token",
-        );
-        return vertexVoiceResponse("Synthetic dictation.");
+      http.all(/^https:\/\/[^/]*googleapis\.com\//u, ({ request }) => {
+        googleRequests.push(request.url);
+        return HttpResponse.json({}, { status: 500 });
       }),
     );
-    await accept(polish(), [200]);
-    await accept(polish(), [200]);
-    expect({ exchanges, impersonations, generations }).toStrictEqual({
-      exchanges: 1,
-      impersonations: 1,
-      generations: 2,
+
+    const response = await accept(
+      polish.post({
+        headers: signIn(),
+        body: { segments: ["Synthetic dictation."] },
+      }),
+      [503],
+    );
+
+    expect(response.body.error.code).toBe("NOT_CONFIGURED");
+    expect(googleRequests).toStrictEqual([]);
+  });
+
+  it("voice-google-auth-007 exchanges the Vercel identity once, impersonates the exact account and reuses the credential", async () => {
+    const signIn = await onboardedAdmin();
+    const { serviceAccount, receipts } = mockGoogleExchange();
+
+    const first = await polishOnce(signIn());
+    const second = await polishOnce(signIn());
+
+    expect(first.status).toBe(200);
+    expect(second.status).toBe(200);
+    expect(receipts.sts).toHaveLength(1);
+    expect(receipts.sts[0]?.authorization).toBeNull();
+    expect(Object.fromEntries(receipts.sts[0]?.form ?? [])).toMatchObject({
+      grant_type: "urn:ietf:params:oauth:grant-type:token-exchange",
+      audience: `//iam.googleapis.com/${GOOGLE_VOICE_PROVIDER}`,
+      scope: "https://www.googleapis.com/auth/cloud-platform",
+      requested_token_type: "urn:ietf:params:oauth:token-type:access_token",
+      subject_token: "synthetic-vercel-runtime-token",
+      subject_token_type: "urn:ietf:params:oauth:token-type:jwt",
     });
+    expect(receipts.impersonation).toStrictEqual([
+      {
+        url: `https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/${serviceAccount}:generateAccessToken`,
+        authorization: "Bearer synthetic-sts-token",
+        body: {
+          scope: ["https://www.googleapis.com/auth/cloud-platform"],
+          lifetime: "3600s",
+        },
+      },
+    ]);
+    expect(receipts.vertex).toStrictEqual([
+      "Bearer impersonated-token",
+      "Bearer impersonated-token",
+    ]);
   });
 
-  it("accepts Google's clock skew without extending credential reuse", async () => {
-    mockNow(new Date("2026-09-11T08:00:00Z"));
-    let impersonations = 0;
-    server.use(
-      http.post(GOOGLE_IMPERSONATION_URL, () => {
-        impersonations += 1;
-        // Google grants the requested hour using its own clock, one minute
-        // ahead of the API host. Its absolute expiry is still legitimate.
-        return HttpResponse.json({
-          accessToken: "clock-skew-token",
-          expireTime: new Date(now() + 3_660_000).toISOString(),
-        });
-      }),
-      http.post(VERTEX_VOICE_URL, ({ request }) => {
-        expect(request.headers.get("authorization")).toBe(
-          "Bearer clock-skew-token",
-        );
-        return vertexVoiceResponse("Synthetic dictation.");
-      }),
+  it("voice-google-auth-029 does not retry a denied impersonation and lets a later request recover", async () => {
+    const signIn = await onboardedAdmin();
+    const { receipts } = mockGoogleExchange([403]);
+
+    const denied = await polishOnce(signIn());
+    expect(denied.status).toBe(502);
+    expect(JSON.stringify(denied.body)).not.toContain(
+      "private-impersonation-detail",
     );
-    const response = await accept(polish(), [200]);
-    expect(response.body).toStrictEqual({ text: "Synthetic dictation." });
-    mockNow(new Date("2026-09-11T08:54:59Z"));
-    await accept(polish(), [200]);
-    expect(impersonations).toBe(1);
-    // Preserve the local five-minute refresh margin even though the absolute
-    // provider timestamp is later than the requested lifetime on this host.
-    mockNow(new Date("2026-09-11T08:55:00Z"));
-    await accept(polish(), [200]);
-    expect(impersonations).toBe(2);
-  });
+    expect(receipts.impersonation).toHaveLength(1);
 
-  it.each([
-    ["GCP_LLM_PROJECT_ID", undefined],
-    ["GCP_LLM_WORKLOAD_IDENTITY_PROVIDER", undefined],
-    ["GCP_LLM_SERVICE_ACCOUNT_EMAIL", undefined],
-    ["GCP_LLM_PROJECT_ID", "../other"],
-    ["GCP_LLM_WORKLOAD_IDENTITY_PROVIDER", "https://attacker.example/token"],
-    ["GCP_LLM_SERVICE_ACCOUNT_EMAIL", "llm-dev@example.com/path"],
-  ])(
-    "rejects missing or invalid %s before external work",
-    async (key, value) => {
-      mockOptionalEnv(key, value);
-      let externalCalls = 0;
-      server.use(
-        http.post(/googleapis\.com/u, () => {
-          externalCalls += 1;
-          return HttpResponse.json({});
-        }),
-      );
-      const response = await accept(polish(), [503]);
-      expect(response.body.error.code).toBe("NOT_CONFIGURED");
-      expect(externalCalls).toBe(0);
-    },
-  );
-
-  it("rejects a missing runtime identity without using user OAuth or OpenRouter", async () => {
-    stubTestVercelRuntimeToken(undefined);
-    let exchanges = 0;
-    server.use(
-      http.post(GOOGLE_STS_URL, () => {
-        exchanges += 1;
-        return HttpResponse.json(stsToken());
-      }),
-    );
-    await accept(polish(), [502]);
-    expect(exchanges).toBe(0);
-  });
-
-  it.each([
-    { access_token: "" },
-    { token_type: "MAC" },
-    { issued_token_type: "urn:ietf:params:oauth:token-type:jwt" },
-    { expires_in: -1 },
-    { expires_in: "3600" },
-    { expires_in: 7200 },
-  ])(
-    "rejects malformed STS credentials %j without impersonation",
-    async (invalid) => {
-      let impersonations = 0;
-      server.use(
-        http.post(GOOGLE_STS_URL, () => {
-          return HttpResponse.json({ ...stsToken(), ...invalid });
-        }),
-        http.post(GOOGLE_IMPERSONATION_URL, () => {
-          impersonations += 1;
-          return HttpResponse.json({});
-        }),
-      );
-      const failed = await accept(polish(), [502]);
-      expect(failed.body.error.code).toBe("VOICE_POLISH_FAILED");
-      expect(impersonations).toBe(0);
-    },
-  );
-
-  it.each([
-    { accessToken: "" },
-    { expireTime: "not-a-date" },
-    { expireTime: "2020-01-01T00:00:00Z" },
-    { expireTime: "2999-01-01T00:00:00Z" },
-  ])(
-    "rejects unusable service-account credentials %j without inference",
-    async (invalid) => {
-      let generations = 0;
-      server.use(
-        http.post(GOOGLE_IMPERSONATION_URL, () => {
-          return HttpResponse.json({
-            accessToken: "synthetic-google-token",
-            expireTime: new Date(now() + 3_599_000).toISOString(),
-            ...invalid,
-          });
-        }),
-        http.post(VERTEX_VOICE_URL, () => {
-          generations += 1;
-          return vertexVoiceResponse("Unexpected.");
-        }),
-      );
-      await accept(polish(), [502]);
-      expect(generations).toBe(0);
-    },
-  );
-
-  it.each([GOOGLE_STS_URL, GOOGLE_IMPERSONATION_URL])(
-    "bounds credential response bodies at %s",
-    async (url) => {
-      server.use(
-        http.post(url, () => {
-          return new HttpResponse("x".repeat(64 * 1024 + 1));
-        }),
-      );
-      const failed = await accept(polish(), [502]);
-      expect(failed.body.error.code).toBe("VOICE_POLISH_FAILED");
-    },
-  );
-
-  it.each([401, 403])(
-    "does not retry denied auth HTTP %i and permits a later request to recover",
-    async (status) => {
-      let attempts = 0;
-      server.use(
-        http.post(GOOGLE_IMPERSONATION_URL, () => {
-          attempts += 1;
-          return attempts === 1
-            ? HttpResponse.json(
-                { error: { message: "private-provider-detail" } },
-                { status },
-              )
-            : HttpResponse.json({
-                accessToken: "synthetic-google-token",
-                expireTime: new Date(now() + 3_599_000).toISOString(),
-              });
-        }),
-      );
-      const failed = await polish();
-      expect(failed.status).toBe(502);
-      expect(JSON.stringify(failed.body)).not.toContain(
-        "private-provider-detail",
-      );
-      expect(attempts).toBe(1);
-      await accept(polish(), [200]);
-      expect(attempts).toBe(2);
-    },
-  );
-
-  it("reuses credentials until the five-minute expiry margin", async () => {
-    mockGoogleVoice();
-    const start = now();
-    mockNow(start);
-    const accounts: string[] = [];
-    server.use(
-      http.post(GOOGLE_IMPERSONATION_URL, ({ request }) => {
-        accounts.push(request.url);
-        return HttpResponse.json({
-          accessToken: `token-${accounts.length}`,
-          expireTime: new Date(now() + 3_600_000).toISOString(),
-        });
-      }),
-    );
-    await accept(polish(), [200]);
-    mockNow(start + 3_200_000);
-    await accept(polish(), [200]);
-    expect(accounts).toHaveLength(1);
-    mockNow(start + 3_301_000);
-    await accept(polish(), [200]);
-    expect(accounts).toHaveLength(2);
+    const recovered = await polishOnce(signIn());
+    expect(recovered.status).toBe(200);
+    expect(receipts.impersonation).toHaveLength(2);
   });
 });

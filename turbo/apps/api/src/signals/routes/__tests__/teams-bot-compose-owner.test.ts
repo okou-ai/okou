@@ -1,279 +1,142 @@
-import { randomUUID } from "node:crypto";
-import { http, HttpResponse } from "msw";
-import { expect, test } from "vitest";
-import { testContext } from "../../../__tests__/test-context";
+import { logsListContract } from "@okouai/api-contracts/contracts/logs";
+import { teamsBotIngressResponseSchema } from "@okouai/api-contracts/contracts/teams-bot";
+import { teamsConnectContract } from "@okouai/api-contracts/contracts/teams-connect";
+import { HttpResponse, http } from "msw";
+import { describe, expect, it } from "vitest";
+
+import { accept, testContext } from "../../../__tests__/test-context";
+import { setupApp } from "../../../__tests__/test-helpers";
 import { server } from "../../../mocks/server";
 import { flushWaitUntilForTest } from "../../context/wait-until";
-import { createRunReadsApi } from "./helpers/api-bdd-run-reads";
-import { createRunsApi } from "./helpers/api-bdd-runs";
-import { createPublicTeamsDispatchFixture } from "./helpers/public-teams-dispatch-fixture";
+import { logsRoutes } from "../logs";
+import { teamsConnectRoutes } from "../teams-connect";
+import { createRouteMocks } from "./helpers/route-test";
+import { connectTeamsAccountForTest } from "./helpers/teams-account";
 import {
+  installTeamsForTest,
   postTeamsActivityForTest,
+  setupTeamsConnectTestEnv,
+  teamsConnectFixture,
   teamsMessageActivityForTest,
   type TeamsConnectFixture,
 } from "./helpers/teams-connect";
 
 const context = testContext();
 
-function configurePersonalConversationMocks(tenantId: string): void {
+const SESSION = Object.freeze({ authorization: "Bearer clerk-session" });
+
+interface TeamsDelivery {
+  readonly type: unknown;
+  readonly text: unknown;
+}
+
+/** Teams' Bot Framework connector for one conversation records what it receives. */
+function recordTeamsConversation(
+  fixture: TeamsConnectFixture,
+  conversationId: string,
+): TeamsDelivery[] {
+  const received: TeamsDelivery[] = [];
+  const record = async (
+    request: Request,
+    params: { conversationId?: unknown },
+  ) => {
+    if (params.conversationId !== conversationId) {
+      return;
+    }
+    const body: unknown = await request.json();
+    received.push({
+      type:
+        typeof body === "object" && body !== null && "type" in body
+          ? body.type
+          : undefined,
+      text:
+        typeof body === "object" && body !== null && "text" in body
+          ? body.text
+          : undefined,
+    });
+    return HttpResponse.json({ id: `reply-${received.length}` });
+  };
   server.use(
     http.post(
-      `https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/token`,
-      () => {
-        return HttpResponse.json({
-          access_token: "teams-graph-token",
-          token_type: "Bearer",
-          expires_in: 3600,
-        });
+      `${fixture.serviceUrl}v3/conversations/:conversationId/activities`,
+      ({ request, params }) => {
+        return record(request, params);
       },
     ),
-    http.get(
-      "https://graph.microsoft.com/v1.0/users/:userId/teamwork/installedApps",
-      () => {
-        return HttpResponse.json({ value: [] });
+    http.post(
+      `${fixture.serviceUrl}v3/conversations/:conversationId/activities/:activityId`,
+      ({ request, params }) => {
+        return record(request, params);
       },
     ),
   );
+  return received;
 }
 
-function absentSenderResponse(
-  installation: TeamsConnectFixture,
-  activityId: string,
-  conversationId: string,
-  prompt: string,
-) {
-  return {
-    ok: true,
-    activity: {
-      kind: "message",
-      activityId,
-      tenantId: installation.teamsTenantId,
-      tenantName: installation.teamsTenantName,
-      teamsAppId: null,
-      serviceUrl: installation.serviceUrl,
-      conversationId,
-      conversationType: "personal",
-      teamId: null,
-      teamAadGroupId: null,
-      teamName: null,
-      channelId: null,
-      timestamp: "2026-06-30T09:10:00.000Z",
-      idempotencyKey: `${conversationId}:message:${activityId}`,
-      threadId: activityId,
-      sender: {
-        id: "",
-        name: null,
-        aadObjectId: null,
-        userPrincipalName: null,
-      },
-      recipient: {
-        id: installation.teamsBotId,
-        name: "Nova",
-        aadObjectId: null,
-        userPrincipalName: null,
-      },
-      rawText: prompt,
-      text: prompt,
-      value: null,
-      mentionsRecipient: false,
-      attachments: [],
-    },
-    connectUrl: null,
-  };
+async function readMemberState(fixture: TeamsConnectFixture) {
+  createRouteMocks(context).clerk.session(fixture.userId, fixture.orgId);
+  const status = await accept(
+    setupApp({ context, routes: teamsConnectRoutes })(
+      teamsConnectContract,
+    ).getStatus({ headers: SESSION }),
+    [200],
+  );
+  const runs = await accept(
+    setupApp({ context, routes: logsRoutes })(logsListContract).list({
+      headers: SESSION,
+      query: { limit: 20 },
+    }),
+    [200],
+  );
+  return { status: status.body, runs: runs.body.data };
 }
 
-test("dispatches a Teams personal message as the connected member", async () => {
-  const owner = createPublicTeamsDispatchFixture(context);
-  await owner.run(async () => {
-    const runs = createRunsApi(context);
-    const fixture = await owner.create({ onboarded: true });
-    server.use(
-      http.post(
-        `https://login.microsoftonline.com/${fixture.installation.teamsTenantId}/oauth2/v2.0/token`,
-        () => {
-          return HttpResponse.json({
-            access_token: "teams-graph-token",
-            token_type: "Bearer",
-            expires_in: 3600,
-          });
-        },
-      ),
-      http.get(
-        "https://graph.microsoft.com/v1.0/users/:userId/teamwork/installedApps",
-        () => {
-          return HttpResponse.json({ value: [] });
-        },
-      ),
-    );
+describe("Teams bot personal message owner", () => {
+  it("teams-bot-compose-owner-003 asks an unidentified Teams sender to connect without starting a Run", async () => {
+    const fixture = teamsConnectFixture();
+    setupTeamsConnectTestEnv();
+    await installTeamsForTest(context.signal, fixture);
+    await connectTeamsAccountForTest(context, fixture, { learnSender: false });
+    const before = await readMemberState(fixture);
+    const personalConversationId = `a:personal-${fixture.fixtureId}`;
+    const received = recordTeamsConversation(fixture, personalConversationId);
 
-    const prompt = "Summarize the Teams compose selection for this message";
-    await owner.dispatch(fixture, prompt);
-    const reads = createRunReadsApi(context);
-    const listed = await reads.requestListLogs(
-      fixture.actor,
-      { limit: 50 },
-      [200],
-    );
-    expect(listed.body.data).toHaveLength(1);
-    const run = listed.body.data[0];
-    if (!run) {
-      throw new Error("Expected the public Teams message to launch a Run");
-    }
-    expect(run).toMatchObject({
-      prompt,
-      triggerSource: "teams",
-      status: "running",
-      startedAt: expect.any(String),
-    });
-
-    await runs.requestCancelRun(fixture.actor, run.id, [200]);
-    await flushWaitUntilForTest();
-    const cancelled = await reads.requestReadLogById(
-      fixture.actor,
-      run.id,
-      [200],
-    );
-    expect(cancelled.body).toMatchObject({
-      id: run.id,
-      prompt,
-      status: "cancelled",
-      startedAt: run.startedAt,
-    });
-  });
-});
-
-test("refreshes a connected Teams sender ID without changing its Aad identity", async () => {
-  const owner = createPublicTeamsDispatchFixture(context);
-  await owner.run(async () => {
-    const runs = createRunsApi(context);
-    const fixture = await owner.create({ onboarded: true });
-    configurePersonalConversationMocks(fixture.installation.teamsTenantId);
-    const originalAccount = {
-      tenantId: fixture.installation.teamsTenantId,
-      teamsUserId: fixture.installation.teamsUserId,
-      teamsAadObjectId: fixture.installation.teamsAadObjectId,
-      displayName: "Teams User",
-      userPrincipalName: fixture.installation.teamsUserPrincipalName,
-    };
-    const before = await owner.status(fixture);
-    expect(before.linkedAccounts).toStrictEqual([originalAccount]);
-
-    const teamsUserId = `29:refreshed-${randomUUID()}`;
-    server.use(
-      http.get(
-        `${fixture.installation.serviceUrl}v3/conversations/:conversationId/members/:memberId`,
-        ({ params }) => {
-          return HttpResponse.json({
-            id: params.memberId,
-            tenantId: fixture.installation.teamsTenantId,
-            aadObjectId: fixture.installation.teamsAadObjectId,
-          });
-        },
-      ),
-    );
-    const prompt = "Summarize the message from the refreshed Teams sender";
-    await owner.dispatch(
-      {
-        ...fixture,
-        installation: { ...fixture.installation, teamsUserId },
-      },
-      prompt,
-    );
-    const after = await owner.status(fixture);
-    expect(after.linkedAccounts).toStrictEqual([
-      { ...originalAccount, teamsUserId },
-    ]);
-    const reads = createRunReadsApi(context);
-    const listed = await reads.requestListLogs(
-      fixture.actor,
-      { limit: 50 },
-      [200],
-    );
-    expect(listed.body.data).toHaveLength(1);
-    const run = listed.body.data[0];
-    if (!run) {
-      throw new Error("Expected the refreshed Teams sender to launch a Run");
-    }
-    expect(run).toMatchObject({
-      prompt,
-      triggerSource: "teams",
-      status: "running",
-      startedAt: expect.any(String),
-    });
-
-    await runs.requestCancelRun(fixture.actor, run.id, [200]);
-    await flushWaitUntilForTest();
-    const cancelled = await reads.requestReadLogById(
-      fixture.actor,
-      run.id,
-      [200],
-    );
-    expect(cancelled.body).toMatchObject({
-      id: run.id,
-      prompt,
-      status: "cancelled",
-      startedAt: run.startedAt,
-    });
-  });
-});
-
-test("returns a connection notice without starting a Run when Teams sender identity is absent", async () => {
-  const owner = createPublicTeamsDispatchFixture(context);
-  await owner.run(async () => {
-    const fixture = await owner.create({ onboarded: true });
-    configurePersonalConversationMocks(fixture.installation.teamsTenantId);
-    const before = await owner.status(fixture);
-    expect(before.linkedAccounts).toStrictEqual([
-      {
-        tenantId: fixture.installation.teamsTenantId,
-        teamsUserId: fixture.installation.teamsUserId,
-        teamsAadObjectId: fixture.installation.teamsAadObjectId,
-        displayName: "Teams User",
-        userPrincipalName: fixture.installation.teamsUserPrincipalName,
-      },
-    ]);
-
-    const activityId = `activity-absent-${randomUUID()}`;
-    const conversationId = `19:absent-${randomUUID()}@thread.v2`;
-    const prompt = "Summarize this message without a Teams sender identity";
-    const noticeCount = fixture.notices.length;
     const response = await postTeamsActivityForTest({
       signal: context.signal,
-      activity: teamsMessageActivityForTest(fixture.installation, {
-        id: activityId,
-        conversation: { id: conversationId, conversationType: "personal" },
-        channelData: {
-          tenant: {
-            id: fixture.installation.teamsTenantId,
-            name: fixture.installation.teamsTenantName,
-          },
+      activity: teamsMessageActivityForTest(fixture, {
+        id: `activity-anonymous-${fixture.fixtureId}`,
+        conversation: {
+          id: personalConversationId,
+          conversationType: "personal",
         },
-        from: {},
-        text: prompt,
+        from: { id: "", name: "Unknown sender" },
+        text: "summarize the open incidents",
         entities: [],
         replyToId: null,
       }),
     });
     expect(response.status).toBe(200);
-    await expect(response.json()).resolves.toStrictEqual(
-      absentSenderResponse(
-        fixture.installation,
-        activityId,
-        conversationId,
-        prompt,
-      ),
-    );
+    const body = teamsBotIngressResponseSchema.parse(await response.json());
     await flushWaitUntilForTest();
-    expect(fixture.notices.slice(noticeCount)).toStrictEqual([
-      "Please connect your account to use Okou in this Teams workspace.",
+
+    if (body.activity.kind !== "message") {
+      throw new Error(`Expected a Teams message, got ${body.activity.kind}`);
+    }
+    expect(body.activity).toMatchObject({
+      conversationId: personalConversationId,
+      conversationType: "personal",
+      text: "summarize the open incidents",
+      sender: { id: "", aadObjectId: null },
+    });
+    expect(body.connectUrl ?? null).toBeNull();
+    expect(received).toStrictEqual([
+      {
+        type: "message",
+        text: "Please connect your account to use Okou in this Teams workspace.",
+      },
     ]);
-    const reads = createRunReadsApi(context);
-    const listed = await reads.requestListLogs(
-      fixture.actor,
-      { limit: 50 },
-      [200],
-    );
-    expect(listed.body.data).toStrictEqual([]);
-    await expect(owner.status(fixture)).resolves.toStrictEqual(before);
+    const after = await readMemberState(fixture);
+    expect(after.runs).toStrictEqual([]);
+    expect(after.status).toStrictEqual(before.status);
   });
 });

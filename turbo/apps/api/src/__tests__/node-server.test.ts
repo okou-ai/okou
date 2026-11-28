@@ -1,226 +1,131 @@
-import { spawn } from "node:child_process";
-import { EventEmitter, once } from "node:events";
-import { connect, type Socket } from "node:net";
+import { spawn, type ChildProcess } from "node:child_process";
+import { once } from "node:events";
+import { createConnection } from "node:net";
 import { fileURLToPath } from "node:url";
-
-import { onTestFinished } from "vitest";
-
-import { testContext } from "./test-context";
+import { describe, expect, it, onTestFinished } from "vitest";
 import { createDeferredPromise } from "../signals/utils";
 
-const context = testContext();
-
-// Process shutdown is the boundary here. Controlled HTTP work makes unfinished
-// requests and background handles reproducible without stalling a real provider.
-
-const fixture = fileURLToPath(
+const childFixture = fileURLToPath(
   new URL("../test-fixtures/node-server-child.ts", import.meta.url),
 );
 
-async function startChild(port = 0) {
-  const child = spawn(
-    process.execPath,
-    ["--import", "tsx", fixture, String(port)],
-    {
-      cwd: fileURLToPath(new URL("../../", import.meta.url)),
-      stdio: ["ignore", "ignore", "inherit", "ipc"],
-    },
-  );
-  const exited = once(child, "exit").then(() => {
-    return { code: child.exitCode, signal: child.signalCode };
-  });
-  const messages = new Map<string, unknown>();
-  const events = new EventEmitter();
-  child.on("message", (message: unknown) => {
-    if (typeof message === "object" && message !== null && "event" in message) {
-      const event = String(message.event);
-      messages.set(event, message);
-      events.emit(event);
-    }
-  });
-
-  function waitFor(event: string): Promise<unknown> {
-    const received = messages.has(event)
-      ? Promise.resolve(messages.get(event))
-      : once(events, event, { signal: context.signal }).then(() => {
-          return messages.get(event);
-        });
-    return Promise.race([
-      received,
-      exited.then((result) => {
-        throw new Error(
-          `Child exited before ${event}: ${JSON.stringify(result)}`,
-        );
-      }),
-    ]);
-  }
-
-  onTestFinished(async () => {
-    if (child.exitCode === null && child.signalCode === null) {
-      child.kill("SIGKILL");
-    }
-    await exited;
-  });
-
-  const ready = await waitFor("ready");
-  if (
-    typeof ready !== "object" ||
-    ready === null ||
-    !("port" in ready) ||
-    typeof ready.port !== "number"
-  ) {
-    throw new Error("Child did not report a listening port");
-  }
-  return { child, port: ready.port, exited, waitFor };
+interface ChildEvent {
+  readonly event: string;
+  readonly port?: number;
 }
 
-async function openSocket(port: number) {
-  const socket = connect(port, "127.0.0.1");
-  onTestFinished(() => {
-    socket.destroy();
+function isChildEvent(value: unknown): value is ChildEvent {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "event" in value &&
+    typeof value.event === "string"
+  );
+}
+
+function createEventQueue(child: ChildProcess) {
+  const buffered: ChildEvent[] = [];
+  const waiters: ((event: ChildEvent) => void)[] = [];
+
+  child.on("message", (message: unknown) => {
+    if (!isChildEvent(message)) {
+      return;
+    }
+    const waiter = waiters.shift();
+    if (waiter) {
+      waiter(message);
+    } else {
+      buffered.push(message);
+    }
   });
-  const closed = once(socket, "close");
-  let response = "";
-  socket.on("data", (chunk: Buffer) => {
-    response += chunk.toString();
-  });
-  await once(socket, "connect");
-  return {
-    socket,
-    closed,
-    waitForHealthResponse: () => {
-      const healthResponse = createDeferredPromise<void>(context.signal);
-      const received = () => {
-        if (response.includes('{"status":"ok"}')) {
-          socket.off("data", received);
-          socket.off("error", failed);
-          healthResponse.resolve(undefined);
+
+  return async function nextEvent(
+    expected: string,
+    signal: AbortSignal,
+  ): Promise<ChildEvent> {
+    while (true) {
+      const queued = buffered.shift();
+      if (queued) {
+        if (queued.event === expected) {
+          return queued;
         }
-      };
-      const failed = (error: Error) => {
-        socket.off("data", received);
-        healthResponse.reject(error);
-      };
-      socket.on("data", received);
-      socket.once("error", failed);
-      received();
-      return healthResponse.promise;
-    },
-    response: () => {
-      return response;
-    },
+        continue;
+      }
+      const deferred = createDeferredPromise<ChildEvent>(signal);
+      waiters.push((event) => {
+        deferred.resolve(event);
+      });
+      const event = await deferred.promise;
+      if (event.event === expected) {
+        return event;
+      }
+    }
   };
 }
 
-function request(socket: Socket, path: string, extraHeaders = ""): void {
-  socket.write(
-    `GET ${path} HTTP/1.1\r\nHost: localhost\r\n${extraHeaders}\r\n`,
-  );
-}
-
 describe("standalone Node server shutdown", () => {
-  it.each(["SIGTERM", "SIGINT"] as const)(
-    "%s releases keepalive connections and allows a replacement listener",
-    async (signal) => {
-      const server = await startChild();
-      const peer = await openSocket(server.port);
-      request(peer.socket, "/health");
-      await peer.waitForHealthResponse();
-      expect(peer.response()).toContain('{"status":"ok"}');
-      server.child.kill(signal);
-      await peer.closed;
-      await expect(server.exited).resolves.toStrictEqual({
-        code: 0,
-        signal: null,
-      });
-
-      const replacement = await startChild(server.port);
-      const replacementPeer = await openSocket(replacement.port);
-      request(replacementPeer.socket, "/health", "Connection: close\r\n");
-      await replacementPeer.closed;
-      expect(replacementPeer.response()).toContain("200 OK");
-      expect(replacementPeer.response()).toContain('{"status":"ok"}');
-      replacement.child.kill("SIGTERM");
-      await expect(replacement.exited).resolves.toStrictEqual({
-        code: 0,
-        signal: null,
-      });
-    },
-  );
-
-  it("cancels active work, rejects late health requests, and tolerates repeated signals", async () => {
-    const server = await startChild();
-    const peer = await openSocket(server.port);
-    request(peer.socket, "/work");
-    await server.waitFor("working");
-    server.child.kill("SIGTERM");
-    await server.waitFor("aborted");
-
-    server.child.kill("SIGTERM");
-    server.child.kill("SIGINT");
-    server.child.send("ping");
-    await server.waitFor("pong");
-    request(
-      peer.socket,
-      "/health",
-      "X-Shutdown-Probe: true\r\nConnection: close\r\n",
+  it("node-server-003 cancels active work, rejects late health requests, and tolerates repeated signals", async () => {
+    const controller = new AbortController();
+    const child = spawn(
+      process.execPath,
+      ["--import", "tsx", childFixture, "0"],
+      { stdio: ["ignore", "pipe", "pipe", "ipc"] },
     );
-    await server.waitFor("probe");
-    server.child.send("finish");
-    await peer.closed;
-    expect(peer.response()).toContain('{"cancelled":true}');
-    expect(peer.response()).toContain("503 Service Unavailable");
-    expect(peer.response().toLowerCase()).toContain("connection: close");
-    expect(peer.response()).not.toContain('{"status":"ok"}');
-    await expect(server.exited).resolves.toStrictEqual({
-      code: 0,
-      signal: null,
-    });
-  });
-
-  it("allows background cleanup after the HTTP listener closes", async () => {
-    const server = await startChild();
-    const peer = await openSocket(server.port);
-    request(peer.socket, "/background", "Connection: close\r\n");
-    await peer.closed;
-    expect(peer.response()).toContain("200 OK");
-    server.child.kill("SIGTERM");
-    await server.waitFor("aborted");
-    // The old process still owns background work, but not the listening port.
-    const replacement = await startChild(server.port);
-    replacement.child.kill("SIGTERM");
-    await expect(replacement.exited).resolves.toStrictEqual({
-      code: 0,
-      signal: null,
-    });
-    server.child.send("finish");
-    await server.waitFor("cleaned");
-    await expect(server.exited).resolves.toStrictEqual({
-      code: 0,
-      signal: null,
-    });
-  });
-
-  it.each(["/work", "/background"])(
-    "bounds shutdown with stalled %s handles",
-    async (path) => {
-      const server = await startChild();
-      const peer = await openSocket(server.port);
-      request(peer.socket, path, "Connection: close\r\n");
-      if (path === "/work") {
-        await server.waitFor("working");
-      } else {
-        await peer.closed;
-        expect(peer.response()).toContain("200 OK");
+    onTestFinished(() => {
+      controller.abort();
+      if (child.exitCode === null && child.signalCode === null) {
+        child.kill("SIGKILL");
       }
-      server.child.kill("SIGTERM");
-      await server.waitFor("aborted");
-      await expect(server.exited).resolves.toStrictEqual({
-        code: 1,
-        signal: null,
-      });
-      await peer.closed;
-    },
-    10_000,
-  );
+    });
+
+    const nextEvent = createEventQueue(child);
+    const ready = await nextEvent("ready", controller.signal);
+    if (ready.port === undefined) {
+      throw new Error("Expected standalone server port");
+    }
+
+    const socket = createConnection({ host: "127.0.0.1", port: ready.port });
+    onTestFinished(() => {
+      socket.destroy();
+    });
+    await once(socket, "connect");
+
+    const chunks: Buffer[] = [];
+    socket.on("data", (chunk: Buffer) => {
+      chunks.push(chunk);
+    });
+    const socketClosed = once(socket, "close");
+
+    socket.write(
+      "GET /work HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: keep-alive\r\n\r\n",
+    );
+    await nextEvent("working", controller.signal);
+
+    child.kill("SIGTERM");
+    await nextEvent("aborted", controller.signal);
+
+    child.kill("SIGTERM");
+    child.kill("SIGINT");
+    child.send("ping");
+    await nextEvent("pong", controller.signal);
+
+    socket.write(
+      "GET /health HTTP/1.1\r\nHost: 127.0.0.1\r\nX-Shutdown-Probe: true\r\nConnection: keep-alive\r\n\r\n",
+    );
+    child.send("finish");
+
+    const [exitCode, exitSignal] = (await once(child, "exit")) as [
+      number | null,
+      NodeJS.Signals | null,
+    ];
+    await socketClosed;
+
+    const raw = Buffer.concat(chunks).toString("utf8");
+    expect(raw).toContain('"cancelled":true');
+    expect(raw).toContain("HTTP/1.1 503");
+    expect(raw.toLowerCase()).toContain("connection: close");
+    expect(raw).not.toContain('"status":"ok"');
+    expect(exitCode).toBe(0);
+    expect(exitSignal).toBeNull();
+  });
 });

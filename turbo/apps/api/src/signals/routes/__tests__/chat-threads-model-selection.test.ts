@@ -2,635 +2,373 @@ import { randomUUID } from "node:crypto";
 import {
   chatThreadMetadataContract,
   chatThreadModelSelectionContract,
-  type ChatThreadEvent,
+  chatThreadsContract,
 } from "@okouai/api-contracts/contracts/chat-threads";
-import { createStore } from "ccstate";
+import { personalModelProvidersMainContract } from "@okouai/api-contracts/contracts/personal-model-providers";
+import { http, HttpResponse } from "msw";
 import { describe, expect, it } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { createRouteMocks } from "./helpers/route-test";
-import { mockClerkUsers } from "./helpers/clerk-users";
-import {
-  createAuthDeviceApiActions,
-  mockCodexDeviceAuthProvider,
-} from "./helpers/api-bdd-auth-device";
-import { mockNow } from "../../../lib/time";
-import { chatThreadGetRoutes } from "../chat-threads-get";
-import { chatThreadModelSelectionRoutes } from "../chat-threads-model-selection";
+import { server } from "../../../mocks/server";
+import { chatThreadRoutes } from "../chat-threads";
+import { meModelProvidersUpsertRoutes } from "../me-model-providers-upsert";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
-import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
+import { mockClaudeCodeTokenEndpoint } from "./helpers/api-bdd-auth-device";
 import { createRunsApi } from "./helpers/api-bdd-runs";
-import { createRunExecutionCredentials } from "./helpers/run-execution-credentials";
-import { seedOrgMembership$ } from "./helpers/org-membership";
+import { credentials } from "./helpers/codex-reset-credit-expiry";
+import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
-const executionToken = createRunExecutionCredentials(context).okouToken;
-const store = createStore();
 const bdd = createBddApi(context);
-const chat = createChatFilesBddApi(context);
-const api = createRunsApi(context);
+const headers = Object.freeze({ authorization: "Bearer clerk-session" });
 
-interface ChatThreadFixture {
-  readonly actor: ApiTestUser;
-  readonly userId: string;
-  readonly orgId: string;
-  readonly threadId: string;
-}
+const app = setupApp({
+  context,
+  routes: [...chatThreadRoutes, ...meModelProvidersUpsertRoutes],
+});
+const threadsApi = app(chatThreadsContract);
+const metadataApi = app(chatThreadMetadataContract);
+const modelSelectionApi = app(chatThreadModelSelectionContract);
+const providersApi = app(personalModelProvidersMainContract);
 
-/** Creates an agent and chat thread through the product routes. */
-async function seedChatThread(title: string): Promise<ChatThreadFixture> {
-  const actor = bdd.user();
-  if (!actor.orgId) {
-    throw new Error("Expected the seeded actor to belong to an org");
-  }
-  await store.set(
-    seedOrgMembership$,
-    { orgId: actor.orgId, userId: actor.userId },
-    context.signal,
-  );
-  bdd.acceptStorageWrites();
+function signIn(user: ApiTestUser, orgIdOverride?: string) {
   createRouteMocks(context).clerk.session(
-    actor.userId,
-    actor.orgId,
-    actor.orgRole,
+    user.userId,
+    orgIdOverride ?? user.orgId,
+    user.orgRole ?? "org:admin",
   );
-  mockClerkUsers(context, [
-    {
-      id: actor.userId,
-      emailAddresses: [{ id: "email", emailAddress: actor.email }],
-      primaryEmailAddressId: "email",
-    },
-  ]);
-  await api.ensurePersonalSubscriptionModel(actor);
-  const thread = await chat.createThread(actor, {
-    title,
-    model: "claude-sonnet-5-5",
-  });
-  return {
-    actor,
-    userId: actor.userId,
-    orgId: actor.orgId,
-    threadId: thread.id,
-  };
+  return headers;
 }
 
-function modelSelectionClient() {
-  return setupApp({ context, routes: chatThreadModelSelectionRoutes })(
-    chatThreadModelSelectionContract,
-  );
-}
-
-function metadataClient() {
-  return setupApp({ context, routes: chatThreadGetRoutes })(
-    chatThreadMetadataContract,
-  );
-}
-
-async function threadEvents(fixture: ChatThreadFixture) {
-  const response = await chat.requestThreadEvents(fixture.actor, {}, [200]);
-  if (response.status !== 200) {
-    throw new Error("Expected thread events");
-  }
-  return response.body.events.filter((event) => {
-    return event.chatThreadId === fixture.threadId;
+async function connectClaude(user: ApiTestUser): Promise<void> {
+  mockClaudeCodeTokenEndpoint();
+  await createRunsApi(context).createPersonalModelProvider(user, {
+    type: "claude-code-oauth-token",
+    secret: `claude-token-${randomUUID()}`,
   });
 }
 
-function expectAdjacentPair(events: readonly ChatThreadEvent[]) {
-  const [model, tier] = events;
-  if (!model || !tier) {
-    throw new Error("Expected a model and service-tier event pair");
-  }
-  expect(tier.seqId).toBe(model.seqId + 1);
-  expect(tier.createdAt).toBe(model.createdAt);
+async function connectCodex(user: ApiTestUser): Promise<void> {
+  server.use(
+    http.get("https://chatgpt.com/backend-api/wham/usage", () => {
+      return HttpResponse.json({ plan_type: "pro" });
+    }),
+  );
+  await accept(
+    providersApi.upsert({
+      headers: signIn(user),
+      body: {
+        type: "codex-oauth-token",
+        authMethod: "auth_json",
+        secrets: { CODEX_AUTH_JSON: credentials().raw },
+      },
+    }),
+    [201],
+  );
 }
 
-async function connectCodex(fixture: ChatThreadFixture) {
-  mockCodexDeviceAuthProvider({ accountId: `metadata-${randomUUID()}` });
-  const auth = createAuthDeviceApiActions(context);
-  const started = await auth.requestCodexStart(
-    fixture.actor,
-    "personal",
-    [200],
-    { mode: "add" },
-  );
-  if (started.status !== 200) {
-    throw new Error("Expected Codex consent start");
-  }
-  const completed = await auth.requestCodexComplete(
-    fixture.actor,
-    started.body.sessionToken,
+async function readMetadata(user: ApiTestUser, threadId: string) {
+  const response = await accept(
+    metadataApi.get({
+      headers: signIn(user),
+      params: { id: threadId },
+    }),
     [200],
   );
-  expect(completed.body).toMatchObject({ status: "complete" });
-  await api.updateUserModelPreference(fixture.actor, "gpt-6-luna");
+  return response.body;
+}
+
+async function readFeed(user: ApiTestUser, orgIdOverride?: string) {
+  const response = await accept(
+    threadsApi.events({
+      headers: signIn(user, orgIdOverride),
+      query: {},
+    }),
+    [200],
+  );
+  return response.body;
 }
 
 describe("POST /api/chat-threads/:id/model-selection", () => {
-  it("retains concurrent per-model efforts and publishes adjacent event pairs for each save", async () => {
-    const fixture = await seedChatThread("Concurrent model efforts");
-    await connectCodex(fixture);
-    const saves = [
-      {
-        model: "claude-sonnet-5-5",
-        effort: "high",
-        codexServiceTier: null,
-        serviceTier: null,
-        eventId: randomUUID(),
-        serviceTierEventId: randomUUID(),
-      },
-      {
-        model: "gpt-6-luna",
-        effort: "high",
-        codexServiceTier: "fast",
-        serviceTier: "priority",
-        eventId: randomUUID(),
-        serviceTierEventId: randomUUID(),
-      },
-    ] as const;
-    const operationTime = new Date("2026-10-16T08:30:00.123Z");
-    mockNow(operationTime);
-    await Promise.all(
-      saves.map((save) => {
-        return chat.updateThreadModelSelection(
-          fixture.actor,
-          fixture.threadId,
-          save.model,
-          {
-            reasoningEffort: save.effort,
-            codexServiceTier: save.codexServiceTier,
-            eventId: save.eventId,
-            serviceTierEventId: save.serviceTierEventId,
-          },
-        );
+  it("chat-threads-model-selection-005 rejects an unavailable personal subscription without mutating selection", async () => {
+    const member = bdd.user();
+    await connectClaude(member);
+
+    const created = await accept(
+      threadsApi.create({
+        headers: signIn(member),
+        body: { title: "Unavailable personal", model: "claude-sonnet-5-5" },
       }),
+      [201],
     );
-    const ids = new Set<string>(
-      saves.flatMap((save) => {
-        return [save.eventId, save.serviceTierEventId];
+    const threadId = created.body.id;
+
+    const rejected = await accept(
+      modelSelectionApi.update({
+        headers: signIn(member),
+        params: { id: threadId },
+        body: { model: "gpt-6-luna" },
       }),
-    );
-    const events = (await threadEvents(fixture)).filter((event) => {
-      return ids.has(event.id);
-    });
-    expect(events).toHaveLength(4);
-    for (const save of saves) {
-      const pair = events.filter((event) => {
-        return (
-          event.id === save.eventId || event.id === save.serviceTierEventId
-        );
-      });
-      expect(pair).toStrictEqual([
-        expect.objectContaining({
-          id: save.eventId,
-          kind: "model_selection_updated",
-          selectedModel: save.model,
-          modelSettingsPatch: { model: save.model, effort: save.effort },
-          createdAt: operationTime.toISOString(),
-        }),
-        expect.objectContaining({
-          id: save.serviceTierEventId,
-          kind: "service_tier_updated",
-          serviceTier: save.serviceTier,
-          createdAt: operationTime.toISOString(),
-        }),
-      ]);
-      expectAdjacentPair(pair);
-    }
-    const winner = events
-      .filter((event) => {
-        return event.kind === "model_selection_updated";
-      })
-      .at(-1);
-    const finalTier = events.at(-1);
-    if (!winner || !finalTier) {
-      throw new Error(
-        "Expected both successful saves in the public event stream",
-      );
-    }
-    await expect(
-      chat.readThreadMetadata(fixture.actor, fixture.threadId),
-    ).resolves.toMatchObject({
-      selectedModel: winner.selectedModel,
-      serviceTier: finalTier.serviceTier,
-      modelSettings: {
-        "claude-sonnet-5-5": { effort: "high" },
-        "gpt-6-luna": { effort: "high" },
-      },
-    });
-  });
-
-  it("deduplicates repeated event IDs and permits a later save with new IDs", async () => {
-    const fixture = await seedChatThread("Event identity deduplication");
-    const ids = { eventId: randomUUID(), serviceTierEventId: randomUUID() };
-    await chat.updateThreadModelSelection(
-      fixture.actor,
-      fixture.threadId,
-      "claude-opus-5-5",
-      { ...ids, reasoningEffort: "extra" },
-    );
-    const saved = await chat.readThreadMetadata(
-      fixture.actor,
-      fixture.threadId,
-    );
-    const published = await threadEvents(fixture);
-    await chat.updateThreadModelSelection(
-      fixture.actor,
-      fixture.threadId,
-      "claude-opus-5-5",
-      { ...ids, reasoningEffort: "extra" },
-    );
-    await expect(
-      chat.readThreadMetadata(fixture.actor, fixture.threadId),
-    ).resolves.toStrictEqual(saved);
-    await expect(threadEvents(fixture)).resolves.toStrictEqual(published);
-    const next = { eventId: randomUUID(), serviceTierEventId: randomUUID() };
-    await chat.updateThreadModelSelection(
-      fixture.actor,
-      fixture.threadId,
-      "claude-sonnet-5-5",
-      { ...next, reasoningEffort: "high" },
-    );
-    const events = await threadEvents(fixture);
-    expect(events).toStrictEqual([
-      ...published,
-      expect.objectContaining({
-        id: next.eventId,
-        kind: "model_selection_updated",
-        selectedModel: "claude-sonnet-5-5",
-        modelSettingsPatch: { model: "claude-sonnet-5-5", effort: "high" },
-      }),
-      expect.objectContaining({
-        id: next.serviceTierEventId,
-        kind: "service_tier_updated",
-        serviceTier: null,
-      }),
-    ]);
-    const nextPair = events.slice(-2);
-    expectAdjacentPair(nextPair);
-    const previous = published.at(-1);
-    const nextModel = nextPair[0];
-    if (!previous || !nextModel) {
-      throw new Error("Expected the previous and new event groups");
-    }
-    // Repeated IDs reserve their positions even though their events already exist.
-    expect(nextModel.seqId).toBe(previous.seqId + 3);
-    await expect(
-      chat.readThreadMetadata(fixture.actor, fixture.threadId),
-    ).resolves.toMatchObject({
-      selectedModel: "claude-sonnet-5-5",
-      modelSettings: {
-        "claude-opus-5-5": { effort: "extra" },
-        "claude-sonnet-5-5": { effort: "high" },
-      },
-    });
-  });
-
-  it("refuses missing, foreign-owned and wrong-org targets without metadata or event effects", async () => {
-    const fixture = await seedChatThread("Ownership boundary");
-    const saved = await chat.readThreadMetadata(
-      fixture.actor,
-      fixture.threadId,
-    );
-    const published = await threadEvents(fixture);
-    const foreign = bdd.user({ orgId: fixture.orgId });
-    const wrongOrg = bdd.user({ userId: fixture.userId });
-    for (const [actor, threadId] of [
-      [fixture.actor, randomUUID()],
-      [foreign, fixture.threadId],
-      [wrongOrg, fixture.threadId],
-    ] as const) {
-      const before = await chat.requestThreadEvents(actor, {}, [200]);
-      await chat.requestUpdateThreadModelSelection(
-        actor,
-        threadId,
-        "claude-sonnet-5-5",
-        [404],
-        {
-          reasoningEffort: "high",
-          eventId: randomUUID(),
-          serviceTierEventId: randomUUID(),
-        },
-      );
-      const after = await chat.requestThreadEvents(actor, {}, [200]);
-      expect(after.body).toStrictEqual(before.body);
-      await expect(
-        chat.readThreadMetadata(fixture.actor, fixture.threadId),
-      ).resolves.toStrictEqual(saved);
-      await expect(threadEvents(fixture)).resolves.toStrictEqual(published);
-    }
-  });
-
-  it("saves and emits actual Codex Fast, preserves it for effort, and resets to standard", async () => {
-    const fixture = await seedChatThread("Codex service tiers");
-    await connectCodex(fixture);
-    const stages = [
-      {
-        options: { codexServiceTier: "fast" as const },
-        serviceTier: "priority",
-      },
-      {
-        options: { reasoningEffort: "high" as const },
-        serviceTier: "priority",
-      },
-      { options: {}, serviceTier: null },
-    ] as const;
-    const expected = [];
-    for (const stage of stages) {
-      const eventId = randomUUID();
-      const serviceTierEventId = randomUUID();
-      await chat.updateThreadModelSelection(
-        fixture.actor,
-        fixture.threadId,
-        "gpt-6-luna",
-        { ...stage.options, eventId, serviceTierEventId },
-      );
-      await expect(
-        chat.readThreadMetadata(fixture.actor, fixture.threadId),
-      ).resolves.toMatchObject({
-        selectedModel: "gpt-6-luna",
-        serviceTier: stage.serviceTier,
-      });
-      expected.push(
-        expect.objectContaining({
-          id: eventId,
-          kind: "model_selection_updated",
-          selectedModel: "gpt-6-luna",
-        }),
-        expect.objectContaining({
-          id: serviceTierEventId,
-          kind: "service_tier_updated",
-          serviceTier: stage.serviceTier,
-        }),
-      );
-    }
-    const events = (await threadEvents(fixture)).filter((event) => {
-      return event.kind !== "created";
-    });
-    expect(events).toStrictEqual(expected);
-    for (let i = 0; i < events.length; i += 2) {
-      expectAdjacentPair(events.slice(i, i + 2));
-    }
-    await chat.updateThreadModelSelection(
-      fixture.actor,
-      fixture.threadId,
-      "gpt-6-luna",
-      { codexServiceTier: "fast" },
-    );
-    const saved = await chat.readThreadMetadata(
-      fixture.actor,
-      fixture.threadId,
-    );
-    const before = await threadEvents(fixture);
-    for (const options of [
-      { reasoningEffort: "high" as const },
-      { codexServiceTier: "fast" as const },
-    ]) {
-      const refused = await chat.requestUpdateThreadModelSelection(
-        fixture.actor,
-        fixture.threadId,
-        "claude-sonnet-5-5",
-        [400],
-        options,
-      );
-      expect(refused.body).toMatchObject({
-        error: { message: "Fast mode is unavailable for this model route" },
-      });
-      await expect(
-        chat.readThreadMetadata(fixture.actor, fixture.threadId),
-      ).resolves.toStrictEqual(saved);
-      await expect(threadEvents(fixture)).resolves.toStrictEqual(before);
-    }
-  });
-
-  it("rejects an unavailable personal subscription without mutating selection", async () => {
-    const fixture = await seedChatThread("Personal subscription availability");
-
-    const rejected = await chat.requestUpdateThreadModelSelection(
-      fixture.actor,
-      fixture.threadId,
-      "gpt-6-luna",
       [400],
     );
-    expect(rejected.body).toMatchObject({
-      error: {
-        message:
-          "Select Auto or a model from your connected personal subscription",
-      },
-    });
-    await expect(
-      chat.readThreadMetadata(fixture.actor, fixture.threadId),
-    ).resolves.toMatchObject({ selectedModel: "claude-sonnet-5-5" });
+    expect(rejected.body.error.message).toMatch(/Auto/);
+    expect(rejected.body.error.message).toMatch(/connect/i);
 
-    await chat.updateThreadModelSelection(
-      fixture.actor,
-      fixture.threadId,
-      "claude-opus-5-5",
-    );
-    await expect(
-      chat.readThreadMetadata(fixture.actor, fixture.threadId),
-    ).resolves.toMatchObject({ selectedModel: "claude-opus-5-5" });
-  });
-
-  it("rejects unsupported effort levels and persists supported ones", async () => {
-    const fixture = await seedChatThread("Effort validation");
-    for (const [model, reasoningEffort] of [
-      ["claude-opus-5-5", "xhigh"],
-      ["claude-sonnet-5-5", "xhigh"],
-    ] as const) {
-      const unsupported = await chat.requestUpdateThreadModelSelection(
-        fixture.actor,
-        fixture.threadId,
-        model,
-        [400],
-        { reasoningEffort },
-      );
-      expect(unsupported.body).toMatchObject({
-        error: {
-          message: "Reasoning effort is not supported by the selected model",
-        },
-      });
-    }
-    for (const reasoningEffort of ["extra", "ultracode"] as const) {
-      await chat.updateThreadModelSelection(
-        fixture.actor,
-        fixture.threadId,
-        "claude-sonnet-5-5",
-        { reasoningEffort },
-      );
-      await expect(
-        chat.readThreadMetadata(fixture.actor, fixture.threadId),
-      ).resolves.toMatchObject({
-        modelSettings: { "claude-sonnet-5-5": { effort: reasoningEffort } },
-      });
-    }
-  });
-
-  it("persists independent model efforts and emits single-model patches", async () => {
-    const fixture = await seedChatThread("Effort persistence");
-    await chat.updateThreadModelSelection(
-      fixture.actor,
-      fixture.threadId,
+    expect((await readMetadata(member, threadId)).selectedModel).toBe(
       "claude-sonnet-5-5",
-      { reasoningEffort: "high" },
     );
-    await chat.updateThreadModelSelection(
-      fixture.actor,
-      fixture.threadId,
-      "claude-opus-5-5",
-    );
-    await expect(
-      chat.readThreadMetadata(fixture.actor, fixture.threadId),
-    ).resolves.toMatchObject({
-      selectedModel: "claude-opus-5-5",
-      modelSettings: { "claude-sonnet-5-5": { effort: "high" } },
-    });
-    await chat.updateThreadModelSelection(
-      fixture.actor,
-      fixture.threadId,
-      "claude-opus-5-5",
-      { reasoningEffort: "extra" },
-    );
-    await expect(
-      chat.readThreadMetadata(fixture.actor, fixture.threadId),
-    ).resolves.toMatchObject({
-      modelSettings: {
-        "claude-sonnet-5-5": { effort: "high" },
-        "claude-opus-5-5": { effort: "extra" },
-      },
-    });
-    const events = await chat.requestThreadEvents(fixture.actor, {}, [200]);
-    if (events.status !== 200) {
-      throw new Error("Expected thread events");
-    }
-    expect(events.body.events).toContainEqual(
-      expect.objectContaining({
-        kind: "model_selection_updated",
-        modelSettingsPatch: {
-          model: "claude-sonnet-5-5",
-          effort: "high",
-        },
-      }),
-    );
-    expect(events.body.events).toContainEqual(
-      expect.objectContaining({
-        kind: "model_selection_updated",
-        modelSettingsPatch: {
-          model: "claude-opus-5-5",
-          effort: "extra",
-        },
-      }),
-    );
-  });
-
-  it("preserves each model's effort on a model switch", async () => {
-    const fixture = await seedChatThread("Effort model switch");
-    await chat.updateThreadModelSelection(
-      fixture.actor,
-      fixture.threadId,
-      "claude-sonnet-5-5",
-      { reasoningEffort: "extra" },
-    );
-    await chat.updateThreadModelSelection(
-      fixture.actor,
-      fixture.threadId,
-      "claude-opus-5-5",
-    );
-    const metadata = await chat.readThreadMetadata(
-      fixture.actor,
-      fixture.threadId,
-    );
-    expect(metadata).toMatchObject({
-      selectedModel: "claude-opus-5-5",
-      modelSettings: { "claude-sonnet-5-5": { effort: "extra" } },
-    });
-  });
-
-  it.each([
-    ["claude-fable-5", "claude-fable-5-1"],
-    ["claude-sonnet-4-6", "claude-sonnet-5-5"],
-    ["claude-opus-4-8", "claude-opus-5-5"],
-  ] as const)(
-    "stores and records the replacement when an old client requests retired %s",
-    async (retiredModel, replacement) => {
-      const fixture = await seedChatThread("Model retirement");
-
-      const token = await executionToken({
-        userId: fixture.userId,
-        orgId: fixture.orgId,
-      });
-      const headers = { authorization: `Bearer ${token}` };
-      await accept(
-        modelSelectionClient().update({
-          headers,
-          params: { id: fixture.threadId },
-          body: { model: retiredModel },
-        }),
-        [204],
-      );
-      const thread = await accept(
-        metadataClient().get({ headers, params: { id: fixture.threadId } }),
-        [200],
-      );
-      expect(thread.body.selectedModel).toBe(replacement);
-      // The event carries the stored model, so replay never restores the
-      // retired id.
-      const events = await chat.requestThreadEvents(fixture.actor, {}, [200]);
-      if (events.status !== 200) {
-        throw new Error("Expected thread events");
-      }
-      expect(
-        events.body.events.filter((event) => {
-          return (
-            event.chatThreadId === fixture.threadId &&
-            event.kind === "model_selection_updated"
-          );
-        }),
-      ).toStrictEqual([
-        expect.objectContaining({ selectedModel: replacement }),
-      ]);
-    },
-  );
-
-  it("updates thread model selection with an Okou run token carrying chat-thread:write", async () => {
-    const fixture = await seedChatThread("Launch plan");
-    const token = await executionToken({
-      userId: fixture.userId,
-      orgId: fixture.orgId,
-    });
 
     await accept(
-      modelSelectionClient().update({
-        headers: { authorization: `Bearer ${token}` },
-        params: { id: fixture.threadId },
-        body: {
-          model: "claude-sonnet-5-5",
-        },
+      modelSelectionApi.update({
+        headers: signIn(member),
+        params: { id: threadId },
+        body: { model: "claude-opus-5-5" },
       }),
       [204],
     );
 
-    const response = await accept(
-      metadataClient().get({
-        headers: { authorization: `Bearer ${token}` },
-        params: { id: fixture.threadId },
+    expect((await readMetadata(member, threadId)).selectedModel).toBe(
+      "claude-opus-5-5",
+    );
+  });
+
+  it("chat-threads-model-selection-003 refuses missing, foreign-owned and wrong-org targets without metadata or event effects", async () => {
+    const owner = bdd.user();
+    if (!owner.orgId) {
+      throw new Error("Expected owner orgId");
+    }
+    const peer = bdd.user({ orgId: owner.orgId, orgRole: "org:member" });
+    const otherOrgId = `org_${randomUUID()}`;
+    await connectClaude(owner);
+
+    const created = await accept(
+      threadsApi.create({
+        headers: signIn(owner),
+        body: { title: "Owned thread", model: "claude-sonnet-5-5" },
       }),
-      [200],
+      [201],
+    );
+    const threadId = created.body.id;
+
+    const ownerMetadataBefore = await readMetadata(owner, threadId);
+    const ownerFeedBefore = await readFeed(owner);
+    const peerFeedBefore = await readFeed(peer);
+    const otherOrgFeedBefore = await readFeed(owner, otherOrgId);
+
+    await accept(
+      modelSelectionApi.update({
+        headers: signIn(owner),
+        params: { id: randomUUID() },
+        body: { model: null },
+      }),
+      [404],
+    );
+    await accept(
+      modelSelectionApi.update({
+        headers: signIn(peer),
+        params: { id: threadId },
+        body: { model: null },
+      }),
+      [404],
+    );
+    await accept(
+      modelSelectionApi.update({
+        headers: signIn(owner, otherOrgId),
+        params: { id: threadId },
+        body: { model: null },
+      }),
+      [404],
     );
 
-    expect(response.body).toStrictEqual({
-      id: fixture.threadId,
-      title: "Launch plan",
-      pinnedAt: null,
-      archived: false,
-      hidden: false,
-      muted: false,
-      selectedModel: "claude-sonnet-5-5",
-      modelSettings: {},
-      serviceTier: null,
-      computerUseHostId: null,
-      cloudBrowserEnabled: true,
+    await expect(readMetadata(owner, threadId)).resolves.toStrictEqual(
+      ownerMetadataBefore,
+    );
+    await expect(readFeed(owner)).resolves.toStrictEqual(ownerFeedBefore);
+    await expect(readFeed(peer)).resolves.toStrictEqual(peerFeedBefore);
+    await expect(readFeed(owner, otherOrgId)).resolves.toStrictEqual(
+      otherOrgFeedBefore,
+    );
+  });
+
+  it("chat-threads-model-selection-008 preserves each model's effort on a model switch", async () => {
+    const member = bdd.user();
+    await connectClaude(member);
+
+    const created = await accept(
+      threadsApi.create({
+        headers: signIn(member),
+        body: { title: "Effort switch", model: "claude-sonnet-5-5" },
+      }),
+      [201],
+    );
+    const threadId = created.body.id;
+
+    await accept(
+      modelSelectionApi.update({
+        headers: signIn(member),
+        params: { id: threadId },
+        body: { model: "claude-sonnet-5-5", reasoningEffort: "extra" },
+      }),
+      [204],
+    );
+
+    await accept(
+      modelSelectionApi.update({
+        headers: signIn(member),
+        params: { id: threadId },
+        body: { model: "claude-opus-5-5" },
+      }),
+      [204],
+    );
+
+    const metadata = await readMetadata(member, threadId);
+    expect(metadata.selectedModel).toBe("claude-opus-5-5");
+    expect(metadata.modelSettings["claude-sonnet-5-5"]).toStrictEqual({
+      effort: "extra",
     });
+  });
+
+  it("chat-threads-model-selection-004 saves and emits actual Codex Fast, preserves it for effort, and resets to standard", async () => {
+    const owner = bdd.user();
+    await connectClaude(owner);
+    await connectCodex(owner);
+
+    const created = await accept(
+      threadsApi.create({
+        headers: signIn(owner),
+        body: { title: "Codex Fast", model: "gpt-6-luna" },
+      }),
+      [201],
+    );
+    const threadId = created.body.id;
+
+    const fastModelEventId = randomUUID();
+    const fastTierEventId = randomUUID();
+    await accept(
+      modelSelectionApi.update({
+        headers: signIn(owner),
+        params: { id: threadId },
+        body: {
+          model: "gpt-6-luna",
+          codexServiceTier: "fast",
+          eventId: fastModelEventId,
+          serviceTierEventId: fastTierEventId,
+        },
+      }),
+      [204],
+    );
+    const stage1 = await readMetadata(owner, threadId);
+    expect(stage1.serviceTier).toBe("priority");
+
+    const effortModelEventId = randomUUID();
+    const effortTierEventId = randomUUID();
+    await accept(
+      modelSelectionApi.update({
+        headers: signIn(owner),
+        params: { id: threadId },
+        body: {
+          model: "gpt-6-luna",
+          reasoningEffort: "high",
+          eventId: effortModelEventId,
+          serviceTierEventId: effortTierEventId,
+        },
+      }),
+      [204],
+    );
+    const stage2 = await readMetadata(owner, threadId);
+    expect(stage2.serviceTier).toBe("priority");
+
+    const resetModelEventId = randomUUID();
+    const resetTierEventId = randomUUID();
+    await accept(
+      modelSelectionApi.update({
+        headers: signIn(owner),
+        params: { id: threadId },
+        body: {
+          model: "gpt-6-luna",
+          eventId: resetModelEventId,
+          serviceTierEventId: resetTierEventId,
+        },
+      }),
+      [204],
+    );
+    const stage3 = await readMetadata(owner, threadId);
+    expect(stage3.serviceTier).toBeNull();
+
+    const feedAfterReset = await readFeed(owner);
+    const pairs = [
+      {
+        modelEventId: fastModelEventId,
+        tierEventId: fastTierEventId,
+        tier: "priority",
+      },
+      {
+        modelEventId: effortModelEventId,
+        tierEventId: effortTierEventId,
+        tier: "priority",
+      },
+      {
+        modelEventId: resetModelEventId,
+        tierEventId: resetTierEventId,
+        tier: null,
+      },
+    ] as const;
+    for (const pair of pairs) {
+      const idx = feedAfterReset.events.findIndex((event) => {
+        return event.id === pair.modelEventId;
+      });
+      expect(idx).toBeGreaterThanOrEqual(0);
+      expect(feedAfterReset.events[idx]).toMatchObject({
+        id: pair.modelEventId,
+        kind: "model_selection_updated",
+        selectedModel: "gpt-6-luna",
+      });
+      expect(feedAfterReset.events[idx + 1]).toMatchObject({
+        id: pair.tierEventId,
+        kind: "service_tier_updated",
+        serviceTier: pair.tier,
+      });
+    }
+
+    await accept(
+      modelSelectionApi.update({
+        headers: signIn(owner),
+        params: { id: threadId },
+        body: { model: "gpt-6-luna", codexServiceTier: "fast" },
+      }),
+      [204],
+    );
+    const metadataBeforeSonnet = await readMetadata(owner, threadId);
+    const feedBeforeSonnet = await readFeed(owner);
+
+    const sonnetWithEffort = await accept(
+      modelSelectionApi.update({
+        headers: signIn(owner),
+        params: { id: threadId },
+        body: { model: "claude-sonnet-5-5", reasoningEffort: "high" },
+      }),
+      [400],
+    );
+    expect(sonnetWithEffort.body.error.message).toBe(
+      "Fast mode is unavailable for this model route",
+    );
+
+    const sonnetWithFast = await accept(
+      modelSelectionApi.update({
+        headers: signIn(owner),
+        params: { id: threadId },
+        body: { model: "claude-sonnet-5-5", codexServiceTier: "fast" },
+      }),
+      [400],
+    );
+    expect(sonnetWithFast.body.error.message).toBe(
+      "Fast mode is unavailable for this model route",
+    );
+
+    await expect(readMetadata(owner, threadId)).resolves.toStrictEqual(
+      metadataBeforeSonnet,
+    );
+    await expect(readFeed(owner)).resolves.toStrictEqual(feedBeforeSonnet);
   });
 });

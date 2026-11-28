@@ -1,58 +1,149 @@
 import { randomUUID } from "node:crypto";
-import { describe, expect, it } from "vitest";
-import { sshCredentialsContract } from "@okouai/api-contracts/contracts/ssh-credentials";
+
 import { sshConnectionsContract } from "@okouai/api-contracts/contracts/ssh-connections";
+import { sshCredentialsContract } from "@okouai/api-contracts/contracts/ssh-credentials";
+import { createStore } from "ccstate";
+
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp, setupRawAppRequest } from "../../../__tests__/test-helpers";
 import { sshConnectionsRoutes } from "../ssh-connections";
+import { seedOrgMembership$ } from "./helpers/org-membership";
 import { createRouteMocks } from "./helpers/route-test";
 import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
-import { createDeferredPromise, joinAll } from "../../utils";
+import { credentialBackedSshHost } from "./helpers/ssh-credential";
+import { createDeferredPromise } from "../../utils";
 
 const context = testContext();
-const mocks = createRouteMocks(context);
 const headers = Object.freeze({ authorization: "Bearer clerk-session" });
-function credentials() {
-  return setupApp({ context, routes: sshConnectionsRoutes })(
-    sshCredentialsContract,
-  );
+
+interface Actor {
+  readonly userId: string;
+  readonly orgId: string;
 }
-function connections() {
+
+const clerkDirectory = createStore();
+
+async function newActor(ids: Partial<Actor> = {}): Promise<Actor> {
+  const actor = {
+    userId: ids.userId ?? `user_${randomUUID()}`,
+    orgId: ids.orgId ?? `org_${randomUUID()}`,
+  };
+  await clerkDirectory.set(
+    seedOrgMembership$,
+    { ...actor, role: "admin" },
+    context.signal,
+  );
+  return actor;
+}
+
+function signIn(actor: Actor) {
+  createRouteMocks(context).clerk.session(actor.userId, actor.orgId);
+}
+
+const hosts = () => {
   return setupApp({ context, routes: sshConnectionsRoutes })(
     sshConnectionsContract,
   );
+};
+const credentials = () => {
+  return setupApp({ context, routes: sshConnectionsRoutes })(
+    sshCredentialsContract,
+  );
+};
+
+async function createPasswordLogin(
+  name = "Deploy login",
+  password = `pw-${randomUUID()}`,
+) {
+  return (
+    await accept(
+      credentials().create({
+        headers,
+        body: {
+          id: randomUUID(),
+          name,
+          username: "deploy",
+          authentication: { method: "password", password },
+        },
+      }),
+      [201],
+    )
+  ).body;
 }
-function owner(overrides: Partial<{ orgId: string; userId: string }> = {}) {
-  const value = {
-    orgId: `org_ssh_${randomUUID()}`,
-    userId: `user_ssh_${randomUUID()}`,
-    ...overrides,
+
+function attachHost(credentialId: string, displayName: string, host: string) {
+  return hosts().create({
+    headers,
+    body: {
+      id: randomUUID(),
+      displayName,
+      host,
+      credential: { id: credentialId },
+    },
+  });
+}
+
+async function listCredentials() {
+  return (await accept(credentials().list({ headers }), [200])).body
+    .credentials;
+}
+
+async function listHosts() {
+  return (await accept(hosts().list({ headers }), [200])).body.connections;
+}
+
+function deleteCredential(credentialId: string, expectedRevision: number) {
+  return credentials().delete({
+    headers,
+    params: { credentialId },
+    body: { expectedRevision },
+  });
+}
+
+function byId<T extends { readonly id: string }>(items: readonly T[]) {
+  return [...items].sort((a, b) => {
+    return a.id.localeCompare(b.id);
+  });
+}
+
+function gate() {
+  const deferred = createDeferredPromise<void>(context.signal);
+  const open = () => {
+    if (!deferred.settled()) {
+      deferred.resolve();
+    }
   };
-  mocks.clerk.session(value.userId, value.orgId);
-  return value;
+  return { open, opened: deferred.promise };
 }
-const passwordBody = {
-  name: "  Operations  ",
-  username: "  deploy  ",
-  authentication: {
-    method: "password" as const,
-    password: "  password-canary\n",
-  },
-} as const;
+
+function expectNoSecret(value: unknown, secret: string) {
+  const text = JSON.stringify(value);
+  expect(text).not.toContain(secret);
+  expect(text).not.toContain("vm0secret:");
+  expect(text).not.toContain("authentication");
+  expect(text.toLowerCase()).not.toContain("encrypted");
+}
 
 describe("reusable SSH credential owner routes", () => {
-  it("requires a session to list credentials", async () => {
+  it("ssh-credentials-001 listing credentials without a session is unauthorized", async () => {
     const response = await accept(credentials().list({ headers: {} }), [401]);
+
     expect(response.body.error.code).toBe("UNAUTHORIZED");
   });
 
-  it("shares named metadata, rejects referenced deletion, and preserves credentials after host deletion", async () => {
-    useSecretKmsProbe();
-    owner();
+  it("ssh-credentials-002 a shared login lists its hosts without secrets and survives host deletion", async () => {
+    signIn(await newActor());
+    const password = `secret-${randomUUID()}`;
+
     const created = await accept(
       credentials().create({
         headers,
-        body: { id: randomUUID(), ...passwordBody },
+        body: {
+          id: randomUUID(),
+          name: " Operations ",
+          username: " deploy ",
+          authentication: { method: "password", password },
+        },
       }),
       [201],
     );
@@ -64,58 +155,33 @@ describe("reusable SSH credential owner routes", () => {
       hosts: [],
     });
     expect(created.headers.get("cache-control")).toBe("no-store");
-    const hosts = [];
-    for (const displayName of ["First", "Second"]) {
-      const result = await accept(
-        connections().create({
-          headers,
-          body: {
-            id: randomUUID(),
-            displayName,
-            host: "ssh.example.com",
-            credential: { id: created.body.id },
-          },
-        }),
-        [201],
-      );
-      hosts.push(result.body);
-    }
-    const listed = await accept(credentials().list({ headers }), [200]);
-    expect(listed.body.credentials[0]?.hosts).toStrictEqual(
-      expect.arrayContaining(
-        hosts.map(({ id, displayName }) => {
-          return { id, displayName };
-        }),
-      ),
+
+    const first = await accept(
+      attachHost(created.body.id, "First", "first.example.com"),
+      [201],
     );
-    for (const response of [created.body, listed.body, hosts]) {
-      const serialized = JSON.stringify(response);
-      for (const secret of [
-        "password-canary",
-        "encryptedPassword",
-        "encryptedPrivateKey",
-        "vm0secret:",
-        "authentication",
-      ]) {
-        expect(serialized).not.toContain(secret);
-      }
+    const second = await accept(
+      attachHost(created.body.id, "Second", "second.example.com"),
+      [201],
+    );
+    const listed = await listCredentials();
+    expect(listed).toHaveLength(1);
+    expect(byId(listed[0]?.hosts ?? [])).toStrictEqual(
+      byId([
+        { id: first.body.id, displayName: "First" },
+        { id: second.body.id, displayName: "Second" },
+      ]),
+    );
+    for (const body of [created.body, listed, first.body, second.body]) {
+      expectNoSecret(body, password);
     }
-    const params = { credentialId: created.body.id };
-    expect(
-      (
-        await accept(
-          credentials().delete({
-            headers,
-            params,
-            body: { expectedRevision: 1 },
-          }),
-          [409],
-        )
-      ).body.error.code,
-    ).toBe("SSH_CREDENTIAL_IN_USE");
-    for (const host of hosts) {
+
+    const blocked = await accept(deleteCredential(created.body.id, 1), [409]);
+    expect(blocked.body.error.code).toBe("SSH_CREDENTIAL_IN_USE");
+
+    for (const host of [first.body, second.body]) {
       await accept(
-        connections().delete({
+        hosts().delete({
           headers,
           params: { connectionId: host.id },
           body: { expectedGeneration: host.generation },
@@ -123,674 +189,224 @@ describe("reusable SSH credential owner routes", () => {
         [204],
       );
     }
-    expect(
-      (await accept(credentials().list({ headers }), [200])).body.credentials,
-    ).toStrictEqual([created.body]);
-    await accept(
-      credentials().delete({ headers, params, body: { expectedRevision: 1 } }),
-      [204],
-    );
-    expect(
-      (await accept(credentials().list({ headers }), [200])).body.credentials,
-    ).toStrictEqual([]);
+    await expect(listCredentials()).resolves.toStrictEqual([created.body]);
+
+    await accept(deleteCredential(created.body.id, 1), [204]);
+    await expect(listCredentials()).resolves.toStrictEqual([]);
   });
 
-  it("keeps a referenced credential usable when deletion overlaps login rotation", async () => {
-    useSecretKmsProbe();
-    owner();
-    const created = await accept(
-      credentials().create({
-        headers,
-        body: { id: randomUUID(), ...passwordBody },
-      }),
+  it("ssh-credentials-003 deleting a login while it is rotated keeps the rotated login in use", async () => {
+    signIn(await newActor());
+    const login = await createPasswordLogin();
+    const host = await accept(
+      attachHost(login.id, "Build box", "build.example.com"),
       [201],
     );
-    const host = await accept(
-      connections().create({
+
+    const [rotated, deleted] = await Promise.all([
+      credentials().update({
         headers,
+        params: { credentialId: login.id },
         body: {
-          id: randomUUID(),
-          displayName: "Referenced during rotation",
-          host: "ssh.example.com",
-          credential: { id: created.body.id },
+          expectedRevision: 1,
+          username: "rotated-delete-user",
+          authentication: {
+            method: "password",
+            password: `rotated-${randomUUID()}`,
+          },
         },
       }),
-      [201],
-    );
-    const params = { credentialId: created.body.id };
-    const [rotated, deleted] = await joinAll([
-      accept(
-        credentials().update({
-          headers,
-          params,
-          body: {
-            expectedRevision: 1,
-            username: "rotated-delete-user",
-            authentication: {
-              method: "password",
-              password: "rotation-delete-canary",
-            },
-          },
-        }),
-        [200],
-      ),
-      accept(
-        credentials().delete({
-          headers,
-          params,
-          body: { expectedRevision: 1 },
-        }),
-        [409],
-      ),
+      deleteCredential(login.id, 1),
     ]);
-    expect(deleted.status).toBe(409);
-    expect(rotated.body).toMatchObject({
+
+    const rotation = await accept(Promise.resolve(rotated), [200]);
+    expect(rotation.body).toMatchObject({
       revision: 2,
       username: "rotated-delete-user",
-      hosts: [{ id: host.body.id, displayName: host.body.displayName }],
+      hosts: [{ id: host.body.id, displayName: "Build box" }],
     });
-    expect(
-      (await accept(credentials().list({ headers }), [200])).body.credentials,
-    ).toStrictEqual([rotated.body]);
+    await accept(Promise.resolve(deleted), [409]);
+    await expect(listCredentials()).resolves.toStrictEqual([rotation.body]);
   });
 
-  it("keeps every host on the current credential when attachment races rotation", async () => {
-    useSecretKmsProbe();
-    owner();
-    const created = await accept(
-      credentials().create({
-        headers,
-        body: { id: randomUUID(), ...passwordBody },
-      }),
+  it("ssh-credentials-004 attaching a host while the login rotates leaves every host on the rotated login", async () => {
+    signIn(await newActor());
+    const login = await createPasswordLogin();
+    const existing = await accept(
+      attachHost(login.id, "Existing host", "first.example.com"),
       [201],
     );
-    const first = await accept(
-      connections().create({
+
+    const [attached, rotated] = await Promise.all([
+      attachHost(login.id, "New host", "second.example.com"),
+      credentials().update({
         headers,
-        body: {
-          id: randomUUID(),
-          displayName: "Existing host",
-          host: "first.example.com",
-          credential: { id: created.body.id },
-        },
+        params: { credentialId: login.id },
+        body: { expectedRevision: 1, username: "rotated-user" },
       }),
-      [201],
-    );
-    const [attached] = await Promise.all([
-      accept(
-        connections().create({
-          headers,
-          body: {
-            id: randomUUID(),
-            displayName: "New host",
-            host: "second.example.com",
-            credential: { id: created.body.id },
-          },
-        }),
-        [201],
-      ),
-      accept(
-        credentials().update({
-          headers,
-          params: { credentialId: created.body.id },
-          body: { expectedRevision: 1, username: "rotated-user" },
-        }),
-        [200],
-      ),
     ]);
-    const listed = await accept(connections().list({ headers }), [200]);
-    expect(listed.body.connections).toHaveLength(2);
-    expect(listed.body.connections).toStrictEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          id: first.body.id,
-          username: "rotated-user",
-          generation: 2,
-          credentialId: created.body.id,
-        }),
-        expect.objectContaining({
-          id: attached.body.id,
-          username: "rotated-user",
-          // Attachment can commit before or after rotation's host UPDATE.
-          // The host always resolves the current credential independently.
-          generation: expect.toBeOneOf([1, 2]),
-          credentialId: created.body.id,
-        }),
+    const added = await accept(Promise.resolve(attached), [201]);
+    await accept(Promise.resolve(rotated), [200]);
+
+    const listedHosts = (await listHosts()).map(credentialBackedSshHost);
+    expect(listedHosts).toHaveLength(2);
+    const existingAfter = listedHosts.find((h) => {
+      return h.id === existing.body.id;
+    });
+    const addedAfter = listedHosts.find((h) => {
+      return h.id === added.body.id;
+    });
+    for (const host of [existingAfter, addedAfter]) {
+      expect(host).toMatchObject({
+        credentialId: login.id,
+        username: "rotated-user",
+      });
+    }
+    expect(existingAfter?.generation).toBe(2);
+    expect([1, 2]).toContain(addedAfter?.generation);
+
+    const [credential] = await listCredentials();
+    expect(credential).toMatchObject({
+      id: login.id,
+      revision: 2,
+      username: "rotated-user",
+    });
+    expect(byId(credential?.hosts ?? [])).toStrictEqual(
+      byId([
+        { id: existing.body.id, displayName: "Existing host" },
+        { id: added.body.id, displayName: "New host" },
       ]),
     );
-    const current = await accept(credentials().list({ headers }), [200]);
-    expect(current.body.credentials).toStrictEqual([
-      expect.objectContaining({
-        id: created.body.id,
-        revision: 2,
-        username: "rotated-user",
-        hosts: expect.arrayContaining([
-          { id: first.body.id, displayName: "Existing host" },
-          { id: attached.body.id, displayName: "New host" },
-        ]),
-      }),
-    ]);
   });
 
-  it("resolves the current credential after concurrent low-frequency rotations", async () => {
-    useSecretKmsProbe();
-    owner();
-    const created = await accept(
-      credentials().create({
-        headers,
-        body: { id: randomUUID(), ...passwordBody },
-      }),
-      [201],
-    );
-    const host = await accept(
-      connections().create({
-        headers,
-        body: {
-          id: randomUUID(),
-          displayName: "Shared",
-          host: "ssh.example.com",
-          credential: { id: created.body.id },
-        },
-      }),
-      [201],
-    );
-    const results = await Promise.all(
-      ["first-user", "second-user"].map((username) => {
-        return accept(
-          credentials().update({
-            headers,
-            params: { credentialId: created.body.id },
-            body: { expectedRevision: 1, username },
-          }),
-          [200, 409],
-        );
-      }),
-    );
-    expect(
-      results.some((result) => {
-        return result.status === 200;
-      }),
-    ).toBeTruthy();
-    const current = await accept(credentials().list({ headers }), [200]);
-    const credential = current.body.credentials[0];
-    expect(credential).toBeDefined();
-    expect(credential?.username).toBeOneOf(["first-user", "second-user"]);
-    const listed = await accept(connections().list({ headers }), [200]);
-    expect(listed.body.connections).toStrictEqual([
-      expect.objectContaining({
-        id: host.body.id,
-        credentialId: created.body.id,
-        username: credential?.username,
-      }),
-    ]);
-  });
-
-  it("hides other users and organizations before KMS work or binding", async () => {
+  it("ssh-credentials-006 other users and organizations cannot see, edit, bind or delete a login", async () => {
     const kms = useSecretKmsProbe();
-    const first = owner();
-    const created = await accept(
-      credentials().create({
-        headers,
-        body: { id: randomUUID(), ...passwordBody },
-      }),
-      [201],
-    );
-    for (const other of [{ orgId: first.orgId }, { userId: first.userId }]) {
-      owner(other);
-      const params = { credentialId: created.body.id };
-      expect(
-        (await accept(credentials().list({ headers }), [200])).body.credentials,
-      ).toStrictEqual([]);
-      for (const credentialId of [created.body.id, randomUUID()]) {
+    const owner = await newActor();
+    signIn(owner);
+    const login = await createPasswordLogin();
+    expect(kms.generateDataKeyCalls).toBe(1);
+
+    const outsiders = [
+      await newActor({ orgId: owner.orgId }),
+      await newActor({ userId: owner.userId }),
+    ];
+    for (const outsider of outsiders) {
+      signIn(outsider);
+      await expect(listCredentials()).resolves.toStrictEqual([]);
+      for (const credentialId of [login.id, randomUUID()]) {
         const update = await accept(
           credentials().update({
             headers,
             params: { credentialId },
             body: {
               expectedRevision: 1,
-              authentication: passwordBody.authentication,
+              authentication: {
+                method: "password",
+                password: `intruder-${randomUUID()}`,
+              },
             },
           }),
           [404],
         );
         expect(update.body.error.code).toBe("SSH_CREDENTIAL_NOT_FOUND");
         const bind = await accept(
-          connections().create({
-            headers,
-            body: {
-              id: randomUUID(),
-              displayName: "Denied",
-              host: "ssh.example.com",
-              credential: { id: credentialId },
-            },
-          }),
+          attachHost(credentialId, "Borrowed", "borrowed.example.com"),
           [404],
         );
         expect(bind.body.error.code).toBe("SSH_CREDENTIAL_NOT_FOUND");
       }
-      await accept(
-        credentials().delete({
-          headers,
-          params,
-          body: { expectedRevision: 1 },
-        }),
-        [404],
-      );
-      expect(
-        (await accept(connections().list({ headers }), [200])).body.connections,
-      ).toStrictEqual([]);
+      await accept(deleteCredential(login.id, 1), [404]);
+      await expect(listHosts()).resolves.toStrictEqual([]);
     }
+
     expect(kms.generateDataKeyCalls).toBe(1);
   });
 
-  it("rejects malformed authentication without logging or echoing supplied secrets", async () => {
+  it("ssh-credentials-007 malformed authentication is rejected without echoing the secret", async () => {
     const kms = useSecretKmsProbe();
-    owner();
-    const request = setupRawAppRequest({
-      context,
-      routes: sshConnectionsRoutes,
-    });
-    for (const authentication of [
-      {
-        method: "password",
-        password: "secret-canary",
-        privateKey: "secret-canary",
-      },
-      { method: "private_key", privateKey: "secret-canary", passphrase: "" },
-      {
-        method: "private_key",
-        privateKey: "secret-canary",
-        password: "secret-canary",
-      },
-    ]) {
-      const response = await request("/api/ssh/credentials", {
+    signIn(await newActor());
+    const canary = `canary-${randomUUID()}`;
+    const raw = setupRawAppRequest({ context, routes: sshConnectionsRoutes });
+    const malformed = [
+      { method: "password", password: canary, privateKey: canary },
+      { method: "private_key", privateKey: canary, passphrase: "" },
+      { method: "private_key", privateKey: canary, password: canary },
+    ];
+
+    for (const authentication of malformed) {
+      const response = await raw("/api/ssh/credentials", {
         method: "POST",
         headers: { ...headers, "content-type": "application/json" },
-        body: JSON.stringify({ ...passwordBody, authentication }),
+        body: JSON.stringify({
+          id: randomUUID(),
+          name: "Broken login",
+          username: "deploy",
+          authentication,
+        }),
       });
       expect(response.status).toBe(400);
-      expect(JSON.stringify(response.body)).not.toContain("secret-canary");
+      expect(JSON.stringify(response.body)).not.toContain(canary);
     }
     expect(kms.generateDataKeyCalls).toBe(0);
   });
 
-  it("rejects a delayed stale edit and keeps the winning credential usable", async () => {
-    useSecretKmsProbe();
-    owner();
-    const created = await accept(
-      credentials().create({
-        headers,
-        body: { id: randomUUID(), ...passwordBody },
-      }),
-      [201],
-    );
-    const params = { credentialId: created.body.id };
-    const entered = createDeferredPromise<void>(context.signal);
-    const release = createDeferredPromise<void>(context.signal);
-    useSecretKmsProbe(async (request) => {
-      entered.resolve();
-      await release.promise;
-      return {
-        keyId: request.keyId,
-        plaintext: Buffer.from("0123456789abcdef0123456789abcdef"),
-        encryptedDataKey: Buffer.from("test-wrapped-key"),
-      };
+  it("ssh-credentials-008 a stale edit finishing after a rename is rejected and the rename stays usable", async () => {
+    const stalled = gate();
+    const release = gate();
+    const kms = useSecretKmsProbe((request, callNumber) => {
+      if (callNumber !== 2) {
+        return undefined;
+      }
+      stalled.open();
+      return release.opened.then(() => {
+        return {
+          keyId: request.keyId,
+          plaintext: Buffer.from("0123456789abcdef0123456789abcdef", "utf8"),
+          encryptedDataKey: Buffer.from(`edk:${request.keyId}`, "utf8"),
+        };
+      });
     });
-    const delayed = accept(
-      credentials().update({
-        headers,
-        params,
-        body: {
-          expectedRevision: 1,
-          authentication: {
-            method: "private_key",
-            privateKey: "replacement-canary",
-          },
+    signIn(await newActor());
+    const login = await createPasswordLogin();
+
+    const staleEdit = credentials().update({
+      headers,
+      params: { credentialId: login.id },
+      body: {
+        expectedRevision: 1,
+        authentication: {
+          method: "private_key",
+          privateKey: `key-${randomUUID()}`,
+          passphrase: null,
         },
-      }),
-      [409],
-    );
-    await entered.promise;
+      },
+    });
+    await stalled.opened;
+
     const renamed = await accept(
       credentials().update({
         headers,
-        params,
+        params: { credentialId: login.id },
         body: { expectedRevision: 1, name: "Concurrent winner" },
       }),
       [200],
     );
-    release.resolve();
-    const rejected = await delayed;
-    expect(rejected.body.error.code).toBe("SSH_CREDENTIAL_REVISION_CONFLICT");
     expect(renamed.body).toMatchObject({
-      id: created.body.id,
       name: "Concurrent winner",
       revision: 2,
       authMethod: "password",
     });
-    expect(
-      (await accept(credentials().list({ headers }), [200])).body.credentials,
-    ).toStrictEqual([renamed.body]);
-    const staleDeletion = await accept(
-      credentials().delete({ headers, params, body: { expectedRevision: 1 } }),
-      [409],
-    );
-    expect(staleDeletion.body.error.code).toBe(
+
+    release.open();
+    const stale = await accept(staleEdit, [409]);
+    expect(stale.body.error.code).toBe("SSH_CREDENTIAL_REVISION_CONFLICT");
+    await expect(listCredentials()).resolves.toStrictEqual([renamed.body]);
+    expect(kms.generateDataKeyCalls).toBe(2);
+
+    const staleDelete = await accept(deleteCredential(login.id, 1), [409]);
+    expect(staleDelete.body.error.code).toBe(
       "SSH_CREDENTIAL_REVISION_CONFLICT",
     );
-    await accept(
-      credentials().delete({ headers, params, body: { expectedRevision: 2 } }),
-      [204],
-    );
-  });
-
-  it.each(["deleted", "rebound"] as const)(
-    "publishes a prepared authentication edit after every observed host is %s",
-    async (hostChange) => {
-      useSecretKmsProbe();
-      owner();
-      const created = await accept(
-        credentials().create({
-          headers,
-          body: { id: randomUUID(), ...passwordBody },
-        }),
-        [201],
-      );
-      const replacement = await accept(
-        credentials().create({
-          headers,
-          body: { id: randomUUID(), ...passwordBody, name: "Replacement" },
-        }),
-        [201],
-      );
-      const host = await accept(
-        connections().create({
-          headers,
-          body: {
-            id: randomUUID(),
-            displayName: "Initially attached",
-            host: "ssh.example.com",
-            credential: { id: created.body.id },
-          },
-        }),
-        [201],
-      );
-      const entered = createDeferredPromise<void>(context.signal);
-      const release = createDeferredPromise<void>(context.signal);
-      useSecretKmsProbe(async (request) => {
-        entered.resolve();
-        await release.promise;
-        return {
-          keyId: request.keyId,
-          plaintext: Buffer.from("0123456789abcdef0123456789abcdef"),
-          encryptedDataKey: Buffer.from("test-wrapped-key"),
-        };
-      });
-      const delayed = accept(
-        credentials().update({
-          headers,
-          params: { credentialId: created.body.id },
-          body: {
-            expectedRevision: 1,
-            username: "rotated-user",
-            authentication: {
-              method: "private_key",
-              privateKey: "replacement-canary",
-            },
-          },
-        }),
-        [200],
-      );
-      await entered.promise;
-      const params = { connectionId: host.body.id };
-      if (hostChange === "deleted") {
-        await accept(
-          connections().delete({
-            headers,
-            params,
-            body: { expectedGeneration: host.body.generation },
-          }),
-          [204],
-        );
-      } else {
-        await accept(
-          connections().update({
-            headers,
-            params,
-            body: {
-              expectedGeneration: host.body.generation,
-              credential: { id: replacement.body.id },
-            },
-          }),
-          [200],
-        );
-      }
-      release.resolve();
-      const saved = await delayed;
-      expect(saved.body).toMatchObject({
-        id: created.body.id,
-        name: created.body.name,
-        username: "rotated-user",
-        authMethod: "private_key",
-        revision: 2,
-        createdAt: created.body.createdAt,
-        hosts: [{ id: host.body.id, displayName: host.body.displayName }],
-      });
-      const current = await accept(credentials().list({ headers }), [200]);
-      expect(current.body.credentials).toStrictEqual(
-        expect.arrayContaining([
-          { ...saved.body, hosts: [] },
-          {
-            ...replacement.body,
-            hosts:
-              hostChange === "rebound"
-                ? [{ id: host.body.id, displayName: host.body.displayName }]
-                : [],
-          },
-        ]),
-      );
-      const remaining = await accept(connections().list({ headers }), [200]);
-      expect(remaining.body.connections).toStrictEqual(
-        hostChange === "rebound"
-          ? [
-              expect.objectContaining({
-                id: host.body.id,
-                credentialId: replacement.body.id,
-                username: replacement.body.username,
-                generation: host.body.generation + 1,
-              }),
-            ]
-          : [],
-      );
-    },
-  );
-
-  it("leaves a recoverable credential state after deletion overlaps an edit", async () => {
-    useSecretKmsProbe();
-    owner();
-    const created = await accept(
-      credentials().create({
-        headers,
-        body: { id: randomUUID(), ...passwordBody },
-      }),
-      [201],
-    );
-    const params = { credentialId: created.body.id };
-    const [updated, deleted] = await Promise.all([
-      accept(
-        credentials().update({
-          headers,
-          params,
-          body: { expectedRevision: 1, name: "Concurrent edit" },
-        }),
-        [200, 404, 409],
-      ),
-      accept(
-        credentials().delete({
-          headers,
-          params,
-          body: { expectedRevision: 1 },
-        }),
-        [204, 409],
-      ),
-    ]);
-    const remaining = await accept(credentials().list({ headers }), [200]);
-    if (deleted.status === 204) {
-      // Deletion can win after the edit's statement snapshot read the row.
-      expect([404, 409]).toContain(updated.status);
-      expect(updated.body).toMatchObject({
-        error: {
-          code:
-            updated.status === 404
-              ? "SSH_CREDENTIAL_NOT_FOUND"
-              : "SSH_CREDENTIAL_REVISION_CONFLICT",
-        },
-      });
-      expect(remaining.body.credentials).toStrictEqual([]);
-      return;
-    }
-    expect(deleted.body.error.code).toBe("SSH_CREDENTIAL_REVISION_CONFLICT");
-    expect(updated.status).toBe(200);
-    expect(updated.body).toMatchObject({
-      id: created.body.id,
-      name: "Concurrent edit",
-      revision: 2,
-    });
-    expect(remaining.body.credentials).toStrictEqual([updated.body]);
-    await accept(
-      credentials().delete({
-        headers,
-        params,
-        body: { expectedRevision: 2 },
-      }),
-      [204],
-    );
-    expect(
-      (await accept(credentials().list({ headers }), [200])).body.credentials,
-    ).toStrictEqual([]);
-  });
-
-  it("preserves one valid outcome when creating a host races credential deletion", async () => {
-    useSecretKmsProbe();
-    owner();
-    const created = await accept(
-      credentials().create({
-        headers,
-        body: { id: randomUUID(), ...passwordBody },
-      }),
-      [201],
-    );
-    const [bound, deleted] = await Promise.all([
-      accept(
-        connections().create({
-          headers,
-          body: {
-            id: randomUUID(),
-            displayName: "Concurrent",
-            host: "ssh.example.com",
-            credential: { id: created.body.id },
-          },
-        }),
-        [201, 404],
-      ),
-      accept(
-        credentials().delete({
-          headers,
-          params: { credentialId: created.body.id },
-          body: { expectedRevision: 1 },
-        }),
-        [204, 409],
-      ),
-    ]);
-    expect([bound.status, deleted.status]).toStrictEqual(
-      bound.status === 201 ? [201, 409] : [404, 204],
-    );
-    if (bound.status === 404) {
-      expect(bound.body.error.code).toBe("SSH_CREDENTIAL_NOT_FOUND");
-    }
-    if (deleted.status === 409) {
-      expect(deleted.body.error.code).toBe("SSH_CREDENTIAL_IN_USE");
-    }
-    const hosts = await accept(connections().list({ headers }), [200]);
-    expect(hosts.body.connections).toHaveLength(bound.status === 201 ? 1 : 0);
-    const remaining = await accept(credentials().list({ headers }), [200]);
-    expect(remaining.body.credentials).toHaveLength(
-      bound.status === 201 ? 1 : 0,
-    );
-  });
-
-  it("preserves the host binding when changing credentials races deletion", async () => {
-    useSecretKmsProbe();
-    owner();
-    const original = await accept(
-      credentials().create({
-        headers,
-        body: { id: randomUUID(), ...passwordBody },
-      }),
-      [201],
-    );
-    const replacement = await accept(
-      credentials().create({
-        headers,
-        body: { id: randomUUID(), ...passwordBody, name: "Replacement" },
-      }),
-      [201],
-    );
-    const host = await accept(
-      connections().create({
-        headers,
-        body: {
-          id: randomUUID(),
-          displayName: "Existing",
-          host: "ssh.example.com",
-          credential: { id: original.body.id },
-        },
-      }),
-      [201],
-    );
-    const [bound, deleted] = await Promise.all([
-      accept(
-        connections().update({
-          headers,
-          params: { connectionId: host.body.id },
-          body: {
-            expectedGeneration: host.body.generation,
-            displayName: "Rebound",
-            credential: { id: replacement.body.id },
-          },
-        }),
-        [200, 404],
-      ),
-      accept(
-        credentials().delete({
-          headers,
-          params: { credentialId: replacement.body.id },
-          body: { expectedRevision: replacement.body.revision },
-        }),
-        [204, 409],
-      ),
-    ]);
-    expect([bound.status, deleted.status]).toStrictEqual(
-      bound.status === 200 ? [200, 409] : [404, 204],
-    );
-    if (bound.status === 404) {
-      expect(bound.body.error.code).toBe("SSH_CREDENTIAL_NOT_FOUND");
-    }
-    if (deleted.status === 409) {
-      expect(deleted.body.error.code).toBe("SSH_CREDENTIAL_IN_USE");
-    }
-    const hosts = await accept(connections().list({ headers }), [200]);
-    expect(hosts.body.connections).toStrictEqual([
-      bound.status === 200 ? bound.body : host.body,
-    ]);
-    const remaining = await accept(credentials().list({ headers }), [200]);
-    const credentialIds = remaining.body.credentials.map(({ id }) => {
-      return id;
-    });
-    expect(credentialIds.sort()).toStrictEqual(
-      bound.status === 200
-        ? [original.body.id, replacement.body.id].sort()
-        : [original.body.id],
-    );
+    await accept(deleteCredential(login.id, 2), [204]);
   });
 });

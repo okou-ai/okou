@@ -1,411 +1,615 @@
-import { randomBytes, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { createStore } from "ccstate";
 import { http, HttpResponse } from "msw";
 import { describe, expect, it } from "vitest";
 import { array, boolean, object, string } from "zod";
-import { integrationsDiscordReadContract } from "@okouai/api-contracts/contracts/integrations-discord-read";
-import { integrationsDiscordMessageContract } from "@okouai/api-contracts/contracts/integrations-discord-message";
+import {
+  cliAuthApproveContract,
+  cliAuthDeviceContract,
+  cliAuthTokenContract,
+} from "@okouai/api-contracts/contracts/cli-auth";
 import { integrationsDiscordContract } from "@okouai/api-contracts/contracts/integrations-discord";
+import { integrationsDiscordMessageContract } from "@okouai/api-contracts/contracts/integrations-discord-message";
+import { integrationsDiscordReadContract } from "@okouai/api-contracts/contracts/integrations-discord-read";
+
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { mockEnv } from "../../../lib/env";
+import { env } from "../../../lib/env";
 import { server } from "../../../mocks/server";
-import type {
-  DiscordChannel,
-  DiscordMessage,
-  DiscordRole,
-} from "../../external/discord-client";
-import { integrationsDiscordReadRoutes } from "../integrations-discord-read";
-import { integrationsDiscordMessageRoutes } from "../integrations-discord-message";
+import { cliAuthRoutes } from "../cli-auth";
 import { integrationsDiscordRoutes } from "../integrations-discord";
+import { integrationsDiscordMessageRoutes } from "../integrations-discord-message";
+import { integrationsDiscordReadRoutes } from "../integrations-discord-read";
+import {
+  configureDiscordApp,
+  createPublicDiscordBinding,
+  uniqueDiscordSnowflake,
+  type DiscordFixture,
+} from "./helpers/discord";
 import { seedOrgMembership$ } from "./helpers/org-membership";
 import { createRouteMocks } from "./helpers/route-test";
-import {
-  mockDiscordMemberships,
-  createPublicDiscordBinding,
-} from "./helpers/discord";
-import { createAuthOrgBddApi } from "./helpers/api-bdd-auth-org";
-import { launchPublicDiscordTestRun } from "./helpers/discord-run";
 
 const context = testContext();
-const API = "https://discord.com/api/v10";
-const VIEW = 1n << 10n;
-const SEND = 1n << 11n;
-const READ = 1n << 16n;
-const THREAD_SEND = 1n << 38n;
-const MANAGE_THREADS = 1n << 34n;
-const BASE_PERMISSIONS = String(VIEW | SEND | READ | THREAD_SEND | (1n << 15n));
+const SESSION = Object.freeze({ authorization: "Bearer clerk-session" });
+const DISCORD_API = "https://discord.com/api/v10";
+const TIMESTAMP = "2026-01-01T00:00:00.000Z";
 
-function snowflake() {
-  return (
-    100_000_000_000_000_000n + BigInt(`0x${randomBytes(7).toString("hex")}`)
-  ).toString();
+const app = setupApp({
+  context,
+  routes: [
+    ...integrationsDiscordReadRoutes,
+    ...integrationsDiscordMessageRoutes,
+    ...integrationsDiscordRoutes,
+    ...cliAuthRoutes,
+  ],
+});
+
+function readApi() {
+  return app(integrationsDiscordReadContract);
 }
 
-async function fixture(
-  options: {
-    sandboxToken?: boolean;
-    runToken?: boolean;
-    messageContent?: boolean;
-  } = {},
-) {
-  const orgId = `org_${randomUUID()}`;
-  const userId = `user_${randomUUID()}`;
-  const guildId = snowflake();
-  const discordUserId = snowflake();
-  const botUserId = snowflake();
-  const channelId = snowflake();
-  const threadId = snowflake();
-  const userRoleId = snowflake();
-  const extraRoleId = snowflake();
-  const botRoleId = snowflake();
-  const store = createStore();
-  await store.set(
-    seedOrgMembership$,
-    { orgId, userId, role: "admin" },
-    context.signal,
-  );
-  mockEnv("DISCORD_BOT_TOKEN", "discord-test-token");
-  mockEnv("DISCORD_APPLICATION_ID", botUserId);
-  mockEnv("DISCORD_PUBLIC_KEY", "ab".repeat(32));
-  mockEnv("DISCORD_GATEWAY_SECRET", "discord-gateway-test-secret-at-least-32");
-  mockDiscordMemberships(context, [{ orgId, userId }]);
-  await createPublicDiscordBinding(context, {
-    flow: "install",
-    orgId,
-    userId,
-    guildId,
-    guildName: "Test guild",
-    discordUserId,
-    botUserId,
-  });
-  const auth = createAuthOrgBddApi(context);
-  const actor = { ...auth.user({ orgId, userId }), orgId };
-  let headers: { authorization: string };
-  if (options.runToken || options.sandboxToken) {
-    const run = await launchPublicDiscordTestRun(context, actor);
-    headers = options.sandboxToken
-      ? { authorization: `Bearer ${run.execution.sandboxToken}` }
-      : run.headers;
-  } else {
-    const { token } = await auth.createCliToken(actor);
-    headers = { authorization: `Bearer ${token}` };
-  }
-  mockDiscordMemberships(context, [{ orgId, userId }]);
-  const author = { id: discordUserId, username: "sender" };
-  const botAuthor = { id: botUserId, username: "Okou", bot: true };
-  const channels = new Map<string, DiscordChannel>([
-    [
-      channelId,
-      {
-        id: channelId,
-        guild_id: guildId,
-        type: 0,
-        name: "general",
-        permission_overwrites: [],
-      },
-    ],
-  ]);
-  const roles: DiscordRole[] = [
-    { id: guildId, name: "@everyone", permissions: BASE_PERMISSIONS },
-    { id: userRoleId, name: "user", permissions: "0" },
-    { id: extraRoleId, name: "extra", permissions: "0" },
-    { id: botRoleId, name: "bot", permissions: "0" },
-  ];
-  const threadMembers = new Set([discordUserId, botUserId]);
-  const messages = new Map<string, DiscordMessage[]>();
-  const sentBodies: {
-    content: string;
-    allowed_mentions: { parse: string[]; replied_user: boolean };
-  }[] = [];
-  const state = {
-    userTimedOut: false,
-    botTimedOut: false,
-    userMember: true,
-    botMember: true,
+function messageApi() {
+  return app(integrationsDiscordMessageContract);
+}
+
+const Permission = {
+  view: 1n << 10n,
+  send: 1n << 11n,
+  history: 1n << 16n,
+  manageThreads: 1n << 34n,
+  sendInThreads: 1n << 38n,
+} as const;
+
+const MEMBER_PERMISSIONS =
+  Permission.view |
+  Permission.send |
+  Permission.history |
+  Permission.sendInThreads;
+const MESSAGE_CONTENT_INTENT = 1 << 18;
+
+interface Overwrite {
+  readonly id: string;
+  readonly type: 0 | 1;
+  readonly allow: string;
+  readonly deny: string;
+}
+
+interface Channel {
+  readonly id: string;
+  readonly type: number;
+  readonly guild_id?: string;
+  readonly name?: string;
+  readonly parent_id?: string | null;
+  permission_overwrites?: Overwrite[];
+  readonly recipients?: { id: string; username: string }[];
+  readonly thread_metadata?: {
+    readonly archived: boolean;
+    readonly locked: boolean;
+    readonly auto_archive_duration: number;
+    readonly archive_timestamp: string;
   };
-  const message = (
-    id = snowflake(),
-    destination = channelId,
-    content = "hello",
-  ): DiscordMessage => {
-    return {
-      id,
-      channel_id: destination,
-      author,
-      content,
-      timestamp: "2026-09-24T00:00:00.000Z",
-      attachments: [],
-    };
+}
+
+interface Attachment {
+  readonly id: string;
+  readonly filename: string;
+  readonly size: number;
+  readonly url: string;
+  readonly proxy_url?: string;
+  readonly content_type?: string;
+}
+
+interface StoredMessage {
+  readonly id: string;
+  readonly channel_id: string;
+  readonly author: { id: string; username: string; bot?: boolean };
+  readonly content: string;
+  readonly timestamp: string;
+  readonly attachments: Attachment[];
+  readonly flags?: number;
+  readonly message_reference?: { message_id: string; channel_id: string };
+  readonly thread?: Channel;
+}
+
+interface Member {
+  readonly user: { id: string; username: string; bot?: boolean };
+  readonly roles: string[];
+  readonly communication_disabled_until?: string;
+}
+
+const postBodySchema = object({
+  content: string(),
+  allowed_mentions: object({
+    parse: array(string()),
+    replied_user: boolean(),
+  }),
+});
+
+const openDmBodySchema = object({ recipient_id: string() }).strict();
+
+/** Discord's provider-side state for one guild, as its REST API reports it. */
+interface DiscordWorld {
+  readonly guildId: string;
+  readonly discordUserId: string;
+  readonly botUserId: string;
+  readonly roles: { id: string; name: string; permissions: string }[];
+  readonly members: Map<string, Member>;
+  readonly channels: Map<string, Channel>;
+  readonly messages: Map<string, StoredMessage[]>;
+  readonly threadMembers: Set<string>;
+  readonly posts: { channelId: string; id: string; body: unknown }[];
+  readonly dmOpens: unknown[];
+  readonly openedDms: string[];
+  applicationFlags: number;
+  dmOpenForbidden: boolean;
+  rateLimitAfterPosts: number | undefined;
+}
+
+function overwrite(
+  id: string,
+  type: 0 | 1,
+  grants: { allow?: bigint; deny?: bigint },
+): Overwrite {
+  return {
+    id,
+    type,
+    allow: String(grants.allow ?? 0n),
+    deny: String(grants.deny ?? 0n),
   };
-  messages.set(channelId, [message()]);
+}
+
+function unknown(code: number) {
+  return HttpResponse.json({ message: "Unknown", code }, { status: 404 });
+}
+
+function serveDiscord(world: DiscordWorld): void {
+  const ownerId = uniqueDiscordSnowflake();
   server.use(
-    http.get(`${API}/applications/@me`, () => {
+    http.get(`${DISCORD_API}/applications/@me`, () => {
       return HttpResponse.json({
-        id: botUserId,
-        flags: (options.messageContent ?? true) ? 1 << 19 : 0,
+        id: env("DISCORD_APPLICATION_ID"),
+        flags: world.applicationFlags,
       });
     }),
-    http.get(`${API}/users/@me`, () => {
-      return HttpResponse.json(botAuthor);
-    }),
-    http.get(`${API}/guilds/${guildId}`, () => {
+    http.get(`${DISCORD_API}/users/@me`, () => {
       return HttpResponse.json({
-        id: guildId,
-        name: "Test guild",
-        owner_id: snowflake(),
+        id: world.botUserId,
+        username: "Okou",
+        bot: true,
       });
     }),
-    http.get(`${API}/guilds/${guildId}/roles`, () => {
-      return HttpResponse.json(roles);
+    http.post(`${DISCORD_API}/users/@me/channels`, async ({ request }) => {
+      const body: unknown = await request.json();
+      world.dmOpens.push(body);
+      if (world.dmOpenForbidden) {
+        return HttpResponse.json(
+          { message: "Cannot send messages to this user", code: 50_007 },
+          { status: 403 },
+        );
+      }
+      const recipient = openDmBodySchema.parse(body).recipient_id;
+      const channel: Channel = {
+        id: uniqueDiscordSnowflake(),
+        type: 1,
+        recipients: [{ id: recipient, username: "recipient" }],
+      };
+      world.channels.set(channel.id, channel);
+      world.openedDms.push(channel.id);
+      return HttpResponse.json(channel);
     }),
-    http.get(`${API}/guilds/${guildId}/members/:id`, ({ params }) => {
-      const isUser = params.id === discordUserId;
-      if ((isUser && !state.userMember) || (!isUser && !state.botMember)) {
-        return HttpResponse.json({ code: 10_007 }, { status: 404 });
+    http.get(`${DISCORD_API}/guilds/:guildId`, ({ params }) => {
+      if (params.guildId !== world.guildId) {
+        return unknown(10_004);
       }
       return HttpResponse.json({
-        user: isUser ? author : botAuthor,
-        roles: isUser ? [userRoleId, extraRoleId] : [botRoleId],
-        communication_disabled_until: (
-          isUser ? state.userTimedOut : state.botTimedOut
-        )
-          ? "2099-01-01T00:00:00Z"
-          : null,
+        id: world.guildId,
+        name: "Native guild",
+        owner_id: ownerId,
       });
     }),
-    http.get(`${API}/guilds/${guildId}/channels`, () => {
-      return HttpResponse.json([...channels.values()]);
+    http.get(`${DISCORD_API}/guilds/:guildId/roles`, ({ params }) => {
+      if (params.guildId !== world.guildId) {
+        return unknown(10_004);
+      }
+      return HttpResponse.json(world.roles);
     }),
-    http.get(`${API}/channels/:channelId`, ({ params }) => {
-      const channel = channels.get(String(params.channelId));
-      return channel
-        ? HttpResponse.json(channel)
-        : HttpResponse.json({ code: 10_003 }, { status: 404 });
+    http.get(`${DISCORD_API}/guilds/:guildId/members/:userId`, ({ params }) => {
+      const member = world.members.get(String(params.userId));
+      if (params.guildId !== world.guildId || !member) {
+        return unknown(10_007);
+      }
+      return HttpResponse.json(member);
+    }),
+    http.get(`${DISCORD_API}/guilds/:guildId/channels`, ({ params }) => {
+      if (params.guildId !== world.guildId) {
+        return unknown(10_004);
+      }
+      return HttpResponse.json(
+        [...world.channels.values()].filter((channel) => {
+          return (
+            channel.guild_id === world.guildId &&
+            ![10, 11, 12].includes(channel.type)
+          );
+        }),
+      );
+    }),
+    http.get(`${DISCORD_API}/channels/:channelId`, ({ params }) => {
+      const channel = world.channels.get(String(params.channelId));
+      return channel ? HttpResponse.json(channel) : unknown(10_003);
     }),
     http.get(
-      `${API}/channels/:channelId/thread-members/:userId`,
+      `${DISCORD_API}/channels/:channelId/thread-members/:userId`,
       ({ params }) => {
-        return threadMembers.has(String(params.userId))
-          ? HttpResponse.json({
-              id: params.channelId,
-              user_id: params.userId,
-              join_timestamp: "2026-09-24T00:00:00Z",
-              flags: 0,
-            })
-          : HttpResponse.json({ code: 10_007 }, { status: 404 });
+        const threadId = String(params.channelId);
+        const userId = String(params.userId);
+        if (!world.threadMembers.has(`${threadId}:${userId}`)) {
+          return unknown(10_007);
+        }
+        return HttpResponse.json({
+          id: threadId,
+          user_id: userId,
+          join_timestamp: TIMESTAMP,
+          flags: 0,
+        });
       },
     ),
-    http.get(`${API}/channels/:channelId/messages/:messageId`, ({ params }) => {
-      const found = messages.get(String(params.channelId))?.find((entry) => {
-        return entry.id === params.messageId;
-      });
-      return found
-        ? HttpResponse.json(found)
-        : HttpResponse.json({ code: 10_008 }, { status: 404 });
-    }),
-    http.get(`${API}/channels/:channelId/messages`, ({ request, params }) => {
-      const query = new URL(request.url).searchParams;
-      const before = query.get("before");
-      const entries = (messages.get(String(params.channelId)) ?? [])
-        .filter((entry) => {
-          return before === null || BigInt(entry.id) < BigInt(before);
-        })
-        .sort((a, b) => {
-          return BigInt(a.id) > BigInt(b.id) ? -1 : 1;
+    http.get(
+      `${DISCORD_API}/channels/:channelId/messages/:messageId`,
+      ({ params }) => {
+        const message = (
+          world.messages.get(String(params.channelId)) ?? []
+        ).find((entry) => {
+          return entry.id === params.messageId;
         });
-      return HttpResponse.json(entries.slice(0, Number(query.get("limit"))));
-    }),
+        return message ? HttpResponse.json(message) : unknown(10_008);
+      },
+    ),
+    http.get(
+      `${DISCORD_API}/channels/:channelId/messages`,
+      ({ params, request }) => {
+        const query = new URL(request.url).searchParams;
+        const before = query.get("before");
+        const limit = Number(query.get("limit") ?? "50");
+        const page = (world.messages.get(String(params.channelId)) ?? [])
+          .filter((message) => {
+            return before === null || BigInt(message.id) < BigInt(before);
+          })
+          .sort((a, b) => {
+            return BigInt(a.id) > BigInt(b.id) ? -1 : 1;
+          })
+          .slice(0, limit);
+        return HttpResponse.json(page);
+      },
+    ),
     http.post(
-      `${API}/channels/:channelId/messages`,
-      async ({ request, params }) => {
-        const body = object({
-          content: string(),
-          allowed_mentions: object({
-            parse: array(string()),
-            replied_user: boolean(),
-          }),
-        }).parse(await request.json());
-        if (body.content.trim().length === 0) {
+      `${DISCORD_API}/channels/:channelId/messages`,
+      async ({ params, request }) => {
+        const channelId = String(params.channelId);
+        const body: unknown = await request.json();
+        if (
+          world.rateLimitAfterPosts !== undefined &&
+          world.posts.length >= world.rateLimitAfterPosts
+        ) {
           return HttpResponse.json(
-            { code: 50_006, message: "Cannot send an empty message" },
-            { status: 400 },
+            {
+              message: "You are being rate limited.",
+              retry_after: 60,
+              global: false,
+            },
+            { status: 429 },
           );
         }
-        sentBodies.push(body);
-        const entry = {
-          ...message(snowflake(), String(params.channelId), body.content),
-          author: botAuthor,
+        const message: StoredMessage = {
+          id: uniqueDiscordSnowflake(),
+          channel_id: channelId,
+          author: { id: world.botUserId, username: "Okou", bot: true },
+          content: postBodySchema.parse(body).content,
+          timestamp: TIMESTAMP,
+          attachments: [],
         };
-        const entries = messages.get(entry.channel_id) ?? [];
-        entries.push(entry);
-        messages.set(entry.channel_id, entries);
-        return HttpResponse.json(entry);
+        world.posts.push({ channelId, id: message.id, body });
+        world.messages.set(channelId, [
+          ...(world.messages.get(channelId) ?? []),
+          message,
+        ]);
+        return HttpResponse.json(message);
       },
     ),
   );
+}
+
+function message(
+  channelId: string,
+  content: string,
+  extra: Partial<StoredMessage> = {},
+): StoredMessage {
   return {
+    id: uniqueDiscordSnowflake(),
+    channel_id: channelId,
+    author: { id: uniqueDiscordSnowflake(), username: "someone" },
+    content,
+    timestamp: TIMESTAMP,
+    attachments: [],
+    ...extra,
+  };
+}
+
+interface Native {
+  readonly fixture: DiscordFixture;
+  readonly world: DiscordWorld;
+  readonly cli: { readonly authorization: string };
+  /** A readable text channel holding one message. */
+  readonly channelId: string;
+  addChannel(channel: Omit<Channel, "guild_id">): Channel;
+  addThread(
+    parentId: string,
+    options: { type?: number; archived?: boolean; locked?: boolean },
+  ): Channel;
+}
+
+async function issueCliToken(userId: string, orgId: string) {
+  const device = await accept(
+    app(cliAuthDeviceContract).create({ body: {} }),
+    [200],
+  );
+  createRouteMocks(context).clerk.session(userId, orgId, "org:admin");
+  await accept(
+    app(cliAuthApproveContract).approve({
+      headers: SESSION,
+      body: { device_code: device.body.device_code },
+    }),
+    [200],
+  );
+  const issued = await accept(
+    app(cliAuthTokenContract).exchange({
+      body: { device_code: device.body.device_code },
+    }),
+    [200],
+  );
+  if (!("access_token" in issued.body)) {
+    throw new Error("Expected an issued CLI token");
+  }
+  return { authorization: `Bearer ${issued.body.access_token}` };
+}
+
+/** An admin installed the bot through Discord OAuth and signed in the CLI. */
+async function nativeAdmin(
+  options: {
+    applicationFlags?: number;
+    /** Workspaces that exist side by side share one identity provider. */
+    identities?: ReturnType<typeof createStore>;
+  } = {},
+): Promise<Native> {
+  const orgId = `org_${randomUUID()}`;
+  const userId = `user_${randomUUID()}`;
+  await (options.identities ?? createStore()).set(
+    seedOrgMembership$,
+    { orgId, userId, role: "admin", name: "Discord native workspace" },
+    context.signal,
+  );
+  configureDiscordApp();
+  const fixture = await createPublicDiscordBinding(context, {
     orgId,
     userId,
-    guildId,
-    discordUserId,
-    botUserId,
-    channelId,
-    threadId,
-    userRoleId,
-    extraRoleId,
-    botRoleId,
-    headers,
-    channels,
-    roles,
-    threadMembers,
-    messages,
-    sentBodies,
-    state,
-    message,
-    read: setupApp({ context, routes: integrationsDiscordReadRoutes })(
-      integrationsDiscordReadContract,
-    ),
-    write: setupApp({ context, routes: integrationsDiscordMessageRoutes })(
-      integrationsDiscordMessageContract,
-    ),
-  };
-}
-
-type Fixture = Awaited<ReturnType<typeof fixture>>;
-
-/** Binds the same Okou user and Discord account through a second org's guild. */
-async function bindAnotherOrganization(f: Fixture, runToken = false) {
-  const orgId = `org_${randomUUID()}`;
-  const guildId = snowflake();
-  // One store holds both memberships so the user remains in each org.
-  const store = createStore();
-  for (const membershipOrgId of [f.orgId, orgId]) {
-    await store.set(
-      seedOrgMembership$,
-      { orgId: membershipOrgId, userId: f.userId, role: "admin" },
-      context.signal,
-    );
-  }
-  mockDiscordMemberships(context, [
-    { orgId: f.orgId, userId: f.userId },
-    { orgId, userId: f.userId },
-  ]);
-  await createPublicDiscordBinding(context, {
+    orgRole: "org:admin",
     flow: "install",
-    orgId,
-    userId: f.userId,
-    guildId,
-    guildName: "Other guild",
-    discordUserId: f.discordUserId,
-    botUserId: f.botUserId,
   });
-  server.use(
-    http.get(`${API}/guilds/${guildId}`, () => {
-      return HttpResponse.json({
+  const { guildId } = fixture;
+  const world: DiscordWorld = {
+    guildId,
+    discordUserId: fixture.discordUserId,
+    botUserId: fixture.botUserId,
+    roles: [
+      {
         id: guildId,
-        name: "Other guild",
-        owner_id: snowflake(),
-      });
-    }),
-    http.get(`${API}/guilds/${guildId}/roles`, () => {
-      return HttpResponse.json([
-        { id: guildId, name: "@everyone", permissions: BASE_PERMISSIONS },
-      ]);
-    }),
-    http.get(`${API}/guilds/${guildId}/members/:id`, ({ params }) => {
-      const isUser = params.id === f.discordUserId;
-      return HttpResponse.json({
-        user: isUser
-          ? { id: f.discordUserId, username: "sender" }
-          : { id: f.botUserId, username: "Okou", bot: true },
-        roles: [],
-      });
-    }),
-  );
-  const auth = createAuthOrgBddApi(context);
-  const actor = auth.user({ orgId, userId: f.userId });
-  const headers = runToken
-    ? (await launchPublicDiscordTestRun(context, actor)).headers
-    : { authorization: `Bearer ${(await auth.createCliToken(actor)).token}` };
-  mockDiscordMemberships(context, [
-    { orgId: f.orgId, userId: f.userId },
-    { orgId, userId: f.userId },
-  ]);
-  return { orgId, headers };
-}
-function addThread(
-  f: Fixture,
-  options: { private?: boolean; archived?: boolean; locked?: boolean } = {},
-) {
-  const channel: DiscordChannel = {
-    id: f.threadId,
-    guild_id: f.guildId,
-    parent_id: f.channelId,
-    type: options.private ? 12 : 11,
-    name: "thread",
-    thread_metadata: {
-      archived: options.archived ?? false,
-      locked: options.locked ?? false,
-      auto_archive_duration: 60,
-      archive_timestamp: "2026-09-24T00:00:00Z",
-    },
+        name: "@everyone",
+        permissions: String(MEMBER_PERMISSIONS),
+      },
+    ],
+    members: new Map([
+      [
+        fixture.discordUserId,
+        { user: { id: fixture.discordUserId, username: "member" }, roles: [] },
+      ],
+      [
+        fixture.botUserId,
+        {
+          user: { id: fixture.botUserId, username: "Okou", bot: true },
+          roles: [],
+        },
+      ],
+    ]),
+    channels: new Map(),
+    messages: new Map(),
+    threadMembers: new Set(),
+    posts: [],
+    dmOpens: [],
+    openedDms: [],
+    applicationFlags: options.applicationFlags ?? MESSAGE_CONTENT_INTENT,
+    dmOpenForbidden: false,
+    rateLimitAfterPosts: undefined,
   };
-  f.channels.set(f.threadId, channel);
-  f.messages.set(f.threadId, [
-    f.message(snowflake(), f.threadId, "thread message"),
-  ]);
+  serveDiscord(world);
+  const addChannel = (channel: Omit<Channel, "guild_id">): Channel => {
+    const stored: Channel = {
+      permission_overwrites: [],
+      ...channel,
+      guild_id: guildId,
+    };
+    world.channels.set(stored.id, stored);
+    return stored;
+  };
+  const addThread = (
+    parentId: string,
+    threadOptions: { type?: number; archived?: boolean; locked?: boolean },
+  ): Channel => {
+    const thread: Channel = {
+      id: uniqueDiscordSnowflake(),
+      type: threadOptions.type ?? 11,
+      guild_id: guildId,
+      name: "Thread",
+      parent_id: parentId,
+      thread_metadata: {
+        archived: threadOptions.archived ?? false,
+        locked: threadOptions.locked ?? false,
+        auto_archive_duration: 1440,
+        archive_timestamp: TIMESTAMP,
+      },
+    };
+    world.channels.set(thread.id, thread);
+    world.messages.set(thread.id, [message(thread.id, "thread message")]);
+    return thread;
+  };
+  const channel = addChannel({
+    id: uniqueDiscordSnowflake(),
+    type: 0,
+    name: "general",
+    parent_id: null,
+  });
+  world.messages.set(channel.id, [message(channel.id, "hello")]);
+  const cli = await issueCliToken(userId, orgId);
+  return {
+    fixture,
+    world,
+    cli,
+    channelId: channel.id,
+    addChannel,
+    addThread,
+  };
+}
+
+function channelOf(world: DiscordWorld, channelId: string): Channel {
+  const channel = world.channels.get(channelId);
+  if (!channel) {
+    throw new Error(`Discord channel ${channelId} is not configured`);
+  }
   return channel;
 }
 
-function history(f: Fixture, channelId = f.channelId) {
-  return f.read.history({
-    headers: f.headers,
-    query: { channelId, limit: 50 },
+async function readHistory(
+  native: Native,
+  query: {
+    channelId: string;
+    guildId?: string;
+    limit?: number;
+    before?: string;
+  },
+  headers: { authorization: string } = native.cli,
+) {
+  return await readApi().history({ headers, query });
+}
+
+async function sendText(native: Native, channelId: string, text: string) {
+  return await messageApi().sendMessage({
+    headers: native.cli,
+    body: { channelId, text },
   });
 }
 
-function send(f: Fixture, channelId = f.channelId, text = "hello") {
-  return f.write.sendMessage({ headers: f.headers, body: { channelId, text } });
-}
-
 describe("Discord native authorization and reads", () => {
-  it.each([15, 16] as const)(
-    "reads a post in a type %s forum or media channel by its thread ID",
-    async (type) => {
-      const f = await fixture();
-      f.channels.get(f.channelId)!.type = type;
-      addThread(f);
-      expect(
-        (await accept(history(f, f.threadId), [200])).body.messages[0]?.content,
-      ).toBe("thread message");
-      expect((await accept(history(f), [404])).body.error.code).toBe(
-        "NOT_FOUND",
-      );
-    },
-  );
+  it("integrations-discord-native-008 fails guild history closed on application discovery failure 500 without blocking sends", async () => {
+    const native = await nativeAdmin();
+    server.use(
+      http.get(`${DISCORD_API}/applications/@me`, () => {
+        return HttpResponse.json(
+          { message: "Internal Server Error", code: 0 },
+          { status: 500 },
+        );
+      }),
+    );
 
-  it("returns attachment metadata without the signed CDN URL", async () => {
-    const f = await fixture();
-    const signedUrl =
-      "https://cdn.discordapp.com/attachments/1/2/report.pdf?ex=66f0&is=66ef&hm=0123abcd";
-    const attachmentId = snowflake();
-    f.messages.set(f.channelId, [
-      {
-        ...f.message(),
+    const read = await accept(
+      readHistory(native, { channelId: native.channelId }),
+      [502],
+    );
+    const sent = await accept(
+      sendText(native, native.channelId, "still deliverable"),
+      [200],
+    );
+
+    expect(read.body.error.code).toBe("DISCORD_ERROR");
+    expect(sent.status).toBe(200);
+  });
+
+  it("integrations-discord-native-005 marks ordinary guild content as limited", async () => {
+    const native = await nativeAdmin({ applicationFlags: 0 });
+
+    const read = await accept(
+      readHistory(native, { channelId: native.channelId }),
+      [200],
+    );
+
+    expect(read.body.contextMode).toBe("mentions_only");
+  });
+
+  it("integrations-discord-native-001 reads a post in a type 15 forum or media channel by its thread ID", async () => {
+    const native = await nativeAdmin();
+    const forum = native.addChannel({
+      id: uniqueDiscordSnowflake(),
+      type: 15,
+      name: "forum",
+    });
+    const thread = native.addThread(forum.id, {});
+
+    const post = await accept(
+      readHistory(native, { channelId: thread.id }),
+      [200],
+    );
+    const parent = await accept(
+      readHistory(native, { channelId: forum.id }),
+      [404],
+    );
+
+    expect(post.body.messages[0]?.content).toBe("thread message");
+    expect(parent.body.error.code).toBe("NOT_FOUND");
+  });
+
+  it("integrations-discord-native-002 reads a post in a type 16 forum or media channel by its thread ID", async () => {
+    const native = await nativeAdmin();
+    const media = native.addChannel({
+      id: uniqueDiscordSnowflake(),
+      type: 16,
+      name: "media",
+    });
+    const thread = native.addThread(media.id, {});
+
+    const post = await accept(
+      readHistory(native, { channelId: thread.id }),
+      [200],
+    );
+    const parent = await accept(
+      readHistory(native, { channelId: media.id }),
+      [404],
+    );
+
+    expect(post.body.messages[0]?.content).toBe("thread message");
+    expect(parent.body.error.code).toBe("NOT_FOUND");
+  });
+
+  it("integrations-discord-native-003 returns attachment metadata without the signed CDN URL", async () => {
+    const native = await nativeAdmin();
+    const attachmentId = uniqueDiscordSnowflake();
+    const signed = `?ex=6a000000&is=69ff0000&hm=0123abcd&`;
+    native.world.messages.set(native.channelId, [
+      message(native.channelId, "see attached", {
         attachments: [
           {
             id: attachmentId,
             filename: "report.pdf",
             size: 1234,
-            url: signedUrl,
-            proxy_url: signedUrl.replace("cdn", "media"),
             content_type: "application/pdf",
+            url: `https://cdn.discordapp.com/attachments/${native.channelId}/${attachmentId}/report.pdf${signed}`,
+            proxy_url: `https://media.discordapp.net/attachments/${native.channelId}/${attachmentId}/report.pdf${signed}`,
           },
         ],
-      },
+      }),
     ]);
-    const read = await accept(history(f), [200]);
+
+    const read = await accept(
+      readHistory(native, { channelId: native.channelId }),
+      [200],
+    );
+
     expect(read.body.messages[0]?.attachments).toStrictEqual([
       {
         id: attachmentId,
@@ -417,39 +621,36 @@ describe("Discord native authorization and reads", () => {
     expect(JSON.stringify(read.body)).not.toContain("hm=0123abcd");
   });
 
-  it("returns exact snowflake pagination and source links", async () => {
-    const f = await fixture();
-    f.messages.set(f.channelId, [
-      f.message("18446744073709551614"),
-      f.message("18446744073709551613"),
-      f.message("18446744073709551612"),
+  it("integrations-discord-native-004 returns exact snowflake pagination and source links", async () => {
+    const native = await nativeAdmin();
+    const { channelId } = native;
+    native.world.messages.set(channelId, [
+      message(channelId, "first", { id: "18446744073709551614" }),
+      message(channelId, "second", { id: "18446744073709551613" }),
+      message(channelId, "third", { id: "18446744073709551612" }),
     ]);
+
     const first = await accept(
-      f.read.history({
-        headers: f.headers,
-        query: { channelId: f.channelId, limit: 2 },
-      }),
+      readHistory(native, { channelId, limit: 2 }),
       [200],
     );
-    expect(first.body.nextBefore).toBe("18446744073709551613");
+    const nextBefore = first.body.nextBefore;
+    if (nextBefore === null) {
+      throw new Error("Expected a next page cursor");
+    }
+    const second = await accept(
+      readHistory(native, { channelId, limit: 2, before: nextBefore }),
+      [200],
+    );
+
     expect(
       first.body.messages.map((entry) => {
         return entry.id;
       }),
     ).toStrictEqual(["18446744073709551614", "18446744073709551613"]);
+    expect(nextBefore).toBe("18446744073709551613");
     expect(first.body.messages[0]?.url).toBe(
-      `https://discord.com/channels/${f.guildId}/${f.channelId}/18446744073709551614`,
-    );
-    const second = await accept(
-      f.read.history({
-        headers: f.headers,
-        query: {
-          channelId: f.channelId,
-          limit: 2,
-          before: first.body.nextBefore!,
-        },
-      }),
-      [200],
+      `https://discord.com/channels/${native.world.guildId}/${channelId}/18446744073709551614`,
     );
     expect(
       second.body.messages.map((entry) => {
@@ -459,791 +660,550 @@ describe("Discord native authorization and reads", () => {
     expect(second.body.nextBefore).toBeNull();
   });
 
-  it("marks ordinary guild content as limited", async () => {
-    const f = await fixture({ messageContent: false });
-    expect((await accept(history(f), [200])).body.contextMode).toBe(
-      "mentions_only",
-    );
-  });
-
-  it("rechecks provider grants instead of retaining a prior content capability", async () => {
-    const f = await fixture();
-    expect((await accept(history(f), [200])).body.contextMode).toBe("full");
-    server.use(
-      http.get(`${API}/applications/@me`, () => {
-        return HttpResponse.json({ id: f.botUserId, flags: 0 });
-      }),
-    );
-    expect((await accept(history(f), [200])).body.contextMode).toBe(
-      "mentions_only",
-    );
-  });
-
-  it.each([401, 500, "invalid", "mismatch"])(
-    "fails guild history closed on application discovery failure %s without blocking sends",
-    async (failure) => {
-      const f = await fixture();
-      server.use(
-        http.get(`${API}/applications/@me`, () => {
-          if (typeof failure === "number") {
-            return new HttpResponse(null, { status: failure });
-          }
-          return HttpResponse.json(
-            failure === "mismatch"
-              ? { id: snowflake(), flags: 1 << 19 }
-              : { id: f.botUserId },
-          );
-        }),
-      );
-      expect((await accept(history(f), [502])).body.error.code).toBe(
-        "DISCORD_ERROR",
-      );
-      await accept(
-        send(f, f.channelId, "writes do not require message content"),
-        [200],
-      );
-    },
-  );
-
-  it("preserves application-discovery rate limits for history callers", async () => {
-    const f = await fixture();
-    server.use(
-      http.get(`${API}/applications/@me`, () => {
-        return HttpResponse.json(
-          { retry_after: 2, global: false },
-          { status: 429 },
-        );
-      }),
-    );
-    expect((await accept(history(f), [429])).body.error).toMatchObject({
-      code: "DISCORD_RATE_LIMITED",
-      retryAfterSeconds: 2,
+  it("integrations-discord-native-006 rechecks provider grants instead of retaining a prior content capability", async () => {
+    const native = await nativeAdmin({
+      applicationFlags: MESSAGE_CONTENT_INTENT,
     });
+
+    const full = await accept(
+      readHistory(native, { channelId: native.channelId }),
+      [200],
+    );
+    native.world.applicationFlags = 0;
+    const limited = await accept(
+      readHistory(native, { channelId: native.channelId }),
+      [200],
+    );
+
+    expect(full.body.contextMode).toBe("full");
+    expect(limited.body.contextMode).toBe("mentions_only");
   });
 
-  it("denies bot DM content to every organization's run token while keeping DM sends", async () => {
-    const f = await fixture({ runToken: true });
-    const other = await bindAnotherOrganization(f, true);
-    const dmId = snowflake();
-    f.channels.set(dmId, {
-      id: dmId,
-      type: 1,
-      recipients: [{ id: f.discordUserId, username: "sender" }],
-    });
-    // Discord keeps one bot DM per user, so the other organization's run
-    // replies into the same channel this organization's token can address.
-    const otherReply = await accept(
-      f.write.sendMessage({
-        headers: other.headers,
-        body: { channelId: dmId, text: "Other organization: 42 open deals" },
+  it("integrations-discord-native-013 opens an outbound DM for me without enabling private reads", async () => {
+    const native = await nativeAdmin();
+
+    const sent = await accept(
+      messageApi().sendMessage({
+        headers: native.cli,
+        body: { userId: "me", text: "note to self" },
       }),
       [200],
     );
-    const replyId = otherReply.body.messages[0]?.id;
-    if (!replyId) {
-      throw new Error("Expected the other organization's DM reply");
+    const dmChannelId = sent.body.messages[0]?.channelId;
+    if (!dmChannelId) {
+      throw new Error("Expected a DM receipt");
     }
-    for (const headers of [f.headers, other.headers]) {
-      const reads = [
-        await accept(
-          f.read.history({ headers, query: { channelId: dmId, limit: 50 } }),
-          [403],
-        ),
-        await accept(
-          f.read.replies({
-            headers,
-            query: { channelId: dmId, messageId: replyId, limit: 50 },
-          }),
-          [403],
-        ),
-      ];
-      for (const denied of reads) {
-        expect(denied.body.error.code).toBe("DISCORD_DM_READ_DENIED");
-        expect(JSON.stringify(denied.body)).not.toContain("42 open deals");
-      }
-    }
-    await accept(send(f, dmId, "this organization can still reply"), [200]);
-    expect(
-      f.messages.get(dmId)?.map((entry) => {
-        return entry.content;
-      }),
-    ).toStrictEqual([
-      expect.stringContaining("Other organization: 42 open deals"),
-      expect.stringContaining("this organization can still reply"),
+    await accept(readHistory(native, { channelId: dmChannelId }), [403]);
+
+    expect(native.world.dmOpens).toStrictEqual([
+      { recipient_id: native.fixture.discordUserId },
     ]);
+    expect(native.world.openedDms).toStrictEqual([dmChannelId]);
   });
 
-  it.each(["me", "other"] as const)(
-    "opens an outbound DM for %s without enabling private reads",
-    async (recipient) => {
-      const f = await fixture();
-      const recipientId = recipient === "me" ? f.discordUserId : snowflake();
-      const dmId = snowflake();
-      const channel = {
-        id: dmId,
-        type: 1,
-        recipients: [{ id: recipientId, username: "recipient" }],
-      };
-      f.channels.set(dmId, channel);
-      server.use(
-        http.post(`${API}/users/@me/channels`, async ({ request }) => {
-          await expect(request.json()).resolves.toStrictEqual({
-            recipient_id: recipientId,
-          });
-          return HttpResponse.json(channel);
-        }),
-      );
-      const delivered = await accept(
-        f.write.sendMessage({
-          headers: f.headers,
-          body: {
-            userId: recipient === "me" ? "me" : recipientId,
-            text: "Hello recipient",
-          },
-        }),
-        [200],
-      );
-      expect(delivered.body.messages[0]?.channelId).toBe(dmId);
-      await accept(
-        f.read.history({
-          headers: f.headers,
-          query: { channelId: dmId, limit: 50 },
-        }),
-        [recipient === "me" ? 403 : 404],
-      );
-    },
-  );
+  it("integrations-discord-native-014 opens an outbound DM for other without enabling private reads", async () => {
+    const native = await nativeAdmin();
+    const otherUserId = uniqueDiscordSnowflake();
 
-  it.each(["forbidden", "wrong-recipient"])(
-    "does not send when opening a DM returns %s",
-    async (failure) => {
-      const f = await fixture();
-      server.use(
-        http.post(`${API}/users/@me/channels`, () => {
-          return failure === "forbidden"
-            ? HttpResponse.json({ code: 50_007 }, { status: 403 })
-            : HttpResponse.json({
-                id: f.channelId,
-                type: 1,
-                recipients: [{ id: snowflake(), username: "wrong" }],
-              });
-        }),
-      );
-      await accept(
-        f.write.sendMessage({
-          headers: f.headers,
-          body: { userId: snowflake(), text: "must not send" },
-        }),
-        [404],
-      );
-      expect(f.sentBodies).toHaveLength(0);
-    },
-  );
+    const sent = await accept(
+      messageApi().sendMessage({
+        headers: native.cli,
+        body: { userId: otherUserId, text: "hello there" },
+      }),
+      [200],
+    );
+    const dmChannelId = sent.body.messages[0]?.channelId;
+    if (!dmChannelId) {
+      throw new Error("Expected a DM receipt");
+    }
+    await accept(readHistory(native, { channelId: dmChannelId }), [404]);
 
-  it.each([
-    "unknown-guild",
-    "other-user-dm",
-    "group-dm",
-    "missing-user",
-    "missing-bot",
-  ] as const)(
-    "denies %s without exposing message contents",
-    async (scenario) => {
-      const f = await fixture();
-      if (scenario === "unknown-guild") {
-        const unknownGuild = snowflake();
-        server.use(
-          http.get(`${API}/guilds/${unknownGuild}`, () => {
-            return HttpResponse.json({}, { status: 404 });
-          }),
-          http.get(`${API}/guilds/${unknownGuild}/roles`, () => {
-            return HttpResponse.json({}, { status: 404 });
-          }),
-          http.get(`${API}/guilds/${unknownGuild}/members/:userId`, () => {
-            return HttpResponse.json({}, { status: 404 });
-          }),
-        );
-        f.channels.set(f.channelId, {
-          id: f.channelId,
-          type: 0,
-          guild_id: unknownGuild,
-          name: "private",
-          permission_overwrites: [],
-        });
-      }
-      if (scenario === "other-user-dm") {
-        f.channels.set(f.channelId, {
-          id: f.channelId,
-          type: 1,
-          recipients: [{ id: snowflake(), username: "someone else" }],
-        });
-      }
-      if (scenario === "group-dm") {
-        f.channels.set(f.channelId, {
-          id: f.channelId,
-          type: 3,
-          recipients: [{ id: f.discordUserId, username: "sender" }],
-        });
-      }
-      if (scenario === "missing-user") {
-        f.state.userMember = false;
-      }
-      if (scenario === "missing-bot") {
-        f.state.botMember = false;
-      }
-      const response = await accept(history(f), [404]);
-      expect(response.body.error.code).toBe("NOT_FOUND");
-      expect(response.body).not.toHaveProperty("messages");
-      if (scenario === "other-user-dm") {
-        await accept(send(f), [200]);
-      } else {
-        expect((await accept(send(f), [404])).body.error.code).toBe(
-          "NOT_FOUND",
-        );
-      }
-    },
-  );
+    expect(native.world.dmOpens).toStrictEqual([{ recipient_id: otherUserId }]);
+    expect(native.world.openedDms).toStrictEqual([dmChannelId]);
+  });
 
-  it("denies an explicit different guild selector and another organization token", async () => {
-    const f = await fixture();
+  it("integrations-discord-native-015 does not send when opening a DM returns forbidden", async () => {
+    const native = await nativeAdmin();
+    native.world.dmOpenForbidden = true;
+
     await accept(
-      f.read.history({
-        headers: f.headers,
-        query: { guildId: snowflake(), channelId: f.channelId, limit: 50 },
+      messageApi().sendMessage({
+        headers: native.cli,
+        body: { userId: uniqueDiscordSnowflake(), text: "must not send" },
       }),
       [404],
     );
-    const other = await fixture();
-    const denied = await accept(
-      f.read.history({
-        headers: other.headers,
-        query: { channelId: f.channelId, guildId: f.guildId, limit: 50 },
-      }),
-      [404],
-    );
-    expect(denied.body.error.code).toBe("NOT_FOUND");
+
+    expect(native.world.posts).toStrictEqual([]);
   });
 
-  it("applies everyone, aggregated role, and member overwrite precedence", async () => {
-    const f = await fixture();
-    const channel = f.channels.get(f.channelId)!;
-    channel.permission_overwrites = [
-      { id: f.guildId, type: 0, deny: String(VIEW), allow: "0" },
-      { id: f.userRoleId, type: 0, deny: String(VIEW), allow: "0" },
-      { id: f.extraRoleId, type: 0, deny: "0", allow: String(VIEW) },
-      { id: f.botRoleId, type: 0, deny: "0", allow: String(VIEW) },
-    ];
-    expect((await accept(history(f), [200])).body.messages).toHaveLength(1);
-    channel.permission_overwrites.push({
-      id: f.discordUserId,
-      type: 1,
-      deny: String(VIEW),
-      allow: "0",
-    });
-    await accept(history(f), [404]);
-    channel.permission_overwrites[4] = {
-      id: f.discordUserId,
-      type: 1,
-      deny: "0",
-      allow: String(VIEW),
-    };
-    expect((await accept(history(f), [200])).body.messages).toHaveLength(1);
-  });
-
-  it("lists only mutually visible readable channels and requires history permission to read", async () => {
-    const f = await fixture();
-    const hidden = snowflake();
-    f.channels.set(hidden, {
-      id: hidden,
-      guild_id: f.guildId,
-      type: 0,
-      name: "hidden",
-      permission_overwrites: [
-        { id: f.botUserId, type: 1, deny: String(VIEW), allow: "0" },
+  it("integrations-discord-native-019 denies group-dm without exposing message contents", async () => {
+    const native = await nativeAdmin();
+    const groupId = uniqueDiscordSnowflake();
+    native.world.channels.set(groupId, {
+      id: groupId,
+      type: 3,
+      recipients: [
+        { id: native.fixture.discordUserId, username: "member" },
+        { id: uniqueDiscordSnowflake(), username: "friend" },
       ],
     });
-    const byType = new Map<number, string>();
-    for (const [type, name] of [
-      [5, "announcements"],
-      [15, "forum"],
-      [16, "media"],
-    ] as const) {
-      const id = snowflake();
-      byType.set(type, id);
-      f.channels.set(id, {
-        id,
-        guild_id: f.guildId,
-        type,
-        name,
-        permission_overwrites: [],
-      });
-    }
-    const listed = await accept(
-      f.read.listChannels({ headers: f.headers, query: {} }),
+    native.world.messages.set(groupId, [message(groupId, "group secret")]);
+
+    const read = await accept(
+      readHistory(native, { channelId: groupId }),
+      [404],
+    );
+    const sent = await accept(sendText(native, groupId, "hello group"), [404]);
+
+    expect(read.body.error.code).toBe("NOT_FOUND");
+    expect(read.body).not.toHaveProperty("messages");
+    expect(sent.body.error.code).toBe("NOT_FOUND");
+  });
+
+  it("integrations-discord-native-020 denies missing-user without exposing message contents", async () => {
+    const native = await nativeAdmin();
+    native.world.members.delete(native.fixture.discordUserId);
+
+    const read = await accept(
+      readHistory(native, { channelId: native.channelId }),
+      [404],
+    );
+    const sent = await accept(sendText(native, native.channelId, "hi"), [404]);
+
+    expect(read.body.error.code).toBe("NOT_FOUND");
+    expect(read.body).not.toHaveProperty("messages");
+    expect(sent.body.error.code).toBe("NOT_FOUND");
+  });
+
+  it("integrations-discord-native-021 denies missing-bot without exposing message contents", async () => {
+    const native = await nativeAdmin();
+    native.world.members.delete(native.fixture.botUserId);
+
+    const read = await accept(
+      readHistory(native, { channelId: native.channelId }),
+      [404],
+    );
+    const sent = await accept(sendText(native, native.channelId, "hi"), [404]);
+
+    expect(read.body.error.code).toBe("NOT_FOUND");
+    expect(read.body).not.toHaveProperty("messages");
+    expect(sent.body.error.code).toBe("NOT_FOUND");
+  });
+
+  it("integrations-discord-native-022 denies an explicit different guild selector and another organization token", async () => {
+    const identities = createStore();
+    const native = await nativeAdmin({ identities });
+    const other = await nativeAdmin({ identities });
+
+    await accept(
+      readHistory(native, {
+        channelId: native.channelId,
+        guildId: uniqueDiscordSnowflake(),
+      }),
+      [404],
+    );
+    const foreign = await accept(
+      readHistory(
+        native,
+        { channelId: native.channelId, guildId: native.world.guildId },
+        other.cli,
+      ),
+      [404],
+    );
+
+    expect(foreign.body.error.code).toBe("NOT_FOUND");
+  });
+
+  it("integrations-discord-native-023 applies everyone, aggregated role, and member overwrite precedence", async () => {
+    const native = await nativeAdmin();
+    const { world } = native;
+    const deniedRole = uniqueDiscordSnowflake();
+    const allowedRole = uniqueDiscordSnowflake();
+    const botRole = uniqueDiscordSnowflake();
+    world.roles.push(
+      { id: deniedRole, name: "denied", permissions: "0" },
+      { id: allowedRole, name: "allowed", permissions: "0" },
+      { id: botRole, name: "bot", permissions: "0" },
+    );
+    world.members.set(world.discordUserId, {
+      user: { id: world.discordUserId, username: "member" },
+      roles: [deniedRole, allowedRole],
+    });
+    world.members.set(world.botUserId, {
+      user: { id: world.botUserId, username: "Okou", bot: true },
+      roles: [botRole],
+    });
+    const channel = channelOf(world, native.channelId);
+    const roleOverwrites = [
+      overwrite(world.guildId, 0, { deny: Permission.view }),
+      overwrite(deniedRole, 0, { deny: Permission.view }),
+      overwrite(allowedRole, 0, { allow: Permission.view }),
+      overwrite(botRole, 0, { allow: Permission.view }),
+    ];
+    channel.permission_overwrites = roleOverwrites;
+
+    const first = await accept(
+      readHistory(native, { channelId: native.channelId }),
       [200],
     );
+    channel.permission_overwrites = [
+      ...roleOverwrites,
+      overwrite(world.discordUserId, 1, { deny: Permission.view }),
+    ];
+    await accept(readHistory(native, { channelId: native.channelId }), [404]);
+    channel.permission_overwrites = [
+      ...roleOverwrites,
+      overwrite(world.discordUserId, 1, { allow: Permission.view }),
+    ];
+    const third = await accept(
+      readHistory(native, { channelId: native.channelId }),
+      [200],
+    );
+
+    expect(first.body.messages).toHaveLength(1);
+    expect(third.body.messages).toHaveLength(1);
+  });
+
+  it("integrations-discord-native-024 lists only mutually visible readable channels and requires history permission to read", async () => {
+    const native = await nativeAdmin();
+    const { world } = native;
+    native.addChannel({
+      id: uniqueDiscordSnowflake(),
+      type: 0,
+      name: "bot-hidden",
+      permission_overwrites: [
+        overwrite(world.botUserId, 1, { deny: Permission.view }),
+      ],
+    });
+    const announcement = native.addChannel({
+      id: uniqueDiscordSnowflake(),
+      type: 5,
+      name: "announcements",
+    });
+    world.messages.set(announcement.id, [message(announcement.id, "news")]);
+    const forum = native.addChannel({
+      id: uniqueDiscordSnowflake(),
+      type: 15,
+      name: "forum",
+    });
+    const media = native.addChannel({
+      id: uniqueDiscordSnowflake(),
+      type: 16,
+      name: "media",
+    });
+
+    const listed = await accept(
+      readApi().listChannels({ headers: native.cli, query: {} }),
+      [200],
+    );
+    await accept(readHistory(native, { channelId: announcement.id }), [200]);
+    const forumRead = await accept(
+      readHistory(native, { channelId: forum.id }),
+      [404],
+    );
+    const mediaRead = await accept(
+      readHistory(native, { channelId: media.id }),
+      [404],
+    );
+    channelOf(world, native.channelId).permission_overwrites = [
+      overwrite(world.discordUserId, 1, { deny: Permission.history }),
+    ];
+    await accept(readHistory(native, { channelId: native.channelId }), [404]);
+
     expect(
       listed.body.channels.map((channel) => {
         return channel.id;
       }),
-    ).toStrictEqual([f.channelId, byType.get(5)]);
-    await accept(history(f, byType.get(5)), [200]);
-    for (const container of [byType.get(15)!, byType.get(16)!]) {
-      expect((await accept(history(f, container), [404])).body.error.code).toBe(
-        "NOT_FOUND",
-      );
-    }
-    f.channels.get(f.channelId)!.permission_overwrites = [
-      { id: f.discordUserId, type: 1, deny: String(READ), allow: "0" },
-    ];
-    await accept(history(f), [404]);
+    ).toStrictEqual([native.channelId, announcement.id]);
+    expect(forumRead.body.error.code).toBe("NOT_FOUND");
+    expect(mediaRead.body.error.code).toBe("NOT_FOUND");
   });
 
-  it.each(["user", "bot"] as const)(
-    "requires private thread membership for the %s",
-    async (party) => {
-      const f = await fixture();
-      addThread(f, { private: true });
-      f.threadMembers.delete(party === "user" ? f.discordUserId : f.botUserId);
-      expect(
-        (await accept(history(f, f.threadId), [404])).body.error.code,
-      ).toBe("NOT_FOUND");
-      expect((await accept(send(f, f.threadId), [404])).body.error.code).toBe(
-        "NOT_FOUND",
-      );
-    },
-  );
+  it("integrations-discord-native-025 requires private thread membership for the user", async () => {
+    const native = await nativeAdmin();
+    const thread = native.addThread(native.channelId, { type: 12 });
+    native.world.threadMembers.add(`${thread.id}:${native.world.botUserId}`);
 
-  it.each(["archived", "locked"] as const)(
-    "conceals %s thread state until both principals have access",
-    async (closedState) => {
-      const f = await fixture();
-      addThread(f, { [closedState]: true });
-      const missing = await accept(send(f, snowflake()), [404]);
-      const parent = f.channels.get(f.channelId)!;
-      for (const id of [f.discordUserId, f.botUserId]) {
-        parent.permission_overwrites = [
-          { id, type: 1, deny: String(VIEW), allow: "0" },
-        ];
-        expect((await accept(send(f, f.threadId), [404])).body).toStrictEqual(
-          missing.body,
-        );
-      }
-      parent.permission_overwrites = [];
-      addThread(f, { private: true, [closedState]: true });
-      for (const id of [f.discordUserId, f.botUserId]) {
-        f.threadMembers.delete(id);
-        expect((await accept(send(f, f.threadId), [404])).body).toStrictEqual(
-          missing.body,
-        );
-        f.threadMembers.add(id);
-      }
-    },
-  );
-
-  it("reads a private thread with both memberships and inherits parent overwrites", async () => {
-    const f = await fixture();
-    addThread(f, { private: true });
-    expect(
-      (await accept(history(f, f.threadId), [200])).body.messages[0]?.content,
-    ).toBe("thread message");
-    f.channels.get(f.channelId)!.permission_overwrites = [
-      { id: f.discordUserId, type: 1, deny: String(VIEW), allow: "0" },
-    ];
-    expect((await accept(history(f, f.threadId), [404])).body.error.code).toBe(
-      "NOT_FOUND",
+    const read = await accept(
+      readHistory(native, { channelId: thread.id }),
+      [404],
     );
+    const sent = await accept(sendText(native, thread.id, "hello"), [404]);
+
+    expect(read.body.error.code).toBe("NOT_FOUND");
+    expect(sent.body.error.code).toBe("NOT_FOUND");
   });
 
-  it("reads native thread replies and refuses to treat an ordinary reply as a thread", async () => {
-    const f = await fixture();
-    const thread = addThread(f);
-    const parent = { ...f.message(f.threadId), thread, flags: 32 };
-    f.messages.set(f.channelId, [parent]);
-    const response = await accept(
-      f.read.replies({
-        headers: f.headers,
-        query: { channelId: f.channelId, messageId: parent.id, limit: 50 },
+  it("integrations-discord-native-029 reads a private thread with both memberships and inherits parent overwrites", async () => {
+    const native = await nativeAdmin();
+    const { world } = native;
+    const thread = native.addThread(native.channelId, { type: 12 });
+    world.threadMembers.add(`${thread.id}:${world.botUserId}`);
+    world.threadMembers.add(`${thread.id}:${world.discordUserId}`);
+
+    const first = await accept(
+      readHistory(native, { channelId: thread.id }),
+      [200],
+    );
+    channelOf(world, native.channelId).permission_overwrites = [
+      overwrite(world.discordUserId, 1, { deny: Permission.view }),
+    ];
+    const second = await accept(
+      readHistory(native, { channelId: thread.id }),
+      [404],
+    );
+
+    expect(first.body.messages[0]?.content).toBe("thread message");
+    expect(second.body.error.code).toBe("NOT_FOUND");
+  });
+
+  it("integrations-discord-native-030 reads native thread replies and refuses to treat an ordinary reply as a thread", async () => {
+    const native = await nativeAdmin();
+    const { world, channelId } = native;
+    const thread = native.addThread(channelId, {});
+    const parent = message(channelId, "start a thread", {
+      id: thread.id,
+      flags: 32,
+      thread,
+    });
+    world.messages.set(channelId, [parent]);
+
+    const replies = await accept(
+      readApi().replies({
+        headers: native.cli,
+        query: { channelId, messageId: parent.id },
       }),
       [200],
     );
-    expect(response.body.threadId).toBe(f.threadId);
-    expect(response.body.messages[0]?.content).toBe("thread message");
-    f.messages.set(f.channelId, [
-      {
-        ...f.message(parent.id),
-        message_reference: { message_id: snowflake() },
-      },
+    world.messages.set(channelId, [
+      message(channelId, "just a reply", {
+        id: parent.id,
+        message_reference: {
+          message_id: uniqueDiscordSnowflake(),
+          channel_id: channelId,
+        },
+      }),
     ]);
     await accept(
-      f.read.replies({
-        headers: f.headers,
-        query: { channelId: f.channelId, messageId: parent.id, limit: 50 },
+      readApi().replies({
+        headers: native.cli,
+        query: { channelId, messageId: parent.id },
       }),
       [404],
     );
+
+    expect(replies.body.threadId).toBe(thread.id);
+    expect(replies.body.messages[0]?.content).toBe("thread message");
   });
 
-  it("requires native read and write capabilities for sandbox requests", async () => {
-    const limited = await fixture({ sandboxToken: true });
-    expect(
-      (await accept(history(limited), [403])).body.error.message,
-    ).toContain("discord:read");
-    expect((await accept(send(limited), [403])).body.error.message).toContain(
-      "discord:write",
+  it("integrations-discord-native-032 revokes native access after disconnect without reusing a previously verified binding", async () => {
+    const native = await nativeAdmin();
+    await accept(readHistory(native, { channelId: native.channelId }), [200]);
+
+    createRouteMocks(context).clerk.session(
+      native.fixture.userId,
+      native.fixture.orgId,
+      "org:admin",
     );
-  });
-
-  it("revokes native access after disconnect without reusing a previously verified binding", async () => {
-    const f = await fixture();
-    await accept(history(f), [200]);
-    createRouteMocks(context).clerk.session(f.userId, f.orgId, "org:admin");
     await accept(
-      setupApp({ context, routes: integrationsDiscordRoutes })(
-        integrationsDiscordContract,
-      ).disconnect({
-        headers: { authorization: "Bearer clerk-session" },
+      app(integrationsDiscordContract).disconnect({
+        headers: SESSION,
         query: {},
       }),
       [200],
     );
-    await accept(history(f), [404]);
-    expect((await accept(send(f), [404])).body.error.code).toBe("NOT_FOUND");
+    await accept(readHistory(native, { channelId: native.channelId }), [404]);
+    const sent = await accept(sendText(native, native.channelId, "hi"), [404]);
+
+    expect(sent.body.error.code).toBe("NOT_FOUND");
   });
 });
 
+function stripFences(chunk: string): string {
+  return chunk.replace(/```(?:ts)?\n?/gu, "");
+}
+
 describe("Discord native sends and transport failures", () => {
-  it.each([1988, 2005])(
-    "normalizes %i closing-fence spaces while preserving code within every message limit",
-    async (spaces) => {
-      const f = await fixture();
-      const text = "x".repeat(1990);
-      const source =
-        "```typescript\n" +
-        "x".repeat(1990) +
-        "\n```" +
-        " ".repeat(spaces) +
-        "\n";
-      const result = await accept(send(f, f.channelId, source), [200]);
-      const read = await accept(history(f), [200]);
-      const byId = new Map(
-        read.body.messages.map((entry) => {
-          return [entry.id, entry.content];
-        }),
-      );
-      const chunks = result.body.messages.map((receipt) => {
-        return byId.get(receipt.id);
-      });
-      expect(chunks.length).toBeGreaterThan(1);
-      for (const chunk of chunks) {
-        expect(chunk!.length).toBeLessThanOrEqual(2000);
-        expect(chunk!.trim().length).toBeGreaterThan(0);
-      }
-      expect(chunks.join("").replaceAll(/```typescript\n|```|\n/g, "")).toBe(
-        text,
-      );
-    },
-  );
-
-  it("preserves a long fenced answer and suppresses all mention notifications", async () => {
-    const f = await fixture();
-    const source =
-      "```ts\n" +
-      "const value = 1;\n".repeat(400) +
-      "```\n@everyone <@123456789012345678>";
-    const result = await accept(send(f, f.channelId, source), [200]);
-    expect(result.body.messages.length).toBeGreaterThan(1);
-    const read = await accept(history(f), [200]);
-    const byId = new Map(
-      read.body.messages.map((entry) => {
-        return [entry.id, entry];
-      }),
-    );
-    const chunks = result.body.messages.map((receipt) => {
-      return byId.get(receipt.id)?.content ?? "";
-    });
-    expect(
-      chunks.every((chunk) => {
-        return chunk.length <= 2000;
-      }),
-    ).toBeTruthy();
-    expect(chunks.join("").replaceAll(/```ts\n|```\n?/g, "")).toBe(
-      source.replaceAll(/```ts\n|```\n?/g, ""),
-    );
-    expect(
-      f.sentBodies.every((body) => {
-        return (
-          body.allowed_mentions.parse.length === 0 &&
-          body.allowed_mentions.replied_user === false
-        );
-      }),
-    ).toBeTruthy();
-    expect(
-      result.body.messages.every((entry) => {
-        return entry.url.endsWith(`/${entry.id}`);
-      }),
-    ).toBeTruthy();
-  });
-
-  it.each([false, true])(
-    "sends into an archived unlocked thread, which Discord reopens (private: %s)",
-    async (isPrivate) => {
-      const f = await fixture();
-      addThread(f, { private: isPrivate, archived: true });
-      await accept(history(f, f.threadId), [200]);
-      await accept(send(f, f.threadId), [200]);
-      expect(f.sentBodies).toHaveLength(1);
-    },
-  );
-
-  it.each<{
-    readonly name: string;
-    readonly user: "role" | "none" | "role-denied";
-    readonly bot: "role" | "none";
-    readonly allowed: boolean;
-    readonly private?: boolean;
-  }>([
-    { name: "neither principal", user: "none", bot: "none", allowed: false },
-    { name: "only the bot", user: "none", bot: "role", allowed: false },
-    { name: "only the sender", user: "role", bot: "none", allowed: false },
-    {
-      name: "a sender whose member overwrite denies it",
-      user: "role-denied",
-      bot: "role",
-      allowed: false,
-    },
-    { name: "both principals", user: "role", bot: "role", allowed: true },
-    {
-      name: "only the bot in a private thread",
-      user: "none",
-      bot: "role",
-      allowed: false,
-      private: true,
-    },
-    {
-      name: "both principals in a private thread",
-      user: "role",
-      bot: "role",
-      allowed: true,
-      private: true,
-    },
-  ])(
-    "reads a locked thread and sends only when MANAGE_THREADS is held by $name",
-    async ({ user, bot, allowed, private: isPrivate }) => {
-      const f = await fixture();
-      const thread = addThread(f, {
-        private: isPrivate,
-        locked: true,
-        archived: true,
-      });
-      const grant = String(MANAGE_THREADS);
-      if (user !== "none") {
-        f.roles.find((role) => {
-          return role.id === f.userRoleId;
-        })!.permissions = grant;
-      }
-      if (user === "role-denied") {
-        f.channels.get(f.channelId)!.permission_overwrites = [
-          { id: f.discordUserId, type: 1, deny: grant, allow: "0" },
-        ];
-      }
-      if (bot === "role") {
-        f.roles.find((role) => {
-          return role.id === f.botRoleId;
-        })!.permissions = grant;
-      }
-      await accept(history(f, thread.id), [200]);
-      if (allowed) {
-        await accept(send(f, thread.id), [200]);
-        expect(f.sentBodies).toHaveLength(1);
-        return;
-      }
-      expect((await accept(send(f, thread.id), [403])).body.error.code).toBe(
-        "DISCORD_THREAD_CLOSED",
-      );
-      expect(f.sentBodies).toHaveLength(0);
-    },
-  );
-
-  it.each(["user", "bot"] as const)(
-    "denies writes for a timed-out %s while retaining readable history",
-    async (party) => {
-      const f = await fixture();
-      if (party === "user") {
-        f.state.userTimedOut = true;
-      } else {
-        f.state.botTimedOut = true;
-      }
-      await accept(history(f), [200]);
-      expect((await accept(send(f), [404])).body.error.code).toBe("NOT_FOUND");
-    },
-  );
-
-  it("keeps native history and existing-thread sends available without public-thread creation permission", async () => {
-    const f = await fixture();
-    addThread(f);
-    f.channels.get(f.channelId)!.permission_overwrites = [
-      { id: f.guildId, type: 0, deny: String(1n << 35n), allow: "0" },
+  it("integrations-discord-native-048 requires SEND_MESSAGES_IN_THREADS rather than parent SEND_MESSAGES", async () => {
+    const native = await nativeAdmin();
+    const { world } = native;
+    const thread = native.addThread(native.channelId, {});
+    channelOf(world, native.channelId).permission_overwrites = [
+      overwrite(world.discordUserId, 1, { deny: Permission.send }),
     ];
-    await accept(history(f), [200]);
-    await accept(history(f, f.threadId), [200]);
-    const parent = await accept(send(f), [200]);
-    const thread = await accept(send(f, f.threadId), [200]);
-    expect(parent.body.messages[0]?.channelId).toBe(f.channelId);
-    expect(thread.body.messages[0]?.channelId).toBe(f.threadId);
-  });
-
-  it("requires SEND_MESSAGES_IN_THREADS rather than parent SEND_MESSAGES", async () => {
-    const f = await fixture();
-    addThread(f);
-    f.channels.get(f.channelId)!.permission_overwrites = [
-      { id: f.discordUserId, type: 1, deny: String(SEND), allow: "0" },
+    const first = await accept(
+      sendText(native, thread.id, "in the thread"),
+      [200],
+    );
+    channelOf(world, native.channelId).permission_overwrites = [
+      overwrite(world.discordUserId, 1, { deny: Permission.sendInThreads }),
     ];
-    await accept(send(f, f.threadId), [200]);
-    f.channels.get(f.channelId)!.permission_overwrites = [
-      { id: f.discordUserId, type: 1, deny: String(THREAD_SEND), allow: "0" },
-    ];
-    expect((await accept(send(f, f.threadId), [404])).body.error.code).toBe(
-      "NOT_FOUND",
+    const second = await accept(
+      sendText(native, thread.id, "denied in the thread"),
+      [404],
     );
+
+    expect(first.status).toBe(200);
+    expect(second.body.error.code).toBe("NOT_FOUND");
   });
 
-  it("retries only an explicit short 429 and returns a complete message receipt", async () => {
-    const f = await fixture();
+  it("integrations-discord-native-054 surfaces a provider server failure without resending an uncertain write", async () => {
+    const native = await nativeAdmin();
     server.use(
-      http.post(
-        `${API}/channels/${f.channelId}/messages`,
-        () => {
-          return HttpResponse.json(
-            { retry_after: 0, global: true },
-            { status: 429 },
-          );
-        },
-        { once: true },
-      ),
-    );
-    const result = await accept(send(f), [200]);
-    expect(result.body.messages).toHaveLength(1);
-    expect(
-      (await accept(history(f), [200])).body.messages.filter((entry) => {
-        return entry.author.bot;
-      }),
-    ).toHaveLength(1);
-  });
-
-  it.each(["binding", "channel"] as const)(
-    "rechecks %s access after a rate limit before resending",
-    async (revoked) => {
-      const f = await fixture();
-      server.use(
-        http.post(
-          `${API}/channels/${f.channelId}/messages`,
-          async () => {
-            if (revoked === "binding") {
-              createRouteMocks(context).clerk.session(
-                f.userId,
-                f.orgId,
-                "org:admin",
-              );
-              await accept(
-                setupApp({ context, routes: integrationsDiscordRoutes })(
-                  integrationsDiscordContract,
-                ).disconnect({
-                  headers: { authorization: "Bearer clerk-session" },
-                  query: {},
-                }),
-                [200],
-              );
-            } else {
-              f.channels.get(f.channelId)!.permission_overwrites = [
-                {
-                  id: f.discordUserId,
-                  type: 1,
-                  deny: String(SEND),
-                  allow: "0",
-                },
-              ];
-            }
-            return HttpResponse.json(
-              { retry_after: 0, global: false },
-              { status: 429 },
-            );
-          },
-          { once: true },
-        ),
-      );
-      const response = await accept(send(f), [403, 404]);
-      expect(response.body.error.deliveredMessages).toStrictEqual([]);
-      expect(f.sentBodies).toStrictEqual([]);
-    },
-  );
-
-  it("surfaces read rate limits without replaying an authorized content request", async () => {
-    const f = await fixture();
-    server.use(
-      http.get(
-        `${API}/channels/${f.channelId}/messages`,
-        () => {
-          return HttpResponse.json(
-            { retry_after: 0, global: false },
-            { status: 429 },
-          );
-        },
-        { once: true },
-      ),
-    );
-    const limited = await accept(history(f), [429]);
-    expect(limited.body.error.retryAfterSeconds).toBe(0);
-    await accept(history(f), [200]);
-  });
-
-  it("reports a provider rate-limit delay and preserves already-delivered chunks", async () => {
-    const f = await fixture();
-    const first = f.message(snowflake(), f.channelId, "first");
-    server.use(
-      http.post(`${API}/channels/${f.channelId}/messages`, () => {
+      http.post(`${DISCORD_API}/channels/:channelId/messages`, () => {
         return HttpResponse.json(
-          { retry_after: 60, global: false },
-          { status: 429 },
+          { message: "Internal Server Error", code: 0 },
+          { status: 500 },
         );
       }),
     );
-    server.use(
-      http.post(
-        `${API}/channels/${f.channelId}/messages`,
-        () => {
-          return HttpResponse.json(first);
-        },
-        { once: true },
-      ),
-    );
-    const result = await accept(send(f, f.channelId, "x".repeat(4001)), [429]);
-    expect(result.body.error.retryAfterSeconds).toBe(60);
-    expect(result.body.error.message).toContain("60 seconds");
-    expect(
-      result.body.error.deliveredMessages?.map((entry) => {
-        return entry.id;
-      }),
-    ).toStrictEqual([first.id]);
-  });
 
-  it("surfaces a provider server failure without resending an uncertain write", async () => {
-    const f = await fixture();
-    server.use(
-      http.post(
-        `${API}/channels/${f.channelId}/messages`,
-        () => {
-          return HttpResponse.json({ message: "uncertain" }, { status: 500 });
-        },
-        { once: true },
-      ),
+    const sent = await accept(
+      sendText(native, native.channelId, "uncertain write"),
+      [502],
     );
-    await accept(send(f), [502]);
-    const read = await accept(history(f), [200]);
+    const history = await accept(
+      readHistory(native, { channelId: native.channelId }),
+      [200],
+    );
+
+    expect(sent.status).toBe(502);
     expect(
-      read.body.messages.filter((entry) => {
-        return entry.author.bot;
+      history.body.messages.filter((message) => {
+        return message.author.bot === true;
       }),
     ).toStrictEqual([]);
+  });
+
+  it("integrations-discord-native-035 preserves a long fenced answer and suppresses all mention notifications", async () => {
+    const native = await nativeAdmin();
+    const mentioned = uniqueDiscordSnowflake();
+    const code = Array.from({ length: 400 }, (_, index) => {
+      return `const value${index} = ${index};\n`;
+    }).join("");
+    const source = `\`\`\`ts\n${code}\`\`\`\n@everyone <@${mentioned}>`;
+
+    const sent = await accept(
+      sendText(native, native.channelId, source),
+      [200],
+    );
+    await accept(readHistory(native, { channelId: native.channelId }), [200]);
+
+    const posted = native.world.posts.map((post) => {
+      return postBodySchema.parse(post.body);
+    });
+    expect(sent.body.messages.length).toBeGreaterThan(1);
+    for (const body of posted) {
+      expect(body.content.length).toBeLessThanOrEqual(2000);
+      expect(body.allowed_mentions).toStrictEqual({
+        parse: [],
+        replied_user: false,
+      });
+    }
+    expect(
+      posted
+        .map((body) => {
+          return stripFences(body.content);
+        })
+        .join(""),
+    ).toBe(stripFences(source));
+    for (const receipt of sent.body.messages) {
+      expect(receipt.url.endsWith(`/${receipt.id}`)).toBeTruthy();
+    }
+  });
+
+  it("integrations-discord-native-036 sends into an archived unlocked thread, which Discord reopens (private: false)", async () => {
+    const native = await nativeAdmin();
+    const thread = native.addThread(native.channelId, { archived: true });
+
+    await accept(readHistory(native, { channelId: thread.id }), [200]);
+    await accept(sendText(native, thread.id, "reopen"), [200]);
+
+    expect(native.world.posts).toHaveLength(1);
+  });
+
+  it("integrations-discord-native-038 reads a locked thread and sends only when MANAGE_THREADS is held by neither principal", async () => {
+    const native = await nativeAdmin();
+    const thread = native.addThread(native.channelId, {
+      archived: true,
+      locked: true,
+    });
+
+    await accept(readHistory(native, { channelId: thread.id }), [200]);
+    const sent = await accept(sendText(native, thread.id, "closed"), [403]);
+
+    expect(sent.body.error.code).toBe("DISCORD_THREAD_CLOSED");
+    expect(native.world.posts).toStrictEqual([]);
+  });
+
+  it("integrations-discord-native-042 reads a locked thread and sends only when MANAGE_THREADS is held by both principals", async () => {
+    const native = await nativeAdmin();
+    const { world } = native;
+    const moderator = uniqueDiscordSnowflake();
+    const botModerator = uniqueDiscordSnowflake();
+    world.roles.push(
+      {
+        id: moderator,
+        name: "moderator",
+        permissions: String(Permission.manageThreads),
+      },
+      {
+        id: botModerator,
+        name: "bot moderator",
+        permissions: String(Permission.manageThreads),
+      },
+    );
+    world.members.set(world.discordUserId, {
+      user: { id: world.discordUserId, username: "member" },
+      roles: [moderator],
+    });
+    world.members.set(world.botUserId, {
+      user: { id: world.botUserId, username: "Okou", bot: true },
+      roles: [botModerator],
+    });
+    const thread = native.addThread(native.channelId, {
+      archived: true,
+      locked: true,
+    });
+
+    await accept(readHistory(native, { channelId: thread.id }), [200]);
+    await accept(sendText(native, thread.id, "moderated"), [200]);
+
+    expect(world.posts).toHaveLength(1);
+  });
+
+  it("integrations-discord-native-045 denies writes for a timed-out user while retaining readable history", async () => {
+    const native = await nativeAdmin();
+    const { world } = native;
+    world.members.set(world.discordUserId, {
+      user: { id: world.discordUserId, username: "member" },
+      roles: [],
+      communication_disabled_until: "2099-01-01T00:00:00.000Z",
+    });
+
+    await accept(readHistory(native, { channelId: native.channelId }), [200]);
+    const sent = await accept(sendText(native, native.channelId, "hi"), [404]);
+
+    expect(sent.body.error.code).toBe("NOT_FOUND");
+  });
+
+  it("integrations-discord-native-053 reports a provider rate-limit delay and preserves already-delivered chunks", async () => {
+    const native = await nativeAdmin();
+    native.world.rateLimitAfterPosts = 1;
+
+    const sent = await accept(
+      sendText(native, native.channelId, "a".repeat(4001)),
+      [429],
+    );
+
+    const [first] = native.world.posts;
+    expect(sent.body.error.retryAfterSeconds).toBe(60);
+    expect(sent.body.error.message).toContain("60 seconds");
+    expect(
+      sent.body.error.deliveredMessages?.map((entry) => {
+        return entry.id;
+      }),
+    ).toStrictEqual([first?.id]);
   });
 });

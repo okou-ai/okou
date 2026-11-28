@@ -1,663 +1,72 @@
-import {
-  CopyObjectCommand,
-  GetObjectCommand,
-  HeadObjectCommand,
-  ListObjectsV2Command,
-  PutObjectCommand,
-} from "@aws-sdk/client-s3";
-import { artifactAccessContract } from "@okouai/api-contracts/contracts/artifact-access";
-import { artifactDownloadsContract } from "@okouai/api-contracts/contracts/artifact-downloads";
-import { artifactReferencesContract } from "@okouai/api-contracts/contracts/artifact-references";
-import type { HostedSiteFilesResponse } from "@okouai/api-contracts/contracts/host";
-import { uploadsContract } from "@okouai/api-contracts/contracts/uploads";
 import { createHash, randomUUID } from "node:crypto";
-import { Readable } from "node:stream";
-import { expect, test } from "vitest";
-import { array, string, object as zObject } from "zod";
-import { apiTestS3PresignedUrl } from "../../../__tests__/mocks";
-import { accept, testContext } from "../../../__tests__/test-context";
-import { setupApp } from "../../../__tests__/test-helpers";
-import { mockEnv } from "../../../lib/env";
-import { now } from "../../../lib/time";
-import { signSandboxJwtForTests } from "../../auth/tokens";
-import { artifactAccessRoutes } from "../artifact-access";
-import { artifactDownloadRoutes } from "../artifact-downloads";
-import { artifactReferenceRoutes } from "../artifact-references";
-import { hostRoutes } from "../host";
-import { uploadsCompleteRoutes } from "../uploads-complete";
-import { uploadsPrepareRoutes } from "../uploads-prepare";
-import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
-import { hostedTextFile } from "./helpers/api-bdd-host-files";
+import { describe, expect, it } from "vitest";
+
+import { testContext } from "../../../__tests__/test-context";
+import { createBddApi } from "./helpers/api-bdd";
 import { createHostBddApi } from "./helpers/api-bdd-host";
-import { createRunsApi } from "./helpers/api-bdd-runs";
-import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
-const mocks = createRouteMocks(context);
-const headers = Object.freeze({ authorization: "Bearer clerk-session" });
+const bdd = createBddApi(context);
+const host = createHostBddApi(context);
 
-function api() {
-  return setupApp({
-    context,
-    routes: [
-      ...artifactAccessRoutes,
-      ...artifactDownloadRoutes,
-      ...artifactReferenceRoutes,
-      ...hostRoutes,
-      ...uploadsPrepareRoutes,
-      ...uploadsCompleteRoutes,
-    ],
-  });
+function siteFile(path: string, content: string) {
+  return {
+    path,
+    size: Buffer.byteLength(content),
+    sha256: createHash("sha256").update(content).digest("hex"),
+    contentType: "text/html; charset=utf-8",
+  };
 }
 
-function session(actor: ApiTestUser) {
-  mocks.clerk.session(actor.userId, actor.orgId);
-}
-
-function reference(url: string) {
-  return new URL(url, "https://app.okou.ai").pathname.split("/").at(-1)!;
-}
-
-function storageKey(url: string) {
-  const object = new URL(url).searchParams.get("object");
-  expect(object).not.toBeNull();
-  return object!.split("/").slice(1).join("/");
-}
-
-function runHeaders(actor: ApiTestUser, capabilities: readonly string[]) {
-  const seconds = Math.floor(now() / 1000);
-  const token = signSandboxJwtForTests({
-    scope: "okou",
-    userId: actor.userId,
-    orgId: actor.orgId!,
-    runId: randomUUID(),
-    capabilities: [...capabilities],
-    iat: seconds,
-    exp: seconds + 3600,
-  });
-  return { authorization: `Bearer ${token}` };
-}
-
-async function download(actor: ApiTestUser, url: string) {
-  session(actor);
-  return await accept(
-    api()(artifactDownloadsContract).download({
-      headers,
-      params: { reference: reference(url) },
-    }),
-    [200],
-  );
-}
-
-function cloneReference(actor: ApiTestUser, url: string) {
-  return api()(artifactDownloadsContract).files({
-    headers: runHeaders(actor, ["host:read"]),
-    params: { reference: reference(url) },
-  });
-}
-
-async function rejectDownload(actor: ApiTestUser, url: string) {
-  session(actor);
-  const result = await accept(
-    api()(artifactDownloadsContract).download({
-      headers,
-      params: { reference: reference(url) },
-    }),
-    [404],
-  );
-  expect(result.body).not.toHaveProperty("site");
-  expect(result.body).not.toHaveProperty("url");
-}
-
-const siteFiles = Object.freeze([
-  hostedTextFile("/index.html", '<a href="pages/report.html">Report</a>'),
-  hostedTextFile("/pages/report.html", "<main>Report details</main>"),
-  hostedTextFile(
-    "/assets/site-1a9b3c57.css",
-    "main { color: green }",
-    "text/css",
-  ),
-  hostedTextFile(
-    "/assets/site-6d2e8f31.js",
-    "console.log('report')",
-    "text/javascript",
-  ),
-  hostedTextFile("/assets/chart-2b7e10d4.svg", "<svg></svg>", "image/svg+xml"),
-]);
-
-async function fixture(plan: "free" | "pro" = "pro") {
-  const bdd = createBddApi(context);
-  const actor = bdd.user();
-  if (!actor.orgId) {
-    throw new Error("Expected an organization");
-  }
-  if (plan === "pro") {
-    await createRunsApi(context).grantProEntitlement(actor);
-  }
-  mockEnv("OKOU_API_BACKEND_URL", "https://api.okou.ai");
-  mockEnv("APP_URL", "https://app.okou.ai");
-  mockEnv("OKOU_PUBLIC_HOST_DOMAIN", "okou.app");
-  mockEnv("OKOU_HOST_SCHEME", "https");
-
-  const members = new Set([actor.userId]);
-  context.mocks.clerk.organizations.getOrganizationMembershipList.mockImplementation(
-    (input) => {
-      const params = zObject({
-        organizationId: string(),
-        userId: array(string()),
-      }).parse(input);
-      return Promise.resolve({
-        data: params.userId
-          .filter((userId) => {
-            return params.organizationId === actor.orgId && members.has(userId);
-          })
-          .map((userId) => {
-            return {
-              publicUserData: { userId },
-              role: "org:member",
-              organization: { id: actor.orgId, name: "Artifact owners" },
-            };
-          }),
-        totalCount: members.size,
-      });
-    },
-  );
-  context.mocks.clerk.users.getOrganizationMembershipList.mockImplementation(
-    (input) => {
-      const { userId } = zObject({ userId: string() }).parse(input);
-      return Promise.resolve({
-        data: members.has(userId)
-          ? [{ organization: { id: actor.orgId }, role: "org:member" }]
-          : [],
-      });
-    },
-  );
-
-  const objects = new Map<string, string>();
-  function etag(body: string) {
-    return `"${createHash("md5").update(body).digest("hex")}"`;
-  }
-  context.mocks.s3.getSignedUrl.mockImplementation((_client, command) => {
-    return Promise.resolve(apiTestS3PresignedUrl(command));
-  });
-  context.mocks.s3.send.mockImplementation((command) => {
-    if (command instanceof ListObjectsV2Command) {
-      return Promise.resolve({ Contents: [] });
-    }
-    if (command instanceof HeadObjectCommand) {
-      return Promise.resolve({
-        ContentLength: 13,
-        Metadata: { "artifact-id": command.input.Key?.split("/")[1] },
-      });
-    }
-    if (command instanceof CopyObjectCommand) {
-      return Promise.resolve({});
-    }
-    if (command instanceof PutObjectCommand) {
-      const key = command.input.Key!;
-      const previous = objects.get(key);
-      if (
-        (command.input.IfNoneMatch === "*" && previous !== undefined) ||
-        (command.input.IfMatch &&
-          (previous === undefined || command.input.IfMatch !== etag(previous)))
-      ) {
-        return Promise.reject(
-          Object.assign(new Error("Stale policy write"), {
-            name: "PreconditionFailed",
-          }),
-        );
-      }
-      objects.set(key, String(command.input.Body));
-      return Promise.resolve({});
-    }
-    if (command instanceof GetObjectCommand) {
-      const body =
-        objects.get(command.input.Key!) ??
-        (command.input.Key?.startsWith("private-sites/")
-          ? "Hosted fixture"
-          : undefined);
-      if (body === undefined) {
-        return Promise.reject(
-          Object.assign(new Error("Missing"), { name: "NoSuchKey" }),
-        );
-      }
-      return Promise.resolve({
-        Body: Readable.from([Buffer.from(body)]),
-        ETag: etag(body),
-      });
-    }
-    throw new Error("Unexpected storage operation");
-  });
-
-  const host = createHostBddApi(context);
-  async function deploy(site = `download-${randomUUID().slice(0, 8)}`) {
-    const prepared = await host.prepareHostedSite(actor, {
-      site,
-      title: site,
+describe("artifact downloads", () => {
+  it("artifact-downloads-007 lets an outsider list a public site's files for cloning", async () => {
+    host.captureHostedSitesS3();
+    const owner = bdd.user();
+    const outsider = bdd.user({ orgId: null });
+    const files = [
+      siteFile("/index.html", "<h1>Home</h1>"),
+      siteFile("/about.html", "<h1>About</h1>"),
+      siteFile("/notes.html", "<p>Release notes</p>"),
+      siteFile("/docs/guide.html", "<h1>Guide</h1>"),
+      siteFile("/docs/faq.html", "<p>Questions</p>"),
+    ];
+    const prepared = await host.prepareHostedSite(owner, {
+      site: `site-${randomUUID().slice(0, 8)}`,
+      title: "Public handbook",
+      visibility: "public",
       artifactKind: "hosted-site",
       spaFallback: false,
-      visibility: "public",
-      files: [...siteFiles],
+      files,
     });
-    await host.completeHostedSite(actor, prepared.deploymentId);
-    return { ...prepared, site };
-  }
-  async function share(
-    artifactId: string,
-    visibility: "private" | "organization" | "public",
-  ) {
-    session(actor);
-    return (
-      await accept(
-        api()(artifactAccessContract).updateVisibility({
-          headers,
-          params: { artifactId },
-          body: { visibility },
-        }),
-        [200],
-      )
-    ).body;
-  }
-  return { actor, bdd, host, members, objects, deploy, share };
-}
+    await host.completeHostedSite(owner, prepared.deploymentId);
 
-function expectCompleteSite(
-  site: HostedSiteFilesResponse,
-  deploymentId: string,
-) {
-  expect(site).toMatchObject({ deploymentId, fileCount: siteFiles.length });
-  expect(site.size).toBe(
-    siteFiles.reduce((total, file) => {
-      return total + file.size;
-    }, 0),
-  );
-  expect(site.files).toHaveLength(siteFiles.length);
-  expect(site.files).toStrictEqual(
-    expect.arrayContaining(
-      siteFiles.map((file) => {
-        return expect.objectContaining(file);
-      }),
-    ),
-  );
-}
-
-test.each([
-  { filename: "report.pdf", contentType: "application/pdf" },
-  { filename: "standalone.html", contentType: "text/html" },
-])(
-  "keeps $filename uploads as single-file downloads",
-  async ({ filename, contentType }) => {
-    const { actor, bdd, share } = await fixture();
-    session(actor);
-    const prepared = await accept(
-      api()(uploadsContract).prepare({
-        headers,
-        body: { filename, contentType, size: 13, purpose: "artifact" },
-      }),
-      [200],
-    );
-    const completed = await accept(
-      api()(uploadsContract).complete({
-        headers,
-        body: { id: prepared.body.id },
-      }),
-      [200],
-    );
-    const own = await download(actor, completed.body.url);
-    expect(own.body).toMatchObject({ kind: "file", filename, contentType });
-    const legacyRead = await accept(
-      api()(artifactReferencesContract).read({
-        headers,
-        params: { reference: reference(completed.body.url) },
-      }),
-      [200],
-    );
-    expect(own.body).toStrictEqual({ kind: "file", ...legacyRead.body });
-    await accept(cloneReference(actor, completed.body.url), [404]);
-
-    await share(prepared.body.id, "public");
-    const outsider = bdd.user({ orgId: null });
-    const publicDownload = await download(outsider, completed.body.url);
-    expect(publicDownload.body).toMatchObject({
-      kind: "file",
-      filename,
-      contentType,
-    });
-    if (publicDownload.body.kind !== "file") {
-      throw new Error("Expected a single-file download");
-    }
-    const key = storageKey(publicDownload.body.url);
-    expect(key).toBe(`private-artifacts/${prepared.body.id}/${filename}`);
-    await share(prepared.body.id, "private");
-    await rejectDownload(outsider, completed.body.url);
-  },
-);
-
-test.each([
-  {
-    filename: "report.html",
-    contentType: "text/html",
-    disposition: "attachment; filename*=UTF-8''report.html",
-  },
-  {
-    filename: "chart.svg",
-    contentType: "image/svg+xml",
-    disposition: "attachment; filename*=UTF-8''chart.svg",
-  },
-  {
-    filename: "report.xml",
-    contentType: "application/xml",
-    disposition: "attachment; filename*=UTF-8''report.xml",
-  },
-  {
-    filename: "小猫 (draft)'*.png",
-    contentType: "image/png",
-    disposition:
-      "attachment; filename*=UTF-8''%E5%B0%8F%E7%8C%AB%20%28draft%29%27%2A.png",
-  },
-])(
-  "$filename previews do not reuse attachment-bearing download credentials",
-  async ({ filename, contentType, disposition }) => {
-    const { actor, bdd, members, share } = await fixture();
-    context.mocks.s3.getSignedUrl.mockImplementation((_client, command) => {
-      const url = new URL(apiTestS3PresignedUrl(command));
-      if (
-        command instanceof GetObjectCommand &&
-        command.input.ResponseContentDisposition
-      ) {
-        url.searchParams.set(
-          "response-content-disposition",
-          command.input.ResponseContentDisposition,
-        );
-        if (command.input.ResponseCacheControl) {
-          url.searchParams.set(
-            "response-cache-control",
-            command.input.ResponseCacheControl,
-          );
-        }
-      }
-      return Promise.resolve(url.href);
-    });
-    session(actor);
-    const prepared = await accept(
-      api()(uploadsContract).prepare({
-        headers,
-        body: { filename, contentType, size: 13, purpose: "artifact" },
-      }),
-      [200],
-    );
-    const completed = await accept(
-      api()(uploadsContract).complete({
-        headers,
-        body: { id: prepared.body.id },
-      }),
-      [200],
-    );
-    const ownerPreview = await accept(
-      api()(artifactReferencesContract).resolve({
-        headers,
-        params: { reference: reference(completed.body.url) },
-      }),
-      [200],
-    );
-    expect(ownerPreview.body).toMatchObject({ filename, contentType });
-    const ownerDownload = new URL(ownerPreview.body.downloadUrl!);
-    expect(ownerDownload.searchParams.get("response-content-disposition")).toBe(
-      disposition,
-    );
-    expect(ownerDownload.searchParams.get("response-cache-control")).toBe(
-      "private, no-store",
-    );
-    expect(
-      new URL(ownerPreview.body.url).searchParams.has(
-        "response-content-disposition",
-      ),
-    ).toBeFalsy();
-
-    const shared = await share(prepared.body.id, "organization");
-    if (!shared.shareUrl) {
-      throw new Error("Expected a shared file URL");
-    }
-    const recipient = bdd.user({ orgId: actor.orgId });
-    members.add(recipient.userId);
-    // Download first, then confirm that preview resolution remains inline.
-    const downloaded = await download(recipient, shared.shareUrl);
-    if (downloaded.body.kind !== "file") {
-      throw new Error("Expected a single-file download");
-    }
-    expect(downloaded.body).toMatchObject({ filename, contentType });
-    expect(
-      new URL(downloaded.body.url).searchParams.get("response-cache-control"),
-    ).toBe("private, no-store");
-    expect(
-      new URL(downloaded.body.url).searchParams.get(
-        "response-content-disposition",
-      ),
-    ).toBe(disposition);
-    for (const viewer of [actor, recipient]) {
-      session(viewer);
-      const preview = await accept(
-        api()(artifactReferencesContract).resolve({
-          headers,
-          params: { reference: reference(shared.shareUrl) },
-        }),
-        [200],
+    const deploymentSlug = `dpl-${prepared.deploymentId}`;
+    for (const slug of [prepared.publicSlug, deploymentSlug]) {
+      const listed = await host.readHostedSiteFiles(outsider, slug);
+      expect(listed.deploymentId).toBe(prepared.deploymentId);
+      expect(listed.fileCount).toBe(5);
+      expect(listed.size).toBe(
+        files.reduce((total, file) => {
+          return total + file.size;
+        }, 0),
       );
-      expect(preview.body).toMatchObject({ filename, contentType });
       expect(
-        new URL(preview.body.downloadUrl!).searchParams.get(
-          "response-content-disposition",
+        listed.files.map((file) => {
+          return file.path;
+        }),
+      ).toStrictEqual(
+        expect.arrayContaining(
+          files.map((file) => {
+            return file.path;
+          }),
         ),
-      ).toBe(disposition);
-      expect(
-        new URL(preview.body.url).searchParams.has(
-          "response-content-disposition",
-        ),
-      ).toBeFalsy();
-      if (viewer === recipient) {
-        expect(storageKey(preview.body.url)).toBe(
-          storageKey(downloaded.body.url),
-        );
+      );
+      for (const file of listed.files) {
+        const url = new URL(file.downloadUrl);
+        expect(url.hostname).toBe(`${deploymentSlug}.okou.app`);
+        expect(url.pathname.startsWith("/.okou/download/")).toBeTruthy();
+        expect(url.searchParams.get("path")).toBe(file.path);
       }
     }
-    await share(prepared.body.id, "public");
-    const published = await accept(
-      api()(artifactReferencesContract).publicUrl({
-        params: { reference: reference(completed.body.url) },
-      }),
-      [200],
-    );
-    const publicDownload = new URL(published.body.downloadUrl!);
-    expect(
-      publicDownload.searchParams.get("response-content-disposition"),
-    ).toBe(disposition);
-    expect(publicDownload.searchParams.get("response-cache-control")).toBe(
-      "private, no-store",
-    );
-    expect(
-      storageKey(publicDownload.href).startsWith(
-        `private-artifacts/${prepared.body.id}/`,
-      ),
-    ).toBeTruthy();
-    await share(prepared.body.id, "private");
-    await accept(
-      api()(artifactReferencesContract).publicUrl({
-        params: { reference: reference(completed.body.url) },
-      }),
-      [404],
-    );
-  },
-);
-
-test("public sites are cloneable outside their originating organization", async () => {
-  const { bdd, host, deploy } = await fixture();
-  const site = await deploy();
-  const outsider = bdd.user({ orgId: null });
-  for (const slug of [site.publicSlug, `dpl-${site.deploymentId}`]) {
-    const result = await host.readHostedSiteFiles(outsider, slug);
-    expectCompleteSite(result, site.deploymentId);
-    for (const file of result.files) {
-      const url = new URL(file.downloadUrl);
-      expect(url.hostname).toBe(`dpl-${site.deploymentId}.okou.app`);
-      expect(url.pathname).toMatch(/^\/\.okou\/download\//u);
-      expect(url.searchParams.get("path")).toBe(file.path);
-    }
-  }
-});
-
-test.each(["free", "pro"] as const)(
-  "%s App previews respect the download paywall without blocking agent inputs",
-  async (plan) => {
-    const { actor, share } = await fixture(plan);
-    session(actor);
-    const prepared = await accept(
-      api()(uploadsContract).prepare({
-        headers,
-        body: {
-          filename: "report.pdf",
-          contentType: "application/pdf",
-          size: 13,
-          purpose: "artifact",
-        },
-      }),
-      [200],
-    );
-    const completed = await accept(
-      api()(uploadsContract).complete({
-        headers,
-        body: { id: prepared.body.id },
-      }),
-      [200],
-    );
-    const params = { reference: reference(completed.body.url) };
-    const resolved = await accept(
-      api()(artifactReferencesContract).resolve({ headers, params }),
-      [200],
-    );
-    expect(resolved.body).toMatchObject({
-      filename: "report.pdf",
-      contentType: "application/pdf",
-      url: expect.any(String),
-    });
-    expect(resolved.body.downloadAllowed).toBe(
-      plan === "free" ? false : undefined,
-    );
-    expect(resolved.body.downloadUrl).toStrictEqual(expect.any(String));
-    if (plan === "free") {
-      expect(resolved.body.downloadUrl).toBe(
-        `https://api.okou.ai/api/artifact-references/${params.reference}/download`,
-      );
-    }
-    const download = await accept(
-      api()(artifactDownloadsContract).download({ headers, params }),
-      [200, 402],
-    );
-    expect(download.status).toBe(plan === "free" ? 402 : 200);
-    const agentInput = await accept(
-      api()(artifactReferencesContract).resolve({
-        headers: runHeaders(actor, ["file:read"]),
-        params,
-        query: { kind: "file" },
-      }),
-      [200],
-    );
-    expect(agentInput.body.downloadUrl).toStrictEqual(expect.any(String));
-
-    await share(prepared.body.id, "public");
-    const publicPreview = await accept(
-      api()(artifactReferencesContract).publicUrl({ params }),
-      [200],
-    );
-    expect(publicPreview.body.downloadUrl).toStrictEqual(expect.any(String));
-  },
-);
-
-test("historical /share/artifacts/:shareId links resolve via read-only R2 policy probe without DB artifact_shares rows", async () => {
-  const { actor, bdd, objects, share } = await fixture();
-  session(actor);
-  const prepared = await accept(
-    api()(uploadsContract).prepare({
-      headers,
-      body: {
-        filename: "historical.pdf",
-        contentType: "application/pdf",
-        size: 13,
-        purpose: "artifact",
-      },
-    }),
-    [200],
-  );
-  await accept(
-    api()(uploadsContract).complete({
-      headers,
-      body: { id: prepared.body.id },
-    }),
-    [200],
-  );
-  await share(prepared.body.id, "public");
-
-  const shareId = randomUUID();
-  const fileId = prepared.body.id;
-  const storageKeyPath = `private-artifacts/${fileId}/shares/${shareId}/historical.pdf`;
-  objects.set(
-    `artifact-shares/okou/${shareId}.json`,
-    JSON.stringify({
-      version: 1,
-      revision: randomUUID(),
-      shareId,
-      ownerId: actor.userId,
-      orgId: actor.orgId,
-      publicBrand: "okou",
-      audience: "public",
-      status: "active",
-      publicToken: "legacy1234",
-      target: {
-        kind: "file",
-        id: fileId,
-        key: storageKeyPath,
-        filename: "historical.pdf",
-        contentType: "application/pdf",
-      },
-    }),
-  );
-
-  const shareReference = `${shareId.replaceAll("-", "")}.pdf`;
-  const publicResolved = await accept(
-    api()(artifactReferencesContract).publicUrl({
-      params: { reference: shareReference },
-    }),
-    [200],
-  );
-  expect(publicResolved.body.preview).toMatchObject({
-    filename: "historical.pdf",
-    contentType: "application/pdf",
   });
-  expect(publicResolved.body.url).toBe(
-    `https://sh-${shareId.replaceAll("-", "")}-legacy1234.okou.app/`,
-  );
-  expect(storageKey(publicResolved.body.downloadUrl!)).toBe(storageKeyPath);
-
-  const outsider = bdd.user({ orgId: null });
-  const downloaded = await download(
-    outsider,
-    `https://app.okou.ai/artifacts/${shareReference}`,
-  );
-  expect(downloaded.body).toMatchObject({
-    kind: "file",
-    filename: "historical.pdf",
-    contentType: "application/pdf",
-  });
-  if (downloaded.body.kind !== "file") {
-    throw new Error("Expected single-file download for historical share");
-  }
-  expect(storageKey(downloaded.body.url)).toBe(storageKeyPath);
-
-  // Revoking visibility via unified PATCH immediately revokes the historical share link too.
-  await share(fileId, "private");
-  await accept(
-    api()(artifactReferencesContract).publicUrl({
-      params: { reference: shareReference },
-    }),
-    [404],
-  );
 });

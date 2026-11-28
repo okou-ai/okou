@@ -1,248 +1,185 @@
-import { integrationsAgentPhoneContract } from "@okouai/api-contracts/contracts/integrations-agentphone";
+import { describe, expect, it } from "vitest";
 import { http, HttpResponse } from "msw";
-import { describe, expect, it, onTestFinished } from "vitest";
 
 import { testContext } from "../../../__tests__/test-context";
-import { setupApp } from "../../../__tests__/test-helpers";
-import { mockNow } from "../../../lib/time";
+import { mockNow, now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
-import { createDeferredPromise, settleIncludingAbort } from "../../utils";
-import { integrationsAgentPhoneRoutes } from "../integrations-agentphone";
 import { uniquePhoneHandle } from "./helpers/api-bdd-agentphone";
 import { createBddIntegrationApi } from "./helpers/api-bdd-integrations";
+import { createDeferredPromise } from "../../utils";
 
 const context = testContext();
+const integrations = createBddIntegrationApi(context);
+
+interface Latch {
+  readonly promise: Promise<void>;
+  readonly open: () => void;
+}
+
+function latch(): Latch {
+  const deferred = createDeferredPromise<void>(context.signal);
+  const open = (): void => {
+    if (!deferred.settled()) {
+      deferred.resolve();
+    }
+  };
+  return { promise: deferred.promise, open };
+}
+
+/** AgentPhone holds the first verification text until released. */
+function holdFirstVerificationText() {
+  const reached = latch();
+  const release = latch();
+  server.use(
+    http.post("https://api.agentphone.test/v1/messages", async () => {
+      reached.open();
+      await release.promise;
+      return HttpResponse.json({ id: "apmsg_held", status: "sent" });
+    }),
+  );
+  return { reached: reached.promise, release: release.open };
+}
+
+/** AgentPhone rejects the first verification text, then accepts. */
+function rejectFirstVerificationText() {
+  let sends = 0;
+  server.use(
+    http.post("https://api.agentphone.test/v1/messages", () => {
+      sends += 1;
+      if (sends === 1) {
+        return HttpResponse.json(
+          { detail: "temporarily unavailable" },
+          { status: 503 },
+        );
+      }
+      return HttpResponse.json({ id: `apmsg_${sends}`, status: "sent" });
+    }),
+  );
+}
 
 describe("AgentPhone verification send cooldown", () => {
-  it("reserves a cold user/org race once without consuming the rejected phone", async () => {
-    const integrations = createBddIntegrationApi(context);
+  it("agentphone-verification-002 keeps both cooldowns after a provider rejection until 60 seconds pass", async () => {
     integrations.configureAgentPhoneProvider();
-    const actor = integrations.user();
-    const firstPhone = uniquePhoneHandle();
-    const secondPhone = uniquePhoneHandle();
-    mockNow(Date.parse("2026-10-22T00:00:00Z"));
-    await integrations.getAgentPhoneLinkStatus(actor);
-    server.use(
-      http.post("https://api.agentphone.test/v1/messages", () => {
-        return HttpResponse.json({});
-      }),
-    );
+    rejectFirstVerificationText();
+    const first = integrations.user();
+    const second = integrations.user();
+    const phoneA = uniquePhoneHandle();
+    const phoneB = uniquePhoneHandle();
+    const start = now();
+    mockNow(start);
 
-    const results = await Promise.all([
-      integrations.requestStartAgentPhoneLink(
-        actor,
-        { phoneHandle: firstPhone },
-        [200, 429],
-      ),
-      integrations.requestStartAgentPhoneLink(
-        actor,
-        { phoneHandle: secondPhone },
-        [200, 429],
-      ),
-    ]);
-    expect(
-      results
-        .map((result) => {
-          return result.status;
-        })
-        .sort(),
-    ).toStrictEqual([200, 429]);
-    const rejectedPhone = results[0].status === 429 ? firstPhone : secondPhone;
-    const independent = await integrations.requestStartAgentPhoneLink(
-      integrations.user(),
-      { phoneHandle: rejectedPhone },
+    const rejected = await integrations.requestStartAgentPhoneLink(
+      first,
+      { phoneHandle: phoneA },
+      [503],
+    );
+    expect(rejected.body).toMatchObject({
+      error: { code: "PROVIDER_UNAVAILABLE" },
+    });
+
+    const sameUser = await integrations.requestStartAgentPhoneLink(
+      first,
+      { phoneHandle: phoneB },
+      [429],
+    );
+    expect(sameUser.body).toMatchObject({
+      error: { code: "TOO_MANY_REQUESTS" },
+    });
+    const samePhone = await integrations.requestStartAgentPhoneLink(
+      second,
+      { phoneHandle: phoneA },
+      [429],
+    );
+    expect(samePhone.body).toMatchObject({
+      error: { code: "TOO_MANY_REQUESTS" },
+    });
+    const otherPhone = await integrations.requestStartAgentPhoneLink(
+      second,
+      { phoneHandle: phoneB },
       [200],
     );
-    expect(independent.body).toStrictEqual({
-      phoneHandle: rejectedPhone,
+    expect(otherPhone.body).toMatchObject({ verificationSent: true });
+
+    mockNow(start + 59_999);
+    const early = await integrations.requestStartAgentPhoneLink(
+      first,
+      { phoneHandle: phoneA },
+      [429],
+    );
+    expect(early.body).toMatchObject({
+      error: { code: "TOO_MANY_REQUESTS" },
+    });
+
+    mockNow(start + 60_000);
+    const retried = await integrations.requestStartAgentPhoneLink(
+      first,
+      { phoneHandle: phoneA },
+      [200],
+    );
+    expect(retried.body).toStrictEqual({
+      phoneHandle: phoneA,
       verificationSent: true,
     });
   });
 
-  it.each(["provider rejection", "network failure"])(
-    "keeps both cooldowns after a %s until the original 60 seconds expire",
-    async (failure) => {
-      const integrations = createBddIntegrationApi(context);
-      integrations.configureAgentPhoneProvider();
-      const actor = integrations.user();
-      const otherActor = integrations.user();
-      const phoneHandle = uniquePhoneHandle();
-      const otherPhone = uniquePhoneHandle();
-      const startedAt = Date.parse("2026-10-22T00:00:00Z");
-      mockNow(startedAt);
-      server.use(
-        http.post("https://api.agentphone.test/v1/messages", () => {
-          return failure === "network failure"
-            ? HttpResponse.error()
-            : HttpResponse.json({ detail: "unavailable" }, { status: 503 });
-        }),
-      );
-
-      const failed = await integrations.requestStartAgentPhoneLink(
-        actor,
-        { phoneHandle },
-        [503],
-      );
-      expect(failed.body).toMatchObject({
-        error: { code: "PROVIDER_UNAVAILABLE" },
-      });
-      server.use(
-        http.post("https://api.agentphone.test/v1/messages", () => {
-          return HttpResponse.json({});
-        }),
-      );
-
-      const sameUser = await integrations.requestStartAgentPhoneLink(
-        actor,
-        { phoneHandle: otherPhone },
-        [429],
-      );
-      expect(sameUser.body).toMatchObject({
-        error: { code: "TOO_MANY_REQUESTS" },
-      });
-      const samePhone = await integrations.requestStartAgentPhoneLink(
-        otherActor,
-        { phoneHandle },
-        [429],
-      );
-      expect(samePhone.body).toMatchObject({
-        error: { code: "TOO_MANY_REQUESTS" },
-      });
-
-      // Rejected attempts must not consume the other phone or user's cooldown.
-      const independent = await integrations.requestStartAgentPhoneLink(
-        otherActor,
-        { phoneHandle: otherPhone },
-        [200],
-      );
-      expect(independent.body).toStrictEqual({
-        phoneHandle: otherPhone,
-        verificationSent: true,
-      });
-
-      mockNow(startedAt + 59_999);
-      const beforeExpiry = await integrations.requestStartAgentPhoneLink(
-        actor,
-        { phoneHandle },
-        [429],
-      );
-      expect(beforeExpiry.body).toMatchObject({
-        error: { code: "TOO_MANY_REQUESTS" },
-      });
-      mockNow(startedAt + 60_000);
-      const retried = await integrations.requestStartAgentPhoneLink(
-        actor,
-        { phoneHandle },
-        [200],
-      );
-      expect(retried.body).toStrictEqual({
-        phoneHandle,
-        verificationSent: true,
-      });
-    },
-  );
-
-  it.each(["phone", "user/org"])(
-    "rejects a concurrent request for the same %s before the provider responds",
-    async (scope) => {
-      const integrations = createBddIntegrationApi(context);
-      integrations.configureAgentPhoneProvider();
-      const actor = integrations.user();
-      const phoneHandle = uniquePhoneHandle();
-      mockNow(Date.parse("2026-10-22T00:00:00Z"));
-      const entered = createDeferredPromise<void>(context.signal);
-      const response = createDeferredPromise<void>(context.signal);
-      server.use(
-        http.post("https://api.agentphone.test/v1/messages", async () => {
-          entered.resolve();
-          await response.promise;
-          return HttpResponse.json({});
-        }),
-      );
-
-      const first = settleIncludingAbort(
-        integrations.requestStartAgentPhoneLink(actor, { phoneHandle }, [200]),
-      );
-      onTestFinished(async () => {
-        if (!response.settled()) {
-          response.resolve();
-        }
-        await first;
-      });
-      await entered.promise;
-      const concurrent = await integrations.requestStartAgentPhoneLink(
-        scope === "phone" ? integrations.user() : actor,
-        {
-          phoneHandle: scope === "phone" ? phoneHandle : uniquePhoneHandle(),
-        },
-        [429],
-      );
-      expect(concurrent.body).toMatchObject({
-        error: { code: "TOO_MANY_REQUESTS" },
-      });
-      response.resolve();
-      const sent = await first;
-      if (!sent.ok) {
-        throw sent.error;
-      }
-      expect(sent.value.body).toStrictEqual({
-        phoneHandle,
-        verificationSent: true,
-      });
-    },
-  );
-
-  it("retains the committed cooldown when the API owner aborts an in-flight send", async () => {
-    const integrations = createBddIntegrationApi(context);
+  it("agentphone-verification-004 rejects another member's request for a phone whose verification is in flight", async () => {
     integrations.configureAgentPhoneProvider();
-    const actor = integrations.user();
+    const provider = holdFirstVerificationText();
+    const first = integrations.user();
+    const second = integrations.user();
     const phoneHandle = uniquePhoneHandle();
-    await integrations.getAgentPhoneLinkStatus(actor);
-    const controller = new AbortController();
-    const client = setupApp({
-      context,
-      routes: integrationsAgentPhoneRoutes,
-      signal: AbortSignal.any([context.signal, controller.signal]),
-      rethrowErrors: true,
-    })(integrationsAgentPhoneContract);
-    const entered = createDeferredPromise<void>(context.signal);
-    const response = createDeferredPromise<void>(context.signal);
-    server.use(
-      http.post("https://api.agentphone.test/v1/messages", async () => {
-        entered.resolve();
-        await response.promise;
-        return HttpResponse.json({});
-      }),
-    );
-    const sending = settleIncludingAbort(
-      client.startLink({
-        headers: { authorization: "Bearer clerk-session" },
-        body: { phoneHandle },
-      }),
-    );
-    onTestFinished(async () => {
-      controller.abort();
-      if (!response.settled()) {
-        response.resolve();
-      }
-      await sending;
-    });
-    await entered.promise;
-    controller.abort(new DOMException("API owner stopped", "AbortError"));
-    const cancelled = await sending;
-    if (cancelled.ok) {
-      throw new Error("Expected API owner cancellation to propagate");
-    }
-    expect(cancelled.error).toMatchObject({ name: "AbortError" });
-    response.resolve();
 
-    const retried = await integrations.requestStartAgentPhoneLink(
-      actor,
+    const original = integrations.requestStartAgentPhoneLink(
+      first,
+      { phoneHandle },
+      [200],
+    );
+    await provider.reached;
+
+    const concurrent = await integrations.requestStartAgentPhoneLink(
+      second,
       { phoneHandle },
       [429],
     );
-    expect(retried.body).toMatchObject({
+    expect(concurrent.body).toMatchObject({
       error: { code: "TOO_MANY_REQUESTS" },
+    });
+
+    provider.release();
+    const completed = await original;
+    expect(completed.body).toStrictEqual({
+      phoneHandle,
+      verificationSent: true,
+    });
+  });
+
+  it("agentphone-verification-005 rejects the same member's request for another phone while a verification is in flight", async () => {
+    integrations.configureAgentPhoneProvider();
+    const provider = holdFirstVerificationText();
+    const member = integrations.user();
+    const phoneHandle = uniquePhoneHandle();
+
+    const original = integrations.requestStartAgentPhoneLink(
+      member,
+      { phoneHandle },
+      [200],
+    );
+    await provider.reached;
+
+    const concurrent = await integrations.requestStartAgentPhoneLink(
+      member,
+      { phoneHandle: uniquePhoneHandle() },
+      [429],
+    );
+    expect(concurrent.body).toMatchObject({
+      error: { code: "TOO_MANY_REQUESTS" },
+    });
+
+    provider.release();
+    const completed = await original;
+    expect(completed.body).toStrictEqual({
+      phoneHandle,
+      verificationSent: true,
     });
   });
 });

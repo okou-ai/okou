@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+
 import {
   personalModelProviderAccountsByIdContract,
   personalModelProvidersMainContract,
@@ -5,622 +7,377 @@ import {
 } from "@okouai/api-contracts/contracts/personal-model-providers";
 import { thirdPartySubscriptionsMainContract } from "@okouai/api-contracts/contracts/third-party-subscriptions";
 import { http, HttpResponse } from "msw";
-import { randomUUID } from "node:crypto";
-import { expect, test } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
+import { now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import { meModelProviderAccountRoutes } from "../me-model-provider-accounts";
 import { meThirdPartySubscriptionsListRoutes } from "../me-model-providers-list";
 import { meModelProvidersUpsertRoutes } from "../me-model-providers-upsert";
-import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
+import type { ApiTestUser } from "./helpers/api-bdd";
 import {
   createAuthDeviceApiActions,
-  mockClaudeCodeTokenEndpoint,
   mockCodexDeviceAuthProvider,
 } from "./helpers/api-bdd-auth-device";
-import { createRunExecutionCredentials } from "./helpers/run-execution-credentials";
 import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
-const credentials = createRunExecutionCredentials(context);
-const mocks = createRouteMocks(context);
-const routes = Object.freeze([
-  ...meThirdPartySubscriptionsListRoutes,
-  ...meModelProvidersUpsertRoutes,
-  ...meModelProviderAccountRoutes,
-]);
-const app = () => {
-  return setupApp({ context, routes });
-};
-const humanHeaders = Object.freeze({ authorization: "Bearer clerk-session" });
+const deviceAuth = createAuthDeviceApiActions(context);
+const headers = Object.freeze({ authorization: "Bearer clerk-session" });
+const app = setupApp({
+  context,
+  routes: [
+    ...meModelProviderAccountRoutes,
+    ...meThirdPartySubscriptionsListRoutes,
+    ...meModelProvidersUpsertRoutes,
+  ],
+});
+const subscriptions = app(thirdPartySubscriptionsMainContract);
+const subscription = app(personalSubscriptionsContract);
+const accounts = app(personalModelProviderAccountsByIdContract);
+const providers = app(personalModelProvidersMainContract);
 
-async function fixture() {
-  const actor = createBddApi(context).user();
+const FIVE_HOURS = 5 * 60 * 60;
+const WEEK = 7 * 24 * 60 * 60;
+
+function user(overrides: Partial<ApiTestUser> = {}): ApiTestUser {
+  const userId = overrides.userId ?? `user_${randomUUID()}`;
+  return {
+    userId,
+    orgId: overrides.orgId ?? `org_${randomUUID()}`,
+    orgRole: "org:admin",
+    email: `${userId}@example.test`,
+  };
+}
+
+function signIn(actor: ApiTestUser): void {
+  createRouteMocks(context).clerk.session(
+    actor.userId,
+    actor.orgId,
+    actor.orgRole,
+  );
+}
+
+function chatgptUsage(fiveHourUsed: number, weeklyUsed: number): void {
+  const resetAt = Math.floor(now() / 1000) + 3600;
   server.use(
     http.get("https://chatgpt.com/backend-api/wham/usage", () => {
       return HttpResponse.json({
         plan_type: "pro",
         rate_limit: {
           primary_window: {
-            limit_window_seconds: 18_000,
-            reset_at: 1_893_441_600,
-            used_percent: 75,
+            used_percent: fiveHourUsed,
+            limit_window_seconds: FIVE_HOURS,
+            reset_at: resetAt,
           },
           secondary_window: {
-            limit_window_seconds: 604_800,
-            reset_at: 1_893_456_000,
-            used_percent: 40,
+            used_percent: weeklyUsed,
+            limit_window_seconds: WEEK,
+            reset_at: resetAt + 2 * 86_400,
           },
         },
-        rate_limit_reset_credits: { available_count: 3 },
       });
     }),
   );
-  const accountIds: string[] = [];
-  for (let index = 0; index < 2; index += 1) {
-    mockCodexDeviceAuthProvider({
-      accountId: `account-${randomUUID()}`,
-      workspaceName: `Workspace ${index}`,
-    });
-    const device = createAuthDeviceApiActions(context);
-    const started = await device.requestCodexStart(actor, "personal", [200], {
-      mode: "add",
-    });
-    if (started.status !== 200) {
-      throw new Error("Expected device authentication to start");
-    }
-    const completed = await device.requestCodexComplete(
-      actor,
-      started.body.sessionToken,
-      [200],
-    );
-    if (!("status" in completed.body) || completed.body.status !== "complete") {
-      throw new Error("Expected a connected subscription");
-    }
-    accountIds.push(completed.body.provider.id);
-  }
-  const [firstAccountId, secondAccountId] = accountIds;
-  if (!firstAccountId || !secondAccountId) {
-    throw new Error("Expected two connected subscriptions");
-  }
-  return { actor, accountIds: [firstAccountId, secondAccountId] as const };
 }
 
-async function agentHeaders(actor: ApiTestUser) {
-  const token = await credentials.okouToken(actor);
-  return { authorization: `Bearer ${token}` };
-}
-
-function human(actor: ApiTestUser) {
-  mocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
-  return humanHeaders;
-}
-
-test("subscription listing requires an authenticated organization session", async () => {
-  context.mocks.clerk.authenticateRequest.mockResolvedValue({
-    isAuthenticated: false,
-  });
-  const unauthenticated = await accept(
-    app()(thirdPartySubscriptionsMainContract).list({ headers: {} }),
-    [401],
-  );
-  expect(unauthenticated.status).toBe(401);
-
-  mocks.clerk.session(`user_${randomUUID()}`, null);
-  const noOrganization = await accept(
-    app()(thirdPartySubscriptionsMainContract).list({ headers: humanHeaders }),
-    [401],
-  );
-  expect(noOrganization.status).toBe(401);
-});
-
-test("agents read all subscriptions and single-account live usage without a failed run", async () => {
-  const { actor, accountIds } = await fixture();
-  const headers = await agentHeaders(actor);
-  const listed = await accept(
-    app()(thirdPartySubscriptionsMainContract).list({ headers }),
-    [200],
-  );
-  expect(
-    listed.body.subscriptions
-      .map((account) => {
-        return account.id;
-      })
-      .sort(),
-  ).toStrictEqual([...accountIds].sort());
-  for (const account of listed.body.subscriptions) {
-    expect(account).not.toHaveProperty("secrets");
-    expect(account).not.toHaveProperty("externalAccountId");
-    expect(account).not.toHaveProperty("orgId");
-    expect(account).not.toHaveProperty("userId");
-  }
-  const detail = await accept(
-    app()(personalSubscriptionsContract).get({
-      headers,
-      params: { id: accountIds[0] },
-    }),
-    [200],
-  );
-  expect(detail.body).toMatchObject({
-    id: accountIds[0],
-    subscriptionResetSupported: true,
-    subscriptionResetCredits: 3,
-    subscriptionUsage: {
-      fiveHour: {
-        usedPercent: 75,
-        remainingPercent: 25,
-        resetAt: "2029-12-31T20:00:00.000Z",
-      },
-      weekly: { remainingPercent: 60 },
-    },
-  });
-  expect(detail.body.modelProviderId).toStrictEqual(expect.any(String));
-  expect(listed.body.subscriptions).toContainEqual(
-    expect.objectContaining({
-      id: detail.body.id,
-      modelProviderId: detail.body.modelProviderId,
-    }),
-  );
-  const otherDetail = await accept(
-    app()(personalSubscriptionsContract).get({
-      headers,
-      params: { id: accountIds[1] },
-    }),
-    [200],
-  );
-  expect(otherDetail.body).toMatchObject({
-    id: accountIds[1],
-    modelProviderId: detail.body.modelProviderId,
-    type: "codex-oauth-token",
-  });
-  const repeatedDetail = await accept(
-    app()(personalSubscriptionsContract).get({
-      headers,
-      params: { id: accountIds[0] },
-    }),
-    [200],
-  );
-  expect(repeatedDetail.body).toMatchObject({
-    id: accountIds[0],
-    modelProviderId: detail.body.modelProviderId,
-  });
-  for (const response of [detail.body, otherDetail.body, repeatedDetail.body]) {
-    expect(response).not.toHaveProperty("secrets");
-    expect(response).not.toHaveProperty("externalAccountId");
-    expect(response).not.toHaveProperty("orgId");
-    expect(response).not.toHaveProperty("userId");
-  }
-});
-
-test("cLI account activation reuses the existing switch behavior", async () => {
-  const { actor, accountIds } = await fixture();
-  const headers = await agentHeaders(actor);
-  const switched = await accept(
-    app()(personalModelProviderAccountsByIdContract).activate({
-      headers,
-      params: { id: accountIds[1] },
-      body: {},
-    }),
-    [200],
-  );
-  expect(switched.body).toMatchObject({ id: accountIds[1], isActive: true });
-  expect(switched.body).not.toHaveProperty("secrets");
-  expect(switched.body).not.toHaveProperty("externalAccountId");
-  expect(switched.body).not.toHaveProperty("orgId");
-  expect(switched.body).not.toHaveProperty("userId");
-  const listed = await accept(
-    app()(thirdPartySubscriptionsMainContract).list({ headers }),
-    [200],
-  );
-  expect(
-    listed.body.subscriptions.map((account) => {
-      return account.id;
-    }),
-  ).toStrictEqual([accountIds[1], accountIds[0]]);
-  expect(
-    listed.body.subscriptions.find((account) => {
-      return account.id === accountIds[0];
-    })?.isActive,
-  ).toBeFalsy();
-  expect(
-    listed.body.subscriptions.find((account) => {
-      return account.id === accountIds[1];
-    })?.isActive,
-  ).toBeTruthy();
-  const repeated = await accept(
-    app()(personalModelProviderAccountsByIdContract).activate({
-      headers,
-      params: { id: accountIds[1] },
-      body: {},
-    }),
-    [200],
-  );
-  expect(repeated.body).toMatchObject({
-    id: accountIds[1],
-    modelProviderId: switched.body.modelProviderId,
-    isActive: true,
-  });
-  const afterRepeat = await accept(
-    app()(thirdPartySubscriptionsMainContract).list({ headers }),
-    [200],
-  );
-  expect(
-    afterRepeat.body.subscriptions
-      .filter((account) => {
-        return account.isActive;
-      })
-      .map((account) => {
-        return account.id;
-      }),
-  ).toStrictEqual([accountIds[1]]);
-  expect(
-    afterRepeat.body.subscriptions.map((account) => {
-      return account.id;
-    }),
-  ).toStrictEqual([accountIds[1], accountIds[0]]);
-});
-
-test("an executing agent cannot execute a subscription reset", async () => {
-  const { actor, accountIds } = await fixture();
-  let consumed = false;
+function chatgptUsageWithResetCredits(available: number): void {
+  const resetAt = Math.floor(now() / 1000) + 3600;
   server.use(
-    http.post(
-      "https://chatgpt.com/backend-api/wham/rate-limit-reset-credits/consume",
+    http.get("https://chatgpt.com/backend-api/wham/usage", () => {
+      return HttpResponse.json({
+        plan_type: "pro",
+        rate_limit: {
+          primary_window: {
+            used_percent: 75,
+            limit_window_seconds: FIVE_HOURS,
+            reset_at: resetAt,
+          },
+          secondary_window: {
+            used_percent: 40,
+            limit_window_seconds: WEEK,
+            reset_at: resetAt + 2 * 86_400,
+          },
+        },
+        rate_limit_reset_credits: { available_count: available },
+      });
+    }),
+    http.get(
+      "https://chatgpt.com/backend-api/wham/rate-limit-reset-credits",
       () => {
-        consumed = true;
-        return HttpResponse.json({ code: "reset", windows_reset: 1 });
+        return HttpResponse.json({
+          credits: Array.from({ length: available }, () => {
+            return { status: "available", expires_at: null };
+          }),
+        });
       },
     ),
   );
-  const headers = await agentHeaders(actor);
-  const denied = await accept(
-    app()(personalModelProviderAccountsByIdContract).resetSubscriptionUsage({
-      headers,
-      params: { id: accountIds[0] },
-      body: { idempotencyKey: randomUUID() },
-    }),
-    [403],
-  );
-  expect(denied.status).toBe(403);
-  const listed = await accept(
-    app()(thirdPartySubscriptionsMainContract).list({ headers }),
-    [200],
-  );
-  expect(
-    listed.body.subscriptions.find((account) => {
-      return account.id === accountIds[0];
-    })?.subscriptionResetCredits,
-  ).toBe(3);
-  expect(consumed).toBeFalsy();
-});
+}
 
-test("a missing run cannot authorize recovery or reset of a connected account", async () => {
-  const { actor, accountIds } = await fixture();
-  const headers = human(actor);
-  const runId = randomUUID();
-  const client = app()(personalModelProviderAccountsByIdContract);
-  const existing = await accept(
-    client.getById({
-      headers,
-      params: { id: accountIds[0] },
-      query: { runId },
+function anthropic(usage: () => Response): void {
+  server.use(
+    http.get("https://api.anthropic.com/api/oauth/profile", () => {
+      return HttpResponse.json({});
     }),
-    [404],
-  );
-  const missing = await accept(
-    client.getById({
-      headers,
-      params: { id: randomUUID() },
-      query: { runId },
+    http.get("https://api.anthropic.com/api/oauth/usage", () => {
+      return usage();
     }),
-    [404],
   );
-  expect(existing.body).toStrictEqual(missing.body);
-  const reset = await accept(
-    client.resetFailedRunSubscriptionUsage({
-      headers,
-      params: { id: accountIds[0], runId },
-      body: { idempotencyKey: randomUUID() },
-    }),
-    [404],
-  );
-  const missingReset = await accept(
-    client.resetFailedRunSubscriptionUsage({
-      headers,
-      params: { id: randomUUID(), runId },
-      body: { idempotencyKey: randomUUID() },
-    }),
-    [404],
-  );
-  expect(reset.body).toStrictEqual(missingReset.body);
-  const detail = await accept(
-    app()(personalSubscriptionsContract).get({
-      headers,
-      params: { id: accountIds[0] },
-    }),
-    [200],
-  );
-  expect(detail.body).toMatchObject({
-    id: accountIds[0],
-    subscriptionResetCredits: 3,
+}
+
+function claudeUsage(fiveHourUsed: number, weeklyUsed: number): Response {
+  return HttpResponse.json({
+    five_hour: {
+      utilization: fiveHourUsed,
+      resets_at: new Date(now() + 3_600_000).toISOString(),
+    },
+    seven_day: {
+      utilization: weeklyUsed,
+      resets_at: new Date(now() + 3 * 86_400_000).toISOString(),
+    },
   });
-  expect(detail.body).not.toHaveProperty("secrets");
-  expect(detail.body).not.toHaveProperty("externalAccountId");
-});
+}
 
-test("foreign users and organizations cannot read or activate the linked account", async () => {
-  const { actor, accountIds } = await fixture();
-  for (const other of [
-    createBddApi(context).user({ orgId: actor.orgId }),
-    createBddApi(context).user({ userId: actor.userId }),
-  ]) {
-    const headers = human(other);
-    const listed = await accept(
-      app()(thirdPartySubscriptionsMainContract).list({ headers }),
+/** Connect one Codex subscription through ChatGPT device authorization. */
+async function connectCodex(actor: ApiTestUser, accountId: string) {
+  mockCodexDeviceAuthProvider({
+    accountId,
+    workspaceName: `Workspace ${accountId}`,
+    refreshToken: `rt_${accountId}_synthetic_high_entropy`,
+  });
+  const started = await deviceAuth.requestCodexStart(actor, "personal", [200], {
+    mode: "add",
+  });
+  if (started.status !== 200) {
+    throw new Error("Expected a started Codex sign-in");
+  }
+  const completed = await deviceAuth.requestCodexComplete(
+    actor,
+    started.body.sessionToken,
+    [200],
+  );
+  if (!("status" in completed.body) || completed.body.status !== "complete") {
+    throw new Error("Expected a completed Codex sign-in");
+  }
+  return completed.body.provider;
+}
+
+async function connectClaude(actor: ApiTestUser) {
+  signIn(actor);
+  return await accept(
+    providers.upsert({
+      headers,
+      body: {
+        type: "claude-code-oauth-token",
+        secret: `sk-ant-oat01-${randomUUID()}`,
+      },
+    }),
+    [201],
+  );
+}
+
+async function listSubscriptions(actor: ApiTestUser) {
+  signIn(actor);
+  const listed = await accept(subscriptions.list({ headers }), [200]);
+  return listed.body.subscriptions;
+}
+
+async function ownerWithTwoCodexSubscriptions() {
+  chatgptUsage(10, 20);
+  const owner = user();
+  const owned = await connectCodex(owner, `acct_${randomUUID()}`);
+  await connectCodex(owner, `acct_${randomUUID()}`);
+  return { owner, owned };
+}
+
+/** What another user observes about the owner's account and a random ID. */
+async function observeAsOther(other: ApiTestUser, ownedId: string) {
+  const list = await listSubscriptions(other);
+  signIn(other);
+  const read = async (id: string) => {
+    const response = await accept(
+      subscription.get({ headers, params: { id } }),
+      [404],
+    );
+    return response.body;
+  };
+  const activate = async (id: string) => {
+    const response = await accept(
+      accounts.activate({ headers, params: { id }, body: {} }),
+      [404],
+    );
+    return response.body;
+  };
+  return {
+    list,
+    ownedRead: await read(ownedId),
+    randomRead: await read(randomUUID()),
+    ownedActivation: await activate(ownedId),
+    randomActivation: await activate(randomUUID()),
+  };
+}
+
+describe("personal subscription controls", () => {
+  it("subscription-controls-009 shows Claude Code usage windows but refuses a manual reset", async () => {
+    anthropic(() => {
+      return claudeUsage(12, 24);
+    });
+    const member = user();
+    const connected = await connectClaude(member);
+
+    signIn(member);
+    const detail = await accept(
+      subscription.get({ headers, params: { id: connected.body.provider.id } }),
       [200],
     );
-    expect(listed.body.subscriptions).toStrictEqual([]);
-    const existing = await accept(
-      app()(personalSubscriptionsContract).get({
+    expect(detail.body.subscriptionResetSupported).toBeFalsy();
+    expect(detail.body.subscriptionUsage).toMatchObject({
+      fiveHour: { remainingPercent: 88 },
+      weekly: { remainingPercent: 76 },
+    });
+    await accept(
+      accounts.resetSubscriptionUsage({
         headers,
-        params: { id: accountIds[0] },
-      }),
-      [404],
-    );
-    const missing = await accept(
-      app()(personalSubscriptionsContract).get({
-        headers,
-        params: { id: randomUUID() },
-      }),
-      [404],
-    );
-    expect(existing.body).toStrictEqual(missing.body);
-    const activated = await accept(
-      app()(personalModelProviderAccountsByIdContract).activate({
-        headers,
-        params: { id: accountIds[0] },
-        body: {},
-      }),
-      [404],
-    );
-    expect(activated.status).toBe(404);
-    const missingActivation = await accept(
-      app()(personalModelProviderAccountsByIdContract).activate({
-        headers,
-        params: { id: randomUUID() },
-        body: {},
-      }),
-      [404],
-    );
-    expect(activated.body).toStrictEqual(missingActivation.body);
-  }
-});
-
-test("reset rejects foreign, logical-provider and disconnected IDs without changing a sibling", async () => {
-  const { actor, accountIds } = await fixture();
-  const first = await accept(
-    app()(personalSubscriptionsContract).get({
-      headers: human(actor),
-      params: { id: accountIds[0] },
-    }),
-    [200],
-  );
-  const logicalProviderId = first.body.modelProviderId;
-  if (!logicalProviderId) {
-    throw new Error("Expected an account's logical provider ID");
-  }
-  await accept(
-    app()(personalModelProviderAccountsByIdContract).delete({
-      headers: human(actor),
-      params: { id: accountIds[1] },
-    }),
-    [204],
-  );
-
-  for (const candidate of [
-    { actor, id: randomUUID() },
-    { actor, id: logicalProviderId },
-    { actor, id: accountIds[1] },
-    {
-      actor: createBddApi(context).user({ orgId: actor.orgId }),
-      id: accountIds[0],
-    },
-    {
-      actor: createBddApi(context).user({ userId: actor.userId }),
-      id: accountIds[0],
-    },
-  ]) {
-    const reset = await accept(
-      app()(personalModelProviderAccountsByIdContract).resetSubscriptionUsage({
-        headers: human(candidate.actor),
-        params: { id: candidate.id },
+        params: { id: connected.body.provider.id },
         body: { idempotencyKey: randomUUID() },
       }),
       [404],
     );
-    expect(reset.body).toStrictEqual({
-      error: { message: "Resource not found", code: "NOT_FOUND" },
+  });
+
+  it("subscription-controls-006 (1/2) hides a member's subscriptions from a colleague in the same organization", async () => {
+    const { owner, owned } = await ownerWithTwoCodexSubscriptions();
+
+    const seen = await observeAsOther(user({ orgId: owner.orgId }), owned.id);
+    expect(seen.list).toStrictEqual([]);
+    expect(seen.ownedRead).toStrictEqual(seen.randomRead);
+    expect(seen.ownedActivation).toStrictEqual(seen.randomActivation);
+  });
+
+  it("subscription-controls-006 (2/2) hides a member's subscriptions from the same user in another organization", async () => {
+    const { owner, owned } = await ownerWithTwoCodexSubscriptions();
+
+    const seen = await observeAsOther(user({ userId: owner.userId }), owned.id);
+    expect(seen.list).toStrictEqual([]);
+    expect(seen.ownedRead).toStrictEqual(seen.randomRead);
+    expect(seen.ownedActivation).toStrictEqual(seen.randomActivation);
+  });
+
+  it("subscription-controls-010 keeps Codex usage when Claude Code usage becomes unavailable", async () => {
+    chatgptUsage(75, 40);
+    let claudeAvailable = true;
+    anthropic(() => {
+      return claudeAvailable
+        ? claudeUsage(12, 24)
+        : HttpResponse.json({ error: "unavailable" }, { status: 503 });
     });
-  }
+    const member = user();
+    await connectCodex(member, `acct_${randomUUID()}`);
+    await connectCodex(member, `acct_${randomUUID()}`);
+    await connectClaude(member);
 
-  const remaining = await accept(
-    app()(thirdPartySubscriptionsMainContract).list({ headers: human(actor) }),
-    [200],
-  );
-  expect(remaining.body.subscriptions).toStrictEqual([
-    expect.objectContaining({
-      id: accountIds[0],
-      modelProviderId: logicalProviderId,
-      isActive: true,
-      subscriptionResetCredits: first.body.subscriptionResetCredits,
-      subscriptionUsage: first.body.subscriptionUsage,
-    }),
-  ]);
-});
+    const first = await listSubscriptions(member);
+    expect(first).toHaveLength(3);
+    const codex = first.filter((entry) => {
+      return entry.type === "codex-oauth-token";
+    });
+    expect(codex).toHaveLength(2);
+    for (const entry of codex) {
+      expect(entry.subscriptionUsage).toMatchObject({
+        fiveHour: { usedPercent: 75 },
+        weekly: { usedPercent: 40 },
+      });
+    }
+    const claude = first.find((entry) => {
+      return entry.type === "claude-code-oauth-token";
+    });
+    expect(claude?.subscriptionUsage).toMatchObject({
+      fiveHour: { usedPercent: 12 },
+      weekly: { usedPercent: 24 },
+    });
 
-test("an unavailable upstream usage read keeps quota unknown instead of fabricating zero", async () => {
-  const { actor, accountIds } = await fixture();
-  server.use(
-    http.get("https://chatgpt.com/backend-api/wham/usage", () => {
-      return HttpResponse.json(
-        { error: "temporarily_unavailable" },
-        { status: 503 },
-      );
-    }),
-  );
-  const detail = await accept(
-    app()(personalSubscriptionsContract).get({
-      headers: human(actor),
-      params: { id: accountIds[0] },
-    }),
-    [200],
-  );
-  expect(detail.body.id).toBe(accountIds[0]);
-  expect(detail.body.subscriptionResetSupported).toBeTruthy();
-  expect(detail.body.subscriptionUsage ?? null).toBeNull();
-  expect(detail.body.subscriptionResetCredits ?? null).toBeNull();
-});
-
-test("claude Code exposes natural usage windows but explicitly rejects manual reset", async () => {
-  const actor = createBddApi(context).user();
-  mockClaudeCodeTokenEndpoint({
-    accountEmail: actor.email,
-    organizationName: `Workspace ${randomUUID()}`,
-  });
-  const connected = await accept(
-    app()(personalModelProvidersMainContract).upsert({
-      headers: human(actor),
-      body: {
-        type: "claude-code-oauth-token",
-        secret: `sk-ant-oat-${randomUUID()}`,
-      },
-    }),
-    [201],
-  );
-  const detail = await accept(
-    app()(personalSubscriptionsContract).get({
-      headers: human(actor),
-      params: { id: connected.body.provider.id },
-    }),
-    [200],
-  );
-  expect(detail.body).toMatchObject({
-    subscriptionResetSupported: false,
-    subscriptionUsage: {
-      fiveHour: { remainingPercent: 88 },
-      weekly: { remainingPercent: 76 },
-    },
-  });
-  const reset = await accept(
-    app()(personalModelProviderAccountsByIdContract).resetSubscriptionUsage({
-      headers: human(actor),
-      params: { id: connected.body.provider.id },
-      body: { idempotencyKey: randomUUID() },
-    }),
-    [404],
-  );
-  expect(reset.status).toBe(404);
-});
-
-test("mixed subscriptions keep provider usage separate when Claude usage becomes unavailable", async () => {
-  const { actor, accountIds } = await fixture();
-  mockClaudeCodeTokenEndpoint({
-    accountEmail: actor.email,
-    organizationName: `Workspace ${randomUUID()}`,
-  });
-  const client = app()(personalModelProvidersMainContract);
-  const headers = human(actor);
-  const connected = await accept(
-    client.upsert({
-      headers,
-      body: {
-        type: "claude-code-oauth-token",
-        secret: `sk-ant-oat-${randomUUID()}`,
-      },
-    }),
-    [201],
-  );
-  const listed = await accept(
-    app()(thirdPartySubscriptionsMainContract).list({ headers }),
-    [200],
-  );
-  expect(
-    listed.body.subscriptions
-      .map((provider) => {
-        return provider.id;
-      })
-      .sort(),
-  ).toStrictEqual([...accountIds, connected.body.provider.id].sort());
-  for (const id of accountIds) {
-    expect(listed.body.subscriptions).toContainEqual(
-      expect.objectContaining({
-        id,
-        type: "codex-oauth-token",
-        subscriptionUsage: expect.objectContaining({
-          fiveHour: expect.objectContaining({ usedPercent: 75 }),
-          weekly: expect.objectContaining({ usedPercent: 40 }),
-        }),
+    claudeAvailable = false;
+    const second = await listSubscriptions(member);
+    expect(
+      second.map((entry) => {
+        return entry.id;
+      }),
+    ).toStrictEqual(
+      first.map((entry) => {
+        return entry.id;
       }),
     );
-  }
-  expect(listed.body.subscriptions).toContainEqual(
-    expect.objectContaining({
-      id: connected.body.provider.id,
-      type: "claude-code-oauth-token",
-      subscriptionUsage: expect.objectContaining({
-        fiveHour: expect.objectContaining({ usedPercent: 12 }),
-        weekly: expect.objectContaining({ usedPercent: 24 }),
+    expect(
+      second.filter((entry) => {
+        return entry.type === "codex-oauth-token";
       }),
-    }),
-  );
-
-  server.use(
-    http.get("https://api.anthropic.com/api/oauth/usage", () => {
-      return HttpResponse.json({ error: "unavailable" }, { status: 503 });
-    }),
-  );
-  const degraded = await accept(
-    app()(thirdPartySubscriptionsMainContract).list({ headers }),
-    [200],
-  );
-  expect(
-    degraded.body.subscriptions.map((provider) => {
-      return provider.id;
-    }),
-  ).toStrictEqual(
-    listed.body.subscriptions.map((provider) => {
-      return provider.id;
-    }),
-  );
-  for (const id of accountIds) {
-    const before = listed.body.subscriptions.find((provider) => {
-      return provider.id === id;
+    ).toStrictEqual(codex);
+    const unavailable = second.find((entry) => {
+      return entry.id === claude?.id;
     });
-    expect(degraded.body.subscriptions).toContainEqual(before);
-  }
-  const claude = degraded.body.subscriptions.find((provider) => {
-    return provider.id === connected.body.provider.id;
+    expect(unavailable).toMatchObject({
+      type: "claude-code-oauth-token",
+      needsReconnect: false,
+    });
+    expect(unavailable?.subscriptionUsage ?? null).toBeNull();
   });
-  expect(claude).toMatchObject({
-    id: connected.body.provider.id,
-    type: "claude-code-oauth-token",
-    needsReconnect: false,
-  });
-  expect(claude?.subscriptionUsage ?? null).toBeNull();
-});
 
-test("a subscription reset link does not grant unauthenticated access", async () => {
-  context.mocks.clerk.authenticateRequest.mockResolvedValue({
-    isAuthenticated: false,
+  it("subscription-controls-007 rejects resets of foreign, logical-provider and disconnected IDs without changing the remaining account", async () => {
+    chatgptUsageWithResetCredits(3);
+    const owner = user();
+    const kept = await connectCodex(owner, `acct_${randomUUID()}`);
+    const removed = await connectCodex(owner, `acct_${randomUUID()}`);
+    const original = (await listSubscriptions(owner)).find((entry) => {
+      return entry.id === kept.id;
+    });
+    if (!original?.modelProviderId) {
+      throw new Error("Expected the kept account's logical provider ID");
+    }
+    signIn(owner);
+    await accept(
+      accounts.delete({ headers, params: { id: removed.id } }),
+      [204],
+    );
+
+    const reset = async (actor: ApiTestUser, id: string) => {
+      signIn(actor);
+      const response = await accept(
+        accounts.resetSubscriptionUsage({
+          headers,
+          params: { id },
+          body: { idempotencyKey: randomUUID() },
+        }),
+        [404],
+      );
+      return response.body;
+    };
+    const notFound = {
+      error: { message: "Resource not found", code: "NOT_FOUND" },
+    };
+    await expect(reset(owner, randomUUID())).resolves.toStrictEqual(notFound);
+    await expect(reset(owner, original.modelProviderId)).resolves.toStrictEqual(
+      notFound,
+    );
+    await expect(reset(owner, removed.id)).resolves.toStrictEqual(notFound);
+    await expect(
+      reset(user({ orgId: owner.orgId }), kept.id),
+    ).resolves.toStrictEqual(notFound);
+    await expect(
+      reset(user({ userId: owner.userId }), kept.id),
+    ).resolves.toStrictEqual(notFound);
+
+    const remaining = await listSubscriptions(owner);
+    expect(remaining).toHaveLength(1);
+    expect(original.subscriptionResetCredits).toBe(3);
+    expect(remaining[0]).toMatchObject({
+      id: kept.id,
+      isActive: true,
+      modelProviderId: original.modelProviderId,
+      subscriptionResetCredits: original.subscriptionResetCredits,
+      subscriptionUsage: original.subscriptionUsage,
+    });
   });
-  const response = await accept(
-    app()(personalSubscriptionsContract).get({
-      params: { id: randomUUID() },
-      headers: {},
-    }),
-    [401],
-  );
-  expect(response.status).toBe(401);
 });

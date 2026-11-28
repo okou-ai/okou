@@ -1,685 +1,461 @@
-import { randomUUID } from "node:crypto";
+import { setupApp } from "../../../__tests__/test-helpers";
+import { createRouteMocks } from "./helpers/route-test";
+import { createHash, randomUUID } from "node:crypto";
 import { Readable } from "node:stream";
 import {
   GetObjectCommand,
   HeadObjectCommand,
   PutObjectCommand,
-  type S3ClientConfig,
 } from "@aws-sdk/client-s3";
-import { beforeEach, describe, expect, it } from "vitest";
 import {
   marketingHandoffsContract,
+  type MarketingHandoffFile,
   type MarketingHandoffManifest,
 } from "@okouai/api-contracts/contracts/marketing-handoffs";
 import { webFilesContract } from "@okouai/api-contracts/contracts/web-files";
+import { describe, expect, it } from "vitest";
+
 import { testContext, accept } from "../../../__tests__/test-context";
-import { setupApp } from "../../../__tests__/test-helpers";
-import { mockNow, now } from "../../../lib/time";
-import { mockEnv } from "../../../lib/env";
+import { env, mockEnv } from "../../../lib/env";
+import { mockNow } from "../../../lib/time";
 import { marketingHandoffsRoutes } from "../marketing-handoffs";
 import { webFileUrlRoutes } from "../web-file-url";
-import { createRouteMocks } from "./helpers/route-test";
+
+const context = testContext();
+const authorization = "Bearer clerk-session";
+
+interface Account {
+  readonly userId: string;
+  readonly orgId: string;
+}
+
+function account(): Account {
+  return { userId: `user_${randomUUID()}`, orgId: `org_${randomUUID()}` };
+}
+
+interface StoredObject {
+  readonly body: Buffer;
+  readonly contentType: string | undefined;
+  readonly metadata: Record<string, string> | undefined;
+}
+
+/** Private R2 buckets for handoff content and imported artifacts. */
+function objectStorage() {
+  mockEnv("R2_MARKETING_HANDOFF_BUCKET_NAME", "test-marketing-handoffs");
+  mockEnv("R2_MARKETING_HANDOFF_ACCESS_KEY_ID", "handoff-access-key");
+  mockEnv("R2_MARKETING_HANDOFF_SECRET_ACCESS_KEY", "handoff-secret-key");
+  const objects = new Map<string, StoredObject>();
+  const etag = (body: Buffer) => {
+    return `"${createHash("sha256").update(body).digest("hex")}"`;
+  };
+  context.mocks.s3.send.mockImplementation((command: unknown) => {
+    if (command instanceof PutObjectCommand) {
+      const key = `${command.input.Bucket}/${command.input.Key}`;
+      if (command.input.IfNoneMatch === "*" && objects.has(key)) {
+        return Promise.reject(
+          Object.assign(new Error("Object already exists"), {
+            name: "PreconditionFailed",
+            $metadata: { httpStatusCode: 412 },
+          }),
+        );
+      }
+      const body = command.input.Body;
+      if (typeof body !== "string" && !(body instanceof Uint8Array)) {
+        return Promise.reject(new Error("Expected object bytes"));
+      }
+      const bytes = Buffer.from(body);
+      objects.set(key, {
+        body: bytes,
+        contentType: command.input.ContentType,
+        metadata: command.input.Metadata,
+      });
+      return Promise.resolve({ ETag: etag(bytes) });
+    }
+    if (
+      command instanceof HeadObjectCommand ||
+      command instanceof GetObjectCommand
+    ) {
+      const stored = objects.get(
+        `${command.input.Bucket}/${command.input.Key}`,
+      );
+      if (!stored) {
+        return Promise.reject(
+          Object.assign(new Error("Object is missing"), {
+            name: "NotFound",
+            $metadata: { httpStatusCode: 404 },
+          }),
+        );
+      }
+      const head = {
+        ContentLength: stored.body.length,
+        ContentType: stored.contentType,
+        Metadata: stored.metadata,
+        ETag: etag(stored.body),
+      };
+      return Promise.resolve(
+        command instanceof GetObjectCommand
+          ? { ...head, Body: Readable.from([stored.body]) }
+          : head,
+      );
+    }
+    return Promise.reject(new Error("Unexpected storage operation"));
+  });
+}
+
+interface Browser {
+  readonly origin: string;
+  cookie: string | null;
+}
+
+function browser(origin = new URL(env("APP_URL")).origin): Browser {
+  return { origin, cookie: null };
+}
+
+function handoffs() {
+  return setupApp({ context, routes: marketingHandoffsRoutes })(
+    marketingHandoffsContract,
+  );
+}
+
+/** Request headers for a browser, optionally signed in and sending its cookie. */
+function request(from: Browser, signedIn: Account | null, withCookie: boolean) {
+  if (signedIn) {
+    createRouteMocks(context).clerk.session(signedIn.userId, signedIn.orgId);
+  }
+  return {
+    headers: signedIn ? { authorization } : {},
+    extraHeaders: {
+      origin: from.origin,
+      ...(withCookie && from.cookie ? { cookie: from.cookie } : {}),
+    },
+  };
+}
+
+/** The browser obtains a guest handoff cookie. */
+async function startSession(from: Browser, signedIn: Account | null = null) {
+  const response = await accept(
+    handoffs().session({ ...request(from, signedIn, false), body: {} }),
+    [200],
+  );
+  const setCookie = response.headers.get("set-cookie") ?? "";
+  from.cookie = setCookie.split(";")[0] ?? null;
+  return setCookie;
+}
+
+async function upload(
+  from: Browser,
+  signedIn: Account | null,
+  filename: string,
+  text: string,
+): Promise<MarketingHandoffFile> {
+  const response = await accept(
+    handoffs().upload({
+      ...request(from, signedIn, true),
+      body: {
+        filename,
+        contentType: "text/plain",
+        data: Buffer.from(text).toString("base64"),
+      },
+    }),
+    [200],
+  );
+  return response.body;
+}
+
+function manifest(
+  prompt: string,
+  files: readonly MarketingHandoffFile[] = [],
+): MarketingHandoffManifest {
+  return { version: 1, prompt, options: {}, files: [...files] };
+}
+
+async function submit(
+  from: Browser,
+  signedIn: Account | null,
+  body: MarketingHandoffManifest,
+  withCookie = true,
+) {
+  const response = await accept(
+    handoffs().create({ ...request(from, signedIn, withCookie), body }),
+    [200],
+  );
+  return response.body;
+}
+
+async function resolveStatus(
+  from: Browser,
+  signedIn: Account,
+  hash: string,
+  withCookie: boolean,
+) {
+  const response = await handoffs().resolve({
+    ...request(from, signedIn, withCookie),
+    params: { hash },
+    body: {},
+  });
+  return response.status;
+}
+
+async function importFiles(
+  from: Browser,
+  signedIn: Account,
+  hash: string,
+  intentId: string,
+  withCookie = true,
+) {
+  const response = await accept(
+    handoffs().import({
+      ...request(from, signedIn, withCookie),
+      params: { hash },
+      body: { intentId },
+    }),
+    [200],
+  );
+  return response.body;
+}
 
 describe("Marketing content handoff", () => {
-  const context = testContext();
-  const mocks = createRouteMocks(context);
-  const origin = "https://www.okou.ai";
-  const auth = { authorization: "Bearer clerk-session" };
-  const routes = [...marketingHandoffsRoutes, ...webFileUrlRoutes];
-  const api = () => {
-    return setupApp({ context, routes })(marketingHandoffsContract);
-  };
-  let actor = { userId: "", orgId: "" };
-  let taskId = "";
-  let intentId = "";
-  let objects = new Map<
-    string,
-    { bytes: Buffer; type: string; metadata: Record<string, string> }
-  >();
+  it("marketing-handoffs-019 rejects requests from another origin even when the user is authenticated", async () => {
+    objectStorage();
+    const user = account();
 
-  function authenticateActor() {
-    actor = { userId: `user_${randomUUID()}`, orgId: `org_${randomUUID()}` };
-    mocks.clerk.session(actor.userId, actor.orgId);
-    return actor;
-  }
-
-  function manifest(
-    prompt = `Prepare a business report ${taskId}`,
-  ): MarketingHandoffManifest {
-    return { version: 1, prompt, options: {}, files: [] };
-  }
-
-  async function create(
-    body = manifest(),
-    cookie?: string,
-    authenticated = true,
-  ) {
-    return await accept(
-      api().create({
-        body,
-        headers: authenticated ? auth : {},
-        extraHeaders: { origin, ...(cookie ? { cookie } : {}) },
-      }),
-      [200],
-    );
-  }
-
-  async function guestCookie() {
-    const response = await accept(
-      api().session({ body: {}, headers: auth, extraHeaders: { origin } }),
-      [200],
-    );
-    const cookie = response.headers.get("set-cookie");
-    expect(cookie).toContain("HttpOnly");
-    expect(cookie).toContain("Secure");
-    expect(cookie).not.toContain("Domain=");
-    if (!cookie) {
-      throw new Error("Missing guest cookie");
-    }
-    return cookie.split(";")[0]!;
-  }
-
-  beforeEach(() => {
-    taskId = randomUUID();
-    intentId = randomUUID();
-    mockEnv("APP_URL", "https://app.okou.ai");
-    mockEnv("OKOU_WEB_URL", origin);
-    mockEnv("R2_MARKETING_HANDOFF_BUCKET_NAME", "test-marketing-handoffs");
-    mockEnv("R2_MARKETING_HANDOFF_ACCESS_KEY_ID", "test-marketing-key");
-    mockEnv("R2_MARKETING_HANDOFF_SECRET_ACCESS_KEY", "test-marketing-secret");
-    objects = new Map();
-    context.mocks.s3.send.mockImplementation((command: unknown) => {
-      if (command instanceof PutObjectCommand) {
-        const key = `${command.input.Bucket}/${command.input.Key}`;
-        if (command.input.IfNoneMatch === "*" && objects.has(key)) {
-          return Promise.reject(
-            Object.assign(new Error("Exists"), {
-              name: "PreconditionFailed",
-              $metadata: { httpStatusCode: 412 },
-            }),
-          );
-        }
-        const body = command.input.Body;
-        if (typeof body !== "string" && !(body instanceof Uint8Array)) {
-          throw new Error("Unexpected upload body");
-        }
-        objects.set(key, {
-          bytes:
-            typeof body === "string" ? Buffer.from(body) : Buffer.from(body),
-          type: command.input.ContentType ?? "application/octet-stream",
-          metadata: command.input.Metadata ?? {},
-        });
-        return Promise.resolve({ ETag: '"stored"' });
-      }
-      if (
-        command instanceof GetObjectCommand ||
-        command instanceof HeadObjectCommand
-      ) {
-        const object = objects.get(
-          `${command.input.Bucket}/${command.input.Key}`,
-        );
-        if (!object) {
-          return Promise.reject(
-            Object.assign(new Error("Missing"), {
-              name: "NoSuchKey",
-              $metadata: { httpStatusCode: 404 },
-            }),
-          );
-        }
-        return Promise.resolve({
-          Body: Readable.from([object.bytes]),
-          ContentLength: object.bytes.length,
-          ContentType: object.type,
-          Metadata: object.metadata,
-          ETag: '"stored"',
-        });
-      }
-      throw new Error("Unexpected storage operation");
+    const response = await handoffs().create({
+      ...request(browser("https://untrusted.example"), user, false),
+      body: manifest(`Untrusted ${randomUUID()}`),
     });
-    authenticateActor();
+
+    expect(response.status).toBe(403);
   });
 
-  it.each([".", ".."])(
-    'rejects the special filename "%s" before storing content',
-    async (filename) => {
-      const response = await api().upload({
-        body: {
-          filename,
-          contentType: "text/plain",
-          data: Buffer.from("Feedback").toString("base64"),
-        },
-        headers: auth,
-        extraHeaders: { origin },
-      });
-      expect(response.status).toBe(400);
-    },
-  );
+  it("marketing-handoffs-007 does not grant another user access merely because they know the hash", async () => {
+    objectStorage();
+    const page = browser();
+    const created = await submit(
+      page,
+      account(),
+      manifest(`Private ${randomUUID()}`),
+    );
 
-  it("keeps identical content stable, versions edits, and leaves the old manifest readable", async () => {
-    const first = await create();
-    const duplicate = await create();
-    const edited = await create(manifest("A different task"));
-    expect(first.body.shortHash).toBe(first.body.hash.slice(0, 12));
-    expect(duplicate.body.hash).toBe(first.body.hash);
-    expect(edited.body.hash).not.toBe(first.body.hash);
-    const resolved = await accept(
-      api().resolve({
-        params: first.body,
-        body: {},
-        headers: auth,
-        extraHeaders: { origin },
-      }),
-      [200],
-    );
-    expect(resolved.body).toStrictEqual(manifest());
-    const short = await accept(
-      api().resolve({
-        params: { hash: first.body.shortHash },
-        body: {},
-        headers: auth,
-        extraHeaders: { origin },
-      }),
-      [200],
-    );
-    expect(short.body).toStrictEqual(resolved.body);
+    await expect(
+      resolveStatus(page, account(), created.shortHash, false),
+    ).resolves.toBe(404);
   });
 
-  it("rejects a colliding short address without overwriting or granting access to the first task", async () => {
-    const firstActor = actor;
-    const firstManifest = manifest("Short handoff collision 12975700");
-    const first = await create(firstManifest);
-    const colliding = manifest("Short handoff collision 15460718");
-    authenticateActor();
-    const rejected = await api().create({
-      body: colliding,
-      headers: auth,
-      extraHeaders: { origin },
-    });
-    expect(rejected.status).toBe(409);
-    expect(
-      (
-        await api().resolve({
-          params: { hash: first.body.shortHash },
+  it("marketing-handoffs-003 keeps identical content stable, versions edits, and leaves the old manifest readable", async () => {
+    objectStorage();
+    const page = browser();
+    const user = account();
+    const original = manifest(`Version one ${randomUUID()}`);
+
+    const first = await submit(page, user, original);
+    const duplicate = await submit(page, user, original);
+    const edited = await submit(
+      page,
+      user,
+      manifest(`${original.prompt} edited`),
+    );
+
+    expect(first.shortHash).toBe(first.hash.slice(0, 12));
+    expect(duplicate.hash).toBe(first.hash);
+    expect(edited.hash).not.toBe(first.hash);
+    for (const hash of [first.hash, first.shortHash]) {
+      const resolved = await accept(
+        handoffs().resolve({
+          ...request(page, user, false),
+          params: { hash },
           body: {},
-          headers: auth,
-          extraHeaders: { origin },
-        })
-      ).status,
-    ).toBe(404);
-    mocks.clerk.session(firstActor.userId, firstActor.orgId);
-    const resolved = await accept(
-      api().resolve({
-        params: { hash: first.body.shortHash },
-        body: {},
-        headers: auth,
-        extraHeaders: { origin },
-      }),
-      [200],
-    );
-    expect(resolved.body).toStrictEqual(firstManifest);
+        }),
+        [200],
+      );
+      expect(resolved.body).toStrictEqual(original);
+    }
   });
 
-  it("reserves a short address for only one of two concurrent colliding tasks", async () => {
-    const bodies = [
-      manifest("Short handoff collision 12975700"),
-      manifest("Short handoff collision 15460718"),
-    ];
-    const responses = await Promise.all(
-      bodies.map((body) => {
-        return api().create({ body, headers: auth, extraHeaders: { origin } });
-      }),
-    );
-    expect(
-      responses
-        .map((response) => {
-          return response.status;
-        })
-        .sort(),
-    ).toStrictEqual([200, 409]);
-    const resolved = await accept(
-      api().resolve({
-        params: { hash: "23aab54ca8ed" },
-        body: {},
-        headers: auth,
-        extraHeaders: { origin },
-      }),
-      [200],
-    );
-    expect(resolved.body).toStrictEqual(
-      bodies[
-        responses.findIndex((response) => {
-          return response.status === 200;
-        })
-      ],
-    );
+  it("marketing-handoffs-008 gives independent grants to two users who submit identical content", async () => {
+    objectStorage();
+    const page = browser();
+    const first = account();
+    const content = manifest(`Shared idea ${randomUUID()}`);
+
+    const fromFirst = await submit(page, first, content);
+    const fromSecond = await submit(page, account(), content);
+
+    expect(fromSecond.hash).toBe(fromFirst.hash);
+    await expect(
+      resolveStatus(page, first, fromFirst.hash, false),
+    ).resolves.toBe(200);
   });
 
-  it("returns not found for an unknown short address", async () => {
-    const response = await api().resolve({
-      params: { hash: "000000000000" },
-      body: {},
-      headers: auth,
-      extraHeaders: { origin },
+  it("marketing-handoffs-016 cannot attach another account's file by hash", async () => {
+    objectStorage();
+    const page = browser();
+    const file = await upload(
+      page,
+      account(),
+      "notes.txt",
+      `notes ${randomUUID()}`,
+    );
+
+    const response = await handoffs().create({
+      ...request(page, account(), false),
+      body: manifest("Use these notes", [file]),
     });
+
     expect(response.status).toBe(404);
   });
 
-  it("does not grant another user access merely because they know the hash", async () => {
-    const created = await create();
-    authenticateActor();
-    const result = await api().resolve({
-      params: { hash: created.body.shortHash },
-      body: {},
-      headers: auth,
-      extraHeaders: { origin },
-    });
-    expect(result.status).toBe(404);
-  });
+  it("marketing-handoffs-010 authorizes every account with the same cookie and retains their independent grants", async () => {
+    objectStorage();
+    const page = browser();
+    const setCookie = await startSession(page);
+    expect(setCookie).toMatch(/HttpOnly/u);
+    expect(setCookie).toMatch(/Secure/u);
+    expect(setCookie).not.toMatch(/Domain=/iu);
+    const created = await submit(page, null, manifest(`Guest ${randomUUID()}`));
+    const accounts = [account(), account(), account()];
 
-  it("gives independent grants to two users who submit identical content", async () => {
-    const firstActor = actor;
-    const first = await create();
-    authenticateActor();
-    const second = await create();
-    expect(second.body.hash).toBe(first.body.hash);
-    mocks.clerk.session(firstActor.userId, firstActor.orgId);
-    expect(
-      (
-        await api().resolve({
-          params: first.body,
-          body: {},
-          headers: auth,
-          extraHeaders: { origin },
-        })
-      ).status,
-    ).toBe(200);
-  });
-
-  it("reuses the handoff transport across independent requests", async () => {
-    for (const prompt of ["First task", "Second task", "Third task"]) {
-      await create(manifest(`${prompt} ${taskId}`));
+    const statuses = [];
+    for (const each of accounts) {
+      statuses.push(await resolveStatus(page, each, created.hash, true));
+      statuses.push(await resolveStatus(page, each, created.hash, false));
     }
-    const configs = context.mocks.s3.requestConfig.mock.calls.map(
-      ([config]) => {
-        return config as S3ClientConfig;
-      },
-    );
-    const transport = configs[0]?.requestHandler;
-    expect(transport).toBeDefined();
-    for (const config of configs) {
-      expect(config.requestHandler).toBe(transport);
-      expect(config.credentials).toMatchObject({
-        accessKeyId: "test-marketing-key",
-        secretAccessKey: "test-marketing-secret",
-      });
+    const fourth = account();
+    const otherPage = browser();
+    await startSession(otherPage);
+    statuses.push(await resolveStatus(page, fourth, created.hash, false));
+    statuses.push(await resolveStatus(otherPage, fourth, created.hash, true));
+    const [firstAccount] = accounts;
+    if (!firstAccount) {
+      throw new Error("Expected the first account");
     }
-  });
+    statuses.push(await resolveStatus(page, firstAccount, created.hash, false));
 
-  it("authorizes every account with the same cookie and retains their independent grants", async () => {
-    const firstActor = actor;
-    const cookie = await guestCookie();
-    const created = await create(manifest(), cookie, false);
-    for (let index = 0; index < 3; index++) {
-      if (index > 0) {
-        authenticateActor();
-      }
-      await accept(
-        api().resolve({
-          params: created.body,
-          body: {},
-          headers: auth,
-          extraHeaders: { origin, cookie },
-        }),
-        [200],
-      );
-      await accept(
-        api().resolve({
-          params: created.body,
-          body: {},
-          headers: auth,
-          extraHeaders: { origin },
-        }),
-        [200],
-      );
-    }
-    authenticateActor();
-    const unrelatedCookie = await guestCookie();
-    const unrelatedHeaders: Record<string, string>[] = [
-      { origin },
-      { origin, cookie: unrelatedCookie },
-    ];
-    for (const headers of unrelatedHeaders) {
-      const result = await api().resolve({
-        params: created.body,
-        body: {},
-        headers: auth,
-        extraHeaders: headers,
-      });
-      expect(result.status).toBe(404);
-    }
-    mocks.clerk.session(firstActor.userId, firstActor.orgId);
-    await accept(
-      api().resolve({
-        params: created.body,
-        body: {},
-        headers: auth,
-        extraHeaders: { origin },
-      }),
-      [200],
-    );
-  });
-
-  it("does not authorize a new account with an expired cookie", async () => {
-    const cookie = await guestCookie();
-    const created = await create(manifest(), cookie, false);
-    await accept(
-      api().resolve({
-        params: created.body,
-        body: {},
-        headers: auth,
-        extraHeaders: { origin, cookie },
-      }),
-      [200],
-    );
-    mockNow(now() + 7 * 24 * 60 * 60 * 1000 + 1);
-    // Receiving once keeps that account's grant after the browser grant expires.
-    await accept(
-      api().resolve({
-        params: created.body,
-        body: {},
-        headers: auth,
-        extraHeaders: { origin },
-      }),
-      [200],
-    );
-    authenticateActor();
-    const result = await api().resolve({
-      params: created.body,
-      body: {},
-      headers: auth,
-      extraHeaders: { origin, cookie },
-    });
-    expect(result.status).toBe(404);
-  });
-
-  it("shares authenticated submissions and their files with the submitting browser session", async () => {
-    const cookie = await guestCookie();
-    const uploaded = await accept(
-      api().upload({
-        body: {
-          filename: "shared.txt",
-          contentType: "text/plain",
-          data: Buffer.from("shared browser task").toString("base64"),
-        },
-        headers: auth,
-        extraHeaders: { origin, cookie },
-      }),
-      [200],
-    );
-    const original = await create(
-      { ...manifest(), files: [uploaded.body] },
-      cookie,
-    );
-    authenticateActor();
-    await accept(
-      api().resolve({
-        params: original.body,
-        body: {},
-        headers: auth,
-        extraHeaders: { origin, cookie },
-      }),
-      [200],
-    );
-    const edited = await create(
-      { ...manifest("Edited by the second account"), files: [uploaded.body] },
-      cookie,
-    );
-    const imported = await accept(
-      api().import({
-        params: edited.body,
-        body: { intentId },
-        headers: auth,
-        extraHeaders: { origin },
-      }),
-      [200],
-    );
-    expect(imported.body.files).toMatchObject([
-      { filename: uploaded.body.filename, size: uploaded.body.size },
+    expect(statuses).toStrictEqual([
+      200, 200, 200, 200, 200, 200, 404, 404, 200,
     ]);
-    authenticateActor();
-    // The original cookie retains file access for editing before resolving a manifest.
-    await create(
-      { ...manifest("Edited by the third account"), files: [uploaded.body] },
-      cookie,
-    );
-    await accept(
-      api().resolve({
-        params: edited.body,
-        body: {},
-        headers: auth,
-        extraHeaders: { origin, cookie },
-      }),
-      [200],
-    );
   });
 
-  it("rejects a tampered guest session", async () => {
-    const cookie = await guestCookie();
-    const created = await create(manifest(), cookie, false);
-    const tampered = cookie.slice(0, -1) + (cookie.endsWith("a") ? "b" : "a");
+  it("marketing-handoffs-011 does not authorize a new account with an expired cookie", async () => {
+    objectStorage();
+    const start = Date.parse("2026-10-01T00:00:00Z");
+    mockNow(new Date(start));
+    const page = browser();
+    await startSession(page);
+    const created = await submit(page, null, manifest(`Guest ${randomUUID()}`));
+    const receiver = account();
+    await expect(
+      resolveStatus(page, receiver, created.hash, true),
+    ).resolves.toBe(200);
+
+    mockNow(new Date(start + 7 * 24 * 60 * 60 * 1000 + 1000));
+
+    await expect(
+      resolveStatus(page, receiver, created.hash, false),
+    ).resolves.toBe(200);
+    await expect(
+      resolveStatus(page, account(), created.hash, true),
+    ).resolves.toBe(404);
+  });
+
+  it("marketing-handoffs-012 shares authenticated submissions and their files with the submitting browser session", async () => {
+    objectStorage();
+    const page = browser();
+    const author = account();
+    const second = account();
+    const third = account();
+    await startSession(page, author);
+    const text = `shared ${randomUUID()}`;
+    const file = await upload(page, author, "shared.txt", text);
+    const original = await submit(page, author, manifest("Original", [file]));
+
+    await expect(
+      resolveStatus(page, second, original.hash, true),
+    ).resolves.toBe(200);
+    const edit = await submit(page, second, manifest("Second edit", [file]));
+    const imported = await importFiles(page, second, edit.hash, randomUUID());
     expect(
-      (
-        await api().resolve({
-          params: created.body,
-          body: {},
-          headers: auth,
-          extraHeaders: { origin, cookie: tampered },
-        })
-      ).status,
-    ).toBe(404);
+      imported.files.map(({ filename, size }) => {
+        return { filename, size };
+      }),
+    ).toStrictEqual([
+      { filename: "shared.txt", size: Buffer.byteLength(text) },
+    ]);
+
+    await submit(page, third, manifest("Third edit", [file]));
+    await expect(resolveStatus(page, third, edit.hash, true)).resolves.toBe(
+      200,
+    );
   });
 
-  it("authorizes two accounts receiving from the same browser session concurrently", async () => {
-    const firstActor = actor;
-    const cookie = await guestCookie();
-    const created = await create(manifest(), cookie, false);
-    const secondActor = authenticateActor();
-    context.mocks.clerk.authenticateRequest.mockImplementation(
-      (request: unknown) => {
-        if (!(request instanceof Request)) {
-          throw new Error("Expected an authentication request");
-        }
-        const identity =
-          request.headers.get("authorization") === "Bearer handoff-a"
-            ? firstActor
-            : secondActor;
-        return Promise.resolve({
-          isAuthenticated: true,
-          toAuth: () => {
-            return { ...identity, orgRole: "org:admin" };
-          },
-        });
-      },
+  it("marketing-handoffs-015 keeps guest-uploaded files authorized after sign-in and prompt editing", async () => {
+    objectStorage();
+    const page = browser();
+    await startSession(page);
+    const file = await upload(page, null, "guest.txt", `guest ${randomUUID()}`);
+    const original = await submit(page, null, manifest("Guest prompt", [file]));
+    const user = account();
+
+    await expect(resolveStatus(page, user, original.hash, true)).resolves.toBe(
+      200,
     );
-    const attempts = await Promise.all(
-      ["handoff-a", "handoff-b"].map((token) => {
-        return api().resolve({
-          params: created.body,
-          body: {},
-          headers: { authorization: `Bearer ${token}` },
-          extraHeaders: { origin, cookie },
-        });
-      }),
-    );
-    expect(
-      attempts
-        .map((response) => {
-          return response.status;
-        })
-        .sort(),
-    ).toStrictEqual([200, 200]);
+    const edited = await submit(page, user, manifest("Edited prompt", [file]));
+    expect(edited.hash).not.toBe(original.hash);
+    await expect(
+      importFiles(page, user, edited.hash, randomUUID()),
+    ).resolves.toMatchObject({ files: [{ filename: "guest.txt" }] });
   });
 
-  it("keeps guest-uploaded files authorized after sign-in and prompt editing", async () => {
-    const cookie = await guestCookie();
-    const uploaded = await accept(
-      api().upload({
-        body: {
-          filename: "guest.txt",
-          contentType: "text/plain",
-          data: Buffer.from("guest bytes").toString("base64"),
-        },
-        extraHeaders: { origin, cookie },
-      }),
-      [200],
+  it("marketing-handoffs-017 imports files privately with stable identities on retry", async () => {
+    objectStorage();
+    const page = browser();
+    const owner = account();
+    const file = await upload(
+      page,
+      owner,
+      "notes.txt",
+      `notes ${randomUUID()}`,
     );
-    const original = await create(
-      { ...manifest(), files: [uploaded.body] },
-      cookie,
+    const created = await submit(page, owner, manifest("Notes", [file]), false);
+    const intentId = randomUUID();
+
+    const first = await importFiles(page, owner, created.hash, intentId, false);
+    const retry = await importFiles(
+      page,
+      owner,
+      created.shortHash,
+      intentId,
       false,
     );
-    await accept(
-      api().resolve({
-        params: original.body,
-        body: {},
-        headers: auth,
-        extraHeaders: { origin, cookie },
-      }),
-      [200],
+    const another = await importFiles(
+      page,
+      owner,
+      created.hash,
+      randomUUID(),
+      false,
     );
-    const edited = await create({
-      ...manifest("Edited after signing in"),
-      files: [uploaded.body],
-    });
-    expect(edited.body.hash).not.toBe(original.body.hash);
-    expect(
-      (
-        await api().import({
-          params: edited.body,
-          body: { intentId },
-          headers: auth,
-          extraHeaders: { origin },
-        })
-      ).status,
-    ).toBe(200);
-  });
 
-  it("cannot attach another account's file by hash", async () => {
-    const file = await accept(
-      api().upload({
-        body: {
-          filename: "notes.txt",
-          contentType: "text/plain",
-          data: Buffer.from("private notes").toString("base64"),
-        },
-        headers: auth,
-        extraHeaders: { origin },
-      }),
-      [200],
-    );
-    authenticateActor();
+    expect(retry).toStrictEqual(first);
     expect(
-      (
-        await api().create({
-          body: { ...manifest(), files: [file.body] },
-          headers: auth,
-          extraHeaders: { origin },
-        })
-      ).status,
-    ).toBe(404);
-  });
-
-  it("imports files privately with stable identities on retry", async () => {
-    const uploaded = await accept(
-      api().upload({
-        body: {
-          filename: "notes.txt",
-          contentType: "text/plain",
-          data: Buffer.from("private notes").toString("base64"),
-        },
-        headers: auth,
-        extraHeaders: { origin },
+      first.files.map((each) => {
+        return each.filename;
       }),
-      [200],
-    );
-    const created = await create({ ...manifest(), files: [uploaded.body] });
-    const first = await accept(
-      api().import({
-        params: created.body,
-        body: { intentId },
-        headers: auth,
-        extraHeaders: { origin },
-      }),
-      [200],
-    );
-    const retry = await accept(
-      api().import({
-        params: { hash: created.body.shortHash },
-        body: { intentId },
-        headers: auth,
-        extraHeaders: { origin },
-      }),
-      [200],
-    );
-    expect(retry.body).toStrictEqual(first.body);
-    const anotherUse = await accept(
-      api().import({
-        params: created.body,
-        body: { intentId: randomUUID() },
-        headers: auth,
-        extraHeaders: { origin },
-      }),
-      [200],
-    );
-    expect(anotherUse.body.files[0]?.id).not.toBe(first.body.files[0]?.id);
-    expect(first.body.files).toHaveLength(1);
-    const file = first.body.files[0]!;
-    expect(file.filename).toBe("notes.txt");
-    const fileClient = setupApp({ context, routes })(webFilesContract);
-    expect(
-      (await fileClient.fileUrl({ query: { file_id: file.id }, headers: auth }))
-        .status,
-    ).toBe(200);
-    authenticateActor();
-    expect(
-      (await fileClient.fileUrl({ query: { file_id: file.id }, headers: auth }))
-        .status,
-    ).toBe(404);
-  });
-
-  it("rejects a manifest whose declared size differs from uploaded bytes", async () => {
-    const uploaded = await accept(
-      api().upload({
-        body: {
-          filename: "notes.txt",
-          contentType: "text/plain",
-          data: Buffer.from("private notes").toString("base64"),
-        },
-        headers: auth,
-        extraHeaders: { origin },
-      }),
-      [200],
-    );
-    expect(
-      (
-        await api().create({
-          body: { ...manifest(), files: [{ ...uploaded.body, size: 1 }] },
-          headers: auth,
-          extraHeaders: { origin },
-        })
-      ).status,
-    ).toBe(400);
-  });
-
-  it("rejects requests from another origin even when the user is authenticated", async () => {
-    expect(
-      (
-        await api().create({
-          body: manifest(),
-          headers: auth,
-          extraHeaders: { origin: "https://untrusted.example" },
-        })
-      ).status,
-    ).toBe(403);
+    ).toStrictEqual(["notes.txt"]);
+    const [imported] = first.files;
+    if (!imported) {
+      throw new Error("Expected one imported file");
+    }
+    expect(another.files[0]?.id).not.toBe(imported.id);
+    const fileUrl = (who: Account) => {
+      createRouteMocks(context).clerk.session(who.userId, who.orgId);
+      return setupApp({ context, routes: webFileUrlRoutes })(
+        webFilesContract,
+      ).fileUrl({
+        headers: { authorization },
+        query: { file_id: imported.id },
+      });
+    };
+    const ownerUrl = await fileUrl(owner);
+    const otherUrl = await fileUrl(account());
+    expect([ownerUrl.status, otherUrl.status]).toStrictEqual([200, 404]);
   });
 });

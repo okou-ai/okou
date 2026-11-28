@@ -1,918 +1,1280 @@
 import { randomUUID } from "node:crypto";
+import { gunzipSync } from "node:zlib";
+import { chatEventsContract } from "@okouai/api-contracts/contracts/chat-event-send";
+import { chatThreadEventsContract } from "@okouai/api-contracts/contracts/chat-threads";
+import {
+  cliAuthApproveContract,
+  cliAuthDeviceContract,
+  cliAuthTokenContract,
+} from "@okouai/api-contracts/contracts/cli-auth";
+import { instructionsContract } from "@okouai/api-contracts/contracts/instructions";
+import { personalModelProvidersMainContract } from "@okouai/api-contracts/contracts/personal-model-providers";
+import { runnerDispatchEnvelopeSchema } from "@okouai/api-contracts/contracts/runner-dispatch";
+import {
+  runContextContract,
+  runRunnerContract,
+  runsByIdContract,
+  runsCancelContract,
+  runsQueueContract,
+} from "@okouai/api-contracts/contracts/run-routes";
+import { runnersHeartbeatContract } from "@okouai/api-contracts/contracts/runners";
+import {
+  webhookClerkContract,
+  webhookCompleteContract,
+} from "@okouai/api-contracts/contracts/webhooks";
 import { http, HttpResponse } from "msw";
-import { expect, onTestFinished, test } from "vitest";
+import { beforeAll, describe, expect, it, onTestFinished } from "vitest";
+import type { infer as zInfer } from "zod";
+
+import { apiTestS3PresignedUrl } from "../../../__tests__/mocks";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { chatEventsRoutes } from "../chat-events";
-import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
-import { createRunsApi } from "./helpers/api-bdd-runs";
-import { createChatCallbacksApi } from "./helpers/api-bdd-chat-callbacks";
-import { completePublicClaudeRun } from "./helpers/public-native-run";
-import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
+import {
+  TEST_WITH_DOUBLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE,
+  TEST_WITH_SINGLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE,
+} from "../../../__tests__/test-timeouts";
+import { env, mockOptionalEnv, optionalEnv } from "../../../lib/env";
 import { clearMockNow, mockNow, now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import { flushWaitUntilForTest } from "../../context/wait-until";
-import { createDeferredPromise } from "../../utils";
-import { cronCleanupSandboxesContract } from "@okouai/api-contracts/contracts/cron";
-import { cronCleanupSandboxesRoutes } from "../cron-cleanup-sandboxes";
-import { env } from "../../../lib/env";
-import { runWssContract } from "@okouai/api-contracts/contracts/run-wss";
+import { createDeferredPromise, settleIncludingAbort } from "../../utils";
+import { chatEventsRoutes } from "../chat-events";
+import { chatThreadRoutes } from "../chat-threads";
+import { cliAuthRoutes } from "../cli-auth";
+import { instructionsRoutes } from "../instructions";
+import { meModelProvidersUpsertRoutes } from "../me-model-providers-upsert";
+import { runDetailRoutes } from "../run-detail";
+import { runnersRoutes } from "../runners";
 import { runsRoutes } from "../runs";
+import { runsCancelRoutes } from "../runs-cancel";
+import { webhooksAgentCompleteRoutes } from "../webhooks-agent-complete";
+import { webhooksClerkRoutes } from "../webhooks-clerk";
+import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
+import { mockClaudeCodeTokenEndpoint } from "./helpers/api-bdd-auth-device";
+import { createChatCallbacksApi } from "./helpers/api-bdd-chat-callbacks";
+import { createRunsApi } from "./helpers/api-bdd-runs";
+import { readProjectedChatEvents } from "./helpers/chat-event-test-reader";
+import { mockClerkUsers } from "./helpers/clerk-users";
 import { createRouteMocks } from "./helpers/route-test";
 
-const context = testContext();
+type DispatchEnvelope = zInfer<typeof runnerDispatchEnvelopeSchema>;
+type RunnerHeartbeatBody = zInfer<
+  (typeof runnersHeartbeatContract.heartbeat)["body"]
+>;
 
-async function launchFixture() {
-  const api = createRunsApi(context);
-  const bdd = createBddApi(context);
-  const callbacks = createChatCallbacksApi(context);
-  bdd.acceptStorageWrites();
-  api.acceptStorageDownloads();
-  api.acceptTelemetryIngest();
-  callbacks.acceptChatObjectStorage();
-  callbacks.disableVapid();
-  const actor = bdd.user();
-  const group = await api.configureRunnerGroup({ registerRunner: false });
-  await api.grantProEntitlement(actor);
-  await api.ensurePersonalSubscriptionModel(actor);
-
-  return { api, actor, group };
+interface CapturedDispatch {
+  readonly runnerId: string;
+  readonly heartbeatGeneration: number;
+  readonly envelope: DispatchEnvelope;
+  readonly bytes: string;
+  readonly rawBytes: Buffer;
+  readonly encoding: string | null;
 }
 
-test("delivers complete input after binding its process", async () => {
-  const f = await launchFixture();
-  const identity = await f.api.registerDirectRunner(f.group, {
-    reply: async (envelope) => {
-      expect(
-        (
-          await f.api.requestRunRunner(
-            f.actor,
-            envelope.executionContext.runId,
-            [200],
-          )
-        ).body,
-      ).toMatchObject({
-        runnerId: envelope.runnerId,
-        runnerHeartbeatGeneration: envelope.heartbeatGeneration,
-      });
-      return HttpResponse.json({
-        runnerId: envelope.runnerId,
-        heartbeatGeneration: envelope.heartbeatGeneration,
-        runId: envelope.executionContext.runId,
-        disposition: "accepted",
-      });
-    },
-  });
-  const run = await f.api.createThreadRun(f.actor, {
-    prompt: "direct complete input",
-  });
-  const input = await f.api.executionInput(run.runId);
-  expect(input.runId).toBe(run.runId);
-  expect(input.prompt).toContain("direct complete input");
-  expect(input.sandboxToken).toBeTruthy();
-  expect(input.platformEnvironment.OKOU_TOKEN).toMatch(/^vm0_sandbox_/);
-  expect(input.startupInputs.contentBundles.instructions).toBeDefined();
-  expect(input.startupInputs.memory).toMatchObject({
-    storageId: expect.any(String),
-    versionId: expect.any(String),
-    empty: true,
-  });
-  expect(run.status).toBe("running");
-  expect(
-    (await f.api.requestRunRunner(f.actor, run.runId, [200])).body,
-  ).toMatchObject({
-    runnerId: identity.runnerId,
-    runnerHeartbeatGeneration: identity.heartbeatGeneration,
-  });
+interface RegisteredRunner {
+  readonly runnerId: string;
+  readonly heartbeatGeneration: number;
+  readonly hostname: string;
+  readonly dispatches: CapturedDispatch[];
+}
+
+interface TrackedRun {
+  readonly actor: ApiTestUser;
+  readonly runId: string;
+  readonly sandboxToken: string;
+  done: boolean;
+}
+
+const SESSION_HEADERS = Object.freeze({
+  authorization: "Bearer clerk-session",
 });
 
-test("bootstraps a WebSocket only for the Run owner and uses the assigned Runner", async () => {
-  const f = await launchFixture();
-  const { orgId } = f.actor;
-  if (!orgId) {
-    throw new Error("Expected an organization member");
-  }
-  const hostname = "wss-fixture.okou.app";
-  const identity = await f.api.registerDirectRunner(f.group, { hostname });
-  const run = await f.api.createThreadRun(f.actor, {
-    prompt: "Check Run WebSocket bootstrap",
-  });
-  expect(run.status).toBe("running");
+const CLAUDE_MODEL = "claude-fable-5-1";
+const DEFAULT_PROFILE = "vm0/default";
 
-  const bdd = createBddApi(context);
-  const client = setupApp({ context, routes: runsRoutes })(runWssContract);
-  const mocks = createRouteMocks(context);
-  function bootstrap(actor: ApiTestUser) {
-    mocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
-    return client.bootstrap({
-      params: { id: run.runId },
-      headers: { authorization: "Bearer clerk-session" },
-      body: undefined,
-    });
-  }
-  const outsider = bdd.user({ orgId });
-  await accept(bootstrap(outsider), [404]);
+const context = testContext();
+const bdd = createBddApi(context);
+const runs = createRunsApi(context);
+const chatCallbacks = createChatCallbacksApi(context);
+const routeMocks = createRouteMocks(context);
 
-  const ticket = {
-    ticket: "A".repeat(43),
-    expiresAt: new Date(now() + 30_000).toISOString(),
+const webhooksClerkApi = setupApp({
+  context,
+  routes: webhooksClerkRoutes,
+})(webhookClerkContract);
+const personalModelProvidersApi = setupApp({
+  context,
+  routes: meModelProvidersUpsertRoutes,
+})(personalModelProvidersMainContract);
+const instructionsApi = setupApp({
+  context,
+  routes: instructionsRoutes,
+})(instructionsContract);
+const chatEventsApi = setupApp({
+  context,
+  routes: chatEventsRoutes,
+})(chatEventsContract);
+const chatThreadEventsApi = setupApp({
+  context,
+  routes: chatThreadRoutes,
+})(chatThreadEventsContract);
+const runnersHeartbeatApi = setupApp({
+  context,
+  routes: runnersRoutes,
+})(runnersHeartbeatContract);
+const runsByIdApi = setupApp({
+  context,
+  routes: runsRoutes,
+})(runsByIdContract);
+const runRunnerApi = setupApp({
+  context,
+  routes: runsRoutes,
+})(runRunnerContract);
+const runsQueueApi = setupApp({
+  context,
+  routes: runsRoutes,
+})(runsQueueContract);
+const runContextApi = setupApp({
+  context,
+  routes: runDetailRoutes,
+})(runContextContract);
+const runsCancelApi = setupApp({
+  context,
+  routes: runsCancelRoutes,
+})(runsCancelContract);
+const webhooksAgentCompleteApi = setupApp({
+  context,
+  routes: webhooksAgentCompleteRoutes,
+})(webhookCompleteContract);
+const cliAuthDeviceApi = setupApp({
+  context,
+  routes: cliAuthRoutes,
+})(cliAuthDeviceContract);
+const cliAuthApproveApi = setupApp({
+  context,
+  routes: cliAuthRoutes,
+})(cliAuthApproveContract);
+const cliAuthTokenApi = setupApp({
+  context,
+  routes: cliAuthRoutes,
+})(cliAuthTokenContract);
+
+function officialRunnerHeaders() {
+  return {
+    authorization: `Bearer vm0_official_${env("OFFICIAL_RUNNER_SECRET")}`,
   };
-  const controlUrl = `https://${hostname}/runners/${identity.runnerId}/control/runs/${run.runId}/wss-ticket`;
-  server.use(
-    http.post(controlUrl, ({ request }) => {
-      expect(request.headers.get("authorization")).toBe(
-        `Bearer vm0_official_${env("OFFICIAL_RUNNER_SECRET")}`,
-      );
-      expect(request.headers.get("x-okou-runner-heartbeat-generation")).toBe(
-        String(identity.heartbeatGeneration),
-      );
-      return HttpResponse.json(ticket);
-    }),
-  );
-  const granted = await accept(bootstrap(f.actor), [200]);
-  expect(granted.body).toStrictEqual({
-    ...ticket,
-    wssUrl: `wss://${hostname}/runners/${identity.runnerId}/sandbox/runs/${run.runId}`,
-  });
-  expect(granted.headers.get("cache-control")).toBe("no-store");
-});
+}
 
-test.each([
-  { copies: 6500, encoding: null, minKiB: 0, maxKiB: 160 },
-  { copies: 12_000, encoding: "gzip", minKiB: 160, maxKiB: 256 },
-  { copies: 40_000, encoding: "gzip", minKiB: 256, maxKiB: 4096 },
-])(
-  "sends a complete $minKiB–$maxKiB KiB dispatch with content encoding $encoding",
-  async ({ copies, encoding, minKiB, maxKiB }) => {
-    const f = await launchFixture();
-    const prompt = "Café review. ".repeat(copies).trim();
-    const requests: { bodyKiB: number; encoding: string | null }[] = [];
-    await f.api.registerDirectRunner(f.group, {
-      reply: (envelope, body, actualEncoding) => {
-        requests.push({
-          bodyKiB: Buffer.byteLength(body, "utf8") / 1024,
-          encoding: actualEncoding,
-        });
-        return HttpResponse.json({
-          runnerId: envelope.runnerId,
-          heartbeatGeneration: envelope.heartbeatGeneration,
-          runId: envelope.executionContext.runId,
-          disposition: "accepted",
-        });
-      },
-    });
-    const run = await f.api.createThreadRun(f.actor, { prompt });
-    expect(run.status).toBe("running");
-    expect(requests).toHaveLength(1);
-    expect(requests[0]?.encoding).toBe(encoding);
-    expect(requests[0]?.bodyKiB).toBeGreaterThanOrEqual(minKiB);
-    expect(requests[0]?.bodyKiB).toBeLessThan(maxKiB);
-    await expect(f.api.executionInput(run.runId)).resolves.toMatchObject({
-      runId: run.runId,
-      prompt: expect.stringContaining(prompt),
-    });
-  },
-);
-
-test("fails a Run with no serving process and releases its concurrency slot", async () => {
-  const f = await launchFixture();
-  await flushWaitUntilForTest();
-  context.mocks.ably.publish.mockClear();
-  const run = await f.api.createThreadRun(f.actor, {
-    prompt: "no serving process",
-  });
-  expect(run).toMatchObject({
-    status: "failed",
-    failureReason: "unknown",
-  });
-  expect(
-    context.mocks.ably.publish.mock.calls.filter(([topic]) => {
-      return topic === `chatThreadMessageCreated:${run.threadId}`;
-    }),
-  ).toHaveLength(3);
-  await f.api.requestRunContext(f.actor, run.runId, [404]);
-  expect((await f.api.readRunQueue(f.actor)).body.concurrency.active).toBe(0);
-});
-
-test("persists preparation failure and releases admission before another Run", async () => {
-  const f = await launchFixture();
-  await f.api.registerDirectRunner(f.group);
-  await createBddApi(context).updatePersonalInstructions(
-    f.actor,
-    `# Direct preparation ${randomUUID()}`,
-  );
-  context.mocks.s3.getSignedUrl.mockRejectedValue(
-    new Error("Object signing is unavailable"),
-  );
-  const chat = createChatFilesBddApi(context);
-  const clientEventId = randomUUID();
-  const sent = await chat.requestSendEvent(
-    f.actor,
+function signIn(actor: ApiTestUser): void {
+  routeMocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
+  const emailId = `email_${actor.userId}`;
+  mockClerkUsers(context, [
     {
-      prompt: "Fail execution preparation",
-      clientEventId,
+      id: actor.userId,
+      emailAddresses: [{ id: emailId, emailAddress: actor.email }],
+      primaryEmailAddressId: emailId,
+      firstName: "BDD",
+      lastName: "Dispatch",
     },
-    [201],
+  ]);
+  const memberships = actor.orgId
+    ? [
+        {
+          id: `membership-${actor.userId}-${actor.orgId}`,
+          createdAt: Date.parse("2020-01-01T00:00:00.000Z"),
+          role: actor.orgRole ?? "org:admin",
+          organization: { id: actor.orgId },
+          publicUserData: { userId: actor.userId },
+        },
+      ]
+    : [];
+  context.mocks.clerk.users.getOrganizationMembershipList.mockResolvedValue({
+    data: memberships,
+  });
+  context.mocks.clerk.organizations.getOrganizationMembershipList.mockResolvedValue(
+    {
+      data: memberships,
+    },
   );
-  if (sent.status !== 201) {
-    throw new Error("Expected admission to enqueue");
-  }
-  await expect(flushWaitUntilForTest()).rejects.toThrow(
-    "Run execution preparation failed",
-  );
-  const events = await chat.listThreadEvents(f.actor, sent.body.threadId);
-  const admitted = events.events.find((event) => {
-    return event.revokesEventId === clientEventId;
-  });
-  if (!admitted?.runId) {
-    throw new Error("Expected a durable admitted Run");
-  }
-  await expect(f.api.readRun(f.actor, admitted.runId)).resolves.toMatchObject({
-    status: "failed",
-    failureReason: "unknown",
-  });
-  expect((await f.api.readRunQueue(f.actor)).body.concurrency.active).toBe(0);
-  f.api.acceptStorageDownloads();
-  const next = await f.api.createThreadRun(f.actor, {
-    threadId: sent.body.threadId,
-    prompt: "Continue after preparation recovered",
-  });
-  expect(next.status).toBe("running");
-});
+}
 
-test("keeps PAT-advertised serving capacity outside the official fleet", async () => {
-  const f = await launchFixture();
-  const identity = await f.api.registerDirectRunner(f.group, {
-    maxConcurrent: 1,
-  });
-  const token = await f.api.createCliToken(f.actor);
-  const attacker = { runnerId: randomUUID(), heartbeatGeneration: 4 };
-  const hostname = `runner-${attacker.runnerId}.okou.app`;
-  server.use(
-    http.post(
-      `https://${hostname}/runners/${attacker.runnerId}/control/runs/:runId/dispatch`,
-      ({ params }) => {
-        return HttpResponse.json({
-          ...attacker,
-          runId: params.runId,
-          disposition: "accepted",
-        });
+function initRuntimeMocks(): void {
+  chatCallbacks.acceptChatObjectStorage();
+  runs.acceptStorageDownloads();
+  runs.acceptTelemetryIngest();
+  mockOptionalEnv("OPENROUTER_API_KEY", undefined);
+  chatCallbacks.disableVapid();
+}
+
+function heartbeatPayload(args: {
+  readonly runnerId: string;
+  readonly runnerHostname?: string;
+  readonly group: string;
+  readonly snapshotGeneration?: number;
+  readonly snapshotSequence?: number;
+  readonly totalVcpu?: number;
+  readonly totalMemoryMb?: number;
+  readonly maxConcurrent?: number;
+  readonly allocatedVcpu?: number;
+  readonly allocatedMemoryMb?: number;
+  readonly runningCount?: number;
+  readonly admittableProfiles?: readonly string[];
+  readonly mode?: RunnerHeartbeatBody["mode"];
+  readonly ingressServiceActive?: boolean;
+}): RunnerHeartbeatBody {
+  return {
+    runnerId: args.runnerId,
+    ...(args.runnerHostname === undefined
+      ? {}
+      : { runnerHostname: args.runnerHostname }),
+    group: args.group,
+    snapshotGeneration: args.snapshotGeneration ?? 1,
+    snapshotSequence: args.snapshotSequence ?? 1,
+    totalVcpu: args.totalVcpu ?? 8,
+    totalMemoryMb: args.totalMemoryMb ?? 16_384,
+    maxConcurrent: args.maxConcurrent ?? 2,
+    allocatedVcpu: args.allocatedVcpu ?? 0,
+    allocatedMemoryMb: args.allocatedMemoryMb ?? 0,
+    runningCount: args.runningCount ?? 0,
+    admittableProfiles: [...(args.admittableProfiles ?? [DEFAULT_PROFILE])],
+    heldSandboxStates: [],
+    heldHomeStates: [],
+    activeReuseProducers: [],
+    mode: args.mode ?? "running",
+    ingressServiceActive: args.ingressServiceActive ?? true,
+  };
+}
+
+function createRunTracker() {
+  const tracked: TrackedRun[] = [];
+
+  onTestFinished(async () => {
+    clearMockNow();
+    initRuntimeMocks();
+    context.mocks.s3.getSignedUrl.mockImplementation(
+      (_client: unknown, command: unknown) => {
+        return Promise.resolve(apiTestS3PresignedUrl(command));
       },
-    ),
-  );
-  await f.api.requestHeartbeatRunnerAs(`Bearer ${token.token}`, [200], {
-    runnerId: attacker.runnerId,
-    snapshotGeneration: attacker.heartbeatGeneration,
-    runnerHostname: hostname,
-    group: f.group,
-    ingressServiceActive: true,
-    maxConcurrent: 100,
-  });
-  const run = await f.api.createThreadRun(f.actor, {
-    prompt: "Use an official process",
-  });
-  expect(run.status).toBe("running");
-  expect(
-    (await f.api.requestRunRunner(f.actor, run.runId, [200])).body,
-  ).toMatchObject({
-    runnerId: identity.runnerId,
-    runnerHeartbeatGeneration: identity.heartbeatGeneration,
-  });
-});
-
-test("recovers interrupted delivery through the ordinary Run heartbeat timeout", async () => {
-  await setupApp({ context, routes: chatEventsRoutes, isolatePg: true });
-  const f = await launchFixture();
-  const chat = createChatFilesBddApi(context);
-  const clock = now();
-  mockNow(clock);
-  onTestFinished(clearMockNow);
-  const request = new AbortController();
-  onTestFinished(() => {
-    request.abort();
-  });
-  const received = createDeferredPromise<void>(context.signal);
-  const release = createDeferredPromise<void>(context.signal);
-  let interrupted = false;
-  const identity = await f.api.registerDirectRunner(f.group, {
-    reply: async (envelope) => {
-      if (!interrupted) {
-        interrupted = true;
-        received.resolve();
-        await release.promise;
-        return HttpResponse.error();
+    );
+    context.mocks.ably.publish.mockResolvedValue(undefined);
+    const errors: unknown[] = [];
+    const initialFlush = await settleIncludingAbort(flushWaitUntilForTest);
+    if (!initialFlush.ok) {
+      errors.push(initialFlush.error);
+    }
+    const pendingCompletions: Promise<unknown>[] = [];
+    for (const entry of tracked) {
+      if (entry.done) {
+        continue;
       }
-      return HttpResponse.json({
-        runnerId: envelope.runnerId,
-        heartbeatGeneration: envelope.heartbeatGeneration,
-        runId: envelope.executionContext.runId,
-        disposition: "accepted",
-      });
-    },
-  });
-  const clientEventId = randomUUID();
-  const sent = await chat.requestSendEvent(
-    f.actor,
-    {
-      clientEventId,
-      prompt: "Interrupt this invocation after publication",
-    },
-    [201],
-    {},
-    AbortSignal.any([request.signal, context.signal]),
-  );
-  if (sent.status !== 201) {
-    throw new Error("Expected the input to enqueue");
-  }
-  await received.promise;
-  request.abort();
-  release.resolve();
-  await flushWaitUntilForTest();
-  const page = await chat.listThreadEvents(f.actor, sent.body.threadId);
-  const admitted = page.events.find((event) => {
-    return event.revokesEventId === clientEventId;
-  });
-  if (!admitted?.runId) {
-    throw new Error("Expected a durable admitted Run");
-  }
-  expect(
-    (await f.api.requestRunRunner(f.actor, admitted.runId, [200])).body,
-  ).toMatchObject({
-    runnerId: identity.runnerId,
-    runnerHeartbeatGeneration: identity.heartbeatGeneration,
-  });
-  mockNow(clock + 121_000);
-  await accept(
-    setupApp({ context, routes: cronCleanupSandboxesRoutes })(
-      cronCleanupSandboxesContract,
-    ).cleanup({
-      headers: { authorization: `Bearer ${env("CRON_SECRET")}` },
-    }),
-    [200],
-  );
-  await flushWaitUntilForTest();
-  await expect(f.api.readRun(f.actor, admitted.runId)).resolves.toMatchObject({
-    status: "timeout",
-    failureReason: "unknown",
-  });
-  expect((await f.api.readRunQueue(f.actor)).body.concurrency.active).toBe(0);
-  const next = await f.api.createThreadRun(f.actor, {
-    threadId: sent.body.threadId,
-    prompt: "Continue after interrupted delivery recovered",
-  });
-  expect(next.status).toBe("running");
-
-  const input = await f.api.executionInput(next.runId);
-  await completePublicClaudeRun(
-    context,
-    next,
-    { authorization: `Bearer ${input.sandboxToken}` },
-    "Recovered after interrupted delivery.",
-  );
-});
-
-test.each(["lost", "process", "generation", "run"] as const)(
-  "retries identical bytes on the same process after a %s response and a later 429",
-  async (responseKind) => {
-    const f = await launchFixture();
-    const bytes: string[] = [];
-    const identity = await f.api.registerDirectRunner(f.group, {
-      reply: (envelope, body) => {
-        bytes.push(body);
-        if (bytes.length === 1) {
-          if (responseKind === "lost") {
-            return HttpResponse.error();
-          }
-          return HttpResponse.json({
-            runnerId:
-              responseKind === "process" ? randomUUID() : envelope.runnerId,
-            heartbeatGeneration:
-              responseKind === "generation"
-                ? envelope.heartbeatGeneration + 1
-                : envelope.heartbeatGeneration,
-            runId:
-              responseKind === "run"
-                ? randomUUID()
-                : envelope.executionContext.runId,
-            disposition: "accepted",
-          });
-        }
-        return HttpResponse.json(
-          {
-            runnerId: envelope.runnerId,
-            heartbeatGeneration: envelope.heartbeatGeneration,
-            runId: envelope.executionContext.runId,
-            disposition: bytes.length === 2 ? "busy" : "accepted",
-          },
-          { status: bytes.length === 2 ? 429 : 200 },
-        );
-      },
-    });
-    let alternatives = 0;
-    await f.api.registerDirectRunner(f.group, {
-      runnerIdentity: { runnerId: randomUUID(), heartbeatGeneration: 2 },
-      maxConcurrent: 1,
-      reply: (envelope) => {
-        alternatives++;
-        return HttpResponse.json({
-          runnerId: envelope.runnerId,
-          heartbeatGeneration: envelope.heartbeatGeneration,
-          runId: envelope.executionContext.runId,
-          disposition: "accepted",
-        });
-      },
-    });
-    const run = await f.api.createThreadRun(f.actor, {
-      prompt: "ambiguous delivery",
-    });
-    expect(run.status).toBe("running");
-    expect(bytes).toHaveLength(3);
-    expect(new Set(bytes).size).toBe(1);
-    expect(alternatives).toBe(0);
-    expect(
-      (await f.api.requestRunRunner(f.actor, run.runId, [200])).body,
-    ).toMatchObject({
-      runnerId: identity.runnerId,
-      runnerHeartbeatGeneration: identity.heartbeatGeneration,
-    });
-  },
-);
-
-test("stops retrying an ambiguous first dispatch once the Run is cancelled", async () => {
-  const f = await launchFixture();
-  let offers = 0;
-  await f.api.registerDirectRunner(f.group, {
-    reply: async (envelope) => {
-      offers++;
-      if (offers === 1) {
-        await f.api.requestCancelRun(
-          f.actor,
-          envelope.executionContext.runId,
+      const cleaned = await settleIncludingAbort(async () => {
+        signIn(entry.actor);
+        const current = await accept(
+          runsByIdApi.getById({
+            headers: SESSION_HEADERS,
+            params: { id: entry.runId },
+          }),
           [200],
         );
-        return HttpResponse.error();
-      }
-      return HttpResponse.json({
-        runnerId: envelope.runnerId,
-        heartbeatGeneration: envelope.heartbeatGeneration,
-        runId: envelope.executionContext.runId,
-        disposition: "accepted",
+        if (["queued", "pending", "running"].includes(current.body.status)) {
+          await accept(
+            runsCancelApi.cancel({
+              headers: SESSION_HEADERS,
+              params: { id: entry.runId },
+            }),
+            [200],
+          );
+        }
+        if (!["completed", "failed", "timeout"].includes(current.body.status)) {
+          pendingCompletions.push(
+            accept(
+              webhooksAgentCompleteApi.complete({
+                headers: { authorization: `Bearer ${entry.sandboxToken}` },
+                body: {
+                  runId: entry.runId,
+                  exitCode: 137,
+                  error: "Run cancelled by test cleanup",
+                },
+              }),
+              [200],
+            ),
+          );
+        }
+        entry.done = true;
       });
+      if (!cleaned.ok) {
+        errors.push(cleaned.error);
+      }
+    }
+    if (pendingCompletions.length > 0) {
+      const completed = await settleIncludingAbort(() => {
+        return Promise.all(pendingCompletions);
+      });
+      if (!completed.ok) {
+        errors.push(completed.error);
+      }
+    }
+    const finalFlush = await settleIncludingAbort(flushWaitUntilForTest);
+    if (!finalFlush.ok) {
+      errors.push(finalFlush.error);
+    }
+    if (errors.length === 1) {
+      throw errors[0];
+    }
+    if (errors.length > 1) {
+      throw new AggregateError(errors, "Direct dispatch test cleanup failed");
+    }
+  });
+
+  return {
+    track(actor: ApiTestUser, runId: string, sandboxToken: string): TrackedRun {
+      const entry: TrackedRun = { actor, runId, sandboxToken, done: false };
+      tracked.push(entry);
+      return entry;
     },
-  });
-  const run = await f.api.createThreadRun(f.actor, {
-    prompt: "cancel before retrying ambiguous delivery",
-  });
-  expect(offers).toBe(1);
-  expect(run.status).toBe("cancelled");
-});
-
-test("switches candidates only after a definite refusal", async () => {
-  const f = await launchFixture();
-  const visited: string[] = [];
-  let rejected = false;
-  const reply: NonNullable<
-    NonNullable<Parameters<typeof f.api.registerDirectRunner>[1]>["reply"]
-  > = (envelope) => {
-    visited.push(envelope.runnerId);
-    const disposition = rejected ? "accepted" : "rejected";
-    rejected = true;
-    return HttpResponse.json({
-      runnerId: envelope.runnerId,
-      heartbeatGeneration: envelope.heartbeatGeneration,
-      runId: envelope.executionContext.runId,
-      disposition,
-    });
   };
-  await f.api.registerDirectRunner(f.group, {
-    runnerIdentity: { runnerId: randomUUID(), heartbeatGeneration: 2 },
-    reply,
-  });
-  await f.api.registerDirectRunner(f.group, {
-    runnerIdentity: { runnerId: randomUUID(), heartbeatGeneration: 3 },
-    reply,
-  });
-  const run = await f.api.createThreadRun(f.actor, {
-    prompt: "definite rejection",
-  });
-  expect(run.status).toBe("running");
-  expect(visited).toHaveLength(2);
-  expect(new Set(visited).size).toBe(2);
-  expect(
-    (await f.api.requestRunRunner(f.actor, run.runId, [200])).body,
-  ).toMatchObject({ runnerId: visited[1] });
-});
+}
 
-test("tries every capacity-ranked candidate with the same prepared execution input", async () => {
-  const f = await launchFixture();
-  const offers: {
+function createRunnerRegistry(defaultGroup: string) {
+  const acceptedByRunId = new Map<string, CapturedDispatch>();
+  const acceptedOrder: string[] = [];
+  const allDispatches: CapturedDispatch[] = [];
+
+  function mountDispatchHandler(args: {
     readonly runnerId: string;
-    readonly executionContext: unknown;
-    readonly notAfter: number;
-  }[] = [];
-  const candidates = [
-    { totalVcpu: 4, totalMemoryMb: 32_768, maxConcurrent: 8 },
-    { totalVcpu: 16, totalMemoryMb: 4096, maxConcurrent: 8 },
-    { totalVcpu: 16, totalMemoryMb: 32_768, maxConcurrent: 3 },
-  ];
-  const identities = [];
-  for (const [index, heartbeat] of candidates.entries()) {
-    identities.push(
-      await f.api.registerDirectRunner(f.group, {
-        heartbeat,
-        reply: (envelope) => {
-          offers.push(envelope);
+    readonly heartbeatGeneration: number;
+    readonly hostname: string;
+    readonly dispatches: CapturedDispatch[];
+    readonly reply?: (
+      dispatch: CapturedDispatch,
+    ) => Response | Promise<Response>;
+  }): void {
+    const expectedAuth = officialRunnerHeaders().authorization;
+    server.use(
+      http.post(
+        `https://${args.hostname}/runners/${args.runnerId}/control/runs/:runId/dispatch`,
+        async ({ request, params }) => {
+          if (request.headers.get("authorization") !== expectedAuth) {
+            return new HttpResponse(null, { status: 401 });
+          }
+          const encoding = request.headers.get("content-encoding");
+          const rawBytes = Buffer.from(await request.arrayBuffer());
+          const bytes =
+            encoding === "gzip"
+              ? gunzipSync(rawBytes).toString("utf8")
+              : rawBytes.toString("utf8");
+          const envelope = runnerDispatchEnvelopeSchema.parse(
+            JSON.parse(bytes),
+          );
+          if (
+            envelope.runnerId !== args.runnerId ||
+            envelope.heartbeatGeneration !== args.heartbeatGeneration ||
+            envelope.executionContext.runId !== params.runId
+          ) {
+            throw new Error("Unexpected direct Runner dispatch identity");
+          }
+          const captured: CapturedDispatch = {
+            runnerId: args.runnerId,
+            heartbeatGeneration: args.heartbeatGeneration,
+            envelope,
+            bytes,
+            rawBytes,
+            encoding,
+          };
+          args.dispatches.push(captured);
+          allDispatches.push(captured);
+          if (args.reply) {
+            const response = await args.reply(captured);
+            if (response.status === 200) {
+              const cloned: unknown = await response.clone().json();
+              if (
+                typeof cloned === "object" &&
+                cloned !== null &&
+                "disposition" in cloned &&
+                cloned.disposition === "accepted"
+              ) {
+                acceptedByRunId.set(envelope.executionContext.runId, captured);
+                acceptedOrder.push(envelope.executionContext.runId);
+              }
+            }
+            return response;
+          }
+          acceptedByRunId.set(envelope.executionContext.runId, captured);
+          acceptedOrder.push(envelope.executionContext.runId);
           return HttpResponse.json({
-            runnerId: envelope.runnerId,
-            heartbeatGeneration: envelope.heartbeatGeneration,
+            runnerId: args.runnerId,
+            heartbeatGeneration: args.heartbeatGeneration,
             runId: envelope.executionContext.runId,
-            disposition: index === 1 ? "accepted" : "rejected",
+            disposition: "accepted",
           });
         },
-      }),
+      ),
     );
   }
-  const run = await f.api.createThreadRun(f.actor, {
-    prompt: "Visit all capacity-ranked processes",
-  });
-  expect(run.status).toBe("running");
-  expect(
-    offers.map((offer) => {
-      return offer.runnerId;
-    }),
-  ).toStrictEqual([
-    identities[2]?.runnerId,
-    identities[0]?.runnerId,
-    identities[1]?.runnerId,
-  ]);
-  expect(offers[1]?.executionContext).toStrictEqual(
-    offers[0]?.executionContext,
-  );
-  expect(offers[2]?.executionContext).toStrictEqual(
-    offers[0]?.executionContext,
-  );
-  expect(
-    new Set(
-      offers.map((offer) => {
-        return offer.notAfter;
-      }),
-    ).size,
-  ).toBe(1);
-  expect(
-    (await f.api.requestRunRunner(f.actor, run.runId, [200])).body,
-  ).toMatchObject({
-    runnerId: identities[1]?.runnerId,
-  });
-});
 
-test.each([
-  {
-    kind: "unlimited",
-    maxConcurrent: 0,
-    runningCount: 100,
-    allocatedVcpu: 0,
-    allocatedMemoryMb: 0,
-  },
-  {
-    kind: "reclaimable",
-    maxConcurrent: 2,
-    runningCount: 2,
-    allocatedVcpu: 8,
-    allocatedMemoryMb: 16_384,
-  },
-])("dispatches to advertised $kind capacity", async (heartbeat) => {
-  const f = await launchFixture();
-  const { kind, ...resources } = heartbeat;
-  const identity = await f.api.registerDirectRunner(f.group, {
-    heartbeat: resources,
-  });
-  const run = await f.api.createThreadRun(f.actor, {
-    prompt: `Use ${kind} capacity`,
-  });
-  expect(run.status).toBe("running");
-  expect(
-    (await f.api.requestRunRunner(f.actor, run.runId, [200])).body,
-  ).toMatchObject({
-    runnerId: identity.runnerId,
-    runnerHeartbeatGeneration: identity.heartbeatGeneration,
-  });
-});
+  async function registerRunner(
+    options: {
+      readonly runnerId?: string;
+      readonly heartbeatGeneration?: number;
+      readonly snapshotSequence?: number;
+      readonly hostname?: string;
+      readonly group?: string;
+      readonly totalVcpu?: number;
+      readonly totalMemoryMb?: number;
+      readonly maxConcurrent?: number;
+      readonly allocatedVcpu?: number;
+      readonly allocatedMemoryMb?: number;
+      readonly runningCount?: number;
+      readonly admittableProfiles?: readonly string[];
+      readonly mode?: RunnerHeartbeatBody["mode"];
+      readonly ingressServiceActive?: boolean;
+      readonly authHeader?: string;
+      readonly mountHandler?: boolean;
+      readonly reply?: (
+        dispatch: CapturedDispatch,
+      ) => Response | Promise<Response>;
+    } = {},
+  ): Promise<RegisteredRunner> {
+    const runnerId = options.runnerId ?? randomUUID();
+    const heartbeatGeneration = options.heartbeatGeneration ?? 1;
+    const hostname = options.hostname ?? `runner-${runnerId}.okou.app`;
+    const dispatches: CapturedDispatch[] = [];
 
-test("keeps another group's serving process when a heartbeat observes a later clock", async () => {
-  const f = await launchFixture();
-  const clock = now();
-  mockNow(clock);
-  onTestFinished(clearMockNow);
-  const identity = await f.api.registerDirectRunner(f.group);
-
-  // A different group's heartbeat cannot retire this group's receiver. Return
-  // to its clock before dispatch so freshness and reclamation are distinguished.
-  mockNow(clock + 5 * 60_000 + 1);
-  await f.api.registerDirectRunner(`vm0/other-${randomUUID()}`);
-  mockNow(clock);
-  const run = await f.api.createThreadRun(f.actor, {
-    prompt: "Use this group's serving process",
-  });
-  expect(run.status).toBe("running");
-  expect(
-    (await f.api.requestRunRunner(f.actor, run.runId, [200])).body,
-  ).toMatchObject({
-    runnerId: identity.runnerId,
-    runnerHeartbeatGeneration: identity.heartbeatGeneration,
-  });
-  const input = await f.api.executionInput(run.runId);
-  await completePublicClaudeRun(
-    context,
-    run,
-    { authorization: `Bearer ${input.sandboxToken}` },
-    "The owning group retained its serving process.",
-  );
-});
-
-test("selects a fresh serving process after stale, unavailable and untrusted-host observations", async () => {
-  const f = await launchFixture();
-  const clock = now();
-  mockNow(clock);
-  onTestFinished(clearMockNow);
-  const stale = await f.api.registerDirectRunner(f.group, {
-    maxConcurrent: 100,
-  });
-  mockNow(clock + 180_001);
-  await f.api.requestHeartbeatRunner(true, [200], {
-    group: f.group,
-    runnerId: stale.runnerId,
-    snapshotGeneration: stale.heartbeatGeneration,
-    runnerHostname: `runner-${stale.runnerId}.okou.app`,
-    maxConcurrent: 100,
-    ingressServiceActive: true,
-  });
-  await f.api.registerDirectRunner(f.group, {
-    hostname: "untrusted.example.test",
-    maxConcurrent: 100,
-  });
-  await f.api.registerDirectRunner(f.group, {
-    heartbeat: { ingressServiceActive: false },
-  });
-  await f.api.registerDirectRunner(f.group, {
-    heartbeat: { mode: "draining" },
-  });
-  await f.api.registerDirectRunner(f.group, {
-    heartbeat: { admittableProfiles: [] },
-  });
-  await f.api.registerDirectRunner("vm0/unrelated-group", {
-    maxConcurrent: 100,
-  });
-  const identity = await f.api.registerDirectRunner(f.group, {
-    runnerIdentity: { runnerId: randomUUID(), heartbeatGeneration: 2 },
-    heartbeat: { snapshotSequence: 2 },
-  });
-  // A replay cannot remove this process's current serving observation.
-  await f.api.requestHeartbeatRunner(true, [200], {
-    group: f.group,
-    runnerId: identity.runnerId,
-    snapshotGeneration: identity.heartbeatGeneration,
-    snapshotSequence: 1,
-    mode: "starting",
-  });
-  await f.api.requestHeartbeatRunner(true, [200], {
-    group: f.group,
-    runnerId: identity.runnerId,
-    snapshotGeneration: 1,
-    snapshotSequence: 100,
-    mode: "starting",
-  });
-  const run = await f.api.createThreadRun(f.actor, {
-    prompt: "Use a current serving process",
-  });
-  expect(run.status).toBe("running");
-  expect(
-    (await f.api.requestRunRunner(f.actor, run.runId, [200])).body,
-  ).toMatchObject({
-    runnerId: identity.runnerId,
-    runnerHeartbeatGeneration: identity.heartbeatGeneration,
-  });
-});
-
-test("launches the following queued input after a definite refusal releases its Thread", async () => {
-  const f = await launchFixture();
-  const chat = createChatFilesBddApi(context);
-  const clientEventId = randomUUID();
-  let queued = false;
-  await f.api.registerDirectRunner(f.group, {
-    reply: async (envelope) => {
-      const first = !queued;
-      queued = true;
-      if (first) {
-        const reuseKey = envelope.executionContext.reuseKey;
-        if (!reuseKey?.startsWith("thread:")) {
-          throw new Error("Expected a Thread-scoped Run");
-        }
-        await chat.requestSendEvent(
-          f.actor,
-          {
-            threadId: reuseKey.slice("thread:".length),
-            clientEventId,
-            prompt: "Continue after refused delivery",
-          },
-          [201],
-        );
-      }
-      return HttpResponse.json({
-        runnerId: envelope.runnerId,
-        heartbeatGeneration: envelope.heartbeatGeneration,
-        runId: envelope.executionContext.runId,
-        disposition: first ? "rejected" : "accepted",
+    if (options.mountHandler !== false) {
+      mountDispatchHandler({
+        runnerId,
+        heartbeatGeneration,
+        hostname,
+        dispatches,
+        reply: options.reply,
       });
-    },
-  });
-  const first = await f.api.createThreadRun(f.actor, {
-    prompt: "Refuse this input",
-  });
-  expect(first.status).toBe("failed");
-  const events = await chat.listThreadEvents(f.actor, first.threadId);
-  const promoted = events.events.find((event) => {
-    return event.revokesEventId === clientEventId;
-  });
-  if (!promoted?.runId) {
-    throw new Error("Expected the following input to launch");
-  }
-  await expect(f.api.readRun(f.actor, promoted.runId)).resolves.toMatchObject({
-    status: "running",
-  });
-  expect((await f.api.readRunQueue(f.actor)).body.concurrency.active).toBe(1);
-});
+    }
 
-test("preserves a concurrent cancellation after the process proves it did not accept", async () => {
-  const f = await launchFixture();
-  await f.api.registerDirectRunner(f.group, {
-    reply: async (envelope) => {
-      await f.api.requestCancelRun(
-        f.actor,
-        envelope.executionContext.runId,
+    await accept(
+      runnersHeartbeatApi.heartbeat({
+        headers:
+          options.authHeader === undefined
+            ? officialRunnerHeaders()
+            : { authorization: options.authHeader },
+        body: heartbeatPayload({
+          runnerId,
+          runnerHostname: hostname,
+          group: options.group ?? defaultGroup,
+          snapshotGeneration: heartbeatGeneration,
+          snapshotSequence: options.snapshotSequence ?? 1,
+          totalVcpu: options.totalVcpu,
+          totalMemoryMb: options.totalMemoryMb,
+          maxConcurrent: options.maxConcurrent,
+          allocatedVcpu: options.allocatedVcpu,
+          allocatedMemoryMb: options.allocatedMemoryMb,
+          runningCount: options.runningCount,
+          admittableProfiles: options.admittableProfiles,
+          mode: options.mode,
+          ingressServiceActive: options.ingressServiceActive,
+        }),
+      }),
+      [200],
+    );
+
+    return { runnerId, heartbeatGeneration, hostname, dispatches };
+  }
+
+  function latestAccepted(afterCount: number): CapturedDispatch {
+    const runId = acceptedOrder[afterCount];
+    if (!runId) {
+      throw new Error("Expected a direct Runner dispatch to be accepted");
+    }
+    const dispatch = acceptedByRunId.get(runId);
+    if (!dispatch) {
+      throw new Error(`Missing accepted dispatch for run ${runId}`);
+    }
+    return dispatch;
+  }
+
+  return {
+    registerRunner,
+    acceptedCount: () => {
+      return acceptedOrder.length;
+    },
+    latestAccepted,
+    allDispatches,
+  };
+}
+
+async function setupDispatchWorkspace() {
+  const tracker = createRunTracker();
+  const actor = bdd.user();
+  if (!actor.orgId) {
+    throw new Error("Expected a workspace actor");
+  }
+  const orgId = actor.orgId;
+  const group = `vm0/bdd-${randomUUID().slice(0, 8)}`;
+
+  initRuntimeMocks();
+  mockOptionalEnv("RUNNER_DEFAULT_GROUP", group);
+  mockOptionalEnv("CLERK_WEBHOOK_SIGNING_SECRET", "whsec_bdd_clerk");
+  mockClaudeCodeTokenEndpoint();
+  signIn(actor);
+
+  const registry = createRunnerRegistry(group);
+
+  await Promise.all([
+    (async () => {
+      context.mocks.clerk.verifyWebhook.mockResolvedValueOnce({
+        type: "organization.created",
+        data: { id: orgId, created_by: actor.userId, created_at: now() },
+      });
+      await accept(
+        webhooksClerkApi.post({ body: "{}", extraHeaders: {} }),
         [200],
       );
-      return HttpResponse.json(
-        {
-          runnerId: envelope.runnerId,
-          heartbeatGeneration: envelope.heartbeatGeneration,
-          runId: envelope.executionContext.runId,
-          disposition: "busy",
+      await flushWaitUntilForTest();
+    })(),
+    accept(
+      personalModelProvidersApi.upsert({
+        headers: SESSION_HEADERS,
+        body: {
+          type: "claude-code-oauth-token",
+          secret: `claude-token-${randomUUID()}`,
         },
-        { status: 429 },
+      }),
+      [201],
+    ),
+  ]);
+
+  async function sendPrompt(args: {
+    readonly prompt: string;
+    readonly threadId?: string;
+    readonly clientEventId?: string;
+  }) {
+    signIn(actor);
+    const clientEventId = args.clientEventId ?? randomUUID();
+    const response = await accept(
+      chatEventsApi.send({
+        headers: SESSION_HEADERS,
+        body: {
+          prompt: args.prompt,
+          hasTextContent: true,
+          clientEventId,
+          model: CLAUDE_MODEL,
+          ...(args.threadId === undefined ? {} : { threadId: args.threadId }),
+          userMessage: {
+            version: 1,
+            parts: [{ type: "text", text: args.prompt }],
+          },
+        },
+      }),
+      [201],
+    );
+    return { threadId: response.body.threadId, eventId: clientEventId };
+  }
+
+  async function readRun(runId: string) {
+    signIn(actor);
+    const response = await accept(
+      runsByIdApi.getById({
+        headers: SESSION_HEADERS,
+        params: { id: runId },
+      }),
+      [200],
+    );
+    return response.body;
+  }
+
+  async function readRunRunner(runId: string) {
+    signIn(actor);
+    const response = await accept(
+      runRunnerApi.getRunner({
+        headers: SESSION_HEADERS,
+        params: { id: runId },
+      }),
+      [200],
+    );
+    return response.body;
+  }
+
+  async function readQueue() {
+    signIn(actor);
+    const response = await accept(
+      runsQueueApi.getQueue({ headers: SESSION_HEADERS }),
+      [200],
+    );
+    return response.body;
+  }
+
+  async function readThreadPromptRunIds(threadId: string): Promise<string[]> {
+    signIn(actor);
+    const events = await readProjectedChatEvents(context, {
+      threadId,
+      headers: SESSION_HEADERS,
+    });
+    return events.flatMap((event) => {
+      return event.eventType === "input.prompt" && event.runId !== undefined
+        ? [event.runId]
+        : [];
+    });
+  }
+
+  return {
+    actor,
+    group,
+    registry,
+    tracker,
+    sendPrompt,
+    readRun,
+    readRunRunner,
+    readQueue,
+    readThreadPromptRunIds,
+  };
+}
+
+function rejectedResponse(dispatch: CapturedDispatch): Response {
+  return HttpResponse.json({
+    runnerId: dispatch.runnerId,
+    heartbeatGeneration: dispatch.heartbeatGeneration,
+    runId: dispatch.envelope.executionContext.runId,
+    disposition: "rejected",
+  });
+}
+
+function acceptedResponse(dispatch: CapturedDispatch): Response {
+  return HttpResponse.json({
+    runnerId: dispatch.runnerId,
+    heartbeatGeneration: dispatch.heartbeatGeneration,
+    runId: dispatch.envelope.executionContext.runId,
+    disposition: "accepted",
+  });
+}
+
+describe("Direct Runner dispatch", () => {
+  beforeAll(async () => {
+    const previousClerkSecret = optionalEnv("CLERK_WEBHOOK_SIGNING_SECRET");
+    mockOptionalEnv("CLERK_WEBHOOK_SIGNING_SECRET", "whsec_warmup");
+    context.mocks.clerk.verifyWebhook.mockRejectedValueOnce(
+      new Error("warmup"),
+    );
+    context.mocks.clerk.authenticateRequest.mockResolvedValue({
+      isAuthenticated: false,
+    });
+    const warmupId = randomUUID();
+    const warmed = await settleIncludingAbort(async () => {
+      await Promise.all([
+        accept(webhooksClerkApi.post({ body: "{}", extraHeaders: {} }), [401]),
+        accept(
+          personalModelProvidersApi.upsert({
+            headers: {},
+            body: { type: "claude-code-oauth-token", secret: "warmup" },
+          }),
+          [401],
+        ),
+        accept(
+          instructionsApi.update({
+            headers: {},
+            body: { content: "warmup" },
+          }),
+          [401],
+        ),
+        accept(
+          chatEventsApi.send({
+            headers: {},
+            body: {
+              prompt: "warmup",
+              hasTextContent: true,
+              clientEventId: randomUUID(),
+              userMessage: {
+                version: 1,
+                parts: [{ type: "text", text: "warmup" }],
+              },
+            },
+          }),
+          [401],
+        ),
+        accept(
+          chatThreadEventsApi.rows({
+            headers: {},
+            params: { threadId: warmupId },
+            query: { sinceSeqId: 0, limit: 10 },
+          }),
+          [401],
+        ),
+        accept(
+          runnersHeartbeatApi.heartbeat({
+            headers: {},
+            body: heartbeatPayload({
+              runnerId: warmupId,
+              runnerHostname: `runner-${warmupId}.okou.app`,
+              group: "vm0/warmup",
+            }),
+          }),
+          [401],
+        ),
+        accept(
+          runsByIdApi.getById({ headers: {}, params: { id: warmupId } }),
+          [401],
+        ),
+        accept(
+          runRunnerApi.getRunner({ headers: {}, params: { id: warmupId } }),
+          [401],
+        ),
+        accept(runsQueueApi.getQueue({ headers: {} }), [401]),
+        accept(
+          runContextApi.getContext({ headers: {}, params: { id: warmupId } }),
+          [401],
+        ),
+        accept(
+          runsCancelApi.cancel({ headers: {}, params: { id: warmupId } }),
+          [401],
+        ),
+        accept(
+          webhooksAgentCompleteApi.complete({
+            headers: {},
+            body: { runId: warmupId, exitCode: 0 },
+          }),
+          [401],
+        ),
+        accept(
+          cliAuthApproveApi.approve({
+            headers: {},
+            body: { device_code: "warmup" },
+          }),
+          [401],
+        ),
+      ]);
+    });
+    mockOptionalEnv("CLERK_WEBHOOK_SIGNING_SECRET", previousClerkSecret);
+    if (!warmed.ok) {
+      throw warmed.error;
+    }
+  });
+
+  it(
+    "runners-direct-dispatch-007 persists preparation failure and releases admission before another Run",
+    { timeout: TEST_WITH_DOUBLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const setup = await setupDispatchWorkspace();
+      await setup.registry.registerRunner({ heartbeatGeneration: 2 });
+
+      signIn(setup.actor);
+      await accept(
+        instructionsApi.update({
+          headers: SESSION_HEADERS,
+          body: {
+            content: `Personal instructions ${randomUUID()} requiring signed object-storage bundle URLs.`,
+          },
+        }),
+        [200],
       );
-    },
-  });
-  const run = await f.api.createThreadRun(f.actor, {
-    prompt: "cancel before acceptance",
-  });
-  expect(run.status).toBe("cancelled");
-  expect((await f.api.readRunQueue(f.actor)).body.concurrency.active).toBe(0);
-});
 
-test("definite refusal releases a preselected Run even though startedAt is set", async () => {
-  const f = await launchFixture();
-  await f.api.registerDirectRunner(f.group, {
-    reply: (envelope) => {
-      return HttpResponse.json({
-        runnerId: envelope.runnerId,
-        heartbeatGeneration: envelope.heartbeatGeneration,
-        runId: envelope.executionContext.runId,
-        disposition: "rejected",
+      context.mocks.s3.getSignedUrl.mockRejectedValue(
+        new Error("Object signing is unavailable"),
+      );
+
+      const firstSent = await setup.sendPrompt({
+        prompt: "First prompt while URL signing fails",
       });
-    },
-  });
-  const run = await f.api.createThreadRun(f.actor, {
-    prompt: "reject input",
-  });
-  expect(run).toMatchObject({
-    status: "failed",
-    failureReason: "unknown",
-  });
-  expect((await f.api.readRunQueue(f.actor)).body.concurrency.active).toBe(0);
-});
+      await expect(flushWaitUntilForTest()).rejects.toThrow(
+        "Run execution preparation failed",
+      );
 
-test("waits through short preferred-process 429s before using a roomier candidate", async () => {
-  const f = await launchFixture();
-  const identity = await f.api.registerDirectRunner(f.group, {
-    maxConcurrent: 1,
-  });
-  const first = await f.api.createThreadRun(f.actor, {
-    prompt: "establish the preferred process",
-    model: "claude-fable-5-1",
-  });
-  const firstInput = await f.api.executionInput(first.runId);
-  await completePublicClaudeRun(
-    context,
-    first,
-    { authorization: `Bearer ${firstInput.sandboxToken}` },
-    "predecessor complete",
+      const [firstRunId] = await setup.readThreadPromptRunIds(
+        firstSent.threadId,
+      );
+      expect(firstRunId).toBeDefined();
+      if (!firstRunId) {
+        throw new Error("Expected admitted Run ID in thread events");
+      }
+
+      const [failedRun, queueAfterFailure] = await Promise.all([
+        setup.readRun(firstRunId),
+        setup.readQueue(),
+      ]);
+      expect(failedRun.status).toBe("failed");
+      expect(failedRun.failureReason).toBe("unknown");
+      expect(queueAfterFailure.concurrency.active).toBe(0);
+
+      context.mocks.s3.getSignedUrl.mockImplementation(
+        (_client: unknown, command: unknown) => {
+          return Promise.resolve(apiTestS3PresignedUrl(command));
+        },
+      );
+
+      const beforeRecovery = setup.registry.acceptedCount();
+      await setup.sendPrompt({
+        threadId: firstSent.threadId,
+        prompt: "Follow-up prompt after URL signing recovers",
+      });
+      await flushWaitUntilForTest();
+
+      const recovered = setup.registry.latestAccepted(beforeRecovery);
+      const recoveredRunId = recovered.envelope.executionContext.runId;
+      setup.tracker.track(
+        setup.actor,
+        recoveredRunId,
+        recovered.envelope.executionContext.sandboxToken,
+      );
+
+      const recoveredRun = await setup.readRun(recoveredRunId);
+      expect(recoveredRun.status).toBe("running");
+    },
   );
-  const bytes: string[] = [];
-  await f.api.registerDirectRunner(f.group, {
-    runnerIdentity: identity,
-    maxConcurrent: 1,
-    reply: (envelope, body) => {
-      bytes.push(body);
-      const busy = bytes.length < 3;
-      return HttpResponse.json(
-        {
-          runnerId: envelope.runnerId,
-          heartbeatGeneration: envelope.heartbeatGeneration,
-          runId: envelope.executionContext.runId,
-          disposition: busy ? "busy" : "accepted",
-        },
-        { status: busy ? 429 : 200 },
-      );
-    },
-  });
-  let alternatives = 0;
-  await f.api.registerDirectRunner(f.group, {
-    runnerIdentity: { runnerId: randomUUID(), heartbeatGeneration: 2 },
-    reply: (envelope) => {
-      alternatives++;
-      return HttpResponse.json({
-        runnerId: envelope.runnerId,
-        heartbeatGeneration: envelope.heartbeatGeneration,
-        runId: envelope.executionContext.runId,
-        disposition: "accepted",
-      });
-    },
-  });
-  const next = await f.api.createThreadRun(f.actor, {
-    threadId: first.threadId,
-    prompt: "resume on the preferred process",
-  });
-  expect(next.status).toBe("running");
-  expect(bytes).toHaveLength(3);
-  expect(new Set(bytes).size).toBe(1);
-  expect(alternatives).toBe(0);
-  expect(
-    (await f.api.requestRunRunner(f.actor, next.runId, [200])).body,
-  ).toMatchObject({
-    runnerId: identity.runnerId,
-    runnerHeartbeatGeneration: identity.heartbeatGeneration,
-  });
-});
 
-test("advances when preferred busy pressure outlasts its preference without renewing delivery", async () => {
-  const f = await launchFixture();
-  const clock = now();
-  mockNow(clock);
-  onTestFinished(clearMockNow);
-  const identity = await f.api.registerDirectRunner(f.group, {
-    maxConcurrent: 1,
-  });
-  const first = await f.api.createThreadRun(f.actor, {
-    prompt: "Establish the preferred process",
-    model: "claude-fable-5-1",
-  });
-  const input = await f.api.executionInput(first.runId);
-  await completePublicClaudeRun(
-    context,
-    first,
-    { authorization: `Bearer ${input.sandboxToken}` },
-    "Predecessor completed",
-  );
-  const deadlines: number[] = [];
-  await f.api.registerDirectRunner(f.group, {
-    runnerIdentity: identity,
-    maxConcurrent: 1,
-    reply: (envelope) => {
-      deadlines.push(envelope.notAfter);
-      mockNow(clock + 2000);
-      return HttpResponse.json(
-        {
-          runnerId: envelope.runnerId,
-          heartbeatGeneration: envelope.heartbeatGeneration,
-          runId: envelope.executionContext.runId,
-          disposition: "busy",
+  it(
+    "runners-direct-dispatch-021 launches the following queued input after a definite refusal releases its Thread",
+    { timeout: TEST_WITH_DOUBLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const firstDispatchArrived = createDeferredPromise<string>(
+        context.signal,
+      );
+      const secondQueued = createDeferredPromise<void>(context.signal);
+      let released = false;
+      const release = () => {
+        if (!released) {
+          released = true;
+          secondQueued.resolve();
+        }
+      };
+      onTestFinished(release);
+
+      const setup = await setupDispatchWorkspace();
+      let attempts = 0;
+      await setup.registry.registerRunner({
+        heartbeatGeneration: 5,
+        reply: async (dispatch) => {
+          attempts += 1;
+          if (attempts === 1) {
+            firstDispatchArrived.resolve(
+              dispatch.envelope.executionContext.runId,
+            );
+            await secondQueued.promise;
+            return rejectedResponse(dispatch);
+          }
+          return acceptedResponse(dispatch);
         },
-        { status: 429 },
+      });
+
+      const firstSent = await setup.sendPrompt({
+        prompt: "First prompt that will be definitely refused",
+      });
+      const firstRunId = await firstDispatchArrived.promise;
+
+      await setup.sendPrompt({
+        threadId: firstSent.threadId,
+        prompt: "Queued follow-up prompt in same thread",
+      });
+      release();
+      await flushWaitUntilForTest();
+
+      const followUpDispatch = setup.registry.latestAccepted(0);
+      const followUpRunId = followUpDispatch.envelope.executionContext.runId;
+      setup.tracker.track(
+        setup.actor,
+        followUpRunId,
+        followUpDispatch.envelope.executionContext.sandboxToken,
+      );
+
+      const [firstRun, followUpRun, queue, threadRunIds] = await Promise.all([
+        setup.readRun(firstRunId),
+        setup.readRun(followUpRunId),
+        setup.readQueue(),
+        setup.readThreadPromptRunIds(firstSent.threadId),
+      ]);
+
+      expect(firstRun.status).toBe("failed");
+      expect(followUpRunId).not.toBe(firstRunId);
+      expect(threadRunIds).toStrictEqual([firstRunId, followUpRunId]);
+      expect(followUpRun.status).toBe("running");
+      expect(queue.concurrency.active).toBe(1);
+    },
+  );
+
+  it(
+    "runners-direct-dispatch-001 delivers complete input after binding its process",
+    { timeout: TEST_WITH_SINGLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const setup = await setupDispatchWorkspace();
+      let duringDispatchRunner:
+        Awaited<ReturnType<typeof setup.readRunRunner>> | undefined;
+
+      const runner = await setup.registry.registerRunner({
+        heartbeatGeneration: 3,
+        reply: async (dispatch) => {
+          duringDispatchRunner = await setup.readRunRunner(
+            dispatch.envelope.executionContext.runId,
+          );
+          return acceptedResponse(dispatch);
+        },
+      });
+
+      const promptText = "Deliver complete execution input after binding";
+      await setup.sendPrompt({ prompt: promptText });
+      await flushWaitUntilForTest();
+
+      const dispatch = setup.registry.latestAccepted(0);
+      const execution = dispatch.envelope.executionContext;
+      setup.tracker.track(setup.actor, execution.runId, execution.sandboxToken);
+
+      expect(duringDispatchRunner).toMatchObject({
+        runnerId: runner.runnerId,
+        runnerHeartbeatGeneration: runner.heartbeatGeneration,
+      });
+      expect(execution.prompt).toContain(promptText);
+      expect(execution.sandboxToken).toMatch(/^vm0_sandbox_/u);
+      expect(execution.platformEnvironment.OKOU_TOKEN).toMatch(
+        /^vm0_sandbox_/u,
+      );
+      expect(execution.startupInputs.contentBundles.format).toBe("tar-gzip-v1");
+
+      const [runAfter, runnerAfter] = await Promise.all([
+        setup.readRun(execution.runId),
+        setup.readRunRunner(execution.runId),
+      ]);
+      expect(runAfter.status).toBe("running");
+      expect(runnerAfter.runnerId).toBe(runner.runnerId);
+      expect(runnerAfter.runnerHeartbeatGeneration).toBe(
+        runner.heartbeatGeneration,
       );
     },
-  });
-  const alternative = await f.api.registerDirectRunner(f.group, {
-    reply: (envelope) => {
-      deadlines.push(envelope.notAfter);
-      return HttpResponse.json({
-        runnerId: envelope.runnerId,
-        heartbeatGeneration: envelope.heartbeatGeneration,
-        runId: envelope.executionContext.runId,
-        disposition: "accepted",
+  );
+
+  it(
+    "runners-direct-dispatch-005 sends a complete 256-4096 KiB dispatch with content encoding gzip",
+    { timeout: TEST_WITH_SINGLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const setup = await setupDispatchWorkspace();
+      const runner = await setup.registry.registerRunner({
+        heartbeatGeneration: 2,
       });
+
+      const largePrompt = "Café review.".repeat(22_000);
+      await setup.sendPrompt({ prompt: largePrompt });
+      await flushWaitUntilForTest();
+
+      expect(runner.dispatches).toHaveLength(1);
+      const [dispatch] = runner.dispatches;
+      if (!dispatch) {
+        throw new Error("Expected gzip direct dispatch");
+      }
+      const execution = dispatch.envelope.executionContext;
+      setup.tracker.track(setup.actor, execution.runId, execution.sandboxToken);
+
+      const decodedBytes = Buffer.byteLength(dispatch.bytes, "utf8");
+      expect(dispatch.encoding).toBe("gzip");
+      expect(decodedBytes).toBeGreaterThanOrEqual(256 * 1024);
+      expect(decodedBytes).toBeLessThan(4096 * 1024);
+      expect(execution.prompt).toContain(largePrompt);
+
+      const run = await setup.readRun(execution.runId);
+      expect(run.status).toBe("running");
     },
-  });
-  const next = await f.api.createThreadRun(f.actor, {
-    threadId: first.threadId,
-    prompt: "Continue after preference expires",
-  });
-  expect(next.status).toBe("running");
-  expect(deadlines).toHaveLength(2);
-  expect(new Set(deadlines).size).toBe(1);
-  expect(
-    (await f.api.requestRunRunner(f.actor, next.runId, [200])).body,
-  ).toMatchObject({
-    runnerId: alternative.runnerId,
-    runnerHeartbeatGeneration: alternative.heartbeatGeneration,
-  });
+  );
+
+  it(
+    "runners-direct-dispatch-006 fails a Run with no serving process and releases its concurrency slot",
+    { timeout: TEST_WITH_SINGLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const setup = await setupDispatchWorkspace();
+
+      const sent = await setup.sendPrompt({
+        prompt: "Dispatch with no serving Runner process",
+      });
+      await flushWaitUntilForTest();
+
+      const [runId] = await setup.readThreadPromptRunIds(sent.threadId);
+      expect(runId).toBeDefined();
+      if (!runId) {
+        throw new Error("Expected admitted Run ID in thread events");
+      }
+
+      signIn(setup.actor);
+      const [run, contextResponse, queue] = await Promise.all([
+        setup.readRun(runId),
+        accept(
+          runContextApi.getContext({
+            headers: SESSION_HEADERS,
+            params: { id: runId },
+          }),
+          [404],
+        ),
+        setup.readQueue(),
+      ]);
+
+      expect(run.status).toBe("failed");
+      expect(run.failureReason).toBe("unknown");
+      expect(contextResponse.status).toBe(404);
+      expect(queue.concurrency.active).toBe(0);
+    },
+  );
+
+  it(
+    "runners-direct-dispatch-008 keeps PAT-advertised serving capacity outside the official fleet",
+    { timeout: TEST_WITH_SINGLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const setup = await setupDispatchWorkspace();
+      const official = await setup.registry.registerRunner({
+        heartbeatGeneration: 6,
+        maxConcurrent: 1,
+      });
+
+      const device = await accept(cliAuthDeviceApi.create({ body: {} }), [200]);
+      signIn(setup.actor);
+      await accept(
+        cliAuthApproveApi.approve({
+          headers: SESSION_HEADERS,
+          body: { device_code: device.body.device_code },
+        }),
+        [200],
+      );
+      const patToken = await accept(
+        cliAuthTokenApi.exchange({
+          body: { device_code: device.body.device_code },
+        }),
+        [200],
+      );
+
+      const patRunner = await setup.registry.registerRunner({
+        heartbeatGeneration: 9,
+        maxConcurrent: 100,
+        totalVcpu: 64,
+        totalMemoryMb: 131_072,
+        ingressServiceActive: true,
+        authHeader: `Bearer ${patToken.body.access_token}`,
+      });
+
+      await setup.sendPrompt({
+        prompt: "Route exclusively to official fleet",
+      });
+      await flushWaitUntilForTest();
+
+      const dispatch = setup.registry.latestAccepted(0);
+      const execution = dispatch.envelope.executionContext;
+      setup.tracker.track(setup.actor, execution.runId, execution.sandboxToken);
+
+      expect(patRunner.dispatches).toHaveLength(0);
+      const [run, assigned] = await Promise.all([
+        setup.readRun(execution.runId),
+        setup.readRunRunner(execution.runId),
+      ]);
+      expect(run.status).toBe("running");
+      expect(assigned.runnerId).toBe(official.runnerId);
+      expect(assigned.runnerHeartbeatGeneration).toBe(
+        official.heartbeatGeneration,
+      );
+    },
+  );
+
+  it(
+    "runners-direct-dispatch-015 switches candidates only after a definite refusal",
+    { timeout: TEST_WITH_SINGLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const setup = await setupDispatchWorkspace();
+      const visitedRunners: string[] = [];
+
+      const handleCandidate = (dispatch: CapturedDispatch): Response => {
+        visitedRunners.push(dispatch.runnerId);
+        return visitedRunners.length === 1
+          ? rejectedResponse(dispatch)
+          : acceptedResponse(dispatch);
+      };
+
+      const [runnerA, runnerB] = await Promise.all([
+        setup.registry.registerRunner({
+          heartbeatGeneration: 2,
+          reply: handleCandidate,
+        }),
+        setup.registry.registerRunner({
+          heartbeatGeneration: 3,
+          reply: handleCandidate,
+        }),
+      ]);
+
+      await setup.sendPrompt({
+        prompt: "Fail over to second candidate after definite refusal",
+      });
+      await flushWaitUntilForTest();
+
+      const dispatch = setup.registry.latestAccepted(0);
+      const execution = dispatch.envelope.executionContext;
+      setup.tracker.track(setup.actor, execution.runId, execution.sandboxToken);
+
+      expect(visitedRunners).toHaveLength(2);
+      expect(new Set(visitedRunners).size).toBe(2);
+      const secondVisited = visitedRunners[1];
+      const expectedGeneration =
+        secondVisited === runnerA.runnerId
+          ? runnerA.heartbeatGeneration
+          : runnerB.heartbeatGeneration;
+
+      const [run, assigned] = await Promise.all([
+        setup.readRun(execution.runId),
+        setup.readRunRunner(execution.runId),
+      ]);
+      expect(run.status).toBe("running");
+      expect(assigned.runnerId).toBe(secondVisited);
+      expect(assigned.runnerHeartbeatGeneration).toBe(expectedGeneration);
+    },
+  );
+
+  it(
+    "runners-direct-dispatch-018 dispatches to advertised reclaimable capacity",
+    { timeout: TEST_WITH_SINGLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const setup = await setupDispatchWorkspace();
+      const runner = await setup.registry.registerRunner({
+        heartbeatGeneration: 4,
+        maxConcurrent: 2,
+        runningCount: 2,
+        totalVcpu: 8,
+        allocatedVcpu: 8,
+        totalMemoryMb: 16_384,
+        allocatedMemoryMb: 16_384,
+      });
+
+      await setup.sendPrompt({
+        prompt: "Dispatch into reclaimable runner capacity",
+      });
+      await flushWaitUntilForTest();
+
+      const dispatch = setup.registry.latestAccepted(0);
+      const execution = dispatch.envelope.executionContext;
+      setup.tracker.track(setup.actor, execution.runId, execution.sandboxToken);
+
+      const [run, assigned] = await Promise.all([
+        setup.readRun(execution.runId),
+        setup.readRunRunner(execution.runId),
+      ]);
+      expect(run.status).toBe("running");
+      expect(assigned.runnerId).toBe(runner.runnerId);
+      expect(assigned.runnerHeartbeatGeneration).toBe(
+        runner.heartbeatGeneration,
+      );
+    },
+  );
+
+  it(
+    "runners-direct-dispatch-020 selects a fresh serving process after stale, unavailable and untrusted-host observations",
+    { timeout: TEST_WITH_SINGLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const setup = await setupDispatchWorkspace();
+      const currentTime = now();
+
+      // Register a stale runner (>180s old, <300s deletion threshold).
+      mockNow(currentTime - 185_000);
+      await setup.registry.registerRunner({
+        heartbeatGeneration: 1,
+        mountHandler: false,
+      });
+      clearMockNow();
+
+      const [currentRunner] = await Promise.all([
+        setup.registry.registerRunner({
+          heartbeatGeneration: 2,
+          snapshotSequence: 2,
+          mode: "running",
+          ingressServiceActive: true,
+        }),
+        setup.registry.registerRunner({
+          hostname: "runner-untrusted.internal",
+          mountHandler: false,
+        }),
+        setup.registry.registerRunner({
+          ingressServiceActive: false,
+          mountHandler: false,
+        }),
+        setup.registry.registerRunner({
+          mode: "draining",
+          mountHandler: false,
+        }),
+        setup.registry.registerRunner({
+          admittableProfiles: [],
+          mountHandler: false,
+        }),
+        setup.registry.registerRunner({
+          group: `vm0/other-${randomUUID().slice(0, 8)}`,
+          mountHandler: false,
+        }),
+      ]);
+
+      // Replayed older sequence and older generation in starting mode must not overwrite current state.
+      await Promise.all([
+        accept(
+          runnersHeartbeatApi.heartbeat({
+            headers: officialRunnerHeaders(),
+            body: heartbeatPayload({
+              runnerId: currentRunner.runnerId,
+              runnerHostname: currentRunner.hostname,
+              group: setup.group,
+              snapshotGeneration: 2,
+              snapshotSequence: 1,
+              mode: "starting",
+            }),
+          }),
+          [200],
+        ),
+        accept(
+          runnersHeartbeatApi.heartbeat({
+            headers: officialRunnerHeaders(),
+            body: heartbeatPayload({
+              runnerId: currentRunner.runnerId,
+              runnerHostname: currentRunner.hostname,
+              group: setup.group,
+              snapshotGeneration: 1,
+              snapshotSequence: 9,
+              mode: "starting",
+            }),
+          }),
+          [200],
+        ),
+      ]);
+
+      await setup.sendPrompt({
+        prompt: "Select the fresh serving Runner process",
+      });
+      await flushWaitUntilForTest();
+
+      const dispatch = setup.registry.latestAccepted(0);
+      const execution = dispatch.envelope.executionContext;
+      setup.tracker.track(setup.actor, execution.runId, execution.sandboxToken);
+
+      const [run, assigned] = await Promise.all([
+        setup.readRun(execution.runId),
+        setup.readRunRunner(execution.runId),
+      ]);
+      expect(run.status).toBe("running");
+      expect(assigned.runnerId).toBe(currentRunner.runnerId);
+      expect(assigned.runnerHeartbeatGeneration).toBe(2);
+    },
+  );
+
+  it(
+    "runners-direct-dispatch-023 definite refusal releases a preselected Run even though startedAt is set",
+    { timeout: TEST_WITH_SINGLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const setup = await setupDispatchWorkspace();
+      await setup.registry.registerRunner({
+        heartbeatGeneration: 7,
+        reply: (dispatch) => {
+          return rejectedResponse(dispatch);
+        },
+      });
+
+      const sent = await setup.sendPrompt({
+        prompt: "Refuse every direct dispatch attempt",
+      });
+      await flushWaitUntilForTest();
+
+      const [runId] = await setup.readThreadPromptRunIds(sent.threadId);
+      expect(runId).toBeDefined();
+      if (!runId) {
+        throw new Error("Expected admitted Run ID in thread events");
+      }
+
+      const [run, queue] = await Promise.all([
+        setup.readRun(runId),
+        setup.readQueue(),
+      ]);
+      expect(run.status).toBe("failed");
+      expect(run.failureReason).toBe("unknown");
+      expect(queue.concurrency.active).toBe(0);
+    },
+  );
 });

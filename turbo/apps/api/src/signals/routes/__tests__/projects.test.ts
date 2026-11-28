@@ -1,833 +1,524 @@
-import { randomUUID } from "node:crypto";
-import { describe, it, test, expect } from "vitest";
-import { projectsContract } from "@okouai/api-contracts/contracts/projects";
+import { gunzipSync } from "node:zlib";
 import {
-  chatThreadsContract,
   chatThreadByIdContract,
   chatThreadDraftContract,
+  chatThreadsContract,
+  type UserMessageInputDocument,
+  type UserMessageInputPart,
 } from "@okouai/api-contracts/contracts/chat-threads";
 import { composerDraftContract } from "@okouai/api-contracts/contracts/composer-draft";
-import { createProjectOperationId } from "@okouai/core/project-operation-id";
-import { testContext, accept } from "../../../__tests__/test-context";
+import { projectsContract } from "@okouai/api-contracts/contracts/projects";
+import { v7 } from "uuid";
+
 import { setupApp } from "../../../__tests__/test-helpers";
+import { accept, testContext } from "../../../__tests__/test-context";
 import { now } from "../../../lib/time";
-import { projectRoutes } from "../projects";
 import { chatThreadRoutes } from "../chat-threads";
+import { chatThreadDraftGetRoutes } from "../chat-threads-draft-get";
+import { chatThreadPatchRoutes } from "../chat-threads-patch";
 import { composerDraftRoutes } from "../composer-draft";
-import {
-  createBddApi,
-  type ApiTestUser,
-  type ApiTestUserOptions,
-} from "./helpers/api-bdd";
-import { createRunsApi } from "./helpers/api-bdd-runs";
-import { createBddIntegrationApi } from "./helpers/api-bdd-integrations";
+import { projectRoutes } from "../projects";
+import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
+import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createRouteMocks } from "./helpers/route-test";
-import { createRunExecutionCredentials } from "./helpers/run-execution-credentials";
 
 const context = testContext();
-const credentials = createRunExecutionCredentials(context);
 const bdd = createBddApi(context);
-const runs = createRunsApi(context);
-function operation() {
-  return createProjectOperationId(now(), randomUUID());
+const chat = createChatFilesBddApi(context);
+const headers = Object.freeze({ authorization: "Bearer clerk-session" });
+
+/** Project operation identities are fresh UUIDv7 values. */
+function operationId(msecs = now()) {
+  return v7({ msecs });
 }
-function headers(actor: ApiTestUser) {
+
+function api() {
+  return setupApp({ context, routes: projectRoutes })(projectsContract);
+}
+
+function as(actor: ApiTestUser) {
   createRouteMocks(context).clerk.session(
     actor.userId,
     actor.orgId,
     actor.orgRole,
   );
-  return { authorization: "Bearer clerk-session" };
+  return api();
 }
-function client() {
-  return setupApp({ context, routes: projectRoutes })(projectsContract);
+
+async function onboardedMember(): Promise<ApiTestUser> {
+  const member = bdd.user();
+  bdd.acceptStorageWrites();
+  await bdd.completeOnboarding(member);
+  return member;
 }
-function threads() {
-  return setupApp({ context, routes: chatThreadRoutes })(chatThreadsContract);
-}
-function owner(options?: ApiTestUserOptions) {
-  const actor = bdd.user(options);
-  if (!actor.orgId) {
-    throw new Error("Project fixture requires an organization");
-  }
-  return actor;
-}
-async function create(
+
+async function createProject(
   actor: ApiTestUser,
-  name = "Campaign",
+  name: string,
   fromThreadId?: string,
 ) {
-  const id = operation();
-  return (
-    await accept(
-      client().create({
-        headers: headers(actor),
-        body: { id, eventId: id, name, fromThreadId },
-      }),
-      [201],
-    )
-  ).body;
-}
-async function configureChatModel(actor: ApiTestUser) {
-  await runs.ensurePersonalSubscriptionModel(actor, {
-    model: "claude-sonnet-5-5",
-  });
-  await createBddIntegrationApi(context).configureNativeSubscriptionModels(
-    actor,
+  const projectId = operationId();
+  const response = await accept(
+    as(actor).create({
+      headers,
+      body: {
+        id: projectId,
+        eventId: projectId,
+        name,
+        ...(fromThreadId === undefined ? {} : { fromThreadId }),
+      },
+    }),
+    [201],
   );
-  await runs.updateUserModelPreference(actor, "claude-sonnet-5-5");
+  return response.body;
 }
-async function thread(actor: ApiTestUser, projectId?: string) {
-  return (
-    await accept(
-      threads().create({
-        headers: headers(actor),
-        body: {
-          clientThreadId: randomUUID(),
-          eventId: randomUUID(),
-          projectId,
-        },
-      }),
-      [201],
-    )
-  ).body;
-}
-async function move(
-  actor: ApiTestUser,
-  threadId: string,
-  projectId: string | null,
-  eventId = operation(),
-) {
-  return await client().membership({
-    headers: headers(actor),
-    params: { id: threadId },
-    body: { projectId, eventId },
+
+async function listNames(actor: ApiTestUser) {
+  const response = await accept(as(actor).list({ headers }), [200]);
+  return response.body.projects.map((project) => {
+    return project.name;
   });
 }
 
-function reorder(
+async function reorder(
   actor: ApiTestUser,
-  projectId: string,
+  id: string,
   targetId: string,
   side: "before" | "after",
-  eventId = operation(),
 ) {
-  return client().reorder({
-    headers: headers(actor),
-    params: { id: projectId },
-    body: { targetId, side, eventId },
-  });
-}
-async function listedIds(actor: ApiTestUser) {
-  const result = await accept(
-    client().list({ headers: headers(actor) }),
-    [200],
+  const response = await accept(
+    as(actor).reorder({
+      headers,
+      params: { id },
+      body: { eventId: operationId(), targetId, side },
+    }),
+    [204],
   );
-  return result.body.projects.map((project) => {
-    return project.id;
-  });
+  return response.status;
 }
 
-test("archives and restores a Project with its original member", async () => {
-  const { installWorkflowVolumeS3Fixture } =
-    await import("./helpers/workflow-volume-s3");
-  const { gunzipSync } = await import("node:zlib");
-  const { projectSnapshotArchiveSchema } =
-    await import("@okouai/api-contracts/validators/projects");
-  const storage = installWorkflowVolumeS3Fixture(context);
-  const actor = owner();
-  const project = await create(actor);
-  const member = await thread(actor, project.id);
-  const update = async (archived: boolean) => {
-    return (
-      await accept(
-        client().update({
-          headers: headers(actor),
-          params: { id: project.id },
-          body: { eventId: operation(), archived },
-        }),
-        [200],
-      )
-    ).body;
-  };
-  const archived = await update(true);
-  expect(archived).toMatchObject({
-    archived: true,
-    lastArchivedAt: expect.any(String),
-  });
-  const { body: snapshot } = await accept(
-    client().snapshot({ headers: headers(actor) }),
-    [200],
-  );
-  const snapshotObject = [...storage.objects.entries()].find(([key]) => {
-    return key.startsWith("project-snapshots/v1/");
-  });
-  if (!snapshotObject) {
-    throw new Error("Project snapshot was not uploaded");
-  }
-  const persisted = projectSnapshotArchiveSchema.parse(
-    JSON.parse(gunzipSync(snapshotObject[1]).toString("utf8")),
-  );
-  expect(persisted.projects).toStrictEqual([archived]);
-  const restored = await update(false);
-  const { body: tail } = await accept(
-    client().events({
-      headers: headers(actor),
-      query: { sinceSeqId: snapshot.latestSeqId },
-    }),
-    [200],
-  );
-  expect(tail.events).toMatchObject([
-    {
-      projectId: project.id,
-      archived: false,
-      lastArchivedAt: archived.lastArchivedAt,
-    },
-  ]);
-  expect(restored).toMatchObject({
-    archived: false,
-    lastArchivedAt: archived.lastArchivedAt,
-    sortOrder: project.sortOrder,
-  });
-  const result = await accept(
-    client().threads({
-      headers: headers(actor),
-      params: { id: project.id },
-      query: { archived: "all", limit: 100 },
-    }),
-    [200],
-  );
-  expect(result.body.threads).toMatchObject([
-    { id: member.id, archived: false },
-  ]);
-});
-
-describe("private Project order", () => {
-  it("moves whole groups before and after targets, preserves rank on rename and appends new Projects", async () => {
-    const actor = owner();
-    const first = await create(actor, "First");
-    const second = await create(actor, "Second");
-    const third = await create(actor, "Third");
-    expect(first.sortOrder).toStrictEqual(expect.any(String));
-    await expect(listedIds(actor)).resolves.toStrictEqual([
-      first.id,
-      second.id,
-      third.id,
-    ]);
-    await accept(reorder(actor, third.id, first.id, "before"), [204]);
-    await expect(listedIds(actor)).resolves.toStrictEqual([
-      third.id,
-      first.id,
-      second.id,
-    ]);
-    await accept(reorder(actor, first.id, second.id, "after"), [204]);
-    const moved = await accept(
-      client().get({ headers: headers(actor), params: { id: first.id } }),
-      [200],
-    );
-    const renamed = await accept(
-      client().update({
-        headers: headers(actor),
-        params: { id: first.id },
-        body: { eventId: operation(), name: "Renamed" },
-      }),
-      [200],
-    );
-    expect(renamed.body.sortOrder).toBe(moved.body.sortOrder);
-    const fourth = await create(actor, "Fourth");
-    await expect(listedIds(actor)).resolves.toStrictEqual([
-      third.id,
-      second.id,
-      first.id,
-      fourth.id,
-    ]);
-    const events = await accept(
-      client().events({ headers: headers(actor), query: { sinceSeqId: 0 } }),
-      [200],
-    );
-    expect(
-      events.body.events.filter((event) => {
-        return event.kind === "sort_updated";
-      }),
-    ).toMatchObject([
-      { projectId: third.id, sortOrder: expect.any(String) },
-      { projectId: first.id, sortOrder: moved.body.sortOrder },
-    ]);
-  });
-
-  it("settles no-op and replayed moves by event identity without undoing a newer order", async () => {
-    const actor = owner();
-    const first = await create(actor, "First");
-    const second = await create(actor, "Second");
-    const third = await create(actor, "Third");
-    const eventId = operation();
-    await accept(reorder(actor, third.id, first.id, "before", eventId), [204]);
-    await accept(reorder(actor, third.id, second.id, "after"), [204]);
-    await accept(reorder(actor, third.id, first.id, "before", eventId), [204]);
-    await expect(listedIds(actor)).resolves.toStrictEqual([
-      first.id,
-      second.id,
-      third.id,
-    ]);
-    expect(
-      (await reorder(actor, third.id, second.id, "before", eventId)).status,
-    ).toBe(409);
-    const noop = operation();
-    await accept(reorder(actor, third.id, second.id, "after", noop), [204]);
-    const events = await accept(
-      client().events({ headers: headers(actor), query: { sinceSeqId: 0 } }),
-      [200],
-    );
-    expect(
-      events.body.events.filter((event) => {
-        return event.id === eventId;
-      }),
-    ).toHaveLength(1);
-    expect(events.body.events).toContainEqual(
-      expect.objectContaining({
-        id: noop,
-        kind: "sort_updated",
-        projectId: third.id,
-      }),
-    );
-    await expect(listedIds(actor)).resolves.toStrictEqual([
-      first.id,
-      second.id,
-      third.id,
-    ]);
-  });
-
-  it("hides foreign source and target Projects from colleagues and other organizations", async () => {
-    const actor = owner();
-    const first = await create(actor, "First");
-    const second = await create(actor, "Second");
-    const peer = owner({ orgId: actor.orgId });
-    const foreign = await create(peer, "Foreign");
-    const elsewhere = owner({ userId: actor.userId });
-    const external = await create(elsewhere, "Elsewhere");
-    expect((await reorder(peer, first.id, foreign.id, "before")).status).toBe(
-      404,
-    );
-    expect((await reorder(actor, first.id, foreign.id, "before")).status).toBe(
-      404,
-    );
-    expect(
-      (await reorder(elsewhere, first.id, external.id, "before")).status,
-    ).toBe(404);
-    expect((await reorder(actor, first.id, external.id, "before")).status).toBe(
-      404,
-    );
-    await expect(listedIds(actor)).resolves.toStrictEqual([
-      first.id,
-      second.id,
-    ]);
-    await expect(listedIds(peer)).resolves.toStrictEqual([foreign.id]);
-    await expect(listedIds(elsewhere)).resolves.toStrictEqual([external.id]);
-  });
-
-  it("arbitrates competing owner writes without duplicate tail ranks or partial event publication", async () => {
-    const actor = owner();
-    const initial = await create(actor, "Initial");
-    const ids = [operation(), operation()];
-    const responses = await Promise.all(
-      ids.map((id) => {
-        return client().create({
-          headers: headers(actor),
-          body: { id, eventId: id, name: id },
-        });
-      }),
-    );
-    expect(
-      responses.map((response) => {
-        return response.status;
-      }),
-    ).toContain(201);
-    for (const [index, response] of responses.entries()) {
-      expect([201, 409]).toContain(response.status);
-      if (response.status === 409) {
-        const id = ids[index]!;
-        await accept(
-          client().create({
-            headers: headers(actor),
-            body: { id, eventId: id, name: id },
-          }),
-          [201],
-        );
-      }
+/** Record immutable snapshot archives written to object storage. */
+function recordSnapshots() {
+  const archives: unknown[] = [];
+  context.mocks.s3.send.mockImplementation((command: unknown) => {
+    const { constructor, input } = command as {
+      readonly constructor: { readonly name: string };
+      readonly input: Record<string, unknown>;
+    };
+    if (
+      constructor.name === "PutObjectCommand" &&
+      String(input.Key).startsWith("project-snapshots/v1/")
+    ) {
+      archives.push(
+        JSON.parse(gunzipSync(input.Body as Uint8Array).toString("utf8")),
+      );
     }
-    const listed = await accept(
-      client().list({ headers: headers(actor) }),
-      [200],
-    );
-    expect(listed.body.projects[0]?.id).toBe(initial.id);
-    expect(
-      new Set(
-        listed.body.projects.map((project) => {
-          return project.sortOrder;
-        }),
-      ).size,
-    ).toBe(3);
-    const eventId = operation();
-    const duplicate = await Promise.all([
-      reorder(actor, initial.id, ids[0]!, "after", eventId),
-      reorder(actor, initial.id, ids[0]!, "after", eventId),
-    ]);
-    expect(
-      duplicate.map((response) => {
-        return response.status;
-      }),
-    ).toStrictEqual([204, 204]);
-    const events = await accept(
-      client().events({ headers: headers(actor), query: { sinceSeqId: 0 } }),
-      [200],
-    );
-    expect(
-      events.body.events.map((event) => {
-        return event.seqId;
-      }),
-    ).toStrictEqual([1, 2, 3, 4]);
-    expect(events.body.events.at(-1)).toMatchObject({
-      id: eventId,
-      projectId: initial.id,
-      kind: "sort_updated",
-    });
+    return Promise.resolve({});
   });
-});
+  context.mocks.s3.getSignedUrl.mockResolvedValue(
+    "https://r2.example.com/project-snapshot.json.gz",
+  );
+  return archives;
+}
 
 describe("private Projects", () => {
-  it("lets a dispatched member Run create and read its own Project", async () => {
-    const actor = owner();
-    const token = await credentials.okouToken(actor);
-    const runHeaders = { authorization: `Bearer ${token}` };
-    const id = operation();
-    await accept(
-      client().create({
-        headers: runHeaders,
-        body: { id, eventId: id, name: "Run project" },
-      }),
-      [201],
+  it("projects-008 isolates each member's Projects across colleagues and organizations", async () => {
+    const owner = await onboardedMember();
+    const project = await createProject(owner, "Owner project");
+    const colleague = bdd.user({ orgId: owner.orgId, orgRole: "org:member" });
+    const elsewhere = bdd.user({ userId: owner.userId });
+
+    const colleagueRead = await accept(
+      as(colleague).get({ headers, params: { id: project.id } }),
+      [404],
     );
-    const project = await accept(
-      client().get({ headers: runHeaders, params: { id } }),
+    expect(colleagueRead.status).toBe(404);
+    await expect(listNames(colleague)).resolves.toStrictEqual([]);
+    const otherOrgRead = await accept(
+      as(elsewhere).get({ headers, params: { id: project.id } }),
+      [404],
+    );
+    expect(otherOrgRead.status).toBe(404);
+  });
+
+  it("projects-002 moves Projects before and after targets, keeps rank on rename and appends new Projects", async () => {
+    const member = await onboardedMember();
+    const first = await createProject(member, "First");
+    const second = await createProject(member, "Second");
+    const third = await createProject(member, "Third");
+    for (const project of [first, second, third]) {
+      expect(typeof project.sortOrder).toBe("string");
+    }
+    await expect(listNames(member)).resolves.toStrictEqual([
+      "First",
+      "Second",
+      "Third",
+    ]);
+    const before = await accept(
+      as(member).events({ headers, query: { sinceSeqId: 0 } }),
       [200],
     );
-    expect(project.body).toMatchObject({ id, name: "Run project" });
+    const sinceSeqId = Math.max(
+      0,
+      ...before.body.events.map((event) => {
+        return event.seqId;
+      }),
+    );
+
+    await expect(reorder(member, third.id, first.id, "before")).resolves.toBe(
+      204,
+    );
+    await expect(listNames(member)).resolves.toStrictEqual([
+      "Third",
+      "First",
+      "Second",
+    ]);
+    await expect(reorder(member, first.id, second.id, "after")).resolves.toBe(
+      204,
+    );
+    await expect(listNames(member)).resolves.toStrictEqual([
+      "Third",
+      "Second",
+      "First",
+    ]);
+    const firstRank = (
+      await accept(as(member).get({ headers, params: { id: first.id } }), [200])
+    ).body.sortOrder;
+
+    const renamed = await accept(
+      as(member).update({
+        headers,
+        params: { id: first.id },
+        body: { eventId: operationId(), name: "First renamed" },
+      }),
+      [200],
+    );
+    expect(renamed.body.sortOrder).toBe(firstRank);
+    await createProject(member, "Fourth");
+    await expect(listNames(member)).resolves.toStrictEqual([
+      "Third",
+      "Second",
+      "First renamed",
+      "Fourth",
+    ]);
+
+    const events = await accept(
+      as(member).events({ headers, query: { sinceSeqId } }),
+      [200],
+    );
+    const sorts = events.body.events.filter((event) => {
+      return event.kind === "sort_updated";
+    });
+    expect(
+      sorts.map((event) => {
+        return event.projectId;
+      }),
+    ).toStrictEqual([third.id, first.id]);
+    expect(sorts[1]?.sortOrder).toBe(firstRank);
   });
 
-  it("preserves structured Project references through member composer and Thread drafts", async () => {
-    const actor = owner();
-    const project = await create(actor);
-    await configureChatModel(actor);
-    const t = await thread(actor, project.id);
-    const draft = {
-      draftUserMessage: {
-        version: 1 as const,
-        parts: [
-          {
-            type: "project" as const,
-            projectId: project.id,
-            nameSnapshot: project.name,
-          },
-          {
-            type: "feedback" as const,
-            quote: "Review this",
-            note: [
-              {
-                type: "project" as const,
-                projectId: project.id,
-                nameSnapshot: project.name,
-              },
-            ],
-          },
-        ],
-      },
-      draftAttachments: null,
-    };
-    const threadApi = setupApp({ context, routes: chatThreadRoutes });
+  it("projects-001 archives and restores a Project with its original member", async () => {
+    const member = await onboardedMember();
+    const project = await createProject(member, "Archive me");
+    const thread = await chat.createThread(member, {
+      model: null,
+      projectId: project.id,
+    });
+    const archives = recordSnapshots();
+
+    const archived = await accept(
+      as(member).update({
+        headers,
+        params: { id: project.id },
+        body: { eventId: operationId(), archived: true },
+      }),
+      [200],
+    );
+    expect(archived.body.archived).toBeTruthy();
+    const lastArchivedAt = archived.body.lastArchivedAt;
+    expect(typeof lastArchivedAt).toBe("string");
+    const snapshot = await accept(as(member).snapshot({ headers }), [200]);
+    expect(archives).toHaveLength(1);
+    expect(archives[0]).toMatchObject({
+      projects: [{ id: project.id, archived: true, lastArchivedAt }],
+    });
+    expect(
+      (archives[0] as { readonly projects: readonly unknown[] }).projects,
+    ).toHaveLength(1);
+
     await accept(
-      threadApi(chatThreadByIdContract).patch({
-        headers: headers(actor),
-        params: { id: t.id },
-        body: draft,
+      as(member).update({
+        headers,
+        params: { id: project.id },
+        body: { eventId: operationId(), archived: false },
+      }),
+      [200],
+    );
+    const events = await accept(
+      as(member).events({
+        headers,
+        query: { sinceSeqId: snapshot.body.latestSeqId },
+      }),
+      [200],
+    );
+    expect(events.body.events).toHaveLength(1);
+    expect(events.body.events[0]).toMatchObject({
+      projectId: project.id,
+      archived: false,
+      lastArchivedAt,
+    });
+    const restored = await accept(
+      as(member).get({ headers, params: { id: project.id } }),
+      [200],
+    );
+    expect(restored.body).toMatchObject({
+      lastArchivedAt,
+      sortOrder: project.sortOrder,
+    });
+    const threads = await accept(
+      as(member).threads({
+        headers,
+        params: { id: project.id },
+        query: { archived: "all" },
+      }),
+      [200],
+    );
+    expect(threads.body.threads).toHaveLength(1);
+    expect(threads.body.threads[0]).toMatchObject({
+      id: thread.id,
+      archived: false,
+    });
+  });
+
+  it("projects-007 preserves structured Project references through Thread and composer drafts", async () => {
+    const member = await onboardedMember();
+    const project = await createProject(member, "Launch");
+    const thread = await chat.createThread(member, { projectId: project.id });
+    const mention: Extract<UserMessageInputPart, { type: "project" }> = {
+      type: "project",
+      projectId: project.id,
+      nameSnapshot: "Launch",
+    };
+    const draftUserMessage: UserMessageInputDocument = {
+      version: 1,
+      parts: [
+        { type: "text", text: "Review " },
+        mention,
+        {
+          type: "feedback",
+          quote: "the launch plan",
+          note: [{ type: "text", text: "Compare with " }, mention],
+        },
+      ],
+    };
+    createRouteMocks(context).clerk.session(
+      member.userId,
+      member.orgId,
+      member.orgRole,
+    );
+
+    const savedThread = await accept(
+      setupApp({ context, routes: chatThreadPatchRoutes })(
+        chatThreadByIdContract,
+      ).patch({
+        headers,
+        params: { id: thread.id },
+        body: { draftUserMessage },
       }),
       [204],
     );
-    expect(
-      (
-        await accept(
-          threadApi(chatThreadDraftContract).get({
-            headers: headers(actor),
-            params: { id: t.id },
-          }),
-          [200],
-        )
-      ).body,
-    ).toStrictEqual(draft);
-    const composerApi = setupApp({ context, routes: composerDraftRoutes })(
+    expect(savedThread.status).toBe(204);
+    const threadDraft = await accept(
+      setupApp({ context, routes: chatThreadDraftGetRoutes })(
+        chatThreadDraftContract,
+      ).get({ headers, params: { id: thread.id } }),
+      [200],
+    );
+    expect(threadDraft.body.draftUserMessage).toStrictEqual(draftUserMessage);
+
+    const composer = setupApp({ context, routes: composerDraftRoutes })(
       composerDraftContract,
     );
-    await accept(
-      composerApi.patch({
-        headers: headers(actor),
-        body: draft,
-      }),
+    const savedComposer = await accept(
+      composer.patch({ headers, body: { draftUserMessage } }),
       [204],
     );
-    expect(
-      (
-        await accept(
-          composerApi.get({
-            headers: headers(actor),
-          }),
-          [200],
-        )
-      ).body,
-    ).toStrictEqual(draft);
+    expect(savedComposer.status).toBe(204);
+    const composerDraft = await accept(composer.get({ headers }), [200]);
+    expect(composerDraft.body.draftUserMessage).toStrictEqual(draftUserMessage);
   });
 
-  it("isolates each member’s Projects across colleagues and organizations", async () => {
-    const actor = owner();
-    const p = await create(actor);
-    const peer = bdd.user({ orgId: actor.orgId });
-    if (!peer.orgId) {
-      throw new Error("Missing org");
-    }
-    expect(
-      (await client().get({ headers: headers(peer), params: { id: p.id } }))
-        .status,
-    ).toBe(404);
-    expect(
-      (await accept(client().list({ headers: headers(peer) }), [200])).body
-        .projects,
-    ).toStrictEqual([]);
-    const elsewhere = owner({ userId: actor.userId });
-    expect(
-      (
-        await client().get({
-          headers: headers(elsewhere),
-          params: { id: p.id },
-        })
-      ).status,
-    ).toBe(404);
-  });
-  it("keeps thread activity while moving across Projects and ignores a replayed old move", async () => {
-    const actor = owner();
-    await configureChatModel(actor);
-    const first = await thread(actor);
-    const second = await thread(actor);
-    const p = await create(actor, "Launch", first.id);
-    const q = await create(actor, "Research");
-    expect((await move(actor, second.id, p.id)).status).toBe(200);
-    await accept(reorder(actor, q.id, p.id, "before"), [204]);
-    const members = (
-      await accept(
-        client().threads({
-          headers: headers(actor),
-          params: { id: p.id },
-          query: { limit: 100, archived: "all" },
+  it("projects-009 keeps thread activity across Project moves and ignores a replayed old move", async () => {
+    const member = await onboardedMember();
+    const first = await chat.createThread(member, { model: null });
+    const second = await chat.createThread(member, { model: null });
+    const launch = await createProject(member, "Launch", first.id);
+    const research = await createProject(member, "Research");
+    const move = async (
+      threadId: string,
+      projectId: string,
+      eventId: string,
+      status: 200 | 409,
+    ) => {
+      const response = await accept(
+        as(member).membership({
+          headers,
+          params: { id: threadId },
+          body: { eventId, projectId },
+        }),
+        [status],
+      );
+      return response.status;
+    };
+    const threadIds = async (projectId: string) => {
+      const response = await accept(
+        as(member).threads({
+          headers,
+          params: { id: projectId },
+          query: { archived: "all" },
         }),
         [200],
-      )
-    ).body.threads;
+      );
+      return response.body.threads;
+    };
+
+    await expect(move(second.id, launch.id, operationId(), 200)).resolves.toBe(
+      200,
+    );
+    await reorder(member, research.id, launch.id, "before");
+    const launchThreads = await threadIds(launch.id);
     expect(
-      members
+      launchThreads
         .map((thread) => {
           return thread.id;
         })
         .sort(),
     ).toStrictEqual([first.id, second.id].sort());
+    const firstThread = launchThreads.find((thread) => {
+      return thread.id === first.id;
+    });
+    expect(firstThread?.sortAt).toBe(firstThread?.createdAt);
+
+    const oldMove = operationId();
+    await expect(move(first.id, launch.id, oldMove, 200)).resolves.toBe(200);
+    await expect(move(first.id, research.id, operationId(), 200)).resolves.toBe(
+      200,
+    );
+    await expect(move(first.id, launch.id, oldMove, 200)).resolves.toBe(200);
     expect(
-      members.find((t) => {
-        return t.id === first.id;
-      })?.sortAt,
-    ).toBe(first.createdAt);
-    const old = operation();
-    expect((await move(actor, first.id, p.id, old)).status).toBe(200);
-    expect((await move(actor, first.id, q.id)).status).toBe(200);
-    expect((await move(actor, first.id, p.id, old)).status).toBe(200);
-    expect(
-      (
-        await accept(
-          client().threads({
-            headers: headers(actor),
-            params: { id: q.id },
-            query: { limit: 100, archived: "all" },
-          }),
-          [200],
-        )
-      ).body.threads.map((t) => {
-        return t.id;
+      (await threadIds(research.id)).map((thread) => {
+        return thread.id;
       }),
     ).toStrictEqual([first.id]);
-    expect((await move(actor, second.id, q.id, old)).status).toBe(409);
-    const expired = createProjectOperationId(
-      now() - 8 * 86_400_000,
-      randomUUID(),
-    );
-    expect((await move(actor, first.id, p.id, expired)).status).toBe(409);
+
+    await expect(move(second.id, research.id, oldMove, 409)).resolves.toBe(409);
+    const expired = operationId(now() - 8 * 24 * 60 * 60 * 1000);
+    await expect(move(second.id, research.id, expired, 409)).resolves.toBe(409);
   });
-  it("deletes the Project atomically, clears each membership and never resurrects an old creation", async () => {
-    const actor = owner();
-    await configureChatModel(actor);
-    const first = await thread(actor);
-    const p = await create(actor, "Launch", first.id);
-    const second = await thread(actor, p.id);
-    expect(second.projectId).toBe(p.id);
+
+  it("projects-010 deletes the Project, clears each membership and never resurrects the old creation", async () => {
+    const member = await onboardedMember();
+    const first = await chat.createThread(member, { model: null });
+    const launch = await createProject(member, "Launch", first.id);
+    const second = await chat.createThread(member, {
+      model: null,
+      projectId: launch.id,
+    });
+    const listed = await accept(
+      as(member).threads({
+        headers,
+        params: { id: launch.id },
+        query: { archived: "all" },
+      }),
+      [200],
+    );
     expect(
-      (
-        await client().delete({
-          headers: headers(actor),
-          params: { id: p.id },
-          body: { eventId: operation() },
+      listed.body.threads.find((thread) => {
+        return thread.id === second.id;
+      })?.projectId,
+    ).toBe(launch.id);
+
+    const deleted = await accept(
+      as(member).delete({
+        headers,
+        params: { id: launch.id },
+        body: { eventId: operationId() },
+      }),
+      [204],
+    );
+    expect(deleted.status).toBe(204);
+    const read = await accept(
+      as(member).get({ headers, params: { id: launch.id } }),
+      [404],
+    );
+    expect(read.status).toBe(404);
+
+    createRouteMocks(context).clerk.session(
+      member.userId,
+      member.orgId,
+      member.orgRole,
+    );
+    const threadEvents = await accept(
+      setupApp({ context, routes: chatThreadRoutes })(
+        chatThreadsContract,
+      ).events({ headers, query: {} }),
+      [200],
+    );
+    for (const thread of [first, second]) {
+      const events = threadEvents.body.events.filter((event) => {
+        return event.chatThreadId === thread.id;
+      });
+      const lastMembership = events
+        .filter((event) => {
+          return event.kind === "project_updated";
         })
-      ).status,
-    ).toBe(204);
-    expect(
-      (await client().get({ headers: headers(actor), params: { id: p.id } }))
-        .status,
-    ).toBe(404);
-    const events = (
-      await accept(
-        threads().events({ headers: headers(actor), query: {} }),
-        [200],
-      )
-    ).body.events;
-    for (const id of [first.id, second.id]) {
+        .at(-1);
+      expect(lastMembership?.projectId).toBeNull();
       expect(
-        events
-          .filter((e) => {
-            return e.chatThreadId === id && e.kind === "project_updated";
-          })
-          .at(-1)?.projectId,
-      ).toBeNull();
-      expect(
-        events.some((e) => {
-          return e.chatThreadId === id && e.kind === "deleted";
+        events.some((event) => {
+          return event.kind === "deleted";
         }),
       ).toBeFalsy();
     }
-    expect(
-      (
-        await client().create({
-          headers: headers(actor),
-          body: {
-            id: p.id,
-            eventId: p.id,
-            name: "Launch",
-            fromThreadId: first.id,
-          },
-        })
-      ).status,
-    ).toBe(404);
-  });
-  it("rejects a missing or foreign source without creating a Project or publishing events", async () => {
-    const actor = owner();
-    const id = operation();
-    expect(
-      (
-        await client().create({
-          headers: headers(actor),
-          body: {
-            id,
-            eventId: id,
-            name: "Missing",
-            fromThreadId: randomUUID(),
-          },
-        })
-      ).status,
-    ).toBe(404);
-    expect(
-      (await accept(client().list({ headers: headers(actor) }), [200])).body
-        .projects,
-    ).toStrictEqual([]);
-    expect(
-      (
-        await accept(
-          client().events({
-            headers: headers(actor),
-            query: { sinceSeqId: 0 },
-          }),
-          [200],
-        )
-      ).body.events,
-    ).toStrictEqual([]);
-  });
-});
 
-test("serializes concurrent moves, duplicate creates and deletion against new memberships", async () => {
-  const actor = owner();
-  await configureChatModel(actor);
-  const first = await thread(actor);
-  const p = await create(actor, "Launch");
-  const q = await create(actor, "Review");
-  const same = operation();
-  const [one, two] = await Promise.all([
-    client().create({
-      headers: headers(actor),
-      body: {
-        id: same,
-        eventId: same,
-        name: "Concurrent",
-        fromThreadId: first.id,
-      },
-    }),
-    client().create({
-      headers: headers(actor),
-      body: {
-        id: same,
-        eventId: same,
-        name: "Concurrent",
-        fromThreadId: first.id,
-      },
-    }),
-  ]);
-  expect([one.status, two.status]).toStrictEqual([201, 201]);
-  const moves = await Promise.all([
-    move(actor, first.id, p.id),
-    move(actor, first.id, q.id),
-  ]);
-  expect(
-    moves.map((r) => {
-      return r.status;
-    }),
-  ).toStrictEqual([200, 200]);
-  const events = (
-    await accept(
-      threads().events({ headers: headers(actor), query: {} }),
+    const recreated = await accept(
+      as(member).create({
+        headers,
+        body: {
+          id: launch.id,
+          eventId: launch.id,
+          name: "Launch",
+          fromThreadId: first.id,
+        },
+      }),
+      [404],
+    );
+    expect(recreated.status).toBe(404);
+  });
+
+  it("projects-011 rejects a missing source thread without creating a Project or publishing events", async () => {
+    const member = await onboardedMember();
+    const projectId = operationId();
+
+    const created = await accept(
+      as(member).create({
+        headers,
+        body: {
+          id: projectId,
+          eventId: projectId,
+          name: "Orphan",
+          fromThreadId: operationId(),
+        },
+      }),
+      [404],
+    );
+
+    expect(created.status).toBe(404);
+    await expect(listNames(member)).resolves.toStrictEqual([]);
+    const events = await accept(
+      as(member).events({ headers, query: { sinceSeqId: 0 } }),
       [200],
-    )
-  ).body.events.filter((e) => {
-    return e.chatThreadId === first.id && e.kind === "project_updated";
+    );
+    expect(events.body.events).toStrictEqual([]);
   });
-  const last = events.at(-1);
-  if (!last?.projectId) {
-    throw new Error("Missing committed membership");
-  }
-  const members = await accept(
-    client().threads({
-      headers: headers(actor),
-      params: { id: last.projectId },
-      query: { limit: 100, archived: "all" },
-    }),
-    [200],
-  );
-  expect(
-    members.body.threads.map((t) => {
-      return t.id;
-    }),
-  ).toStrictEqual([first.id]);
-  const [deletion, joining] = await Promise.all([
-    client().delete({
-      headers: headers(actor),
-      params: { id: p.id },
-      body: { eventId: operation() },
-    }),
-    move(actor, first.id, p.id),
-  ]);
-  expect([204, 409]).toContain(deletion.status);
-  expect([200, 404]).toContain(joining.status);
-  if (deletion.status === 204) {
-    expect(
-      (await client().get({ headers: headers(actor), params: { id: p.id } }))
-        .status,
-    ).toBe(404);
-    const all = (
-      await accept(
-        threads().events({ headers: headers(actor), query: {} }),
-        [200],
-      )
-    ).body.events;
-    const tail = all
-      .filter((e) => {
-        return e.chatThreadId === first.id && e.kind === "project_updated";
-      })
-      .at(-1);
-    expect(tail?.projectId).not.toBe(p.id);
-  }
-});
-
-test("publishes immutable owner-scoped metadata snapshots with an exact event tail fence", async () => {
-  const { installWorkflowVolumeS3Fixture } =
-    await import("./helpers/workflow-volume-s3");
-  const { gunzipSync } = await import("node:zlib");
-  const { projectSnapshotArchiveSchema } =
-    await import("@okouai/api-contracts/validators/projects");
-  const actor = owner();
-  const storage = installWorkflowVolumeS3Fixture(context);
-  const empty = await accept(
-    client().snapshot({ headers: headers(actor) }),
-    [200],
-  );
-  expect(empty.body).toMatchObject({ latestEventId: null, latestSeqId: 0 });
-  const emptyKeys = new Set(storage.objects.keys());
-  const p = await create(actor, "Original");
-  const snapshot = await accept(
-    client().snapshot({ headers: headers(actor) }),
-    [200],
-  );
-  if (!("url" in snapshot.body)) {
-    throw new Error("Project snapshot URL missing");
-  }
-  const first = [...storage.objects.entries()].find(([key]) => {
-    return key.startsWith("project-snapshots/v1/") && !emptyKeys.has(key);
-  });
-  if (!first) {
-    throw new Error("Project metadata was not published");
-  }
-  const archived = projectSnapshotArchiveSchema.parse(
-    JSON.parse(gunzipSync(first[1]).toString("utf8")),
-  );
-  expect(archived.projects).toStrictEqual([p]);
-  expect(archived).toMatchObject({ latestEventId: p.id, latestSeqId: 1 });
-  expect(snapshot.body).toMatchObject({
-    latestEventId: archived.latestEventId,
-    latestSeqId: archived.latestSeqId,
-  });
-  const q = await create(actor, "Second");
-  await accept(reorder(actor, q.id, p.id, "before"), [204]);
-  const reordered = await accept(
-    client().get({ headers: headers(actor), params: { id: q.id } }),
-    [200],
-  );
-  await accept(
-    client().update({
-      headers: headers(actor),
-      params: { id: p.id },
-      body: { eventId: operation(), name: "Renamed" },
-    }),
-    [200],
-  );
-  const tail = await accept(
-    client().events({
-      headers: headers(actor),
-      query: { sinceSeqId: archived.latestSeqId },
-    }),
-    [200],
-  );
-  expect(tail.body.events).toMatchObject([
-    { kind: "created", projectId: q.id, sortOrder: q.sortOrder, seqId: 2 },
-    {
-      kind: "sort_updated",
-      projectId: q.id,
-      sortOrder: reordered.body.sortOrder,
-      seqId: 3,
-    },
-    {
-      kind: "renamed",
-      projectId: p.id,
-      name: "Renamed",
-      sortOrder: p.sortOrder,
-      seqId: 4,
-    },
-  ]);
-  const renamed = await accept(
-    client().snapshot({ headers: headers(actor) }),
-    [200],
-  );
-  expect(renamed.body).toMatchObject({
-    latestEventId: tail.body.events.at(-1)?.id,
-    latestSeqId: 4,
-  });
-  await expect(listedIds(actor)).resolves.toStrictEqual([q.id, p.id]);
-  expect(storage.objects.get(first[0])).toStrictEqual(first[1]);
 });

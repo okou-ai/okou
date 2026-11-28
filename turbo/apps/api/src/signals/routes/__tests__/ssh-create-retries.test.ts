@@ -1,367 +1,345 @@
 import { randomUUID } from "node:crypto";
-import { expect, test } from "vitest";
+import { cloudflareAccessContract } from "@okouai/api-contracts/contracts/cloudflare-access";
 import { sshConnectionsContract } from "@okouai/api-contracts/contracts/ssh-connections";
 import { sshCredentialsContract } from "@okouai/api-contracts/contracts/ssh-credentials";
-import { cloudflareAccessContract } from "@okouai/api-contracts/contracts/cloudflare-access";
+import { createStore } from "ccstate";
+import { describe, expect, it } from "vitest";
+
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { createDeferredPromise, joinAll } from "../../utils";
-import { sshConnectionsRoutes } from "../ssh-connections";
 import { cloudflareAccessRoutes } from "../cloudflare-access";
-import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
+import { sshConnectionsRoutes } from "../ssh-connections";
+import { seedOrgMembership$ } from "./helpers/org-membership";
 import { createRouteMocks } from "./helpers/route-test";
-import { sshCredentialId } from "./helpers/ssh-credential";
 
 const context = testContext();
-const mocks = createRouteMocks(context);
 const headers = Object.freeze({ authorization: "Bearer clerk-session" });
-const routes = Object.freeze([
-  ...sshConnectionsRoutes,
-  ...cloudflareAccessRoutes,
-]);
-const connections = () => {
-  return setupApp({ context, routes })(sshConnectionsContract);
+const clerkDirectory = createStore();
+
+interface Actor {
+  readonly userId: string;
+  readonly orgId: string;
+}
+
+async function member(ids: Partial<Actor> = {}): Promise<Actor> {
+  const actor = {
+    userId: ids.userId ?? `user_${randomUUID()}`,
+    orgId: ids.orgId ?? `org_${randomUUID()}`,
+  };
+  await clerkDirectory.set(
+    seedOrgMembership$,
+    { ...actor, role: "member" },
+    context.signal,
+  );
+  return actor;
+}
+
+function signIn(actor: Actor) {
+  createRouteMocks(context).clerk.session(
+    actor.userId,
+    actor.orgId,
+    "org:member",
+  );
+}
+
+const hosts = () => {
+  return setupApp({ context, routes: sshConnectionsRoutes })(
+    sshConnectionsContract,
+  );
 };
-const credentials = () => {
-  return setupApp({ context, routes })(sshCredentialsContract);
+const logins = () => {
+  return setupApp({ context, routes: sshConnectionsRoutes })(
+    sshCredentialsContract,
+  );
 };
 const access = () => {
-  return setupApp({ context, routes })(cloudflareAccessContract);
-};
-const login = Object.freeze({
-  name: "Deploy",
-  username: "deploy",
-  authentication: { method: "password" as const, password: "secret-password" },
-});
-const protection = Object.freeze({
-  name: "Access",
-  credentials: { clientId: "test.access", clientSecret: "secret-token" },
-});
-type Kind = "host" | "credential" | "access";
-
-function owner(existing?: { orgId?: string; userId?: string }) {
-  const value = {
-    orgId: existing?.orgId ?? `org_retry_${randomUUID()}`,
-    userId: existing?.userId ?? `user_retry_${randomUUID()}`,
-  };
-  mocks.clerk.session(value.userId, value.orgId);
-  return value;
-}
-async function create(kind: Kind, id: string, name = "Original") {
-  if (kind === "credential") {
-    return await credentials().create({
-      headers,
-      body: { ...login, id, name },
-    });
-  }
-  if (kind === "access") {
-    return await access().create({
-      headers,
-      body: { ...protection, id, name },
-    });
-  }
-  return await connections().create({
-    headers,
-    body: {
-      id,
-      displayName: name,
-      host: "ssh.example.com",
-      port: 443,
-      credential: { create: login },
-      transport: { type: "cloudflare_access", create: protection },
-    },
-  });
-}
-async function resources() {
-  return {
-    hosts: (await accept(connections().list({ headers }), [200])).body
-      .connections,
-    credentials: (await accept(credentials().list({ headers }), [200])).body
-      .credentials,
-    access: (await accept(access().list({ headers }), [200])).body.configs,
-  };
-}
-
-test.each<Kind>(["host", "credential", "access"])(
-  "concurrent %s retries acknowledge the same resource without duplicate writes",
-  async (kind) => {
-    useSecretKmsProbe();
-    owner();
-    const id = randomUUID();
-    const results = await Promise.all([
-      create(kind, id),
-      create(kind, id.toUpperCase()),
-    ]);
-    expect(
-      results
-        .map((result) => {
-          return result.status;
-        })
-        .sort((left, right) => {
-          return left - right;
-        }),
-    ).toStrictEqual([201, 204]);
-    const before = await resources();
-    expect(before.hosts).toHaveLength(kind === "host" ? 1 : 0);
-    expect(before.credentials).toHaveLength(kind === "access" ? 0 : 1);
-    expect(before.access).toHaveLength(kind === "credential" ? 0 : 1);
-    const repeated = await accept(create(kind, id, "Changed input"), [204]);
-    expect(repeated.body).toBeUndefined();
-    await expect(resources()).resolves.toStrictEqual(before);
-  },
-);
-
-test.each(["same owner", "another user in the same org"] as const)(
-  "a delayed credential create preserves the winning create from %s",
-  async (scope) => {
-    const entered = createDeferredPromise<void>(context.signal);
-    const release = createDeferredPromise<void>(context.signal);
-    useSecretKmsProbe(async (request, call) => {
-      if (call === 1) {
-        entered.resolve();
-        await release.promise;
-      }
-      return {
-        keyId: request.keyId,
-        plaintext: Buffer.from("0123456789abcdef0123456789abcdef"),
-        encryptedDataKey: Buffer.from(`encrypted-data-key:${request.keyId}`),
-      };
-    });
-    const first = owner();
-    const id = randomUUID();
-    const delayed = create("credential", id, "Delayed original");
-    await joinAll([
-      (async () => {
-        await entered.promise;
-        if (scope !== "same owner") {
-          owner({ orgId: first.orgId });
-        }
-        const winner = await accept(
-          create("credential", id.toUpperCase(), "Winning create"),
-          [201],
-        );
-        release.resolve();
-        const result = await accept(
-          delayed,
-          scope === "same owner" ? [204] : [409],
-        );
-        if (result.status === 409) {
-          expect(result.body).toStrictEqual({
-            error: {
-              code: "SSH_RESOURCE_ID_CONFLICT",
-              message:
-                "This resource ID cannot be used for this SSH configuration.",
-            },
-          });
-        }
-        const current = await accept(credentials().list({ headers }), [200]);
-        expect(current.body.credentials).toStrictEqual([winner.body]);
-        expect(current.body.credentials[0]).toMatchObject({
-          id,
-          name: "Winning create",
-          revision: 1,
-          hosts: [],
-        });
-        if (scope !== "same owner") {
-          mocks.clerk.session(first.userId, first.orgId);
-          const originalOwner = await accept(
-            credentials().list({ headers }),
-            [200],
-          );
-          expect(originalOwner.body.credentials).toStrictEqual([]);
-        }
-      })().finally(() => {
-        if (!release.settled()) {
-          release.resolve();
-        }
-      }),
-      delayed,
-    ]);
-  },
-);
-
-test("a delayed original request and its retry create only one set of inline resources", async () => {
-  const entered = createDeferredPromise<void>(context.signal);
-  const release = createDeferredPromise<void>(context.signal);
-  useSecretKmsProbe(async (request, call) => {
-    if (call === 1) {
-      entered.resolve();
-      await release.promise;
-    }
-    return {
-      keyId: request.keyId,
-      plaintext: Buffer.from("0123456789abcdef0123456789abcdef"),
-      encryptedDataKey: Buffer.from(`encrypted-data-key:${request.keyId}`),
-    };
-  });
-  owner();
-  const id = randomUUID();
-  const pending = create("host", id);
-  await entered.promise;
-  const retried = await create("host", id);
-  release.resolve();
-  expect(retried.status).toBe(201);
-  await accept(pending, [204]);
-  const current = await resources();
-  expect(current.hosts).toHaveLength(1);
-  expect(current.hosts[0]?.id).toBe(id);
-  expect(current.credentials).toHaveLength(1);
-  expect(current.access).toHaveLength(1);
-});
-
-test.each(["orgId", "userId"] as const)(
-  "same-ID creation never acknowledges another owner sharing the %s",
-  async (shared) => {
-    useSecretKmsProbe();
-    const first = owner();
-    const id = randomUUID();
-    for (const kind of ["host", "credential", "access"] as const) {
-      await accept(create(kind, id), [201]);
-    }
-    owner({ [shared]: first[shared] });
-    for (const kind of ["host", "credential", "access"] as const) {
-      const denied = await accept(create(kind, id), [409]);
-      expect(denied.body).toStrictEqual({
-        error:
-          kind === "access"
-            ? {
-                code: "CLOUDFLARE_ACCESS_RESOURCE_ID_CONFLICT",
-                message:
-                  "This resource ID cannot be used for this Cloudflare Access configuration.",
-              }
-            : {
-                code: "SSH_RESOURCE_ID_CONFLICT",
-                message:
-                  "This resource ID cannot be used for this SSH configuration.",
-              },
-      });
-    }
-    await expect(resources()).resolves.toStrictEqual({
-      hosts: [],
-      credentials: [],
-      access: [],
-    });
-    mocks.clerk.session(first.userId, first.orgId);
-    await accept(create("host", id), [204]);
-    expect((await resources()).hosts).toHaveLength(1);
-  },
-);
-
-test("an owner whose delayed create loses an ID race has no orphan inline resources", async () => {
-  const entered = createDeferredPromise<void>(context.signal);
-  const release = createDeferredPromise<void>(context.signal);
-  useSecretKmsProbe(async (request, call) => {
-    if (call === 1) {
-      entered.resolve();
-      await release.promise;
-    }
-    return {
-      keyId: request.keyId,
-      plaintext: Buffer.from("0123456789abcdef0123456789abcdef"),
-      encryptedDataKey: Buffer.from(`encrypted-data-key:${request.keyId}`),
-    };
-  });
-  const first = owner();
-  const id = randomUUID();
-  const delayed = create("host", id);
-  await entered.promise;
-  owner({ orgId: first.orgId });
-  const winner = await create("host", id.toUpperCase());
-  release.resolve();
-  expect(winner.status).toBe(201);
-  const denied = await accept(delayed, [409]);
-  expect(denied.body.error.code).toBe("SSH_RESOURCE_ID_CONFLICT");
-  mocks.clerk.session(first.userId, first.orgId);
-  await expect(resources()).resolves.toStrictEqual({
-    hosts: [],
-    credentials: [],
-    access: [],
-  });
-});
-
-test("a known invalid create can be corrected without consuming its resource ID", async () => {
-  useSecretKmsProbe();
-  owner();
-  const id = randomUUID();
-  await accept(
-    connections().create({
-      headers,
-      body: {
-        id,
-        displayName: "Invalid",
-        host: "https://ssh.example.com",
-        credential: { create: login },
-      },
-    }),
-    [400],
+  return setupApp({ context, routes: cloudflareAccessRoutes })(
+    cloudflareAccessContract,
   );
-  await expect(resources()).resolves.toStrictEqual({
-    hosts: [],
-    credentials: [],
-    access: [],
-  });
-  await accept(create("host", id), [201]);
-});
+};
 
-test("a host can be saved again after overlapping low-frequency edits", async () => {
-  useSecretKmsProbe();
-  owner();
-  const created = await accept(
-    connections().create({
-      headers,
-      body: {
-        id: randomUUID(),
-        displayName: "Original",
-        host: "ssh.example.com",
-        credential: { create: login },
-      },
-    }),
+function passwordLogin(name = "Deploy login") {
+  return {
+    name,
+    username: "deploy",
+    authentication: {
+      method: "password" as const,
+      password: `pw-${randomUUID()}`,
+    },
+  };
+}
+
+function accessToken(name = "Access token") {
+  return {
+    name,
+    credentials: {
+      clientId: `client-${randomUUID()}`,
+      clientSecret: `secret-${randomUUID()}`,
+    },
+  };
+}
+
+function protectedHost(id: string, displayName = "Protected host") {
+  return {
+    id,
+    displayName,
+    host: "ssh.example.com",
+    port: 443,
+    credential: { create: passwordLogin() },
+    transport: { type: "cloudflare_access" as const, create: accessToken() },
+  };
+}
+
+function directHost(id: string) {
+  return {
+    id,
+    displayName: "Direct host",
+    host: "ssh.example.com",
+    credential: { create: passwordLogin() },
+    transport: { type: "direct" as const },
+  };
+}
+
+/** Everything the signed-in caller can see about hosts, logins and Access configs. */
+async function inventory() {
+  const [hostList, loginList, accessList] = await Promise.all([
+    accept(hosts().list({ headers }), [200]),
+    accept(logins().list({ headers }), [200]),
+    accept(access().list({ headers, query: {} }), [200]),
+  ]);
+  return {
+    hosts: hostList.body.connections,
+    logins: loginList.body.credentials,
+    configs: accessList.body.configs,
+  };
+}
+
+/** The member owns a host, a login and an Access config that share one resource ID. */
+async function sameIdResources(owner: Actor, id: string) {
+  signIn(owner);
+  await accept(hosts().create({ headers, body: directHost(id) }), [201]);
+  await accept(
+    logins().create({ headers, body: { id, ...passwordLogin() } }),
     [201],
   );
-  const edit = {
-    expectedGeneration: 1,
-    credential: { create: { ...login, name: "Replacement" } },
-    port: 443,
-    transport: { type: "cloudflare_access" as const, create: protection },
-  };
-  const params = { connectionId: created.body.id };
-  const results = await Promise.all([
-    connections().update({ headers, params, body: edit }),
-    connections().update({ headers, params, body: edit }),
-  ]);
-  for (const result of results) {
-    expect([200, 409]).toContain(result.status);
-  }
-  const observed = await resources();
-  const host = observed.hosts[0];
-  if (!host) {
-    throw new Error("Expected the edited host to remain available");
-  }
   await accept(
-    connections().update({
-      headers,
-      params,
-      body: {
-        expectedGeneration: host.generation,
-        displayName: "Saved again",
-      },
-    }),
-    [200],
+    access().create({ headers, query: {}, body: { id, ...accessToken() } }),
+    [201],
   );
-  const current = await resources();
-  const savedHost = current.hosts[0];
-  if (!savedHost) {
-    throw new Error("Expected the saved host");
-  }
-  expect(savedHost).toMatchObject({
-    displayName: "Saved again",
-    generation: host.generation + 1,
-    credentialName: "Replacement",
-    username: login.username,
+}
+
+async function expectForeignIdConflicts(stranger: Actor, id: string) {
+  signIn(stranger);
+  const [host, login, config] = await Promise.all([
+    accept(hosts().create({ headers, body: directHost(id) }), [409]),
+    accept(
+      logins().create({ headers, body: { id, ...passwordLogin() } }),
+      [409],
+    ),
+    accept(
+      access().create({ headers, query: {}, body: { id, ...accessToken() } }),
+      [409],
+    ),
+  ]);
+  const sshConflict = {
+    code: "SSH_RESOURCE_ID_CONFLICT",
+    message: "This resource ID cannot be used for this SSH configuration.",
+  };
+  expect(host.body.error).toMatchObject(sshConflict);
+  expect(login.body.error).toMatchObject(sshConflict);
+  expect(config.body.error).toMatchObject({
+    code: "CLOUDFLARE_ACCESS_RESOURCE_ID_CONFLICT",
+    message:
+      "This resource ID cannot be used for this Cloudflare Access configuration.",
   });
-  expect(
-    current.credentials.map((credential) => {
-      return credential.id;
-    }),
-  ).toContain(sshCredentialId(savedHost));
+  await expect(inventory()).resolves.toStrictEqual({
+    hosts: [],
+    logins: [],
+    configs: [],
+  });
+}
+
+/** The original member repeats the host create; returns their hosts afterwards. */
+async function ownerRetry(owner: Actor, id: string) {
+  signIn(owner);
+  const retry = await accept(
+    hosts().create({ headers, body: directHost(id) }),
+    [204],
+  );
+  if (retry.body) {
+    throw new Error("Expected an empty retry acknowledgement");
+  }
+  return (await inventory()).hosts;
+}
+
+describe("SSH create retries", () => {
+  it("ssh-create-retries-010 corrects an invalid host create without consuming its ID", async () => {
+    signIn(await member());
+    const id = randomUUID();
+
+    await accept(
+      hosts().create({
+        headers,
+        body: { ...directHost(id), host: "https://ssh.example.com" },
+      }),
+      [400],
+    );
+    await expect(inventory()).resolves.toStrictEqual({
+      hosts: [],
+      logins: [],
+      configs: [],
+    });
+
+    await accept(hosts().create({ headers, body: directHost(id) }), [201]);
+  });
+
+  it("ssh-create-retries-001 acknowledges concurrent host create retries without duplicates", async () => {
+    signIn(await member());
+    const id = randomUUID();
+
+    const statuses = await Promise.all([
+      accept(hosts().create({ headers, body: protectedHost(id) }), [201, 204]),
+      accept(
+        hosts().create({ headers, body: protectedHost(id.toUpperCase()) }),
+        [201, 204],
+      ),
+    ]);
+
+    expect(
+      statuses
+        .map((response) => {
+          return response.status;
+        })
+        .sort(),
+    ).toStrictEqual([201, 204]);
+    const created = await inventory();
+    expect(created.hosts).toHaveLength(1);
+    expect(created.logins).toHaveLength(1);
+    expect(created.configs).toHaveLength(1);
+
+    const renamed = await accept(
+      hosts().create({ headers, body: protectedHost(id, "Renamed host") }),
+      [204],
+    );
+    expect(renamed.body).toBeFalsy();
+    await expect(inventory()).resolves.toStrictEqual(created);
+  });
+
+  it("ssh-create-retries-003 acknowledges concurrent Access create retries without duplicates", async () => {
+    signIn(await member());
+    const id = randomUUID();
+
+    const statuses = await Promise.all([
+      accept(
+        access().create({ headers, query: {}, body: { id, ...accessToken() } }),
+        [201, 204],
+      ),
+      accept(
+        access().create({
+          headers,
+          query: {},
+          body: { id: id.toUpperCase(), ...accessToken() },
+        }),
+        [201, 204],
+      ),
+    ]);
+
+    expect(
+      statuses
+        .map((response) => {
+          return response.status;
+        })
+        .sort(),
+    ).toStrictEqual([201, 204]);
+    const created = await inventory();
+    expect(created.hosts).toStrictEqual([]);
+    expect(created.logins).toStrictEqual([]);
+    expect(created.configs).toHaveLength(1);
+
+    const renamed = await accept(
+      access().create({
+        headers,
+        query: {},
+        body: { id, ...accessToken("Renamed token") },
+      }),
+      [204],
+    );
+    expect(renamed.body).toBeFalsy();
+    await expect(inventory()).resolves.toStrictEqual(created);
+  });
+
+  it("ssh-create-retries-007 refuses another user in the same organization the same resource ID", async () => {
+    const owner = await member();
+    const id = randomUUID();
+    await sameIdResources(owner, id);
+    const stranger = await member({ orgId: owner.orgId });
+
+    await expectForeignIdConflicts(stranger, id);
+    await expect(ownerRetry(owner, id)).resolves.toHaveLength(1);
+  });
+
+  it("ssh-create-retries-008 refuses the same user in another organization the same resource ID", async () => {
+    const owner = await member();
+    const id = randomUUID();
+    await sameIdResources(owner, id);
+    const stranger = await member({ userId: owner.userId });
+
+    await expectForeignIdConflicts(stranger, id);
+    await expect(ownerRetry(owner, id)).resolves.toHaveLength(1);
+  });
+
+  it("ssh-create-retries-011 saves a host again after overlapping edits", async () => {
+    signIn(await member());
+    const id = randomUUID();
+    await accept(hosts().create({ headers, body: directHost(id) }), [201]);
+    const edit = () => {
+      return accept(
+        hosts().update({
+          headers,
+          params: { connectionId: id },
+          body: {
+            expectedGeneration: 1,
+            port: 443,
+            credential: { create: passwordLogin("Replacement") },
+            transport: { type: "cloudflare_access", create: accessToken() },
+          },
+        }),
+        [200, 409],
+      );
+    };
+
+    await Promise.all([edit(), edit()]);
+    const listed = (await inventory()).hosts.find((host) => {
+      return host.id === id;
+    });
+    if (!listed) {
+      throw new Error("Expected the host to remain listed");
+    }
+
+    const saved = await accept(
+      hosts().update({
+        headers,
+        params: { connectionId: id },
+        body: {
+          expectedGeneration: listed.generation,
+          displayName: "Saved again",
+        },
+      }),
+      [200],
+    );
+
+    expect(saved.body).toMatchObject({
+      displayName: "Saved again",
+      generation: listed.generation + 1,
+      username: "deploy",
+    });
+    if (!("credentialName" in saved.body)) {
+      throw new Error("Expected a credential-backed host");
+    }
+    expect(saved.body.credentialName).toBe("Replacement");
+    const credentialIds = (await inventory()).logins.map((login) => {
+      return login.id;
+    });
+    expect(credentialIds).toContain(saved.body.credentialId);
+  });
 });

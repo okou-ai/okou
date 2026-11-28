@@ -1,241 +1,273 @@
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { MODEL_PROVIDER_ENV_PLACEHOLDERS } from "@okouai/api-contracts/contracts/model-provider-firewalls";
-import { describe, expect, it, onTestFinished } from "vitest";
-import { testContext } from "../../../__tests__/test-context";
-import { createRunsApi } from "./helpers/api-bdd-runs";
-import { createChatEventsFixture } from "./helpers/chat-events-fixture";
-import { publicChatActor } from "./helpers/public-chat-actor";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
-import { createFirewallApi, secretTemplate } from "./helpers/api-bdd-firewall";
+import { randomUUID } from "node:crypto";
 import {
-  getSecretKmsClient,
-  setSecretKmsClientForTests,
-} from "../../../lib/secret-kms-client";
+  AUTO_RUN_UPSTREAM_MODEL,
+  AUTO_SELECTED_MODEL,
+} from "@okouai/core/auto-run-model";
+import { describe, expect, it } from "vitest";
+import { string } from "zod";
+import { testContext } from "../../../__tests__/test-context";
+import {
+  TEST_WITH_SINGLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE,
+  TEST_WITH_TRIPLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE,
+} from "../../../__tests__/test-timeouts";
+import { mockOptionalEnv } from "../../../lib/env";
+import { createBddApi } from "./helpers/api-bdd";
+import { createFirewallApi, secretTemplate } from "./helpers/api-bdd-firewall";
+import { createRunsApi } from "./helpers/api-bdd-runs";
+import {
+  createChatEventsFixture,
+  modelProviderSecretPlaceholder,
+  okouTokenFromExecution,
+} from "./helpers/chat-events-fixture";
+import { publicRunOwner } from "./helpers/public-run-owner";
 import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
-import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 
-const context = testContext();
-const api = createRunsApi(context);
-const firewall = createFirewallApi(context);
-const webhooks = createWebhookCallbackApi(context);
-const MANAGED_KEY = "okou-fake-managed-model-key-sentinel-3f9c1e7a";
-const { configureSubscriptionPiModel } = createChatEventsFixture(context);
+const MANAGED_OPENROUTER_SENTINEL =
+  "okou-fake-managed-model-key-sentinel-3f9c1e7a";
 
 describe("Runner built-in and personal dispatch", () => {
-  it("dispatches managed Auto placeholders and resolves only the Run-owned credential", async () => {
-    const owned = await publicChatActor(context);
-    await owned.run(async () => {
-      const originalKms = getSecretKmsClient();
-      onTestFinished(() => {
-        setSecretKmsClientForTests(originalKms);
-      });
-      const unavailable = () => {
-        return Promise.reject(
-          new Error("KMS is unavailable during Run startup"),
-        );
-      };
-      const kms = useSecretKmsProbe(unavailable, unavailable);
-      const run = await api.createThreadRun(owned.actor, {
-        prompt: "Use the captured Auto route",
-        model: "auto",
-      });
-      const input = await owned.executionInput(run.runId);
-      expect(input).toMatchObject({
-        cliAgentType: "pi",
-        platformEnvironment: { OKOU_CURRENT_INTEGRATION: "web" },
-        billableFirewalls: ["model-provider:openrouter-codex"],
-        modelUsageProvider: "@preset/okou-1-0",
-        modelUsageLongContextMinTotalInputTokens: 100_001,
-        piModelConfig: {
-          provider: "openrouter",
-          baseUrl: "https://openrouter.ai/api/v1",
-          model: "@preset/okou-1-0",
-          catalogModel: "auto",
+  const context = testContext();
+
+  it(
+    "runners-built-in-execution-001 dispatches managed Auto placeholders and resolves only the Run-owned credential",
+    { timeout: TEST_WITH_TRIPLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const fixture = createChatEventsFixture(context);
+      const bdd = createBddApi(context);
+      const runs = createRunsApi(context);
+      const firewall = createFirewallApi(context);
+      const actor = bdd.user();
+      const owner = publicRunOwner(context, actor);
+
+      fixture.chatCallbacks.acceptChatObjectStorage();
+      fixture.api.acceptStorageDownloads();
+      fixture.api.acceptTelemetryIngest();
+      mockOptionalEnv("OPENROUTER_API_KEY", undefined);
+      fixture.chatCallbacks.disableVapid();
+      await fixture.api.configureRunnerGroup();
+
+      const kms = useSecretKmsProbe(
+        () => {
+          return Promise.reject(new Error("KMS unavailable during startup"));
         },
+        () => {
+          return Promise.reject(new Error("KMS unavailable during startup"));
+        },
+      );
+
+      await owner.run(() => {
+        return bdd.bootstrapLimitedFreeOnboarding(actor);
       });
+
+      const run = await owner.run(() => {
+        return fixture.sendChatRun(actor, {
+          prompt: "Run managed Auto from Web without KMS",
+          model: null,
+        });
+      });
+      const execution = await owner.executionInput(run.runId);
+
+      expect(execution.cliAgentType).toBe("pi");
+      expect(execution.piModelConfig).toMatchObject({
+        provider: "openrouter",
+        model: AUTO_RUN_UPSTREAM_MODEL,
+        catalogModel: AUTO_SELECTED_MODEL,
+      });
+      expect(execution.platformEnvironment.OKOU_CURRENT_INTEGRATION).toBe(
+        "web",
+      );
+      expect(execution.billableFirewalls).toContain(
+        "model-provider:openrouter-codex",
+      );
+      expect(execution.modelUsageLongContextMinTotalInputTokens).toBe(100_001);
+      expect(execution.environment?.OPENAI_API_KEY).toBe(
+        modelProviderSecretPlaceholder(
+          "openrouter-codex",
+          "OPENROUTER_API_KEY",
+        ),
+      );
       expect(kms.generateDataKeyCalls).toBe(0);
       expect(kms.decryptCalls).toBe(0);
-      setSecretKmsClientForTests(originalKms);
-      expect(JSON.stringify(input)).not.toContain(MANAGED_KEY);
-      expect(input.secretValues).toContain(
-        input.platformEnvironment.OKOU_TOKEN,
+      expect(JSON.stringify(execution)).not.toContain(
+        MANAGED_OPENROUTER_SENTINEL,
       );
-      expect(input.environment?.OPENAI_API_KEY).toBe(
-        MODEL_PROVIDER_ENV_PLACEHOLDERS.OPENAI_API_KEY,
-      );
-      const authHeaders = {
-        Authorization: `Bearer ${secretTemplate("OPENROUTER_API_KEY")}`,
-      };
-      expect(input.secretValues).not.toContain(input.firewallToken);
-      const firewallHeaders = {
-        authorization: `Bearer ${input.firewallToken}`,
-      };
-      await webhooks.requestAgentHeartbeat(
-        { runId: run.runId },
-        firewallHeaders,
+
+      const heartbeatWithBoundary = await runs.requestHeartbeatRunnerAs(
+        `Bearer ${execution.firewallToken}`,
         [401],
       );
-      await firewall.requestFirewallAuth(
-        { authorization: `Bearer ${input.platformEnvironment.OKOU_TOKEN!}` },
-        { authHeaders },
-        [401],
-      );
-      await firewall.requestFirewallAuth(
-        { authorization: `Bearer ${input.sandboxToken}` },
-        { authHeaders },
-        [401],
-      );
-      await firewall.requestFirewallAuth(
-        {
-          authorization: `Bearer ${input.sandboxToken.replace("vm0_sandbox_", "vm0_firewall_")}`,
+      expect(heartbeatWithBoundary.status).toBe(401);
+
+      const managedAuthBody = {
+        authHeaders: {
+          Authorization: `Bearer ${secretTemplate("OPENROUTER_API_KEY")}`,
         },
-        { authHeaders },
+        firewallBillable: true,
+      };
+      const executionToken = okouTokenFromExecution(execution);
+      const resolutionWithExecutionToken = await firewall.requestFirewallAuth(
+        { authorization: `Bearer ${executionToken}` },
+        managedAuthBody,
         [401],
       );
-      const resolved = await firewall.requestFirewallAuth(
-        firewallHeaders,
-        { authHeaders, firewallBillable: true },
+      expect(resolutionWithExecutionToken.status).toBe(401);
+
+      const resolutionWithSandboxToken = await firewall.requestFirewallAuth(
+        { authorization: `Bearer ${execution.sandboxToken}` },
+        managedAuthBody,
+        [401],
+      );
+      expect(resolutionWithSandboxToken.status).toBe(401);
+
+      const incompatibleRefResolution = await firewall.requestFirewallAuth(
+        { authorization: `Bearer ${execution.firewallToken}` },
+        {
+          ...managedAuthBody,
+          secretConnectorMap: {
+            OPENROUTER_API_KEY: "codex-oauth-token",
+          },
+          secretConnectorMetadataMap: {
+            OPENROUTER_API_KEY: {
+              sourceType: "model-provider",
+              sourceUserId: actor.userId,
+              sourceId: randomUUID(),
+              metadataKey: "codex-oauth-token",
+            },
+          },
+        },
+        [424],
+      );
+      expect(incompatibleRefResolution.status).toBe(424);
+
+      const validResolution = await firewall.requestFirewallAuth(
+        { authorization: `Bearer ${execution.firewallToken}` },
+        managedAuthBody,
         [200],
       );
-      expect(resolved.body).toMatchObject({
-        headers: { Authorization: `Bearer ${MANAGED_KEY}` },
-        resolvedSecrets: ["OPENROUTER_API_KEY"],
-        expiresAt: expect.any(Number),
-      });
-      const mapped = await firewall.requestFirewallAuth(
-        firewallHeaders,
-        {
-          authHeaders,
-          secretConnectorMap: { OPENROUTER_API_KEY: "codex-oauth-token" },
-          secretConnectorMetadataMap: {
-            OPENROUTER_API_KEY: {
-              sourceType: "model-provider",
-              sourceId: run.runId,
-              sourceUserId: owned.actor.userId,
-              metadataKey: "codex-oauth-token",
-            },
-          },
-        },
-        [424],
+      expect(validResolution.status).toBe(200);
+      if (validResolution.status !== 200) {
+        throw new Error("Expected boundary credential resolution to succeed");
+      }
+      expect(validResolution.body.headers.Authorization).toBe(
+        `Bearer ${MANAGED_OPENROUTER_SENTINEL}`,
       );
-      expect(mapped.body).toMatchObject({
-        error: { code: "CONNECTOR_NOT_CONFIGURED" },
-      });
-      const unpairedMetadata = await firewall.requestFirewallAuth(
-        firewallHeaders,
-        {
-          authHeaders,
-          secretConnectorMetadataMap: {
-            OPENROUTER_API_KEY: {
-              sourceType: "model-provider",
-              sourceId: run.runId,
-              sourceUserId: owned.actor.userId,
-              metadataKey: "codex-oauth-token",
-            },
-          },
-        },
-        [424],
-      );
-      expect(unpairedMetadata.body).toMatchObject({
-        error: { code: "CONNECTOR_NOT_CONFIGURED" },
-      });
-      const inspected = await api.readRun(owned.actor, run.runId);
-      expect(JSON.stringify(inspected)).not.toContain(input.firewallToken);
-      expect(inspected).toMatchObject({
+      expect(validResolution.body.resolvedSecrets).toStrictEqual([
+        "OPENROUTER_API_KEY",
+      ]);
+      expect(validResolution.body.expiresAt).toStrictEqual(expect.any(Number));
+
+      const readback = await fixture.api.readRun(actor, run.runId);
+      expect(readback).toMatchObject({
         status: "running",
         source: {
           providerType: "built-in",
           runtimeProviderType: "openrouter-codex",
-          model: "auto",
+          model: AUTO_SELECTED_MODEL,
         },
       });
-      await api.requestCancelRun(owned.actor, run.runId, [200]);
-      await firewall.requestFirewallAuth(
-        firewallHeaders,
-        { authHeaders },
+      expect(JSON.stringify(readback)).not.toContain(execution.firewallToken);
+
+      const cancelled = await owner.run(() => {
+        return fixture.api.requestCancelRun(actor, run.runId, [200]);
+      });
+      expect(cancelled.status).toBe(200);
+
+      const afterCancelResolution = await firewall.requestFirewallAuth(
+        { authorization: `Bearer ${execution.firewallToken}` },
+        managedAuthBody,
         [403],
       );
-    });
-  });
+      expect(afterCancelResolution.status).toBe(403);
+    },
+  );
 
-  it("keeps Auto on the managed Pi preset when Codex execution is enabled", async () => {
-    const owned = await publicChatActor(context);
-    owned.ownsFeatureSwitches();
-    if (!owned.actor.orgId) {
-      throw new Error("Expected a workspace owner");
-    }
-    const switchOwner = { ...owned.actor, orgId: owned.actor.orgId };
-    await owned.run(async () => {
-      await updateFeatureSwitchesForUser(context, switchOwner, {
-        [FeatureSwitchKey.CodexExecution]: true,
-      });
-      const run = await api.createThreadRun(owned.actor, {
-        prompt: "Use Auto with Codex execution enabled",
-        model: "auto",
-      });
-      const input = await owned.executionInput(run.runId);
-      expect(input).toMatchObject({
-        cliAgentType: "pi",
-        piModelConfig: {
-          provider: "openrouter",
-          baseUrl: "https://openrouter.ai/api/v1",
-          model: "@preset/okou-1-0",
-          catalogModel: "auto",
-        },
-      });
-      await expect(api.readRun(owned.actor, run.runId)).resolves.toMatchObject({
-        status: "running",
-        source: { providerType: "built-in", model: "auto" },
-      });
-    });
-  });
+  it(
+    "runners-built-in-execution-003 dispatches a captured personal Pi subscription without built-in billing",
+    { timeout: TEST_WITH_SINGLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const fixture = createChatEventsFixture(context);
+      const bdd = createBddApi(context);
+      const firewall = createFirewallApi(context);
+      const actor = bdd.user();
+      const owner = publicRunOwner(context, actor);
 
-  it("dispatches a captured personal Pi subscription without built-in billing", async () => {
-    const owned = await publicChatActor(context);
-    await owned.run(async () => {
-      const { oauth } = await configureSubscriptionPiModel(owned.actor);
-      const run = await api.createThreadRun(owned.actor, {
-        prompt: "Use my own subscription",
-        model: "gpt-6-luna",
+      fixture.chatCallbacks.acceptChatObjectStorage();
+      fixture.api.acceptStorageDownloads();
+      fixture.api.acceptTelemetryIngest();
+      mockOptionalEnv("OPENROUTER_API_KEY", undefined);
+      fixture.chatCallbacks.disableVapid();
+      await fixture.api.configureRunnerGroup();
+
+      await owner.run(() => {
+        return bdd.bootstrapLimitedFreeOnboarding(actor);
       });
-      const input = await owned.executionInput(run.runId);
-      expect(input).toMatchObject({
-        cliAgentType: "pi",
-        billableFirewalls: [],
-        modelUsageProvider: "gpt-6-luna",
-        modelUsageLongContextMinTotalInputTokens: 0,
-        piModelConfig: {
-          provider: "openai-codex",
+      const { oauth, accountSourceId } = await owner.run(() => {
+        return fixture.configureSubscriptionPiModel(
+          actor,
+          { accountId: "personal-codex-luna-account" },
+          "gpt-6-luna",
+        );
+      });
+      const expectedAccessToken = string().parse(
+        oauth.oauthTokenResponses[0]?.access_token,
+      );
+
+      const run = await owner.run(() => {
+        return fixture.sendChatRun(actor, {
+          prompt: "Run Luna on personal Codex subscription",
           model: "gpt-6-luna",
-          thinkingLevel: "xhigh",
+        });
+      });
+      const execution = await owner.executionInput(run.runId);
+
+      expect(execution.cliAgentType).toBe("pi");
+      expect(execution.piModelConfig).toMatchObject({
+        provider: "openai-codex",
+        model: "gpt-6-luna",
+        thinkingLevel: "xhigh",
+      });
+      expect(execution.platformEnvironment.OKOU_REASONING_EFFORT).toBe("xhigh");
+      expect(execution.billableFirewalls).toStrictEqual([]);
+      expect(execution.modelUsageLongContextMinTotalInputTokens).toBe(0);
+
+      await expect(
+        fixture.api.readRun(actor, run.runId),
+      ).resolves.toMatchObject({
+        status: "running",
+        source: {
+          providerType: "codex-oauth-token",
+          runtimeProviderType: "codex-oauth-token",
+          model: "gpt-6-luna",
+          credentialScope: "member",
+          account: {
+            status: "connected",
+            id: accountSourceId,
+          },
         },
       });
-      await expect(api.readRun(owned.actor, run.runId)).resolves.toMatchObject({
-        status: "running",
-        source: { providerType: "codex-oauth-token", model: "gpt-6-luna" },
-      });
-      if (!input.secretConnectorMap || !input.secretConnectorMetadataMap) {
-        throw new Error("Expected the personal model's account references");
-      }
-      const personal = await firewall.requestFirewallAuth(
-        { authorization: `Bearer ${input.firewallToken}` },
+
+      const personalResolution = await firewall.requestFirewallAuth(
+        { authorization: `Bearer ${execution.firewallToken}` },
         {
           authHeaders: {
             Authorization: `Bearer ${secretTemplate("CHATGPT_ACCESS_TOKEN")}`,
           },
-          secretConnectorMap: input.secretConnectorMap,
-          secretConnectorMetadataMap: input.secretConnectorMetadataMap,
+          secretConnectorMap: execution.secretConnectorMap ?? undefined,
+          secretConnectorMetadataMap:
+            execution.secretConnectorMetadataMap ?? undefined,
         },
         [200],
       );
-      expect(personal.body).toMatchObject({
-        headers: {
-          Authorization: `Bearer ${oauth.oauthTokenResponses[0]?.access_token}`,
-        },
-        resolvedSecrets: ["CHATGPT_ACCESS_TOKEN"],
-      });
-      const unavailable = await firewall.requestFirewallAuth(
-        { authorization: `Bearer ${input.firewallToken}` },
+      expect(personalResolution.status).toBe(200);
+      if (personalResolution.status !== 200) {
+        throw new Error("Expected personal ChatGPT credential resolution");
+      }
+      expect(personalResolution.body.headers.Authorization).toBe(
+        `Bearer ${expectedAccessToken}`,
+      );
+
+      const managedSecretAttempt = await firewall.requestFirewallAuth(
+        { authorization: `Bearer ${execution.firewallToken}` },
         {
           authHeaders: {
             Authorization: `Bearer ${secretTemplate("OPENROUTER_API_KEY")}`,
@@ -243,9 +275,13 @@ describe("Runner built-in and personal dispatch", () => {
         },
         [424],
       );
-      expect(unavailable.body).toMatchObject({
-        error: { code: "CONNECTOR_NOT_CONFIGURED" },
-      });
-    });
-  });
+      expect(managedSecretAttempt.status).toBe(424);
+      if (managedSecretAttempt.status !== 424) {
+        throw new Error("Expected 424 for managed secret on personal Run");
+      }
+      expect(managedSecretAttempt.body.error.code).toBe(
+        "CONNECTOR_NOT_CONFIGURED",
+      );
+    },
+  );
 });

@@ -1,512 +1,308 @@
-import { randomUUID } from "node:crypto";
-import { publicChatActor } from "./helpers/public-chat-actor";
-import { expectThreadModelCredits } from "./helpers/public-thread-usage";
-import { describe, expect, it } from "vitest";
-import { createFixtureOperationOwner } from "./helpers/fixture-operation-owner";
-import { testContext } from "../../../__tests__/test-context";
-import { env, mockEnv, mockOptionalEnv, optionalEnv } from "../../../lib/env";
+import { describe, expect, it, onTestFinished } from "vitest";
+import { testContext, type TestContext } from "../../../__tests__/test-context";
 import {
-  getSecretKmsClient,
-  setSecretKmsClientForTests,
-} from "../../../lib/secret-kms-client";
-
+  TEST_WITH_DOUBLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE,
+  TEST_WITH_FOUR_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE,
+} from "../../../__tests__/test-timeouts";
+import { mockOptionalEnv } from "../../../lib/env";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { settleIncludingAbort } from "../../utils";
-
 import { chatEventDisplayText } from "./helpers/chat-event";
-import { readCompletedRunSessionId } from "./helpers/public-run-session";
-import type { ApiTestUser } from "./helpers/api-bdd";
-import { createRunsApi } from "./helpers/api-bdd-runs";
-import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
+import { createChatEventsFixture } from "./helpers/chat-events-fixture";
+import { captureConnectorExternalState } from "./helpers/public-connector-actor";
+import { publicRunOwner } from "./helpers/public-run-owner";
+import { readThreadModelCredits } from "./helpers/public-thread-usage";
 
-import {
-  createChatEventsFixture,
-  userMessages,
-  eventBackedContents,
-} from "./helpers/chat-events-fixture";
-
-const context = testContext();
-const {
-  api,
-  chat,
-  chatCallbacks,
-  configureSubscriptionPiModel,
-  sendChatRun,
-  runExecution,
-  waitForThreadMessages,
-  completeChatRunOk,
-  cancelChatRun,
-  mockPiObjectStore,
-  completeSandboxFirstPiRun,
-  mockPiResourceArchiveDownloads,
-} = createChatEventsFixture(context);
-
-async function configureResponsesWithOwnedRuns(args: {
-  readonly actor: ApiTestUser;
-  readonly runnerGroup: string;
-  readonly selectedModel: "gpt-6-luna";
-}): Promise<{
-  /** The normally connected personal model selection. */
-  readonly model: "gpt-6-luna";
-  /** The run model that executes the selection. */
-  readonly runModel: string;
-  readonly run: ReturnType<typeof createFixtureOperationOwner>["run"];
-  readonly sendChatRun: typeof sendChatRun;
-  readonly runExecution: typeof runExecution;
-  readonly cancelChatRun: typeof cancelChatRun;
-}> {
-  const model = args.selectedModel;
-
-  function captureExternalState() {
-    const storage = context.mocks.s3.send.getMockImplementation();
-    const signedUrl = context.mocks.s3.getSignedUrl.getMockImplementation();
-    const bucket = env("R2_USER_STORAGES_BUCKET_NAME");
-    const kmsKey = env("SECRETS_KMS_KEY_ID");
-    const kms = getSecretKmsClient();
-    return () => {
-      mockEnv("R2_USER_STORAGES_BUCKET_NAME", bucket);
-      mockOptionalEnv("SECRETS_KMS_KEY_ID", kmsKey);
-      mockOptionalEnv("RUNNER_DEFAULT_GROUP", args.runnerGroup);
-      setSecretKmsClientForTests(kms);
-      if (storage) {
-        context.mocks.s3.send.mockImplementation(storage);
-      }
-      if (signedUrl) {
-        context.mocks.s3.getSignedUrl.mockImplementation(signedUrl);
-      }
-    };
-  }
-
-  let restoreAcceptedState = captureExternalState();
-  let previousCleanupRunnerGroup: string | undefined;
-
-  const owned = new Map<
-    string,
-    {
-      readonly actor: ApiTestUser;
-      readonly restoreExternalState: () => void;
-      sandboxToken?: string;
-      finished: boolean;
-    }
-  >();
-
-  async function cleanupOwnedRuns(): Promise<void> {
-    const cleanupRuns = createRunsApi(context);
-    const cleanupWebhooks = createWebhookCallbackApi(context);
-    for (const [runId, run] of owned) {
-      if (run.finished) {
-        continue;
-      }
-      const current = await cleanupRuns.readRun(run.actor, runId);
-      if (
-        current.status === "pending" ||
-        current.status === "running" ||
-        current.status === "cancelled"
-      ) {
-        run.restoreExternalState();
-        cleanupRuns.acceptTelemetryIngest();
-        context.mocks.ably.publish.mockResolvedValue(undefined);
-        if (current.status !== "cancelled") {
-          await cleanupRuns.requestCancelRun(run.actor, runId, [200]);
-        }
-        if (run.sandboxToken) {
-          await cleanupWebhooks.requestAgentComplete(
-            { runId, exitCode: 1, error: "Cancelled OpenRouter test Run" },
-            { authorization: `Bearer ${run.sandboxToken}` },
-            [200],
-            undefined,
-          );
-        }
-      }
-      await flushWaitUntilForTest();
-      run.finished = true;
-    }
-  }
-
-  // These selected callbacks own every main Run before its first dispatch. This
-  // hook and the producer hook both finish Runs before releasing model state.
-  const operations = createFixtureOperationOwner(
-    async () => {
-      const result = await settleIncludingAbort(cleanupOwnedRuns);
-      mockOptionalEnv("RUNNER_DEFAULT_GROUP", previousCleanupRunnerGroup);
-      if (!result.ok) {
-        throw result.error;
-      }
-    },
-    {
-      beforeDrain() {
-        previousCleanupRunnerGroup = optionalEnv("RUNNER_DEFAULT_GROUP");
-        restoreAcceptedState();
-      },
-    },
-  );
-
-  function runOwned<T>(operation: () => Promise<T>): Promise<T> {
-    restoreAcceptedState = captureExternalState();
-    return operations.run(operation);
-  }
-
-  async function sendOwnedRun(...parameters: Parameters<typeof sendChatRun>) {
-    const restoreExternalState = captureExternalState();
-    const run = await sendChatRun(...parameters);
-    owned.set(run.runId, {
-      actor: parameters[0],
-      finished: false,
-      restoreExternalState,
-    });
-    return run;
-  }
-
-  async function observeOwnedExecution(
-    ...parameters: Parameters<typeof runExecution>
-  ) {
-    const execution = await runExecution(...parameters);
-    const run = owned.get(parameters[0]);
-    if (!run) {
-      throw new Error("Expected to own the dispatched OpenRouter test Run");
-    }
-    run.sandboxToken = execution.execution.sandboxToken;
-    return execution;
-  }
-
-  async function cancelOwnedRun(
-    ...parameters: Parameters<typeof cancelChatRun>
-  ): Promise<void> {
-    const run = owned.get(parameters[1]);
-    if (!run?.sandboxToken) {
-      throw new Error("Expected a dispatched OpenRouter test Run to cancel");
-    }
-    await cancelChatRun(
-      parameters[0],
-      parameters[1],
-      parameters[2] ?? { authorization: `Bearer ${run.sandboxToken}` },
-    );
-    run.finished = true;
-  }
-
-  await runOwned(async () => {
-    await configureSubscriptionPiModel(args.actor, {}, model);
+async function createPiCodexChatActor(context: TestContext) {
+  const fixture = createChatEventsFixture(context);
+  const actor = fixture.bdd.user();
+  let accepted = captureConnectorExternalState(context);
+  let previous: (() => void) | undefined;
+  onTestFinished(() => {
+    previous?.();
   });
-
+  const owner = publicRunOwner(context, actor, {
+    continueAcceptedOperations: true,
+    restoreEnvironment: () => {
+      previous ??= captureConnectorExternalState(context);
+      accepted();
+    },
+  });
+  function run<T>(operation: () => Promise<T>) {
+    return owner.run(() => {
+      const pending = settleIncludingAbort(operation);
+      accepted = captureConnectorExternalState(context);
+      return pending.then((result) => {
+        if (!result.ok) {
+          throw result.error;
+        }
+        return result.value;
+      });
+    });
+  }
+  fixture.chatCallbacks.acceptChatObjectStorage();
+  fixture.api.acceptStorageDownloads();
+  fixture.api.acceptTelemetryIngest();
+  mockOptionalEnv("OPENROUTER_API_KEY", undefined);
+  fixture.chatCallbacks.disableVapid();
+  const runnerGroupPromise = fixture.api.configureRunnerGroup();
+  await Promise.all([
+    runnerGroupPromise,
+    run(() => {
+      return fixture.api.grantProEntitlement(actor);
+    }),
+  ]);
+  await run(() => {
+    return fixture.connectSubscriptionPiModel(actor);
+  });
   return {
-    model,
-    runModel: model,
-    run: runOwned,
-    sendChatRun: (...parameters) => {
-      return runOwned(() => {
-        return sendOwnedRun(...parameters);
+    actor,
+    fixture,
+    run,
+    sendChatRun: (...parameters: Parameters<typeof fixture.sendChatRun>) => {
+      return run(() => {
+        return fixture.sendChatRun(...parameters);
       });
     },
-    runExecution: (...parameters) => {
-      return runOwned(() => {
-        return observeOwnedExecution(...parameters);
+    runExecution: (...parameters: Parameters<typeof fixture.runExecution>) => {
+      return run(async () => {
+        const execution = await fixture.runExecution(...parameters);
+        owner.rememberExecution(
+          parameters[0],
+          execution.execution.sandboxToken,
+        );
+        return execution;
       });
     },
-    cancelChatRun: (...parameters) => {
-      return runOwned(() => {
-        return cancelOwnedRun(...parameters);
+    async completePiTurn(
+      target: { readonly runId: string; readonly threadId: string },
+      sandboxHeaders: { readonly authorization: string },
+      answer: string,
+    ): Promise<void> {
+      await run(async () => {
+        await fixture.webhooks.requestAgentEvents(
+          {
+            runId: target.runId,
+            events: [
+              {
+                type: "assistant",
+                sequenceNumber: 1,
+                message: { content: [{ type: "text", text: answer }] },
+              },
+              { type: "result", sequenceNumber: 2, result: answer },
+            ],
+          },
+          sandboxHeaders,
+          [200],
+        );
+        await fixture.webhooks.requestAgentComplete(
+          {
+            runId: target.runId,
+            exitCode: 0,
+            lastEventSequence: 2,
+            completion: {
+              cliAgentType: "pi",
+              cliAgentSessionId: target.threadId,
+              cliAgentSessionHistoryDisposition: "native_only",
+            },
+          },
+          sandboxHeaders,
+          [200],
+        );
+        await flushWaitUntilForTest();
       });
     },
   };
 }
 
-describe("CHAT-02: model-first routing", () => {
-  it("reuses one OpenRouter Responses Pi session across standard, fast, and standard turns for gpt-6-luna", async () => {
-    const selectedModel = "gpt-6-luna";
-    const { actor, runnerGroup } = await publicChatActor(context);
-    const {
-      run: own,
-      model,
-      sendChatRun,
-      runExecution,
-    } = await configureResponsesWithOwnedRuns({
-      actor,
-      runnerGroup,
-      selectedModel,
-    });
-
-    mockPiResourceArchiveDownloads();
-    const historyObjects = mockPiObjectStore();
-    const prompts = [
-      "start standard Luna in the canonical Pi session",
-      "continue fast Luna in the same Pi session",
-      "return to standard Luna in the same Pi session",
-    ] as const;
-    const answers = [
-      "first standard Luna answer",
-      "fast Luna answer",
-      "returned standard Luna answer",
-    ] as const;
-
-    const first = await sendChatRun(actor, {
-      prompt: prompts[0],
-      model,
-    });
-    await flushWaitUntilForTest();
-    const firstExecution = await runExecution(first.runId);
-    expect(firstExecution.execution.piModelConfig).toMatchObject({
-      model: selectedModel,
-    });
-    expect(firstExecution.execution.piModelConfig).not.toHaveProperty(
-      "serviceTier",
-    );
-    await own(async () => {
-      return await completeSandboxFirstPiRun({
-        actor,
-        answer: answers[0],
-        historyObjects,
-        execution: firstExecution,
-        prompt: prompts[0],
-        run: first,
-        responsesModel: { provider: "openai-codex", model: selectedModel },
-      });
-    });
-    const firstSessionId = await readCompletedRunSessionId(
-      context,
-      actor,
-      first.runId,
-    );
-
-    const fast = await sendChatRun(actor, {
-      threadId: first.threadId,
-      prompt: prompts[1],
-      model,
-      runOptions: { codexServiceTier: "fast" },
-    });
-    await flushWaitUntilForTest();
-    const fastExecution = await runExecution(fast.runId);
-    expect(fastExecution.execution.piModelConfig).toMatchObject({
-      model: selectedModel,
-      serviceTier: "fast",
-    });
-    await own(async () => {
-      return await completeSandboxFirstPiRun({
-        actor,
-        answer: answers[1],
-        historyObjects,
-        execution: fastExecution,
-        prompt: prompts[1],
-        run: fast,
-        responsesModel: { provider: "openai-codex", model: selectedModel },
-      });
-    });
-    await expect(
-      readCompletedRunSessionId(context, actor, fast.runId),
-    ).resolves.toBe(firstSessionId);
-
-    await own(async () => {
-      return await chat.updateThreadModelSelection(
-        actor,
-        first.threadId,
-        model,
-        {
-          codexServiceTier: null,
-        },
+function visibleConversationPairs(
+  events: Awaited<
+    ReturnType<
+      ReturnType<typeof createChatEventsFixture>["chat"]["listThreadEvents"]
+    >
+  >["events"],
+) {
+  const revokedIds = new Set(
+    events.flatMap((event) => {
+      return event.revokesEventId ? [event.revokesEventId] : [];
+    }),
+  );
+  return events
+    .filter((event) => {
+      return (
+        !revokedIds.has(event.id) &&
+        (event.eventType === "input.prompt" ||
+          event.eventType === "output.message")
       );
+    })
+    .map((event) => {
+      return {
+        eventType: event.eventType,
+        text: chatEventDisplayText(event),
+      };
     });
-    const returned = await sendChatRun(actor, {
-      threadId: first.threadId,
-      prompt: prompts[2],
-      model,
-    });
-    await flushWaitUntilForTest();
-    const returnedExecution = await runExecution(returned.runId);
-    expect(returnedExecution.execution.piModelConfig).toMatchObject({
-      model: selectedModel,
-    });
-    expect(returnedExecution.execution.piModelConfig).not.toHaveProperty(
-      "serviceTier",
-    );
-    await own(async () => {
-      return await completeSandboxFirstPiRun({
-        actor,
-        answer: answers[2],
-        historyObjects,
-        execution: returnedExecution,
-        prompt: prompts[2],
-        run: returned,
-        responsesModel: { provider: "openai-codex", model: selectedModel },
+}
+
+describe("chat-events-pi-responses", () => {
+  const context = testContext();
+
+  it(
+    "chat-events-pi-responses-001 (1/2) reuses one Pi Responses session from a standard turn to a fast turn for gpt-6-luna",
+    { timeout: TEST_WITH_FOUR_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const chatActor = await createPiCodexChatActor(context);
+      const { actor, fixture } = chatActor;
+      const historyObjects = fixture.mockPiObjectStore();
+
+      const prompt1 = "Turn one standard prompt alpha-101";
+      const answer1 = "Turn one standard answer alpha-102";
+      const run1 = await chatActor.sendChatRun(actor, {
+        model: "gpt-6-luna",
+        prompt: prompt1,
       });
-    });
-    await expect(
-      readCompletedRunSessionId(context, actor, returned.runId),
-    ).resolves.toBe(firstSessionId);
+      const exec1 = await chatActor.runExecution(run1.runId);
+      expect(exec1.execution.cliAgentType).toBe("pi");
+      expect(exec1.execution.piSessionId).toBe(run1.threadId);
+      expect(exec1.execution.piModelConfig).toMatchObject({
+        model: "gpt-6-luna",
+        dialect: "openai-codex-responses",
+      });
+      expect(exec1.execution.piModelConfig).not.toHaveProperty("serviceTier");
+      await chatActor.completePiTurn(run1, exec1.sandboxHeaders, answer1);
 
-    for (const runId of [fast.runId, returned.runId]) {
-      const run = await api.executionInput(runId);
-      const appendSystemPrompt = run.appendSystemPrompt ?? "";
-      for (const turn of [...prompts, ...answers]) {
-        expect(appendSystemPrompt).not.toContain(turn);
-      }
-    }
-
-    await expectThreadModelCredits(context, actor, first.threadId, 0);
-    await expectThreadModelCredits(context, actor, fast.threadId, 0);
-    await expectThreadModelCredits(context, actor, returned.threadId, 0);
-
-    const visibleTurns = [
-      { runId: first.runId, prompt: prompts[0], answer: answers[0] },
-      { runId: fast.runId, prompt: prompts[1], answer: answers[1] },
-      { runId: returned.runId, prompt: prompts[2], answer: answers[2] },
-    ];
-    const finalEvents = await waitForThreadMessages(
-      actor,
-      first.threadId,
-      (events) => {
-        return eventBackedContents(events, returned.runId).some((event) => {
-          return event.content === answers[2];
-        });
-      },
-    );
-    const runIds = new Set(
-      visibleTurns.map((turn) => {
-        return turn.runId;
-      }),
-    );
-    expect(
-      finalEvents.events
-        .filter((event) => {
-          return (
-            event.runId !== undefined &&
-            event.runId !== null &&
-            runIds.has(event.runId) &&
-            (event.eventType === "input.prompt" ||
-              event.eventType === "output.message")
-          );
-        })
-        .map((event) => {
-          return {
-            runId: event.runId,
-            eventType: event.eventType,
-            content: chatEventDisplayText(event),
-          };
-        }),
-    ).toStrictEqual(
-      visibleTurns.flatMap((turn) => {
-        return [
-          {
-            runId: turn.runId,
-            eventType: "input.prompt",
-            content: turn.prompt,
-          },
-          {
-            runId: turn.runId,
-            eventType: "output.message",
-            content: turn.answer,
-          },
-        ];
-      }),
-    );
-    const sessionBlobs = [...historyObjects.entries()].filter(([key]) => {
-      return key.includes("/blobs/");
-    });
-    expect(sessionBlobs).toStrictEqual([]);
-  }, 90_000);
-
-  it("promotes queued fast gpt-6-luna to a priority Pi Sandbox run", async () => {
-    const selectedModel = "gpt-6-luna";
-    const {
-      run: own,
-      actor,
-      runExecution,
-      sendChatRun,
-      requestSendEvent,
-    } = await publicChatActor(context);
-    // The anchor must stay on the native Runner while the queued target
-    // proves Pi promotion; Sonnet 5 would itself run through Pi.
-    await own(async () => {
-      return await api.updateUserModelPreference(actor, "claude-fable-5-1");
-    });
-    const anchor = await sendChatRun(actor, {
-      prompt: "hold the thread before queued fast Luna",
-      model: "claude-fable-5-1",
-    });
-    const anchorExecution = await runExecution(anchor.runId);
-
-    await own(async () => {
-      return await configureSubscriptionPiModel(actor, {}, selectedModel);
-    });
-
-    mockPiResourceArchiveDownloads();
-    const historyObjects = mockPiObjectStore();
-    const prompt = "promote queued fast Luna through the callback";
-    const answer = "queued fast Luna Sandbox answer";
-
-    const queuedId = randomUUID();
-    const queued = await requestSendEvent(
-      actor,
-      {
-        threadId: anchor.threadId,
-        prompt,
-        clientEventId: queuedId,
-        model: selectedModel,
+      const prompt2 = "Turn two fast prompt beta-201";
+      const answer2 = "Turn two fast answer beta-202";
+      const run2 = await chatActor.sendChatRun(actor, {
+        threadId: run1.threadId,
+        model: "gpt-6-luna",
         runOptions: { codexServiceTier: "fast" },
-      },
-      [201],
-    );
-    if (queued.status !== 201) {
-      throw new Error("Expected queued fast Luna to enter the chat queue");
-    }
-
-    chatCallbacks.mockChatOutputEvents([]);
-    await own(async () => {
-      return await completeChatRunOk(
-        anchor.runId,
-        anchorExecution.sandboxHeaders,
-        {},
-      );
-    });
-    await flushWaitUntilForTest();
-    const messages = await waitForThreadMessages(
-      actor,
-      anchor.threadId,
-      (events) => {
-        return userMessages(events).some((event) => {
-          return (
-            event.revokesEventId === queuedId && typeof event.runId === "string"
-          );
-        });
-      },
-    );
-    const promoted = userMessages(messages.events).find((event) => {
-      return event.revokesEventId === queuedId;
-    });
-    if (!promoted?.runId) {
-      throw new Error("Expected queued fast Luna to create a run");
-    }
-    const promotedRunId = promoted.runId;
-    await flushWaitUntilForTest();
-
-    const promotedExecution = await runExecution(promotedRunId);
-    expect(promotedExecution.execution.cliAgentType).toBe("pi");
-    expect(promotedExecution.execution.piModelConfig).toMatchObject({
-      model: selectedModel,
-      serviceTier: "fast",
-    });
-    await own(async () => {
-      return await completeSandboxFirstPiRun({
-        actor,
-        answer,
-        historyObjects,
-        execution: promotedExecution,
-        prompt,
-        run: { runId: promotedRunId, threadId: anchor.threadId },
-        responsesModel: { provider: "openai-codex", model: selectedModel },
+        prompt: prompt2,
       });
-    });
-    const finalEvents = await waitForThreadMessages(
-      actor,
-      anchor.threadId,
-      (events) => {
-        return eventBackedContents(events, promotedRunId).some((event) => {
-          return event.content === answer;
+      const exec2 = await chatActor.runExecution(run2.runId);
+      expect(exec2.execution.cliAgentType).toBe("pi");
+      expect(exec2.execution.piSessionId).toBe(run1.threadId);
+      expect(exec2.execution.piModelConfig).toMatchObject({
+        model: "gpt-6-luna",
+        dialect: "openai-codex-responses",
+        serviceTier: "fast",
+      });
+      expect(exec2.execution.nativeContinuation).toMatchObject({
+        sessionId: run1.threadId,
+        generationRunId: run1.runId,
+      });
+      expect(exec2.execution.appendSystemPrompt ?? "").not.toContain(prompt1);
+      expect(exec2.execution.appendSystemPrompt ?? "").not.toContain(answer1);
+      await chatActor.completePiTurn(run2, exec2.sandboxHeaders, answer2);
+
+      const [storedRun1, storedRun2, history, modelCredits] = await Promise.all(
+        [
+          fixture.api.readRun(actor, run1.runId),
+          fixture.api.readRun(actor, run2.runId),
+          fixture.chat.listThreadEvents(actor, run1.threadId),
+          readThreadModelCredits(context, actor, run1.threadId),
+        ],
+      );
+      for (const storedRun of [storedRun1, storedRun2]) {
+        expect(storedRun.status).toBe("completed");
+        expect(storedRun.result).toMatchObject({
+          framework: "pi",
+          frameworkSessionId: run1.threadId,
         });
-      },
-    );
-    expect(
-      eventBackedContents(finalEvents.events, promotedRunId).filter((event) => {
-        return event.content === answer;
-      }),
-    ).toHaveLength(1);
-  }, 90_000);
+      }
+      expect(visibleConversationPairs(history.events)).toStrictEqual([
+        { eventType: "input.prompt", text: prompt1 },
+        { eventType: "output.message", text: answer1 },
+        { eventType: "input.prompt", text: prompt2 },
+        { eventType: "output.message", text: answer2 },
+      ]);
+      expect(historyObjects.size).toBe(0);
+      expect(modelCredits).toBe(0);
+    },
+  );
+
+  it(
+    "chat-events-pi-responses-001 (2/2) reuses the same Pi Responses session after clearing fast service tier back to standard",
+    { timeout: TEST_WITH_DOUBLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const chatActor = await createPiCodexChatActor(context);
+      const { actor, fixture } = chatActor;
+      const historyObjects = fixture.mockPiObjectStore();
+
+      const prompt1 = "Fast turn prompt beta-201";
+      const answer1 = "Fast turn answer beta-202";
+      const run1 = await chatActor.sendChatRun(actor, {
+        model: "gpt-6-luna",
+        runOptions: { codexServiceTier: "fast" },
+        prompt: prompt1,
+      });
+      const exec1 = await chatActor.runExecution(run1.runId);
+      expect(exec1.execution.cliAgentType).toBe("pi");
+      expect(exec1.execution.piSessionId).toBe(run1.threadId);
+      expect(exec1.execution.piModelConfig).toMatchObject({
+        model: "gpt-6-luna",
+        dialect: "openai-codex-responses",
+        serviceTier: "fast",
+      });
+      await chatActor.completePiTurn(run1, exec1.sandboxHeaders, answer1);
+
+      await chatActor.run(() => {
+        return fixture.chat.updateThreadModelSelection(
+          actor,
+          run1.threadId,
+          "gpt-6-luna",
+          { codexServiceTier: null },
+        );
+      });
+
+      const prompt2 = "Cleared standard turn prompt gamma-301";
+      const answer2 = "Cleared standard turn answer gamma-302";
+      const run2 = await chatActor.sendChatRun(actor, {
+        threadId: run1.threadId,
+        model: "gpt-6-luna",
+        prompt: prompt2,
+      });
+      const exec2 = await chatActor.runExecution(run2.runId);
+      expect(exec2.execution.cliAgentType).toBe("pi");
+      expect(exec2.execution.piSessionId).toBe(run1.threadId);
+      expect(exec2.execution.piModelConfig).toMatchObject({
+        model: "gpt-6-luna",
+        dialect: "openai-codex-responses",
+      });
+      expect(exec2.execution.piModelConfig).not.toHaveProperty("serviceTier");
+      expect(exec2.execution.nativeContinuation).toMatchObject({
+        sessionId: run1.threadId,
+        generationRunId: run1.runId,
+      });
+      for (const priorText of [prompt1, answer1, prompt2, answer2]) {
+        expect(exec2.execution.appendSystemPrompt ?? "").not.toContain(
+          priorText,
+        );
+      }
+      await chatActor.completePiTurn(run2, exec2.sandboxHeaders, answer2);
+
+      const [storedRun1, storedRun2, history, modelCredits] = await Promise.all(
+        [
+          fixture.api.readRun(actor, run1.runId),
+          fixture.api.readRun(actor, run2.runId),
+          fixture.chat.listThreadEvents(actor, run1.threadId),
+          readThreadModelCredits(context, actor, run1.threadId),
+        ],
+      );
+      for (const storedRun of [storedRun1, storedRun2]) {
+        expect(storedRun.status).toBe("completed");
+        expect(storedRun.result).toMatchObject({
+          framework: "pi",
+          frameworkSessionId: run1.threadId,
+        });
+      }
+      expect(visibleConversationPairs(history.events)).toStrictEqual([
+        { eventType: "input.prompt", text: prompt1 },
+        { eventType: "output.message", text: answer1 },
+        { eventType: "input.prompt", text: prompt2 },
+        { eventType: "output.message", text: answer2 },
+      ]);
+      expect(historyObjects.size).toBe(0);
+      expect(modelCredits).toBe(0);
+    },
+  );
 });

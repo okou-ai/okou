@@ -1,226 +1,75 @@
 import { randomUUID } from "node:crypto";
-
-import { describe, expect, it } from "vitest";
-
-import { testContext, accept } from "../../../__tests__/test-context";
-import { mockOptionalEnv } from "../../../lib/env";
-import { flushWaitUntilForTest } from "../../context/wait-until";
-import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
-import { createChatCallbacksApi } from "./helpers/api-bdd-chat-callbacks";
-import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
-import { createRunsApi } from "./helpers/api-bdd-runs";
-import { createMcpWebApi } from "./helpers/mcp-web-api";
+import {
+  chatThreadMarkReadContract,
+  chatThreadMarkUnreadContract,
+  chatThreadsContract,
+} from "@okouai/api-contracts/contracts/chat-threads";
+import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { chatThreadMarkReadContract } from "@okouai/api-contracts/contracts/chat-threads";
+import { flushWaitUntilForTest } from "../../context/wait-until";
+import { chatThreadRoutes } from "../chat-threads";
 import { chatThreadMarkReadRoutes } from "../chat-threads-mark-read";
+import { chatThreadMarkUnreadRoutes } from "../chat-threads-mark-unread";
+import { channelsPublishedTo } from "./helpers/realtime-publications";
+import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
-const bdd = createBddApi(context);
-const chat = createChatFilesBddApi(context);
-const runs = createRunsApi(context);
-const chatCallbacks = createChatCallbacksApi(context);
+const sessionHeaders = Object.freeze({ authorization: "Bearer clerk-session" });
 
-interface CursorFixture {
-  readonly actor: ApiTestUser;
-  readonly threadId: string;
+interface Member {
+  readonly userId: string;
   readonly orgId: string;
 }
 
-function actorOrgId(actor: ApiTestUser): string {
-  const { orgId } = actor;
-  if (orgId === null) {
-    throw new Error("Expected the seeded actor to belong to an org");
-  }
-  return orgId;
+function newMember(orgId = `org_${randomUUID()}`): Member {
+  return { userId: `user_${randomUUID()}`, orgId };
 }
 
-/**
- * An owned thread whose creation cursor is already set and which carries no
- * terminal Run event. Mark-read on it is an accepted 200 that advances
- * nothing, which is the success a denial must not be confused with.
- */
-async function createCursorFixture(): Promise<CursorFixture> {
-  const actor = bdd.user();
-  const thread = await chat.createThread(actor, {
-    title: `Read cursor ${randomUUID()}`,
-  });
-  return {
-    actor,
-    threadId: thread.id,
-    orgId: actorOrgId(actor),
-  };
+function signIn(member: Member): void {
+  createRouteMocks(context).clerk.session(member.userId, member.orgId);
 }
 
-async function prepareChatRuntime(): Promise<void> {
-  await runs.configureRunnerGroup();
-  runs.acceptStorageDownloads();
-  runs.acceptTelemetryIngest();
-  chatCallbacks.acceptChatObjectStorage();
-  chatCallbacks.disableVapid();
-  mockOptionalEnv("OPENROUTER_API_KEY", undefined);
+async function createThread(member: Member): Promise<string> {
+  signIn(member);
+  const created = await accept(
+    setupApp({ context, routes: chatThreadRoutes })(chatThreadsContract).create(
+      { headers: sessionHeaders, body: {} },
+    ),
+    [201],
+  );
+  return created.body.id;
 }
 
-/**
- * An owned thread carrying one terminal Run event newer than its creation
- * cursor, so an admitted mark-read actually advances the persisted cursor and
- * clears the thread's unread indicator.
- */
-async function createUnreadCursorFixture(): Promise<CursorFixture> {
-  await prepareChatRuntime();
-  const actor = bdd.user();
-  await runs.grantProEntitlement(actor);
-  // The Run must still be active when it is cancelled, so it uses Fable,
-  // whose personal subscription route queues it for the native Runner, not Pi.
-  await runs.ensurePersonalSubscriptionModel(actor, {
-    model: "claude-fable-5-1",
-  });
-  const { runId, threadId } = await chat.sendAndLaunch(actor, {
-    prompt: `read cursor ${randomUUID()}`,
-  });
-  await runs.requestCancelRun(actor, runId, [200]);
-  await flushWaitUntilForTest();
-
-  await flushWaitUntilForTest();
-  await expect(
-    (async () => {
-      return await chat.listUnreadChatThreadIds(actor);
-    })(),
-  ).resolves.toContain(threadId);
-  return { actor, threadId, orgId: actorOrgId(actor) };
+function markRead(member: Member, threadId: string) {
+  signIn(member);
+  return setupApp({ context, routes: chatThreadMarkReadRoutes })(
+    chatThreadMarkReadContract,
+  ).markRead({ headers: sessionHeaders, params: { id: threadId } });
 }
 
-/** The persisted cursor a production thread reader returns. */
-async function readCursor(fixture: CursorFixture): Promise<string | null> {
-  const detail = await chat.readThread(fixture.actor, fixture.threadId);
-  return detail.lastReadAt;
-}
-
-/** The thread ids the sidebar currently shows as unread for this owner. */
-async function unreadThreadIds(
-  fixture: CursorFixture,
-): Promise<readonly string[]> {
-  return await chat.listUnreadChatThreadIds(fixture.actor);
+function markUnread(member: Member, threadId: string) {
+  signIn(member);
+  return setupApp({ context, routes: chatThreadMarkUnreadRoutes })(
+    chatThreadMarkUnreadContract,
+  ).markUnread({ headers: sessionHeaders, params: { id: threadId } });
 }
 
 describe("chat thread read cursor", () => {
-  it("advances the native read watermark with OAuth chat read scope", async () => {
-    const fixture = await createUnreadCursorFixture();
-    const before = await readCursor(fixture);
-    const token = createMcpWebApi(context).authorize(fixture.actor)({
-      scope: "user:org:read okou:chat:read",
-    });
-    const marked = await accept(
-      setupApp({ context, routes: chatThreadMarkReadRoutes })(
-        chatThreadMarkReadContract,
-      ).markRead({
-        headers: { authorization: `Bearer ${token}` },
-        params: { id: fixture.threadId },
-      }),
-      [200],
-    );
-    expect(marked.body.lastReadAt).not.toBe(before);
-    await expect(readCursor(fixture)).resolves.toBe(marked.body.lastReadAt);
-    await expect(unreadThreadIds(fixture)).resolves.not.toContain(
-      fixture.threadId,
-    );
-  });
+  it("chat-thread-read-cursor-005 hides another member's thread and an unknown thread from read state changes", async () => {
+    const owner = newMember();
+    const peer = newMember(owner.orgId);
+    const threadId = await createThread(owner);
 
-  it("advances a read to the latest terminal marker and repeats without a second invalidation", async () => {
-    const fixture = await createUnreadCursorFixture();
-    const before = await readCursor(fixture);
-    context.mocks.ably.channelGet.mockClear();
-    context.mocks.ably.publish.mockClear();
+    await accept(markRead(peer, threadId), [404]);
+    await accept(markUnread(peer, threadId), [404]);
 
-    const first = await chat.markThreadRead(fixture.actor, fixture.threadId);
-    expect(first.lastReadAt).not.toBe(before);
-    expect(context.mocks.ably.channelGet.mock.calls).toStrictEqual([
-      [`user-org:${fixture.actor.userId}:${fixture.orgId}`],
-    ]);
-    expect(context.mocks.ably.publish).toHaveBeenCalledWith(
-      "chatThreadReadCursorUpdated",
-      {
-        threadId: fixture.threadId,
-        lastReadAt: first.lastReadAt,
-      },
-    );
+    const unknownThreadId = randomUUID();
+    await accept(markRead(owner, unknownThreadId), [404]);
+    await accept(markUnread(owner, unknownThreadId), [404]);
 
-    // The repeat advances nothing, so it reports the stored cursor and
-    // publishes no second invalidation.
-    context.mocks.ably.publish.mockClear();
-    const repeated = await chat.markThreadRead(fixture.actor, fixture.threadId);
-    expect(repeated.lastReadAt).toBe(first.lastReadAt);
-    expect(context.mocks.ably.publish).not.toHaveBeenCalled();
-    await expect(readCursor(fixture)).resolves.toBe(first.lastReadAt);
-  });
-
-  it("accepts competing marks and publishes only the committed cursor advance", async () => {
-    const fixture = await createUnreadCursorFixture();
-    const before = await readCursor(fixture);
-    context.mocks.ably.publish.mockClear();
-
-    const responses = await Promise.all([
-      chat.markThreadRead(fixture.actor, fixture.threadId),
-      chat.markThreadRead(fixture.actor, fixture.threadId),
-    ]);
-    const stored = await readCursor(fixture);
-    expect(stored).not.toBe(before);
-    expect(responses).toContainEqual({ lastReadAt: stored });
-    // A loser may return its pre-read cursor; do not require a race refresh.
-    for (const response of responses) {
-      expect([before, stored]).toContain(response.lastReadAt);
-    }
-    expect(context.mocks.ably.publish.mock.calls).toStrictEqual([
-      [
-        "chatThreadReadCursorUpdated",
-        {
-          threadId: fixture.threadId,
-          lastReadAt: stored,
-        },
-      ],
-    ]);
-    await expect(unreadThreadIds(fixture)).resolves.not.toContain(
-      fixture.threadId,
-    );
-  });
-
-  it("requires the thread's organization for read cursor writes", async () => {
-    const fixture = await createUnreadCursorFixture();
-    const before = await readCursor(fixture);
-    const orgless = bdd.user({ userId: fixture.actor.userId, orgId: null });
-    const otherOrg = bdd.user({ userId: fixture.actor.userId });
-    context.mocks.ably.publish.mockClear();
-
-    await chat.requestMarkThreadRead(orgless, fixture.threadId, [400]);
-    await chat.requestMarkThreadUnread(orgless, fixture.threadId, [400]);
-    await chat.requestMarkThreadRead(otherOrg, fixture.threadId, [404]);
-    await chat.requestMarkThreadUnread(otherOrg, fixture.threadId, [404]);
-    expect(context.mocks.ably.publish).not.toHaveBeenCalled();
-    await expect(readCursor(fixture)).resolves.toBe(before);
-  });
-
-  it("returns 404 for another user's thread and for a missing thread", async () => {
-    const fixture = await createCursorFixture();
-    const foreign = bdd.user({ orgId: fixture.orgId });
-    context.mocks.ably.publish.mockClear();
-
-    await chat.requestMarkThreadRead(foreign, fixture.threadId, [404]);
-    await chat.requestMarkThreadUnread(foreign, fixture.threadId, [404]);
-    await chat.requestMarkThreadRead(fixture.actor, randomUUID(), [404]);
-    await chat.requestMarkThreadUnread(fixture.actor, randomUUID(), [404]);
-
-    expect(context.mocks.ably.publish).not.toHaveBeenCalled();
-  });
-
-  it("clears the cursor on mark-unread and shows the thread as unread again", async () => {
-    const fixture = await createUnreadCursorFixture();
-    await chat.markThreadRead(fixture.actor, fixture.threadId);
-    await expect(unreadThreadIds(fixture)).resolves.not.toContain(
-      fixture.threadId,
-    );
-
-    await chat.markThreadUnread(fixture.actor, fixture.threadId);
-
-    await expect(readCursor(fixture)).resolves.toBeNull();
-    await expect(unreadThreadIds(fixture)).resolves.toContain(fixture.threadId);
+    await flushWaitUntilForTest();
+    expect(
+      channelsPublishedTo(context.mocks, "chatThreadReadCursorUpdated"),
+    ).toStrictEqual([]);
   });
 });

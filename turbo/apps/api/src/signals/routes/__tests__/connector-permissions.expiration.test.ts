@@ -1,13 +1,16 @@
 import { randomUUID } from "node:crypto";
+import {
+  connectorPermissionsContract,
+  type ApplyConnectorPermissions,
+} from "@okouai/api-contracts/contracts/connector-permissions";
+import type { ConnectorAccountTarget } from "@okouai/api-contracts/contracts/connector-accounts";
 import { describe, expect, it } from "vitest";
-import { connectorPermissionsContract } from "@okouai/api-contracts/contracts/connector-permissions";
-import type { ApplyUserPermissionGrant } from "@okouai/api-contracts/validators/user-permission-grants";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockNow } from "../../../lib/time";
 import { connectorPermissionsRoutes } from "../connector-permissions";
-import { createBddApi } from "./helpers/api-bdd";
+import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import {
   createConnectorBddApi,
   mockSlackConnectorOAuth,
@@ -17,87 +20,109 @@ import { createRouteMocks } from "./helpers/route-test";
 const context = testContext();
 const bdd = createBddApi(context);
 const connectors = createConnectorBddApi(context);
-const mocks = createRouteMocks(context);
-const headers = { authorization: "Bearer clerk-session" } as const;
-const startedAt = Date.parse("2026-11-05T00:00:00.000Z");
-const hour = 60 * 60 * 1000;
+const permissionsApi = setupApp({
+  context,
+  routes: connectorPermissionsRoutes,
+})(connectorPermissionsContract);
 
-async function owner() {
-  const actor = bdd.user();
+const START = Date.parse("2026-06-01T08:00:00.000Z");
+const LATER = START + 10 * 60 * 1000;
+const START_PLUS_1H_ISO = "2026-06-01T09:00:00.000Z";
+const LATER_PLUS_24H_ISO = "2026-06-02T08:10:00.000Z";
+const LATER_PLUS_1H_ISO = "2026-06-01T09:10:00.000Z";
+const AUTH_HEADERS = Object.freeze({ authorization: "Bearer clerk-session" });
+const SLACK_TARGET: ConnectorAccountTarget = Object.freeze({
+  kind: "builtin",
+  connectorSlug: "slack",
+});
+
+async function connectSlack(actor: ApiTestUser): Promise<void> {
   mockSlackConnectorOAuth();
   const started = await connectors.startOauth(actor, "slack", "oauth");
   const state = new URL(started.authorizationUrl).searchParams.get("state");
   if (!state) {
-    throw new Error("Expected OAuth state from the public start response");
+    throw new Error("Expected Slack authorization state");
   }
   const completed = await connectors.completeOauthCallbackResult("slack", {
     state,
-    code: randomUUID(),
+    code: `code-${randomUUID()}`,
   });
   expect(completed.body.status).toBe("success");
+}
 
-  mocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
-  return async (
-    grant: ApplyUserPermissionGrant,
-    mode: "patch" | "replace" = "patch",
-  ) => {
-    const result = await accept(
-      setupApp({ context, routes: connectorPermissionsRoutes })(
-        connectorPermissionsContract,
-      ).apply({
-        headers,
-        body: {
-          target: { kind: "builtin", connectorSlug: "slack" },
-          mode,
-          grants: [grant],
-        },
-      }),
-      [200],
-    );
-    return result.body.grants;
-  };
+/** Applies one chat:write allow rule and returns its resulting deadline. */
+async function applyChatWrite(
+  actor: ApiTestUser,
+  mode: ApplyConnectorPermissions["mode"],
+  expiresIn?: "1h" | "24h" | "always",
+): Promise<string | null | undefined> {
+  createRouteMocks(context).clerk.session(
+    actor.userId,
+    actor.orgId,
+    actor.orgRole,
+  );
+  const response = await accept(
+    permissionsApi.apply({
+      headers: AUTH_HEADERS,
+      body: {
+        target: SLACK_TARGET,
+        mode,
+        grants: [
+          {
+            permission: "chat:write",
+            action: "allow",
+            ...(expiresIn ? { expiresIn } : {}),
+          },
+        ],
+      },
+    }),
+    [200],
+  );
+  return response.body.grants.find((grant) => {
+    return grant.permission === "chat:write";
+  })?.expiresAt;
+}
+
+/** The owner completed Slack OAuth with no prior chat:write expiry. */
+async function slackOwner(): Promise<ApiTestUser> {
+  mockNow(START);
+  const owner = bdd.user();
+  await connectSlack(owner);
+  return owner;
 }
 
 describe("Connector permission expiration", () => {
-  it("preserves a patch deadline unless the caller explicitly changes the duration or replaces the grant", async () => {
-    mockNow(startedAt);
-    const apply = await owner();
-    const allow = { permission: "chat:write", action: "allow" } as const;
-    await expect(apply({ ...allow, expiresIn: "1h" })).resolves.toMatchObject([
-      { expiresAt: new Date(startedAt + hour).toISOString() },
-    ]);
-    mockNow(startedAt + 10 * 60 * 1000);
-    await expect(apply(allow)).resolves.toMatchObject([
-      { expiresAt: new Date(startedAt + hour).toISOString() },
-    ]);
-    await expect(apply({ ...allow, expiresIn: "24h" })).resolves.toMatchObject([
-      {
-        expiresAt: new Date(
-          startedAt + 10 * 60 * 1000 + 24 * hour,
-        ).toISOString(),
-      },
-    ]);
-    await expect(
-      apply({ ...allow, expiresIn: "always" }),
-    ).resolves.toMatchObject([{ expiresAt: null }]);
-    await apply({ ...allow, expiresIn: "1h" });
-    await expect(apply(allow, "replace")).resolves.toMatchObject([
-      { expiresAt: null },
-    ]);
+  it("connector-permissions.expiration-001 (1/3) keeps the one-hour patch deadline on a durationless revisit", async () => {
+    const owner = await slackOwner();
+
+    const first = await applyChatWrite(owner, "patch", "1h");
+    mockNow(LATER);
+    const durationless = await applyChatWrite(owner, "patch");
+
+    expect(first).toBe(START_PLUS_1H_ISO);
+    expect(durationless).toBe(first);
   });
 
-  it("clears expiry on deny and does not preserve an already expired allow deadline", async () => {
-    mockNow(startedAt);
-    const apply = await owner();
-    const allow = { permission: "chat:write", action: "allow" } as const;
-    await apply({ ...allow, expiresIn: "1h" });
-    await expect(
-      apply({ permission: "chat:write", action: "deny" }),
-    ).resolves.toMatchObject([{ action: "deny", expiresAt: null }]);
-    await apply({ ...allow, expiresIn: "1h" });
-    mockNow(startedAt + hour);
-    await expect(apply(allow)).resolves.toMatchObject([
-      { action: "allow", expiresAt: null },
-    ]);
+  it("connector-permissions.expiration-001 (2/3) recomputes the deadline for explicit 24h and clears it on always", async () => {
+    const owner = await slackOwner();
+    await applyChatWrite(owner, "patch", "1h");
+    mockNow(LATER);
+
+    const day = await applyChatWrite(owner, "patch", "24h");
+    const always = await applyChatWrite(owner, "patch", "always");
+
+    expect(day).toBe(LATER_PLUS_24H_ISO);
+    expect(always).toBeNull();
+  });
+
+  it("connector-permissions.expiration-001 (3/3) clears a renewed one-hour deadline on a durationless replace", async () => {
+    const owner = await slackOwner();
+    mockNow(LATER);
+
+    const renewed = await applyChatWrite(owner, "patch", "1h");
+    const replaced = await applyChatWrite(owner, "replace");
+
+    expect(renewed).toBe(LATER_PLUS_1H_ISO);
+    expect(replaced).toBeNull();
   });
 });

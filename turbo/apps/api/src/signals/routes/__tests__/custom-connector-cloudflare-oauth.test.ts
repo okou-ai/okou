@@ -1,492 +1,459 @@
+import { Buffer } from "node:buffer";
 import { randomUUID } from "node:crypto";
+
 import { cloudflareAccessContract } from "@okouai/api-contracts/contracts/cloudflare-access";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { http, HttpResponse } from "msw";
-import { expect, test } from "vitest";
-import { settleIncludingAbort } from "../../utils";
+import { describe, expect, it } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
 import { server } from "../../../mocks/server";
 import { cloudflareAccessRoutes } from "../cloudflare-access";
+import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import {
   createConnectorBddApi,
-  mockCustomConnectorOAuth2Provider,
   mockAutomaticMcpOAuthProvider,
 } from "./helpers/api-bdd-connectors";
-import { createPublicConnectorActor } from "./helpers/public-connector-actor";
 import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
+const bdd = createBddApi(context);
 const connectors = createConnectorBddApi(context);
-const headers = Object.freeze({ authorization: "Bearer clerk-session" });
 
-async function scenario(
-  operation:
-    | "inside-basic"
-    | "inside-post"
-    | "outside"
-    | "rotate"
-    | "private-dns"
-    | "redirect",
-) {
-  const owner = createPublicConnectorActor(context);
-  owner.ownsFeatureSwitches();
-  await owner.run(async () => {
-    context.mocks.dns.resolve4.mockResolvedValue(["8.8.8.8"]);
-    context.mocks.dns.resolve6.mockResolvedValue([]);
-    mockEnv("APP_URL", "https://app.okou.ai");
-    mockEnv("OKOU_WEB_URL", "https://www.okou.ai");
-    const actor = owner.actor;
-    await connectors.updateFeatureSwitches(actor, {
-      [FeatureSwitchKey.CustomConnectorCloudflareAccess]: true,
-    });
-    createRouteMocks(context).clerk.session(
-      actor.userId,
-      actor.orgId,
-      "org:admin",
-    );
-    const configs = setupApp({ context, routes: cloudflareAccessRoutes })(
+interface AccessSetup {
+  readonly admin: ApiTestUser;
+  readonly configId: string;
+  readonly accessClientId: string;
+  readonly accessSecret: string;
+}
+
+/** An organization admin with the Access feature and one organization configuration. */
+async function accessWorkspace(): Promise<AccessSetup> {
+  context.mocks.dns.resolve4.mockResolvedValue(["93.184.216.34"]);
+  context.mocks.dns.resolve6.mockRejectedValue(
+    Object.assign(new Error("no AAAA record"), { code: "ENODATA" }),
+  );
+  const admin = bdd.user();
+  await connectors.updateFeatureSwitches(admin, {
+    [FeatureSwitchKey.CustomConnectorCloudflareAccess]: true,
+  });
+  const accessClientId = `access-client-${randomUUID()}`;
+  const accessSecret = `access-secret-${randomUUID()}`;
+  createRouteMocks(context).clerk.session(
+    admin.userId,
+    admin.orgId,
+    admin.orgRole,
+  );
+  const config = await accept(
+    setupApp({ context, routes: cloudflareAccessRoutes })(
       cloudflareAccessContract,
-    );
-    const config = (
-      await accept(
-        configs.create({
-          headers,
-          query: { view: "scoped" },
-          body: {
-            id: randomUUID(),
-            scope: "organization",
-            name: "OAuth network",
-            credentials: {
-              clientId: "network-client",
-              clientSecret: "network-secret",
-            },
+    ).create({
+      headers: { authorization: "Bearer clerk-session" },
+      query: { view: "scoped" },
+      body: {
+        id: randomUUID(),
+        name: `Gateway ${randomUUID().slice(0, 8)}`,
+        scope: "organization",
+        credentials: { clientId: accessClientId, clientSecret: accessSecret },
+      },
+    }),
+    [201],
+  );
+  return {
+    admin,
+    configId: config.body.id,
+    accessClientId,
+    accessSecret,
+  };
+}
+
+function stateOf(authorizationUrl: string): string {
+  const state = new URL(authorizationUrl).searchParams.get("state");
+  if (!state) {
+    throw new Error("Expected OAuth state");
+  }
+  return state;
+}
+
+async function expectConnectedWithoutSecret(
+  setup: AccessSetup,
+  connectorId: string,
+): Promise<void> {
+  const accounts = await connectors.listCustomConnectorAccounts(
+    setup.admin,
+    connectorId,
+  );
+  expect(accounts).toHaveLength(1);
+  expect(accounts[0]).toMatchObject({ connectionStatus: "connected" });
+  expect(JSON.stringify(accounts)).not.toContain(setup.accessSecret);
+}
+
+async function staticHttpOAuthCase(args: {
+  readonly tokenInsidePrefix: boolean;
+  readonly tokenEndpointAuthMethod:
+    "client_secret_basic" | "client_secret_post";
+}) {
+  const setup = await accessWorkspace();
+  const id = randomUUID();
+  const prefix = `https://api-${id}.example.test/v1/`;
+  const tokenUrl = args.tokenInsidePrefix
+    ? `${prefix}oauth/token`
+    : `https://auth-${id}.example.test/oauth/token`;
+  const clientId = `app-client-${id}`;
+  const clientSecret = `app-secret-${id}`;
+  const tokenRequests: { headers: Headers; body: URLSearchParams }[] = [];
+  server.use(
+    http.post(tokenUrl, async ({ request }) => {
+      tokenRequests.push({
+        headers: new Headers(request.headers),
+        body: new URLSearchParams(await request.text()),
+      });
+      return HttpResponse.json({
+        access_token: `access-${id}`,
+        refresh_token: `refresh-${id}`,
+        token_type: "Bearer",
+        expires_in: 3600,
+      });
+    }),
+  );
+  const connector = await connectors.createCustomConnector(setup.admin, {
+    displayName: "Internal Orders",
+    prefixTemplates: [prefix],
+    authMode: "oauth",
+    fields: [],
+    headerInjections: [
+      { name: "Authorization", valueTemplate: "Bearer {{oauth.access_token}}" },
+    ],
+    queryInjections: [],
+    oauthConfig: {
+      providerAdapter: "standard",
+      clientId,
+      clientSecret,
+      authorizationUrl: `https://auth-${id}.example.test/authorize`,
+      tokenUrl,
+      tokenEndpointAuthMethod: args.tokenEndpointAuthMethod,
+      pkceMethod: "S256",
+      scopes: ["read"],
+      authorizationParams: {},
+    },
+    networkBinding: { type: "cloudflare_access", configId: setup.configId },
+  });
+
+  const authorizationUrl = await connectors.startCustomConnectorOAuth2(
+    setup.admin,
+    connector.id,
+  );
+  expect(authorizationUrl).not.toContain(setup.accessSecret);
+  expect(
+    new URL(authorizationUrl).searchParams.get("code_challenge_method"),
+  ).toBe("S256");
+  const completed =
+    await connectors.completeCustomConnectorOAuth2CallbackResult({
+      state: stateOf(authorizationUrl),
+      code: `code-${id}`,
+    });
+  expect(completed.body.status).toBe("success");
+  await expectConnectedWithoutSecret(setup, connector.id);
+  expect(tokenRequests).toHaveLength(1);
+  const [exchange] = tokenRequests;
+  if (!exchange) {
+    throw new Error("Expected one code exchange");
+  }
+  expect(exchange.body.get("code_verifier")).toBeTruthy();
+  return { setup, exchange, clientId, clientSecret };
+}
+
+type McpChallenge = "parameters" | "bare" | "combined";
+
+async function automaticMcpCase(args: {
+  readonly registration: "none" | "cimd" | "dcr";
+  readonly challenge: McpChallenge;
+  readonly access: boolean;
+  readonly protectedIssuer: boolean;
+}) {
+  const setup = await accessWorkspace();
+  if (args.registration === "cimd") {
+    // CIMD client IDs must be HTTPS, so publish them from the hosted API origin.
+    mockEnv("OKOU_API_BACKEND_URL", "https://api.okou.ai");
+  }
+  const id = randomUUID();
+  const endpoint = `https://mcp-${id}.example.test/server`;
+  const provider = mockAutomaticMcpOAuthProvider(context, {
+    registration: args.registration,
+    authentication: args.registration === "none" ? "none" : "oauth",
+    endpoint,
+    issuer: `https://issuer-${id}.example.test`,
+    ...(args.protectedIssuer ? { tokenEndpoint: `${endpoint}/token` } : {}),
+    ...(args.challenge === "parameters"
+      ? {}
+      : { discovery: "well-known-oidc" as const, challengeScope: null }),
+    ...(args.challenge === "combined"
+      ? { challengeHeader: 'Digest realm="mcp", Bearer' }
+      : {}),
+  });
+  const connector = await connectors.createCustomConnector(setup.admin, {
+    kind: "mcp",
+    displayName: "Internal research",
+    endpoint,
+    transport: "streamable-http",
+    authMode: "automatic",
+    fields: [],
+    headerInjections: [],
+    queryInjections: [],
+    ...(args.access
+      ? {
+          networkBinding: {
+            type: "cloudflare_access" as const,
+            configId: setup.configId,
           },
-        }),
-        [201],
-      )
-    ).body;
-    const provider = mockCustomConnectorOAuth2Provider(context);
-    const received: { headers: Headers; form: URLSearchParams }[] = [];
-    server.use(
-      http.post(provider.tokenUrl, async ({ request }) => {
-        received.push({
-          headers: request.headers,
-          form: new URLSearchParams(await request.text()),
-        });
-        return operation === "redirect"
-          ? new HttpResponse(null, {
-              status: 302,
-              headers: { location: "https://another.example.test/token" },
-            })
-          : HttpResponse.json({
-              access_token: "application-token",
-              refresh_token: "application-refresh",
-              token_type: "Bearer",
-              expires_in: 3600,
-            });
-      }),
-    );
-    const connector = await connectors.createCustomConnector(actor, {
-      displayName: "Protected OAuth connector",
-      kind: "http",
-      prefixTemplates: [
-        operation === "outside"
-          ? "https://unrelated.example.test/"
-          : `${new URL(provider.tokenUrl).origin}/`,
-      ],
+        }
+      : {}),
+  });
+
+  const started = await connectors.requestStartCustomConnectorOAuth2(
+    setup.admin,
+    connector.id,
+    [200],
+  );
+  if (started.status !== 200) {
+    throw new Error("Expected the authorization start to succeed");
+  }
+  expect(provider.endpointHeaders.length).toBeGreaterThan(0);
+  expect(
+    provider.endpointHeaders.map((headers) => {
+      return headers.get("cf-access-client-secret");
+    }),
+  ).toStrictEqual(
+    provider.endpointHeaders.map(() => {
+      return args.access ? setup.accessSecret : null;
+    }),
+  );
+  return { setup, provider, connector, started: started.body };
+}
+
+/** Completes provider consent and reports what the provider and owner observed. */
+async function completeAutomaticMcpCase(
+  run: Awaited<ReturnType<typeof automaticMcpCase>>,
+) {
+  const { setup, provider, connector, started } = run;
+  if (started.result !== "authorization") {
+    throw new Error("Expected an authorization URL");
+  }
+  const completed =
+    await connectors.completeCustomConnectorOAuth2CallbackResult({
+      state: stateOf(started.authorizationUrl),
+      code: `code-${randomUUID()}`,
+      iss: provider.issuer,
+    });
+  const accounts = await connectors.listCustomConnectorAccounts(
+    setup.admin,
+    connector.id,
+  );
+  return {
+    authorizationUrlExposesAccess: started.authorizationUrl.includes(
+      setup.accessSecret,
+    ),
+    callbackStatus: completed.body.status,
+    registrations: provider.registrationBodies.length,
+    tokenRequestsWithAccess: provider.tokenHeaders.map((headers) => {
+      return headers.get("cf-access-client-secret") === setup.accessSecret;
+    }),
+    accountStatuses: accounts.map((account) => {
+      return account.connectionStatus;
+    }),
+    accountsExposeAccess: JSON.stringify(accounts).includes(setup.accessSecret),
+  };
+}
+
+function connectedOutcome(registrations: number, tokenAccess: boolean) {
+  return {
+    authorizationUrlExposesAccess: false,
+    callbackStatus: "success",
+    registrations,
+    tokenRequestsWithAccess: [tokenAccess],
+    accountStatuses: ["connected"],
+    accountsExposeAccess: false,
+  };
+}
+
+describe("custom connector Cloudflare Access OAuth setup", () => {
+  it("custom-connector-cloudflare-oauth-003 (1/2) starts S256 authorization without exposing the Access secret", async () => {
+    const setup = await accessWorkspace();
+    const id = randomUUID();
+    const connector = await connectors.createCustomConnector(setup.admin, {
+      displayName: "Internal Orders",
+      prefixTemplates: [`https://api-${id}.example.test/v1/`],
       authMode: "oauth",
       fields: [],
-      queryInjections: [],
       headerInjections: [
         {
           name: "Authorization",
           valueTemplate: "Bearer {{oauth.access_token}}",
         },
       ],
-      networkBinding: { type: "cloudflare_access", configId: config.id },
+      queryInjections: [],
       oauthConfig: {
         providerAdapter: "standard",
-        clientId: "application-client",
-        clientSecret: "application-secret",
-        authorizationUrl: provider.authorizationUrl,
-        tokenUrl: provider.tokenUrl,
-        tokenEndpointAuthMethod:
-          operation === "inside-basic"
-            ? "client_secret_basic"
-            : "client_secret_post",
+        clientId: `app-client-${id}`,
+        clientSecret: `app-secret-${id}`,
+        authorizationUrl: `https://auth-${id}.example.test/authorize`,
+        tokenUrl: `https://auth-${id}.example.test/oauth/token`,
+        tokenEndpointAuthMethod: "client_secret_post",
         pkceMethod: "S256",
         scopes: ["read"],
         authorizationParams: {},
       },
+      networkBinding: { type: "cloudflare_access", configId: setup.configId },
     });
-    const tested = await settleIncludingAbort(async () => {
-      const authorization = new URL(
-        await connectors.startCustomConnectorOAuth2AtBaseUrl(
-          actor,
-          connector.id,
-          "https://api.okou.ai",
-        ),
-      );
-      expect(authorization.searchParams.get("code_challenge_method")).toBe(
-        "S256",
-      );
-      expect(authorization.href).not.toContain("network-secret");
-      const state = authorization.searchParams.get("state");
-      if (!state) {
-        throw new Error("Expected an OAuth state");
-      }
-      if (operation === "rotate") {
-        await accept(
-          configs.update({
-            headers,
-            query: { view: "scoped" },
-            params: { configId: config.id },
-            body: {
-              expectedRevision: config.revision,
-              credentials: {
-                clientId: "rotated-client",
-                clientSecret: "rotated-secret",
-              },
-            },
-          }),
-          [200],
-        );
-      }
-      if (operation === "private-dns") {
-        context.mocks.dns.resolve4.mockResolvedValue(["127.0.0.1"]);
-      }
-      const callback =
-        await connectors.completeCustomConnectorOAuth2CallbackResult(
-          { code: "synthetic-code", state },
-          { baseUrl: "https://api.okou.ai" },
-        );
-      if (
-        operation === "rotate" ||
-        operation === "private-dns" ||
-        operation === "redirect"
-      ) {
-        expect(callback.body.status).toBe("error");
-        await expect(
-          connectors.listCustomConnectorAccounts(actor, connector.id),
-        ).resolves.toStrictEqual([]);
-        expect(received).toHaveLength(operation === "redirect" ? 1 : 0);
-      } else {
-        expect(callback.body.status).toBe("success");
-        await expect(
-          connectors.listCustomConnectorAccounts(actor, connector.id),
-        ).resolves.toMatchObject([{ connectionStatus: "connected" }]);
-        expect(received).toHaveLength(1);
-        const request = received[0];
-        if (!request) {
-          throw new Error("Expected a token request");
-        }
-        expect(request.form.get("code_verifier")).toBeTruthy();
-        expect(request.form.get("code")).toBe("synthetic-code");
-        if (operation === "inside-basic") {
-          expect(request.headers.get("authorization")).toMatch(/^Basic /u);
-          expect(request.form.has("client_secret")).toBeFalsy();
-        } else {
-          expect(request.form.get("client_secret")).toBe("application-secret");
-        }
-        expect(request.headers.get("CF-Access-Client-Secret")).toBe(
-          operation === "outside" ? null : "network-secret",
-        );
-        expect(request.headers.get("CF-Access-Client-Id")).toBe(
-          operation === "outside" ? null : "network-client",
-        );
-      }
-      expect(
-        JSON.stringify(
-          await connectors.listCustomConnectorAccounts(actor, connector.id),
-        ),
-      ).not.toContain("network-secret");
-    });
-    await connectors.deleteCustomConnector(actor, connector.id);
-    const preview = (
-      await accept(
-        configs.impactPreview({
-          headers,
-          params: { configId: config.id },
-          query: { operation: "delete" },
-        }),
-        [200],
-      )
-    ).body;
-    await accept(
-      configs.delete({
-        headers,
-        query: { view: "scoped" },
-        params: { configId: config.id },
-        body: {
-          expectedRevision: preview.expectedRevision,
-          impactSnapshot: preview.impactSnapshot,
-        },
-      }),
-      [204],
+
+    const authorizationUrl = await connectors.startCustomConnectorOAuth2(
+      setup.admin,
+      connector.id,
     );
-    if (!tested.ok) {
-      throw tested.error;
-    }
+
+    expect(authorizationUrl).not.toContain(setup.accessSecret);
+    expect(
+      new URL(authorizationUrl).searchParams.get("code_challenge_method"),
+    ).toBe("S256");
   });
-}
 
-test.each([
-  "inside-basic",
-  "inside-post",
-  "outside",
-  "rotate",
-  "private-dns",
-  "redirect",
-] as const)(
-  "cloudflare OAuth setup preserves app authentication and current network authority: %s",
-  scenario,
-);
-
-test.each([
-  {
-    registration: "none",
-    challenge: "parameters",
-    networkBound: true,
-    protectedIssuer: false,
-  },
-  {
-    registration: "cimd",
-    challenge: "parameters",
-    networkBound: true,
-    protectedIssuer: false,
-  },
-  {
-    registration: "dcr",
-    challenge: "parameters",
-    networkBound: true,
-    protectedIssuer: false,
-  },
-  {
-    registration: "cimd",
-    challenge: "bare",
-    networkBound: true,
-    protectedIssuer: false,
-  },
-  {
-    registration: "dcr",
-    challenge: "bare",
-    networkBound: true,
-    protectedIssuer: false,
-  },
-  {
-    registration: "cimd",
-    challenge: "combined",
-    networkBound: false,
-    protectedIssuer: false,
-  },
-  {
-    registration: "cimd",
-    challenge: "combined",
-    networkBound: true,
-    protectedIssuer: false,
-  },
-  {
-    registration: "dcr",
-    challenge: "combined",
-    networkBound: false,
-    protectedIssuer: false,
-  },
-  {
-    registration: "dcr",
-    challenge: "combined",
-    networkBound: true,
-    protectedIssuer: false,
-  },
-  {
-    registration: "cimd",
-    challenge: "quoted",
-    networkBound: true,
-    protectedIssuer: false,
-  },
-  {
-    registration: "cimd",
-    challenge: "quoted-escape",
-    networkBound: true,
-    protectedIssuer: false,
-  },
-  {
-    registration: "cimd",
-    challenge: "auth-param",
-    networkBound: true,
-    protectedIssuer: false,
-  },
-  {
-    registration: "cimd",
-    challenge: "bare",
-    networkBound: true,
-    protectedIssuer: true,
-  },
-  {
-    registration: "dcr",
-    challenge: "bare",
-    networkBound: true,
-    protectedIssuer: true,
-  },
-  {
-    registration: "cimd",
-    challenge: "bare",
-    networkBound: false,
-    protectedIssuer: true,
-  },
-  {
-    registration: "dcr",
-    challenge: "bare",
-    networkBound: false,
-    protectedIssuer: true,
-  },
-] as const)(
-  "initializes MCP $registration with separate OAuth credentials (challenge: $challenge, Access: $networkBound, protected issuer: $protectedIssuer)",
-  async ({ registration, challenge, networkBound, protectedIssuer }) => {
-    const owner = createPublicConnectorActor(context);
-    owner.ownsFeatureSwitches();
-    await owner.run(async () => {
-      context.mocks.dns.resolve4.mockResolvedValue(["8.8.8.8"]);
-      context.mocks.dns.resolve6.mockResolvedValue([]);
-      mockEnv("APP_URL", "https://app.okou.ai");
-      mockEnv("OKOU_API_BACKEND_URL", "https://api.okou.ai");
-      mockEnv("OKOU_WEB_URL", "https://www.okou.ai");
-      const actor = owner.actor;
-      await connectors.updateFeatureSwitches(actor, {
-        [FeatureSwitchKey.CustomConnectorCloudflareAccess]: true,
-      });
-      const configs = setupApp({ context, routes: cloudflareAccessRoutes })(
-        cloudflareAccessContract,
-      );
-      const config = (
-        await accept(
-          configs.create({
-            headers,
-            query: { view: "scoped" },
-            body: {
-              id: randomUUID(),
-              scope: "organization",
-              name: "MCP network",
-              credentials: {
-                clientId: "network-client",
-                clientSecret: "network-secret",
-              },
-            },
-          }),
-          [201],
-        )
-      ).body;
-      const challengeHeader = {
-        parameters: undefined,
-        bare: undefined,
-        combined: 'Digest realm="gateway", Bearer',
-        quoted: 'Digest realm="quoted, Bearer"',
-        "quoted-escape": 'Digest realm="escaped \\\", Bearer, inside"',
-        "auth-param": 'Digest realm="gateway", bearer = "value"',
-      }[challenge];
-      const protectedOrigin = `https://${randomUUID()}.example.test`;
-      const provider = mockAutomaticMcpOAuthProvider(context, {
-        registration,
-        ...(protectedIssuer
-          ? {
-              endpoint: `${protectedOrigin}/`,
-              issuer: protectedOrigin,
-              tokenEndpoint: `${protectedOrigin}/token`,
-            }
-          : {}),
-        ...(challenge !== "parameters"
-          ? { discovery: "well-known-oidc" as const, challengeScope: null }
-          : {}),
-        ...(challengeHeader ? { challengeHeader } : {}),
-        ...(registration === "none" ? { authentication: "none" as const } : {}),
-      });
-      const connector = await connectors.createCustomConnector(actor, {
-        kind: "mcp",
-        displayName: "Protected MCP",
-        endpoint: provider.endpoint,
-        transport: "streamable-http",
-        authMode: "automatic",
-        fields: [],
-        headerInjections: [],
-        queryInjections: [],
-        ...(networkBound
-          ? {
-              networkBinding: {
-                type: "cloudflare_access" as const,
-                configId: config.id,
-              },
-            }
-          : {}),
-      });
-      const tested = await settleIncludingAbort(async () => {
-        const start = await connectors.requestStartCustomConnectorOAuth2(
-          actor,
-          connector.id,
-          [200],
-        );
-        if (start.status !== 200) {
-          throw new Error("Expected successful MCP setup");
-        }
-        expect(provider.endpointHeaders.length).toBeGreaterThan(0);
-        expect(
-          provider.endpointHeaders.every((requestHeaders) => {
-            return (
-              requestHeaders.get("CF-Access-Client-Secret") ===
-              (networkBound ? "network-secret" : null)
-            );
-          }),
-        ).toBeTruthy();
-        if (registration === "none") {
-          expect(start.body.result).toBe("connected");
-        } else {
-          if (start.body.result !== "authorization") {
-            throw new Error("Expected OAuth authorization");
-          }
-          const state = new URL(start.body.authorizationUrl).searchParams.get(
-            "state",
-          );
-          if (!state) {
-            throw new Error("Expected an OAuth state");
-          }
-          const callback =
-            await connectors.completeCustomConnectorOAuth2CallbackResult({
-              code: randomUUID(),
-              state,
-              iss: provider.issuer,
-            });
-          expect(callback.body.status).toBe("success");
-          expect(provider.registrationBodies).toHaveLength(
-            registration === "dcr" ? 1 : 0,
-          );
-          expect(provider.tokenHeaders).toHaveLength(1);
-          expect(provider.tokenHeaders[0]?.has("CF-Access-Client-Secret")).toBe(
-            networkBound && protectedIssuer,
-          );
-        }
-        await expect(
-          connectors.listCustomConnectorAccounts(actor, connector.id),
-        ).resolves.toMatchObject([{ connectionStatus: "connected" }]);
-        expect(
-          JSON.stringify(
-            await connectors.listCustomConnectorAccounts(actor, connector.id),
-          ),
-        ).not.toContain("network-secret");
-      });
-      await connectors.deleteCustomConnector(actor, connector.id);
-      await accept(
-        configs.delete({
-          headers,
-          query: { view: "scoped" },
-          params: { configId: config.id },
-          body: { expectedRevision: config.revision },
-        }),
-        [204],
-      );
-      if (!tested.ok) {
-        throw tested.error;
-      }
+  it("custom-connector-cloudflare-oauth-003 (2/2) exchanges the code outside the prefix with the app secret and no Access headers", async () => {
+    const { exchange, clientSecret } = await staticHttpOAuthCase({
+      tokenInsidePrefix: false,
+      tokenEndpointAuthMethod: "client_secret_post",
     });
-  },
-);
+    expect(exchange.body.get("client_secret")).toBe(clientSecret);
+    expect(exchange.headers.get("cf-access-client-id")).toBeNull();
+    expect(exchange.headers.get("cf-access-client-secret")).toBeNull();
+  });
+
+  it("custom-connector-cloudflare-oauth-001 sends Basic app auth and Access headers to a token endpoint inside the prefix", async () => {
+    const { setup, exchange, clientId, clientSecret } =
+      await staticHttpOAuthCase({
+        tokenInsidePrefix: true,
+        tokenEndpointAuthMethod: "client_secret_basic",
+      });
+    expect(exchange.headers.get("authorization")).toBe(
+      `Basic ${Buffer.from(`${clientId}:${clientSecret}`).toString("base64")}`,
+    );
+    expect(exchange.body.has("client_secret")).toBeFalsy();
+    expect(exchange.headers.get("cf-access-client-id")).toBe(
+      setup.accessClientId,
+    );
+    expect(exchange.headers.get("cf-access-client-secret")).toBe(
+      setup.accessSecret,
+    );
+  });
+
+  it("custom-connector-cloudflare-oauth-002 posts the app secret with Access headers to a token endpoint inside the prefix", async () => {
+    const { setup, exchange, clientSecret } = await staticHttpOAuthCase({
+      tokenInsidePrefix: true,
+      tokenEndpointAuthMethod: "client_secret_post",
+    });
+    expect(exchange.body.get("client_secret")).toBe(clientSecret);
+    expect(exchange.headers.get("cf-access-client-id")).toBe(
+      setup.accessClientId,
+    );
+    expect(exchange.headers.get("cf-access-client-secret")).toBe(
+      setup.accessSecret,
+    );
+  });
+
+  it("custom-connector-cloudflare-oauth-007 connects a no-auth Access-bound MCP server directly", async () => {
+    const { setup, connector, started } = await automaticMcpCase({
+      registration: "none",
+      challenge: "parameters",
+      access: true,
+      protectedIssuer: false,
+    });
+    expect(started.result).toBe("connected");
+    expect(JSON.stringify(started)).not.toContain(setup.accessSecret);
+    await expectConnectedWithoutSecret(setup, connector.id);
+  });
+
+  it("custom-connector-cloudflare-oauth-008 authorizes an Access-bound CIMD MCP server without sending Access to the issuer", async () => {
+    const run = await automaticMcpCase({
+      registration: "cimd",
+      challenge: "parameters",
+      access: true,
+      protectedIssuer: false,
+    });
+    await expect(completeAutomaticMcpCase(run)).resolves.toStrictEqual(
+      connectedOutcome(0, false),
+    );
+  });
+
+  it("custom-connector-cloudflare-oauth-009 authorizes an Access-bound DCR MCP server without sending Access to the issuer", async () => {
+    const run = await automaticMcpCase({
+      registration: "dcr",
+      challenge: "parameters",
+      access: true,
+      protectedIssuer: false,
+    });
+    await expect(completeAutomaticMcpCase(run)).resolves.toStrictEqual(
+      connectedOutcome(1, false),
+    );
+  });
+
+  it("custom-connector-cloudflare-oauth-011 authorizes an Access-bound DCR MCP server discovered through a bare challenge", async () => {
+    const run = await automaticMcpCase({
+      registration: "dcr",
+      challenge: "bare",
+      access: true,
+      protectedIssuer: false,
+    });
+    await expect(completeAutomaticMcpCase(run)).resolves.toStrictEqual(
+      connectedOutcome(1, false),
+    );
+  });
+
+  it("custom-connector-cloudflare-oauth-012 authorizes an unbound CIMD MCP server behind a combined challenge", async () => {
+    const run = await automaticMcpCase({
+      registration: "cimd",
+      challenge: "combined",
+      access: false,
+      protectedIssuer: false,
+    });
+    await expect(completeAutomaticMcpCase(run)).resolves.toStrictEqual(
+      connectedOutcome(0, false),
+    );
+  });
+
+  it("custom-connector-cloudflare-oauth-014 authorizes an unbound DCR MCP server behind a combined challenge", async () => {
+    const run = await automaticMcpCase({
+      registration: "dcr",
+      challenge: "combined",
+      access: false,
+      protectedIssuer: false,
+    });
+    await expect(completeAutomaticMcpCase(run)).resolves.toStrictEqual(
+      connectedOutcome(1, false),
+    );
+  });
+
+  it("custom-connector-cloudflare-oauth-019 sends Access to a CIMD token endpoint on the protected MCP origin", async () => {
+    const run = await automaticMcpCase({
+      registration: "cimd",
+      challenge: "bare",
+      access: true,
+      protectedIssuer: true,
+    });
+    await expect(completeAutomaticMcpCase(run)).resolves.toStrictEqual(
+      connectedOutcome(0, true),
+    );
+  });
+
+  it("custom-connector-cloudflare-oauth-020 sends Access to a DCR token endpoint on the protected MCP origin", async () => {
+    const run = await automaticMcpCase({
+      registration: "dcr",
+      challenge: "bare",
+      access: true,
+      protectedIssuer: true,
+    });
+    await expect(completeAutomaticMcpCase(run)).resolves.toStrictEqual(
+      connectedOutcome(1, true),
+    );
+  });
+});

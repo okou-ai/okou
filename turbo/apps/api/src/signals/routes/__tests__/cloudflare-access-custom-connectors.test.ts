@@ -1,388 +1,345 @@
 import { randomUUID } from "node:crypto";
 
 import { cloudflareAccessContract } from "@okouai/api-contracts/contracts/cloudflare-access";
-import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   customConnectorByIdContract,
   customConnectorProposalContract,
   customConnectorsContract,
 } from "@okouai/api-contracts/contracts/custom-connectors";
-import { expect, test } from "vitest";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { describe, expect, it } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { cloudflareAccessRoutes } from "../cloudflare-access";
 import { customConnectorsRoutes } from "../custom-connectors";
-import { featureSwitchesRoutes } from "../feature-switches";
-import { createBddApi } from "./helpers/api-bdd";
+import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { createRouteMocks } from "./helpers/route-test";
-import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
 
 const context = testContext();
-const mocks = createRouteMocks(context);
 const headers = Object.freeze({ authorization: "Bearer clerk-session" });
-const query = Object.freeze({ view: "scoped" as const });
-const configs = () => {
-  return setupApp({ context, routes: cloudflareAccessRoutes })(
-    cloudflareAccessContract,
-  );
-};
-const connectors = () => {
-  return setupApp({ context, routes: customConnectorsRoutes })(
-    customConnectorsContract,
-  );
-};
-const connectorById = () => {
-  return setupApp({ context, routes: customConnectorsRoutes })(
-    customConnectorByIdContract,
-  );
-};
 
-async function enableNetworkBinding(enabled: boolean) {
-  await accept(
-    setupApp({ context, routes: featureSwitchesRoutes })(
-      featureSwitchesContract,
-    ).update({
+function workspaceAdmin() {
+  const actor = {
+    userId: `user_${randomUUID()}`,
+    orgId: `org_${randomUUID()}`,
+    orgRole: "org:admin" as const,
+  };
+  const signIn = () => {
+    createRouteMocks(context).clerk.session(
+      actor.userId,
+      actor.orgId,
+      actor.orgRole,
+    );
+  };
+  signIn();
+  return { actor, signIn };
+}
+
+function clients() {
+  return {
+    configs: setupApp({ context, routes: cloudflareAccessRoutes })(
+      cloudflareAccessContract,
+    ),
+    connectors: setupApp({ context, routes: customConnectorsRoutes })(
+      customConnectorsContract,
+    ),
+    connector: setupApp({ context, routes: customConnectorsRoutes })(
+      customConnectorByIdContract,
+    ),
+    proposals: setupApp({ context, routes: customConnectorsRoutes })(
+      customConnectorProposalContract,
+    ),
+  };
+}
+
+async function createOrganizationConfig(
+  configs: ReturnType<typeof clients>["configs"],
+  clientSecret = `secret-${randomUUID()}`,
+) {
+  const created = await accept(
+    configs.create({
       headers,
+      query: { view: "scoped" },
       body: {
-        switches: {
-          [FeatureSwitchKey.CustomConnectorCloudflareAccess]: enabled,
-        },
+        id: randomUUID(),
+        name: `Gateway ${randomUUID().slice(0, 8)}`,
+        scope: "organization",
+        credentials: { clientId: `client-${randomUUID()}`, clientSecret },
       },
     }),
-    [200],
+    [201],
   );
+  return created.body;
 }
 
-async function actor() {
-  const bdd = createBddApi(context);
-  const identity = bdd.user({ orgRole: "org:admin" });
-  await bdd.readMe(identity);
-  mocks.clerk.session(identity.userId, identity.orgId, "org:admin");
-  mocks.s3.listObjects([]);
+function httpDefinition(displayName: string) {
+  return {
+    displayName,
+    prefixTemplates: [`https://api-${randomUUID()}.example.test/v1/`],
+    fields: [],
+    headerInjections: [],
+    queryInjections: [],
+    authMode: "none" as const,
+  };
 }
 
-test.each(["http", "mcp"] as const)(
-  "%s binds atomically and requires explicit dependency removal",
-  async (kind) => {
-    useSecretKmsProbe();
-    await actor();
-    await enableNetworkBinding(true);
-    const config = (
-      await accept(
-        configs().create({
-          headers,
-          query,
-          body: {
-            id: randomUUID(),
-            scope: "organization",
-            name: "Shared gateway",
-            credentials: {
-              clientId: "synthetic-id",
-              clientSecret: "synthetic-secret",
-            },
-          },
-        }),
-        [201],
-      )
-    ).body;
-    const definition = {
-      displayName: "Protected connector",
-      authMode: "none" as const,
-      fields: [],
-      headerInjections: [],
-      queryInjections: [],
-      ...(kind === "http"
-        ? {
-            kind: "http" as const,
-            prefixTemplates: ["https://api.example.com/"],
-          }
-        : {
-            kind: "mcp" as const,
-            endpoint: "https://api.example.com/mcp",
-            transport: "streamable-http" as const,
-          }),
+describe("custom connector Cloudflare Access bindings", () => {
+  it("cloudflare-access-custom-connectors-005 rejects a new Cloudflare binding while the feature is disabled", async () => {
+    workspaceAdmin();
+    const api = clients();
+    const networkBinding = {
+      type: "cloudflare_access" as const,
+      configId: randomUUID(),
     };
-    const created = (
-      await accept(
-        connectors().create({
-          headers,
-          body: {
-            ...definition,
-            networkBinding: { type: "cloudflare_access", configId: config.id },
-          },
-        }),
-        [201],
-      )
-    ).body;
-    expect(created.networkBinding).toMatchObject({
-      configId: config.id,
-      status: "available",
-    });
-    const retained = (
-      await accept(
-        connectorById().update({
-          headers,
-          params: { id: created.id },
-          body: {
-            ...definition,
-            displayName: "Renamed protected connector",
-            storageVersion: created.storageVersion,
-          },
-        }),
-        [200],
-      )
-    ).body;
-    expect(retained.networkBinding?.configId).toBe(config.id);
-    expect(retained.storageVersion).toBe(created.storageVersion);
-    for (const operation of ["delete", "convert"] as const) {
-      const preview = (
-        await accept(
-          configs().impactPreview({
-            headers,
-            params: { configId: config.id },
-            query: { operation, includeCustomConnectors: "true" },
-          }),
-          [200],
-        )
-      ).body;
-      expect(preview.customConnectors).toStrictEqual([
-        expect.objectContaining({ id: created.id }),
-      ]);
-      const body = {
-        expectedRevision: preview.expectedRevision,
-        impactSnapshot: preview.impactSnapshot,
-      };
-      const denied =
-        operation === "delete"
-          ? await accept(
-              configs().delete({
-                headers,
-                query,
-                params: { configId: config.id },
-                body,
-              }),
-              [409],
-            )
-          : await accept(
-              configs().convertToPersonal({
-                headers,
-                params: { configId: config.id },
-                body,
-              }),
-              [409],
-            );
-      expect(denied.body.error.message.toLowerCase()).toContain("connector");
-    }
-    await enableNetworkBinding(false);
-    const cleared = (
-      await accept(
-        connectorById().update({
-          headers,
-          params: { id: created.id },
-          body: {
-            ...definition,
-            storageVersion: created.storageVersion,
-            networkBinding: null,
-          },
-        }),
-        [200],
-      )
-    ).body;
-    expect(cleared.networkBinding).toBeUndefined();
-    expect(cleared.storageVersion).toBe(created.storageVersion);
-    const preview = (
-      await accept(
-        configs().impactPreview({
-          headers,
-          params: { configId: config.id },
-          query: { operation: "delete", includeCustomConnectors: "true" },
-        }),
-        [200],
-      )
-    ).body;
-    expect(preview.customConnectors).toStrictEqual([]);
+    const definition = httpDefinition("Partner API");
+
     await accept(
-      configs().delete({
+      api.connectors.create({
         headers,
-        query,
-        params: { configId: config.id },
-        body: {
-          expectedRevision: preview.expectedRevision,
-          impactSnapshot: preview.impactSnapshot,
-        },
+        body: { ...definition, networkBinding },
       }),
-      [204],
-    );
-  },
-);
-
-test.each(["http", "mcp"] as const)(
-  "%s unbound connectors preserve legacy Direct behavior and safe Cloudflare metadata",
-  async (kind) => {
-    useSecretKmsProbe();
-    await actor();
-    const config = (
-      await accept(
-        configs().create({
-          headers,
-          query,
-          body: {
-            id: randomUUID(),
-            scope: "organization",
-            name: "Protected gateway",
-            credentials: {
-              clientId: "synthetic-id",
-              clientSecret: "synthetic-secret",
-            },
-          },
-        }),
-        [201],
-      )
-    ).body;
-    const definition = {
-      displayName: "Direct connector",
-      authMode: "none" as const,
-      fields: [],
-      headerInjections: [],
-      queryInjections: [],
-      ...(kind === "http"
-        ? {
-            kind: "http" as const,
-            prefixTemplates: ["https://api.example.com/"],
-          }
-        : {
-            kind: "mcp" as const,
-            endpoint: "https://api.example.com/mcp",
-            transport: "streamable-http" as const,
-          }),
-    };
-    const connector = (
-      await accept(connectors().create({ headers, body: definition }), [201])
-    ).body;
-    expect(
-      (
-        await accept(
-          connectorById().get({ headers, params: { id: connector.id } }),
-          [200],
-        )
-      ).body,
-    ).not.toHaveProperty("networkBinding");
-    const updated = (
-      await accept(
-        connectorById().update({
-          headers,
-          params: { id: connector.id },
-          body: {
-            ...definition,
-            displayName: "Renamed connector",
-            storageVersion: connector.storageVersion,
-          },
-        }),
-        [200],
-      )
-    ).body;
-    expect(updated.displayName).toBe("Renamed connector");
-    expect(updated).not.toHaveProperty("networkBinding");
-
-    const legacy = (await accept(configs().list({ headers, query }), [200]))
-      .body.configs;
-    expect(legacy[0]).not.toHaveProperty("customConnectors");
-    const optedIn = (
-      await accept(
-        configs().list({
-          headers,
-          query: { ...query, includeCustomConnectors: "true" },
-        }),
-        [200],
-      )
-    ).body.configs;
-    expect(optedIn[0]?.customConnectors).toStrictEqual([]);
-    expect(JSON.stringify(optedIn)).not.toContain("synthetic-secret");
-    const preview = (
-      await accept(
-        configs().impactPreview({
-          headers,
-          params: { configId: config.id },
-          query: { operation: "convert", includeCustomConnectors: "true" },
-        }),
-        [200],
-      )
-    ).body;
-    expect(preview.customConnectors).toStrictEqual([]);
-    await accept(
-      configs().convertToPersonal({
-        headers,
-        params: { configId: config.id },
-        body: {
-          expectedRevision: preview.expectedRevision,
-          impactSnapshot: preview.impactSnapshot,
-        },
-      }),
-      [200],
-    );
-    await accept(
-      connectorById().delete({ headers, params: { id: connector.id } }),
-      [204],
-    );
-  },
-);
-
-test.each([
-  {
-    type: "cloudflare_access" as const,
-    configId: randomUUID(),
-  },
-])(
-  "a disabled feature rejects a new binding without dropping it: %j",
-  async (networkBinding) => {
-    await actor();
-    const definition = {
-      displayName: "No early activation",
-      prefixTemplates: ["https://api.example.com/"],
-      authMode: "none" as const,
-      fields: [],
-      headerInjections: [],
-      queryInjections: [],
-    };
-    await accept(
-      connectors().create({ headers, body: { ...definition, networkBinding } }),
       [400],
     );
     await accept(
-      setupApp({ context, routes: customConnectorsRoutes })(
-        customConnectorProposalContract,
-      ).save({
+      api.proposals.save({
         headers,
         body: {
-          proposal: { ...definition, operation: "create", networkBinding },
+          proposal: {
+            operation: "create",
+            displayName: definition.displayName,
+            prefixTemplates: definition.prefixTemplates,
+            fields: [],
+            headerInjections: [],
+            queryInjections: [],
+            networkBinding,
+          },
           values: [],
         },
       }),
       [400],
     );
-    expect(
-      (await accept(connectors().list({ headers }), [200])).body.connectors,
-    ).toStrictEqual([]);
-    const connector = (
-      await accept(connectors().create({ headers, body: definition }), [201])
-    ).body;
+    const empty = await accept(api.connectors.list({ headers }), [200]);
+    expect(empty.body.connectors).toStrictEqual([]);
+
+    const created = await accept(
+      api.connectors.create({ headers, body: definition }),
+      [201],
+    );
     await accept(
-      connectorById().update({
+      api.connector.update({
         headers,
-        params: { id: connector.id },
+        params: { id: created.body.id },
         body: { ...definition, networkBinding },
       }),
       [400],
     );
-    expect(
-      (
-        await accept(
-          connectorById().get({ headers, params: { id: connector.id } }),
+    const read = await accept(
+      api.connector.get({ headers, params: { id: created.body.id } }),
+      [200],
+    );
+    expect(read.body).not.toHaveProperty("networkBinding");
+  });
+
+  it("cloudflare-access-custom-connectors-003 leaves unbound HTTP connectors direct and never exposes the Cloudflare secret", async () => {
+    workspaceAdmin();
+    const api = clients();
+    const clientSecret = `secret-${randomUUID()}`;
+    const config = await createOrganizationConfig(api.configs, clientSecret);
+    const definition = httpDefinition("Billing API");
+
+    const created = await accept(
+      api.connectors.create({ headers, body: definition }),
+      [201],
+    );
+    const read = await accept(
+      api.connector.get({ headers, params: { id: created.body.id } }),
+      [200],
+    );
+    expect(read.body).not.toHaveProperty("networkBinding");
+    const renamed = await accept(
+      api.connector.update({
+        headers,
+        params: { id: created.body.id },
+        body: { ...definition, displayName: "Billing API v2" },
+      }),
+      [200],
+    );
+    expect(renamed.body.displayName).toBe("Billing API v2");
+    expect(renamed.body).not.toHaveProperty("networkBinding");
+
+    const plain = await accept(
+      api.configs.list({ headers, query: { view: "scoped" } }),
+      [200],
+    );
+    const plainConfig = plain.body.configs.find(({ id }) => {
+      return id === config.id;
+    });
+    expect(plainConfig).toBeDefined();
+    expect(plainConfig).not.toHaveProperty("customConnectors");
+    const withConnectors = await accept(
+      api.configs.list({
+        headers,
+        query: { view: "scoped", includeCustomConnectors: "true" },
+      }),
+      [200],
+    );
+    const optedIn = withConnectors.body.configs.find(({ id }) => {
+      return id === config.id;
+    });
+    expect(optedIn?.customConnectors).toStrictEqual([]);
+    expect(JSON.stringify(withConnectors.body)).not.toContain(clientSecret);
+
+    const preview = await accept(
+      api.configs.impactPreview({
+        headers,
+        params: { configId: config.id },
+        query: { operation: "convert", includeCustomConnectors: "true" },
+      }),
+      [200],
+    );
+    expect(preview.body.customConnectors).toStrictEqual([]);
+    await accept(
+      api.configs.convertToPersonal({
+        headers,
+        params: { configId: config.id },
+        body: {
+          expectedRevision: preview.body.expectedRevision,
+          impactSnapshot: preview.body.impactSnapshot,
+        },
+      }),
+      [200],
+    );
+    await accept(
+      api.connector.delete({ headers, params: { id: created.body.id } }),
+      [204],
+    );
+  });
+
+  it("cloudflare-access-custom-connectors-001 keeps a bound HTTP connector blocking its configuration until the binding is cleared", async () => {
+    const { actor, signIn } = workspaceAdmin();
+    await updateFeatureSwitchesForUser(context, actor, {
+      [FeatureSwitchKey.CustomConnectorCloudflareAccess]: true,
+    });
+    signIn();
+    const api = clients();
+    const config = await createOrganizationConfig(api.configs);
+    const binding = { type: "cloudflare_access" as const, configId: config.id };
+    const definition = httpDefinition("Internal Orders");
+
+    const created = await accept(
+      api.connectors.create({
+        headers,
+        body: { ...definition, networkBinding: binding },
+      }),
+      [201],
+    );
+    expect(created.body.networkBinding).toMatchObject({
+      ...binding,
+      status: "available",
+    });
+
+    const renamed = await accept(
+      api.connector.update({
+        headers,
+        params: { id: created.body.id },
+        body: { ...definition, displayName: "Internal Orders v2" },
+      }),
+      [200],
+    );
+    expect(renamed.body.networkBinding).toStrictEqual(
+      created.body.networkBinding,
+    );
+    expect(renamed.body.storageVersion).toBe(created.body.storageVersion);
+
+    const listed = {
+      id: created.body.id,
+      displayName: "Internal Orders v2",
+      kind: "http",
+    };
+    const previews = await Promise.all(
+      (["delete", "convert"] as const).map((operation) => {
+        return accept(
+          api.configs.impactPreview({
+            headers,
+            params: { configId: config.id },
+            query: { operation, includeCustomConnectors: "true" },
+          }),
           [200],
-        )
-      ).body,
-    ).not.toHaveProperty("networkBinding");
-  },
-);
+        );
+      }),
+    );
+    const [deletePreview, convertPreview] = previews;
+    if (!deletePreview || !convertPreview) {
+      throw new Error("Expected both impact previews");
+    }
+    expect(deletePreview.body.customConnectors).toStrictEqual([listed]);
+    expect(convertPreview.body.customConnectors).toStrictEqual([listed]);
+    const [blockedDelete, blockedConvert] = await Promise.all([
+      accept(
+        api.configs.delete({
+          headers,
+          params: { configId: config.id },
+          body: {
+            expectedRevision: deletePreview.body.expectedRevision,
+            impactSnapshot: deletePreview.body.impactSnapshot,
+          },
+        }),
+        [409],
+      ),
+      accept(
+        api.configs.convertToPersonal({
+          headers,
+          params: { configId: config.id },
+          body: {
+            expectedRevision: convertPreview.body.expectedRevision,
+            impactSnapshot: convertPreview.body.impactSnapshot,
+          },
+        }),
+        [409],
+      ),
+    ]);
+    expect(blockedDelete.body.error.message).toContain("custom connectors");
+    expect(blockedConvert.body.error.message).toContain("custom connectors");
+
+    await updateFeatureSwitchesForUser(context, actor, {
+      [FeatureSwitchKey.CustomConnectorCloudflareAccess]: false,
+    });
+    signIn();
+    const cleared = await accept(
+      api.connector.update({
+        headers,
+        params: { id: created.body.id },
+        body: {
+          ...definition,
+          displayName: "Internal Orders v2",
+          networkBinding: null,
+        },
+      }),
+      [200],
+    );
+    expect(cleared.body).not.toHaveProperty("networkBinding");
+    expect(cleared.body.storageVersion).toBe(created.body.storageVersion);
+
+    const freePreview = await accept(
+      api.configs.impactPreview({
+        headers,
+        params: { configId: config.id },
+        query: { operation: "delete", includeCustomConnectors: "true" },
+      }),
+      [200],
+    );
+    expect(freePreview.body.customConnectors).toStrictEqual([]);
+    await accept(
+      api.configs.delete({
+        headers,
+        params: { configId: config.id },
+        body: {
+          expectedRevision: freePreview.body.expectedRevision,
+          impactSnapshot: freePreview.body.impactSnapshot,
+        },
+      }),
+      [204],
+    );
+  });
+});

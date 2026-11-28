@@ -1,1542 +1,1213 @@
-import { randomUUID } from "node:crypto";
-import { GetObjectCommand, PutObjectCommand } from "@aws-sdk/client-s3";
 import { browserContract } from "@okouai/api-contracts/contracts/browser";
-
-import { describe, expect, it } from "vitest";
+import { browserUserActionsContract } from "@okouai/api-contracts/contracts/browser-user-actions";
 import { HttpResponse, http } from "msw";
-import { accept, testContext } from "../../../__tests__/test-context";
+import { beforeAll, describe, expect, it, onTestFinished } from "vitest";
+import { literal, object, string } from "zod";
 import { TEST_BROWSER_EXTENSION } from "../../../__tests__/browser-extension";
+import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-
-import { mockNow } from "../../../lib/time";
+import {
+  TEST_WITH_DOUBLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE,
+  TEST_WITH_SINGLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE,
+} from "../../../__tests__/test-timeouts";
+import { clearMockNow, mockNow, nowDate } from "../../../lib/time";
 import { server } from "../../../mocks/server";
-import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createDeferredPromise, settleIncludingAbort } from "../../utils";
 import { browserRoutes } from "../browser";
+import { browserUserActionRoutes } from "../browser-user-actions";
 import { createBddApi } from "./helpers/api-bdd";
-import { installBrowserWindowContentCommands } from "./helpers/browser-native-window";
-
-import { createBddIntegrationApi } from "./helpers/api-bdd-integrations";
-import { createRunReadsApi } from "./helpers/api-bdd-run-reads";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
-import { okouTokenFromExecution } from "./helpers/chat-events-fixture";
-
-import { uniqueSlackUserId } from "./helpers/slack-public-install";
-import { holdSecretKms } from "./helpers/hold-secret-kms";
 import {
   createBrowserFixtures,
   MINUTE,
   PROVIDER_URL,
   START,
 } from "./helpers/browser-fixture";
+import { okouTokenFromExecution } from "./helpers/chat-events-fixture";
 
 const context = testContext();
-const { fixture, view, renew } = createBrowserFixtures(context);
-const headers = Object.freeze({ authorization: "Bearer clerk-session" });
-function client() {
+const runsApi = createRunsApi(context);
+const browserFixtures = createBrowserFixtures(context);
+const sessionHeaders = Object.freeze({
+  authorization: "Bearer clerk-session",
+});
+const PASSWORD_NODE_ID = 101;
+const FILE_NODE_ID = 201;
+
+function deferred() {
+  return createDeferredPromise<void>(context.signal);
+}
+
+function browserClient() {
   return setupApp({ context, routes: browserRoutes })(browserContract);
 }
-type Chat = Awaited<ReturnType<Awaited<ReturnType<typeof fixture>>["start"]>>;
-function runHeaders(chat: Chat) {
-  return { authorization: `Bearer ${okouTokenFromExecution(chat.execution)}` };
-}
-async function use(chat: Chat) {
-  return (
-    await accept(client().use({ headers: runHeaders(chat), body: {} }), [200])
-  ).body;
-}
 
-describe("shared Browser public consumers", () => {
-  it.each([false, true])(
-    "keeps screenshot attribution with out-of-order membership replies and moved=%s",
-    async (moved) => {
-      const f = await fixture();
-      await f.owned.run(async () => {
-        installBrowserWindowContentCommands(f.provider.native);
-        const a = await f.start();
-        const b = await f.start();
-        const first = await use(a);
-        const sibling = await use(b);
-        const aPage = [...f.provider.native.targets.values()].find((page) => {
-          return page.windowId === first.browser.window?.primaryWindowId;
-        });
-        const bPage = [...f.provider.native.targets.values()].find((page) => {
-          return page.windowId === sibling.browser.window?.primaryWindowId;
-        });
-        if (!aPage || !bPage) {
-          throw new Error("Expected both chats' native pages");
-        }
-        const siblingRead = createDeferredPromise<void>(context.signal);
-        f.provider.native.beforeWindowForTargetReply = async (targetId) => {
-          if (targetId === aPage.targetId && !siblingRead.settled()) {
-            await siblingRead.promise;
-          }
-          if (targetId === bPage.targetId && !siblingRead.settled()) {
-            siblingRead.resolve();
-          }
-        };
-        const contentCommand = f.provider.native.command;
-        const send = context.mocks.s3.send.getMockImplementation();
-        if (!contentCommand || !send) {
-          throw new Error("Expected external CDP and S3 fixtures");
-        }
-        f.provider.native.command = (command) => {
-          if (moved && command.method === "Page.captureScreenshot") {
-            aPage.windowId = bPage.windowId;
-          }
-          return contentCommand(command);
-        };
-        const uploaded: string[] = [];
-        context.mocks.s3.send.mockImplementation((command) => {
-          if (
-            command instanceof PutObjectCommand &&
-            command.input.ContentType === "image/webp"
-          ) {
-            uploaded.push(String(command.input.Body));
-          }
-          return send(command);
-        });
-        await accept(
-          client().close({
-            headers,
-            params: { threadId: a.threadId },
-            body: {},
-          }),
-          [200],
-        );
-        await flushWaitUntilForTest();
-        const preview = await view(a);
-        if (moved) {
-          expect(preview.screenshotUrl).toBeNull();
-          expect(uploaded).toStrictEqual([]);
-        } else {
-          expect(preview.screenshotUrl).not.toBeNull();
-          expect(uploaded).toStrictEqual([`preview:${aPage.targetId}`]);
-        }
-        expect((await view(b)).window).toStrictEqual(sibling.browser.window);
-      });
-    },
+function userActionsClient() {
+  return setupApp({ context, routes: browserUserActionRoutes })(
+    browserUserActionsContract,
   );
+}
 
-  it("reports a suspended Browser when its chat window expires during acquisition", async () => {
-    const f = await fixture();
-    await f.owned.run(async () => {
-      const a = await f.start();
-      await use(a);
-      const [providerSessionId] = f.provider.sessionIds;
-      const entered = createDeferredPromise<void>(context.signal);
-      const release = createDeferredPromise<void>(context.signal);
-      server.use(
-        http.get(
-          `${PROVIDER_URL}/browsers/${providerSessionId}`,
-          async () => {
-            entered.resolve();
-            await release.promise;
-            // Continue to the fixture's active provider response after the lease expires.
+function requireActiveWindow(
+  session: Awaited<ReturnType<typeof browserFixtures.view>>,
+) {
+  if (session.status !== "active") {
+    throw new Error("Expected an active Browser session");
+  }
+  return session.window;
+}
+
+function findWindowTarget(
+  provider: ReturnType<typeof browserFixtures.profileProvider>,
+  windowId: number,
+) {
+  const target = [...provider.native.targets.values()].find((entry) => {
+    return entry.windowId === windowId;
+  });
+  if (!target) {
+    throw new Error(`Expected target in window ${String(windowId)}`);
+  }
+  return target;
+}
+
+function urlsInWindow(
+  provider: ReturnType<typeof browserFixtures.profileProvider>,
+  windowId: number,
+) {
+  return [...provider.native.targets.values()]
+    .filter((entry) => {
+      return entry.windowId === windowId;
+    })
+    .map((entry) => {
+      return entry.url;
+    });
+}
+
+interface ObservedFile {
+  readonly name: string;
+  readonly size: number;
+  readonly type: string;
+}
+
+interface InputWriteRecord {
+  readonly targetId: string;
+  readonly value?: string;
+  readonly operation?: string;
+}
+
+function installInputCommands(
+  provider: ReturnType<typeof browserFixtures.profileProvider>,
+  options: { readonly initialFiles?: readonly ObservedFile[] } = {},
+) {
+  let files: ObservedFile[] = [...(options.initialFiles ?? [])];
+  const writes: InputWriteRecord[] = [];
+  const nodeByObjectId = new Map<
+    string,
+    { readonly targetId: string; readonly backendNodeId: number }
+  >();
+
+  function handleRuntimeCallFunctionOn(
+    targetId: string,
+    params: Record<string, unknown>,
+  ) {
+    const fn = String(params.functionDeclaration ?? "");
+    const objectId = String(params.objectId ?? "");
+    const resolved = nodeByObjectId.get(objectId);
+    if (fn.includes("supportedInputTypes")) {
+      return {
+        result: {
+          value: [
+            resolved?.backendNodeId === FILE_NODE_ID
+              ? {
+                  tagName: "INPUT",
+                  inputType: "file",
+                  connected: true,
+                  mainDocument: true,
+                  writable: true,
+                  siteRequired: false,
+                  multiple: false,
+                  accept: ".pdf",
+                  files: [...files],
+                }
+              : {
+                  tagName: "INPUT",
+                  inputType: "password",
+                  connected: true,
+                  mainDocument: true,
+                  writable: true,
+                  siteRequired: false,
+                  multiple: false,
+                },
+          ],
+        },
+      };
+    }
+    const args = Array.isArray(params.arguments)
+      ? (params.arguments as readonly { readonly value?: unknown }[])
+      : [];
+    if (fn.includes("DataTransfer")) {
+      const operation = String(args[1]?.value ?? "");
+      writes.push({ targetId, operation });
+      if (operation === "clear") {
+        files = [];
+      }
+      return { result: { value: true } };
+    }
+    if (fn.includes("JSON.stringify(expected)")) {
+      return { result: { value: true } };
+    }
+    const firstSpec = args[0]?.value;
+    if (
+      typeof firstSpec === "object" &&
+      firstSpec !== null &&
+      !("verifyOnly" in firstSpec)
+    ) {
+      const value =
+        "value" in firstSpec && typeof firstSpec.value === "string"
+          ? firstSpec.value
+          : undefined;
+      writes.push({ targetId, value });
+    }
+    return { result: { value: true } };
+  }
+
+  provider.native.command = (command) => {
+    const targetId = command.sessionId?.startsWith("page-")
+      ? command.sessionId.slice("page-".length)
+      : "";
+    if (command.method === "Target.attachToTarget") {
+      return { sessionId: `page-${String(command.params.targetId)}` };
+    }
+    if (command.method === "Page.getFrameTree") {
+      const target = provider.native.targets.get(targetId);
+      return {
+        frameTree: {
+          frame: {
+            id: "main-frame",
+            loaderId: "loader-1",
+            url: target?.url ?? "about:blank",
           },
-          { once: true },
-        ),
-      );
-      const connection = client().get({
-        headers,
-        params: { threadId: a.threadId },
-        query: { viewer: "native" },
-      });
-      await entered.promise;
-      mockNow(START + 11 * MINUTE);
-      release.resolve();
-      await expect(connection).resolves.toMatchObject({
-        status: 200,
-        body: { browser: { status: "suspended" }, viewer: null },
-      });
+        },
+      };
+    }
+    if (command.method === "Page.createIsolatedWorld") {
+      return { executionContextId: 1 };
+    }
+    if (command.method === "DOM.resolveNode") {
+      const backendNodeId = Number(command.params.backendNodeId);
+      const objectId = `node-${targetId}-${String(backendNodeId)}`;
+      nodeByObjectId.set(objectId, { targetId, backendNodeId });
+      return { object: { objectId } };
+    }
+    if (command.method === "Runtime.callFunctionOn") {
+      return handleRuntimeCallFunctionOn(targetId, command.params);
+    }
+    throw new Error(`Unexpected input CDP command: ${command.method}`);
+  };
+
+  return {
+    writes,
+    getFiles() {
+      return files;
+    },
+  };
+}
+
+async function setupSharedWindows(
+  urlA: string,
+  urlB: string,
+  options: { readonly initialFiles?: readonly ObservedFile[] } = {},
+) {
+  const { owned, start, provider } = await browserFixtures.fixture();
+  const cdp = installInputCommands(provider, options);
+  const chatA = await start();
+  const chatB = await start();
+
+  const browserA = await browserFixtures.open(chatA);
+  const windowA = requireActiveWindow(browserA);
+  expect(windowA.primaryWindowId).toBe(0);
+
+  provider.native.windowIds.push(17);
+  const browserB = await browserFixtures.open(chatB);
+  const windowB = requireActiveWindow(browserB);
+  expect(windowB.primaryWindowId).toBe(17);
+
+  const targetA = findWindowTarget(provider, windowA.primaryWindowId);
+  const targetB = findWindowTarget(provider, windowB.primaryWindowId);
+  targetA.url = urlA;
+  targetB.url = urlB;
+
+  return {
+    owned,
+    provider,
+    cdp,
+    chatA,
+    chatB,
+    windowA,
+    windowB,
+    targetA,
+    targetB,
+  };
+}
+
+function passwordCreateBody(pageTargetId: string) {
+  return {
+    kind: "input" as const,
+    title: "Sign in to portal",
+    reason: "Enter your password to continue",
+    callbackPrompt: "Continue after sign-in",
+    pageTargetId,
+    fields: [
+      {
+        key: "password",
+        label: "Password",
+        fieldKind: "password" as const,
+        required: true,
+        backendNodeId: PASSWORD_NODE_ID,
+      },
+    ],
+  };
+}
+
+function fileCreateBody(pageTargetId: string) {
+  return {
+    kind: "input" as const,
+    title: "Upload receipt",
+    reason: "Provide or clear the document on this form",
+    callbackPrompt: "Continue after upload",
+    pageTargetId,
+    fields: [
+      {
+        key: "document",
+        label: "Document",
+        fieldKind: "file" as const,
+        required: false,
+        backendNodeId: FILE_NODE_ID,
+      },
+    ],
+  };
+}
+
+describe("shared Browser lifecycle, reclaim, recovery, and native input", () => {
+  beforeAll(async () => {
+    await settleIncludingAbort(async () => {
+      const warmupUser = createBddApi(context).user();
+      await runsApi.grantProEntitlement(warmupUser);
+      await runsApi.configureRunnerGroup();
     });
   });
 
-  it("creates a proxyless shared Browser with the required extension", async () => {
-    const f = await fixture();
-    await f.owned.run(async () => {
-      installBrowserWindowContentCommands(f.provider.native);
-      const a = await f.start();
-      const result = await accept(
-        client().create({
-          headers: runHeaders(a),
+  it(
+    "browser-profile-cleanup-001 publishes one owner instance and cleans only the losing profile during concurrent first opens",
+    { timeout: TEST_WITH_DOUBLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      mockNow(START);
+      onTestFinished(() => {
+        clearMockNow();
+      });
+
+      let arrived = 0;
+      const bothArrived = deferred();
+      const provider = browserFixtures.profileProvider(async () => {
+        arrived += 1;
+        if (arrived === 2) {
+          bothArrived.resolve();
+        }
+        await bothArrived.promise;
+      });
+      const { start } = await browserFixtures.fixture(provider);
+      const chatA = await start();
+      const chatB = await start();
+
+      const [resA, resB] = await Promise.all([
+        accept(
+          browserClient().use({
+            headers: {
+              authorization: `Bearer ${okouTokenFromExecution(chatA.execution)}`,
+            },
+            body: {},
+          }),
+          [200, 409],
+        ),
+        accept(
+          browserClient().use({
+            headers: {
+              authorization: `Bearer ${okouTokenFromExecution(chatB.execution)}`,
+            },
+            body: {},
+          }),
+          [200, 409],
+        ),
+      ]);
+
+      expect([resA.status, resB.status].sort()).toStrictEqual([200, 409]);
+      expect(provider.createdIds).toHaveLength(2);
+      expect(provider.sessionRequests).toHaveLength(1);
+
+      const { profileId: winningProfileId } = object({
+        profileId: string(),
+      }).parse(provider.sessionRequests[0]);
+      const losingProfileId = provider.createdIds.find((id) => {
+        return id !== winningProfileId;
+      });
+      if (!losingProfileId) {
+        throw new Error("Expected a losing profile ID");
+      }
+
+      const [winnerCheck, loserCheck] = await Promise.all([
+        fetch(`${PROVIDER_URL}/profiles/${winningProfileId}`),
+        fetch(`${PROVIDER_URL}/profiles/${losingProfileId}`),
+      ]);
+      expect(winnerCheck.status).toBe(200);
+      expect(loserCheck.status).toBe(404);
+    },
+  );
+
+  it(
+    "browser-reclaim-012 leaves an intentionally moved page in its current sibling window",
+    { timeout: TEST_WITH_DOUBLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      mockNow(START);
+      onTestFinished(() => {
+        clearMockNow();
+      });
+
+      const { start, provider } = await browserFixtures.fixture();
+      const chatA = await start();
+      const chatB = await start();
+      const browserA = await browserFixtures.open(chatA);
+      const browserB = await browserFixtures.open(chatB);
+      const windowA = requireActiveWindow(browserA);
+      const windowB = requireActiveWindow(browserB);
+
+      const targetA = findWindowTarget(provider, windowA.primaryWindowId);
+      targetA.url = "https://a.example.test/moved";
+      targetA.windowId = windowB.primaryWindowId;
+
+      mockNow(START + 9 * MINUTE);
+      await browserFixtures.renew(chatB);
+
+      mockNow(START + 11 * MINUTE);
+      const reopenedA = await browserFixtures.open(chatA);
+      const reopenedWindowA = requireActiveWindow(reopenedA);
+
+      expect(reopenedWindowA.instanceId).toBe(windowA.instanceId);
+      const urlsInB = urlsInWindow(provider, windowB.primaryWindowId);
+      expect(urlsInB).toHaveLength(2);
+      expect(urlsInB).toContain("https://a.example.test/moved");
+      expect(provider.sessionRequests).toHaveLength(1);
+    },
+  );
+
+  it(
+    "browser-reclaim-003 saves and restores expired A in the same instance while preserving active B",
+    { timeout: TEST_WITH_DOUBLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      mockNow(START);
+      onTestFinished(() => {
+        clearMockNow();
+      });
+
+      const { start, provider } = await browserFixtures.fixture();
+      const chatA = await start();
+      const chatB = await start();
+      const browserA = await browserFixtures.open(chatA);
+      const browserB = await browserFixtures.open(chatB);
+      const windowA = requireActiveWindow(browserA);
+      const windowB = requireActiveWindow(browserB);
+
+      findWindowTarget(provider, windowA.primaryWindowId).url =
+        "https://a.example.test/task";
+      const targetB = findWindowTarget(provider, windowB.primaryWindowId);
+      targetB.url = "https://b.example.test/task";
+
+      mockNow(START + 9 * MINUTE);
+      const renewedB = await browserFixtures.renew(chatB);
+      const renewedExpiryB = renewedB.idleExpiresAt;
+
+      mockNow(START + 11 * MINUTE);
+      const recoveredA = await browserFixtures.open(chatA);
+      const readB = await browserFixtures.view(chatB);
+      const recoveredWindowA = requireActiveWindow(recoveredA);
+
+      expect(recoveredWindowA.instanceId).toBe(windowA.instanceId);
+      expect(recoveredWindowA.primaryWindowId).not.toBe(
+        windowA.primaryWindowId,
+      );
+      expect(
+        urlsInWindow(provider, recoveredWindowA.primaryWindowId),
+      ).toStrictEqual(["https://a.example.test/task"]);
+      expect(urlsInWindow(provider, windowB.primaryWindowId)).toStrictEqual([
+        "https://b.example.test/task",
+      ]);
+      expect(requireActiveWindow(readB)).toStrictEqual(windowB);
+      expect(readB.idleExpiresAt).toBe(renewedExpiryB);
+      expect(provider.sessionRequests).toHaveLength(1);
+    },
+  );
+
+  it(
+    "browser-lifecycle-004 creates a proxyless shared Browser with the required extension",
+    { timeout: TEST_WITH_SINGLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      mockNow(START);
+      onTestFinished(() => {
+        clearMockNow();
+      });
+
+      const { start, provider } = await browserFixtures.fixture();
+      const chat = await start();
+
+      const created = await accept(
+        browserClient().create({
+          headers: {
+            authorization: `Bearer ${okouTokenFromExecution(chat.execution)}`,
+          },
           body: { name: "Research browser" },
         }),
         [201],
       );
-      expect(result.status).toBe(201);
-      expect(result.body).toMatchObject({
-        browser: { name: "Research browser", status: "active" },
-      });
-      expect(result.body.extension).toStrictEqual(TEST_BROWSER_EXTENSION);
-      expect(f.provider.sessionRequests).toStrictEqual([
-        expect.objectContaining({ proxyCountryCode: null }),
-      ]);
-    });
-  });
 
-  it("recovers a missing provider instance and preserves provider failures as failures", async () => {
-    const f = await fixture();
-    await f.owned.run(async () => {
-      installBrowserWindowContentCommands(f.provider.native);
-      const a = await f.start();
-      const first = await use(a);
-      const b = await f.start();
-      const sibling = await use(b);
-      const [providerSessionId] = f.provider.sessionIds;
-      if (!providerSessionId) {
-        throw new Error("Expected the shared provider instance");
-      }
-      for (const target of f.provider.native.targets.values()) {
-        target.url =
-          target.windowId === first.browser.window?.primaryWindowId
-            ? "https://a.example.test/recovered"
-            : "https://b.example.test/recovered";
-      }
-      await accept(
-        client().close({ headers, params: { threadId: a.threadId }, body: {} }),
-        [200],
-      );
-      await accept(
-        client().close({ headers, params: { threadId: b.threadId }, body: {} }),
-        [200],
-      );
-      let missing = false;
-      server.use(
-        http.get(`${PROVIDER_URL}/browsers/${providerSessionId}`, () => {
-          return HttpResponse.json(
-            { detail: missing ? "Browser missing" : "Provider unavailable" },
-            { status: missing ? 404 : 503 },
-          );
-        }),
-      );
+      expect(created.body.browser.name).toBe("Research browser");
+      expect(created.body.browser.status).toBe("active");
+      expect(created.body.extension).toStrictEqual(TEST_BROWSER_EXTENSION);
+      expect(provider.sessionRequests).toHaveLength(1);
       expect(
-        (await client().use({ headers: runHeaders(a), body: {} })).status,
-      ).toBe(502);
-      expect(f.provider.sessionRequests).toHaveLength(1);
-      missing = true;
-      f.provider.native.targets.clear();
-      const reopened = await use(a);
-      expect(reopened.browser.window?.instanceId).not.toBe(
-        first.browser.window?.instanceId,
-      );
-      expect(f.provider.createdIds).toHaveLength(1);
-      expect(f.provider.sessionRequests).toHaveLength(2);
-      expect((await view(b)).status).toBe("suspended");
-      expect(
-        [...f.provider.native.targets.values()].map((page) => {
-          return page.url;
-        }),
-      ).toStrictEqual(["https://a.example.test/recovered"]);
-      const restoredB = await use(b);
-      expect(restoredB.browser.window?.instanceId).toBe(
-        reopened.browser.window?.instanceId,
-      );
-      expect(restoredB.browser.window).not.toStrictEqual(
-        sibling.browser.window,
-      );
-      expect(
-        [...f.provider.native.targets.values()]
-          .filter((page) => {
-            return page.windowId === restoredB.browser.window?.primaryWindowId;
-          })
-          .map((page) => {
-            return page.url;
-          }),
-      ).toStrictEqual(["https://b.example.test/recovered"]);
-    });
-  });
+        object({ proxyCountryCode: literal(null) }).parse(
+          provider.sessionRequests[0],
+        ).proxyCountryCode,
+      ).toBeNull();
+    },
+  );
 
-  it("shares the owner Browser with a Slack chat and preserves its window after the Run ends", async () => {
-    const f = await fixture();
-    await f.owned.run(async () => {
-      installBrowserWindowContentCommands(f.provider.native);
-      const web = await use(await f.start());
-      const actor = f.owned.actor;
-      const integrations = createBddIntegrationApi(context);
-      const runs = createRunsApi(context);
-      integrations.configureSlackAppMocks();
-      await createBddApi(context).provisionWorkspace(actor);
-      const slackUserId = uniqueSlackUserId();
-      const { teamId } = await integrations.installSlackWorkspace(actor, {
-        installerSlackUserId: slackUserId,
+  it(
+    "browser-lifecycle-007 provisions one profile and instance for two chats, reads and resizes only each owned window",
+    { timeout: TEST_WITH_DOUBLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      mockNow(START);
+      onTestFinished(() => {
+        clearMockNow();
       });
-      await integrations.postSlackEvent(teamId, {
-        type: "app_mention",
-        user: slackUserId,
-        text: "Use my Browser in this Slack chat",
-        ts: "3000.000100",
-        channel: "C_SHARED_BROWSER",
-        channel_type: "channel",
-      });
-      await runs.heartbeatRunner(f.owned.runnerGroup);
-      await flushWaitUntilForTest();
-      const input = await runs.nextReceivedExecution(f.owned.runnerGroup);
-      const runId = input.runId;
-      expect(
-        (
-          await createRunReadsApi(context).requestReadLogById(
-            actor,
-            runId,
-            [200],
-          )
-        ).body.triggerSource,
-      ).toBe("slack");
-      const execution = await f.owned.executionInput(runId);
-      const used = await accept(
-        client().use({
-          headers: {
-            authorization: `Bearer ${okouTokenFromExecution(execution)}`,
-          },
-          body: {},
-        }),
-        [200],
-      );
-      const slack = used.body.browser;
-      expect(slack.window?.instanceId).toBe(web.browser.window?.instanceId);
-      expect(slack.window?.primaryWindowId).not.toBe(
-        web.browser.window?.primaryWindowId,
-      );
-      await createWebhookCallbackApi(context).requestAgentComplete(
-        { runId, exitCode: 1, error: "The fixture Run finished" },
-        { authorization: `Bearer ${execution.sandboxToken}` },
-        [200],
-      );
-      await flushWaitUntilForTest();
-      const viewed = await accept(
-        client().get({ headers, params: { threadId: slack.threadId } }),
-        [200],
-      );
-      expect(viewed.body.browser.window).toStrictEqual(slack.window);
-      expect(f.provider.sessionRequests).toHaveLength(1);
-    });
-  });
 
-  it("provisions one profile and instance for two chats, reads and resizes only each owned window", async () => {
-    const f = await fixture();
-    await f.owned.run(async () => {
-      const external = installBrowserWindowContentCommands(f.provider.native);
-      const a = await f.start();
-      const b = await f.start();
-      const first = await use(a);
-      expect(first.extension).toStrictEqual(TEST_BROWSER_EXTENSION);
-      expect(first.cdpUrl).toBe(f.provider.cdpUrl);
-      const current = await accept(
-        client().current({ headers: runHeaders(a) }),
+      const { start, provider } = await browserFixtures.fixture();
+      const chatA = await start();
+      const chatB = await start();
+      const tokenA = {
+        authorization: `Bearer ${okouTokenFromExecution(chatA.execution)}`,
+      };
+      const tokenB = {
+        authorization: `Bearer ${okouTokenFromExecution(chatB.execution)}`,
+      };
+
+      const useA1 = await accept(
+        browserClient().use({ headers: tokenA, body: {} }),
         [200],
       );
-      expect(current.body.browser.window).toStrictEqual(first.browser.window);
-      const resized = await accept(
-        client().resizeByThread({
-          headers,
-          params: { threadId: a.threadId },
+      const windowA = requireActiveWindow(useA1.body.browser);
+      expect(useA1.body.extension).toStrictEqual(TEST_BROWSER_EXTENSION);
+      expect(useA1.body.cdpUrl).toBe(provider.cdpUrl);
+
+      const currentA = await accept(
+        browserClient().current({ headers: tokenA }),
+        [200],
+      );
+      expect(requireActiveWindow(currentA.body.browser)).toStrictEqual(windowA);
+
+      const resizedA = await accept(
+        browserClient().resizeByThread({
+          headers: sessionHeaders,
+          params: { threadId: chatA.threadId },
           body: { aspectRatio: 2 },
         }),
         [200],
       );
-      expect(resized.body.browser.window).toStrictEqual(first.browser.window);
-      const second = await use(b);
-      expect(second.extension).toStrictEqual(first.extension);
-      expect(second.cdpUrl).toBe(first.cdpUrl);
-      expect(first.browser.window?.instanceId).toBe(
-        second.browser.window?.instanceId,
+      expect(requireActiveWindow(resizedA.body.browser)).toStrictEqual(windowA);
+
+      const useB = await accept(
+        browserClient().use({ headers: tokenB, body: {} }),
+        [200],
       );
-      expect(first.browser.window?.primaryWindowId).not.toBe(
-        second.browser.window?.primaryWindowId,
+      const windowB = requireActiveWindow(useB.body.browser);
+      expect(useB.body.extension).toStrictEqual(TEST_BROWSER_EXTENSION);
+      expect(useB.body.cdpUrl).toBe(provider.cdpUrl);
+      expect(windowB.instanceId).toBe(windowA.instanceId);
+      expect(windowB.primaryWindowId).not.toBe(windowA.primaryWindowId);
+
+      const useA2 = await accept(
+        browserClient().use({ headers: tokenA, body: {} }),
+        [200],
       );
-      const reused = await use(a);
-      expect(reused).toMatchObject({
-        browser: { window: first.browser.window },
-        extension: first.extension,
-        cdpUrl: first.cdpUrl,
-      });
-      expect(f.provider.createdIds).toHaveLength(1);
-      expect(f.provider.sessionRequests).toHaveLength(1);
-      expect(f.provider.sessionRequests[0]).toMatchObject({
-        profileId: f.provider.createdIds[0],
+      expect(requireActiveWindow(useA2.body.browser)).toStrictEqual(windowA);
+      expect(useA2.body.extension).toStrictEqual(TEST_BROWSER_EXTENSION);
+      expect(useA2.body.cdpUrl).toBe(provider.cdpUrl);
+
+      const readB1 = await browserFixtures.view(chatB);
+      expect(requireActiveWindow(readB1)).toStrictEqual(windowB);
+      expect(provider.createdIds).toHaveLength(1);
+      expect(provider.sessionRequests).toHaveLength(1);
+      expect(
+        object({
+          profileId: string(),
+          proxyCountryCode: literal(null),
+        }).parse(provider.sessionRequests[0]),
+      ).toStrictEqual({
+        profileId: provider.createdIds[0],
         proxyCountryCode: null,
       });
       expect(
-        external.sizes.get(Number(first.browser.window?.primaryWindowId)),
+        provider.native.contentsSizes.get(windowA.primaryWindowId),
       ).toStrictEqual({ width: 1440, height: 720 });
       expect(
-        external.sizes.get(Number(second.browser.window?.primaryWindowId)),
+        provider.native.contentsSizes.get(windowB.primaryWindowId),
       ).toStrictEqual({ width: 1440, height: 900 });
-      const unchanged = await accept(
-        client().get({ headers, params: { threadId: b.threadId } }),
-        [200],
-      );
-      expect(unchanged.body.browser.window).toStrictEqual(
-        second.browser.window,
-      );
+
       mockNow(START + MINUTE);
-      const leased = await accept(
-        client().lease({ headers: runHeaders(a), body: {} }),
+      const leasedA = await accept(
+        browserClient().lease({ headers: tokenA, body: {} }),
         [200],
       );
-      expect(Date.parse(String(leased.body.browser.idleExpiresAt))).toBe(
-        START + 11 * MINUTE,
-      );
-      const sibling = await view(b);
-      expect(Date.parse(String(sibling.idleExpiresAt))).toBe(
-        START + 10 * MINUTE,
-      );
-    });
-  });
+      const readB2 = await browserFixtures.view(chatB);
 
-  it("captures only the chat URLs and reopens a new window without recreating the live owner instance", async () => {
-    const f = await fixture();
-    await f.owned.run(async () => {
-      installBrowserWindowContentCommands(f.provider.native);
-      const a = await f.start();
-      const b = await f.start();
-      const first = await use(a);
-      const second = await use(b);
-      const window = first.browser.window;
-      if (!window) {
-        throw new Error("Expected the public Browser window");
-      }
-      for (const target of f.provider.native.targets.values()) {
-        target.url =
-          target.windowId === window.primaryWindowId
-            ? "https://a.example.test/saved"
-            : "https://b.example.test/private";
-      }
-      await accept(
-        client().close({ headers, params: { threadId: a.threadId }, body: {} }),
-        [200],
-      );
-      // Native closure must leave recovery dependent on the sidebar capture.
-      for (const [id, target] of f.provider.native.targets) {
-        if (target.windowId === window.primaryWindowId) {
-          f.provider.native.targets.delete(id);
-        }
-      }
-      const resumed = await use(a);
-      expect(resumed.browser.window?.instanceId).toBe(window.instanceId);
-      expect(resumed.browser.window?.primaryWindowId).not.toBe(
-        window.primaryWindowId,
-      );
-      const restored = [...f.provider.native.targets.values()].filter(
-        (target) => {
-          return target.windowId === resumed.browser.window?.primaryWindowId;
-        },
-      );
-      expect(
-        restored.map((target) => {
-          return target.url;
-        }),
-      ).toStrictEqual(["https://a.example.test/saved"]);
-      expect((await use(b)).browser.window).toStrictEqual(
-        second.browser.window,
-      );
-      expect(f.provider.sessionRequests).toHaveLength(1);
       mockNow(START + 11 * MINUTE);
-      const restarted = await use(a);
-      expect(restarted.browser.window?.instanceId).not.toBe(window.instanceId);
-      expect(f.provider.createdIds).toHaveLength(1);
-      expect(f.provider.sessionRequests).toHaveLength(2);
-      expect(f.provider.sessionRequests[1]).toMatchObject({
-        profileId: f.provider.createdIds[0],
-        proxyCountryCode: null,
+      const expectedExpiryA = nowDate().toISOString();
+      mockNow(START + 10 * MINUTE);
+      const expectedExpiryB = nowDate().toISOString();
+
+      expect(leasedA.body.browser.idleExpiresAt).toBe(expectedExpiryA);
+      expect(readB2.idleExpiresAt).toBe(expectedExpiryB);
+    },
+  );
+
+  it(
+    "browser-lifecycle-031 initializes native contents before publishing a window",
+    { timeout: TEST_WITH_DOUBLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      mockNow(START);
+      onTestFinished(() => {
+        clearMockNow();
       });
-      expect(
-        [...f.provider.native.targets.values()].map((target) => {
-          return target.url;
+
+      const { start, provider } = await browserFixtures.fixture();
+      const chatB = await start();
+      const browserB = await browserFixtures.open(chatB);
+      const windowB = requireActiveWindow(browserB);
+
+      provider.native.beforeCreateReply = (target) => {
+        provider.native.contentsSizes.set(target.windowId, {
+          width: 1440,
+          height: 776,
+        });
+      };
+
+      const resizedB = await accept(
+        browserClient().resizeByThread({
+          headers: sessionHeaders,
+          params: { threadId: chatB.threadId },
+          body: { aspectRatio: 2 },
         }),
-      ).toStrictEqual(["https://a.example.test/saved"]);
-      const sleepingSibling = await accept(
-        client().get({ headers, params: { threadId: b.threadId } }),
         [200],
       );
-      expect(sleepingSibling.body.browser.status).toBe("suspended");
-      expect(sleepingSibling.body.browser.window).toBeUndefined();
-    });
-  });
+      expect(resizedB.status).toBe(200);
+      expect(
+        provider.native.contentsSizes.get(windowB.primaryWindowId),
+      ).toStrictEqual({ width: 1440, height: 720 });
 
-  it("retains chat metadata and preview while another chat replaces the owner instance", async () => {
-    const f = await fixture();
-    await f.owned.run(async () => {
-      installBrowserWindowContentCommands(f.provider.native);
-      const a = await f.start();
-      const b = await f.start();
-      const first = await use(a);
-      const named = await accept(
-        client().create({
-          headers: runHeaders(b),
-          body: { name: "Travel research" },
+      const chatA = await start();
+      const browserA = await browserFixtures.open(chatA);
+      const windowA = requireActiveWindow(browserA);
+
+      expect(
+        provider.native.contentsSizes.get(windowA.primaryWindowId),
+      ).toStrictEqual({ width: 1440, height: 900 });
+    },
+  );
+
+  it(
+    "browser-native-extension-004 restores accepted URLs and eventually stops the Browser after unfinished window close",
+    { timeout: TEST_WITH_DOUBLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      mockNow(START);
+      onTestFinished(() => {
+        clearMockNow();
+      });
+
+      const { start, provider } = await browserFixtures.fixture();
+      const chatA = await start();
+      const chatB = await start();
+      const browserA = await browserFixtures.open(chatA);
+      const browserB = await browserFixtures.open(chatB);
+      const windowA = requireActiveWindow(browserA);
+      const windowB = requireActiveWindow(browserB);
+
+      const oldTargetA = findWindowTarget(provider, windowA.primaryWindowId);
+      oldTargetA.url = "https://a.example.test/accepted";
+
+      mockNow(START + 9 * MINUTE);
+      await browserFixtures.renew(chatB);
+      mockNow(START + 11 * MINUTE);
+      provider.native.closeSucceeds = false;
+
+      const firstUse = await browserFixtures.open(chatA);
+      const midWindowA = requireActiveWindow(firstUse);
+      expect(midWindowA.instanceId).toBe(windowA.instanceId);
+      expect(midWindowA.primaryWindowId).not.toBe(windowA.primaryWindowId);
+      expect(
+        urlsInWindow(provider, midWindowA.primaryWindowId).filter((url) => {
+          return url !== "about:blank";
+        }),
+      ).toStrictEqual(["https://a.example.test/accepted"]);
+      expect(provider.native.targets.has(oldTargetA.targetId)).toBeTruthy();
+
+      oldTargetA.url = "https://a.example.test/later-unrestored";
+      const readB1 = await browserFixtures.view(chatB);
+      expect(requireActiveWindow(readB1)).toStrictEqual(windowB);
+      expect(provider.sessionRequests).toHaveLength(1);
+
+      provider.native.closeSucceeds = true;
+      mockNow(START + 30 * MINUTE);
+
+      const secondUse = await browserFixtures.open(chatA);
+      const finalWindowA = requireActiveWindow(secondUse);
+      const readB2 = await browserFixtures.view(chatB);
+
+      expect(finalWindowA.instanceId).not.toBe(windowA.instanceId);
+      expect(provider.stoppedSessionIds.size).toBe(1);
+      expect(provider.sessionRequests).toHaveLength(2);
+      expect(
+        [...provider.native.targets.values()].map((entry) => {
+          return entry.url;
+        }),
+      ).toStrictEqual(["https://a.example.test/accepted"]);
+      expect(readB2.status).toBe("suspended");
+    },
+  );
+
+  it(
+    "browser-native-extension-007 restores A's URLs while sibling native events advance the global sequence",
+    { timeout: TEST_WITH_DOUBLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      mockNow(START);
+      onTestFinished(() => {
+        clearMockNow();
+      });
+
+      const { start, provider } = await browserFixtures.fixture();
+      const chatA = await start();
+      const chatB = await start();
+      const browserA = await browserFixtures.open(chatA);
+      const browserB = await browserFixtures.open(chatB);
+      const windowA = requireActiveWindow(browserA);
+      const windowB = requireActiveWindow(browserB);
+
+      const targetA = findWindowTarget(provider, windowA.primaryWindowId);
+      targetA.url = "https://a.example.test/busy-sibling";
+
+      mockNow(START + 9 * MINUTE);
+      await browserFixtures.renew(chatB);
+      provider.native.snapshotEventWindowId = windowB.primaryWindowId;
+      mockNow(START + 11 * MINUTE);
+
+      const recoveredA = await browserFixtures.open(chatA);
+      const readB = await browserFixtures.view(chatB);
+      const recoveredWindowA = requireActiveWindow(recoveredA);
+
+      expect(recoveredWindowA.instanceId).toBe(windowA.instanceId);
+      expect(
+        urlsInWindow(provider, recoveredWindowA.primaryWindowId),
+      ).toStrictEqual(["https://a.example.test/busy-sibling"]);
+      expect(requireActiveWindow(readB)).toStrictEqual(windowB);
+    },
+  );
+
+  it(
+    "browser-profile-cleanup-003 cleans an unadopted profile after the Run ends during preparation",
+    { timeout: TEST_WITH_SINGLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      mockNow(START);
+      onTestFinished(() => {
+        clearMockNow();
+      });
+
+      const profileCreated = deferred();
+      const releaseProfile = deferred();
+      const provider = browserFixtures.profileProvider(async () => {
+        profileCreated.resolve();
+        await releaseProfile.promise;
+      });
+      const { owned, start } = await browserFixtures.fixture(provider);
+      const chat = await start();
+
+      const pendingUse = accept(
+        browserClient().use({
+          headers: {
+            authorization: `Bearer ${okouTokenFromExecution(chat.execution)}`,
+          },
+          body: {},
+        }),
+        [409],
+      );
+
+      await profileCreated.promise;
+      await runsApi.requestCancelRun(owned.actor, chat.runId, [200, 400]);
+      const completed = await createWebhookCallbackApi(
+        context,
+      ).requestAgentComplete(
+        { runId: chat.runId, exitCode: 1, error: "Run cancelled" },
+        { authorization: `Bearer ${chat.execution.sandboxToken}` },
+        [200],
+      );
+      expect(completed.status).toBe(200);
+
+      releaseProfile.resolve();
+      const useResponse = await pendingUse;
+      expect(useResponse.status).toBe(409);
+      expect(provider.sessionRequests).toStrictEqual([]);
+      expect(provider.createdIds).toHaveLength(1);
+
+      for (const id of provider.createdIds) {
+        const check = await fetch(`${PROVIDER_URL}/profiles/${id}`);
+        expect(check.status).toBe(404);
+      }
+    },
+  );
+
+  it(
+    "browser-recovery-003 preserves another owner's accepted profile when the provider repeats its identity",
+    { timeout: TEST_WITH_DOUBLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      mockNow(START);
+      onTestFinished(() => {
+        clearMockNow();
+      });
+
+      const provider = browserFixtures.profileProvider();
+      const owner1 = await browserFixtures.fixture(provider);
+      const chat1 = await owner1.start();
+      await browserFixtures.open(chat1);
+      const firstProfileId = provider.createdIds[0];
+      if (!firstProfileId) {
+        throw new Error("Expected first owner profile ID");
+      }
+
+      const owner2 = await browserFixtures.fixture(provider);
+      const chat2 = await owner2.start();
+
+      let duplicateOnce = true;
+      server.use(
+        http.post(`${PROVIDER_URL}/profiles`, () => {
+          if (!duplicateOnce) {
+            return undefined;
+          }
+          duplicateOnce = false;
+          return HttpResponse.json(provider.profile(firstProfileId), {
+            status: 201,
+          });
+        }),
+        ...provider.handlers,
+      );
+
+      const secondUse = await accept(
+        browserClient().use({
+          headers: {
+            authorization: `Bearer ${okouTokenFromExecution(chat2.execution)}`,
+          },
+          body: {},
+        }),
+        [502],
+      );
+      expect(secondUse.body.error.code).toBe("BROWSER_USE_INVALID_RESPONSE");
+
+      const firstProfileCheck = await fetch(
+        `${PROVIDER_URL}/profiles/${firstProfileId}`,
+      );
+      expect(firstProfileCheck.status).toBe(200);
+      expect(provider.stoppedSessionIds.size).toBe(0);
+
+      const firstAgain = await browserFixtures.open(chat1);
+      expect(firstAgain.status).toBe("active");
+    },
+  );
+
+  it(
+    "browser-input-003 captures window zero and applies only the owned page without exposing sealed identities or values",
+    { timeout: TEST_WITH_DOUBLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      mockNow(START);
+      onTestFinished(() => {
+        clearMockNow();
+      });
+
+      const loginUrl = "https://auth.example.test/login";
+      const { cdp, chatA, chatB, targetA } = await setupSharedWindows(
+        loginUrl,
+        loginUrl,
+      );
+
+      const created = await accept(
+        userActionsClient().create({
+          headers: {
+            authorization: `Bearer ${okouTokenFromExecution(chatA.execution)}`,
+          },
+          body: passwordCreateBody(targetA.targetId),
         }),
         [201],
       );
-      for (const page of f.provider.native.targets.values()) {
-        if (page.windowId === named.body.browser.window?.primaryWindowId) {
-          page.url = "https://travel.example.test/saved";
-        }
-      }
-      await accept(
-        client().close({ headers, params: { threadId: b.threadId }, body: {} }),
-        [200],
-      );
-      await flushWaitUntilForTest();
-      const preview = await view(b);
-      expect(preview.screenshotUrl).not.toBeNull();
-      mockNow(START + 11 * MINUTE);
-      const restarted = await use(a);
-      expect(restarted.browser.window?.instanceId).not.toBe(
-        first.browser.window?.instanceId,
-      );
-      const dormant = await view(b);
-      expect(dormant).toMatchObject({
-        status: "suspended",
-        name: "Travel research",
-        createdAt: named.body.browser.createdAt,
-        screenshotUrl: preview.screenshotUrl,
-      });
-      const restored = await use(b);
-      expect(restored.browser.name).toBe("Travel research");
-      expect(restored.browser.createdAt).toBe(named.body.browser.createdAt);
-      expect(
-        [...f.provider.native.targets.values()]
-          .filter((page) => {
-            return page.windowId === restored.browser.window?.primaryWindowId;
-          })
-          .map((page) => {
-            return page.url;
-          }),
-      ).toStrictEqual(["https://travel.example.test/saved"]);
-    });
-  });
+      const requestToken = created.body.action.requestToken;
 
-  it("preserves a named Browser and its preview while an earlier open is still resolving", async () => {
-    const f = await fixture();
-    await f.owned.run(async () => {
-      installBrowserWindowContentCommands(f.provider.native);
-      const a = await f.start();
-      await use(a);
-      const entered = createDeferredPromise<void>(context.signal);
-      const release = createDeferredPromise<void>(context.signal);
-      let first = true;
-      f.provider.native.beforeNativeWindowReply = async () => {
-        if (first) {
-          first = false;
-          entered.resolve();
-          await release.promise;
-        }
-      };
-      const earlier = settleIncludingAbort(use(a));
-      const published = await settleIncludingAbort(async () => {
-        await Promise.race([
-          entered.promise,
-          earlier.then((result) => {
-            if (!result.ok) {
-              throw result.error;
-            }
-            throw new Error("The first open never reached its provider read");
-          }),
-        ]);
-        const named = await accept(
-          client().create({
-            headers: runHeaders(a),
-            body: { name: "Trip planning" },
-          }),
-          [201],
-        );
-        expect(named.body.browser.name).toBe("Trip planning");
-        await accept(
-          client().close({
-            headers,
-            params: { threadId: a.threadId },
-            body: {},
-          }),
-          [200],
-        );
-        const viewed = await accept(
-          client().get({ headers, params: { threadId: a.threadId } }),
-          [200],
-        );
-        expect(viewed.body.browser.screenshotUrl).not.toBeNull();
-        return viewed.body.browser.screenshotUrl;
-      });
-      if (!release.settled()) {
-        release.resolve();
-      }
-      const completed = await earlier;
-      if (!published.ok) {
-        throw published.error;
-      }
-      if (!completed.ok) {
-        throw completed.error;
-      }
-      const latest = await accept(
-        client().get({ headers, params: { threadId: a.threadId } }),
-        [200],
-      );
-      expect(latest.body.browser.screenshotUrl).toBe(published.value);
-      expect(latest.body.browser.name).toBe("Trip planning");
-    });
-  });
-
-  it("preserves a new window's preview when the old window's screenshot upload finishes late", async () => {
-    const f = await fixture();
-    await f.owned.run(async () => {
-      installBrowserWindowContentCommands(f.provider.native);
-      const a = await f.start();
-      const b = await f.start();
-      const first = await use(a);
-      await use(b);
-      const window = first.browser.window;
-      const page = [...f.provider.native.targets.values()].find((target) => {
-        return target.windowId === window?.primaryWindowId;
-      });
-      if (!window || !page) {
-        throw new Error("Expected A's first Browser window and page");
-      }
-      const entered = createDeferredPromise<void>(context.signal);
-      const release = createDeferredPromise<void>(context.signal);
-      const uploads: { readonly key: string; readonly bytes: Buffer }[] = [];
-      const send = context.mocks.s3.send.getMockImplementation();
-      if (!send) {
-        throw new Error("Expected the external object-storage fixture");
-      }
-      context.mocks.s3.send.mockImplementation(async (command: unknown) => {
-        if (
-          command instanceof PutObjectCommand &&
-          command.input.ContentType === "image/webp"
-        ) {
-          if (!command.input.Key || !Buffer.isBuffer(command.input.Body)) {
-            throw new Error("Expected an immutable screenshot upload");
-          }
-          uploads.push({ key: command.input.Key, bytes: command.input.Body });
-          if (uploads.length === 1) {
-            entered.resolve();
-            await release.promise;
-          }
-        }
-        return await send(command);
-      });
-      context.mocks.s3.getSignedUrl.mockImplementation(
-        (_client: unknown, command: unknown) => {
-          if (!(command instanceof GetObjectCommand) || !command.input.Key) {
-            throw new Error("Expected a private screenshot download");
-          }
-          return Promise.resolve(
-            `https://screenshots.example.test/${encodeURIComponent(command.input.Key)}`,
-          );
-        },
-      );
-      const oldCapture = settleIncludingAbort(
-        accept(
-          client().close({
-            headers,
-            params: { threadId: a.threadId },
-            body: {},
-          }),
-          [200],
-        ),
-      );
-      const publication = await settleIncludingAbort(async () => {
-        await Promise.race([
-          entered.promise,
-          oldCapture.then((result) => {
-            if (!result.ok) {
-              throw result.error;
-            }
-            throw new Error("The screenshot never reached its upload");
-          }),
-        ]);
-        f.provider.native.targets.delete(page.targetId);
-        const replacement = await use(a);
-        expect(replacement.browser.window?.primaryWindowId).not.toBe(
-          window.primaryWindowId,
-        );
-        await accept(
-          client().close({
-            headers,
-            params: { threadId: a.threadId },
-            body: {},
-          }),
-          [200],
-        );
-        const viewed = await accept(
-          client().get({ headers, params: { threadId: a.threadId } }),
-          [200],
-        );
-        const preview = viewed.body.browser.screenshotUrl;
-        const oldUpload = uploads[0];
-        const newUpload = uploads[1];
-        if (!oldUpload || !newUpload) {
-          throw new Error("Expected both native-window screenshot uploads");
-        }
-        expect(oldUpload.bytes.toString()).toBe(`preview:${page.targetId}`);
-        expect(preview).toBe(
-          `https://screenshots.example.test/${encodeURIComponent(newUpload.key)}`,
-        );
-        return preview;
-      });
-      if (!release.settled()) {
-        release.resolve();
-      }
-      const completed = await oldCapture;
-      if (!publication.ok) {
-        throw publication.error;
-      }
-      if (!completed.ok) {
-        throw completed.error;
-      }
-      const latest = await accept(
-        client().get({ headers, params: { threadId: a.threadId } }),
-        [200],
-      );
-      expect(latest.body.browser.screenshotUrl).toBe(publication.value);
-      expect(uploads).toHaveLength(2);
-    });
-  });
-});
-
-describe("shared Browser capture publication and admission", () => {
-  it.each(["closed", "blank"] as const)(
-    "distinguishes a %s native window when capturing recovery URLs",
-    async (state) => {
-      const f = await fixture();
-      await f.owned.run(async () => {
-        installBrowserWindowContentCommands(f.provider.native);
-        const a = await f.start();
-        const b = await f.start();
-        const first = await use(a);
-        const sibling = await use(b);
-        const window = first.browser.window;
-        const page = [...f.provider.native.targets.values()].find((target) => {
-          return target.windowId === window?.primaryWindowId;
-        });
-        if (!window || !page) {
-          throw new Error("Expected A's original native window and page");
-        }
-        page.url = "https://a.example.test/recoverable";
-        const params = { threadId: a.threadId };
-        await accept(client().close({ headers, params, body: {} }), [200]);
-        if (state === "closed") {
-          f.provider.native.targets.delete(page.targetId);
-        } else {
-          page.url = "about:blank";
-        }
-        await accept(client().close({ headers, params, body: {} }), [200]);
-        f.provider.native.targets.delete(page.targetId);
-        const reopened = await use(a);
-        expect(reopened.browser.window?.primaryWindowId).not.toBe(
-          window.primaryWindowId,
-        );
-        expect(
-          [...f.provider.native.targets.values()]
-            .filter((target) => {
-              return (
-                target.windowId === reopened.browser.window?.primaryWindowId
-              );
-            })
-            .map((target) => {
-              return target.url ?? "about:blank";
-            }),
-        ).toStrictEqual([
-          state === "closed"
-            ? "https://a.example.test/recoverable"
-            : "about:blank",
-        ]);
-        const siblingAfter = await accept(
-          client().get({ headers, params: { threadId: b.threadId } }),
-          [200],
-        );
-        expect(siblingAfter.body.browser.window).toStrictEqual(
-          sibling.browser.window,
-        );
-        expect(siblingAfter.body.browser.idleExpiresAt).toBe(
-          sibling.browser.idleExpiresAt,
-        );
-      });
-    },
-  );
-
-  it.each([true, false])(
-    "keeps the restored winner when native loser cleanup succeeds=%s",
-    async (cleanupSucceeds) => {
-      const f = await fixture();
-      await f.owned.run(async () => {
-        installBrowserWindowContentCommands(f.provider.native);
-        const a = await f.start();
-        const b = await f.start();
-        const first = await use(a);
-        const sibling = await use(b);
-        const window = first.browser.window;
-        if (!window) {
-          throw new Error("Expected A's original window");
-        }
-        for (const target of f.provider.native.targets.values()) {
-          if (target.windowId === window.primaryWindowId) {
-            target.url = "https://a.example.test/first";
-          }
-        }
-        const secondPage = randomUUID();
-        f.provider.native.targets.set(secondPage, {
-          targetId: secondPage,
-          windowId: window.primaryWindowId,
-          url: "https://a.example.test/second",
-        });
-        await accept(
-          client().close({
-            headers,
-            params: { threadId: a.threadId },
-            body: {},
-          }),
-          [200],
-        );
-        for (const [id, target] of f.provider.native.targets) {
-          if (target.windowId === window.primaryWindowId) {
-            f.provider.native.targets.delete(id);
-          }
-        }
-        f.provider.native.closeSucceeds = cleanupSucceeds;
-        const firstCandidate = createDeferredPromise<void>(context.signal);
-        const both = createDeferredPromise<void>(context.signal);
-        const nativeArrivals: number[] = [];
-        f.provider.native.beforeCreateReply = async (target) => {
-          nativeArrivals.push(target.windowId);
-          if (nativeArrivals.length === 1) {
-            firstCandidate.resolve();
-          }
-          if (nativeArrivals.length === 2) {
-            both.resolve();
-          }
-          await both.promise;
-        };
-        function startOpen() {
-          return settleIncludingAbort(
-            client().use({ headers: runHeaders(a), body: {} }),
-          );
-        }
-        const opened = startOpen();
-        const requests = [opened];
-        function completedEarly(request: ReturnType<typeof startOpen>) {
-          return request.then((result) => {
-            if (!result.ok) {
-              throw result.error;
-            }
-            throw new Error(
-              `Admission completed before both native candidates: ${JSON.stringify({ status: result.value.status, body: result.value.body, nativeArrivals })}`,
-            );
-          });
-        }
-        const coordinated = await settleIncludingAbort(async () => {
-          // Retirement may legitimately reject another open before creation.
-          // Compete only once the first candidate exists, before publication.
-          await Promise.race([firstCandidate.promise, completedEarly(opened)]);
-          const admitted = startOpen();
-          requests.push(admitted);
-          await Promise.race([
-            both.promise,
-            completedEarly(opened),
-            completedEarly(admitted),
-          ]);
-        });
-        if (!both.settled()) {
-          both.resolve();
-        }
-        const completed = await Promise.all(requests);
-        if (!coordinated.ok) {
-          throw coordinated.error;
-        }
-        const results = completed.map((result) => {
-          if (!result.ok) {
-            throw result.error;
-          }
-          return result.value;
-        });
-        const successful = results.find((result) => {
-          return result.status === 200;
-        });
-        const conflict = results.find((result) => {
-          return result.status === 409;
-        });
-        expect(results).toHaveLength(2);
-        expect(successful?.status).toBe(200);
-        expect(conflict).toMatchObject({
-          status: 409,
-          body: { error: { code: "BROWSER_RECLAIMING" } },
-        });
-        const winner = await view(a);
-        expect(winner.window).toStrictEqual(successful?.body.browser.window);
-        const pages = [...f.provider.native.targets.values()];
-        expect(
-          pages
-            .filter((page) => {
-              return page.windowId === winner.window?.primaryWindowId;
-            })
-            .map((page) => {
-              return page.url;
-            })
-            .sort(),
-        ).toStrictEqual([
-          "https://a.example.test/first",
-          "https://a.example.test/second",
-        ]);
-        expect(
-          new Set(
-            pages.map((page) => {
-              return page.windowId;
-            }),
-          ),
-        ).toStrictEqual(
-          new Set([
-            ...(cleanupSucceeds
-              ? [winner.window?.primaryWindowId]
-              : nativeArrivals),
-            sibling.browser.window?.primaryWindowId,
-          ]),
-        );
-        const siblingAfter = await view(b);
-        expect(siblingAfter.window).toStrictEqual(sibling.browser.window);
-        expect(siblingAfter.idleExpiresAt).toBe(sibling.browser.idleExpiresAt);
-        expect(f.provider.sessionRequests).toHaveLength(1);
-      });
-    },
-  );
-
-  it.each([
-    { previous: false, retirement: "missing" },
-    { previous: true, retirement: "missing" },
-    { previous: true, retirement: "healthy" },
-    { previous: true, retirement: "unavailable" },
-  ] as const)(
-    "keeps newer recovery URLs after a delayed native reply with previous=$previous and retirement=$retirement",
-    async ({ previous, retirement }) => {
-      const f = await fixture();
-      await f.owned.run(async () => {
-        installBrowserWindowContentCommands(f.provider.native);
-        const a = await f.start();
-        const b = await f.start();
-        const first = await use(a);
-        const sibling = await use(b);
-        const window = first.browser.window;
-        const page = [...f.provider.native.targets.values()].find((target) => {
-          return target.windowId === window?.primaryWindowId;
-        });
-        if (!window || !page) {
-          throw new Error("Expected A's live native page");
-        }
-        const close = () => {
-          return accept(
-            client().close({
-              headers,
-              params: { threadId: a.threadId },
-              body: {},
-            }),
-            [200],
-          );
-        };
-        if (previous) {
-          page.url = "https://a.example.test/previous";
-          await close();
-        }
-        const entered = createDeferredPromise<void>(context.signal);
-        const release = createDeferredPromise<void>(context.signal);
-        let hold = true;
-        f.provider.native.afterNativeWindowReply = async (windowId) => {
-          if (hold && windowId === window.primaryWindowId) {
-            hold = false;
-            entered.resolve();
-            await release.promise;
-          }
-        };
-        mockNow(START + 1000);
-        page.url = "https://a.example.test/older-observation";
-        const earlier = settleIncludingAbort(close());
-        const newer = await settleIncludingAbort(async () => {
-          await Promise.race([
-            entered.promise,
-            earlier.then((result) => {
-              if (!result.ok) {
-                throw result.error;
-              }
-              throw new Error("Expected a held native URL response");
-            }),
-          ]);
-          mockNow(START + 2000);
-          page.url = "https://a.example.test/newer-accepted";
-          await close();
-        });
-        mockNow(START + 3000);
-        release.resolve();
-        const completed = await earlier;
-        if (!newer.ok) {
-          throw newer.error;
-        }
-        if (!completed.ok) {
-          throw completed.error;
-        }
-        if (retirement === "missing") {
-          // Native loss must restore accepted data without a fresh recapture.
-          for (const [id, target] of f.provider.native.targets) {
-            if (target.windowId === window.primaryWindowId) {
-              f.provider.native.targets.delete(id);
-            }
-          }
-        } else {
-          mockNow(START + 9 * MINUTE);
-          await renew(b);
-          if (retirement === "unavailable") {
-            f.provider.native.nativeWindowErrors.set(
-              window.primaryWindowId,
-              "Retirement capture unavailable",
-            );
-          }
-          mockNow(START + 11 * MINUTE);
-        }
-        const restored = await use(a);
-        expect(restored.browser.window?.instanceId).toBe(window.instanceId);
-        expect(restored.browser.window?.primaryWindowId).not.toBe(
-          window.primaryWindowId,
-        );
-        const siblingAfter = await view(b);
-        expect(siblingAfter.window).toStrictEqual(sibling.browser.window);
-        expect(siblingAfter.idleExpiresAt).toBe(
-          retirement === "missing"
-            ? sibling.browser.idleExpiresAt
-            : new Date(START + 19 * MINUTE).toISOString(),
-        );
-        expect(
-          [...f.provider.native.targets.values()]
-            .filter((target) => {
-              return (
-                target.windowId === restored.browser.window?.primaryWindowId
-              );
-            })
-            .map((target) => {
-              return target.url;
-            }),
-        ).toStrictEqual(["https://a.example.test/newer-accepted"]);
-      });
-    },
-  );
-
-  it("keeps newer close URLs when a delayed native retirement capture wins closing", async () => {
-    const f = await fixture();
-    await f.owned.run(async () => {
-      installBrowserWindowContentCommands(f.provider.native);
-      const a = await f.start();
-      const b = await f.start();
-      const first = await use(a);
-      const sibling = await use(b);
-      const window = first.browser.window;
-      const page = [...f.provider.native.targets.values()].find((target) => {
-        return target.windowId === window?.primaryWindowId;
-      });
-      if (!window || !page) {
-        throw new Error("Expected A's live native page");
-      }
-      mockNow(START + 9 * MINUTE);
-      const leased = await renew(b);
-      const entered = createDeferredPromise<void>(context.signal);
-      const release = createDeferredPromise<void>(context.signal);
-      let hold = true;
-      f.provider.native.afterNativeWindowReply = async (windowId) => {
-        if (hold && windowId === window.primaryWindowId) {
-          hold = false;
-          entered.resolve();
-          await release.promise;
-        }
-      };
-      mockNow(START + 11 * MINUTE);
-      page.url = "https://a.example.test/older-retirement";
-      const earlier = settleIncludingAbort(use(a));
-      const newer = await settleIncludingAbort(async () => {
-        await Promise.race([
-          entered.promise,
-          earlier.then((result) => {
-            if (!result.ok) {
-              throw result.error;
-            }
-            throw new Error("Expected a held native retirement response");
-          }),
-        ]);
-        mockNow(START + 11 * MINUTE + 1000);
-        page.url = "https://a.example.test/newer-accepted";
-        await accept(
-          client().close({
-            headers,
-            params: { threadId: a.threadId },
-            body: {},
-          }),
-          [200],
-        );
-      });
-      mockNow(START + 11 * MINUTE + 2000);
-      release.resolve();
-      const completed = await earlier;
-      if (!newer.ok) {
-        throw newer.error;
-      }
-      if (!completed.ok) {
-        throw completed.error;
-      }
-      const restored = completed.value;
-      expect(restored.browser.window?.instanceId).toBe(window.instanceId);
-      expect(restored.browser.window?.primaryWindowId).not.toBe(
-        window.primaryWindowId,
-      );
-      expect(
-        [...f.provider.native.targets.values()]
-          .filter((target) => {
-            return target.windowId === restored.browser.window?.primaryWindowId;
-          })
-          .map((target) => {
-            return target.url;
-          }),
-      ).toStrictEqual(["https://a.example.test/newer-accepted"]);
-      const siblingAfter = await view(b);
-      expect(siblingAfter.window).toStrictEqual(sibling.browser.window);
-      expect(siblingAfter.idleExpiresAt).toBe(leased.idleExpiresAt);
-    });
-  });
-
-  it.each([false, true])(
-    "keeps the newer preview after a delayed native screenshot with previous=%s",
-    async (previous) => {
-      const f = await fixture();
-      await f.owned.run(async () => {
-        installBrowserWindowContentCommands(f.provider.native);
-        const a = await f.start();
-        await use(a);
-        const close = () => {
-          return accept(
-            client().close({
-              headers,
-              params: { threadId: a.threadId },
-              body: {},
-            }),
-            [200],
-          );
-        };
-        if (previous) {
-          await close();
-          expect((await view(a)).screenshotUrl).not.toBeNull();
-        }
-        const native = f.provider.native.command;
-        if (!native) {
-          throw new Error("Expected external CDP fixture");
-        }
-        const entered = createDeferredPromise<void>(context.signal);
-        const release = createDeferredPromise<void>(context.signal);
-        let hold = true;
-        f.provider.native.command = async (command) => {
-          if (command.method !== "Page.captureScreenshot") {
-            return await native(command);
-          }
-          const earlier = hold;
-          const result = {
-            data: Buffer.from(
-              earlier ? "earlier image" : "later image",
-            ).toString("base64"),
-          };
-          if (earlier) {
-            hold = false;
-            entered.resolve();
-            await release.promise;
-          }
-          return result;
-        };
-        mockNow(START + 1000);
-        const earlier = settleIncludingAbort(close());
-        const newer = await settleIncludingAbort(async () => {
-          await Promise.race([
-            entered.promise,
-            earlier.then((result) => {
-              if (!result.ok) {
-                throw result.error;
-              }
-              throw new Error("Expected a held native screenshot response");
-            }),
-          ]);
-          mockNow(START + 2000);
-          await close();
-          const preview = (await view(a)).screenshotUrl;
-          expect(preview).not.toBeNull();
-          return preview;
-        });
-        mockNow(START + 3000);
-        release.resolve();
-        const completed = await earlier;
-        if (!newer.ok) {
-          throw newer.error;
-        }
-        if (!completed.ok) {
-          throw completed.error;
-        }
-        expect((await view(a)).screenshotUrl).toBe(newer.value);
-      });
-    },
-  );
-
-  it.each(["sequential", "older-last", "older-first"] as const)(
-    "preserves the newer same-window preview with %s completion",
-    async (completion) => {
-      const f = await fixture();
-      await f.owned.run(async () => {
-        installBrowserWindowContentCommands(f.provider.native);
-        const a = await f.start();
-        const first = await use(a);
-        let capture = 0;
-        const native = f.provider.native.command;
-        if (!native) {
-          throw new Error("Expected external CDP fixture");
-        }
-        f.provider.native.command = (command) => {
-          if (command.method === "Page.captureScreenshot") {
-            return {
-              data: Buffer.from("capture:" + ++capture).toString("base64"),
-            };
-          }
-          return native(command);
-        };
-        const entered = createDeferredPromise<void>(context.signal);
-        const release = createDeferredPromise<void>(context.signal);
-        const uploads: { key: string; bytes: Buffer }[] = [];
-        const send = context.mocks.s3.send.getMockImplementation();
-        if (!send) {
-          throw new Error("Expected external S3 fixture");
-        }
-        context.mocks.s3.send.mockImplementation(async (command: unknown) => {
-          if (
-            command instanceof PutObjectCommand &&
-            command.input.ContentType === "image/webp"
-          ) {
-            if (!command.input.Key || !Buffer.isBuffer(command.input.Body)) {
-              throw new Error("Expected immutable screenshot bytes");
-            }
-            uploads.push({ key: command.input.Key, bytes: command.input.Body });
-            if (uploads.length === 1) {
-              entered.resolve();
-              await release.promise;
-            } else if (uploads.length === 2 && completion === "older-first") {
-              if (!release.settled()) {
-                release.resolve();
-              }
-              const completed = await earlier;
-              if (!completed.ok) {
-                throw completed.error;
-              }
-            }
-          }
-          return await send(command);
-        });
-        context.mocks.s3.getSignedUrl.mockImplementation(
-          (_client: unknown, command: unknown) => {
-            if (!(command instanceof GetObjectCommand) || !command.input.Key) {
-              throw new Error("Expected preview download");
-            }
-            return Promise.resolve(
-              "https://screenshots.example.test/" +
-                encodeURIComponent(command.input.Key),
-            );
-          },
-        );
-        const earlier = settleIncludingAbort(
-          accept(
-            client().close({
-              headers,
-              params: { threadId: a.threadId },
-              body: {},
-            }),
-            [200],
-          ),
-        );
-        const publication = await settleIncludingAbort(async () => {
-          await Promise.race([
-            entered.promise,
-            earlier.then((r) => {
-              if (!r.ok) {
-                throw r.error;
-              }
-              throw new Error("Earlier capture did not reach external upload");
-            }),
-          ]);
-          if (completion === "sequential") {
-            if (!release.settled()) {
-              release.resolve();
-            }
-            const completed = await earlier;
-            if (!completed.ok) {
-              throw completed.error;
-            }
-          }
-          if (completion === "older-first") {
-            mockNow(START + MINUTE);
-          }
-          await accept(
-            client().close({
-              headers,
-              params: { threadId: a.threadId },
-              body: {},
-            }),
-            [200],
-          );
-          const viewed = await accept(
-            client().get({ headers, params: { threadId: a.threadId } }),
-            [200],
-          );
-          expect(viewed.body.browser.window).toStrictEqual(
-            first.browser.window,
-          );
-          expect(
-            uploads.map((x) => {
-              return x.bytes.toString();
-            }),
-          ).toStrictEqual(["capture:1", "capture:2"]);
-          const newerUpload = uploads[1];
-          if (!newerUpload) {
-            throw new Error("Expected the newer screenshot upload");
-          }
-          expect(viewed.body.browser.screenshotUrl).toBe(
-            "https://screenshots.example.test/" +
-              encodeURIComponent(newerUpload.key),
-          );
-          return viewed.body.browser.screenshotUrl;
-        });
-        if (!release.settled()) {
-          release.resolve();
-        }
-        const joined = await earlier;
-        if (!publication.ok) {
-          throw publication.error;
-        }
-        if (!joined.ok) {
-          throw joined.error;
-        }
-        const latest = await accept(
-          client().get({ headers, params: { threadId: a.threadId } }),
-          [200],
-        );
-        expect(latest.body.browser.window).toStrictEqual(first.browser.window);
-        expect(
-          latest.body.browser.screenshotUrl,
-          "Older capture must not replace the newer preview",
-        ).toBe(publication.value);
-      });
-    },
-  );
-
-  it.each([
-    { reverse: false, before: 0, after: 0, warmup: false },
-    { reverse: true, before: 0, after: 0, warmup: false },
-    { reverse: false, before: 0, after: -MINUTE, warmup: false },
-    { reverse: true, before: 0, after: MINUTE, warmup: false },
-    { reverse: true, before: 90_000, after: MINUTE, warmup: true },
-  ])(
-    "restores newer URLs with reverse=$reverse, clocks=$before/$after and warmup=$warmup",
-    async ({ reverse, before, after, warmup }) => {
-      const f = await fixture();
-      await f.owned.run(async () => {
-        installBrowserWindowContentCommands(f.provider.native);
-        const a = await f.start();
-        const b = await f.start();
-        const first = await use(a);
-        const sibling = await use(b);
-        const window = first.browser.window;
-        if (!window) {
-          throw new Error("Expected current native window");
-        }
-        const page = [...f.provider.native.targets.values()].find((t) => {
-          return t.windowId === window.primaryWindowId;
-        });
-        if (!page) {
-          throw new Error("Expected A's native page");
-        }
-        if (warmup) {
-          page.url = "https://a.example.test/initial";
-          mockNow(START + 2 * MINUTE);
-          await accept(
-            client().close({
-              headers,
-              params: { threadId: a.threadId },
-              body: {},
-            }),
-            [200],
-          );
-        }
-        mockNow(START + before);
-        page.url = "https://a.example.test/older";
-        const kms = holdSecretKms(1, context.signal);
-        const earlier = settleIncludingAbort(
-          accept(
-            client().close({
-              headers,
-              params: { threadId: a.threadId },
-              body: {},
-            }),
-            [200],
-          ),
-        );
-        const saved = await settleIncludingAbort(async () => {
-          await Promise.race([
-            kms.entered,
-            earlier.then((r) => {
-              if (!r.ok) {
-                throw r.error;
-              }
-              throw new Error(
-                "Earlier snapshot did not reach external encryption",
-              );
-            }),
-          ]);
-          if (!reverse) {
-            kms.release();
-            const completed = await earlier;
-            if (!completed.ok) {
-              throw completed.error;
-            }
-          }
-          mockNow(START + after);
-          page.url = "https://a.example.test/newer";
-          await accept(
-            client().close({
-              headers,
-              params: { threadId: a.threadId },
-              body: {},
-            }),
-            [200],
-          );
-        });
-        kms.release();
-        const joined = await earlier;
-        if (!saved.ok) {
-          throw saved.error;
-        }
-        if (!joined.ok) {
-          throw joined.error;
-        }
-        // Retire an already closed native window so it cannot re-save newer
-        // URLs and mask a stale concurrent sidebar snapshot publication.
-        for (const [id, target] of f.provider.native.targets) {
-          if (target.windowId === window.primaryWindowId) {
-            f.provider.native.targets.delete(id);
-          }
-        }
-        const reopened = await use(a);
-        expect(reopened.browser.window?.instanceId).toBe(window.instanceId);
-        expect(reopened.browser.window?.primaryWindowId).not.toBe(
-          window.primaryWindowId,
-        );
-        const siblingAfter = await accept(
-          client().get({ headers, params: { threadId: b.threadId } }),
-          [200],
-        );
-        expect(siblingAfter.body.browser.window).toStrictEqual(
-          sibling.browser.window,
-        );
-        expect(siblingAfter.body.browser.idleExpiresAt).toBe(
-          sibling.browser.idleExpiresAt,
-        );
-        const restored = [...f.provider.native.targets.values()]
-          .filter((t) => {
-            return t.windowId === reopened.browser.window?.primaryWindowId;
-          })
-          .map((t) => {
-            return t.url;
-          });
-        expect(
-          restored,
-          "The latest successful close must supply the restored URLs",
-        ).toStrictEqual(["https://a.example.test/newer"]);
-      });
-    },
-  );
-
-  it("initializes native contents before publishing a window", async () => {
-    const f = await fixture();
-    await f.owned.run(async () => {
-      const { sizes } = installBrowserWindowContentCommands(f.provider.native);
-      // External native state follows the separately measured local Chromium
-      // viewport after creating a sibling of a 1440x720 window.
-      f.provider.native.beforeCreateReply = (candidate) => {
-        sizes.set(candidate.windowId, { width: 1440, height: 776 });
-      };
-      const b = await f.start();
-      const first = await use(b);
-      const firstWindow = first.browser.window;
-      if (!firstWindow) {
-        throw new Error("Expected the sibling Browser window");
-      }
-      await accept(
-        client().resizeByThread({
-          headers,
-          params: { threadId: b.threadId },
-          body: { aspectRatio: 2 },
-        }),
-        [200],
-      );
-      expect(sizes.get(firstWindow.primaryWindowId)).toStrictEqual({
-        width: 1440,
-        height: 720,
-      });
-      const a = await f.start();
-      const joined = await use(a);
-      const joinedWindow = joined.browser.window;
-      if (!joinedWindow) {
-        throw new Error("Expected the admitted Browser window");
-      }
-      expect(
-        sizes.get(joinedWindow.primaryWindowId),
-        "Admission must establish the published native contents",
-      ).toStrictEqual({ width: 1440, height: 900 });
-    });
-  });
-
-  it("restores the saved chat URLs before publishing the replacement", async () => {
-    const f = await fixture();
-    await f.owned.run(async () => {
-      installBrowserWindowContentCommands(f.provider.native);
-      const a = await f.start();
-      const b = await f.start();
-      const first = await use(a);
-      const sibling = await use(b);
-      const window = first.browser.window;
-      if (!window) {
-        throw new Error("Expected A's original window");
-      }
-      for (const target of f.provider.native.targets.values()) {
-        if (target.windowId === window.primaryWindowId) {
-          target.url = "https://a.example.test/saved";
-        }
-      }
-      await accept(
-        client().close({
-          headers,
-          params: { threadId: a.threadId },
+      const preflight = await accept(
+        userActionsClient().preflight({
+          headers: sessionHeaders,
+          params: { requestToken },
           body: {},
         }),
         [200],
       );
-      for (const [id, target] of f.provider.native.targets) {
-        if (target.windowId === window.primaryWindowId) {
-          f.provider.native.targets.delete(id);
-        }
+      expect(preflight.body.state).toBe("pending");
+
+      const applied = await accept(
+        userActionsClient().apply({
+          headers: sessionHeaders,
+          params: { requestToken },
+          body: {
+            values: [{ key: "password", value: "private-input-value" }],
+          },
+        }),
+        [200],
+      );
+      expect(applied.body.state).toBe("succeeded");
+      expect(JSON.stringify(applied.body)).not.toContain("private-input-value");
+      expect(cdp.writes).toStrictEqual([
+        { targetId: targetA.targetId, value: "private-input-value" },
+      ]);
+
+      const readAfter = await accept(
+        userActionsClient().get({
+          headers: sessionHeaders,
+          params: { requestToken },
+        }),
+        [200],
+      );
+      expect(readAfter.body.state).toBe("succeeded");
+
+      const viewB = await browserFixtures.view(chatB);
+      expect(requireActiveWindow(viewB).primaryWindowId).toBe(17);
+    },
+  );
+
+  it(
+    "browser-input-004 rejects sibling capture and treats a moved page as stale without writing",
+    { timeout: TEST_WITH_DOUBLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      mockNow(START);
+      onTestFinished(() => {
+        clearMockNow();
+      });
+
+      const { cdp, chatA, targetA, targetB } = await setupSharedWindows(
+        "https://auth.example.test/login",
+        "https://auth.example.test/login",
+      );
+      const tokenA = {
+        authorization: `Bearer ${okouTokenFromExecution(chatA.execution)}`,
+      };
+
+      const siblingRejected = await accept(
+        userActionsClient().create({
+          headers: tokenA,
+          body: passwordCreateBody(targetB.targetId),
+        }),
+        [409],
+      );
+      expect(siblingRejected.body.error.code).toBe(
+        "BROWSER_USER_ACTION_PAGE_TARGET_NOT_FOUND",
+      );
+
+      const created1 = await accept(
+        userActionsClient().create({
+          headers: tokenA,
+          body: passwordCreateBody(targetA.targetId),
+        }),
+        [201],
+      );
+      targetA.windowId = 17;
+      const stalePreflight = await accept(
+        userActionsClient().preflight({
+          headers: sessionHeaders,
+          params: { requestToken: created1.body.action.requestToken },
+          body: {},
+        }),
+        [200],
+      );
+      expect(stalePreflight.body.state).toBe("stale");
+
+      targetA.windowId = 0;
+      const created2 = await accept(
+        userActionsClient().create({
+          headers: tokenA,
+          body: passwordCreateBody(targetA.targetId),
+        }),
+        [201],
+      );
+      targetA.windowId = 17;
+      const staleApply = await accept(
+        userActionsClient().apply({
+          headers: sessionHeaders,
+          params: { requestToken: created2.body.action.requestToken },
+          body: { values: [{ key: "password", value: "never-written" }] },
+        }),
+        [200],
+      );
+      expect(staleApply.body.state).toBe("stale");
+      expect(cdp.writes).toStrictEqual([]);
+    },
+  );
+
+  it(
+    "browser-input-006 expires A without reviving it through B's provider and accepts only a newly admitted A window",
+    { timeout: TEST_WITH_DOUBLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      mockNow(START);
+      onTestFinished(() => {
+        clearMockNow();
+      });
+
+      const loginUrl = "https://auth.example.test/login";
+      const { provider, cdp, chatA, chatB, targetA } = await setupSharedWindows(
+        loginUrl,
+        loginUrl,
+      );
+      const tokenA = {
+        authorization: `Bearer ${okouTokenFromExecution(chatA.execution)}`,
+      };
+
+      const oldCreated = await accept(
+        userActionsClient().create({
+          headers: tokenA,
+          body: passwordCreateBody(targetA.targetId),
+        }),
+        [201],
+      );
+      const oldToken = oldCreated.body.action.requestToken;
+
+      mockNow(START + 9 * MINUTE);
+      const renewedB = await browserFixtures.renew(chatB);
+      const expiryB = renewedB.idleExpiresAt;
+
+      mockNow(START + 11 * MINUTE);
+      const expiredPreflight = await accept(
+        userActionsClient().preflight({
+          headers: sessionHeaders,
+          params: { requestToken: oldToken },
+          body: {},
+        }),
+        [410],
+      );
+      expect(expiredPreflight.status).toBe(410);
+
+      const createBeforeReacquire = await accept(
+        userActionsClient().create({
+          headers: tokenA,
+          body: passwordCreateBody(targetA.targetId),
+        }),
+        [409],
+      );
+      expect(createBeforeReacquire.status).toBe(409);
+
+      const replacementA = await browserFixtures.open(chatA);
+      const replacementWindowA = requireActiveWindow(replacementA);
+      const replacementTargetA = findWindowTarget(
+        provider,
+        replacementWindowA.primaryWindowId,
+      );
+      replacementTargetA.url = loginUrl;
+
+      const oldApply = await accept(
+        userActionsClient().apply({
+          headers: sessionHeaders,
+          params: { requestToken: oldToken },
+          body: { values: [{ key: "password", value: "stale-secret" }] },
+        }),
+        [410],
+      );
+      expect(oldApply.status).toBe(410);
+
+      const freshCreated = await accept(
+        userActionsClient().create({
+          headers: tokenA,
+          body: passwordCreateBody(replacementTargetA.targetId),
+        }),
+        [201],
+      );
+      const freshApplied = await accept(
+        userActionsClient().apply({
+          headers: sessionHeaders,
+          params: { requestToken: freshCreated.body.action.requestToken },
+          body: { values: [{ key: "password", value: "fresh-value" }] },
+        }),
+        [200],
+      );
+      expect(freshApplied.body.state).toBe("succeeded");
+      expect(cdp.writes).toStrictEqual([
+        { targetId: replacementTargetA.targetId, value: "fresh-value" },
+      ]);
+
+      const viewB = await browserFixtures.view(chatB);
+      expect(viewB.idleExpiresAt).toBe(expiryB);
+    },
+  );
+
+  it(
+    "browser-input-013 binds staged files and native file readback to the same window",
+    { timeout: TEST_WITH_DOUBLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      mockNow(START);
+      onTestFinished(() => {
+        clearMockNow();
+      });
+
+      const signedUploadUrl = "https://storage.example.test/staged-upload";
+      const { cdp, chatA, targetA } = await setupSharedWindows(
+        "https://upload.example.test/form",
+        "https://other.example.test/home",
+        {
+          initialFiles: [
+            { name: "receipt.pdf", size: 128, type: "application/pdf" },
+          ],
+        },
+      );
+      context.mocks.s3.getSignedUrl.mockResolvedValue(signedUploadUrl);
+
+      const tokenA = {
+        authorization: `Bearer ${okouTokenFromExecution(chatA.execution)}`,
+      };
+      const created1 = await accept(
+        userActionsClient().create({
+          headers: tokenA,
+          body: fileCreateBody(targetA.targetId),
+        }),
+        [201],
+      );
+      const token1 = created1.body.action.requestToken;
+
+      const prepared1 = await accept(
+        userActionsClient().prepareFileUpload({
+          headers: sessionHeaders,
+          params: { requestToken: token1 },
+          body: { key: "document", index: 0, size: 128 },
+        }),
+        [200],
+      );
+      expect(prepared1.body.uploadUrl).toBe(signedUploadUrl);
+
+      const preflight = await accept(
+        userActionsClient().preflight({
+          headers: sessionHeaders,
+          params: { requestToken: token1 },
+          body: {},
+        }),
+        [200],
+      );
+      const observedFingerprint =
+        preflight.body.fields[0]?.control.fileSetFingerprint;
+      if (!observedFingerprint) {
+        throw new Error("Expected fileSetFingerprint from preflight");
       }
-      const reopened = await use(a);
-      expect(reopened.browser.window?.instanceId).toBe(window.instanceId);
-      expect(reopened.browser.window?.primaryWindowId).not.toBe(
-        window.primaryWindowId,
+
+      const cleared = await accept(
+        userActionsClient().apply({
+          headers: sessionHeaders,
+          params: { requestToken: token1 },
+          body: {
+            values: [
+              {
+                key: "document",
+                observedFingerprint,
+                operation: "clear",
+                files: [],
+              },
+            ],
+          },
+        }),
+        [200],
       );
-      expect((await use(b)).browser.window).toStrictEqual(
-        sibling.browser.window,
+      expect(cleared.body.state).toBe("succeeded");
+      expect(cdp.getFiles()).toStrictEqual([]);
+      expect(cdp.writes).toStrictEqual([
+        { targetId: targetA.targetId, operation: "clear" },
+      ]);
+
+      const created2 = await accept(
+        userActionsClient().create({
+          headers: tokenA,
+          body: fileCreateBody(targetA.targetId),
+        }),
+        [201],
       );
-      const urls = [...f.provider.native.targets.values()]
-        .filter((t) => {
-          return t.windowId === reopened.browser.window?.primaryWindowId;
-        })
-        .map((t) => {
-          return t.url ?? "about:blank";
-        });
-      expect(
-        urls,
-        "Admission must restore the chat snapshot before publication",
-      ).toStrictEqual(["https://a.example.test/saved"]);
-    });
-  });
+      mockNow(START + 11 * MINUTE);
+
+      const expiredPrepare = await accept(
+        userActionsClient().prepareFileUpload({
+          headers: sessionHeaders,
+          params: { requestToken: created2.body.action.requestToken },
+          body: { key: "document", index: 0, size: 64 },
+        }),
+        [410],
+      );
+      expect(expiredPrepare.status).toBe(410);
+    },
+  );
+
+  it(
+    "browser-input-014 exposes retired shared input as stale without touching the sibling window",
+    { timeout: TEST_WITH_DOUBLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      mockNow(START);
+      onTestFinished(() => {
+        clearMockNow();
+      });
+
+      const { cdp, chatA, chatB, targetA } = await setupSharedWindows(
+        "https://auth.example.test/login",
+        "https://other.example.test/home",
+      );
+
+      const created = await accept(
+        userActionsClient().create({
+          headers: {
+            authorization: `Bearer ${okouTokenFromExecution(chatA.execution)}`,
+          },
+          body: passwordCreateBody(targetA.targetId),
+        }),
+        [201],
+      );
+      const requestToken = created.body.action.requestToken;
+
+      mockNow(START + 9 * MINUTE);
+      await browserFixtures.renew(chatB);
+
+      mockNow(START + 11 * MINUTE);
+      await browserFixtures.open(chatA);
+
+      const [readInput, readB] = await Promise.all([
+        accept(
+          userActionsClient().get({
+            headers: sessionHeaders,
+            params: { requestToken },
+          }),
+          [410],
+        ),
+        accept(
+          browserClient().get({
+            headers: sessionHeaders,
+            params: { threadId: chatB.threadId },
+          }),
+          [200],
+        ),
+      ]);
+      expect(readInput.status).toBe(410);
+      expect(readB.body.browser.status).toBe("active");
+      expect(cdp.writes).toStrictEqual([]);
+    },
+  );
 });

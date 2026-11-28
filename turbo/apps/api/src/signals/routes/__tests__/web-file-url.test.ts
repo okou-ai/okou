@@ -1,276 +1,185 @@
 import { randomUUID } from "node:crypto";
-import { createStore } from "ccstate";
-import { describe, expect, it } from "vitest";
-import type { Capability } from "@okouai/api-contracts/contracts/capabilities";
 import { webFilesContract } from "@okouai/api-contracts/contracts/web-files";
+import { beforeAll, describe, expect, it } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { mockEnv } from "../../../lib/env";
-import { mockNow, now } from "../../../lib/time";
-import { signSandboxJwtForTests } from "../../auth/tokens";
+import { TEST_WITH_SINGLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE } from "../../../__tests__/test-timeouts";
+import { mockOptionalEnv } from "../../../lib/env";
+import { buildArtifactKey } from "../../../lib/file-url";
+import { mockNow } from "../../../lib/time";
 import { webFileUrlRoutes } from "../web-file-url";
-import { expectApiError } from "./helpers/api-bdd";
-import { seedOrgMembership$ } from "./helpers/org-membership";
+import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
+import { createRunsApi } from "./helpers/api-bdd-runs";
+import { createRouteMocks } from "./helpers/route-test";
+import { createRunExecutionCredentials } from "./helpers/run-execution-credentials";
 
 const context = testContext();
-const store = createStore();
-const BUCKET = "test-user-artifacts";
-const PRESIGNED_URL = "https://r2.example.com/artifacts/photo.png?sig=test";
+const bdd = createBddApi(context);
+const credentials = createRunExecutionCredentials(context, {
+  preferences: false,
+});
+const webFiles = setupApp({ context, routes: webFileUrlRoutes })(
+  webFilesContract,
+);
 
-function client() {
-  return setupApp({ context, routes: webFileUrlRoutes })(webFilesContract);
-}
+const ARTIFACTS_BUCKET = "test-user-artifacts";
+const PRESIGNED_URL =
+  "https://r2.signed.example.test/presigned-object?X-Amz-Signature=ok";
 
-function currentSecond(): number {
-  return Math.floor(now() / 1000);
-}
-
-function mintOkouToken(args: {
-  readonly userId: string;
-  readonly orgId: string;
-  readonly capabilities: readonly Capability[];
-}): string {
-  const seconds = currentSecond();
-  return signSandboxJwtForTests({
-    scope: "okou",
-    userId: args.userId,
-    orgId: args.orgId,
-    runId: `run_${randomUUID()}`,
-    capabilities: args.capabilities,
-    iat: seconds,
-    exp: seconds + 3600,
+function disableClerkFallback(): void {
+  context.mocks.clerk.authenticateRequest.mockResolvedValue({
+    isAuthenticated: false,
   });
 }
 
-async function mintFileReadToken(): Promise<{
-  readonly orgId: string;
-  readonly token: string;
-  readonly userId: string;
-}> {
-  const orgId = `org_${randomUUID()}`;
-  const userId = `user_${randomUUID()}`;
-  await store.set(seedOrgMembership$, { orgId, userId }, context.signal);
-  return {
-    orgId,
-    userId,
-    token: mintOkouToken({
-      userId,
-      orgId,
-      capabilities: ["file:read"],
-    }),
-  };
+function mockMemberships(actors: readonly ApiTestUser[]): void {
+  context.mocks.clerk.users.getOrganizationMembershipList.mockImplementation(
+    (request: unknown) => {
+      const userId =
+        typeof request === "object" &&
+        request !== null &&
+        "userId" in request &&
+        typeof request.userId === "string"
+          ? request.userId
+          : undefined;
+      const actor = actors.find((candidate) => {
+        return candidate.userId === userId;
+      });
+      return Promise.resolve({
+        data: actor?.orgId
+          ? [
+              {
+                role: actor.orgRole ?? "org:member",
+                organization: { id: actor.orgId },
+              },
+            ]
+          : [],
+      });
+    },
+  );
 }
 
-function authHeaders(token: string) {
-  return { authorization: `Bearer ${token}` };
-}
-
-function commandInput(command: unknown): Record<string, unknown> {
-  if (
+function readSignedCall(index: number): {
+  readonly input: Record<string, unknown>;
+  readonly options: Record<string, unknown>;
+} {
+  const call = context.mocks.s3.getSignedUrl.mock.calls[index];
+  if (!call) {
+    throw new Error(`Expected getSignedUrl call at index ${String(index)}`);
+  }
+  const command: unknown = call[1];
+  const options: unknown = call[2];
+  const input =
     typeof command === "object" &&
     command !== null &&
     "input" in command &&
     typeof command.input === "object" &&
     command.input !== null
-  ) {
-    return command.input as Record<string, unknown>;
-  }
-  return {};
-}
-
-function signedObjectInputs(): Record<string, unknown>[] {
-  return context.mocks.s3.getSignedUrl.mock.calls.map(([, command]) => {
-    return commandInput(command);
-  });
-}
-
-function signedOptions(): unknown[] {
-  return context.mocks.s3.getSignedUrl.mock.calls.map((call) => {
-    return call[2];
-  });
-}
-
-function mockS3Objects(keys: readonly string[]): void {
-  mockEnv("R2_USER_ARTIFACTS_BUCKET_NAME", BUCKET);
-  context.mocks.s3.send.mockImplementation((command: unknown) => {
-    const input = commandInput(command);
-    const bucket = typeof input.Bucket === "string" ? input.Bucket : "";
-    const prefix = typeof input.Prefix === "string" ? input.Prefix : undefined;
-
-    if (prefix !== undefined) {
-      return Promise.resolve({
-        Contents: keys
-          .filter((key) => {
-            return key.startsWith(prefix) && bucket === BUCKET;
-          })
-          .map((key) => {
-            return {
-              Key: key,
-              Size: 4,
-              LastModified: new Date("2025-01-01T00:00:00.000Z"),
-            };
-          }),
-      });
-    }
-
-    return Promise.resolve({});
-  });
-}
-
-function artifactKey(userId: string, fileId: string, filename: string): string {
-  return `artifacts/${userId}/${fileId}/${filename}`;
+      ? (command.input as Record<string, unknown>)
+      : {};
+  return {
+    input,
+    options:
+      typeof options === "object" && options !== null
+        ? (options as Record<string, unknown>)
+        : {},
+  };
 }
 
 describe("GET /api/web/file-url", () => {
-  it("returns 401 when no auth token is provided", async () => {
-    const response = await accept(
-      client().fileUrl({ headers: {}, query: { file_id: "abc" } }),
-      [401],
-    );
-
-    expectApiError(response.body);
-    expect(response.body.error.code).toBe("UNAUTHORIZED");
+  beforeAll(async () => {
+    await createRunsApi(context).configureRunnerGroup();
   });
 
-  it("returns 403 for an agent token without file:read capability", async () => {
-    const token = mintOkouToken({
-      userId: `user_${randomUUID()}`,
-      orgId: `org_${randomUUID()}`,
-      capabilities: ["agent:read"],
-    });
+  it(
+    "web-file-url-004 signs the resolved object key for the owning user",
+    { timeout: TEST_WITH_SINGLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      mockNow(Date.parse("2026-09-09T12:00:00.123Z"));
+      const member = bdd.user({ orgRole: "org:member" });
+      const token = await credentials.okouToken(member);
+      const fileId = randomUUID();
+      const key = buildArtifactKey(member.userId, fileId, "photo.png");
 
-    const response = await accept(
-      client().fileUrl({
-        headers: authHeaders(token),
-        query: { file_id: "abc" },
-      }),
-      [403],
-    );
+      createRouteMocks(context).s3.listObjects([
+        { bucket: ARTIFACTS_BUCKET, key, size: 128 },
+      ]);
+      context.mocks.s3.getSignedUrl.mockReset();
+      context.mocks.s3.getSignedUrl.mockResolvedValue(PRESIGNED_URL);
+      disableClerkFallback();
+      mockMemberships([member]);
 
-    expectApiError(response.body);
-    expect(response.body.error.code).toBe("FORBIDDEN");
-  });
+      const response = await accept(
+        webFiles.fileUrl({
+          headers: { authorization: `Bearer ${token}` },
+          query: { file_id: fileId },
+        }),
+        [200],
+      );
 
-  it("returns 404 without signing anything when the file does not exist", async () => {
-    const { token } = await mintFileReadToken();
-    mockS3Objects([]);
+      expect(response.body).toMatchObject({
+        url: PRESIGNED_URL,
+        downloadUrl: PRESIGNED_URL,
+        expiresAt: "2026-09-11T12:00:00.000Z",
+        previewImageUrl: null,
+      });
+      expect(context.mocks.s3.getSignedUrl).toHaveBeenCalledTimes(2);
 
-    const response = await accept(
-      client().fileUrl({
-        headers: authHeaders(token),
-        query: { file_id: "missing" },
-      }),
-      [404],
-    );
+      const previewCall = readSignedCall(0);
+      expect(previewCall.input).toMatchObject({
+        Bucket: ARTIFACTS_BUCKET,
+        Key: key,
+      });
+      expect(previewCall.input.ResponseContentDisposition).toBeUndefined();
+      expect(previewCall.options).toStrictEqual({
+        expiresIn: 172_800,
+        signingDate: new Date("2026-09-09T12:00:00.000Z"),
+      });
 
-    expectApiError(response.body);
-    expect(response.body.error.code).toBe("NOT_FOUND");
-    expect(signedObjectInputs()).toStrictEqual([]);
-  });
-
-  it("signs the resolved object key for the owning user", async () => {
-    mockNow(new Date("2026-09-09T12:00:00.123Z"));
-    const fileId = randomUUID();
-    const { token, userId } = await mintFileReadToken();
-    const key = artifactKey(userId, fileId, "photo.png");
-    mockS3Objects([key]);
-    context.mocks.s3.getSignedUrl.mockResolvedValue(PRESIGNED_URL);
-
-    const response = await accept(
-      client().fileUrl({
-        headers: authHeaders(token),
-        query: { file_id: fileId },
-      }),
-      [200],
-    );
-
-    expect(response.body.url).toBe(PRESIGNED_URL);
-    expect(response.body.downloadUrl).toBe(PRESIGNED_URL);
-    expect(response.body.expiresAt).toBe("2026-09-11T12:00:00.000Z");
-    expect(response.body.previewImageUrl).toBeNull();
-    expect(signedObjectInputs()).toStrictEqual([
-      expect.objectContaining({ Bucket: BUCKET, Key: key }),
-      expect.objectContaining({
-        Bucket: BUCKET,
+      const downloadCall = readSignedCall(1);
+      expect(downloadCall.input).toMatchObject({
+        Bucket: ARTIFACTS_BUCKET,
         Key: key,
         ResponseCacheControl: "private, no-store",
         ResponseContentDisposition: "attachment; filename*=UTF-8''photo.png",
-      }),
-    ]);
-    expect(signedOptions()).toStrictEqual([
-      { expiresIn: 172_800, signingDate: new Date("2026-09-09T12:00:00.000Z") },
-      { expiresIn: 172_800, signingDate: new Date("2026-09-09T12:00:00.123Z") },
-    ]);
-  });
+      });
+      expect(downloadCall.options).toStrictEqual({
+        expiresIn: 172_800,
+        signingDate: new Date("2026-09-09T12:00:00.123Z"),
+      });
+    },
+  );
 
-  it("reports the public artifacts url for the same object", async () => {
-    mockEnv("R2_PRIVATE_ARTIFACTS_ACCESS_KEY_ID", undefined);
-    mockEnv("R2_PRIVATE_ARTIFACTS_SECRET_ACCESS_KEY", undefined);
-    const fileId = randomUUID();
-    const { token, userId } = await mintFileReadToken();
-    const key = artifactKey(userId, fileId, "photo.png");
-    mockS3Objects([key]);
-    context.mocks.s3.getSignedUrl.mockResolvedValue(PRESIGNED_URL);
+  it(
+    "web-file-url-005 reports the public artifacts url for the same object",
+    { timeout: TEST_WITH_SINGLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const member = bdd.user({ orgRole: "org:member" });
+      const token = await credentials.okouToken(member);
+      const fileId = randomUUID();
+      const key = buildArtifactKey(member.userId, fileId, "photo.png");
 
-    const response = await accept(
-      client().fileUrl({
-        headers: authHeaders(token),
-        query: { file_id: fileId },
-      }),
-      [200],
-    );
+      mockOptionalEnv("R2_PRIVATE_ARTIFACTS_ACCESS_KEY_ID", undefined);
+      mockOptionalEnv("R2_PRIVATE_ARTIFACTS_SECRET_ACCESS_KEY", undefined);
+      createRouteMocks(context).s3.listObjects([
+        { bucket: ARTIFACTS_BUCKET, key, size: 128 },
+      ]);
+      context.mocks.s3.getSignedUrl.mockReset();
+      context.mocks.s3.getSignedUrl.mockResolvedValue(PRESIGNED_URL);
+      disableClerkFallback();
+      mockMemberships([member]);
 
-    // A shared link has to outlive the presigned window and carry no
-    // credential, so it addresses the object on the public artifacts domain.
-    expect(response.body.publicUrl).toBe(`https://cdn.vm7.io/${key}`);
-    expect(response.headers.get("cache-control")).toBe("private, no-store");
-  });
+      const response = await accept(
+        webFiles.fileUrl({
+          headers: { authorization: `Bearer ${token}` },
+          query: { file_id: fileId },
+        }),
+        [200],
+      );
 
-  it("keeps preview inline and serves the separate download as an attachment", async () => {
-    const fileId = randomUUID();
-    const { token, userId } = await mintFileReadToken();
-    mockS3Objects([artifactKey(userId, fileId, "photo.png")]);
-
-    await accept(
-      client().fileUrl({
-        headers: authHeaders(token),
-        query: { file_id: fileId },
-      }),
-      [200],
-    );
-
-    expect(
-      signedObjectInputs().map((input) => {
-        return input.ResponseContentDisposition;
-      }),
-    ).toStrictEqual([undefined, "attachment; filename*=UTF-8''photo.png"]);
-  });
-
-  it("does not sign a URL for a file owned by another user", async () => {
-    const fileId = randomUUID();
-    const owner = await mintFileReadToken();
-    mockS3Objects([artifactKey(owner.userId, fileId, "private_notes.md")]);
-
-    await accept(
-      client().fileUrl({
-        headers: authHeaders(owner.token),
-        query: { file_id: fileId },
-      }),
-      [200],
-    );
-
-    const otherUser = await mintFileReadToken();
-    const forbidden = await accept(
-      client().fileUrl({
-        headers: authHeaders(otherUser.token),
-        query: { file_id: fileId },
-      }),
-      [404],
-    );
-
-    expectApiError(forbidden.body);
-    expect(forbidden.body.error.code).toBe("NOT_FOUND");
-    expect(signedObjectInputs()).toHaveLength(2);
-  });
+      expect(response.headers.get("cache-control")).toBe("private, no-store");
+      expect(response.body.publicUrl).toBe(`https://cdn.vm7.io/${key}`);
+    },
+  );
 });

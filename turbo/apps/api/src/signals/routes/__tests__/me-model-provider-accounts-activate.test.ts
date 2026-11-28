@@ -1,320 +1,344 @@
-import { randomUUID } from "node:crypto";
-import { describe, expect, it } from "vitest";
-import { http, HttpResponse } from "msw";
-import { personalModelProviderAccountsByIdContract } from "@okouai/api-contracts/contracts/personal-model-providers";
-import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
+import { randomUUID } from "node:crypto";
+import { createRouteMocks } from "./helpers/route-test";
+import { claudeCodeDeviceAuthContract } from "@okouai/api-contracts/contracts/claude-code-device-auth";
+import { codexDeviceAuthContract } from "@okouai/api-contracts/contracts/codex-device-auth";
+import {
+  personalModelProviderAccountsByIdContract,
+  personalModelProvidersMainContract,
+} from "@okouai/api-contracts/contracts/personal-model-providers";
+import { http, HttpResponse } from "msw";
+import { describe, expect, it } from "vitest";
+
+import { testContext, accept } from "../../../__tests__/test-context";
 import { mockNow } from "../../../lib/time";
 import { server } from "../../../mocks/server";
+import { claudeCodeDeviceAuthRoutes } from "../claude-code-device-auth";
+import { codexDeviceAuthRoutes } from "../codex-device-auth";
 import { meModelProviderAccountRoutes } from "../me-model-provider-accounts";
-import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
-import {
-  createAuthDeviceApiActions,
-  mockClaudeCodeTokenEndpoint,
-  mockCodexDeviceAuthProvider,
-} from "./helpers/api-bdd-auth-device";
-import { createAuthDeviceSupportApi } from "./helpers/api-bdd-auth-device-support";
-import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
-import { createRouteMocks } from "./helpers/route-test";
+import { meModelProvidersListRoutes } from "../me-model-providers-list";
+import { jwt } from "./helpers/codex-reset-credit-expiry";
 
 const context = testContext();
-const bdd = createBddApi(context);
-const auth = createAuthDeviceApiActions(context);
-const support = createAuthDeviceSupportApi(context);
-const mocks = createRouteMocks(context);
+const headers = Object.freeze({ authorization: "Bearer clerk-session" });
+const CLOCK = "2026-10-09T14:00:00.000Z";
 
-function accountsClient(actor: ApiTestUser) {
-  mocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
+type Kind = "codex" | "claude";
+
+interface Owner {
+  readonly userId: string;
+  readonly orgId: string;
+}
+
+function owner(): Owner {
+  return { userId: `user_${randomUUID()}`, orgId: `org_${randomUUID()}` };
+}
+
+function signIn(actor: Owner) {
+  createRouteMocks(context).clerk.session(actor.userId, actor.orgId);
+}
+
+/**
+ * OpenAI and Anthropic approve each device authorization with a distinct
+ * account, and answer the account reads that follow.
+ */
+function providers() {
+  const claudeTokens = new Map<string, string>();
+  server.use(
+    http.post(
+      "https://auth.openai.com/api/accounts/deviceauth/usercode",
+      () => {
+        return HttpResponse.json({
+          device_auth_id: `dev_${randomUUID()}`,
+          user_code: "ABCD-EFGH",
+          interval: 5,
+        });
+      },
+    ),
+    http.post("https://auth.openai.com/api/accounts/deviceauth/token", () => {
+      return HttpResponse.json({
+        authorization_code: `code_${randomUUID()}`,
+        code_challenge: "challenge",
+        code_verifier: "verifier",
+      });
+    }),
+    http.post("https://auth.openai.com/oauth/token", () => {
+      const accountId = randomUUID();
+      return HttpResponse.json({
+        access_token: jwt({ exp: 4_102_444_800, jti: randomUUID() }),
+        refresh_token: `refresh-${randomUUID()}`,
+        id_token: jwt({
+          email: `${accountId}@example.test`,
+          "https://api.openai.com/auth": {
+            chatgpt_account_id: accountId,
+            chatgpt_plan_type: "plus",
+          },
+        }),
+      });
+    }),
+    http.get("https://chatgpt.com/backend-api/wham/usage", () => {
+      return HttpResponse.json({ plan_type: "plus" });
+    }),
+    http.get(
+      "https://chatgpt.com/backend-api/wham/rate-limit-reset-credits",
+      () => {
+        return HttpResponse.json({ credits: [] });
+      },
+    ),
+    http.post("https://platform.claude.com/v1/oauth/token", () => {
+      const accessToken = `sk-ant-oat01-${randomUUID()}`;
+      claudeTokens.set(accessToken, randomUUID());
+      return HttpResponse.json({ access_token: accessToken });
+    }),
+    http.get("https://api.anthropic.com/api/oauth/profile", ({ request }) => {
+      const token = (request.headers.get("authorization") ?? "").replace(
+        /^Bearer /u,
+        "",
+      );
+      const uuid = claudeTokens.get(token) ?? randomUUID();
+      return HttpResponse.json({
+        account: { uuid, email: `${uuid}@example.test` },
+        organization: {
+          uuid: `org-${uuid}`,
+          name: "Claude Workspace",
+          organization_type: "claude_max",
+          rate_limit_tier: "default_claude_max_5x",
+        },
+      });
+    }),
+    http.get("https://api.anthropic.com/api/oauth/usage", () => {
+      return HttpResponse.json({});
+    }),
+  );
+}
+
+function main() {
+  return setupApp({ context, routes: meModelProvidersListRoutes })(
+    personalModelProvidersMainContract,
+  );
+}
+
+function accounts() {
   return setupApp({ context, routes: meModelProviderAccountRoutes })(
     personalModelProviderAccountsByIdContract,
   );
 }
-function activate(
-  actor: ApiTestUser,
-  id: string,
-  statuses: readonly (200 | 404 | 409)[] = [200],
-) {
-  return accept(
-    accountsClient(actor).activate({
-      headers: { authorization: "Bearer clerk-session" },
-      params: { id },
-      body: {},
-    }),
-    statuses,
-  );
-}
-async function connectCodex(actor: ApiTestUser) {
-  mockCodexDeviceAuthProvider({ accountId: randomUUID() });
-  const started = await auth.requestCodexStart(actor, "personal", [200], {
-    mode: "add",
-  });
-  if (started.status !== 200) {
-    throw new Error("Expected Codex authorization to start");
+
+/** The member adds one subscription account through its device authorization. */
+async function connect(actor: Owner, kind: Kind) {
+  signIn(actor);
+  if (kind === "codex") {
+    const codex = setupApp({ context, routes: codexDeviceAuthRoutes })(
+      codexDeviceAuthContract,
+    );
+    const started = await accept(
+      codex.start({ headers, body: { scope: "personal", mode: "add" } }),
+      [200],
+    );
+    const completed = await accept(
+      codex.complete({
+        headers,
+        body: { sessionToken: started.body.sessionToken },
+      }),
+      [200],
+    );
+    if (!("provider" in completed.body)) {
+      throw new Error("Codex device authorization did not complete");
+    }
+    return completed.body.provider;
   }
-  const completed = await auth.requestCodexComplete(
-    actor,
-    started.body.sessionToken,
+  const claude = setupApp({ context, routes: claudeCodeDeviceAuthRoutes })(
+    claudeCodeDeviceAuthContract,
+  );
+  const started = await accept(
+    claude.start({ headers, body: { scope: "personal", mode: "add" } }),
     [200],
   );
-  if (!("status" in completed.body) || completed.body.status !== "complete") {
-    throw new Error("Expected a connected Codex account");
-  }
-  return completed.body.provider;
-}
-async function connectClaude(actor: ApiTestUser) {
-  mockClaudeCodeTokenEndpoint({ accountEmail: `${randomUUID()}@example.com` });
-  const started = await auth.requestClaudeCodeStart(actor, "personal", [200], {
-    mode: "add",
-  });
-  if (started.status !== 200) {
-    throw new Error("Expected Claude authorization to start");
-  }
   const state = new URL(started.body.browserUrl).searchParams.get("state");
-  if (!state) {
-    throw new Error("Expected an authorization state");
-  }
-  const completed = await auth.requestClaudeCodeComplete(
-    actor,
-    started.body.sessionToken,
-    `claude_code_test#${state}`,
+  const completed = await accept(
+    claude.complete({
+      headers,
+      body: {
+        sessionToken: started.body.sessionToken,
+        authorizationCode: `code-${randomUUID()}#${state ?? ""}`,
+      },
+    }),
     [200],
   );
-  if (completed.status !== 200) {
-    throw new Error("Expected a connected Claude account");
-  }
   return completed.body.provider;
 }
-async function list(actor: ApiTestUser) {
-  const result = await support.listPersonalModelProviders(actor, [200]);
-  if (!("modelProviders" in result.body)) {
-    throw new Error("Expected the member's subscription accounts");
-  }
-  return result.body.modelProviders;
+
+async function list(actor: Owner) {
+  signIn(actor);
+  const response = await accept(main().list({ headers }), [200]);
+  return response.body.modelProviders;
+}
+
+async function activeIds(actor: Owner) {
+  return (await list(actor))
+    .filter((provider) => {
+      return provider.isActive === true;
+    })
+    .map((provider) => {
+      return provider.id;
+    });
+}
+
+async function activate(actor: Owner, id: string) {
+  signIn(actor);
+  const response = await accept(
+    accounts().activate({ headers, params: { id }, body: {} }),
+    [200],
+  );
+  return response.body;
+}
+
+async function rejectActivation(actor: Owner, id: string) {
+  signIn(actor);
+  const response = await accept(
+    accounts().activate({ headers, params: { id }, body: {} }),
+    [404],
+  );
+  return response.body;
+}
+
+async function disconnect(actor: Owner, id: string) {
+  signIn(actor);
+  await accept(accounts().delete({ headers, params: { id } }), [204]);
+}
+
+async function switchesWithinType(kind: Kind, other: Kind) {
+  providers();
+  const member = owner();
+  const first = await connect(member, kind);
+  const second = await connect(member, kind);
+  const sibling = await connect(member, other);
+  mockNow(new Date(CLOCK));
+
+  const activated = await activate(member, second.id);
+  expect(activated).toMatchObject({
+    id: second.id,
+    isActive: true,
+    updatedAt: CLOCK,
+  });
+  const listed = await list(member);
+  expect(
+    listed.map((provider) => {
+      return { id: provider.id, isActive: provider.isActive };
+    }),
+  ).toStrictEqual(
+    expect.arrayContaining([
+      { id: first.id, isActive: false },
+      { id: second.id, isActive: true },
+      { id: sibling.id, isActive: true },
+    ]),
+  );
+  expect(
+    listed.find((provider) => {
+      return provider.id === first.id;
+    })?.updatedAt,
+  ).toBe(CLOCK);
+
+  await activate(member, first.id);
+  return {
+    active: new Set(await activeIds(member)),
+    expected: new Set([first.id, sibling.id]),
+  };
+}
+
+async function promotesOldestSibling(kind: Kind) {
+  providers();
+  const member = owner();
+  const first = await connect(member, kind);
+  const second = await connect(member, kind);
+  const third = await connect(member, kind);
+  const states = async () => {
+    return (await list(member)).map((provider) => {
+      return { id: provider.id, isActive: provider.isActive };
+    });
+  };
+
+  await disconnect(member, first.id);
+  await expect(states()).resolves.toStrictEqual(
+    expect.arrayContaining([
+      { id: second.id, isActive: true },
+      { id: third.id, isActive: false },
+    ]),
+  );
+  await expect(states()).resolves.toHaveLength(2);
+  await rejectActivation(member, first.id);
+  await disconnect(member, third.id);
+  await expect(states()).resolves.toStrictEqual([
+    { id: second.id, isActive: true },
+  ]);
+  await disconnect(member, second.id);
+  await expect(states()).resolves.toStrictEqual([]);
+
+  const replacement = await connect(member, kind);
+  return { first, replacement };
 }
 
 describe("POST /api/me/model-provider-accounts/:id/activate", () => {
-  it.each(["codex", "claude"] as const)(
-    "switches %s accounts and preserves the other subscription type",
-    async (type) => {
-      const actor = bdd.user({ orgRole: "org:member" });
-      const connect = type === "codex" ? connectCodex : connectClaude;
-      const first = await connect(actor);
-      const second = await connect(actor);
-      const other = await (type === "codex" ? connectClaude : connectCodex)(
-        actor,
-      );
-      expect(first.isActive).toBeTruthy();
-      expect(second.isActive).toBeFalsy();
-      const changedAt = new Date("2026-10-09T14:00:00Z");
-      mockNow(changedAt);
-      const switched = await activate(actor, second.id);
-      expect(switched.body).toMatchObject({
-        ...second,
-        isActive: true,
-        updatedAt: changedAt.toISOString(),
-      });
-      await expect(list(actor)).resolves.toStrictEqual(
-        expect.arrayContaining([
-          expect.objectContaining({
-            id: first.id,
-            isActive: false,
-            updatedAt: changedAt.toISOString(),
-          }),
-          expect.objectContaining({ id: second.id, isActive: true }),
-          expect.objectContaining({ id: other.id, isActive: true }),
-        ]),
-      );
-      await activate(actor, first.id);
-      expect(
-        (await list(actor)).filter((account) => {
-          return account.isActive;
-        }),
-      ).toStrictEqual(
-        expect.arrayContaining([
-          expect.objectContaining({ id: first.id }),
-          expect.objectContaining({ id: other.id }),
-        ]),
-      );
-    },
-  );
+  it("me-model-provider-accounts-activate-005 rejects a disconnected account without changing the active sibling", async () => {
+    providers();
+    const member = owner();
+    const first = await connect(member, "codex");
+    const second = await connect(member, "codex");
+    await disconnect(member, second.id);
 
-  it("activates the same sole account repeatedly with nullable metadata", async () => {
-    const actor = bdd.user();
-    server.use(
-      http.get("https://api.anthropic.com/api/oauth/profile", () => {
-        return new HttpResponse(null, { status: 503 });
+    await rejectActivation(member, second.id);
+
+    const listed = await list(member);
+    expect(
+      listed.map((provider) => {
+        return { id: provider.id, isActive: provider.isActive };
       }),
-    );
-    const connected = await createMiscRoutesApi(
-      context,
-    ).upsertPersonalModelProvider(
-      actor,
-      { type: "claude-code-oauth-token", secret: "sk-ant-oat-null-metadata" },
-      [201],
-    );
-    if (connected.status !== 201) {
-      throw new Error("Expected the subscription to be connected");
-    }
-    const initial = connected.body.provider;
-    for (const time of ["2026-10-09T14:00:00Z", "2026-10-09T14:01:00Z"]) {
-      mockNow(new Date(time));
-      const response = await activate(actor, initial.id);
-      expect(response.body).toMatchObject({
-        id: initial.id,
-        modelProviderId: initial.modelProviderId,
-        createdAt: initial.createdAt,
-        updatedAt: new Date(time).toISOString(),
-        isActive: true,
-        accountEmail: null,
-        workspaceName: null,
-        planType: null,
-        subscriptionResetPeriod: null,
-        subscriptionNextResetAt: null,
-        lastRefreshErrorCode: null,
-      });
-    }
-    await expect(list(actor)).resolves.toHaveLength(1);
+    ).toStrictEqual([{ id: first.id, isActive: true }]);
   });
 
-  it("rejects logical-provider, foreign-user and foreign-org IDs without switching", async () => {
-    const owner = bdd.user();
-    const first = await connectCodex(owner);
-    const second = await connectCodex(owner);
-    const providerId = first.modelProviderId;
-    if (!providerId) {
-      throw new Error("Expected the connected account logical provider ID");
+  it("me-model-provider-accounts-activate-004 rejects logical-provider, foreign-user and foreign-org IDs without switching", async () => {
+    providers();
+    const member = owner();
+    const first = await connect(member, "codex");
+    const second = await connect(member, "codex");
+    const logicalId = first.modelProviderId;
+    if (!logicalId) {
+      throw new Error("Expected a logical provider ID on the account");
     }
-    const stranger = bdd.user({ orgId: owner.orgId });
-    const otherOrg = bdd.user({ userId: owner.userId });
+    const peer = { userId: `user_${randomUUID()}`, orgId: member.orgId };
+    const elsewhere = { userId: member.userId, orgId: `org_${randomUUID()}` };
+
     for (const [actor, id] of [
-      [owner, providerId],
-      [stranger, second.id],
-      [otherOrg, second.id],
+      [member, logicalId],
+      [peer, second.id],
+      [elsewhere, second.id],
     ] as const) {
-      const rejected = await activate(actor, id, [404]);
-      expect(rejected.body).toMatchObject({ error: { code: "NOT_FOUND" } });
-      expect(
-        (await list(owner)).filter((account) => {
-          return account.isActive;
-        }),
-      ).toStrictEqual([expect.objectContaining({ id: first.id })]);
+      await expect(rejectActivation(actor, id)).resolves.toMatchObject({
+        error: { code: "NOT_FOUND" },
+      });
+      await expect(activeIds(member)).resolves.toStrictEqual([first.id]);
     }
   });
 
-  it("rejects a disconnected account without changing the active sibling", async () => {
-    const actor = bdd.user();
-    const first = await connectCodex(actor);
-    const second = await connectCodex(actor);
-    await support.deletePersonalModelProviderAccount(actor, second.id);
-    await activate(actor, second.id, [404]);
-    await expect(list(actor)).resolves.toStrictEqual([
-      expect.objectContaining({ id: first.id, isActive: true }),
-    ]);
+  it("me-model-provider-accounts-activate-002 switches claude accounts and preserves the other subscription type", async () => {
+    const { active, expected } = await switchesWithinType("claude", "codex");
+    expect(active).toStrictEqual(expected);
   });
 
-  it.each(["codex", "claude"] as const)(
-    "promotes the oldest connected %s sibling when the active account is disconnected",
-    async (type) => {
-      const actor = bdd.user();
-      const connect = type === "codex" ? connectCodex : connectClaude;
-      const first = await connect(actor);
-      const second = await connect(actor);
-      const third = await connect(actor);
-
-      await support.deletePersonalModelProviderAccount(actor, first.id);
-      await expect(list(actor)).resolves.toStrictEqual([
-        expect.objectContaining({ id: second.id, isActive: true }),
-        expect.objectContaining({ id: third.id, isActive: false }),
-      ]);
-      await activate(actor, first.id, [404]);
-
-      await support.deletePersonalModelProviderAccount(actor, third.id);
-      await expect(list(actor)).resolves.toStrictEqual([
-        expect.objectContaining({ id: second.id, isActive: true }),
-      ]);
-      await support.deletePersonalModelProviderAccount(actor, second.id);
-      await expect(list(actor)).resolves.toStrictEqual([]);
-      const reconnected = await connect(actor);
-      expect(reconnected.isActive).toBeTruthy();
-      expect(reconnected.modelProviderId).not.toBe(first.modelProviderId);
-    },
-  );
-
-  it("keeps one active account after competing switches and permits a subsequent save", async () => {
-    const actor = bdd.user();
-    await connectCodex(actor);
-    const second = await connectCodex(actor);
-    const third = await connectCodex(actor);
-    const responses = await Promise.all([
-      activate(actor, second.id, [200, 409]),
-      activate(actor, third.id, [200, 409]),
-    ]);
-    expect(
-      responses.some((response) => {
-        return response.status === 200;
-      }),
-    ).toBeTruthy();
-    const active = (await list(actor)).filter((account) => {
-      return account.isActive;
-    });
-    expect(active).toHaveLength(1);
-    expect([second.id, third.id]).toContain(active[0]?.id);
-    await activate(actor, second.id);
-    expect(
-      (await list(actor)).filter((account) => {
-        return account.isActive;
-      }),
-    ).toStrictEqual([expect.objectContaining({ id: second.id })]);
+  it("me-model-provider-accounts-activate-007 promotes the oldest connected claude sibling when the active account is disconnected", async () => {
+    const { first, replacement } = await promotesOldestSibling("claude");
+    expect(replacement.isActive).toBeTruthy();
+    expect(replacement.modelProviderId).not.toBe(first.modelProviderId);
   });
 
-  it.each(["target", "sibling"] as const)(
-    "does not resurrect a disconnected %s during a competing switch",
-    async (selection) => {
-      const actor = bdd.user();
-      const first = await connectCodex(actor);
-      const second = await connectCodex(actor);
-      const removed = selection === "target" ? second : first;
-      await Promise.all([
-        activate(actor, second.id, [200, 404, 409]),
-        accept(
-          accountsClient(actor).delete({
-            headers: { authorization: "Bearer clerk-session" },
-            params: { id: removed.id },
-          }),
-          [204],
-        ),
-      ]);
-      const remaining = await list(actor);
-      expect(
-        remaining.map((account) => {
-          return account.id;
-        }),
-      ).not.toContain(removed.id);
-      expect(
-        remaining.filter((account) => {
-          return account.isActive;
-        }).length,
-      ).toBeLessThanOrEqual(1);
-      await activate(actor, removed.id, [404]);
-      await activate(actor, selection === "target" ? first.id : second.id);
-    },
-  );
+  it("me-model-provider-accounts-activate-001 switches codex accounts and preserves the other subscription type", async () => {
+    const { active, expected } = await switchesWithinType("codex", "claude");
+    expect(active).toStrictEqual(expected);
+  });
 
-  it("preserves a concurrent new connection while switching existing accounts", async () => {
-    const actor = bdd.user();
-    await connectCodex(actor);
-    const second = await connectCodex(actor);
-    await Promise.all([
-      activate(actor, second.id, [200, 409]),
-      connectCodex(actor),
-    ]);
-    const accounts = await list(actor);
-    expect(accounts).toHaveLength(3);
-    expect(
-      accounts.filter((account) => {
-        return account.isActive;
-      }),
-    ).toHaveLength(1);
-    await activate(actor, second.id);
+  it("me-model-provider-accounts-activate-006 promotes the oldest connected codex sibling when the active account is disconnected", async () => {
+    const { first, replacement } = await promotesOldestSibling("codex");
+    expect(replacement.isActive).toBeTruthy();
+    expect(replacement.modelProviderId).not.toBe(first.modelProviderId);
   });
 });

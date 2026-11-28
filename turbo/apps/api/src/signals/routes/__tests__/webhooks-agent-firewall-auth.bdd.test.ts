@@ -1,3622 +1,1185 @@
-import { publicRunOwner } from "./helpers/public-run-owner";
-import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
-import { launchPublicToolRun } from "./helpers/public-tool-actor";
-import { publicPlanLifecycle } from "./helpers/public-plan-lifecycle";
 import { randomUUID } from "node:crypto";
-import { completePublicClaudeRun } from "./helpers/public-native-run";
-
-import { HttpResponse, http } from "msw";
-import { afterEach, describe, expect, it, onTestFinished } from "vitest";
-
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { builtinConnectorAutomaticContract } from "@okouai/api-contracts/contracts/connectors";
+import { gunzipSync } from "node:zlib";
+import { chatEventsContract } from "@okouai/api-contracts/contracts/chat-event-send";
 import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
-import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
-
-import { mockEnv, mockOptionalEnv } from "../../../lib/env";
 import {
-  getSecretKmsClient,
-  setSecretKmsClientForTests,
-  type SecretKmsClient,
-  type SecretKmsDataKey,
-  type SecretKmsGenerateDataKeyRequest,
-} from "../../../lib/secret-kms-client";
-import { now } from "../../../lib/time";
+  builtinConnectorAutomaticContract,
+  builtinConnectorOauthDeviceAuthSessionContract,
+  builtinConnectorOauthStartContract,
+} from "@okouai/api-contracts/contracts/connectors";
+import { builtinConnectorsSlugCallbackContract } from "@okouai/api-contracts/contracts/connectors-slug-callback";
+import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
+import { personalModelProvidersMainContract } from "@okouai/api-contracts/contracts/personal-model-providers";
+import {
+  runsByIdContract,
+  runsCancelContract,
+} from "@okouai/api-contracts/contracts/run-routes";
+import { runnerDispatchEnvelopeSchema } from "@okouai/api-contracts/contracts/runner-dispatch";
+import {
+  runnersHeartbeatContract,
+  type ExecutionContext,
+} from "@okouai/api-contracts/contracts/runners";
+import {
+  runWebhookContract,
+  webhookClerkContract,
+  webhookCompleteContract,
+  webhookStripeContract,
+} from "@okouai/api-contracts/contracts/webhooks";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { http, HttpResponse } from "msw";
+import { beforeAll, describe, expect, it, onTestFinished } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { builtinConnectorsAutomaticRoutes } from "../connectors-automatic";
-import { connectorAccountRoutes } from "../connector-accounts";
-import { automaticMcpCatalogFixture } from "./helpers/connector-automatic-catalog";
-import { createRouteMocks } from "./helpers/route-test";
+import {
+  TEST_WITH_DOUBLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE,
+  TEST_WITH_TRIPLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE,
+} from "../../../__tests__/test-timeouts";
+import { env, mockEnv, mockOptionalEnv, optionalEnv } from "../../../lib/env";
+import { mockNow, now, nowDate } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import { flushWaitUntilForTest } from "../../context/wait-until";
+import { settleIncludingAbort } from "../../utils";
+import { chatEventsRoutes } from "../chat-events";
+import { connectorAccountRoutes } from "../connector-accounts";
+import { builtinConnectorsRoutes } from "../connectors";
+import { builtinConnectorsAutomaticRoutes } from "../connectors-automatic";
+import { builtinConnectorsOauthDeviceAuthRoutes } from "../connectors-oauth-device-auth";
+import { builtinConnectorsSlugCallbackRoutes } from "../connectors-slug-callback";
+import { featureSwitchesRoutes } from "../feature-switches";
+import { meModelProvidersUpsertRoutes } from "../me-model-providers-upsert";
+import { runnersRoutes } from "../runners";
+import { runsRoutes } from "../runs";
+import { runsCancelRoutes } from "../runs-cancel";
+import { webhooksAgentCompleteRoutes } from "../webhooks-agent-complete";
+import { webhooksAgentFirewallAuthRoutes } from "../webhooks-agent-firewall-auth";
+import { webhooksClerkRoutes } from "../webhooks-clerk";
+import { webhooksStripeRoutes } from "../webhooks-stripe";
+import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
+import { mockClaudeCodeTokenEndpoint } from "./helpers/api-bdd-auth-device";
+import { createChatCallbacksApi } from "./helpers/api-bdd-chat-callbacks";
 import {
-  createDeferredPromise,
-  settle,
-  settleIncludingAbort,
-} from "../../utils";
-import {
-  basicTemplate,
-  createFirewallApi,
-  secretTemplate,
-  varTemplate,
-} from "./helpers/api-bdd-firewall";
-import {
-  createBddApi,
-  expectApiError,
-  type ApiTestUser,
-} from "./helpers/api-bdd";
-import {
-  awsVerificationCode,
-  createConnectorBddApi,
   mockAutomaticMcpOAuthProvider,
-  mockAwsExternalCodeProvider,
   mockTestOAuthAuthCodeProvider,
+  mockTestOAuthDeviceConnectorProvider,
 } from "./helpers/api-bdd-connectors";
+import { secretTemplate } from "./helpers/api-bdd-firewall";
 import { createRunsApi } from "./helpers/api-bdd-runs";
-import { createPublicFirewallConnections } from "./helpers/public-firewall-connections";
-import {
-  createPublicFirewallFixture,
-  type PublicFirewallFixture,
-} from "./helpers/public-firewall-fixture";
-
-import {
-  createAuthDeviceApiActions,
-  makeCodexAuthJson,
-  mockCodexDeviceAuthProvider,
-} from "./helpers/api-bdd-auth-device";
-import { createAuthDeviceSupportApi } from "./helpers/api-bdd-auth-device-support";
-import type { TestTerminalRunStatus } from "./helpers/run-terminal-status";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
-
-const TEST_DATA_KEY = Buffer.from("0123456789abcdef0123456789abcdef", "utf8");
-
-/**
- * HOOK-02 / FW: firewall auth template resolution and connector refresh
- * through POST /api/webhooks/run/firewall/auth.
- *
- * Corrected scenarios use public setup and authenticated Runner protocol flows.
- * Private metadata helpers and worker entry points do not justify preserving
- * a scenario that users cannot construct through production boundaries.
- * Credit depletion and low-balance leases are covered in runtime-credit-balance.test.ts.
- *
- * Unreachable through public APIs (kept out of this file deliberately):
- * - TOKEN_ACCESS_RESOLUTION_FAILED needs a current token whose backing secret
- *   row is missing; public seeding writes both atomically.
- */
+import { mockClerkUsers } from "./helpers/clerk-users";
+import { createRouteMocks } from "./helpers/route-test";
+import {
+  generatedStripeCustomerId,
+  generatedStripeSubscriptionId,
+  postSubscriptionInvoicePaid,
+} from "./helpers/stripe-billing-webhook";
 
 const context = testContext();
-const codexFirewallApi = createFirewallApi(context);
-const publicConnections = createPublicFirewallConnections(context);
-const TERMINAL_RUN_STATUSES = [
-  "completed",
-  "failed",
-  "cancelled",
-] as const satisfies readonly TestTerminalRunStatus[];
+const bdd = createBddApi(context);
+const runs = createRunsApi(context);
+const chatCallbacks = createChatCallbacksApi(context);
+const webhooks = createWebhookCallbackApi(context);
+const routeMocks = createRouteMocks(context);
 
-function createCodexAccountOwnership() {
-  return {
-    receipts: new Map<string, string>(),
-    owned: new Map<string, Set<string>>(),
-  };
+const SESSION_HEADERS = Object.freeze({
+  authorization: "Bearer clerk-session",
+});
+const CLAUDE_MODEL = "claude-fable-5-1";
+const TEST_OAUTH_TOKEN_URL =
+  "http://localhost:3000/api/test/oauth-provider/token";
+const AUTOMATIC_MCP_ENDPOINT = "https://automatic-mcp.example.test/server";
+const TEST_OAUTH_TARGET = Object.freeze({
+  kind: "builtin" as const,
+  connectorSlug: "test-oauth" as const,
+});
+const TEST_OAUTH_DEVICE_TARGET = Object.freeze({
+  kind: "builtin" as const,
+  connectorSlug: "test-oauth-device" as const,
+});
+const AUTOMATIC_MCP_TARGET = Object.freeze({
+  kind: "builtin" as const,
+  connectorSlug: "automatic-mcp-oauth" as const,
+});
+
+const app = setupApp({
+  context,
+  baseUrl: "https://api.okou.ai",
+  routes: [
+    ...builtinConnectorsRoutes,
+    ...builtinConnectorsAutomaticRoutes,
+    ...builtinConnectorsOauthDeviceAuthRoutes,
+    ...builtinConnectorsSlugCallbackRoutes,
+    ...chatEventsRoutes,
+    ...connectorAccountRoutes,
+    ...featureSwitchesRoutes,
+    ...meModelProvidersUpsertRoutes,
+    ...runnersRoutes,
+    ...runsRoutes,
+    ...runsCancelRoutes,
+    ...webhooksAgentCompleteRoutes,
+    ...webhooksAgentFirewallAuthRoutes,
+    ...webhooksClerkRoutes,
+    ...webhooksStripeRoutes,
+  ],
+});
+
+const automaticApi = app(builtinConnectorAutomaticContract);
+const chatEventsApi = app(chatEventsContract);
+const connectorAccountsApi = app(connectorAccountsContract);
+const deviceAuthApi = app(builtinConnectorOauthDeviceAuthSessionContract);
+const featureSwitchesApi = app(featureSwitchesContract);
+const oauthCallbackApi = app(builtinConnectorsSlugCallbackContract);
+const oauthStartApi = app(builtinConnectorOauthStartContract);
+const personalModelProvidersApi = app(personalModelProvidersMainContract);
+const runnersHeartbeatApi = app(runnersHeartbeatContract);
+const runsByIdApi = app(runsByIdContract);
+const runsCancelApi = app(runsCancelContract);
+const agentCompleteApi = app(webhookCompleteContract);
+const firewallAuthApi = app(runWebhookContract);
+const clerkWebhookApi = app(webhookClerkContract);
+const stripeWebhookApi = app(webhookStripeContract);
+
+function bearerHeaders(token: string) {
+  return { authorization: `Bearer ${token}` };
 }
-const codexAccounts = createCodexAccountOwnership();
 
-async function connectCodexAccount(
-  actor: ApiTestUser,
-  input: {
-    readonly accessToken: string;
-    readonly refreshToken: string;
-    readonly accountId: string;
-    readonly expiresIn: number;
-  },
-) {
-  const response = await createMiscRoutesApi(
-    context,
-  ).upsertPersonalModelProvider(
-    actor,
+function signIn(actor: ApiTestUser) {
+  routeMocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
+  const emailId = `email_${actor.userId}`;
+  mockClerkUsers(context, [
     {
-      type: "codex-oauth-token",
-      authMethod: "auth_json",
-      secrets: {
-        CODEX_AUTH_JSON: makeCodexAuthJson({
-          accessToken: input.accessToken,
-          refreshToken: input.refreshToken,
-          accountId: input.accountId,
-          idTokenExpiresAt: Math.floor(now() / 1000) + input.expiresIn,
-        }),
+      id: actor.userId,
+      emailAddresses: [{ id: emailId, emailAddress: actor.email }],
+      primaryEmailAddressId: emailId,
+      firstName: "BDD",
+      lastName: "Firewall",
+    },
+  ]);
+  const memberships = actor.orgId
+    ? [
+        {
+          id: `membership-${actor.userId}-${actor.orgId}`,
+          createdAt: Date.parse("2020-01-01T00:00:00.000Z"),
+          role: actor.orgRole ?? "org:admin",
+          organization: { id: actor.orgId },
+          publicUserData: { userId: actor.userId },
+        },
+      ]
+    : [];
+  context.mocks.clerk.users.getOrganizationMembershipList.mockResolvedValue({
+    data: memberships,
+  });
+  context.mocks.clerk.organizations.getOrganizationMembershipList.mockResolvedValue(
+    { data: memberships },
+  );
+  return SESSION_HEADERS;
+}
+
+function testOAuthFirewallBody(sourceId: string, forceRefresh?: boolean) {
+  return {
+    authHeaders: {
+      Authorization: `Bearer ${secretTemplate("TEST_OAUTH_TOKEN")}`,
+    },
+    secretConnectorMap: {
+      TEST_OAUTH_TOKEN: "test-oauth",
+    },
+    secretConnectorMetadataMap: {
+      TEST_OAUTH_TOKEN: {
+        sourceType: "connector" as const,
+        sourceId,
       },
     },
-    [200, 201],
-  );
-  if (response.status !== 200 && response.status !== 201) {
-    throw new Error("Expected normal Codex paste to succeed");
-  }
-  const id = response.body.provider.id;
-  codexAccounts.receipts.set(actor.userId, id);
-  const owned = codexAccounts.owned.get(actor.userId);
-  if (!owned) {
-    throw new Error("Expected the real Run owner before connecting Codex");
-  }
-  owned.add(id);
+    ...(forceRefresh === undefined ? {} : { forceRefresh }),
+  };
 }
 
-async function firewallRun(
-  options: {
-    readonly prepareActor?: (actor: ApiTestUser) => Promise<void>;
-    readonly additionalConnectorSlugs?: readonly ConnectorSlug[];
-  } = {},
+function testOAuthDeviceFirewallBody(sourceId: string) {
+  return {
+    authHeaders: {
+      Authorization: `Bearer ${secretTemplate("TEST_OAUTH_DEVICE_TOKEN")}`,
+    },
+    secretConnectorMap: {
+      TEST_OAUTH_DEVICE_TOKEN: "test-oauth-device",
+    },
+    secretConnectorMetadataMap: {
+      TEST_OAUTH_DEVICE_TOKEN: {
+        sourceType: "connector" as const,
+        sourceId,
+      },
+    },
+  };
+}
+
+beforeAll(async () => {
+  const previousClerkSecret = optionalEnv("CLERK_WEBHOOK_SIGNING_SECRET");
+  const previousStripeSecret = optionalEnv("STRIPE_WEBHOOK_SECRET");
+  const warmupId = randomUUID();
+  context.mocks.clerk.authenticateRequest.mockResolvedValue({
+    isAuthenticated: false,
+  });
+  context.mocks.clerk.verifyWebhook.mockRejectedValueOnce(new Error("warmup"));
+  mockOptionalEnv("CLERK_WEBHOOK_SIGNING_SECRET", "whsec_warmup");
+  mockOptionalEnv("STRIPE_WEBHOOK_SECRET", "whsec_stripe_warmup");
+
+  const warmed = await settleIncludingAbort(async () => {
+    await Promise.all([
+      accept(
+        firewallAuthApi.firewallAuth({
+          headers: {},
+          body: { authHeaders: {} },
+        }),
+        [401],
+      ),
+      accept(
+        automaticApi.start({
+          headers: {},
+          params: { connectorSlug: "automatic-mcp-oauth" },
+          body: { authMethod: "smart-connect", account: { intent: "add" } },
+        }),
+        [401],
+      ),
+      accept(
+        oauthStartApi.start({
+          headers: {},
+          params: { connectorSlug: "test-oauth" },
+          body: { authMethod: "oauth", account: { intent: "add" } },
+        }),
+        [401],
+      ),
+      accept(
+        deviceAuthApi.create({
+          headers: {},
+          params: { connectorSlug: "test-oauth-device" },
+          body: { authMethod: "oauth", account: { intent: "add" } },
+        }),
+        [401],
+      ),
+      accept(
+        connectorAccountsApi.connections({
+          headers: {},
+          query: TEST_OAUTH_TARGET,
+        }),
+        [401],
+      ),
+      accept(
+        connectorAccountsApi.scopeDiff({
+          headers: {},
+          params: { connectionId: warmupId },
+          query: { connectorSlug: "test-oauth" },
+        }),
+        [401],
+      ),
+      accept(
+        connectorAccountsApi.delete({
+          headers: {},
+          params: { connectionId: warmupId },
+          body: { target: TEST_OAUTH_DEVICE_TARGET },
+        }),
+        [401],
+      ),
+      accept(
+        featureSwitchesApi.update({
+          headers: {},
+          body: { switches: { [FeatureSwitchKey.TestOauthConnector]: true } },
+        }),
+        [401],
+      ),
+      accept(
+        personalModelProvidersApi.upsert({
+          headers: {},
+          body: { type: "claude-code-oauth-token", secret: "warmup" },
+        }),
+        [401],
+      ),
+      accept(
+        chatEventsApi.send({
+          headers: {},
+          body: {
+            prompt: "warmup",
+            hasTextContent: true,
+            clientEventId: randomUUID(),
+            userMessage: {
+              version: 1,
+              parts: [{ type: "text", text: "warmup" }],
+            },
+          },
+        }),
+        [401],
+      ),
+      accept(
+        runnersHeartbeatApi.heartbeat({
+          headers: {},
+          body: {
+            runnerId: warmupId,
+            runnerHostname: `runner-${warmupId}.okou.app`,
+            group: "vm0/warmup",
+            snapshotGeneration: 1,
+            snapshotSequence: 1,
+            totalVcpu: 8,
+            totalMemoryMb: 16_384,
+            maxConcurrent: 2,
+            allocatedVcpu: 0,
+            allocatedMemoryMb: 0,
+            runningCount: 0,
+            admittableProfiles: ["vm0/default"],
+            heldSandboxStates: [],
+            heldHomeStates: [],
+            activeReuseProducers: [],
+            mode: "running",
+            ingressServiceActive: true,
+          },
+        }),
+        [401],
+      ),
+      accept(
+        runsByIdApi.getById({ headers: {}, params: { id: warmupId } }),
+        [401],
+      ),
+      accept(
+        runsCancelApi.cancel({ headers: {}, params: { id: warmupId } }),
+        [401],
+      ),
+      accept(
+        agentCompleteApi.complete({
+          headers: {},
+          body: { runId: warmupId, exitCode: 1, error: "warmup" },
+        }),
+        [401],
+      ),
+      accept(clerkWebhookApi.post({ body: "{}", extraHeaders: {} }), [401]),
+      accept(stripeWebhookApi.post({ body: "{}", extraHeaders: {} }), [401]),
+    ]);
+  });
+
+  mockOptionalEnv("CLERK_WEBHOOK_SIGNING_SECRET", previousClerkSecret);
+  mockOptionalEnv("STRIPE_WEBHOOK_SECRET", previousStripeSecret);
+  if (!warmed.ok) {
+    throw warmed.error;
+  }
+});
+
+interface TrackedRun {
+  readonly runId: string;
+  readonly sandboxToken: string;
+  done: boolean;
+}
+
+function createFirewallRunHarness(
+  options: { readonly proTier?: boolean } = {},
 ) {
-  const bdd = createBddApi(context);
-  const runs = createRunsApi(context);
-  const actor = bdd.user();
-  bdd.acceptStorageWrites();
+  const actor = bdd.user({ orgRole: "org:admin" });
+  if (!actor.orgId) {
+    throw new Error("Expected a workspace actor with an orgId");
+  }
+  const orgId: string = actor.orgId;
+  const group = `vm0/fw-${randomUUID().slice(0, 8)}`;
+  const runnerId = randomUUID();
+  const hostname = `runner-${runnerId}.okou.app`;
+  const acceptedOrder: string[] = [];
+  const acceptedByRunId = new Map<string, ExecutionContext>();
+  const trackedRuns: TrackedRun[] = [];
+  const bucket = env("R2_USER_STORAGES_BUCKET_NAME");
+  const kmsKey = env("SECRETS_KMS_KEY_ID");
+
+  mockEnv("APP_URL", "https://app.okou.ai");
+  mockEnv("OKOU_WEB_URL", "https://www.okou.ai");
+  mockEnv("OKOU_API_BACKEND_URL", "https://api.okou.ai");
+  mockOptionalEnv("OPENROUTER_API_KEY", undefined);
+  mockOptionalEnv("RUNNER_DEFAULT_GROUP", group);
+  chatCallbacks.acceptChatObjectStorage();
   runs.acceptStorageDownloads();
   runs.acceptTelemetryIngest();
-  const runnerGroup = await runs.configureRunnerGroup();
+  chatCallbacks.disableVapid();
+  mockClaudeCodeTokenEndpoint();
 
-  const modelAccounts = new Set<string>();
-  codexAccounts.owned.set(actor.userId, modelAccounts);
-  const owner = publicRunOwner(context, actor, {
-    afterRuns: async () => {
-      const support = createAuthDeviceSupportApi(context);
-      for (const id of modelAccounts) {
-        await support.deletePersonalModelProviderAccount(actor, id);
-      }
-      const connectors = createConnectorBddApi(context);
-      for (const slug of [
-        "test-oauth",
-        ...(options.additionalConnectorSlugs ?? []),
-      ]) {
-        for (const account of await connectors.listBuiltinConnectorAccounts(
-          actor,
-          slug,
-        )) {
-          await connectors.deleteBuiltinConnectorAccount(
-            actor,
-            slug,
-            account.id,
+  server.use(
+    http.post(
+      `https://${hostname}/runners/${runnerId}/control/runs/:runId/dispatch`,
+      async ({ request, params }) => {
+        const encoding = request.headers.get("content-encoding");
+        const rawBytes = Buffer.from(await request.arrayBuffer());
+        const text =
+          encoding === "gzip"
+            ? gunzipSync(rawBytes).toString("utf8")
+            : rawBytes.toString("utf8");
+        const envelope = runnerDispatchEnvelopeSchema.parse(JSON.parse(text));
+        if (
+          envelope.runnerId !== runnerId ||
+          envelope.executionContext.runId !== params.runId
+        ) {
+          throw new Error("Unexpected direct Runner dispatch identity");
+        }
+        acceptedByRunId.set(
+          envelope.executionContext.runId,
+          envelope.executionContext,
+        );
+        acceptedOrder.push(envelope.executionContext.runId);
+        return HttpResponse.json({
+          runnerId,
+          heartbeatGeneration: 1,
+          runId: envelope.executionContext.runId,
+          disposition: "accepted",
+        });
+      },
+    ),
+  );
+
+  let lastClockMs = now();
+
+  onTestFinished(async () => {
+    const previousGroup = optionalEnv("RUNNER_DEFAULT_GROUP");
+    mockNow(lastClockMs);
+    mockEnv("R2_USER_STORAGES_BUCKET_NAME", bucket);
+    mockEnv("SECRETS_KMS_KEY_ID", kmsKey);
+    mockOptionalEnv("RUNNER_DEFAULT_GROUP", group);
+    context.mocks.ably.publish.mockResolvedValue(undefined);
+    const cleaned = await settleIncludingAbort(async () => {
+      await flushWaitUntilForTest();
+      const active = trackedRuns.filter((entry) => {
+        return !entry.done;
+      });
+      if (active.length > 0) {
+        signIn(actor);
+        for (const entry of active) {
+          const current = await accept(
+            runsByIdApi.getById({
+              headers: SESSION_HEADERS,
+              params: { id: entry.runId },
+            }),
+            [200],
           );
+          if (["queued", "pending", "running"].includes(current.body.status)) {
+            await accept(
+              runsCancelApi.cancel({
+                headers: SESSION_HEADERS,
+                params: { id: entry.runId },
+              }),
+              [200],
+            );
+          }
+          if (
+            !["completed", "failed", "timeout"].includes(current.body.status)
+          ) {
+            await accept(
+              agentCompleteApi.complete({
+                headers: bearerHeaders(entry.sandboxToken),
+                body: {
+                  runId: entry.runId,
+                  exitCode: 137,
+                  error: "Run cancelled by test cleanup",
+                },
+              }),
+              [200],
+            );
+          }
+          entry.done = true;
         }
       }
-      codexAccounts.receipts.delete(actor.userId);
-      codexAccounts.owned.delete(actor.userId);
-    },
-  });
-  return await owner.run(async () => {
-    await publicPlanLifecycle(context, actor).update("active");
-    await bdd.completeOnboarding(actor);
-    const provider = await runs.ensurePersonalSubscriptionModel(actor, {
-      model: "claude-fable-5-1",
+      await flushWaitUntilForTest();
     });
-    modelAccounts.add(provider.providerId);
-
-    await options.prepareActor?.(actor);
-    const run = await runs.createThreadRun(actor, {
-      model: "claude-fable-5-1",
-      prompt: "resolve firewall auth",
-    });
-    await runs.heartbeatRunner(runnerGroup);
-    const execution = await owner.executionInput(run.runId);
-    return {
-      actor,
-      runId: run.runId,
-      execution,
-      headers: { authorization: `Bearer ${execution.firewallToken}` },
-    };
+    mockOptionalEnv("RUNNER_DEFAULT_GROUP", previousGroup);
+    if (!cleaned.ok) {
+      throw cleaned.error;
+    }
   });
-}
 
-async function recordUnclassifiedCodexFailure(
-  actor: ApiTestUser,
-  headers: { readonly authorization: string },
-) {
-  const fw = codexFirewallApi;
-  fw.mockCodexTokenRefresh(() => {
-    return HttpResponse.json(
-      {
-        error: {
-          code: "refresh_token_other",
-          message: "unclassified refresh failure",
+  async function registerRunner(): Promise<void> {
+    lastClockMs = now();
+    await accept(
+      runnersHeartbeatApi.heartbeat({
+        headers: {
+          authorization: `Bearer vm0_official_${env("OFFICIAL_RUNNER_SECRET")}`,
         },
-      },
-      { status: 401 },
+        body: {
+          runnerId,
+          runnerHostname: hostname,
+          group,
+          snapshotGeneration: 1,
+          snapshotSequence: 1,
+          totalVcpu: 16,
+          totalMemoryMb: 32_768,
+          maxConcurrent: 4,
+          allocatedVcpu: 0,
+          allocatedMemoryMb: 0,
+          runningCount: 0,
+          admittableProfiles: ["vm0/default"],
+          heldSandboxStates: [],
+          heldHomeStates: [],
+          activeReuseProducers: [],
+          mode: "running",
+          ingressServiceActive: true,
+        },
+      }),
+      [200],
     );
-  });
-  const failed = await fw.requestFirewallAuth(
-    headers,
-    {
-      forceRefresh: true,
-      authHeaders: {
-        Authorization: `Bearer ${secretTemplate("CHATGPT_ACCESS_TOKEN")}`,
-      },
-      secretConnectorMap: { CHATGPT_ACCESS_TOKEN: "codex-oauth-token" },
-      secretConnectorMetadataMap: {
-        CHATGPT_ACCESS_TOKEN: ownedCodexMetadata(actor),
-      },
-    },
-    [502],
-  );
-  expect(failed.body).toMatchObject({
-    error: { code: "TOKEN_REFRESH_FAILED" },
-  });
-  expect(failed.body).not.toHaveProperty("error.failureReason");
-}
+  }
 
-async function withPublicFirewallRun(
-  scenario: (
-    headers: { readonly authorization: string },
-    fixture: PublicFirewallFixture,
-    subscription: Awaited<ReturnType<PublicFirewallFixture["fund"]>>,
-    run: {
-      readonly runId: string;
-      readonly threadId: string;
-      readonly sandboxToken: string;
-    },
-  ) => Promise<void>,
-): Promise<void> {
-  const fixture = createPublicFirewallFixture(context);
-  await fixture.run(async () => {
-    const bdd = createBddApi(context);
-    const runsApi = createRunsApi(context);
-    bdd.acceptStorageWrites();
-    runsApi.acceptStorageDownloads();
-    runsApi.acceptTelemetryIngest();
-    const runnerGroup = await runsApi.configureRunnerGroup();
-    const subscription = await fixture.fund();
-    await runsApi.ensurePersonalSubscriptionModel(fixture.actor);
-
-    const run = await runsApi.createThreadRun(fixture.actor, {
-      prompt: "resolve firewall auth",
+  async function provisionMember(): Promise<void> {
+    webhooks.configureClerkWebhookSecret();
+    webhooks.verifyNextClerkWebhook({
+      type: "organization.created",
+      data: { id: orgId, created_by: actor.userId, created_at: now() },
     });
-    fixture.registerRun(run.runId);
-    await runsApi.heartbeatRunner(runnerGroup);
-    const execution = await runsApi.executionInput(run.runId);
-    fixture.registerExecution(run.runId, execution.sandboxToken);
-    await scenario(
-      { authorization: `Bearer ${execution.firewallToken}` },
-      fixture,
-      subscription,
-      { ...run, sandboxToken: execution.sandboxToken },
-    );
-  });
-}
+    await accept(clerkWebhookApi.post({ body: "{}", extraHeaders: {} }), [200]);
+    await flushWaitUntilForTest();
 
-async function connectPublicTestOAuth(
-  fixture: PublicFirewallFixture,
-  options: {
+    const tasks: Promise<unknown>[] = [
+      accept(
+        featureSwitchesApi.update({
+          headers: signIn(actor),
+          body: {
+            switches: { [FeatureSwitchKey.TestOauthConnector]: true },
+          },
+        }),
+        [200],
+      ),
+      accept(
+        personalModelProvidersApi.upsert({
+          headers: signIn(actor),
+          body: {
+            type: "claude-code-oauth-token",
+            secret: `claude-token-${randomUUID()}`,
+          },
+        }),
+        [201],
+      ),
+    ];
+    if (options.proTier) {
+      const periodEnd = nowDate();
+      periodEnd.setTime(now() + 30 * 24 * 60 * 60 * 1000);
+      tasks.push(
+        postSubscriptionInvoicePaid(context.signal, {
+          orgId,
+          userId: actor.userId,
+          tier: "pro",
+          customerId: generatedStripeCustomerId(),
+          subscriptionId: generatedStripeSubscriptionId(),
+          currentPeriodEnd: periodEnd,
+        }),
+      );
+    }
+    await Promise.all(tasks);
+  }
+
+  async function connectTestOAuth(args: {
     readonly accessToken: string;
     readonly refreshToken: string;
     readonly expiresIn: number;
-  },
-) {
-  fixture.registerBuiltinConnector("test-oauth");
-  const connectors = createConnectorBddApi(context);
-  await connectors.updateFeatureSwitches(fixture.actor, {
-    [FeatureSwitchKey.TestOauthConnector]: true,
-  });
-  mockTestOAuthAuthCodeProvider({ ...options, userId: fixture.actor.userId });
-  const started = await connectors.startOauth(
-    fixture.actor,
-    "test-oauth",
-    "oauth",
-  );
-  const state = new URL(started.authorizationUrl).searchParams.get("state");
-  if (!state) {
-    throw new Error("Expected OAuth authorization state");
-  }
-  await connectors.completeOauthCallbackResult("test-oauth", {
-    code: "initial-code",
-    state,
-  });
-}
-
-async function exactSecretConnectorSources(
-  actor: ApiTestUser,
-  sources: Readonly<Record<string, ConnectorSlug>>,
-  platformSecretNames: readonly string[] = [],
-): Promise<{
-  readonly secretConnectorMap: Readonly<Record<string, ConnectorSlug>>;
-  readonly secretConnectorMetadataMap: Readonly<
-    Record<
-      string,
-      | { readonly sourceType: "connector"; readonly sourceId: string }
-      | { readonly sourceType: "platform-secret" }
-    >
-  >;
-}> {
-  const connectors = createConnectorBddApi(context);
-  const entries = await Promise.all(
-    Object.entries(sources).map(async ([secretName, connectorSlug]) => {
-      const metadata = !platformSecretNames.includes(secretName)
-        ? {
-            sourceType: "connector" as const,
-            sourceId: (
-              await connectors.readDefaultBuiltinAccount(actor, connectorSlug)
-            ).id,
-          }
-        : { sourceType: "platform-secret" as const };
-      return [secretName, { connectorSlug, metadata }] as const;
-    }),
-  );
-  return {
-    secretConnectorMap: Object.fromEntries(
-      entries.map(([secretName, source]) => {
-        return [secretName, source.connectorSlug];
-      }),
-    ),
-    secretConnectorMetadataMap: Object.fromEntries(
-      entries.map(([secretName, source]) => {
-        return [secretName, source.metadata];
-      }),
-    ),
-  };
-}
-
-async function publicGoogleRefreshFixture(slug: "gmail" | "google-sheets") {
-  const fw = createFirewallApi(context);
-  const { actor, headers } = await publicConnections.run();
-  const secretName = slug === "gmail" ? "GMAIL_TOKEN" : "GOOGLE_SHEETS_TOKEN";
-  const accessToken = `stale-${slug}-access`;
-  mockOptionalEnv("GOOGLE_OAUTH_CLIENT_ID", "google-client-id");
-  mockOptionalEnv("GOOGLE_OAUTH_CLIENT_SECRET", "google-client-secret");
-  await publicConnections.googleOAuth(actor, slug, {
-    accessToken,
-    refreshToken: `synthetic-${slug}-refresh-secret`,
-    expiresIn: -60,
-  });
-  const body = {
-    authHeaders: {
-      Authorization: `Bearer ${secretTemplate(secretName)}`,
-    },
-    ...(await exactSecretConnectorSources(actor, { [secretName]: slug })),
-  };
-  return { fw, actor, headers, body };
-}
-
-function gateFirstStoredSecretDecrypt(): {
-  readonly started: Promise<void>;
-  readonly release: () => void;
-} {
-  const started = createDeferredPromise<void>(context.signal);
-  const resume = createDeferredPromise<void>(context.signal);
-  let gated = false;
-  const release = (): void => {
-    if (!resume.settled()) {
-      resume.resolve(undefined);
-    }
-  };
-  onTestFinished(release);
-
-  const client: SecretKmsClient = {
-    generateDataKey(
-      request: SecretKmsGenerateDataKeyRequest,
-    ): Promise<SecretKmsDataKey> {
-      return Promise.resolve({
-        keyId: request.keyId,
-        plaintext: TEST_DATA_KEY,
-        encryptedDataKey: Buffer.from(
-          `encrypted-data-key:${request.keyId}`,
-          "utf8",
-        ),
-      });
-    },
-    async decrypt(): Promise<Uint8Array> {
-      // Stored credential decryption starts after the credential SELECT has
-      // captured its statement snapshot.
-      if (!gated) {
-        gated = true;
-        started.resolve(undefined);
-        await resume.promise;
-      }
-      return TEST_DATA_KEY;
-    },
-  };
-  setSecretKmsClientForTests(client);
-  return { started: started.promise, release };
-}
-
-describe("FW-1: firewall auth boundaries", () => {
-  it("rejects missing and malformed firewall auth requests", async () => {
-    const fw = createFirewallApi(context);
-    const body = {
-      authHeaders: {},
-    };
-
-    const missingAuth = await fw.requestFirewallAuth({}, body, [401]);
-    expectApiError(missingAuth.body);
-    expect(missingAuth.body.error.code).toBe("UNAUTHORIZED");
-
-    const junkToken = await fw.requestFirewallAuth(
-      { authorization: "Bearer junk" },
-      body,
-      [401],
-    );
-    expectApiError(junkToken.body);
-    expect(junkToken.body.error.code).toBe("UNAUTHORIZED");
-  });
-});
-
-describe("saved connector account credentials", () => {
-  it("uses the newest Gmail access and refresh credentials after repeated Add account consent", async () => {
-    const fw = createFirewallApi(context);
-    const { actor, headers } = await publicConnections.run();
-    const connections = createConnectorBddApi(context);
-    await publicConnections.googleOAuth(actor, "gmail", {
-      accessToken: "dedup-before-access",
-      refreshToken: "dedup-before-refresh",
-      expiresIn: 3600,
-    });
-    const original = await connections.readDefaultBuiltinAccount(
-      actor,
-      "gmail",
-    );
-    const body = {
-      authHeaders: { Authorization: `Bearer ${secretTemplate("GMAIL_TOKEN")}` },
-      ...(await exactSecretConnectorSources(actor, { GMAIL_TOKEN: "gmail" })),
-    };
-    const authorization = async () => {
-      const resolved = await fw.requestFirewallAuth(headers, body, [200]);
-      if (resolved.status !== 200) {
-        throw new Error("Expected the saved Gmail account to resolve");
-      }
-      return resolved.body.headers.Authorization;
-    };
-    await expect(authorization()).resolves.toBe("Bearer dedup-before-access");
-    await publicConnections.googleOAuth(actor, "gmail", {
-      accessToken: "dedup-after-access",
-      refreshToken: "dedup-after-refresh",
-      expiresIn: 3600,
-    });
-    await expect(authorization()).resolves.toBe("Bearer dedup-after-access");
-    await publicConnections.googleOAuth(actor, "gmail", {
-      accessToken: "dedup-expired-access",
-      refreshToken: "dedup-newest-refresh",
-      expiresIn: -60,
-    });
-    server.use(
-      http.post("https://oauth2.googleapis.com/token", async ({ request }) => {
-        const input = new URLSearchParams(await request.text());
-        return input.get("grant_type") === "refresh_token" &&
-          input.get("refresh_token") === "dedup-newest-refresh"
-          ? HttpResponse.json({
-              access_token: "dedup-renewed-access",
-              expires_in: 3600,
-            })
-          : HttpResponse.json({ error: "invalid_grant" }, { status: 400 });
-      }),
-    );
-    await expect(authorization()).resolves.toBe("Bearer dedup-renewed-access");
-    const accounts = await connections.listBuiltinConnectorAccounts(
-      actor,
-      "gmail",
-    );
-    expect(accounts).toHaveLength(1);
-    expect(accounts[0]?.id).toBe(original.id);
-  });
-});
-
-describe("FW-2: template resolution without connector refresh", () => {
-  it("resolves variable and basic auth header templates", async () => {
-    await withPublicFirewallRun(async (headers) => {
-      const fw = createFirewallApi(context);
-      mockEnv("OKOU_DATA_ROUTER_URL", "https://data-router.example.test");
-      mockEnv("OKOU_DATA_TOKEN", "test-data-token");
-
-      const resolved = await fw.requestFirewallAuth(
-        headers,
-        {
-          authHeaders: {
-            "X-Tenant": varTemplate("TENANT"),
-            "X-Basic": basicTemplate(
-              "secrets.OKOU_DATA_TOKEN",
-              "vars.BASIC_PASS",
-            ),
-            "X-Literal-Basic": basicTemplate('"alice"', '"literal-pass"'),
-            "X-Shared": `${secretTemplate("OKOU_DATA_TOKEN")}:${varTemplate("OKOU_DATA_TOKEN")}`,
-          },
-          vars: {
-            TENANT: "tenant-1",
-            BASIC_PASS: "var-pass",
-            OKOU_DATA_TOKEN: "var-shared",
-          },
-        },
-        [200],
-      );
-      if (resolved.status !== 200) {
-        throw new Error("Expected firewall auth resolution to succeed");
-      }
-      expect(resolved.body.headers["X-Tenant"]).toBe("tenant-1");
-      expect(resolved.body.headers["X-Basic"]).toBe(
-        `Basic ${Buffer.from("test-data-token:var-pass").toString("base64")}`,
-      );
-      expect(resolved.body.headers["X-Literal-Basic"]).toBe(
-        `Basic ${Buffer.from("alice:literal-pass").toString("base64")}`,
-      );
-      expect(resolved.body.headers["X-Shared"]).toBe(
-        "test-data-token:var-shared",
-      );
-      expect(resolved.body.refreshedConnectors).toStrictEqual([]);
-      expect(resolved.body.refreshedSecrets).toStrictEqual([]);
-    });
-  });
-
-  it("resolves secret templates in the base URL and query", async () => {
-    await withPublicFirewallRun(async (headers) => {
-      const fw = createFirewallApi(context);
-      mockEnv("OKOU_DATA_ROUTER_URL", "https://data-router.example.test");
-      mockEnv("OKOU_DATA_TOKEN", "test-data-token");
-
-      const resolved = await fw.requestFirewallAuth(
-        headers,
-        {
-          authHeaders: {},
-          authBase: `https://api.example.test/${secretTemplate("OKOU_DATA_TOKEN")}`,
-          authQuery: { token: secretTemplate("OKOU_DATA_TOKEN") },
-        },
-        [200],
-      );
-      if (resolved.status !== 200) {
-        throw new Error("Expected firewall auth resolution to succeed");
-      }
-      expect(resolved.body.base).toBe(
-        "https://api.example.test/test-data-token",
-      );
-      expect(resolved.body.query).toStrictEqual({ token: "test-data-token" });
-      expect(resolved.body.expiresAt).toBeNull();
-      expect(resolved.body.refreshedConnectors).toStrictEqual([]);
-      expect(resolved.body.refreshedSecrets).toStrictEqual([]);
-      expect(resolved.body.resolvedSecrets).toStrictEqual(["OKOU_DATA_TOKEN"]);
-    });
-  });
-
-  it("reports unresolvable template references as connector-not-configured", async () => {
-    await withPublicFirewallRun(async (headers) => {
-      const fw = createFirewallApi(context);
-
-      const missing = await fw.requestFirewallAuth(
-        headers,
-        {
-          authHeaders: {
-            Authorization: `Bearer ${secretTemplate("NEVER_SET")}`,
-          },
-          secretConnectorMap: {},
-        },
-        [424],
-      );
-      if (missing.status !== 424) {
-        throw new Error("Expected unresolved secret to fail with 424");
-      }
-      expect(missing.body.error.code).toBe("CONNECTOR_NOT_CONFIGURED");
-    });
-  });
-
-  it("uses pinned routing variables and current auth-only variables for builtin connectors", async () => {
-    await withPublicFirewallRun(async (headers, fixture) => {
-      const fw = createFirewallApi(context);
-      const connectorsApi = createConnectorBddApi(context);
-      const actor = fixture.actor;
-      const accountIds = fixture.registerBuiltinConnector("jira");
-      const jiraConnection = await connectorsApi.connectManualGrant(
-        actor,
-        "jira",
-        "api-token",
-        {
-          apiToken: "current-jira-token",
-          domain: "current.atlassian.net",
-          email: "current@example.test",
-        },
-      );
-      accountIds.add(jiraConnection.id);
-      const body = {
-        authHeaders: {
-          "X-Domain": varTemplate("JIRA_DOMAIN"),
-          "X-Email": varTemplate("JIRA_EMAIL"),
-        },
-        vars: {
-          JIRA_DOMAIN: "run-start.atlassian.net",
-          JIRA_EMAIL: "run-start@example.test",
-        },
-        matchedFirewall: {
-          name: "jira",
-          apiId: "jira:0",
-          connectorSlug: "jira" as const,
-          sourceId: jiraConnection.id,
-          routingVariables: {
-            JIRA_DOMAIN: "run-start.atlassian.net",
-          },
-        },
-      };
-
-      const resolved = await fw.requestFirewallAuth(headers, body, [200]);
-      if (resolved.status !== 200) {
-        throw new Error(
-          "Expected builtin connector auth resolution to succeed",
-        );
-      }
-      expect(resolved.body.headers).toStrictEqual({
-        "X-Domain": "run-start.atlassian.net",
-        "X-Email": "current@example.test",
-      });
-
-      fixture.registerBuiltinConnectorDeletion("jira", jiraConnection.id);
-      await connectorsApi.deleteDefaultBuiltinConnectorAccount(actor, "jira");
-      const disconnected = await fw.requestFirewallAuth(headers, body, [424]);
-      if (disconnected.status !== 424) {
-        throw new Error("Expected disconnected builtin connector auth to fail");
-      }
-      expect(disconnected.body.error.code).toBe("CONNECTOR_NOT_CONFIGURED");
-    });
-  });
-
-  it("passes literals through query templates and keeps basic-literal templates opaque", async () => {
-    await withPublicFirewallRun(async (headers) => {
-      const fw = createFirewallApi(context);
-
-      // The quoted basic arguments are literals: the embedded secret template
-      // must neither be collected as a reference nor resolved, so the request
-      // succeeds even though NEVER_SET has no credential source.
-      const resolved = await fw.requestFirewallAuth(
-        headers,
-        {
-          authHeaders: {
-            "X-Empty-Basic": basicTemplate("", ""),
-            "X-Literal-Template": basicTemplate(
-              `"${secretTemplate("NEVER_SET")}"`,
-              "vars.PASS",
-            ),
-            "X-Quoted-Namespace": basicTemplate('"vars.PASS"', "vars.PASS"),
-          },
-          authQuery: {
-            token: "literal-query-value",
-            workspace: varTemplate("WORKSPACE_ID"),
-          },
-          vars: { WORKSPACE_ID: "workspace-9", PASS: "configured-pass" },
-        },
-        [200],
-      );
-      if (resolved.status !== 200) {
-        throw new Error("Expected the literal template resolution to succeed");
-      }
-      expect(resolved.body.headers["X-Empty-Basic"]).toBe(
-        `Basic ${Buffer.from(":").toString("base64")}`,
-      );
-      expect(resolved.body.headers["X-Literal-Template"]).toBe(
-        `Basic ${Buffer.from(`${secretTemplate("NEVER_SET")}:configured-pass`).toString("base64")}`,
-      );
-      expect(resolved.body.headers["X-Quoted-Namespace"]).toBe(
-        `Basic ${Buffer.from("vars.PASS:configured-pass").toString("base64")}`,
-      );
-      expect(resolved.body.query).toStrictEqual({
-        token: "literal-query-value",
-        workspace: "workspace-9",
-      });
-      expect(resolved.body.resolvedSecrets).toStrictEqual([]);
-
-      const withoutQuery = await fw.requestFirewallAuth(
-        headers,
-        {
-          authHeaders: { Authorization: "Bearer static-token" },
-        },
-        [200],
-      );
-      if (withoutQuery.status !== 200) {
-        throw new Error("Expected the query-less resolution to succeed");
-      }
-      expect(withoutQuery.body.query).toBeUndefined();
-      expect(withoutQuery.body.headers.Authorization).toBe(
-        "Bearer static-token",
-      );
-    });
-  });
-});
-
-describe("FW-3: billable firewall lease", () => {
-  afterEach(publicConnections.cleanup);
-
-  it("leases billable auth for limited-free-1 workspaces with spendable credits", async () => {
-    await withPublicFirewallRun(async (headers, fixture, subscription) => {
-      const fw = createFirewallApi(context);
-      await createWebhookCallbackApi(context).postStripeEvent(
-        {
-          type: "customer.subscription.deleted",
-          data: {
-            object: {
-              id: subscription.subscriptionId,
-              customer: subscription.customerId,
-              status: "canceled",
-              metadata: {},
-              items: { data: [{ price: { id: "price_bdd_pro" } }] },
-            },
-          },
-        },
-        [200],
-      );
-      await flushWaitUntilForTest();
-      await expect(
-        createRunsApi(context).readBillingStatus(fixture.actor),
-      ).resolves.toMatchObject({
-        tier: "limited-free-1",
-        status: "active",
-        credits: 20_000,
-      });
-      const before = Math.floor(now() / 1000);
-      const leased = await fw.requestFirewallAuth(
-        headers,
-        {
-          authHeaders: {},
-          firewallBillable: true,
-        },
-        [200],
-      );
-      if (leased.status !== 200) {
-        throw new Error("Expected limited-free-1 billable auth to succeed");
-      }
-      expect(leased.body.expiresAt ?? 0).toBeGreaterThanOrEqual(before + 25);
-      expect(leased.body.expiresAt ?? 0).toBeLessThanOrEqual(before + 35);
-    });
-  });
-
-  it("denies billable auth for suspended workspaces even with credits", async () => {
-    await withPublicFirewallRun(async (headers, fixture, subscription) => {
-      const fw = createFirewallApi(context);
-      const actor = fixture.actor;
-      if (!actor.orgId) {
-        throw new Error("Expected firewall actor to have an org");
-      }
-      await createWebhookCallbackApi(context).postStripeEvent(
-        {
-          type: "customer.subscription.updated",
-          data: {
-            object: {
-              id: subscription.subscriptionId,
-              customer: subscription.customerId,
-              status: "canceled",
-              cancel_at_period_end: false,
-              cancel_at: null,
-              schedule: null,
-              trial_end: null,
-              metadata: {},
-              items: { data: [{ price: { id: "price_bdd_pro" } }] },
-            },
-          },
-        },
-        [200],
-      );
-      await flushWaitUntilForTest();
-      await expect(
-        createRunsApi(context).readBillingStatus(actor),
-      ).resolves.toMatchObject({
-        tier: "pro",
-        status: "suspended",
-        credits: 20_000,
-      });
-
-      const denied = await fw.requestFirewallAuth(
-        headers,
-        {
-          authHeaders: {},
-          firewallBillable: true,
-        },
-        [402],
-      );
-      if (denied.status !== 402) {
-        throw new Error("Expected suspended billable auth to be denied");
-      }
-      expect(denied.body.error.code).toBe("INSUFFICIENT_CREDITS");
-    });
-  });
-
-  it("does not refresh an expired connector when billable auth is denied", async () => {
-    const fw = createFirewallApi(context);
-    const actor = createBddApi(context).user();
-    const subscription =
-      await createRunsApi(context).grantProEntitlement(actor);
-    const { execution: receivedExecution } = await launchPublicToolRun(
-      context,
-      actor,
-      onTestFinished,
-    );
-    const headers = {
-      authorization: `Bearer ${receivedExecution.firewallToken}`,
-    };
-    await publicConnections.testOAuth(actor, {
-      accessToken: "stale-access",
-      refreshToken: "refresh-1",
-      expiresIn: -60,
-    });
-    let refreshRequests = 0;
-    fw.mockTestOauthTokenRefresh(() => {
-      refreshRequests += 1;
-      return fw.oauthTokenResponse({
-        accessToken: "should-not-refresh",
-        expiresIn: 3600,
-      });
-    });
-    if (!actor.orgId) {
-      throw new Error("Expected firewall actor to have an org");
-    }
-    await publicPlanLifecycle(context, actor, "pro", subscription).update(
-      "canceled",
-    );
-
-    const denied = await fw.requestFirewallAuth(
-      headers,
-      {
-        authHeaders: {
-          Authorization: `Bearer ${secretTemplate("TEST_OAUTH_TOKEN")}`,
-        },
-        ...(await exactSecretConnectorSources(actor, {
-          TEST_OAUTH_TOKEN: "test-oauth",
-        })),
-        firewallBillable: true,
-      },
-      [402],
-    );
-    if (denied.status !== 402) {
-      throw new Error("Expected billable connector auth to be denied");
-    }
-    expect(denied.body.error.code).toBe("INSUFFICIENT_CREDITS");
-    expect(refreshRequests).toBe(0);
-  });
-
-  it("bounds billable auth expiry by the credit authorization lease", async () => {
-    await withPublicFirewallRun(async (headers) => {
-      const fw = createFirewallApi(context);
-
-      const before = Math.floor(now() / 1000);
-      const leased = await fw.requestFirewallAuth(
-        headers,
-        {
-          authHeaders: {},
-          firewallBillable: true,
-        },
-        [200],
-      );
-      if (leased.status !== 200) {
-        throw new Error("Expected billable firewall auth to succeed");
-      }
-      expect(leased.body.expiresAt ?? 0).toBeGreaterThanOrEqual(before + 25);
-      expect(leased.body.expiresAt ?? 0).toBeLessThanOrEqual(before + 35);
-    });
-  });
-
-  it("merges the billable lease with refreshed connector token expiries", async () => {
-    const fw = createFirewallApi(context);
-    const { actor, headers } = await publicConnections.run();
-    await publicConnections.testOAuth(actor, {
-      accessToken: "stale-access",
-      refreshToken: "refresh-1",
-      expiresIn: -60,
-    });
-
-    // A long-lived refreshed token leaves the 30 s billable lease as the
-    // earlier bound.
-    fw.mockTestOauthTokenRefresh(() => {
-      return fw.oauthTokenResponse({
-        accessToken: "long-lived-access",
-        expiresIn: 3600,
-      });
-    });
-    const body = {
-      authHeaders: {
-        Authorization: `Bearer ${secretTemplate("TEST_OAUTH_TOKEN")}`,
-      },
-      ...(await exactSecretConnectorSources(actor, {
-        TEST_OAUTH_TOKEN: "test-oauth",
-      })),
-      firewallBillable: true,
-    };
-    const leaseBefore = Math.floor(now() / 1000);
-    const leaseBound = await fw.requestFirewallAuth(headers, body, [200]);
-    if (leaseBound.status !== 200) {
-      throw new Error("Expected the long-lived billable refresh to succeed");
-    }
-    expect(leaseBound.body.headers.Authorization).toBe(
-      "Bearer long-lived-access",
-    );
-    expect(leaseBound.body.expiresAt ?? 0).toBeGreaterThanOrEqual(
-      leaseBefore + 25,
-    );
-    expect(leaseBound.body.expiresAt ?? 0).toBeLessThanOrEqual(
-      leaseBefore + 35,
-    );
-
-    // A short positive lifetime after the refresh buffer undercuts the lease.
-    fw.mockTestOauthTokenRefresh(() => {
-      return fw.oauthTokenResponse({
-        accessToken: "short-lived-access",
-        expiresIn: 65,
-      });
-    });
-    const tokenBefore = Math.floor(now() / 1000);
-    const tokenBound = await fw.requestFirewallAuth(
-      headers,
-      {
-        ...body,
-        forceRefresh: true,
-      },
-      [200],
-    );
-    if (tokenBound.status !== 200) {
-      throw new Error("Expected the short-lived billable refresh to succeed");
-    }
-    expect(tokenBound.body.headers.Authorization).toBe(
-      "Bearer short-lived-access",
-    );
-    expect(tokenBound.body.expiresAt ?? 0).toBeGreaterThanOrEqual(
-      tokenBefore + 1,
-    );
-    expect(tokenBound.body.expiresAt ?? 0).toBeLessThanOrEqual(
-      tokenBefore + 10,
-    );
-  });
-
-  it("continues billable firewall auth after subscription deletion when credits remain", async () => {
-    const bdd = createBddApi(context);
-    const runsApi = createRunsApi(context);
-    const webhooks = createWebhookCallbackApi(context);
-    const fw = createFirewallApi(context);
-    const actor = bdd.user();
-    bdd.acceptStorageWrites();
-    runsApi.acceptStorageDownloads();
-    runsApi.acceptTelemetryIngest();
-    const runnerGroup = await runsApi.configureRunnerGroup();
-    const granted = await runsApi.grantProEntitlement(actor);
-    await runsApi.ensurePersonalSubscriptionModel(actor);
-
-    const run = await runsApi.createThreadRun(actor, {
-      prompt: "billable auth across a subscription deletion",
-    });
-    await runsApi.heartbeatRunner(runnerGroup);
-    const execution = await runsApi.executionInput(run.runId);
-    const headers = { authorization: `Bearer ${execution.firewallToken}` };
-    const body = {
-      authHeaders: {},
-      firewallBillable: true,
-    };
-
-    const leased = await fw.requestFirewallAuth(headers, body, [200]);
-    if (leased.status !== 200) {
-      throw new Error("Expected the entitled billable auth to lease");
-    }
-
-    webhooks.configureStripeBillingEnv();
-    await webhooks.postStripeEvent(
-      {
-        id: `evt_bdd_${randomUUID()}`,
-        type: "customer.subscription.deleted",
-        data: { object: { id: granted.subscriptionId, metadata: {} } },
-      },
-      [200],
-    );
-
-    const downgraded = await runsApi.readBillingStatus(actor);
-    expect(downgraded.tier).toBe("limited-free-1");
-    expect(downgraded.subscriptionStatus).toBe("canceled");
-
-    const postDeletionBefore = Math.floor(now() / 1000);
-    const postDeletionLease = await fw.requestFirewallAuth(
-      headers,
-      body,
-      [200],
-    );
-    if (postDeletionLease.status !== 200) {
-      throw new Error("Expected the limited-free-1 billable auth to lease");
-    }
-    expect(postDeletionLease.body.expiresAt ?? 0).toBeGreaterThanOrEqual(
-      postDeletionBefore + 25,
-    );
-    expect(postDeletionLease.body.expiresAt ?? 0).toBeLessThanOrEqual(
-      postDeletionBefore + 35,
-    );
-
-    await runsApi.requestCancelRun(actor, run.runId, [200]);
-    await webhooks.requestAgentComplete(
-      { runId: run.runId, exitCode: 1, error: "Firewall carrier cancelled" },
-      { authorization: `Bearer ${execution.sandboxToken}` },
-      [200],
-    );
-  });
-
-  it("denies billable firewall auth when the granted credits already expired", async () => {
-    const bdd = createBddApi(context);
-    const runsApi = createRunsApi(context);
-    const fw = createFirewallApi(context);
-    const actor = bdd.user();
-    bdd.acceptStorageWrites();
-    runsApi.acceptStorageDownloads();
-    runsApi.acceptTelemetryIngest();
-    const runnerGroup = await runsApi.configureRunnerGroup();
-    // The credit expiry is the subscription period end plus one month, so a
-    // period that ended two months ago yields a pro org whose entire balance
-    // is expired but unsettled.
-    await runsApi.grantProEntitlement(actor, {
-      periodEndUnix: Math.floor(now() / 1000) - 60 * 86_400,
-    });
-    await runsApi.ensurePersonalSubscriptionModel(actor);
-
-    const run = await runsApi.createThreadRun(actor, {
-      prompt: "billable auth with expired credits",
-    });
-
-    await runsApi.heartbeatRunner(runnerGroup);
-    const execution = await runsApi.executionInput(run.runId);
-    const denied = await fw.requestFirewallAuth(
-      { authorization: `Bearer ${execution.firewallToken}` },
-      {
-        authHeaders: {},
-        firewallBillable: true,
-      },
-      [402],
-    );
-    if (denied.status !== 402) {
-      throw new Error("Expected the expired-credit billable auth to be denied");
-    }
-    expect(denied.body.error.code).toBe("INSUFFICIENT_CREDITS");
-
-    await runsApi.requestCancelRun(actor, run.runId, [200]);
-    await createWebhookCallbackApi(context).requestAgentComplete(
-      { runId: run.runId, exitCode: 1, error: "Firewall carrier cancelled" },
-      { authorization: `Bearer ${execution.sandboxToken}` },
-      [200],
-    );
-  });
-});
-
-describe("FW-4: connector refresh and replacement snapshots", () => {
-  afterEach(publicConnections.cleanup);
-
-  it("defaults the refreshed expiry when the provider omits expires_in", async () => {
-    const fw = createFirewallApi(context);
-    const { actor, headers } = await publicConnections.run();
-    await publicConnections.testOAuth(actor, {
-      accessToken: "stale-access",
-      refreshToken: "refresh-1",
-      expiresIn: -60,
-    });
-    fw.mockTestOauthTokenRefresh(() => {
-      return fw.oauthTokenResponse({ accessToken: "fresh-no-expiry" });
-    });
-
-    const before = Math.floor(now() / 1000);
-    const refreshed = await fw.requestFirewallAuth(
-      headers,
-      {
-        authHeaders: {
-          Authorization: `Bearer ${secretTemplate("TEST_OAUTH_TOKEN")}`,
-        },
-        ...(await exactSecretConnectorSources(actor, {
-          TEST_OAUTH_TOKEN: "test-oauth",
-        })),
-      },
-      [200],
-    );
-    if (refreshed.status !== 200) {
-      throw new Error("Expected refresh to succeed");
-    }
-    expect(refreshed.body.headers.Authorization).toBe("Bearer fresh-no-expiry");
-    expect(refreshed.body.expiresAt ?? 0).toBeGreaterThanOrEqual(before + 835);
-    expect(refreshed.body.expiresAt ?? 0).toBeLessThanOrEqual(before + 845);
-  });
-
-  it.each([0, 60])(
-    "refreshes a stored token with %i seconds remaining at the effective boundary",
-    async (expiresIn) => {
-      const fw = createFirewallApi(context);
-      const { actor, headers } = await publicConnections.run();
-      await publicConnections.testOAuth(actor, {
-        accessToken: "boundary-access",
-        refreshToken: "refresh-1",
-        expiresIn,
-      });
-      let refreshCalls = 0;
-      fw.mockTestOauthTokenRefresh(() => {
-        refreshCalls += 1;
-        return fw.oauthTokenResponse({
-          accessToken: "positive-lifetime-access",
-          expiresIn: 3600,
-        });
-      });
-      const before = Math.floor(now() / 1000);
-      const refreshed = await fw.requestFirewallAuth(
-        headers,
-        {
-          authHeaders: {
-            Authorization: `Bearer ${secretTemplate("TEST_OAUTH_TOKEN")}`,
-          },
-          ...(await exactSecretConnectorSources(actor, {
-            TEST_OAUTH_TOKEN: "test-oauth",
-          })),
-        },
-        [200],
-      );
-      if (refreshed.status !== 200) {
-        throw new Error("Expected effective-boundary refresh to succeed");
-      }
-      expect(refreshed.body.headers.Authorization).toBe(
-        "Bearer positive-lifetime-access",
-      );
-      expect(refreshed.body.expiresAt ?? 0).toBeGreaterThanOrEqual(
-        before + 3535,
-      );
-      expect(refreshed.body.expiresAt ?? 0).toBeLessThanOrEqual(before + 3545);
-      expect(refreshed.body.refreshedConnectors).toStrictEqual(["test-oauth"]);
-      expect(refreshCalls).toBe(1);
-    },
-  );
-
-  it.each([0, 5, 60])(
-    "fails closed after a %i-second refresh and retains rotation for later recovery",
-    async (expiresIn) => {
-      const fw = createFirewallApi(context);
-      const { actor, headers } = await publicConnections.run();
-      await publicConnections.testOAuth(actor, {
-        accessToken: "stale-access",
-        refreshToken: "refresh-1",
-        expiresIn: -60,
-      });
-      const refreshTokens: (string | null)[] = [];
-      fw.mockTestOauthTokenRefresh(async (request) => {
-        refreshTokens.push(
-          new URLSearchParams(await request.text()).get("refresh_token"),
-        );
-        return fw.oauthTokenResponse({
-          accessToken:
-            refreshTokens.length === 1 ? "unusable-access" : "recovered-access",
-          refreshToken: "rotated-refresh",
-          expiresIn: refreshTokens.length === 1 ? expiresIn : 3600,
-        });
-      });
-      const body = {
-        authHeaders: {
-          Authorization: `Bearer ${secretTemplate("TEST_OAUTH_TOKEN")}`,
-        },
-        ...(await exactSecretConnectorSources(actor, {
-          TEST_OAUTH_TOKEN: "test-oauth",
-        })),
-      };
-      const failed = await fw.requestFirewallAuth(headers, body, [502]);
-      if (failed.status !== 502) {
-        throw new Error("Expected non-positive lifetime refresh to fail");
-      }
-      expect(failed.body.error).toMatchObject({
-        code: "TOKEN_REFRESH_FAILED",
-        connectors: ["test-oauth"],
-        failureReason: "upstream_provider",
-      });
-      expect(refreshTokens).toStrictEqual(["refresh-1"]);
-
-      const before = Math.floor(now() / 1000);
-      const recovered = await fw.requestFirewallAuth(headers, body, [200]);
-      if (recovered.status !== 200) {
-        throw new Error("Expected persisted rotation to support recovery");
-      }
-      expect(recovered.body.headers.Authorization).toBe(
-        "Bearer recovered-access",
-      );
-      expect(recovered.body.expiresAt ?? 0).toBeGreaterThanOrEqual(
-        before + 3535,
-      );
-      expect(recovered.body.expiresAt ?? 0).toBeLessThanOrEqual(before + 3545);
-      expect(refreshTokens).toStrictEqual(["refresh-1", "rotated-refresh"]);
-    },
-  );
-
-  it("preserves mixed refresh failures and rotation when one refreshed lifetime is unusable", async () => {
-    const fw = createFirewallApi(context);
-    const { actor, headers } = await publicConnections.run();
-    await publicConnections.testOAuth(actor, {
-      accessToken: "stale-access",
-      refreshToken: "refresh-1",
-      expiresIn: -60,
-    });
-    await publicConnections.googleOAuth(actor, "gmail", {
-      accessToken: "stale-gmail-access",
-      refreshToken: "gmail-refresh-1",
-      expiresIn: -60,
-    });
-    const refreshTokens: (string | null)[] = [];
-    fw.mockTestOauthTokenRefresh(async (request) => {
-      refreshTokens.push(
-        new URLSearchParams(await request.text()).get("refresh_token"),
-      );
-      return fw.oauthTokenResponse({
-        accessToken:
-          refreshTokens.length === 1 ? "unusable-access" : "recovered-access",
-        refreshToken: "rotated-refresh",
-        expiresIn: refreshTokens.length === 1 ? 60 : 3600,
-      });
-    });
-    server.use(
-      http.post("https://oauth2.googleapis.com/token", () => {
-        return HttpResponse.json({ error: "invalid_grant" }, { status: 400 });
-      }),
-    );
-    const body = {
-      authHeaders: {
-        Authorization: `Bearer ${secretTemplate("TEST_OAUTH_TOKEN")}`,
-        "X-Gmail": `Bearer ${secretTemplate("GMAIL_TOKEN")}`,
-      },
-      ...(await exactSecretConnectorSources(actor, {
-        TEST_OAUTH_TOKEN: "test-oauth",
-        GMAIL_TOKEN: "gmail",
-      })),
-    };
-
-    const failed = await fw.requestFirewallAuth(headers, body, [502]);
-    if (failed.status !== 502) {
-      throw new Error("Expected both refresh failures to remain visible");
-    }
-    expect(failed.body.error.code).toBe("TOKEN_REFRESH_FAILED");
-    expect(failed.body.error.connectors?.slice().sort()).toStrictEqual([
-      "gmail",
-      "test-oauth",
-    ]);
-    // The unusable lifetime is upstream_provider; Gmail remains a distinct
-    // reconnect_required failure, so no single reason represents the batch.
-    expect(failed.body.error.failureReason).toBeUndefined();
-    expect(refreshTokens).toStrictEqual(["refresh-1"]);
-
-    const before = Math.floor(now() / 1000);
-    const recovered = await fw.requestFirewallAuth(
-      headers,
-      {
-        ...body,
-        authHeaders: { Authorization: body.authHeaders.Authorization },
-      },
-      [200],
-    );
-    if (recovered.status !== 200) {
-      throw new Error("Expected the unaffected rotated source to recover");
-    }
-    expect(recovered.body.headers.Authorization).toBe(
-      "Bearer recovered-access",
-    );
-    expect(recovered.body.refreshedConnectors).toStrictEqual(["test-oauth"]);
-    expect(recovered.body.expiresAt ?? 0).toBeGreaterThanOrEqual(before + 3535);
-    expect(recovered.body.expiresAt ?? 0).toBeLessThanOrEqual(before + 3545);
-    expect(refreshTokens).toStrictEqual(["refresh-1", "rotated-refresh"]);
-  });
-
-  it("re-runs refresh for a current connector when forceRefresh is set", async () => {
-    const fw = createFirewallApi(context);
-    const { actor, headers } = await publicConnections.run();
-    await publicConnections.testOAuth(actor, {
-      accessToken: "current-access",
-      refreshToken: "refresh-1",
-      expiresIn: 3600,
-    });
-    fw.mockTestOauthTokenRefresh(() => {
-      return fw.oauthTokenResponse({
-        accessToken: "forced-access",
-        expiresIn: 3600,
-      });
-    });
-
-    const before = Math.floor(now() / 1000);
-    const refreshed = await fw.requestFirewallAuth(
-      headers,
-      {
-        authHeaders: {
-          Authorization: `Bearer ${secretTemplate("TEST_OAUTH_TOKEN")}`,
-        },
-        ...(await exactSecretConnectorSources(actor, {
-          TEST_OAUTH_TOKEN: "test-oauth",
-        })),
-        forceRefresh: true,
-      },
-      [200],
-    );
-    if (refreshed.status !== 200) {
-      throw new Error("Expected forced refresh to succeed");
-    }
-    expect(refreshed.body.headers.Authorization).toBe("Bearer forced-access");
-    expect(refreshed.body.refreshedConnectors).toStrictEqual(["test-oauth"]);
-    expect(refreshed.body.expiresAt ?? 0).toBeGreaterThanOrEqual(before + 3535);
-    expect(refreshed.body.expiresAt ?? 0).toBeLessThanOrEqual(before + 3545);
-  });
-
-  it.each([
-    {
-      registration: "cimd" as const,
-      refreshError: "invalid_grant" as const,
-      failureReason: "reconnect_required",
-      connectionStatusAfterFailure: "reconnect-required",
-    },
-    {
-      registration: "cimd" as const,
-      refreshError: "temporarily_unavailable" as const,
-      failureReason: "upstream_provider",
-      connectionStatusAfterFailure: "connected",
-    },
-    {
-      registration: "dcr" as const,
-      refreshError: "invalid_client" as const,
-      failureReason: "reconnect_required",
-      connectionStatusAfterFailure: "reconnect-required",
-    },
-  ])(
-    "classifies Automatic MCP OAuth $refreshError refresh failures",
-    async ({
-      registration,
-      refreshError,
-      failureReason,
-      connectionStatusAfterFailure,
-    }) => {
-      mockEnv("OKOU_API_BACKEND_URL", "https://api.okou.ai");
-      mockEnv("OKOU_WEB_URL", "https://www.okou.ai");
-      mockEnv("APP_URL", "https://app.okou.ai");
-      const provider = mockAutomaticMcpOAuthProvider(context, {
-        registration,
-        initialExpiresIn: 3600,
-        ...(refreshError === "temporarily_unavailable"
-          ? { refreshErrors: [refreshError] }
-          : { refreshError }),
-      });
-      const fw = createFirewallApi(context);
-      const connectors = createConnectorBddApi(context);
-      await withPublicFirewallRun(async (headers, fixture) => {
-        const actor = fixture.actor;
-        const mcp = await connectors.createCustomConnector(actor, {
-          kind: "mcp",
-          displayName: `BDD Automatic MCP ${refreshError}`,
-          endpoint: provider.endpoint,
-          transport: "streamable-http",
-          fields: [],
-          headerInjections: [],
-          queryInjections: [],
-          authMode: "automatic",
-        });
-        fixture.registerCustomConnector(mcp.id);
-        const authorizationUrl = await connectors.startCustomConnectorOAuth2(
-          actor,
-          mcp.id,
-        );
-        const state = new URL(authorizationUrl).searchParams.get("state");
-        if (!state) {
-          throw new Error("Expected Automatic MCP OAuth state");
-        }
-        await connectors.completeCustomConnectorOAuth2Callback({
-          code: `automatic-mcp-${refreshError}-code`,
-          state,
-          iss: provider.issuer,
-        });
-        if (refreshError === "invalid_client") {
-          const secondAuthorization =
-            await connectors.startCustomConnectorOAuth2(actor, mcp.id, {
-              intent: "add",
-              displayName: "Second",
-            });
-          const secondState = new URL(secondAuthorization).searchParams.get(
-            "state",
-          );
-          if (!secondState) {
-            throw new Error("Expected second Automatic MCP OAuth state");
-          }
-          await connectors.completeCustomConnectorOAuth2Callback({
-            code: "automatic-mcp-invalid-client-second-code",
-            state: secondState,
-            iss: provider.issuer,
-          });
-        }
-        const accounts = await connectors.listCustomConnectorAccounts(
-          actor,
-          mcp.id,
-        );
-        const [account] = accounts;
-        if (!account) {
-          throw new Error("Expected an Automatic MCP OAuth account");
-        }
-        const internalName = `custom_connector_${mcp.id.replaceAll("-", "")}`;
-        const secretKey = `CUSTOM_${mcp.id.replaceAll("-", "")}_S___OAUTH_ACCESS_TOKEN`;
-        const authBody = {
-          authHeaders: {
-            Authorization: `Bearer ${secretTemplate(secretKey)}`,
-          },
-          matchedFirewall: {
-            name: internalName,
-            apiId: `${internalName}:0`,
-            customConnectorId: mcp.id,
-            sourceId: account.id,
-            routingVariables: {},
-          },
-          forceRefresh: true,
-        };
-
-        const failed = await fw.requestFirewallAuth(headers, authBody, [502]);
-        if (failed.status !== 502) {
-          throw new Error("Expected Automatic MCP OAuth refresh failure");
-        }
-        expect(failed.body.error).toMatchObject({
-          code: "TOKEN_REFRESH_FAILED",
-          connectors: [mcp.id],
-          failureReason,
-        });
-        await expect(
-          connectors.listCustomConnectorAccounts(actor, mcp.id),
-        ).resolves.toContainEqual(
-          expect.objectContaining({
-            id: account.id,
-            connectionStatus: connectionStatusAfterFailure,
-          }),
-        );
-        expect(
-          provider.tokenBodies.map((body) => {
-            return body.get("grant_type");
-          }),
-        ).toStrictEqual(
-          refreshError === "invalid_client"
-            ? ["authorization_code", "authorization_code", "refresh_token"]
-            : ["authorization_code", "refresh_token"],
-        );
-        const verifyOutcome: Record<typeof refreshError, () => Promise<void>> =
-          {
-            invalid_grant: async () => {
-              for (const forceRefresh of [false, true]) {
-                const repeated = await fw.requestFirewallAuth(
-                  headers,
-                  { ...authBody, forceRefresh },
-                  [502],
-                );
-                expect(repeated.body).toMatchObject({
-                  error: { failureReason: "reconnect_required" },
-                });
-              }
-              expect(provider.tokenBodies).toHaveLength(4);
-            },
-            invalid_client: async () => {
-              const retiredAccounts =
-                await connectors.listCustomConnectorAccounts(actor, mcp.id);
-              expect(retiredAccounts).toHaveLength(2);
-              expect(
-                retiredAccounts.map((item) => {
-                  return item.connectionStatus;
-                }),
-              ).toStrictEqual(["reconnect-required", "reconnect-required"]);
-              await connectors.startCustomConnectorOAuth2(actor, mcp.id, {
-                intent: "reconnect",
-                connectionId: account.id,
-              });
-              expect(provider.registrationBodies).toHaveLength(2);
-            },
-            temporarily_unavailable: async () => {
-              const recovered = await fw.requestFirewallAuth(
-                headers,
-                authBody,
-                [200],
-              );
-              expect(recovered.body).toMatchObject({
-                headers: {
-                  Authorization: "Bearer automatic-refreshed-access-token",
-                },
-                refreshedConnectors: [mcp.id],
-              });
-              expect(provider.tokenBodies[2]?.get("grant_type")).toBe(
-                "refresh_token",
-              );
-              expect(provider.tokenBodies[2]?.get("resource")).toBe(
-                provider.endpoint,
-              );
-            },
-          };
-        await verifyOutcome[refreshError]();
-      });
-    },
-  );
-
-  it("maintains authoritative and unknown OAuth grants across refresh", async () => {
-    const fw = createFirewallApi(context);
-    const connectors = createConnectorBddApi(context);
-    const catalog = automaticMcpCatalogFixture("oauth");
-    const provider = mockAutomaticMcpOAuthProvider(context, {
-      registration: "cimd",
-      authentication: "oauth",
-      initialExpiresIn: 3600,
-    });
-    const automaticTokenRequests: URLSearchParams[] = [];
-    server.use(
-      http.post(`${provider.issuer}/token`, async ({ request }) => {
-        const body = new URLSearchParams(await request.text());
-        automaticTokenRequests.push(body);
-        return HttpResponse.json({
-          access_token:
-            body.get("grant_type") === "refresh_token"
-              ? "automatic-refreshed-access-token"
-              : "automatic-initial-access-token",
-          refresh_token: "automatic-refresh-token",
-          token_type: "Bearer",
-          expires_in: 3600,
-        });
-      }),
-    );
-    let automaticConnectionId: string | undefined;
-    const {
-      actor,
-      headers,
-      execution: receivedExecution,
-    } = await firewallRun({
-      additionalConnectorSlugs: [catalog.slug],
-      prepareActor: async (owner) => {
-        mockEnv("OKOU_API_BACKEND_URL", "https://api.okou.ai");
-        mockEnv("OKOU_WEB_URL", "https://www.okou.ai");
-        mockEnv("APP_URL", "https://app.okou.ai");
-        createRouteMocks(context).clerk.session(
-          owner.userId,
-          owner.orgId,
-          owner.orgRole,
-        );
-        const userHeaders = { authorization: "Bearer clerk-session" };
-        const automatic = setupApp({
-          context,
-          routes: builtinConnectorsAutomaticRoutes,
-        })(builtinConnectorAutomaticContract);
-        const started = await accept(
-          automatic.start({
-            headers: userHeaders,
-            params: { connectorSlug: catalog.slug },
-            body: {
-              authMethod: catalog.methodId,
-              account: { intent: "add" },
-            },
-          }),
-          [200],
-        );
-        if (started.body.result !== "authorization") {
-          throw new Error("Expected Automatic OAuth authorization redirect");
-        }
-        const state = new URL(started.body.authorizationUrl).searchParams.get(
-          "state",
-        );
-        if (!state) {
-          throw new Error("Expected issued Automatic OAuth state");
-        }
-        const completed = await accept(
-          automatic.callback({
-            query: {
-              state,
-              code: "unknown-grant-code",
-              iss: provider.issuer,
-              responseMode: "json",
-            },
-          }),
-          [200],
-        );
-        expect(completed.body.status).toBe("success");
-        const receipt = await accept(
-          setupApp({ context, routes: connectorAccountRoutes })(
-            connectorAccountsContract,
-          ).oauthCompletion({
-            headers: userHeaders,
-            params: { attemptId: started.body.oauthAttemptId },
-            query: { kind: "builtin", connectorSlug: catalog.slug },
-          }),
-          [200],
-        );
-        automaticConnectionId = receipt.body.connectionId;
-        expect(
-          (await connectors.readDefaultBuiltinAccount(owner, catalog.slug))
-            .oauthScopes,
-        ).toBeNull();
-      },
-    });
-    if (!automaticConnectionId) {
-      throw new Error(
-        "Expected the connected account and actual dispatched Runner credentials",
-      );
-    }
-    expect(receivedExecution.connectorRuntimeTargets).toContainEqual(
-      expect.objectContaining({
-        kind: "builtin",
-        connectorSlug: catalog.slug,
-        sourceId: automaticConnectionId,
-      }),
-    );
-    expect(receivedExecution.firewalls).toContainEqual(
-      expect.objectContaining({
-        kind: "builtin",
-        name: catalog.slug,
-        sourceId: automaticConnectionId,
-      }),
-    );
-    if (!actor.orgId) {
-      throw new Error("Expected firewall actor to have an organization");
-    }
-    await connectors.updateFeatureSwitches(actor, {
-      [FeatureSwitchKey.TestOauthConnector]: true,
-    });
+    readonly scope?: string;
+  }): Promise<string> {
     mockTestOAuthAuthCodeProvider({
-      accessToken: "initial-scoped-access",
-      refreshToken: "initial-scoped-refresh",
-      scope: "read provider-added",
+      accessToken: args.accessToken,
+      refreshToken: args.refreshToken,
+      expiresIn: args.expiresIn,
+      scope: args.scope ?? "read",
+      userId: `test-oauth-user-${randomUUID().slice(0, 8)}`,
+      username: "bdd-test-oauth",
+      email: "bdd-test-oauth@example.test",
     });
-    const start = await connectors.startOauth(actor, "test-oauth", "oauth");
-    const state = new URL(start.authorizationUrl).searchParams.get("state");
-    if (!state) {
-      throw new Error("Expected test OAuth authorization state");
-    }
-    await connectors.completeOauthCallback("test-oauth", {
-      code: "scoped-refresh-code",
-      state,
-    });
-
-    const connected = await connectors.readDefaultBuiltinAccount(
-      actor,
-      "test-oauth",
-    );
-    expect(connected.oauthScopes).toStrictEqual(["read", "provider-added"]);
-    expect(connected.connectionStatus).toBe("connected");
-    const connectorSources = await exactSecretConnectorSources(actor, {
-      TEST_OAUTH_TOKEN: "test-oauth",
-    });
-    const forceRefresh = async () => {
-      const response = await fw.requestFirewallAuth(
-        headers,
-        {
-          authHeaders: {
-            Authorization: `Bearer ${secretTemplate("TEST_OAUTH_TOKEN")}`,
-          },
-          ...connectorSources,
-          forceRefresh: true,
-        },
-        [200],
-      );
-      if (response.status !== 200) {
-        throw new Error("Expected scoped connector refresh to succeed");
-      }
-      return response.body;
-    };
-
-    fw.mockTestOauthTokenRefresh(() => {
-      return fw.oauthTokenResponse({
-        accessToken: "narrow-scoped-access",
-        refreshToken: "narrow-scoped-refresh",
-        expiresIn: 3600,
-        scope: "provider-added",
-      });
-    });
-    const narrowed = await forceRefresh();
-    expect(narrowed.headers.Authorization).toBe("Bearer narrow-scoped-access");
-    const narrowedConnector = await connectors.readDefaultBuiltinAccount(
-      actor,
-      "test-oauth",
-    );
-    expect(narrowedConnector.oauthScopes).toStrictEqual(["provider-added"]);
-    expect(narrowedConnector.connectionStatus).toBe("connected");
-    await expect(
-      connectors.readDefaultBuiltinScopeDiff(actor, "test-oauth"),
-    ).resolves.toStrictEqual({
-      addedScopes: [],
-      removedScopes: [],
-      currentScopes: ["read"],
-      storedScopes: ["read"],
-    });
-
-    fw.mockTestOauthTokenRefresh(() => {
-      return fw.oauthTokenResponse({
-        accessToken: "omitted-scope-access",
-        refreshToken: "omitted-scope-refresh",
-        expiresIn: 3600,
-      });
-    });
-    await forceRefresh();
-    const preservedConnector = await connectors.readDefaultBuiltinAccount(
-      actor,
-      "test-oauth",
-    );
-    expect(preservedConnector.oauthScopes).toStrictEqual(["provider-added"]);
-
-    const unknownGrantRefresh = await fw.requestFirewallAuth(
-      { authorization: `Bearer ${receivedExecution.firewallToken}` },
-      {
-        authHeaders: catalog.firewallAuthHeaders,
-        matchedFirewall: {
-          name: catalog.slug,
-          apiId: `${catalog.slug}:0`,
-          base: catalog.endpoint,
-          connectorSlug: catalog.slug,
-          sourceId: automaticConnectionId,
-          routingVariables: {},
-        },
-        forceRefresh: true,
-      },
-      [200],
-    );
-    expect(unknownGrantRefresh.body).toMatchObject({
-      headers: { Authorization: "Bearer automatic-refreshed-access-token" },
-      refreshedConnectors: [],
-    });
-    expect(
-      automaticTokenRequests.map((body) => {
-        return body.get("grant_type");
+    const started = await accept(
+      oauthStartApi.start({
+        headers: signIn(actor),
+        params: { connectorSlug: "test-oauth" },
+        body: { authMethod: "oauth", account: { intent: "add" } },
       }),
-    ).toStrictEqual(["authorization_code", "refresh_token"]);
-    expect(
-      (await connectors.readDefaultBuiltinAccount(actor, catalog.slug))
-        .oauthScopes,
-    ).toBeNull();
-  });
-
-  it("resolves a current stored connector token", async () => {
-    const fw = createFirewallApi(context);
-    const { actor, execution } = await publicConnections.run();
-    await publicConnections.testOAuth(actor, {
-      accessToken: "db-access",
-      refreshToken: "refresh-1",
-      expiresIn: 3600,
-    });
-
-    const before = Math.floor(now() / 1000);
-    const synced = await fw.requestFirewallAuth(
-      { authorization: `Bearer ${execution.firewallToken}` },
-      {
-        authHeaders: {
-          Authorization: `Bearer ${secretTemplate("TEST_OAUTH_TOKEN")}`,
-        },
-        ...(await exactSecretConnectorSources(actor, {
-          TEST_OAUTH_TOKEN: "test-oauth",
-        })),
-      },
       [200],
     );
-    if (synced.status !== 200) {
-      throw new Error("Expected stored-token sync to succeed");
+    const state = new URL(started.body.authorizationUrl).searchParams.get(
+      "state",
+    );
+    if (!state) {
+      throw new Error("Expected state from test-oauth OAuth start");
     }
-    expect(synced.body.headers.Authorization).toBe("Bearer db-access");
-    expect(synced.body.refreshedConnectors).toStrictEqual([]);
-    expect(synced.body.expiresAt ?? 0).toBeGreaterThanOrEqual(before + 3535);
-    expect(synced.body.expiresAt ?? 0).toBeLessThanOrEqual(before + 3545);
-  });
-
-  it("keeps multi-secret connector auth on one replacement snapshot", async () => {
-    const fw = createFirewallApi(context);
-    const connectors = createConnectorBddApi(context);
-    await withPublicFirewallRun(async (headers, fixture) => {
-      const actor = fixture.actor;
-      context.mocks.ably.publish.mockResolvedValue(undefined);
-      const oldCredentials = {
-        accessKeyId: "old-aws-access-key-id",
-        secretAccessKey: "old-aws-secret-access-key",
-        sessionToken: "old-aws-session-token",
-      };
-      const newCredentials = {
-        accessKeyId: "new-aws-access-key-id",
-        secretAccessKey: "new-aws-secret-access-key",
-        sessionToken: "new-aws-session-token",
-      };
-      const provider = mockAwsExternalCodeProvider({
-        credentialsByRequest: [oldCredentials, newCredentials],
-      });
-
-      async function connectAws(): Promise<void> {
-        const session = await connectors.startExternalCode(actor, "aws", "cli");
-        await connectors.completeExternalCode(actor, "aws", {
-          sessionId: session.sessionId,
-          sessionToken: session.sessionToken,
-          code: awsVerificationCode(session.authorizationUrl),
-        });
-      }
-
-      const accountIds = fixture.registerBuiltinConnector("aws");
-      await connectAws();
-      const [account] = await connectors.listBuiltinConnectorAccounts(
-        actor,
-        "aws",
-      );
-      if (!account) {
-        throw new Error("Expected AWS account");
-      }
-      accountIds.add(account.id);
-      const originalKmsClient = getSecretKmsClient();
-      const decryptGate = gateFirstStoredSecretDecrypt();
-      let pendingAuth: ReturnType<typeof fw.requestFirewallAuth> | undefined;
-      const authOutcome = await settleIncludingAbort(
-        (async () => {
-          const awsSecretSources = await exactSecretConnectorSources(actor, {
-            AWS_ACCESS_KEY_ID: "aws",
-            AWS_SECRET_ACCESS_KEY: "aws",
-            AWS_SESSION_TOKEN: "aws",
-          });
-          pendingAuth = fw.requestFirewallAuth(
-            headers,
-            {
-              authHeaders: {
-                "X-AWS-Access-Key-ID": secretTemplate("AWS_ACCESS_KEY_ID"),
-                "X-AWS-Secret-Access-Key": secretTemplate(
-                  "AWS_SECRET_ACCESS_KEY",
-                ),
-                "X-AWS-Session-Token": secretTemplate("AWS_SESSION_TOKEN"),
-              },
-              ...awsSecretSources,
-            },
-            [200],
-          );
-          await decryptGate.started;
-          const replacement = await settle(connectAws());
-          decryptGate.release();
-          const resolved = await pendingAuth;
-          if (!replacement.ok) {
-            throw replacement.error;
-          }
-          if (resolved.status !== 200) {
-            throw new Error("Expected AWS firewall auth to resolve");
-          }
-
-          expect(provider.tokenRequests).toHaveLength(2);
-          expect(resolved.body.headers).toStrictEqual({
-            "X-AWS-Access-Key-ID": oldCredentials.accessKeyId,
-            "X-AWS-Secret-Access-Key": oldCredentials.secretAccessKey,
-            "X-AWS-Session-Token": oldCredentials.sessionToken,
-          });
-
-          fixture.registerBuiltinConnectorDeletion("aws", account.id);
-          await connectors.deleteDefaultBuiltinConnectorAccount(actor, "aws");
-        })(),
-      );
-
-      decryptGate.release();
-      if (pendingAuth) {
-        await Promise.allSettled([pendingAuth]);
-      }
-      setSecretKmsClientForTests(originalKmsClient);
-
-      if (!authOutcome.ok) {
-        throw authOutcome.error;
-      }
-    });
-  });
-
-  it.each([
-    { subtype: undefined, reason: "authorization_expired_or_revoked" },
-    { subtype: "invalid_rapt", reason: "provider_session_expired" },
-  ])(
-    "retries standard OAuth $reason and recovers",
-    async ({ subtype, reason }) => {
-      await withPublicFirewallRun(async (headers, fixture) => {
-        const fw = createFirewallApi(context);
-        const connectorsApi = createConnectorBddApi(context);
-        const actor = fixture.actor;
-        fixture.registerBuiltinConnector("test-oauth");
-        await connectorsApi.updateFeatureSwitches(actor, {
-          [FeatureSwitchKey.TestOauthConnector]: true,
-        });
-        mockTestOAuthAuthCodeProvider({
-          refreshToken: "original-refresh",
-          userId: actor.userId,
-        });
-        const started = await connectorsApi.startOauth(
-          actor,
-          "test-oauth",
-          "oauth",
-        );
-        const state = new URL(started.authorizationUrl).searchParams.get(
-          "state",
-        );
-        if (!state) {
-          throw new Error("Expected OAuth authorization state");
-        }
-        await connectorsApi.completeOauthCallbackResult("test-oauth", {
-          code: "initial-code",
+    const callback = await accept(
+      oauthCallbackApi.callback({
+        params: { connectorSlug: "test-oauth" },
+        query: {
+          code: `code-${randomUUID()}`,
           state,
-        });
-        const [account] = await connectorsApi.listBuiltinConnectorAccounts(
-          actor,
-          "test-oauth",
-        );
-        if (!account) {
-          throw new Error("Expected connected OAuth account");
-        }
-        let failedRefreshCalls = 0;
-        fw.mockTestOauthTokenRefresh(() => {
-          failedRefreshCalls += 1;
-          return HttpResponse.json(
-            {
-              error: "invalid_grant",
-              ...(subtype ? { error_subtype: subtype } : {}),
-            },
-            { status: 400 },
-          );
-        });
-        const body = {
-          authHeaders: {
-            Authorization: `Bearer ${secretTemplate("TEST_OAUTH_TOKEN")}`,
-          },
-          ...(await exactSecretConnectorSources(actor, {
-            TEST_OAUTH_TOKEN: "test-oauth",
-          })),
-        };
-
-        for (const forceRefresh of [true, false, true]) {
-          const failed = await fw.requestFirewallAuth(
-            headers,
-            { ...body, forceRefresh },
-            [502],
-          );
-          expect(failed.body).toMatchObject({
-            error: {
-              code: "TOKEN_REFRESH_FAILED",
-              failureReason: "reconnect_required",
-              connectors: ["test-oauth"],
-            },
-          });
-        }
-        expect(failedRefreshCalls).toBe(3);
-
-        await expect(
-          connectorsApi.listBuiltinConnectorAccounts(actor, "test-oauth"),
-        ).resolves.toContainEqual(
-          expect.objectContaining({
-            id: account.id,
-            connectionStatus: "reconnect-required",
-            reconnectReason: reason,
-          }),
-        );
-
-        fw.mockTestOauthTokenRefresh(() => {
-          return fw.oauthTokenResponse({
-            accessToken: "recovered-without-reconnect",
-            expiresIn: 3600,
-          });
-        });
-        const retried = await fw.requestFirewallAuth(headers, body, [200]);
-        expect(retried.body).toMatchObject({
-          headers: { Authorization: "Bearer recovered-without-reconnect" },
-        });
-        await expect(
-          connectorsApi.listBuiltinConnectorAccounts(actor, "test-oauth"),
-        ).resolves.toContainEqual(
-          expect.objectContaining({
-            id: account.id,
-            connectionStatus: "connected",
-            reconnectReason: null,
-          }),
-        );
-
-        const provider = mockTestOAuthAuthCodeProvider({
-          accessToken: "reconnected-access",
-          refreshToken: "replacement-refresh",
-          userId: actor.userId,
-        });
-        const reconnect = await connectorsApi.startOauth(
-          actor,
-          "test-oauth",
-          "oauth",
-          {
-            intent: "reconnect",
-            connectionId: account.id,
-          },
-        );
-        const reconnectState = new URL(
-          reconnect.authorizationUrl,
-        ).searchParams.get("state");
-        if (!reconnectState) {
-          throw new Error("Expected OAuth reconnect state");
-        }
-        await connectorsApi.completeOauthCallbackResult("test-oauth", {
-          code: "reconnect-code",
-          state: reconnectState,
-        });
-        await expect(
-          connectorsApi.listBuiltinConnectorAccounts(actor, "test-oauth"),
-        ).resolves.toContainEqual(
-          expect.objectContaining({
-            id: account.id,
-            connectionStatus: "connected",
-            reconnectReason: null,
-          }),
-        );
-        const recovered = await fw.requestFirewallAuth(
-          headers,
-          { ...body, forceRefresh: true },
-          [200],
-        );
-        expect(recovered.body).toMatchObject({
-          headers: { Authorization: "Bearer reconnected-access" },
-        });
-        expect(provider.tokenBodies.at(-1)?.get("refresh_token")).toBe(
-          "replacement-refresh",
-        );
-      });
-    },
-  );
-
-  it("requires reconnect for unknown OAuth refresh error subtypes", async () => {
-    const fw = createFirewallApi(context);
-    const { actor, headers } = await publicConnections.run();
-    const longSubtype = `invalid_rapt:${"x".repeat(200)}`;
-    await publicConnections.testOAuth(actor, {
-      accessToken: "stale-access",
-      refreshToken: "refresh-1",
-      expiresIn: -60,
-    });
-    fw.mockTestOauthTokenRefresh(() => {
-      return HttpResponse.json(
-        {
-          error: "invalid_grant",
-          error_description: "Session control expired",
-          error_subtype: longSubtype,
+          responseMode: "json",
         },
-        { status: 400 },
-      );
-    });
-
-    const body = {
-      authHeaders: {
-        Authorization: `Bearer ${secretTemplate("TEST_OAUTH_TOKEN")}`,
-      },
-      ...(await exactSecretConnectorSources(actor, {
-        TEST_OAUTH_TOKEN: "test-oauth",
-      })),
-    };
-
-    const failed = await fw.requestFirewallAuth(headers, body, [502]);
-    if (failed.status !== 502) {
-      throw new Error("Expected invalid_grant to fail with 502");
-    }
-    expect(failed.body.error.code).toBe("TOKEN_REFRESH_FAILED");
-    expect(failed.body.error.failureReason).toBe("reconnect_required");
-    expect(failed.body.error.connectors).toStrictEqual(["test-oauth"]);
-
-    const connectorsApi = createConnectorBddApi(context);
-    await connectorsApi.updateFeatureSwitches(actor, {
-      [FeatureSwitchKey.TestOauthConnector]: true,
-    });
-    const connector = await connectorsApi.readDefaultBuiltinAccount(
-      actor,
-      "test-oauth",
+      }),
+      [200],
     );
-    expect(connector.connectionStatus).toBe("reconnect-required");
-    expect(connector.reconnectReason).toBeNull();
-  });
-
-  it("classifies transient OAuth refresh errors as upstream failures", async () => {
-    const fw = createFirewallApi(context);
-    const { actor, headers } = await publicConnections.run();
-    await publicConnections.testOAuth(actor, {
-      accessToken: "stale-access",
-      refreshToken: "refresh-1",
-      expiresIn: -60,
-    });
-    fw.mockTestOauthTokenRefresh(() => {
-      return HttpResponse.json(
-        { error: "temporarily_unavailable" },
-        { status: 400 },
-      );
-    });
-
-    const body = {
-      authHeaders: {
-        Authorization: `Bearer ${secretTemplate("TEST_OAUTH_TOKEN")}`,
-      },
-      ...(await exactSecretConnectorSources(actor, {
-        TEST_OAUTH_TOKEN: "test-oauth",
-      })),
-    };
-
-    const failed = await fw.requestFirewallAuth(headers, body, [502]);
-    if (failed.status !== 502) {
-      throw new Error("Expected temporarily_unavailable to fail with 502");
+    if (callback.body.status !== "success") {
+      throw new Error("Expected test-oauth callback to succeed");
     }
-    expect(failed.body.error.code).toBe("TOKEN_REFRESH_FAILED");
-    expect(failed.body.error.failureReason).toBe("upstream_provider");
-    expect(failed.body.error.connectors).toStrictEqual(["test-oauth"]);
-
-    fw.mockTestOauthTokenRefresh(() => {
-      return fw.oauthTokenResponse({
-        accessToken: "after-temporary-outage",
-        expiresIn: 3600,
-      });
-    });
-    const recovered = await fw.requestFirewallAuth(headers, body, [200]);
-    if (recovered.status !== 200) {
-      throw new Error("Expected refresh after temporary outage to succeed");
-    }
-    expect(recovered.body.headers.Authorization).toBe(
-      "Bearer after-temporary-outage",
+    const listed = await accept(
+      connectorAccountsApi.connections({
+        headers: signIn(actor),
+        query: TEST_OAUTH_TARGET,
+      }),
+      [200],
     );
-  });
-
-  it("classifies provider 500s as upstream failures without marking reconnect", async () => {
-    const fw = createFirewallApi(context);
-    const { actor, headers } = await publicConnections.run();
-    await publicConnections.testOAuth(actor, {
-      accessToken: "stale-access",
-      refreshToken: "refresh-1",
-      expiresIn: -60,
-    });
-    fw.mockTestOauthTokenRefresh(() => {
-      return new HttpResponse(null, { status: 500 });
-    });
-
-    const body = {
-      authHeaders: {
-        Authorization: `Bearer ${secretTemplate("TEST_OAUTH_TOKEN")}`,
-      },
-      ...(await exactSecretConnectorSources(actor, {
-        TEST_OAUTH_TOKEN: "test-oauth",
-      })),
-    };
-
-    const failed = await fw.requestFirewallAuth(headers, body, [502]);
-    if (failed.status !== 502) {
-      throw new Error("Expected provider 500 to fail with 502");
+    const conn = listed.body.connections[0];
+    if (!conn) {
+      throw new Error("Expected connected test-oauth account");
     }
-    expect(failed.body.error.failureReason).toBe("upstream_provider");
+    return conn.id;
+  }
 
-    fw.mockTestOauthTokenRefresh(() => {
-      return fw.oauthTokenResponse({
-        accessToken: "after-outage",
-        expiresIn: 3600,
-      });
-    });
-    const recovered = await fw.requestFirewallAuth(headers, body, [200]);
-    if (recovered.status !== 200) {
-      throw new Error("Expected refresh after outage to succeed");
+  async function connectAutomaticMcp(issuer: string): Promise<string> {
+    const started = await accept(
+      automaticApi.start({
+        headers: signIn(actor),
+        params: { connectorSlug: "automatic-mcp-oauth" },
+        body: { authMethod: "smart-connect", account: { intent: "add" } },
+      }),
+      [200],
+    );
+    if (started.body.result !== "authorization") {
+      throw new Error("Expected authorization handoff for automatic-mcp-oauth");
     }
-    expect(recovered.body.headers.Authorization).toBe("Bearer after-outage");
-  });
+    const state = new URL(started.body.authorizationUrl).searchParams.get(
+      "state",
+    );
+    if (!state) {
+      throw new Error("Expected state from automatic-mcp-oauth start");
+    }
+    const completed = await accept(
+      automaticApi.callback({
+        query: {
+          code: `auto-code-${randomUUID()}`,
+          state,
+          iss: issuer,
+          responseMode: "json",
+        },
+      }),
+      [200],
+    );
+    if (completed.body.status !== "success") {
+      throw new Error(
+        `Expected automatic-mcp-oauth callback to succeed, got ${JSON.stringify(completed.body)}`,
+      );
+    }
+    const listed = await accept(
+      connectorAccountsApi.connections({
+        headers: signIn(actor),
+        query: AUTOMATIC_MCP_TARGET,
+      }),
+      [200],
+    );
+    const conn = listed.body.connections[0];
+    if (!conn) {
+      throw new Error("Expected connected automatic-mcp-oauth account");
+    }
+    return conn.id;
+  }
 
-  it("recovers a temporary Gmail OAuth response within the same refresh", async () => {
-    const { fw, headers, body } = await publicGoogleRefreshFixture("gmail");
-    let attempts = 0;
+  async function connectTestOAuthDevice(args: {
+    readonly accessToken: string;
+    readonly expiresIn: number;
+  }): Promise<string> {
+    mockTestOAuthDeviceConnectorProvider();
     server.use(
-      http.post("https://oauth2.googleapis.com/token", () => {
-        attempts += 1;
-        return attempts === 1
-          ? HttpResponse.json(
-              {
-                error: "temporarily_unavailable",
-                error_description: "synthetic-provider-private-text",
-              },
-              { status: 400 },
-            )
-          : HttpResponse.json({
-              access_token: "recovered-gmail-access",
+      http.post(TEST_OAUTH_TOKEN_URL, async ({ request }) => {
+        const body = new URLSearchParams(await request.text());
+        if (
+          body.get("grant_type") !==
+          "urn:ietf:params:oauth:grant-type:device_code"
+        ) {
+          throw new Error(
+            "Expected device_code grant during test-oauth-device",
+          );
+        }
+        return HttpResponse.json({
+          access_token: args.accessToken,
+          expires_in: args.expiresIn,
+          token_type: "Bearer",
+          scope: "read",
+        });
+      }),
+    );
+    const started = await accept(
+      deviceAuthApi.create({
+        headers: signIn(actor),
+        params: { connectorSlug: "test-oauth-device" },
+        body: { authMethod: "oauth", account: { intent: "add" } },
+      }),
+      [200],
+    );
+    const polled = await accept(
+      deviceAuthApi.poll({
+        headers: signIn(actor),
+        params: {
+          connectorSlug: "test-oauth-device",
+          sessionId: started.body.sessionId,
+        },
+        body: { sessionToken: started.body.sessionToken },
+      }),
+      [200],
+    );
+    if (polled.body.status !== "complete") {
+      throw new Error("Expected test-oauth-device poll to complete");
+    }
+    return polled.body.connectionId;
+  }
+
+  async function launchRun(prompt: string) {
+    lastClockMs = now();
+    const before = acceptedOrder.length;
+    await accept(
+      chatEventsApi.send({
+        headers: signIn(actor),
+        body: {
+          prompt,
+          model: CLAUDE_MODEL,
+          hasTextContent: true,
+          clientEventId: randomUUID(),
+          userMessage: {
+            version: 1,
+            parts: [{ type: "text", text: prompt }],
+          },
+        },
+      }),
+      [201],
+    );
+    await flushWaitUntilForTest();
+    const runId = acceptedOrder[before];
+    if (!runId) {
+      throw new Error("Expected direct Runner dispatch");
+    }
+    const execution = acceptedByRunId.get(runId);
+    if (!execution) {
+      throw new Error(`Missing execution context for ${runId}`);
+    }
+    const trackedEntry: TrackedRun = {
+      runId,
+      sandboxToken: execution.sandboxToken,
+      done: false,
+    };
+    trackedRuns.push(trackedEntry);
+    return { runId, execution, trackedEntry };
+  }
+
+  return {
+    actor,
+    registerRunner,
+    provisionMember,
+    connectTestOAuth,
+    connectAutomaticMcp,
+    connectTestOAuthDevice,
+    launchRun,
+  };
+}
+
+describe("webhooks-agent-firewall-auth.bdd", () => {
+  it(
+    "webhooks-agent-firewall-auth.bdd-025 maintains authoritative and unknown OAuth grants across refresh",
+    { timeout: TEST_WITH_TRIPLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const harness = createFirewallRunHarness({ proTier: true });
+      const { actor } = harness;
+      const autoProvider = mockAutomaticMcpOAuthProvider(context, {
+        registration: "cimd",
+        endpoint: AUTOMATIC_MCP_ENDPOINT,
+        challengeScope: null,
+        metadataScopes: [],
+        initialExpiresIn: 3600,
+      });
+      const automaticGrantTypes: string[] = [];
+      server.use(
+        http.post(`${autoProvider.issuer}/token`, async ({ request }) => {
+          const form = new URLSearchParams(await request.text());
+          const grantType = form.get("grant_type") ?? "";
+          automaticGrantTypes.push(grantType);
+          if (grantType === "refresh_token") {
+            return HttpResponse.json({
+              access_token: "automatic-refreshed-access-token",
+              refresh_token: "automatic-rotated-refresh-token",
+              token_type: "Bearer",
               expires_in: 3600,
             });
-      }),
-    );
-
-    const refreshed = await fw.requestFirewallAuth(headers, body, [200]);
-    if (refreshed.status !== 200) {
-      throw new Error("Expected Gmail refresh to recover after one retry");
-    }
-    expect(attempts).toBe(2);
-    expect(refreshed.body.headers.Authorization).toBe(
-      "Bearer recovered-gmail-access",
-    );
-  });
-
-  it("preserves the Gmail grant after an exhausted temporary retry", async () => {
-    const { fw, headers, body } = await publicGoogleRefreshFixture("gmail");
-    let attempts = 0;
-    server.use(
-      http.post("https://oauth2.googleapis.com/token", () => {
-        attempts += 1;
-        return HttpResponse.json(
-          {
-            error: "server_error",
-            error_description: "synthetic-provider-private-text",
-          },
-          { status: 503 },
-        );
-      }),
-    );
-
-    const failed = await fw.requestFirewallAuth(headers, body, [502]);
-    if (failed.status !== 502) {
-      throw new Error("Expected exhausted Gmail refresh to fail");
-    }
-    expect(attempts).toBe(2);
-    expect(failed.body.error.failureReason).toBe("upstream_provider");
-    expect(JSON.stringify(failed.body)).not.toContain(
-      "synthetic-provider-private-text",
-    );
-    server.use(
-      http.post("https://oauth2.googleapis.com/token", () => {
-        return HttpResponse.json({
-          access_token: "later-gmail-access",
-          expires_in: 3600,
-        });
-      }),
-    );
-    const recovered = await fw.requestFirewallAuth(headers, body, [200]);
-    if (recovered.status !== 200) {
-      throw new Error("Expected Gmail grant to recover on a later request");
-    }
-    expect(recovered.body.headers.Authorization).toBe(
-      "Bearer later-gmail-access",
-    );
-  });
-
-  it("does not retry a Gmail invalid_grant response", async () => {
-    const { fw, headers, body } = await publicGoogleRefreshFixture("gmail");
-    let attempts = 0;
-    server.use(
-      http.post("https://oauth2.googleapis.com/token", () => {
-        attempts += 1;
-        return HttpResponse.json({ error: "invalid_grant" }, { status: 400 });
-      }),
-    );
-
-    const failed = await fw.requestFirewallAuth(headers, body, [502]);
-    if (failed.status !== 502) {
-      throw new Error("Expected revoked Gmail grant to fail");
-    }
-    expect(attempts).toBe(1);
-    expect(failed.body.error.failureReason).toBe("reconnect_required");
-  });
-
-  it("does not retry a rate-limited Gmail refresh without Retry-After handling", async () => {
-    const { fw, headers, body } = await publicGoogleRefreshFixture("gmail");
-    let attempts = 0;
-    server.use(
-      http.post("https://oauth2.googleapis.com/token", () => {
-        attempts += 1;
-        return HttpResponse.json(
-          { error: "temporarily_unavailable" },
-          { status: 429 },
-        );
-      }),
-    );
-
-    const failed = await fw.requestFirewallAuth(headers, body, [502]);
-    if (failed.status !== 502) {
-      throw new Error("Expected Gmail rate limit to fail this request");
-    }
-    expect(attempts).toBe(1);
-    expect(failed.body.error.failureReason).toBe("upstream_provider");
-  });
-
-  it("does not replay a Gmail refresh after an ambiguous network failure", async () => {
-    const { fw, headers, body } = await publicGoogleRefreshFixture("gmail");
-    let attempts = 0;
-    server.use(
-      http.post("https://oauth2.googleapis.com/token", () => {
-        attempts += 1;
-        return HttpResponse.error();
-      }),
-    );
-
-    const failed = await fw.requestFirewallAuth(headers, body, [502]);
-    if (failed.status !== 502) {
-      throw new Error("Expected Gmail network refresh failure");
-    }
-    expect(attempts).toBe(1);
-    expect(failed.body.error.failureReason).toBe("upstream_provider");
-  });
-
-  it.each([1, 2, 3])(
-    "recovers Google Sheets network failures on attempt %i",
-    async (successfulAttempt) => {
-      const { fw, headers, body } =
-        await publicGoogleRefreshFixture("google-sheets");
-      let attempts = 0;
-      server.use(
-        http.post("https://oauth2.googleapis.com/token", () => {
-          attempts += 1;
-          return attempts < successfulAttempt
-            ? HttpResponse.error()
-            : HttpResponse.json({
-                access_token: "recovered-sheets-access",
-                expires_in: 3600,
-              });
-        }),
-      );
-
-      const refreshed = await fw.requestFirewallAuth(headers, body, [200]);
-      if (refreshed.status !== 200) {
-        throw new Error("Expected Google Sheets refresh to recover");
-      }
-      expect(refreshed.body.headers.Authorization).toBe(
-        "Bearer recovered-sheets-access",
-      );
-      expect(refreshed.body.refreshedConnectors).toStrictEqual([
-        "google-sheets",
-      ]);
-      expect(attempts).toBe(successfulAttempt);
-    },
-  );
-
-  it("recovers Google Sheets temporary OAuth responses on the third attempt", async () => {
-    const { fw, headers, body } =
-      await publicGoogleRefreshFixture("google-sheets");
-    let attempts = 0;
-    server.use(
-      http.post("https://oauth2.googleapis.com/token", () => {
-        attempts += 1;
-        if (attempts === 1) {
-          return new HttpResponse(null, { status: 503 });
-        }
-        if (attempts === 2) {
-          return HttpResponse.json(
-            { error: "temporarily_unavailable" },
-            { status: 400 },
-          );
-        }
-        return HttpResponse.json({
-          access_token: "recovered-sheets-access",
-          expires_in: 3600,
-        });
-      }),
-    );
-
-    const refreshed = await fw.requestFirewallAuth(headers, body, [200]);
-    if (refreshed.status !== 200) {
-      throw new Error("Expected Google Sheets temporary responses to recover");
-    }
-    expect(refreshed.body.headers.Authorization).toBe(
-      "Bearer recovered-sheets-access",
-    );
-    expect(attempts).toBe(3);
-  });
-
-  it.each(["network", "temporary-response"])(
-    "preserves the Google Sheets grant after three %s failures",
-    async (failureKind) => {
-      const { fw, actor, headers, body } =
-        await publicGoogleRefreshFixture("google-sheets");
-      let attempts = 0;
-      server.use(
-        http.post("https://oauth2.googleapis.com/token", () => {
-          attempts += 1;
-          return failureKind === "network"
-            ? HttpResponse.error()
-            : HttpResponse.json(
-                {
-                  error: "server_error",
-                  error_description: "synthetic-provider-private-text",
-                },
-                { status: 503 },
-              );
-        }),
-      );
-
-      const failed = await fw.requestFirewallAuth(headers, body, [502]);
-      if (failed.status !== 502) {
-        throw new Error("Expected exhausted Google Sheets refresh to fail");
-      }
-      expect(failed.body.error.code).toBe("TOKEN_REFRESH_FAILED");
-      expect(failed.body.error.failureReason).toBe("upstream_provider");
-      expect(failed.body.error.connectors).toStrictEqual(["google-sheets"]);
-      expect(attempts).toBe(3);
-      expect(JSON.stringify(failed.body)).not.toContain(
-        "synthetic-provider-private-text",
-      );
-      const connector = await createConnectorBddApi(
-        context,
-      ).readDefaultBuiltinAccount(actor, "google-sheets");
-      expect(connector.connectionStatus).toBe("connected");
-
-      server.use(
-        http.post("https://oauth2.googleapis.com/token", () => {
+          }
           return HttpResponse.json({
-            access_token: "later-sheets-access",
+            access_token: "automatic-initial-access-token",
+            refresh_token: "automatic-refresh-token",
+            token_type: "Bearer",
             expires_in: 3600,
           });
         }),
       );
-      const recovered = await fw.requestFirewallAuth(headers, body, [200]);
-      if (recovered.status !== 200) {
-        throw new Error("Expected the Google Sheets grant to remain usable");
-      }
-      expect(recovered.body.headers.Authorization).toBe(
-        "Bearer later-sheets-access",
-      );
-    },
-  );
 
-  it.each([0, 1])(
-    "stops Google Sheets retries at invalid_grant after %i transient failures",
-    async (transientFailures) => {
-      const { fw, actor, headers, body } =
-        await publicGoogleRefreshFixture("google-sheets");
-      let attempts = 0;
-      server.use(
-        http.post("https://oauth2.googleapis.com/token", () => {
-          attempts += 1;
-          return attempts <= transientFailures
-            ? HttpResponse.error()
-            : HttpResponse.json(
-                { error: "invalid_grant" },
-                { status: transientFailures === 0 ? 400 : 503 },
-              );
+      await Promise.all([harness.provisionMember(), harness.registerRunner()]);
+      const [autoConnectionId, testOAuthConnectionId] = await Promise.all([
+        harness.connectAutomaticMcp(autoProvider.issuer),
+        harness.connectTestOAuth({
+          accessToken: "initial-wide-access",
+          refreshToken: "initial-refresh-token",
+          expiresIn: 3600,
+          scope: "read provider-added",
+        }),
+      ]);
+
+      const launched = await harness.launchRun(
+        "Verify authoritative and unknown OAuth grant scopes across refresh",
+      );
+
+      expect(launched.execution.connectorRuntimeTargets).toContainEqual(
+        expect.objectContaining({
+          kind: "builtin",
+          connectorSlug: "automatic-mcp-oauth",
+          sourceId: autoConnectionId,
+        }),
+      );
+      expect(launched.execution.firewalls).toContainEqual(
+        expect.objectContaining({
+          kind: "builtin",
+          name: "automatic-mcp-oauth",
         }),
       );
 
-      const failed = await fw.requestFirewallAuth(headers, body, [502]);
-      if (failed.status !== 502) {
-        throw new Error("Expected the revoked Google Sheets grant to fail");
-      }
-      expect(failed.body.error.failureReason).toBe("reconnect_required");
-      expect(attempts).toBe(transientFailures + 1);
-      const connector = await createConnectorBddApi(
-        context,
-      ).readDefaultBuiltinAccount(actor, "google-sheets");
-      expect(connector.connectionStatus).toBe("reconnect-required");
-    },
-  );
-
-  it("does not retry a rate-limited Google Sheets refresh", async () => {
-    const { fw, headers, body } =
-      await publicGoogleRefreshFixture("google-sheets");
-    let attempts = 0;
-    server.use(
-      http.post("https://oauth2.googleapis.com/token", () => {
-        attempts += 1;
-        return HttpResponse.json(
-          { error: "temporarily_unavailable" },
-          { status: 429 },
-        );
-      }),
-    );
-
-    const failed = await fw.requestFirewallAuth(headers, body, [502]);
-    if (failed.status !== 502) {
-      throw new Error("Expected the Google Sheets rate limit to fail");
-    }
-    expect(failed.body.error.failureReason).toBe("upstream_provider");
-    expect(attempts).toBe(1);
-  });
-
-  it("does not retry malformed Google Sheets refresh output", async () => {
-    const { fw, headers, body } =
-      await publicGoogleRefreshFixture("google-sheets");
-    let attempts = 0;
-    server.use(
-      http.post("https://oauth2.googleapis.com/token", () => {
-        attempts += 1;
-        return HttpResponse.json({ expires_in: 3600 });
-      }),
-    );
-
-    const failed = await fw.requestFirewallAuth(headers, body, [502]);
-    if (failed.status !== 502) {
-      throw new Error(
-        "Expected malformed Google Sheets refresh output to fail",
-      );
-    }
-    expect(failed.body.error.code).toBe("TOKEN_REFRESH_FAILED");
-    expect(attempts).toBe(1);
-  });
-
-  it("treats refresh responses without an access token as upstream failures", async () => {
-    const fw = createFirewallApi(context);
-    const { actor, headers } = await publicConnections.run();
-    await publicConnections.testOAuth(actor, {
-      accessToken: "stale-access",
-      refreshToken: "refresh-1",
-      expiresIn: -60,
-    });
-    fw.mockTestOauthTokenRefresh(() => {
-      return HttpResponse.json({ ok: true });
-    });
-
-    const failed = await fw.requestFirewallAuth(
-      headers,
-      {
-        authHeaders: {
-          Authorization: `Bearer ${secretTemplate("TEST_OAUTH_TOKEN")}`,
-        },
-        ...(await exactSecretConnectorSources(actor, {
-          TEST_OAUTH_TOKEN: "test-oauth",
-        })),
-      },
-      [502],
-    );
-    if (failed.status !== 502) {
-      throw new Error("Expected malformed refresh body to fail with 502");
-    }
-    expect(failed.body.error.code).toBe("TOKEN_REFRESH_FAILED");
-    expect(failed.body.error.connectors).toStrictEqual(["test-oauth"]);
-  });
-
-  it("requires reconnect when the stored connector never kept a refresh token", async () => {
-    const fw = createFirewallApi(context);
-    const { actor, headers } = await publicConnections.run();
-    await publicConnections.testOAuth(actor, {
-      accessToken: "stale-access",
-      expiresIn: -60,
-    });
-
-    const body = {
-      authHeaders: {
-        Authorization: `Bearer ${secretTemplate("TEST_OAUTH_TOKEN")}`,
-      },
-      ...(await exactSecretConnectorSources(actor, {
-        TEST_OAUTH_TOKEN: "test-oauth",
-      })),
-    };
-
-    const failed = await fw.requestFirewallAuth(headers, body, [502]);
-    if (failed.status !== 502) {
-      throw new Error("Expected the refresh-token-less refresh to fail");
-    }
-    expect(failed.body.error.code).toBe("TOKEN_REFRESH_FAILED");
-    expect(failed.body.error.failureReason).toBe("reconnect_required");
-    expect(failed.body.error.connectors).toStrictEqual(["test-oauth"]);
-
-    // The connector is now flagged for reconnect and keeps failing without
-    // reaching any provider endpoint.
-    const flagged = await fw.requestFirewallAuth(headers, body, [502]);
-    if (flagged.status !== 502) {
-      throw new Error("Expected the flagged connector to keep failing");
-    }
-    expect(flagged.body.error.failureReason).toBe("reconnect_required");
-
-    // The reconnect flag is visible through the public connector read.
-    const connectorsApi = createConnectorBddApi(context);
-    await connectorsApi.updateFeatureSwitches(actor, {
-      [FeatureSwitchKey.TestOauthConnector]: true,
-    });
-    const connector = await connectorsApi.readDefaultBuiltinAccount(
-      actor,
-      "test-oauth",
-    );
-    expect(connector.connectionStatus).toBe("reconnect-required");
-  });
-
-  it("classifies network refresh failures as upstream and recovers", async () => {
-    const fw = createFirewallApi(context);
-    const { actor, headers } = await publicConnections.run();
-    await publicConnections.testOAuth(actor, {
-      accessToken: "stale-access",
-      refreshToken: "refresh-1",
-      expiresIn: -60,
-    });
-    fw.mockTestOauthTokenRefresh(() => {
-      return HttpResponse.error();
-    });
-
-    const body = {
-      authHeaders: {
-        Authorization: `Bearer ${secretTemplate("TEST_OAUTH_TOKEN")}`,
-      },
-      ...(await exactSecretConnectorSources(actor, {
-        TEST_OAUTH_TOKEN: "test-oauth",
-      })),
-    };
-
-    const failed = await fw.requestFirewallAuth(headers, body, [502]);
-    if (failed.status !== 502) {
-      throw new Error("Expected the network failure to fail with 502");
-    }
-    expect(failed.body.error.failureReason).toBe("upstream_provider");
-    expect(failed.body.error.connectors).toStrictEqual(["test-oauth"]);
-
-    fw.mockTestOauthTokenRefresh(() => {
-      return fw.oauthTokenResponse({
-        accessToken: "after-network-outage",
-        expiresIn: 3600,
-      });
-    });
-    const recovered = await fw.requestFirewallAuth(headers, body, [200]);
-    if (recovered.status !== 200) {
-      throw new Error("Expected the refresh after the outage to succeed");
-    }
-    expect(recovered.body.headers.Authorization).toBe(
-      "Bearer after-network-outage",
-    );
-  });
-
-  it("treats malformed and failing provider token responses as upstream failures", async () => {
-    await withPublicFirewallRun(async (headers, fixture) => {
-      const fw = createFirewallApi(context);
-      const connectorsApi = createConnectorBddApi(context);
-      const actor = fixture.actor;
-      const accountIds = fixture.registerBuiltinConnector("lark");
-      const account = await connectorsApi.connectManualGrant(
-        actor,
-        "lark",
-        "api-token",
-        {
-          appId: "lark-app-id",
-          appSecret: "lark-app-secret",
-        },
-      );
-      accountIds.add(account.id);
+      let testOAuthRefreshCount = 0;
       server.use(
-        http.post(
-          "https://open.larksuite.com/open-apis/auth/v3/tenant_access_token/internal",
-          () => {
-            return HttpResponse.json({ code: 0, msg: "ok" });
-          },
-        ),
-      );
-
-      const body = {
-        authHeaders: {
-          Authorization: `Bearer ${secretTemplate("LARK_TOKEN")}`,
-        },
-        ...(await exactSecretConnectorSources(actor, {
-          LARK_TOKEN: "lark",
-        })),
-      };
-
-      const malformed = await fw.requestFirewallAuth(headers, body, [502]);
-      if (malformed.status !== 502) {
-        throw new Error(
-          "Expected the malformed lark response to fail with 502",
-        );
-      }
-      expect(malformed.body.error.code).toBe("TOKEN_REFRESH_FAILED");
-      expect(malformed.body.error.failureReason).toBe("upstream_provider");
-      expect(malformed.body.error.connectors).toStrictEqual(["lark"]);
-
-      // Provider HTTP failures classify the same way without flagging the
-      // connector for reconnect.
-      server.use(
-        http.post(
-          "https://open.larksuite.com/open-apis/auth/v3/tenant_access_token/internal",
-          () => {
-            return new HttpResponse(null, { status: 500 });
-          },
-        ),
-      );
-      const failing = await fw.requestFirewallAuth(headers, body, [502]);
-      if (failing.status !== 502) {
-        throw new Error("Expected the failing lark endpoint to fail with 502");
-      }
-      expect(failing.body.error.failureReason).toBe("upstream_provider");
-      expect(failing.body.error.connectors).toStrictEqual(["lark"]);
-    });
-  });
-
-  it("refreshes mapped-input connector access and stores its variable outputs", async () => {
-    const fw = createFirewallApi(context);
-    const { actor, headers } = await publicConnections.run();
-    await publicConnections.testOAuth(
-      actor,
-      {
-        accessToken: "stale-api-access",
-        refreshToken: "api-refresh-1",
-        expiresIn: -60,
-      },
-      "api",
-    );
-    fw.mockTestOauthTokenRefresh(() => {
-      return fw.oauthTokenResponse({
-        accessToken: "fresh-api-access",
-        refreshToken: "api-refresh-2",
-        expiresIn: 3600,
-      });
-    });
-
-    const body = {
-      authHeaders: {
-        Authorization: `Bearer ${secretTemplate("TEST_OAUTH_TOKEN")}`,
-      },
-      ...(await exactSecretConnectorSources(actor, {
-        TEST_OAUTH_TOKEN: "test-oauth",
-      })),
-    };
-
-    const refreshed = await fw.requestFirewallAuth(headers, body, [200]);
-    if (refreshed.status !== 200) {
-      throw new Error("Expected the mapped-input refresh to succeed");
-    }
-    expect(refreshed.body.headers.Authorization).toBe(
-      "Bearer fresh-api-access",
-    );
-    expect(refreshed.body.refreshedConnectors).toStrictEqual(["test-oauth"]);
-    expect(refreshed.body.refreshedSecrets).toStrictEqual(["TEST_OAUTH_TOKEN"]);
-
-    const served = await fw.requestFirewallAuth(headers, body, [200]);
-    if (served.status !== 200) {
-      throw new Error("Expected the stored mapped-input token to resolve");
-    }
-    expect(served.body.headers.Authorization).toBe("Bearer fresh-api-access");
-    expect(served.body.refreshedConnectors).toStrictEqual([]);
-  });
-});
-
-describe("FW-5: terminal runs close firewall credential authority", () => {
-  it.each(TERMINAL_RUN_STATUSES)(
-    "rejects a %s run before connector refresh",
-    async (status) => {
-      await withPublicFirewallRun(
-        async (headers, fixture, _subscription, run) => {
-          const fw = createFirewallApi(context);
-          const actor = fixture.actor;
-          const { runId, sandboxToken } = run;
-          const callbackHeaders = { authorization: `Bearer ${sandboxToken}` };
-          await connectPublicTestOAuth(fixture, {
-            accessToken: "stale-access",
-            refreshToken: "refresh-1",
-            expiresIn: -60,
-          });
-          let refreshRequests = 0;
-          fw.mockTestOauthTokenRefresh(() => {
-            refreshRequests += 1;
-            return fw.oauthTokenResponse({
-              accessToken: "must-not-refresh",
-              expiresIn: 3600,
+        http.post(TEST_OAUTH_TOKEN_URL, async ({ request }) => {
+          const form = new URLSearchParams(await request.text());
+          if (form.get("grant_type") !== "refresh_token") {
+            throw new Error("Expected refresh_token grant for test-oauth");
+          }
+          testOAuthRefreshCount += 1;
+          if (testOAuthRefreshCount === 1) {
+            return HttpResponse.json({
+              access_token: "narrow-scoped-access",
+              refresh_token: "rotated-refresh-1",
+              expires_in: 3600,
+              token_type: "Bearer",
+              scope: "provider-added",
             });
+          }
+          return HttpResponse.json({
+            access_token: "omitted-scope-access",
+            refresh_token: "rotated-refresh-2",
+            expires_in: 3600,
+            token_type: "Bearer",
           });
-
-          if (status === "cancelled") {
-            await createRunsApi(context).requestCancelRun(actor, runId, [200]);
-          } else if (status === "failed") {
-            await createWebhookCallbackApi(context).requestAgentComplete(
-              { runId, exitCode: 1 },
-              callbackHeaders,
-              [200],
-            );
-          } else {
-            await completePublicClaudeRun(
-              context,
-              run,
-              callbackHeaders,
-              "terminal firewall authorization",
-            );
-          }
-          expect(
-            (await createRunsApi(context).readRun(actor, runId)).status,
-          ).toBe(status);
-          const denied = await fw.requestFirewallAuth(
-            headers,
-            {
-              authHeaders: {
-                Authorization: `Bearer ${secretTemplate("TEST_OAUTH_TOKEN")}`,
-              },
-              ...(await exactSecretConnectorSources(actor, {
-                TEST_OAUTH_TOKEN: "test-oauth",
-              })),
-            },
-            [403],
-          );
-          if (denied.status !== 403) {
-            throw new Error(
-              "Expected terminal-run firewall auth to be forbidden",
-            );
-          }
-          expect(denied.body.error.code).toBe("FORBIDDEN");
-          expect(refreshRequests).toBe(0);
-        },
+        }),
       );
+
+      const firstRefresh = await accept(
+        firewallAuthApi.firewallAuth({
+          headers: bearerHeaders(launched.execution.firewallToken),
+          body: testOAuthFirewallBody(testOAuthConnectionId, true),
+        }),
+        [200],
+      );
+      expect(firstRefresh.body.headers.Authorization).toBe(
+        "Bearer narrow-scoped-access",
+      );
+
+      const [accountAfterFirst, scopeDiffAfterFirst] = await Promise.all([
+        accept(
+          connectorAccountsApi.connection({
+            headers: signIn(actor),
+            params: { connectionId: testOAuthConnectionId },
+            query: TEST_OAUTH_TARGET,
+          }),
+          [200],
+        ),
+        accept(
+          connectorAccountsApi.scopeDiff({
+            headers: signIn(actor),
+            params: { connectionId: testOAuthConnectionId },
+            query: { connectorSlug: "test-oauth" },
+          }),
+          [200],
+        ),
+      ]);
+      expect(accountAfterFirst.body).toMatchObject({
+        connectionStatus: "connected",
+        oauthScopes: ["provider-added"],
+      });
+      expect(scopeDiffAfterFirst.body).toMatchObject({
+        currentScopes: ["read"],
+        storedScopes: ["read"],
+        addedScopes: [],
+        removedScopes: [],
+      });
+
+      const secondRefresh = await accept(
+        firewallAuthApi.firewallAuth({
+          headers: bearerHeaders(launched.execution.firewallToken),
+          body: testOAuthFirewallBody(testOAuthConnectionId, true),
+        }),
+        [200],
+      );
+      expect(secondRefresh.body.headers.Authorization).toBe(
+        "Bearer omitted-scope-access",
+      );
+
+      const accountAfterSecond = await accept(
+        connectorAccountsApi.connection({
+          headers: signIn(actor),
+          params: { connectionId: testOAuthConnectionId },
+          query: TEST_OAUTH_TARGET,
+        }),
+        [200],
+      );
+      expect(accountAfterSecond.body.oauthScopes).toStrictEqual([
+        "provider-added",
+      ]);
+
+      const automaticRefresh = await accept(
+        firewallAuthApi.firewallAuth({
+          headers: bearerHeaders(launched.execution.firewallToken),
+          body: {
+            authHeaders: {
+              Authorization: `Bearer ${secretTemplate("MCP_ACCESS_TOKEN")}`,
+            },
+            matchedFirewall: {
+              name: "automatic-mcp-oauth",
+              apiId: "api-0",
+              base: AUTOMATIC_MCP_ENDPOINT,
+              connectorSlug: "automatic-mcp-oauth",
+              sourceId: autoConnectionId,
+              routingVariables: {},
+            },
+            forceRefresh: true,
+          },
+        }),
+        [200],
+      );
+      expect(automaticRefresh.body.headers.Authorization).toBe(
+        "Bearer automatic-refreshed-access-token",
+      );
+      expect(automaticRefresh.body.refreshedConnectors).toStrictEqual([]);
+      expect(automaticGrantTypes).toStrictEqual([
+        "authorization_code",
+        "refresh_token",
+      ]);
+
+      const automaticAccount = await accept(
+        connectorAccountsApi.connection({
+          headers: signIn(actor),
+          params: { connectionId: autoConnectionId },
+          query: AUTOMATIC_MCP_TARGET,
+        }),
+        [200],
+      );
+      expect(automaticAccount.body.oauthScopes).toBeNull();
     },
   );
-});
 
-describe("FW-6: manual-grant api-token refresh without a provider client", () => {
-  it("resolves a missing alias through the synchronous input-driven refresh", async () => {
-    await withPublicFirewallRun(async (headers, fixture) => {
-      const fw = createFirewallApi(context);
-      const connectorsApi = createConnectorBddApi(context);
-      const actor = fixture.actor;
-      await connectorsApi.updateFeatureSwitches(actor, {
-        [FeatureSwitchKey.TestOauthConnector]: true,
+  it(
+    "webhooks-agent-firewall-auth.bdd-057 requires reconnect for expired static tokens and syncs current ones",
+    { timeout: TEST_WITH_DOUBLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const startMs = Date.parse("2026-06-01T12:00:00.000Z");
+      mockNow(startMs);
+      const harness = createFirewallRunHarness();
+      const { actor } = harness;
+
+      await harness.provisionMember();
+      const firstConnectionId = await harness.connectTestOAuthDevice({
+        accessToken: "expired-device-token",
+        expiresIn: 3600,
       });
-      const accountIds = fixture.registerBuiltinConnector("test-oauth");
-      const account = await connectorsApi.connectManualGrant(
-        actor,
-        "test-oauth",
-        "api-token",
-        {
-          apiToken: "manual-secret",
-          inputVariable: "manual-var",
-          tenantId: "tenant-x",
-        },
+
+      mockNow(startMs + 3_660_000);
+      await harness.registerRunner();
+      const launched = await harness.launchRun(
+        "Verify expired static device token requires reconnect and new token resolves",
       );
 
-      accountIds.add(account.id);
-      const before = Math.floor(now() / 1000);
-      const resolved = await fw.requestFirewallAuth(
-        headers,
-        {
-          authHeaders: {
-            Authorization: `Bearer ${secretTemplate("TEST_OAUTH_API_TOKEN")}`,
-          },
-          ...(await exactSecretConnectorSources(actor, {
-            TEST_OAUTH_API_TOKEN: "test-oauth",
-          })),
-        },
+      const expiredResponse = await accept(
+        firewallAuthApi.firewallAuth({
+          headers: bearerHeaders(launched.execution.firewallToken),
+          body: testOAuthDeviceFirewallBody(firstConnectionId),
+        }),
+        [502],
+      );
+      expect(expiredResponse.body.error).toMatchObject({
+        code: "TOKEN_REFRESH_FAILED",
+        failureReason: "reconnect_required",
+        connectors: ["test-oauth-device"],
+      });
+
+      await accept(
+        connectorAccountsApi.delete({
+          headers: signIn(actor),
+          params: { connectionId: firstConnectionId },
+          body: { target: TEST_OAUTH_DEVICE_TARGET },
+        }),
         [200],
       );
-      if (resolved.status !== 200) {
-        throw new Error("Expected api-token refresh to succeed");
-      }
-      expect(resolved.body.headers.Authorization).toBe(
-        "Bearer fresh-test-oauth-api-token:manual-secret:manual-var",
+      const secondConnectionId = await harness.connectTestOAuthDevice({
+        accessToken: "current-device",
+        expiresIn: 3600,
+      });
+
+      const currentResponse = await accept(
+        firewallAuthApi.firewallAuth({
+          headers: bearerHeaders(launched.execution.firewallToken),
+          body: testOAuthDeviceFirewallBody(secondConnectionId),
+        }),
+        [200],
       );
-      expect(resolved.body.refreshedConnectors).toStrictEqual(["test-oauth"]);
-      expect(resolved.body.expiresAt ?? 0).toBeGreaterThanOrEqual(
-        before + 3500,
+      expect(currentResponse.body.headers.Authorization).toBe(
+        "Bearer current-device",
       );
-    });
-  });
-});
+      expect(currentResponse.body.refreshedConnectors).toStrictEqual([]);
+    },
+  );
 
-describe("FW-8: static access tokens and unavailable sources", () => {
-  afterEach(publicConnections.cleanup);
+  it(
+    "webhooks-agent-firewall-auth.bdd-053 rejects a completed run before connector refresh",
+    { timeout: TEST_WITH_DOUBLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const startMs = Date.parse("2026-06-01T12:00:00.000Z");
+      mockNow(startMs);
+      const harness = createFirewallRunHarness({ proTier: true });
+      const { actor } = harness;
 
-  it("requires reconnect for expired static tokens and syncs current ones", async () => {
-    const fw = createFirewallApi(context);
-    const connectors = createConnectorBddApi(context);
-    const { actor, headers } = await publicConnections.run();
-    await publicConnections.deviceOAuth(actor, {
-      accessToken: "stale-device",
-      expiresIn: -60,
-    });
+      await harness.provisionMember();
+      const connectionId = await harness.connectTestOAuth({
+        accessToken: "expired-before-complete",
+        refreshToken: "refresh-should-not-run",
+        expiresIn: 60,
+      });
 
-    const body = {
-      authHeaders: {
-        Authorization: `Bearer ${secretTemplate("TEST_OAUTH_DEVICE_TOKEN")}`,
-      },
-      ...(await exactSecretConnectorSources(actor, {
-        TEST_OAUTH_DEVICE_TOKEN: "test-oauth-device",
-      })),
-    };
-
-    const expired = await fw.requestFirewallAuth(headers, body, [502]);
-    if (expired.status !== 502) {
-      throw new Error("Expected expired static token to fail with 502");
-    }
-    expect(expired.body.error.failureReason).toBe("reconnect_required");
-    expect(expired.body.error.connectors).toStrictEqual(["test-oauth-device"]);
-
-    const [expiredAccount] = await connectors.listBuiltinConnectorAccounts(
-      actor,
-      "test-oauth-device",
-    );
-    if (!expiredAccount) {
-      throw new Error("Expected the expired device account");
-    }
-    await connectors.deleteBuiltinConnectorAccount(
-      actor,
-      "test-oauth-device",
-      expiredAccount.id,
-    );
-
-    await publicConnections.deviceOAuth(actor, {
-      accessToken: "current-device",
-      expiresIn: 3600,
-    });
-    const currentBody = {
-      ...body,
-      ...(await exactSecretConnectorSources(actor, {
-        TEST_OAUTH_DEVICE_TOKEN: "test-oauth-device",
-      })),
-    };
-    const synced = await fw.requestFirewallAuth(headers, currentBody, [200]);
-    if (synced.status !== 200) {
-      throw new Error("Expected current static token to resolve");
-    }
-    expect(synced.body.headers.Authorization).toBe("Bearer current-device");
-    expect(synced.body.refreshedConnectors).toStrictEqual([]);
-  });
-
-  it("serves static device tokens that were stored without an expiry", async () => {
-    const fw = createFirewallApi(context);
-    const { actor, headers } = await publicConnections.run();
-    await publicConnections.deviceOAuth(actor, {
-      accessToken: "no-expiry-device",
-    });
-
-    const synced = await fw.requestFirewallAuth(
-      headers,
-      {
-        authHeaders: {
-          Authorization: `Bearer ${secretTemplate("TEST_OAUTH_DEVICE_TOKEN")}`,
-        },
-        ...(await exactSecretConnectorSources(actor, {
-          TEST_OAUTH_DEVICE_TOKEN: "test-oauth-device",
-        })),
-      },
-      [200],
-    );
-    if (synced.status !== 200) {
-      throw new Error("Expected the expiry-less static token to resolve");
-    }
-    expect(synced.body.headers.Authorization).toBe("Bearer no-expiry-device");
-    expect(synced.body.refreshedConnectors).toStrictEqual([]);
-    expect(synced.body.expiresAt).toBeNull();
-  });
-
-  it("reports aliases for never-connected connector slugs as not configured", async () => {
-    await withPublicFirewallRun(async (headers) => {
-      const fw = createFirewallApi(context);
-
-      const missing = await fw.requestFirewallAuth(
-        headers,
-        {
-          authHeaders: {
-            Authorization: `Bearer ${secretTemplate("NOTION_TOKEN")}`,
-          },
-          secretConnectorMap: { NOTION_TOKEN: "notion" },
-        },
-        [424],
+      mockNow(startMs + 120_000);
+      await harness.registerRunner();
+      const launched = await harness.launchRun(
+        "Complete run before testing terminal firewall rejection",
       );
-      if (missing.status !== 424) {
-        throw new Error(
-          "Expected unconnected connector alias to fail with 424",
-        );
-      }
-      expect(missing.body.error.code).toBe("CONNECTOR_NOT_CONFIGURED");
-    });
-  });
-});
 
-function ownedCodexMetadata(actor: ApiTestUser) {
-  const sourceId = codexAccounts.receipts.get(actor.userId);
-  if (!sourceId) {
-    throw new Error("Expected the normal Codex account receipt");
-  }
-  return {
-    sourceType: "model-provider" as const,
-    sourceUserId: actor.userId,
-    sourceId,
-    metadataKey: "codex-oauth-token",
-  };
-}
-
-describe("FW-9: codex model-provider access", () => {
-  it("refreshes the exact owned Codex account and serves its stored token afterwards", async () => {
-    const fw = codexFirewallApi;
-    const { actor, headers } = await firewallRun();
-    await connectCodexAccount(actor, {
-      accessToken: "stale-chatgpt-token",
-      refreshToken: "chatgpt-refresh",
-      accountId: "acct-bdd",
-      expiresIn: -60,
-    });
-    fw.mockCodexTokenRefresh(() => {
-      return HttpResponse.json({
-        access_token: "fresh-chatgpt-token",
-        refresh_token: "rotated-chatgpt-refresh",
-        expires_in: 3600,
-      });
-    });
-
-    const body = {
-      authHeaders: {
-        Authorization: `Bearer ${secretTemplate("CHATGPT_ACCESS_TOKEN")}`,
-      },
-      secretConnectorMap: { CHATGPT_ACCESS_TOKEN: "codex-oauth-token" },
-      secretConnectorMetadataMap: {
-        CHATGPT_ACCESS_TOKEN: ownedCodexMetadata(actor),
-      },
-    };
-
-    const refreshed = await fw.requestFirewallAuth(headers, body, [200]);
-    if (refreshed.status !== 200) {
-      throw new Error("Expected codex refresh to succeed");
-    }
-    expect(refreshed.body.headers.Authorization).toBe(
-      "Bearer fresh-chatgpt-token",
-    );
-    expect(refreshed.body.refreshedConnectors).toStrictEqual([
-      "codex-oauth-token",
-    ]);
-    expect(refreshed.body.refreshedSecrets).toStrictEqual([
-      "CHATGPT_ACCESS_TOKEN",
-    ]);
-
-    const served = await fw.requestFirewallAuth(headers, body, [200]);
-    if (served.status !== 200) {
-      throw new Error("Expected stored codex token to resolve");
-    }
-    expect(served.body.headers.Authorization).toBe(
-      "Bearer fresh-chatgpt-token",
-    );
-    expect(served.body.refreshedConnectors).toStrictEqual([]);
-  });
-
-  it("rejects Codex access when concrete account metadata is omitted", async () => {
-    const fw = codexFirewallApi;
-    const { actor, headers } = await firewallRun();
-    await connectCodexAccount(actor, {
-      accessToken: "stale-chatgpt-token",
-      refreshToken: "chatgpt-refresh",
-      accountId: "acct-bdd",
-      expiresIn: -60,
-    });
-    fw.mockCodexTokenRefresh(() => {
-      return HttpResponse.json({
-        access_token: "derived-chatgpt-token",
-        refresh_token: "rotated-chatgpt-refresh",
-        expires_in: 3600,
-      });
-    });
-
-    const refreshed = await fw.requestFirewallAuth(
-      headers,
-      {
-        authHeaders: {
-          Authorization: `Bearer ${secretTemplate("CHATGPT_ACCESS_TOKEN")}`,
-        },
-        secretConnectorMap: { CHATGPT_ACCESS_TOKEN: "codex-oauth-token" },
-      },
-      [403],
-    );
-    expect(refreshed.body).toMatchObject({ error: { code: "FORBIDDEN" } });
-    expect(refreshed.body).not.toHaveProperty("headers");
-  });
-
-  it("rejects cross-user model-provider sources and unknown aliases", async () => {
-    const fw = codexFirewallApi;
-    const { actor, headers } = await firewallRun();
-    await connectCodexAccount(actor, {
-      accessToken: "stale-chatgpt-token",
-      refreshToken: "chatgpt-refresh",
-      accountId: "acct-bdd",
-      expiresIn: -60,
-    });
-
-    const crossUser = await fw.requestFirewallAuth(
-      headers,
-      {
-        authHeaders: {
-          Authorization: `Bearer ${secretTemplate("CHATGPT_ACCESS_TOKEN")}`,
-        },
-        secretConnectorMap: { CHATGPT_ACCESS_TOKEN: "codex-oauth-token" },
-        secretConnectorMetadataMap: {
-          CHATGPT_ACCESS_TOKEN: {
-            sourceType: "model-provider" as const,
-            sourceUserId: "user_someone_else",
-            metadataKey: "codex-oauth-token",
-          },
-        },
-      },
-      [403],
-    );
-    expectApiError(crossUser.body);
-
-    const unknownAlias = await fw.requestFirewallAuth(
-      headers,
-      {
-        authHeaders: {
-          Authorization: `Bearer ${secretTemplate("CHATGPT_REFRESH_TOKEN")}`,
-        },
-        secretConnectorMap: { CHATGPT_REFRESH_TOKEN: "codex-oauth-token" },
-        secretConnectorMetadataMap: {
-          CHATGPT_REFRESH_TOKEN: ownedCodexMetadata(actor),
-        },
-      },
-      [424],
-    );
-    if (unknownAlias.status !== 424) {
-      throw new Error("Expected unknown codex alias to fail with 424");
-    }
-    expect(unknownAlias.body.error.code).toBe("CONNECTOR_NOT_CONFIGURED");
-
-    const userScoped = await fw.requestFirewallAuth(
-      headers,
-      {
-        authHeaders: {
-          Authorization: `Bearer ${secretTemplate("CHATGPT_ACCESS_TOKEN")}`,
-        },
-        secretConnectorMap: { CHATGPT_ACCESS_TOKEN: "codex-oauth-token" },
-        secretConnectorMetadataMap: {
-          CHATGPT_ACCESS_TOKEN: {
-            sourceType: "model-provider" as const,
-            sourceUserId: actor.userId,
-            metadataKey: "codex-oauth-token",
-          },
-        },
-      },
-      [403],
-    );
-    expect(userScoped.body).toMatchObject({ error: { code: "FORBIDDEN" } });
-    expect(userScoped.body).not.toHaveProperty("headers");
-  });
-
-  it("recovers an unclassified reconnect-flagged codex provider after a successful refresh", async () => {
-    const fw = codexFirewallApi;
-    const { actor, headers } = await firewallRun();
-    await connectCodexAccount(actor, {
-      accessToken: "stale-chatgpt-token",
-      refreshToken: "chatgpt-refresh",
-      accountId: "acct-bdd",
-      expiresIn: -60,
-    });
-    await recordUnclassifiedCodexFailure(actor, headers);
-    fw.mockCodexTokenRefresh(() => {
-      return HttpResponse.json({
-        access_token: "recovered-chatgpt-token",
-        refresh_token: "rotated-chatgpt-refresh",
-        expires_in: 3600,
-      });
-    });
-
-    const recovered = await fw.requestFirewallAuth(
-      headers,
-      {
-        authHeaders: {
-          Authorization: `Bearer ${secretTemplate("CHATGPT_ACCESS_TOKEN")}`,
-        },
-        secretConnectorMap: { CHATGPT_ACCESS_TOKEN: "codex-oauth-token" },
-        secretConnectorMetadataMap: {
-          CHATGPT_ACCESS_TOKEN: ownedCodexMetadata(actor),
-        },
-      },
-      [200],
-    );
-    if (recovered.status !== 200) {
-      throw new Error("Expected reconnect-flagged refresh to recover");
-    }
-    expect(recovered.body.headers.Authorization).toBe(
-      "Bearer recovered-chatgpt-token",
-    );
-  });
-
-  it("re-refreshes unclassified reconnect-flagged codex providers before their token expires", async () => {
-    const fw = codexFirewallApi;
-    const { actor, headers } = await firewallRun();
-    await connectCodexAccount(actor, {
-      accessToken: "current-chatgpt-token",
-      refreshToken: "chatgpt-refresh",
-      accountId: "acct-bdd",
-      expiresIn: 3600,
-    });
-    await recordUnclassifiedCodexFailure(actor, headers);
-    fw.mockCodexTokenRefresh(() => {
-      return HttpResponse.json({
-        access_token: "reauthorized-chatgpt-token",
-        refresh_token: "rotated-chatgpt-refresh",
-        expires_in: 3600,
-      });
-    });
-
-    const refreshed = await fw.requestFirewallAuth(
-      headers,
-      {
-        authHeaders: {
-          Authorization: `Bearer ${secretTemplate("CHATGPT_ACCESS_TOKEN")}`,
-        },
-        secretConnectorMap: { CHATGPT_ACCESS_TOKEN: "codex-oauth-token" },
-        secretConnectorMetadataMap: {
-          CHATGPT_ACCESS_TOKEN: ownedCodexMetadata(actor),
-        },
-      },
-      [200],
-    );
-    if (refreshed.status !== 200) {
-      throw new Error("Expected the unexpired reconnect refresh to succeed");
-    }
-    expect(refreshed.body.headers.Authorization).toBe(
-      "Bearer reauthorized-chatgpt-token",
-    );
-    expect(refreshed.body.refreshedConnectors).toStrictEqual([
-      "codex-oauth-token",
-    ]);
-  });
-
-  it("reports a missing exact owned Codex account as not configured", async () => {
-    const { actor, headers } = await firewallRun();
-    const fw = createFirewallApi(context);
-    const missing = await fw.requestFirewallAuth(
-      headers,
-      {
-        authHeaders: {
-          Authorization: `Bearer ${secretTemplate("CHATGPT_ACCESS_TOKEN")}`,
-        },
-        secretConnectorMap: { CHATGPT_ACCESS_TOKEN: "codex-oauth-token" },
-        secretConnectorMetadataMap: {
-          CHATGPT_ACCESS_TOKEN: {
-            sourceType: "model-provider" as const,
-            sourceUserId: actor.userId,
-            sourceId: randomUUID(),
-            metadataKey: "codex-oauth-token",
-          },
-        },
-      },
-      [424],
-    );
-    if (missing.status !== 424) {
-      throw new Error("Expected missing Codex account to fail with 424");
-    }
-    expect(missing.body.error.code).toBe("CONNECTOR_NOT_CONFIGURED");
-  });
-
-  it("stops retrying terminal chatgpt refresh failures", async () => {
-    const fw = codexFirewallApi;
-    const { actor, headers } = await firewallRun();
-    const terminalErrorCodes = [
-      "refresh_token_reused",
-      "refresh_token_expired",
-      "refresh_token_invalidated",
-    ] as const;
-    for (const errorCode of terminalErrorCodes) {
-      await connectCodexAccount(actor, {
-        accessToken: "stale-chatgpt-token",
-        refreshToken: `chatgpt-refresh-${errorCode}`,
-        accountId: "acct-bdd",
-        expiresIn: -60,
-      });
-      const body = {
-        authHeaders: {
-          Authorization: `Bearer ${secretTemplate("CHATGPT_ACCESS_TOKEN")}`,
-        },
-        secretConnectorMap: { CHATGPT_ACCESS_TOKEN: "codex-oauth-token" },
-        secretConnectorMetadataMap: {
-          CHATGPT_ACCESS_TOKEN: ownedCodexMetadata(actor),
-        },
-      };
       let refreshCalls = 0;
-      fw.mockCodexTokenRefresh(() => {
-        refreshCalls += 1;
-        return HttpResponse.json(
-          {
-            error: {
-              code: errorCode,
-              message: `${errorCode} refresh token`,
+      server.use(
+        http.post(TEST_OAUTH_TOKEN_URL, () => {
+          refreshCalls += 1;
+          return HttpResponse.json({
+            access_token: "unexpected-refresh",
+            expires_in: 3600,
+            token_type: "Bearer",
+          });
+        }),
+      );
+
+      await accept(
+        agentCompleteApi.complete({
+          headers: bearerHeaders(launched.execution.sandboxToken),
+          body: {
+            runId: launched.runId,
+            exitCode: 0,
+            completion: {
+              cliAgentType: "claude-code",
+              cliAgentSessionId: `completed-session-${launched.runId}`,
+              cliAgentSessionHistoryDisposition: "native_only",
+              storageOutputs: [],
             },
           },
-          { status: 401 },
-        );
-      });
-
-      for (let requestIndex = 0; requestIndex < 3; requestIndex += 1) {
-        const failed = await fw.requestFirewallAuth(headers, body, [502]);
-        if (failed.status !== 502) {
-          throw new Error("Expected the chatgpt reconnect failure to be 502");
-        }
-        expect(failed.body.error.code).toBe("TOKEN_REFRESH_FAILED");
-        expect(failed.body.error.failureReason).toBe("reconnect_required");
-        expect(failed.body.error.connectors).toStrictEqual([
-          "codex-oauth-token",
-        ]);
-      }
-
-      expect(refreshCalls).toBe(1);
-    }
-  });
-
-  it("keeps terminal Codex failure on the exact account until reconnect", async () => {
-    const fw = createFirewallApi(context);
-    const authDevice = createAuthDeviceApiActions(context);
-    const support = createAuthDeviceSupportApi(context);
-    const { actor, headers } = await firewallRun();
-    const accounts: string[] = [];
-    for (const accountId of ["expired-account", "healthy-account"]) {
-      mockCodexDeviceAuthProvider({
-        accountId,
-        accessTokenExpiresAt:
-          Math.floor(now() / 1000) +
-          (accountId === "expired-account" ? -60 : 7200),
-      });
-      const started = await authDevice.requestCodexStart(
-        actor,
-        "personal",
-        [200],
-        { mode: "add" },
-      );
-      if (started.status !== 200) {
-        throw new Error("Expected Codex account connection to start");
-      }
-      const completed = await authDevice.requestCodexComplete(
-        actor,
-        started.body.sessionToken,
+        }),
         [200],
       );
-      if (
-        !("status" in completed.body) ||
-        completed.body.status !== "complete"
-      ) {
-        throw new Error("Expected Codex account connection to complete");
-      }
-      accounts.push(completed.body.provider.id);
-      codexAccounts.owned.get(actor.userId)?.add(completed.body.provider.id);
-    }
-    const [expiredAccountId, healthyAccountId] = accounts;
-    if (!expiredAccountId || !healthyAccountId) {
-      throw new Error("Expected both concrete accounts");
-    }
-    await support.activatePersonalModelProviderAccount(actor, healthyAccountId);
-    let refreshCalls = 0;
-    fw.mockCodexTokenRefresh(() => {
-      refreshCalls += 1;
-      return HttpResponse.json(
-        { error: { code: "refresh_token_reused", message: "reused token" } },
-        { status: 401 },
+      launched.trackedEntry.done = true;
+      await flushWaitUntilForTest();
+
+      const [runAfterComplete, rejectedAuth] = await Promise.all([
+        accept(
+          runsByIdApi.getById({
+            headers: signIn(actor),
+            params: { id: launched.runId },
+          }),
+          [200],
+        ),
+        accept(
+          firewallAuthApi.firewallAuth({
+            headers: bearerHeaders(launched.execution.firewallToken),
+            body: testOAuthFirewallBody(connectionId),
+          }),
+          [403],
+        ),
+      ]);
+
+      expect(runAfterComplete.body.status).toBe("completed");
+      expect(rejectedAuth.body.error.code).toBe("FORBIDDEN");
+      expect(refreshCalls).toBe(0);
+    },
+  );
+
+  it(
+    "webhooks-agent-firewall-auth.bdd-055 rejects a cancelled run before connector refresh",
+    { timeout: TEST_WITH_DOUBLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const startMs = Date.parse("2026-06-01T12:00:00.000Z");
+      mockNow(startMs);
+      const harness = createFirewallRunHarness({ proTier: true });
+      const { actor } = harness;
+
+      await harness.provisionMember();
+      const connectionId = await harness.connectTestOAuth({
+        accessToken: "expired-before-cancel",
+        refreshToken: "refresh-should-not-run",
+        expiresIn: 60,
+      });
+
+      mockNow(startMs + 120_000);
+      await harness.registerRunner();
+      const launched = await harness.launchRun(
+        "Cancel run before testing terminal firewall rejection",
       );
-    });
-    const body = {
-      authHeaders: {
-        Authorization: `Bearer ${secretTemplate("CHATGPT_ACCESS_TOKEN")}`,
-      },
-      secretConnectorMap: { CHATGPT_ACCESS_TOKEN: "codex-oauth-token" },
-      secretConnectorMetadataMap: {
-        CHATGPT_ACCESS_TOKEN: {
-          sourceType: "model-provider" as const,
-          sourceUserId: actor.userId,
-          sourceId: expiredAccountId,
-          metadataKey: "codex-oauth-token",
-        },
-      },
-    };
-    for (let attempt = 0; attempt < 2; attempt += 1) {
-      const failed = await fw.requestFirewallAuth(headers, body, [502]);
-      expect(failed.body).toMatchObject({
-        error: {
-          code: "TOKEN_REFRESH_FAILED",
-          failureReason: "reconnect_required",
-        },
-      });
-    }
-    expect(refreshCalls).toBe(1);
-    const failedAccounts = await support.listPersonalModelProviders(
-      actor,
-      [200],
-    );
-    expect(failedAccounts.body).toMatchObject({
-      modelProviders: expect.arrayContaining([
-        expect.objectContaining({
-          id: expiredAccountId,
-          needsReconnect: true,
-          lastRefreshErrorCode: "refresh_token_reused",
+
+      let refreshCalls = 0;
+      server.use(
+        http.post(TEST_OAUTH_TOKEN_URL, () => {
+          refreshCalls += 1;
+          return HttpResponse.json({
+            access_token: "unexpected-refresh",
+            expires_in: 3600,
+            token_type: "Bearer",
+          });
         }),
-        expect.objectContaining({
-          id: healthyAccountId,
-          isActive: true,
-          needsReconnect: false,
-          lastRefreshErrorCode: null,
+      );
+
+      await accept(
+        runsCancelApi.cancel({
+          headers: signIn(actor),
+          params: { id: launched.runId },
         }),
-      ]),
-    });
+        [200],
+      );
 
-    const reconnected = mockCodexDeviceAuthProvider({
-      accountId: "expired-account",
-    });
-    const started = await authDevice.requestCodexStart(
-      actor,
-      "personal",
-      [200],
-      {
-        mode: "reconnect",
-        modelProviderId: expiredAccountId,
-      },
-    );
-    if (started.status !== 200) {
-      throw new Error("Expected exact Codex account reconnect to start");
-    }
-    await authDevice.requestCodexComplete(
-      actor,
-      started.body.sessionToken,
-      [200],
-    );
-    const recoveredAccounts = await support.listPersonalModelProviders(
-      actor,
-      [200],
-    );
-    expect(recoveredAccounts.body).toMatchObject({
-      modelProviders: expect.arrayContaining([
-        expect.objectContaining({
-          id: expiredAccountId,
-          needsReconnect: false,
-          lastRefreshErrorCode: null,
+      const [runAfterCancel, rejectedAuth] = await Promise.all([
+        accept(
+          runsByIdApi.getById({
+            headers: signIn(actor),
+            params: { id: launched.runId },
+          }),
+          [200],
+        ),
+        accept(
+          firewallAuthApi.firewallAuth({
+            headers: bearerHeaders(launched.execution.firewallToken),
+            body: testOAuthFirewallBody(connectionId),
+          }),
+          [403],
+        ),
+      ]);
+
+      expect(runAfterCancel.body.status).toBe("cancelled");
+      expect(rejectedAuth.body.error.code).toBe("FORBIDDEN");
+      expect(refreshCalls).toBe(0);
+    },
+  );
+
+  it("webhooks-agent-firewall-auth.bdd-001 rejects missing and malformed firewall auth requests", async () => {
+    const [missingHeader, malformedBearer] = await Promise.all([
+      accept(
+        firewallAuthApi.firewallAuth({
+          headers: {},
+          body: { authHeaders: {} },
         }),
-      ]),
-    });
-    const resolved = await fw.requestFirewallAuth(headers, body, [200]);
-    expect(resolved.body).toMatchObject({
-      headers: {
-        Authorization: `Bearer ${reconnected.oauthTokenResponses[0]?.access_token}`,
-      },
-      refreshedConnectors: [],
-    });
-    expect(reconnected.oauthToken).toHaveLength(1);
-  });
-
-  it("retries a transient codex refresh failure", async () => {
-    const fw = codexFirewallApi;
-    const { actor, headers } = await firewallRun();
-    await connectCodexAccount(actor, {
-      accessToken: "stale-chatgpt-token",
-      refreshToken: "chatgpt-refresh",
-      accountId: "acct-bdd",
-      expiresIn: -60,
-    });
-    let refreshCalls = 0;
-    fw.mockCodexTokenRefresh(() => {
-      refreshCalls += 1;
-      if (refreshCalls === 1) {
-        return HttpResponse.json({ error: "server_error" }, { status: 503 });
-      }
-      return HttpResponse.json({
-        access_token: "recovered-chatgpt-token",
-        refresh_token: "rotated-chatgpt-refresh",
-        expires_in: 3600,
-      });
-    });
-    const body = {
-      authHeaders: {
-        Authorization: `Bearer ${secretTemplate("CHATGPT_ACCESS_TOKEN")}`,
-      },
-      secretConnectorMap: { CHATGPT_ACCESS_TOKEN: "codex-oauth-token" },
-      secretConnectorMetadataMap: {
-        CHATGPT_ACCESS_TOKEN: ownedCodexMetadata(actor),
-      },
-    };
-
-    const failed = await fw.requestFirewallAuth(headers, body, [502]);
-    if (failed.status !== 502) {
-      throw new Error("Expected the transient codex failure to be 502");
-    }
-    expect(failed.body.error.failureReason).toBe("upstream_provider");
-
-    const recovered = await fw.requestFirewallAuth(headers, body, [200]);
-    if (recovered.status !== 200) {
-      throw new Error("Expected the transient codex failure to recover");
-    }
-    expect(recovered.body.headers.Authorization).toBe(
-      "Bearer recovered-chatgpt-token",
-    );
-    expect(refreshCalls).toBe(2);
-  });
-});
-
-describe("FW-10: platform connector secrets", () => {
-  afterEach(publicConnections.cleanup);
-
-  it("resolves platform-secret aliases from current API env", async () => {
-    const fw = createFirewallApi(context);
-    const { actor, headers } = await publicConnections.run();
-    await publicConnections.googleOAuth(actor, "google-ads", {
-      accessToken: "google-ads-access",
-      refreshToken: "google-ads-refresh",
-    });
-    mockOptionalEnv("GOOGLE_ADS_DEVELOPER_TOKEN", "developer-token-current");
-
-    const resolved = await fw.requestFirewallAuth(
-      headers,
-      {
-        authHeaders: {
-          Authorization: `Bearer ${secretTemplate("GOOGLE_ADS_TOKEN")}`,
-          "developer-token": secretTemplate("GOOGLE_ADS_DEVELOPER_TOKEN"),
-        },
-        ...(await exactSecretConnectorSources(
-          actor,
-          {
-            GOOGLE_ADS_TOKEN: "google-ads",
-            GOOGLE_ADS_DEVELOPER_TOKEN: "google-ads",
-          },
-          ["GOOGLE_ADS_DEVELOPER_TOKEN"],
-        )),
-      },
-      [200],
-    );
-    if (resolved.status !== 200) {
-      throw new Error("Expected platform-secret alias to resolve");
-    }
-    expect(resolved.body.headers.Authorization).toBe(
-      "Bearer google-ads-access",
-    );
-    expect(resolved.body.headers["developer-token"]).toBe(
-      "developer-token-current",
-    );
-    expect(resolved.body.resolvedSecrets).toStrictEqual([
-      "GOOGLE_ADS_DEVELOPER_TOKEN",
-      "GOOGLE_ADS_TOKEN",
+        [401],
+      ),
+      accept(
+        firewallAuthApi.firewallAuth({
+          headers: { authorization: "Bearer junk" },
+          body: { authHeaders: {} },
+        }),
+        [401],
+      ),
     ]);
-  });
 
-  it("reports missing platform env as connector-not-configured", async () => {
-    const fw = createFirewallApi(context);
-    const { actor, headers } = await publicConnections.run();
-    await publicConnections.googleOAuth(actor, "google-ads", {
-      accessToken: "google-ads-access",
-      refreshToken: "google-ads-refresh",
-    });
-    mockOptionalEnv("GOOGLE_ADS_DEVELOPER_TOKEN", undefined);
-
-    const missing = await fw.requestFirewallAuth(
-      headers,
-      {
-        authHeaders: {
-          "developer-token": secretTemplate("GOOGLE_ADS_DEVELOPER_TOKEN"),
-        },
-        secretConnectorMap: {
-          GOOGLE_ADS_DEVELOPER_TOKEN: "google-ads",
-        },
-        secretConnectorMetadataMap: {
-          GOOGLE_ADS_DEVELOPER_TOKEN: {
-            sourceType: "platform-secret" as const,
-          },
-        },
-      },
-      [424],
-    );
-    if (missing.status !== 424) {
-      throw new Error("Expected missing platform env to fail with 424");
-    }
-    expect(missing.body.error.code).toBe("CONNECTOR_NOT_CONFIGURED");
-  });
-
-  it("rejects platform metadata for non-platform connector aliases", async () => {
-    const fw = createFirewallApi(context);
-    const { actor, headers } = await publicConnections.run();
-    await publicConnections.googleOAuth(actor, "google-ads", {
-      accessToken: "google-ads-access",
-      refreshToken: "google-ads-refresh",
-    });
-    mockOptionalEnv("GOOGLE_ADS_DEVELOPER_TOKEN", "developer-token-current");
-
-    const invalid = await fw.requestFirewallAuth(
-      headers,
-      {
-        authHeaders: {
-          Authorization: `Bearer ${secretTemplate("GOOGLE_ADS_TOKEN")}`,
-        },
-        secretConnectorMap: {
-          GOOGLE_ADS_TOKEN: "google-ads",
-        },
-        secretConnectorMetadataMap: {
-          GOOGLE_ADS_TOKEN: {
-            sourceType: "platform-secret" as const,
-          },
-        },
-      },
-      [424],
-    );
-    if (invalid.status !== 424) {
-      throw new Error("Expected invalid platform alias to fail with 424");
-    }
-    expect(invalid.body.error.code).toBe("CONNECTOR_NOT_CONFIGURED");
-  });
-});
-
-describe("FW-11: aws sigv4 template resolution", () => {
-  it("resolves aws sigv4 credentials from variable templates", async () => {
-    await withPublicFirewallRun(async (headers) => {
-      const fw = createFirewallApi(context);
-
-      const resolved = await fw.requestFirewallAuth(
-        headers,
-        {
-          authHeaders: {},
-          authAwsSigv4: {
-            accessKeyId: varTemplate("AWS_ACCESS_KEY_ID"),
-            secretAccessKey: varTemplate("AWS_SECRET_ACCESS_KEY"),
-            sessionToken: varTemplate("AWS_SESSION_TOKEN"),
-          },
-          vars: {
-            AWS_ACCESS_KEY_ID: "access-key-id",
-            AWS_SECRET_ACCESS_KEY: "secret-access-key",
-            AWS_SESSION_TOKEN: "session-token",
-          },
-        },
-        [200],
-      );
-      if (resolved.status !== 200) {
-        throw new Error("Expected the sigv4 resolution to succeed");
-      }
-      expect(resolved.body.headers).toStrictEqual({});
-      expect(resolved.body.awsSigv4).toStrictEqual({
-        accessKeyId: "access-key-id",
-        secretAccessKey: "secret-access-key",
-        sessionToken: "session-token",
-      });
-      expect(resolved.body.resolvedSecrets).toStrictEqual([]);
-      expect(resolved.body.expiresAt).toBeNull();
-    });
-  });
-
-  it("rejects empty resolved aws sigv4 credentials as connector-not-configured", async () => {
-    await withPublicFirewallRun(async (headers) => {
-      const fw = createFirewallApi(context);
-
-      const missing = await fw.requestFirewallAuth(
-        headers,
-        {
-          authHeaders: {},
-          authAwsSigv4: {
-            accessKeyId: varTemplate("AWS_ACCESS_KEY_ID"),
-            secretAccessKey: varTemplate("AWS_SECRET_ACCESS_KEY"),
-          },
-          vars: {
-            AWS_ACCESS_KEY_ID: "",
-            AWS_SECRET_ACCESS_KEY: "secret-access-key",
-          },
-        },
-        [424],
-      );
-      if (missing.status !== 424) {
-        throw new Error("Expected the empty sigv4 credential to fail with 424");
-      }
-      expect(missing.body.error.code).toBe("CONNECTOR_NOT_CONFIGURED");
-    });
+    expect(missingHeader.body.error.code).toBe("UNAUTHORIZED");
+    expect(malformedBearer.body.error.code).toBe("UNAUTHORIZED");
   });
 });

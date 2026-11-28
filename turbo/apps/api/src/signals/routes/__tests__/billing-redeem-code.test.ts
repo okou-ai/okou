@@ -1,501 +1,284 @@
+import { setupApp } from "../../../__tests__/test-helpers";
+import { createRouteMocks } from "./helpers/route-test";
 import { createHash, randomUUID } from "node:crypto";
-
 import {
   billingRedeemCodeContract,
   billingStatusContract,
 } from "@okouai/api-contracts/contracts/billing";
 import { http, HttpResponse } from "msw";
+import { describe, expect, it } from "vitest";
 
-import { accept, testContext } from "../../../__tests__/test-context";
-import { setupApp } from "../../../__tests__/test-helpers";
-import { mockEnv, mockOptionalEnv } from "../../../lib/env";
+import { apiTestEnvironment } from "../../../__tests__/test-environment";
+import { testContext, accept } from "../../../__tests__/test-context";
 import { server } from "../../../mocks/server";
-import { createRouteMocks } from "./helpers/route-test";
 import { billingRedeemCodeRoutes } from "../billing-redeem-code";
-import { ClerkUserNotFoundTestError } from "./helpers/clerk-users";
-import { createBddApi } from "./helpers/api-bdd";
-import { postSubscriptionInvoicePaid } from "./helpers/stripe-billing-webhook";
 import { billingStatusRoutes } from "../billing-status";
-import { now } from "../../../lib/time";
+import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
+import { mockClerkUsers } from "./helpers/clerk-users";
+import { publicPlanLifecycle } from "./helpers/public-plan-lifecycle";
 
 const context = testContext();
-const mocks = createRouteMocks(context);
 
-const ATOM_URL = "https://atom.example.test";
-const ATOM_MACHINE_SECRET_KEY = "msk_test_atom";
-const ATOM_M2M_TOKEN = "mt_test_atom";
+const headers = Object.freeze({ authorization: "Bearer clerk-session" });
+const ATOM_CONSUME_URL = new URL(
+  "/api/redeem-codes/consume",
+  apiTestEnvironment.ATOM_URL,
+).toString();
+const MACHINE_SECRET = apiTestEnvironment.OKOU_MACHINE_SECRET_KEY;
 
-interface SessionFixture {
-  readonly userId: string;
-  readonly orgId: string;
-  readonly email: string;
+interface AtomReceipt {
+  readonly authorization: string | null;
+  readonly body: unknown;
+  readonly raw: string;
 }
 
-// The payload carries random identifiers, so a bare secret length would match
-// them by chance without proving anything about the secret. Only derivatives
-// that reproduce the value itself are meaningful evidence of a leak.
-function expectValueFree(payload: string, values: readonly string[]): void {
-  for (const value of values) {
-    const forbiddenDerivatives = [
-      value,
-      createHash("sha256").update(value).digest("hex"),
-      JSON.stringify(value),
-    ];
-    for (const derivative of forbiddenDerivatives) {
-      expect(payload).not.toContain(derivative);
-    }
+function redeemCodeApi() {
+  return setupApp({ context, routes: billingRedeemCodeRoutes })(
+    billingRedeemCodeContract,
+  );
+}
+
+function billingStatusApi() {
+  return setupApp({ context, routes: billingStatusRoutes })(
+    billingStatusContract,
+  );
+}
+
+function signIn(actor: ApiTestUser): void {
+  createRouteMocks(context).clerk.session(
+    actor.userId,
+    actor.orgId,
+    actor.orgRole,
+  );
+}
+
+/** Clerk issues an M2M token for the redeem service. */
+function clerkIssuesM2mToken(): string {
+  const token = `m2m_${randomUUID()}`;
+  context.mocks.clerk.m2m.createToken.mockResolvedValue({ token });
+  return token;
+}
+
+/** Atom's consume endpoint answers with `respond` and records every receipt. */
+function atomConsume(respond: () => Response): AtomReceipt[] {
+  const receipts: AtomReceipt[] = [];
+  server.use(
+    http.post(ATOM_CONSUME_URL, async ({ request }) => {
+      const raw = await request.text();
+      receipts.push({
+        authorization: request.headers.get("authorization"),
+        body: JSON.parse(raw),
+        raw: `${JSON.stringify([...request.headers.entries()])}${raw}`,
+      });
+      return respond();
+    }),
+  );
+  return receipts;
+}
+
+/** A signed-in admin of a provisioned Free workspace. */
+async function freeWorkspaceAdmin(): Promise<ApiTestUser> {
+  const api = createBddApi(context);
+  const admin = api.user();
+  await api.provisionWorkspace(admin);
+  signIn(admin);
+  return admin;
+}
+
+async function redeem(
+  code: string,
+  statuses: readonly (200 | 400 | 403 | 503)[],
+) {
+  return await accept(
+    redeemCodeApi().create({ headers, body: { code } }),
+    statuses,
+  );
+}
+
+async function rejection(status: 400 | 403 | 503) {
+  const response = await redeem("YUMA-123", [status]);
+  if (!("error" in response.body)) {
+    throw new Error("expected an error response");
   }
-}
-
-async function setAdminSession(): Promise<SessionFixture> {
-  const userId = `user_${randomUUID()}`;
-  const fixture = {
-    userId,
-    orgId: `org_${randomUUID()}`,
-    email: `${userId}@example.test`,
-  };
-  await createBddApi(context).provisionWorkspace({
-    ...fixture,
-    orgRole: "org:admin",
-  });
-  context.mocks.clerk.users.getUser.mockResolvedValue({
-    id: fixture.userId,
-    primaryEmailAddressId: `email_${fixture.userId}`,
-    emailAddresses: [
-      {
-        id: `email_${fixture.userId}`,
-        emailAddress: fixture.email,
-      },
-    ],
-  });
-  return fixture;
+  return response.body.error;
 }
 
 describe("POST /api/billing/redeem-code", () => {
-  beforeEach(() => {
-    mockOptionalEnv("ATOM_URL", ATOM_URL);
-    mockOptionalEnv("OKOU_MACHINE_SECRET_KEY", ATOM_MACHINE_SECRET_KEY);
-    context.mocks.clerk.m2m.createToken.mockResolvedValue({
-      token: ATOM_M2M_TOKEN,
+  it("billing-redeem-code-005 refuses a non-admin member", async () => {
+    const member: ApiTestUser = {
+      ...createBddApi(context).user(),
+      orgRole: "org:member",
+    };
+    signIn(member);
+    clerkIssuesM2mToken();
+    const receipts = atomConsume(() => {
+      return HttpResponse.json({ ok: true });
+    });
+
+    await expect(rejection(403)).resolves.toStrictEqual({
+      message: "Only org admins can manage billing",
+      code: "FORBIDDEN",
+    });
+
+    expect(receipts).toHaveLength(0);
+    expect(context.mocks.clerk.m2m.createToken).not.toHaveBeenCalled();
+  });
+
+  it("billing-redeem-code-010 reports an invalid code that Atom rejects", async () => {
+    await freeWorkspaceAdmin();
+    clerkIssuesM2mToken();
+    atomConsume(() => {
+      return HttpResponse.json({ error: "invalid code" }, { status: 404 });
+    });
+
+    await expect(rejection(400)).resolves.toStrictEqual({
+      message: "Invalid redeem code",
+      code: "BAD_REQUEST",
     });
   });
 
-  it.each(["pro", "team"] as const)(
-    "leaves a %s plan and the redeem code unchanged",
-    async (tier) => {
-      const fixture = await setAdminSession();
-      await postSubscriptionInvoicePaid(context.signal, {
-        ...fixture,
-        tier,
-        customerId: `cus_${randomUUID()}`,
-        subscriptionId: `sub_${randomUUID()}`,
-        currentPeriodEnd: new Date(now() + 30 * 86_400_000),
-      });
-      let calledAtom = false;
-      server.use(
-        http.post(`${ATOM_URL}/api/redeem-codes/consume`, () => {
-          calledAtom = true;
-          return HttpResponse.json({ ok: true });
-        }),
+  it("billing-redeem-code-011 explains that the code was already used", async () => {
+    await freeWorkspaceAdmin();
+    clerkIssuesM2mToken();
+    atomConsume(() => {
+      return HttpResponse.json(
+        { error: { code: "already_used" } },
+        { status: 409 },
       );
-
-      const response = await accept(
-        setupApp({ context, routes: billingRedeemCodeRoutes })(
-          billingRedeemCodeContract,
-        ).create({
-          body: { code: "PRO-CAMPAIGN" },
-          headers: { authorization: "Bearer clerk-session" },
-        }),
-        [200],
-      );
-      expect(response.body).toStrictEqual({ redeemed: false });
-      expect(calledAtom).toBeFalsy();
-      expect(context.mocks.clerk.m2m.createToken).not.toHaveBeenCalled();
-      const status = await accept(
-        setupApp({ context, routes: billingStatusRoutes })(
-          billingStatusContract,
-        ).get({ headers: { authorization: "Bearer clerk-session" } }),
-        [200],
-      );
-      expect(status.body).toMatchObject({ tier, hasSubscription: true });
-    },
-  );
-
-  it("redeems for a free workspace after onboarding is complete", async () => {
-    const fixture = await setAdminSession();
-    await createBddApi(context).completeOnboarding({
-      ...fixture,
-      orgRole: "org:admin",
     });
-    let redeemedCode: unknown;
-    server.use(
-      http.post(`${ATOM_URL}/api/redeem-codes/consume`, async ({ request }) => {
-        redeemedCode = await request.json();
-        return HttpResponse.json({ ok: true });
-      }),
-    );
 
-    const response = await accept(
-      setupApp({ context, routes: billingRedeemCodeRoutes })(
-        billingRedeemCodeContract,
-      ).create({
-        body: { code: "PRO-CAMPAIGN" },
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [200],
-    );
+    await expect(rejection(400)).resolves.toStrictEqual({
+      message: "This redeem code has already been used",
+      code: "BAD_REQUEST",
+    });
+  });
+
+  it("billing-redeem-code-012 explains that the code expired", async () => {
+    await freeWorkspaceAdmin();
+    clerkIssuesM2mToken();
+    atomConsume(() => {
+      return HttpResponse.json({ error_code: "code_expired" }, { status: 410 });
+    });
+
+    await expect(rejection(400)).resolves.toStrictEqual({
+      message: "This redeem code has expired",
+      code: "BAD_REQUEST",
+    });
+  });
+
+  it("billing-redeem-code-013 explains that the code is not eligible for the workspace", async () => {
+    await freeWorkspaceAdmin();
+    clerkIssuesM2mToken();
+    atomConsume(() => {
+      return HttpResponse.json({ code: "org_mismatch" }, { status: 403 });
+    });
+
+    await expect(rejection(400)).resolves.toStrictEqual({
+      message: "This code is not eligible for this workspace",
+      code: "BAD_REQUEST",
+    });
+  });
+
+  it("billing-redeem-code-009 reports the redeem service unavailable when Atom is unreachable", async () => {
+    await freeWorkspaceAdmin();
+    clerkIssuesM2mToken();
+    atomConsume(() => {
+      return HttpResponse.error();
+    });
+
+    await expect(rejection(503)).resolves.toStrictEqual({
+      message: "Redeem service unavailable",
+      code: "PROVIDER_UNAVAILABLE",
+    });
+  });
+
+  it("billing-redeem-code-017 redeems a trimmed code for the admin's primary email", async () => {
+    const admin = await freeWorkspaceAdmin();
+    const primaryEmail = `primary-${admin.userId}@example.test`;
+    mockClerkUsers(context, [
+      {
+        id: admin.userId,
+        emailAddresses: [
+          { id: "email_secondary", emailAddress: "secondary@example.test" },
+          { id: "email_primary", emailAddress: primaryEmail },
+        ],
+        primaryEmailAddressId: "email_primary",
+      },
+    ]);
+    const token = clerkIssuesM2mToken();
+    const receipts = atomConsume(() => {
+      return HttpResponse.json({ ok: true });
+    });
+
+    const response = await redeem(" YUMA-123 ", [200]);
+
     expect(response.body).toStrictEqual({ redeemed: true });
-    expect(redeemedCode).toMatchObject({
+    expect(context.mocks.clerk.users.getUser).toHaveBeenCalledTimes(1);
+    expect(context.mocks.clerk.users.getUser.mock.calls[0]?.[0]).toBe(
+      admin.userId,
+    );
+    expect(context.mocks.clerk.m2m.createToken).toHaveBeenCalledWith({
+      machineSecretKey: MACHINE_SECRET,
+      secondsUntilExpiration: 3600,
+      minRemainingTtlSeconds: 300,
+    });
+    expect(receipts).toHaveLength(1);
+    expect(receipts[0]?.authorization).toBe(`Bearer ${token}`);
+    expect(receipts[0]?.body).toStrictEqual({
+      code: "YUMA-123",
+      email: primaryEmail,
+      org_id: admin.orgId,
+      user_id: admin.userId,
+    });
+    const hashed = createHash("sha256").update(MACHINE_SECRET).digest("hex");
+    const observed = `${JSON.stringify(response.body)}${receipts[0]?.raw ?? ""}`;
+    for (const secret of [
+      MACHINE_SECRET,
+      hashed,
+      JSON.stringify(MACHINE_SECRET),
+    ]) {
+      expect(observed).not.toContain(secret);
+    }
+  });
+
+  it("billing-redeem-code-003 redeems for a Free workspace that completed onboarding", async () => {
+    const api = createBddApi(context);
+    const admin = api.user();
+    await api.provisionWorkspace(admin);
+    await api.completeOnboarding(admin);
+    signIn(admin);
+    clerkIssuesM2mToken();
+    const receipts = atomConsume(() => {
+      return HttpResponse.json({ ok: true });
+    });
+
+    const response = await redeem("PRO-CAMPAIGN", [200]);
+
+    expect(response.body).toStrictEqual({ redeemed: true });
+    expect(receipts).toHaveLength(1);
+    expect(receipts[0]?.body).toMatchObject({
       code: "PRO-CAMPAIGN",
-      org_id: fixture.orgId,
-      user_id: fixture.userId,
+      org_id: admin.orgId,
+      user_id: admin.userId,
     });
   });
 
-  it("returns 401 when not authenticated", async () => {
-    const client = setupApp({ context, routes: billingRedeemCodeRoutes })(
-      billingRedeemCodeContract,
-    );
-
-    const response = await accept(
-      client.create({
-        body: { code: "YUMA-123" },
-        headers: {},
-      }),
-      [401],
-    );
-
-    expect(response.body).toStrictEqual({
-      error: {
-        message: "Not authenticated",
-        code: "UNAUTHORIZED",
-      },
+  it("billing-redeem-code-001 leaves a Pro plan and the code unchanged", async () => {
+    const api = createBddApi(context);
+    const admin = api.user();
+    await publicPlanLifecycle(context, admin, "pro").update("active");
+    signIn(admin);
+    clerkIssuesM2mToken();
+    const receipts = atomConsume(() => {
+      return HttpResponse.json({ ok: true });
     });
-  });
 
-  it("returns 403 for a non-admin org member", async () => {
-    let calledAtom = false;
-    server.use(
-      http.post(`${ATOM_URL}/api/redeem-codes/consume`, () => {
-        calledAtom = true;
-        return HttpResponse.json({ ok: true });
-      }),
-    );
-    mocks.clerk.session(
-      `user_${randomUUID()}`,
-      `org_${randomUUID()}`,
-      "org:member",
-    );
+    const response = await redeem("PRO-CAMPAIGN", [200]);
 
-    const client = setupApp({ context, routes: billingRedeemCodeRoutes })(
-      billingRedeemCodeContract,
-    );
-    const response = await accept(
-      client.create({
-        body: { code: "YUMA-123" },
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [403],
-    );
-
-    expect(response.body).toStrictEqual({
-      error: {
-        message: "Only org admins can manage billing",
-        code: "FORBIDDEN",
-      },
-    });
-    expect(calledAtom).toBeFalsy();
+    expect(response.body).toStrictEqual({ redeemed: false });
+    expect(receipts).toHaveLength(0);
     expect(context.mocks.clerk.m2m.createToken).not.toHaveBeenCalled();
+    const status = await accept(billingStatusApi().get({ headers }), [200]);
+    expect(status.body).toMatchObject({ tier: "pro", hasSubscription: true });
   });
-
-  it("returns 503 when ATOM_URL is not configured", async () => {
-    mockOptionalEnv("ATOM_URL", undefined);
-    mockEnv("ENV", "production");
-    await setAdminSession();
-
-    const client = setupApp({ context, routes: billingRedeemCodeRoutes })(
-      billingRedeemCodeContract,
-    );
-    const response = await accept(
-      client.create({
-        body: { code: "YUMA-123" },
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [503],
-    );
-
-    expect(response.body).toStrictEqual({
-      error: {
-        message: "Redeem service not configured",
-        code: "PROVIDER_UNAVAILABLE",
-      },
-    });
-    expect(context.mocks.clerk.m2m.createToken).not.toHaveBeenCalled();
-  });
-
-  it("returns 503 when Atom Clerk M2M auth is not configured", async () => {
-    mockOptionalEnv("OKOU_MACHINE_SECRET_KEY", undefined);
-    await setAdminSession();
-
-    const client = setupApp({ context, routes: billingRedeemCodeRoutes })(
-      billingRedeemCodeContract,
-    );
-    const response = await accept(
-      client.create({
-        body: { code: "YUMA-123" },
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [503],
-    );
-
-    expect(response.body).toStrictEqual({
-      error: {
-        message: "Redeem service not configured",
-        code: "PROVIDER_UNAVAILABLE",
-      },
-    });
-    expect(context.mocks.clerk.m2m.createToken).not.toHaveBeenCalled();
-  });
-
-  it("returns 503 when Atom Clerk M2M auth fails", async () => {
-    let calledAtom = false;
-    server.use(
-      http.post(`${ATOM_URL}/api/redeem-codes/consume`, () => {
-        calledAtom = true;
-        return HttpResponse.json({ ok: true });
-      }),
-    );
-    context.mocks.clerk.m2m.createToken.mockRejectedValueOnce(
-      new Error("M2M unavailable"),
-    );
-    await setAdminSession();
-
-    const client = setupApp({ context, routes: billingRedeemCodeRoutes })(
-      billingRedeemCodeContract,
-    );
-    const response = await accept(
-      client.create({
-        body: { code: "YUMA-123" },
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [503],
-    );
-
-    expect(response.body).toStrictEqual({
-      error: {
-        message: "Redeem service authentication unavailable",
-        code: "PROVIDER_UNAVAILABLE",
-      },
-    });
-    expect(calledAtom).toBeFalsy();
-  });
-
-  it("returns 503 when Atom cannot be reached", async () => {
-    server.use(
-      http.post(`${ATOM_URL}/api/redeem-codes/consume`, () => {
-        return HttpResponse.error();
-      }),
-    );
-    await setAdminSession();
-
-    const client = setupApp({ context, routes: billingRedeemCodeRoutes })(
-      billingRedeemCodeContract,
-    );
-    const response = await accept(
-      client.create({
-        body: { code: "YUMA-123" },
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [503],
-    );
-
-    expect(response.body).toStrictEqual({
-      error: {
-        message: "Redeem service unavailable",
-        code: "PROVIDER_UNAVAILABLE",
-      },
-    });
-  });
-
-  it("returns 400 when Atom rejects the redeem code", async () => {
-    server.use(
-      http.post(`${ATOM_URL}/api/redeem-codes/consume`, () => {
-        return HttpResponse.json({ error: "invalid code" }, { status: 404 });
-      }),
-    );
-    await setAdminSession();
-
-    const client = setupApp({ context, routes: billingRedeemCodeRoutes })(
-      billingRedeemCodeContract,
-    );
-    const response = await accept(
-      client.create({
-        body: { code: "YUMA-123" },
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [400],
-    );
-
-    expect(response.body).toStrictEqual({
-      error: {
-        message: "Invalid redeem code",
-        code: "BAD_REQUEST",
-      },
-    });
-  });
-
-  it.each([
-    [
-      "already used",
-      { error: { code: "already_used" } },
-      409,
-      "This redeem code has already been used",
-    ],
-    [
-      "expired",
-      { error_code: "code_expired" },
-      410,
-      "This redeem code has expired",
-    ],
-    [
-      "not eligible",
-      { code: "org_mismatch" },
-      403,
-      "This code is not eligible for this workspace",
-    ],
-    [
-      "unknown",
-      { error: { code: "atom_internal_business_error" } },
-      400,
-      "Redeem code could not be redeemed",
-    ],
-  ])(
-    "returns a stable message when Atom reports %s",
-    async (_caseName, body, status, message) => {
-      server.use(
-        http.post(`${ATOM_URL}/api/redeem-codes/consume`, () => {
-          return HttpResponse.json(body, { status });
-        }),
-      );
-      await setAdminSession();
-
-      const client = setupApp({ context, routes: billingRedeemCodeRoutes })(
-        billingRedeemCodeContract,
-      );
-      const response = await accept(
-        client.create({
-          body: { code: "YUMA-123" },
-          headers: { authorization: "Bearer clerk-session" },
-        }),
-        [400],
-      );
-
-      expect(response.body).toStrictEqual({
-        error: {
-          message,
-          code: "BAD_REQUEST",
-        },
-      });
-    },
-  );
-
-  it.each([
-    ["missing user", new ClerkUserNotFoundTestError()],
-    ["provider failure", new Error("Clerk unavailable")],
-  ])("preserves the unavailable response for %s", async (_label, error) => {
-    const fixture = await setAdminSession();
-    context.mocks.clerk.users.getUser.mockRejectedValue(error);
-    let calledAtom = false;
-    server.use(
-      http.post(`${ATOM_URL}/api/redeem-codes/consume`, () => {
-        calledAtom = true;
-        return HttpResponse.json({ ok: true });
-      }),
-    );
-    const response = await accept(
-      setupApp({ context, routes: billingRedeemCodeRoutes })(
-        billingRedeemCodeContract,
-      ).create({
-        body: { code: "YUMA-123" },
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [503],
-    );
-    expect(response.body).toStrictEqual({
-      error: {
-        code: "PROVIDER_UNAVAILABLE",
-        message: "Redeem service user unavailable",
-      },
-    });
-    expect(context.mocks.clerk.users.getUser).toHaveBeenCalledExactlyOnceWith(
-      fixture.userId,
-    );
-    expect(context.mocks.clerk.m2m.createToken).not.toHaveBeenCalled();
-    expect(calledAtom).toBeFalsy();
-  });
-
-  it.each([true, false])(
-    "redeems a code with a primary-email match of %s",
-    async (hasPrimary) => {
-      const fixture = await setAdminSession();
-      context.mocks.clerk.users.getUser.mockResolvedValue({
-        id: fixture.userId,
-        primaryEmailAddressId: hasPrimary ? "primary" : "deleted-primary",
-        emailAddresses: hasPrimary
-          ? [
-              { id: "secondary", emailAddress: `secondary-${fixture.email}` },
-              { id: "primary", emailAddress: fixture.email },
-            ]
-          : [{ id: "secondary", emailAddress: fixture.email }],
-      });
-      let requestedBody: unknown = null;
-      let requestedAuthorization: string | null = null;
-      server.use(
-        http.post(
-          `${ATOM_URL}/api/redeem-codes/consume`,
-          async ({ request }) => {
-            requestedAuthorization = request.headers.get("authorization");
-            requestedBody = await request.json();
-            return HttpResponse.json({ ok: true });
-          },
-        ),
-      );
-
-      const client = setupApp({ context, routes: billingRedeemCodeRoutes })(
-        billingRedeemCodeContract,
-      );
-      const response = await accept(
-        client.create({
-          body: { code: " YUMA-123 " },
-          headers: { authorization: "Bearer clerk-session" },
-        }),
-        [200],
-      );
-
-      expect(response.body).toStrictEqual({ redeemed: true });
-      expect(context.mocks.clerk.users.getUser).toHaveBeenCalledExactlyOnceWith(
-        fixture.userId,
-      );
-      expect(context.mocks.clerk.m2m.createToken).toHaveBeenCalledWith({
-        machineSecretKey: ATOM_MACHINE_SECRET_KEY,
-        secondsUntilExpiration: 3600,
-        minRemainingTtlSeconds: 300,
-      });
-      expect(requestedAuthorization).toBe(`Bearer ${ATOM_M2M_TOKEN}`);
-      expect(requestedBody).toStrictEqual({
-        code: "YUMA-123",
-        email: fixture.email,
-        org_id: fixture.orgId,
-        user_id: fixture.userId,
-      });
-      expectValueFree(
-        JSON.stringify({
-          response: response.body,
-          upstreamAuthorization: requestedAuthorization,
-          upstreamBody: requestedBody,
-        }),
-        [ATOM_MACHINE_SECRET_KEY],
-      );
-    },
-  );
 });

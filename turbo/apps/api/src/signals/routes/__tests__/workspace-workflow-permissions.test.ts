@@ -1,284 +1,305 @@
 import { randomUUID } from "node:crypto";
 import {
+  workflowAutomationsContract,
   workflowsCollectionContract,
   workflowsDetailContract,
   workflowVisibilityContract,
-  workflowAutomationsContract,
 } from "@okouai/api-contracts/contracts/workflows";
-import { accept, testContext } from "../../../__tests__/test-context";
+import { expect, test } from "vitest";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { workflowsRoutes } from "../workflows";
+import { accept, testContext } from "../../../__tests__/test-context";
 import { workflowAutomationsRoutes } from "../workflow-automations";
-import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
-import { createWorkflowsBddApi } from "./helpers/api-bdd-workflows";
+import { workflowsRoutes } from "../workflows";
 import { createRouteMocks } from "./helpers/route-test";
 import { installWorkflowVolumeS3Fixture } from "./helpers/workflow-volume-s3";
 
 const context = testContext();
-const bdd = createBddApi(context);
-const workflowBdd = createWorkflowsBddApi(context);
-const mocks = createRouteMocks(context);
-function headers(actor: ApiTestUser) {
-  mocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
-  return { authorization: "Bearer clerk-session" };
+const headers = Object.freeze({ authorization: "Bearer clerk-session" });
+const app = setupApp({
+  context,
+  routes: [...workflowsRoutes, ...workflowAutomationsRoutes],
+});
+
+interface Actor {
+  readonly userId: string;
+  readonly orgId: string;
+  readonly role: "org:admin" | "org:member";
 }
-function collection() {
-  return setupApp({ context, routes: workflowsRoutes })(
-    workflowsCollectionContract,
+
+function as(actor: Actor) {
+  createRouteMocks(context).clerk.session(
+    actor.userId,
+    actor.orgId,
+    actor.role,
+  );
+  return headers;
+}
+
+async function schedule(actor: Actor, workflowId: string, seconds: number) {
+  await accept(
+    app(workflowAutomationsContract).create({
+      headers: as(actor),
+      params: { workflowId },
+      body: { schedule: { type: "loop", intervalSeconds: seconds } },
+    }),
+    [201],
   );
 }
-function detail() {
-  return setupApp({ context, routes: workflowsRoutes })(
-    workflowsDetailContract,
-  );
-}
-function visibility() {
-  return setupApp({ context, routes: workflowsRoutes })(
-    workflowVisibilityContract,
-  );
-}
-function automations() {
-  return setupApp({ context, routes: workflowAutomationsRoutes })(
-    workflowAutomationsContract,
-  );
-}
-async function fixture() {
-  const { actor: admin } = await workflowBdd.setupWorkflowOrg({
-    tier: "team",
-  });
-  const alice = bdd.user({ orgId: admin.orgId, orgRole: "org:member" });
-  const bob = bdd.user({ orgId: admin.orgId, orgRole: "org:member" });
-  const s3 = installWorkflowVolumeS3Fixture(context);
+
+test("workspace-workflow-permissions-002 copies only the caller's Automations", async () => {
+  const orgId = `org_${randomUUID()}`;
+  const admin: Actor = {
+    userId: `user_${randomUUID()}`,
+    orgId,
+    role: "org:admin",
+  };
+  const member: Actor = {
+    userId: `user_${randomUUID()}`,
+    orgId,
+    role: "org:member",
+  };
   const source = await accept(
-    collection().create({
-      headers: headers(admin),
+    app(workflowsCollectionContract).create({
+      headers: as(admin),
       body: {
         name: `shared-${randomUUID().slice(0, 8)}`,
         visibility: "public",
-        instruction: "Public version one",
-        files: [{ path: "reference.md", content: "Shared reference" }],
       },
     }),
     [201],
   );
-  return { admin, alice, bob, source: source.body, s3 };
-}
+  await schedule(admin, source.body.id, 1800);
+  await schedule(member, source.body.id, 900);
 
-test("ordinary members create and copy private Workflows without gaining public rights", async () => {
-  const { admin, alice, bob, source } = await fixture();
-  const personal = await accept(
-    collection().create({
-      headers: headers(alice),
-      body: {
-        name: `personal-${randomUUID().slice(0, 8)}`,
-        instruction: "My steps",
-      },
-    }),
-    [201],
-  );
-  expect(personal.body).toMatchObject({
-    ownerUserId: alice.userId,
-    visibility: "private",
-    canManage: true,
-    canPublish: false,
-  });
-  const copied = await accept(
-    detail().copy({
-      headers: headers(alice),
-      params: { workflowId: source.id },
+  const copy = await accept(
+    app(workflowsDetailContract).copy({
+      headers: as(member),
+      params: { workflowId: source.body.id },
       body: {},
     }),
     [201],
   );
-  expect(copied.body).toMatchObject({
-    ownerUserId: alice.userId,
-    visibility: "private",
-    canManage: true,
-    canPublish: false,
-  });
-  const readCopy = await accept(
-    detail().get({
-      headers: headers(alice),
-      params: { workflowId: copied.body.id },
+  const automations = await accept(
+    app(workflowAutomationsContract).list({
+      headers: as(member),
+      params: { workflowId: copy.body.id },
     }),
     [200],
   );
-  expect(readCopy.body).toMatchObject({
-    instruction: "Public version one",
-    fileContents: [{ path: "reference.md", content: "Shared reference" }],
-  });
-  await accept(
-    detail().update({
-      headers: headers(alice),
-      params: { workflowId: copied.body.id },
-      body: { instruction: "Alice's override" },
-    }),
-    [200],
-  );
-  await accept(
-    detail().copy({
-      headers: headers(alice),
-      params: { workflowId: source.id },
-      body: {},
-    }),
-    [409],
-  );
-  await accept(
-    collection().create({
-      headers: headers(alice),
-      body: {
-        name: `denied-${randomUUID().slice(0, 8)}`,
-        visibility: "public",
-      },
-    }),
-    [403],
-  );
-  await accept(
-    visibility().publish({
-      headers: headers(alice),
-      params: { workflowId: copied.body.id },
-    }),
-    [403],
-  );
-  await accept(
-    detail().update({
-      headers: headers(alice),
-      params: { workflowId: source.id },
-      body: { instruction: "Unauthorized public edit" },
-    }),
-    [403],
-  );
-  await accept(
-    detail().delete({
-      headers: headers(alice),
-      params: { workflowId: source.id },
-    }),
-    [403],
-  );
-  await accept(
-    detail().update({
-      headers: headers(admin),
-      params: { workflowId: source.id },
-      body: { instruction: "Latest public definition" },
-    }),
-    [200],
-  );
-  await accept(
-    visibility().publish({
-      headers: headers({ ...alice, orgRole: "org:admin" }),
-      params: { workflowId: copied.body.id },
-    }),
-    [409],
-  );
-  const aliceCommands = await accept(
-    collection().composer({
-      headers: headers(alice),
-      query: {},
-    }),
-    [200],
-  );
-  expect(
-    aliceCommands.body.find((row) => {
-      return row.name === source.name;
-    })?.id,
-  ).toBe(copied.body.id);
-  const bobCommands = await accept(
-    collection().composer({
-      headers: headers(bob),
-      query: {},
-    }),
-    [200],
-  );
-  expect(
-    bobCommands.body.find((row) => {
-      return row.name === source.name;
-    })?.id,
-  ).toBe(source.id);
-  const aliceList = await accept(
-    collection().list({ headers: headers(alice) }),
-    [200],
-  );
-  expect(
-    aliceList.body.find((row) => {
-      return row.id === source.id;
-    })?.shadowedBy?.id,
-  ).toBe(copied.body.id);
-  const bobList = await accept(
-    collection().list({ headers: headers(bob) }),
-    [200],
-  );
-  expect(
-    bobList.body.find((row) => {
-      return row.id === source.id;
-    })?.shadowedBy,
-  ).toBeNull();
-  const shared = await accept(
-    detail().get({ headers: headers(bob), params: { workflowId: source.id } }),
-    [200],
-  );
-  expect(shared.body.instruction).toBe("Latest public definition");
-  const retained = await accept(
-    detail().get({
-      headers: headers(alice),
-      params: { workflowId: copied.body.id },
-    }),
-    [200],
-  );
-  expect(retained.body.instruction).toBe("Alice's override");
-  await accept(
-    detail().get({
-      headers: headers(bob),
-      params: { workflowId: copied.body.id },
-    }),
-    [404],
-  );
-  const chat = await accept(
-    detail().chatThread({
-      headers: headers(alice),
-      params: { workflowId: source.id },
-    }),
-    [200],
-  );
-  expect(chat.body.prompt).toContain(source.id);
-});
 
-test("copies only the caller's Automations and preserves the existing private copy", async () => {
-  const { admin, alice, source } = await fixture();
-  for (const actor of [admin, alice]) {
-    await accept(
-      automations().create({
-        headers: headers(actor),
-        params: { workflowId: source.id },
-        body: {
-          kind: "schedule",
-          schedule: {
-            type: "loop",
-            intervalSeconds: actor === alice ? 900 : 1800,
-          },
-        },
-      }),
-      [201],
-    );
-  }
-  const copied = await accept(
-    detail().copy({
-      headers: headers(alice),
-      params: { workflowId: source.id },
-      body: {},
-    }),
-    [201],
-  );
-  const copiedAutomations = await accept(
-    automations().list({
-      headers: headers(alice),
-      params: { workflowId: copied.body.id },
-    }),
-    [200],
-  );
-  expect(copiedAutomations.body).toHaveLength(1);
-  expect(copiedAutomations.body[0]).toMatchObject({
-    ownerUserId: alice.userId,
+  expect(automations.body).toHaveLength(1);
+  expect(automations.body[0]).toMatchObject({
+    ownerUserId: member.userId,
     kind: "schedule",
     schedule: { type: "loop", intervalSeconds: 900 },
   });
+});
+
+/** A Team administrator's public Workflow with a reference file and two members. */
+async function teamWithPublicWorkflow() {
+  installWorkflowVolumeS3Fixture(context);
+  const orgId = `org_${randomUUID()}`;
+  const admin: Actor = {
+    userId: `user_${randomUUID()}`,
+    orgId,
+    role: "org:admin",
+  };
+  const alice: Actor = {
+    userId: `user_${randomUUID()}`,
+    orgId,
+    role: "org:member",
+  };
+  const bob: Actor = {
+    userId: `user_${randomUUID()}`,
+    orgId,
+    role: "org:member",
+  };
+  const files = [{ path: "reference.md", content: "Team reference" }];
+  const name = `team-${randomUUID().slice(0, 8)}`;
+  const source = await accept(
+    app(workflowsCollectionContract).create({
+      headers: as(admin),
+      body: {
+        name,
+        instruction: "Team instruction",
+        files,
+        visibility: "public",
+      },
+    }),
+    [201],
+  );
+  return { admin, alice, bob, files, name, sourceId: source.body.id };
+}
+
+function copyWorkflow(actor: Actor, workflowId: string) {
+  return app(workflowsDetailContract).copy({
+    headers: as(actor),
+    params: { workflowId },
+    body: {},
+  });
+}
+
+/** Alice's private copy of the public Workflow, edited with her override. */
+async function aliceOverrideCopy(alice: Actor, sourceId: string) {
+  const copy = await accept(copyWorkflow(alice, sourceId), [201]);
+  await accept(
+    app(workflowsDetailContract).update({
+      headers: as(alice),
+      params: { workflowId: copy.body.id },
+      body: { instruction: "Alice override" },
+    }),
+    [200],
+  );
+  return copy.body.id;
+}
+
+test("workspace-workflow-permissions-001 (1/4) lets a member create and copy private Workflows she manages", async () => {
+  const { alice, files, sourceId } = await teamWithPublicWorkflow();
+  const collection = app(workflowsCollectionContract);
+  const detail = app(workflowsDetailContract);
+
+  const own = await accept(
+    collection.create({
+      headers: as(alice),
+      body: { name: `alice-${randomUUID().slice(0, 8)}` },
+    }),
+    [201],
+  );
+  const copy = await accept(copyWorkflow(alice, sourceId), [201]);
+  for (const created of [own.body, copy.body]) {
+    expect(created).toMatchObject({
+      visibility: "private",
+      ownerUserId: alice.userId,
+      canManage: true,
+      canPublish: false,
+    });
+  }
+  const copyId = copy.body.id;
+  const copied = await accept(
+    detail.get({ headers: as(alice), params: { workflowId: copyId } }),
+    [200],
+  );
+  expect(copied.body.instruction).toBe("Team instruction");
+  expect(copied.body.fileContents).toStrictEqual(files);
+  await accept(
+    detail.update({
+      headers: as(alice),
+      params: { workflowId: copyId },
+      body: { instruction: "Alice override" },
+    }),
+    [200],
+  );
+  await accept(copyWorkflow(alice, sourceId), [409]);
+});
+
+test("workspace-workflow-permissions-001 (2/4) forbids a member's public creation and publication", async () => {
+  const { alice, sourceId } = await teamWithPublicWorkflow();
+  const copyId = await aliceOverrideCopy(alice, sourceId);
+
+  const publicCreation = await app(workflowsCollectionContract).create({
+    headers: as(alice),
+    body: {
+      name: `public-${randomUUID().slice(0, 8)}`,
+      visibility: "public",
+    },
+  });
+  const memberPublish = await app(workflowVisibilityContract).publish({
+    headers: as(alice),
+    params: { workflowId: copyId },
+  });
+
+  expect([publicCreation.status, memberPublish.status]).toStrictEqual([
+    403, 403,
+  ]);
+});
+
+test("workspace-workflow-permissions-001 (3/4) keeps the source out of a member's reach and conflicts on publishing the copy as admin", async () => {
+  const { alice, sourceId } = await teamWithPublicWorkflow();
+  const copyId = await aliceOverrideCopy(alice, sourceId);
+  const detail = app(workflowsDetailContract);
+
+  const sourceEdit = await detail.update({
+    headers: as(alice),
+    params: { workflowId: sourceId },
+    body: { instruction: "Hijacked" },
+  });
+  const sourceDelete = await detail.delete({
+    headers: as(alice),
+    params: { workflowId: sourceId },
+  });
+  const adminPublish = await app(workflowVisibilityContract).publish({
+    headers: as({ ...alice, role: "org:admin" }),
+    params: { workflowId: copyId },
+  });
+
+  expect([
+    sourceEdit.status,
+    sourceDelete.status,
+    adminPublish.status,
+  ]).toStrictEqual([403, 403, 409]);
+});
+
+test("workspace-workflow-permissions-001 (4/4) resolves Alice's copy for her and the updated public Workflow for Bob", async () => {
+  const { admin, alice, bob, name, sourceId } = await teamWithPublicWorkflow();
+  const copyId = await aliceOverrideCopy(alice, sourceId);
+  const collection = app(workflowsCollectionContract);
+  const detail = app(workflowsDetailContract);
+  await accept(
+    detail.update({
+      headers: as(admin),
+      params: { workflowId: sourceId },
+      body: { instruction: "Team instruction v2" },
+    }),
+    [200],
+  );
+
+  const aliceComposer = await accept(
+    collection.composer({ headers: as(alice) }),
+    [200],
+  );
+  const aliceList = await accept(
+    collection.list({ headers: as(alice), query: {} }),
+    [200],
+  );
+  const aliceCopy = await accept(
+    detail.get({ headers: as(alice), params: { workflowId: copyId } }),
+    [200],
+  );
+  const bobComposer = await accept(
+    collection.composer({ headers: as(bob) }),
+    [200],
+  );
+  const bobList = await accept(
+    collection.list({ headers: as(bob), query: {} }),
+    [200],
+  );
+  const bobSource = await accept(
+    detail.get({ headers: as(bob), params: { workflowId: sourceId } }),
+    [200],
+  );
+  await accept(
+    detail.get({ headers: as(bob), params: { workflowId: copyId } }),
+    [404],
+  );
+  const chat = await accept(
+    detail.chatThread({ headers: as(bob), params: { workflowId: sourceId } }),
+    [200],
+  );
+
+  const idsNamed = (entries: readonly { id: string; name: string }[]) => {
+    return entries
+      .filter((entry) => {
+        return entry.name === name;
+      })
+      .map((entry) => {
+        return entry.id;
+      });
+  };
+  expect(idsNamed(aliceComposer.body)).toStrictEqual([copyId]);
+  expect(idsNamed(aliceList.body)).toContain(copyId);
+  expect(aliceCopy.body.instruction).toBe("Alice override");
+  expect(idsNamed(bobComposer.body)).toStrictEqual([sourceId]);
+  expect(idsNamed(bobList.body)).toStrictEqual([sourceId]);
+  expect(bobSource.body.instruction).toBe("Team instruction v2");
+  expect(chat.body.prompt).toContain(sourceId);
 });

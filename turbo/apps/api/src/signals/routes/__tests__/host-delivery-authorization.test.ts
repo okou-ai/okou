@@ -1,296 +1,282 @@
-import { randomUUID } from "node:crypto";
-import { PutObjectCommand } from "@aws-sdk/client-s3";
+import { createHash, randomUUID } from "node:crypto";
+
 import { hostContract } from "@okouai/api-contracts/contracts/host";
-import { object, string, uuid, enum as zEnum } from "zod";
-import { expect, onTestFinished, test } from "vitest";
-import { setupAppWithRoutes } from "../../../__tests__/test-app";
+import { describe, expect, it } from "vitest";
+
 import { accept, testContext } from "../../../__tests__/test-context";
+import { setupApp } from "../../../__tests__/test-helpers";
 import { hostRoutes } from "../host";
-import { createDeferredPromise } from "../../utils";
-import { createBddApi } from "./helpers/api-bdd";
-import { hostedTextFile } from "./helpers/api-bdd-host-files";
+import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createHostBddApi } from "./helpers/api-bdd-host";
-import { createRunsApi } from "./helpers/api-bdd-runs";
 
 const context = testContext();
-const referenceSchema = object({
-  siteId: uuid(),
-  deploymentId: uuid(),
-  publicSlug: string(),
-  publicBrand: zEnum(["vm0", "okou"]),
-  prefix: string(),
-  manifestKey: string(),
-});
+const bdd = createBddApi(context);
+const host = createHostBddApi(context);
 
-test("rejects malformed pointer identities at the anonymous request boundary", async () => {
-  const client = setupAppWithRoutes({ context, routes: hostRoutes })(
-    hostContract,
-  );
-  const params = { siteId: randomUUID(), deploymentId: randomUUID() };
-  const query = {
-    alias: "missing-site",
-    publicSlug: "missing-site",
-    publicBrand: "okou" as const,
-    prefix: "sites/missing",
-    manifestKey: "sites/missing/manifest.json",
+type Storage = ReturnType<typeof host.captureHostedSitesS3>;
+
+function htmlFile(content: string) {
+  return {
+    path: "/index.html",
+    size: Buffer.byteLength(content),
+    sha256: createHash("sha256").update(content).digest("hex"),
+    contentType: "text/html; charset=utf-8",
   };
-  for (const request of [
-    { params, query: { ...query, prefix: "private-sites/missing" } },
-  ]) {
-    const response = await accept(client.deliveryAuthorization(request), [400]);
-    expect(response.body.error.code).toBe("BAD_REQUEST");
-  }
-  const missing = await accept(
-    client.deliveryAuthorization({ params, query }),
-    [200],
-  );
-  expect(missing.body).toStrictEqual({ allowed: false, decision: "deny" });
-  expect(missing.headers.get("Cache-Control")).toBe("private, no-store");
-});
+}
 
-test("denies late immutable writes after deletion even when R2 loses the response", async () => {
-  const bdd = createBddApi(context);
-  const api = createHostBddApi(context);
-  const owner = bdd.user();
-  await createRunsApi(context).grantProEntitlement(owner);
-  const capture = api.captureHostedSitesS3();
-  const site = `delivery-loss-${randomUUID().slice(0, 8)}`;
-  const pending = await api.prepareHostedSite(owner, {
-    site,
-    title: site,
-    artifactKind: "hosted-site",
-    spaFallback: false,
-    files: [hostedTextFile("/index.html", "<p>old</p>")],
-  });
-  const send = context.mocks.s3.send.getMockImplementation();
-  if (!send) {
-    throw new Error("Hosted-sites storage mock is not installed");
+/** The last delivery pointer the Worker would read for a deployment. */
+function deliveryPointer(storage: Storage, deploymentId: string) {
+  let found:
+    { prefix: string; manifestKey: string; publicSlug: string } | undefined;
+  for (const put of storage.puts) {
+    if (!put.key.endsWith(".json")) {
+      continue;
+    }
+    const parsed: unknown = JSON.parse(put.body);
+    if (
+      typeof parsed === "object" &&
+      parsed !== null &&
+      "deploymentId" in parsed &&
+      parsed.deploymentId === deploymentId &&
+      "prefix" in parsed &&
+      typeof parsed.prefix === "string" &&
+      "manifestKey" in parsed &&
+      typeof parsed.manifestKey === "string" &&
+      "publicSlug" in parsed &&
+      typeof parsed.publicSlug === "string"
+    ) {
+      found = {
+        prefix: parsed.prefix,
+        manifestKey: parsed.manifestKey,
+        publicSlug: parsed.publicSlug,
+      };
+    }
   }
-  const publishing = createDeferredPromise<void>(context.signal);
-  const resume = createDeferredPromise<void>(context.signal);
-  const pointerKey = `sites/brands/okou/deployments/${pending.deploymentId}.json`;
-  const recordKey = `artifact-delivery/okou/html/dpl-${pending.deploymentId}.json`;
-  context.mocks.s3.send.mockImplementation(async (request: unknown) => {
-    if (
-      request instanceof PutObjectCommand &&
-      request.input.Key === pointerKey
-    ) {
-      publishing.resolve(undefined);
-      await resume.promise;
+  if (!found) {
+    throw new Error(`Expected a delivery pointer for ${deploymentId}`);
+  }
+  return found;
+}
+
+/** The current site pointer stored for an alias. */
+function sitePointerDeployment(storage: Storage, publicSlug: string) {
+  let current: unknown;
+  for (const [key, body] of storage.objects) {
+    if (key.endsWith(".json") && key.includes(publicSlug)) {
+      const parsed: unknown = JSON.parse(body);
+      if (
+        typeof parsed === "object" &&
+        parsed !== null &&
+        "deploymentId" in parsed
+      ) {
+        current = parsed.deploymentId;
+      }
     }
-    const response = await send(request);
-    if (
-      request instanceof PutObjectCommand &&
-      request.input.Key === recordKey
-    ) {
-      throw new Error("R2 accepted the alias write but its response was lost");
-    }
-    return response;
+  }
+  return current;
+}
+
+interface Delivery {
+  readonly siteId: string;
+  readonly deploymentId: string;
+  readonly alias: string;
+  readonly publicSlug: string;
+  readonly publicBrand: "okou" | "vm0";
+  readonly prefix: string;
+  readonly manifestKey: string;
+}
+
+async function decide(delivery: Delivery) {
+  context.mocks.clerk.authenticateRequest.mockResolvedValue({
+    isAuthenticated: false,
   });
-  const completion = api.requestCompleteHostedSite(
-    owner,
-    pending.deploymentId,
-    [500],
-  );
-  onTestFinished(async () => {
-    if (!resume.settled()) {
-      resume.resolve(undefined);
-    }
-    await Promise.allSettled([completion]);
-  });
-  await publishing.promise;
-  await api.deleteHostedSite(owner, site);
-  resume.resolve(undefined);
-  await completion;
-  await api.requestHostedSiteFiles(owner, `dpl-${pending.deploymentId}`, [409]);
-  // Preserve the original failed physical-cleanup observation. The reader
-  // candidate denies the residual reference instead of claiming it is absent.
-  expect(capture.objects.get(recordKey)).toBeDefined();
-  const reference = referenceSchema.parse(
-    JSON.parse(capture.objects.get(pointerKey) ?? "null"),
-  );
-  const client = setupAppWithRoutes({ context, routes: hostRoutes })(
-    hostContract,
-  );
   const response = await accept(
-    client.deliveryAuthorization({
-      params: { siteId: pending.siteId, deploymentId: pending.deploymentId },
-      query: { ...reference, alias: `dpl-${pending.deploymentId}` },
+    setupApp({ context, routes: hostRoutes })(
+      hostContract,
+    ).deliveryAuthorization({
+      headers: {},
+      params: { siteId: delivery.siteId, deploymentId: delivery.deploymentId },
+      query: {
+        alias: delivery.alias,
+        publicSlug: delivery.publicSlug,
+        publicBrand: delivery.publicBrand,
+        prefix: delivery.prefix,
+        manifestKey: delivery.manifestKey,
+      },
     }),
     [200],
   );
-  expect(response.body.allowed).toBeFalsy();
-});
+  expect(response.headers.get("cache-control")).toBe("private, no-store");
+  return response.body.decision;
+}
 
-test("waits for SQL readiness when the public pointer already exists", async () => {
-  const bdd = createBddApi(context);
-  const api = createHostBddApi(context);
-  const owner = bdd.user();
-  const capture = api.captureHostedSitesS3();
-  const site = `delivery-pending-${randomUUID().slice(0, 8)}`;
-  const pending = await api.prepareHostedSite(owner, {
+async function prepare(owner: ApiTestUser, site: string, content: string) {
+  return await host.prepareHostedSite(owner, {
     site,
-    title: site,
+    title: "Delivery site",
+    visibility: "public",
     artifactKind: "hosted-site",
     spaFallback: false,
-    visibility: "public",
-    files: [hostedTextFile("/index.html", "<p>old</p>")],
+    files: [htmlFile(content)],
   });
-  const send = context.mocks.s3.send.getMockImplementation();
-  if (!send) {
-    throw new Error("Hosted-sites storage mock is not installed");
-  }
-  const written = createDeferredPromise<void>(context.signal);
-  const resume = createDeferredPromise<void>(context.signal);
-  context.mocks.s3.send.mockImplementation(async (request: unknown) => {
-    const response = await send(request);
-    if (
-      request instanceof PutObjectCommand &&
-      request.input.Key === `artifact-delivery/okou/html/${site}.json`
-    ) {
-      written.resolve(undefined);
-      await resume.promise;
-    }
-    return response;
-  });
-  const completion = api.completeHostedSite(owner, pending.deploymentId);
-  onTestFinished(async () => {
-    if (!resume.settled()) {
-      resume.resolve(undefined);
-    }
-    await Promise.allSettled([completion]);
-  });
-  await written.promise;
-  const reference = referenceSchema.parse(
-    JSON.parse(
-      capture.objects.get(`sites/brands/okou/${site}/active.json`) ?? "null",
-    ),
-  );
-  const client = setupAppWithRoutes({ context, routes: hostRoutes })(
-    hostContract,
-  );
-  const request = {
-    params: { siteId: pending.siteId, deploymentId: pending.deploymentId },
-    query: { ...reference, alias: site },
-  };
-  const before = await accept(client.deliveryAuthorization(request), [200]);
-  expect(before.body.allowed).toBeFalsy();
-  resume.resolve(undefined);
-  await completion;
-  const after = await accept(client.deliveryAuthorization(request), [200]);
-  expect(after.body.allowed).toBeTruthy();
-});
+}
 
-test("authorizes ready owned identities, keeps immutable history and denies deleted content", async () => {
-  const bdd = createBddApi(context);
-  const api = createHostBddApi(context);
+/**
+ * A member's prepared public site and another user's published site. The
+ * Worker addresses the unfinished first version with the same layout as a
+ * ready one, relocated from the other user's published pointer.
+ */
+async function deliveryScenario() {
+  const storage = host.captureHostedSitesS3();
   const owner = bdd.user();
   const other = bdd.user();
-  const capture = api.captureHostedSitesS3();
-  const site = `delivery-${randomUUID().slice(0, 8)}`;
-  const body = {
-    site,
-    title: site,
-    artifactKind: "hosted-site" as const,
-    spaFallback: false,
-    visibility: "public" as const,
-    files: [hostedTextFile("/index.html", "<p>site</p>")],
-  };
-  const first = await api.prepareHostedSite(owner, body);
-  const prefix = `sites/brands/okou/publications/${first.deploymentId}`;
-  const client = setupAppWithRoutes({ context, routes: hostRoutes })(
-    hostContract,
+  const site = `site-${randomUUID().slice(0, 8)}`;
+  const first = await prepare(owner, site, "<h1>First</h1>");
+  const otherSite = await prepare(
+    other,
+    `site-${randomUUID().slice(0, 8)}`,
+    "<h1>Other</h1>",
   );
-  const check = async (
-    deploymentId: string,
-    query: {
-      alias: string;
-      publicSlug: string;
-      publicBrand: "okou" | "vm0";
-      prefix: string;
-      manifestKey: string;
-    },
-    siteId = first.siteId,
-  ) => {
-    const response = await accept(
-      client.deliveryAuthorization({ params: { siteId, deploymentId }, query }),
-      [200],
-    );
-    expect(response.headers.get("Cache-Control")).toBe("private, no-store");
-    return response.body.allowed;
+  await host.completeHostedSite(other, otherSite.deploymentId);
+  const otherPointer = deliveryPointer(storage, otherSite.deploymentId);
+  const relocate = (value: string) => {
+    return value
+      .replaceAll(otherSite.siteId, first.siteId)
+      .replaceAll(otherSite.deploymentId, first.deploymentId)
+      .replaceAll(otherSite.publicSlug, first.publicSlug);
   };
-  const firstQuery = {
-    alias: site,
-    publicSlug: site,
-    publicBrand: "okou" as const,
-    prefix,
-    manifestKey: `${prefix}/manifest.json`,
+  const pending: Delivery = {
+    siteId: first.siteId,
+    deploymentId: first.deploymentId,
+    alias: first.publicSlug,
+    publicSlug: relocate(otherPointer.publicSlug),
+    publicBrand: "okou",
+    prefix: relocate(otherPointer.prefix),
+    manifestKey: relocate(otherPointer.manifestKey),
   };
-  await expect(check(first.deploymentId, firstQuery)).resolves.toBeFalsy();
-  await api.completeHostedSite(owner, first.deploymentId);
-  const reference = referenceSchema.parse(
-    JSON.parse(
-      capture.objects.get(`sites/brands/okou/${site}/active.json`) ?? "null",
-    ),
+  return { storage, owner, site, first, otherSite, otherPointer, pending };
+}
+
+type DeliveryScenario = Awaited<ReturnType<typeof deliveryScenario>>;
+
+/** Completes the first version and returns its delivery as the Worker reads it. */
+async function completeFirst(scenario: DeliveryScenario): Promise<Delivery> {
+  await host.completeHostedSite(scenario.owner, scenario.first.deploymentId);
+  const pointer = deliveryPointer(
+    scenario.storage,
+    scenario.first.deploymentId,
   );
-  expect(reference.deploymentId).toBe(first.deploymentId);
-  await expect(check(first.deploymentId, firstQuery)).resolves.toBeTruthy();
-  await expect(
-    check(
-      first.deploymentId.toUpperCase(),
-      firstQuery,
-      first.siteId.toUpperCase(),
-    ),
-  ).resolves.toBeTruthy();
-  for (const query of [
-    { ...firstQuery, publicBrand: "vm0" as const },
-    { ...firstQuery, publicSlug: "other-site" },
-    { ...firstQuery, prefix: "sites/foreign" },
-    { ...firstQuery, manifestKey: "sites/foreign/manifest.json" },
-    { ...firstQuery, alias: "other-site" },
-  ]) {
-    await expect(check(first.deploymentId, query)).resolves.toBeFalsy();
-  }
-  const foreign = await api.prepareHostedSite(other, {
-    ...body,
-    site: `foreign-${randomUUID().slice(0, 8)}`,
-    title: "Foreign",
+  return { ...scenario.pending, ...pointer };
+}
+
+async function publishNewer(scenario: DeliveryScenario) {
+  const newer = await prepare(scenario.owner, scenario.site, "<h1>Newer</h1>");
+  await host.completeHostedSite(scenario.owner, newer.deploymentId);
+}
+
+describe("host delivery authorization", () => {
+  it("host-delivery-authorization-004 (1/5) denies the first version before completion", async () => {
+    const { pending } = await deliveryScenario();
+
+    await expect(decide(pending)).resolves.toBe("deny");
   });
-  await api.completeHostedSite(other, foreign.deploymentId);
-  await expect(check(foreign.deploymentId, firstQuery)).resolves.toBeFalsy();
-  await expect(
-    check(first.deploymentId, firstQuery, foreign.siteId),
-  ).resolves.toBeFalsy();
-  const newer = await api.prepareHostedSite(owner, body);
-  await api.completeHostedSite(owner, newer.deploymentId);
-  await expect(check(first.deploymentId, firstQuery)).resolves.toBeFalsy();
-  await expect(
-    check(first.deploymentId, {
-      ...firstQuery,
-      alias: `dpl-${first.deploymentId}`,
-    }),
-  ).resolves.toBeTruthy();
-  await api.deleteHostedSite(owner, site);
-  await expect(
-    check(first.deploymentId, {
-      ...firstQuery,
-      alias: `dpl-${first.deploymentId}`,
-    }),
-  ).resolves.toBeFalsy();
-  const replacement = await api.prepareHostedSite(owner, body);
-  await api.completeHostedSite(owner, replacement.deploymentId);
-  const replacementPrefix = `sites/brands/okou/publications/${replacement.deploymentId}`;
-  await expect(
-    check(replacement.deploymentId, {
-      ...firstQuery,
-      prefix: replacementPrefix,
-      manifestKey: `${replacementPrefix}/manifest.json`,
-    }),
-  ).resolves.toBeTruthy();
-  await expect(
-    check(first.deploymentId, {
-      ...firstQuery,
-      alias: `dpl-${first.deploymentId}`,
-    }),
-  ).resolves.toBeFalsy();
+
+  it("host-delivery-authorization-004 (2/5) allows the completed version, also with upper-cased IDs, and points the site at it", async () => {
+    const scenario = await deliveryScenario();
+    const { storage, first, pending } = scenario;
+    await decide(pending);
+
+    await host.completeHostedSite(scenario.owner, first.deploymentId);
+
+    expect(deliveryPointer(storage, first.deploymentId)).toStrictEqual({
+      publicSlug: pending.publicSlug,
+      prefix: pending.prefix,
+      manifestKey: pending.manifestKey,
+    });
+    expect(sitePointerDeployment(storage, first.publicSlug)).toBe(
+      first.deploymentId,
+    );
+    await expect(
+      Promise.all([
+        decide(pending),
+        decide({
+          ...pending,
+          siteId: pending.siteId.toUpperCase(),
+          deploymentId: pending.deploymentId.toUpperCase(),
+        }),
+      ]),
+    ).resolves.toStrictEqual(["allow", "allow"]);
+  });
+
+  it("host-delivery-authorization-004 (3/5) denies each mismatched field and the other user's site or deployment", async () => {
+    const scenario = await deliveryScenario();
+    const { otherSite, otherPointer } = scenario;
+    const ready = await completeFirst(scenario);
+
+    await expect(
+      Promise.all([
+        decide({ ...ready, publicBrand: "vm0" }),
+        decide({ ...ready, publicSlug: otherPointer.publicSlug }),
+        decide({ ...ready, prefix: otherPointer.prefix }),
+        decide({ ...ready, manifestKey: otherPointer.manifestKey }),
+        decide({ ...ready, alias: otherSite.publicSlug }),
+        decide({ ...ready, deploymentId: otherSite.deploymentId }),
+        decide({ ...ready, siteId: otherSite.siteId }),
+      ]),
+    ).resolves.toStrictEqual([
+      "deny",
+      "deny",
+      "deny",
+      "deny",
+      "deny",
+      "deny",
+      "deny",
+    ]);
+  });
+
+  it("host-delivery-authorization-004 (4/5) keeps the old version only under its dpl- alias after a newer one", async () => {
+    const scenario = await deliveryScenario();
+    const ready = await completeFirst(scenario);
+
+    await publishNewer(scenario);
+
+    await expect(
+      Promise.all([
+        decide(ready),
+        decide({ ...ready, alias: `dpl-${scenario.first.deploymentId}` }),
+      ]),
+    ).resolves.toStrictEqual(["deny", "allow"]);
+  });
+
+  it("host-delivery-authorization-004 (5/5) denies deleted history and allows the replacement under its own prefix", async () => {
+    const scenario = await deliveryScenario();
+    const { storage, owner, site, first } = scenario;
+    const ready = await completeFirst(scenario);
+    await publishNewer(scenario);
+    const immutable = { ...ready, alias: `dpl-${first.deploymentId}` };
+
+    await host.deleteHostedSite(owner, first.publicSlug);
+    await expect(decide(immutable)).resolves.toBe("deny");
+    const replacement = await prepare(owner, site, "<h1>Replacement</h1>");
+    await host.completeHostedSite(owner, replacement.deploymentId);
+    const replacementPointer = deliveryPointer(
+      storage,
+      replacement.deploymentId,
+    );
+    expect(replacementPointer.prefix).not.toBe(ready.prefix);
+    await expect(
+      Promise.all([
+        decide({
+          siteId: replacement.siteId,
+          deploymentId: replacement.deploymentId,
+          alias: replacement.publicSlug,
+          publicSlug: replacementPointer.publicSlug,
+          publicBrand: "okou",
+          prefix: replacementPointer.prefix,
+          manifestKey: replacementPointer.manifestKey,
+        }),
+        decide(immutable),
+      ]),
+    ).resolves.toStrictEqual(["allow", "deny"]);
+  });
 });

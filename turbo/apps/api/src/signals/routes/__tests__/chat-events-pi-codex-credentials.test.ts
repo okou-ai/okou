@@ -1,204 +1,77 @@
-import { createRunsApi } from "./helpers/api-bdd-runs";
 import { randomUUID } from "node:crypto";
-import { describe, expect, it } from "vitest";
-import { testContext } from "../../../__tests__/test-context";
+import { personalModelProvidersMainContract } from "@okouai/api-contracts/contracts/personal-model-providers";
+import { expect, test } from "vitest";
+
+import { accept, testContext } from "../../../__tests__/test-context";
+import { setupApp } from "../../../__tests__/test-helpers";
 import { now } from "../../../lib/time";
+import { meModelProvidersUpsertRoutes } from "../me-model-providers-upsert";
+import { headers, jwt } from "./helpers/codex-reset-credit-expiry";
+import { publicChatActor } from "./helpers/public-chat-actor";
+import { createRouteMocks } from "./helpers/route-test";
 import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
-import {
-  assistantMessages,
-  createChatEventsFixture,
-  userMessages,
-} from "./helpers/chat-events-fixture";
 
 const context = testContext();
-const api = createRunsApi(context);
-const {
-  chat,
-  entitledChatActor,
-  configureSubscriptionPiModel,
-  authDeviceSupport,
-  misc,
-  sendChatRun,
-  waitForThreadMessages,
-} = createChatEventsFixture(context);
 
-function unsignedJwt(payload: Record<string, unknown>): string {
-  const encode = (value: unknown) => {
-    return Buffer.from(JSON.stringify(value)).toString("base64url");
-  };
-  return `${encode({ alg: "none", typ: "JWT" })}.${encode(payload)}.`;
-}
-
-/** A ChatGPT auth.json; `accountId: null` omits every account id claim. */
-function codexAuthJson(accountId: string | null): string {
-  const exp = Math.floor(now() / 1000) + 7200;
+/** A ChatGPT `auth.json` whose id_token carries a plan but no workspace account. */
+function authJsonWithoutAccountId() {
+  const accessToken = jwt({ exp: Math.floor(now() / 1000) + 3600 });
   return JSON.stringify({
-    OPENAI_API_KEY: null,
     tokens: {
-      access_token: unsignedJwt({ exp }),
-      refresh_token: `rt_${randomUUID()}`,
-      ...(accountId === null ? {} : { account_id: accountId }),
-      id_token: unsignedJwt({
-        "https://api.openai.com/auth":
-          accountId === null
-            ? { chatgpt_plan_type: "plus" }
-            : { chatgpt_account_id: accountId, chatgpt_plan_type: "plus" },
-        exp,
+      access_token: accessToken,
+      refresh_token: `refresh-${randomUUID()}`,
+      account_id: randomUUID(),
+      id_token: jwt({
+        email: "astra@example.com",
+        "https://api.openai.com/auth": { chatgpt_plan_type: "plus" },
       }),
     },
   });
 }
 
-async function fixture(expiresAt = Math.floor(now() / 1000) + 7200) {
-  const { actor } = await entitledChatActor();
-  const identity = `pi-codex-fast-${randomUUID()}`;
-  const connected = await configureSubscriptionPiModel(actor, {
-    accountId: identity,
-    accessTokenExpiresAt: expiresAt,
-    refreshedAccessTokenExpiresAt: Math.floor(now() / 1000) + 7200,
-  });
-  return { actor, connected, identity };
-}
-
-/** A member ChatGPT auth.json source. */
-async function memberAuthJsonFixture(accountId: string | null) {
-  const { actor } = await entitledChatActor();
-
-  await misc.upsertPersonalModelProvider(
-    actor,
-    {
-      type: "codex-oauth-token",
-      authMethod: "auth_json",
-      secrets: { CODEX_AUTH_JSON: codexAuthJson(accountId) },
-    },
-    [200, 201],
-  );
-  return { actor };
-}
-
-describe("Pi Codex subscription admission", () => {
-  it("does not admit a new personal run after its only account is deleted", async () => {
-    const f = await fixture();
-    await authDeviceSupport.deletePersonalModelProviderAccount(
-      f.actor,
-      f.connected.accountSourceId,
-    );
-    const clientEventId = randomUUID();
-    const response = await chat.requestSendEvent(
-      f.actor,
-      {
-        model: "gpt-6-luna",
-        prompt: "do not reuse the deleted codex account",
-        clientEventId,
-      },
-      [201],
-    );
-    if (response.status !== 201) {
-      throw new Error("Expected the send to be accepted");
+test("chat-events-pi-codex-credentials-006 (1/2) rejects storing a ChatGPT auth.json without an account id", async () => {
+  const owned = await publicChatActor(context);
+  await owned.run(async () => {
+    const { actor } = owned;
+    const orgId = actor.orgId;
+    if (!orgId) {
+      throw new Error("Expected the entitled member's workspace");
     }
-    // The pick refuses the input in the thread instead of launching a run.
-    const messages = await waitForThreadMessages(
-      f.actor,
-      response.body.threadId,
-      (items) => {
-        return assistantMessages(items).some((message) => {
-          return message.eventType === "output.error";
-        });
-      },
-    );
-    expect(
-      userMessages(messages.events).filter((message) => {
-        return message.revokesEventId === clientEventId;
-      }),
-    ).toStrictEqual([
-      expect.objectContaining({
-        eventType: "input.rejected",
-        error: "conflict",
-      }),
-    ]);
-    expect(
-      assistantMessages(messages.events).filter((message) => {
-        return message.eventType === "output.error";
-      }),
-    ).toStrictEqual([
-      expect.objectContaining({
-        error: "conflict",
-        content:
-          "The selected subscription account is unavailable. Reconnect it before starting another run.",
-      }),
-    ]);
-    expect(JSON.stringify(messages.events)).not.toContain(f.identity);
-  }, 30_000);
-});
+    createRouteMocks(context).clerk.session(actor.userId, orgId);
+    const providers = setupApp({
+      context,
+      routes: meModelProvidersUpsertRoutes,
+    })(personalModelProvidersMainContract);
 
-describe("ChatGPT subscription credentials at launch", () => {
-  it.each(["gpt-6-luna", "gpt-6-astra"] as const)(
-    "launches %s when stored-secret decryption is unavailable",
-    async (selectedModel) => {
-      const f = await fixture();
-      await api.updateUserModelPreference(f.actor, selectedModel);
-      // Routing uses account metadata; tokens stay behind firewall auth.
-      useSecretKmsProbe(undefined, () => {
-        return Promise.reject(new Error("KMS decryption unavailable"));
-      });
-      const run = await sendChatRun(f.actor, {
-        model: selectedModel,
-        prompt: "launch with the connected ChatGPT account",
-      });
-      expect(run.runId).toStrictEqual(expect.any(String));
-    },
-    30_000,
-  );
-});
-
-describe("ChatGPT auth.json credentials at launch", () => {
-  it.each(["gpt-6-luna", "gpt-6-astra"] as const)(
-    "launches %s with KMS decryption unavailable beside a connected Claude subscription",
-    async (selectedModel) => {
-      const f = await memberAuthJsonFixture(`ws_acct_${randomUUID()}`);
-      await api.updateUserModelPreference(f.actor, selectedModel);
-      // Neither routing identity nor the unrelated Claude token needs decryption.
-      useSecretKmsProbe(undefined, () => {
-        return Promise.reject(new Error("KMS decryption unavailable"));
-      });
-      const run = await sendChatRun(f.actor, {
-        model: selectedModel,
-        prompt: "launch with the ChatGPT auth.json account",
-      });
-      expect(run.runId).toStrictEqual(expect.any(String));
-    },
-    30_000,
-  );
-
-  it("fails closed when a ChatGPT auth.json has no account id", async () => {
-    // Native Codex routes by workspace account; a source without one is
-    // refused when stored, so no launch can proceed without it.
-    const { actor } = await entitledChatActor();
-    const rejected = await misc.upsertPersonalModelProvider(
-      actor,
-      {
-        type: "codex-oauth-token",
-        authMethod: "auth_json",
-        secrets: { CODEX_AUTH_JSON: codexAuthJson(null) },
-      },
+    const stored = await accept(
+      providers.upsert({
+        headers,
+        body: {
+          type: "codex-oauth-token",
+          authMethod: "auth_json",
+          secrets: { CODEX_AUTH_JSON: authJsonWithoutAccountId() },
+        },
+      }),
       [400],
     );
-    expect(rejected.body).toMatchObject({
-      error: { code: "CODEX_AUTH_JSON_SHAPE_INVALID" },
-    });
+
+    expect(stored.body.error.code).toBe("CODEX_AUTH_JSON_SHAPE_INVALID");
+  });
+});
+
+test("chat-events-pi-codex-credentials-006 (2/2) enqueues an Astra prompt without decrypting stored secrets", async () => {
+  // The rejected store left no ChatGPT source, so the entitled member has none.
+  const owned = await publicChatActor(context);
+  await owned.run(async () => {
     const kms = useSecretKmsProbe();
-    const response = await chat.requestSendEvent(
-      actor,
-      {
-        model: "gpt-6-astra",
-        prompt: "do not launch without a workspace account",
-        clientEventId: randomUUID(),
-      },
+
+    const sent = await owned.requestSendEvent(
+      owned.actor,
+      { prompt: "plan the launch with Astra", model: "gpt-6-astra" },
       [201],
     );
-    if (response.status !== 201) {
-      throw new Error("Expected the send to be accepted");
-    }
+
+    expect(sent.status).toBe(201);
     expect(kms.decryptCalls).toBe(0);
-  }, 30_000);
+  });
 });

@@ -1,825 +1,606 @@
-import { createHmac, randomBytes, randomUUID } from "node:crypto";
+import { createHmac, randomUUID } from "node:crypto";
 
-import { bankingWorkspaceContract } from "@okouai/api-contracts/contracts/banking";
+import {
+  bankingPublicContract,
+  bankingWorkspaceContract,
+} from "@okouai/api-contracts/contracts/banking";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { HttpResponse, http } from "msw";
-import { beforeEach, describe, onTestFinished } from "vitest";
+import { http, HttpResponse } from "msw";
+import { describe, expect, it } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { createApp } from "../../../app-factory";
 import { mockEnv } from "../../../lib/env";
 import { server } from "../../../mocks/server";
-import { flushWaitUntilForTest } from "../../context/wait-until";
-import { createDeferredPromise } from "../../utils";
-import { createBddApi } from "./helpers/api-bdd";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { bankingRoutes } from "../banking";
+import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
+import {
+  channelsPublishedTo,
+  countPublishedTo,
+} from "./helpers/realtime-publications";
+import { createRouteMocks } from "./helpers/route-test";
+import { createDeferredPromise } from "../../utils";
 
 const context = testContext();
-const secret = randomBytes(32).toString("hex");
-const baseUrl = "https://api.finicity.com";
-const headers = Object.freeze({ authorization: "Bearer clerk-session" });
 
-function account(institutionLoginId: string, repairRequired = false) {
+const FINICITY = "https://api.finicity.com";
+// A generated Finicity webhook secret, configured for the route below.
+const APP_SECRET = randomUUID();
+const TOPIC = "bankingAccessChanged";
+
+interface ListedAccount {
+  readonly id: string;
+  readonly name: string;
+  readonly institutionLoginId: string;
+  readonly type: string;
+  readonly healthy: boolean;
+}
+
+interface HeldRead {
+  readonly reached: () => void;
+  readonly release: Promise<void>;
+}
+
+function deferred(): {
+  readonly promise: Promise<void>;
+  readonly resolve: () => void;
+} {
+  const deferred = createDeferredPromise<void>(context.signal);
+  const release = () => {
+    if (!deferred.settled()) {
+      deferred.resolve();
+    }
+  };
+  return { promise: deferred.promise, resolve: release };
+}
+
+function finicityAccount(account: ListedAccount) {
   return {
-    id: `account-${institutionLoginId}`,
-    name: "Checking",
-    institutionName: institutionLoginId,
-    institutionLoginId,
-    type: "checking",
-    status: repairRequired ? "error" : "active",
-    aggregationStatusCode: repairRequired ? 103 : 0,
+    id: account.id,
+    name: account.name,
+    institutionName: `${account.institutionLoginId} institution`,
+    institutionLoginId: account.institutionLoginId,
+    type: account.type,
+    realAccountNumberLast4: "4321",
+    status: account.healthy ? "active" : "error",
+    aggregationStatusCode: account.healthy ? 0 : 185,
   };
 }
 
-async function pendingConnect() {
-  const bdd = createBddApi(context);
-  const actor = bdd.user();
-  if (!actor.orgId) {
-    throw new Error("Banking requires an organization");
-  }
-  bdd.acceptStorageWrites();
-  await updateFeatureSwitchesForUser(
-    context,
-    { userId: actor.userId, orgId: actor.orgId },
-    { [FeatureSwitchKey.Banking]: true },
-  );
-  const customerId = `customer-${randomUUID()}`;
-  const accountsUrl = `${baseUrl}/aggregation/v1/customers/${customerId}/accounts`;
-  server.use(
-    http.post(`${baseUrl}/aggregation/v2/partners/authentication`, () => {
-      return HttpResponse.json({ token: "test-app-token" });
-    }),
-    http.post(`${baseUrl}/aggregation/v2/customers/testing`, () => {
-      return HttpResponse.json({ id: customerId });
-    }),
-    http.post(`${baseUrl}/connect/v2/generate`, () => {
-      return HttpResponse.json({
-        link: "https://connect.example.test/session",
-      });
-    }),
-    http.post(`${baseUrl}/connect/v2/generate/fix`, () => {
-      return HttpResponse.json({ link: "https://connect.example.test/fix" });
-    }),
-    http.get(accountsUrl, () => {
-      return HttpResponse.json({ accounts: [account("bank")] });
-    }),
-  );
-  const client = setupApp({ context, routes: bankingRoutes })(
-    bankingWorkspaceContract,
-  );
-  const started = await accept(
-    client.createConnectSession({
-      headers,
-      body: { mode: "connect" },
-    }),
-    [200],
-  );
-  const status = async () => {
-    return await accept(
-      client.accessRequestStatus({
-        headers,
-      }),
-      [200],
-    );
-  };
-  const initial = await status();
-  const connectionId = initial.body.connection?.id;
-  if (!connectionId) {
-    throw new Error(
-      "Expected the public connect status to return a connection",
-    );
-  }
-  const event = (eventType: string, sessionId = started.body.sessionId) => {
-    return {
-      eventId: `event-${randomUUID()}`,
-      eventType,
-      customerId,
-      webhookData: {
-        uniqueCustomerId: connectionId,
-        uniqueRequestId: sessionId,
-      },
-    };
-  };
-  return {
-    client,
-    userId: actor.userId,
-    accountsUrl,
-    status,
-    event,
-  };
-}
-
-async function postWebhook(body: Record<string, unknown>) {
-  const rawBody = JSON.stringify(body);
-  const signature = createHmac("sha256", secret).update(rawBody).digest("hex");
-  return await createApp({
-    signal: context.signal,
-    routes: bankingRoutes,
-  }).request("/api/webhooks/finicity", {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      "x-finicity-signature": signature,
-    },
-    body: rawBody,
-  });
-}
-
-beforeEach(() => {
-  mockEnv("FINICITY_APP_KEY", "test-app-key");
-  mockEnv("FINICITY_APP_SECRET", secret);
-  mockEnv("FINICITY_PARTNER_ID", "test-partner");
+const checking: ListedAccount = Object.freeze({
+  id: "acct-checking",
+  name: "Everyday checking",
+  institutionLoginId: "bank",
+  type: "checking",
+  healthy: true,
 });
 
-describe("Finicity webhook outcomes", () => {
-  it("notifies only the owner after connect, signed webhook updates, and grant changes", async () => {
-    const fixture = await pendingConnect();
-    await flushWaitUntilForTest();
-    context.mocks.ably.publish.mockClear();
-    context.mocks.ably.channelGet.mockClear();
-    const expectNotification = async () => {
-      await flushWaitUntilForTest();
-      expect(context.mocks.ably.publish.mock.calls).toStrictEqual([
-        ["bankingAccessChanged", null],
-      ]);
-      expect(context.mocks.ably.channelGet.mock.calls).toStrictEqual([
-        [`user:${fixture.userId}`],
-      ]);
-      context.mocks.ably.publish.mockClear();
-      context.mocks.ably.channelGet.mockClear();
-    };
+async function bankingMember() {
+  const userId = `user_${randomUUID()}`;
+  const orgId = `org_${randomUUID()}`;
+  const customerId = `cust-${randomUUID()}`;
+  const eventPrefix = randomUUID();
+  mockEnv("FINICITY_APP_KEY", "finicity-app-key");
+  mockEnv("FINICITY_APP_SECRET", APP_SECRET);
+  mockEnv("FINICITY_PARTNER_ID", "finicity-partner");
+  await updateFeatureSwitchesForUser(
+    context,
+    { userId, orgId },
+    { [FeatureSwitchKey.Banking]: true },
+  );
+  createRouteMocks(context).clerk.session(userId, orgId);
 
-    const session = await accept(
-      fixture.client.createConnectSession({
-        headers,
+  const provider = {
+    accounts: [] as ListedAccount[],
+    accountsStatus: 200,
+    connectStatus: 200,
+    hold: null as HeldRead | null,
+    webhookData: [] as Record<string, unknown>[],
+  };
+  const generate = async (request: Request) => {
+    if (provider.connectStatus !== 200) {
+      return HttpResponse.json(
+        { message: "Service unavailable" },
+        { status: provider.connectStatus },
+      );
+    }
+    const body = (await request.json()) as {
+      readonly webhookData: Record<string, unknown>;
+    };
+    provider.webhookData.push(body.webhookData);
+    return HttpResponse.json({
+      link: `https://connect.finicity.com/?id=${randomUUID()}`,
+    });
+  };
+  server.use(
+    http.post(`${FINICITY}/aggregation/v2/partners/authentication`, () => {
+      return HttpResponse.json({ token: "finicity-app-token" });
+    }),
+    http.post(`${FINICITY}/aggregation/v2/customers/testing`, () => {
+      return HttpResponse.json({ id: customerId });
+    }),
+    http.post(`${FINICITY}/connect/v2/generate`, ({ request }) => {
+      return generate(request);
+    }),
+    http.post(`${FINICITY}/connect/v2/generate/fix`, ({ request }) => {
+      return generate(request);
+    }),
+    http.get(
+      `${FINICITY}/aggregation/v1/customers/${customerId}/accounts`,
+      async () => {
+        const hold = provider.hold;
+        if (hold) {
+          provider.hold = null;
+          hold.reached();
+          await hold.release;
+        }
+        if (provider.accountsStatus !== 200) {
+          return HttpResponse.json(
+            { message: "Service unavailable" },
+            { status: provider.accountsStatus },
+          );
+        }
+        return HttpResponse.json({
+          accounts: provider.accounts.map(finicityAccount),
+        });
+      },
+    ),
+  );
+
+  const client = setupApp({ context, routes: bankingRoutes });
+  const workspace = client(bankingWorkspaceContract);
+  const webhooks = client(bankingPublicContract);
+  const headers = { authorization: "Bearer clerk-session" };
+  const ownerChannel = `user:${userId}`;
+
+  const notifications = () => {
+    return countPublishedTo(context.mocks, {
+      channel: ownerChannel,
+      topic: TOPIC,
+    });
+  };
+
+  const startSession = async (
+    body:
+      | { readonly mode: "connect" }
+      | { readonly mode: "fix"; readonly institutionLoginId: string } = {
+      mode: "connect",
+    },
+  ) => {
+    return await accept(
+      workspace.createConnectSession({ headers, body }),
+      [200],
+    );
+  };
+
+  const status = async () => {
+    return (await accept(workspace.accessRequestStatus({ headers }), [200]))
+      .body;
+  };
+
+  const deliver = async (event: {
+    readonly eventType: string;
+    readonly eventId: string;
+    readonly customerId?: string;
+    readonly extra?: Record<string, unknown>;
+  }) => {
+    const body = JSON.stringify({
+      eventType: event.eventType,
+      eventId: `${eventPrefix}-${event.eventId}`,
+      customerId: event.customerId ?? customerId,
+      webhookData: provider.webhookData.at(-1),
+      ...event.extra,
+    });
+    const signature = createHmac("sha256", APP_SECRET)
+      .update(body)
+      .digest("hex");
+    return await webhooks.finicityWebhook({
+      headers: { "x-finicity-signature": signature },
+      body,
+    });
+  };
+
+  return {
+    userId,
+    ownerChannel,
+    provider,
+    workspace,
+    headers,
+    notifications,
+    startSession,
+    status,
+    deliver,
+  };
+}
+
+describe("Finicity webhook outcomes", () => {
+  it("banking-webhook-002 fails the session and notifies the owner when connect-link generation is unavailable", async () => {
+    const member = await bankingMember();
+    await member.startSession();
+    member.provider.connectStatus = 503;
+
+    const before = member.notifications();
+    await accept(
+      member.workspace.createConnectSession({
+        headers: member.headers,
         body: { mode: "connect" },
       }),
-      [200],
+      [502],
     );
-    await expectNotification();
-    expect((await fixture.status()).body.session).toMatchObject({
-      id: session.body.sessionId,
-      status: "pending",
-    });
 
-    const added = fixture.event("added", session.body.sessionId);
-    expect((await postWebhook(added)).status).toBe(200);
-    await expectNotification();
-    const connected = await fixture.status();
-    expect(connected.body.connection?.accounts).toHaveLength(1);
-    const accountId = connected.body.connection?.accounts[0]?.id;
-    if (!accountId) {
-      throw new Error("Expected a publicly connected account");
-    }
-    const done = fixture.event("done", session.body.sessionId);
-    expect((await postWebhook(done)).status).toBe(200);
-    await expectNotification();
-    expect((await fixture.status()).body.session?.status).toBe("completed");
-    expect((await postWebhook(done)).status).toBe(200);
-    await flushWaitUntilForTest();
-    expect(context.mocks.ably.publish).not.toHaveBeenCalled();
-
-    const grantBody = {
-      accountIds: [accountId],
-      duration: "7d" as const,
-      purpose: "Review checking account",
-    };
-    const granted = await accept(
-      fixture.client.saveGrant({ headers, body: grantBody }),
-      [200],
+    expect((await member.status()).session?.status).toBe("failed");
+    expect(member.notifications() - before).toBe(2);
+    expect(new Set(channelsPublishedTo(context.mocks, TOPIC))).toStrictEqual(
+      new Set([member.ownerChannel]),
     );
-    await expectNotification();
-    expect(granted.body.grant?.status).toBe("active");
-    const revoked = await accept(
-      fixture.client.revokeGrant({
-        headers,
-        body: {},
-      }),
-      [200],
-    );
-    await expectNotification();
-    expect(revoked.body.grant?.status).toBe("revoked");
-
-    context.mocks.ably.publish.mockRejectedValue(new Error("Ably unavailable"));
-    await accept(fixture.client.saveGrant({ headers, body: grantBody }), [200]);
-    await expectNotification();
-    expect((await fixture.status()).body.grant?.status).toBe("active");
   });
 
-  it.each(["unavailable", "invalid-response"] as const)(
-    "notifies the owner after a connect session fails with %s",
-    async (outcome) => {
-      const fixture = await pendingConnect();
-      await flushWaitUntilForTest();
-      context.mocks.ably.publish.mockClear();
-      context.mocks.ably.channelGet.mockClear();
-      server.use(
-        http.post(`${baseUrl}/connect/v2/generate`, () => {
-          return outcome === "unavailable"
-            ? HttpResponse.json({ message: "Unavailable" }, { status: 503 })
-            : HttpResponse.json({});
-        }),
-      );
-      await accept(
-        fixture.client.createConnectSession({
-          headers,
-          body: { mode: "connect" },
-        }),
-        [502],
-      );
-      await flushWaitUntilForTest();
-      expect((await fixture.status()).body.session?.status).toBe("failed");
-      expect(context.mocks.ably.publish.mock.calls).toStrictEqual([
-        ["bankingAccessChanged", null],
-        ["bankingAccessChanged", null],
-      ]);
-      expect(context.mocks.ably.channelGet.mock.calls).toStrictEqual([
-        [`user:${fixture.userId}`],
-        [`user:${fixture.userId}`],
-      ]);
-    },
-  );
+  it("banking-webhook-006 keeps unknown events pending and preserves added and done results on replay", async () => {
+    const member = await bankingMember();
+    await member.startSession();
+    member.provider.accounts = [checking];
 
-  it.each(["success", "failure"] as const)(
-    "preserves a replacement while an older connect provider response ends in %s",
-    async (outcome) => {
-      const fixture = await pendingConnect();
-      const requested = createDeferredPromise<string>(context.signal);
-      const response = createDeferredPromise<void>(context.signal);
-      let firstRequest = true;
-      server.use(
-        http.post(`${baseUrl}/connect/v2/generate`, async ({ request }) => {
-          if (firstRequest) {
-            firstRequest = false;
-            const body = await request.json();
-            const parsed = body as {
-              webhookData: { uniqueRequestId: string };
-            };
-            requested.resolve(parsed.webhookData.uniqueRequestId);
-            await response.promise;
-            if (outcome === "failure") {
-              return HttpResponse.json(
-                { message: "Provider unavailable" },
-                { status: 503 },
-              );
-            }
-          }
-          return HttpResponse.json({
-            link: "https://connect.example.test/new",
-          });
-        }),
-      );
-      const start = () => {
-        return fixture.client.createConnectSession({
-          headers,
-          body: { mode: "connect" },
-        });
-      };
-      const older = start();
-      onTestFinished(async () => {
-        if (!response.settled()) {
-          response.resolve();
-        }
-        await older;
-      });
-      const olderId = await requested.promise;
-      const replacement = await accept(start(), [200]);
-      expect(replacement.body.sessionId).not.toBe(olderId);
-      expect((await fixture.status()).body.session).toMatchObject({
-        id: replacement.body.sessionId,
-        mode: "connect",
-        status: "pending",
-      });
-      response.resolve();
-      const finished = await older;
-      if (outcome === "success") {
-        expect(finished.status).toBe(200);
-        if (finished.status === 200) {
-          expect(finished.body.sessionId).toBe(olderId);
-        }
-      } else {
-        expect(finished.status).toBe(502);
-      }
-      expect((await postWebhook(fixture.event("added", olderId))).status).toBe(
-        200,
-      );
-      const current = await fixture.status();
-      expect(current.body.session).toMatchObject({
-        id: replacement.body.sessionId,
-        status: "pending",
-      });
-      expect(current.body.connection?.accounts).toStrictEqual([]);
+    for (let delivery = 0; delivery < 2; delivery += 1) {
       expect(
-        (await postWebhook(fixture.event("added", replacement.body.sessionId)))
-          .status,
+        (
+          await member.deliver({
+            eventType: "institutionSelected",
+            eventId: "e-selected",
+          })
+        ).status,
       ).toBe(200);
-      expect(
-        (await postWebhook(fixture.event("done", replacement.body.sessionId)))
-          .status,
-      ).toBe(200);
-      expect((await fixture.status()).body.session).toMatchObject({
-        id: replacement.body.sessionId,
-        status: "completed",
-      });
-      const retry = await accept(start(), [200]);
-      expect(retry.body.sessionId).not.toBe(replacement.body.sessionId);
-      expect((await fixture.status()).body.session).toMatchObject({
-        id: retry.body.sessionId,
-        status: "pending",
-      });
-    },
-  );
+    }
+    const afterUnknown = await member.status();
+    expect(afterUnknown.session?.status).toBe("pending");
+    expect(afterUnknown.connection?.accounts ?? []).toStrictEqual([]);
 
-  it("keeps unknown events pending and preserves added/done results on replay", async () => {
-    const fixture = await pendingConnect();
-    const unknown = fixture.event("institutionSelected");
-    expect((await postWebhook(unknown)).status).toBe(200);
-    expect((await postWebhook(unknown)).status).toBe(200);
-    const untouched = await fixture.status();
-    expect(untouched.body.session?.status).toBe("pending");
-    expect(untouched.body.connection?.accounts).toStrictEqual([]);
+    expect(
+      (await member.deliver({ eventType: "added", eventId: "e-added" })).status,
+    ).toBe(200);
+    member.provider.accounts = [{ ...checking, healthy: false }];
+    expect(
+      (await member.deliver({ eventType: "added", eventId: "e-added" })).status,
+    ).toBe(200);
+    const afterAdded = await member.status();
+    expect(afterAdded.session?.status).toBe("pending");
+    expect(afterAdded.connection?.accounts).toHaveLength(1);
+    expect(afterAdded.connection?.accounts[0]?.repairRequired).toBeFalsy();
 
-    const added = { ...fixture.event("added"), eventTimestamp: 1_767_225_600 };
-    expect((await postWebhook(added)).status).toBe(200);
-    server.use(
-      http.get(fixture.accountsUrl, () => {
-        return HttpResponse.json({ accounts: [account("bank", true)] });
-      }),
-    );
-    expect((await postWebhook(added)).status).toBe(200);
-    const replayed = await fixture.status();
-    expect(replayed.body.session?.status).toBe("pending");
-    expect(replayed.body.connection?.accounts).toStrictEqual([
-      expect.objectContaining({ repairRequired: false }),
-    ]);
-
-    server.use(
-      http.get(fixture.accountsUrl, () => {
-        return HttpResponse.json({ accounts: [account("bank")] });
-      }),
-    );
+    member.provider.accounts = [checking];
     const done = {
-      ...fixture.event("done"),
-      reason: "userSubmit".repeat(10),
-      eventTimestamp: "2026-01-01T00:00:00Z",
+      eventType: "done",
+      eventId: "e-done",
+      extra: {
+        reason: "user-finished-the-connect-flow-".repeat(4),
+        eventTimestamp: "2026-11-25T10:00:00.000Z",
+      },
     };
-    expect((await postWebhook(done)).status).toBe(200);
-    expect((await fixture.status()).body.session?.status).toBe("completed");
-    server.use(
-      http.get(fixture.accountsUrl, () => {
-        return HttpResponse.json({ accounts: [] });
-      }),
-    );
-    expect((await postWebhook(done)).status).toBe(200);
-    const completed = await fixture.status();
-    expect(completed.body.session?.status).toBe("completed");
-    expect(completed.body.connection?.accounts).toHaveLength(1);
+    expect((await member.deliver(done)).status).toBe(200);
+    expect((await member.status()).session?.status).toBe("completed");
+
+    member.provider.accounts = [];
+    expect((await member.deliver(done)).status).toBe(200);
+    const afterReplay = await member.status();
+    expect(afterReplay.session?.status).toBe("completed");
+    expect(afterReplay.connection?.accounts).toHaveLength(1);
   });
 
-  it("updates account metadata, removes absent accounts and restores their identities", async () => {
-    const fixture = await pendingConnect();
-    server.use(
-      http.get(fixture.accountsUrl, () => {
-        return HttpResponse.json({
-          accounts: [account("bank", true), account("other")],
-        });
-      }),
-    );
-    expect((await postWebhook(fixture.event("added"))).status).toBe(200);
-    const initial = await fixture.status();
-    expect(initial.body.connection?.status).toBe("repair_required");
-    const bank = initial.body.connection?.accounts.find((entry) => {
-      return entry.institutionName === "bank";
-    });
-    const other = initial.body.connection?.accounts.find((entry) => {
-      return entry.institutionName === "other";
-    });
-    if (!bank || !other) {
-      throw new Error("Expected both provider accounts in public status");
-    }
-    expect(bank.repairRequired).toBeTruthy();
+  it("banking-webhook-007 updates account metadata, removes absent accounts and restores their identities", async () => {
+    const member = await bankingMember();
+    await member.startSession();
+    const bank: ListedAccount = { ...checking, healthy: false };
+    const other: ListedAccount = {
+      id: "acct-other",
+      name: "Other checking",
+      institutionLoginId: "other",
+      type: "checking",
+      healthy: true,
+    };
+    member.provider.accounts = [bank, other];
 
-    server.use(
-      http.get(fixture.accountsUrl, () => {
-        return HttpResponse.json({
-          accounts: [{ ...account("other"), name: "Savings", type: "savings" }],
-        });
-      }),
-    );
-    expect((await postWebhook(fixture.event("added"))).status).toBe(200);
-    const removed = await fixture.status();
-    expect(removed.body.session?.status).toBe("pending");
-    expect(removed.body.connection?.status).toBe("active");
-    expect(removed.body.connection?.repairInstitutions).toStrictEqual([]);
-    expect(removed.body.connection?.accounts).toStrictEqual([
+    await member.deliver({ eventType: "added", eventId: "e-added-1" });
+    const first = await member.status();
+    expect(first.connection?.status).toBe("repair_required");
+    const bankRow = first.connection?.accounts.find((account) => {
+      return account.name === bank.name;
+    });
+    const otherRow = first.connection?.accounts.find((account) => {
+      return account.name === other.name;
+    });
+    expect(bankRow?.repairRequired).toBeTruthy();
+
+    member.provider.accounts = [{ ...other, name: "Savings", type: "savings" }];
+    expect(
+      (await member.deliver({ eventType: "added", eventId: "e-added-2" }))
+        .status,
+    ).toBe(200);
+    const second = await member.status();
+    expect(second.session?.status).toBe("pending");
+    expect(second.connection?.status).toBe("active");
+    expect(second.connection?.repairInstitutions).toStrictEqual([]);
+    expect(second.connection?.accounts).toStrictEqual([
       expect.objectContaining({
-        id: other.id,
+        id: otherRow?.id,
         name: "Savings",
         type: "savings",
         repairRequired: false,
       }),
     ]);
 
-    server.use(
-      http.get(fixture.accountsUrl, () => {
-        return HttpResponse.json({
-          accounts: [
-            { ...account("bank"), name: "Restored Checking" },
-            { ...account("other"), name: "Savings", type: "savings" },
-          ],
-        });
-      }),
-    );
-    expect((await postWebhook(fixture.event("done"))).status).toBe(200);
-    const restored = await fixture.status();
-    expect(restored.body.session?.status).toBe("completed");
-    expect(restored.body.connection?.status).toBe("active");
-    expect(restored.body.connection?.repairInstitutions).toStrictEqual([]);
-    expect(restored.body.connection?.accounts).toHaveLength(2);
-    expect(restored.body.connection?.accounts).toStrictEqual(
+    member.provider.accounts = [
+      { ...bank, name: "Restored Checking", healthy: true },
+      { ...other, name: "Savings", type: "savings" },
+    ];
+    expect(
+      (await member.deliver({ eventType: "done", eventId: "e-done" })).status,
+    ).toBe(200);
+    const third = await member.status();
+    expect(third.session?.status).toBe("completed");
+    expect(third.connection?.status).toBe("active");
+    expect(third.connection?.repairInstitutions).toStrictEqual([]);
+    expect(third.connection?.accounts).toHaveLength(2);
+    expect(third.connection?.accounts).toStrictEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          id: bank.id,
+          id: bankRow?.id,
           name: "Restored Checking",
           repairRequired: false,
         }),
-        expect.objectContaining({ id: other.id, name: "Savings" }),
+        expect.objectContaining({ id: otherRow?.id, name: "Savings" }),
       ]),
     );
   });
 
-  it("clears an empty provider directory and restores the same account identity", async () => {
-    const fixture = await pendingConnect();
-    expect((await postWebhook(fixture.event("added"))).status).toBe(200);
-    const initial = await fixture.status();
-    const original = initial.body.connection?.accounts[0];
-    if (!original) {
-      throw new Error("Expected a publicly connected account");
-    }
-    server.use(
-      http.get(fixture.accountsUrl, () => {
-        return HttpResponse.json({ accounts: [] });
-      }),
-    );
-    expect((await postWebhook(fixture.event("added"))).status).toBe(200);
-    const empty = await fixture.status();
-    expect(empty.body.connection).toMatchObject({
-      status: "active",
-      accounts: [],
-    });
-    expect(empty.body.session?.status).toBe("pending");
-    server.use(
-      http.get(fixture.accountsUrl, () => {
-        return HttpResponse.json({ accounts: [account("bank")] });
-      }),
-    );
-    expect((await postWebhook(fixture.event("added"))).status).toBe(200);
-    expect((await fixture.status()).body.connection?.accounts).toStrictEqual([
-      expect.objectContaining({ id: original.id, repairRequired: false }),
+  it("banking-webhook-008 clears an empty provider directory and restores the same account identity", async () => {
+    const member = await bankingMember();
+    await member.startSession();
+    member.provider.accounts = [checking];
+
+    expect(
+      (await member.deliver({ eventType: "added", eventId: "e-1" })).status,
+    ).toBe(200);
+    const originalId = (await member.status()).connection?.accounts[0]?.id;
+
+    member.provider.accounts = [];
+    expect(
+      (await member.deliver({ eventType: "added", eventId: "e-2" })).status,
+    ).toBe(200);
+    const empty = await member.status();
+    expect(empty.connection?.status).toBe("active");
+    expect(empty.connection?.accounts).toStrictEqual([]);
+    expect(empty.session?.status).toBe("pending");
+
+    member.provider.accounts = [checking];
+    expect(
+      (await member.deliver({ eventType: "added", eventId: "e-3" })).status,
+    ).toBe(200);
+    const restored = await member.status();
+    expect(restored.connection?.accounts).toStrictEqual([
+      expect.objectContaining({ id: originalId, repairRequired: false }),
     ]);
   });
 
-  it.each([false, true])(
-    "uses the last duplicate account with repairRequired=%s",
-    async (repairRequired) => {
-      const fixture = await pendingConnect();
-      server.use(
-        http.get(fixture.accountsUrl, () => {
-          return HttpResponse.json({
-            accounts: [
-              account("bank", !repairRequired),
-              {
-                ...account("bank", repairRequired),
-                name: "Latest savings",
-                type: "savings",
-              },
-            ],
-          });
-        }),
-      );
-      expect((await postWebhook(fixture.event("added"))).status).toBe(200);
-      const status = await fixture.status();
-      expect(status.body.connection?.status).toBe(
-        repairRequired ? "repair_required" : "active",
-      );
-      expect(status.body.connection?.accounts).toStrictEqual([
-        expect.objectContaining({
-          name: "Latest savings",
-          type: "savings",
-          repairRequired,
-        }),
-      ]);
-    },
-  );
-
-  it("rejects an invalid overwritten provider account without consuming the event", async () => {
-    const fixture = await pendingConnect();
-    expect((await postWebhook(fixture.event("added"))).status).toBe(200);
-    const initial = await fixture.status();
-    const added = fixture.event("added");
-    server.use(
-      http.get(fixture.accountsUrl, () => {
-        return HttpResponse.json({
-          accounts: [
-            account("other"),
-            { ...account("bank", true), name: "x".repeat(257) },
-            { ...account("bank"), name: "Latest checking" },
-          ],
-        });
-      }),
-    );
-    expect((await postWebhook(added)).status).toBe(500);
-    expect((await fixture.status()).body).toStrictEqual(initial.body);
-    server.use(
-      http.get(fixture.accountsUrl, () => {
-        return HttpResponse.json({
-          accounts: [{ ...account("bank"), name: "Latest checking" }],
-        });
-      }),
-    );
-    expect((await postWebhook(added)).status).toBe(200);
-    expect((await fixture.status()).body.connection?.accounts).toStrictEqual([
-      expect.objectContaining({
-        id: initial.body.connection?.accounts[0]?.id,
-        name: "Latest checking",
-        repairRequired: false,
-      }),
-    ]);
-  });
-
-  it("keeps a grant revoked when an already captured account refresh finishes", async () => {
-    const fixture = await pendingConnect();
-    expect((await postWebhook(fixture.event("added"))).status).toBe(200);
-    const initial = await fixture.status();
-    const accountId = initial.body.connection?.accounts[0]?.id;
-    if (!accountId) {
-      throw new Error("Expected a publicly connected account");
-    }
+  it("banking-webhook-012 keeps a grant revoked when an already captured account refresh finishes", async () => {
+    const member = await bankingMember();
+    await member.startSession();
+    member.provider.accounts = [checking];
+    await member.deliver({ eventType: "added", eventId: "e-added-1" });
+    const accountId = (await member.status()).connection?.accounts[0]?.id ?? "";
     await accept(
-      fixture.client.saveGrant({
-        headers,
+      member.workspace.saveGrant({
+        headers: member.headers,
         body: {
           accountIds: [accountId],
           duration: "7d",
-          purpose: "Review checking account",
+          purpose: "Cash flow summary",
         },
       }),
       [200],
     );
-    const requested = createDeferredPromise<void>(context.signal);
-    const response = createDeferredPromise<void>(context.signal);
-    server.use(
-      http.get(fixture.accountsUrl, async () => {
-        requested.resolve();
-        await response.promise;
-        return HttpResponse.json({
-          accounts: [{ ...account("bank"), name: "Refreshed checking" }],
-        });
-      }),
-    );
-    const refresh = postWebhook(fixture.event("added"));
-    onTestFinished(async () => {
-      if (!response.settled()) {
-        response.resolve();
-      }
-      await refresh;
+
+    const reached = deferred();
+    const release = deferred();
+    member.provider.hold = {
+      reached: reached.resolve,
+      release: release.promise,
+    };
+    const webhook = member.deliver({
+      eventType: "added",
+      eventId: "e-added-2",
     });
-    await requested.promise;
+    await reached.promise;
+
     const revoked = await accept(
-      fixture.client.revokeGrant({
-        headers,
-        body: {},
-      }),
+      member.workspace.revokeGrant({ headers: member.headers, body: {} }),
       [200],
     );
     expect(revoked.body.grant?.status).toBe("revoked");
-    response.resolve();
-    expect((await refresh).status).toBe(200);
-    const refreshed = await fixture.status();
-    expect(refreshed.body.grant).toStrictEqual(revoked.body.grant);
-    expect(refreshed.body.connection?.accounts).toStrictEqual([
+
+    member.provider.accounts = [{ ...checking, name: "Refreshed checking" }];
+    release.resolve();
+    expect((await webhook).status).toBe(200);
+
+    const after = await member.status();
+    expect(after.grant).toMatchObject({
+      status: "revoked",
+      accountIds: [accountId],
+    });
+    expect(after.connection?.accounts).toStrictEqual([
       expect.objectContaining({ id: accountId, name: "Refreshed checking" }),
     ]);
   });
 
-  it("cancels connect when added and done return only unhealthy accounts", async () => {
-    const fixture = await pendingConnect();
-    server.use(
-      http.get(fixture.accountsUrl, () => {
-        return HttpResponse.json({ accounts: [account("bank", true)] });
-      }),
-    );
-    expect((await postWebhook(fixture.event("added"))).status).toBe(200);
-    await flushWaitUntilForTest();
-    context.mocks.ably.publish.mockClear();
-    context.mocks.ably.channelGet.mockClear();
-    expect((await postWebhook(fixture.event("done"))).status).toBe(200);
-    const cancelled = await fixture.status();
-    expect(cancelled.body.session?.status).toBe("cancelled");
-    expect(cancelled.body.connection?.accounts).toStrictEqual([
+  it("banking-webhook-013 cancels connect when added and done return only unhealthy accounts", async () => {
+    const member = await bankingMember();
+    await member.startSession();
+    member.provider.accounts = [{ ...checking, healthy: false }];
+
+    expect(
+      (await member.deliver({ eventType: "added", eventId: "e-added" })).status,
+    ).toBe(200);
+    const before = member.notifications();
+    expect(
+      (await member.deliver({ eventType: "done", eventId: "e-done" })).status,
+    ).toBe(200);
+    expect(member.notifications() - before).toBe(1);
+
+    const after = await member.status();
+    expect(after.session?.status).toBe("cancelled");
+    expect(after.connection?.accounts).toStrictEqual([
       expect.objectContaining({ repairRequired: true }),
     ]);
-    await flushWaitUntilForTest();
-    expect(context.mocks.ably.publish.mock.calls).toStrictEqual([
-      ["bankingAccessChanged", null],
-    ]);
-    expect(context.mocks.ably.channelGet.mock.calls).toStrictEqual([
-      [`user:${fixture.userId}`],
-    ]);
   });
 
-  it("allows retry after provider failure without consuming the event", async () => {
-    const fixture = await pendingConnect();
-    await flushWaitUntilForTest();
-    context.mocks.ably.publish.mockClear();
-    const added = fixture.event("added");
-    server.use(
-      http.get(fixture.accountsUrl, () => {
-        return HttpResponse.json(
-          { message: "Provider unavailable" },
-          { status: 503 },
-        );
-      }),
-    );
-    expect((await postWebhook(added)).status).toBe(500);
-    const failed = await fixture.status();
-    expect(failed.body.session?.status).toBe("pending");
-    expect(failed.body.connection?.accounts).toStrictEqual([]);
-    await flushWaitUntilForTest();
-    expect(context.mocks.ably.publish).not.toHaveBeenCalled();
-    server.use(
-      http.get(fixture.accountsUrl, () => {
-        return HttpResponse.json({ accounts: [account("bank")] });
-      }),
-    );
-    expect((await postWebhook(added)).status).toBe(200);
-    expect((await postWebhook(fixture.event("done"))).status).toBe(200);
-    expect((await fixture.status()).body.session?.status).toBe("completed");
-  });
+  it("banking-webhook-014 allows retry after a provider failure without consuming the event", async () => {
+    const member = await bankingMember();
+    await member.startSession();
+    member.provider.accounts = [checking];
+    member.provider.accountsStatus = 503;
 
-  it("completes a done request captured before added when its provider response arrives later", async () => {
-    const fixture = await pendingConnect();
-    const requested = createDeferredPromise<void>(context.signal);
-    const response = createDeferredPromise<void>(context.signal);
-    let firstRequest = true;
-    server.use(
-      http.get(fixture.accountsUrl, async () => {
-        if (firstRequest) {
-          firstRequest = false;
-          requested.resolve();
-          await response.promise;
-        }
-        return HttpResponse.json({ accounts: [account("bank")] });
-      }),
-    );
-    const done = postWebhook(fixture.event("done"));
-    onTestFinished(async () => {
-      if (!response.settled()) {
-        response.resolve();
-      }
-      await done;
-    });
-    await requested.promise;
-    expect((await postWebhook(fixture.event("added"))).status).toBe(200);
-    expect((await fixture.status()).body.session?.status).toBe("pending");
-    response.resolve();
-    expect((await done).status).toBe(200);
-    expect((await fixture.status()).body.session?.status).toBe("completed");
-  });
-
-  it("does not revive a session when a captured added request arrives after done-only cancellation", async () => {
-    const fixture = await pendingConnect();
-    const requested = createDeferredPromise<void>(context.signal);
-    const response = createDeferredPromise<void>(context.signal);
-    let firstRequest = true;
-    server.use(
-      http.get(fixture.accountsUrl, async () => {
-        if (firstRequest) {
-          firstRequest = false;
-          requested.resolve();
-          await response.promise;
-        }
-        return HttpResponse.json({ accounts: [account("bank")] });
-      }),
-    );
-    const addedEvent = fixture.event("added");
-    const added = postWebhook(addedEvent);
-    onTestFinished(async () => {
-      if (!response.settled()) {
-        response.resolve();
-      }
-      await added;
-    });
-    await requested.promise;
-    expect((await postWebhook(fixture.event("done"))).status).toBe(200);
-    expect((await fixture.status()).body.session?.status).toBe("cancelled");
-    response.resolve();
-    expect((await added).status).toBe(200);
-    expect((await postWebhook(addedEvent)).status).toBe(200);
-    expect((await fixture.status()).body.session?.status).toBe("cancelled");
-  });
-
-  it("keeps concurrent duplicate added callbacks pending until done", async () => {
-    const fixture = await pendingConnect();
-    const added = fixture.event("added");
-    const responses = await Promise.all([
-      postWebhook(added),
-      postWebhook(added),
-    ]);
+    const before = member.notifications();
     expect(
-      responses.map((response) => {
-        return response.status;
-      }),
-    ).toStrictEqual([200, 200]);
-    const pending = await fixture.status();
-    expect(pending.body.session?.status).toBe("pending");
-    expect(pending.body.connection?.accounts).toHaveLength(1);
-    expect((await postWebhook(fixture.event("done"))).status).toBe(200);
-    expect((await fixture.status()).body.session?.status).toBe("completed");
-  });
+      (await member.deliver({ eventType: "added", eventId: "e-added" })).status,
+    ).toBe(500);
+    const failed = await member.status();
+    expect(failed.session?.status).toBe("pending");
+    expect(failed.connection?.accounts).toStrictEqual([]);
+    expect(member.notifications() - before).toBe(0);
 
-  it("completes fix only for a healthy account at its requested institution without requiring added", async () => {
-    const fixture = await pendingConnect();
-    server.use(
-      http.get(fixture.accountsUrl, () => {
-        return HttpResponse.json({
-          accounts: [account("bank", true), account("other")],
-        });
-      }),
-    );
-    expect((await postWebhook(fixture.event("added"))).status).toBe(200);
-    expect((await postWebhook(fixture.event("done"))).status).toBe(200);
-    const repair = await fixture.status();
-    expect(repair.body.connection?.repairInstitutions).toStrictEqual([
-      { institutionLoginId: "bank", institutionName: "bank" },
-    ]);
-    const startFix = async () => {
-      return await accept(
-        fixture.client.createConnectSession({
-          headers,
-          body: {
-            mode: "fix",
-            institutionLoginId: "bank",
-          },
-        }),
-        [200],
-      );
-    };
-    const cancelled = await startFix();
+    member.provider.accountsStatus = 200;
     expect(
-      (await postWebhook(fixture.event("done", cancelled.body.sessionId)))
-        .status,
+      (await member.deliver({ eventType: "added", eventId: "e-added" })).status,
     ).toBe(200);
-    expect((await fixture.status()).body.session).toMatchObject({
+    expect(
+      (await member.deliver({ eventType: "done", eventId: "e-done" })).status,
+    ).toBe(200);
+    expect((await member.status()).session?.status).toBe("completed");
+  });
+
+  it("banking-webhook-018 completes a fix only for a healthy account at its requested institution", async () => {
+    const member = await bankingMember();
+    await member.startSession();
+    const bank: ListedAccount = { ...checking, healthy: false };
+    const other: ListedAccount = {
+      id: "acct-other",
+      name: "Other checking",
+      institutionLoginId: "other",
+      type: "checking",
+      healthy: true,
+    };
+    member.provider.accounts = [bank, other];
+    await member.deliver({ eventType: "added", eventId: "e-added" });
+    await member.deliver({ eventType: "done", eventId: "e-done" });
+    const connected = await member.status();
+    expect(
+      connected.connection?.repairInstitutions.map((institution) => {
+        return institution.institutionLoginId;
+      }),
+    ).toStrictEqual(["bank"]);
+
+    await member.startSession({ mode: "fix", institutionLoginId: "bank" });
+    await member.deliver({ eventType: "done", eventId: "e-fix-1" });
+    expect((await member.status()).session).toMatchObject({
       mode: "fix",
       status: "cancelled",
     });
 
-    const repaired = await startFix();
-    await flushWaitUntilForTest();
-    context.mocks.ably.publish.mockClear();
-    context.mocks.ably.channelGet.mockClear();
-    server.use(
-      http.get(fixture.accountsUrl, () => {
-        return HttpResponse.json({
-          accounts: [account("bank"), account("other")],
-        });
-      }),
-    );
+    await member.startSession({ mode: "fix", institutionLoginId: "bank" });
+    member.provider.accounts = [{ ...bank, healthy: true }, other];
+    const before = member.notifications();
     expect(
-      (await postWebhook(fixture.event("done", repaired.body.sessionId)))
-        .status,
+      (await member.deliver({ eventType: "done", eventId: "e-fix-2" })).status,
     ).toBe(200);
-    const completed = await fixture.status();
-    expect(completed.body.session).toMatchObject({
-      id: repaired.body.sessionId,
-      mode: "fix",
-      status: "completed",
-    });
-    expect(completed.body.connection?.repairInstitutions).toStrictEqual([]);
-    await flushWaitUntilForTest();
-    expect(context.mocks.ably.publish.mock.calls).toStrictEqual([
-      ["bankingAccessChanged", null],
-    ]);
-    expect(context.mocks.ably.channelGet.mock.calls).toStrictEqual([
-      [`user:${fixture.userId}`],
-    ]);
+    expect(member.notifications() - before).toBe(1);
+    const fixed = await member.status();
+    expect(fixed.session).toMatchObject({ mode: "fix", status: "completed" });
+    expect(fixed.connection?.repairInstitutions).toStrictEqual([]);
   });
 
-  it("rejects malformed signed events and ignores wrong customer correlation", async () => {
-    const fixture = await pendingConnect();
+  it("banking-webhook-019 ignores a signed event correlated with another customer", async () => {
+    const member = await bankingMember();
+    await member.startSession();
+    member.provider.accounts = [checking];
+
+    const response = await member.deliver({
+      eventType: "added",
+      eventId: "e-other-customer",
+      customerId: `cust-${randomUUID()}`,
+    });
+
+    expect(response.status).toBe(200);
+    const after = await member.status();
+    expect(after.session?.status).toBe("pending");
+    expect(after.connection?.accounts).toStrictEqual([]);
+  });
+
+  it("banking-webhook-001 notifies only the owner through connect, webhook updates and grant changes", async () => {
+    const member = await bankingMember();
+    await member.startSession();
+    member.provider.accounts = [checking];
+
+    let before = member.notifications();
+    const started = await member.startSession();
+    expect(member.notifications() - before).toBe(1);
+    expect((await member.status()).session).toMatchObject({
+      id: started.body.sessionId,
+      status: "pending",
+    });
+
+    before = member.notifications();
     expect(
-      (
-        await postWebhook({
-          ...fixture.event("added"),
-          customerId: "another-customer",
-        })
-      ).status,
+      (await member.deliver({ eventType: "added", eventId: "e-added" })).status,
     ).toBe(200);
-    const unchanged = await fixture.status();
-    expect(unchanged.body.session?.status).toBe("pending");
-    expect(unchanged.body.connection?.accounts).toStrictEqual([]);
+    expect(member.notifications() - before).toBe(1);
+    const afterAdded = await member.status();
+    expect(afterAdded.connection?.accounts).toHaveLength(1);
+    const accountId = afterAdded.connection?.accounts[0]?.id ?? "";
+
+    before = member.notifications();
+    expect(
+      (await member.deliver({ eventType: "done", eventId: "e-done" })).status,
+    ).toBe(200);
+    expect(member.notifications() - before).toBe(1);
+    expect((await member.status()).session?.status).toBe("completed");
+
+    before = member.notifications();
+    expect(
+      (await member.deliver({ eventType: "done", eventId: "e-done" })).status,
+    ).toBe(200);
+    expect(member.notifications() - before).toBe(0);
+
+    const grantBody = {
+      accountIds: [accountId],
+      duration: "7d" as const,
+      purpose: "Monthly budget review",
+    };
+    before = member.notifications();
+    const saved = await accept(
+      member.workspace.saveGrant({ headers: member.headers, body: grantBody }),
+      [200],
+    );
+    expect(saved.body.grant?.status).toBe("active");
+    expect(member.notifications() - before).toBe(1);
+
+    before = member.notifications();
+    const revoked = await accept(
+      member.workspace.revokeGrant({ headers: member.headers, body: {} }),
+      [200],
+    );
+    expect(revoked.body.grant?.status).toBe("revoked");
+    expect(member.notifications() - before).toBe(1);
+
+    context.mocks.ably.publish.mockRejectedValueOnce(
+      new Error("Ably unavailable"),
+    );
+    before = member.notifications();
+    const resaved = await accept(
+      member.workspace.saveGrant({ headers: member.headers, body: grantBody }),
+      [200],
+    );
+    expect(resaved.body.grant?.status).toBe("active");
+    expect(member.notifications() - before).toBe(1);
+    expect(new Set(channelsPublishedTo(context.mocks, TOPIC))).toStrictEqual(
+      new Set([member.ownerChannel]),
+    );
   });
 });

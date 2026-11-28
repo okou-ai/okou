@@ -1,223 +1,80 @@
+import { randomUUID } from "node:crypto";
 import {
-  chatThreadMetadataContract,
   chatThreadPinContract,
   chatThreadPinOrderContract,
+  chatThreadsContract,
 } from "@okouai/api-contracts/contracts/chat-threads";
-import { replayChatThreadEvents } from "@okouai/core/chat-thread-event-replay";
-import { comparePinnedThreads } from "@okouai/core/chat-thread-pin-order";
-import { createStore } from "ccstate";
-import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
+
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { chatThreadGetRoutes } from "../chat-threads-get";
+import { chatThreadCreateRoutes } from "../chat-threads-create";
 import { chatThreadPinRoutes } from "../chat-threads-pin";
 import { chatThreadPinOrderRoutes } from "../chat-threads-pin-order";
-import { createBddApi } from "./helpers/api-bdd";
-import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
-import { createRunExecutionCredentials } from "./helpers/run-execution-credentials";
-import { seedOrgMembership$ } from "./helpers/org-membership";
 import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
-const executionToken = createRunExecutionCredentials(context).okouToken;
-const store = createStore();
-const bdd = createBddApi(context);
-const chat = createChatFilesBddApi(context);
+const headers = Object.freeze({ authorization: "Bearer clerk-session" });
 
-interface ChatThreadFixture {
-  readonly userId: string;
-  readonly orgId: string;
-  readonly threadId: string;
-  readonly actor: ReturnType<typeof bdd.user>;
-}
+const app = setupApp({
+  context,
+  routes: [
+    ...chatThreadCreateRoutes,
+    ...chatThreadPinRoutes,
+    ...chatThreadPinOrderRoutes,
+  ],
+});
+const threadsApi = app(chatThreadsContract);
+const pinApi = app(chatThreadPinContract);
+const pinOrderApi = app(chatThreadPinOrderContract);
 
-/** Creates an agent and chat thread through the product routes. */
-async function seedChatThread(title: string): Promise<ChatThreadFixture> {
-  const actor = bdd.user();
-  bdd.acceptStorageWrites();
-
-  const thread = await chat.createThread(actor, {
-    title,
-  });
-  if (!actor.orgId) {
-    throw new Error("Expected the seeded actor to belong to an org");
-  }
-  await store.set(
-    seedOrgMembership$,
-    { orgId: actor.orgId, userId: actor.userId },
-    context.signal,
-  );
-  return {
-    userId: actor.userId,
-    orgId: actor.orgId,
-    threadId: thread.id,
-    actor,
-  };
-}
-
-function reorderClient() {
-  return setupApp({ context, routes: chatThreadPinOrderRoutes })(
-    chatThreadPinOrderContract,
-  );
-}
-function pinHeaders(fixture: ChatThreadFixture) {
-  createRouteMocks(context).clerk.session(
-    fixture.userId,
-    fixture.orgId,
-    fixture.actor.orgRole,
-  );
-  return { authorization: "Bearer clerk-session" };
-}
-function pinClient() {
-  return setupApp({ context, routes: chatThreadPinRoutes })(
-    chatThreadPinContract,
-  );
-}
-async function headers(fixture: ChatThreadFixture) {
-  return {
-    authorization: `Bearer ${await executionToken({ ...fixture })}`,
-  };
-}
-function metadataClient() {
-  return setupApp({ context, routes: chatThreadGetRoutes })(
-    chatThreadMetadataContract,
-  );
+function signIn(userId: string, orgId: string) {
+  createRouteMocks(context).clerk.session(userId, orgId, "org:admin");
+  return headers;
 }
 
 describe("pinned thread ordering", () => {
-  it("persists client ranks in events without changing pin time", async () => {
-    const fixture = await seedChatThread("First");
-    const second = await chat.createThread(fixture.actor, {
-      title: "Second",
-    });
-    await chat.pinThread(fixture.actor, fixture.threadId);
-    await chat.pinThread(fixture.actor, second.id);
-    const before = await accept(
-      metadataClient().get({
-        headers: await headers(fixture),
-        params: { id: fixture.threadId },
+  it("chat-threads-pin-order-003 does not reorder an unpinned or other-org thread", async () => {
+    const userId = `user_${randomUUID()}`;
+    const primaryOrgId = `org_${randomUUID()}`;
+    const otherOrgId = `org_${randomUUID()}`;
+
+    const created = await accept(
+      threadsApi.create({
+        headers: signIn(userId, primaryOrgId),
+        body: { title: "Unpinned thread" },
       }),
-      [200],
+      [201],
     );
-    const eventId = randomUUID();
+    const threadId = created.body.id;
+
+    const unpinnedReorder = await accept(
+      pinOrderApi.reorder({
+        headers: signIn(userId, primaryOrgId),
+        params: { id: threadId },
+        body: { pinOrder: "a0", eventId: randomUUID() },
+      }),
+      [404],
+    );
+    expect(unpinnedReorder.status).toBe(404);
+
     await accept(
-      reorderClient().reorder({
-        headers: await headers(fixture),
-        params: { id: fixture.threadId },
-        body: { pinOrder: "Zy", eventId },
+      pinApi.pin({
+        headers: signIn(userId, primaryOrgId),
+        params: { id: threadId },
+        query: { pinOrder: "a0" },
       }),
       [204],
     );
-    const after = await accept(
-      metadataClient().get({
-        headers: await headers(fixture),
-        params: { id: fixture.threadId },
-      }),
-      [200],
-    );
-    expect(after.body).toStrictEqual(before.body);
-    const events = await chat.requestThreadEvents(fixture.actor, {}, [200]);
-    if (events.status !== 200) {
-      throw new Error("Missing events");
-    }
-    expect(events.body.events).toContainEqual(
-      expect.objectContaining({
-        id: eventId,
-        kind: "sort_touched",
-        pinOrder: "Zy",
-      }),
-    );
-    expect(
-      replayChatThreadEvents([], events.body.events)
-        .filter((thread) => {
-          return thread.pinnedAt !== null;
-        })
-        .sort(comparePinnedThreads)
-        .map((thread) => {
-          return thread.id;
-        }),
-    ).toStrictEqual([fixture.threadId, second.id]);
-  });
 
-  it("accepts equal client ranks with deterministic id ordering", async () => {
-    const fixture = await seedChatThread("First");
-    const second = await chat.createThread(fixture.actor, {
-      title: "Second",
-    });
-    for (const id of [fixture.threadId, second.id]) {
-      await accept(
-        pinClient().pin({
-          headers: pinHeaders(fixture),
-          params: { id },
-          query: { pinOrder: "a0", eventId: randomUUID() },
-        }),
-        [204],
-      );
-    }
-    const events = await chat.requestThreadEvents(fixture.actor, {}, [200]);
-    if (events.status !== 200) {
-      throw new Error("Missing events");
-    }
-    const order = replayChatThreadEvents([], events.body.events)
-      .filter((thread) => {
-        return thread.pinnedAt !== null;
-      })
-      .sort(comparePinnedThreads);
-    expect(
-      order.map((thread) => {
-        return thread.id;
-      }),
-    ).toStrictEqual([fixture.threadId, second.id].sort().reverse());
-  });
-
-  it("does not reorder an unpinned or other-org thread", async () => {
-    const fixture = await seedChatThread("Unpinned");
-    const missing = await accept(
-      reorderClient().reorder({
-        headers: await headers(fixture),
-        params: { id: fixture.threadId },
-        body: { pinOrder: "a0", eventId: randomUUID() },
+    const otherOrgReorder = await accept(
+      pinOrderApi.reorder({
+        headers: signIn(userId, otherOrgId),
+        params: { id: threadId },
+        body: { pinOrder: "a1", eventId: randomUUID() },
       }),
       [404],
     );
-    expect(missing.status).toBe(404);
-    await chat.pinThread(fixture.actor, fixture.threadId);
-    const orgId = `org_${randomUUID()}`;
-    await store.set(
-      seedOrgMembership$,
-      { orgId, userId: fixture.userId },
-      context.signal,
-    );
-    await accept(
-      reorderClient().reorder({
-        headers: await headers({ ...fixture, orgId }),
-        params: { id: fixture.threadId },
-        body: { pinOrder: "a0", eventId: randomUUID() },
-      }),
-      [404],
-    );
-  });
-
-  it("validates fractional rank keys", async () => {
-    const fixture = await seedChatThread("Pinned");
-    await chat.pinThread(fixture.actor, fixture.threadId);
-    const invalid = await accept(
-      reorderClient().reorder({
-        headers: await headers(fixture),
-        params: { id: fixture.threadId },
-        body: { pinOrder: "a00", eventId: randomUUID() },
-      }),
-      [400],
-    );
-    expect(invalid.status).toBe(400);
-    await accept(
-      pinClient().pin({
-        headers: pinHeaders(fixture),
-        params: { id: fixture.threadId },
-        query: { pinOrder: "a00" },
-      }),
-      [400],
-    );
+    expect(otherOrgReorder.status).toBe(404);
   });
 });

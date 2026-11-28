@@ -1,1383 +1,754 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
-import { mockNow, now } from "../../../lib/time";
-import { expect, test } from "vitest";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { artifactAccessContract } from "@okouai/api-contracts/contracts/artifact-access";
-import { authContract } from "@okouai/api-contracts/contracts/auth";
-import { authMeRoutes } from "../auth-me";
-import { hostContract } from "@okouai/api-contracts/contracts/host";
 import { artifactOgContract } from "@okouai/api-contracts/contracts/artifact-og";
-import { setupAppWithRoutes } from "../../../__tests__/test-app";
+import { hostContract } from "@okouai/api-contracts/contracts/host";
+import type { HostedSiteVisibility } from "@okouai/api-contracts/contracts/hosted-site-access";
+import { describe, expect, it } from "vitest";
+
+import { setupApp } from "../../../__tests__/test-helpers";
 import { accept, testContext } from "../../../__tests__/test-context";
+import { mockNow } from "../../../lib/time";
 import { artifactAccessRoutes } from "../artifact-access";
-import { hostRoutes } from "../host";
 import { artifactOgRoutes } from "../artifact-og";
+import { hostRoutes } from "../host";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createHostBddApi } from "./helpers/api-bdd-host";
-import { hostedTextFile } from "./helpers/api-bdd-host-files";
-import { mockClerkUsers } from "./helpers/clerk-users";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
+import { publicPlanLifecycle } from "./helpers/public-plan-lifecycle";
 import { createRouteMocks } from "./helpers/route-test";
-import { createRunsApi } from "./helpers/api-bdd-runs";
 
 const context = testContext();
-const headers = { authorization: "Bearer clerk-session" } as const;
+const bdd = createBddApi(context);
+const host = createHostBddApi(context);
 
-function setupActor(user?: ApiTestUser) {
-  if (user) {
-    createRouteMocks(context).clerk.session(
-      user.userId,
-      user.orgId,
-      user.orgRole,
-    );
-    context.mocks.clerk.authenticateRequest.mockImplementation((request) => {
-      return Promise.resolve({
-        isAuthenticated:
-          request instanceof Request &&
-          request.headers.get("Authorization") === headers.authorization,
-        toAuth: () => {
-          return {
-            userId: user.userId,
-            orgId: user.orgId,
-            orgRole: user.orgRole,
-            sessionId: `sess_${user.userId}`,
-          };
-        },
-      });
-    });
-    context.mocks.clerk.sessions.getSession.mockImplementation((sessionId) => {
-      return Promise.resolve({
-        id: sessionId,
-        userId: user.userId,
-        status: "active",
-        expireAt: now() + 86_400_000,
-      });
-    });
-  }
+function hostApi() {
+  return setupApp({ context, routes: hostRoutes })(hostContract);
 }
 
-function client(user?: ApiTestUser) {
-  setupActor(user);
-  return setupAppWithRoutes({
-    context,
-    routes: [...hostRoutes, ...artifactAccessRoutes],
-    baseUrl: "https://api.okou.ai",
-  })(hostContract);
-}
-
-function accessClient(user: ApiTestUser) {
-  setupActor(user);
-  return setupAppWithRoutes({
-    context,
-    routes: [...hostRoutes, ...artifactAccessRoutes],
-    baseUrl: "https://api.okou.ai",
-  })(artifactAccessContract);
-}
-
-test.each([
-  [undefined, "private"],
-  ["private", "private"],
-  ["organization", "organization"],
-  ["public", "public"],
-] as const)(
-  "creation establishes %s visibility",
-  async (visibility, expected) => {
-    const owner = createBddApi(context).user();
-    const api = createHostBddApi(context);
-    api.captureHostedSitesS3();
-    const prepared = await api.prepareHostedSite(owner, {
-      site: `private-${randomUUID().slice(0, 8)}`,
-      title: "Private",
-      artifactKind: "hosted-site",
-      spaFallback: false,
-      ...(visibility === undefined ? {} : { visibility }),
-      files: [hostedTextFile("/index.html", "<p>Private by default</p>")],
-    });
-    expect(prepared.visibility).toBe(expected);
-    const request = {
-      params: { siteId: prepared.siteId },
-      query: { origin: `https://${prepared.publicSlug}.okou.app` },
-    };
-    expect(
-      (await accept(client().siteAccess(request), [200])).body.decision,
-    ).toBe(expected === "public" ? "allow" : "authenticate");
-    await api.completeHostedSite(owner, prepared.deploymentId);
-    const policy = await accept(
-      accessClient(owner).getVisibility({
-        headers,
-        params: { artifactId: prepared.siteId },
-      }),
-      [200],
-    );
-    expect(policy.body.visibility).toBe(expected);
-    const changed = await accept(
-      accessClient(owner).updateVisibility({
-        headers,
-        params: { artifactId: prepared.siteId },
-        body: { visibility: "public" },
-      }),
-      [200],
-    );
-    expect(changed.body.visibility).toBe("public");
-  },
-);
-
-test("redeployments preserve an existing public site's visibility", async () => {
-  const { owner, api, input } = await publish();
-  const next = await api.prepareHostedSite(owner, input);
-  expect(next.visibility).toBe("public");
-  await api.completeHostedSite(owner, next.deploymentId);
-  const access = await accept(
-    client().siteAccess({
-      params: { siteId: next.siteId },
-      query: { origin: `https://${next.publicSlug}.okou.app` },
-    }),
-    [200],
+function signIn(actor: ApiTestUser) {
+  createRouteMocks(context).clerk.session(
+    actor.userId,
+    actor.orgId,
+    actor.orgRole,
   );
-  expect(access.body.decision).toBe("allow");
-});
+  return { authorization: "Bearer clerk-session" };
+}
 
-test("an explicitly private redeployment restricts the site before new bytes are uploaded", async () => {
-  const { owner, api, input, prepared, request } = await publish();
-  const next = await api.prepareHostedSite(owner, {
-    ...input,
-    visibility: "private",
+/** A real App browser session: Clerk reports a live session id for the user. */
+function signInWithAppSession(actor: ApiTestUser) {
+  const sessionId = `sess_${actor.userId}`;
+  context.mocks.clerk.authenticateRequest.mockResolvedValue({
+    isAuthenticated: true,
+    toAuth: () => {
+      return {
+        userId: actor.userId,
+        orgId: actor.orgId,
+        orgRole: actor.orgRole,
+        sessionId,
+      };
+    },
   });
-  expect(next.visibility).toBe("private");
-  expect(
-    (await accept(client().deliveryAuthorization(request), [200])).body
-      .decision,
-  ).toBe("authenticate");
-  await api.completeHostedSite(owner, next.deploymentId);
-  expect(
-    (await accept(client().deliveryAuthorization(request), [200])).body
-      .decision,
-  ).toBe("deny");
-  const pinned = {
-    ...request,
-    query: { ...request.query, alias: `dpl-${prepared.deploymentId}` },
-  };
-  expect(
-    (await accept(client().deliveryAuthorization(pinned), [200])).body.decision,
-  ).toBe("authenticate");
-});
+  context.mocks.clerk.sessions.getSession.mockImplementation((id) => {
+    return Promise.resolve({
+      id,
+      userId: String(id).slice("sess_".length),
+      status: "active",
+      expireAt: Date.parse("2100-01-01T00:00:00Z"),
+    });
+  });
+  return { authorization: "Bearer clerk-session" };
+}
 
-async function publish(
-  artifactKind: "hosted-site" | "presentation-html" = "hosted-site",
-) {
-  const owner = createBddApi(context).user();
-  if (!owner.orgId) {
-    throw new Error("Expected an organization for hosted site owner");
-  }
-  const api = createHostBddApi(context);
-  api.captureHostedSitesS3();
-  const site = `access-${randomUUID().slice(0, 8)}`;
-  const input = {
-    site,
-    title: site,
-    artifactKind,
-    spaFallback: false,
-    files: [hostedTextFile("/index.html", "<p>protected report</p>")],
-  };
-  const prepared = await api.prepareHostedSite(owner, {
-    ...input,
-    visibility: "public",
+function anonymous() {
+  context.mocks.clerk.authenticateRequest.mockResolvedValue({
+    isAuthenticated: false,
   });
-  await api.completeHostedSite(owner, prepared.deploymentId);
-  const policy = await accept(
-    accessClient(owner).getVisibility({
-      headers,
-      params: { artifactId: prepared.siteId },
-    }),
-    [200],
-  );
-  const prefix = `sites/brands/okou/publications/${prepared.deploymentId}`;
+  return {};
+}
+
+function htmlFile(content: string) {
   return {
-    owner: { ...owner, orgId: owner.orgId },
-    api,
-    input,
-    prepared,
-    artifactId: policy.body.artifactId,
-    request: {
-      params: { siteId: prepared.siteId, deploymentId: prepared.deploymentId },
-      query: {
-        alias: prepared.publicSlug,
-        publicSlug: prepared.publicSlug,
-        publicBrand: "okou" as const,
-        prefix,
-        manifestKey: `${prefix}/manifest.json`,
-      },
-    },
+    path: "/index.html",
+    size: Buffer.byteLength(content),
+    sha256: createHash("sha256").update(content).digest("hex"),
+    contentType: "text/html; charset=utf-8",
   };
 }
 
-test("site banners default on and persist independently of visibility and redeployment", async () => {
-  const { owner, api, input, prepared, artifactId, request } = await publish();
-  await createRunsApi(context).grantProEntitlement(owner);
-  const delivery = {
-    ...request,
-    query: { ...request.query, presentation: "banner" as const },
-  };
-  const initial = await accept(
-    client(owner).siteBanner({ headers, params: { siteId: prepared.siteId } }),
-    [200],
-  );
-  expect(initial.body).toStrictEqual({
-    siteId: prepared.siteId,
-    showBanner: true,
-    revision: null,
+interface Storage {
+  readonly puts: readonly { readonly key: string; readonly body: string }[];
+}
+
+interface Published {
+  readonly siteId: string;
+  readonly deploymentId: string;
+  readonly publicSlug: string;
+  readonly site: string;
+  readonly visibility: HostedSiteVisibility | undefined;
+}
+
+async function publishSite(
+  owner: ApiTestUser,
+  options: {
+    readonly site?: string;
+    readonly visibility?: HostedSiteVisibility;
+    readonly content?: string;
+  } = {},
+): Promise<Published> {
+  const site = options.site ?? `site-${randomUUID().slice(0, 8)}`;
+  const prepared = await host.prepareHostedSite(owner, {
+    site,
+    title: "Hosted page",
+    ...(options.visibility ? { visibility: options.visibility } : {}),
+    artifactKind: "hosted-site",
+    spaFallback: false,
+    files: [htmlFile(options.content ?? "<h1>Hello</h1>")],
   });
-  const shown = (await accept(client().deliveryAuthorization(delivery), [200]))
-    .body;
-  expect(shown).toMatchObject({
-    allowed: true,
-    presentation: {
-      showBanner: true,
-      siteUrl: `https://${prepared.publicSlug}.okou.app/`,
+  await host.completeHostedSite(owner, prepared.deploymentId);
+  return {
+    siteId: prepared.siteId,
+    deploymentId: prepared.deploymentId,
+    publicSlug: prepared.publicSlug,
+    site,
+    visibility: prepared.visibility,
+  };
+}
+
+/** The delivery pointer the Worker reads from hosted-sites storage. */
+function deliveryPointer(storage: Storage, deploymentId: string) {
+  for (const put of storage.puts) {
+    if (!put.key.endsWith(".json")) {
+      continue;
+    }
+    const parsed: unknown = JSON.parse(put.body);
+    if (
+      typeof parsed === "object" &&
+      parsed !== null &&
+      "deploymentId" in parsed &&
+      parsed.deploymentId === deploymentId &&
+      "prefix" in parsed &&
+      typeof parsed.prefix === "string" &&
+      "manifestKey" in parsed &&
+      typeof parsed.manifestKey === "string" &&
+      "publicSlug" in parsed &&
+      typeof parsed.publicSlug === "string"
+    ) {
+      return {
+        prefix: parsed.prefix,
+        manifestKey: parsed.manifestKey,
+        publicSlug: parsed.publicSlug,
+      };
+    }
+  }
+  throw new Error(`Expected a delivery pointer for ${deploymentId}`);
+}
+
+interface DeliveryOptions {
+  readonly alias?: string;
+  readonly deploymentId?: string;
+  readonly presentation?: "banner";
+  readonly publicBrand?: "okou" | "vm0";
+  readonly sessionToken?: string;
+}
+
+function deliveryRequest(
+  storage: Storage,
+  site: Published,
+  options: DeliveryOptions = {},
+) {
+  const deploymentId = options.deploymentId ?? site.deploymentId;
+  const pointer = deliveryPointer(storage, deploymentId);
+  return hostApi().deliveryAuthorization({
+    headers: options.sessionToken
+      ? (anonymous(), { authorization: `Bearer ${options.sessionToken}` })
+      : anonymous(),
+    params: { siteId: site.siteId, deploymentId },
+    query: {
+      alias: options.alias ?? site.publicSlug,
+      publicSlug: pointer.publicSlug,
+      publicBrand: options.publicBrand ?? "okou",
+      prefix: pointer.prefix,
+      manifestKey: pointer.manifestKey,
+      ...(options.presentation ? { presentation: options.presentation } : {}),
     },
   });
-  const hidden = await accept(
-    client(owner).updateSiteBanner({
-      headers,
-      params: { siteId: prepared.siteId },
-      body: { showBanner: false, expectedRevision: null },
-    }),
-    [200],
-  );
-  expect(hidden.body.showBanner).toBeFalsy();
-  expect(hidden.body.revision).not.toBeNull();
-  await accept(
-    client(owner).updateSiteBanner({
-      headers,
-      params: { siteId: prepared.siteId },
-      body: { showBanner: true, expectedRevision: null },
-    }),
-    [409],
-  );
-  const policy = await accept(
-    accessClient(owner).getVisibility({
-      headers,
-      params: { artifactId },
-    }),
-    [200],
-  );
-  expect(policy.body.visibility).toBe("public");
-  for (const alias of [prepared.publicSlug, `dpl-${prepared.deploymentId}`]) {
-    const result = (
-      await accept(
-        client().deliveryAuthorization({
-          ...delivery,
-          query: { ...delivery.query, alias },
-        }),
-        [200],
-      )
-    ).body;
-    expect(result).toMatchObject({
-      allowed: true,
-      presentation: { showBanner: false },
-    });
-  }
-  const redeployed = await api.prepareHostedSite(owner, input);
-  await api.completeHostedSite(owner, redeployed.deploymentId);
-  expect(
-    (
-      await accept(
-        client(owner).siteBanner({
-          headers,
-          params: { siteId: prepared.siteId },
-        }),
-        [200],
-      )
-    ).body,
-  ).toStrictEqual(hidden.body);
-});
+}
 
-test("banner management requires ownership without revealing restricted metadata", async () => {
-  const { owner, prepared, request } = await publish();
-  const params = { siteId: prepared.siteId };
-  const other = createBddApi(context).user({ orgId: owner.orgId });
-  await accept(client(other).siteBanner({ headers, params }), [404]);
-  await accept(
-    client(other).updateSiteBanner({
-      headers,
-      params,
-      body: { showBanner: false, expectedRevision: null },
-    }),
-    [404],
-  );
-  await accept(
-    accessClient(owner).updateVisibility({
-      headers,
-      params: { artifactId: prepared.siteId },
-      body: { visibility: "private" },
-    }),
-    [200],
-  );
-  const denied = (
-    await accept(
-      client().deliveryAuthorization({
-        ...request,
-        query: { ...request.query, presentation: "banner" },
-      }),
-      [200],
-    )
-  ).body;
-  expect(denied).toStrictEqual({ allowed: false, decision: "authenticate" });
-  expect(
-    (await accept(client().deliveryAuthorization(request), [200])).body
-      .decision,
-  ).toBe("authenticate");
-});
-
-async function authorizeBrowser(
-  user: ApiTestUser,
-  siteId: string,
-  origin: string,
+async function deliveryDecision(
+  storage: Storage,
+  site: Published,
+  options: DeliveryOptions = {},
 ) {
-  const verifier = randomBytes(32).toString("base64url");
-  const state = randomBytes(32).toString("base64url");
-  const result = await accept(
-    client(user).authorizeSiteSession({
-      headers,
-      params: { siteId },
-      body: {
-        origin,
-        state,
-        codeChallenge: createHash("sha256")
-          .update(verifier)
-          .digest("base64url"),
-      },
+  const response = await accept(deliveryRequest(storage, site, options), [200]);
+  return response.body;
+}
+
+async function proOwner() {
+  const owner = bdd.user();
+  await publicPlanLifecycle(context, owner, "pro").update("active");
+  return owner;
+}
+
+/** The owner's download URL for `/index.html` of an immutable deployment. */
+async function indexDownloadUrl(owner: ApiTestUser, deploymentId: string) {
+  const listed = await host.readHostedSiteFiles(owner, `dpl-${deploymentId}`);
+  const index = listed.files.find((file) => {
+    return file.path === "/index.html";
+  });
+  if (!index) {
+    throw new Error("Expected /index.html in the listed files");
+  }
+  return new URL(index.downloadUrl);
+}
+
+async function redeemDownload(
+  downloadUrl: URL,
+  deploymentId: string,
+  path = "/index.html",
+) {
+  const token = downloadUrl.pathname.split("/").at(-1) ?? "";
+  const response = await accept(
+    hostApi().downloadAuthorization({
+      params: { token },
+      query: { deploymentId, path },
     }),
     [200],
   );
-  const callback = new URL(result.body.callbackUrl);
+  return response.body.file;
+}
+
+function clerkLists(orgId: string, members: readonly string[]) {
+  context.mocks.clerk.organizations.getOrganizationMembershipList.mockResolvedValue(
+    {
+      data: members.map((userId) => {
+        return {
+          role: "org:member",
+          organization: { id: orgId },
+          publicUserData: { userId },
+        };
+      }),
+      totalCount: members.length,
+    },
+  );
+}
+
+async function anonymousAccess(site: Published) {
+  const response = await accept(
+    hostApi().siteAccess({
+      headers: anonymous(),
+      params: { siteId: site.siteId },
+      query: { origin: `https://${site.publicSlug}.okou.app` },
+    }),
+    [200],
+  );
+  return response.body;
+}
+
+function accessApi() {
+  return setupApp({ context, routes: artifactAccessRoutes })(
+    artifactAccessContract,
+  );
+}
+
+async function readVisibility(owner: ApiTestUser, siteId: string) {
+  const response = await accept(
+    accessApi().getVisibility({
+      headers: signIn(owner),
+      params: { artifactId: siteId },
+    }),
+    [200],
+  );
+  return response.body;
+}
+
+async function setVisibility(
+  owner: ApiTestUser,
+  siteId: string,
+  visibility: HostedSiteVisibility,
+) {
+  const response = await accept(
+    accessApi().updateVisibility({
+      headers: signIn(owner),
+      params: { artifactId: siteId },
+      body: { visibility },
+    }),
+    [200],
+  );
+  return response.body;
+}
+
+async function makePrivate(owner: ApiTestUser, siteId: string) {
+  return await setVisibility(owner, siteId, "private");
+}
+
+function pkce() {
+  const verifier = randomBytes(32).toString("base64url");
+  return {
+    verifier,
+    challenge: createHash("sha256").update(verifier).digest("base64url"),
+    state: randomBytes(32).toString("base64url"),
+  };
+}
+
+async function authorizationCode(viewer: ApiTestUser, site: Published) {
+  const proof = pkce();
+  const origin = `https://${site.publicSlug}.okou.app`;
+  const authorized = await accept(
+    hostApi().authorizeSiteSession({
+      headers: signInWithAppSession(viewer),
+      params: { siteId: site.siteId },
+      body: { origin, codeChallenge: proof.challenge, state: proof.state },
+    }),
+    [200],
+  );
+  const callback = new URL(authorized.body.callbackUrl);
   expect(callback.origin).toBe(origin);
   expect(callback.pathname).toBe("/.okou/auth/callback");
-  expect(callback.searchParams.get("state")).toBe(state);
+  expect(callback.searchParams.get("state")).toBe(proof.state);
   return {
+    code: callback.searchParams.get("code") ?? "",
     origin,
-    code: callback.searchParams.get("code")!,
-    codeVerifier: verifier,
+    verifier: proof.verifier,
   };
 }
 
-async function browserHeaders(
-  user: ApiTestUser,
-  siteId: string,
-  origin: string,
-) {
-  const body = await authorizeBrowser(user, siteId, origin);
+async function siteSession(viewer: ApiTestUser, site: Published) {
+  const grant = await authorizationCode(viewer, site);
   const exchanged = await accept(
-    client().exchangeSiteSession({ params: { siteId }, body }),
+    hostApi().exchangeSiteSession({
+      headers: anonymous(),
+      params: { siteId: site.siteId },
+      body: {
+        origin: grant.origin,
+        code: grant.code,
+        codeVerifier: grant.verifier,
+      },
+    }),
     [200],
   );
   expect(exchanged.body.sessionToken).toMatch(/^okou_site_[a-f0-9]{64}$/u);
-  return { authorization: `Bearer ${exchanged.body.sessionToken}` };
+  return exchanged.body.sessionToken;
 }
 
-test("explicitly public creation ignores stale credentials before Clerk is called", async () => {
-  const { owner, prepared } = await publish();
-  const status = await accept(
-    accessClient(owner).getVisibility({
-      headers,
-      params: { artifactId: prepared.siteId },
-    }),
-    [200],
-  );
-  expect(status.body.visibility).toBe("public");
-  context.mocks.clerk.authenticateRequest.mockRejectedValue(
-    new Error("Clerk unavailable"),
-  );
-  const response = await accept(
-    client().deliveryAuthorization({
-      params: { siteId: prepared.siteId, deploymentId: prepared.deploymentId },
-      query: {
-        alias: prepared.publicSlug,
-        publicSlug: prepared.publicSlug,
-        publicBrand: "okou",
-        prefix: `sites/brands/okou/publications/${prepared.deploymentId}`,
-        manifestKey: `sites/brands/okou/publications/${prepared.deploymentId}/manifest.json`,
-      },
-      headers: { authorization: "Bearer expired" },
-    }),
-    [200],
-  );
-  expect(response.body).toStrictEqual({ allowed: true, decision: "allow" });
-});
+describe("hosted site access", () => {
+  it("hosted-site-access-001 creates a private site when visibility is omitted", async () => {
+    host.captureHostedSitesS3();
+    const member = bdd.user();
+    const prepared = await host.prepareHostedSite(member, {
+      site: `site-${randomUUID().slice(0, 8)}`,
+      title: "Hosted page",
+      artifactKind: "hosted-site",
+      spaFallback: false,
+      files: [htmlFile("<h1>Hello</h1>")],
+    });
+    expect(prepared.visibility).toBe("private");
+    const site = {
+      siteId: prepared.siteId,
+      deploymentId: prepared.deploymentId,
+      publicSlug: prepared.publicSlug,
+      site: "",
+      visibility: prepared.visibility,
+    };
+    await expect(anonymousAccess(site)).resolves.toMatchObject({
+      decision: "authenticate",
+    });
+    await host.completeHostedSite(member, prepared.deploymentId);
 
-test("only the owner changes visibility and updates apply consistently", async () => {
-  const { owner, prepared, artifactId, request } = await publish();
-  const other = createBddApi(context).user();
-  const origin = `https://${prepared.publicSlug}.okou.app`;
-  const otherSession = await browserHeaders(other, prepared.siteId, origin);
-  const ownerSession = await browserHeaders(owner, prepared.siteId, origin);
-  await accept(
-    accessClient(other).updateVisibility({
-      headers,
-      params: { artifactId },
-      body: { visibility: "private" },
-    }),
-    [404],
-  );
-  const changed = await accept(
-    accessClient(owner).updateVisibility({
-      headers,
-      params: { artifactId },
-      body: { visibility: "private" },
-    }),
-    [200],
-  );
-  expect(changed.body.visibility).toBe("private");
-  expect(
-    (await accept(client().deliveryAuthorization(request), [200])).body
-      .decision,
-  ).toBe("authenticate");
-  expect(
-    (
-      await accept(
-        client(other).deliveryAuthorization({
-          ...request,
-          headers: otherSession,
-        }),
-        [200],
-      )
-    ).body.decision,
-  ).toBe("deny");
-  expect(
-    (
-      await accept(
-        client(owner).deliveryAuthorization({
-          ...request,
-          headers: ownerSession,
-        }),
-        [200],
-      )
-    ).body.decision,
-  ).toBe("allow");
-  const legacyRequest = {
-    ...request,
-    query: { ...request.query, publicBrand: "vm0" as const },
-  };
-  expect(
-    (await accept(client().deliveryAuthorization(legacyRequest), [200])).body
-      .decision,
-  ).toBe("deny");
-  expect(
-    (await accept(client().deliveryAuthorization(request), [200])).body.allowed,
-  ).toBeFalsy();
-  const restored = await accept(
-    accessClient(owner).updateVisibility({
-      headers,
-      params: { artifactId: prepared.siteId },
-      body: { visibility: "public" },
-    }),
-    [200],
-  );
-  expect(restored.body.visibility).toBe("public");
-  expect(
-    (await accept(client().deliveryAuthorization(request), [200])).body
-      .decision,
-  ).toBe("allow");
-  expect(
-    (await accept(client().deliveryAuthorization(legacyRequest), [200])).body
-      .decision,
-  ).toBe("deny");
-});
-
-test("organization access follows current membership in the site's organization", async () => {
-  const { owner, prepared, request } = await publish();
-  const viewer = createBddApi(context).user();
-  await accept(
-    accessClient(owner).updateVisibility({
-      headers,
-      params: { artifactId: prepared.siteId },
-      body: { visibility: "organization" },
-    }),
-    [200],
-  );
-  let member = true;
-  context.mocks.clerk.organizations.getOrganizationMembershipList.mockImplementation(
-    (params) => {
-      const matches =
-        typeof params === "object" &&
-        params !== null &&
-        "organizationId" in params &&
-        params.organizationId === owner.orgId;
-      return Promise.resolve({
-        data:
-          matches && member
-            ? [
-                {
-                  publicUserData: { userId: viewer.userId },
-                  organization: { id: owner.orgId },
-                },
-              ]
-            : [],
-      });
-    },
-  );
-  const viewerSession = await browserHeaders(
-    viewer,
-    prepared.siteId,
-    `https://${prepared.publicSlug}.okou.app`,
-  );
-  expect(
-    (
-      await accept(
-        client(viewer).deliveryAuthorization({
-          ...request,
-          headers: viewerSession,
-        }),
-        [200],
-      )
-    ).body.allowed,
-  ).toBeTruthy();
-  const previewRequest = {
-    headers,
-    params: { publicSlug: prepared.publicSlug },
-    query: { hostname: `${prepared.publicSlug}.okou.app` },
-  };
-  const preview = await accept(
-    client(viewer).sitePreview(previewRequest),
-    [200],
-  );
-  expect(preview.body.expiresAt).not.toBeNull();
-  member = false;
-  await accept(client(viewer).sitePreview(previewRequest), [404]);
-  expect(
-    (
-      await accept(
-        client(viewer).deliveryAuthorization({
-          ...request,
-          headers: viewerSession,
-        }),
-        [200],
-      )
-    ).body.decision,
-  ).toBe("deny");
-  context.mocks.clerk.organizations.getOrganizationMembershipList.mockRejectedValue(
-    new Error("Membership service unavailable"),
-  );
-  await accept(
-    client(viewer).deliveryAuthorization({
-      ...request,
-      headers: viewerSession,
-    }),
-    [500],
-  );
-});
-
-test("redeployment preserves an explicit policy for both aliases and immutable addresses", async () => {
-  const { owner, api, input, prepared, request } = await publish();
-  await accept(
-    accessClient(owner).updateVisibility({
-      headers,
-      params: { artifactId: prepared.siteId },
-      body: { visibility: "private" },
-    }),
-    [200],
-  );
-  const next = await api.prepareHostedSite(owner, {
-    ...input,
-    files: [hostedTextFile("/index.html", "<p>next</p>")],
+    const current = await readVisibility(member, prepared.siteId);
+    expect(current.visibility).toBe("private");
+    await expect(
+      setVisibility(member, prepared.siteId, "public"),
+    ).resolves.toMatchObject({ visibility: "public" });
   });
-  await api.completeHostedSite(owner, next.deploymentId);
-  const old = await accept(
-    client().deliveryAuthorization({
-      ...request,
-      query: { ...request.query, alias: `dpl-${prepared.deploymentId}` },
-    }),
-    [200],
-  );
-  expect(old.body.decision).toBe("authenticate");
-  const policy = await accept(
-    accessClient(owner).getVisibility({
-      headers,
-      params: { artifactId: next.siteId },
-    }),
-    [200],
-  );
-  expect(policy.body.visibility).toBe("private");
-});
 
-test("issued download grants stop working after a policy revision changes", async () => {
-  const { owner, api, prepared } = await publish();
-  await createRunsApi(context).grantProEntitlement(owner);
-  await accept(
-    accessClient(owner).updateVisibility({
-      headers,
-      params: { artifactId: prepared.siteId },
-      body: { visibility: "public" },
-    }),
-    [200],
-  );
-  const files = await api.requestHostedSiteFiles(
-    owner,
-    `dpl-${prepared.deploymentId}`,
-    [200],
-  );
-  if (files.status !== 200) {
-    throw new Error("Expected hosted download files");
-  }
-  const url = new URL(files.body.files[0]!.downloadUrl);
-  const token = url.pathname.split("/").at(-1)!;
-  const download = {
-    params: { token },
-    query: { deploymentId: prepared.deploymentId, path: "/index.html" },
-  };
-  const first = await accept(client().downloadAuthorization(download), [200]);
-  expect(first.body.file?.contentType).toBe("text/html; charset=utf-8");
-  await accept(
-    accessClient(owner).updateVisibility({
-      headers,
-      params: { artifactId: prepared.siteId },
-      body: { visibility: "private" },
-    }),
-    [200],
-  );
-  expect(
-    (await accept(client().downloadAuthorization(download), [200])).body.file,
-  ).toBeNull();
-});
+  it("hosted-site-access-004 creates a public site when public visibility is requested", async () => {
+    host.captureHostedSitesS3();
+    const member = bdd.user();
+    const prepared = await host.prepareHostedSite(member, {
+      site: `site-${randomUUID().slice(0, 8)}`,
+      title: "Hosted page",
+      visibility: "public",
+      artifactKind: "hosted-site",
+      spaFallback: false,
+      files: [htmlFile("<h1>Hello</h1>")],
+    });
+    expect(prepared.visibility).toBe("public");
+    const site = {
+      siteId: prepared.siteId,
+      deploymentId: prepared.deploymentId,
+      publicSlug: prepared.publicSlug,
+      site: "",
+      visibility: prepared.visibility,
+    };
+    await expect(anonymousAccess(site)).resolves.toMatchObject({
+      decision: "allow",
+    });
+    await host.completeHostedSite(member, prepared.deploymentId);
 
-test("a caller-supplied identity or foreign origin cannot authorize a private preview", async () => {
-  const { owner, prepared } = await publish();
-  await accept(
-    accessClient(owner).updateVisibility({
-      headers,
-      params: { artifactId: prepared.siteId },
-      body: { visibility: "private" },
-    }),
-    [200],
-  );
-  const result = await accept(
-    client(owner).siteAccess({
-      headers,
-      params: { siteId: prepared.siteId },
-      query: { origin: "https://attacker.example" },
-    }),
-    [200],
-  );
-  expect(result.body.decision).toBe("authenticate");
-});
+    const current = await readVisibility(member, prepared.siteId);
+    expect(current.visibility).toBe("public");
+    await expect(
+      setVisibility(member, prepared.siteId, "public"),
+    ).resolves.toMatchObject({ visibility: "public" });
+  });
 
-test("concurrent visibility updates settle to a single consistent visibility", async () => {
-  const { owner, artifactId } = await publish();
-  const results = await Promise.all([
-    accept(
-      accessClient(owner).updateVisibility({
-        headers,
-        params: { artifactId },
+  it("hosted-site-access-005 keeps a public site public across a redeployment", async () => {
+    host.captureHostedSitesS3();
+    const owner = bdd.user();
+    const first = await publishSite(owner, { visibility: "public" });
+
+    const redeployed = await host.prepareHostedSite(owner, {
+      site: first.site,
+      title: "Hosted page",
+      artifactKind: "hosted-site",
+      spaFallback: false,
+      files: [htmlFile("<h1>Updated</h1>")],
+    });
+    await host.completeHostedSite(owner, redeployed.deploymentId);
+
+    expect(redeployed.visibility).toBe("public");
+    await expect(anonymousAccess(first)).resolves.toMatchObject({
+      decision: "allow",
+    });
+  });
+
+  it("hosted-site-access-008 hides banner management from other members and presentation from anonymous viewers", async () => {
+    const storage = host.captureHostedSitesS3();
+    const owner = bdd.user();
+    const peer = bdd.user({ orgId: owner.orgId, orgRole: "org:member" });
+    const site = await publishSite(owner, { visibility: "public" });
+
+    await accept(
+      hostApi().siteBanner({
+        headers: signIn(peer),
+        params: { siteId: site.siteId },
+      }),
+      [404],
+    );
+    await accept(
+      hostApi().updateSiteBanner({
+        headers: signIn(peer),
+        params: { siteId: site.siteId },
+        body: { showBanner: false, expectedRevision: null },
+      }),
+      [404],
+    );
+    await makePrivate(owner, site.siteId);
+
+    await expect(
+      deliveryDecision(storage, site, { presentation: "banner" }),
+    ).resolves.toStrictEqual({ allowed: false, decision: "authenticate" });
+    await expect(deliveryDecision(storage, site)).resolves.toMatchObject({
+      decision: "authenticate",
+    });
+  });
+
+  it("hosted-site-access-012 keeps an explicit private policy for immutable addresses after redeployment", async () => {
+    const storage = host.captureHostedSitesS3();
+    const owner = bdd.user();
+    const first = await publishSite(owner, { visibility: "public" });
+    await makePrivate(owner, first.siteId);
+
+    const redeployed = await host.prepareHostedSite(owner, {
+      site: first.site,
+      title: "Hosted page",
+      artifactKind: "hosted-site",
+      spaFallback: false,
+      files: [htmlFile("<h1>Updated</h1>")],
+    });
+    await host.completeHostedSite(owner, redeployed.deploymentId);
+
+    await expect(
+      deliveryDecision(storage, first, {
+        alias: `dpl-${first.deploymentId}`,
+      }),
+    ).resolves.toMatchObject({ decision: "authenticate" });
+    await expect(readVisibility(owner, first.siteId)).resolves.toMatchObject({
+      visibility: "private",
+    });
+  });
+
+  it("hosted-site-access-016 stops anonymous OG metadata once a site becomes private", async () => {
+    host.captureHostedSitesS3();
+    const owner = bdd.user();
+    const site = await publishSite(owner, { visibility: "public" });
+    const og = setupApp({ context, routes: artifactOgRoutes })(
+      artifactOgContract,
+    );
+
+    const before = await accept(
+      og.metadata({ query: { kind: "host", id: site.deploymentId } }),
+      [200],
+    );
+    expect(before.body.available).toBeTruthy();
+    await makePrivate(owner, site.siteId);
+    const after = await accept(
+      og.metadata({ query: { kind: "host", id: site.deploymentId } }),
+      [200],
+    );
+    expect(after.body.available).toBeFalsy();
+  });
+
+  it("hosted-site-access-028 gives owners a preview capability and strangers the public address", async () => {
+    host.captureHostedSitesS3();
+    const owner = bdd.user();
+    const stranger = bdd.user();
+    const site = await publishSite(owner, { visibility: "public" });
+    const hostname = `${site.publicSlug}.okou.app`;
+
+    const ownerPreview = await accept(
+      hostApi().sitePreview({
+        headers: signIn(owner),
+        params: { publicSlug: site.publicSlug },
+        query: { hostname },
+      }),
+      [200],
+    );
+    expect(ownerPreview.body.url).toMatch(
+      /^https:\/\/pv-[a-f0-9]{48}\.okou\.app\/$/u,
+    );
+    expect(ownerPreview.body.expiresAt).not.toBeNull();
+    const strangerPreview = await accept(
+      hostApi().sitePreview({
+        headers: signIn(stranger),
+        params: { publicSlug: site.publicSlug },
+        query: { hostname },
+      }),
+      [200],
+    );
+    expect(strangerPreview.body).toStrictEqual({
+      url: `https://${hostname}/`,
+      expiresAt: null,
+    });
+  });
+  it("hosted-site-access-010 lets only the owner change visibility and rejects stale edits", async () => {
+    const storage = host.captureHostedSitesS3();
+    const owner = bdd.user();
+    const outsider = bdd.user();
+    const site = await publishSite(owner, { visibility: "public" });
+    const outsiderSession = await siteSession(outsider, site);
+    const ownerSession = await siteSession(owner, site);
+    await accept(
+      accessApi().updateVisibility({
+        headers: signIn(outsider),
+        params: { artifactId: site.siteId },
         body: { visibility: "private" },
       }),
-      [200, 409],
-    ),
-    accept(
-      accessClient(owner).updateVisibility({
-        headers,
-        params: { artifactId },
-        body: { visibility: "organization" },
-      }),
-      [200, 409],
-    ),
-  ]);
-  const succeeded = results.filter((result) => {
-    return result.status === 200;
-  });
-  expect(succeeded.length).toBeGreaterThanOrEqual(1);
-  const finalPolicy = await accept(
-    accessClient(owner).getVisibility({
-      headers,
-      params: { artifactId },
-    }),
-    [200],
-  );
-  expect(
-    succeeded.map((result) => {
-      return result.body.visibility;
-    }),
-  ).toContain(finalPolicy.body.visibility);
-});
+      [404],
+    );
+    const hidden = await setVisibility(owner, site.siteId, "private");
+    expect(hidden.visibility).toBe("private");
 
-test("anonymous OG metadata stops exposing a Site after it becomes private", async () => {
-  const { owner, prepared } = await publish();
-  const og = setupAppWithRoutes({ context, routes: artifactOgRoutes })(
-    artifactOgContract,
-  );
-  const query = { kind: "host" as const, id: prepared.deploymentId };
-  expect(
-    (await accept(og.metadata({ query }), [200])).body.available,
-  ).toBeTruthy();
-  await accept(
-    accessClient(owner).updateVisibility({
-      headers,
-      params: { artifactId: prepared.siteId },
-      body: { visibility: "private" },
-    }),
-    [200],
-  );
-  expect(
-    (await accept(og.metadata({ query }), [200])).body.available,
-  ).toBeFalsy();
-});
-
-test("private downloads remain controlled and stop after deletion", async () => {
-  const { owner, api, input, prepared } = await publish();
-  await createRunsApi(context).grantProEntitlement(owner);
-  await accept(
-    accessClient(owner).updateVisibility({
-      headers,
-      params: { artifactId: prepared.siteId },
-      body: { visibility: "private" },
-    }),
-    [200],
-  );
-  const files = await api.requestHostedSiteFiles(
-    owner,
-    `dpl-${prepared.deploymentId}`,
-    [200],
-  );
-  if (files.status !== 200) {
-    throw new Error("Expected hosted download files");
-  }
-  const url = new URL(files.body.files[0]!.downloadUrl);
-  expect(url.hostname).toBe(`dpl-${prepared.deploymentId}.okou.app`);
-  const download = {
-    params: { token: url.pathname.split("/").at(-1)! },
-    query: { deploymentId: prepared.deploymentId, path: "/index.html" },
-  };
-  expect(
-    (await accept(client().downloadAuthorization(download), [200])).body.file,
-  ).not.toBeNull();
-  const wrongDeployment = {
-    ...download,
-    query: { ...download.query, deploymentId: randomUUID() },
-  };
-  expect(
-    (await accept(client().downloadAuthorization(wrongDeployment), [200])).body
-      .file,
-  ).toBeNull();
-  const wrongPath = {
-    ...download,
-    query: { ...download.query, path: "/missing.html" },
-  };
-  expect(
-    (await accept(client().downloadAuthorization(wrongPath), [200])).body.file,
-  ).toBeNull();
-  await api.deleteHostedSite(owner, input.site);
-  expect(
-    (await accept(client().downloadAuthorization(download), [200])).body.file,
-  ).toBeNull();
-});
-
-test("authorization codes require the correct proof, Site and origin, and are single-use", async () => {
-  const { owner, prepared } = await publish();
-  const params = { siteId: prepared.siteId };
-  const body = await authorizeBrowser(
-    owner,
-    prepared.siteId,
-    `https://${prepared.publicSlug}.okou.app`,
-  );
-  await accept(
-    client().exchangeSiteSession({
-      params,
-      body: { ...body, codeVerifier: "a".repeat(43) },
-    }),
-    [401],
-  );
-  await accept(
-    client().exchangeSiteSession({
-      params,
-      body: { ...body, origin: "https://other.okou.app" },
-    }),
-    [401],
-  );
-  await accept(
-    client().exchangeSiteSession({ params: { siteId: randomUUID() }, body }),
-    [401],
-  );
-  const results = await Promise.all([
-    client().exchangeSiteSession({ params, body }),
-    client().exchangeSiteSession({ params, body }),
-  ]);
-  expect(
-    results
-      .map((result) => {
-        return result.status;
-      })
-      .sort(),
-  ).toStrictEqual([200, 401]);
-  await accept(client().exchangeSiteSession({ params, body }), [401]);
-});
-
-test("expired authorization codes cannot be exchanged", async () => {
-  const { owner, prepared } = await publish();
-  const start = now();
-  mockNow(start);
-  const body = await authorizeBrowser(
-    owner,
-    prepared.siteId,
-    `https://${prepared.publicSlug}.okou.app`,
-  );
-  mockNow(start + 121_000);
-  const response = await accept(
-    client().exchangeSiteSession({ params: { siteId: prepared.siteId }, body }),
-    [401],
-  );
-  expect(response.body.error.code).toBe("UNAUTHORIZED");
-});
-
-test("site sessions survive 60 seconds without a Clerk JWT and stop after primary revocation", async () => {
-  const { owner, prepared } = await publish();
-  const params = { siteId: prepared.siteId };
-  const origin = `https://${prepared.publicSlug}.okou.app`;
-  const siteHeaders = await browserHeaders(owner, prepared.siteId, origin);
-  await accept(
-    accessClient(owner).updateVisibility({
-      headers,
-      params: { artifactId: prepared.siteId },
-      body: { visibility: "private" },
-    }),
-    [200],
-  );
-  await accept(
-    setupAppWithRoutes({ context, routes: authMeRoutes })(authContract).me({
-      headers: siteHeaders,
-    }),
-    [401],
-  );
-  mockNow(now() + 61_000);
-  expect(
-    (
-      await accept(
-        client().siteAccess({
-          headers: siteHeaders,
-          params,
-          query: { origin },
-        }),
-        [200],
-      )
-    ).body.decision,
-  ).toBe("allow");
-  expect(
-    (
-      await accept(
-        client().siteAccess({
-          headers: siteHeaders,
-          params,
-          query: { origin: "https://sibling.okou.app" },
-        }),
-        [200],
-      )
-    ).body.decision,
-  ).toBe("authenticate");
-  expect(
-    (
-      await accept(
-        client(owner).siteAccess({ headers, params, query: { origin } }),
-        [200],
-      )
-    ).body.decision,
-  ).toBe("authenticate");
-  context.mocks.clerk.sessions.getSession.mockResolvedValue({
-    id: `sess_${owner.userId}`,
-    userId: owner.userId,
-    status: "revoked",
-    expireAt: now() + 86_400_000,
-  });
-  expect(
-    (
-      await accept(
-        client().siteAccess({
-          headers: siteHeaders,
-          params,
-          query: { origin },
-        }),
-        [200],
-      )
-    ).body.decision,
-  ).toBe("authenticate");
-});
-
-test("pending sessions and untrusted return origins cannot mint site authorization codes", async () => {
-  const { owner, prepared } = await publish();
-  const api = client(owner);
-  const input = {
-    headers,
-    params: { siteId: prepared.siteId },
-    body: {
-      origin: `https://${prepared.publicSlug}.okou.app`,
-      state: "a".repeat(43),
-      codeChallenge: "b".repeat(43),
-    },
-  };
-  context.mocks.clerk.sessions.getSession.mockResolvedValue({
-    id: `sess_${owner.userId}`,
-    userId: owner.userId,
-    status: "pending",
-    expireAt: now() + 86_400_000,
-  });
-  const response = await accept(api.authorizeSiteSession(input), [401]);
-  expect(response.body.error.code).toBe("UNAUTHORIZED");
-  await accept(
-    api.authorizeSiteSession({
-      ...input,
-      body: { ...input.body, origin: "https://attacker.example" },
-    }),
-    [403],
-  );
-});
-
-test("one publisher cannot redirect another Site's authorization to its own origin", async () => {
-  const { owner, api, input, prepared } = await publish();
-  const other = await api.prepareHostedSite(owner, {
-    ...input,
-    site: `other-${randomUUID().slice(0, 8)}`,
-    title: "Other",
-  });
-  await api.completeHostedSite(owner, other.deploymentId);
-  await accept(
-    client(owner).authorizeSiteSession({
-      headers,
-      params: { siteId: prepared.siteId },
-      body: {
-        origin: `https://${other.publicSlug}.okou.app`,
-        state: "a".repeat(43),
-        codeChallenge: "b".repeat(43),
-      },
-    }),
-    [403],
-  );
-  const origin = `https://dpl-${prepared.deploymentId}.okou.app`;
-  const session = await browserHeaders(owner, prepared.siteId, origin);
-  await accept(
-    accessClient(owner).updateVisibility({
-      headers,
-      params: { artifactId: prepared.siteId },
-      body: { visibility: "private" },
-    }),
-    [200],
-  );
-  expect(
-    (
-      await accept(
-        client().siteAccess({
-          headers: session,
-          params: { siteId: prepared.siteId },
-          query: { origin },
-        }),
-        [200],
-      )
-    ).body.decision,
-  ).toBe("allow");
-});
-
-test("the App bridge rejects a Clerk JWT issued to an untrusted hosted origin", async () => {
-  const { owner, prepared } = await publish();
-  const api = client(owner);
-  const origin = `https://${prepared.publicSlug}.okou.app`;
-  context.mocks.clerk.authenticateRequest.mockImplementation(
-    (_request, options) => {
-      const parties =
-        typeof options === "object" &&
-        options !== null &&
-        "authorizedParties" in options &&
-        Array.isArray(options.authorizedParties)
-          ? options.authorizedParties
-          : null;
-      return Promise.resolve({
-        isAuthenticated: parties === null || parties.includes(origin),
-        toAuth: () => {
-          return {
-            userId: owner.userId,
-            sessionId: `sess_${owner.userId}`,
-          };
-        },
-      });
-    },
-  );
-  const response = await accept(
-    api.authorizeSiteSession({
-      headers,
-      params: { siteId: prepared.siteId },
-      body: {
-        origin,
-        state: "a".repeat(43),
-        codeChallenge: "b".repeat(43),
-      },
-    }),
-    [401],
-  );
-  expect(response.body.error.code).toBe("UNAUTHORIZED");
-});
-
-test.each([
-  "https://demo.okou.app",
-  "https://demo.okou.app.",
-  "https://demo.sites.example.com",
-])(
-  "general API endpoints reject verified Clerk credentials from %s",
-  async (origin) => {
-    const { owner } = await publish();
-    client(owner);
-    context.mocks.clerk.authenticateRequest.mockResolvedValue({
-      isAuthenticated: true,
-      toAuth: () => {
-        return {
-          userId: owner.userId,
-          orgId: owner.orgId,
-          sessionId: `sess_${owner.userId}`,
-          sessionClaims: { azp: origin },
-        };
-      },
+    await expect(deliveryDecision(storage, site)).resolves.toStrictEqual({
+      allowed: false,
+      decision: "authenticate",
     });
-    const response = await accept(
-      setupAppWithRoutes({ context, routes: authMeRoutes })(authContract).me({
-        headers,
+    await expect(
+      deliveryDecision(storage, site, { sessionToken: outsiderSession }),
+    ).resolves.toMatchObject({ decision: "deny" });
+    await expect(
+      deliveryDecision(storage, site, { sessionToken: ownerSession }),
+    ).resolves.toMatchObject({ decision: "allow" });
+    await expect(
+      deliveryDecision(storage, site, { publicBrand: "vm0" }),
+    ).resolves.toMatchObject({ decision: "deny" });
+
+    await expect(
+      setVisibility(owner, site.siteId, "public"),
+    ).resolves.toMatchObject({ visibility: "public" });
+    await expect(deliveryDecision(storage, site)).resolves.toMatchObject({
+      decision: "allow",
+    });
+    await expect(
+      deliveryDecision(storage, site, { publicBrand: "vm0" }),
+    ).resolves.toMatchObject({ decision: "deny" });
+  });
+
+  it("hosted-site-access-018 accepts an authorization code once with the right proof, site and origin", async () => {
+    host.captureHostedSitesS3();
+    const owner = bdd.user();
+    const site = await publishSite(owner, { visibility: "public" });
+    const grant = await authorizationCode(owner, site);
+    const exchange = (
+      body: { origin: string; codeVerifier: string },
+      siteId = site.siteId,
+    ) => {
+      return hostApi().exchangeSiteSession({
+        headers: anonymous(),
+        params: { siteId },
+        body: { ...body, code: grant.code },
+      });
+    };
+
+    await accept(
+      exchange({
+        origin: grant.origin,
+        codeVerifier: randomBytes(32).toString("base64url"),
       }),
       [401],
     );
-    expect(response.body.error.code).toBe("UNAUTHORIZED");
-  },
-);
-
-test("restricted previews reuse private-artifact credentials only after current access checks", async () => {
-  mockNow(Date.parse("2026-10-22T00:00:00Z"));
-  const { owner, prepared } = await publish();
-  await accept(
-    accessClient(owner).updateVisibility({
-      headers,
-      params: { artifactId: prepared.siteId },
-      body: { visibility: "private" },
-    }),
-    [200],
-  );
-  const request = {
-    headers,
-    params: { publicSlug: prepared.publicSlug },
-    query: { hostname: `${prepared.publicSlug}.okou.app` },
-  };
-  const issuedAt = now();
-  const first = await accept(client(owner).sitePreview(request), [200]);
-  expect(first.body.url).toMatch(/^https:\/\/pv-[a-f0-9]{48}\.okou\.app\/$/u);
-  expect(Date.parse(first.body.expiresAt!) - issuedAt).toBe(
-    48 * 60 * 60 * 1000,
-  );
-  const repeated = await accept(client(owner).sitePreview(request), [200]);
-  expect(repeated.body).toStrictEqual(first.body);
-  const outsider = createBddApi(context).user();
-  await accept(client(outsider).sitePreview(request), [404]);
-  await accept(
-    client(owner).sitePreview({
-      ...request,
-      query: { hostname: "unrelated.okou.app" },
-    }),
-    [404],
-  );
-  const invalidDeployment = `dpl-${"-".repeat(35)}a`;
-  await accept(
-    client(owner).sitePreview({
-      ...request,
-      params: { publicSlug: invalidDeployment },
-      query: { hostname: `${invalidDeployment}.okou.app` },
-    }),
-    [404],
-  );
-  const immutable = await accept(
-    client(owner).sitePreview({
-      ...request,
-      params: { publicSlug: `dpl-${prepared.deploymentId}` },
-      query: { hostname: `dpl-${prepared.deploymentId}.okou.app` },
-    }),
-    [200],
-  );
-  expect(immutable.body).toStrictEqual(first.body);
-
-  mockNow(issuedAt + 47 * 60 * 60 * 1000 - 1);
-  expect(
-    (await accept(client(owner).sitePreview(request), [200])).body,
-  ).toStrictEqual(first.body);
-  mockNow(issuedAt + 47 * 60 * 60 * 1000);
-  const renewed = await accept(client(owner).sitePreview(request), [200]);
-  expect(renewed.body.url).not.toBe(first.body.url);
-  expect(Date.parse(renewed.body.expiresAt!) - now()).toBe(48 * 60 * 60 * 1000);
-});
-
-test("public viewers use anonymous addresses while owners use an independent preview capability", async () => {
-  const { owner, prepared } = await publish();
-  const result = await accept(
-    client(owner).sitePreview({
-      headers,
-      params: { publicSlug: prepared.publicSlug },
-      query: { hostname: `${prepared.publicSlug}.okou.app` },
-    }),
-    [200],
-  );
-  expect(result.body.url).toMatch(/^https:\/\/pv-[a-f0-9]{48}\.okou\.app\/$/u);
-  expect(result.body.expiresAt).not.toBeNull();
-  const stranger = createBddApi(context).user();
-  expect(
-    (
-      await accept(
-        client(stranger).sitePreview({
-          headers,
-          params: { publicSlug: prepared.publicSlug },
-          query: { hostname: `${prepared.publicSlug}.okou.app` },
+    await accept(
+      exchange({
+        origin: "https://other.okou.app",
+        codeVerifier: grant.verifier,
+      }),
+      [401],
+    );
+    await accept(
+      exchange(
+        { origin: grant.origin, codeVerifier: grant.verifier },
+        randomUUID(),
+      ),
+      [401],
+    );
+    const correct = { origin: grant.origin, codeVerifier: grant.verifier };
+    const concurrent = await Promise.all([
+      exchange(correct),
+      exchange(correct),
+    ]);
+    expect(
+      concurrent
+        .map((response) => {
+          return response.status;
+        })
+        .slice()
+        .sort((left, right) => {
+          return left - right;
         }),
-        [200],
-      )
-    ).body,
-  ).toStrictEqual({
-    url: `https://${prepared.publicSlug}.okou.app/`,
-    expiresAt: null,
+    ).toStrictEqual([200, 401]);
+    await accept(exchange(correct), [401]);
+  });
+
+  it("hosted-site-access-027 reuses a restricted preview until it nears expiry and only after current access checks", async () => {
+    const issuedAt = Date.parse("2026-10-22T00:00:00Z");
+    mockNow(issuedAt);
+    host.captureHostedSitesS3();
+    const owner = bdd.user();
+    const outsider = bdd.user();
+    const site = await publishSite(owner, { visibility: "public" });
+    await makePrivate(owner, site.siteId);
+    const preview = (
+      actor: ApiTestUser,
+      publicSlug: string,
+      hostname: string,
+    ) => {
+      return hostApi().sitePreview({
+        headers: signIn(actor),
+        params: { publicSlug },
+        query: { hostname },
+      });
+    };
+    const hostname = `${site.publicSlug}.okou.app`;
+
+    const first = await accept(
+      preview(owner, site.publicSlug, hostname),
+      [200],
+    );
+    expect(first.body.url).toMatch(/^https:\/\/pv-[a-f0-9]{48}\.okou\.app\/$/u);
+    expect(first.body.expiresAt).toBe(
+      new Date(issuedAt + 48 * 3_600_000).toISOString(),
+    );
+    await expect(
+      preview(owner, site.publicSlug, hostname),
+    ).resolves.toMatchObject({ status: 200, body: first.body });
+    await accept(preview(outsider, site.publicSlug, hostname), [404]);
+    await accept(preview(owner, site.publicSlug, "unrelated.okou.app"), [404]);
+    await accept(
+      preview(owner, "dpl-not-a-deployment", `dpl-not-a-deployment.okou.app`),
+      [404],
+    );
+    const immutable = `dpl-${site.deploymentId}`;
+    await expect(
+      preview(owner, immutable, `${immutable}.okou.app`),
+    ).resolves.toMatchObject({ status: 200, body: first.body });
+
+    mockNow(issuedAt + 47 * 3_600_000 - 1);
+    await expect(
+      preview(owner, site.publicSlug, hostname),
+    ).resolves.toMatchObject({ status: 200, body: first.body });
+    const renewedAt = issuedAt + 47 * 3_600_000;
+    mockNow(renewedAt);
+    const renewed = await accept(
+      preview(owner, site.publicSlug, hostname),
+      [200],
+    );
+    expect(renewed.body.url).not.toBe(first.body.url);
+    expect(renewed.body.expiresAt).toBe(
+      new Date(renewedAt + 48 * 3_600_000).toISOString(),
+    );
+  });
+
+  it("hosted-site-access-011 grants organization access only while Clerk lists the viewer as a member", async () => {
+    const storage = host.captureHostedSitesS3();
+    const owner = bdd.user();
+    const viewer = bdd.user();
+    const site = await publishSite(owner, { visibility: "public" });
+    await setVisibility(owner, site.siteId, "organization");
+    clerkLists(owner.orgId ?? "", [viewer.userId]);
+    const session = await siteSession(viewer, site);
+    const hostname = `${site.publicSlug}.okou.app`;
+    const preview = () => {
+      return hostApi().sitePreview({
+        headers: signIn(viewer),
+        params: { publicSlug: site.publicSlug },
+        query: { hostname },
+      });
+    };
+
+    await expect(
+      deliveryDecision(storage, site, { sessionToken: session }),
+    ).resolves.toMatchObject({ allowed: true, decision: "allow" });
+    const granted = await accept(preview(), [200]);
+    expect(granted.body.expiresAt).not.toBeNull();
+
+    clerkLists(owner.orgId ?? "", []);
+    await accept(preview(), [404]);
+    await expect(
+      deliveryDecision(storage, site, { sessionToken: session }),
+    ).resolves.toMatchObject({ decision: "deny" });
+
+    context.mocks.clerk.organizations.getOrganizationMembershipList.mockRejectedValue(
+      new Error("Clerk is unavailable"),
+    );
+    await accept(
+      deliveryRequest(storage, site, { sessionToken: session }),
+      [500],
+    );
+  });
+
+  it("hosted-site-access-013 stops honoring an issued download grant after the policy revision changes", async () => {
+    host.captureHostedSitesS3();
+    const owner = await proOwner();
+    const site = await publishSite(owner, { visibility: "public" });
+    await setVisibility(owner, site.siteId, "public");
+    const downloadUrl = await indexDownloadUrl(owner, site.deploymentId);
+
+    await expect(
+      redeemDownload(downloadUrl, site.deploymentId),
+    ).resolves.toMatchObject({ contentType: "text/html; charset=utf-8" });
+    await setVisibility(owner, site.siteId, "private");
+    await expect(
+      redeemDownload(downloadUrl, site.deploymentId),
+    ).resolves.toBeNull();
+  });
+
+  it("hosted-site-access-017 keeps private downloads bound to their deployment and path until deletion", async () => {
+    host.captureHostedSitesS3();
+    const owner = await proOwner();
+    const site = await publishSite(owner, { visibility: "public" });
+    await makePrivate(owner, site.siteId);
+    const downloadUrl = await indexDownloadUrl(owner, site.deploymentId);
+
+    expect(downloadUrl.host).toBe(`dpl-${site.deploymentId}.okou.app`);
+    await expect(
+      redeemDownload(downloadUrl, site.deploymentId),
+    ).resolves.not.toBeNull();
+    await expect(redeemDownload(downloadUrl, randomUUID())).resolves.toBeNull();
+    await expect(
+      redeemDownload(downloadUrl, site.deploymentId, "/missing.html"),
+    ).resolves.toBeNull();
+    await host.deleteHostedSite(owner, site.publicSlug);
+    await expect(
+      redeemDownload(downloadUrl, site.deploymentId),
+    ).resolves.toBeNull();
   });
 });
-
-test.each(["hosted-site", "presentation-html"] as const)(
-  "%s delivery policy, per-user shares, banner, title updates, and canonical URL resolve via unique entity indexes",
-  async (artifactKind) => {
-    const { owner, api, input, prepared, artifactId, request } =
-      await publish(artifactKind);
-    await createRunsApi(context).grantProEntitlement(owner);
-    await updateFeatureSwitchesForUser(context, owner, {
-      [FeatureSwitchKey.ArtifactUserSharing]: true,
-    });
-    const colleague = createBddApi(context).user({ orgId: owner.orgId });
-    const ownerProfile = {
-      id: owner.userId,
-      firstName: "Site",
-      lastName: "Owner",
-      imageUrl: null,
-      banned: false,
-      primaryEmailAddressId: `em_${owner.userId}`,
-      emailAddresses: [
-        {
-          id: `em_${owner.userId}`,
-          emailAddress: owner.email,
-          verification: { status: "verified" as const },
-        },
-      ],
-    };
-    const colleagueProfile = {
-      id: colleague.userId,
-      firstName: "Colleague",
-      lastName: "Viewer",
-      imageUrl: null,
-      banned: false,
-      primaryEmailAddressId: `em_${colleague.userId}`,
-      emailAddresses: [
-        {
-          id: `em_${colleague.userId}`,
-          emailAddress: colleague.email,
-          verification: { status: "verified" as const },
-        },
-      ],
-    };
-    mockClerkUsers(context, [ownerProfile, colleagueProfile]);
-    context.mocks.resend.send.mockResolvedValue({
-      data: { id: randomUUID() },
-      error: null,
-    });
-    context.mocks.clerk.organizations.getOrganization.mockResolvedValue({
-      id: owner.orgId,
-      name: "Sharing workspace",
-    });
-    context.mocks.clerk.users.getUserList.mockResolvedValue({
-      data: [colleagueProfile],
-    });
-    context.mocks.clerk.organizations.getOrganizationMembershipList.mockResolvedValue(
-      {
-        data: [
-          {
-            publicUserData: {
-              userId: colleague.userId,
-              identifier: colleague.email,
-              firstName: "Colleague",
-              lastName: "Viewer",
-            },
-            organization: { id: owner.orgId, name: "Sharing workspace" },
-          },
-        ],
-      },
-    );
-
-    const deliveryWithBanner = {
-      ...request,
-      query: { ...request.query, presentation: "banner" as const },
-    };
-
-    // 1. Public delivery + initial banner title + canonical site URL artifactId
-    const initialDelivery = await accept(
-      client().deliveryAuthorization(deliveryWithBanner),
-      [200],
-    );
-    expect(initialDelivery.body).toMatchObject({
-      allowed: true,
-      decision: "allow",
-      presentation: {
-        showBanner: true,
-        downloadAllowed: true,
-        title: input.title,
-        siteUrl: `https://${prepared.publicSlug}.okou.app/`,
-      },
-    });
-    const urlInfo = await accept(
-      client(owner).siteUrl({
-        headers,
-        params: { publicSlug: prepared.publicSlug },
-        query: { hostname: `${prepared.publicSlug}.okou.app` },
-      }),
-      [200],
-    );
-    expect(urlInfo.body.artifactId).toBe(artifactId);
-
-    // 2. Title update propagates to banner delivery and subsequent redeploys
-    const updatedTitle =
-      artifactKind === "presentation-html"
-        ? "Q4 Architecture Deck"
-        : "Q4 Architecture Site";
-    const renamed = await accept(
-      client(owner).updateSiteTitle({
-        headers,
-        params: { publicSlug: prepared.publicSlug },
-        body: { title: updatedTitle },
-      }),
-      [200],
-    );
-    expect(renamed.body).toStrictEqual({
-      siteId: prepared.siteId,
-      publicSlug: prepared.publicSlug,
-      title: updatedTitle,
-    });
-    const afterRenameDelivery = await accept(
-      client().deliveryAuthorization(deliveryWithBanner),
-      [200],
-    );
-    expect(afterRenameDelivery.body).toMatchObject({
-      allowed: true,
-      presentation: {
-        showBanner: true,
-        title: updatedTitle,
-      },
-    });
-    const redeployed = await api.prepareHostedSite(owner, {
-      ...input,
-      title: "Overridden Default Title",
-    });
-    expect(redeployed.title).toBe(updatedTitle);
-    await api.completeHostedSite(owner, redeployed.deploymentId);
-
-    // 3. Banner toggle persists on delivery
-    await accept(
-      client(owner).updateSiteBanner({
-        headers,
-        params: { siteId: prepared.siteId },
-        body: { showBanner: false, expectedRevision: null },
-      }),
-      [200],
-    );
-    const redeployedPrefix = `sites/brands/okou/publications/${redeployed.deploymentId}`;
-    const redeployedDelivery = {
-      params: {
-        siteId: prepared.siteId,
-        deploymentId: redeployed.deploymentId,
-      },
-      query: {
-        alias: prepared.publicSlug,
-        publicSlug: prepared.publicSlug,
-        publicBrand: "okou" as const,
-        prefix: redeployedPrefix,
-        manifestKey: `${redeployedPrefix}/manifest.json`,
-        presentation: "banner" as const,
-      },
-    };
-    const hiddenBanner = await accept(
-      client().deliveryAuthorization(redeployedDelivery),
-      [200],
-    );
-    expect(hiddenBanner.body).toMatchObject({
-      allowed: true,
-      presentation: {
-        showBanner: false,
-        title: updatedTitle,
-      },
-    });
-
-    // 4. Visibility -> private + per-user artifact_shares grant & revocation
-    // Capture a live colleague browser session before restricting visibility so
-    // we can verify deny -> allow (shared) -> deny (revoked) on delivery.
-    const colleagueSession = await browserHeaders(
-      colleague,
-      prepared.siteId,
-      `https://${prepared.publicSlug}.okou.app`,
-    );
-
-    await accept(
-      accessClient(owner).updateVisibility({
-        headers,
-        params: { artifactId },
-        body: { visibility: "private" },
-      }),
-      [200],
-    );
-    expect(
-      (await accept(client().deliveryAuthorization(redeployedDelivery), [200]))
-        .body.decision,
-    ).toBe("authenticate");
-
-    expect(
-      (
-        await accept(
-          client(colleague).deliveryAuthorization({
-            ...redeployedDelivery,
-            headers: colleagueSession,
-          }),
-          [200],
-        )
-      ).body.decision,
-    ).toBe("deny");
-
-    await accept(
-      accessClient(owner).addShare({
-        headers,
-        params: { artifactId },
-        body: { userId: colleague.userId },
-      }),
-      [200],
-    );
-    const sharedDelivery = await accept(
-      client(colleague).deliveryAuthorization({
-        ...redeployedDelivery,
-        headers: colleagueSession,
-      }),
-      [200],
-    );
-    expect(sharedDelivery.body).toMatchObject({
-      allowed: true,
-      decision: "allow",
-      presentation: {
-        showBanner: false,
-        title: updatedTitle,
-      },
-    });
-
-    await accept(
-      accessClient(owner).removeShare({
-        headers,
-        params: { artifactId, userId: colleague.userId },
-      }),
-      [200],
-    );
-    expect(
-      (
-        await accept(
-          client(colleague).deliveryAuthorization({
-            ...redeployedDelivery,
-            headers: colleagueSession,
-          }),
-          [200],
-        )
-      ).body.decision,
-    ).toBe("deny");
-  },
-);

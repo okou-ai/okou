@@ -1,1453 +1,1075 @@
-import { publicChatActor } from "../../routes/__tests__/helpers/public-chat-actor";
-
-import { webhookTelemetryContract } from "@okouai/api-contracts/contracts/webhooks";
+import { randomUUID } from "node:crypto";
+import { gunzipSync } from "node:zlib";
+import { chatEventsContract } from "@okouai/api-contracts/contracts/chat-event-send";
+import type { UserMessageInputDocument } from "@okouai/api-contracts/contracts/chat-threads";
+import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
+import { personalModelProvidersMainContract } from "@okouai/api-contracts/contracts/personal-model-providers";
 import { runPhaseTimingContract } from "@okouai/api-contracts/contracts/run-phase-timing";
+import { runnerDispatchEnvelopeSchema } from "@okouai/api-contracts/contracts/runner-dispatch";
+import {
+  runsByIdContract,
+  runsCancelContract,
+} from "@okouai/api-contracts/contracts/run-routes";
+import {
+  runnersHeartbeatContract,
+  type ExecutionContext,
+} from "@okouai/api-contracts/contracts/runners";
+import {
+  webhookClerkContract,
+  webhookCompleteContract,
+  webhookEventsContract,
+  webhookTelemetryContract,
+} from "@okouai/api-contracts/contracts/webhooks";
+import { findDocumentTemplateItem } from "@okouai/core/document-template-items";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { createStore } from "ccstate";
-import { HttpResponse, http } from "msw";
-import { describe, expect, it, onTestFinished, vi } from "vitest";
+import { http, HttpResponse } from "msw";
+import { beforeAll, describe, expect, it, onTestFinished } from "vitest";
+import {
+  array,
+  record,
+  string,
+  unknown as zUnknown,
+  type infer as zInfer,
+} from "zod";
 
-import { getApiTestMocks } from "../../../__tests__/mocks";
+import {
+  apiTestS3PresignedUrl,
+  mockAxiomSdkTelemetryFailure,
+} from "../../../__tests__/mocks";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { mockOptionalEnv } from "../../../lib/env";
-import { mockNow, now } from "../../../lib/time";
+import { TEST_WITH_SINGLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE } from "../../../__tests__/test-timeouts";
+import { env, mockOptionalEnv, optionalEnv } from "../../../lib/env";
+import { clearMockNow, mockNow, now, nowDate } from "../../../lib/time";
 import { server } from "../../../mocks/server";
-import { webhooksAgentHealthUsageTelemetryRoutes } from "../../routes/webhooks-agent-health-usage-telemetry";
-import { runPhaseTimingRoutes } from "../../routes/run-phase-timing";
-import { createAuthDeviceSupportApi } from "../../routes/__tests__/helpers/api-bdd-auth-device-support";
-import { createRunsApi } from "../../routes/__tests__/helpers/api-bdd-runs";
-import { createWebhookCallbackApi } from "../../routes/__tests__/helpers/api-bdd-webhooks";
 import { flushWaitUntilForTest } from "../../context/wait-until";
-import { completePublicClaudeRun } from "../../routes/__tests__/helpers/public-native-run";
-import { createDeferredPromise } from "../../utils";
-import { recordBillingOperationTimings } from "../sandbox-op-log";
+import { chatEventsRoutes } from "../../routes/chat-events";
+import { featureSwitchesRoutes } from "../../routes/feature-switches";
+import { meModelProvidersUpsertRoutes } from "../../routes/me-model-providers-upsert";
+import { runPhaseTimingRoutes } from "../../routes/run-phase-timing";
+import { runnersRoutes } from "../../routes/runners";
+import { runsRoutes } from "../../routes/runs";
+import { runsCancelRoutes } from "../../routes/runs-cancel";
+import { webhooksAgentCompleteRoutes } from "../../routes/webhooks-agent-complete";
+import { webhooksAgentEventsRoutes } from "../../routes/webhooks-agent-events";
+import { webhooksAgentHealthUsageTelemetryRoutes } from "../../routes/webhooks-agent-health-usage-telemetry";
+import { webhooksClerkRoutes } from "../../routes/webhooks-clerk";
+import {
+  createBddApi,
+  type ApiTestUser,
+} from "../../routes/__tests__/helpers/api-bdd";
+import { mockClaudeCodeTokenEndpoint } from "../../routes/__tests__/helpers/api-bdd-auth-device";
+import { createChatCallbacksApi } from "../../routes/__tests__/helpers/api-bdd-chat-callbacks";
+import { createRunsApi } from "../../routes/__tests__/helpers/api-bdd-runs";
+import { mockClerkUsers } from "../../routes/__tests__/helpers/clerk-users";
+import { createRouteMocks } from "../../routes/__tests__/helpers/route-test";
+import { settleIncludingAbort } from "../../utils";
 
-const context = testContext();
+type DispatchEnvelope = zInfer<typeof runnerDispatchEnvelopeSchema>;
+type RunnerHeartbeatBody = zInfer<
+  (typeof runnersHeartbeatContract.heartbeat)["body"]
+>;
 
-function sdkClientForDataset(
-  mocks: ReturnType<typeof getApiTestMocks>,
-  dataset: string,
-) {
-  const client = mocks.axiom.clients.find((candidate) => {
-    return candidate.ingest.mock.calls.some(([actualDataset]) => {
-      return actualDataset === dataset;
-    });
-  });
-  if (!client) {
-    throw new Error(`Expected Axiom SDK client for ${dataset}`);
-  }
-  return client;
+interface TrackedRun {
+  readonly actor: ApiTestUser;
+  readonly runId: string;
+  readonly sandboxToken: string;
+  done: boolean;
 }
 
-describe("shared SDK ingestion", () => {
-  it("preserves independent filesystem samples through the metrics HTTP transport", async () => {
-    // Telemetry-client suite exception: the ingestion payload is the subject,
-    // and no production read endpoint exposes these measurements. Construct
-    // the run through public endpoints and keep route tests on HTTP outcomes.
-    const owned = await publicChatActor(context);
-    const { runId } = await owned.sendChatRun(owned.actor, {
-      prompt: "measure rootfs and home independently",
-    });
-    const { execution } = await owned.runExecution(runId);
-    await owned.run(async () => {
-      const metric = {
-        ts: "2026-10-10T00:00:00Z",
-        cpu: 1,
-        mem_used: 10,
-        mem_total: 100,
-      };
-      const rootfs = {
-        used_bytes: 20,
-        total_bytes: 100,
-        available_bytes: 70,
-        used_inodes: 4,
-        total_inodes: 10,
-        available_inodes: 5,
-      };
-      const home = {
-        used_bytes: 0,
-        total_bytes: 200,
-        available_bytes: 190,
-        used_inodes: 0,
-        total_inodes: 20,
-        available_inodes: 19,
-      };
-      const receivedMetrics: unknown[] = [];
-      server.use(
-        http.post(
-          "https://api.axiom.co/v1/datasets/sandbox-telemetry-metrics/ingest",
-          async ({ request }) => {
-            const events: unknown = await request.json();
-            if (!Array.isArray(events)) {
-              throw new Error("Expected an Axiom metric array");
-            }
-            receivedMetrics.push(...events);
-            return HttpResponse.json({
-              ingested: events.length,
-              failed: 0,
-              processedBytes: 1,
-              blocksCreated: 1,
-              walLength: 1,
-            });
-          },
-        ),
-      );
-      const response = await accept(
-        setupApp({ context, routes: webhooksAgentHealthUsageTelemetryRoutes })(
-          webhookTelemetryContract,
-        ).send({
-          headers: { authorization: `Bearer ${execution.sandboxToken}` },
-          body: {
-            runId,
-            metrics: [
-              { ...metric, rootfs, home },
-              { ...metric, rootfs },
-              { ...metric, home },
-              metric,
-              { ...metric, rootfs, home: { ...home, used_bytes: -1 } },
-              { ...metric, rootfs: { ...rootfs, used_bytes: -1 }, home },
-            ],
-          },
-        }),
-        [200],
-      );
-      expect(response.body).toStrictEqual({ success: true, id: runId });
-      const expected = {
-        _time: metric.ts,
-        runId,
-        userId: owned.actor.userId,
-        cpu: metric.cpu,
-        mem_used: metric.mem_used,
-        mem_total: metric.mem_total,
-      };
-      const rootfsDimensions = {
-        rootfs_used_bytes: 20,
-        rootfs_total_bytes: 100,
-        rootfs_available_bytes: 70,
-        rootfs_used_inodes: 4,
-        rootfs_total_inodes: 10,
-        rootfs_available_inodes: 5,
-      };
-      const homeDimensions = {
-        home_used_bytes: 0,
-        home_total_bytes: 200,
-        home_available_bytes: 190,
-        home_used_inodes: 0,
-        home_total_inodes: 20,
-        home_available_inodes: 19,
-      };
-      expect(receivedMetrics).toStrictEqual([
-        { ...expected, ...rootfsDimensions, ...homeDimensions },
-        { ...expected, ...rootfsDimensions },
-        { ...expected, ...homeDimensions },
-        expected,
-        { ...expected, ...rootfsDimensions },
-        { ...expected, ...homeDimensions },
-      ]);
-    });
-  });
-
-  it("emits ID-free billing timings through the existing operation dataset", () => {
-    // Telemetry-client suite exception: no API read endpoint exposes this event.
-    recordBillingOperationTimings([
-      {
-        actionType: "api_billing_settlement_work",
-        durationMs: 39,
-        success: true,
-        dimensions: {
-          timing_scope: "inline",
-          pending_events: 3,
-          compaction_lock_wait_ms: 0,
-          pending_read_ms: 4.2,
-          pricing_read_ms: 1.1,
-          pricing_calculation_ms: 0.08,
-          event_write_ms: 5.3,
-          grant_deduction_ms: 10.5,
-          org_credit_ms: 0,
-          org_balance_read_ms: 0,
-          org_expire_credits_ms: 0,
-          org_debit_ms: 0,
-          org_expiry_lot_deduction_ms: 0,
-        },
-      },
-      {
-        actionType: "api_billing_settlement_compaction_lock_wait",
-        durationMs: 0,
-        success: true,
-      },
-    ]);
-    expect(context.mocks.axiom.sdkIngest).toHaveBeenCalledWith(
-      "vm0-sandbox-op-log-dev",
-      [
-        {
-          _time: expect.any(String),
-          source: "api",
-          op_type: "api_billing_settlement_work",
-          operation_domain: "billing",
-          duration_ms: 39,
-          success: true,
-          timing_scope: "inline",
-          pending_events: 3,
-          compaction_lock_wait_ms: 0,
-          pending_read_ms: 4.2,
-          pricing_read_ms: 1.1,
-          pricing_calculation_ms: 0.08,
-          event_write_ms: 5.3,
-          grant_deduction_ms: 10.5,
-          org_credit_ms: 0,
-          org_balance_read_ms: 0,
-          org_expire_credits_ms: 0,
-          org_debit_ms: 0,
-          org_expiry_lot_deduction_ms: 0,
-        },
-        {
-          _time: expect.any(String),
-          source: "api",
-          op_type: "api_billing_settlement_compaction_lock_wait",
-          operation_domain: "billing",
-          duration_ms: 0,
-          success: true,
-        },
-      ],
-    );
-  });
-
-  it("does not throw when billing timing ingestion fails synchronously", () => {
-    // Telemetry-client suite exception: the ingestion boundary is the subject.
-    context.mocks.axiom.sdkIngest.mockImplementationOnce(() => {
-      throw new Error("telemetry unavailable");
-    });
-    expect(() => {
-      recordBillingOperationTimings([
-        {
-          actionType: "api_billing_settlement_work",
-          durationMs: 8,
-          success: true,
-        },
-      ]);
-    }).not.toThrow();
-  });
-
-  it("preserves archive diagnostics through the sandbox-operation SDK transport", async () => {
-    // Logger-suite exception: ingestion is the subject and no read endpoint
-    // exposes it. Use the real webhook to cover validation and projection.
-    const owned = await publicChatActor(context);
-    const { runId } = await owned.sendChatRun(owned.actor, {
-      prompt: "check archive startup",
-    });
-    const { execution } = await owned.runExecution(runId);
-    await owned.run(async () => {
-      const token = execution.sandboxToken;
-      const operation = {
-        ts: "2026-09-18T00:00:00Z",
-        action_type: "storage_cache_fresh_delivery_headers",
-        duration_ms: 183,
-        success: false,
-        error: "response-size-mismatch",
-      };
-      const diagnostic = {
-        expected_bytes: "5",
-        response_bytes: "18446744073709551615",
-        source_kind: "storage",
-        source_index: 0,
-        content_encoding: "other",
-        archive_url: "https://private.example/archive?secret=private",
-        raw_content_encoding: "private-header",
-      } as const;
-      const connectionAttempt = {
-        started: 2,
-        succeeded: 1,
-        failed: 0,
-        dropped: 0,
-        active_at_headers: 1,
-        terminal_duration_ms: 37,
-        saturated: false,
-        origin: "https://private.example",
-        raw_error: "private",
-      } as const;
-      const response = await accept(
-        setupApp({ context, routes: webhooksAgentHealthUsageTelemetryRoutes })(
-          webhookTelemetryContract,
-        ).send({
-          headers: { authorization: `Bearer ${token}` },
-          body: {
-            runId,
-            sandboxOperations: [
-              operation,
-              { ...operation, archive_size_mismatch: diagnostic },
-              {
-                ...operation,
-                archive_connection_attempt: connectionAttempt,
-              },
-            ],
-          },
-        }),
-        [200],
-      );
-      expect(response.body).toStrictEqual({ success: true, id: runId });
-      const expected = {
-        _time: operation.ts,
-        source: "sandbox",
-        sandbox_type: "runner",
-        op_type: operation.action_type,
-        duration_ms: operation.duration_ms,
-        success: false,
-        error: operation.error,
-        run_id: runId,
-      };
-      expect(context.mocks.axiom.sdkIngest).toHaveBeenCalledWith(
-        "vm0-sandbox-op-log-dev",
-        [expected],
-      );
-      expect(context.mocks.axiom.sdkIngest).toHaveBeenCalledWith(
-        "vm0-sandbox-op-log-dev",
-        [
-          {
-            ...expected,
-            archive_size_mismatch_expected_bytes: "5",
-            archive_size_mismatch_response_bytes: "18446744073709551615",
-            archive_size_mismatch_source_kind: "storage",
-            archive_size_mismatch_source_index: 0,
-            archive_size_mismatch_content_encoding: "other",
-          },
-        ],
-      );
-      expect(context.mocks.axiom.sdkIngest).toHaveBeenCalledWith(
-        "vm0-sandbox-op-log-dev",
-        [
-          {
-            ...expected,
-            archive_connection_attempt_started: 2,
-            archive_connection_attempt_succeeded: 1,
-            archive_connection_attempt_failed: 0,
-            archive_connection_attempt_dropped: 0,
-            archive_connection_attempt_active_at_headers: 1,
-            archive_connection_attempt_terminal_duration_ms: 37,
-            archive_connection_attempt_saturated: false,
-          },
-        ],
-      );
-    });
-  });
-
-  it("preserves staging counts, phase availability and redaction through the webhook", async () => {
-    // Logger-suite exception: exercise the authenticated production webhook;
-    // its validated, allowlisted SDK ingest payload is this suite's boundary.
-    const owned = await publicChatActor(context);
-    const { runId } = await owned.sendChatRun(owned.actor, {
-      prompt: "observe archive staging",
-    });
-    const { execution } = await owned.runExecution(runId);
-    await owned.run(async () => {
-      const operation = {
-        ts: "2026-11-17T00:00:00Z",
-        action_type: "storage_cache_stage_batch_write",
-        duration_ms: 140,
-        success: true,
-      };
-      const full = {
-        file_count: 2,
-        content_bytes: 42,
-        host_timing: "complete",
-        lock_wait_us: 0,
-        admission_us: 0,
-        validation_us: 1,
-        path_lock_wait_us: 2,
-        file_gate_wait_us: 3,
-        request_setup_us: 4,
-        frame_builder_wait_us: 5,
-        frame_encode_us: 6,
-        writer_wait_us: 7,
-        frame_write_us: 8,
-        response_wait_us: 9,
-        result_decode_us: 10,
-      } as const;
-      const partial = {
-        file_count: 1,
-        content_bytes: 0,
-        host_timing: "partial",
-        admission_us: 0,
-      } as const;
-      const unavailable = {
-        file_count: 1,
-        content_bytes: 0,
-        host_timing: "unavailable",
-      } as const;
-      const fullWithPrivateFields = {
-        ...full,
-        path: "/private/archive",
-        content: "private bytes",
-        archive_url: "https://private.example/?secret=private",
-      };
-      const response = await accept(
-        setupApp({ context, routes: webhooksAgentHealthUsageTelemetryRoutes })(
-          webhookTelemetryContract,
-        ).send({
-          headers: { authorization: `Bearer ${execution.sandboxToken}` },
-          body: {
-            runId,
-            sandboxOperations: [
-              {
-                ...operation,
-                storage_stage_write: fullWithPrivateFields,
-              },
-              { ...operation, success: false, storage_stage_write: partial },
-              { ...operation, storage_stage_write: unavailable },
-            ],
-          },
-        }),
-        [200],
-      );
-      expect(response.body).toStrictEqual({ success: true, id: runId });
-      const base = {
-        _time: operation.ts,
-        source: "sandbox",
-        sandbox_type: "runner",
-        op_type: operation.action_type,
-        duration_ms: 140,
-        success: true,
-        run_id: runId,
-      };
-      const measurements = [
-        {
-          storage_stage_file_count: 2,
-          storage_stage_content_bytes: 42,
-          storage_stage_host_timing: "complete",
-          storage_stage_lock_wait_us: 0,
-          storage_stage_admission_us: 0,
-          storage_stage_validation_us: 1,
-          storage_stage_path_lock_wait_us: 2,
-          storage_stage_file_gate_wait_us: 3,
-          storage_stage_request_setup_us: 4,
-          storage_stage_frame_builder_wait_us: 5,
-          storage_stage_frame_encode_us: 6,
-          storage_stage_writer_wait_us: 7,
-          storage_stage_frame_write_us: 8,
-          storage_stage_response_wait_us: 9,
-          storage_stage_result_decode_us: 10,
-        },
-        {
-          storage_stage_file_count: 1,
-          storage_stage_content_bytes: 0,
-          storage_stage_host_timing: "partial",
-          storage_stage_admission_us: 0,
-          success: false,
-        },
-        {
-          storage_stage_file_count: 1,
-          storage_stage_content_bytes: 0,
-          storage_stage_host_timing: "unavailable",
-        },
-      ];
-      for (const measurement of measurements) {
-        expect(context.mocks.axiom.sdkIngest).toHaveBeenCalledWith(
-          "vm0-sandbox-op-log-dev",
-          [{ ...base, ...measurement }],
-        );
-      }
-    });
-  });
-
-  it("preserves storage batch measurements through the sandbox-operation SDK transport", async () => {
-    // Logger-suite exception: the SDK ingestion record is the subject, and no
-    // production read endpoint exposes it. Exercise the real webhook so its
-    // validation and field projection remain part of this transport contract.
-    const owned = await publicChatActor(context);
-    const { runId } = await owned.sendChatRun(owned.actor, {
-      prompt: "measure storage batch application",
-    });
-    const { execution } = await owned.runExecution(runId);
-    await owned.run(async () => {
-      const token = execution.sandboxToken;
-      const ts = "2026-09-15T00:00:00Z";
-      const storageBatch = {
-        ts,
-        action_type: "runner_storage_manifest_batch_apply",
-        duration_ms: 42,
-        success: true,
-        outcome: "dedicated_middle",
-        reason: "32_to_64_kib",
-        storage_batch_guest_duration_ms: 31,
-        storage_batch_outer_residual_ms: 11,
-        storage_batch_timing: "paired",
-        storage_batch_admission_ms: 0,
-        storage_batch_request_setup_ms: 1,
-        storage_batch_frame_builder_wait_ms: 2,
-        storage_batch_frame_encode_ms: 3,
-        storage_batch_writer_wait_ms: 4,
-        storage_batch_frame_write_ms: 5,
-        storage_batch_response_wait_ms: 6,
-        storage_batch_result_decode_ms: 7,
-        storage_batch_resource_log_ms: 8,
-        storage_batch_host_timing: "complete",
-        storage_batch_guest_timing: "complete",
-        storage_batch_resources: "complete",
-        storage_batch_guest_request_ownership_us: 0,
-        storage_batch_guest_worker_wait_us: 1,
-        storage_batch_guest_response_prepare_us: 2,
-        storage_batch_containment_wall_us: 3,
-        storage_batch_resource_collection_us: 4,
-        storage_batch_cpu_usage_us: 5,
-        storage_batch_cpu_throttled_us: 6,
-        storage_batch_memory_peak_bytes: Number.MAX_SAFE_INTEGER,
-        storage_batch_memory_events_oom: 0,
-        storage_batch_memory_events_oom_kill: 0,
-        storage_batch_memory_events_oom_group_kill: 0,
-        storage_batch_pids_events_max: 0,
-        resources: { group: "private-cgroup", request_seq: 17 },
-        storage_control_timing: { run_id: "private-run" },
-        storage_batch_payload_size_bucket: "64_to_256_kib",
-        manifest_json: "must-not-reach-axiom",
-      } as const;
-      const partialStorageBatch = {
-        ts,
-        action_type: storageBatch.action_type,
-        duration_ms: 42,
-        success: false,
-        storage_batch_host_timing: "partial",
-        storage_batch_request_setup_ms: 0,
-        storage_batch_payload_size_bucket: "none",
-      } as const;
-      const unavailableStorageBatch = {
-        ts,
-        action_type: storageBatch.action_type,
-        duration_ms: 42,
-        success: true,
-        storage_batch_host_timing: "unavailable",
-        storage_batch_payload_size_bucket: "none",
-      } as const;
-      const response = await accept(
-        setupApp({ context, routes: webhooksAgentHealthUsageTelemetryRoutes })(
-          webhookTelemetryContract,
-        ).send({
-          headers: { authorization: `Bearer ${token}` },
-          body: {
-            runId,
-            sandboxOperations: [
-              storageBatch,
-              partialStorageBatch,
-              unavailableStorageBatch,
-            ],
-          },
-        }),
-        [200],
-      );
-      expect(response.body).toStrictEqual({ success: true, id: runId });
-
-      const expected = {
-        _time: ts,
-        source: "sandbox",
-        sandbox_type: "runner",
-        op_type: storageBatch.action_type,
-        duration_ms: storageBatch.duration_ms,
-        success: true,
-        run_id: runId,
-      };
-      expect(context.mocks.axiom.sdkIngest).toHaveBeenCalledWith(
-        "vm0-sandbox-op-log-dev",
-        [
-          {
-            ...expected,
-            op_type: storageBatch.action_type,
-            duration_ms: storageBatch.duration_ms,
-            outcome: storageBatch.outcome,
-            reason: storageBatch.reason,
-            storage_batch_guest_duration_ms:
-              storageBatch.storage_batch_guest_duration_ms,
-            storage_batch_outer_residual_ms:
-              storageBatch.storage_batch_outer_residual_ms,
-            storage_batch_timing: storageBatch.storage_batch_timing,
-            storage_batch_admission_ms: storageBatch.storage_batch_admission_ms,
-            storage_batch_request_setup_ms:
-              storageBatch.storage_batch_request_setup_ms,
-            storage_batch_frame_builder_wait_ms:
-              storageBatch.storage_batch_frame_builder_wait_ms,
-            storage_batch_frame_encode_ms:
-              storageBatch.storage_batch_frame_encode_ms,
-            storage_batch_writer_wait_ms:
-              storageBatch.storage_batch_writer_wait_ms,
-            storage_batch_frame_write_ms:
-              storageBatch.storage_batch_frame_write_ms,
-            storage_batch_response_wait_ms:
-              storageBatch.storage_batch_response_wait_ms,
-            storage_batch_result_decode_ms:
-              storageBatch.storage_batch_result_decode_ms,
-            storage_batch_resource_log_ms:
-              storageBatch.storage_batch_resource_log_ms,
-            storage_batch_host_timing: storageBatch.storage_batch_host_timing,
-            storage_batch_guest_timing: storageBatch.storage_batch_guest_timing,
-            storage_batch_resources: storageBatch.storage_batch_resources,
-            storage_batch_guest_request_ownership_us:
-              storageBatch.storage_batch_guest_request_ownership_us,
-            storage_batch_guest_worker_wait_us:
-              storageBatch.storage_batch_guest_worker_wait_us,
-            storage_batch_guest_response_prepare_us:
-              storageBatch.storage_batch_guest_response_prepare_us,
-            storage_batch_containment_wall_us:
-              storageBatch.storage_batch_containment_wall_us,
-            storage_batch_resource_collection_us:
-              storageBatch.storage_batch_resource_collection_us,
-            storage_batch_cpu_usage_us: storageBatch.storage_batch_cpu_usage_us,
-            storage_batch_cpu_throttled_us:
-              storageBatch.storage_batch_cpu_throttled_us,
-            storage_batch_memory_peak_bytes:
-              storageBatch.storage_batch_memory_peak_bytes,
-            storage_batch_memory_events_oom:
-              storageBatch.storage_batch_memory_events_oom,
-            storage_batch_memory_events_oom_kill:
-              storageBatch.storage_batch_memory_events_oom_kill,
-            storage_batch_memory_events_oom_group_kill:
-              storageBatch.storage_batch_memory_events_oom_group_kill,
-            storage_batch_pids_events_max:
-              storageBatch.storage_batch_pids_events_max,
-            storage_batch_payload_size_bucket:
-              storageBatch.storage_batch_payload_size_bucket,
-          },
-        ],
-      );
-      for (const batch of [partialStorageBatch, unavailableStorageBatch]) {
-        const { ts: eventTime, action_type: action, ...dimensions } = batch;
-        expect(context.mocks.axiom.sdkIngest).toHaveBeenCalledWith(
-          "vm0-sandbox-op-log-dev",
-          [{ ...expected, ...dimensions, _time: eventTime, op_type: action }],
-        );
-      }
-    });
-  });
-
-  it("attributes dataset failures and flushes every selected client", async () => {
-    const { flushAxiom, ingestToAxiom } =
-      await vi.importActual<typeof import("../axiom")>("../axiom");
-    const mocks = getApiTestMocks();
-    const restoreConsole = mocks.console.capture();
-    onTestFinished(restoreConsole);
-
-    const telemetryToken = "xaat-private-telemetry-token";
-    const sessionsToken = "xaat-private-sessions-token";
-    const requestDataset = "okou-request-log-shared-test";
-    const contextDataset = "okou-run-context-shared-test";
-    const sessionsDataset = "okou-agent-run-events-shared-test";
-    const requestPayload = "private-request-payload";
-    const secondRequestPayload = "private-second-request-payload";
-    const contextPayload = "private-context-payload";
-    const sessionsPayload = "private-sessions-payload";
-    mockOptionalEnv("AXIOM_TOKEN_TELEMETRY", telemetryToken);
-    mockOptionalEnv("AXIOM_TOKEN_SESSIONS", sessionsToken);
-
-    expect(
-      ingestToAxiom(requestDataset, [{ value: requestPayload }]),
-    ).toBeTruthy();
-    expect(
-      ingestToAxiom(contextDataset, [{ value: contextPayload }]),
-    ).toBeTruthy();
-    expect(
-      ingestToAxiom(sessionsDataset, [{ value: sessionsPayload }]),
-    ).toBeTruthy();
-    expect(
-      ingestToAxiom(requestDataset, [{ value: secondRequestPayload }]),
-    ).toBeTruthy();
-
-    const requestClient = sdkClientForDataset(mocks, requestDataset);
-    const contextClient = sdkClientForDataset(mocks, contextDataset);
-    const sessionsClient = sdkClientForDataset(mocks, sessionsDataset);
-    expect(
-      mocks.axiom.clients.filter((client) => {
-        return client.ingest.mock.calls.length > 0;
-      }),
-    ).toHaveLength(3);
-    expect(requestClient.options.token).toBe(telemetryToken);
-    expect(contextClient.options.token).toBe(telemetryToken);
-    expect(sessionsClient.options.token).toBe(sessionsToken);
-    expect(requestClient.ingest.mock.calls).toStrictEqual([
-      [requestDataset, [{ value: requestPayload }]],
-      [requestDataset, [{ value: secondRequestPayload }]],
-    ]);
-
-    const requestError = new Error("The operation was aborted due to timeout");
-    requestError.name = "TimeoutError";
-    const contextError = new Error("connection refused");
-    const requestOnError = requestClient.options.onError;
-    const contextOnError = contextClient.options.onError;
-    if (!requestOnError || !contextOnError) {
-      throw new Error("Expected dataset-bound Axiom error callbacks");
-    }
-    requestOnError(requestError);
-    contextOnError(contextError);
-
-    const operationLogs = mocks.axiomLogging.error.mock.calls.filter(
-      ([message]) => {
-        return message === "Axiom client operation failed";
-      },
-    );
-    expect(operationLogs).toStrictEqual([
-      [
-        "Axiom client operation failed",
-        expect.objectContaining({
-          client: "telemetry",
-          dataset: requestDataset,
-          failureKind: "timeout",
-          api_commit_sha: "a".repeat(40),
-          error: expect.objectContaining({
-            name: "TimeoutError",
-            message: requestError.message,
-            stack: expect.any(String),
-          }),
-        }),
-      ],
-      [
-        "Axiom client operation failed",
-        expect.objectContaining({
-          client: "telemetry",
-          dataset: contextDataset,
-          failureKind: "transport_error",
-          api_commit_sha: "a".repeat(40),
-          error: expect.objectContaining({
-            name: "Error",
-            message: contextError.message,
-            stack: expect.any(String),
-          }),
-        }),
-      ],
-    ]);
-    const serializedOperationLogs = JSON.stringify(operationLogs);
-    for (const secret of [
-      telemetryToken,
-      sessionsToken,
-      requestPayload,
-      secondRequestPayload,
-      contextPayload,
-      sessionsPayload,
-    ]) {
-      expect(serializedOperationLogs).not.toContain(secret);
-    }
-
-    const flushController = new AbortController();
-    onTestFinished(() => {
-      flushController.abort();
-    });
-    const requestFlush = createDeferredPromise<void>(flushController.signal);
-    const contextFlush = createDeferredPromise<void>(flushController.signal);
-    requestClient.flush.mockReturnValueOnce(requestFlush.promise);
-    contextClient.flush.mockReturnValueOnce(contextFlush.promise);
-    sessionsClient.flush.mockResolvedValue(undefined);
-    const telemetryFlush = flushAxiom({ client: "telemetry" });
-    expect(requestClient.flush).toHaveBeenCalledOnce();
-    expect(contextClient.flush).toHaveBeenCalledOnce();
-    expect(sessionsClient.flush).not.toHaveBeenCalled();
-    requestFlush.resolve();
-    contextFlush.resolve();
-    await expect(telemetryFlush).resolves.toBeUndefined();
-
-    requestClient.flush.mockClear();
-    contextClient.flush.mockClear();
-    sessionsClient.flush.mockClear();
-    await expect(flushAxiom({ client: "sessions" })).resolves.toBeUndefined();
-    expect(requestClient.flush).not.toHaveBeenCalled();
-    expect(contextClient.flush).not.toHaveBeenCalled();
-    expect(sessionsClient.flush).toHaveBeenCalledOnce();
-
-    requestClient.flush.mockClear();
-    contextClient.flush.mockClear();
-    sessionsClient.flush.mockClear();
-    mocks.axiom.flush.mockResolvedValue(undefined);
-    await expect(flushAxiom()).resolves.toBeUndefined();
-    expect(requestClient.flush).toHaveBeenCalledOnce();
-    expect(contextClient.flush).toHaveBeenCalledOnce();
-    expect(sessionsClient.flush).toHaveBeenCalledOnce();
-
-    requestClient.flush.mockClear();
-    contextClient.flush.mockClear();
-    sessionsClient.flush.mockClear();
-    mocks.axiomLogging.error.mockClear();
-    const flushError = new Error("flush rejected");
-    requestClient.flush.mockRejectedValueOnce(flushError);
-    contextClient.flush.mockResolvedValueOnce(undefined);
-    await expect(flushAxiom({ client: "telemetry" })).resolves.toBeUndefined();
-    expect(requestClient.flush).toHaveBeenCalledOnce();
-    expect(contextClient.flush).toHaveBeenCalledOnce();
-    expect(sessionsClient.flush).not.toHaveBeenCalled();
-    expect(mocks.axiomLogging.error).toHaveBeenCalledWith(
-      "Axiom client flush failed",
-      expect.objectContaining({
-        client: "telemetry",
-        dataset: requestDataset,
-        api_commit_sha: "a".repeat(40),
-        error: expect.objectContaining({
-          name: "Error",
-          message: flushError.message,
-          stack: expect.any(String),
-        }),
-      }),
-    );
-  });
+const SESSION_HEADERS = Object.freeze({
+  authorization: "Bearer clerk-session",
 });
 
-describe("Run phase observation transport", () => {
-  it.each([false, true])(
-    "writes the authenticated stage timeline with callback provenance (skipResearch=%s)",
-    async (skipResearch) => {
-      // Telemetry-client exception: these optional events have no raw API read
-      // route. Construct every stage through its authenticated production API.
-      const owned = await publicChatActor(context);
-      owned.ownsFeatureSwitches();
-      const events: unknown[] = [];
-      context.mocks.axiom.useRealTelemetry.mockReturnValue(true);
-      server.use(
-        http.post(
-          "https://api.axiom.co/v1/datasets/vm0-web-logs-dev/ingest",
-          async ({ request }) => {
-            const body: unknown = await request.json();
-            if (!Array.isArray(body)) {
-              throw new Error("Expected phase observation array");
-            }
-            events.push(...body);
-            return HttpResponse.json({ ingested: body.length, failed: 0 });
-          },
-        ),
-      );
-      await owned.run(async () => {
-        const run = await createRunsApi(context).createThreadRun(owned.actor, {
-          prompt: "Create the phase transport example",
-          model: "claude-fable-5-1",
-        });
-        const execution = await owned.executionInput(run.runId);
-        const api = setupApp({ context, routes: runPhaseTimingRoutes })(
-          runPhaseTimingContract,
-        );
-        const token = execution.platformEnvironment.OKOU_TOKEN;
-        if (!token) {
-          throw new Error("Expected a minted Run token");
-        }
-        const headers = { authorization: `Bearer ${token}` };
-        const researchAt = new Date(now());
-        const generationAt = new Date(researchAt.getTime() + 1000);
-        const completionAt = new Date(generationAt.getTime() + 1000);
-        if (!skipResearch) {
-          mockNow(researchAt);
-          await accept(
-            api.mark({ headers, body: { phase: "research-start" } }),
-            [202],
-          );
-        }
-        mockNow(generationAt);
-        await accept(
-          api.mark({
-            headers,
-            body: { phase: "generation-start", kind: "report", skipResearch },
-          }),
-          [202],
-        );
-        mockNow(completionAt);
-        await completePublicClaudeRun(
-          context,
-          run,
-          { authorization: `Bearer ${execution.sandboxToken}` },
-          "Report ready",
-        );
-        const identity = {
-          schema_version: 2,
-          type: "run_phase_mark",
-          source: "callback",
-          run_id: run.runId,
-          user_id: owned.actor.userId,
-          org_id: owned.actor.orgId,
-        };
-        const expected = [
-          ...(skipResearch
-            ? []
-            : [
-                {
-                  ...identity,
-                  _time: researchAt.toISOString(),
-                  phase: "research-start",
-                },
-              ]),
-          {
-            ...identity,
-            _time: generationAt.toISOString(),
-            phase: "generation-start",
-            generation_kind: "report",
-            research_skipped: skipResearch,
-          },
-          {
-            ...identity,
-            _time: completionAt.toISOString(),
-            phase: "completion-callback",
-          },
-        ];
-        expect(events).toHaveLength(expected.length);
-        expect(events).toStrictEqual(expect.arrayContaining(expected));
-      });
+const CLAUDE_MODEL = "claude-fable-5-1";
+const DEFAULT_PROFILE = "vm0/default";
+const SIMPLE_INVOICE_TEMPLATE_ID = "document-template:simple-invoice" as const;
+const AXIOM_INGEST_URL = "https://api.axiom.co/v1/datasets/:dataset/ingest";
+
+const axiomEventsBodySchema = array(record(string(), zUnknown()));
+
+const context = testContext();
+const bdd = createBddApi(context);
+const runs = createRunsApi(context);
+const chatCallbacks = createChatCallbacksApi(context);
+const routeMocks = createRouteMocks(context);
+
+const webhooksClerkApi = setupApp({
+  context,
+  routes: webhooksClerkRoutes,
+})(webhookClerkContract);
+const personalModelProvidersApi = setupApp({
+  context,
+  routes: meModelProvidersUpsertRoutes,
+})(personalModelProvidersMainContract);
+const featureSwitchesApi = setupApp({
+  context,
+  routes: featureSwitchesRoutes,
+})(featureSwitchesContract);
+const chatEventsApi = setupApp({
+  context,
+  routes: chatEventsRoutes,
+})(chatEventsContract);
+const runnersHeartbeatApi = setupApp({
+  context,
+  routes: runnersRoutes,
+})(runnersHeartbeatContract);
+const runsByIdApi = setupApp({
+  context,
+  routes: runsRoutes,
+})(runsByIdContract);
+const runsCancelApi = setupApp({
+  context,
+  routes: runsCancelRoutes,
+})(runsCancelContract);
+const runPhaseTimingApi = setupApp({
+  context,
+  routes: runPhaseTimingRoutes,
+})(runPhaseTimingContract);
+const webhooksAgentCompleteApi = setupApp({
+  context,
+  routes: webhooksAgentCompleteRoutes,
+})(webhookCompleteContract);
+const webhooksAgentEventsApi = setupApp({
+  context,
+  routes: webhooksAgentEventsRoutes,
+})(webhookEventsContract);
+const webhooksAgentTelemetryApi = setupApp({
+  context,
+  routes: webhooksAgentHealthUsageTelemetryRoutes,
+})(webhookTelemetryContract);
+
+function officialRunnerHeaders() {
+  return {
+    authorization: `Bearer vm0_official_${env("OFFICIAL_RUNNER_SECRET")}`,
+  };
+}
+
+function bearerHeaders(token: string) {
+  return { authorization: `Bearer ${token}` };
+}
+
+function signIn(actor: ApiTestUser): void {
+  routeMocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
+  const emailId = `email_${actor.userId}`;
+  mockClerkUsers(context, [
+    {
+      id: actor.userId,
+      emailAddresses: [{ id: emailId, emailAddress: actor.email }],
+      primaryEmailAddressId: emailId,
+      firstName: "BDD",
+      lastName: "Axiom",
+    },
+  ]);
+  const memberships = actor.orgId
+    ? [
+        {
+          id: `membership-${actor.userId}-${actor.orgId}`,
+          createdAt: Date.parse("2020-01-01T00:00:00.000Z"),
+          role: actor.orgRole ?? "org:admin",
+          organization: { id: actor.orgId },
+          publicUserData: { userId: actor.userId },
+        },
+      ]
+    : [];
+  context.mocks.clerk.users.getOrganizationMembershipList.mockResolvedValue({
+    data: memberships,
+  });
+  context.mocks.clerk.organizations.getOrganizationMembershipList.mockResolvedValue(
+    {
+      data: memberships,
     },
   );
-});
+}
 
-describe("Run phase start and completion transport", () => {
-  const runs = createRunsApi(context);
-  const features = createAuthDeviceSupportApi(context);
-  const webhooks = createWebhookCallbackApi(context);
+function initRuntimeMocks(): void {
+  chatCallbacks.acceptChatObjectStorage();
+  runs.acceptStorageDownloads();
+  runs.acceptTelemetryIngest();
+  mockOptionalEnv("OPENROUTER_API_KEY", undefined);
+  chatCallbacks.disableVapid();
+}
 
-  // The ingestion request is the telemetry client's external contract.
-  // All Run state is created and completed through public API endpoints.
-  async function callbackFixture(
-    options: {
-      readonly threePointEnabled?: boolean;
-    } = {},
-  ) {
-    const owned = await publicChatActor(context);
-    owned.ownsFeatureSwitches();
-    const events: unknown[] = [];
-    context.mocks.axiom.useRealTelemetry.mockReturnValue(true);
+function heartbeatPayload(args: {
+  readonly runnerId: string;
+  readonly runnerHostname: string;
+  readonly group: string;
+}): RunnerHeartbeatBody {
+  return {
+    runnerId: args.runnerId,
+    runnerHostname: args.runnerHostname,
+    group: args.group,
+    snapshotGeneration: 1,
+    snapshotSequence: 1,
+    totalVcpu: 16,
+    totalMemoryMb: 32_768,
+    maxConcurrent: 4,
+    allocatedVcpu: 0,
+    allocatedMemoryMb: 0,
+    runningCount: 0,
+    admittableProfiles: [DEFAULT_PROFILE],
+    heldSandboxStates: [],
+    heldHomeStates: [],
+    activeReuseProducers: [],
+    mode: "running",
+    ingressServiceActive: true,
+  };
+}
+
+function createRunTracker() {
+  const tracked: TrackedRun[] = [];
+
+  onTestFinished(async () => {
+    clearMockNow();
+    const pendingEntries = tracked.filter((entry) => {
+      return !entry.done;
+    });
+    if (pendingEntries.length === 0) {
+      await flushWaitUntilForTest();
+      return;
+    }
+    initRuntimeMocks();
+    context.mocks.s3.getSignedUrl.mockImplementation(
+      (_client: unknown, command: unknown) => {
+        return Promise.resolve(apiTestS3PresignedUrl(command));
+      },
+    );
+    context.mocks.ably.publish.mockResolvedValue(undefined);
+    const errors: unknown[] = [];
+    const initialFlush = await settleIncludingAbort(flushWaitUntilForTest);
+    if (!initialFlush.ok) {
+      errors.push(initialFlush.error);
+    }
+    const pendingCompletions: Promise<unknown>[] = [];
+    for (const entry of pendingEntries) {
+      const cleaned = await settleIncludingAbort(async () => {
+        signIn(entry.actor);
+        const current = await accept(
+          runsByIdApi.getById({
+            headers: SESSION_HEADERS,
+            params: { id: entry.runId },
+          }),
+          [200],
+        );
+        if (["queued", "pending", "running"].includes(current.body.status)) {
+          await accept(
+            runsCancelApi.cancel({
+              headers: SESSION_HEADERS,
+              params: { id: entry.runId },
+            }),
+            [200],
+          );
+        }
+        if (!["completed", "failed", "timeout"].includes(current.body.status)) {
+          pendingCompletions.push(
+            accept(
+              webhooksAgentCompleteApi.complete({
+                headers: bearerHeaders(entry.sandboxToken),
+                body: {
+                  runId: entry.runId,
+                  exitCode: 137,
+                  error: "Run cancelled by test cleanup",
+                },
+              }),
+              [200],
+            ),
+          );
+        }
+        entry.done = true;
+      });
+      if (!cleaned.ok) {
+        errors.push(cleaned.error);
+      }
+    }
+    if (pendingCompletions.length > 0) {
+      const completed = await settleIncludingAbort(() => {
+        return Promise.all(pendingCompletions);
+      });
+      if (!completed.ok) {
+        errors.push(completed.error);
+      }
+    }
+    const finalFlush = await settleIncludingAbort(flushWaitUntilForTest);
+    if (!finalFlush.ok) {
+      errors.push(finalFlush.error);
+    }
+    if (errors.length === 1) {
+      throw errors[0];
+    }
+    if (errors.length > 1) {
+      throw new AggregateError(errors, "Axiom transport test cleanup failed");
+    }
+  });
+
+  return {
+    track(actor: ApiTestUser, runId: string, sandboxToken: string): TrackedRun {
+      const entry: TrackedRun = { actor, runId, sandboxToken, done: false };
+      tracked.push(entry);
+      return entry;
+    },
+  };
+}
+
+function createDirectRunnerHarness(group: string) {
+  const acceptedByRunId = new Map<string, ExecutionContext>();
+  const acceptedOrder: string[] = [];
+
+  async function register(): Promise<void> {
+    const runnerId = randomUUID();
+    const heartbeatGeneration = 1;
+    const hostname = `runner-${runnerId}.okou.app`;
+    const expectedAuth = officialRunnerHeaders().authorization;
+
     server.use(
       http.post(
-        "https://api.axiom.co/v1/datasets/vm0-web-logs-dev/ingest",
-        async ({ request }) => {
-          const body: unknown = await request.json();
-          if (!Array.isArray(body)) {
-            throw new Error("Expected phase observation array");
+        `https://${hostname}/runners/${runnerId}/control/runs/:runId/dispatch`,
+        async ({ request, params }) => {
+          if (request.headers.get("authorization") !== expectedAuth) {
+            return new HttpResponse(null, { status: 401 });
           }
-          events.push(...body);
-          return HttpResponse.json({ ingested: body.length, failed: 0 });
+          const encoding = request.headers.get("content-encoding");
+          const rawBytes = Buffer.from(await request.arrayBuffer());
+          const bytes =
+            encoding === "gzip"
+              ? gunzipSync(rawBytes).toString("utf8")
+              : rawBytes.toString("utf8");
+          const envelope: DispatchEnvelope = runnerDispatchEnvelopeSchema.parse(
+            JSON.parse(bytes),
+          );
+          if (
+            envelope.runnerId !== runnerId ||
+            envelope.heartbeatGeneration !== heartbeatGeneration ||
+            envelope.executionContext.runId !== params.runId
+          ) {
+            throw new Error("Unexpected direct Runner dispatch identity");
+          }
+          acceptedByRunId.set(
+            envelope.executionContext.runId,
+            envelope.executionContext,
+          );
+          acceptedOrder.push(envelope.executionContext.runId);
+          return HttpResponse.json({
+            runnerId,
+            heartbeatGeneration,
+            runId: envelope.executionContext.runId,
+            disposition: "accepted",
+          });
         },
       ),
     );
-    return await owned.run(async () => {
-      if (options.threePointEnabled !== undefined) {
-        await features.updateFeatureSwitches(owned.actor, {
-          [FeatureSwitchKey.ArtifactThreePointTiming]:
-            options.threePointEnabled,
-        });
-      }
-      const run = await runs.createThreadRun(owned.actor, {
-        prompt: "Complete a normally authenticated Run",
-        model: owned.model,
-      });
-      const execution = await owned.executionInput(run.runId);
-      const token = execution.platformEnvironment.OKOU_TOKEN;
-      if (!token) {
-        throw new Error("Expected a minted Run token");
-      }
-      const headers = { authorization: `Bearer ${execution.sandboxToken}` };
-      const markHeaders = { authorization: `Bearer ${token}` };
-      return { owned, run, execution, headers, markHeaders, events };
-    });
+
+    await accept(
+      runnersHeartbeatApi.heartbeat({
+        headers: officialRunnerHeaders(),
+        body: heartbeatPayload({
+          runnerId,
+          runnerHostname: hostname,
+          group,
+        }),
+      }),
+      [200],
+    );
   }
 
-  it("preserves duplicate raw starts with signed Run identity and server receipt time", async () => {
-    const f = await callbackFixture();
-    await f.owned.run(async () => {
-      const api = setupApp({ context, routes: runPhaseTimingRoutes })(
-        runPhaseTimingContract,
-      );
-      const recordedAt = new Date(now());
-      mockNow(recordedAt);
-      const marks = [
-        { phase: "research-start" },
-        { phase: "research-start" },
-        { phase: "generation-start", kind: "report", skipResearch: false },
-        { phase: "generation-start", kind: "report", skipResearch: false },
-      ] as const;
-      for (const body of marks) {
-        await accept(api.mark({ headers: f.markHeaders, body }), [202]);
-        await flushWaitUntilForTest();
-      }
-      expect(f.events).toStrictEqual(
-        marks.map((mark) => {
-          return {
-            _time: recordedAt.toISOString(),
-            schema_version: 2,
-            type: "run_phase_mark",
-            source: "callback",
-            run_id: f.run.runId,
-            user_id: f.owned.actor.userId,
-            org_id: f.owned.actor.orgId,
-            phase: mark.phase,
-            ...(mark.phase === "generation-start"
-              ? {
-                  generation_kind: mark.kind,
-                  research_skipped: mark.skipResearch,
-                }
-              : {}),
-          };
-        }),
-      );
-    });
-  });
+  function nextAccepted(afterIndex: number): ExecutionContext {
+    const runId = acceptedOrder[afterIndex];
+    if (!runId) {
+      throw new Error("Expected a direct Runner dispatch to be accepted");
+    }
+    const execution = acceptedByRunId.get(runId);
+    if (!execution) {
+      throw new Error(`Missing captured execution context for run ${runId}`);
+    }
+    return execution;
+  }
 
-  it("keeps the start receipt accepted when the telemetry provider is unavailable", async () => {
-    const f = await callbackFixture();
-    let attempts = 0;
-    server.use(
-      http.post(
-        "https://api.axiom.co/v1/datasets/vm0-web-logs-dev/ingest",
-        () => {
-          attempts++;
-          return HttpResponse.json(
-            { error: "temporarily unavailable" },
-            { status: 503 },
-          );
+  return {
+    register,
+    acceptedCount: () => {
+      return acceptedOrder.length;
+    },
+    nextAccepted,
+  };
+}
+
+async function provisionOrg(actor: ApiTestUser): Promise<void> {
+  if (!actor.orgId) {
+    throw new Error("Expected a workspace actor");
+  }
+  mockOptionalEnv("CLERK_WEBHOOK_SIGNING_SECRET", "whsec_bdd_clerk");
+  context.mocks.clerk.verifyWebhook.mockResolvedValueOnce({
+    type: "organization.created",
+    data: { id: actor.orgId, created_by: actor.userId, created_at: now() },
+  });
+  await accept(webhooksClerkApi.post({ body: "{}", extraHeaders: {} }), [200]);
+  await flushWaitUntilForTest();
+}
+
+async function addPersonalClaudeProvider(actor: ApiTestUser): Promise<void> {
+  signIn(actor);
+  await accept(
+    personalModelProvidersApi.upsert({
+      headers: SESSION_HEADERS,
+      body: {
+        type: "claude-code-oauth-token",
+        secret: `claude-token-${randomUUID()}`,
+      },
+    }),
+    [201],
+  );
+}
+
+async function setupNativeRunMember(
+  options: {
+    readonly featureSwitches?: Readonly<Record<string, boolean>>;
+  } = {},
+) {
+  const tracker = createRunTracker();
+  const actor = bdd.user();
+  const group = `vm0/bdd-${randomUUID().slice(0, 8)}`;
+
+  initRuntimeMocks();
+  mockOptionalEnv("RUNNER_DEFAULT_GROUP", group);
+  mockClaudeCodeTokenEndpoint();
+  signIn(actor);
+
+  const runner = createDirectRunnerHarness(group);
+
+  await Promise.all([
+    runner.register(),
+    provisionOrg(actor),
+    addPersonalClaudeProvider(actor),
+    ...(options.featureSwitches
+      ? [
+          accept(
+            featureSwitchesApi.update({
+              headers: SESSION_HEADERS,
+              body: { switches: options.featureSwitches },
+            }),
+            [200],
+          ),
+        ]
+      : []),
+  ]);
+
+  async function launchChatRun(args: {
+    readonly prompt: string;
+    readonly userMessage?: UserMessageInputDocument;
+  }) {
+    const beforeCount = runner.acceptedCount();
+    const clientEventId = randomUUID();
+    signIn(actor);
+    const sent = await accept(
+      chatEventsApi.send({
+        headers: SESSION_HEADERS,
+        body: {
+          prompt: args.prompt,
+          hasTextContent: true,
+          clientEventId,
+          model: CLAUDE_MODEL,
+          userMessage: args.userMessage ?? {
+            version: 1,
+            parts: [{ type: "text", text: args.prompt }],
+          },
         },
-      ),
+      }),
+      [201],
     );
-    await f.owned.run(async () => {
-      const marked = await accept(
-        setupApp({ context, routes: runPhaseTimingRoutes })(
-          runPhaseTimingContract,
-        ).mark({
-          headers: f.markHeaders,
-          body: { phase: "research-start" },
-        }),
-        [202],
-      );
-      expect(marked.body).toStrictEqual({
-        schemaVersion: 2,
-        status: "accepted",
-      });
-      expect(marked.headers.get("cache-control")).toBe("no-store");
-      await flushWaitUntilForTest();
-      expect(attempts).toBe(1);
-      expect((await runs.readRun(f.owned.actor, f.run.runId)).status).toBe(
-        "running",
-      );
-    });
-  });
+    await flushWaitUntilForTest();
+    const execution = runner.nextAccepted(beforeCount);
+    const trackedEntry = tracker.track(
+      actor,
+      execution.runId,
+      execution.sandboxToken,
+    );
+    return {
+      threadId: sent.body.threadId,
+      runId: execution.runId,
+      execution,
+      trackedEntry,
+    };
+  }
 
-  // The real five-second transport deadline needs headroom for API fixture work.
-  it("bounds a stalled start observation without changing its acceptance receipt", async () => {
-    const f = await callbackFixture();
-    const aborted = createDeferredPromise<void>(context.signal);
-    let attempts = 0;
-    server.use(
-      http.post(
-        "https://api.axiom.co/v1/datasets/vm0-web-logs-dev/ingest",
-        async ({ request }) => {
-          attempts++;
-          request.signal.addEventListener(
-            "abort",
-            () => {
-              if (!aborted.settled()) {
-                aborted.resolve();
-              }
+  async function readRun(runId: string) {
+    signIn(actor);
+    const response = await accept(
+      runsByIdApi.getById({
+        headers: SESSION_HEADERS,
+        params: { id: runId },
+      }),
+      [200],
+    );
+    return response.body;
+  }
+
+  async function completeClaudeRun(
+    launched: Awaited<ReturnType<typeof launchChatRun>>,
+    options: { readonly flush?: boolean } = {},
+  ) {
+    const headers = bearerHeaders(launched.execution.sandboxToken);
+    const sessionId = `axiom-session-${launched.runId}`;
+    await accept(
+      webhooksAgentEventsApi.send({
+        headers,
+        body: {
+          runId: launched.runId,
+          events: [
+            {
+              type: "result",
+              result: "Completed report deliverable.",
+              sequenceNumber: 0,
             },
-            { once: true },
-          );
-          await aborted.promise;
-          return HttpResponse.json({ ingested: 1, failed: 0 });
+          ],
         },
-      ),
+      }),
+      [200],
     );
-    await f.owned.run(async () => {
-      const marked = await accept(
-        setupApp({ context, routes: runPhaseTimingRoutes })(
-          runPhaseTimingContract,
-        ).mark({
-          headers: f.markHeaders,
-          body: { phase: "generation-start", kind: "report" },
-        }),
-        [202],
-      );
-      expect(marked.body).toStrictEqual({
-        schemaVersion: 2,
-        status: "accepted",
-      });
-      await flushWaitUntilForTest();
-      await aborted.promise;
-      expect(attempts).toBe(1);
-      expect((await runs.readRun(f.owned.actor, f.run.runId)).status).toBe(
-        "running",
-      );
-    });
-  }, 10_000);
-
-  it("emits one callback observation without start marks and ignores completion replay", async () => {
-    const f = await callbackFixture();
-    await f.owned.run(async () => {
-      await completePublicClaudeRun(context, f.run, f.headers, "Task ready");
-      expect(f.events).toStrictEqual([
-        {
-          _time: expect.any(String),
-          schema_version: 2,
-          type: "run_phase_mark",
-          source: "callback",
-          run_id: f.run.runId,
-          user_id: f.owned.actor.userId,
-          org_id: f.owned.actor.orgId,
-          phase: "completion-callback",
-        },
-      ]);
-      const replay = await webhooks.requestAgentComplete(
-        {
-          runId: f.run.runId,
+    await accept(
+      webhooksAgentCompleteApi.complete({
+        headers,
+        body: {
+          runId: launched.runId,
           exitCode: 0,
-          lastEventSequence: 2,
           completion: {
             cliAgentType: "claude-code",
-            cliAgentSessionId: f.run.threadId,
+            cliAgentSessionId: sessionId,
             cliAgentSessionHistoryDisposition: "native_only",
           },
         },
-        f.headers,
+      }),
+      [200],
+    );
+    if (options.flush !== false) {
+      await flushWaitUntilForTest();
+    }
+    launched.trackedEntry.done = true;
+  }
+
+  return {
+    actor,
+    launchChatRun,
+    readRun,
+    completeClaudeRun,
+  };
+}
+
+function captureDirectAxiomIngest(
+  options: {
+    readonly targetDataset?: string;
+    readonly respond?: (
+      dataset: string,
+      events: readonly Record<string, unknown>[],
+    ) => Response;
+  } = {},
+) {
+  const deliveries: {
+    readonly dataset: string;
+    readonly events: readonly Record<string, unknown>[];
+  }[] = [];
+
+  server.use(
+    http.post(AXIOM_INGEST_URL, async ({ params, request }) => {
+      const dataset =
+        typeof params.dataset === "string"
+          ? decodeURIComponent(params.dataset)
+          : "";
+      const parsed = axiomEventsBodySchema.parse(await request.json());
+      if (
+        options.targetDataset === undefined ||
+        dataset === options.targetDataset
+      ) {
+        deliveries.push({ dataset, events: parsed });
+      }
+      if (options.respond) {
+        return options.respond(dataset, parsed);
+      }
+      return HttpResponse.json({
+        ingested: parsed.length,
+        failed: 0,
+        processedBytes: 256,
+      });
+    }),
+  );
+
+  return deliveries;
+}
+
+describe("Axiom telemetry and run observation transport", () => {
+  beforeAll(async () => {
+    const previousClerkSecret = optionalEnv("CLERK_WEBHOOK_SIGNING_SECRET");
+    mockOptionalEnv("CLERK_WEBHOOK_SIGNING_SECRET", "whsec_warmup");
+    context.mocks.clerk.verifyWebhook.mockRejectedValueOnce(
+      new Error("warmup"),
+    );
+    context.mocks.clerk.authenticateRequest.mockResolvedValue({
+      isAuthenticated: false,
+    });
+    const warmupId = randomUUID();
+    runnerDispatchEnvelopeSchema.safeParse({});
+    const warmed = await settleIncludingAbort(async () => {
+      await Promise.all([
+        accept(webhooksClerkApi.post({ body: "{}", extraHeaders: {} }), [401]),
+        accept(
+          personalModelProvidersApi.upsert({
+            headers: {},
+            body: { type: "claude-code-oauth-token", secret: "warmup" },
+          }),
+          [401],
+        ),
+        accept(
+          featureSwitchesApi.update({
+            headers: {},
+            body: {
+              switches: { [FeatureSwitchKey.ArtifactThreePointTiming]: false },
+            },
+          }),
+          [401],
+        ),
+        accept(
+          chatEventsApi.send({
+            headers: {},
+            body: {
+              prompt: "warmup",
+              hasTextContent: true,
+              clientEventId: randomUUID(),
+              userMessage: {
+                version: 1,
+                parts: [{ type: "text", text: "warmup" }],
+              },
+            },
+          }),
+          [401],
+        ),
+        accept(
+          runnersHeartbeatApi.heartbeat({
+            headers: {},
+            body: heartbeatPayload({
+              runnerId: warmupId,
+              runnerHostname: `runner-${warmupId}.okou.app`,
+              group: "vm0/warmup",
+            }),
+          }),
+          [401],
+        ),
+        accept(
+          runsByIdApi.getById({ headers: {}, params: { id: warmupId } }),
+          [401],
+        ),
+        accept(
+          runsCancelApi.cancel({ headers: {}, params: { id: warmupId } }),
+          [401],
+        ),
+        accept(
+          runPhaseTimingApi.mark({
+            headers: {},
+            body: { phase: "research-start" },
+          }),
+          [401],
+        ),
+        accept(
+          webhooksAgentCompleteApi.complete({
+            headers: {},
+            body: { runId: warmupId, exitCode: 0 },
+          }),
+          [401],
+        ),
+        accept(
+          webhooksAgentEventsApi.send({
+            headers: {},
+            body: {
+              runId: warmupId,
+              events: [{ type: "system", sequenceNumber: 0 }],
+            },
+          }),
+          [401],
+        ),
+        accept(
+          webhooksAgentTelemetryApi.send({
+            headers: {},
+            body: {},
+          }),
+          [400],
+        ),
+      ]);
+    });
+    mockOptionalEnv("CLERK_WEBHOOK_SIGNING_SECRET", previousClerkSecret);
+    if (!warmed.ok) {
+      throw warmed.error;
+    }
+  });
+
+  it(
+    "axiom-001 preserves independent filesystem samples through the metrics HTTP transport",
+    { timeout: TEST_WITH_SINGLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const setup = await setupNativeRunMember();
+      const deliveries = captureDirectAxiomIngest({
+        targetDataset: "sandbox-telemetry-metrics",
+      });
+
+      const launched = await setup.launchChatRun({
+        prompt: "Collect filesystem metrics samples",
+      });
+
+      const sampleTs = nowDate().toISOString();
+      const validRootfs = {
+        used_bytes: 1000,
+        total_bytes: 4000,
+        available_bytes: 3000,
+        used_inodes: 100,
+        total_inodes: 500,
+        available_inodes: 400,
+      };
+      const validHome = {
+        used_bytes: 2000,
+        total_bytes: 8000,
+        available_bytes: 6000,
+        used_inodes: 200,
+        total_inodes: 900,
+        available_inodes: 700,
+      };
+      const invalidNegativeFs = {
+        used_bytes: -1,
+        total_bytes: 4000,
+        available_bytes: 3000,
+        used_inodes: 100,
+        total_inodes: 500,
+        available_inodes: 400,
+      };
+
+      const response = await accept(
+        webhooksAgentTelemetryApi.send({
+          headers: bearerHeaders(launched.execution.sandboxToken),
+          body: {
+            runId: launched.runId,
+            metrics: [
+              {
+                ts: sampleTs,
+                cpu: 10,
+                mem_used: 128,
+                mem_total: 1024,
+                rootfs: validRootfs,
+                home: validHome,
+              },
+              {
+                ts: sampleTs,
+                cpu: 20,
+                mem_used: 256,
+                mem_total: 1024,
+                rootfs: validRootfs,
+              },
+              {
+                ts: sampleTs,
+                cpu: 30,
+                mem_used: 384,
+                mem_total: 1024,
+                home: validHome,
+              },
+              {
+                ts: sampleTs,
+                cpu: 40,
+                mem_used: 512,
+                mem_total: 1024,
+              },
+              {
+                ts: sampleTs,
+                cpu: 50,
+                mem_used: 640,
+                mem_total: 1024,
+                rootfs: validRootfs,
+                home: invalidNegativeFs,
+              },
+              {
+                ts: sampleTs,
+                cpu: 60,
+                mem_used: 768,
+                mem_total: 1024,
+                rootfs: invalidNegativeFs,
+                home: validHome,
+              },
+            ],
+          },
+        }),
         [200],
       );
-      await flushWaitUntilForTest();
-      expect(replay.body).toMatchObject({ success: true, status: "completed" });
-      expect(f.events).toHaveLength(1);
-      expect((await runs.readRun(f.owned.actor, f.run.runId)).status).toBe(
-        "completed",
-      );
-    });
-  });
 
-  it("suppresses collection while preserving normal completion after a personal opt-out", async () => {
-    const f = await callbackFixture({ threePointEnabled: false });
-    await f.owned.run(async () => {
-      const api = setupApp({ context, routes: runPhaseTimingRoutes })(
-        runPhaseTimingContract,
+      expect(response.body).toStrictEqual({
+        success: true,
+        id: launched.runId,
+      });
+
+      const rootfsFields = {
+        rootfs_used_bytes: validRootfs.used_bytes,
+        rootfs_total_bytes: validRootfs.total_bytes,
+        rootfs_available_bytes: validRootfs.available_bytes,
+        rootfs_used_inodes: validRootfs.used_inodes,
+        rootfs_total_inodes: validRootfs.total_inodes,
+        rootfs_available_inodes: validRootfs.available_inodes,
+      };
+      const homeFields = {
+        home_used_bytes: validHome.used_bytes,
+        home_total_bytes: validHome.total_bytes,
+        home_available_bytes: validHome.available_bytes,
+        home_used_inodes: validHome.used_inodes,
+        home_total_inodes: validHome.total_inodes,
+        home_available_inodes: validHome.available_inodes,
+      };
+      const baseSample = (cpu: number, memUsed: number) => {
+        return {
+          _time: sampleTs,
+          runId: launched.runId,
+          userId: setup.actor.userId,
+          cpu,
+          mem_used: memUsed,
+          mem_total: 1024,
+        };
+      };
+
+      expect(deliveries).toHaveLength(1);
+      expect(deliveries[0]?.events).toStrictEqual([
+        { ...baseSample(10, 128), ...rootfsFields, ...homeFields },
+        { ...baseSample(20, 256), ...rootfsFields },
+        { ...baseSample(30, 384), ...homeFields },
+        baseSample(40, 512),
+        { ...baseSample(50, 640), ...rootfsFields },
+        { ...baseSample(60, 768), ...homeFields },
+      ]);
+    },
+  );
+
+  it(
+    "axiom-008 writes the authenticated stage timeline with callback provenance (skipResearch=false)",
+    { timeout: TEST_WITH_SINGLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const setup = await setupNativeRunMember();
+      const deliveries = captureDirectAxiomIngest({
+        targetDataset: "web-logs",
+      });
+
+      const launched = await setup.launchChatRun({
+        prompt: "Write a market report with three-point phase marks",
+      });
+      // Upstream #50973 enabled ArtifactThreePointTiming by default for everyone.
+      expect(launched.execution.appendSystemPrompt ?? "").toContain(
+        "okou run mark",
       );
-      expect(f.execution.appendSystemPrompt).not.toContain("okou run mark");
-      for (const body of [
-        { phase: "research-start" },
-        { phase: "generation-start", kind: "report", skipResearch: false },
-      ] as const) {
-        const marked = await accept(
-          api.mark({ headers: f.markHeaders, body }),
-          [404],
-        );
-        expect(marked.headers.get("cache-control")).toBe("no-store");
+
+      const okouToken = launched.execution.platformEnvironment.OKOU_TOKEN;
+      if (!okouToken) {
+        throw new Error("Expected Run OKOU_TOKEN in platformEnvironment");
       }
-      await completePublicClaudeRun(context, f.run, f.headers, "Report ready");
-      expect((await runs.readRun(f.owned.actor, f.run.runId)).status).toBe(
-        "completed",
-      );
-      expect(f.events).toHaveLength(0);
-    });
-  });
 
-  it("stops collecting starts and completion points after a live opt-out", async () => {
-    const f = await callbackFixture();
-    await f.owned.run(async () => {
-      const api = setupApp({ context, routes: runPhaseTimingRoutes })(
-        runPhaseTimingContract,
-      );
-      await accept(
-        api.mark({
-          headers: f.markHeaders,
+      const baseMs = Math.floor(now() / 1000) * 1000;
+
+      mockNow(baseMs + 1000);
+      const researchTime = nowDate().toISOString();
+      const researchMark = await accept(
+        runPhaseTimingApi.mark({
+          headers: bearerHeaders(okouToken),
           body: { phase: "research-start" },
         }),
         [202],
       );
-      await flushWaitUntilForTest();
-      await features.updateFeatureSwitches(f.owned.actor, {
-        [FeatureSwitchKey.ArtifactThreePointTiming]: false,
+      expect(researchMark.body).toStrictEqual({
+        schemaVersion: 2,
+        status: "accepted",
       });
-      const unavailable = await accept(
-        api.mark({
-          headers: f.markHeaders,
+
+      mockNow(baseMs + 2000);
+      const generationTime = nowDate().toISOString();
+      const generationMark = await accept(
+        runPhaseTimingApi.mark({
+          headers: bearerHeaders(okouToken),
           body: {
             phase: "generation-start",
             kind: "report",
             skipResearch: false,
           },
         }),
-        [404],
+        [202],
       );
-      expect(unavailable.headers.get("cache-control")).toBe("no-store");
-      await completePublicClaudeRun(context, f.run, f.headers, "Report ready");
-      expect((await runs.readRun(f.owned.actor, f.run.runId)).status).toBe(
-        "completed",
-      );
-      expect(f.events).toStrictEqual([
-        {
-          _time: expect.any(String),
-          schema_version: 2,
-          type: "run_phase_mark",
-          source: "callback",
-          run_id: f.run.runId,
-          user_id: f.owned.actor.userId,
-          org_id: f.owned.actor.orgId,
-          phase: "research-start",
-        },
-      ]);
-    });
-  });
-
-  it("collects callback-provenance observations after live enable for an existing Run", async () => {
-    const f = await callbackFixture({ threePointEnabled: false });
-    await f.owned.run(async () => {
-      const api = setupApp({ context, routes: runPhaseTimingRoutes })(
-        runPhaseTimingContract,
-      );
-      await accept(
-        api.mark({
-          headers: f.markHeaders,
-          body: { phase: "research-start" },
-        }),
-        [404],
-      );
-      await flushWaitUntilForTest();
-      expect(f.events).toHaveLength(0);
-      await features.updateFeatureSwitches(f.owned.actor, {
-        [FeatureSwitchKey.ArtifactThreePointTiming]: true,
+      expect(generationMark.body).toStrictEqual({
+        schemaVersion: 2,
+        status: "accepted",
       });
-      for (const body of [
-        { phase: "research-start" },
-        { phase: "generation-start", kind: "report", skipResearch: false },
-      ] as const) {
-        await accept(api.mark({ headers: f.markHeaders, body }), [202]);
-      }
-      await completePublicClaudeRun(context, f.run, f.headers, "Task ready");
-      expect((await runs.readRun(f.owned.actor, f.run.runId)).status).toBe(
-        "completed",
-      );
-      const identity = {
-        _time: expect.any(String),
+
+      mockNow(baseMs + 3000);
+      const completionTime = nowDate().toISOString();
+      await setup.completeClaudeRun(launched);
+
+      const phaseEvents = deliveries
+        .flatMap((delivery) => {
+          return delivery.events;
+        })
+        .filter((event) => {
+          return event.type === "run_phase_mark";
+        });
+
+      const sharedIdentity = {
         schema_version: 2,
         type: "run_phase_mark",
         source: "callback",
-        run_id: f.run.runId,
-        user_id: f.owned.actor.userId,
-        org_id: f.owned.actor.orgId,
+        run_id: launched.runId,
+        user_id: setup.actor.userId,
+        org_id: setup.actor.orgId,
       };
-      expect(f.events).toHaveLength(3);
-      expect(f.events).toStrictEqual(
-        expect.arrayContaining([
-          { ...identity, phase: "research-start" },
-          {
-            ...identity,
-            phase: "generation-start",
-            generation_kind: "report",
-            research_skipped: false,
-          },
-          { ...identity, phase: "completion-callback" },
-        ]),
-      );
-    });
-  });
-
-  it("preserves a reported execution failure without inventing a completion point", async () => {
-    const f = await callbackFixture();
-    await f.owned.run(async () => {
-      const failed = await webhooks.requestAgentComplete(
-        { runId: f.run.runId, exitCode: 1, error: "Generation interrupted" },
-        f.headers,
-        [200],
-      );
-      await flushWaitUntilForTest();
-      expect(failed.body).toMatchObject({ success: true, status: "failed" });
-      expect((await runs.readRun(f.owned.actor, f.run.runId)).status).toBe(
-        "failed",
-      );
-      expect(f.events).toHaveLength(0);
-    });
-  });
-
-  it("waits for valid native completion output before recording the callback point", async () => {
-    const f = await callbackFixture();
-    await f.owned.run(async () => {
-      await webhooks.requestAgentComplete(
+      expect(phaseEvents).toStrictEqual([
         {
-          runId: f.run.runId,
-          exitCode: 0,
-          completion: {
-            cliAgentType: "codex",
-            cliAgentSessionId: f.run.threadId,
-            cliAgentSessionHistoryDisposition: "native_only",
-          },
+          ...sharedIdentity,
+          _time: researchTime,
+          phase: "research-start",
         },
-        f.headers,
-        [400],
-      );
-      await flushWaitUntilForTest();
-      expect((await runs.readRun(f.owned.actor, f.run.runId)).status).toBe(
-        "running",
-      );
-      expect(f.events).toHaveLength(0);
-      await completePublicClaudeRun(
-        context,
-        f.run,
-        f.headers,
-        "Validated output",
-      );
-      expect((await runs.readRun(f.owned.actor, f.run.runId)).status).toBe(
-        "completed",
-      );
-      expect(f.events).toHaveLength(1);
-    });
-  });
+        {
+          ...sharedIdentity,
+          _time: generationTime,
+          phase: "generation-start",
+          generation_kind: "report",
+          research_skipped: false,
+        },
+        {
+          ...sharedIdentity,
+          _time: completionTime,
+          phase: "completion-callback",
+        },
+      ]);
+    },
+  );
 
-  it("preserves cancelled output recovery without recording a normal completion point", async () => {
-    const f = await callbackFixture();
-    await f.owned.run(async () => {
-      await runs.requestCancelRun(f.owned.actor, f.run.runId, [200]);
-      await completePublicClaudeRun(
-        context,
-        f.run,
-        f.headers,
-        "Recovered late output",
-      );
-      expect((await runs.readRun(f.owned.actor, f.run.runId)).status).toBe(
-        "cancelled",
-      );
-      expect(f.events).toHaveLength(0);
-    });
-  });
+  it(
+    "axiom-014 suppresses collection while preserving normal completion for owner opt-out",
+    { timeout: TEST_WITH_SINGLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const setup = await setupNativeRunMember({
+        featureSwitches: {
+          [FeatureSwitchKey.ArtifactThreePointTiming]: false,
+        },
+      });
+      const deliveries = captureDirectAxiomIngest({
+        targetDataset: "web-logs",
+      });
 
-  // The real five-second transport deadline needs headroom for API fixture work.
-  it("bounds a stalled completion observation without changing normal completion", async () => {
-    const f = await callbackFixture();
-    const aborted = createDeferredPromise<void>(context.signal);
-    let attempts = 0;
-    server.use(
-      http.post(
-        "https://api.axiom.co/v1/datasets/vm0-web-logs-dev/ingest",
-        async ({ request }) => {
-          attempts++;
-          request.signal.addEventListener(
-            "abort",
-            () => {
-              if (!aborted.settled()) {
-                aborted.resolve();
-              }
+      const launched = await setup.launchChatRun({
+        prompt: "Create a report after opting out of three-point timing",
+      });
+      expect(launched.execution.appendSystemPrompt ?? "").not.toContain(
+        "okou run mark",
+      );
+
+      const okouToken = launched.execution.platformEnvironment.OKOU_TOKEN;
+      if (!okouToken) {
+        throw new Error("Expected Run OKOU_TOKEN in platformEnvironment");
+      }
+
+      const [researchMark, generationMark] = await Promise.all([
+        accept(
+          runPhaseTimingApi.mark({
+            headers: bearerHeaders(okouToken),
+            body: { phase: "research-start" },
+          }),
+          [404],
+        ),
+        accept(
+          runPhaseTimingApi.mark({
+            headers: bearerHeaders(okouToken),
+            body: {
+              phase: "generation-start",
+              kind: "report",
+              skipResearch: false,
             },
-            { once: true },
-          );
-          await aborted.promise;
-          return HttpResponse.json({ ingested: 1, failed: 0 });
-        },
-      ),
-    );
-    await f.owned.run(async () => {
-      await completePublicClaudeRun(
-        context,
-        f.run,
-        f.headers,
-        "Artifact ready",
-      );
-      await aborted.promise;
-      expect((await runs.readRun(f.owned.actor, f.run.runId)).status).toBe(
-        "completed",
-      );
-      expect(attempts).toBe(1);
-    });
-  }, 10_000);
+          }),
+          [404],
+        ),
+      ]);
+      expect(researchMark.headers.get("cache-control")).toBe("no-store");
+      expect(generationMark.headers.get("cache-control")).toBe("no-store");
 
-  it("keeps normal completion successful when the telemetry provider is unavailable", async () => {
-    const f = await callbackFixture();
-    let attempts = 0;
-    server.use(
-      http.post(
-        "https://api.axiom.co/v1/datasets/vm0-web-logs-dev/ingest",
-        () => {
-          attempts++;
+      await setup.completeClaudeRun(launched, { flush: false });
+
+      const [, completed] = await Promise.all([
+        flushWaitUntilForTest(),
+        setup.readRun(launched.runId),
+      ]);
+      expect(completed.status).toBe("completed");
+      expect(deliveries).toStrictEqual([]);
+    },
+  );
+
+  it(
+    "axiom-023 keeps normal completion successful when the telemetry provider is unavailable",
+    { timeout: TEST_WITH_SINGLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const setup = await setupNativeRunMember();
+      const deliveries = captureDirectAxiomIngest({
+        targetDataset: "web-logs",
+        respond: () => {
           return HttpResponse.json(
-            { error: "temporarily unavailable" },
+            { message: "telemetry provider temporarily unavailable" },
             { status: 503 },
           );
         },
-      ),
-    );
-    await f.owned.run(async () => {
-      await completePublicClaudeRun(
-        context,
-        f.run,
-        f.headers,
-        "Artifact ready",
-      );
-      expect((await runs.readRun(f.owned.actor, f.run.runId)).status).toBe(
-        "completed",
-      );
-      expect(attempts).toBe(1);
-    });
-  });
-});
+      });
 
-describe("queryAxiom", () => {
-  it("keeps the Axiom match timestamp when event data contains _time", async () => {
-    const { queryAxiom } =
-      await vi.importActual<typeof import("../axiom")>("../axiom");
-    const mocks = getApiTestMocks();
-    mocks.axiom.query.mockResolvedValue({
-      matches: [
+      const launched = await setup.launchChatRun({
+        prompt: "Complete normally when Axiom returns HTTP 503",
+      });
+      await setup.completeClaudeRun(launched, { flush: false });
+
+      const [, completed] = await Promise.all([
+        flushWaitUntilForTest(),
+        setup.readRun(launched.runId),
+      ]);
+      expect(completed.status).toBe("completed");
+      expect(deliveries).toHaveLength(1);
+      expect(deliveries[0]?.events).toMatchObject([
         {
-          _time: "2026-06-10T11:00:00Z",
-          data: {
-            _time: "not-a-timestamp",
-            host: "api.example.com",
-          },
+          type: "run_phase_mark",
+          phase: "completion-callback",
+          run_id: launched.runId,
         },
-      ],
-    });
+      ]);
+    },
+  );
 
-    const rows = await createStore().get(
-      queryAxiom("['vm0-sandbox-telemetry-network-dev']"),
-    );
+  it(
+    "log-axiom-transport-026 preserves a created template run when Axiom ingestion fails",
+    { timeout: TEST_WITH_SINGLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const invoiceItem = findDocumentTemplateItem(SIMPLE_INVOICE_TEMPLATE_ID);
+      if (!invoiceItem) {
+        throw new Error("Expected simple-invoice built-in document template");
+      }
 
-    expect(rows).toStrictEqual([
-      {
-        _time: "2026-06-10T11:00:00Z",
-        host: "api.example.com",
-      },
-    ]);
-  });
+      const setup = await setupNativeRunMember();
+      mockAxiomSdkTelemetryFailure({
+        mode: "ingest",
+        datasets: ["vm0-web-logs-dev"],
+        eventTypes: ["template_used"],
+      });
 
-  it("sends pagination cursor reads without using the Axiom cache", async () => {
-    const { queryAxiom } =
-      await vi.importActual<typeof import("../axiom")>("../axiom");
-    const apl = "['vm0-agent-run-events-dev'] | limit 1";
-    const requests: {
-      readonly authorization: string | null;
-      readonly body: unknown;
-      readonly url: string;
-    }[] = [];
-
-    server.use(
-      http.post(
-        "https://api.axiom.co/v1/datasets/_apl",
-        async ({ request }) => {
-          requests.push({
-            authorization: request.headers.get("authorization"),
-            body: await request.json(),
-            url: request.url,
-          });
-
-          return HttpResponse.json({
-            matches: [
-              {
-                _time: "2026-06-10T12:00:00Z",
-                data: {
-                  _time: "not-a-timestamp",
-                  log: "next page",
-                },
+      const prompt = "Generate an invoice for ACME Consulting.";
+      const launched = await setup.launchChatRun({
+        prompt,
+        userMessage: {
+          version: 1,
+          parts: [
+            {
+              type: "template",
+              titleSnapshot: invoiceItem.title,
+              template: {
+                type: "document",
+                selection: { documentTemplateId: SIMPLE_INVOICE_TEMPLATE_ID },
               },
-            ],
-          });
+            },
+            { type: "text", text: prompt },
+          ],
         },
-      ),
-    );
+      });
 
-    const rows = await createStore().get(
-      queryAxiom(apl, {
-        cursor: "cursor-next-page",
-        noCache: true,
-      }),
-    );
-
-    expect(requests).toStrictEqual([
-      {
-        authorization: "Bearer xaat-test-sessions",
-        body: {
-          apl,
-          cursor: "cursor-next-page",
-        },
-        url: "https://api.axiom.co/v1/datasets/_apl?format=legacy&nocache=true",
-      },
-    ]);
-    expect(rows).toStrictEqual([
-      {
-        _time: "2026-06-10T12:00:00Z",
-        log: "next page",
-      },
-    ]);
-  });
+      const currentRun = await setup.readRun(launched.runId);
+      expect(currentRun.status).toBe("running");
+      expect(launched.execution.appendSystemPrompt ?? "").toContain(
+        "Selected document template:",
+      );
+    },
+  );
 });

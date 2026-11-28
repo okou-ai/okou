@@ -1,1497 +1,1256 @@
-import { publicPlanLifecycle } from "./helpers/public-plan-lifecycle";
-import { createPublicBillingZeroFixture } from "./helpers/public-billing-zero-fixture";
-import { deleteFeatureSwitchesForUser } from "./helpers/feature-switches";
-import { createHash, randomUUID } from "node:crypto";
-import { describe, expect, it, onTestFinished, test } from "vitest";
-
-import { createDeferredPromise, settle } from "../../utils";
+import { randomUUID } from "node:crypto";
+import { personalModelProvidersMainContract } from "@okouai/api-contracts/contracts/personal-model-providers";
+import { runModelsMainContract } from "@okouai/api-contracts/contracts/run-models";
+import { userPreferencesContract } from "@okouai/api-contracts/contracts/user-preferences";
 import { http, HttpResponse } from "msw";
-import { server } from "../../../mocks/server";
-import type { AvailableRunModel } from "@okouai/api-contracts/contracts/model-providers";
-import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
-import { holdSubscriptionKmsBatch } from "./helpers/subscription-kms-batch";
-import { createFixtureOperationOwner } from "./helpers/fixture-operation-owner";
-import { testContext } from "../../../__tests__/test-context";
-
-import { now } from "../../../lib/time";
-import { flushWaitUntilForTest } from "../../context/wait-until";
-import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
-import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
-import { createRunsApi } from "./helpers/api-bdd-runs";
-import { createRunReadsApi } from "./helpers/api-bdd-run-reads";
-import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
-import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
-import { createFirewallApi, secretTemplate } from "./helpers/api-bdd-firewall";
-import { createAuthDeviceSupportApi } from "./helpers/api-bdd-auth-device-support";
+import { beforeAll, describe, expect, it, onTestFinished } from "vitest";
+import { accept, testContext } from "../../../__tests__/test-context";
+import { setupApp } from "../../../__tests__/test-helpers";
 import {
+  TEST_WITH_DOUBLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE,
+  TEST_WITH_SINGLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE,
+} from "../../../__tests__/test-timeouts";
+import { env, mockEnv, mockOptionalEnv, optionalEnv } from "../../../lib/env";
+import { server } from "../../../mocks/server";
+import { flushWaitUntilForTest } from "../../context/wait-until";
+import { settleIncludingAbort } from "../../utils";
+import { meModelProvidersUpsertRoutes } from "../me-model-providers-upsert";
+import { runModelsRoutes } from "../run-models";
+import { userPreferencesRoutes } from "../user-preferences";
+import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
+import {
+  createAuthDeviceApiActions,
   makeCodexAuthJson,
-  makeCodexJwt,
   mockClaudeCodeTokenEndpoint,
   mockCodexDeviceAuthProvider,
-  createAuthDeviceApiActions,
 } from "./helpers/api-bdd-auth-device";
-import type { TestTerminalRunStatus } from "./helpers/run-terminal-status";
-type SubscriptionType = "claude-code-oauth-token" | "codex-oauth-token";
-const context = testContext();
-const runs = createRunsApi(context);
-const reads = createRunReadsApi(context);
-const support = createAuthDeviceSupportApi(context);
-const firewall = createFirewallApi(context);
+import { createAuthDeviceSupportApi } from "./helpers/api-bdd-auth-device-support";
+import { createChatCallbacksApi } from "./helpers/api-bdd-chat-callbacks";
+import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
+import { createFirewallApi, secretTemplate } from "./helpers/api-bdd-firewall";
+import { createRunReadsApi } from "./helpers/api-bdd-run-reads";
+import { createRunsApi } from "./helpers/api-bdd-runs";
+import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
+import { publicPlanLifecycle } from "./helpers/public-plan-lifecycle";
+import { createRouteMocks } from "./helpers/route-test";
 
-/** A listed personal subscription model, not the fixed Auto every workspace keeps. */
-function availableModel(
-  response: { readonly models: readonly AvailableRunModel[] },
-  model: string | null,
-): AvailableRunModel | undefined {
-  return response.models.find((entry) => {
-    return entry.model === model;
-  });
+const context = testContext();
+const headers = Object.freeze({ authorization: "Bearer clerk-session" });
+
+function signIn(
+  userId: string,
+  orgId: string,
+  role: "org:admin" | "org:member",
+): void {
+  createRouteMocks(context).clerk.session(userId, orgId, role);
 }
 
-type ExecutionInput = Awaited<ReturnType<typeof runs.executionInput>>;
+async function listRunModels() {
+  const api = setupApp({ context, routes: runModelsRoutes })(
+    runModelsMainContract,
+  );
+  return (await accept(api.list({ headers }), [200])).body.models;
+}
 
-/**
- * Sends a prompt, lets the background pick run, and returns the rejection the
- * pick appended in place of a run.
- */
-async function sendRejectedAtPick(
-  actor: ApiTestUser,
-  body: {
-    readonly model: string;
-    readonly prompt: string;
-  },
-) {
-  const chat = createChatFilesBddApi(context);
-  const clientEventId = randomUUID();
-  const sent = await chat.requestSendEvent(
-    actor,
-    { ...body, clientEventId },
+async function setupWorkspaceWithOwnerClaude() {
+  const orgId = `org_${randomUUID()}`;
+  const ownerId = `user_${randomUUID()}`;
+  const memberId = `user_${randomUUID()}`;
+
+  signIn(ownerId, orgId, "org:admin");
+  mockClaudeCodeTokenEndpoint();
+  await accept(
+    setupApp({ context, routes: meModelProvidersUpsertRoutes })(
+      personalModelProvidersMainContract,
+    ).upsert({
+      headers,
+      body: {
+        type: "claude-code-oauth-token",
+        secret: "owner-claude-token",
+      },
+    }),
     [201],
   );
-  if (sent.status !== 201) {
-    throw new Error("Expected the chat send to be queued");
-  }
-  await flushWaitUntilForTest();
-  const { events } = await chat.listThreadEvents(actor, sent.body.threadId);
-  expect(
-    events.filter((event) => {
-      return event.runId !== undefined;
+
+  signIn(memberId, orgId, "org:member");
+  await accept(
+    setupApp({ context, routes: userPreferencesRoutes })(
+      userPreferencesContract,
+    ).initialize({
+      headers,
+      body: { locale: "en-US" },
     }),
-  ).toStrictEqual([]);
-  return {
-    rejected: events.find((event) => {
-      return (
-        event.eventType === "input.rejected" &&
-        event.revokesEventId === clientEventId
-      );
-    }),
-    guidance: events.find((event) => {
-      return event.eventType === "output.error";
-    }),
-  };
-}
-
-async function connect(
-  actor: ApiTestUser,
-  type: SubscriptionType,
-  identity: string,
-  expired = false,
-  withUpstreamIdentity = true,
-) {
-  if (type === "claude-code-oauth-token") {
-    mockClaudeCodeTokenEndpoint();
-    server.use(
-      http.get("https://api.anthropic.com/api/oauth/profile", ({ request }) => {
-        const upstreamIdentity = request.headers
-          .get("authorization")
-          ?.replace("Bearer sk-ant-oat-", "");
-        return HttpResponse.json({
-          account: withUpstreamIdentity
-            ? {
-                uuid: upstreamIdentity,
-                email: `${upstreamIdentity}@example.com`,
-              }
-            : {},
-          organization: {
-            uuid: `org-${upstreamIdentity}`,
-            name: upstreamIdentity,
-          },
-        });
-      }),
-    );
-  }
-  const token =
-    type === "codex-oauth-token"
-      ? makeCodexJwt({
-          exp: Math.floor(now() / 1000) + (expired ? -60 : 7200),
-          identity,
-          nonce: randomUUID(),
-        })
-      : `sk-ant-oat-${identity}`;
-  const result = await createMiscRoutesApi(context).upsertPersonalModelProvider(
-    actor,
-    type === "codex-oauth-token"
-      ? {
-          type,
-          authMethod: "auth_json",
-          secrets: {
-            CODEX_AUTH_JSON: makeCodexAuthJson({
-              accessToken: token,
-              accountId: identity,
-              refreshToken: `refresh-${identity}`,
-            }),
-          },
-        }
-      : { type, secret: token },
-    [200, 201],
-  );
-  if (result.status !== 200 && result.status !== 201) {
-    throw new Error("Expected a connected subscription");
-  }
-  return { id: result.body.provider.id, token };
-}
-
-async function fixture(type: SubscriptionType, withUpstreamIdentity = true) {
-  const bdd = createBddApi(context);
-  const actor = bdd.user();
-  bdd.acceptStorageWrites();
-  runs.acceptStorageDownloads();
-  runs.acceptTelemetryIngest();
-  const runnerGroup = await runs.configureRunnerGroup();
-  const subscription = await runs.grantProEntitlement(actor);
-  mockClaudeCodeTokenEndpoint();
-  const connected = await connect(
-    actor,
-    type,
-    "identity-a",
-    false,
-    withUpstreamIdentity,
-  );
-  const model: "gpt-6-astra" | "claude-sonnet-5-5" =
-    type === "codex-oauth-token" ? "gpt-6-astra" : "claude-sonnet-5-5";
-  await runs.updateUserModelPreference(actor, model);
-
-  const start = async () => {
-    const sent = await createChatFilesBddApi(context).sendAndLaunch(actor, {
-      prompt: "use my selected subscription",
-      model,
-    });
-    return sent.runId;
-  };
-  const execution = async (runId: string) => {
-    const state = await runs.readRun(actor, runId);
-    expect(state.status, JSON.stringify(state)).toBe("running");
-    await runs.heartbeatRunner(runnerGroup);
-    return await runs.executionInput(runId);
-  };
-  return {
-    actor,
-    connected,
-    subscription,
-    start,
-    execution,
-    type,
-    model,
-  };
-}
-
-function authBody(execution: ExecutionInput, type: SubscriptionType) {
-  const accessKey =
-    type === "codex-oauth-token"
-      ? "CHATGPT_ACCESS_TOKEN"
-      : "CLAUDE_CODE_OAUTH_TOKEN";
-  return {
-    authHeaders: {
-      Authorization: `Bearer ${secretTemplate(accessKey)}`,
-      ...(type === "codex-oauth-token"
-        ? { "ChatGPT-Account-ID": secretTemplate("CHATGPT_ACCOUNT_ID") }
-        : {}),
-    },
-    secretConnectorMap: execution.secretConnectorMap ?? undefined,
-    secretConnectorMetadataMap:
-      execution.secretConnectorMetadataMap ?? undefined,
-  };
-}
-
-async function resolve(execution: ExecutionInput, type: SubscriptionType) {
-  const response = await firewall.requestFirewallAuth(
-    { authorization: `Bearer ${execution.firewallToken}` },
-    authBody(execution, type),
     [200],
   );
-  if (response.status !== 200) {
-    throw new Error("Expected subscription credentials");
-  }
-  return response.body.headers;
+
+  return { orgId, ownerId, memberId };
 }
 
-function accountId(execution: ExecutionInput, type: SubscriptionType) {
-  const key =
-    type === "codex-oauth-token"
-      ? "CHATGPT_ACCESS_TOKEN"
-      : "CLAUDE_CODE_OAUTH_TOKEN";
-  const id = execution.secretConnectorMetadataMap?.[key]?.sourceId;
-  if (!id) {
-    throw new Error("Expected an exact subscription sourceId");
+describe("member-effective model contract", () => {
+  it("personal-subscription-run-identity-031 (1/2) shares Auto and scopes the owner's Claude subscription to the owner", async () => {
+    const { orgId, ownerId, memberId } = await setupWorkspaceWithOwnerClaude();
+
+    signIn(ownerId, orgId, "org:admin");
+    const ownerInitial = await listRunModels();
+
+    signIn(memberId, orgId, "org:member");
+    const memberInitial = await listRunModels();
+
+    const ownerAuto = ownerInitial.find((entry) => {
+      return entry.model === "auto";
+    });
+    const memberAuto = memberInitial.find((entry) => {
+      return entry.model === "auto";
+    });
+    expect(ownerAuto).toBeDefined();
+    expect(ownerAuto?.modelLabel).toBe("Auto");
+    expect(memberAuto).toStrictEqual(ownerAuto);
+
+    const ownerClaude = ownerInitial.find((entry) => {
+      return entry.model === "claude-sonnet-5-5";
+    });
+    expect(ownerClaude).toBeDefined();
+    expect(ownerClaude?.memberEffective).toMatchObject({
+      runtimeProviderType: "claude-code-oauth-token",
+      credentialScope: "member",
+      accountSelection: "capture_required",
+    });
+    expect(
+      memberInitial.some((entry) => {
+        return entry.model === "claude-sonnet-5-5";
+      }),
+    ).toBeFalsy();
+  });
+
+  it("personal-subscription-run-identity-031 (2/2) scopes a member's Codex subscription without changing the owner's models", async () => {
+    const { orgId, ownerId, memberId } = await setupWorkspaceWithOwnerClaude();
+
+    signIn(ownerId, orgId, "org:admin");
+    const ownerBefore = (await listRunModels()).find((entry) => {
+      return entry.model === "claude-sonnet-5-5";
+    });
+
+    signIn(memberId, orgId, "org:member");
+    await accept(
+      setupApp({ context, routes: meModelProvidersUpsertRoutes })(
+        personalModelProvidersMainContract,
+      ).upsert({
+        headers,
+        body: {
+          type: "codex-oauth-token",
+          authMethod: "auth_json",
+          secrets: { CODEX_AUTH_JSON: makeCodexAuthJson() },
+        },
+      }),
+      [201],
+    );
+
+    const memberAfter = await listRunModels();
+    const memberCodex = memberAfter.find((entry) => {
+      return entry.model === "gpt-6-astra";
+    });
+    expect(memberCodex).toBeDefined();
+    expect(memberCodex?.memberEffective).toMatchObject({
+      runtimeProviderType: "codex-oauth-token",
+      credentialScope: "member",
+    });
+    expect(
+      memberAfter.some((entry) => {
+        return entry.model === "claude-sonnet-5-5";
+      }),
+    ).toBeFalsy();
+
+    signIn(ownerId, orgId, "org:admin");
+    const ownerAfter = await listRunModels();
+    expect(
+      ownerAfter.some((entry) => {
+        return entry.model === "gpt-6-astra";
+      }),
+    ).toBeFalsy();
+    expect(
+      ownerAfter.find((entry) => {
+        return entry.model === "claude-sonnet-5-5";
+      }),
+    ).toStrictEqual(ownerBefore);
+  });
+});
+
+describe("personal subscription run identity", () => {
+  const bdd = createBddApi(context);
+  const runsApi = createRunsApi(context);
+  const runReads = createRunReadsApi(context);
+  const chat = createChatFilesBddApi(context);
+  const chatCallbacks = createChatCallbacksApi(context);
+  const webhooks = createWebhookCallbackApi(context);
+  const authDevice = createAuthDeviceApiActions(context);
+  const authDeviceSupport = createAuthDeviceSupportApi(context);
+  const firewall = createFirewallApi(context);
+
+  beforeAll(async () => {
+    await settleIncludingAbort(async () => {
+      const warmupUser = createBddApi(context).user();
+      await runsApi.grantProEntitlement(warmupUser);
+      await runsApi.configureRunnerGroup();
+    });
+  });
+
+  function registerRunCleanup(
+    actor: ApiTestUser,
+    tokens: ReadonlyMap<string, string>,
+  ): void {
+    const bucket = env("R2_USER_STORAGES_BUCKET_NAME");
+    const kmsKey = env("SECRETS_KMS_KEY_ID");
+    const runnerGroup = optionalEnv("RUNNER_DEFAULT_GROUP");
+
+    onTestFinished(async () => {
+      mockEnv("R2_USER_STORAGES_BUCKET_NAME", bucket);
+      mockEnv("SECRETS_KMS_KEY_ID", kmsKey);
+      if (runnerGroup) {
+        mockOptionalEnv("RUNNER_DEFAULT_GROUP", runnerGroup);
+      }
+      context.mocks.ably.publish.mockResolvedValue(undefined);
+      await settleIncludingAbort(flushWaitUntilForTest);
+      const logs = await runReads.requestListLogs(actor, { limit: 100 }, [200]);
+      for (const run of logs.body.data) {
+        if (["queued", "pending", "running"].includes(run.status)) {
+          await runsApi.requestCancelRun(actor, run.id, [200, 400]);
+        }
+        const token = tokens.get(run.id);
+        if (token && !["completed", "failed", "timeout"].includes(run.status)) {
+          await webhooks.requestAgentComplete(
+            { runId: run.id, exitCode: 1, error: "Run cancelled" },
+            { authorization: `Bearer ${token}` },
+            [200],
+          );
+        }
+      }
+      await settleIncludingAbort(flushWaitUntilForTest);
+    });
   }
-  for (const metadata of Object.values(
-    execution.secretConnectorMetadataMap ?? {},
-  )) {
-    if (metadata.sourceType === "model-provider") {
-      expect(metadata.sourceId).toBe(id);
+
+  async function setupProMember(
+    options: { readonly configureStripeEnv?: boolean } = {},
+  ) {
+    const actor = bdd.user({ orgRole: "org:admin" });
+    chatCallbacks.acceptChatObjectStorage();
+    runsApi.acceptStorageDownloads();
+    runsApi.acceptTelemetryIngest();
+    chatCallbacks.disableVapid();
+    mockOptionalEnv("OPENROUTER_API_KEY", undefined);
+    if (options.configureStripeEnv) {
+      webhooks.configureStripeBillingEnv();
     }
+    await runsApi.configureRunnerGroup();
+    const entitlement = await runsApi.grantProEntitlement(actor);
+    const tokens = new Map<string, string>();
+    registerRunCleanup(actor, tokens);
+    return { actor, entitlement, tokens };
   }
-  return id;
-}
 
-async function finish(
-  actor: ApiTestUser,
-  runId: string,
-  execution: ExecutionInput,
-  status: Exclude<TestTerminalRunStatus, "timeout">,
-) {
-  if (status === "cancelled") {
-    await runs.requestCancelRun(actor, runId, [200]);
-  } else {
-    await createWebhookCallbackApi(context).requestAgentComplete(
+  async function setupFailedCodexAWithActiveB() {
+    const { actor, tokens } = await setupProMember();
+    const codexA = await runsApi.createPersonalModelProvider(actor, {
+      type: "codex-oauth-token",
+      authMethod: "auth_json",
+      secrets: {
+        CODEX_AUTH_JSON: makeCodexAuthJson({
+          accountId: "identity-a",
+          refreshToken: `rt_a_${randomUUID()}`,
+        }),
+      },
+    });
+    const run = await chat.sendAndLaunch(actor, {
+      prompt: "Run on Codex account A",
+      model: "gpt-6-astra",
+    });
+    const execution = await runsApi.executionInput(run.runId);
+    tokens.set(run.runId, execution.sandboxToken);
+    await webhooks.requestAgentComplete(
       {
-        runId,
-        exitCode: status === "completed" ? 0 : 1,
-        ...(status === "completed"
-          ? {
-              completion: {
-                cliAgentType: execution.cliAgentType,
-                cliAgentSessionId:
-                  execution.cliAgentType === "pi"
-                    ? (execution.piSessionId ?? runId)
-                    : `subscription-${runId}`,
-                cliAgentSessionHistoryDisposition: "native_only",
-              },
-            }
-          : { error: "Upstream run failed" }),
+        runId: run.runId,
+        exitCode: 1,
+        error: "Rate limit exceeded",
+        failureReason: "usage_limit",
       },
       { authorization: `Bearer ${execution.sandboxToken}` },
       [200],
     );
-  }
-  expect((await runs.readRun(actor, runId)).status).toBe(status);
-}
+    await flushWaitUntilForTest();
 
-describe("personal subscription run identity", () => {
-  it("executes without proven upstream identity but denies failed-run account management", async () => {
-    const f = await fixture("claude-code-oauth-token", false);
-    const runId = await f.start();
-    const execution = await f.execution(runId);
-    expect(accountId(execution, f.type)).toBe(f.connected.id);
-    expect((await runs.readRun(f.actor, runId)).source?.account).toStrictEqual({
-      status: "unknown",
-    });
-    await finish(f.actor, runId, execution, "failed");
-    expect(
-      (
-        await support.readPersonalModelProviderAccount(
-          f.actor,
-          f.connected.id,
-          runId,
-          [404],
-        )
-      ).status,
-    ).toBe(404);
-    expect(
-      (
-        await support.resetPersonalModelProviderAccount(
-          f.actor,
-          f.connected.id,
-          randomUUID(),
-          [404],
-          runId,
-        )
-      ).status,
-    ).toBe(404);
-  });
-
-  it.each(["claude-code-oauth-token", "codex-oauth-token"] as const)(
-    "preserves proven recovery identity for %s pending admission",
-    async (type) => {
-      const f = await fixture(type);
-      const admitted: string[] = [];
-      const owner = createFixtureOperationOwner(async () => {
-        for (const runId of [...admitted].reverse()) {
-          await runs.requestCancelRun(f.actor, runId, [200]);
-        }
-      });
-      await owner.run(async () => {
-        admitted.push(await f.start());
-        const target = await f.start();
-        admitted.push(target);
-        await expect(runs.readRun(f.actor, target)).resolves.toMatchObject({
-          status: "running",
-          source: { account: { status: "connected", id: f.connected.id } },
-        });
-
-        await connect(f.actor, type, "identity-b");
-        expect(
-          (await runs.readRun(f.actor, target)).source?.account,
-        ).toStrictEqual({
-          status: "unavailable",
-        });
-      });
-    },
-  );
-
-  it.each([
-    ["claude-code-oauth-token", "claude-opus-5-5"],
-    ["codex-oauth-token", "gpt-6-sol"],
-  ] as const)(
-    "runs a free-plan member's %s subscription model on its subscription route",
-    async (type, model) => {
-      const bdd = createBddApi(context);
-      const actor = bdd.user();
-      if (!actor.orgId) {
-        throw new Error("Expected an organization-scoped actor");
-      }
-      const orgId = actor.orgId;
-      let ownedRunId: string | undefined;
-      let ownedExecution: ExecutionInput | undefined;
-      let completed = false;
-      const owner = createPublicBillingZeroFixture(context, actor, {
-        beforeOrganizationCleanup: async () => {
-          runs.acceptStorageDownloads();
-          runs.acceptTelemetryIngest();
-          if (ownedRunId && !completed) {
-            const state = await runs.readRun(actor, ownedRunId);
-            if (state.status === "pending" || state.status === "running") {
-              await runs.requestCancelRun(actor, ownedRunId, [200]);
-            }
-            await flushWaitUntilForTest();
-            if (ownedExecution) {
-              await createWebhookCallbackApi(context).requestAgentComplete(
-                { runId: ownedRunId, exitCode: 1, error: "fixture cleanup" },
-                { authorization: `Bearer ${ownedExecution.sandboxToken}` },
-                [200],
-              );
-            }
-          }
-          await support.deletePersonalModelProvider(actor, type, [204, 404]);
-          await deleteFeatureSwitchesForUser(context, {
-            ...actor,
-            orgId,
-          });
-          await flushWaitUntilForTest();
-        },
-      });
-      await owner.run(async () => {
-        bdd.acceptStorageWrites();
-        // Run creation requires the member memory that onboarding initializes.
-        await owner.initialize();
-        runs.acceptStorageDownloads();
-        runs.acceptTelemetryIngest();
-        const runnerGroup = await runs.configureRunnerGroup();
-        const connected = await connect(actor, type, "identity-auto");
-        const sent = await createChatFilesBddApi(context).sendAndLaunch(actor, {
-          prompt: "use my subscription model",
-          model,
-        });
-        ownedRunId = sent.runId;
-        const state = await runs.readRun(actor, sent.runId);
-        expect(state.status, JSON.stringify(state)).toBe("running");
-        await runs.heartbeatRunner(runnerGroup);
-        const execution = await runs.executionInput(sent.runId);
-        ownedExecution = execution;
-        // The member's own subscription account serves the run, not Built-in.
-        expect(accountId(execution, type)).toBe(connected.id);
-        await finish(actor, sent.runId, execution, "failed");
-        completed = true;
-      });
-    },
-  );
-
-  describe("failed A after active B", () => {
-    async function recoveryFixture() {
-      const f = await fixture("codex-oauth-token");
-      const runId = await f.start();
-      const execution = await f.execution(runId);
-      const captured = accountId(execution, f.type);
-      await finish(f.actor, runId, execution, "failed");
-      const auth = createAuthDeviceApiActions(context);
-      mockCodexDeviceAuthProvider({
-        accountId: "identity-b",
-      });
-      const started = await auth.requestCodexStart(f.actor, "personal", [200], {
-        mode: "add",
-      });
-      if (started.status !== 200) {
-        throw new Error("Expected device auth start");
-      }
-      const connected = await auth.requestCodexComplete(
-        f.actor,
-        started.body.sessionToken,
-        [200],
-      );
-      if (
-        !("status" in connected.body) ||
-        connected.body.status !== "complete"
-      ) {
-        throw new Error("Expected connected account B");
-      }
-      await support.activatePersonalModelProviderAccount(
-        f.actor,
-        connected.body.provider.id,
-      );
-
-      const observed: {
-        readonly path: string;
-        readonly account: string | null;
-      }[] = [];
-      for (const path of ["usage", "rate-limit-reset-credits"] as const) {
-        server.use(
-          http.get(
-            `https://chatgpt.com/backend-api/wham/${path}`,
-            ({ request }) => {
-              observed.push({
-                path,
-                account: request.headers.get("chatgpt-account-id"),
-              });
-              return HttpResponse.json(
-                path === "usage"
-                  ? {
-                      plan_type: "plus",
-                      rate_limit_reset_credits: { available_count: 1 },
-                    }
-                  : { credits: [] },
-              );
-            },
-          ),
-        );
-      }
-      const resetKeys: unknown[] = [];
-      server.use(
-        http.post(
-          "https://chatgpt.com/backend-api/wham/rate-limit-reset-credits/consume",
-          async ({ request }) => {
-            observed.push({
-              path: "consume",
-              account: request.headers.get("chatgpt-account-id"),
-            });
-            resetKeys.push(await request.json());
-            return HttpResponse.json({
-              code: resetKeys.length === 1 ? "reset" : "already_redeemed",
-              windows_reset: 1,
-            });
-          },
-        ),
-      );
-      return {
-        f,
-        runId,
-        captured,
-        active: connected.body.provider.id,
-        observed,
-        resetKeys,
-      };
+    mockCodexDeviceAuthProvider({ accountId: "identity-b" });
+    const startedB = await authDevice.requestCodexStart(
+      actor,
+      "personal",
+      [200],
+      { mode: "add" },
+    );
+    if (startedB.status !== 200) {
+      throw new Error("Expected Codex device auth start for B");
     }
-
-    async function expectCapturedAccountRecovery(
-      scenario: Awaited<ReturnType<typeof recoveryFixture>>,
+    const completedB = await authDevice.requestCodexComplete(
+      actor,
+      startedB.body.sessionToken,
+      [200],
+    );
+    if (
+      !("status" in completedB.body) ||
+      completedB.body.status !== "complete"
     ) {
-      const { f, runId, captured, observed } = scenario;
-      expect((await runs.readRun(f.actor, runId)).source).toMatchObject({
-        providerType: f.type,
-        model: f.model,
-        credentialScope: "member",
-        account: { status: "connected", id: captured },
-      });
-      const exact = await support.readPersonalModelProviderAccount(
-        f.actor,
-        captured,
-        runId,
-        [200],
-      );
-      expect(exact.body).toMatchObject({
-        id: captured,
-        subscriptionResetCredits: 1,
-      });
-      const reset = await support.resetPersonalModelProviderAccount(
-        f.actor,
-        captured,
-        randomUUID(),
-        [200],
-        runId,
-      );
-      expect(reset.body).toMatchObject({ outcome: "reset" });
-      expect(
-        observed.map(({ account }) => {
-          return account;
-        }),
-      ).not.toContain("identity-b");
+      throw new Error("Expected Codex device auth completion for B");
     }
+    const accountBId = completedB.body.provider.id;
+    await authDeviceSupport.activatePersonalModelProviderAccount(
+      actor,
+      accountBId,
+    );
 
-    it("recovers the captured account and preserves reset idempotency", async () => {
-      const { f, runId, captured, observed, resetKeys } =
-        await recoveryFixture();
-      expect((await runs.readRun(f.actor, runId)).source).toMatchObject({
-        providerType: f.type,
-        model: f.model,
-        credentialScope: "member",
-        account: { status: "connected", id: captured },
-      });
-      const exact = await support.readPersonalModelProviderAccount(
-        f.actor,
-        captured,
-        runId,
-        [200],
-      );
-      expect(exact.body).toMatchObject({
-        id: captured,
-        subscriptionResetCredits: 1,
-      });
-      const idempotencyKey = randomUUID();
-      const first = await support.resetPersonalModelProviderAccount(
-        f.actor,
-        captured,
-        idempotencyKey,
-        [200],
-        runId,
-      );
-      expect(first.body).toMatchObject({ outcome: "reset" });
-      const second = await support.resetPersonalModelProviderAccount(
-        f.actor,
-        captured,
-        idempotencyKey,
-        [200],
-        runId,
-      );
-      expect(second.body).toMatchObject({ outcome: "alreadyRedeemed" });
-      expect(resetKeys[1]).toStrictEqual(resetKeys[0]);
-      expect(
-        observed.map(({ account }) => {
-          return account;
-        }),
-      ).not.toContain("identity-b");
-      expect(
-        observed.some(({ path }) => {
-          return path === "consume";
-        }),
-      ).toBeTruthy();
-    });
+    const seenAccountIds: string[] = [];
+    const consumeBodies: string[] = [];
+    let consumeCalls = 0;
+    let totalChatGptCalls = 0;
 
-    it("denies another member access to the captured account and reset", async () => {
-      const scenario = await recoveryFixture();
-      await expectCapturedAccountRecovery(scenario);
-      const { f, runId, captured } = scenario;
-      const foreign = createBddApi(context).user({ orgId: f.actor.orgId });
-      expect(
-        (
-          await support.readPersonalModelProviderAccount(
-            foreign,
-            captured,
-            runId,
-            [404],
-          )
-        ).status,
-      ).toBe(404);
-      expect(
-        (
-          await support.resetPersonalModelProviderAccount(
-            foreign,
-            captured,
-            randomUUID(),
-            [404],
-            runId,
-          )
-        ).status,
-      ).toBe(404);
-    });
-
-    it("rechecks a disconnected recovery account after in-flight usage completes", async () => {
-      const { f, runId, captured, active } = await recoveryFixture();
-      const started = createDeferredPromise<void>(context.signal);
-      const released = createDeferredPromise<void>(context.signal);
-      server.use(
-        http.get(
-          "https://chatgpt.com/backend-api/wham/usage",
-          async ({ request }) => {
-            if (request.headers.get("chatgpt-account-id") === "identity-a") {
-              if (!started.settled()) {
-                started.resolve(undefined);
-              }
-              await released.promise;
-            }
-            return HttpResponse.json({
-              plan_type: "plus",
-              rate_limit_reset_credits: { available_count: 1 },
-            });
-          },
-        ),
-      );
-      const recovery = settle(
-        support.readPersonalModelProviderAccount(
-          f.actor,
-          captured,
-          runId,
-          [404],
-        ),
-      );
-      onTestFinished(async () => {
-        if (!released.settled()) {
-          released.resolve(undefined);
+    server.use(
+      http.get("https://chatgpt.com/backend-api/wham/usage", ({ request }) => {
+        totalChatGptCalls += 1;
+        const accountHeader = request.headers.get("chatgpt-account-id");
+        if (accountHeader) {
+          seenAccountIds.push(accountHeader);
         }
-        await recovery;
+        return HttpResponse.json({
+          plan_type: "plus",
+          rate_limit_reset_credits: { available_count: 1 },
+        });
+      }),
+      http.get(
+        "https://chatgpt.com/backend-api/wham/rate-limit-reset-credits",
+        ({ request }) => {
+          totalChatGptCalls += 1;
+          const accountHeader = request.headers.get("chatgpt-account-id");
+          if (accountHeader) {
+            seenAccountIds.push(accountHeader);
+          }
+          return HttpResponse.json({ credits: [] });
+        },
+      ),
+      http.post(
+        "https://chatgpt.com/backend-api/wham/rate-limit-reset-credits/consume",
+        async ({ request }) => {
+          totalChatGptCalls += 1;
+          consumeCalls += 1;
+          const accountHeader = request.headers.get("chatgpt-account-id");
+          if (accountHeader) {
+            seenAccountIds.push(accountHeader);
+          }
+          consumeBodies.push(await request.text());
+          return HttpResponse.json({
+            code: consumeCalls === 1 ? "reset" : "already_redeemed",
+          });
+        },
+      ),
+    );
+
+    return {
+      actor,
+      accountAId: codexA.providerId,
+      accountBId,
+      runId: run.runId,
+      seenAccountIds,
+      consumeBodies,
+      getTotalChatGptCalls: () => {
+        return totalChatGptCalls;
+      },
+    };
+  }
+
+  it(
+    "personal-subscription-run-identity-002 preserves proven recovery identity for claude-code-oauth-token pending admission",
+    { timeout: TEST_WITH_DOUBLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const { actor, tokens } = await setupProMember();
+      mockClaudeCodeTokenEndpoint({ accountEmail: "identity-a@example.com" });
+      const accountA = await runsApi.createPersonalModelProvider(actor, {
+        type: "claude-code-oauth-token",
+        secret: "claude-identity-a-token",
       });
 
-      await started.promise;
-      await support.deletePersonalModelProviderAccount(f.actor, captured);
-      released.resolve(undefined);
-      const result = await recovery;
-      if (!result.ok) {
-        throw result.error;
-      }
-      expect(result.value.body).toStrictEqual({
-        error: { message: "Resource not found", code: "NOT_FOUND" },
+      const first = await chat.sendAndLaunch(actor, {
+        prompt: "First Claude run on identity A",
+        model: "claude-sonnet-5-5",
       });
-      const remaining = await support.listPersonalModelProviders(
-        f.actor,
-        [200],
-      );
-      expect(remaining.body).toMatchObject({
-        modelProviders: [
-          {
-            id: active,
-            isActive: true,
-            subscriptionResetCredits: 1,
-          },
-        ],
-      });
-    });
+      const firstExec = await runsApi.executionInput(first.runId);
+      tokens.set(first.runId, firstExec.sandboxToken);
 
-    it("removes recovery after the captured account is deleted", async () => {
-      const scenario = await recoveryFixture();
-      await expectCapturedAccountRecovery(scenario);
-      const { f, runId, captured, observed } = scenario;
-      await support.deletePersonalModelProviderAccount(f.actor, captured);
-      expect(
-        (await runs.readRun(f.actor, runId)).source?.account,
-      ).toStrictEqual({
+      const second = await chat.sendAndLaunch(actor, {
+        prompt: "Second Claude run on identity A",
+        model: "claude-sonnet-5-5",
+      });
+      const secondExec = await runsApi.executionInput(second.runId);
+      tokens.set(second.runId, secondExec.sandboxToken);
+
+      const beforeReconnect = await runsApi.readRun(actor, second.runId);
+      expect(beforeReconnect.status).toBe("running");
+      expect(beforeReconnect.source.account).toStrictEqual({
+        status: "connected",
+        id: accountA.providerId,
+      });
+
+      mockClaudeCodeTokenEndpoint({ accountEmail: "identity-b@example.com" });
+      await runsApi.createPersonalModelProvider(actor, {
+        type: "claude-code-oauth-token",
+        secret: "claude-identity-b-token",
+      });
+
+      const afterReconnect = await runsApi.readRun(actor, second.runId);
+      expect(afterReconnect.source.account).toStrictEqual({
         status: "unavailable",
       });
-      const beforeRejected = observed.length;
-      expect(
-        (
-          await support.readPersonalModelProviderAccount(
-            f.actor,
-            captured,
-            runId,
-            [404],
-          )
-        ).status,
-      ).toBe(404);
-      expect(
-        (
-          await support.resetPersonalModelProviderAccount(
-            f.actor,
-            captured,
-            randomUUID(),
-            [404],
-            runId,
-          )
-        ).status,
-      ).toBe(404);
-      expect(observed).toHaveLength(beforeRejected);
-    });
-  });
+    },
+  );
 
-  it("admits one canonical run for concurrent idempotent chat sends", async () => {
-    const f = await fixture("codex-oauth-token");
-    const chat = createChatFilesBddApi(context);
-    const thread = await chat.createThread(f.actor, {});
-    const headId = randomUUID();
-    const send = () => {
-      return chat.requestSendEvent(
-        f.actor,
+  it(
+    "personal-subscription-run-identity-004 runs a free-plan member's claude-code-oauth-token subscription model on its subscription route",
+    { timeout: TEST_WITH_SINGLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const actor = bdd.user({ orgRole: "org:admin" });
+      chatCallbacks.acceptChatObjectStorage();
+      runsApi.acceptStorageDownloads();
+      runsApi.acceptTelemetryIngest();
+      chatCallbacks.disableVapid();
+      mockOptionalEnv("OPENROUTER_API_KEY", undefined);
+      await runsApi.configureRunnerGroup();
+      await bdd.bootstrapLimitedFreeOnboarding(actor);
+
+      mockClaudeCodeTokenEndpoint({ accountEmail: "free-claude@example.com" });
+      const provider = await runsApi.createPersonalModelProvider(actor, {
+        type: "claude-code-oauth-token",
+        secret: "free-claude-token",
+      });
+
+      const tokens = new Map<string, string>();
+      registerRunCleanup(actor, tokens);
+
+      const launched = await chat.sendAndLaunch(actor, {
+        prompt: "Free plan Claude Opus run",
+        model: "claude-opus-5-5",
+      });
+      const execution = await runsApi.executionInput(launched.runId);
+      tokens.set(launched.runId, execution.sandboxToken);
+
+      const running = await runsApi.readRun(actor, launched.runId);
+      expect(running.status).toBe("running");
+      expect(
+        execution.secretConnectorMetadataMap?.CLAUDE_CODE_OAUTH_TOKEN,
+      ).toMatchObject({
+        sourceType: "model-provider",
+        sourceUserId: actor.userId,
+        sourceId: provider.providerId,
+      });
+      expect(execution.billableFirewalls ?? []).toHaveLength(0);
+
+      await webhooks.requestAgentComplete(
+        { runId: launched.runId, exitCode: 1, error: "Expected test failure" },
+        { authorization: `Bearer ${execution.sandboxToken}` },
+        [200],
+      );
+      await flushWaitUntilForTest();
+
+      const failed = await runsApi.readRun(actor, launched.runId);
+      expect(failed.status).toBe("failed");
+    },
+  );
+
+  it(
+    "personal-subscription-run-identity-005 runs a free-plan member's codex-oauth-token subscription model on its subscription route",
+    { timeout: TEST_WITH_SINGLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const actor = bdd.user({ orgRole: "org:admin" });
+      chatCallbacks.acceptChatObjectStorage();
+      runsApi.acceptStorageDownloads();
+      runsApi.acceptTelemetryIngest();
+      chatCallbacks.disableVapid();
+      mockOptionalEnv("OPENROUTER_API_KEY", undefined);
+      await runsApi.configureRunnerGroup();
+      await bdd.bootstrapLimitedFreeOnboarding(actor);
+
+      const provider = await runsApi.createPersonalModelProvider(actor, {
+        type: "codex-oauth-token",
+        authMethod: "auth_json",
+        secrets: {
+          CODEX_AUTH_JSON: makeCodexAuthJson({
+            accountId: "free-codex-acct",
+          }),
+        },
+      });
+
+      const tokens = new Map<string, string>();
+      registerRunCleanup(actor, tokens);
+
+      const launched = await chat.sendAndLaunch(actor, {
+        prompt: "Free plan GPT Sol run",
+        model: "gpt-6-sol",
+      });
+      const execution = await runsApi.executionInput(launched.runId);
+      tokens.set(launched.runId, execution.sandboxToken);
+
+      const running = await runsApi.readRun(actor, launched.runId);
+      expect(running.status).toBe("running");
+      expect(
+        execution.secretConnectorMetadataMap?.CHATGPT_ACCESS_TOKEN,
+      ).toMatchObject({
+        sourceType: "model-provider",
+        sourceUserId: actor.userId,
+        sourceId: provider.providerId,
+      });
+      expect(execution.billableFirewalls ?? []).toHaveLength(0);
+
+      await webhooks.requestAgentComplete(
+        { runId: launched.runId, exitCode: 1, error: "Expected test failure" },
+        { authorization: `Bearer ${execution.sandboxToken}` },
+        [200],
+      );
+      await flushWaitUntilForTest();
+
+      const failed = await runsApi.readRun(actor, launched.runId);
+      expect(failed.status).toBe("failed");
+    },
+  );
+
+  it(
+    "personal-subscription-run-identity-006 recovers the captured account and preserves reset idempotency",
+    { timeout: TEST_WITH_SINGLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const setup = await setupFailedCodexAWithActiveB();
+
+      const run = await runsApi.readRun(setup.actor, setup.runId);
+      expect(run.source).toMatchObject({
+        providerType: "codex-oauth-token",
+        model: "gpt-6-astra",
+        credentialScope: "member",
+        account: { status: "connected", id: setup.accountAId },
+      });
+
+      const accountRead =
+        await authDeviceSupport.readPersonalModelProviderAccount(
+          setup.actor,
+          setup.accountAId,
+          setup.runId,
+          [200],
+        );
+      if (accountRead.status !== 200) {
+        throw new Error("Expected failed-run account read to succeed");
+      }
+      expect(accountRead.body.id).toBe(setup.accountAId);
+      expect(accountRead.body.subscriptionResetCredits).toBe(1);
+
+      const idempotencyKey = randomUUID();
+      const firstReset =
+        await authDeviceSupport.resetPersonalModelProviderAccount(
+          setup.actor,
+          setup.accountAId,
+          idempotencyKey,
+          [200],
+          setup.runId,
+        );
+      const secondReset =
+        await authDeviceSupport.resetPersonalModelProviderAccount(
+          setup.actor,
+          setup.accountAId,
+          idempotencyKey,
+          [200],
+          setup.runId,
+        );
+      if (firstReset.status !== 200 || secondReset.status !== 200) {
+        throw new Error("Expected failed-run subscription resets to succeed");
+      }
+      expect(firstReset.body.outcome).toBe("reset");
+      expect(secondReset.body.outcome).toBe("alreadyRedeemed");
+      expect(setup.consumeBodies.length).toBeGreaterThanOrEqual(1);
+      expect(
+        setup.consumeBodies.every((body) => {
+          return body === setup.consumeBodies[0];
+        }),
+      ).toBeTruthy();
+      expect(setup.seenAccountIds).not.toContain("identity-b");
+    },
+  );
+
+  it(
+    "personal-subscription-run-identity-007 denies another member access to the captured account and reset",
+    { timeout: TEST_WITH_SINGLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const setup = await setupFailedCodexAWithActiveB();
+      const otherMember = bdd.user({
+        orgId: setup.actor.orgId,
+        orgRole: "org:member",
+      });
+
+      const ownerRead =
+        await authDeviceSupport.readPersonalModelProviderAccount(
+          setup.actor,
+          setup.accountAId,
+          setup.runId,
+          [200],
+        );
+      if (ownerRead.status !== 200) {
+        throw new Error("Expected owner recovery account read to succeed");
+      }
+      expect(ownerRead.body.id).toBe(setup.accountAId);
+      expect(ownerRead.body.subscriptionResetCredits).toBe(1);
+
+      const ownerReset =
+        await authDeviceSupport.resetPersonalModelProviderAccount(
+          setup.actor,
+          setup.accountAId,
+          randomUUID(),
+          [200],
+          setup.runId,
+        );
+      if (ownerReset.status !== 200) {
+        throw new Error("Expected owner recovery reset to succeed");
+      }
+      expect(ownerReset.body.outcome).toBe("reset");
+      expect(setup.seenAccountIds).not.toContain("identity-b");
+
+      const otherRead =
+        await authDeviceSupport.readPersonalModelProviderAccount(
+          otherMember,
+          setup.accountAId,
+          setup.runId,
+          [404],
+        );
+      const otherReset =
+        await authDeviceSupport.resetPersonalModelProviderAccount(
+          otherMember,
+          setup.accountAId,
+          randomUUID(),
+          [404],
+          setup.runId,
+        );
+      expect(otherRead.status).toBe(404);
+      expect(otherReset.status).toBe(404);
+    },
+  );
+
+  it(
+    "personal-subscription-run-identity-009 removes recovery after the captured account is deleted",
+    { timeout: TEST_WITH_SINGLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const setup = await setupFailedCodexAWithActiveB();
+
+      const beforeDelete =
+        await authDeviceSupport.readPersonalModelProviderAccount(
+          setup.actor,
+          setup.accountAId,
+          setup.runId,
+          [200],
+        );
+      expect(beforeDelete.status).toBe(200);
+
+      await authDeviceSupport.deletePersonalModelProviderAccount(
+        setup.actor,
+        setup.accountAId,
+      );
+      const callsAfterDelete = setup.getTotalChatGptCalls();
+
+      const runAfterDelete = await runsApi.readRun(setup.actor, setup.runId);
+      expect(runAfterDelete.source.account).toStrictEqual({
+        status: "unavailable",
+      });
+
+      const retryRead =
+        await authDeviceSupport.readPersonalModelProviderAccount(
+          setup.actor,
+          setup.accountAId,
+          setup.runId,
+          [404],
+        );
+      const retryReset =
+        await authDeviceSupport.resetPersonalModelProviderAccount(
+          setup.actor,
+          setup.accountAId,
+          randomUUID(),
+          [404],
+          setup.runId,
+        );
+      expect(retryRead.status).toBe(404);
+      expect(retryReset.status).toBe(404);
+      expect(setup.getTotalChatGptCalls()).toBe(callsAfterDelete);
+    },
+  );
+
+  it(
+    "personal-subscription-run-identity-010 admits one canonical run for concurrent idempotent chat sends",
+    { timeout: TEST_WITH_SINGLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const { actor, tokens } = await setupProMember();
+      await runsApi.createPersonalModelProvider(actor, {
+        type: "codex-oauth-token",
+        authMethod: "auth_json",
+        secrets: {
+          CODEX_AUTH_JSON: makeCodexAuthJson({
+            accountId: "idempotent-codex-acct",
+          }),
+        },
+      });
+      const thread = await chat.createThread(actor, { model: "gpt-6-astra" });
+      const clientEventId = randomUUID();
+      const sendBody = {
+        threadId: thread.id,
+        prompt: "Idempotent concurrent prompt",
+        clientEventId,
+      };
+
+      const [firstSend, secondSend] = await Promise.all([
+        chat.requestSendEvent(actor, sendBody, [201]),
+        chat.requestSendEvent(actor, sendBody, [201]),
+      ]);
+      expect(firstSend.status).toBe(201);
+      expect(secondSend.status).toBe(201);
+      await flushWaitUntilForTest();
+
+      const beforeComplete = await chat.listThreadEvents(actor, thread.id);
+      const claimedPrompts = beforeComplete.events.filter((event) => {
+        return (
+          event.eventType === "input.prompt" &&
+          event.revokesEventId === clientEventId &&
+          event.runId !== undefined
+        );
+      });
+      expect(claimedPrompts).toHaveLength(1);
+      const runId = claimedPrompts[0]?.runId;
+      if (!runId) {
+        throw new Error("Expected one claimed run ID");
+      }
+
+      const execution = await runsApi.executionInput(runId);
+      tokens.set(runId, execution.sandboxToken);
+      await webhooks.requestAgentComplete(
         {
-          threadId: thread.id,
-          clientEventId: headId,
-          prompt: "one canonical subscription input",
-          model: f.model,
+          runId,
+          exitCode: 0,
+          completion: {
+            cliAgentType: "codex",
+            cliAgentSessionId: `bdd-codex-${runId}`,
+            cliAgentSessionHistoryDisposition: "native_only",
+          },
+        },
+        { authorization: `Bearer ${execution.sandboxToken}` },
+        [200],
+      );
+      await flushWaitUntilForTest();
+
+      const afterComplete = await chat.listThreadEvents(actor, thread.id);
+      const finalClaimed = afterComplete.events.filter((event) => {
+        return (
+          event.eventType === "input.prompt" &&
+          event.revokesEventId === clientEventId &&
+          event.runId === runId
+        );
+      });
+      expect(finalClaimed).toHaveLength(1);
+
+      const finalRun = await runsApi.readRun(actor, runId);
+      expect(finalRun.status).toBe("completed");
+    },
+  );
+
+  it(
+    "personal-subscription-run-identity-026 preserves the requested model and lazy exact claude-code-oauth-token authentication",
+    { timeout: TEST_WITH_SINGLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const { actor, tokens } = await setupProMember();
+      const exactSecret = "claude-exact-secret-token";
+      mockClaudeCodeTokenEndpoint({ accountEmail: "exact-claude@example.com" });
+      const provider = await runsApi.createPersonalModelProvider(actor, {
+        type: "claude-code-oauth-token",
+        secret: exactSecret,
+      });
+      await runsApi.updateUserModelPreference(actor, "claude-opus-5-5");
+
+      const launched = await chat.sendAndLaunch(actor, {
+        prompt: "Exact Claude Opus request",
+        model: "claude-opus-5-5",
+      });
+      const execution = await runsApi.executionInput(launched.runId);
+      tokens.set(launched.runId, execution.sandboxToken);
+
+      const logBefore = await runReads.requestReadLogById(
+        actor,
+        launched.runId,
+        [200],
+      );
+      if (logBefore.status !== 200) {
+        throw new Error("Expected log read to succeed");
+      }
+      expect(logBefore.body).toMatchObject({
+        selectedModel: "claude-opus-5-5",
+        modelRuntimeProvider: "claude-code-oauth-token",
+        modelRuntimeModel: "claude-opus-5-5",
+      });
+      expect(execution.environment?.ANTHROPIC_MODEL).toBe("claude-opus-5-5");
+      expect(JSON.stringify(execution.environment ?? {})).not.toContain(
+        exactSecret,
+      );
+      expect(JSON.stringify(execution.platformEnvironment)).not.toContain(
+        exactSecret,
+      );
+      expect(
+        execution.secretConnectorMetadataMap?.CLAUDE_CODE_OAUTH_TOKEN?.sourceId,
+      ).toBe(provider.providerId);
+
+      await runsApi.updateUserModelPreference(actor, "claude-sonnet-5-5");
+      const logAfter = await runReads.requestReadLogById(
+        actor,
+        launched.runId,
+        [200],
+      );
+      if (logAfter.status !== 200) {
+        throw new Error("Expected second log read to succeed");
+      }
+      expect(logAfter.body).toStrictEqual(logBefore.body);
+
+      firewall.seedClerkDirectory(actor);
+      const authResult = await firewall.requestFirewallAuth(
+        { authorization: `Bearer ${execution.firewallToken}` },
+        {
+          authHeaders: {
+            Authorization: `Bearer ${secretTemplate("CLAUDE_CODE_OAUTH_TOKEN")}`,
+          },
+          secretConnectorMap: execution.secretConnectorMap ?? undefined,
+          secretConnectorMetadataMap:
+            execution.secretConnectorMetadataMap ?? undefined,
+        },
+        [200],
+      );
+      if (authResult.status !== 200) {
+        throw new Error("Expected Claude firewall auth resolution");
+      }
+      expect(authResult.body.headers.Authorization).toBe(
+        `Bearer ${exactSecret}`,
+      );
+    },
+  );
+
+  it(
+    "personal-subscription-run-identity-027 preserves the requested model and lazy exact codex-oauth-token authentication",
+    { timeout: TEST_WITH_SINGLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const { actor, tokens } = await setupProMember();
+      const exactAccessToken = `codex-exact-access-${randomUUID()}`;
+      const provider = await runsApi.createPersonalModelProvider(actor, {
+        type: "codex-oauth-token",
+        authMethod: "auth_json",
+        secrets: {
+          CODEX_AUTH_JSON: makeCodexAuthJson({
+            accountId: "identity-a",
+            accessToken: exactAccessToken,
+          }),
+        },
+      });
+      await runsApi.updateUserModelPreference(actor, "gpt-6-sol");
+
+      const launched = await chat.sendAndLaunch(actor, {
+        prompt: "Exact GPT Sol request",
+        model: "gpt-6-sol",
+      });
+      const execution = await runsApi.executionInput(launched.runId);
+      tokens.set(launched.runId, execution.sandboxToken);
+
+      const logBefore = await runReads.requestReadLogById(
+        actor,
+        launched.runId,
+        [200],
+      );
+      if (logBefore.status !== 200) {
+        throw new Error("Expected log read to succeed");
+      }
+      expect(logBefore.body).toMatchObject({
+        selectedModel: "gpt-6-sol",
+        modelRuntimeProvider: "codex-oauth-token",
+        modelRuntimeModel: "gpt-6-sol",
+      });
+      expect(execution.environment?.OPENAI_MODEL).toBe("gpt-6-sol");
+      expect(JSON.stringify(execution.environment ?? {})).not.toContain(
+        exactAccessToken,
+      );
+      expect(JSON.stringify(execution.platformEnvironment)).not.toContain(
+        exactAccessToken,
+      );
+      expect(
+        execution.secretConnectorMetadataMap?.CHATGPT_ACCESS_TOKEN?.sourceId,
+      ).toBe(provider.providerId);
+
+      await runsApi.updateUserModelPreference(actor, "gpt-6-astra");
+      const logAfter = await runReads.requestReadLogById(
+        actor,
+        launched.runId,
+        [200],
+      );
+      if (logAfter.status !== 200) {
+        throw new Error("Expected second log read to succeed");
+      }
+      expect(logAfter.body).toStrictEqual(logBefore.body);
+
+      firewall.seedClerkDirectory(actor);
+      const authResult = await firewall.requestFirewallAuth(
+        { authorization: `Bearer ${execution.firewallToken}` },
+        {
+          authHeaders: {
+            Authorization: `Bearer ${secretTemplate("CHATGPT_ACCESS_TOKEN")}`,
+            "ChatGPT-Account-ID": secretTemplate("CHATGPT_ACCOUNT_ID"),
+          },
+          secretConnectorMap: execution.secretConnectorMap ?? undefined,
+          secretConnectorMetadataMap:
+            execution.secretConnectorMetadataMap ?? undefined,
+        },
+        [200],
+      );
+      if (authResult.status !== 200) {
+        throw new Error("Expected Codex firewall auth resolution");
+      }
+      expect(authResult.body.headers.Authorization).toBe(
+        `Bearer ${exactAccessToken}`,
+      );
+      expect(authResult.body.headers["ChatGPT-Account-ID"]).toBe("identity-a");
+    },
+  );
+
+  it(
+    "personal-subscription-run-identity-029 lists and runs personal claude-code-oauth-token, then removes it after disconnection",
+    { timeout: TEST_WITH_SINGLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const { actor, tokens } = await setupProMember();
+      const claudeSecret = "claude-boundary-secret";
+      mockClaudeCodeTokenEndpoint({
+        accountEmail: "boundary-claude@example.com",
+      });
+      await runsApi.createPersonalModelProvider(actor, {
+        type: "claude-code-oauth-token",
+        secret: claudeSecret,
+      });
+      await runsApi.updateUserModelPreference(actor, "claude-sonnet-5-5");
+
+      const modelsBefore = await runsApi.listRunModels(actor);
+      const claudeEntry = modelsBefore.models.find((entry) => {
+        return entry.model === "claude-sonnet-5-5";
+      });
+      expect(claudeEntry?.memberEffective).toMatchObject({
+        runtimeProviderType: "claude-code-oauth-token",
+        credentialScope: "member",
+      });
+
+      const launched = await chat.sendAndLaunch(actor, {
+        prompt: "Claude boundary run",
+        model: "claude-sonnet-5-5",
+      });
+      const execution = await runsApi.executionInput(launched.runId);
+      tokens.set(launched.runId, execution.sandboxToken);
+
+      firewall.seedClerkDirectory(actor);
+      const authResult = await firewall.requestFirewallAuth(
+        { authorization: `Bearer ${execution.firewallToken}` },
+        {
+          authHeaders: {
+            Authorization: `Bearer ${secretTemplate("CLAUDE_CODE_OAUTH_TOKEN")}`,
+          },
+          secretConnectorMap: execution.secretConnectorMap ?? undefined,
+          secretConnectorMetadataMap:
+            execution.secretConnectorMetadataMap ?? undefined,
+        },
+        [200],
+      );
+      if (authResult.status !== 200) {
+        throw new Error("Expected Claude firewall auth resolution");
+      }
+      expect(authResult.body.headers.Authorization).toBe(
+        `Bearer ${claudeSecret}`,
+      );
+
+      await runsApi.requestCancelRun(actor, launched.runId, [200]);
+      await webhooks.requestAgentComplete(
+        { runId: launched.runId, exitCode: 1, error: "Run cancelled" },
+        { authorization: `Bearer ${execution.sandboxToken}` },
+        [200],
+      );
+      await flushWaitUntilForTest();
+
+      await authDeviceSupport.deletePersonalModelProvider(
+        actor,
+        "claude-code-oauth-token",
+        [204],
+      );
+      const modelsAfter = await runsApi.listRunModels(actor);
+      expect(
+        modelsAfter.models.some((entry) => {
+          return entry.model === "claude-sonnet-5-5";
+        }),
+      ).toBeFalsy();
+
+      const rejectedThread = await chat.requestCreateThread(
+        actor,
+        { model: "claude-sonnet-5-5" },
+        [400],
+      );
+      expect(rejectedThread.status).toBe(400);
+    },
+  );
+
+  it(
+    "personal-subscription-run-identity-030 lists and runs personal codex-oauth-token, then removes it after disconnection",
+    { timeout: TEST_WITH_SINGLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const { actor, tokens } = await setupProMember();
+      const codexAccessToken = `codex-boundary-${randomUUID()}`;
+      await runsApi.createPersonalModelProvider(actor, {
+        type: "codex-oauth-token",
+        authMethod: "auth_json",
+        secrets: {
+          CODEX_AUTH_JSON: makeCodexAuthJson({
+            accountId: "boundary-codex-acct",
+            accessToken: codexAccessToken,
+          }),
+        },
+      });
+      await runsApi.updateUserModelPreference(actor, "gpt-6-astra");
+
+      const modelsBefore = await runsApi.listRunModels(actor);
+      const codexEntry = modelsBefore.models.find((entry) => {
+        return entry.model === "gpt-6-astra";
+      });
+      expect(codexEntry?.memberEffective).toMatchObject({
+        runtimeProviderType: "codex-oauth-token",
+        credentialScope: "member",
+      });
+
+      const launched = await chat.sendAndLaunch(actor, {
+        prompt: "Codex boundary run",
+        model: "gpt-6-astra",
+      });
+      const execution = await runsApi.executionInput(launched.runId);
+      tokens.set(launched.runId, execution.sandboxToken);
+
+      firewall.seedClerkDirectory(actor);
+      const authResult = await firewall.requestFirewallAuth(
+        { authorization: `Bearer ${execution.firewallToken}` },
+        {
+          authHeaders: {
+            Authorization: `Bearer ${secretTemplate("CHATGPT_ACCESS_TOKEN")}`,
+          },
+          secretConnectorMap: execution.secretConnectorMap ?? undefined,
+          secretConnectorMetadataMap:
+            execution.secretConnectorMetadataMap ?? undefined,
+        },
+        [200],
+      );
+      if (authResult.status !== 200) {
+        throw new Error("Expected Codex firewall auth resolution");
+      }
+      expect(authResult.body.headers.Authorization).toBe(
+        `Bearer ${codexAccessToken}`,
+      );
+
+      await runsApi.requestCancelRun(actor, launched.runId, [200]);
+      await webhooks.requestAgentComplete(
+        { runId: launched.runId, exitCode: 1, error: "Run cancelled" },
+        { authorization: `Bearer ${execution.sandboxToken}` },
+        [200],
+      );
+      await flushWaitUntilForTest();
+
+      await authDeviceSupport.deletePersonalModelProvider(
+        actor,
+        "codex-oauth-token",
+        [204],
+      );
+      const modelsAfter = await runsApi.listRunModels(actor);
+      expect(
+        modelsAfter.models.some((entry) => {
+          return entry.model === "gpt-6-astra";
+        }),
+      ).toBeFalsy();
+
+      const rejectedThread = await chat.requestCreateThread(
+        actor,
+        { model: "gpt-6-astra" },
+        [400],
+      );
+      expect(rejectedThread.status).toBe(400);
+    },
+  );
+
+  it(
+    "personal-subscription-run-identity-034 rejects a suspended entitlement even with org credits and a supported subscription",
+    { timeout: TEST_WITH_SINGLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const { actor, entitlement } = await setupProMember({
+        configureStripeEnv: true,
+      });
+      expect(entitlement.credits).toBeGreaterThan(0);
+
+      mockClaudeCodeTokenEndpoint({
+        accountEmail: "suspended-pro@example.com",
+      });
+      await runsApi.createPersonalModelProvider(actor, {
+        type: "claude-code-oauth-token",
+        secret: "suspended-pro-claude-secret",
+      });
+
+      const plan = publicPlanLifecycle(context, actor, "pro", {
+        customerId: entitlement.customerId,
+        subscriptionId: entitlement.subscriptionId,
+      });
+      await plan.update("canceled");
+
+      const sent = await chat.requestSendEvent(
+        actor,
+        {
+          prompt: "Send after Pro cancellation",
+          model: "claude-sonnet-5-5",
+          clientEventId: randomUUID(),
         },
         [201],
       );
-    };
-    const responses = await Promise.all([send(), send()]);
-    for (const response of responses) {
-      if (response.status !== 201) {
-        throw new Error("Expected both idempotent sends to be accepted");
+      if (sent.status !== 201) {
+        throw new Error("Expected chat send to be accepted");
       }
-    }
+      await flushWaitUntilForTest();
 
-    await flushWaitUntilForTest();
-    const admittedEvents = (await chat.listThreadEvents(f.actor, thread.id))
-      .events;
-    const claims = admittedEvents.filter((event) => {
-      return (
-        event.eventType === "input.prompt" &&
-        event.revokesEventId === headId &&
-        event.runId !== null
-      );
-    });
-    expect(claims).toHaveLength(1);
-    const claimedRunId = claims[0]?.runId;
-    if (!claimedRunId) {
-      throw new Error("Expected the input to be claimed by one run");
-    }
-    const execution = await f.execution(claimedRunId);
-    await finish(f.actor, claimedRunId, execution, "completed");
-    const events = (await chat.listThreadEvents(f.actor, thread.id)).events;
-    expect(
-      events.filter((event) => {
-        return (
-          event.eventType === "input.prompt" && event.revokesEventId === headId
-        );
-      }),
-    ).toStrictEqual([expect.objectContaining({ runId: claimedRunId })]);
-    expect((await runs.readRun(f.actor, claimedRunId)).status).toBe(
-      "completed",
-    );
-  });
+      const logs = await runReads.requestListLogs(actor, { limit: 10 }, [200]);
+      expect(logs.body.data).toHaveLength(0);
 
-  it("retains pending bindings when a replacement changes the active identity", async () => {
-    const f = await fixture("codex-oauth-token");
+      const { events } = await chat.listThreadEvents(actor, sent.body.threadId);
+      expect(
+        events.some((event) => {
+          return event.eventType === "input.rejected";
+        }),
+      ).toBeTruthy();
 
-    const first = await f.start();
-    const pending = await f.start();
-    const firstExecution = await f.execution(first);
-    const captured = accountId(firstExecution, f.type);
-    await connect(f.actor, f.type, "identity-b");
-    await expect(resolve(firstExecution, f.type)).resolves.toMatchObject({
-      "ChatGPT-Account-ID": "identity-a",
-    });
-    const pendingExecution = await f.execution(pending);
-    expect(accountId(pendingExecution, f.type)).toBe(captured);
-    await expect(resolve(pendingExecution, f.type)).resolves.toMatchObject({
-      "ChatGPT-Account-ID": "identity-a",
-    });
-    await runs.requestCancelRun(f.actor, first, [200]);
-    await runs.requestCancelRun(f.actor, pending, [200]);
-    expect((await connect(f.actor, f.type, "identity-a")).id).not.toBe(
-      captured,
-    );
-  }, 20_000);
-
-  it("keeps both admitted identities when reconnect merges a duplicate account", async () => {
-    const f = await fixture("codex-oauth-token");
-    const first = await f.start();
-    const firstExecution = await f.execution(first);
-    const accountA = accountId(firstExecution, f.type);
-    const auth = createAuthDeviceApiActions(context);
-    async function oauth(mode: "add" | "reconnect", modelProviderId?: string) {
-      mockCodexDeviceAuthProvider({
-        accountId: "identity-b",
+      const models = await runsApi.listRunModels(actor);
+      const claudeEntry = models.models.find((entry) => {
+        return entry.model === "claude-sonnet-5-5";
       });
-      const started = await auth.requestCodexStart(f.actor, "personal", [200], {
-        mode,
-        modelProviderId,
+      expect(claudeEntry?.memberEffective).toMatchObject({
+        runtimeProviderType: "claude-code-oauth-token",
+        credentialScope: "member",
+        availability: "plan_restricted",
       });
-      if (started.status !== 200) {
-        throw new Error("Expected device auth start");
-      }
-      const result = await auth.requestCodexComplete(
-        f.actor,
-        started.body.sessionToken,
-        [200],
-      );
-      if (!("status" in result.body) || result.body.status !== "complete") {
-        throw new Error("Expected device auth completion");
-      }
-      return result.body.provider.id;
-    }
-    const accountB = await oauth("add");
-    await support.activatePersonalModelProviderAccount(f.actor, accountB);
-    const second = await f.start();
-    const secondExecution = await f.execution(second);
-    await support.activatePersonalModelProviderAccount(f.actor, accountA);
-    await expect(oauth("reconnect", accountA)).resolves.toBe(accountB);
-    await expect(resolve(firstExecution, f.type)).resolves.toMatchObject({
-      "ChatGPT-Account-ID": "identity-a",
-    });
-    await expect(resolve(secondExecution, f.type)).resolves.toMatchObject({
-      "ChatGPT-Account-ID": "identity-b",
-    });
-    const listed = await support.listPersonalModelProviders(f.actor, [200]);
-    if (listed.status !== 200) {
-      throw new Error("Expected the connected account list");
-    }
-    expect(
-      listed.body.modelProviders.map((account) => {
-        return account.id;
-      }),
-    ).toStrictEqual([accountB]);
-    await runs.requestCancelRun(f.actor, first, [200]);
-    await runs.requestCancelRun(f.actor, second, [200]);
-    expect(
-      (await support.listPersonalModelProviders(f.actor, [200])).body,
-    ).toMatchObject({ modelProviders: [{ id: accountB }] });
-  }, 20_000);
-
-  it.each(["claude-code-oauth-token", "codex-oauth-token"] as const)(
-    "rejects reactivation of a retained disconnected %s account",
-    async (type) => {
-      const f = await fixture(type);
-      const runId = await f.start();
-      const execution = await f.execution(runId);
-      const captured = accountId(execution, type);
-      onTestFinished(async () => {
-        await runs.requestCancelRun(f.actor, runId, [200]);
-      });
-      const replacement = await connect(f.actor, type, "identity-b");
-      await support.activatePersonalModelProviderAccount(
-        f.actor,
-        captured,
-        [404],
-      );
-      const listed = await support.listPersonalModelProviders(f.actor, [200]);
-      expect(listed.body).toMatchObject({
-        modelProviders: [{ id: replacement.id, isActive: true }],
-      });
-      // The real authenticated Runner still owns its captured retained bundle.
-      await expect(resolve(execution, type)).resolves.toMatchObject({
-        Authorization: `Bearer ${f.connected.token}`,
-      });
-      await support.activatePersonalModelProviderAccount(
-        f.actor,
-        replacement.id,
-      );
     },
   );
 
-  it("reuses the same Claude identity across a reconnect", async () => {
-    const f = await fixture("claude-code-oauth-token");
-    const runId = await f.start();
-    const execution = await f.execution(runId);
-    const captured = accountId(execution, f.type);
-    expect((await connect(f.actor, f.type, "identity-a")).id).toBe(captured);
-    await support.deletePersonalModelProviderAccount(f.actor, captured);
-    expect((await connect(f.actor, f.type, "identity-a")).id).toBe(captured);
-    await expect(resolve(execution, f.type)).resolves.toMatchObject({
-      Authorization: `Bearer ${f.connected.token}`,
-    });
-    await runs.requestCancelRun(f.actor, runId, [200]);
-    expect(
-      (await support.listPersonalModelProviders(f.actor, [200])).body,
-    ).toMatchObject({ modelProviders: [{ id: captured }] });
-  });
-
-  it.each([
-    "user.banned",
-    "user.deleted",
-    "organization.deleted",
-    "organizationMembership.deleted",
-  ] as const)(
-    "%s stops the active Run from using a retained subscription",
-    async (eventType) => {
-      const f = await fixture("codex-oauth-token");
-      const runId = await f.start();
-      const execution = await f.execution(runId);
-      await support.deletePersonalModelProviderAccount(
-        f.actor,
-        accountId(execution, f.type),
-      );
-      const webhooks = createWebhookCallbackApi(context);
-      webhooks.configureClerkWebhookSecret();
-      context.mocks.stripe.subscriptions.list.mockResolvedValue({
-        data: [],
-        has_more: false,
-      });
-      context.mocks.stripe.subscriptions.update.mockResolvedValue({});
-      webhooks.verifyNextClerkWebhook({
-        type: eventType,
-        data: {
-          id:
-            eventType === "organization.deleted"
-              ? f.actor.orgId
-              : f.actor.userId,
-          organization_id: f.actor.orgId,
-          user_id: f.actor.userId,
+  it(
+    "personal-subscription-run-identity-041 preserves a Codex session across account changes and resolves uncreated queued messages at promotion",
+    { timeout: TEST_WITH_DOUBLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const { actor, tokens } = await setupProMember();
+      const accessTokenA = `codex-session-a-${randomUUID()}`;
+      const accessTokenB = `codex-session-b-${randomUUID()}`;
+      const accountA = await runsApi.createPersonalModelProvider(actor, {
+        type: "codex-oauth-token",
+        authMethod: "auth_json",
+        secrets: {
+          CODEX_AUTH_JSON: makeCodexAuthJson({
+            accountId: "identity-a",
+            accessToken: accessTokenA,
+          }),
         },
       });
-      await webhooks.requestClerkWebhook("{}", {}, [200]);
+
+      const first = await chat.sendAndLaunch(actor, {
+        prompt: "First Codex run on account A",
+        model: "gpt-6-astra",
+      });
+      const firstExecution = await runsApi.executionInput(first.runId);
+      tokens.set(first.runId, firstExecution.sandboxToken);
+      expect(
+        firstExecution.secretConnectorMetadataMap?.CHATGPT_ACCESS_TOKEN
+          ?.sourceId,
+      ).toBe(accountA.providerId);
+
+      const queuedClientEventId = randomUUID();
+      const queuedSend = await chat.requestSendEvent(
+        actor,
+        {
+          threadId: first.threadId,
+          prompt: "Queued follow-up after account switch",
+          clientEventId: queuedClientEventId,
+        },
+        [201],
+      );
+      expect(queuedSend.status).toBe(201);
       await flushWaitUntilForTest();
-      // Observe with the already-issued host credential: terminal Run
-      // refusal does not require erasing the captured account or its token.
-      const denied = await firewall.requestFirewallAuth(
-        { authorization: `Bearer ${execution.firewallToken}` },
-        authBody(execution, f.type),
-        [400, 401, 403, 424],
-      );
-      expect(denied.status).not.toBe(200);
-    },
-  );
 
-  describe.each(["claude-code-oauth-token", "codex-oauth-token"] as const)(
-    "%s personal provider removal",
-    (type) => {
-      async function removedProviderFixture() {
-        const f = await fixture(type);
-        const admitted: string[] = [];
-        const owner = createFixtureOperationOwner(async () => {
-          for (const runId of admitted) {
-            await runs.requestCancelRun(f.actor, runId, [200]);
-          }
-        });
-        return await owner.run(async () => {
-          const runId = await f.start();
-          admitted.push(runId);
-          const execution = await f.execution(runId);
-          const captured = accountId(execution, type);
-          await expect(resolve(execution, type)).resolves.toMatchObject({
-            Authorization: `Bearer ${f.connected.token}`,
-          });
-          await support.deletePersonalModelProvider(f.actor, type, [204]);
-          expect(
-            (await support.listPersonalModelProviders(f.actor, [200])).body,
-          ).toMatchObject({ modelProviders: [] });
-          await expect(resolve(execution, type)).resolves.toMatchObject({
-            Authorization: `Bearer ${f.connected.token}`,
-          });
-          return { f, admitted, owner, receivedExecution: execution, captured };
-        });
-      }
-
-      it("denies the retained credentials to the replacement sandbox", async () => {
-        const {
-          f,
-          admitted,
-          owner,
-          receivedExecution: execution,
-          captured,
-        } = await removedProviderFixture();
-        await owner.run(async () => {
-          const next = await connect(f.actor, type, "identity-b");
-          const nextRun = await f.start();
-          admitted.push(nextRun);
-          const nextExecution = await f.execution(nextRun);
-          expect(accountId(nextExecution, type)).not.toBe(captured);
-          await expect(resolve(nextExecution, type)).resolves.toMatchObject({
-            Authorization: `Bearer ${next.token}`,
-          });
-          await expect(resolve(execution, type)).resolves.toMatchObject({
-            Authorization: `Bearer ${f.connected.token}`,
-          });
-          const denied = await firewall.requestFirewallAuth(
-            { authorization: `Bearer ${nextExecution.firewallToken}` },
-            authBody(execution, type),
-            [424],
-          );
-          expect(denied.status).toBe(424);
-        });
+      const accountB = await runsApi.createPersonalModelProvider(actor, {
+        type: "codex-oauth-token",
+        authMethod: "auth_json",
+        secrets: {
+          CODEX_AUTH_JSON: makeCodexAuthJson({
+            accountId: "identity-b",
+            accessToken: accessTokenB,
+          }),
+        },
       });
-    },
-  );
 
-  it.each([
-    "completed",
-    "failed",
-    "cancelled",
-  ] as const satisfies readonly TestTerminalRunStatus[])(
-    "cleans up only after the final %s transition",
-    async (status) => {
-      const f = await fixture("codex-oauth-token");
-      const first = await f.start();
-      const second = await f.start();
-      const firstExecution = await f.execution(first);
-      const secondExecution = await f.execution(second);
-      const captured = accountId(firstExecution, f.type);
-      await support.deletePersonalModelProviderAccount(f.actor, captured);
-      await finish(f.actor, first, firstExecution, status);
-      await expect(resolve(secondExecution, f.type)).resolves.toMatchObject({
-        "ChatGPT-Account-ID": "identity-a",
-      });
-      await finish(f.actor, second, secondExecution, status);
-      const reconnected = await connect(f.actor, f.type, "identity-a");
-      expect(reconnected.id).not.toBe(captured);
-    },
-  );
-
-  it("does not resurrect a retained credential when final cancellation races refresh", async () => {
-    const f = await fixture("codex-oauth-token");
-    const runId = await f.start();
-    const execution = await f.execution(runId);
-    const captured = accountId(execution, f.type);
-    await connect(f.actor, f.type, "identity-a", true);
-    await support.deletePersonalModelProviderAccount(f.actor, captured);
-    const started = createDeferredPromise<void>(context.signal);
-    const released = createDeferredPromise<void>(context.signal);
-    firewall.mockCodexTokenRefresh(async () => {
-      started.resolve(undefined);
-      await released.promise;
-      return HttpResponse.json({
-        access_token: "refreshed-before-delete",
-        refresh_token: "rotated-before-delete",
-        expires_in: 7200,
-      });
-    });
-    const refreshing = firewall.requestFirewallAuth(
-      { authorization: `Bearer ${execution.firewallToken}` },
-      authBody(execution, f.type),
-      [200, 403],
-    );
-    onTestFinished(async () => {
-      if (!released.settled()) {
-        released.resolve(undefined);
-      }
-      await refreshing;
-    });
-    await started.promise;
-    const cancelling = runs.requestCancelRun(f.actor, runId, [200]);
-    onTestFinished(async () => {
-      if (!released.settled()) {
-        released.resolve(undefined);
-      }
-      await cancelling;
-    });
-    // Final cancellation commits while the upstream refresh is still held.
-    await cancelling;
-    released.resolve(undefined);
-    await Promise.all([refreshing, cancelling]);
-    expect((await runs.readRun(f.actor, runId)).status).toBe("cancelled");
-    const denied = await firewall.requestFirewallAuth(
-      { authorization: `Bearer ${execution.firewallToken}` },
-      authBody(execution, f.type),
-      [400, 403, 424],
-    );
-    expect(denied.status).not.toBe(200);
-    expect((await connect(f.actor, f.type, "identity-a")).id).not.toBe(
-      captured,
-    );
-  }, 20_000);
-});
-
-describe("exact subscription selection", () => {
-  it.each([
-    ["claude-code-oauth-token", "claude-opus-5-5", "ANTHROPIC_MODEL"],
-    ["codex-oauth-token", "gpt-6-sol", "OPENAI_MODEL"],
-  ] as const)(
-    "preserves the requested model and lazy exact %s authentication",
-    async (type, model, modelEnv) => {
-      const f = await fixture(type);
-      await runs.updateUserModelPreference(f.actor, model);
-      const { runId } = await createChatFilesBddApi(context).sendAndLaunch(
-        f.actor,
-        { model, prompt: "use the requested model" },
-      );
-      onTestFinished(async () => {
-        await runs.requestCancelRun(f.actor, runId, [200]);
-      });
-      const launched = await reads.requestReadLogById(f.actor, runId, [200]);
-      expect(launched.body).toMatchObject({
-        selectedModel: model,
-        modelRuntimeProvider: type,
-        modelRuntimeModel: model,
-      });
-      const execution = await f.execution(runId);
-      expect(execution.environment?.[modelEnv]).toBe(model);
-      expect(Object.values(execution.environment ?? {})).not.toContain(
-        f.connected.token,
-      );
-      expect(accountId(execution, type)).toBe(f.connected.id);
-      // Admission pins the execution route; later preferences do not rewrite its provenance.
-      await runs.updateUserModelPreference(f.actor, f.model);
-      const captured = await reads.requestReadLogById(f.actor, runId, [200]);
-      expect(captured.body).toMatchObject({
-        selectedModel: model,
-        modelRuntimeProvider: type,
-        modelRuntimeModel: execution.environment?.[modelEnv],
-      });
-      await expect(resolve(execution, type)).resolves.toMatchObject({
-        Authorization: `Bearer ${f.connected.token}`,
-        ...(type === "codex-oauth-token"
-          ? { "ChatGPT-Account-ID": "identity-a" }
-          : {}),
-      });
-    },
-  );
-});
-
-test("keeps a Claude identity shared after a type-wide disconnect and reconnect", async () => {
-  const f = await fixture("claude-code-oauth-token");
-  const runId = await f.start();
-  const execution = await f.execution(runId);
-  const captured = accountId(execution, f.type);
-  await support.deletePersonalModelProvider(f.actor, f.type, [204]);
-  const restored = await connect(f.actor, f.type, "identity-a");
-  expect(restored.id).toBe(captured);
-  await expect(resolve(execution, f.type)).resolves.toMatchObject({
-    Authorization: `Bearer ${restored.token}`,
-  });
-  await runs.requestCancelRun(f.actor, runId, [200]);
-});
-
-describe("personal priority connection boundaries", () => {
-  it.each(["claude-code-oauth-token", "codex-oauth-token"] as const)(
-    "lists and runs personal %s, then removes it after disconnection",
-    async (type) => {
-      const f = await fixture(type);
-      const misc = createMiscRoutesApi(context);
-      expect(
-        availableModel(await misc.listRunModels(f.actor), f.model),
-      ).toMatchObject({
-        memberEffective: expect.objectContaining({
-          providerType: type,
-          credentialScope: "member",
-        }),
-      });
-      const runId = await f.start();
-      const execution = await f.execution(runId);
-      await expect(resolve(execution, type)).resolves.toMatchObject({
-        Authorization: `Bearer ${f.connected.token}`,
-      });
-      await runs.requestCancelRun(f.actor, runId, [200]);
-      await support.deletePersonalModelProvider(f.actor, type, [204]);
-      const models = await misc.listRunModels(f.actor);
-      expect(availableModel(models, f.model)).toBeUndefined();
-      const rejected = await createChatFilesBddApi(context).requestCreateThread(
-        f.actor,
-        { model: f.model },
-        [400],
-      );
-      expect(rejected.status).toBe(400);
-    },
-  );
-});
-
-describe("member-effective model contract", () => {
-  it("keeps fixed Auto common and personal model visibility scoped to the member", async () => {
-    const f = await fixture("claude-code-oauth-token");
-    const bdd = createBddApi(context);
-    const member = bdd.user({ orgId: f.actor.orgId, orgRole: "org:member" });
-    await bdd.completeOnboarding(member);
-    const misc = createMiscRoutesApi(context);
-    const ownerModels = await misc.listRunModels(f.actor);
-    const memberModels = await misc.listRunModels(member);
-    expect(availableModel(ownerModels, "auto")).toMatchObject({
-      modelLabel: "Auto",
-    });
-    expect(availableModel(ownerModels, "auto")).toStrictEqual(
-      availableModel(memberModels, "auto"),
-    );
-    expect(availableModel(ownerModels, f.model)).toMatchObject({
-      memberEffective: {
-        providerType: f.type,
-        credentialScope: "member",
-        accountSelection: "capture_required",
-      },
-    });
-    expect(availableModel(memberModels, f.model)).toBeUndefined();
-    await connect(member, "codex-oauth-token", "other-member");
-    const connected = await misc.listRunModels(member);
-    expect(availableModel(connected, "gpt-6-astra")).toMatchObject({
-      memberEffective: {
-        providerType: "codex-oauth-token",
-        credentialScope: "member",
-      },
-    });
-    expect(availableModel(connected, f.model)).toBeUndefined();
-    const ownerAfter = await misc.listRunModels(f.actor);
-    expect(availableModel(ownerAfter, "gpt-6-astra")).toBeUndefined();
-    expect(availableModel(ownerAfter, f.model)).toStrictEqual(
-      availableModel(ownerModels, f.model),
-    );
-  });
-
-  it.each(["claude-code-oauth-token", "codex-oauth-token"] as const)(
-    "requires the configured %s subscription",
-    async (type) => {
-      const f = await fixture(type);
-      await support.deletePersonalModelProvider(f.actor, f.type, [204]);
-      const { rejected, guidance } = await sendRejectedAtPick(f.actor, {
-        model: f.model,
-        prompt: "this model requires my subscription",
-      });
-      expect(rejected).toMatchObject({ error: "conflict" });
-      expect(guidance?.content).toContain("subscription");
-      const models = await createMiscRoutesApi(context).listRunModels(f.actor);
-      expect(availableModel(models, f.model)).toBeUndefined();
-      expect(
-        models.models.map((entry) => {
-          return entry.model;
-        }),
-      ).toStrictEqual(["auto"]);
-    },
-  );
-});
-
-describe("personal effective provider entitlement", () => {
-  it("rejects a suspended entitlement even with org credits and a supported subscription", async () => {
-    const f = await fixture("claude-code-oauth-token");
-
-    if (!f.actor.orgId) {
-      throw new Error("Expected an owned organization");
-    }
-    await publicPlanLifecycle(context, f.actor, "pro", f.subscription).update(
-      "canceled",
-    );
-    const restricted = await sendRejectedAtPick(f.actor, {
-      model: f.model,
-      prompt: "personal requires plan authority",
-    });
-    expect(restricted.rejected).toBeDefined();
-    const policies = await createMiscRoutesApi(context).listRunModels(f.actor);
-    expect(
-      policies.models.find((policy) => {
-        return policy.model === f.model;
-      })?.memberEffective,
-    ).toMatchObject({
-      providerType: f.type,
-      credentialScope: "member",
-      availability: "plan_restricted",
-    });
-  });
-});
-
-describe("subscription bundle decryption ownership", () => {
-  it.each([
-    "reconnect",
-    "activation",
-    "disconnect",
-    "membership",
-    "final-cancel",
-  ] as const)(
-    "preserves exact authority when %s commits during delayed bundle decrypts",
-    async (mutation) => {
-      const f = await fixture("codex-oauth-token");
-      const runId = await f.start();
-      const execution = await f.execution(runId);
-      const captured = accountId(execution, f.type);
-      if (!f.actor.orgId) {
-        throw new Error("Expected an organization");
-      }
-      const orgId = f.actor.orgId;
-      let accountB: string | undefined;
-      if (mutation === "activation") {
-        const auth = createAuthDeviceApiActions(context);
-        mockCodexDeviceAuthProvider({
-          accountId: "identity-b",
-        });
-        const started = await auth.requestCodexStart(
-          f.actor,
-          "personal",
-          [200],
-          { mode: "add" },
-        );
-        if (started.status !== 200) {
-          throw new Error("Expected device auth start");
-        }
-        const connected = await auth.requestCodexComplete(
-          f.actor,
-          started.body.sessionToken,
-          [200],
-        );
-        if (
-          !("status" in connected.body) ||
-          connected.body.status !== "complete"
-        ) {
-          throw new Error("Expected connected account B");
-        }
-        accountB = connected.body.provider.id;
-      }
-      if (mutation === "final-cancel") {
-        await support.deletePersonalModelProviderAccount(f.actor, captured);
-      }
-      const webhooks = createWebhookCallbackApi(context);
-      if (mutation === "membership") {
-        webhooks.configureClerkWebhookSecret();
-        webhooks.verifyNextClerkWebhook({
-          type: "organizationMembership.deleted",
-          data: {
-            id: f.actor.userId,
-            organization_id: orgId,
-            user_id: f.actor.userId,
+      const nativeSessionId = `subscription-${first.runId}`;
+      await webhooks.requestAgentComplete(
+        {
+          runId: first.runId,
+          exitCode: 0,
+          completion: {
+            cliAgentType: "codex",
+            cliAgentSessionId: nativeSessionId,
+            cliAgentSessionHistoryDisposition: "native_only",
           },
-        });
-      }
-      const batch = holdSubscriptionKmsBatch(context.signal);
-      const requests: Promise<unknown>[] = [];
-      onTestFinished(async () => {
-        batch.release();
-        await Promise.allSettled(requests);
-        useSecretKmsProbe();
-        if (mutation !== "membership") {
-          await runs.requestCancelRun(f.actor, runId, [200]);
-        }
-      });
-      const reading = firewall.requestFirewallAuth(
-        { authorization: `Bearer ${execution.firewallToken}` },
-        authBody(execution, f.type),
-        [200, 400, 403, 424],
+        },
+        { authorization: `Bearer ${firstExecution.sandboxToken}` },
+        [200],
       );
-      requests.push(reading);
-      await batch.entered;
-      let replacement: Awaited<ReturnType<typeof connect>> | undefined;
-      const mutate = async () => {
-        if (mutation === "reconnect") {
-          replacement = await connect(f.actor, f.type, "identity-a");
-        } else if (mutation === "activation" && accountB) {
-          await support.activatePersonalModelProviderAccount(f.actor, accountB);
-        } else if (mutation === "disconnect") {
-          await support.deletePersonalModelProviderAccount(f.actor, captured);
-        } else if (mutation === "membership") {
-          await webhooks.requestClerkWebhook("{}", {}, [200]);
-        } else {
-          await runs.requestCancelRun(f.actor, runId, [200]);
-        }
-      };
-      const writing = mutate();
-      requests.push(writing);
-      // Reads take no lifecycle lock: the mutation commits while the
-      // firewall request still holds its credential bundle decrypts.
-      await writing;
-      batch.release();
-      const observed = await reading;
-      await writing;
       await flushWaitUntilForTest();
-      expect(batch.active).toBe(0);
-      if (observed.status === 200) {
-        expect(observed.body.headers["ChatGPT-Account-ID"]).toBe("identity-a");
-        expect([
-          `Bearer ${f.connected.token}`,
-          ...(replacement ? [`Bearer ${replacement.token}`] : []),
-        ]).toContain(observed.body.headers.Authorization);
-      }
-      if (mutation === "membership" || mutation === "final-cancel") {
-        const denied = await firewall.requestFirewallAuth(
-          { authorization: `Bearer ${execution.firewallToken}` },
-          authBody(execution, f.type),
-          [400, 401, 403, 424],
+
+      const { events } = await chat.listThreadEvents(actor, first.threadId);
+      const promotedEvent = events.find((event) => {
+        return (
+          event.eventType === "input.prompt" &&
+          event.revokesEventId === queuedClientEventId &&
+          event.runId !== undefined
         );
-        expect(denied.status).not.toBe(200);
-        if (mutation === "final-cancel") {
-          expect((await connect(f.actor, f.type, "identity-a")).id).not.toBe(
-            captured,
-          );
-        }
-      } else {
-        expect(observed.status).toBe(200);
-        await expect(resolve(execution, f.type)).resolves.toMatchObject({
-          Authorization: `Bearer ${replacement?.token ?? f.connected.token}`,
-          "ChatGPT-Account-ID": "identity-a",
-        });
-        if (mutation === "activation") {
-          const next = await f.start();
-          onTestFinished(async () => {
-            await runs.requestCancelRun(f.actor, next, [200]);
-          });
-          const nextExecution = await f.execution(next);
-          expect(accountId(nextExecution, f.type)).toBe(accountB);
-          await expect(resolve(nextExecution, f.type)).resolves.toMatchObject({
-            "ChatGPT-Account-ID": "identity-b",
-          });
-        }
+      });
+      const promotedRunId = promotedEvent?.runId;
+      if (!promotedRunId) {
+        throw new Error("Expected queued message to promote to a new Run");
       }
+
+      const promotedExecution = await runsApi.executionInput(promotedRunId);
+      tokens.set(promotedRunId, promotedExecution.sandboxToken);
+      expect(
+        promotedExecution.secretConnectorMetadataMap?.CHATGPT_ACCESS_TOKEN
+          ?.sourceId,
+      ).toBe(accountB.providerId);
+      expect(promotedExecution.cliAgentType).toBe("codex");
+      expect(promotedExecution.nativeContinuation.sessionId).toBe(
+        nativeSessionId,
+      );
+
+      firewall.seedClerkDirectory(actor);
+      const authResult = await firewall.requestFirewallAuth(
+        { authorization: `Bearer ${promotedExecution.firewallToken}` },
+        {
+          authHeaders: {
+            Authorization: `Bearer ${secretTemplate("CHATGPT_ACCESS_TOKEN")}`,
+            "ChatGPT-Account-ID": secretTemplate("CHATGPT_ACCOUNT_ID"),
+          },
+          secretConnectorMap: promotedExecution.secretConnectorMap ?? undefined,
+          secretConnectorMetadataMap:
+            promotedExecution.secretConnectorMetadataMap ?? undefined,
+        },
+        [200],
+      );
+      if (authResult.status !== 200) {
+        throw new Error("Expected promoted Run firewall auth resolution");
+      }
+      expect(authResult.body.headers.Authorization).toBe(
+        `Bearer ${accessTokenB}`,
+      );
+      expect(authResult.body.headers["ChatGPT-Account-ID"]).toBe("identity-b");
     },
   );
-});
-
-describe("personal priority credential and session boundaries", () => {
-  it("keeps a selected subscription personal when credential decryption fails", async () => {
-    const f = await fixture("codex-oauth-token");
-
-    const billingBefore = await runs.readBillingStatus(f.actor);
-    const runId = await f.start();
-    const execution = await f.execution(runId);
-    onTestFinished(async () => {
-      useSecretKmsProbe();
-      await finish(f.actor, runId, execution, "cancelled");
-      await flushWaitUntilForTest();
-    });
-    const kms = useSecretKmsProbe(undefined, () => {
-      return Promise.reject(new Error("owned KMS transport unavailable"));
-    });
-    const projected = await createMiscRoutesApi(context).listRunModels(f.actor);
-    expect(availableModel(projected, f.model)?.memberEffective).toMatchObject({
-      providerType: f.type,
-      credentialScope: "member",
-    });
-    expect(kms.decryptCalls).toBe(0);
-    const denied = await firewall.requestFirewallAuth(
-      { authorization: `Bearer ${execution.firewallToken}` },
-      authBody(execution, f.type),
-      [502],
-    );
-    expect(denied.body).toMatchObject({
-      error: {
-        code: "TOKEN_ACCESS_RESOLUTION_FAILED",
-        connectors: [f.type],
-      },
-    });
-    expect(kms.decryptCalls).toBeGreaterThan(0);
-    expect(execution.billableFirewalls).toStrictEqual([]);
-    await expect(runs.readRun(f.actor, runId)).resolves.toMatchObject({
-      source: {
-        providerType: f.type,
-        credentialScope: "member",
-        account: { status: "connected", id: f.connected.id },
-      },
-    });
-    await expect(runs.readBillingStatus(f.actor)).resolves.toMatchObject({
-      credits: billingBefore.credits,
-    });
-  });
-
-  it("preserves a Codex session across account changes and resolves uncreated queued messages at promotion", async () => {
-    const f = await fixture("codex-oauth-token");
-
-    const chat = createChatFilesBddApi(context);
-    const sent = await chat.sendAndLaunch(f.actor, {
-      model: f.model,
-      prompt: "first account",
-    });
-    const first = await f.execution(sent.runId);
-    await chat.requestSendEvent(
-      f.actor,
-      {
-        threadId: sent.threadId,
-        clientEventId: randomUUID(),
-        prompt: "resolve my next account when the queued message becomes a run",
-      },
-      [201],
-    );
-    const replacement = await connect(f.actor, f.type, "identity-b");
-    const history = Buffer.from(`subscription history ${sent.runId}`);
-    const hash = createHash("sha256").update(history).digest("hex");
-    context.sessionHistoryBlobs.set(hash, history);
-
-    await finish(f.actor, sent.runId, first, "completed");
-    let nextRunId: string | undefined;
-    await flushWaitUntilForTest();
-    await expect(
-      (async () => {
-        const events = await chat.listThreadEvents(f.actor, sent.threadId);
-        nextRunId = events.events.find((event) => {
-          return (
-            event.eventType === "input.prompt" &&
-            event.runId &&
-            event.runId !== sent.runId
-          );
-        })?.runId;
-        return nextRunId;
-      })(),
-    ).resolves.toBeTruthy();
-    if (!nextRunId) {
-      throw new Error("Expected the queued message to be promoted");
-    }
-    const promotedRunId = nextRunId;
-    const second = await f.execution(promotedRunId);
-    onTestFinished(async () => {
-      await finish(f.actor, promotedRunId, second, "cancelled");
-      await flushWaitUntilForTest();
-    });
-    expect(accountId(first, f.type)).toBe(f.connected.id);
-    expect(accountId(second, f.type)).toBe(replacement.id);
-    expect((await resolve(second, f.type)).Authorization).toBe(
-      `Bearer ${replacement.token}`,
-    );
-    expect(second.cliAgentType).toBe("codex");
-    expect(second.nativeContinuation?.sessionId).toBe(
-      `subscription-${sent.runId}`,
-    );
-  });
 });

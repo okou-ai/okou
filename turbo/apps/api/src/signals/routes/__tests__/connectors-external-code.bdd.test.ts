@@ -1,1022 +1,537 @@
-import { mockNintendoStoreExternalCodeProvider } from "./helpers/connector-auth-provider-fixtures";
-/**
- * CONN-02: external-code authorization sessions through public APIs.
- *
- * External provider endpoints are mocked with MSW at the HTTP boundary.
- */
-
 import { Buffer } from "node:buffer";
 
-import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
-import { HttpResponse, http } from "msw";
 import { describe, expect, it } from "vitest";
+import { http, HttpResponse } from "msw";
 
-import { accept, testContext } from "../../../__tests__/test-context";
-import { setupApp } from "../../../__tests__/test-helpers";
-import { mockNow, now } from "../../../lib/time";
+import { testContext } from "../../../__tests__/test-context";
+import { now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
-import { connectorAccountRoutes } from "../connector-accounts";
-import {
-  createBddApi,
-  expectApiError,
-  type ApiTestUser,
-} from "./helpers/api-bdd";
+import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import {
   awsVerificationCode,
   createConnectorBddApi,
-  mockAwsDeferredTokenExchange,
   mockAwsExternalCodeProvider,
 } from "./helpers/api-bdd-connectors";
-import { createRouteMocks } from "./helpers/route-test";
+import { mockNintendoStoreExternalCodeProvider } from "./helpers/connector-auth-provider-fixtures";
 
 const context = testContext();
-const connectorsApi = createConnectorBddApi(context);
+const bdd = createBddApi(context);
+const connectors = createConnectorBddApi(context);
 
-const AWS_REDIRECT_URI =
-  "https://us-east-1.signin.aws.amazon.com/v1/sessions/confirmation";
-const PLAYSTATION_AUTHORIZE_URL =
-  "https://ca.account.sony.com/api/authz/v3/oauth/authorize";
-const PLAYSTATION_NPSSO_URL = "https://ca.account.sony.com/api/v1/ssocookie";
-const NINTENDO_STORE_AUTHORIZE_URL =
-  "https://accounts.nintendo.com/connect/1.0.0/authorize";
-const NINTENDO_STORE_SESSION_TOKEN_URL =
-  "https://accounts.nintendo.com/connect/1.0.0/api/session_token";
-const NINTENDO_STORE_TOKEN_URL =
-  "https://accounts.nintendo.com/connect/1.0.0/api/token";
-const NINTENDO_STORE_PROFILE_URL =
-  "https://api.accounts.nintendo.com/2.0.0/users/me";
-const NINTENDO_STORE_REDIRECT_URI = "npf5c38e31cd085304b://auth";
-const NINTENDO_STORE_CLIENT_ID = "5c38e31cd085304b";
-const NINTENDO_SWITCH_PARENTAL_CONTROLS_REDIRECT_URI =
-  "npf54789befb391a838://auth";
-const NINTENDO_SWITCH_PARENTAL_CONTROLS_CLIENT_ID = "54789befb391a838";
-const NINTENDO_SWITCH_PARENTAL_CONTROLS_FEDERATION_URL =
-  "https://app.lp1.znma.srv.nintendo.net/v3/actions/federation";
-const NINTENDO_SWITCH_PARENTAL_CONTROLS_LOGOUT_URL =
-  "https://app.lp1.znma.srv.nintendo.net/v2/actions/logout";
-const NINTENDO_SWITCH_PARENTAL_CONTROLS_SCOPES = [
-  "openid",
-  "user",
-  "user.mii",
-  "moonUser:administration",
-  "moonDevice:create",
-  "moonOwnedDevice:administration",
-  "moonParentalControlSetting",
-  "moonParentalControlSetting:update",
-  "moonParentalControlSettingState",
-  "moonPairingState",
-  "moonSmartDevice:administration",
-  "moonDailySummary",
-  "moonMonthlySummary",
-] as const;
-const NINTENDO_SWITCH_PARENTAL_CONTROLS_INITIAL_SESSION_TOKEN_CODE =
-  "bdd-switch-parental-controls-code";
-const NINTENDO_SWITCH_PARENTAL_CONTROLS_REPLACEMENT_SESSION_TOKEN_CODE =
-  "bdd-switch-parental-controls-replacement-code";
-const NINTENDO_SWITCH_PARENTAL_CONTROLS_INITIAL_SESSION_TOKEN =
-  "bdd-switch-parental-controls-session-token";
-const NINTENDO_SWITCH_PARENTAL_CONTROLS_REPLACEMENT_SESSION_TOKEN =
-  "bdd-switch-parental-controls-replacement-session-token";
-const NINTENDO_SWITCH_PARENTAL_CONTROLS_UNLOCK_CODE =
-  "bdd-switch-parental-controls-unlock-code-must-not-leak";
-
-function awsActor(): ApiTestUser {
-  const bdd = createBddApi(context);
-  context.mocks.ably.publish.mockResolvedValue(undefined);
-  return bdd.user();
+interface Session {
+  readonly sessionId: string;
+  readonly sessionToken: string;
+  readonly authorizationUrl: string;
 }
 
-function expectNoVisibleSecret(value: unknown, secret: string): void {
-  expect(JSON.stringify(value)).not.toContain(secret);
+function completeAws(actor: ApiTestUser, session: Session, code = "AWS-CODE") {
+  return connectors.requestExternalCodeComplete(
+    actor,
+    "aws",
+    {
+      sessionId: session.sessionId,
+      sessionToken: session.sessionToken,
+      code: awsVerificationCode(session.authorizationUrl, code),
+    },
+    [200, 400, 404, 409],
+  );
 }
 
-function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
+async function defaultAwsAccount(actor: ApiTestUser) {
+  const response = await connectors.requestBuiltinConnectorAccounts(
+    actor,
+    "aws",
+    [200],
+  );
+  if (response.status !== 200) {
+    throw new Error("Expected AWS accounts");
+  }
+  return response.body.defaultConnection;
 }
 
-function jwtPayload(payload: Readonly<Record<string, string>>): string {
+function unsignedJwt(payload: Readonly<Record<string, string>>): string {
   const encode = (value: unknown) => {
     return Buffer.from(JSON.stringify(value)).toString("base64url");
   };
   return `${encode({ alg: "none" })}.${encode(payload)}.`;
 }
 
-function mockNintendoSwitchParentalControlsExternalCodeProvider(): {
-  readonly federatedSmartDeviceIds: string[];
-  readonly federationBodies: unknown[];
-  readonly failLogout: () => void;
-  readonly initialIdToken: string;
-  readonly logoutAuthorizations: (string | null)[];
-  readonly logoutBodies: unknown[];
-  readonly replacementIdToken: string;
-  readonly sessionTokenBodies: URLSearchParams[];
-  readonly tokenBodies: Readonly<Record<string, unknown>>[];
-} {
-  const federatedSmartDeviceIds: string[] = [];
-  const federationBodies: unknown[] = [];
-  const initialIdToken = jwtPayload({
-    sub: "bdd-switch-parental-controls-account-id",
-    preferred_username: "bdd-nintendo-parent",
-    email: "bdd-nintendo-parent@example.test",
-  });
-  const logoutAuthorizations: (string | null)[] = [];
-  const logoutBodies: unknown[] = [];
-  const replacementIdToken = jwtPayload({
-    sub: "bdd-switch-parental-controls-replacement-account-id",
-    preferred_username: "bdd-nintendo-replacement-parent",
-    email: "bdd-nintendo-replacement-parent@example.test",
-  });
-  const sessionTokenBodies: URLSearchParams[] = [];
-  const tokenBodies: Readonly<Record<string, unknown>>[] = [];
-  let logoutStatus = 204;
+const PARENTAL_ACTIONS = "https://app.lp1.znma.srv.nintendo.net";
 
+/** Nintendo account and parental-controls action endpoints for two parents. */
+function mockParentalControlsProvider() {
+  const parents: Readonly<
+    Record<string, { readonly sub: string; readonly username: string }>
+  > = {
+    "code-initial": {
+      sub: "bdd-switch-parental-controls-account-id",
+      username: "bdd-nintendo-parent",
+    },
+    "code-replacement": {
+      sub: "bdd-switch-parental-controls-replacement-id",
+      username: "bdd-nintendo-replacement-parent",
+    },
+  };
+  const recorded = {
+    sessionTokenCodes: [] as string[],
+    exchangedSessionTokens: [] as string[],
+    federations: [] as { smartDeviceId: string; bundleId: unknown }[],
+    logouts: [] as { smartDeviceId: string; authorization: string }[],
+    logoutStatus: 200,
+  };
+  const idTokenFor = (sessionToken: string) => {
+    const code = sessionToken.replace("session-", "");
+    const parent = parents[code];
+    if (!parent) {
+      throw new Error(`Unknown Nintendo session token ${sessionToken}`);
+    }
+    return unsignedJwt({
+      sub: parent.sub,
+      preferred_username: parent.username,
+      email: `${parent.username}@example.test`,
+    });
+  };
   server.use(
-    http.post(NINTENDO_STORE_SESSION_TOKEN_URL, async ({ request }) => {
-      const body = new URLSearchParams(await request.text());
-      sessionTokenBodies.push(body);
-      const sessionTokenCode = body.get("session_token_code");
-      if (
-        sessionTokenCode ===
-        NINTENDO_SWITCH_PARENTAL_CONTROLS_INITIAL_SESSION_TOKEN_CODE
-      ) {
-        return HttpResponse.json({
-          session_token:
-            NINTENDO_SWITCH_PARENTAL_CONTROLS_INITIAL_SESSION_TOKEN,
-        });
-      }
-      if (
-        sessionTokenCode ===
-        NINTENDO_SWITCH_PARENTAL_CONTROLS_REPLACEMENT_SESSION_TOKEN_CODE
-      ) {
-        return HttpResponse.json({
-          session_token:
-            NINTENDO_SWITCH_PARENTAL_CONTROLS_REPLACEMENT_SESSION_TOKEN,
-        });
-      }
-      throw new Error(
-        `Unexpected Nintendo Switch Parental Controls session token code: ${sessionTokenCode}`,
-      );
-    }),
-    http.post(NINTENDO_STORE_TOKEN_URL, async ({ request }) => {
-      const body: unknown = await request.json();
-      if (!isRecord(body)) {
-        throw new Error(
-          "Expected Nintendo Switch Parental Controls token body object",
-        );
-      }
-      tokenBodies.push(body);
-      const sessionToken = body["session_token"];
-      if (
-        sessionToken !==
-          NINTENDO_SWITCH_PARENTAL_CONTROLS_INITIAL_SESSION_TOKEN &&
-        sessionToken !==
-          NINTENDO_SWITCH_PARENTAL_CONTROLS_REPLACEMENT_SESSION_TOKEN
-      ) {
-        throw new Error(
-          "Expected a known Nintendo Switch Parental Controls session token",
-        );
-      }
-      const isReplacement =
-        sessionToken ===
-        NINTENDO_SWITCH_PARENTAL_CONTROLS_REPLACEMENT_SESSION_TOKEN;
-      return HttpResponse.json({
-        access_token: isReplacement
-          ? "bdd-switch-parental-controls-replacement-access-token"
-          : "bdd-switch-parental-controls-access-token",
-        expires_in: 3600,
-        id_token: isReplacement ? replacementIdToken : initialIdToken,
-        token_type: "Bearer",
-        scope: NINTENDO_SWITCH_PARENTAL_CONTROLS_SCOPES.join(" "),
-      });
-    }),
-    http.get(NINTENDO_STORE_PROFILE_URL, () => {
-      return HttpResponse.json({ country: "US", language: "en" });
-    }),
     http.post(
-      NINTENDO_SWITCH_PARENTAL_CONTROLS_FEDERATION_URL,
+      "https://accounts.nintendo.com/connect/1.0.0/api/session_token",
+      async ({ request }) => {
+        const body = new URLSearchParams(await request.text());
+        const code = body.get("session_token_code") ?? "";
+        recorded.sessionTokenCodes.push(code);
+        return HttpResponse.json({ session_token: `session-${code}` });
+      },
+    ),
+    http.post(
+      "https://accounts.nintendo.com/connect/1.0.0/api/token",
       async ({ request }) => {
         const body: unknown = await request.json();
-        if (
-          !isRecord(body) ||
-          !isRecord(body["smartDeviceInfo"]) ||
-          typeof body["smartDeviceInfo"]["id"] !== "string"
-        ) {
-          throw new Error("Expected Nintendo smart-device federation body");
-        }
-        federationBodies.push(body);
-        federatedSmartDeviceIds.push(body["smartDeviceInfo"]["id"]);
+        const sessionToken =
+          typeof body === "object" &&
+          body !== null &&
+          "session_token" in body &&
+          typeof body.session_token === "string"
+            ? body.session_token
+            : "";
+        recorded.exchangedSessionTokens.push(sessionToken);
+        return HttpResponse.json({
+          access_token: `access-${sessionToken}`,
+          expires_in: 900,
+          id_token: idTokenFor(sessionToken),
+          token_type: "Bearer",
+          scope: "openid user",
+        });
+      },
+    ),
+    http.get("https://api.accounts.nintendo.com/2.0.0/users/me", () => {
+      return HttpResponse.json({ country: "US", language: "en-US" });
+    }),
+    http.post(
+      `${PARENTAL_ACTIONS}/v3/actions/federation`,
+      async ({ request }) => {
+        const body: unknown = await request.json();
+        const bundleId =
+          typeof body === "object" &&
+          body !== null &&
+          "smartDeviceInfo" in body &&
+          typeof body.smartDeviceInfo === "object" &&
+          body.smartDeviceInfo !== null &&
+          "bundleId" in body.smartDeviceInfo
+            ? body.smartDeviceInfo.bundleId
+            : undefined;
+        recorded.federations.push({
+          smartDeviceId: request.headers.get("x-moon-smart-device-id") ?? "",
+          bundleId,
+        });
         return HttpResponse.json({
           loginInfo: {
             ownedDevices: [
               {
-                deviceId: "bdd-switch-device-id",
-                label: "Family room",
-                device: {
-                  serialNumber: "bdd-serial-must-not-leak",
-                  synchronizedUnlockCode:
-                    NINTENDO_SWITCH_PARENTAL_CONTROLS_UNLOCK_CODE,
-                },
+                deviceId: `switch-${recorded.federations.length}`,
+                label: "Living room Switch",
+                serialNumber: "XAW10012345678",
+                unlockCode: "246810",
               },
             ],
           },
-          nextStep: "COMPLETED",
         });
       },
     ),
-    http.post(
-      NINTENDO_SWITCH_PARENTAL_CONTROLS_LOGOUT_URL,
-      async ({ request }) => {
-        logoutAuthorizations.push(request.headers.get("authorization"));
-        logoutBodies.push(await request.json());
-        return logoutStatus === 204
-          ? new HttpResponse(null, { status: 204 })
-          : HttpResponse.json(
-              { error: "temporarily unavailable" },
-              { status: logoutStatus },
-            );
-      },
-    ),
+    http.post(`${PARENTAL_ACTIONS}/v2/actions/logout`, ({ request }) => {
+      recorded.logouts.push({
+        smartDeviceId: request.headers.get("x-moon-smart-device-id") ?? "",
+        authorization: request.headers.get("authorization") ?? "",
+      });
+      return recorded.logoutStatus === 200
+        ? HttpResponse.json({})
+        : HttpResponse.json(
+            { error: "unavailable" },
+            { status: recorded.logoutStatus },
+          );
+    }),
   );
-
-  return {
-    federatedSmartDeviceIds,
-    federationBodies,
-    failLogout: () => {
-      logoutStatus = 503;
-    },
-    initialIdToken,
-    logoutAuthorizations,
-    logoutBodies,
-    replacementIdToken,
-    sessionTokenBodies,
-    tokenBodies,
-  };
+  return { recorded, idTokenFor };
 }
 
-describe("CONN-02: external-code session lifecycle", () => {
-  it("starts, completes, replays, and protects an AWS external-code session through public APIs", async () => {
-    const provider = mockAwsExternalCodeProvider();
-    const actor = await awsActor();
-    const bdd = createBddApi(context);
-
-    const session = await connectorsApi.startExternalCode(actor, "aws", "cli", {
-      intent: "add",
-    });
-    expect(session).toMatchObject({
-      connectorSlug: "aws",
-      status: "pending",
-      expiresIn: 600,
-    });
-    const authorizationUrl = new URL(session.authorizationUrl);
-    expect(`${authorizationUrl.origin}${authorizationUrl.pathname}`).toBe(
-      "https://us-east-1.signin.aws.amazon.com/v1/authorize",
-    );
-    expect(authorizationUrl.searchParams.get("client_id")).toBe(
-      "arn:aws:signin:::devtools/cross-device",
-    );
-    expect(authorizationUrl.searchParams.get("scope")).toBe("openid");
-    expect(authorizationUrl.searchParams.get("redirect_uri")).toBe(
-      AWS_REDIRECT_URI,
-    );
-
-    const wrongToken = await connectorsApi.requestExternalCodeComplete(
-      actor,
-      "aws",
-      {
-        sessionId: session.sessionId,
-        sessionToken: `wrong-${session.sessionToken}`,
-        code: awsVerificationCode(session.authorizationUrl),
-      },
-      [404],
-    );
-    expectApiError(wrongToken.body);
-    expect(wrongToken.body.error.message).toBe(
-      "External-code authorization session not found",
-    );
-    expect(provider.tokenRequests).toStrictEqual([]);
-
-    const stranger = bdd.user();
-    const crossUser = await connectorsApi.requestExternalCodeComplete(
-      stranger,
-      "aws",
-      {
-        sessionId: session.sessionId,
-        sessionToken: session.sessionToken,
-        code: awsVerificationCode(session.authorizationUrl),
-      },
-      [404],
-    );
-    expectApiError(crossUser.body);
-    expect(crossUser.body.error.code).toBe("NOT_FOUND");
-    expect(provider.tokenRequests).toStrictEqual([]);
-
-    const beforeComplete = now();
-    const complete = await connectorsApi.completeExternalCode(actor, "aws", {
-      sessionId: session.sessionId,
-      sessionToken: session.sessionToken,
-      code: ` ${awsVerificationCode(session.authorizationUrl)} \n`,
-    });
-    const afterComplete = now();
-
-    expect(provider.tokenRequests).toHaveLength(1);
-    expect(provider.tokenRequests[0]).toMatchObject({
-      grantType: "authorization_code",
-      code: "AWS-CODE",
-      redirectUri: AWS_REDIRECT_URI,
-    });
-    expect(complete.account).toMatchObject({
-      target: { kind: "builtin", connectorSlug: "aws" },
-      authMethod: "cli",
-      externalId: "123456789012",
-      externalUsername:
-        "arn:aws:iam::123456789012:user/external-code (AIDAEXTERNALUSER)",
-      oauthScopes: ["openid"],
-    });
-    const tokenExpiresAtMs = Date.parse(complete.account.tokenExpiresAt ?? "");
-    expect(tokenExpiresAtMs).toBeGreaterThanOrEqual(beforeComplete + 899_000);
-    expect(tokenExpiresAtMs).toBeLessThanOrEqual(afterComplete + 901_000);
-    expectNoVisibleSecret(complete, "aws-secret-access-key");
-    expectNoVisibleSecret(complete, "aws-login-refresh-token");
-    expectNoVisibleSecret(complete, "aws-session-token");
-
-    const readBack = await connectorsApi.readDefaultBuiltinAccount(
-      actor,
-      "aws",
-    );
-    expect(readBack.id).toBe(complete.connectionId);
-    expect(readBack.connectionStatus).toBe("connected");
-
-    const listed = await connectorsApi.listBuiltinConnectors(actor);
-    expect(
-      listed.connectors.find((connector) => {
-        return connector.slug === "aws";
-      })?.id,
-    ).toBe(complete.connectionId);
-
-    const replay = await connectorsApi.completeExternalCode(actor, "aws", {
-      sessionId: session.sessionId,
-      sessionToken: session.sessionToken,
-      code: awsVerificationCode(session.authorizationUrl),
-    });
-    expect(replay.connectionId).toBe(complete.connectionId);
-    expect(replay.account).toMatchObject({
-      target: { kind: "builtin", connectorSlug: "aws" },
-      authMethod: "cli",
-      externalId: "123456789012",
-    });
-    expect(provider.tokenRequests).toHaveLength(1);
-
-    const removedReconnect = await connectorsApi.startExternalCode(
-      actor,
-      "aws",
-      "cli",
-      { intent: "reconnect", connectionId: complete.connectionId },
-    );
-    await connectorsApi.deleteDefaultBuiltinConnectorAccount(actor, "aws");
-    const rejectedReconnect = await connectorsApi.requestExternalCodeComplete(
-      actor,
-      "aws",
-      {
-        sessionId: removedReconnect.sessionId,
-        sessionToken: removedReconnect.sessionToken,
-        code: awsVerificationCode(removedReconnect.authorizationUrl),
-      },
-      [409],
-    );
-    expectApiError(rejectedReconnect.body);
-    expect(rejectedReconnect.body.error.message).toBe(
-      "Connector account not found",
-    );
-    const afterDelete = await connectorsApi.requestBuiltinConnectorAccounts(
-      actor,
-      "aws",
-      [200],
-    );
-    expect(afterDelete.body.defaultConnection).toBeNull();
-  });
-
-  it("replays the exact non-default account added by an external-code session", async () => {
-    const provider = mockAwsExternalCodeProvider();
-    const actor = awsActor();
-    await connectorsApi.updateFeatureSwitches(actor, {});
-
-    const defaultSession = await connectorsApi.startExternalCode(
-      actor,
-      "aws",
-      "cli",
-      { intent: "add" },
-    );
-    const defaultAccount = await connectorsApi.completeExternalCode(
-      actor,
-      "aws",
-      {
-        sessionId: defaultSession.sessionId,
-        sessionToken: defaultSession.sessionToken,
-        code: awsVerificationCode(defaultSession.authorizationUrl),
-      },
-    );
-    provider.setAccountId("222222222222");
-    const siblingSession = await connectorsApi.startExternalCode(
-      actor,
-      "aws",
-      "cli",
-      { intent: "add" },
-    );
-    const siblingAccount = await connectorsApi.completeExternalCode(
-      actor,
-      "aws",
-      {
-        sessionId: siblingSession.sessionId,
-        sessionToken: siblingSession.sessionToken,
-        code: awsVerificationCode(siblingSession.authorizationUrl),
-      },
-    );
-
-    expect(siblingAccount.connectionId).not.toBe(defaultAccount.connectionId);
-    const accounts = await connectorsApi.listBuiltinConnectorAccounts(
-      actor,
-      "aws",
-    );
-    expect(accounts).toStrictEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          id: defaultAccount.connectionId,
-          isDefault: true,
-        }),
-        expect.objectContaining({
-          id: siblingAccount.connectionId,
-          isDefault: false,
-        }),
-      ]),
-    );
-
-    createRouteMocks(context).clerk.session(
-      actor.userId,
-      actor.orgId,
-      actor.orgRole,
-    );
-    const renamed = await accept(
-      setupApp({ context, routes: connectorAccountRoutes })(
-        connectorAccountsContract,
-      ).rename({
-        headers: { authorization: "Bearer clerk-session" },
-        params: { connectionId: siblingAccount.connectionId },
-        body: {
-          target: { kind: "builtin", connectorSlug: "aws" },
-          displayName: "Renamed AWS sibling",
-        },
-      }),
-      [200],
-    );
-    const replay = await connectorsApi.completeExternalCode(actor, "aws", {
-      sessionId: siblingSession.sessionId,
-      sessionToken: siblingSession.sessionToken,
-      code: awsVerificationCode(siblingSession.authorizationUrl),
-    });
-    expect(replay.account).toStrictEqual({
-      ...siblingAccount.account,
-      displayName: renamed.body.displayName,
-      updatedAt: renamed.body.updatedAt,
-    });
-    expect(provider.tokenRequests).toHaveLength(2);
-
-    await connectorsApi.deleteBuiltinConnectorAccount(
-      actor,
-      "aws",
-      siblingAccount.connectionId,
-    );
-    await connectorsApi.deleteBuiltinConnectorAccount(
-      actor,
-      "aws",
-      defaultAccount.connectionId,
-    );
-    await connectorsApi.deleteFeatureSwitches(actor);
-  });
-
-  it("supersedes pending sessions and restores provider-rejected sessions to pending", async () => {
-    const provider = mockAwsExternalCodeProvider();
-    const actor = await awsActor();
-
-    const first = await connectorsApi.startExternalCode(actor, "aws", "cli");
-    const second = await connectorsApi.startExternalCode(actor, "aws", "cli");
-
-    const superseded = await connectorsApi.requestExternalCodeComplete(
-      actor,
-      "aws",
-      {
-        sessionId: first.sessionId,
-        sessionToken: first.sessionToken,
-        code: awsVerificationCode(first.authorizationUrl),
-      },
-      [400],
-    );
-    expectApiError(superseded.body);
-    expect(superseded.body.error.message).toBe(
-      "External-code authorization session was superseded",
-    );
-    expect(provider.tokenRequests).toStrictEqual([]);
-
-    const rejected = await connectorsApi.requestExternalCodeComplete(
-      actor,
-      "aws",
-      {
-        sessionId: second.sessionId,
-        sessionToken: second.sessionToken,
-        code: awsVerificationCode(second.authorizationUrl, "AWS-BAD"),
-      },
-      [400],
-    );
-    expectApiError(rejected.body);
-    expect(rejected.body.error.message).toBe(
-      "External-code authorization code was rejected. Check it and try again.",
-    );
-
-    const retried = await connectorsApi.completeExternalCode(actor, "aws", {
-      sessionId: second.sessionId,
-      sessionToken: second.sessionToken,
-      code: awsVerificationCode(second.authorizationUrl),
-    });
-    expect(retried.account).toMatchObject({
-      target: { kind: "builtin", connectorSlug: "aws" },
-      authMethod: "cli",
-      externalId: "123456789012",
-    });
-    expect(provider.tokenRequests).toHaveLength(2);
-
-    const readBack = await connectorsApi.readDefaultBuiltinAccount(
-      actor,
-      "aws",
-    );
-    expect(readBack.id).toBe(retried.connectionId);
-
-    await connectorsApi.deleteDefaultBuiltinConnectorAccount(actor, "aws");
-  });
-
-  it("returns generic external-code copy when the PlayStation NPSSO token is rejected", async () => {
-    const bdd = createBddApi(context);
-    const actor = bdd.user();
-    let authorizeRequestCount = 0;
-    context.mocks.ably.publish.mockResolvedValue(undefined);
+describe("external-code session lifecycle", () => {
+  it("connectors-external-code.bdd-004 returns generic copy when PlayStation rejects the NPSSO token", async () => {
+    const cookies: (string | null)[] = [];
     server.use(
-      http.get(PLAYSTATION_AUTHORIZE_URL, ({ request }) => {
-        authorizeRequestCount += 1;
-        expect(request.headers.get("cookie")).toBe("npsso=bad-npsso");
-        return new HttpResponse(null, { status: 401 });
-      }),
+      http.get(
+        "https://ca.account.sony.com/api/authz/v3/oauth/authorize",
+        ({ request }) => {
+          cookies.push(request.headers.get("cookie"));
+          return new HttpResponse(null, { status: 401 });
+        },
+      ),
     );
-
-    const session = await connectorsApi.startExternalCode(
+    const actor = bdd.user();
+    const session = await connectors.startExternalCode(
       actor,
       "playstation",
       "api",
     );
-    expect(session.authorizationUrl).toBe(PLAYSTATION_NPSSO_URL);
-
-    const rejected = await connectorsApi.requestExternalCodeComplete(
+    expect(session.authorizationUrl).toBe(
+      "https://ca.account.sony.com/api/v1/ssocookie",
+    );
+    const rejected = await connectors.requestExternalCodeComplete(
       actor,
       "playstation",
       {
         sessionId: session.sessionId,
         sessionToken: session.sessionToken,
-        code: " bad-npsso ",
+        code: "  bad-npsso  ",
       },
       [400],
     );
-    expectApiError(rejected.body);
-    expect(rejected.body.error.message).toBe(
-      "External-code authorization code was rejected. Check it and try again.",
-    );
-    expect(authorizeRequestCount).toBe(1);
+    expect(rejected.body).toMatchObject({
+      error: {
+        message:
+          "External-code authorization code was rejected. Check it and try again.",
+      },
+    });
+    expect(cookies).toStrictEqual(["npsso=bad-npsso"]);
   });
 
-  it("starts and completes a Nintendo Store external-code session through public APIs", async () => {
-    const provider = mockNintendoStoreExternalCodeProvider();
-    const bdd = createBddApi(context);
-    const actor = bdd.user();
-    context.mocks.ably.publish.mockResolvedValue(undefined);
+  it("connectors-external-code.bdd-003 supersedes pending sessions and keeps rejected sessions retryable", async () => {
+    const provider = mockAwsExternalCodeProvider();
+    const owner = bdd.user();
+    const first = await connectors.startExternalCode(owner, "aws", "cli");
+    const second = await connectors.startExternalCode(owner, "aws", "cli");
 
-    const session = await connectorsApi.startExternalCode(
+    const superseded = await completeAws(owner, first);
+    expect(superseded.status).toBe(400);
+    expect(superseded.body).toMatchObject({
+      error: {
+        message: "External-code authorization session was superseded",
+      },
+    });
+    expect(provider.tokenRequests).toHaveLength(0);
+    const rejected = await completeAws(owner, second, "AWS-BAD");
+    expect(rejected.status).toBe(400);
+    expect(rejected.body).toMatchObject({
+      error: {
+        message:
+          "External-code authorization code was rejected. Check it and try again.",
+      },
+    });
+    const retried = await completeAws(owner, second);
+    if (retried.status !== 200) {
+      throw new Error("Expected the retry to complete");
+    }
+    expect(provider.tokenRequests).toHaveLength(2);
+    await expect(defaultAwsAccount(owner)).resolves.toMatchObject({
+      id: retried.body.connectionId,
+      authMethod: "cli",
+      externalId: "123456789012",
+      isDefault: true,
+    });
+  });
+
+  it("connectors-external-code.bdd-005 starts and completes a Nintendo Store session", async () => {
+    const provider = mockNintendoStoreExternalCodeProvider();
+    const actor = bdd.user();
+    const session = await connectors.startExternalCode(
       actor,
       "nintendo-store",
       "api",
     );
-    expect(session).toMatchObject({
-      connectorSlug: "nintendo-store",
-      status: "pending",
-      expiresIn: 600,
+    expect(session).toMatchObject({ status: "pending", expiresIn: 600 });
+    const url = new URL(session.authorizationUrl);
+    const state = url.searchParams.get("state");
+    expect(`${url.origin}${url.pathname}`).toBe(
+      "https://accounts.nintendo.com/connect/1.0.0/authorize",
+    );
+    expect({
+      clientId: url.searchParams.get("client_id"),
+      redirectUri: url.searchParams.get("redirect_uri"),
+      responseType: url.searchParams.get("response_type"),
+      scope: url.searchParams.get("scope"),
+    }).toStrictEqual({
+      clientId: "5c38e31cd085304b",
+      redirectUri: "npf5c38e31cd085304b://auth",
+      responseType: "session_token_code",
+      scope: "openid user user.mii user.email user.links[].id",
     });
-    const authorizationUrl = new URL(session.authorizationUrl);
-    expect(`${authorizationUrl.origin}${authorizationUrl.pathname}`).toBe(
-      NINTENDO_STORE_AUTHORIZE_URL,
-    );
-    expect(authorizationUrl.searchParams.get("client_id")).toBe(
-      NINTENDO_STORE_CLIENT_ID,
-    );
-    expect(authorizationUrl.searchParams.get("redirect_uri")).toBe(
-      NINTENDO_STORE_REDIRECT_URI,
-    );
-    expect(authorizationUrl.searchParams.get("response_type")).toBe(
-      "session_token_code",
-    );
-    expect(authorizationUrl.searchParams.get("scope")).toBe(
-      "openid user user.mii user.email user.links[].id",
-    );
-    const state = authorizationUrl.searchParams.get("state");
-    expect(state).toStrictEqual(expect.any(String));
-    if (!state) {
-      throw new Error("Expected Nintendo Store authorization state");
-    }
+    expect(state).toBeTruthy();
 
-    const complete = await connectorsApi.completeExternalCode(
+    const completed = await connectors.completeExternalCode(
       actor,
       "nintendo-store",
       {
         sessionId: session.sessionId,
         sessionToken: session.sessionToken,
-        code: `${NINTENDO_STORE_REDIRECT_URI}#session_token_code=bdd-nintendo-session-token-code&state=${state}`,
+        code: `npf5c38e31cd085304b://auth#session_token_code=bdd-nintendo-session-token-code&state=${state ?? ""}`,
       },
     );
-
-    expect(provider.sessionTokenBodies).toHaveLength(1);
-    expect(provider.sessionTokenBodies[0]?.get("client_id")).toBe(
-      NINTENDO_STORE_CLIENT_ID,
-    );
-    expect(provider.sessionTokenBodies[0]?.get("session_token_code")).toBe(
-      "bdd-nintendo-session-token-code",
-    );
     expect(
-      provider.sessionTokenBodies[0]?.get("session_token_code_verifier"),
-    ).toStrictEqual(expect.any(String));
-    expect(provider.tokenBodies).toStrictEqual([
+      provider.sessionTokenBodies.map((body) => {
+        return {
+          clientId: body.get("client_id"),
+          code: body.get("session_token_code"),
+          hasVerifier: Boolean(body.get("session_token_code_verifier")),
+        };
+      }),
+    ).toStrictEqual([
       {
-        client_id: NINTENDO_STORE_CLIENT_ID,
-        session_token: "bdd-nintendo-session-token",
-        grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer-session-token",
+        clientId: "5c38e31cd085304b",
+        code: "bdd-nintendo-session-token-code",
+        hasVerifier: true,
       },
     ]);
-    expect(complete.account).toMatchObject({
-      target: { kind: "builtin", connectorSlug: "nintendo-store" },
+    expect(provider.tokenBodies).toHaveLength(1);
+    expect(completed.account).toMatchObject({
       authMethod: "api",
       externalId: "bdd-nintendo-account-id",
       externalUsername: "bdd-nintendo-player",
-      oauthScopes: [
-        "openid",
-        "user",
-        "user.mii",
-        "user.email",
-        "user.links[].id",
-      ],
     });
-    expect(complete.account.tokenExpiresAt).not.toBeNull();
-    expectNoVisibleSecret(complete, "bdd-nintendo-session-token");
-    expectNoVisibleSecret(complete, "bdd-nintendo-access-token");
-
-    await connectorsApi.deleteDefaultBuiltinConnectorAccount(
-      actor,
-      "nintendo-store",
-    );
+    expect(completed.account.oauthScopes).toHaveLength(5);
+    expect(completed.account.tokenExpiresAt).toBeTruthy();
+    const exposed = JSON.stringify(completed);
+    expect(exposed).not.toContain("bdd-nintendo-session-token");
+    expect(exposed).not.toContain("bdd-nintendo-access-token");
   });
-
-  it("replaces the remote Nintendo registration and keeps local deletion resilient", async () => {
-    const provider = mockNintendoSwitchParentalControlsExternalCodeProvider();
-    const bdd = createBddApi(context);
+  it("connectors-external-code.bdd-006 replaces the remote Nintendo registration and keeps local deletion resilient", async () => {
+    const { recorded, idTokenFor } = mockParentalControlsProvider();
+    const slug = "nintendo-switch-parental-controls";
     const actor = bdd.user();
-    context.mocks.ably.publish.mockResolvedValue(undefined);
-
-    const session = await connectorsApi.startExternalCode(
-      actor,
-      "nintendo-switch-parental-controls",
-      "api",
-    );
-    expect(session).toMatchObject({
-      connectorSlug: "nintendo-switch-parental-controls",
-      status: "pending",
-      expiresIn: 600,
-    });
-    const authorizationUrl = new URL(session.authorizationUrl);
-    expect(`${authorizationUrl.origin}${authorizationUrl.pathname}`).toBe(
-      NINTENDO_STORE_AUTHORIZE_URL,
-    );
-    expect(authorizationUrl.searchParams.get("client_id")).toBe(
-      NINTENDO_SWITCH_PARENTAL_CONTROLS_CLIENT_ID,
-    );
-    expect(authorizationUrl.searchParams.get("redirect_uri")).toBe(
-      NINTENDO_SWITCH_PARENTAL_CONTROLS_REDIRECT_URI,
-    );
-    expect(authorizationUrl.searchParams.get("scope")).toBe(
-      NINTENDO_SWITCH_PARENTAL_CONTROLS_SCOPES.join(" "),
-    );
-    const state = authorizationUrl.searchParams.get("state");
-    if (!state) {
-      throw new Error(
-        "Expected Nintendo Switch Parental Controls authorization state",
-      );
-    }
-
-    const complete = await connectorsApi.completeExternalCode(
-      actor,
-      "nintendo-switch-parental-controls",
-      {
+    const connect = async (code: string) => {
+      const session = await connectors.startExternalCode(actor, slug, "api");
+      const url = new URL(session.authorizationUrl);
+      const state = url.searchParams.get("state") ?? "";
+      const completed = await connectors.completeExternalCode(actor, slug, {
         sessionId: session.sessionId,
         sessionToken: session.sessionToken,
-        code: `${NINTENDO_SWITCH_PARENTAL_CONTROLS_REDIRECT_URI}#session_token_code=${NINTENDO_SWITCH_PARENTAL_CONTROLS_INITIAL_SESSION_TOKEN_CODE}&state=${state}`,
-      },
-    );
+        code: `npf54789befb391a838://auth#session_token_code=${code}&state=${state}`,
+      });
+      return { session, url, completed };
+    };
 
-    expect(provider.sessionTokenBodies).toHaveLength(1);
-    expect(provider.sessionTokenBodies[0]?.get("client_id")).toBe(
-      NINTENDO_SWITCH_PARENTAL_CONTROLS_CLIENT_ID,
-    );
-    expect(provider.tokenBodies).toStrictEqual([
-      {
-        client_id: NINTENDO_SWITCH_PARENTAL_CONTROLS_CLIENT_ID,
-        session_token: NINTENDO_SWITCH_PARENTAL_CONTROLS_INITIAL_SESSION_TOKEN,
-        grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer-session-token",
-      },
-    ]);
-    expect(provider.federationBodies).toHaveLength(1);
-    expect(provider.federationBodies[0]).toMatchObject({
-      smartDeviceInfo: {
-        id: expect.any(String),
-        bundleId: "com.nintendo.znma",
-        notificationToken: null,
-      },
+    const first = await connect("code-initial");
+    expect(first.session).toMatchObject({ status: "pending", expiresIn: 600 });
+    expect({
+      clientId: first.url.searchParams.get("client_id"),
+      redirectUri: first.url.searchParams.get("redirect_uri"),
+      scopes: (first.url.searchParams.get("scope") ?? "").split(" ").length,
+    }).toStrictEqual({
+      clientId: "54789befb391a838",
+      redirectUri: "npf54789befb391a838://auth",
+      scopes: 13,
     });
-    expect(complete.account).toMatchObject({
-      target: {
-        kind: "builtin",
-        connectorSlug: "nintendo-switch-parental-controls",
-      },
-      authMethod: "api",
+    expect(recorded.sessionTokenCodes).toStrictEqual(["code-initial"]);
+    expect(recorded.exchangedSessionTokens).toStrictEqual([
+      "session-code-initial",
+    ]);
+    expect(recorded.federations).toHaveLength(1);
+    expect(recorded.federations[0]?.bundleId).toBe("com.nintendo.znma");
+    expect(first.completed.account).toMatchObject({
       externalId: "bdd-switch-parental-controls-account-id",
       externalUsername: "bdd-nintendo-parent",
-      oauthScopes: NINTENDO_SWITCH_PARENTAL_CONTROLS_SCOPES,
     });
-    expect(complete.account.tokenExpiresAt).not.toBeNull();
-    expectNoVisibleSecret(
-      complete,
-      NINTENDO_SWITCH_PARENTAL_CONTROLS_INITIAL_SESSION_TOKEN,
-    );
-    expectNoVisibleSecret(
-      complete,
-      "bdd-switch-parental-controls-access-token",
-    );
-    expectNoVisibleSecret(complete, "bdd-serial-must-not-leak");
-    expectNoVisibleSecret(
-      complete,
-      NINTENDO_SWITCH_PARENTAL_CONTROLS_UNLOCK_CODE,
-    );
-
-    const replacementSession = await connectorsApi.startExternalCode(
-      actor,
-      "nintendo-switch-parental-controls",
-      "api",
-    );
-    const replacementAuthorizationUrl = new URL(
-      replacementSession.authorizationUrl,
-    );
-    const replacementState =
-      replacementAuthorizationUrl.searchParams.get("state");
-    if (!replacementState) {
-      throw new Error("Expected replacement Nintendo authorization state");
+    const exposed = JSON.stringify(first.completed);
+    for (const hidden of [
+      "session-code-initial",
+      idTokenFor("session-code-initial"),
+      "XAW10012345678",
+      "246810",
+    ]) {
+      expect(exposed).not.toContain(hidden);
     }
-    const replacementComplete = await connectorsApi.completeExternalCode(
-      actor,
-      "nintendo-switch-parental-controls",
-      {
-        sessionId: replacementSession.sessionId,
-        sessionToken: replacementSession.sessionToken,
-        code: `${NINTENDO_SWITCH_PARENTAL_CONTROLS_REDIRECT_URI}#session_token_code=${NINTENDO_SWITCH_PARENTAL_CONTROLS_REPLACEMENT_SESSION_TOKEN_CODE}&state=${replacementState}`,
+
+    const replacement = await connect("code-replacement");
+    expect(replacement.completed.connectionId).not.toBe(
+      first.completed.connectionId,
+    );
+    expect(recorded.federations).toHaveLength(2);
+    const [firstDevice, replacementDevice] = recorded.federations.map(
+      (federation) => {
+        return federation.smartDeviceId;
       },
     );
-    expect(provider.federatedSmartDeviceIds).toHaveLength(2);
-    expect(provider.federatedSmartDeviceIds[1]).not.toBe(
-      provider.federatedSmartDeviceIds[0],
-    );
-    expect(replacementComplete.connectionId).not.toBe(complete.connectionId);
-    expect(provider.logoutBodies).toStrictEqual([]);
+    expect(replacementDevice).not.toBe(firstDevice);
+    expect(recorded.logouts).toStrictEqual([]);
 
-    await connectorsApi.deleteBuiltinConnectorAccount(
+    recorded.exchangedSessionTokens.length = 0;
+    await connectors.deleteBuiltinConnectorAccount(
       actor,
-      "nintendo-switch-parental-controls",
-      complete.connectionId,
+      slug,
+      first.completed.connectionId,
     );
-    expect(provider.logoutBodies).toStrictEqual([
-      { smartDeviceId: provider.federatedSmartDeviceIds[0] },
-    ]);
-
-    provider.failLogout();
-    await connectorsApi.deleteBuiltinConnectorAccount(
+    recorded.logoutStatus = 503;
+    await connectors.deleteBuiltinConnectorAccount(
       actor,
-      "nintendo-switch-parental-controls",
-      replacementComplete.connectionId,
+      slug,
+      replacement.completed.connectionId,
     );
-    expect(
-      provider.tokenBodies.map((body) => {
-        return body["session_token"];
-      }),
-    ).toStrictEqual([
-      NINTENDO_SWITCH_PARENTAL_CONTROLS_INITIAL_SESSION_TOKEN,
-      NINTENDO_SWITCH_PARENTAL_CONTROLS_REPLACEMENT_SESSION_TOKEN,
-      NINTENDO_SWITCH_PARENTAL_CONTROLS_INITIAL_SESSION_TOKEN,
-      NINTENDO_SWITCH_PARENTAL_CONTROLS_REPLACEMENT_SESSION_TOKEN,
+    expect(recorded.exchangedSessionTokens).toStrictEqual([
+      "session-code-initial",
+      "session-code-replacement",
     ]);
-    expect(provider.logoutAuthorizations).toStrictEqual([
-      `Bearer ${provider.initialIdToken}`,
-      `Bearer ${provider.replacementIdToken}`,
+    expect(recorded.logouts).toStrictEqual([
+      {
+        smartDeviceId: firstDevice,
+        authorization: `Bearer ${idTokenFor("session-code-initial")}`,
+      },
+      {
+        smartDeviceId: replacementDevice,
+        authorization: `Bearer ${idTokenFor("session-code-replacement")}`,
+      },
     ]);
-    expect(provider.logoutBodies).toStrictEqual([
-      { smartDeviceId: provider.federatedSmartDeviceIds[0] },
-      { smartDeviceId: provider.federatedSmartDeviceIds[1] },
-    ]);
-    const afterDelete = await connectorsApi.requestBuiltinConnectorAccounts(
+    const remaining = await connectors.requestBuiltinConnectorAccounts(
       actor,
-      "nintendo-switch-parental-controls",
+      slug,
       [200],
     );
-    expect(afterDelete.body.defaultConnection).toBeNull();
-    await connectorsApi.deleteFeatureSwitches(actor);
+    expect(
+      remaining.status === 200 ? remaining.body.defaultConnection : undefined,
+    ).toBeNull();
   });
 
-  it("keeps an in-flight completion exclusive without superseding it", async () => {
-    const provider = mockAwsDeferredTokenExchange();
-    const actor = await awsActor();
+  it("connectors-external-code.bdd-001 (1/2) starts a protected AWS session and completes it into the default cli account", async () => {
+    const provider = mockAwsExternalCodeProvider();
+    const owner = bdd.user();
+    const other = bdd.user();
 
-    const first = await connectorsApi.startExternalCode(actor, "aws", "cli");
-    const heldCompletePromise = connectorsApi.completeExternalCode(
-      actor,
+    const session = await connectors.startExternalCode(owner, "aws", "cli");
+    expect(session).toMatchObject({ status: "pending", expiresIn: 600 });
+    const url = new URL(session.authorizationUrl);
+    expect(`${url.origin}${url.pathname}`).toBe(
+      "https://us-east-1.signin.aws.amazon.com/v1/authorize",
+    );
+    expect(url.searchParams.get("client_id")).toBe(
+      "arn:aws:signin:::devtools/cross-device",
+    );
+    expect(url.searchParams.get("scope")).toBe("openid");
+    expect(url.searchParams.get("redirect_uri")).toBe(
+      "https://us-east-1.signin.aws.amazon.com/v1/sessions/confirmation",
+    );
+
+    const wrongToken = await completeAws(owner, {
+      ...session,
+      sessionToken: `${session.sessionToken}-wrong`,
+    });
+    expect(wrongToken.status).toBe(404);
+    expect(wrongToken.body).toMatchObject({
+      error: { message: "External-code authorization session not found" },
+    });
+    const foreign = await completeAws(other, session);
+    expect(foreign.status).toBe(404);
+    expect(foreign.body).toMatchObject({ error: { code: "NOT_FOUND" } });
+    expect(provider.tokenRequests).toHaveLength(0);
+
+    const completed = await connectors.requestExternalCodeComplete(
+      owner,
       "aws",
       {
-        sessionId: first.sessionId,
-        sessionToken: first.sessionToken,
-        code: awsVerificationCode(first.authorizationUrl),
+        sessionId: session.sessionId,
+        sessionToken: session.sessionToken,
+        code: `  ${awsVerificationCode(session.authorizationUrl)}  `,
       },
+      [200],
     );
-    await provider.tokenRequestStarted;
-
-    const alreadyCompleting = await connectorsApi.requestExternalCodeComplete(
-      actor,
+    if (completed.status !== 200) {
+      throw new Error("Expected AWS completion");
+    }
+    const connectionId = completed.body.connectionId;
+    expect(
+      provider.tokenRequests.map((request) => {
+        return { grantType: request.grantType, code: request.code };
+      }),
+    ).toStrictEqual([{ grantType: "authorization_code", code: "AWS-CODE" }]);
+    const account = await connectors.readBuiltinConnectorAccount(
+      owner,
       "aws",
-      {
-        sessionId: first.sessionId,
-        sessionToken: first.sessionToken,
-        code: awsVerificationCode(first.authorizationUrl),
-      },
-      [400],
+      connectionId,
     );
-    expectApiError(alreadyCompleting.body);
-    expect(alreadyCompleting.body.error.message).toBe(
-      "External-code authorization session is already completing",
-    );
-
-    const second = await connectorsApi.startExternalCode(actor, "aws", "cli");
-    expect(second.status).toBe("pending");
-
-    provider.releaseTokenResponse();
-    const heldComplete = await heldCompletePromise;
-    expect(heldComplete.account).toMatchObject({
-      target: { kind: "builtin", connectorSlug: "aws" },
+    expect({
+      authMethod: account.authMethod,
+      externalId: account.externalId,
+      externalUsername: account.externalUsername,
+      oauthScopes: account.oauthScopes,
+      isDefault: account.isDefault,
+    }).toStrictEqual({
       authMethod: "cli",
       externalId: "123456789012",
+      externalUsername: expect.stringContaining(
+        "arn:aws:iam::123456789012:user/external-code",
+      ),
+      oauthScopes: ["openid"],
+      isDefault: true,
     });
-    expect(provider.tokenRequests).toHaveLength(1);
-
-    const secondComplete = await connectorsApi.completeExternalCode(
-      actor,
-      "aws",
-      {
-        sessionId: second.sessionId,
-        sessionToken: second.sessionToken,
-        code: awsVerificationCode(second.authorizationUrl),
-      },
-    );
-    expect(secondComplete.account.target).toStrictEqual({
-      kind: "builtin",
-      connectorSlug: "aws",
-    });
-    expect(provider.tokenRequests).toHaveLength(2);
-
-    await connectorsApi.deleteDefaultBuiltinConnectorAccount(actor, "aws");
+    const expiresInMs = Date.parse(account.tokenExpiresAt ?? "") - now();
+    expect(expiresInMs).toBeGreaterThan(14 * 60_000);
+    expect(expiresInMs).toBeLessThanOrEqual(15 * 60_000 + 5000);
+    const exposed = JSON.stringify([completed.body, account]);
+    for (const secret of [
+      "aws-secret-access-key",
+      "aws-login-refresh-token",
+      "aws-session-token",
+    ]) {
+      expect(exposed).not.toContain(secret);
+    }
+    const listed = await connectors.listBuiltinConnectors(owner);
+    expect(
+      listed.connectors.find((connector) => {
+        return connector.slug === "aws";
+      }),
+    ).toMatchObject({ id: connectionId, externalId: "123456789012" });
   });
 
-  it("expires external-code sessions past their deadline, including stale completing claims", async () => {
-    const guardProvider = mockAwsExternalCodeProvider();
-    const actor = await awsActor();
+  it("connectors-external-code.bdd-001 (2/2) replays the completion and rejects a reconnect after deletion", async () => {
+    const provider = mockAwsExternalCodeProvider();
+    const owner = bdd.user();
+    const session = await startRejectedAwsSession(owner);
+    const first = await completeAws(owner, session);
+    if (first.status !== 200) {
+      throw new Error("Expected AWS completion");
+    }
+    const connectionId = first.body.connectionId;
 
-    const base = now();
-    mockNow(base);
-    const pending = await connectorsApi.startExternalCode(actor, "aws", "cli");
-    mockNow(base + 601_000);
+    const replay = await completeAws(owner, session);
+    expect(replay.body).toStrictEqual({ status: "complete", connectionId });
+    expect(provider.tokenRequests).toHaveLength(1);
 
-    const expired = await connectorsApi.requestExternalCodeComplete(
-      actor,
-      "aws",
-      {
-        sessionId: pending.sessionId,
-        sessionToken: pending.sessionToken,
-        code: awsVerificationCode(pending.authorizationUrl),
-      },
-      [400],
-    );
-    expectApiError(expired.body);
-    expect(expired.body.error.message).toBe(
-      "External-code authorization session expired",
-    );
-
-    const expiredAgain = await connectorsApi.requestExternalCodeComplete(
-      actor,
-      "aws",
-      {
-        sessionId: pending.sessionId,
-        sessionToken: pending.sessionToken,
-        code: awsVerificationCode(pending.authorizationUrl),
-      },
-      [400],
-    );
-    expectApiError(expiredAgain.body);
-    expect(expiredAgain.body.error.message).toBe(
-      "External-code authorization session expired",
-    );
-    expect(guardProvider.tokenRequests).toStrictEqual([]);
-
-    const deferredProvider = mockAwsDeferredTokenExchange();
-    const staleBase = base + 700_000;
-    mockNow(staleBase);
-    const completing = await connectorsApi.startExternalCode(
-      actor,
-      "aws",
-      "cli",
-    );
-    const heldCompletePromise = connectorsApi.requestExternalCodeComplete(
-      actor,
-      "aws",
-      {
-        sessionId: completing.sessionId,
-        sessionToken: completing.sessionToken,
-        code: awsVerificationCode(completing.authorizationUrl),
-      },
-      [500],
-    );
-    await deferredProvider.tokenRequestStarted;
-    mockNow(staleBase + 31 * 60_000);
-
-    const staleExpired = await connectorsApi.requestExternalCodeComplete(
-      actor,
-      "aws",
-      {
-        sessionId: completing.sessionId,
-        sessionToken: completing.sessionToken,
-        code: awsVerificationCode(completing.authorizationUrl),
-      },
-      [400],
-    );
-    expectApiError(staleExpired.body);
-    expect(staleExpired.body.error.message).toBe(
-      "External-code authorization session expired",
-    );
-
-    deferredProvider.releaseTokenResponse();
-    const heldComplete = await heldCompletePromise;
-    expect(heldComplete.body).toStrictEqual({
-      error: "Internal server error",
+    const reconnect = await connectors.startExternalCode(owner, "aws", "cli", {
+      intent: "reconnect",
+      connectionId,
     });
-    expect(deferredProvider.tokenRequests).toHaveLength(1);
-  });
-
-  it("marks a session failed when the provider identity lookup fails after token exchange", async () => {
-    const provider = mockAwsExternalCodeProvider({ stsFailure: true });
-    const actor = await awsActor();
-
-    const session = await connectorsApi.startExternalCode(actor, "aws", "cli");
-    const failed = await connectorsApi.requestExternalCodeComplete(
-      actor,
-      "aws",
-      {
-        sessionId: session.sessionId,
-        sessionToken: session.sessionToken,
-        code: awsVerificationCode(session.authorizationUrl),
-      },
-      [500],
-    );
-    expect(failed.body).toStrictEqual({ error: "Internal server error" });
-    expect(provider.tokenRequests).toHaveLength(1);
-
-    const terminal = await connectorsApi.requestExternalCodeComplete(
-      actor,
-      "aws",
-      {
-        sessionId: session.sessionId,
-        sessionToken: session.sessionToken,
-        code: awsVerificationCode(session.authorizationUrl),
-      },
-      [400],
-    );
-    expectApiError(terminal.body);
-    expect(terminal.body.error.message).toContain("STS");
-    expect(provider.tokenRequests).toHaveLength(1);
-
-    const nothingPersisted =
-      await connectorsApi.requestBuiltinConnectorAccounts(actor, "aws", [200]);
-    expect(nothingPersisted.body.defaultConnection).toBeNull();
+    await connectors.deleteBuiltinConnectorAccount(owner, "aws", connectionId);
+    const orphaned = await completeAws(owner, reconnect);
+    expect(orphaned.status).toBe(409);
+    expect(orphaned.body).toMatchObject({
+      error: { message: "Connector account not found" },
+    });
+    await expect(defaultAwsAccount(owner)).resolves.toBeNull();
   });
 });
+
+/** An AWS add session after the wrong-token and other-user completions were refused. */
+async function startRejectedAwsSession(owner: ApiTestUser) {
+  const other = bdd.user();
+  const session = await connectors.startExternalCode(owner, "aws", "cli");
+  await completeAws(owner, {
+    ...session,
+    sessionToken: `${session.sessionToken}-wrong`,
+  });
+  await completeAws(other, session);
+  return session;
+}

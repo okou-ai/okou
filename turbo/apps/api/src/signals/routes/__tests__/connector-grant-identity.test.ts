@@ -1,187 +1,219 @@
-import {
-  connectorAccountsContract,
-  type ConnectorAccountMutationIntent,
-} from "@okouai/api-contracts/contracts/connector-accounts";
-import { describe, expect, it } from "vitest";
+import type { ConnectorAccountMutationIntent } from "@okouai/api-contracts/contracts/connector-accounts";
+import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import { http, HttpResponse } from "msw";
-import { server } from "../../../mocks/server";
+import { describe, expect, it } from "vitest";
+
+import { testContext } from "../../../__tests__/test-context";
 import { mockOptionalEnv } from "../../../lib/env";
-import { accept, testContext } from "../../../__tests__/test-context";
-import { setupApp } from "../../../__tests__/test-helpers";
-import { connectorAccountRoutes } from "../connector-accounts";
+import { server } from "../../../mocks/server";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
-import {
-  createConnectorBddApi,
-  mockSlackConnectorOAuth,
-} from "./helpers/api-bdd-connectors";
-import { mockNotionConnectorOAuth } from "./helpers/api-bdd-workflows";
+import { createConnectorBddApi } from "./helpers/api-bdd-connectors";
 
 const context = testContext();
-const api = createConnectorBddApi(context);
-const headers = Object.freeze({ authorization: "Bearer clerk-session" });
-const accounts = setupApp({ context, routes: connectorAccountRoutes })(
-  connectorAccountsContract,
-);
-type ScopedSlug = "notion" | "slack" | "hubspot";
-function provider(slug: ScopedSlug, namespace?: string) {
-  if (slug === "notion") {
-    mockNotionConnectorOAuth({
-      botId: namespace,
-      ownerId: "same-notion-owner",
-    });
-  } else if (slug === "slack") {
-    mockSlackConnectorOAuth();
-    server.use(
-      http.post("https://slack.com/api/oauth.v2.access", () => {
-        return HttpResponse.json({
-          ok: true,
-          team: namespace ? { id: namespace } : undefined,
-          authed_user: {
-            id: "U012AB3CD",
-            access_token: "xoxp-scoped-user-token",
-            scope: "channels:read,chat:write",
-          },
-        });
-      }),
-    );
-  } else {
-    mockOptionalEnv("HUBSPOT_OAUTH_CLIENT_ID", "hubspot-client-id");
-    mockOptionalEnv("HUBSPOT_OAUTH_CLIENT_SECRET", "hubspot-client-secret");
-    server.use(
-      http.post("https://api.hubapi.com/oauth/v1/token", () => {
-        return HttpResponse.json({
-          access_token: "hubspot-access-token",
-          refresh_token: "hubspot-refresh-token",
-        });
-      }),
-      http.get("https://api.hubapi.com/oauth/v1/access-tokens/:token", () => {
-        return HttpResponse.json({
-          user_id: 123,
-          hub_id: namespace ? Number(namespace) : undefined,
-          user: "owner@example.test",
-        });
-      }),
-    );
-  }
+const bdd = createBddApi(context);
+const connectors = createConnectorBddApi(context);
+
+/** Each token exchange hands out the next workspace grant for the same provider user. */
+function grantSequence(grants: readonly string[]) {
+  let index = 0;
+  return () => {
+    const grant = grants[Math.min(index, grants.length - 1)];
+    index += 1;
+    if (!grant) {
+      throw new Error("Expected a provider grant");
+    }
+    return grant;
+  };
 }
+
+function mockNotion(grants: readonly string[]) {
+  mockOptionalEnv("NOTION_OAUTH_CLIENT_ID", "notion-client-id");
+  mockOptionalEnv("NOTION_OAUTH_CLIENT_SECRET", "notion-client-secret");
+  const next = grantSequence(grants);
+  server.use(
+    http.post("https://api.notion.com/v1/oauth/token", () => {
+      const bot = next();
+      return HttpResponse.json({
+        access_token: `notion-access-${bot}`,
+        refresh_token: `notion-refresh-${bot}`,
+        bot_id: bot,
+        owner: {
+          user: {
+            id: "notion-user-1",
+            name: "Notion Owner",
+            person: { email: "owner@example.test" },
+          },
+        },
+      });
+    }),
+  );
+}
+
+function mockSlack(teams: readonly string[]) {
+  mockOptionalEnv("SLACK_OAUTH_CLIENT_ID", "slack-client-id");
+  mockOptionalEnv("SLACK_OAUTH_CLIENT_SECRET", "slack-client-secret");
+  const next = grantSequence(teams);
+  server.use(
+    http.post("https://slack.com/api/oauth.v2.access", () => {
+      const team = next();
+      return HttpResponse.json({
+        ok: true,
+        team: { id: team },
+        authed_user: {
+          id: "U0SAMEUSER",
+          access_token: `xoxp-${team}`,
+          scope: "channels:read,chat:write",
+        },
+      });
+    }),
+    http.get("https://slack.com/api/users.info", () => {
+      return HttpResponse.json({
+        ok: true,
+        user: {
+          id: "U0SAMEUSER",
+          name: "slackowner",
+          real_name: "Slack Owner",
+          profile: { email: "owner@example.test" },
+        },
+      });
+    }),
+  );
+}
+
+function mockHubSpot(hubs: readonly number[]) {
+  mockOptionalEnv("HUBSPOT_OAUTH_CLIENT_ID", "hubspot-client-id");
+  mockOptionalEnv("HUBSPOT_OAUTH_CLIENT_SECRET", "hubspot-client-secret");
+  let index = 0;
+  server.use(
+    http.post("https://api.hubapi.com/oauth/v1/token", () => {
+      const hub = hubs[Math.min(index, hubs.length - 1)];
+      index += 1;
+      return HttpResponse.json({
+        access_token: `hubspot-access-${String(hub)}`,
+        refresh_token: `hubspot-refresh-${String(hub)}`,
+        expires_in: 1800,
+      });
+    }),
+    http.get(
+      "https://api.hubapi.com/oauth/v1/access-tokens/:accessToken",
+      ({ params }) => {
+        return HttpResponse.json({
+          user_id: 4242,
+          hub_id: Number(
+            String(params.accessToken).slice("hubspot-access-".length),
+          ),
+          user: "owner@example.test",
+          hub_domain: "example.hubspot.test",
+        });
+      },
+    ),
+  );
+}
+
 async function authorize(
-  actor: ApiTestUser,
-  slug: ScopedSlug,
-  namespace?: string,
+  owner: ApiTestUser,
+  slug: ConnectorSlug,
   account?: ConnectorAccountMutationIntent,
 ) {
-  provider(slug, namespace);
-  const started = await api.startOauth(actor, slug, "oauth", account);
+  const started = await connectors.startOauth(owner, slug, "oauth", account);
   const state = new URL(started.authorizationUrl).searchParams.get("state");
   if (!state) {
-    throw new Error("Missing scoped authorization state");
+    throw new Error("Expected OAuth state");
   }
-  return await api.completeOauthCallbackResult(slug, {
-    code: "scoped-authorization",
+  const response = await connectors.completeOauthCallbackResult(slug, {
+    code: `code-${state.slice(0, 8)}`,
     state,
   });
+  return response.body.status;
 }
-async function connections(slug: ScopedSlug) {
-  return (
-    await accept(
-      accounts.connections({
-        headers,
-        query: { kind: "builtin", connectorSlug: slug },
+
+async function addsTwoGrantsForOneUser(slug: ConnectorSlug) {
+  const owner = bdd.user();
+
+  await expect(authorize(owner, slug)).resolves.toBe("success");
+  await expect(authorize(owner, slug)).resolves.toBe("success");
+
+  const accounts = await connectors.listBuiltinConnectorAccounts(owner, slug);
+  expect(accounts).toHaveLength(2);
+  expect(accounts[0]?.externalId).toBeTruthy();
+  expect(accounts[1]?.externalId).toBe(accounts[0]?.externalId);
+}
+
+async function rejectsReconnectToAnotherGrant(slug: ConnectorSlug) {
+  const owner = bdd.user();
+  await expect(authorize(owner, slug)).resolves.toBe("success");
+  const original = await connectors.readDefaultBuiltinAccount(owner, slug);
+
+  await expect(
+    authorize(owner, slug, {
+      intent: "reconnect",
+      connectionId: original.id,
+    }),
+  ).resolves.toBe("error");
+
+  const accounts = await connectors.listBuiltinConnectorAccounts(owner, slug);
+  expect(
+    accounts.map((account) => {
+      return account.id;
+    }),
+  ).toStrictEqual([original.id]);
+}
+
+describe("slack authorization identity", () => {
+  it("connector-grant-identity-004 keeps two Slack team grants of the same user", async () => {
+    mockSlack(["T0TEAMA", "T0TEAMB"]);
+
+    await expect(addsTwoGrantsForOneUser("slack")).resolves.toBeUndefined();
+  });
+
+  it("connector-grant-identity-005 rejects a Slack reconnect to another team grant", async () => {
+    mockSlack(["T0TEAMA", "T0TEAMB"]);
+
+    await expect(
+      rejectsReconnectToAnotherGrant("slack"),
+    ).resolves.toBeUndefined();
+  });
+
+  it("pf-061 reuses the same Slack team grant on repeated Add account authorization", async () => {
+    mockSlack(["T0TEAMA", "T0TEAMA"]);
+    const owner = bdd.user();
+
+    await expect(authorize(owner, "slack")).resolves.toBe("success");
+    const first = await connectors.readDefaultBuiltinAccount(owner, "slack");
+    await expect(authorize(owner, "slack")).resolves.toBe("success");
+
+    const accounts = await connectors.listBuiltinConnectorAccounts(
+      owner,
+      "slack",
+    );
+    expect(
+      accounts.map((account) => {
+        return account.id;
       }),
-      [200],
-    )
-  ).body.connections;
-}
+    ).toStrictEqual([first.id]);
+  });
+});
 
-describe.each(["notion", "slack", "hubspot"] as const)(
-  "%s authorization identity",
-  (slug) => {
-    it("reuses the same provider grant on repeated authorization", async () => {
-      const actor = createBddApi(context).user();
-      expect((await authorize(actor, slug, "1001")).body.status).toBe(
-        "success",
-      );
-      const [original] = await connections(slug);
-      expect((await authorize(actor, slug, "1001")).body.status).toBe(
-        "success",
-      );
-      const saved = await connections(slug);
-      expect(saved).toHaveLength(1);
-      expect(saved[0]?.id).toBe(original?.id);
-    });
+describe("notion authorization identity", () => {
+  it("connector-grant-identity-001 keeps two Notion workspace grants of the same user", async () => {
+    mockNotion(["bot-workspace-a", "bot-workspace-b"]);
 
-    it("arbitrates overlapping authorizations of the same workspace grant", async () => {
-      const actor = createBddApi(context).user();
-      provider(slug, "1001");
-      const starts = await Promise.all([
-        api.startOauth(actor, slug, "oauth"),
-        api.startOauth(actor, slug, "oauth"),
-      ]);
-      const results = await Promise.all(
-        starts.map(async (started) => {
-          const state = new URL(started.authorizationUrl).searchParams.get(
-            "state",
-          );
-          if (!state) {
-            throw new Error("Missing overlapping authorization state");
-          }
-          return await api.completeOauthCallbackResult(slug, {
-            code: "overlapping-authorization",
-            state,
-          });
-        }),
-      );
-      expect(
-        results.map((result) => {
-          return result.body.status;
-        }),
-      ).toStrictEqual(["success", "success"]);
-      await expect(connections(slug)).resolves.toHaveLength(1);
-    });
+    await expect(addsTwoGrantsForOneUser("notion")).resolves.toBeUndefined();
+  });
 
-    it("preserves different authorizations owned by the same provider user", async () => {
-      const actor = createBddApi(context).user();
-      expect((await authorize(actor, slug, "1001")).body.status).toBe(
-        "success",
-      );
-      expect((await authorize(actor, slug, "1002")).body.status).toBe(
-        "success",
-      );
-      const saved = await connections(slug);
-      expect(saved).toHaveLength(2);
-      expect(
-        new Set(
-          saved.map((account) => {
-            return account.externalId;
-          }),
-        ).size,
-      ).toBe(1);
-    });
+  it("connector-grant-identity-002 rejects a Notion reconnect to another workspace grant", async () => {
+    mockNotion(["bot-workspace-a", "bot-workspace-b"]);
 
-    it("rejects reconnecting a known authorization to a different workspace grant", async () => {
-      const actor = createBddApi(context).user();
-      await authorize(actor, slug, "1001");
-      const [original] = await connections(slug);
-      if (!original) {
-        throw new Error("Missing original provider connection");
-      }
-      const replaced = await authorize(actor, slug, "1002", {
-        intent: "reconnect",
-        connectionId: original.id,
-      });
-      expect(replaced.body.status).toBe("error");
-      expect(
-        (await connections(slug)).map((account) => {
-          return account.id;
-        }),
-      ).toStrictEqual([original.id]);
-    });
+    await expect(
+      rejectsReconnectToAnotherGrant("notion"),
+    ).resolves.toBeUndefined();
+  });
+});
 
-    it("keeps grants independent when their authorization identity is unavailable", async () => {
-      const actor = createBddApi(context).user();
-      expect((await authorize(actor, slug)).body.status).toBe("success");
-      expect((await authorize(actor, slug)).body.status).toBe("success");
-      await expect(connections(slug)).resolves.toHaveLength(2);
-    });
-  },
-);
+describe("hubspot authorization identity", () => {
+  it("connector-grant-identity-007 keeps two HubSpot account grants of the same user", async () => {
+    mockHubSpot([1001, 1002]);
+
+    await expect(addsTwoGrantsForOneUser("hubspot")).resolves.toBeUndefined();
+  });
+});

@@ -1,176 +1,190 @@
 import { randomUUID } from "node:crypto";
-
 import {
   billingStatusContract,
   billingUsagePackCreditsContract,
 } from "@okouai/api-contracts/contracts/billing";
+import { describe, expect, it } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
+import { flushWaitUntilForTest } from "../../context/wait-until";
+import { mockNow, now } from "../../../lib/time";
 import { billingStatusRoutes } from "../billing-status";
 import { billingUsagePackCreditsRoutes } from "../billing-usage-pack-credits";
-import { mockNow } from "../../../lib/time";
-import { deliverOrganizationCreated } from "./helpers/api-bdd-webhooks";
-import { createBddApi } from "./helpers/api-bdd";
-import { createRunsApi } from "./helpers/api-bdd-runs";
+import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { createRouteMocks } from "./helpers/route-test";
+import { postSubscriptionInvoicePaid } from "./helpers/stripe-billing-webhook";
 
 const context = testContext();
-const mocks = createRouteMocks(context);
 const headers = Object.freeze({ authorization: "Bearer clerk-session" });
+const app = setupApp({
+  context,
+  routes: [...billingStatusRoutes, ...billingUsagePackCreditsRoutes],
+});
 
-function clients() {
-  const app = setupApp({
-    context,
-    routes: [...billingStatusRoutes, ...billingUsagePackCreditsRoutes],
-  });
+interface Workspace {
+  readonly orgId: string;
+  readonly creatorId: string;
+  readonly createdAt: number;
+}
+
+function workspace(): Workspace {
   return {
-    billing: app(billingStatusContract),
-    usagePack: app(billingUsagePackCreditsContract),
+    orgId: `org_${randomUUID()}`,
+    creatorId: `user_${randomUUID()}`,
+    createdAt: now(),
   };
 }
 
-async function expectSingleOnboardingGrant(
-  api: ReturnType<typeof clients>,
-): Promise<void> {
-  const billing = await accept(api.billing.get({ headers }), [200]);
-  expect(billing.body.credits).toBe(0);
-  expect(billing.body.creditGrants).toStrictEqual([]);
-  const usagePack = await accept(api.usagePack.get({ headers }), [200]);
-  expect(usagePack.body).toMatchObject({
-    totalCredits: 1000,
-    purchasedCredits: 0,
-    bonusCredits: 1000,
-    hasUsagePack: false,
+/** Clerk delivers its signed `organization.created` webhook for the workspace. */
+async function deliverOrganizationCreated(ws: Workspace): Promise<void> {
+  const webhooks = createWebhookCallbackApi(context);
+  webhooks.configureClerkWebhookSecret();
+  webhooks.verifyNextClerkWebhook({
+    type: "organization.created",
+    data: { id: ws.orgId, created_by: ws.creatorId, created_at: ws.createdAt },
   });
-  expect(usagePack.body.creditGrants).toStrictEqual([
-    expect.objectContaining({
-      grantType: "bonus",
-      amount: 1000,
-      remaining: 1000,
-    }),
-  ]);
+  await webhooks.requestClerkWebhook("{}", {}, [200]);
+  await flushWaitUntilForTest();
+}
+
+function signIn(
+  userId: string,
+  orgId: string,
+  role: "org:admin" | "org:member" = "org:admin",
+): void {
+  createRouteMocks(context).clerk.session(userId, orgId, role);
+}
+
+async function readUsagePackCredits() {
+  const response = await accept(
+    app(billingUsagePackCreditsContract).get({ headers }),
+    [200],
+  );
+  return response.body;
+}
+
+async function readBillingStatus() {
+  const response = await accept(
+    app(billingStatusContract).get({ headers }),
+    [200],
+  );
+  return response.body;
 }
 
 describe("workspace creation credit grants", () => {
-  it("keeps the onboarding bonus personal to the workspace creator", async () => {
-    const creator = createBddApi(context).user();
-    if (!creator.orgId) {
-      throw new Error("Expected a workspace creator");
-    }
-    mocks.clerk.session(creator.userId, creator.orgId, "org:admin");
-    const api = clients();
-    await deliverOrganizationCreated(context, creator);
-    await expectSingleOnboardingGrant(api);
-    const creatorCredits = await accept(api.usagePack.get({ headers }), [200]);
-    expect(creatorCredits.body.memberCredits).toStrictEqual([
-      expect.objectContaining({
-        memberId: creator.userId,
-        totalCredits: 1000,
-        bonusCredits: 1000,
-      }),
-    ]);
+  it("onboarding-bootstrap-001 keeps the onboarding bonus personal to the workspace creator", async () => {
+    const ws = workspace();
+    signIn(ws.creatorId, ws.orgId);
+    await deliverOrganizationCreated(ws);
 
-    mocks.clerk.session(`user_${randomUUID()}`, creator.orgId, "org:member");
-    const memberCredits = await accept(api.usagePack.get({ headers }), [200]);
-    expect(memberCredits.body).toMatchObject({
+    const status = await readBillingStatus();
+    expect(status.credits).toBe(0);
+    expect(status.creditGrants).toStrictEqual([]);
+
+    const first = await readUsagePackCredits();
+    expect(first).toMatchObject({
+      totalCredits: 1000,
+      purchasedCredits: 0,
+      bonusCredits: 1000,
+      hasUsagePack: false,
+    });
+    expect(first.creditGrants).toHaveLength(1);
+    expect(first.creditGrants[0]).toMatchObject({
+      grantType: "bonus",
+      amount: 1000,
+      remaining: 1000,
+    });
+    expect(first.memberCredits).toHaveLength(1);
+    expect(first.memberCredits?.[0]).toMatchObject({
+      memberId: ws.creatorId,
+      totalCredits: 1000,
+      bonusCredits: 1000,
+    });
+
+    signIn(`user_${randomUUID()}`, ws.orgId, "org:member");
+    const other = await readUsagePackCredits();
+    expect(other).toMatchObject({
       totalCredits: 0,
       purchasedCredits: 0,
       bonusCredits: 0,
       creditGrants: [],
     });
-    expect(memberCredits.body.memberCredits).toBeUndefined();
-    mocks.clerk.session(creator.userId, creator.orgId, "org:admin");
-    const unchanged = await accept(api.usagePack.get({ headers }), [200]);
-    expect(unchanged.body).toStrictEqual(creatorCredits.body);
+    expect(other.memberCredits ?? []).toStrictEqual([]);
+
+    signIn(ws.creatorId, ws.orgId);
+    await expect(readUsagePackCredits()).resolves.toStrictEqual(first);
   });
 
-  it("expires the personal onboarding grant after 30 days without restarting on replay", async () => {
-    const grantedAt = new Date("2027-01-01T12:34:56.789Z");
-    const expiresAt = new Date("2027-01-31T12:34:56.789Z");
-    mockNow(grantedAt);
-    const creator = createBddApi(context).user();
-    mocks.clerk.session(creator.userId, creator.orgId, "org:admin");
-    const api = clients();
-    await deliverOrganizationCreated(context, creator);
-    await expectSingleOnboardingGrant(api);
-    const granted = await accept(api.usagePack.get({ headers }), [200]);
-    expect(granted.body.creditGrants).toStrictEqual([
-      expect.objectContaining({
-        grantType: "bonus",
-        amount: 1000,
-        remaining: 1000,
-        expiresAt: expiresAt.toISOString(),
-      }),
-    ]);
+  it("onboarding-bootstrap-002 expires the personal onboarding grant after 30 days without restarting on replay", async () => {
+    mockNow(new Date("2027-01-01T12:34:56.789Z"));
+    const ws = workspace();
+    signIn(ws.creatorId, ws.orgId);
+    await deliverOrganizationCreated(ws);
 
-    mockNow(expiresAt.getTime() - 1);
-    await deliverOrganizationCreated(context, creator);
-    const beforeExpiry = await accept(api.usagePack.get({ headers }), [200]);
-    expect(beforeExpiry.body).toStrictEqual(granted.body);
-    mockNow(expiresAt);
-    await deliverOrganizationCreated(context, creator);
-    const expired = await accept(api.usagePack.get({ headers }), [200]);
-    expect(expired.body).toMatchObject({
+    const initial = await readUsagePackCredits();
+    expect(initial.creditGrants).toHaveLength(1);
+    expect(initial.creditGrants[0]).toMatchObject({
+      grantType: "bonus",
+      amount: 1000,
+      remaining: 1000,
+      expiresAt: "2027-01-31T12:34:56.789Z",
+    });
+
+    mockNow(new Date("2027-01-31T12:34:56.788Z"));
+    await deliverOrganizationCreated(ws);
+    await expect(readUsagePackCredits()).resolves.toStrictEqual(initial);
+
+    mockNow(new Date("2027-01-31T12:34:56.789Z"));
+    await deliverOrganizationCreated(ws);
+    const expired = await readUsagePackCredits();
+    expect(expired).toMatchObject({
       totalCredits: 0,
       bonusCredits: 0,
       creditGrants: [],
     });
-    const billing = await accept(api.billing.get({ headers }), [200]);
-    expect(billing.body.credits).toBe(0);
-    expect(billing.body.creditGrants).toStrictEqual([]);
+
+    const status = await readBillingStatus();
+    expect(status.credits).toBe(0);
+    expect(status.creditGrants).toStrictEqual([]);
   });
 
-  it("issues one personal bonus across repeated organization creation events", async () => {
-    const creator = createBddApi(context).user();
-    if (!creator.orgId) {
-      throw new Error("Expected a workspace creator");
-    }
-    mocks.clerk.session(creator.userId, creator.orgId, "org:admin");
-    await deliverOrganizationCreated(context, creator);
-    const api = clients();
-    await expectSingleOnboardingGrant(api);
-    const initial = await accept(api.usagePack.get({ headers }), [200]);
+  it("onboarding-bootstrap-003 issues one personal bonus across repeated organization creation events", async () => {
+    const ws = workspace();
+    signIn(ws.creatorId, ws.orgId);
+    await deliverOrganizationCreated(ws);
 
-    await deliverOrganizationCreated(context, creator);
-    await expectSingleOnboardingGrant(api);
-    const replayed = await accept(api.usagePack.get({ headers }), [200]);
-    expect(replayed.body).toStrictEqual(initial.body);
+    const initial = await readUsagePackCredits();
+    expect(initial.creditGrants).toHaveLength(1);
+    expect(initial.creditGrants[0]).toMatchObject({
+      grantType: "bonus",
+      amount: 1000,
+    });
+    expect((await readBillingStatus()).credits).toBe(0);
+
+    await deliverOrganizationCreated(ws);
+
+    await expect(readUsagePackCredits()).resolves.toStrictEqual(initial);
+    expect((await readBillingStatus()).credits).toBe(0);
   });
 
-  it.each(["pro", "team"] as const)(
-    "preserves a %s purchase racing bootstrap",
-    async (tier) => {
-      const actor = createBddApi(context).user();
-      if (!actor.orgId) {
-        throw new Error("Expected a paid workspace");
-      }
-      mocks.clerk.session(actor.userId, actor.orgId, "org:admin");
-      const api = clients();
-      await Promise.all([
-        deliverOrganizationCreated(context, actor),
-        createRunsApi(context).grantProEntitlement(actor, { tier }),
-      ]);
-      const billing = await accept(api.billing.get({ headers }), [200]);
-      expect(billing.body.tier).toBe(tier);
-    },
-  );
-  it.each(["pro", "team"] as const)(
-    "does not grant limited-free credits to an already %s workspace",
-    async (tier) => {
-      const actor = createBddApi(context).user();
-      if (!actor.orgId) {
-        throw new Error("Expected a paid workspace");
-      }
-      await createRunsApi(context).grantProEntitlement(actor, { tier });
-      mocks.clerk.session(actor.userId, actor.orgId, "org:admin");
-      const api = clients();
-      await deliverOrganizationCreated(context, actor);
-      const billing = await accept(api.billing.get({ headers }), [200]);
-      expect(billing.body.tier).toBe(tier);
-      const credits = await accept(api.usagePack.get({ headers }), [200]);
-      expect(credits.body.totalCredits).toBe(0);
-      expect(credits.body.creditGrants).toStrictEqual([]);
-    },
-  );
+  it("onboarding-bootstrap-006 does not grant limited-free credits to an already pro workspace", async () => {
+    const ws = workspace();
+    await postSubscriptionInvoicePaid(context.signal, {
+      orgId: ws.orgId,
+      userId: ws.creatorId,
+      tier: "pro",
+      customerId: `cus_${randomUUID().slice(0, 8)}`,
+      subscriptionId: `sub_${randomUUID().slice(0, 8)}`,
+      currentPeriodEnd: new Date(now() + 30 * 86_400_000),
+    });
+    signIn(ws.creatorId, ws.orgId);
+
+    await deliverOrganizationCreated(ws);
+
+    expect((await readBillingStatus()).tier).toBe("pro");
+    const credits = await readUsagePackCredits();
+    expect(credits.totalCredits).toBe(0);
+    expect(credits.creditGrants).toStrictEqual([]);
+  });
 });

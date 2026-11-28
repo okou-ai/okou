@@ -1,10 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { CLIENT_REQUEST_ID_HEADER } from "@okouai/api-contracts/contracts/client-headers";
-import {
-  integrationsTelegramContract,
-  OFFICIAL_TELEGRAM_BOT_ID,
-} from "@okouai/api-contracts/contracts/integrations-telegram";
+import { integrationsTelegramContract } from "@okouai/api-contracts/contracts/integrations-telegram";
 import { http, HttpResponse } from "msw";
+import { describe, expect, it } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
@@ -14,143 +12,129 @@ import { integrationsTelegramRoutes } from "../integrations-telegram";
 import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
-const mocks = createRouteMocks(context);
-const BOT_TOKEN = "9876543210:test-bot-secret";
 const APP_ORIGIN = "https://app.example.com";
-const REQUEST_ID = "51326918-3b76-4fea-a42f-d8f58e426d9b";
-const OAUTH_URL = "https://oauth.telegram.org/auth";
+const BOT_ID = "9876543210";
 
-beforeEach(() => {
-  mocks.clerk.session(`user_${randomUUID()}`, `org_${randomUUID()}`);
+type ProbeAnswer =
+  { readonly status: number; readonly contentLength: number } | "network-error";
+
+/** The official bot is configured and Telegram's OAuth page answers each domain probe in turn. */
+function officialBot(answers: readonly ProbeAnswer[]) {
   mockEnv("APP_URL", APP_ORIGIN);
-  mockEnv("TELEGRAM_OFFICIAL_BOT_TOKEN", BOT_TOKEN);
   mockEnv("TELEGRAM_OFFICIAL_BOT_USERNAME", "test_okou_bot");
-  mockEnv("TELEGRAM_OFFICIAL_WEBHOOK_SECRET", "test-webhook-secret");
-  mockEnv("AXIOM_TOKEN_TELEMETRY", "test-telemetry-token");
-});
-
-async function linkStatus(source?: "onboarding" | "works") {
-  const client = setupApp({ context, routes: integrationsTelegramRoutes })(
-    integrationsTelegramContract,
+  mockEnv("TELEGRAM_OFFICIAL_BOT_TOKEN", `${BOT_ID}:${randomUUID()}`);
+  const probes: URL[] = [];
+  server.use(
+    http.head("https://oauth.telegram.org/auth", ({ request }) => {
+      const answer = answers[probes.length] ?? answers.at(-1);
+      probes.push(new URL(request.url));
+      if (!answer || answer === "network-error") {
+        return HttpResponse.error();
+      }
+      return new HttpResponse(null, {
+        status: answer.status,
+        headers: { "content-length": String(answer.contentLength) },
+      });
+    }),
   );
-  const headers = {
-    authorization: "Bearer clerk-session",
-    [CLIENT_REQUEST_ID_HEADER]: REQUEST_ID,
-  };
-  return await accept(
-    client.getLinkStatus({
-      headers,
-      query: {
-        botId: OFFICIAL_TELEGRAM_BOT_ID,
-        origin: APP_ORIGIN,
-        source,
-      },
+  return probes;
+}
+
+/** A signed-in member without a Telegram link checks readiness. */
+async function readLinkStatus(source: "onboarding" | "works") {
+  createRouteMocks(context).clerk.session(
+    `user_${randomUUID()}`,
+    `org_${randomUUID()}`,
+    "org:member",
+  );
+  const response = await accept(
+    setupApp({ context, routes: integrationsTelegramRoutes })(
+      integrationsTelegramContract,
+    ).getLinkStatus({
+      headers: { authorization: "Bearer clerk-session" },
+      query: { botId: "official", origin: APP_ORIGIN, source },
+      extraHeaders: { [CLIENT_REQUEST_ID_HEADER]: randomUUID() },
     }),
     [200],
   );
+  return response.body;
 }
 
+function probeQuery(probes: readonly URL[]) {
+  return probes.map((probe) => {
+    return {
+      origin: probe.searchParams.get("origin"),
+      botId: probe.searchParams.get("bot_id"),
+    };
+  });
+}
+
+const installation = Object.freeze({
+  id: "official",
+  botUsername: "test_okou_bot",
+  loginBotId: BOT_ID,
+});
+
 describe("Telegram connection readiness diagnostics", () => {
-  it.each([
-    { length: "5000", status: 200, configured: true },
-    { length: "38", status: 200, configured: false },
-    { length: "1000", status: 200, configured: false },
-    { length: null, status: 200, configured: false },
-    { length: "38", status: 503, configured: false },
-    { length: "5000", status: 503, configured: false },
-  ])(
-    "reports a $status probe with length $length without guessing domain configuration",
-    async ({ length, status, configured }) => {
-      server.use(
-        http.head(OAUTH_URL, ({ request }) => {
-          const url = new URL(request.url);
-          expect(url.searchParams.get("origin")).toBe(APP_ORIGIN);
-          expect(url.searchParams.get("bot_id")).toBe("9876543210");
-          return new HttpResponse(null, {
-            status,
-            headers: length === null ? {} : { "content-length": length },
-          });
-        }),
-      );
+  it("integrations-telegram-readiness-001 reports a verified domain for a 200 probe with length 5000", async () => {
+    const probes = officialBot([{ status: 200, contentLength: 5000 }]);
 
-      const response = await linkStatus("onboarding");
+    const status = await readLinkStatus("onboarding");
 
-      expect(response.body).toStrictEqual({
-        linked: false,
-        ...(configured
-          ? {}
-          : {
-              readinessError:
-                status === 200 ? "domain_not_verified" : "domain_check_failed",
-            }),
-        installation: {
-          id: OFFICIAL_TELEGRAM_BOT_ID,
-          botUsername: "test_okou_bot",
-          loginBotId: "9876543210",
-          domainConfigured: configured,
-        },
-      });
-    },
-  );
+    expect(probeQuery(probes)).toStrictEqual([
+      { origin: APP_ORIGIN, botId: BOT_ID },
+    ]);
+    expect(status).toStrictEqual({
+      linked: false,
+      installation: { ...installation, domainConfigured: true },
+    });
+  });
 
-  it.each([
-    {
-      name: "missing bot username",
-      variable: "TELEGRAM_OFFICIAL_BOT_USERNAME",
-      value: undefined,
-    },
-    {
-      name: "missing bot token",
-      variable: "TELEGRAM_OFFICIAL_BOT_TOKEN",
-      value: undefined,
-    },
-    {
-      name: "invalid bot id",
-      variable: "TELEGRAM_OFFICIAL_BOT_TOKEN",
-      value: "invalid:test-bot-secret",
-    },
-  ] as const)(
-    "explains $name separately from a domain check failure",
-    async ({ variable, value }) => {
-      mockEnv(variable, value);
+  it("integrations-telegram-readiness-002 reports an unverified domain for a 200 probe with length 38", async () => {
+    const probes = officialBot([{ status: 200, contentLength: 38 }]);
 
-      const response = await linkStatus();
+    const status = await readLinkStatus("onboarding");
 
-      expect(response.body).toMatchObject({
-        linked: false,
-        readinessError: "bot_not_configured",
-      });
-    },
-  );
+    expect(probeQuery(probes)).toStrictEqual([
+      { origin: APP_ORIGIN, botId: BOT_ID },
+    ]);
+    expect(status).toStrictEqual({
+      linked: false,
+      readinessError: "domain_not_verified",
+      installation: { ...installation, domainConfigured: false },
+    });
+  });
 
-  it("reports transport failure and allows a later Works attempt to verify the domain", async () => {
-    server.use(
-      http.head(OAUTH_URL, () => {
-        return HttpResponse.error();
-      }),
-    );
+  it("integrations-telegram-readiness-005 reports a failed domain check for a 503 probe with length 38", async () => {
+    const probes = officialBot([{ status: 503, contentLength: 38 }]);
 
-    const failed = await linkStatus("onboarding");
+    const status = await readLinkStatus("onboarding");
 
-    expect(failed.body).toMatchObject({
+    expect(probeQuery(probes)).toStrictEqual([
+      { origin: APP_ORIGIN, botId: BOT_ID },
+    ]);
+    expect(status).toStrictEqual({
+      linked: false,
+      readinessError: "domain_check_failed",
+      installation: { ...installation, domainConfigured: false },
+    });
+  });
+
+  it("integrations-telegram-readiness-010 reports a transport failure and lets a later Works attempt verify the domain", async () => {
+    officialBot(["network-error", { status: 200, contentLength: 5000 }]);
+
+    const failed = await readLinkStatus("onboarding");
+    const retried = await readLinkStatus("works");
+
+    expect(failed).toMatchObject({
       linked: false,
       readinessError: "domain_check_failed",
       installation: { domainConfigured: false },
     });
-    server.use(
-      http.head(OAUTH_URL, () => {
-        return new HttpResponse(null, {
-          headers: { "content-length": "5000" },
-        });
-      }),
-    );
-
-    const retried = await linkStatus("works");
-
-    expect(retried.body).toMatchObject({
+    expect(retried).toMatchObject({
       linked: false,
       installation: { domainConfigured: true },
     });
-    expect(retried.body).not.toHaveProperty("readinessError");
+    expect(retried).not.toHaveProperty("readinessError");
   });
 });

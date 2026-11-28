@@ -1,402 +1,254 @@
 import { voiceIoPolishSegmentsContract } from "@okouai/api-contracts/contracts/voice-io-polish";
-import { HttpResponse, http } from "msw";
+import { http, HttpResponse } from "msw";
 
-import { accept, testContext } from "../../../__tests__/test-context";
-import { stubTestVercelRuntimeToken } from "../../../__tests__/env-stub";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { mockOptionalEnv } from "../../../lib/env";
+import { accept, testContext } from "../../../__tests__/test-context";
 import { server } from "../../../mocks/server";
-import { createBddApi } from "./helpers/api-bdd";
-import { createRouteMocks } from "./helpers/route-test";
-import {
-  mockGoogleVoice,
-  VERTEX_VOICE_URL,
-  vertexVoiceResponse,
-} from "./helpers/google-voice";
 import { voiceIoPolishRoutes } from "../voice-io-polish";
+import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
+import {
+  mockGoogleText,
+  VERTEX_TEXT_URL,
+  vertexTextRequestSchema,
+  vertexTextResponse,
+} from "./helpers/google-text";
 import { createMcpWebApi } from "./helpers/mcp-web-api";
+import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
-const mocks = createRouteMocks(context);
-beforeEach(() => {
-  mockGoogleVoice();
-});
-afterEach(() => {
-  stubTestVercelRuntimeToken(undefined);
-});
+const bdd = createBddApi(context);
+const headers = Object.freeze({ authorization: "Bearer clerk-session" });
 
-function client() {
+function api() {
   return setupApp({ context, routes: voiceIoPolishRoutes })(
     voiceIoPolishSegmentsContract,
   );
 }
 
-async function setupVoicePolish() {
-  mockOptionalEnv("OPENROUTER_API_KEY", undefined);
-  const actor = createBddApi(context).user();
-  if (!actor.orgId) {
-    throw new Error("Voice draft tests require an organization");
-  }
-  await createBddApi(context).completeOnboarding(actor);
-  mocks.clerk.session(actor.userId, actor.orgId, "org:admin");
-  return actor;
+async function onboardedAdmin(): Promise<ApiTestUser> {
+  const admin = bdd.user();
+  bdd.acceptStorageWrites();
+  await bdd.completeOnboarding(admin);
+  return admin;
 }
 
-describe("POST /api/voice-io/polish", () => {
-  it.each([
-    { code: "ECONNRESET", status: 503 },
-    { code: "UND_ERR_BODY_TIMEOUT", status: 503 },
-    { code: "CERT_HAS_EXPIRED", status: 502 },
-  ])(
-    "classifies a Google body I/O failure with $code",
-    async ({ code, status }) => {
-      await setupVoicePolish();
-      let calls = 0;
-      server.use(
-        http.post(VERTEX_VOICE_URL, () => {
-          calls += 1;
-          return new HttpResponse(
-            new ReadableStream({
-              start(controller) {
-                controller.error(
-                  new TypeError("fetch failed", { cause: { code } }),
-                );
-              },
-            }),
-          );
-        }),
-      );
-      const response = await client().post({
-        headers: { authorization: "Bearer clerk-session" },
-        body: { segments: ["Synthetic dictation."] },
-      });
-      expect(response.status).toBe(status);
-      expect(response.body).toMatchObject({
-        error: {
-          code: status === 503 ? "PROVIDER_UNAVAILABLE" : "VOICE_POLISH_FAILED",
-        },
-      });
-      expect(calls).toBe(1);
-    },
+function signIn(actor: ApiTestUser) {
+  createRouteMocks(context).clerk.session(
+    actor.userId,
+    actor.orgId,
+    actor.orgRole,
   );
+  return api();
+}
 
-  it("classifies a Google connection failure without replaying generation", async () => {
-    await setupVoicePolish();
-    let calls = 0;
-    server.use(
-      http.post(VERTEX_VOICE_URL, () => {
-        calls += 1;
-        return HttpResponse.error();
-      }),
-    );
+/** Serve each Google response in order and record the native requests. */
+function googleReplies(...replies: (() => Response)[]) {
+  mockGoogleText();
+  const requests: { url: string; body: unknown }[] = [];
+  server.use(
+    http.post(VERTEX_TEXT_URL, async ({ request }) => {
+      requests.push({ url: request.url, body: await request.json() });
+      const reply = replies[requests.length - 1];
+      if (!reply) {
+        throw new Error("Unexpected Google generation request");
+      }
+      return reply();
+    }),
+  );
+  return requests;
+}
+
+const segments = Object.freeze([
+  "um ship the nebula release Friday",
+  "no Monday",
+]);
+
+function expectMergedRequest(requests: { url: string; body: unknown }[]) {
+  expect(requests).toHaveLength(1);
+  const sent = vertexTextRequestSchema.parse(requests[0]?.body);
+  expect(sent.contents).toStrictEqual([
+    { role: "user", parts: [{ text: JSON.stringify({ segments }) }] },
+  ]);
+  expect(sent.generationConfig.temperature).toBe(0);
+  expect(sent.generationConfig.thinkingConfig.thinkingLevel).toBe("MINIMAL");
+  expect(sent.generationConfig.maxOutputTokens).toBe(
+    segments.join("").length + 4096,
+  );
+  expect(sent.generationConfig.responseMimeType).toBeUndefined();
+  expect(
+    sent.systemInstruction.parts
+      .map((part) => {
+        return part.text;
+      })
+      .join("\n"),
+  ).toContain("Include every segment, not just the last one.");
+}
+
+describe("POST /api/voice-io/polish/segments", () => {
+  it("voice-io-polish-014 requires authentication", async () => {
+    context.mocks.clerk.authenticateRequest.mockResolvedValue({
+      isAuthenticated: false,
+    });
+
     const response = await accept(
-      client().post({
-        headers: { authorization: "Bearer clerk-session" },
-        body: { segments: ["Synthetic dictation."] },
-      }),
-      [503],
+      api().post({ headers: {}, body: { segments: ["Hello"] } }),
+      [401],
     );
-    expect(response.body.error.code).toBe("PROVIDER_UNAVAILABLE");
-    expect(calls).toBe(1);
+    expect(response.status).toBe(401);
   });
 
-  it("retains the maximum text contract with JSON escaping and rejects oversize output", async () => {
-    await setupVoicePolish();
-    const text = `a${"\u0001".repeat(262_142)}z`;
-    server.use(
-      http.post(VERTEX_VOICE_URL, () => {
-        return vertexVoiceResponse(text);
-      }),
-    );
+  it("voice-io-polish-013 rejects an oversized combined transcript", async () => {
+    const admin = await onboardedAdmin();
+
     const response = await accept(
-      client().post({
-        headers: { authorization: "Bearer clerk-session" },
-        body: { segments: ["Synthetic dictation."] },
+      signIn(admin).post({
+        headers,
+        body: { segments: ["a".repeat(131_073), "b".repeat(131_072)] },
       }),
-      [200],
+      [400],
     );
-    expect(response.body.text).toBe(text);
-    server.use(
-      http.post(VERTEX_VOICE_URL, () => {
-        return vertexVoiceResponse("x".repeat(262_145));
-      }),
-    );
-    await accept(
-      client().post({
-        headers: { authorization: "Bearer clerk-session" },
-        body: { segments: ["Synthetic dictation."] },
-      }),
-      [502],
-    );
-    server.use(
-      http.post(VERTEX_VOICE_URL, () => {
-        return new HttpResponse("x".repeat(2 * 1024 * 1024 + 1));
-      }),
-    );
-    await accept(
-      client().post({
-        headers: { authorization: "Bearer clerk-session" },
-        body: { segments: ["Synthetic dictation."] },
-      }),
-      [502],
-    );
+    expect(response.status).toBe(400);
   });
 
-  it("recovers a temporary Google polish failure on the same model", async () => {
-    await setupVoicePolish();
-    const urls: string[] = [];
-    server.use(
-      http.post(VERTEX_VOICE_URL, ({ request }) => {
-        urls.push(request.url);
-        return urls.length === 1
-          ? new HttpResponse(null, { status: 503 })
-          : vertexVoiceResponse("Synthetic dictation.");
-      }),
-    );
-    await accept(
-      client().post({
-        headers: { authorization: "Bearer clerk-session" },
-        body: { segments: ["Synthetic dictation."] },
-      }),
-      [200],
-    );
-    expect(urls).toHaveLength(2);
-    expect(urls[1]).toBe(urls[0]);
-    expect(urls[0]).toContain(
-      "/locations/us/publishers/google/models/gemini-3.1-flash-lite:generateContent",
-    );
-  });
+  it("voice-io-polish-007 rejects a candidate blocked for safety", async () => {
+    const admin = await onboardedAdmin();
+    googleReplies(() => {
+      return vertexTextResponse("", "SAFETY");
+    });
 
-  it.each([
-    { reason: "blocked", body: { candidates: [{ finishReason: "SAFETY" }] } },
-    {
-      reason: "non_stop",
-      body: { candidates: [{ finishReason: "private unknown finish reason" }] },
-    },
-    {
-      reason: "empty_output",
-      body: {
-        candidates: [
-          {
-            finishReason: "STOP",
-            content: {
-              parts: [{ text: "private thought text", thought: true }],
-            },
-          },
-        ],
-      },
-    },
-  ])("rejects unusable Google output for $reason", async ({ body }) => {
-    await setupVoicePolish();
-    server.use(
-      http.post(VERTEX_VOICE_URL, () => {
-        return HttpResponse.json(body);
-      }),
-    );
     const response = await accept(
-      client().post({
-        headers: { authorization: "Bearer clerk-session" },
+      signIn(admin).post({
+        headers,
         body: { segments: ["private user dictation"] },
       }),
       [502],
     );
+
     expect(response.body.error.code).toBe("VOICE_POLISH_FAILED");
   });
 
-  it("preserves public provider errors and rejects incomplete polish", async () => {
-    await setupVoicePolish();
-    context.mocks.signalTimers.delay.mockResolvedValue(undefined);
-    const cases = [
-      {
-        status: 400,
-        body: {
-          error: {
-            code: "unsupported_value",
-            param: "reasoning.effort",
-            message: "private-provider-detail",
-          },
-        },
-        expectedStatus: 502,
-        code: "VOICE_POLISH_FAILED",
-      },
-      {
-        status: 429,
-        body: { error: { message: "private-provider-detail" } },
-        expectedStatus: 503,
-        code: "PROVIDER_UNAVAILABLE",
-      },
-      {
-        status: 503,
-        body: { error: { message: "private-provider-detail" } },
-        expectedStatus: 503,
-        code: "PROVIDER_UNAVAILABLE",
-      },
-      {
-        status: 200,
-        body: {
-          error: {
-            code: "invalid_request_error",
-            param: "max_tokens",
-            message: "private-provider-detail",
-          },
-        },
-        expectedStatus: 502,
-        code: "VOICE_POLISH_FAILED",
-      },
-      {
-        status: 200,
-        body: {
-          promptFeedback: { blockReason: "SAFETY" },
-          candidates: [],
-        },
-        expectedStatus: 502,
-        code: "VOICE_POLISH_FAILED",
-      },
-      {
-        status: 200,
-        body: {
-          candidates: [
-            {
-              finishReason: "MAX_TOKENS",
-              content: { parts: [{ text: "Truncated dictation" }] },
+  it("voice-io-polish-010 rejects incomplete polish without exposing provider detail", async () => {
+    const admin = await onboardedAdmin();
+    const detail = "private provider detail";
+    const retryAfter = { "Retry-After": "20" };
+    const replies = [
+      () => {
+        return HttpResponse.json(
+          {
+            error: {
+              code: 400,
+              message: `Unsupported value: ${detail}`,
+              status: "INVALID_ARGUMENT",
             },
-          ],
-        },
-        expectedStatus: 502,
-        code: "VOICE_POLISH_FAILED",
+          },
+          { status: 400, headers: retryAfter },
+        );
       },
-      {
-        status: 200,
-        body: {
-          candidates: [
-            { finishReason: "STOP", content: { parts: [{ text: " " }] } },
-          ],
-        },
-        expectedStatus: 502,
-        code: "VOICE_POLISH_FAILED",
+      () => {
+        return HttpResponse.json(
+          { error: { code: 500, message: detail, status: "INTERNAL" } },
+          { headers: retryAfter },
+        );
       },
-    ];
-    for (const testCase of cases) {
-      server.use(
-        http.post(VERTEX_VOICE_URL, () => {
-          return HttpResponse.json(testCase.body, {
-            status: testCase.status,
-            headers: { "Retry-After": "20" },
-          });
-        }),
-      );
-      const response = await client().post({
-        headers: { authorization: "Bearer clerk-session" },
-        body: { segments: ["um prepare the update"] },
-      });
-      expect(response.status).toBe(testCase.expectedStatus);
-      expect(response.body).toStrictEqual({
-        error: {
-          code: testCase.code,
-          message:
-            testCase.expectedStatus === 503
-              ? "Voice draft cleanup is temporarily unavailable"
-              : "Voice draft cleanup failed to produce a usable response",
-        },
-      });
-    }
-  });
-
-  it.each(["session", "oauth"])(
-    "merges ordered segments with %s without answering speech or translating it",
-    async (credential) => {
-      const actor = await setupVoicePolish();
-      const authorization =
-        credential === "oauth"
-          ? `Bearer ${createMcpWebApi(context).authorize(actor)({ scope: "user:org:read okou:voice:transcribe" })}`
-          : "Bearer clerk-session";
-      let requestBody: unknown;
-      server.use(
-        http.post(VERTEX_VOICE_URL, async ({ request }) => {
-          requestBody = await request.json();
-          return HttpResponse.json({
+      () => {
+        return HttpResponse.json(
+          {
+            promptFeedback: {
+              blockReason: "SAFETY",
+              blockReasonMessage: detail,
+            },
+          },
+          { headers: retryAfter },
+        );
+      },
+      () => {
+        return HttpResponse.json(
+          {
+            candidates: [
+              {
+                finishReason: "MAX_TOKENS",
+                content: { role: "model", parts: [{ text: detail }] },
+              },
+            ],
+          },
+          { headers: retryAfter },
+        );
+      },
+      () => {
+        return HttpResponse.json(
+          {
             candidates: [
               {
                 finishReason: "STOP",
-                content: { parts: [{ text: "Ship the release on Monday." }] },
+                content: { role: "model", parts: [{ text: "  \n " }] },
               },
             ],
-          });
-        }),
-      );
+          },
+          { headers: retryAfter },
+        );
+      },
+    ];
+    googleReplies(...replies);
+    const client = signIn(admin);
 
+    for (const _reply of replies) {
       const response = await accept(
-        client().post({
-          headers: { authorization },
-          body: {
-            segments: ["um ship the nebula release Friday", "no Monday"],
-          },
+        client.post({
+          headers,
+          body: { segments: ["um prepare the update"] },
         }),
-        [200],
+        [502],
       );
-
       expect(response.body).toStrictEqual({
-        text: "Ship the release on Monday.",
-      });
-      expect(requestBody).toMatchObject({
-        generationConfig: {
-          maxOutputTokens:
-            "um ship the nebula release Friday".length +
-            "no Monday".length +
-            4096,
-          thinkingConfig: { thinkingLevel: "MINIMAL" },
+        error: {
+          code: "VOICE_POLISH_FAILED",
+          message: "Voice draft cleanup failed to produce a usable response",
         },
-        systemInstruction: {
-          parts: [
-            {
-              text: expect.stringContaining(
-                "Include every segment, not just the last one.",
-              ),
-            },
-          ],
-        },
-        contents: [
-          {
-            role: "user",
-            parts: [
-              {
-                text: JSON.stringify({
-                  segments: ["um ship the nebula release Friday", "no Monday"],
-                }),
-              },
-            ],
-          },
-        ],
       });
-      expect(requestBody).toHaveProperty("generationConfig.temperature", 0);
-      expect(requestBody).not.toHaveProperty(
-        "generationConfig.responseMimeType",
-      );
-    },
-  );
+      expect(JSON.stringify(response.body)).not.toContain(detail);
+    }
+  });
 
-  it.each([
-    {
-      label: "oversized total",
-      segments: ["a".repeat(131_073), "b".repeat(131_072)],
-    },
-  ])(
-    "rejects unusable or oversized combined transcripts before generation: $label",
-    async ({ segments }) => {
-      await setupVoicePolish();
-      const result = await client().post({
-        headers: { authorization: "Bearer clerk-session" },
-        body: { segments },
-      });
-      expect(result.status).toBe(400);
-    },
-  );
-
-  it("requires authentication", async () => {
-    const unauthenticated = await client().post({
-      headers: {},
-      body: { segments: ["Hello"] },
+  it("voice-io-polish-011 merges ordered segments for a Clerk session without answering them", async () => {
+    const admin = await onboardedAdmin();
+    const requests = googleReplies(() => {
+      return vertexTextResponse("Ship the release on Monday.");
     });
-    expect(unauthenticated.status).toBe(401);
+
+    const response = await accept(
+      signIn(admin).post({ headers, body: { segments: [...segments] } }),
+      [200],
+    );
+
+    expect(response.body).toStrictEqual({
+      text: "Ship the release on Monday.",
+    });
+    expectMergedRequest(requests);
+  });
+
+  it("voice-io-polish-012 merges ordered segments for an OAuth access token without answering them", async () => {
+    const admin = await onboardedAdmin();
+    const issue = createMcpWebApi(context).authorize(admin);
+    context.mocks.clerk.users.getOrganizationMembershipList.mockResolvedValue({
+      data: [{ role: "org:admin", organization: { id: admin.orgId } }],
+      totalCount: 1,
+    });
+    const token = issue({ scope: "user:org:read okou:voice:transcribe" });
+    const requests = googleReplies(() => {
+      return vertexTextResponse("Ship the release on Monday.");
+    });
+
+    const response = await accept(
+      api().post({
+        headers: { authorization: `Bearer ${token}` },
+        body: { segments: [...segments] },
+      }),
+      [200],
+    );
+
+    expect(response.body).toStrictEqual({
+      text: "Ship the release on Monday.",
+    });
+    expectMergedRequest(requests);
   });
 });

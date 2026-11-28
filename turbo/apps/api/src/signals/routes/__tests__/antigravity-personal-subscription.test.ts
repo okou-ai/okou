@@ -1,253 +1,319 @@
 import { randomUUID } from "node:crypto";
-import { antigravityPersonalSubscriptionContract as contract } from "@okouai/api-contracts/contracts/antigravity-personal-subscription";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+
+import { antigravityPersonalSubscriptionContract } from "@okouai/api-contracts/contracts/antigravity-personal-subscription";
 import { chatThreadsContract } from "@okouai/api-contracts/contracts/chat-threads";
-import { chatThreadCreateRoutes } from "../chat-threads-create";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { describe, expect, it } from "vitest";
+
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { mockNow } from "../../../lib/time";
 import { mockOptionalEnv } from "../../../lib/env";
 import { createUniqueStaffOrgIdFixture } from "../../../test-fixtures/staff-org";
 import { antigravityPersonalSubscriptionRoutes } from "../antigravity-personal-subscription";
+import { chatThreadCreateRoutes } from "../chat-threads-create";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
-import { mockClerkMembership } from "./helpers/api-bdd-clerk";
-import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
-const headers = Object.freeze({ authorization: "Bearer clerk-session" });
-const clerk = createRouteMocks(context).clerk;
-const key = FeatureSwitchKey.GeminiAntigravity;
-const client = () => {
-  return setupApp({ context, routes: antigravityPersonalSubscriptionRoutes })(
-    contract,
-  );
-};
-function makeOwner(orgId = createUniqueStaffOrgIdFixture()) {
-  return {
-    orgId,
-    userId: `user_${randomUUID()}`,
-    machineId: `mch_${randomUUID()}`,
-    loginHost: "tester@agy.internal.example",
-  };
+
+const memberHeaders = Object.freeze({ authorization: "Bearer clerk-session" });
+// Members are unique per case; the staff organization identity only selects
+// the production staff gate, so one hash-colliding org serves the file.
+const staffOrgId = createUniqueStaffOrgIdFixture();
+
+interface Member {
+  readonly userId: string;
+  readonly orgId: string;
 }
-function configure(
-  ...workers: (Omit<ReturnType<typeof makeOwner>, "loginHost"> &
-    ({ loginHost: string } | { loginOrigin: string }))[]
-) {
-  mockOptionalEnv("OKOU_MACHINE_SECRET_KEY", "msk_test_receiver");
+
+type Worker = Member & { readonly machineId: string } & (
+    { readonly loginHost: string } | { readonly loginOrigin: string }
+  );
+
+function newMember(orgId: string = staffOrgId): Member {
+  return { userId: `user_${randomUUID()}`, orgId };
+}
+
+function machineHeaders(machineId: string) {
+  return { authorization: `Bearer m2m:${machineId}` };
+}
+
+function isMachineRequest(options: unknown): boolean {
+  return (
+    typeof options === "object" &&
+    options !== null &&
+    "acceptsToken" in options &&
+    options.acceptsToken === "m2m_token"
+  );
+}
+
+/**
+ * Clerk answers member sessions for `member` and machine tokens for the
+ * machine named in the bearer token; Clerk lists each worker's member as an
+ * organization member.
+ */
+function clerkAs(member: Member): void {
+  context.mocks.clerk.authenticateRequest.mockImplementation(
+    (request: unknown, options: unknown) => {
+      if (!isMachineRequest(options)) {
+        return Promise.resolve({
+          isAuthenticated: true,
+          toAuth: () => {
+            return {
+              userId: member.userId,
+              orgId: member.orgId,
+              orgRole: "org:admin",
+            };
+          },
+        });
+      }
+      const header =
+        request instanceof Request
+          ? (request.headers.get("authorization") ?? "")
+          : "";
+      const machineId = header.startsWith("Bearer m2m:")
+        ? header.slice("Bearer m2m:".length)
+        : null;
+      return Promise.resolve(
+        machineId
+          ? {
+              isAuthenticated: true,
+              toAuth: () => {
+                return {
+                  tokenType: "m2m_token",
+                  machineId,
+                  id: `mt_${machineId}`,
+                };
+              },
+            }
+          : {
+              isAuthenticated: false,
+              toAuth: () => {
+                return null;
+              },
+            },
+      );
+    },
+  );
+  context.mocks.clerk.organizations.getOrganizationMembershipList.mockImplementation(
+    (params: unknown) => {
+      const query = params as { organizationId: string; userId: string[] };
+      return Promise.resolve({
+        data: query.userId.map((userId) => {
+          return {
+            organization: { id: query.organizationId },
+            publicUserData: { userId },
+          };
+        }),
+      });
+    },
+  );
+}
+
+async function optIn(member: Member): Promise<void> {
+  await updateFeatureSwitchesForUser(context, member, {
+    [FeatureSwitchKey.GeminiAntigravity]: true,
+  });
+}
+
+function assignWorkers(workers: readonly Worker[]): void {
+  mockOptionalEnv("OKOU_MACHINE_SECRET_KEY", "ak_machine_secret");
   mockOptionalEnv("ANTIGRAVITY_SUBSCRIPTION_WORKERS", JSON.stringify(workers));
 }
-function asMachine(owner: ReturnType<typeof makeOwner>) {
-  const { machineId } = owner;
-  mockClerkMembership(
-    context,
-    { ...owner, orgRole: "org:member", email: "member@example.test" },
-    "org:member",
+
+function workerFor(
+  member: Member,
+  name: string,
+): Worker & { readonly loginHost: string } {
+  return {
+    ...member,
+    machineId: `mch_${randomUUID()}`,
+    loginHost: `${name}@agy-${randomUUID().slice(0, 8)}.internal`,
+  };
+}
+
+function subscriptionClient() {
+  return setupApp({ context, routes: antigravityPersonalSubscriptionRoutes })(
+    antigravityPersonalSubscriptionContract,
   );
-  context.mocks.clerk.authenticateRequest.mockResolvedValue({
-    isAuthenticated: true,
-    toAuth: () => {
-      return { tokenType: "m2m_token", machineId, id: "m2m_valid" };
-    },
-  });
-}
-function confirm(bindingId: string) {
-  return client().confirm({
-    headers: { authorization: "Bearer mt_worker" },
-    params: { bindingId },
-    body: {},
-  });
-}
-async function start() {
-  const response = await accept(client().start({ headers, body: {} }), [200]);
-  if (response.body.status !== "pending") {
-    throw new Error("Expected a pending binding");
-  }
-  return response.body;
 }
 
 describe("member-owned Antigravity login", () => {
-  it("requires staff opt-in and assignment to an individual worker", async () => {
-    const owner = makeOwner();
-    clerk.session(owner.userId, owner.orgId);
-    await accept(client().get({ headers }), [404]);
-    await accept(client().start({ headers, body: {} }), [404]);
-    await updateFeatureSwitchesForUser(context, owner, { [key]: true });
-    configure();
-    expect((await accept(client().get({ headers }), [200])).body.status).toBe(
-      "unassigned",
-    );
-    await accept(client().start({ headers, body: {} }), [503]);
-    const peer = makeOwner(owner.orgId);
-    configure(owner, { ...peer, machineId: owner.machineId });
-    await accept(client().start({ headers, body: {} }), [503]);
-    clerk.session(owner.userId, `org_${randomUUID()}`);
-    await accept(client().get({ headers }), [404]);
+  it("antigravity-personal-subscription-001 requires staff opt-in and a dedicated worker", async () => {
+    const api = subscriptionClient();
+    const member = newMember();
+    assignWorkers([]);
+
+    clerkAs(member);
+    await accept(api.get({ headers: memberHeaders }), [404]);
+    await accept(api.start({ headers: memberHeaders, body: {} }), [404]);
+
+    await optIn(member);
+    clerkAs(member);
+    const unassigned = await accept(api.get({ headers: memberHeaders }), [200]);
+    expect(unassigned.body).toStrictEqual({ status: "unassigned" });
+    await accept(api.start({ headers: memberHeaders, body: {} }), [503]);
+
+    const shared = workerFor(member, "alice");
+    assignWorkers([
+      shared,
+      { ...workerFor(newMember(), "peer"), machineId: shared.machineId },
+    ]);
+    await accept(api.start({ headers: memberHeaders, body: {} }), [503]);
+
+    clerkAs(newMember(`org_${randomUUID()}`));
+    await accept(api.get({ headers: memberHeaders }), [404]);
   });
 
-  it("binds the exact member, reuses a pending request, and tolerates a lost confirmation", async () => {
-    const a = makeOwner();
-    const b = makeOwner(a.orgId);
-    configure(a, b);
-    await updateFeatureSwitchesForUser(context, b, { [key]: true });
-    await updateFeatureSwitchesForUser(context, a, { [key]: true });
-    const [first, again] = await Promise.all([start(), start()]);
-    expect(again).toStrictEqual(first);
-    expect(first).toMatchObject({ loginHost: a.loginHost });
-    const bindingId = first.bindingId;
-    await accept(confirm(bindingId), [403]);
-    asMachine(b);
-    await accept(confirm(bindingId), [404]);
-    asMachine(a);
-    const confirmed = await accept(confirm(bindingId), [200]);
-    expect(confirmed.body).toStrictEqual({
+  it("antigravity-personal-subscription-002 binds the exact member and keeps the binding when another member disconnects it", async () => {
+    const api = subscriptionClient();
+    const alice = newMember();
+    const bob = newMember();
+    await optIn(alice);
+    await optIn(bob);
+    const aliceWorker = workerFor(alice, "alice");
+    const bobWorker = workerFor(bob, "bob");
+    assignWorkers([aliceWorker, bobWorker]);
+
+    clerkAs(alice);
+    const [first, second] = await Promise.all([
+      accept(api.start({ headers: memberHeaders, body: {} }), [200]),
+      accept(api.start({ headers: memberHeaders, body: {} }), [200]),
+    ]);
+    expect(first.body).toMatchObject({
+      status: "pending",
+      loginHost: aliceWorker.loginHost,
+    });
+    expect(second.body).toStrictEqual(first.body);
+    const bindingId =
+      "bindingId" in first.body ? first.body.bindingId : "missing";
+
+    await accept(
+      api.confirm({ headers: {}, params: { bindingId }, body: {} }),
+      [403],
+    );
+    await accept(
+      api.confirm({
+        headers: machineHeaders(bobWorker.machineId),
+        params: { bindingId },
+        body: {},
+      }),
+      [404],
+    );
+    const connected = await accept(
+      api.confirm({
+        headers: machineHeaders(aliceWorker.machineId),
+        params: { bindingId },
+        body: {},
+      }),
+      [200],
+    );
+    expect(connected.body).toStrictEqual({
       status: "connected",
       bindingId,
-      loginHost: a.loginHost,
+      loginHost: aliceWorker.loginHost,
     });
-    expect((await accept(confirm(bindingId), [200])).body).toStrictEqual(
-      confirmed.body,
-    );
-    clerk.session(b.userId, b.orgId);
-    expect((await accept(client().get({ headers }), [200])).body).toStrictEqual(
-      {
-        status: "disconnected",
-      },
-    );
-    await accept(
-      client().disconnect({ headers, params: { bindingId } }),
+    const repeated = await accept(
+      api.confirm({
+        headers: machineHeaders(aliceWorker.machineId),
+        params: { bindingId },
+        body: {},
+      }),
       [200],
     );
-    clerk.session(a.userId, a.orgId);
-    expect((await accept(client().get({ headers }), [200])).body).toStrictEqual(
-      confirmed.body,
+    expect(repeated.body).toStrictEqual(connected.body);
+
+    clerkAs(bob);
+    const bobStatus = await accept(api.get({ headers: memberHeaders }), [200]);
+    expect(bobStatus.body).toStrictEqual({ status: "disconnected" });
+    await accept(
+      api.disconnect({ headers: memberHeaders, params: { bindingId } }),
+      [200],
     );
+
+    clerkAs(alice);
+    const aliceStatus = await accept(
+      api.get({ headers: memberHeaders }),
+      [200],
+    );
+    expect(aliceStatus.body).toStrictEqual(connected.body);
   });
 
-  it("returns only the member's HTTPS terminal and refuses to share it between members", async () => {
-    const a = makeOwner();
-    const b = makeOwner(a.orgId);
-    const terminal = {
-      orgId: a.orgId,
-      userId: a.userId,
-      machineId: a.machineId,
-      loginOrigin: "https://alice.agy.example.com",
+  it("antigravity-personal-subscription-003 returns only the member's HTTPS terminal and refuses to share it", async () => {
+    const api = subscriptionClient();
+    const alice = newMember();
+    const bob = newMember();
+    await optIn(alice);
+    const loginOrigin = `https://alice-${randomUUID().slice(0, 8)}.agy.example.com`;
+    const aliceWorker: Worker = {
+      ...alice,
+      machineId: `mch_${randomUUID()}`,
+      loginOrigin,
     };
-    await updateFeatureSwitchesForUser(context, a, { [key]: true });
-    configure(terminal);
-    const first = await start();
-    expect(first).toHaveProperty("loginOrigin", terminal.loginOrigin);
-    expect(first).not.toHaveProperty("loginHost");
-    asMachine(a);
-    expect((await accept(confirm(first.bindingId), [200])).body).toStrictEqual({
-      status: "connected",
-      bindingId: first.bindingId,
-      loginOrigin: terminal.loginOrigin,
-    });
-    clerk.session(b.userId, b.orgId);
-    await updateFeatureSwitchesForUser(context, b, { [key]: true });
-    configure(terminal, {
-      ...terminal,
-      userId: b.userId,
-      machineId: b.machineId,
-    });
-    await accept(client().start({ headers, body: {} }), [503]);
-  });
+    assignWorkers([aliceWorker]);
 
-  it("rejects a worker whose owner left the organization and still allows cleanup", async () => {
-    const owner = makeOwner();
-    configure(owner);
-    await updateFeatureSwitchesForUser(context, owner, { [key]: true });
-    const { bindingId } = await start();
-    asMachine(owner);
-    context.mocks.clerk.organizations.getOrganizationMembershipList.mockResolvedValue(
-      { data: [] },
-    );
-    await accept(confirm(bindingId), [404]);
-    await accept(
-      client().workerDisconnect({ headers, params: { bindingId } }),
+    clerkAs(alice);
+    const pending = await accept(
+      api.start({ headers: memberHeaders, body: {} }),
       [200],
     );
-    clerk.session(owner.userId, owner.orgId);
-    expect((await accept(client().get({ headers }), [200])).body.status).toBe(
-      "disconnected",
+    expect(pending.body).toMatchObject({ status: "pending", loginOrigin });
+    expect(pending.body).not.toHaveProperty("loginHost");
+    const bindingId =
+      "bindingId" in pending.body ? pending.body.bindingId : "missing";
+    const connected = await accept(
+      api.confirm({
+        headers: machineHeaders(aliceWorker.machineId),
+        params: { bindingId },
+        body: {},
+      }),
+      [200],
     );
+    expect(connected.body).toStrictEqual({
+      status: "connected",
+      bindingId,
+      loginOrigin,
+    });
+
+    await optIn(bob);
+    assignWorkers([
+      aliceWorker,
+      { ...bob, machineId: `mch_${randomUUID()}`, loginOrigin },
+    ]);
+    clerkAs(bob);
+    await accept(api.start({ headers: memberHeaders, body: {} }), [503]);
   });
 
-  it("expires an unconfirmed login, rotates the binding ID, and rejects the old proof", async () => {
-    const owner = makeOwner();
-    configure(owner);
-    await updateFeatureSwitchesForUser(context, owner, { [key]: true });
-    const first = await start();
-    mockNow(Date.parse(first.expiresAt) + 1);
-    expect((await accept(client().get({ headers }), [200])).body.status).toBe(
-      "expired",
-    );
-    asMachine(owner);
-    await accept(confirm(first.bindingId), [404]);
-    clerk.session(owner.userId, owner.orgId);
-    const next = await start();
-    expect(next.bindingId).not.toBe(first.bindingId);
-    asMachine(owner);
-    await accept(confirm(first.bindingId), [404]);
-    await accept(confirm(next.bindingId), [200]);
-  });
+  it("antigravity-personal-subscription-006 explains that cloud runs are not enabled after a native sign-in", async () => {
+    const api = subscriptionClient();
+    const member = newMember();
+    await optIn(member);
+    const worker = workerFor(member, "member");
+    assignWorkers([worker]);
 
-  it("reports the disabled cloud route separately from a successful native Google sign-in", async () => {
-    const owner = makeOwner();
-    configure(owner);
-    await updateFeatureSwitchesForUser(context, owner, { [key]: true });
-    const binding = await start();
-    asMachine(owner);
-    await accept(confirm(binding.bindingId), [200]);
-    clerk.session(owner.userId, owner.orgId);
-    const threads = setupApp({ context, routes: chatThreadCreateRoutes })(
-      chatThreadsContract,
+    clerkAs(member);
+    const pending = await accept(
+      api.start({ headers: memberHeaders, body: {} }),
+      [200],
     );
-    const result = await accept(
-      threads.create({ headers, body: { model: "gemini-4-neon" } }),
+    const bindingId =
+      "bindingId" in pending.body ? pending.body.bindingId : "missing";
+    await accept(
+      api.confirm({
+        headers: machineHeaders(worker.machineId),
+        params: { bindingId },
+        body: {},
+      }),
+      [200],
+    );
+
+    const created = await accept(
+      setupApp({ context, routes: chatThreadCreateRoutes })(
+        chatThreadsContract,
+      ).create({ headers: memberHeaders, body: { model: "gemini-4-neon" } }),
       [400],
     );
-    expect(result.body.error.message).toBe(
+    expect(created.body.error.message).toBe(
       "Your Google AI subscription is connected. Cloud runs for this model are not enabled yet.",
-    );
-  });
-
-  it("revokes with the switch off and fences old confirmations and old disconnects after reconnect", async () => {
-    const owner = makeOwner();
-    configure(owner);
-    await updateFeatureSwitchesForUser(context, owner, { [key]: true });
-    const { bindingId } = await start();
-    asMachine(owner);
-    await accept(confirm(bindingId), [200]);
-    await updateFeatureSwitchesForUser(context, owner, { [key]: false });
-    asMachine(owner);
-    await accept(
-      client().workerStatus({ headers, params: { bindingId } }),
-      [404],
-    );
-    clerk.session(owner.userId, owner.orgId);
-    expect(
-      (
-        await accept(
-          client().disconnect({ headers, params: { bindingId } }),
-          [200],
-        )
-      ).body.status,
-    ).toBe("disconnected");
-    await updateFeatureSwitchesForUser(context, owner, { [key]: true });
-    const second = await start();
-    expect(second.bindingId).not.toBe(bindingId);
-    asMachine(owner);
-    await accept(confirm(bindingId), [404]);
-    clerk.session(owner.userId, owner.orgId);
-    await accept(
-      client().disconnect({ headers, params: { bindingId } }),
-      [404],
-    );
-    expect((await accept(client().get({ headers }), [200])).body).toStrictEqual(
-      second,
     );
   });
 });

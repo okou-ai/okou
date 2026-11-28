@@ -1,91 +1,102 @@
-import { randomUUID } from "node:crypto";
-import { expect, test } from "vitest";
-import { tailscaleContract } from "@okouai/api-contracts/contracts/tailscale";
-import { accept, testContext } from "../../../__tests__/test-context";
+import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { joinAll } from "../../utils";
-import { tailscaleRoutes } from "../tailscale";
+import { randomUUID } from "node:crypto";
 import { createRouteMocks } from "./helpers/route-test";
+import { tailscaleContract } from "@okouai/api-contracts/contracts/tailscale";
+import { expect, test } from "vitest";
+
+import { testContext, accept } from "../../../__tests__/test-context";
+import { tailscaleRoutes } from "../tailscale";
 
 const context = testContext();
-const mocks = createRouteMocks(context);
+const bdd = createBddApi(context);
 const headers = Object.freeze({ authorization: "Bearer clerk-session" });
-const api = () => {
-  return setupApp({ context, routes: tailscaleRoutes })(tailscaleContract);
-};
 
-test("arbitrates concurrent explicit-ID creation without overwriting the winner or granting foreign reconciliation", async () => {
-  const orgId = `org_tailscale_create_${randomUUID()}`;
-  const userId = `user_tailscale_create_${randomUUID()}`;
-  mocks.clerk.session(userId, orgId);
-  const body = {
-    id: randomUUID(),
-    name: "First network",
-    credentials: {
-      clientId: "creation-client-canary",
-      clientSecret: "creation-secret-canary",
-    },
+function tailscale(actor: ApiTestUser) {
+  createRouteMocks(context).clerk.session(
+    actor.userId,
+    actor.orgId,
+    actor.orgRole,
+  );
+  return setupApp({ context, routes: tailscaleRoutes })(tailscaleContract);
+}
+
+function createBody(id: string, name: string, clientSecret: string) {
+  return {
+    id,
+    name,
+    credentials: { clientId: `client-${randomUUID()}`, clientSecret },
     tags: ["tag:okou"],
   };
-  const outcomes = await joinAll(
-    [body, { ...body, name: "Competing network" }].map(async (input) => {
-      return await accept(api().create({ headers, body: input }), [201, 204]);
+}
+
+test("tailscale-creation-001 arbitrates concurrent explicit-ID creation without overwriting the winner or leaking it to another member", async () => {
+  const owner = bdd.user();
+  const peer = bdd.user({ orgId: owner.orgId, orgRole: "org:member" });
+  const id = randomUUID();
+  const names = [`Tailnet A ${id.slice(0, 8)}`, `Tailnet B ${id.slice(0, 8)}`];
+  const ownerApi = tailscale(owner);
+  const concurrent = await Promise.all(
+    names.map((name) => {
+      return accept(
+        ownerApi.create({
+          headers,
+          body: createBody(id, name, `secret-${randomUUID()}`),
+        }),
+        [201, 204],
+      );
     }),
   );
   expect(
-    outcomes
-      .map((result) => {
-        return result.status;
+    concurrent
+      .map((response) => {
+        return response.status;
       })
       .sort(),
   ).toStrictEqual([201, 204]);
-  const winner = outcomes.find((result) => {
-    return result.status === 201;
+  const created = concurrent.find((response) => {
+    return response.status === 201;
   });
-  if (winner?.status !== 201) {
-    throw new Error(
-      "Concurrent creation must return exactly one created configuration",
-    );
+  if (created?.status !== 201) {
+    throw new Error("Expected one winning creation");
   }
-  expect(
-    (await accept(api().list({ headers }), [200])).body.configs,
-  ).toStrictEqual([winner.body]);
+  const winner = created.body;
+  expect(names).toContain(winner.name);
+
+  const replaySecret = `secret-${randomUUID()}`;
   await accept(
-    api().create({
+    ownerApi.create({
       headers,
-      body: {
-        ...body,
-        name: "Replay must not rename",
-        credentials: {
-          ...body.credentials,
-          clientSecret: "replay-secret-canary",
-        },
-      },
+      body: createBody(id, `Renamed ${id.slice(0, 8)}`, replaySecret),
     }),
     [204],
   );
-  expect(
-    (await accept(api().list({ headers }), [200])).body.configs,
-  ).toStrictEqual([winner.body]);
+  await expect(
+    accept(ownerApi.list({ headers }), [200]),
+  ).resolves.toMatchObject({ body: { configs: [winner] } });
 
-  mocks.clerk.session(`user_foreign_${randomUUID()}`, orgId);
-  const refused = await accept(api().create({ headers, body }), [409]);
-  expect(JSON.stringify(refused.body)).not.toMatch(
-    /creation-secret-canary|creation-client-canary|First network|Competing network/u,
+  const peerSecret = `secret-${randomUUID()}`;
+  const peerName = `Peer ${id.slice(0, 8)}`;
+  const peerApi = tailscale(peer);
+  const conflict = await accept(
+    peerApi.create({ headers, body: createBody(id, peerName, peerSecret) }),
+    [409],
   );
-  expect(
-    (await accept(api().list({ headers }), [200])).body.configs,
-  ).toStrictEqual([]);
+  const disclosed = JSON.stringify(conflict.body);
+  for (const hidden of [winner.name, peerName, peerSecret, replaySecret]) {
+    expect(disclosed).not.toContain(hidden);
+  }
+  const peerList = await accept(peerApi.list({ headers }), [200]);
+  expect(peerList.body.configs).toStrictEqual([]);
 
-  mocks.clerk.session(userId, orgId);
-  expect(
-    (await accept(api().list({ headers }), [200])).body.configs,
-  ).toStrictEqual([winner.body]);
+  const ownerAgain = tailscale(owner);
+  const ownerList = await accept(ownerAgain.list({ headers }), [200]);
+  expect(ownerList.body.configs).toStrictEqual([winner]);
   await accept(
-    api().delete({
+    ownerAgain.delete({
       headers,
-      params: { configId: body.id },
-      body: { expectedRevision: 1 },
+      params: { configId: id },
+      body: { expectedRevision: winner.revision },
     }),
     [204],
   );

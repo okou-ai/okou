@@ -5,46 +5,36 @@ import { expect, test } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { env } from "../../../lib/env";
-import { createRouteMocks } from "./helpers/route-test";
 import { connectorCatalogRoutes } from "../connector-catalog";
 import { runnersRoutes } from "../runners";
+import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
 
-test("serves the existing catalog through discovery, detail and authenticated Runner firewall lookup", async () => {
+test("preview-connector-catalog.catalog-generation-001 serves the active catalog through discovery, detail and Runner firewall lookup", async () => {
   createRouteMocks(context).clerk.session(
     `user_${randomUUID()}`,
     `org_${randomUUID()}`,
   );
   const headers = { authorization: "Bearer clerk-session" };
-  const client = setupApp({ context, routes: connectorCatalogRoutes })(
+  const catalog = setupApp({ context, routes: connectorCatalogRoutes })(
     connectorCatalogContract,
   );
-  const listed = await accept(client.list({ headers }), [200]);
-  expect(
-    listed.body.connectors.map((entry) => {
-      return entry.slug;
-    }),
-  ).toStrictEqual(expect.arrayContaining(["github", "gitlab"]));
+  const firewalls = setupApp({ context, routes: runnersRoutes })(
+    runnersBuiltinFirewallsResolveContract,
+  );
+
+  const list = await accept(catalog.list({ headers }), [200]);
   const detail = await accept(
-    client.get({ headers, params: { connectorSlug: "gitlab" } }),
+    catalog.get({ headers, params: { connectorSlug: "gitlab" } }),
     [200],
   );
-  expect(detail.body.connector.slug).toBe("gitlab");
-  expect(detail.body.connector.label).toBe("GitLab");
   const discovery = await accept(
-    client.discovery({ headers, query: { keyword: "gitlab" } }),
+    catalog.discovery({ headers, query: { keyword: "gitlab" } }),
     [200],
   );
-  expect(
-    discovery.body.connectors.map((entry) => {
-      return entry.slug;
-    }),
-  ).toContain("gitlab");
-  const firewalls = await accept(
-    setupApp({ context, routes: runnersRoutes })(
-      runnersBuiltinFirewallsResolveContract,
-    ).resolve({
+  const resolved = await accept(
+    firewalls.resolve({
       headers: {
         authorization: `Bearer vm0_official_${env("OFFICIAL_RUNNER_SECRET")}`,
       },
@@ -52,7 +42,23 @@ test("serves the existing catalog through discovery, detail and authenticated Ru
     }),
     [200],
   );
-  expect(Object.keys(firewalls.body.firewalls).sort()).toStrictEqual([
+
+  const listedSlugs = list.body.connectors.map((connector) => {
+    return connector.slug;
+  });
+  expect(listedSlugs).toStrictEqual(
+    expect.arrayContaining(["github", "gitlab"]),
+  );
+  expect(detail.body.connector).toMatchObject({
+    slug: "gitlab",
+    label: "GitLab",
+  });
+  expect(
+    discovery.body.connectors.map((connector) => {
+      return connector.slug;
+    }),
+  ).toContain("gitlab");
+  expect(Object.keys(resolved.body.firewalls).sort()).toStrictEqual([
     "github",
     "gitlab",
   ]);

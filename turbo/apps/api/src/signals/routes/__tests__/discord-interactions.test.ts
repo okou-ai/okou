@@ -1,125 +1,62 @@
-import {
-  generateKeyPairSync,
-  randomBytes,
-  randomUUID,
-  sign,
-} from "node:crypto";
-
+import { generateKeyPairSync, randomUUID, sign } from "node:crypto";
 import { discordInteractionsContract } from "@okouai/api-contracts/contracts/discord-interactions";
-import { HttpResponse, http } from "msw";
-import { beforeEach, describe, expect, it, onTestFinished } from "vitest";
-import {
-  array,
-  literal,
-  number,
-  object,
-  string,
-  type infer as zInfer,
-} from "zod";
+import { http, HttpResponse } from "msw";
+import { describe, expect, it } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { mockEnv } from "../../../lib/env";
-import {
-  clearMockMonotonicNow,
-  mockMonotonicNow,
-  now,
-} from "../../../lib/time";
+import { env, mockEnv } from "../../../lib/env";
+import { now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import { flushWaitUntilForTest } from "../../context/wait-until";
-import { createDeferredPromise } from "../../utils";
 import { discordInteractionsRoutes } from "../discord-interactions";
+import { configureDiscordApp, uniqueDiscordSnowflake } from "./helpers/discord";
 
 const context = testContext();
-const keys = generateKeyPairSync("ed25519");
-const publicKey = keys.publicKey
-  .export({ format: "der", type: "spki" })
-  .subarray(-32)
-  .toString("hex");
-const applicationId = "1464000000000000001";
-const senderId = "1464000000000000002";
-const channelId = "1464000000000000003";
 
-const privateMessageSchema = object({
-  content: string(),
-  components: array(
-    object({
-      type: literal(1),
-      components: array(
-        object({
-          type: number(),
-          custom_id: string().optional(),
-          style: number().optional(),
-          url: string().optional(),
-          label: string().optional(),
-          options: array(
-            object({ label: string(), value: string() }),
-          ).optional(),
-        }),
-      ),
-    }),
-  ),
-  allowed_mentions: object({ parse: array(string()) }),
-});
+const STALE_CONTROL =
+  "This control has expired or your access has changed. Run the command again.";
 
-function command(name: string) {
-  return {
-    id: String(
-      1_000_000_000_000_000_000n +
-        BigInt(`0x${randomBytes(7).toString("hex")}`),
-    ),
-    application_id: applicationId,
-    token: randomUUID(),
-    type: 2,
-    version: 1,
-    channel_id: channelId,
-    user: { id: senderId },
-    data: {
-      id: "1464000000000000005",
-      type: 1,
-      name,
-    },
-  };
+interface DiscordCallback {
+  readonly interactionId: string;
+  readonly body: unknown;
 }
 
-function signedRequest(payload: unknown) {
-  const body = JSON.stringify(payload);
-  const timestamp = String(Math.floor(now() / 1000));
-  const signature = sign(
-    null,
-    Buffer.from(`${timestamp}${body}`),
-    keys.privateKey,
-  ).toString("hex");
-  return {
-    body,
-    headers: {
-      "content-type": "application/json",
-      "x-signature-timestamp": timestamp,
-      "x-signature-ed25519": signature,
-    },
-  };
+interface DiscordReply {
+  readonly interactionToken: string;
+  readonly body: unknown;
 }
 
-function client() {
-  return setupApp({ context, routes: discordInteractionsRoutes })(
-    discordInteractionsContract,
-  );
-}
+/**
+ * Configures the Discord app with a freshly generated Ed25519 key pair and
+ * stands in for Discord's interaction callback and original-response APIs.
+ * Discord accepts one callback per interaction and answers repeats with
+ * error 40060.
+ */
+function configureDiscordInteractions() {
+  configureDiscordApp();
+  const { publicKey, privateKey } = generateKeyPairSync("ed25519");
+  const rawPublicKey = publicKey
+    .export({ format: "der", type: "spki" })
+    .subarray(-32);
+  mockEnv("DISCORD_PUBLIC_KEY", rawPublicKey.toString("hex"));
+  const applicationId = env("DISCORD_APPLICATION_ID");
+  if (!applicationId) {
+    throw new Error("Expected the Discord application to be configured");
+  }
 
-function privateResponses() {
-  const acknowledged = new Set<string>();
-  const callbacks: unknown[] = [];
-  const messages: zInfer<typeof privateMessageSchema>[] = [];
-  const delivered = createDeferredPromise<zInfer<typeof privateMessageSchema>>(
-    context.signal,
-  );
+  const callbacks: DiscordCallback[] = [];
+  const replies: DiscordReply[] = [];
   server.use(
     http.post(
-      "https://discord.com/api/v10/interactions/:id/:token/callback",
+      "https://discord.com/api/v10/interactions/:interactionId/:token/callback",
       async ({ request, params }) => {
-        callbacks.push(await request.json());
-        const id = String(params.id);
-        if (acknowledged.has(id)) {
+        const interactionId = String(params.interactionId);
+        const acknowledged = callbacks.some((callback) => {
+          return callback.interactionId === interactionId;
+        });
+        callbacks.push({ interactionId, body: await request.json() });
+        if (acknowledged) {
           return HttpResponse.json(
             {
               code: 40_060,
@@ -128,223 +65,195 @@ function privateResponses() {
             { status: 400 },
           );
         }
-        acknowledged.add(id);
         return new HttpResponse(null, { status: 204 });
       },
     ),
     http.patch(
-      "https://discord.com/api/v10/webhooks/:applicationId/:token/messages/@original",
-      async ({ request }) => {
-        const message = privateMessageSchema.parse(await request.json());
-        messages.push(message);
-        delivered.resolve(message);
+      `https://discord.com/api/v10/webhooks/${applicationId}/:token/messages/@original`,
+      async ({ request, params }) => {
+        const body: unknown = await request.json();
+        replies.push({ interactionToken: String(params.token), body });
+        const content =
+          typeof body === "object" && body !== null && "content" in body
+            ? String(body.content)
+            : "";
         return HttpResponse.json({
-          id: "1464000000000000004",
-          channel_id: channelId,
-          author: { id: applicationId, username: "okou", bot: true },
-          content: message.content,
+          id: uniqueDiscordSnowflake(),
+          channel_id: uniqueDiscordSnowflake(),
+          author: { id: applicationId, username: "Okou", bot: true },
+          content,
           timestamp: new Date(now()).toISOString(),
           attachments: [],
         });
       },
     ),
   );
-  return { delivered: delivered.promise, messages, callbacks };
-}
 
-beforeEach(() => {
-  mockEnv("APP_URL", "https://app.okou.ai");
-  mockEnv("DISCORD_PUBLIC_KEY", publicKey);
-  mockEnv("DISCORD_APPLICATION_ID", applicationId);
-  mockEnv("DISCORD_BOT_TOKEN", randomBytes(32).toString("hex"));
-  mockEnv("DISCORD_GATEWAY_SECRET", randomBytes(32).toString("hex"));
-});
-
-describe("Discord private account interactions", () => {
-  it("acknowledges once, replies privately, and rejects a replay before side effects", async () => {
-    const replies = privateResponses();
-    const request = signedRequest(command("help"));
-    await accept(client().post(request), [202]);
-    const message = await replies.delivered;
-    expect(message.content).toContain("/disconnect");
-    expect(message.content).toContain("**Commands**");
-    expect(message.content).toContain("**Usage**");
-    await accept(client().post(request), [202]);
-    expect(replies.messages).toHaveLength(1);
-    expect(replies.callbacks[0]).toStrictEqual({
-      type: 5,
-      data: { flags: 64 },
-    });
-    expect(replies.messages[0]?.allowed_mentions.parse).toStrictEqual([]);
-  });
-
-  it.each(["connect", "disconnect"])(
-    "gives an unbound sender setup guidance for /%s",
-    async (name) => {
-      const replies = privateResponses();
-      await accept(client().post(signedRequest(command(name))), [202]);
-      const message = await replies.delivered;
-      expect(message.content).toBe(
-        "Please connect your account to use Okou from Discord.",
-      );
-      expect(message.components).toStrictEqual([
-        {
-          type: 1,
-          components: [
-            {
-              type: 2,
-              style: 5,
-              label: "Connect",
-              url: "https://app.okou.ai/settings/discord",
-            },
-          ],
+  async function post(interaction: Readonly<Record<string, unknown>>) {
+    const body = JSON.stringify(interaction);
+    const timestamp = String(Math.floor(now() / 1000));
+    const signature = sign(
+      null,
+      Buffer.from(`${timestamp}${body}`, "utf8"),
+      privateKey,
+    ).toString("hex");
+    const response = await accept(
+      setupApp({ context, routes: discordInteractionsRoutes })(
+        discordInteractionsContract,
+      ).post({
+        body,
+        headers: {
+          "content-type": "application/json",
+          "x-signature-ed25519": signature,
+          "x-signature-timestamp": timestamp,
         },
-      ]);
-    },
-  );
-
-  it("links a server /connect command directly to setup for that server", async () => {
-    const replies = privateResponses();
-    const guildId = "1464000000000000006";
-    const payload = {
-      ...command("connect"),
-      guild_id: guildId,
-      user: undefined,
-      member: { user: { id: senderId } },
-    };
-    await accept(client().post(signedRequest(payload)), [202]);
-    const message = await replies.delivered;
-    expect(message.components[0]?.components[0]).toMatchObject({
-      label: "Connect",
-      url: `https://app.okou.ai/settings/discord?guild_id=${guildId}`,
-    });
-    expect(replies.callbacks[0]).toStrictEqual({
-      type: 5,
-      data: { flags: 64 },
-    });
-  });
-
-  it("rejects a forged picker without reading or changing another account", async () => {
-    const replies = privateResponses();
-    const payload = {
-      ...command("connect"),
-      type: 3,
-      data: {
-        component_type: 3,
-        custom_id: `okou:1:org:${randomUUID()}:0:ffff:forged`,
-        values: [randomUUID()],
-      },
-    };
-    await accept(client().post(signedRequest(payload)), [202]);
-    const message = await replies.delivered;
-    expect(message.content).toContain("expired or your access has changed");
-    // A deferred update edits the picker message rather than adding a reply.
-    expect(replies.callbacks).toStrictEqual([{ type: 6 }]);
-    expect(message.components).toStrictEqual([]);
-  });
-
-  it("does not execute work after a rejected callback acknowledgement", async () => {
-    const edits: unknown[] = [];
-    server.use(
-      http.patch(
-        "https://discord.com/api/v10/webhooks/:applicationId/:token/messages/@original",
-        async ({ request }) => {
-          edits.push(await request.json());
-          return HttpResponse.json(
-            { code: 10_015, message: "Unknown Webhook" },
-            { status: 404 },
-          );
-        },
-      ),
-      http.post(
-        "https://discord.com/api/v10/interactions/:id/:token/callback",
-        () => {
-          return HttpResponse.json(
-            { code: 10_062, message: "Unknown interaction" },
-            { status: 404 },
-          );
-        },
-      ),
-    );
-    const result = await accept(
-      client().post(signedRequest(command("disconnect"))),
-      [503],
-    );
-    expect(result.body.error).toBe(
-      "Discord could not acknowledge the interaction",
+      }),
+      [202],
     );
     await flushWaitUntilForTest();
-    expect(edits).toStrictEqual([]);
+    return response;
+  }
+
+  function invocation(
+    sender: { readonly guildId?: string },
+    payload: Readonly<Record<string, unknown>>,
+  ) {
+    const user = { id: uniqueDiscordSnowflake() };
+    return {
+      id: uniqueDiscordSnowflake(),
+      application_id: applicationId,
+      token: `interaction-token-${randomUUID()}`,
+      version: 1,
+      channel_id: uniqueDiscordSnowflake(),
+      ...(sender.guildId
+        ? { guild_id: sender.guildId, member: { user } }
+        : { user }),
+      ...payload,
+    };
+  }
+
+  function slashCommand(
+    name: "help" | "connect" | "disconnect",
+    sender: { readonly guildId?: string } = {},
+  ) {
+    return invocation(sender, {
+      type: 2,
+      data: { id: uniqueDiscordSnowflake(), type: 1, name },
+    });
+  }
+
+  return { callbacks, replies, post, invocation, slashCommand };
+}
+
+function connectGuidance(guildId?: string) {
+  const url = new URL("/settings/discord", env("APP_URL"));
+  if (guildId) {
+    url.searchParams.set("guild_id", guildId);
+  }
+  return {
+    content: "Please connect your account to use Okou from Discord.",
+    components: [
+      {
+        type: 1,
+        components: [
+          { type: 2, style: 5, label: "Connect", url: url.toString() },
+        ],
+      },
+    ],
+  };
+}
+
+describe("Discord private account interactions", () => {
+  it("discord-interactions-001 acknowledges /help once, replies privately, and ignores a replay", async () => {
+    const discord = configureDiscordInteractions();
+    const help = discord.slashCommand("help");
+
+    await discord.post(help);
+    await discord.post(help);
+
+    expect(discord.callbacks[0]).toStrictEqual({
+      interactionId: help.id,
+      body: { type: 5, data: { flags: 64 } },
+    });
+    expect(discord.replies).toHaveLength(1);
+    expect(discord.replies[0]?.interactionToken).toBe(help.token);
+    const reply = discord.replies[0]?.body;
+    expect(reply).toMatchObject({ allowed_mentions: { parse: [] } });
+    const content =
+      typeof reply === "object" && reply !== null && "content" in reply
+        ? String(reply.content)
+        : "";
+    expect(content).toContain("/disconnect");
+    expect(content).toContain("Commands");
+    expect(content).toContain("Usage");
   });
 
-  it.each([
-    {
-      kind: "network failure",
-      response: () => {
-        return HttpResponse.error();
-      },
-    },
-    {
-      kind: "Discord server error",
-      response: () => {
-        return HttpResponse.json({ message: "Unavailable" }, { status: 503 });
-      },
-    },
-  ])(
-    "reports no change instead of failing after a $kind acknowledgement",
-    async ({ response }) => {
-      const replies = privateResponses();
-      mockMonotonicNow(0);
-      onTestFinished(clearMockMonotonicNow);
-      server.use(
-        http.post(
-          "https://discord.com/api/v10/interactions/:id/:token/callback",
-          () => {
-            // Let Discord's 3-second response window close before the edit.
-            mockMonotonicNow(10_000);
-            return response();
-          },
-        ),
-      );
+  it("discord-interactions-002 guides an unlinked sender to connect after /connect", async () => {
+    const discord = configureDiscordInteractions();
 
-      const result = await client().post(signedRequest(command("help")));
+    const command = discord.slashCommand("connect");
 
-      expect(result.status).toBe(202);
-      const message = await replies.delivered;
-      expect(message.content).toContain("no changes were made");
-      expect(message.content).not.toContain("/disconnect");
-      expect(message.components).toStrictEqual([]);
-      expect(replies.messages).toHaveLength(1);
-    },
-  );
+    await discord.post(command);
 
-  it("accepts Discord rejecting the no-change edit when the acknowledgement never arrived", async () => {
-    const attempted = createDeferredPromise<void>(context.signal);
-    mockMonotonicNow(0);
-    onTestFinished(clearMockMonotonicNow);
-    server.use(
-      http.post(
-        "https://discord.com/api/v10/interactions/:id/:token/callback",
-        () => {
-          mockMonotonicNow(10_000);
-          return HttpResponse.error();
+    expect(discord.callbacks).toStrictEqual([
+      { interactionId: command.id, body: { type: 5, data: { flags: 64 } } },
+    ]);
+    expect(discord.replies).toHaveLength(1);
+    expect(discord.replies[0]?.body).toMatchObject(connectGuidance());
+  });
+
+  it("discord-interactions-003 guides an unlinked sender to connect after /disconnect", async () => {
+    const discord = configureDiscordInteractions();
+
+    const command = discord.slashCommand("disconnect");
+
+    await discord.post(command);
+
+    expect(discord.callbacks).toStrictEqual([
+      { interactionId: command.id, body: { type: 5, data: { flags: 64 } } },
+    ]);
+    expect(discord.replies).toHaveLength(1);
+    expect(discord.replies[0]?.body).toMatchObject(connectGuidance());
+  });
+
+  it("discord-interactions-004 links a server /connect directly to setup for that server", async () => {
+    const discord = configureDiscordInteractions();
+    const guildId = uniqueDiscordSnowflake();
+    const connect = discord.slashCommand("connect", { guildId });
+
+    await discord.post(connect);
+
+    expect(discord.callbacks).toStrictEqual([
+      { interactionId: connect.id, body: { type: 5, data: { flags: 64 } } },
+    ]);
+    expect(discord.replies).toHaveLength(1);
+    expect(discord.replies[0]?.body).toMatchObject(connectGuidance(guildId));
+  });
+
+  it("discord-interactions-005 clears a forged picker without changing any account", async () => {
+    const discord = configureDiscordInteractions();
+    const expiresAt = (Math.floor(now() / 1000) + 600).toString(36);
+    const picker = discord.invocation(
+      {},
+      {
+        type: 3,
+        data: {
+          component_type: 3,
+          custom_id: `okou:1:org:0:${expiresAt}:-:${"A".repeat(22)}`,
+          values: [randomUUID()],
         },
-      ),
-      http.patch(
-        "https://discord.com/api/v10/webhooks/:applicationId/:token/messages/@original",
-        () => {
-          attempted.resolve();
-          return HttpResponse.json(
-            { code: 10_015, message: "Unknown Webhook" },
-            { status: 404 },
-          );
-        },
-      ),
+      },
     );
 
-    const result = await client().post(signedRequest(command("disconnect")));
+    await discord.post(picker);
 
-    expect(result.status).toBe(202);
-    await attempted.promise;
+    expect(discord.callbacks).toStrictEqual([
+      { interactionId: picker.id, body: { type: 6 } },
+    ]);
+    expect(discord.replies).toHaveLength(1);
+    expect(discord.replies[0]?.body).toMatchObject({
+      content: STALE_CONTROL,
+      components: [],
+    });
   });
 });

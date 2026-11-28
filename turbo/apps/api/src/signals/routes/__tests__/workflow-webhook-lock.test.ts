@@ -1,348 +1,249 @@
-import { randomUUID } from "node:crypto";
+import {
+  chatThreadByIdContract,
+  chatThreadsContract,
+} from "@okouai/api-contracts/contracts/chat-threads";
 import {
   workflowAutomationsContract,
-  workflowVisibilityContract,
+  workflowsCollectionContract,
 } from "@okouai/api-contracts/contracts/workflows";
-import { replayChatThreadEvents } from "@okouai/core/chat-thread-event-replay";
-import { onTestFinished } from "vitest";
-
-import { accept, testContext } from "../../../__tests__/test-context";
+import { describe, expect, it } from "vitest";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { createApp } from "../../../app-factory";
-import { settleIncludingAbort } from "../../utils";
+import { accept, testContext } from "../../../__tests__/test-context";
+import { chatThreadRoutes } from "../chat-threads";
+import { chatThreadCreateRoutes } from "../chat-threads-create";
+import { chatThreadDeleteRoutes } from "../chat-threads-delete";
 import { workflowAutomationsRoutes } from "../workflow-automations";
 import { workflowsRoutes } from "../workflows";
-import {
-  createChatFilesBddApi,
-  threadEventCursor,
-} from "./helpers/api-bdd-chat-files";
-import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
-import { createWorkflowsBddApi } from "./helpers/api-bdd-workflows";
-import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
-import { holdSecretKms } from "./helpers/hold-secret-kms";
-import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
+import { createBddApi } from "./helpers/api-bdd";
+import { publicPlanLifecycle } from "./helpers/public-plan-lifecycle";
 import { createRouteMocks } from "./helpers/route-test";
+import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
 
 const context = testContext();
-const workflows = createWorkflowsBddApi(context);
-const chat = createChatFilesBddApi(context);
-const webhooks = createWebhookCallbackApi(context);
 const bdd = createBddApi(context);
-const mocks = createRouteMocks(context);
+const headers = Object.freeze({ authorization: "Bearer clerk-session" });
+const routes = Object.freeze([
+  ...workflowsRoutes,
+  ...workflowAutomationsRoutes,
+  ...chatThreadRoutes,
+  ...chatThreadCreateRoutes,
+  ...chatThreadDeleteRoutes,
+]);
+const app = setupApp({ context, routes });
+const rethrowingApp = setupApp({ context, routes, rethrowErrors: true });
+const webhook = Object.freeze({
+  kind: "event" as const,
+  eventType: "webhook-received" as const,
+});
 
-function client() {
-  return setupApp({ context, routes: workflowAutomationsRoutes })(
-    workflowAutomationsContract,
+async function teamMember(options: { unrelatedThread: boolean }) {
+  const actor = bdd.user();
+  if (!actor.orgId) {
+    throw new Error("Expected a workspace member");
+  }
+  await publicPlanLifecycle(context, actor, "team").update("active");
+  createRouteMocks(context).clerk.session(
+    actor.userId,
+    actor.orgId,
+    actor.orgRole,
+  );
+  const [workflow, thread] = await Promise.all([
+    accept(
+      app(workflowsCollectionContract).create({
+        headers,
+        body: { name: "webhook-lock-test" },
+      }),
+      [201],
+    ),
+    options.unrelatedThread
+      ? accept(
+          app(chatThreadsContract).create({ headers, body: { model: null } }),
+          [201],
+        )
+      : Promise.resolve(null),
+  ]);
+  return { workflowId: workflow.body.id, threadId: thread?.body.id ?? null };
+}
+
+function createWebhook(workflowId: string) {
+  return accept(
+    app(workflowAutomationsContract).create({
+      headers,
+      params: { workflowId },
+      body: webhook,
+    }),
+    [201],
   );
 }
 
-function headers(actor?: ApiTestUser) {
-  if (actor) {
-    mocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
+async function created(workflowId: string) {
+  const response = await createWebhook(workflowId);
+  const body = response.body;
+  if (!("webhookUrl" in body) || !("webhookSecret" in body)) {
+    throw new Error("Expected a webhook automation");
   }
-  return { authorization: "Bearer clerk-session" };
+  return {
+    id: body.id,
+    chatThreadId: body.chatThreadId,
+    webhookUrl: body.webhookUrl,
+    webhookSecret: body.webhookSecret,
+  };
 }
 
-async function readThreads(actor: ApiTestUser, sinceSeqId?: number) {
-  const page = await chat.requestThreadEvents(actor, { sinceSeqId }, [200]);
-  if (page.status !== 200) {
-    throw new Error("Expected the chat thread feed");
-  }
-  expect(page.body.hasMore).toBeFalsy();
-  return replayChatThreadEvents([], page.body.events);
+async function reveal(id: string) {
+  return (
+    await accept(
+      app(workflowAutomationsContract).revealWebhookSecret({
+        headers,
+        params: { id },
+      }),
+      [200],
+    )
+  ).body;
 }
 
-async function scenario() {
-  const org = await workflows.setupWorkflowOrg({ tier: "team" });
-  const sinceSeqId = await threadEventCursor(context, org.actor);
-  const workflowId = await workflows.createWorkflow(org.actor, {
-    name: "webhook-lock-test",
-  });
-  const thread = await chat.createThread(org.actor, {
-    title: "Unrelated chat",
-  });
-  return { ...org, workflowId, thread, sinceSeqId };
+async function listAutomations(workflowId: string) {
+  return (
+    await accept(
+      app(workflowAutomationsContract).list({
+        headers,
+        params: { workflowId },
+      }),
+      [200],
+    )
+  ).body;
 }
 
-function startCreation(
-  workflowId: string,
-  kms: ReturnType<typeof holdSecretKms>,
-) {
-  const creating = client().create({
-    headers: headers(),
-    params: { workflowId },
-    body: { kind: "event", eventType: "webhook-received" },
-  });
-  const settled = settleIncludingAbort(creating);
-  onTestFinished(async () => {
-    kms.release();
-    await settled;
-  });
-  return creating;
+async function feedThreadIds() {
+  const feed = await accept(
+    app(chatThreadsContract).events({ headers, query: {} }),
+    [200],
+  );
+  return [
+    ...new Set(
+      feed.body.events.map((event) => {
+        return event.chatThreadId;
+      }),
+    ),
+  ].sort();
 }
 
 describe("webhook credential preparation lock isolation", () => {
-  it("publishes concurrent webhook credentials through one shared conversation", async () => {
-    const { actor, workflowId, sinceSeqId } = await scenario();
-    const created = await Promise.all(
-      [0, 1].map(() => {
-        return accept(
-          client().create({
-            headers: headers(actor),
-            params: { workflowId },
-            body: { kind: "event", eventType: "webhook-received" },
-          }),
-          [201],
-        );
-      }),
+  it("workflow-webhook-lock-007 (1/2) fails the webhook creation when KMS call 1 fails", async () => {
+    const { workflowId } = await kmsFailingTeamMember();
+
+    await expect(createFailingWebhook(workflowId)).rejects.toThrow(
+      "KMS unavailable",
     );
-    const summaries = created.map(({ body }) => {
-      if (body.kind !== "event" || body.eventType !== "webhook-received") {
-        throw new Error("Expected a webhook automation");
-      }
-      return body;
+  });
+
+  it("workflow-webhook-lock-007 (2/2) leaves no automation and only the unrelated thread", async () => {
+    const { workflowId, threadId } = await kmsFailingTeamMember();
+    await createFailingWebhook(workflowId).catch(() => {
+      return undefined;
     });
-    const threadId = summaries[0]?.chatThreadId;
-    expect(threadId).toBeTruthy();
-    expect(
-      summaries.every((summary) => {
-        return summary.chatThreadId === threadId;
-      }),
-    ).toBeTruthy();
-    expect(
-      new Set(
-        summaries.map((summary) => {
-          return summary.id;
-        }),
-      ).size,
-    ).toBe(2);
-    expect(
-      new Set(
-        summaries.map((summary) => {
-          return summary.webhookUrl;
-        }),
-      ).size,
-    ).toBe(2);
-    for (const summary of summaries) {
-      const revealed = await accept(
-        client().revealWebhookSecret({
-          headers: headers(actor),
-          params: { id: summary.id },
-          body: undefined,
-        }),
-        [200],
-      );
-      expect(summary).toMatchObject(revealed.body);
-    }
-    const threads = await readThreads(actor, sinceSeqId);
-    expect(threads).toHaveLength(2);
-    expect(threads).toContainEqual(expect.objectContaining({ id: threadId }));
-    const listed = await accept(
-      client().list({ headers: headers(actor), params: { workflowId } }),
-      [200],
+
+    await expect(listAutomations(workflowId)).resolves.toStrictEqual([]);
+    await expect(feedThreadIds()).resolves.toStrictEqual([threadId]);
+  });
+
+  it("workflow-webhook-lock-001 shares one conversation between concurrent webhook credentials", async () => {
+    const { workflowId, threadId } = await teamMember({
+      unrelatedThread: true,
+    });
+
+    const [first, second] = await Promise.all([
+      created(workflowId),
+      created(workflowId),
+    ]);
+    expect(first.chatThreadId).toBe(second.chatThreadId);
+    expect(first.id).not.toBe(second.id);
+    expect(first.webhookUrl).not.toBe(second.webhookUrl);
+
+    const [firstSecret, secondSecret, threads, automations] = await Promise.all(
+      [
+        reveal(first.id),
+        reveal(second.id),
+        feedThreadIds(),
+        listAutomations(workflowId),
+      ],
     );
+    expect(firstSecret).toStrictEqual({
+      webhookUrl: first.webhookUrl,
+      webhookSecret: first.webhookSecret,
+    });
+    expect(secondSecret).toStrictEqual({
+      webhookUrl: second.webhookUrl,
+      webhookSecret: second.webhookSecret,
+    });
+    expect(threads).toStrictEqual([threadId, first.chatThreadId].sort());
     expect(
-      listed.body
-        .map((summary) => {
-          return summary.id;
+      automations
+        .map((automation) => {
+          return automation.id;
+        })
+        .sort(),
+    ).toStrictEqual([first.id, second.id].sort());
+  });
+
+  it("workflow-webhook-lock-002 rebuilds the conversation without re-enabling a deleted conversation's webhook", async () => {
+    const { workflowId } = await teamMember({ unrelatedThread: false });
+    const first = await created(workflowId);
+    const deletedThreadId = first.chatThreadId;
+    if (!deletedThreadId) {
+      throw new Error("Expected a webhook conversation");
+    }
+    await accept(
+      app(chatThreadByIdContract).delete({
+        headers,
+        params: { id: deletedThreadId },
+      }),
+      [204],
+    );
+
+    const second = await created(workflowId);
+    expect(second.chatThreadId).not.toBe(deletedThreadId);
+    const [automations, secret, threads] = await Promise.all([
+      listAutomations(workflowId),
+      reveal(second.id),
+      feedThreadIds(),
+    ]);
+
+    expect(
+      automations
+        .map((automation) => {
+          return [automation.id, automation.enabled, automation.chatThreadId];
         })
         .sort(),
     ).toStrictEqual(
-      summaries
-        .map((summary) => {
-          return summary.id;
-        })
-        .sort(),
+      [
+        [first.id, false, second.chatThreadId],
+        [second.id, true, second.chatThreadId],
+      ].sort(),
     );
-  });
-
-  it("rebuilds the shared conversation without re-enabling a deleted conversation's webhook", async () => {
-    const { actor, workflowId, sinceSeqId } = await scenario();
-    const first = await accept(
-      client().create({
-        headers: headers(actor),
-        params: { workflowId },
-        body: { kind: "event", eventType: "webhook-received" },
-      }),
-      [201],
-    );
-    const previousThreadId = first.body.chatThreadId;
-    if (!previousThreadId) {
-      throw new Error("Expected a thread-bound webhook automation");
-    }
-    await chat.deleteThread(actor, previousThreadId);
-    const created = await accept(
-      client().create({
-        headers: headers(actor),
-        params: { workflowId },
-        body: { kind: "event", eventType: "webhook-received" },
-      }),
-      [201],
-    );
-    expect(created.body.chatThreadId).toBeTruthy();
-    expect(created.body.chatThreadId).not.toBe(previousThreadId);
-    const listed = await accept(
-      client().list({ headers: headers(actor), params: { workflowId } }),
-      [200],
-    );
-    expect(listed.body).toStrictEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          id: first.body.id,
-          enabled: false,
-          chatThreadId: created.body.chatThreadId,
-        }),
-        expect.objectContaining({
-          id: created.body.id,
-          enabled: true,
-          chatThreadId: created.body.chatThreadId,
-        }),
-      ]),
-    );
-    const revealed = await accept(
-      client().revealWebhookSecret({
-        headers: headers(actor),
-        params: { id: created.body.id },
-        body: undefined,
-      }),
-      [200],
-    );
-    expect(created.body).toMatchObject(revealed.body);
-    await expect(readThreads(actor, sinceSeqId)).resolves.toHaveLength(2);
-  });
-
-  it.each([1, 2])(
-    "allows unrelated chat writes while KMS call %i is stalled",
-    async (callToHold) => {
-      const { actor, workflowId, thread, sinceSeqId } = await scenario();
-      const kms = holdSecretKms(callToHold, context.signal);
-      const creating = startCreation(workflowId, kms);
-      await kms.entered;
-
-      await chat.renameThread(actor, thread.id, "Changed while KMS waits");
-      await expect(readThreads(actor, sinceSeqId)).resolves.toContainEqual(
-        expect.objectContaining({
-          id: thread.id,
-          title: "Changed while KMS waits",
-        }),
-      );
-      const listed = await accept(
-        client().list({ headers: headers(), params: { workflowId } }),
-        [200],
-      );
-      expect(listed.body).toStrictEqual([]);
-      await expect(readThreads(actor, sinceSeqId)).resolves.toHaveLength(1);
-
-      kms.release();
-      const created = await accept(creating, [201]);
-      expect(created.body.chatThreadId).toBeTruthy();
-      await expect(readThreads(actor, sinceSeqId)).resolves.toHaveLength(2);
-      const revealed = await accept(
-        client().revealWebhookSecret({
-          headers: headers(),
-          params: { id: created.body.id },
-          body: undefined,
-        }),
-        [200],
-      );
-      expect(created.body).toMatchObject(revealed.body);
-    },
-    30_000,
-  );
-
-  it("rejects creation when the public workflow becomes private during KMS preparation", async () => {
-    const { actor: owner } = await workflows.setupWorkflowOrg({
-      tier: "team",
+    expect(secret).toStrictEqual({
+      webhookUrl: second.webhookUrl,
+      webhookSecret: second.webhookSecret,
     });
-    const workflowId = await workflows.createWorkflow(owner, {
-      name: "revocable-webhook",
-      visibility: "public",
-    });
-    const actor = bdd.user({ orgId: owner.orgId, orgRole: "org:member" });
-    headers(actor);
-    const kms = holdSecretKms(1, context.signal);
-    const creating = startCreation(workflowId, kms);
-    await kms.entered;
-    const visibility = setupApp({ context, routes: workflowsRoutes })(
-      workflowVisibilityContract,
-    );
-    await accept(
-      visibility.demote({
-        headers: headers(owner),
-        params: { workflowId },
-      }),
-      [200],
-    );
-    kms.release();
-    await accept(creating, [404]);
-
-    await accept(
-      visibility.publish({
-        headers: headers(owner),
-        params: { workflowId },
-      }),
-      [200],
-    );
-    const listed = await accept(
-      client().list({ headers: headers(actor), params: { workflowId } }),
-      [200],
-    );
-    expect(listed.body).toStrictEqual([]);
-    await expect(readThreads(actor)).resolves.toStrictEqual([]);
-  }, 30_000);
-
-  it("rejects creation after a downgrade commits while KMS is stalled", async () => {
-    const { actor, subscriptionId, workflowId, sinceSeqId } = await scenario();
-    const kms = holdSecretKms(1, context.signal);
-    const creating = startCreation(workflowId, kms);
-    await kms.entered;
-
-    await webhooks.postStripeEvent(
-      {
-        id: `evt_webhook_kms_downgrade_${randomUUID()}`,
-        type: "customer.subscription.deleted",
-        data: { object: { id: subscriptionId } },
-      },
-      [200],
-    );
-    kms.release();
-    const rejected = await accept(creating, [402]);
-    expect(rejected.body.error.code).toBe("TEAM_REQUIRED");
-    const listed = await accept(
-      client().list({ headers: headers(), params: { workflowId } }),
-      [200],
-    );
-    expect(listed.body).toStrictEqual([]);
-    await expect(readThreads(actor, sinceSeqId)).resolves.toHaveLength(1);
-  }, 30_000);
-
-  it.each([1, 2])(
-    "creates no automation or thread when KMS call %i fails",
-    async (callToFail) => {
-      const { actor, workflowId, sinceSeqId } = await scenario();
-      useSecretKmsProbe((_request, callNumber) => {
-        return callNumber === callToFail
-          ? Promise.reject(new Error("KMS unavailable"))
-          : undefined;
-      });
-      const failed = await createApp({
-        signal: context.signal,
-        routes: workflowAutomationsRoutes,
-      }).request(`/api/workflows/${workflowId}/automations`, {
-        method: "POST",
-        headers: { ...headers(), "content-type": "application/json" },
-        body: JSON.stringify({
-          kind: "event",
-          eventType: "webhook-received",
-        }),
-      });
-      expect(failed.status).toBe(500);
-      const listed = await accept(
-        client().list({ headers: headers(), params: { workflowId } }),
-        [200],
-      );
-      expect(listed.body).toStrictEqual([]);
-      await expect(readThreads(actor, sinceSeqId)).resolves.toHaveLength(1);
-    },
-  );
+    expect(threads).toHaveLength(2);
+  });
 });
+
+/** A Team member's Workflow and unrelated Thread, with KMS failing its first call. */
+async function kmsFailingTeamMember() {
+  const owned = await teamMember({ unrelatedThread: true });
+  useSecretKmsProbe((_request, callNumber) => {
+    return callNumber === 1
+      ? Promise.reject(new Error("KMS unavailable"))
+      : undefined;
+  });
+  return owned;
+}
+
+function createFailingWebhook(workflowId: string) {
+  return rethrowingApp(workflowAutomationsContract).create({
+    headers,
+    params: { workflowId },
+    body: webhook,
+  });
+}

@@ -1,161 +1,308 @@
 import { randomUUID } from "node:crypto";
-import { rootCertificates } from "node:tls";
-import { beforeEach, describe, expect, it, test } from "vitest";
+
 import { cloudflareAccessContract } from "@okouai/api-contracts/contracts/cloudflare-access";
 import { tailscaleContract } from "@okouai/api-contracts/contracts/tailscale";
 import {
+  type VncConnectionResponse,
+  type createVncConnectionRequestSchema,
+  type updateVncConnectionRequestSchema,
   vncConnectionsContract,
-  type VncSecurity,
 } from "@okouai/api-contracts/contracts/vnc-connections";
 import { vncCredentialsContract } from "@okouai/api-contracts/contracts/vnc-credentials";
-import { sshConnectionsContract } from "@okouai/api-contracts/contracts/ssh-connections";
+import { createStore } from "ccstate";
+import { describe, expect, it } from "vitest";
+import type { input as zInput } from "zod";
+
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { cloudflareAccessRoutes } from "../cloudflare-access";
 import { tailscaleRoutes } from "../tailscale";
 import { vncConnectionsRoutes } from "../vnc-connections";
-import { sshConnectionsRoutes } from "../ssh-connections";
+import { seedOrgMembership$ } from "./helpers/org-membership";
 import { createRouteMocks } from "./helpers/route-test";
 import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
-import { createDeferredPromise } from "../../utils";
+import { certificateChain } from "./helpers/vnc-synthetic-client";
 
 const context = testContext();
-const mocks = createRouteMocks(context);
 const headers = Object.freeze({ authorization: "Bearer clerk-session" });
-const query = Object.freeze({ view: "scoped" as const });
-const routes = Object.freeze([
-  ...cloudflareAccessRoutes,
-  ...tailscaleRoutes,
-  ...vncConnectionsRoutes,
-  ...sshConnectionsRoutes,
-]);
-type Provider = "cloudflare_access" | "tailscale";
-const providers = ["cloudflare_access", "tailscale"] as const;
-const api = () => {
-  return setupApp({ context, routes });
-};
-const vnc = () => {
-  return api()(vncConnectionsContract);
-};
-const credentials = () => {
-  return api()(vncCredentialsContract);
-};
-const access = () => {
-  return api()(cloudflareAccessContract);
-};
-const tailscale = () => {
-  return api()(tailscaleContract);
-};
-const oauth = Object.freeze({
-  clientId: "native-client-canary",
-  clientSecret: "native-secret-canary",
-});
 
-function authenticate(owner: { orgId: string; userId: string }) {
-  mocks.clerk.session(owner.userId, owner.orgId);
-  context.mocks.clerk.organizations.getOrganizationMembershipList.mockResolvedValue(
-    {
-      data: [
-        {
-          id: `member_${owner.userId}`,
-          publicUserData: { userId: owner.userId },
-          organization: { id: owner.orgId },
-          role: "org:admin",
-        },
-      ],
-      totalCount: 1,
-    },
+interface Actor {
+  readonly userId: string;
+  readonly orgId: string;
+  readonly role: "org:admin" | "org:member";
+}
+
+/** Request bodies as clients send them (server defaults still optional). */
+type CreateVncConnectionRequest = zInput<
+  typeof createVncConnectionRequestSchema
+>;
+type UpdateVncConnectionRequest = zInput<
+  typeof updateVncConnectionRequestSchema
+>;
+type Provider = "cloudflare_access" | "tailscale";
+type Scope = "personal" | "organization";
+
+interface ProviderSecrets {
+  readonly clientId: string;
+  readonly clientSecret: string;
+}
+
+interface ConfigRef {
+  readonly id: string;
+  readonly revision: number;
+  readonly generation: number;
+}
+
+interface Route {
+  readonly type: Provider;
+  readonly configId: string;
+}
+
+async function workspace() {
+  const orgId = `org_${randomUUID()}`;
+  const store = createStore();
+  const join = async (role: Actor["role"]): Promise<Actor> => {
+    const actor = { userId: `user_${randomUUID()}`, orgId, role };
+    await store.set(
+      seedOrgMembership$,
+      {
+        orgId,
+        userId: actor.userId,
+        role: role === "org:admin" ? "admin" : "member",
+      },
+      context.signal,
+    );
+    return actor;
+  };
+  const admin = await join("org:admin");
+  const member = await join("org:member");
+  const other = await join("org:member");
+  return { admin, member, other };
+}
+
+function signIn(actor: Actor) {
+  createRouteMocks(context).clerk.session(
+    actor.userId,
+    actor.orgId,
+    actor.role,
   );
 }
-beforeEach(() => {
-  useSecretKmsProbe();
-  authenticate({
-    orgId: `org_native_${randomUUID()}`,
-    userId: `user_native_${randomUUID()}`,
-  });
-});
-async function config(
-  provider: Provider,
-  scope: "personal" | "organization" = "personal",
-) {
-  const body = {
-    id: randomUUID(),
-    name: "Native network",
-    scope,
-    credentials: oauth,
-  };
-  return provider === "cloudflare_access"
-    ? (await accept(access().create({ headers, query, body }), [201])).body
-    : (
-        await accept(
-          tailscale().create({
-            headers,
-            body: { ...body, tags: ["tag:okou"] },
-          }),
-          [201],
-        )
-      ).body;
-}
-async function configurations(provider: Provider) {
-  return provider === "cloudflare_access"
-    ? (await accept(access().list({ headers, query }), [200])).body.configs
-    : (await accept(tailscale().list({ headers }), [200])).body.configs;
-}
-function rotate(
-  provider: Provider,
-  selected: { id: string; revision: number },
-) {
-  const body = {
-    expectedRevision: selected.revision,
-    credentials: { clientId: "rotated-client", clientSecret: "rotated-secret" },
-  };
-  const params = { configId: selected.id };
-  return provider === "cloudflare_access"
-    ? accept(access().update({ headers, query, params, body }), [200, 409])
-    : accept(tailscale().update({ headers, params, body }), [200, 409]);
-}
-function deleteConfig(
-  provider: Provider,
-  selected: { id: string; revision: number },
-  impactSnapshot?: string,
-) {
-  const params = { configId: selected.id };
-  const body = {
-    expectedRevision: selected.revision,
-    ...(impactSnapshot ? { impactSnapshot } : {}),
-  };
-  return provider === "cloudflare_access"
-    ? accept(access().delete({ headers, params, body }), [204, 409])
-    : accept(tailscale().delete({ headers, params, body }), [204, 409]);
-}
-async function impact(provider: Provider, id: string) {
-  const params = { configId: id };
-  const query = { operation: "delete" as const };
-  return provider === "cloudflare_access"
-    ? (await accept(access().impactPreview({ headers, params, query }), [200]))
-        .body
-    : (
-        await accept(
-          tailscale().impactPreview({ headers, params, query }),
-          [200],
-        )
-      ).body;
-}
-function endpoint(provider: Provider, role: "rfb" | "kdc") {
+
+const hosts = () => {
+  return setupApp({ context, routes: vncConnectionsRoutes })(
+    vncConnectionsContract,
+  );
+};
+const credentials = () => {
+  return setupApp({ context, routes: vncConnectionsRoutes })(
+    vncCredentialsContract,
+  );
+};
+const accessConfigs = () => {
+  return setupApp({ context, routes: cloudflareAccessRoutes })(
+    cloudflareAccessContract,
+  );
+};
+const tailscaleConfigs = () => {
+  return setupApp({ context, routes: tailscaleRoutes })(tailscaleContract);
+};
+
+function providerSecrets(): ProviderSecrets {
   return {
-    host:
-      provider === "cloudflare_access"
-        ? `${role}-gateway.example.com`
-        : `${role}-peer.tailnet`,
-    port: provider === "cloudflare_access" ? 443 : role === "rfb" ? 5900 : 88,
+    clientId: `client-${randomUUID()}`,
+    clientSecret: `secret-${randomUUID()}`,
   };
 }
-function binding(type: Provider, configId: string) {
-  return type === "cloudflare_access"
-    ? { type: "cloudflare_access" as const, configId }
-    : { type: "tailscale" as const, configId };
+
+async function createConfig(
+  actor: Actor,
+  provider: Provider,
+  scope: Scope = "personal",
+  secrets: ProviderSecrets = providerSecrets(),
+): Promise<ConfigRef> {
+  signIn(actor);
+  const id = randomUUID();
+  const name = `${provider} ${id.slice(0, 8)}`;
+  if (provider === "cloudflare_access") {
+    const created = await accept(
+      accessConfigs().create({
+        headers,
+        query: { view: "scoped" },
+        body: { id, name, scope, credentials: secrets },
+      }),
+      [201],
+    );
+    return created.body;
+  }
+  const created = await accept(
+    tailscaleConfigs().create({
+      headers,
+      body: { id, name, scope, credentials: secrets, tags: ["tag:okou"] },
+    }),
+    [201],
+  );
+  return created.body;
 }
-function security(provider: Provider, configId: string) {
+
+async function rotateConfig(
+  actor: Actor,
+  provider: Provider,
+  config: ConfigRef,
+  secrets: ProviderSecrets,
+): Promise<ConfigRef> {
+  signIn(actor);
+  const request = {
+    headers,
+    params: { configId: config.id },
+    body: { expectedRevision: config.revision, credentials: secrets },
+  };
+  if (provider === "cloudflare_access") {
+    const updated = await accept(
+      accessConfigs().update({ ...request, query: { view: "scoped" } }),
+      [200],
+    );
+    return updated.body;
+  }
+  const updated = await accept(tailscaleConfigs().update(request), [200]);
+  return updated.body;
+}
+
+async function deleteConfig(
+  actor: Actor,
+  provider: Provider,
+  configId: string,
+  body: { readonly expectedRevision: number; readonly impactSnapshot?: string },
+): Promise<number> {
+  signIn(actor);
+  const request = { headers, params: { configId }, body };
+  if (provider === "cloudflare_access") {
+    const deleted = await accept(
+      accessConfigs().delete({ ...request, query: { view: "scoped" } }),
+      [204, 409],
+    );
+    return deleted.status;
+  }
+  const deleted = await accept(tailscaleConfigs().delete(request), [204, 409]);
+  return deleted.status;
+}
+
+async function previewDeletion(
+  actor: Actor,
+  provider: Provider,
+  configId: string,
+) {
+  signIn(actor);
+  const request = {
+    headers,
+    params: { configId },
+    query: { operation: "delete" as const },
+  };
+  if (provider === "cloudflare_access") {
+    const preview = await accept(accessConfigs().impactPreview(request), [200]);
+    return preview.body;
+  }
+  const preview = await accept(
+    tailscaleConfigs().impactPreview(request),
+    [200],
+  );
+  return preview.body;
+}
+
+async function listConfigs(actor: Actor, provider: Provider) {
+  signIn(actor);
+  if (provider === "cloudflare_access") {
+    const listed = await accept(
+      accessConfigs().list({ headers, query: { view: "scoped" } }),
+      [200],
+    );
+    return listed.body.configs;
+  }
+  const listed = await accept(tailscaleConfigs().list({ headers }), [200]);
+  return listed.body.configs;
+}
+
+async function vncHostsOf(actor: Actor, provider: Provider, configId: string) {
+  const configs = await listConfigs(actor, provider);
+  return configs.find((config) => {
+    return config.id === configId;
+  })?.vncHosts;
+}
+
+async function listHosts(actor: Actor) {
+  signIn(actor);
+  const listed = await accept(hosts().list({ headers }), [200]);
+  return listed.body.connections;
+}
+
+async function hostOf(actor: Actor, hostId: string) {
+  const listed = await listHosts(actor);
+  return listed.find((host) => {
+    return host.id === hostId;
+  });
+}
+
+async function listCredentials(actor: Actor) {
+  signIn(actor);
+  const listed = await accept(credentials().list({ headers }), [200]);
+  return listed.body.credentials;
+}
+
+async function createHost(actor: Actor, body: CreateVncConnectionRequest) {
+  signIn(actor);
+  const created = await accept(hosts().create({ headers, body }), [201]);
+  return created.body;
+}
+
+async function updateHost(
+  actor: Actor,
+  host: VncConnectionResponse,
+  body: Omit<UpdateVncConnectionRequest, "expectedGeneration">,
+) {
+  signIn(actor);
+  return await accept(
+    hosts().update({
+      headers,
+      params: { connectionId: host.id },
+      body: { ...body, expectedGeneration: host.generation },
+    }),
+    [200, 400, 404],
+  );
+}
+
+function credentialIdOf(host: VncConnectionResponse | undefined): string {
+  if (!host || !("credentialId" in host)) {
+    throw new Error("Expected a credential-bound VNC host");
+  }
+  return host.credentialId;
+}
+
+const kerberosPassword = "kerberos-private-password";
+const providerRoute = {
+  cloudflare_access: {
+    rfb: { host: "rfb-gateway.example.com", port: 443 },
+    kdc: { host: "kdc-gateway.example.com", port: 443 },
+  },
+  tailscale: {
+    rfb: { host: "desktop.tailnet", port: 5900 },
+    kdc: { host: "kdc.tailnet", port: 88 },
+  },
+} as const;
+
+function kerberosCredential() {
+  return {
+    create: {
+      name: "Kerberos password",
+      authentication: {
+        method: "qemu_kerberos_password" as const,
+        initiator: { realm: "EXAMPLE.COM", components: ["alice"] },
+        password: kerberosPassword,
+      },
+    },
+  };
+}
+
+function kerberosSecurity(kdc: Route) {
+  const route = providerRoute[kdc.type].kdc;
   return {
     type: "qemu_x509_gssapi" as const,
     trust: { mode: "system" as const },
@@ -164,810 +311,568 @@ function security(provider: Provider, configId: string) {
       realm: "EXAMPLE.COM",
       components: ["vnc", "desktop.example.com"],
     },
-    kdc: {
-      ...endpoint(provider, "kdc"),
-      transport: binding(provider, configId),
-      ticketLifetimeSeconds: 1200,
-      renewableLifetimeSeconds: 7200,
-    },
+    kdc: { host: route.host, port: route.port, transport: kdc },
   };
 }
-function hostBody(
-  provider: Provider,
-  configId: string,
-  kdcProvider = provider,
-  kdcId = configId,
-) {
+
+function kerberosHost(rfb: Route, kdc: Route): CreateVncConnectionRequest {
+  const route = providerRoute[rfb.type].rfb;
   return {
     id: randomUUID(),
-    displayName: "Private desktop and KDC",
-    ...endpoint(provider, "rfb"),
-    transport: binding(provider, configId),
-    security: security(kdcProvider, kdcId),
-    credential: {
-      create: {
-        name: "Kerberos login",
-        authentication: {
-          method: "qemu_kerberos_password" as const,
-          initiator: { realm: "EXAMPLE.COM", components: ["operator"] },
-          password: "kerberos-secret-canary",
-        },
-      },
-    },
+    displayName: "Kerberos desktop",
+    host: route.host,
+    port: route.port,
+    credential: kerberosCredential(),
+    security: kerberosSecurity(kdc),
+    transport: rfb,
   };
 }
-async function latest(id: string) {
-  const host = (
-    await accept(vnc().list({ headers }), [200])
-  ).body.connections.find((host) => {
-    return host.id === id;
-  });
-  if (!host) {
-    throw new Error("Expected public native host");
-  }
-  return host;
+
+function hostReference(host: VncConnectionResponse, roles: string[]) {
+  return [{ id: host.id, displayName: host.displayName, roles }];
 }
 
-describe.each(providers)(
-  "%s public native publication on PostgreSQL",
-  (provider) => {
-    it("creates both roles, retains logical config metadata and rotates a dual-role Host exactly once", async () => {
-      const selected = await config(provider);
-      expect(selected.vncHosts).toStrictEqual([]);
-      const body = hostBody(provider, selected.id);
-      // PostgreSQL UUID identity is case insensitive across the two roles.
-      const created = (
-        await accept(
-          vnc().create({
-            headers,
-            body: {
-              ...body,
-              transport: binding(provider, selected.id.toUpperCase()),
-            },
-          }),
-          [201],
-        )
-      ).body;
-      const probe = useSecretKmsProbe();
-      await accept(vnc().create({ headers, body }), [204]);
-      expect(probe.generateDataKeyCalls).toBe(0);
-      const refs = [
-        {
-          id: created.id,
-          displayName: created.displayName,
-          roles: ["rfb", "kdc"],
-        },
-      ];
-      await expect(configurations(provider)).resolves.toStrictEqual([
-        { ...selected, vncHosts: refs },
-      ]);
-      const renamed = (
-        await accept(
-          vnc().update({
-            headers,
-            params: { connectionId: created.id },
-            body: {
-              expectedGeneration: created.generation,
-              displayName: "Retained private desktop",
-            },
-          }),
-          [200],
-        )
-      ).body;
-      expect(renamed).toMatchObject({
-        id: created.id,
-        transport: body.transport,
-        security: body.security,
-        generation: created.generation + 1,
-      });
-      const rotated = await rotate(provider, selected);
-      expect(rotated.status).toBe(200);
-      await expect(latest(created.id)).resolves.toMatchObject({
-        id: created.id,
-        generation: renamed.generation + 1,
-        security: body.security,
-      });
-      await expect(configurations(provider)).resolves.toMatchObject([
-        {
-          ...selected,
-          revision: selected.revision + 1,
-          generation: selected.generation + 1,
-          updatedAt: expect.any(String),
-          vncHosts: [{ ...refs[0], displayName: renamed.displayName }],
-        },
-      ]);
-      const listed = JSON.stringify(await configurations(provider));
-      for (const secret of [
-        oauth.clientId,
-        oauth.clientSecret,
-        body.credential.create.authentication.password,
-      ]) {
-        expect(listed).not.toContain(secret);
-      }
-      expect(
-        (
-          await deleteConfig(
-            provider,
-            rotated.status === 200 ? rotated.body : selected,
-          )
-        ).status,
-      ).toBe(409);
-    });
+async function rotatesDualRoleHostOnce(provider: Provider) {
+  const kms = useSecretKmsProbe();
+  const { admin } = await workspace();
+  const secrets = providerSecrets();
+  const config = await createConfig(admin, provider, "personal", secrets);
+  const route = { type: provider, configId: config.id.toUpperCase() };
+  const body = kerberosHost(route, route);
 
-    it("publishes independent configurations, rebinds only KDC and preserves all credential/trust fields on a failed edit", async () => {
-      const rfb = await config(provider),
-        kdc = await config(provider),
-        replacement = await config(provider);
-      const body = hostBody(provider, rfb.id, provider, kdc.id);
-      const created = (await accept(vnc().create({ headers, body }), [201]))
-        .body;
-      const before = (await accept(credentials().list({ headers }), [200]))
-        .body;
-      await accept(
-        vnc().update({
-          headers,
-          params: { connectionId: created.id },
-          body: {
-            expectedGeneration: created.generation,
-            transport: binding(provider, randomUUID()),
-            credential: body.credential,
-          },
-        }),
-        [404],
-      );
-      await expect(latest(created.id)).resolves.toStrictEqual(created);
-      expect(
-        (await accept(credentials().list({ headers }), [200])).body,
-      ).toStrictEqual(before);
-      const rebound = (
-        await accept(
-          vnc().update({
-            headers,
-            params: { connectionId: created.id },
-            body: {
-              expectedGeneration: created.generation,
-              security: security(provider, replacement.id),
-            },
-          }),
-          [200],
-        )
-      ).body;
-      expect(rebound).toMatchObject({
-        id: created.id,
-        transport: body.transport,
-        security: security(provider, replacement.id),
-        generation: created.generation + 1,
-      });
-      const configs = await configurations(provider);
-      expect(
-        configs.find((c) => {
-          return c.id === rfb.id;
-        })?.vncHosts,
-      ).toStrictEqual([
-        { id: created.id, displayName: created.displayName, roles: ["rfb"] },
-      ]);
-      expect(
-        configs.find((c) => {
-          return c.id === kdc.id;
-        })?.vncHosts,
-      ).toStrictEqual([]);
-      expect(
-        configs.find((c) => {
-          return c.id === replacement.id;
-        })?.vncHosts,
-      ).toStrictEqual([
-        { id: created.id, displayName: created.displayName, roles: ["kdc"] },
-      ]);
-    });
-
-    it("removes native KDC bindings when changing profile and clears the RFB reference only on an explicit route change", async () => {
-      const selected = await config(provider);
-      const created = (
-        await accept(
-          vnc().create({ headers, body: hostBody(provider, selected.id) }),
-          [201],
-        )
-      ).body;
-      const changed = (
-        await accept(
-          vnc().update({
-            headers,
-            params: { connectionId: created.id },
-            body: {
-              expectedGeneration: created.generation,
-              credential: { type: "none" },
-              security: {
-                type: "x509_none",
-                serverName: "inner.example.com",
-                trust: { mode: "system" },
-              },
-            },
-          }),
-          [200],
-        )
-      ).body;
-      expect(changed).toMatchObject({
-        id: created.id,
-        security: { type: "x509_none" },
-        transport: binding(provider, selected.id),
-      });
-      expect(changed.security).not.toHaveProperty("kdc");
-      expect(
-        (await configurations(provider)).find((c) => {
-          return c.id === selected.id;
-        })?.vncHosts,
-      ).toStrictEqual([
-        { id: created.id, displayName: created.displayName, roles: ["rfb"] },
-      ]);
-      const direct = (
-        await accept(
-          vnc().update({
-            headers,
-            params: { connectionId: created.id },
-            body: {
-              expectedGeneration: changed.generation,
-              host: "direct.example.com",
-              port: 5900,
-              transport: { type: "direct" },
-            },
-          }),
-          [200],
-        )
-      ).body;
-      expect(direct).not.toHaveProperty("transport");
-      expect(
-        (await configurations(provider)).find((c) => {
-          return c.id === selected.id;
-        })?.vncHosts,
-      ).toStrictEqual([]);
-      expect(
-        (await accept(credentials().list({ headers }), [200])).body.credentials,
-      ).toMatchObject([{ hosts: [] }]);
-    });
-
-    it("rejects deletion during inline credential preparation without any partial Host, config or credential publication", async () => {
-      const selected = await config(provider);
-      const body = hostBody(provider, selected.id);
-      const before = (await accept(credentials().list({ headers }), [200]))
-        .body;
-      const probe = useSecretKmsProbe(async (request, call) => {
-        if (call === 1) {
-          expect((await deleteConfig(provider, selected)).status).toBe(204);
-        }
-        return {
-          keyId: request.keyId,
-          plaintext: Buffer.from("0123456789abcdef0123456789abcdef"),
-          encryptedDataKey: Buffer.from(`encrypted-data-key:${request.keyId}`),
-        };
-      });
-      await accept(vnc().create({ headers, body }), [404]);
-      expect(probe.generateDataKeyCalls).toBe(1);
-      expect(
-        (await accept(vnc().list({ headers }), [200])).body.connections,
-      ).toStrictEqual([]);
-      expect(
-        (await accept(credentials().list({ headers }), [200])).body,
-      ).toStrictEqual(before);
-      await expect(configurations(provider)).resolves.toStrictEqual([]);
-    });
-
-    it("rejects a stale retained inline edit after rotation without orphaning its prepared credential", async () => {
-      const selected = await config(provider);
-      const body = hostBody(provider, selected.id);
-      const created = (await accept(vnc().create({ headers, body }), [201]))
-        .body;
-      const before = (await accept(credentials().list({ headers }), [200]))
-        .body;
-      const probe = useSecretKmsProbe(async (request, call) => {
-        if (call === 1) {
-          expect((await rotate(provider, selected)).status).toBe(200);
-        }
-        return {
-          keyId: request.keyId,
-          plaintext: Buffer.from("0123456789abcdef0123456789abcdef"),
-          encryptedDataKey: Buffer.from(`encrypted-data-key:${request.keyId}`),
-        };
-      });
-      await accept(
-        vnc().update({
-          headers,
-          params: { connectionId: created.id },
-          body: {
-            expectedGeneration: created.generation,
-            displayName: "Losing draft",
-            credential: body.credential,
-          },
-        }),
-        [409],
-      );
-      // One Host credential preparation and the config's two encrypted values.
-      expect(probe.generateDataKeyCalls).toBe(3);
-      expect(
-        (await accept(credentials().list({ headers }), [200])).body,
-      ).toStrictEqual(before);
-      await expect(latest(created.id)).resolves.toMatchObject({
-        id: created.id,
-        displayName: created.displayName,
-        generation: created.generation + 1,
-        security: created.security,
-      });
-    });
-
-    it("keeps SSH/VNC UUID collisions distinct in shared reference accounting", async () => {
-      const selected = await config(provider, "organization");
-      const body = hostBody(provider, selected.id);
-      const created = (await accept(vnc().create({ headers, body }), [201]))
-        .body;
-      await accept(
-        api()(sshConnectionsContract).create({
-          headers,
-          body: {
-            id: created.id,
-            displayName: "Same UUID SSH",
-            host: "peer.example.com",
-            port: 443,
-            transport: binding(provider, selected.id),
-            credential: {
-              create: {
-                name: "SSH login",
-                username: "operator",
-                authentication: {
-                  method: "password",
-                  password: "synthetic-ssh-password",
-                },
-              },
-            },
-          },
-        }),
-        [201],
-      );
-      const listed = (await configurations(provider)).find((c) => {
-        return c.id === selected.id;
-      });
-      expect(listed?.sshHosts).toStrictEqual([
-        { id: created.id, displayName: "Same UUID SSH" },
-      ]);
-      expect(listed?.vncHosts).toStrictEqual([
-        {
-          id: created.id,
-          displayName: created.displayName,
-          roles: ["rfb", "kdc"],
-        },
-      ]);
-      await expect(impact(provider, selected.id)).resolves.toMatchObject({
-        ownHostCount: 2,
-        otherHostCount: 0,
-      });
-    });
-
-    it("commits only one concurrent entering edit and its inline credential", async () => {
-      const original = await config(provider),
-        first = await config(provider),
-        second = await config(provider);
-      const body = hostBody(provider, original.id);
-      const created = (await accept(vnc().create({ headers, body }), [201]))
-        .body;
-      const prepared = createDeferredPromise<void>(context.signal);
-      const probe = useSecretKmsProbe(async (request, call) => {
-        if (call === 2) {
-          prepared.resolve();
-        }
-        await prepared.promise;
-        return {
-          keyId: request.keyId,
-          plaintext: Buffer.from("0123456789abcdef0123456789abcdef"),
-          encryptedDataKey: Buffer.from(`encrypted-data-key:${request.keyId}`),
-        };
-      });
-      const results = await Promise.all(
-        [first, second].map((selected) => {
-          return accept(
-            vnc().update({
-              headers,
-              params: { connectionId: created.id },
-              body: {
-                expectedGeneration: created.generation,
-                transport: binding(provider, selected.id),
-                credential: {
-                  create: {
-                    ...body.credential.create,
-                    name: `Login ${selected.id}`,
-                  },
-                },
-              },
-            }),
-            [200, 409],
-          );
-        }),
-      );
-      expect(
-        results
-          .map((r) => {
-            return r.status;
-          })
-          .sort(),
-      ).toStrictEqual([200, 409]);
-      expect(probe.generateDataKeyCalls).toBe(2);
-      const winner = await latest(created.id);
-      expect(winner.generation).toBe(created.generation + 1);
-      expect(
-        (await accept(credentials().list({ headers }), [200])).body.credentials,
-      ).toHaveLength(2);
-      const refs = await configurations(provider);
-      for (const selected of [first, second]) {
-        expect(
-          refs.find((c) => {
-            return c.id === selected.id;
-          }),
-        ).toMatchObject({
-          ...selected,
-          vncHosts:
-            winner.transport &&
-            "configId" in winner.transport &&
-            winner.transport.configId === selected.id
-              ? [
-                  {
-                    id: created.id,
-                    displayName: created.displayName,
-                    roles: ["rfb"],
-                  },
-                ]
-              : [],
-        });
-      }
-    });
-
-    it("includes a newly published dual-role Host admitted during configuration encryption", async () => {
-      const selected = await config(provider);
-      const body = hostBody(provider, selected.id);
-      useSecretKmsProbe(async (request, call) => {
-        if (call === 1) {
-          await accept(vnc().create({ headers, body }), [201]);
-        }
-        return {
-          keyId: request.keyId,
-          plaintext: Buffer.from("0123456789abcdef0123456789abcdef"),
-          encryptedDataKey: Buffer.from(`encrypted-data-key:${request.keyId}`),
-        };
-      });
-      const rotated = await rotate(provider, selected);
-      expect(rotated.status).toBe(200);
-      if (rotated.status !== 200) {
-        throw new Error("Expected current mixed-reference rotation");
-      }
-      expect(rotated.body.vncHosts).toStrictEqual([
-        { id: body.id, displayName: body.displayName, roles: ["rfb", "kdc"] },
-      ]);
-      await expect(latest(body.id)).resolves.toMatchObject({
-        generation: 2,
-        transport: body.transport,
-        security: body.security,
-      });
-    });
-
-    it("does not reveal or encrypt for another member's personal configuration", async () => {
-      const owner = {
-        orgId: `org_private_${randomUUID()}`,
-        userId: `owner_${randomUUID()}`,
-      };
-      authenticate(owner);
-      const selected = await config(provider);
-      authenticate({
-        orgId: owner.orgId,
-        userId: `other_${randomUUID()}`,
-      });
-      const probe = useSecretKmsProbe();
-      await accept(
-        vnc().create({ headers, body: hostBody(provider, selected.id) }),
-        [404],
-      );
-      expect(probe.generateDataKeyCalls).toBe(0);
-      await expect(configurations(provider)).resolves.toStrictEqual([]);
-      expect(
-        (await accept(credentials().list({ headers }), [200])).body.credentials,
-      ).toStrictEqual([]);
-    });
-
-    it("detaches both roles once after reviewed others-only deletion and requires an explicit rebind", async () => {
-      const organization = {
-        orgId: `org_detach_${randomUUID()}`,
-        userId: `admin_${randomUUID()}`,
-      };
-      authenticate(organization);
-      const selected = await config(provider, "organization");
-      const member = {
-        orgId: organization.orgId,
-        userId: `member_${randomUUID()}`,
-      };
-      authenticate(member);
-      const body = hostBody(provider, selected.id);
-      const created = (await accept(vnc().create({ headers, body }), [201]))
-        .body;
-      authenticate(organization);
-      const preview = await impact(provider, selected.id);
-      expect(preview).toMatchObject({ ownHostCount: 0, otherHostCount: 1 });
-      expect(
-        preview.affectedOwners.map((owner) => {
-          return owner.userId;
-        }),
-      ).toStrictEqual([member.userId]);
-      expect(JSON.stringify(preview)).not.toContain(created.displayName);
-      authenticate(member);
-      await accept(
-        vnc().update({
-          headers,
-          params: { connectionId: created.id },
-          body: {
-            expectedGeneration: created.generation,
-            displayName: "Changed after review",
-          },
-        }),
-        [200],
-      );
-      authenticate(organization);
-      expect(
-        (await deleteConfig(provider, selected, preview.impactSnapshot)).status,
-      ).toBe(409);
-      const currentPreview = await impact(provider, selected.id);
-      expect(
-        (await deleteConfig(provider, selected, currentPreview.impactSnapshot))
-          .status,
-      ).toBe(204);
-      authenticate(member);
-      const detached = await latest(created.id);
-      expect(detached).toMatchObject({
-        id: created.id,
-        generation: created.generation + 2,
-        transport: { type: provider, needsRebind: true },
-        security: { kdc: { transport: { type: provider, needsRebind: true } } },
-      });
-      await accept(
-        vnc().update({
-          headers,
-          params: { connectionId: created.id },
-          body: {
-            expectedGeneration: detached.generation,
-            displayName: "Do not downgrade",
-          },
-        }),
-        [400],
-      );
-      await expect(latest(created.id)).resolves.toStrictEqual(detached);
-      const replacement = await config(provider);
-      const rebound = (
-        await accept(
-          vnc().update({
-            headers,
-            params: { connectionId: created.id },
-            body: {
-              expectedGeneration: detached.generation,
-              transport: binding(provider, replacement.id),
-              security: security(provider, replacement.id),
-            },
-          }),
-          [200],
-        )
-      ).body;
-      expect(rebound).toMatchObject({
-        id: created.id,
-        credentialId:
-          "credentialId" in created ? created.credentialId : undefined,
-        generation: detached.generation + 1,
-        transport: binding(provider, replacement.id),
-        security: security(provider, replacement.id),
-      });
-    });
-  },
-);
-
-test.each([
-  ["cloudflare_access", "tailscale"],
-  ["tailscale", "cloudflare_access"],
-] as const)(
-  "keeps %s RFB and %s KDC authority independent",
-  async (rfbProvider, kdcProvider) => {
-    const rfb = await config(rfbProvider),
-      kdc = await config(kdcProvider);
-    const body = hostBody(rfbProvider, rfb.id, kdcProvider, kdc.id);
-    const created = (await accept(vnc().create({ headers, body }), [201])).body;
-    expect(created).toMatchObject({
-      transport: body.transport,
-      security: body.security,
-    });
-    expect(
-      (await configurations(rfbProvider)).find((c) => {
-        return c.id === rfb.id;
-      })?.vncHosts,
-    ).toStrictEqual([
-      { id: created.id, displayName: created.displayName, roles: ["rfb"] },
-    ]);
-    expect(
-      (await configurations(kdcProvider)).find((c) => {
-        return c.id === kdc.id;
-      })?.vncHosts,
-    ).toStrictEqual([
-      { id: created.id, displayName: created.displayName, roles: ["kdc"] },
-    ]);
-  },
-);
-
-const rawProfiles = [
-  {
-    security: { type: "apple_vnc_password" },
-    authentication: { method: "vnc_password", password: "secret" },
-  },
-  {
-    security: { type: "apple_dh" },
-    authentication: {
-      method: "apple_dh_username_password",
-      username: "operator",
-      password: "synthetic",
-    },
-  },
-  {
-    security: { type: "apple_srp" },
-    authentication: {
-      method: "apple_srp_username_password",
-      username: "operator",
-      password: "synthetic",
-    },
-  },
-  {
-    security: { type: "apple_rsa_srp" },
-    authentication: {
-      method: "apple_rsa_srp_username_password",
-      username: "operator",
-      password: "synthetic",
-    },
-  },
-  ...(["rsa_aes_ra2ne", "rsa_aes_ra2ne_256"] as const).flatMap((type) => {
-    return [
-      {
-        security: { type, serverKeySha256: "ab".repeat(32) },
-        authentication: {
-          method: "rsa_aes_password" as const,
-          password: "synthetic",
-        },
-      },
-      {
-        security: { type, serverKeySha256: "ab".repeat(32) },
-        authentication: {
-          method: "rsa_aes_username_password" as const,
-          username: "operator",
-          password: "synthetic",
-        },
-      },
-    ];
-  }),
-] as const;
-describe.each(providers)("%s raw-profile owner validation", (provider) => {
-  it.each(rawProfiles)(
-    "admits $security.type only with its protective route",
-    async ({ security, authentication }) => {
-      const selected = await config(provider);
-      const originTls = {
-        serverName: "origin.example.com",
-        trust: { mode: "system" as const },
-      };
-      const body = {
-        id: randomUUID(),
-        displayName: "Protected desktop",
-        ...endpoint(provider, "rfb"),
-        security,
-        credential: { create: { name: "Protected login", authentication } },
-        transport: {
-          ...binding(provider, selected.id),
-          ...(provider === "cloudflare_access" ? { originTls } : {}),
-        },
-      };
-      if (provider === "cloudflare_access") {
-        await accept(
-          vnc().create({
-            headers,
-            body: { ...body, transport: binding(provider, selected.id) },
-          }),
-          [400],
-        );
-      }
-      const created = (await accept(vnc().create({ headers, body }), [201]))
-        .body;
-      expect(created).toMatchObject({
-        id: body.id,
-        transport: body.transport,
-        security,
-      });
-      await accept(
-        vnc().update({
-          headers,
-          params: { connectionId: created.id },
-          body: {
-            expectedGeneration: created.generation,
-            host: "public.example.com",
-            transport: { type: "direct" },
-          },
-        }),
-        [400],
-      );
-      await expect(latest(created.id)).resolves.toStrictEqual(created);
-    },
+  const created = await createHost(admin, body);
+  const dataKeys = kms.generateDataKeyCalls;
+  signIn(admin);
+  await accept(hosts().create({ headers, body }), [204]);
+  expect(kms.generateDataKeyCalls).toBe(dataKeys);
+  await expect(vncHostsOf(admin, provider, config.id)).resolves.toStrictEqual(
+    hostReference(created, ["rfb", "kdc"]),
   );
+
+  const renamed = await updateHost(admin, created, {
+    displayName: "Renamed desktop",
+  });
+  if (renamed.status !== 200) {
+    throw new Error(`Expected the rename to succeed, got ${renamed.status}`);
+  }
+  expect(renamed.body.generation).toBe(created.generation + 1);
+  expect(renamed.body.transport).toStrictEqual(created.transport);
+  expect(renamed.body.security).toStrictEqual(created.security);
+
+  const rotatedSecrets = providerSecrets();
+  const rotated = await rotateConfig(admin, provider, config, rotatedSecrets);
+  await expect(hostOf(admin, created.id)).resolves.toMatchObject({
+    generation: renamed.body.generation + 1,
+    displayName: "Renamed desktop",
+  });
+  const listed = await listConfigs(admin, provider);
+  expect(listed).toStrictEqual([
+    expect.objectContaining({
+      id: config.id,
+      revision: config.revision + 1,
+      generation: config.generation + 1,
+      vncHosts: hostReference(renamed.body, ["rfb", "kdc"]),
+    }),
+  ]);
+  expect(rotated.revision).toBe(config.revision + 1);
+  const disclosed = JSON.stringify(listed);
+  for (const hidden of [
+    secrets.clientId,
+    secrets.clientSecret,
+    rotatedSecrets.clientId,
+    rotatedSecrets.clientSecret,
+    kerberosPassword,
+  ]) {
+    expect(disclosed).not.toContain(hidden);
+  }
+
+  return await deleteConfig(admin, provider, config.id, {
+    expectedRevision: rotated.revision,
+  });
+}
+
+async function rebindsOnlyKdc(provider: Provider) {
+  useSecretKmsProbe();
+  const { admin } = await workspace();
+  const rfbConfig = await createConfig(admin, provider);
+  const kdcConfig = await createConfig(admin, provider);
+  const replacement = await createConfig(admin, provider);
+  const rfb = { type: provider, configId: rfbConfig.id };
+  const created = await createHost(
+    admin,
+    kerberosHost(rfb, { type: provider, configId: kdcConfig.id }),
+  );
+  const hostsBefore = await listHosts(admin);
+  const credentialsBefore = await listCredentials(admin);
+
+  const unknown = await updateHost(admin, created, {
+    transport: { type: provider, configId: randomUUID() },
+    credential: kerberosCredential(),
+  });
+  expect(unknown.status).toBe(404);
+  await expect(listHosts(admin)).resolves.toStrictEqual(hostsBefore);
+  await expect(listCredentials(admin)).resolves.toStrictEqual(
+    credentialsBefore,
+  );
+
+  const replacementSecurity = kerberosSecurity({
+    type: provider,
+    configId: replacement.id,
+  });
+  const rebound = await updateHost(admin, created, {
+    security: replacementSecurity,
+  });
+  if (rebound.status !== 200) {
+    throw new Error(
+      `Expected the KDC rebind to succeed, got ${rebound.status}`,
+    );
+  }
+  expect(rebound.body.generation).toBe(created.generation + 1);
+  expect(rebound.body.transport).toStrictEqual(rfb);
+  expect(rebound.body.security).toMatchObject(replacementSecurity);
+
+  const byId = new Map(
+    (await listConfigs(admin, provider)).map((config) => {
+      return [config.id, config.vncHosts];
+    }),
+  );
+  expect(byId.get(rfbConfig.id)).toStrictEqual(hostReference(created, ["rfb"]));
+  expect(byId.get(replacement.id)).toStrictEqual(
+    hostReference(created, ["kdc"]),
+  );
+  return byId.get(kdcConfig.id);
+}
+
+async function dropsKdcThenRfbBinding(provider: Provider) {
+  useSecretKmsProbe();
+  const { admin } = await workspace();
+  const config = await createConfig(admin, provider);
+  const route = { type: provider, configId: config.id };
+  const created = await createHost(admin, kerberosHost(route, route));
+
+  const profile = await updateHost(admin, created, {
+    security: {
+      type: "x509_none",
+      trust: { mode: "system" },
+      serverName: "desktop.example.com",
+    },
+    credential: { type: "none" },
+  });
+  if (profile.status !== 200) {
+    throw new Error(`Expected the profile change, got ${profile.status}`);
+  }
+  expect(profile.body.security).toStrictEqual({
+    type: "x509_none",
+    trust: { mode: "system" },
+    serverName: "desktop.example.com",
+  });
+  expect(profile.body.transport).toStrictEqual(route);
+  await expect(vncHostsOf(admin, provider, config.id)).resolves.toStrictEqual(
+    hostReference(created, ["rfb"]),
+  );
+
+  const direct = await updateHost(admin, profile.body, {
+    transport: { type: "direct" },
+    host: "direct.example.com",
+    port: 5900,
+  });
+  if (direct.status !== 200) {
+    throw new Error(`Expected the direct switch, got ${direct.status}`);
+  }
+  expect("transport" in direct.body).toBeFalsy();
+  await expect(vncHostsOf(admin, provider, config.id)).resolves.toStrictEqual(
+    [],
+  );
+  const saved = await listCredentials(admin);
+  expect(saved).toHaveLength(1);
+  return saved[0]?.hosts;
+}
+
+async function hidesAnotherMembersConfig(provider: Provider) {
+  const kms = useSecretKmsProbe();
+  const { member, other } = await workspace();
+  const config = await createConfig(member, provider);
+  const route = { type: provider, configId: config.id };
+  const dataKeys = kms.generateDataKeyCalls;
+
+  signIn(other);
+  await accept(
+    hosts().create({ headers, body: kerberosHost(route, route) }),
+    [404],
+  );
+
+  expect(kms.generateDataKeyCalls).toBe(dataKeys);
+  await expect(listConfigs(other, provider)).resolves.toStrictEqual([]);
+  return await listCredentials(other);
+}
+
+async function detachesAfterReviewedDeletion(provider: Provider) {
+  useSecretKmsProbe();
+  const { admin, member } = await workspace();
+  const shared = await createConfig(admin, provider, "organization");
+  const route = { type: provider, configId: shared.id };
+  const created = await createHost(member, kerberosHost(route, route));
+
+  const stale = await previewDeletion(admin, provider, shared.id);
+  expect(stale).toMatchObject({ ownHostCount: 0, otherHostCount: 1 });
+  expect(
+    stale.affectedOwners.map((owner) => {
+      return owner.userId;
+    }),
+  ).toStrictEqual([member.userId]);
+  expect(JSON.stringify(stale)).not.toContain(created.displayName);
+
+  const renamed = await updateHost(member, created, {
+    displayName: "Member desktop",
+  });
+  expect(renamed.status).toBe(200);
+  await expect(
+    deleteConfig(admin, provider, shared.id, {
+      expectedRevision: stale.expectedRevision,
+      impactSnapshot: stale.impactSnapshot,
+    }),
+  ).resolves.toBe(409);
+  const current = await previewDeletion(admin, provider, shared.id);
+  await expect(
+    deleteConfig(admin, provider, shared.id, {
+      expectedRevision: current.expectedRevision,
+      impactSnapshot: current.impactSnapshot,
+    }),
+  ).resolves.toBe(204);
+
+  const detached = await hostOf(member, created.id);
+  if (!detached) {
+    throw new Error("Expected the member's host to remain listed");
+  }
+  expect(detached.generation).toBe(created.generation + 2);
+  expect(detached.transport).toStrictEqual({
+    type: provider,
+    needsRebind: true,
+  });
+  expect(detached.security).toMatchObject({
+    kdc: { transport: { type: provider, needsRebind: true } },
+  });
+
+  const blocked = await updateHost(member, detached, {
+    displayName: "Blocked rename",
+  });
+  expect(blocked.status).toBe(400);
+  await expect(hostOf(member, created.id)).resolves.toStrictEqual(detached);
+
+  const replacement = await createConfig(member, provider);
+  const rebind = { type: provider, configId: replacement.id };
+  const rebound = await updateHost(member, detached, {
+    transport: rebind,
+    security: kerberosSecurity(rebind),
+  });
+  if (rebound.status !== 200) {
+    throw new Error(`Expected the rebind to succeed, got ${rebound.status}`);
+  }
+  expect(credentialIdOf(rebound.body)).toBe(credentialIdOf(created));
+  expect(rebound.body.transport).toStrictEqual(rebind);
+  expect(rebound.body.security).toMatchObject(kerberosSecurity(rebind));
+  return rebound.body.generation - detached.generation;
+}
+
+async function independentAuthority(rfbType: Provider, kdcType: Provider) {
+  useSecretKmsProbe();
+  const { admin } = await workspace();
+  const rfbConfig = await createConfig(admin, rfbType);
+  const kdcConfig = await createConfig(admin, kdcType);
+  const body = kerberosHost(
+    { type: rfbType, configId: rfbConfig.id },
+    { type: kdcType, configId: kdcConfig.id },
+  );
+
+  const created = await createHost(admin, body);
+
+  expect(created.transport).toStrictEqual(body.transport);
+  expect(created.security).toMatchObject(body.security);
+  await expect(vncHostsOf(admin, rfbType, rfbConfig.id)).resolves.toStrictEqual(
+    hostReference(created, ["rfb"]),
+  );
+  const kdcHosts = await vncHostsOf(admin, kdcType, kdcConfig.id);
+  expect(kdcHosts).toStrictEqual(hostReference(created, ["kdc"]));
+  return kdcHosts?.map((host) => {
+    return host.roles;
+  });
+}
+
+describe("independent RFB and KDC authority", () => {
+  it("vnc-native-publication-021 keeps cloudflare_access RFB and tailscale KDC authority independent", async () => {
+    await expect(
+      independentAuthority("cloudflare_access", "tailscale"),
+    ).resolves.toStrictEqual([["kdc"]]);
+  });
+
+  it("vnc-native-publication-022 keeps tailscale RFB and cloudflare_access KDC authority independent", async () => {
+    await expect(
+      independentAuthority("tailscale", "cloudflare_access"),
+    ).resolves.toStrictEqual([["kdc"]]);
+  });
 });
 
-test("validates independent origin and inner certificate identities and preserves a failed trust edit", async () => {
-  const selected = await config("cloudflare_access");
-  const caBundle = rootCertificates[0];
-  if (!caBundle) {
-    throw new Error("Expected a public CA fixture");
-  }
-  const transport = {
-    type: "cloudflare_access" as const,
-    configId: selected.id,
-    originTls: {
-      serverName: "origin.example.com",
-      trust: { mode: "custom_ca" as const, caBundle },
-    },
-  };
-  const security: VncSecurity = {
-    type: "x509_none",
-    serverName: "inner.example.com",
-    trust: { mode: "system" },
-  };
-  const body = {
-    id: randomUUID(),
-    displayName: "Independent identities",
-    ...endpoint("cloudflare_access", "rfb"),
-    transport,
-    security,
-    credential: { type: "none" as const },
-  };
-  const created = (await accept(vnc().create({ headers, body }), [201])).body;
-  expect(created).toMatchObject({
-    host: "rfb-gateway.example.com",
-    security: { serverName: "inner.example.com" },
-    transport: { originTls: { serverName: "origin.example.com" } },
+describe("cloudflare_access public native publication", () => {
+  it("vnc-native-publication-001 creates both roles once and rotates a dual-role Cloudflare Access host exactly once", async () => {
+    await expect(rotatesDualRoleHostOnce("cloudflare_access")).resolves.toBe(
+      409,
+    );
   });
-  await accept(
-    vnc().update({
-      headers,
-      params: { connectionId: created.id },
-      body: {
-        expectedGeneration: created.generation,
-        transport: {
-          ...transport,
+
+  it("vnc-native-publication-002 keeps a failed Cloudflare Access edit unchanged and rebinds only the KDC", async () => {
+    await expect(rebindsOnlyKdc("cloudflare_access")).resolves.toStrictEqual(
+      [],
+    );
+  });
+
+  it("vnc-native-publication-003 drops the Cloudflare Access KDC role on a profile change and the RFB role on a direct switch", async () => {
+    await expect(
+      dropsKdcThenRfbBinding("cloudflare_access"),
+    ).resolves.toStrictEqual([]);
+  });
+
+  it("vnc-native-publication-009 does not let another member use a personal Cloudflare Access configuration", async () => {
+    await expect(
+      hidesAnotherMembersConfig("cloudflare_access"),
+    ).resolves.toStrictEqual([]);
+  });
+
+  it("vnc-native-publication-010 detaches both Cloudflare Access roles after a reviewed deletion and requires an explicit rebind", async () => {
+    await expect(
+      detachesAfterReviewedDeletion("cloudflare_access"),
+    ).resolves.toBe(1);
+  });
+});
+
+describe("tailscale public native publication", () => {
+  it("vnc-native-publication-011 creates both roles once and rotates a dual-role Tailscale host exactly once", async () => {
+    await expect(rotatesDualRoleHostOnce("tailscale")).resolves.toBe(409);
+  });
+
+  it("vnc-native-publication-012 keeps a failed Tailscale edit unchanged and rebinds only the KDC", async () => {
+    await expect(rebindsOnlyKdc("tailscale")).resolves.toStrictEqual([]);
+  });
+
+  it("vnc-native-publication-013 drops the Tailscale KDC role on a profile change and the RFB role on a direct switch", async () => {
+    await expect(dropsKdcThenRfbBinding("tailscale")).resolves.toStrictEqual(
+      [],
+    );
+  });
+
+  it("vnc-native-publication-019 does not let another member use a personal Tailscale configuration", async () => {
+    await expect(hidesAnotherMembersConfig("tailscale")).resolves.toStrictEqual(
+      [],
+    );
+  });
+
+  it("vnc-native-publication-020 detaches both Tailscale roles after a reviewed deletion and requires an explicit rebind", async () => {
+    await expect(detachesAfterReviewedDeletion("tailscale")).resolves.toBe(1);
+  });
+});
+
+type RawProfile = Pick<CreateVncConnectionRequest, "security"> & {
+  readonly authentication: Extract<
+    CreateVncConnectionRequest["credential"],
+    { create: unknown }
+  >["create"]["authentication"];
+};
+
+async function admitsOnlyProtectedRoute(
+  provider: Provider,
+  profile: RawProfile,
+) {
+  useSecretKmsProbe();
+  const { admin } = await workspace();
+  const config = await createConfig(admin, provider);
+  const route = providerRoute[provider].rfb;
+  const body = (transport: CreateVncConnectionRequest["transport"]) => {
+    return {
+      id: randomUUID(),
+      displayName: "Mac desktop",
+      host: route.host,
+      port: route.port,
+      credential: {
+        create: { name: "Mac login", authentication: profile.authentication },
+      },
+      security: profile.security,
+      transport,
+    };
+  };
+  const plain = { type: provider, configId: config.id };
+  if (provider === "cloudflare_access") {
+    signIn(admin);
+    await accept(hosts().create({ headers, body: body(plain) }), [400]);
+  }
+  const protectedRoute =
+    provider === "cloudflare_access"
+      ? {
+          ...plain,
           originTls: {
-            ...transport.originTls,
-            trust: { mode: "custom_ca", caBundle: "invalid CA" },
+            serverName: "origin.example.com",
+            trust: { mode: "system" as const },
+          },
+        }
+      : plain;
+
+  const created = await createHost(admin, body(protectedRoute));
+  expect(created.transport).toStrictEqual(protectedRoute);
+  expect(created.security).toStrictEqual(profile.security);
+
+  const direct = await updateHost(admin, created, {
+    transport: { type: "direct" },
+    host: "public.example.com",
+  });
+  await expect(hostOf(admin, created.id)).resolves.toStrictEqual(created);
+  return direct.status;
+}
+
+const serverKeySha256 = "0f".repeat(32);
+
+describe("cloudflare_access raw-profile owner validation", () => {
+  it("vnc-native-publication-023 admits apple_vnc_password only with origin TLS", async () => {
+    await expect(
+      admitsOnlyProtectedRoute("cloudflare_access", {
+        security: { type: "apple_vnc_password" },
+        authentication: { method: "vnc_password", password: "s3cret" },
+      }),
+    ).resolves.toBe(400);
+  });
+
+  it("vnc-native-publication-024 admits apple_dh only with origin TLS", async () => {
+    await expect(
+      admitsOnlyProtectedRoute("cloudflare_access", {
+        security: { type: "apple_dh" },
+        authentication: {
+          method: "apple_dh_username_password",
+          username: "alice",
+          password: "s3cret",
+        },
+      }),
+    ).resolves.toBe(400);
+  });
+
+  it("vnc-native-publication-025 admits apple_srp only with origin TLS", async () => {
+    await expect(
+      admitsOnlyProtectedRoute("cloudflare_access", {
+        security: { type: "apple_srp" },
+        authentication: {
+          method: "apple_srp_username_password",
+          username: "alice",
+          password: "s3cret",
+        },
+      }),
+    ).resolves.toBe(400);
+  });
+
+  it("vnc-native-publication-026 admits apple_rsa_srp only with origin TLS", async () => {
+    await expect(
+      admitsOnlyProtectedRoute("cloudflare_access", {
+        security: { type: "apple_rsa_srp" },
+        authentication: {
+          method: "apple_rsa_srp_username_password",
+          username: "alice",
+          password: "s3cret",
+        },
+      }),
+    ).resolves.toBe(400);
+  });
+
+  it("vnc-native-publication-027 admits rsa_aes_ra2ne only with origin TLS", async () => {
+    await expect(
+      admitsOnlyProtectedRoute("cloudflare_access", {
+        security: { type: "rsa_aes_ra2ne", serverKeySha256 },
+        authentication: { method: "rsa_aes_password", password: "s3cret" },
+      }),
+    ).resolves.toBe(400);
+  });
+
+  it("vnc-native-publication-029 admits rsa_aes_ra2ne_256 only with origin TLS", async () => {
+    await expect(
+      admitsOnlyProtectedRoute("cloudflare_access", {
+        security: { type: "rsa_aes_ra2ne_256", serverKeySha256 },
+        authentication: { method: "rsa_aes_password", password: "s3cret" },
+      }),
+    ).resolves.toBe(400);
+  });
+});
+
+describe("tailscale raw-profile owner validation", () => {
+  it("vnc-native-publication-031 admits apple_vnc_password through Tailscale but not a direct switch", async () => {
+    await expect(
+      admitsOnlyProtectedRoute("tailscale", {
+        security: { type: "apple_vnc_password" },
+        authentication: { method: "vnc_password", password: "s3cret" },
+      }),
+    ).resolves.toBe(400);
+  });
+});
+
+describe("origin and inner certificate identities", () => {
+  it("vnc-native-publication-039 validates origin and inner identities independently and keeps a failed trust edit unchanged", async () => {
+    const { admin } = await workspace();
+    const access = await createConfig(admin, "cloudflare_access");
+    const tailnet = await createConfig(admin, "tailscale");
+    const innerSecurity = {
+      type: "x509_none" as const,
+      trust: { mode: "system" as const },
+      serverName: "inner.example.com",
+    };
+    const created = await createHost(admin, {
+      id: randomUUID(),
+      displayName: "Gateway desktop",
+      host: "rfb-gateway.example.com",
+      port: 443,
+      credential: { type: "none" },
+      security: innerSecurity,
+      transport: {
+        type: "cloudflare_access",
+        configId: access.id,
+        originTls: {
+          serverName: "origin.example.com",
+          trust: { mode: "custom_ca", caBundle: certificateChain },
+        },
+      },
+    });
+    expect(created.host).toBe("rfb-gateway.example.com");
+    expect(created.security).toStrictEqual(innerSecurity);
+    expect(created.transport).toMatchObject({
+      type: "cloudflare_access",
+      configId: access.id,
+      originTls: { serverName: "origin.example.com" },
+    });
+
+    const invalid = await updateHost(admin, created, {
+      transport: {
+        type: "cloudflare_access",
+        configId: access.id,
+        originTls: {
+          serverName: "origin.example.com",
+          trust: {
+            mode: "custom_ca",
+            caBundle:
+              "-----BEGIN CERTIFICATE-----\nbm90LWEtY2VydGlmaWNhdGU=\n-----END CERTIFICATE-----\n",
           },
         },
       },
-    }),
-    [400],
-  );
-  await expect(latest(created.id)).resolves.toStrictEqual(created);
-  const peer = await config("tailscale");
-  const changed = (
-    await accept(
-      vnc().update({
-        headers,
-        params: { connectionId: created.id },
-        body: {
-          expectedGeneration: created.generation,
-          host: "desktop.tailnet",
-          port: 5900,
-          transport: binding("tailscale", peer.id),
-        },
-      }),
-      [200],
-    )
-  ).body;
-  expect(changed).toMatchObject({
-    security: created.security,
-    transport: binding("tailscale", peer.id),
+    });
+    expect(invalid.status).toBe(400);
+    await expect(hostOf(admin, created.id)).resolves.toStrictEqual(created);
+
+    const moved = await updateHost(admin, created, {
+      transport: { type: "tailscale", configId: tailnet.id },
+      host: "desktop.tailnet",
+      port: 5900,
+    });
+    if (moved.status !== 200) {
+      throw new Error(`Expected the Tailscale switch, got ${moved.status}`);
+    }
+    expect(moved.body.security).toStrictEqual(innerSecurity);
+    expect(moved.body.transport).toStrictEqual({
+      type: "tailscale",
+      configId: tailnet.id,
+    });
+    await expect(
+      vncHostsOf(admin, "cloudflare_access", access.id),
+    ).resolves.toStrictEqual([]);
   });
-  expect(changed.transport).not.toHaveProperty("originTls");
-  expect(
-    (await configurations("cloudflare_access")).find((c) => {
-      return c.id === selected.id;
-    })?.vncHosts,
-  ).toStrictEqual([]);
 });

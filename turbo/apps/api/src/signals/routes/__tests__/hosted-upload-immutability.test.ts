@@ -1,197 +1,102 @@
-import { randomUUID } from "node:crypto";
-import { PutObjectCommand } from "@aws-sdk/client-s3";
+import { createHash, randomUUID } from "node:crypto";
+
 import { testContext } from "../../../__tests__/test-context";
 import { createBddApi } from "./helpers/api-bdd";
-import { hostedTextFile } from "./helpers/api-bdd-host-files";
 import { createHostBddApi } from "./helpers/api-bdd-host";
-import { createRunsApi } from "./helpers/api-bdd-runs";
+import { publicPlanLifecycle } from "./helpers/public-plan-lifecycle";
 
 const context = testContext();
 const bdd = createBddApi(context);
-const api = createHostBddApi(context);
+const host = createHostBddApi(context);
 
-async function fixture() {
-  const actor = bdd.user();
-  await createRunsApi(context).grantProEntitlement(actor);
-  const capture = api.captureHostedSitesS3();
-  return { actor, capture };
+function file(path: string, content: string, contentType: string) {
+  return {
+    path,
+    size: Buffer.byteLength(content),
+    sha256: createHash("sha256").update(content).digest("hex"),
+    contentType,
+  };
 }
 
-test("issues normal 48-hour hosted PUT credentials without checksum binding", async () => {
-  const { actor, capture } = await fixture();
-  const files = [
-    hostedTextFile("/index.html", "<main>Immutable report</main>"),
-    hostedTextFile(
-      "/assets/manifest-3f8c2d91.json",
-      '{"name":"Report"}',
-      "application/json",
-    ),
-  ];
-  const draft = await api.prepareHostedSite(actor, {
-    site: `immutable-${randomUUID().slice(0, 8)}`,
-    title: "Immutable",
-    artifactKind: "hosted-site",
+function html(content: string) {
+  return file("/index.html", content, "text/html; charset=utf-8");
+}
+
+function css(path: string, content: string) {
+  return file(path, content, "text/css; charset=utf-8");
+}
+
+function deployment(site: string, files: ReturnType<typeof file>[]) {
+  return {
+    site,
+    title: "Hosted page",
+    artifactKind: "hosted-site" as const,
     spaFallback: false,
     files,
-  });
+  };
+}
 
-  for (const file of files) {
-    const signing = context.mocks.s3.getSignedUrl.mock.calls.find((call) => {
-      return (
-        call[1] instanceof PutObjectCommand &&
-        call[1].input.Key?.endsWith(file.path)
-      );
-    });
-    if (!signing || !(signing[1] instanceof PutObjectCommand)) {
-      throw new Error("Expected a signed hosted PUT");
-    }
-    expect(signing[1].input.Key).toContain(file.path);
-    expect(signing[1].input.ChecksumSHA256).toBeUndefined();
-    expect(signing[2]).toMatchObject({ expiresIn: 172_800 });
-  }
+async function proOwner() {
+  const owner = bdd.user();
+  await publicPlanLifecycle(context, owner, "pro").update("active");
+  return owner;
+}
 
-  await api.completeHostedSite(actor, draft.deploymentId);
-  const manifests = capture.puts.filter(({ key }) => {
-    return key.endsWith("/manifest.json");
-  });
-  expect(manifests).toHaveLength(1);
-  expect(JSON.parse(manifests[0]!.body)).toMatchObject({
-    deploymentId: draft.deploymentId,
-    immutableContent: true,
-  });
-  const downloaded = await api.readHostedSiteFiles(
-    actor,
-    `dpl-${draft.deploymentId}`,
-  );
-  expect(
-    downloaded.files.map((file) => {
-      return file.path;
-    }),
-  ).toContain("/assets/manifest-3f8c2d91.json");
-});
+test("hosted-upload-immutability-003 rejects an asset whose name does not carry its content hash", async () => {
+  host.captureHostedSitesS3();
+  const owner = await proOwner();
 
-test("rejects uploads that would overwrite the server delivery manifest", async () => {
-  const { actor } = await fixture();
-  const response = await api.requestPrepareHostedSite(
-    actor,
-    {
-      site: `reserved-${randomUUID().slice(0, 8)}`,
-      title: "Reserved",
-      artifactKind: "hosted-site",
-      spaFallback: false,
-      files: [
-        hostedTextFile("/index.html", "<main>Report</main>"),
-        hostedTextFile("/manifest.json", "{}", "application/json"),
-      ],
-    },
+  const rejected = await host.requestPrepareHostedSite(
+    owner,
+    deployment(`site-${randomUUID().slice(0, 8)}`, [
+      html("<link rel=stylesheet href=/assets/app.css>"),
+      css("/assets/app.css", "body{color:red}"),
+    ]),
     [400],
   );
-  expect(response.body).toMatchObject({
-    error: { message: "Hosted-site path is reserved: /manifest.json" },
-  });
+
+  expect("error" in rejected.body && rejected.body.error.message).toContain(
+    "Hosted-site asset must carry a content hash in its file name: /assets/app.css",
+  );
 });
 
-test("rejects an asset whose name does not carry its content hash", async () => {
-  const { actor } = await fixture();
-  const response = await api.requestPrepareHostedSite(
-    actor,
-    {
-      site: `unhashed-${randomUUID().slice(0, 8)}`,
-      title: "Unhashed",
-      artifactKind: "hosted-site",
-      spaFallback: false,
-      files: [
-        hostedTextFile("/index.html", "<main>Report</main>"),
-        hostedTextFile("/assets/app.css", "h1{color:green}", "text/css"),
-      ],
-    },
-    [400],
+test("hosted-upload-immutability-004 preserves asset hashes across retained deployments even when a later deployment omits the asset", async () => {
+  host.captureHostedSitesS3();
+  const owner = await proOwner();
+  const site = `site-${randomUUID().slice(0, 8)}`;
+  const firstAsset = css("/assets/app-4f3a9c12.css", "body{color:red}");
+  const secondAsset = css("/assets/app-8b6e1d42.css", "body{color:blue}");
+
+  const first = await host.prepareHostedSite(
+    owner,
+    deployment(site, [html("<p>v1</p>"), firstAsset]),
   );
-  expect(response.body).toMatchObject({
-    error: {
-      message: expect.stringContaining(
-        "Hosted-site asset must carry a content hash in its file name: /assets/app.css",
-      ) as unknown as string,
-    },
-  });
-});
-
-test("preserves asset hashes across retained deployments even when a later deployment omits the asset", async () => {
-  const { actor } = await fixture();
-  const site = `republished-${randomUUID().slice(0, 8)}`;
-  const asset = "/assets/app-4f3a9c12.css";
-  const first = await api.prepareHostedSite(actor, {
-    site,
-    title: site,
-    artifactKind: "hosted-site",
-    spaFallback: false,
-    files: [
-      hostedTextFile("/index.html", "<main>Report</main>"),
-      hostedTextFile(asset, "h1{color:green}", "text/css"),
-    ],
-  });
-  await api.completeHostedSite(actor, first.deploymentId);
-
-  // New assets and HTML updates can replace the latest deployment's file set.
-  const nextAsset = hostedTextFile(
-    "/assets/app-8b6e1d42.css",
-    "h1{color:blue}",
-    "text/css",
+  await host.completeHostedSite(owner, first.deploymentId);
+  const second = await host.prepareHostedSite(
+    owner,
+    deployment(site, [html("<p>v2</p>"), secondAsset]),
   );
-  const second = await api.prepareHostedSite(actor, {
-    site,
-    title: site,
-    artifactKind: "hosted-site",
-    spaFallback: false,
-    files: [
-      hostedTextFile("/index.html", "<main>New report</main>"),
-      nextAsset,
-    ],
-  });
-  await api.completeHostedSite(actor, second.deploymentId);
-  expect(second).toMatchObject({
-    siteId: first.siteId,
-    deploymentVersion: 2,
-  });
+  await host.completeHostedSite(owner, second.deploymentId);
 
-  // The old name remains immutable even though it is absent from the latest deployment.
-  const response = await api.requestPrepareHostedSite(
-    actor,
-    {
-      site,
-      title: site,
-      artifactKind: "hosted-site",
-      spaFallback: false,
-      files: [
-        hostedTextFile("/index.html", "<main>Updated</main>"),
-        hostedTextFile(asset, "h1{color:red}", "text/css"),
-      ],
-    },
+  const changed = await host.requestPrepareHostedSite(
+    owner,
+    deployment(site, [
+      html("<p>v3</p>"),
+      css("/assets/app-4f3a9c12.css", "body{color:green}"),
+    ]),
     [409],
   );
-  expect(response.body).toMatchObject({
-    error: {
-      message: expect.stringContaining(
-        `Hosted-site asset changed without a new file name: ${asset}`,
-      ) as unknown as string,
-    },
-  });
+  const unchanged = await host.prepareHostedSite(
+    owner,
+    deployment(site, [html("<p>v4</p>"), firstAsset, secondAsset]),
+  );
 
-  // Unchanged assets from either deployment can be reused with updated HTML.
-  const redeployed = await api.prepareHostedSite(actor, {
-    site,
-    title: site,
-    artifactKind: "hosted-site",
-    spaFallback: false,
-    files: [
-      hostedTextFile("/index.html", "<main>Updated</main>"),
-      hostedTextFile(asset, "h1{color:green}", "text/css"),
-      nextAsset,
-    ],
-  });
-  expect(redeployed).toMatchObject({
-    siteId: first.siteId,
-    publicSlug: first.publicSlug,
-    deploymentVersion: 3,
-  });
+  expect(second.siteId).toBe(first.siteId);
+  expect(second.deploymentVersion).toBe(2);
+  expect("error" in changed.body && changed.body.error.message).toContain(
+    "Hosted-site asset changed without a new file name: /assets/app-4f3a9c12.css",
+  );
+  expect(unchanged.siteId).toBe(first.siteId);
+  expect(unchanged.publicSlug).toBe(first.publicSlug);
+  expect(unchanged.deploymentVersion).toBe(3);
 });

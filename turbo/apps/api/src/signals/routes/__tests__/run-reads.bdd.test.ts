@@ -1,20 +1,62 @@
-import { publicChatActor } from "./helpers/public-chat-actor";
-import { createPublicFirewallFixture } from "./helpers/public-firewall-fixture";
-import { readonlyConnectorSkills } from "./helpers/readonly-connector-skills";
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 
-import { CANONICAL_CLAUDE_MEMORY_MOUNT_PATH } from "@okouai/api-contracts/contracts/runners";
+import { authContract } from "@okouai/api-contracts/contracts/auth";
+import { billingStatusContract } from "@okouai/api-contracts/contracts/billing";
+import { chatEventsContract } from "@okouai/api-contracts/contracts/chat-threads";
+import { instructionsContract } from "@okouai/api-contracts/contracts/instructions";
+import {
+  logsByIdContract,
+  logsListContract,
+} from "@okouai/api-contracts/contracts/logs";
+import { onboardingCompleteContract } from "@okouai/api-contracts/contracts/onboarding";
+import { personalModelProvidersMainContract } from "@okouai/api-contracts/contracts/personal-model-providers";
+import {
+  runsByIdContract,
+  runsCancelContract,
+  runsQueueContract,
+} from "@okouai/api-contracts/contracts/run-routes";
+import { runnersHeartbeatContract } from "@okouai/api-contracts/contracts/runners";
+import { userModelPreferenceContract } from "@okouai/api-contracts/contracts/user-model-preference";
+import {
+  webhookClerkContract,
+  webhookCompleteContract,
+  webhookStripeContract,
+} from "@okouai/api-contracts/contracts/webhooks";
+import {
+  workflowAutomationsContract,
+  workflowsCollectionContract,
+} from "@okouai/api-contracts/contracts/workflows";
+import { beforeAll, describe, expect, it } from "vitest";
 
-import { describe, expect, it, onTestFinished } from "vitest";
-import { HttpResponse, http } from "msw";
-
+import { setupAppWithRoutes } from "../../../__tests__/test-app";
 import { testContext } from "../../../__tests__/test-context";
-import { mockEnv, mockOptionalEnv } from "../../../lib/env";
-import { now, withMockNowForTest } from "../../../lib/time";
-import { server } from "../../../mocks/server";
-import { createUniqueStaffOrgIdFixture } from "../../../test-fixtures/staff-org";
+import {
+  TEST_WITH_DOUBLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE,
+  TEST_WITH_SINGLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE,
+  TEST_WITH_TRIPLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE,
+} from "../../../__tests__/test-timeouts";
+import { createAppWithRoutes } from "../../../app-factory-core";
+import { mockEnv, mockOptionalEnv, optionalEnv } from "../../../lib/env";
+import { now, nowDate } from "../../../lib/time";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { settleIncludingAbort } from "../../utils";
+import { authMeRoutes } from "../auth-me";
+import { billingStatusRoutes } from "../billing-status";
+import { chatEventsRoutes } from "../chat-events";
+import { instructionsRoutes } from "../instructions";
+import { logsRoutes } from "../logs";
+import { meModelProvidersUpsertRoutes } from "../me-model-providers-upsert";
+import { onboardingCompleteRoutes } from "../onboarding-complete";
+import { runnersRoutes } from "../runners";
+import { runsRoutes } from "../runs";
+import { runsCancelRoutes } from "../runs-cancel";
+import { userModelPreferenceRoutes } from "../user-model-preference";
+import { webhooksAgentCompleteRoutes } from "../webhooks-agent-complete";
+import { webhooksClerkRoutes } from "../webhooks-clerk";
+import { webhooksStripeRoutes } from "../webhooks-stripe";
+import { webhooksWorkflowAutomationsRoutes } from "../webhooks-workflow-automations";
+import { workflowAutomationsRoutes } from "../workflow-automations";
+import { workflowsRoutes } from "../workflows";
 import {
   createBddApi,
   expectApiError,
@@ -23,221 +65,529 @@ import {
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createRunReadsApi } from "./helpers/api-bdd-run-reads";
 import { createRunsApi } from "./helpers/api-bdd-runs";
-import { storageTextFile } from "./helpers/api-bdd-storage-files";
-import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
+import {
+  createWebhookCallbackApi,
+  deliverOrganizationCreated,
+} from "./helpers/api-bdd-webhooks";
 import { createWorkflowsBddApi } from "./helpers/api-bdd-workflows";
-import { refreshConcurrencyEntitlement } from "./helpers/stripe-billing-webhook";
+import { createChatEventsFixture } from "./helpers/chat-events-fixture";
+import { mockClerkUsers } from "./helpers/clerk-users";
 import { holdDownloadSigning } from "./helpers/hold-download-signing";
+import { publicChatActor } from "./helpers/public-chat-actor";
+import { publicRunOwner } from "./helpers/public-run-owner";
+import {
+  generatedStripeCustomerId,
+  generatedStripeSubscriptionId,
+  postSubscriptionInvoicePaid,
+  refreshConcurrencyEntitlement,
+} from "./helpers/stripe-billing-webhook";
 
-/*
- * RUN-03/RUN-04 read surfaces for agent runs (list/read/queue/cancel,
- * agent run detail reads, event logs, and log reads) plus the RUN-01/02
- * direct-run create arms that
- * end in those reads (session continuation, memory root policies, volume
- * pinning, concurrency caps, and the production capture gate).
- *
- * Direct runs are constructed through createAgentRun$; route boundaries cover
- * Runner executions and sandbox webhooks (events/outputs/complete). Axiom reads
- * use an APL-dispatching mock, with HTTP coverage for context freshness.
- */
+const WARMUP_RUN_ID = "00000000-0000-4000-8000-000000000001";
+const WARMUP_WORKFLOW_ID = "00000000-0000-4000-8000-000000000002";
 
-// The sanitizer accepts the literal IANA name; built by parts to satisfy
-// unicorn/text-encoding-identifier-case.
-const UTF8_ENCODING = ["utf", "8"].join("-");
-const HOUR_MS = 60 * 60 * 1000;
-
-const context = testContext();
-const bdd = createBddApi(context);
-const api = createRunsApi(context);
-const webhooks = createWebhookCallbackApi(context);
-const reads = createRunReadsApi(context);
-const chat = createChatFilesBddApi(context);
-const workflows = createWorkflowsBddApi(context);
-
-function mustOk<TResponse extends { readonly status: number }>(
-  response: TResponse,
-  what: string,
-): asserts response is Extract<TResponse, { status: 200 }> {
-  if (response.status !== 200) {
-    throw new Error(`Expected ${what} to succeed`);
-  }
-}
-
-async function entitledActor(
-  customerId?: string,
-  tier?: "pro" | "team",
-): Promise<ApiTestUser> {
-  const actor = bdd.user();
-  bdd.acceptStorageWrites();
-  api.acceptStorageDownloads();
-  api.acceptTelemetryIngest();
-  await api.configureRunnerGroup();
-  await api.grantProEntitlement(actor, { customerId, tier });
-  return actor;
-}
-
-async function prepareChatModel(actor: ApiTestUser): Promise<void> {
-  // The Claude Code route (no Pi route), matching completeRun's native history.
-  await api.ensurePersonalSubscriptionModel(actor, {
-    model: "claude-fable-5-1",
-  });
-}
-
-type ChatInputOutcome =
-  | { readonly kind: "launched"; readonly runId: string }
-  | { readonly kind: "queued" }
-  | { readonly kind: "rejected" };
-
-/** Send a chat prompt; the send only enqueues it for a background pick. */
-async function sendChatPrompt(
-  actor: ApiTestUser,
-  prompt: string,
-): Promise<{ readonly threadId: string; readonly clientEventId: string }> {
-  const clientEventId = randomUUID();
-  const sent = await chat.requestSendEvent(
-    actor,
-    { prompt, clientEventId },
-    [201],
-  );
-  if (sent.status !== 201) {
-    throw new Error("Expected the chat send to be accepted");
-  }
-  return { threadId: sent.body.threadId, clientEventId };
-}
-
-/** Finish background picks, then read what became of one chat input. */
-async function readChatInputOutcome(
-  actor: ApiTestUser,
-  input: { readonly threadId: string; readonly clientEventId: string },
-): Promise<ChatInputOutcome> {
-  await flushWaitUntilForTest();
-  const { events } = await chat.listThreadEvents(actor, input.threadId);
-  const successor = events.find((event) => {
-    return event.revokesEventId === input.clientEventId;
-  });
-  if (successor === undefined) {
-    return { kind: "queued" };
-  }
-  if (successor.eventType === "input.prompt" && successor.runId) {
-    return { kind: "launched", runId: successor.runId };
-  }
-  return { kind: "rejected" };
-}
-
-function sandboxHeaders(token: string): { readonly authorization: string } {
-  return { authorization: `Bearer ${token}` };
-}
-
-function s3CommandKey(command: unknown): string | undefined {
-  return (command as { readonly input?: { readonly Key?: string } }).input?.Key;
-}
-
-function s3CommandName(command: unknown): string | undefined {
-  return (command as { readonly constructor?: { readonly name?: string } })
-    .constructor?.name;
-}
-
-function presignedUrlKeysSince(
-  startIndex: number,
-): readonly (string | undefined)[] {
-  return context.mocks.s3.getSignedUrl.mock.calls
-    .slice(startIndex)
-    .map(([, command]) => {
-      return s3CommandKey(command);
-    });
-}
-
-function hasManifestPresign(keys: readonly (string | undefined)[]): boolean {
-  return keys.some((key) => {
-    return key?.endsWith("/manifest.json") ?? false;
-  });
-}
-
-/**
- * Marks a dispatched Run completed through the sandbox webhooks. Successful
- * completion includes the required native session identity and history references
- * atomically.
- */
-async function completeRun(
-  runId: string,
-  sandboxToken: string,
-  options: { readonly lastEventSequence?: number } = {},
-): Promise<void> {
-  const headers = sandboxHeaders(sandboxToken);
-  await webhooks.requestAgentComplete(
-    {
-      runId,
-      exitCode: 0,
-      completion: {
-        cliAgentType: "claude-code",
-        cliAgentSessionId: `bdd-cli-${runId}`,
-        cliAgentSessionHistoryDisposition: "native_only",
-      },
-      ...(options.lastEventSequence === undefined
-        ? {}
-        : { lastEventSequence: options.lastEventSequence }),
-    },
-    headers,
-    [200],
-  );
-}
-
-async function finishCancelledRun(
-  runId: string,
-  sandboxToken: string,
-): Promise<void> {
-  await webhooks.requestAgentComplete(
-    { runId, exitCode: 1, error: "Run cancelled" },
-    sandboxHeaders(sandboxToken),
-    [200],
-  );
-}
-
-describe("RUN-03/RUN-04: run read surface auth matrix", () => {
-  it("rejects unauthenticated and org-less requests across the run read surfaces", async () => {
-    const missingId = randomUUID();
-    const NOT_AUTHENTICATED = {
-      error: { message: "Not authenticated", code: "UNAUTHORIZED" },
-    };
-
-    const unauthenticated = [
-      (await api.requestReadRun(null, missingId, [401])).body,
-      (await api.requestReadRunQueue(null, [401])).body,
-      (await api.requestCancelRun(null, missingId, [401])).body,
-      (await reads.requestAgentRunAgentEvents(null, missingId, {}, [401])).body,
-      (await reads.requestAgentRunNetworkLogs(null, missingId, {}, [401])).body,
-      (await reads.requestListLogs(null, {}, [401])).body,
-      (await reads.requestReadLogById(null, missingId, [401])).body,
-    ];
-    for (const body of unauthenticated) {
-      expect(body).toStrictEqual(NOT_AUTHENTICATED);
-    }
-
-    const orgless = bdd.user({ orgId: null });
-    const orglessUnauthorized = [
-      (await api.requestReadRunQueue(orgless, [401])).body,
-      (await api.requestCancelRun(orgless, missingId, [401])).body,
-      (await reads.requestListLogs(orgless, {}, [401])).body,
-      (await reads.requestAgentRunAgentEvents(orgless, missingId, {}, [401]))
-        .body,
-      (await reads.requestAgentRunNetworkLogs(orgless, missingId, {}, [401]))
-        .body,
-    ];
-    for (const body of orglessUnauthorized) {
-      expect(body).toStrictEqual(NOT_AUTHENTICATED);
-    }
-  });
+const WARMUP_HEARTBEAT_BODY = Object.freeze({
+  runnerId: "00000000-0000-4000-8000-000000000003",
+  group: "vm0/warmup",
+  snapshotGeneration: 1,
+  snapshotSequence: 1,
+  totalVcpu: 8,
+  totalMemoryMb: 16_384,
+  maxConcurrent: 2,
+  allocatedVcpu: 0,
+  allocatedMemoryMb: 0,
+  runningCount: 0,
+  admittableProfiles: Object.freeze(["vm0/default"]),
+  heldSandboxStates: Object.freeze([]),
+  heldHomeStates: Object.freeze([]),
+  activeReuseProducers: Object.freeze([]),
+  mode: "running" as const,
 });
 
-describe("RUN-03/RUN-04: direct run list, detail, and queue reads", () => {
-  it("keeps limited-free plan concurrency visible when the runtime cap is disabled", async () => {
-    const actor = bdd.user();
-    await bdd.bootstrapLimitedFreeOnboarding(actor);
-    mockEnv("CONCURRENT_RUN_LIMIT_CAP", "0");
+function clerkProfile(actor: ApiTestUser) {
+  const emailId = `email_${actor.userId}`;
+  return {
+    id: actor.userId,
+    emailAddresses: [{ id: emailId, emailAddress: actor.email }],
+    primaryEmailAddressId: emailId,
+    firstName: "BDD",
+    lastName: "User",
+  };
+}
 
-    const queue = await api.readRunQueue(actor);
+describe("run-reads.bdd", () => {
+  const context = testContext();
+  const bdd = createBddApi(context);
+  const runs = createRunsApi(context);
+  const reads = createRunReadsApi(context);
+  const chat = createChatFilesBddApi(context);
+  const webhooks = createWebhookCallbackApi(context);
+  const workflows = createWorkflowsBddApi(context);
+  const fixture = createChatEventsFixture(context);
 
-    expect(queue.body.concurrency).toMatchObject({
+  const authMeWarmup = setupAppWithRoutes({ context, routes: authMeRoutes })(
+    authContract,
+  );
+  const onboardingWarmup = setupAppWithRoutes({
+    context,
+    routes: onboardingCompleteRoutes,
+  })(onboardingCompleteContract);
+  const billingStatusWarmup = setupAppWithRoutes({
+    context,
+    routes: billingStatusRoutes,
+  })(billingStatusContract);
+  const providersWarmup = setupAppWithRoutes({
+    context,
+    routes: meModelProvidersUpsertRoutes,
+  })(personalModelProvidersMainContract);
+  const modelPrefWarmup = setupAppWithRoutes({
+    context,
+    routes: userModelPreferenceRoutes,
+  })(userModelPreferenceContract);
+  const instructionsWarmup = setupAppWithRoutes({
+    context,
+    routes: instructionsRoutes,
+  })(instructionsContract);
+  const chatEventsWarmup = setupAppWithRoutes({
+    context,
+    routes: chatEventsRoutes,
+  })(chatEventsContract);
+  const logsListWarmup = setupAppWithRoutes({ context, routes: logsRoutes })(
+    logsListContract,
+  );
+  const logsByIdWarmup = setupAppWithRoutes({ context, routes: logsRoutes })(
+    logsByIdContract,
+  );
+  const runsByIdWarmup = setupAppWithRoutes({ context, routes: runsRoutes })(
+    runsByIdContract,
+  );
+  const runsQueueWarmup = setupAppWithRoutes({ context, routes: runsRoutes })(
+    runsQueueContract,
+  );
+  const runsCancelWarmup = setupAppWithRoutes({
+    context,
+    routes: runsCancelRoutes,
+  })(runsCancelContract);
+  const runnersWarmup = setupAppWithRoutes({ context, routes: runnersRoutes })(
+    runnersHeartbeatContract,
+  );
+  const completeWarmup = setupAppWithRoutes({
+    context,
+    routes: webhooksAgentCompleteRoutes,
+  })(webhookCompleteContract);
+  const clerkWebhookWarmup = setupAppWithRoutes({
+    context,
+    routes: webhooksClerkRoutes,
+  })(webhookClerkContract);
+  const stripeWebhookWarmup = setupAppWithRoutes({
+    context,
+    routes: webhooksStripeRoutes,
+  })(webhookStripeContract);
+  const workflowsWarmup = setupAppWithRoutes({
+    context,
+    routes: workflowsRoutes,
+  })(workflowsCollectionContract);
+  const automationsWarmup = setupAppWithRoutes({
+    context,
+    routes: workflowAutomationsRoutes,
+  })(workflowAutomationsContract);
+
+  beforeAll(async () => {
+    const previousClerkSecret = optionalEnv("CLERK_WEBHOOK_SIGNING_SECRET");
+    const previousStripeSecret = optionalEnv("STRIPE_WEBHOOK_SECRET");
+    const warmed = await settleIncludingAbort(async () => {
+      context.mocks.clerk.authenticateRequest.mockResolvedValue({
+        isAuthenticated: false,
+      });
+      mockOptionalEnv("CLERK_WEBHOOK_SIGNING_SECRET", "whsec_warmup_clerk");
+      mockOptionalEnv("STRIPE_WEBHOOK_SECRET", "whsec_warmup_stripe");
+      context.mocks.clerk.verifyWebhook.mockRejectedValueOnce(
+        new Error("warmup"),
+      );
+
+      await Promise.all([
+        authMeWarmup.me({ headers: {} }),
+        onboardingWarmup.complete({ headers: {}, body: {} }),
+        billingStatusWarmup.get({ headers: {} }),
+        providersWarmup.upsert({
+          headers: {},
+          body: { type: "claude-code-oauth-token", secret: "warmup" },
+        }),
+        modelPrefWarmup.update({
+          headers: {},
+          body: { selectedModel: "claude-fable-5-1", serviceTier: null },
+        }),
+        instructionsWarmup.update({ headers: {}, body: { content: "warmup" } }),
+        chatEventsWarmup.send({
+          headers: {},
+          body: {
+            prompt: "warmup",
+            hasTextContent: true,
+            userMessage: {
+              version: 1,
+              parts: [{ type: "text", text: "warmup" }],
+            },
+          },
+        }),
+        logsListWarmup.list({ headers: {}, query: {} }),
+        logsByIdWarmup.getById({ headers: {}, params: { id: WARMUP_RUN_ID } }),
+        runsByIdWarmup.getById({ headers: {}, params: { id: WARMUP_RUN_ID } }),
+        runsQueueWarmup.getQueue({ headers: {} }),
+        runsCancelWarmup.cancel({ headers: {}, params: { id: WARMUP_RUN_ID } }),
+        runnersWarmup.heartbeat({
+          headers: {},
+          body: {
+            ...WARMUP_HEARTBEAT_BODY,
+            admittableProfiles: [...WARMUP_HEARTBEAT_BODY.admittableProfiles],
+            heldSandboxStates: [...WARMUP_HEARTBEAT_BODY.heldSandboxStates],
+            heldHomeStates: [...WARMUP_HEARTBEAT_BODY.heldHomeStates],
+            activeReuseProducers: [
+              ...WARMUP_HEARTBEAT_BODY.activeReuseProducers,
+            ],
+          },
+        }),
+        completeWarmup.complete({
+          headers: {},
+          body: { runId: WARMUP_RUN_ID, exitCode: 0 },
+        }),
+        clerkWebhookWarmup.post({ body: "{}", extraHeaders: {} }),
+        stripeWebhookWarmup.post({ body: "{}", extraHeaders: {} }),
+        workflowsWarmup.create({
+          headers: {},
+          body: { name: "warmup", visibility: "public" },
+        }),
+        automationsWarmup.create({
+          headers: {},
+          params: { workflowId: WARMUP_WORKFLOW_ID },
+          body: { kind: "event", eventType: "webhook-received" },
+        }),
+        createAppWithRoutes({
+          signal: context.signal,
+          routes: webhooksWorkflowAutomationsRoutes,
+        }).request("/api/webhooks/workflow-automations/warmup-token", {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            "content-length": "9999999",
+          },
+          body: "{}",
+        }),
+      ]);
+    });
+    mockOptionalEnv("CLERK_WEBHOOK_SIGNING_SECRET", previousClerkSecret);
+    mockOptionalEnv("STRIPE_WEBHOOK_SECRET", previousStripeSecret);
+    if (!warmed.ok) {
+      throw warmed.error;
+    }
+  });
+
+  async function onboardWorkspaceMember(orgId: string) {
+    const member = bdd.user({ orgId, orgRole: "org:member" });
+    const memberOwner = publicRunOwner(context, member);
+    await bdd.completeOnboarding(member);
+    const { model } = await runs.ensurePersonalSubscriptionModel(member);
+    return { member, memberOwner, model };
+  }
+
+  async function findRunIdByPrompt(
+    actor: ApiTestUser,
+    prompt: string,
+  ): Promise<string> {
+    const list = await reads.requestListLogs(actor, { limit: 20 }, [200]);
+    const match = list.body.data.find((entry) => {
+      return entry.prompt === prompt;
+    });
+    if (!match) {
+      throw new Error(`Expected launched run with prompt "${prompt}"`);
+    }
+    return match.id;
+  }
+
+  it(
+    "run-reads.bdd-027 filters run logs by status and source",
+    { timeout: TEST_WITH_TRIPLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const seeded = await seedTeamCancelledRuns({ includeMember: false });
+
+      const [webFiltered, webLimited, telegramFiltered] = await Promise.all([
+        reads.requestListLogs(
+          seeded.owner.actor,
+          { status: "cancelled", triggerSource: "web" },
+          [200],
+        ),
+        reads.requestListLogs(
+          seeded.owner.actor,
+          { status: "cancelled", triggerSource: "web", limit: 1 },
+          [200],
+        ),
+        reads.requestListLogs(
+          seeded.owner.actor,
+          { triggerSource: "telegram" },
+          [200],
+        ),
+      ]);
+
+      expect(
+        webFiltered.body.data
+          .map((entry) => {
+            return entry.id;
+          })
+          .sort(),
+      ).toStrictEqual([seeded.web1Id, seeded.web2Id].sort());
+      expect(webLimited.body.data).toHaveLength(1);
+      expect(webLimited.body.pagination.totalPages).toBe(2);
+      expect(telegramFiltered.body.data).toStrictEqual([]);
+    },
+  );
+
+  it(
+    "run-reads.bdd-005 (1/2) lists and filters public logs and enforces run detail isolation",
+    { timeout: TEST_WITH_TRIPLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      mockEnv("CONCURRENT_RUN_LIMIT_CAP", 2);
+      const owner = await publicChatActor(context, {
+        tier: "pro",
+        runner: { maxConcurrent: 4 },
+      });
+      const {
+        member,
+        memberOwner,
+        model: memberModel,
+      } = await onboardWorkspaceMember(owner.actor.orgId ?? "");
+
+      await Promise.all([
+        owner.requestSendEvent(
+          owner.actor,
+          {
+            prompt: "target run a",
+            model: owner.model,
+            clientEventId: randomUUID(),
+          },
+          [201],
+        ),
+        owner.requestSendEvent(
+          owner.actor,
+          {
+            prompt: "other run b",
+            model: owner.model,
+            clientEventId: randomUUID(),
+          },
+          [201],
+        ),
+      ]);
+      await flushWaitUntilForTest();
+
+      const initialOwnerLogs = await reads.requestListLogs(
+        owner.actor,
+        { limit: 10 },
+        [200],
+      );
+      const runA = initialOwnerLogs.body.data.find((entry) => {
+        return entry.prompt === "target run a";
+      });
+      const runB = initialOwnerLogs.body.data.find((entry) => {
+        return entry.prompt === "other run b";
+      });
+      if (!runA || !runB) {
+        throw new Error("Expected both owner runs A and B to launch");
+      }
+      const runAToken = runs.dispatchedRun(runA.id).executionContext
+        .sandboxToken;
+      const runBToken = runs.dispatchedRun(runB.id).executionContext
+        .sandboxToken;
+      owner.rememberExecution(runA.id, runAToken);
+      owner.rememberExecution(runB.id, runBToken);
+
+      await fixture.completeChatRunOk(runB.id, {
+        authorization: `Bearer ${runBToken}`,
+      });
+      await flushWaitUntilForTest();
+
+      await memberOwner.run(() => {
+        return chat.requestSendEvent(
+          member,
+          {
+            prompt: "member isolated run",
+            model: memberModel,
+            clientEventId: randomUUID(),
+          },
+          [201],
+        );
+      });
+      await flushWaitUntilForTest();
+      const memberRunId = await findRunIdByPrompt(
+        member,
+        "member isolated run",
+      );
+      memberOwner.rememberExecution(
+        memberRunId,
+        runs.dispatchedRun(memberRunId).executionContext.sandboxToken,
+      );
+
+      const oneHourAgo = now() - 60 * 60 * 1000;
+      const [
+        ownerDefaultLogs,
+        ownerRunningLogs,
+        ownerCompletedLimit1,
+        ownerCompletedSince,
+        ownerRunBDetail,
+        ownerUnknownRun,
+        ownerMemberRun,
+      ] = await Promise.all([
+        reads.requestListLogs(owner.actor, {}, [200]),
+        reads.requestListLogs(owner.actor, { status: "running" }, [200]),
+        reads.requestListLogs(
+          owner.actor,
+          { status: "completed", limit: 1 },
+          [200],
+        ),
+        reads.requestListLogs(
+          owner.actor,
+          { status: "completed", since: oneHourAgo },
+          [200],
+        ),
+        runs.requestReadRun(owner.actor, runB.id, [200]),
+        runs.requestReadRun(owner.actor, randomUUID(), [404]),
+        runs.requestReadRun(owner.actor, memberRunId, [404]),
+      ]);
+
+      const [memberDefaultLogs, memberOwnRun] = await Promise.all([
+        reads.requestListLogs(member, {}, [200]),
+        runs.requestReadRun(member, memberRunId, [200]),
+      ]);
+
+      const ownerPrompts = ownerDefaultLogs.body.data.map((entry) => {
+        return entry.prompt;
+      });
+      expect(ownerPrompts).toContain("target run a");
+      expect(ownerPrompts).toContain("other run b");
+
+      const memberIds = memberDefaultLogs.body.data.map((entry) => {
+        return entry.id;
+      });
+      expect(memberIds).not.toContain(runA.id);
+
+      const runningIds = ownerRunningLogs.body.data.map((entry) => {
+        return entry.id;
+      });
+      expect(runningIds).toContain(runA.id);
+      expect(runningIds).not.toContain(runB.id);
+
+      expect(ownerCompletedLimit1.body.data).toHaveLength(1);
+      expect(ownerCompletedLimit1.body.data[0]).toMatchObject({
+        id: runB.id,
+        startedAt: expect.any(String),
+      });
+      expect(ownerCompletedSince.body.data).toContainEqual(
+        expect.objectContaining({ id: runB.id }),
+      );
+
+      expect(ownerRunBDetail.body).toMatchObject({
+        runId: runB.id,
+        status: "completed",
+        startedAt: expect.any(String),
+        completedAt: expect.any(String),
+      });
+
+      expectApiError(ownerUnknownRun.body);
+      expect(ownerUnknownRun.body.error.message).toBe("Agent run not found");
+      expectApiError(ownerMemberRun.body);
+      expect(ownerMemberRun.body.error.message).toBe("Agent run not found");
+
+      if (!("runId" in memberOwnRun.body)) {
+        throw new Error("Expected member to read their own run detail");
+      }
+      expect(memberOwnRun.body.runId).toBe(memberRunId);
+    },
+  );
+
+  it(
+    "run-reads.bdd-003 groups active concurrency by workspace member",
+    { timeout: TEST_WITH_DOUBLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const owner = await publicChatActor(context, {
+        tier: "pro",
+        runner: { maxConcurrent: 4 },
+      });
+      const {
+        member,
+        memberOwner,
+        model: memberModel,
+      } = await onboardWorkspaceMember(owner.actor.orgId ?? "");
+
+      await bdd.readMe(owner.actor);
+      await bdd.readMe(member);
+
+      await owner.requestSendEvent(
+        owner.actor,
+        {
+          prompt: "owner concurrency run",
+          model: owner.model,
+          clientEventId: randomUUID(),
+        },
+        [201],
+      );
+      await memberOwner.run(() => {
+        return chat.requestSendEvent(
+          member,
+          {
+            prompt: "member concurrency run",
+            model: memberModel,
+            clientEventId: randomUUID(),
+          },
+          [201],
+        );
+      });
+      await flushWaitUntilForTest();
+
+      const ownerRunId = await findRunIdByPrompt(
+        owner.actor,
+        "owner concurrency run",
+      );
+      const memberRunId = await findRunIdByPrompt(
+        member,
+        "member concurrency run",
+      );
+      owner.rememberExecution(
+        ownerRunId,
+        runs.dispatchedRun(ownerRunId).executionContext.sandboxToken,
+      );
+      memberOwner.rememberExecution(
+        memberRunId,
+        runs.dispatchedRun(memberRunId).executionContext.sandboxToken,
+      );
+
+      const queue = await runs.readRunQueue(owner.actor);
+      expect(queue.body.concurrency).toMatchObject({
+        tier: "pro",
+        limit: 3,
+        active: 2,
+        available: 1,
+      });
+      expect(queue.body.concurrency.memberUsage).toHaveLength(2);
+      expect(queue.body.concurrency.memberUsage).toStrictEqual(
+        expect.arrayContaining([
+          {
+            userId: owner.actor.userId,
+            displayName: "BDD User",
+            active: 1,
+          },
+          {
+            userId: member.userId,
+            displayName: "BDD User",
+            active: 1,
+          },
+        ]),
+      );
+    },
+  );
+
+  it("run-reads.bdd-002 keeps limited-free plan concurrency visible when the runtime cap is disabled", async () => {
+    const member = bdd.user();
+    await bdd.bootstrapLimitedFreeOnboarding(member);
+    mockEnv("CONCURRENT_RUN_LIMIT_CAP", 0);
+
+    const queue = await runs.readRunQueue(member);
+    expect(queue.body.concurrency).toStrictEqual({
       tier: "limited-free-1",
       limit: 2,
       active: 0,
@@ -246,2649 +596,691 @@ describe("RUN-03/RUN-04: direct run list, detail, and queue reads", () => {
     });
   });
 
-  it("groups active concurrency by workspace member", async () => {
-    const actor = await entitledActor();
-    const member = bdd.user({ orgId: actor.orgId, orgRole: "org:member" });
-    await bdd.completeOnboarding(member);
-    await api.ensurePersonalSubscriptionModel(member);
-    await prepareChatModel(actor);
-
-    await api.createThreadRun(actor, {
-      prompt: "actor active run",
-    });
-    await api.createThreadRun(member, {
-      prompt: "member active run",
-      model: "claude-fable-5-1",
-    });
-    await bdd.readMe(actor);
-    await bdd.readMe(member);
-
-    const queue = await api.readRunQueue(actor);
-
-    expect(queue.body.concurrency).toMatchObject({
-      tier: "pro",
-      limit: 3,
-      active: 2,
-      available: 1,
-    });
-    expect(queue.body.concurrency.memberUsage).toHaveLength(2);
-    expect(queue.body.concurrency.memberUsage).toStrictEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
+  it(
+    "run-reads.bdd-004 reads the signed event automation trigger source from logs",
+    { timeout: TEST_WITH_SINGLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const actor = bdd.user();
+      const orgId = actor.orgId;
+      if (!orgId) {
+        throw new Error("Expected a team workspace owner");
+      }
+      const owner = publicRunOwner(context, actor);
+      fixture.chatCallbacks.acceptChatObjectStorage();
+      runs.acceptStorageDownloads();
+      runs.acceptTelemetryIngest();
+      mockOptionalEnv("OPENROUTER_API_KEY", "bdd-run-reads-auto-key");
+      fixture.chatCallbacks.disableVapid();
+      const periodEnd = nowDate();
+      periodEnd.setTime(now() + 30 * 24 * 60 * 60 * 1000);
+      await Promise.all([
+        runs.configureRunnerGroup(),
+        deliverOrganizationCreated(context, actor),
+        postSubscriptionInvoicePaid(context.signal, {
+          orgId,
           userId: actor.userId,
-          displayName: "BDD User",
-          active: 1,
+          tier: "team",
+          customerId: generatedStripeCustomerId(),
+          subscriptionId: generatedStripeSubscriptionId(),
+          currentPeriodEnd: periodEnd,
         }),
-        expect.objectContaining({
-          userId: member.userId,
-          displayName: "BDD User",
-          active: 1,
-        }),
-      ]),
-    );
-  });
-
-  it("reads the signed event automation trigger source from logs", async () => {
-    // Webhook automations require a Team workspace.
-    const actor = await entitledActor(undefined, "team");
-    await prepareChatModel(actor);
-
-    const event = await workflows.startEventAutomationRun(actor);
-    await api.requestCancelRun(actor, event.runId, [200]);
-
-    const sourceRuns = [
-      { runId: event.runId, triggerSource: "automation-event" },
-    ] as const;
-    const triggerSources = sourceRuns.map((run) => {
-      return run.triggerSource;
-    });
-
-    const listed = await reads.requestListLogs(actor, {}, [200]);
-    mustOk(listed, "the trigger source logs list");
-    expect(listed.body.filters.sources).toStrictEqual(
-      expect.arrayContaining([...triggerSources]),
-    );
-
-    for (const sourceRun of sourceRuns) {
-      const detail = await reads.requestReadLogById(
-        actor,
-        sourceRun.runId,
-        [200],
-      );
-      expect(detail.body).toMatchObject({
-        id: sourceRun.runId,
-        triggerSource: sourceRun.triggerSource,
-      });
-
-      const filtered = await reads.requestListLogs(
-        actor,
-        { triggerSource: sourceRun.triggerSource },
-        [200],
-      );
-      mustOk(filtered, `${sourceRun.triggerSource} logs filter`);
-      expect(
-        filtered.body.data.map((entry) => {
-          return entry.id;
-        }),
-      ).toContain(sourceRun.runId);
-    }
-  });
-
-  it("lists and reads runs through public logs with status and since filters", async () => {
-    // Keep this capacity scenario independent of the product-tier limit.
-    mockEnv("CONCURRENT_RUN_LIMIT_CAP", "2");
-    const actor = await entitledActor();
-    const member = bdd.user({ orgId: actor.orgId, orgRole: "org:member" });
-    await bdd.completeOnboarding(member);
-    await api.ensurePersonalSubscriptionModel(member);
-
-    await api.ensurePersonalSubscriptionModel(actor, {
-      model: "claude-fable-5-1",
-    });
-
-    const runA = await api.createThreadRun(actor, {
-      prompt: "target run a",
-    });
-    const runB = await api.createThreadRun(actor, {
-      prompt: "other run b",
-    });
-
-    const defaults = await reads.requestListLogs(actor, {}, [200]);
-    const defaultPrompts = defaults.body.data.map((run) => {
-      return run.prompt;
-    });
-    expect(defaultPrompts).toStrictEqual(
-      expect.arrayContaining(["target run a", "other run b"]),
-    );
-
-    const memberView = await reads.requestListLogs(member, {}, [200]);
-    expect(
-      memberView.body.data.map((run) => {
-        return run.id;
-      }),
-    ).not.toContain(runA.runId);
-
-    const executionA = await api.executionInput(runA.runId);
-    const executionB = await api.executionInput(runB.runId);
-    await completeRun(runB.runId, executionB.sandboxToken);
-
-    const runningOnly = await reads.requestListLogs(
-      actor,
-      { status: "running" },
-      [200],
-    );
-    const runningIds = runningOnly.body.data.map((run) => {
-      return run.id;
-    });
-    expect(runningIds).toContain(runA.runId);
-    expect(runningIds).not.toContain(runB.runId);
-
-    const afterComplete = await reads.requestListLogs(actor, {}, [200]);
-    expect(
-      afterComplete.body.data.map((run) => {
-        return run.prompt;
-      }),
-    ).toContain("other run b");
-
-    const completed = await reads.requestListLogs(
-      actor,
-      { status: "completed", limit: 1 },
-      [200],
-    );
-    expect(completed.body.data).toHaveLength(1);
-    expect(completed.body.data[0]).toMatchObject({
-      id: runB.runId,
-      status: "completed",
-      prompt: "other run b",
-    });
-    expect(completed.body.data[0]?.startedAt).not.toBeNull();
-
-    const insideWindow = await reads.requestListLogs(
-      actor,
-      {
-        status: "completed",
-        since: now() - 60 * 60_000,
-      },
-      [200],
-    );
-    expect(
-      insideWindow.body.data.map((run) => {
-        return run.id;
-      }),
-    ).toContain(runB.runId);
-
-    const detail = await api.requestReadRun(actor, runB.runId, [200]);
-    expect(detail.body).toMatchObject({
-      runId: runB.runId,
-      status: "completed",
-      prompt: "other run b",
-    });
-    mustOk(detail, "Agent run detail");
-    expect(detail.body.startedAt).toBeDefined();
-    expect(detail.body.completedAt).toBeDefined();
-
-    const missing = await api.requestReadRun(actor, randomUUID(), [404]);
-    expectApiError(missing.body);
-    expect(missing.body.error.message).toBe("Agent run not found");
-
-    const runM = await api.createThreadRun(member, {
-      prompt: "member run m",
-      model: "claude-fable-5-1",
-    });
-    const hiddenFromActor = await api.requestReadRun(actor, runM.runId, [404]);
-    expectApiError(hiddenFromActor.body);
-    expect(hiddenFromActor.body.error.message).toBe("Agent run not found");
-    const memberDetail = await api.requestReadRun(member, runM.runId, [200]);
-    expect(memberDetail.body).toMatchObject({ runId: runM.runId });
-    const executionM = await api.executionInput(runM.runId);
-
-    // auth-me refreshes the caller's user-cache email, which the queue
-    // surfaces for owner entries.
-    await bdd.readMe(actor);
-    const agentQueue = await api.readRunQueue(actor);
-    expect(agentQueue.body.concurrency).toMatchObject({
-      tier: "pro",
-      limit: 2,
-      active: 2,
-      available: 0,
-    });
-    expect(agentQueue.body.runningTasks).toHaveLength(2);
-    const ownTask = agentQueue.body.runningTasks.find((task) => {
-      return task.isOwner;
-    });
-    expect(ownTask).toMatchObject({
-      runId: runA.runId,
-      userEmail: actor.email,
-      isOwner: true,
-    });
-    expect(ownTask?.startedAt).not.toBeNull();
-    const foreignTask = agentQueue.body.runningTasks.find((task) => {
-      return !task.isOwner;
-    });
-    expect(foreignTask).toMatchObject({
-      runId: null,
-      userEmail: "unknown",
-      isOwner: false,
-    });
-
-    // A full org keeps new chat input queued instead of launching it.
-    const overLimit = await sendChatPrompt(
-      actor,
-      "run over the concurrency limit",
-    );
-    await expect(readChatInputOutcome(actor, overLimit)).resolves.toStrictEqual(
-      { kind: "queued" },
-    );
-    await api.requestCancelRun(actor, runA.runId, [200]);
-    await api.requestCancelRun(member, runM.runId, [200]);
-    // Started runs still occupy capacity until the runner reports completion.
-    expect((await api.readRunQueue(actor)).body.concurrency.active).toBe(2);
-    await expect(readChatInputOutcome(actor, overLimit)).resolves.toStrictEqual(
-      { kind: "queued" },
-    );
-    await finishCancelledRun(runA.runId, executionA.sandboxToken);
-    await finishCancelledRun(runM.runId, executionM.sandboxToken);
-
-    // Released slots pick the queued input.
-    const picked = await readChatInputOutcome(actor, overLimit);
-    if (picked.kind !== "launched") {
-      throw new Error("Expected released capacity to launch the queued input");
-    }
-    expect((await api.readRunQueue(actor)).body.concurrency.active).toBe(1);
-    const pickedExecution = await api.executionInput(picked.runId);
-    await api.requestCancelRun(actor, picked.runId, [200]);
-    await finishCancelledRun(picked.runId, pickedExecution.sandboxToken);
-    const drained = await api.readRunQueue(actor);
-    expect(drained.body.concurrency.active).toBe(0);
-  });
-});
-
-describe("RUN-03: cancel through the run cancel route", () => {
-  async function cancelFixture() {
-    const actor = await entitledActor();
-    await prepareChatModel(actor);
-    return { actor };
-  }
-
-  it("cancels a running run idempotently", async () => {
-    const { actor } = await cancelFixture();
-    const run = await api.createThreadRun(actor, {
-      prompt: "cancel a running run",
-    });
-    await api.executionInput(run.runId);
-    const cancelled = await api.requestCancelRun(
-      actor,
-      run.runId.toUpperCase(),
-      [200],
-    );
-    expect(cancelled.body).toStrictEqual({
-      id: run.runId,
-      status: "cancelled",
-      message: "Run cancelled successfully",
-    });
-    expect((await api.readRun(actor, run.runId)).status).toBe("cancelled");
-    const repeated = await api.requestCancelRun(actor, run.runId, [200]);
-    expect(repeated.body).toMatchObject({ status: "cancelled" });
-  });
-
-  it("rejects cancellation after a run completes", async () => {
-    const { actor } = await cancelFixture();
-    const run = await api.createThreadRun(actor, {
-      prompt: "complete then cancel",
-    });
-    const execution = await api.executionInput(run.runId);
-    await completeRun(run.runId, execution.sandboxToken);
-    const notCancellable = await api.requestCancelRun(actor, run.runId, [400]);
-    expectApiError(notCancellable.body);
-    expect(notCancellable.body.error.code).toBe("RUN_NOT_CANCELLABLE");
-  });
-
-  it("hides an unknown run from cancellation", async () => {
-    const { actor } = await cancelFixture();
-    const unknown = await api.requestCancelRun(actor, randomUUID(), [404]);
-    expectApiError(unknown.body);
-    expect(unknown.body.error.code).toBe("NOT_FOUND");
-  });
-
-  it("hides another organization's run from cancellation", async () => {
-    const { actor } = await cancelFixture();
-    const run = await api.createThreadRun(actor, {
-      prompt: "cross-organization cancel",
-    });
-    const execution = await api.executionInput(run.runId);
-    await completeRun(run.runId, execution.sandboxToken);
-    const outsider = bdd.user();
-    const crossOrg = await api.requestCancelRun(
-      outsider,
-      run.runId.toUpperCase(),
-      [404],
-    );
-    expectApiError(crossOrg.body);
-    expect(crossOrg.body.error.code).toBe("NOT_FOUND");
-  });
-});
-
-describe("RUN-01/RUN-02: session continuation, memory policies, and volume pinning", () => {
-  it("restores volumes, memory, and conversation state when continuing sessions", async () => {
-    const fixture = createPublicFirewallFixture(context);
-    await fixture.run(async () => {
-      mockEnv("S3_ENDPOINT", undefined);
-      mockEnv("S3_PUBLIC_ENDPOINT", undefined);
-      const actor = fixture.actor;
-      bdd.acceptStorageWrites();
-      api.acceptStorageDownloads();
-      api.acceptTelemetryIngest();
-      await api.configureRunnerGroup();
-      await fixture.fund();
-      await api.ensurePersonalSubscriptionModel(actor, {
-        model: "claude-fable-5-1",
-      });
-      const volumeArchiveSize = 12_345;
-      context.mocks.s3.getSignedUrl.mockResolvedValue(
-        "https://r2.example.com/storages/presigned?sig=bdd",
-      );
-      context.mocks.s3.send.mockResolvedValue({
-        ContentLength: volumeArchiveSize,
-      });
-
-      const [readonlySkill] = await readonlyConnectorSkills(context, actor, [
-        "session continuation",
       ]);
-      if (!readonlySkill) {
-        throw new Error("Expected a readonly Connector skill");
-      }
-      context.mocks.s3.getSignedUrl.mockResolvedValue(
-        "https://r2.example.com/storages/presigned?sig=bdd",
+
+      const started = await owner.run(() => {
+        return workflows.startEventAutomationRun(actor);
+      });
+      owner.rememberExecution(
+        started.runId,
+        runs.dispatchedRun(started.runId).executionContext.sandboxToken,
       );
 
-      // The session-history blob for persisted conversations is hash-only
-      // in R2 — answer the GetObject for it while keeping other s3 sends inert.
-      const history = '{"type":"init"}\n{"type":"human","text":"hi"}\n';
-      const historyHash = createHash("sha256").update(history).digest("hex");
-      context.mocks.s3.send.mockImplementation((command: unknown) => {
-        const input = (
-          command as { readonly input?: { readonly Key?: string } }
-        ).input;
-        if (input?.Key === `blobs/${historyHash}.blob`) {
-          if (s3CommandName(command) === "HeadObjectCommand") {
-            return Promise.resolve({
-              ContentLength: Buffer.byteLength(history, "utf8"),
-            });
-          }
-          return Promise.resolve({
-            Body: {
-              async *[Symbol.asyncIterator]() {
-                yield Buffer.from(history, "utf8");
-              },
-            },
-          });
-        }
-        return Promise.resolve({});
-      });
+      await runs.requestCancelRun(actor, started.runId, [200]);
 
-      const presignCallsBeforeRun =
-        context.mocks.s3.getSignedUrl.mock.calls.length;
-      const r1 = await api.createThreadRun(actor, {
-        prompt: "pin the Connector Skill bundle",
-      });
-      fixture.registerRun(r1.runId);
-      const execution1 = await api.executionInput(r1.runId);
-      fixture.registerExecution(r1.runId, execution1.sandboxToken);
-      const workflowMount = execution1.startupInputs.contentBundles.skills.find(
-        (mount) => {
-          return mount.name === readonlySkill.name;
-        },
-      );
-      expect(workflowMount?.bundle).toMatchObject({
-        sha256: readonlySkill.sha256,
-        archiveBytes: readonlySkill.archiveBytes,
-      });
-      const memory1 = execution1.startupInputs.memory;
-      expect(memory1).toMatchObject({
-        empty: true,
-        storageId: expect.any(String),
-        versionId: expect.any(String),
-        missingRootPolicy: "preserveParentVersion",
-      });
-      if (!memory1) {
-        throw new Error("Expected the execution manifest to mount memory");
-      }
-      expect(memory1.archiveUrl).toBeUndefined();
-      expect(
-        hasManifestPresign(presignedUrlKeysSince(presignCallsBeforeRun)),
-      ).toBeFalsy();
+      const [allLogs, detail, filtered] = await Promise.all([
+        reads.requestListLogs(actor, {}, [200]),
+        reads.requestReadLogById(actor, started.runId, [200]),
+        reads.requestListLogs(
+          actor,
+          { triggerSource: "automation-event" },
+          [200],
+        ),
+      ]);
 
-      const historyTransport = context.mocks.s3.send.getMockImplementation();
-      const volumeFile = storageTextFile(
-        "data/cache.txt",
-        "bdd volume payload",
-      );
-      const memoryHeaders = sandboxHeaders(execution1.sandboxToken);
-      context.mocks.s3.send.mockResolvedValue({
-        ContentLength: volumeArchiveSize,
+      expect(allLogs.body.filters.sources).toContain("automation-event");
+      expect(detail.body).toMatchObject({
+        id: started.runId,
+        triggerSource: "automation-event",
       });
-      const prepared = await webhooks.requestAgentStoragePrepare(
-        { runId: r1.runId, storageId: memory1.storageId, files: [volumeFile] },
-        memoryHeaders,
-        [200],
-      );
-      mustOk(prepared, "Memory publication prepare");
-      const volumeVersion = prepared.body.versionId;
-      await webhooks.requestAgentStorageCommit(
-        {
-          runId: r1.runId,
-          storageId: memory1.storageId,
-          versionId: volumeVersion,
-          files: [volumeFile],
-        },
-        memoryHeaders,
-        [200],
-      );
-      const presignCount = context.mocks.s3.getSignedUrl.mock.calls.length;
-      const requestCount = context.mocks.s3.send.mock.calls.length;
-      context.mocks.s3.send.mockRejectedValue(
-        new Error("Registered version reuse must not access R2"),
-      );
-      const repeatedPrepare = await webhooks.requestAgentStoragePrepare(
-        {
-          runId: r1.runId,
-          storageId: memory1.storageId,
-          files: [volumeFile],
-          force: true,
-        },
-        memoryHeaders,
-        [200],
-      );
-      mustOk(repeatedPrepare, "Memory publication reuse");
-      expect(repeatedPrepare.body).toStrictEqual({
-        versionId: volumeVersion,
-        existing: true,
-      });
-      expect(context.mocks.s3.getSignedUrl).toHaveBeenCalledTimes(presignCount);
-      await webhooks.requestAgentStorageCommit(
-        {
-          runId: r1.runId,
-          storageId: memory1.storageId,
-          versionId: volumeVersion,
-          files: [volumeFile],
-        },
-        memoryHeaders,
-        [200],
-      );
-      expect(context.mocks.s3.send).toHaveBeenCalledTimes(requestCount);
-      const empty = await webhooks.requestAgentStoragePrepare(
-        { runId: r1.runId, storageId: memory1.storageId, files: [] },
-        memoryHeaders,
-        [200],
-      );
-      mustOk(empty, "Original empty Memory restore");
-      expect(empty.body.versionId).toBe(memory1.versionId);
-      await webhooks.requestAgentStorageCommit(
-        {
-          runId: r1.runId,
-          storageId: memory1.storageId,
-          versionId: empty.body.versionId,
-          files: [],
-        },
-        memoryHeaders,
-        [200],
-      );
-      if (!historyTransport) {
-        throw new Error("Expected the session history transport");
-      }
-      context.mocks.s3.send.mockImplementation(historyTransport);
-
-      const cliAgentSessionId = `bdd-cli-${r1.runId}`;
-      const headers1 = sandboxHeaders(execution1.sandboxToken);
-      await webhooks.requestAgentComplete(
-        {
-          runId: r1.runId,
-          exitCode: 0,
-          completion: {
-            cliAgentType: "claude-code",
-            cliAgentSessionId,
-            cliAgentSessionHistoryDisposition: "native_only",
-            storageOutputs: [
-              {
-                name: "memory",
-                version: memory1.versionId,
-                mountPath: CANONICAL_CLAUDE_MEMORY_MOUNT_PATH,
-              },
-            ],
-            volumeVersionsSnapshot: {
-              versions: { memory: memory1.versionId },
-            },
-          },
-        },
-        headers1,
-        [200],
-      );
-
-      await flushWaitUntilForTest();
-      const continued = await api.createThreadRun(actor, {
-        threadId: r1.threadId,
-        prompt: "continue the persisted session",
-      });
-      fixture.registerRun(continued.runId);
-      const continuedExecution = await api.executionInput(continued.runId);
-      fixture.registerExecution(
-        continued.runId,
-        continuedExecution.sandboxToken,
-      );
-      expect(continuedExecution.vars).toStrictEqual(execution1.vars);
-      expect(
-        continuedExecution.startupInputs.contentBundles.skills,
-      ).toContainEqual(
+      expect(filtered.body.data).toContainEqual(
         expect.objectContaining({
-          name: readonlySkill.name,
-          bundle: expect.objectContaining({
-            sha256: readonlySkill.sha256,
-            archiveBytes: readonlySkill.archiveBytes,
-          }),
+          id: started.runId,
+          triggerSource: "automation-event",
         }),
       );
-
-      expect(continuedExecution.nativeContinuation).toMatchObject({
-        sessionId: `bdd-cli-${r1.runId}`,
-        generationRunId: r1.runId,
-      });
-      const continuedMemory = continuedExecution.startupInputs.memory;
-      expect(continuedMemory).toMatchObject({
-        missingRootPolicy: "preserveParentVersion",
-      });
-      await api.requestCancelRun(actor, continued.runId, [200]);
-      await finishCancelledRun(
-        continued.runId,
-        continuedExecution.sandboxToken,
-      );
-    });
-  });
-});
-
-describe("RUN-01: run admission boundaries", () => {
-  it("treats the one-run limit as soft for concurrent chat picks and enforces it afterwards", async () => {
-    const actor = await entitledActor();
-    await prepareChatModel(actor);
-    mockEnv("CONCURRENT_RUN_LIMIT_CAP", "1");
-
-    const inputs = await Promise.all([
-      sendChatPrompt(actor, "concurrent admission candidate one"),
-      sendChatPrompt(actor, "concurrent admission candidate two"),
-    ]);
-
-    // Picks count active runs without an org lock, so simultaneous picks may
-    // both launch. At least one always does, and the limit only keeps the
-    // other queued; it never rejects the input.
-    const outcomes: ChatInputOutcome[] = [];
-    for (const input of inputs) {
-      outcomes.push(await readChatInputOutcome(actor, input));
-    }
-    const launchedRunIds = outcomes.flatMap((outcome) => {
-      return outcome.kind === "launched" ? [outcome.runId] : [];
-    });
-    expect(launchedRunIds.length).toBeGreaterThanOrEqual(1);
-    expect(
-      outcomes.every((outcome) => {
-        return outcome.kind !== "rejected";
-      }),
-    ).toBeTruthy();
-    const running = await reads.requestListLogs(
-      actor,
-      { status: "running", limit: 50 },
-      [200],
-    );
-    expect(
-      running.body.data
-        .map((run) => {
-          return run.id;
-        })
-        .sort(),
-    ).toStrictEqual([...launchedRunIds].sort());
-
-    // A later input observes the launched runs and stays queued.
-    const limited = await sendChatPrompt(
-      actor,
-      "sequential admission after race",
-    );
-    await expect(readChatInputOutcome(actor, limited)).resolves.toStrictEqual({
-      kind: "queued",
-    });
-
-    for (const runId of launchedRunIds) {
-      await api.requestCancelRun(actor, runId, [200]);
-    }
-    await flushWaitUntilForTest();
-  });
-
-  it("enforces chat pick concurrency until the cap is disabled", async () => {
-    const customerId = `cus_${randomUUID()}`;
-    const actor = await entitledActor(customerId);
-    await prepareChatModel(actor);
-    await prepareChatModel(actor);
-
-    const first = await api.createThreadRun(actor, {
-      prompt: "first concurrent run",
-    });
-    const second = await api.createThreadRun(actor, {
-      prompt: "second concurrent run",
-    });
-    const third = await api.createThreadRun(actor, {
-      prompt: "third concurrent run",
-    });
-    const limited = await sendChatPrompt(actor, "fourth concurrent run");
-    await expect(readChatInputOutcome(actor, limited)).resolves.toStrictEqual({
-      kind: "queued",
-    });
-
-    mockEnv("CONCURRENT_RUN_LIMIT_CAP", "0");
-    await refreshConcurrencyEntitlement(actor, customerId, context.signal);
-    const uncapped = await readChatInputOutcome(actor, limited);
-    if (uncapped.kind !== "launched") {
-      throw new Error("Expected the uncapped pick to launch the queued input");
-    }
-    await api.requestCancelRun(actor, uncapped.runId, [200]);
-    await api.requestCancelRun(actor, first.runId, [200]);
-    await api.requestCancelRun(actor, second.runId, [200]);
-    await api.requestCancelRun(actor, third.runId, [200]);
-  });
-
-  it("restricts production network-body capture to staff organizations", async () => {
-    const actor = await entitledActor();
-    await prepareChatModel(actor);
-    mockEnv("ENV", "production");
-    mockOptionalEnv("VERCEL_ENV", "preview");
-    const legacyDomainActor = {
-      ...actor,
-      email: `bdd-${randomUUID().slice(0, 8)}@vm0.ai`,
-    };
-    await bdd.readMe(legacyDomainActor);
-    // The pick rejects a non-staff capture request before any run exists.
-    await expect(
-      api.readThreadRunRejection(legacyDomainActor, {
-        prompt: "capture from a non-staff organization",
-        captureNetworkBodies: true,
-      }),
-    ).resolves.toBe("forbidden");
-
-    const staff = bdd.user({ orgId: createUniqueStaffOrgIdFixture() });
-    await api.grantProEntitlement(staff);
-    await prepareChatModel(staff);
-    const allowed = await api.createThreadRun(staff, {
-      prompt: "capture from a staff organization",
-      captureNetworkBodies: true,
-    });
-    const captureExecution = await api.executionInput(allowed.runId);
-    expect(captureExecution.captureNetworkBodies).toBeTruthy();
-    await api.requestCancelRun(staff, allowed.runId, [200]);
-  });
-});
-
-interface AxiomQueryRows {
-  readonly events?: readonly Record<string, unknown>[];
-  readonly network?: readonly unknown[];
-  readonly runContext?: readonly Record<string, unknown>[];
-}
-
-/** Answers Activity diagnostic Axiom reads by APL shape and runId. */
-function dispatchAxiomQueries(
-  rowsByRun: Readonly<Record<string, AxiomQueryRows>>,
-): void {
-  context.mocks.axiom.query.mockImplementation((apl: unknown) => {
-    if (typeof apl !== "string") {
-      return Promise.resolve([]);
-    }
-    const runId = Object.keys(rowsByRun).find((id) => {
-      return apl.includes(id);
-    });
-    const rows = runId === undefined ? undefined : rowsByRun[runId];
-    if (!rows) {
-      return Promise.resolve([]);
-    }
-    if (apl.includes("['agent-run-events']")) {
-      return Promise.resolve(sequenceEventRows(apl, rows.events ?? []));
-    }
-    if (apl.includes("['sandbox-telemetry-network']")) {
-      return Promise.resolve(timeCursorRows(apl, rows.network ?? []));
-    }
-    if (apl.includes("['run-context']")) {
-      return Promise.resolve([...(rows.runContext ?? [])]);
-    }
-    return Promise.resolve([]);
-  });
-}
-
-function sequenceEventRows(
-  apl: string,
-  rows: readonly Record<string, unknown>[],
-): readonly Record<string, unknown>[] {
-  const boundaryMatch = /\| where sequenceNumber ([<>]) (-?\d+)/.exec(apl);
-  const boundary = boundaryMatch?.[2] ? Number(boundaryMatch[2]) : undefined;
-  const operator = boundaryMatch?.[1];
-  const order = apl.includes("| order by sequenceNumber desc") ? "desc" : "asc";
-  const limitMatch = /\| limit (\d+)/.exec(apl);
-  const limit = limitMatch?.[1] ? Number(limitMatch[1]) : rows.length;
-  const sinceTimeMatch = /\| where _time > datetime\("([^"]+)"\)/.exec(apl);
-  const groupingPosition = apl.indexOf(
-    "| summarize arg_min(_time, eventType, eventData) by sequenceNumber",
-  );
-  const filterTime = (row: Record<string, unknown>) => {
-    const sinceTime = sinceTimeMatch?.[1];
-    return (
-      sinceTime === undefined ||
-      Date.parse(String(row._time)) > Date.parse(sinceTime)
-    );
-  };
-  let selectedRows = [...rows];
-  if (sinceTimeMatch && sinceTimeMatch.index < groupingPosition) {
-    selectedRows = selectedRows.filter(filterTime);
-  }
-  if (groupingPosition !== -1) {
-    const selected = new Map<unknown, Record<string, unknown>>();
-    for (const row of selectedRows) {
-      const previous = selected.get(row.sequenceNumber);
-      if (
-        !previous ||
-        Date.parse(String(row._time)) < Date.parse(String(previous._time))
-      ) {
-        selected.set(row.sequenceNumber, row);
-      }
-    }
-    selectedRows = [...selected.values()];
-  }
-
-  return selectedRows
-    .filter(filterTime)
-    .filter((row) => {
-      if (boundary === undefined || typeof row.sequenceNumber !== "number") {
-        return boundary === undefined;
-      }
-      return operator === ">"
-        ? row.sequenceNumber > boundary
-        : row.sequenceNumber < boundary;
-    })
-    .sort((left, right) => {
-      const leftSequence = Number(left.sequenceNumber);
-      const rightSequence = Number(right.sequenceNumber);
-      return order === "asc"
-        ? leftSequence - rightSequence
-        : rightSequence - leftSequence;
-    })
-    .slice(0, limit);
-}
-
-function isAxiomRow(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function axiomCursorOption(value: unknown): string | undefined {
-  if (!isAxiomRow(value)) {
-    return undefined;
-  }
-
-  return typeof value.cursor === "string" ? value.cursor : undefined;
-}
-
-function timeCursorRows(
-  apl: string,
-  rows: readonly unknown[],
-): readonly unknown[] {
-  if (!apl.includes("cursor_current()")) {
-    return [...rows];
-  }
-
-  return rows.map((row, index) => {
-    if (!isAxiomRow(row) || typeof row._timeCursor === "string") {
-      return row;
-    }
-
-    return {
-      ...row,
-      _timeCursor: `cursor-${index.toString().padStart(4, "0")}`,
-    };
-  });
-}
-
-function axiomCallCount(): number {
-  return context.mocks.axiom.query.mock.calls.length;
-}
-
-function axiomCallAt(index: number): readonly unknown[] {
-  const call = context.mocks.axiom.query.mock.calls[index];
-  if (!call) {
-    throw new Error(`Expected an Axiom query call at index ${index}`);
-  }
-  return call;
-}
-
-function expectTimeCursorAxiomResume(
-  call: readonly unknown[],
-  expected: {
-    readonly cursor: string;
-    readonly order: "asc" | "desc";
-  },
-): void {
-  const apl = call[0];
-  expect(call[1]).toStrictEqual({
-    cursor: expected.cursor,
-    noCache: true,
-  });
-  expect(apl).toContain(`| order by _time ${expected.order}`);
-  expect(apl).not.toContain("| where _time > datetime(");
-  expect(apl).not.toContain("| where _time < datetime(");
-  expect(apl).not.toContain("_timeCursor >");
-  expect(apl).not.toContain("_timeCursor <");
-}
-
-function networkHardeningRows(
-  runId: string,
-  userId: string,
-): readonly unknown[] {
-  return [
-    "not-a-network-log-row",
-    {
-      _time: 123,
-      runId,
-      userId,
-      type: "http",
-      action: "ALLOW",
-      host: "missing-time.example.com",
-    },
-    {
-      _time: "2026-06-10T12:00:00Z",
-      runId,
-      userId,
-      type: "http",
-      action: "MAYBE",
-      host: 42,
-      port: "443",
-      status: "200",
-      browser_user_agent: "true",
-      firewall_params: { owner: "okou-ai", broken: 5 },
-      connector_diagnostic_env_names: ["FAL_TOKEN", 5],
-      connector_route_candidates: ["primary", 5],
-      auth_resolved_secrets: ["TOKEN", null],
-      request_headers: { host: "api.example.com", broken: false },
-      request_body_encoding: "utf-16",
-      request_body_truncated: "false",
-      response_body_encoding: "binary",
-      model_catalog_cache_status: "unbounded-provider-value",
-      model_catalog_cache_upstream_encoding: "gzip",
-      model_catalog_cache_entry_age_ms: "61000",
-      model_catalog_cache_validation_latency_ms: -1,
-      model_catalog_cache_eviction_count: 33,
-      model_catalog_prefetch_role: "credential-specific-value",
-      openrouter: { generation_id: "invalid" },
-    },
-    {
-      _time: "2026-06-10T12:01:00Z",
-      runId,
-      userId,
-      type: "http",
-      action: "BLOCK",
-      host: "blocked.example.com",
-      port: 443,
-      firewall_error: "connector_not_configured",
-      model_catalog_cache_status: "model_catalog_revalidated_200_same",
-      model_catalog_cache_upstream_encoding: "br",
-      model_catalog_cache_bypass_reason: "response_cache_control",
-      model_catalog_cache_entry_age_ms: 61_000,
-      model_catalog_cache_validation_latency_ms: 1700,
-      model_catalog_cache_eviction_count: 1,
-      model_catalog_prefetch_role: "inflight_consumer",
-      "openrouter.generation_id": "gen-network-log",
-      "openrouter.model": "author/model",
-      "openrouter.provider": "Fallback Host",
-      "openrouter.attempts": [
-        { provider: "First Host", model: "author/model", status: 429 },
-        { provider: "Fallback Host", model: "author/model", status: 200 },
-      ],
-      "openrouter.pipeline": "ignored",
-      upstream_binding_reason: "connector_auth",
-      upstream_binding_trusted_host: "api.github.com",
-      upstream_binding_request_host: "203.0.113.10",
-      upstream_binding_request_port: 443,
-      upstream_binding_server_connected: true,
-      upstream_binding_server_address: "203.0.113.10:443",
-      upstream_binding_server_peername: "140.82.121.4:443",
-      upstream_binding_server_sockname: "10.0.0.2:51000",
-      upstream_binding_client_sockname: "10.0.0.1:41000",
-      upstream_binding_server_id: "server-1",
-      upstream_binding_client_id: "client-1",
-      upstream_binding_direct_binding_present: true,
-      upstream_binding_direct_binding_host: "api.github.com",
-      upstream_binding_direct_binding_port: 443,
-      upstream_binding_direct_binding_kinds: "connector_auth",
-      upstream_binding_client_binding_count: 2,
-      upstream_binding_client_binding_match: true,
-      upstream_binding_client_binding_endpoint_match: false,
-      upstream_binding_client_binding_hosts:
-        "api.github.com, uploads.github.com",
-    },
-    {
-      _time: "2026-06-10T12:02:00Z",
-      runId,
-      userId,
-      type: "dns",
-      dns_event: "reply",
-    },
-  ];
-}
-
-function agentEvent(
-  runId: string,
-  sequenceNumber: number,
-  text: string,
-): Record<string, unknown> {
-  return {
-    _time: "2026-06-10T10:30:00Z",
-    runId,
-    sequenceNumber,
-    eventType: "assistant",
-    eventData: { message: { content: [{ type: "text", text }] } },
-  };
-}
-
-function timeLogCursor(
-  order: "asc" | "desc",
-  timestamp: string,
-  tieBreaker: string,
-): string {
-  return `time:${order}:${encodeURIComponent(timestamp)}:${encodeURIComponent(
-    tieBreaker,
-  )}`;
-}
-
-function timeLogQueryPath(
-  path: string,
-  query: {
-    readonly cursor: string;
-    readonly limit: number;
-    readonly order: "asc" | "desc";
-  },
-): string {
-  const params = new URLSearchParams({
-    cursor: query.cursor,
-    limit: String(query.limit),
-    order: query.order,
-  });
-  return `${path}?${params.toString()}`;
-}
-
-describe("RUN-04: agent run telemetry families", () => {
-  it("serves paged Activity events without leaking another member's run", async () => {
-    const actor = await entitledActor();
-    const member = bdd.user({ orgId: actor.orgId, orgRole: "org:member" });
-    await prepareChatModel(actor);
-    const run = await api.createThreadRun(actor, {
-      prompt: "inspect activity events",
-    });
-    const execution = await api.executionInput(run.runId);
-    await completeRun(run.runId, execution.sandboxToken, {
-      lastEventSequence: 1,
-    });
-
-    dispatchAxiomQueries({
-      [run.runId]: {
-        events: [
-          agentEvent(run.runId, 0, "First event"),
-          agentEvent(run.runId, 1, "Second event"),
-        ],
-      },
-    });
-
-    const firstPage = await reads.requestAgentRunAgentEvents(
-      actor,
-      run.runId,
-      { limit: 1, order: "asc" },
-      [200],
-    );
-    expect(firstPage.body).toStrictEqual({
-      events: [
-        {
-          sequenceNumber: 0,
-          eventType: "assistant",
-          eventData: {
-            message: { content: [{ type: "text", text: "First event" }] },
-          },
-          createdAt: "2026-06-10T10:30:00Z",
-        },
-      ],
-      hasMore: true,
-      nextCursor: "sequence:asc:0",
-      status: "completed",
-      lastEventSequence: 1,
-    });
-
-    const cursor = firstPage.body.nextCursor;
-    if (!cursor) {
-      throw new Error(
-        "Expected the first Activity event page to have a cursor",
-      );
-    }
-    const secondPage = await reads.requestAgentRunAgentEvents(
-      actor,
-      run.runId,
-      { cursor, limit: 1, order: "asc" },
-      [200],
-    );
-    expect(secondPage.body.events).toStrictEqual([
-      {
-        sequenceNumber: 1,
-        eventType: "assistant",
-        eventData: {
-          message: { content: [{ type: "text", text: "Second event" }] },
-        },
-        createdAt: "2026-06-10T10:30:00Z",
-      },
-    ]);
-    expect(secondPage.body.hasMore).toBeFalsy();
-    expect(secondPage.body.status).toBe("completed");
-    expect(secondPage.body.lastEventSequence).toBe(1);
-
-    const memberPage = await reads.requestAgentRunAgentEvents(
-      member,
-      run.runId,
-      { limit: 1, order: "asc" },
-      [404],
-    );
-    expectApiError(memberPage.body);
-    expect(memberPage.body.error.message).toBe("Agent run not found");
-
-    const eventQueries = context.mocks.axiom.query.mock.calls.filter(
-      ([apl]) => {
-        return typeof apl === "string" && apl.includes("['agent-run-events']");
-      },
-    );
-    expect(eventQueries).toHaveLength(2);
-    expect(eventQueries[0]?.[0]).toContain(`| where runId == "${run.runId}"`);
-    expect(eventQueries[0]?.[0]).toContain("| order by sequenceNumber asc");
-    expect(eventQueries[1]?.[0]).toContain("| where sequenceNumber > 0");
-    expect(eventQueries[0]?.[1]).toStrictEqual({
-      noCache: true,
-      format: "tabular",
-    });
-  });
-
-  it.each(["asc", "desc"] as const)(
-    "pages unique Activity events in %s order after ambiguous trace retries",
-    async (order) => {
-      const actor = await entitledActor();
-      await prepareChatModel(actor);
-      const run = await api.createThreadRun(actor, {
-        prompt: "inspect repeated diagnostic events",
-      });
-      dispatchAxiomQueries({
-        [run.runId]: {
-          events: [
-            {
-              ...agentEvent(run.runId, 0, "First event"),
-              _time: "2026-06-10T10:30:05Z",
-            },
-            agentEvent(run.runId, 0, "First event"),
-            agentEvent(run.runId, 1, "Second event"),
-            {
-              ...agentEvent(run.runId, 1, "Second event"),
-              _time: "2026-06-10T10:30:05Z",
-            },
-          ],
-        },
-      });
-      const first = await reads.requestAgentRunAgentEvents(
-        actor,
-        run.runId,
-        { limit: 1, order },
-        [200],
-      );
-      const firstSequence = order === "asc" ? 0 : 1;
-      expect(first.body.events).toHaveLength(1);
-      expect(first.body.events[0]).toMatchObject({
-        sequenceNumber: firstSequence,
-        createdAt: "2026-06-10T10:30:00Z",
-      });
-      expect(first.body.hasMore).toBeTruthy();
-      expect(first.body.nextCursor).toBe(`sequence:${order}:${firstSequence}`);
-      const cursor = first.body.nextCursor;
-      if (!cursor) {
-        throw new Error("Expected the next unique event page");
-      }
-      const second = await reads.requestAgentRunAgentEvents(
-        actor,
-        run.runId,
-        { limit: 1, order, cursor },
-        [200],
-      );
-      expect(second.body.events).toHaveLength(1);
-      expect(second.body.events[0]).toMatchObject({
-        sequenceNumber: order === "asc" ? 1 : 0,
-        createdAt: "2026-06-10T10:30:00Z",
-      });
-      expect(second.body.hasMore).toBeFalsy();
-      expect(second.body.nextCursor).toBeUndefined();
     },
   );
 
-  it("does not re-emit an already seen Activity event through sinceTime after a trace retry", async () => {
-    const actor = await entitledActor();
-    await prepareChatModel(actor);
-    const run = await api.createThreadRun(actor, {
-      prompt: "read incremental Activity diagnostics",
-    });
-    const capturedAt = now();
-    dispatchAxiomQueries({
-      [run.runId]: {
-        events: [
-          {
-            ...agentEvent(run.runId, 0, "Already seen"),
-            _time: new Date(capturedAt + 1000).toISOString(),
-          },
-          {
-            ...agentEvent(run.runId, 0, "Already seen"),
-            _time: new Date(capturedAt + 3000).toISOString(),
-          },
-          {
-            ...agentEvent(run.runId, 1, "New event"),
-            _time: new Date(capturedAt + 4000).toISOString(),
-          },
-        ],
-      },
-    });
-    const result = await reads.requestAgentRunAgentEvents(
-      actor,
-      run.runId,
-      { limit: 10, order: "asc", sinceTime: capturedAt + 2000 },
-      [200],
-    );
-    expect(result.body.events).toStrictEqual([
-      {
-        sequenceNumber: 1,
-        eventType: "assistant",
-        eventData: {
-          message: { content: [{ type: "text", text: "New event" }] },
-        },
-        createdAt: new Date(capturedAt + 4000).toISOString(),
-      },
-    ]);
-    expect(result.body.hasMore).toBeFalsy();
-  });
-
-  it.each([false, true])(
-    "reads tabular Activity aggregation with partial=%s",
-    async (partial) => {
-      const actor = await entitledActor();
-      await prepareChatModel(actor);
-      const run = await api.createThreadRun(actor, {
-        prompt: "read aggregated trace data",
+  it(
+    "run-reads.bdd-005 (2/2) enforces cap=2 queue visibility, holds cancelled slots until runner completion, then launches queued work",
+    { timeout: TEST_WITH_TRIPLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      mockEnv("CONCURRENT_RUN_LIMIT_CAP", 2);
+      const owner = await publicChatActor(context, {
+        tier: "pro",
+        runner: { maxConcurrent: 4 },
       });
-      context.mocks.axiom.useRealQuery.mockReturnValue(true);
-      server.use(
-        http.post(
-          "https://api.axiom.co/v1/datasets/_apl",
-          async ({ request }) => {
-            const url = new URL(request.url);
-            expect(url.searchParams.get("format")).toBe("tabular");
-            expect(url.searchParams.get("nocache")).toBe("true");
-            const query: unknown = await request.json();
-            expect(query).toMatchObject({
-              apl: expect.stringContaining(
-                "| summarize arg_min(_time, eventType, eventData) by sequenceNumber",
-              ),
-            });
-            return HttpResponse.json({
-              status: { isPartial: partial },
-              tables: [
-                {
-                  fields: [
-                    { name: "sequenceNumber", type: "integer" },
-                    { name: "_time", type: "datetime" },
-                    { name: "eventType", type: "string" },
-                    { name: "eventData", type: "dynamic" },
-                  ],
-                  columns: [
-                    [0],
-                    ["2026-06-10T10:30:00Z"],
-                    ["assistant"],
-                    [
-                      {
-                        message: { content: [{ type: "text", text: "Trace" }] },
-                      },
-                    ],
-                  ],
-                },
-              ],
-            });
-          },
-        ),
+      const {
+        member,
+        memberOwner,
+        model: memberModel,
+      } = await onboardWorkspaceMember(owner.actor.orgId ?? "");
+
+      // Populate userCache only for owner so owner's task carries their email
+      // while the uncached member's task reports userEmail: "unknown".
+      await bdd.readMe(owner.actor);
+
+      await owner.requestSendEvent(
+        owner.actor,
+        {
+          prompt: "target run a",
+          model: owner.model,
+          clientEventId: randomUUID(),
+        },
+        [201],
       );
-      if (partial) {
-        await expect(
-          reads.requestAgentRunAgentEvents(
-            actor,
-            run.runId,
-            { limit: 1, order: "asc" },
-            [200],
-          ),
-        ).rejects.toThrow("Unknown response status 500");
-      } else {
-        const result = await reads.requestAgentRunAgentEvents(
-          actor,
-          run.runId,
-          { limit: 1, order: "asc" },
-          [200],
-        );
-        expect(result.body.events).toStrictEqual([
+      await memberOwner.run(() => {
+        return chat.requestSendEvent(
+          member,
           {
-            sequenceNumber: 0,
-            eventType: "assistant",
-            eventData: {
-              message: { content: [{ type: "text", text: "Trace" }] },
-            },
-            createdAt: "2026-06-10T10:30:00Z",
-          },
-        ]);
-        expect(result.body.hasMore).toBeFalsy();
-      }
-    },
-  );
-
-  it("hardens network log rows in the agent read API", async () => {
-    const actor = await entitledActor();
-    await prepareChatModel(actor);
-    const agentRun = await api.createThreadRun(actor, {
-      prompt: "zero network hardening",
-    });
-
-    dispatchAxiomQueries({
-      [agentRun.runId]: {
-        network: networkHardeningRows(agentRun.runId, actor.userId),
-      },
-    });
-
-    const networkLogsRead = await reads.requestAgentRunNetworkLogs(
-      actor,
-      agentRun.runId,
-      { limit: 4, order: "asc" },
-      [200],
-    );
-    if (networkLogsRead.status !== 200) {
-      throw new Error("Expected the zero network log read to succeed");
-    }
-
-    const expectedNetworkLogs = [
-      {
-        timestamp: "2026-06-10T12:00:00Z",
-        type: "http",
-        firewall_params: { owner: "okou-ai" },
-        request_headers: { host: "api.example.com" },
-        response_body_encoding: "binary",
-      },
-      {
-        timestamp: "2026-06-10T12:01:00Z",
-        type: "http",
-        action: "BLOCK",
-        host: "blocked.example.com",
-        port: 443,
-        firewall_error: "connector_not_configured",
-        model_catalog_cache_status: "model_catalog_revalidated_200_same",
-        model_catalog_cache_upstream_encoding: "br",
-        model_catalog_cache_bypass_reason: "response_cache_control",
-        model_catalog_cache_entry_age_ms: 61_000,
-        model_catalog_cache_validation_latency_ms: 1700,
-        model_catalog_cache_eviction_count: 1,
-        model_catalog_prefetch_role: "inflight_consumer",
-        openrouter: {
-          generation_id: "gen-network-log",
-          model: "author/model",
-          provider: "Fallback Host",
-          attempts: [
-            { provider: "First Host", model: "author/model", status: 429 },
-            { provider: "Fallback Host", model: "author/model", status: 200 },
-          ],
-        },
-        upstream_binding_reason: "connector_auth",
-        upstream_binding_trusted_host: "api.github.com",
-        upstream_binding_request_host: "203.0.113.10",
-        upstream_binding_request_port: 443,
-        upstream_binding_server_connected: true,
-        upstream_binding_server_address: "203.0.113.10:443",
-        upstream_binding_server_peername: "140.82.121.4:443",
-        upstream_binding_server_sockname: "10.0.0.2:51000",
-        upstream_binding_client_sockname: "10.0.0.1:41000",
-        upstream_binding_server_id: "server-1",
-        upstream_binding_client_id: "client-1",
-        upstream_binding_direct_binding_present: true,
-        upstream_binding_direct_binding_host: "api.github.com",
-        upstream_binding_direct_binding_port: 443,
-        upstream_binding_direct_binding_kinds: "connector_auth",
-        upstream_binding_client_binding_count: 2,
-        upstream_binding_client_binding_match: true,
-        upstream_binding_client_binding_endpoint_match: false,
-        upstream_binding_client_binding_hosts:
-          "api.github.com, uploads.github.com",
-      },
-    ];
-    const expectedNextCursor = timeLogCursor(
-      "asc",
-      "2026-06-10T12:01:00Z",
-      "cursor-0003",
-    );
-
-    expect(networkLogsRead.body).toStrictEqual({
-      networkLogs: expectedNetworkLogs,
-      hasMore: true,
-      nextCursor: expectedNextCursor,
-    });
-    const networkQuery = axiomCallAt(axiomCallCount() - 1);
-    expect(networkQuery[1]).toStrictEqual({ noCache: true });
-  });
-
-  it("keeps same-timestamp network rows reachable across time cursor pages", async () => {
-    const actor = await entitledActor();
-    await prepareChatModel(actor);
-    const run = await api.createThreadRun(actor, {
-      prompt: "emit tied network telemetry",
-    });
-    const runId = run.runId;
-    const timestamp = "2026-06-10T12:30:00Z";
-    const laterTimestamp = "2026-06-10T12:30:01Z";
-    const olderTimestamp = "2026-06-10T12:29:59Z";
-    const networkRows = [
-      {
-        _time: timestamp,
-        _timeCursor: "network-a",
-        runId,
-        userId: actor.userId,
-        type: "http",
-        action: "ALLOW",
-        host: "first.example.com",
-      },
-      {
-        _time: timestamp,
-        _timeCursor: "network-b",
-        runId,
-        userId: actor.userId,
-        type: "http",
-        action: "ALLOW",
-        host: "second.example.com",
-      },
-      {
-        _time: laterTimestamp,
-        _timeCursor: "network-c",
-        runId,
-        userId: actor.userId,
-        type: "http",
-        action: "ALLOW",
-        host: "third.example.com",
-      },
-    ];
-
-    context.mocks.axiom.query.mockImplementation(
-      (apl: unknown, options: unknown) => {
-        if (
-          typeof apl !== "string" ||
-          !apl.includes("['sandbox-telemetry-network']")
-        ) {
-          return Promise.resolve([]);
-        }
-
-        const limitMatch = /\| limit (\d+)/.exec(apl);
-        const limit = limitMatch?.[1]
-          ? Number(limitMatch[1])
-          : networkRows.length;
-        const cursor = axiomCursorOption(options);
-        const cursorIndex =
-          cursor === undefined
-            ? -1
-            : networkRows.findIndex((row) => {
-                return row._timeCursor === cursor;
-              });
-        const startIndex =
-          cursor === undefined
-            ? 0
-            : cursorIndex === -1
-              ? networkRows.length
-              : cursorIndex + 1;
-
-        return Promise.resolve(
-          networkRows.slice(startIndex, startIndex + limit),
-        );
-      },
-    );
-
-    const firstPage = await reads.requestAgentRunNetworkLogs(
-      actor,
-      runId,
-      { limit: 1, order: "asc" },
-      [200],
-    );
-    expect(firstPage.body).toStrictEqual({
-      networkLogs: [
-        {
-          timestamp,
-          type: "http",
-          action: "ALLOW",
-          host: "first.example.com",
-        },
-      ],
-      hasMore: true,
-      nextCursor: timeLogCursor("asc", timestamp, "network-a"),
-    });
-
-    const cursor = firstPage.body.nextCursor;
-    if (!cursor) {
-      throw new Error(
-        "Expected the first tied network page to return a cursor",
-      );
-    }
-
-    const secondPage = await reads.requestAgentRunNetworkLogs(
-      actor,
-      runId,
-      { cursor, limit: 1, order: "asc" },
-      [200],
-    );
-    expect(secondPage.body).toStrictEqual({
-      networkLogs: [
-        {
-          timestamp,
-          type: "http",
-          action: "ALLOW",
-          host: "second.example.com",
-        },
-      ],
-      hasMore: true,
-      nextCursor: timeLogCursor("asc", timestamp, "network-b"),
-    });
-    const secondPageCall = axiomCallAt(axiomCallCount() - 1);
-    expectTimeCursorAxiomResume(secondPageCall, {
-      cursor: "network-a",
-      order: "asc",
-    });
-
-    const descRows = [
-      {
-        _time: timestamp,
-        _timeCursor: "desc-a",
-        runId,
-        userId: actor.userId,
-        type: "http",
-        action: "ALLOW",
-        host: "desc-first.example.com",
-      },
-      {
-        _time: timestamp,
-        _timeCursor: "desc-b",
-        runId,
-        userId: actor.userId,
-        type: "http",
-        action: "ALLOW",
-        host: "desc-second.example.com",
-      },
-      {
-        _time: olderTimestamp,
-        _timeCursor: "desc-c",
-        runId,
-        userId: actor.userId,
-        type: "http",
-        action: "ALLOW",
-        host: "desc-third.example.com",
-      },
-    ];
-    context.mocks.axiom.query.mockImplementation(
-      (apl: unknown, options: unknown) => {
-        if (
-          typeof apl !== "string" ||
-          !apl.includes("['sandbox-telemetry-network']")
-        ) {
-          return Promise.resolve([]);
-        }
-
-        const limitMatch = /\| limit (\d+)/.exec(apl);
-        const limit = limitMatch?.[1] ? Number(limitMatch[1]) : descRows.length;
-        const cursor = axiomCursorOption(options);
-        const cursorIndex =
-          cursor === undefined
-            ? -1
-            : descRows.findIndex((row) => {
-                return row._timeCursor === cursor;
-              });
-        const startIndex =
-          cursor === undefined
-            ? 0
-            : cursorIndex === -1
-              ? descRows.length
-              : cursorIndex + 1;
-
-        return Promise.resolve(descRows.slice(startIndex, startIndex + limit));
-      },
-    );
-
-    const descFirst = await reads.requestAgentRunNetworkLogs(
-      actor,
-      runId,
-      { limit: 1, order: "desc" },
-      [200],
-    );
-    expect(descFirst.body).toStrictEqual({
-      networkLogs: [
-        {
-          timestamp,
-          type: "http",
-          action: "ALLOW",
-          host: "desc-first.example.com",
-        },
-      ],
-      hasMore: true,
-      nextCursor: timeLogCursor("desc", timestamp, "desc-a"),
-    });
-    const descCursor = descFirst.body.nextCursor;
-    if (!descCursor) {
-      throw new Error(
-        "Expected the first desc tied network page to return a cursor",
-      );
-    }
-
-    const descSecond = await reads.requestAgentRunNetworkLogs(
-      actor,
-      runId,
-      { cursor: descCursor, limit: 1, order: "desc" },
-      [200],
-    );
-    expect(descSecond.body).toStrictEqual({
-      networkLogs: [
-        {
-          timestamp,
-          type: "http",
-          action: "ALLOW",
-          host: "desc-second.example.com",
-        },
-      ],
-      hasMore: true,
-      nextCursor: timeLogCursor("desc", timestamp, "desc-b"),
-    });
-    const descSecondCall = axiomCallAt(axiomCallCount() - 1);
-    expectTimeCursorAxiomResume(descSecondCall, {
-      cursor: "desc-a",
-      order: "desc",
-    });
-  });
-
-  it("fails visibly when a network page cannot advance its cursor", async () => {
-    const actor = await entitledActor();
-    await prepareChatModel(actor);
-    const run = await api.createThreadRun(actor, {
-      prompt: "emit an unpageable network boundary",
-    });
-    const runId = run.runId;
-    const boundaryTime = "2026-06-10T12:00:00Z";
-
-    dispatchAxiomQueries({
-      [runId]: {
-        network: [
-          {
-            _time: boundaryTime,
-            runId,
-            userId: actor.userId,
-            type: "http",
-            action: "ALLOW",
-            host: "api.example.com",
-          },
-          {
-            _time: "2026-06-10T12:00:01Z",
-            runId,
-            userId: actor.userId,
-            type: "http",
-            action: "ALLOW",
-            host: "later.example.com",
-          },
-        ],
-      },
-    });
-
-    const cursor = timeLogCursor("asc", boundaryTime, "cursor-0000");
-    const networkLogs = await reads.rawApiRequest(
-      actor,
-      timeLogQueryPath(`/api/runs/${runId}/network`, {
-        cursor,
-        limit: 1,
-        order: "asc",
-      }),
-    );
-    expect(networkLogs).toStrictEqual({
-      status: 500,
-      body: { error: "Internal server error" },
-    });
-  });
-
-  it("reads fresh run context within the creation-time window after a cached miss", async () => {
-    const actor = await entitledActor();
-    await api.ensurePersonalSubscriptionModel(actor);
-
-    const agentRun = await api.createThreadRun(actor, {
-      prompt: "bounded run context",
-    });
-    onTestFinished(async () => {
-      await api.requestCancelRun(actor, agentRun.runId, [200]);
-    });
-
-    const runCreatedAt = agentRun.createdAt;
-    if (runCreatedAt === undefined) {
-      throw new Error("Expected the created run to include its creation time");
-    }
-    const runCreatedAtMs = Date.parse(runCreatedAt);
-    if (!Number.isFinite(runCreatedAtMs)) {
-      throw new Error("Expected the created run to have a valid creation time");
-    }
-    const started = await reads.requestReadLogById(
-      actor,
-      agentRun.runId,
-      [200],
-    );
-    mustOk(started, "the dispatched Run's start time");
-    const runStartedAtMs = Date.parse(started.body.startedAt ?? runCreatedAt);
-    context.mocks.axiom.useRealQuery.mockReturnValue(true);
-    let snapshotVisible = false;
-    const queryRequests: {
-      readonly body: unknown;
-      readonly noCache: string | null;
-    }[] = [];
-    server.use(
-      http.post(
-        "https://api.axiom.co/v1/datasets/_apl",
-        async ({ request }) => {
-          const noCache = new URL(request.url).searchParams.get("nocache");
-          queryRequests.push({ body: await request.json(), noCache });
-          // Cached reads retain the initial miss after the snapshot is ingested.
-          return HttpResponse.json({
-            matches:
-              noCache === "true" && snapshotVisible
-                ? [
-                    {
-                      _time: runCreatedAt,
-                      data: {
-                        runId: agentRun.runId,
-                        prompt: "bounded run context",
-                        sessionId: "bdd-bounded",
-                        storageMounts: [
-                          {
-                            name: "source",
-                            version: "source-version",
-                            mountPath: "/source",
-                            writeback: false,
-                          },
-                          {
-                            name: "output",
-                            version: "output-version",
-                            mountPath: "/output",
-                            writeback: true,
-                          },
-                          {
-                            name: "memory",
-                            version: "memory-version",
-                            mountPath: "/memory",
-                            writeback: true,
-                          },
-                        ],
-                      },
-                    },
-                  ]
-                : [],
-          });
-        },
-      ),
-    );
-
-    const pendingContext = await api.requestRunContext(
-      actor,
-      agentRun.runId,
-      [404],
-    );
-    expect(pendingContext.body).toStrictEqual({
-      error: { message: "Run context not available", code: "NOT_FOUND" },
-    });
-
-    snapshotVisible = true;
-    const contextRead = await api.requestRunContext(
-      actor,
-      agentRun.runId,
-      [200],
-    );
-    if (contextRead.status !== 200) {
-      throw new Error("Expected the run context read to succeed");
-    }
-    expect(contextRead.body).toMatchObject({
-      runId: agentRun.runId,
-      prompt: "bounded run context",
-      sessionId: "bdd-bounded",
-      storageMounts: [
-        {
-          name: "source",
-          version: "source-version",
-          mountPath: "/source",
-          writeback: false,
-        },
-        {
-          name: "output",
-          version: "output-version",
-          mountPath: "/output",
-          writeback: true,
-        },
-        {
-          name: "memory",
-          version: "memory-version",
-          mountPath: "/memory",
-          writeback: true,
-        },
-      ],
-    });
-
-    const expectedQuery = {
-      noCache: "true",
-      body: {
-        apl: `['vm0-run-context-dev']
-| where runId == "${agentRun.runId}"
-| sort by _time desc
-| limit 1`,
-        startTime: new Date(runCreatedAtMs - HOUR_MS).toISOString(),
-        endTime: new Date(
-          Math.max(runCreatedAtMs, runStartedAtMs) + HOUR_MS,
-        ).toISOString(),
-      },
-    };
-    expect(queryRequests).toStrictEqual([expectedQuery, expectedQuery]);
-  });
-
-  it("maps agent run context, network, and runner metadata from axiom snapshots", async () => {
-    const actor = await entitledActor();
-    const member = bdd.user({ orgId: actor.orgId, orgRole: "org:member" });
-    await api.ensurePersonalSubscriptionModel(actor, {
-      model: "claude-fable-5-1",
-    });
-
-    const agentRun = await api.createThreadRun(actor, {
-      prompt: "agent run detail",
-    });
-    const execution = await api.executionInput(agentRun.runId);
-    const headers = sandboxHeaders(execution.sandboxToken);
-    await webhooks.requestAgentComplete(
-      {
-        runId: agentRun.runId,
-        exitCode: 0,
-        completion: {
-          cliAgentType: "claude-code",
-          cliAgentSessionId: `bdd-cli-${agentRun.runId}`,
-          cliAgentSessionHistoryDisposition: "native_only",
-        },
-      },
-      headers,
-      [200],
-    );
-
-    const bareRun = await api.createThreadRun(actor, {
-      prompt: "agent run without snapshots",
-    });
-
-    const runId = agentRun.runId;
-    const templateGuidanceBundles = [
-      {
-        ownerKind: "user-template",
-        templateId: "859550cb-28ad-47ef-8728-f6b3849f8c55",
-        sha256: "a".repeat(64),
-        archiveBytes: 512,
-      },
-      {
-        ownerKind: "presentation-template",
-        templateId: "f0fbad48-3d7f-4468-83d1-221e9a27a1a9",
-        sha256: "b".repeat(64),
-        archiveBytes: 1024,
-      },
-    ];
-    dispatchAxiomQueries({
-      [runId]: {
-        network: [
-          {
-            _time: "2026-06-10T11:00:00Z",
-            runId,
-            userId: actor.userId,
-            type: "http",
-            action: "ALLOW",
-            host: "api.example.com",
-            port: 443,
-            method: "GET",
-            url: "[truncated]",
-            url_truncated: true,
-            url_original_char_count: 1_000_001,
-            status: 200,
-            latency_ms: 150,
-            request_size: 100,
-            response_size: 2048,
-            firewall_params: { owner: "okou-ai", broken: 5 },
-            connector_diagnostic_slug: "fal",
-            connector_diagnostic_reason: "not_configured_for_run",
-            connector_diagnostic_env_names: ["FAL_TOKEN"],
-            connector_diagnostic_base: "https://fal.run",
-            request_headers: { accept: "application/json", junk: 9 },
-            request_headers_truncated: true,
-            request_body: "req",
-            request_body_encoding: UTF8_ENCODING,
-            request_body_truncated: false,
-            response_headers: { server: "***", junk: 9 },
-            response_headers_truncated: false,
-            response_body: "cmVz",
-            response_body_encoding: "base64",
-            response_body_truncated: true,
-          },
-          {
-            _time: "2026-06-10T11:00:01Z",
-            runId,
-            userId: actor.userId,
-            type: "tcp",
-            action: "MAYBE",
-            host: "redis.example.com",
-            port: 6379,
-            request_body_encoding: "weird",
-            response_headers_truncated: "false",
-            auth_cache_hit: null,
-          },
-          {
-            _time: "2026-06-10T11:00:02Z",
-            runId,
-            userId: actor.userId,
-            type: "dns",
-            host: "api.github.com",
-            port: 53,
-            dns_event: "reply",
-            dns_result: "140.82.121.4",
-            dns_serial: "42",
-          },
-        ],
-        runContext: [
-          {
-            runId,
-            prompt: "captured diagnostic prompt",
-            appendSystemPrompt: "captured system instructions",
-            templateGuidanceBundles,
-            secretNames: ["OKOU_TOKEN", "TEST_TOKEN"],
-            varEntries: [
-              { name: "REGION", value: "launch-region" },
-              { name: "EMPTY", value: "" },
-            ],
-            cliAgentType: "claude-code",
-            sessionId: "bdd-session-1",
-            storageMounts: null,
-            environment: { LEGACY_IGNORED: "legacy-map" },
-            environmentEntries: [
-              { name: "NODE_ENV", value: "production" },
-              { name: "EMPTY", value: null },
-              { name: "NUM", value: 5 },
-              { value: "missing-name" },
-            ],
-            firewalls: [
-              {
-                kind: "builtin",
-                name: "catalog-fw",
-                baseUrlVars: { REGION: "us-east-1" },
-                sourceId: "33333333-3333-4333-8333-333333333333",
-              },
-              {
-                kind: "inline",
-                name: "test-fw",
-                customConnectorId: "11111111-1111-4111-8111-111111111111",
-                sourceId: "22222222-2222-4222-8222-222222222222",
-                apis: [
-                  {
-                    id: "test-fw:0",
-                    base: "https://api.example.com",
-                    hostPolicy: { kind: "publicDestination" },
-                    auth: {
-                      headerEntries: [
-                        {
-                          name: "Authorization",
-                          value: `Bearer \${{ secrets.TEST_TOKEN }}`,
-                        },
-                      ],
-                      base: "https://auth.example.com",
-                      queryEntries: [
-                        {
-                          name: "api_key",
-                          value: `\${{ secrets.TEST_QUERY_TOKEN }}`,
-                        },
-                      ],
-                    },
-                    permissions: [{ name: "read", rules: ["GET /users/*"] }],
-                  },
-                  {
-                    id: "test-fw:1",
-                    base: "https://aws.example.com",
-                    auth: {
-                      awsSigv4: {
-                        accessKeyId: `\${{ secrets.AWS_ACCESS_KEY_ID }}`,
-                        secretAccessKey: `\${{ secrets.AWS_SECRET_ACCESS_KEY }}`,
-                        sessionToken: `\${{ secrets.AWS_SESSION_TOKEN }}`,
-                      },
-                    },
-                  },
-                ],
-              },
-              {
-                kind: "inline",
-                name: "fallback-fw",
-                apis: [
-                  {
-                    base: "https://fallback.example.com",
-                    auth: {
-                      headerEntries: [
-                        { name: "Authorization", value: "conflicting-auth" },
-                      ],
-                      awsSigv4: {
-                        accessKeyId: "access-key",
-                        secretAccessKey: "secret-key",
-                      },
-                    },
-                    permissions: [
-                      { name: "fallback", rules: ["GET /fallback"] },
-                    ],
-                  },
-                ],
-              },
-              {
-                name: "historical-fw",
-                apis: [{ base: "https://historical.example.com" }],
-              },
-            ],
-            volumes: [
-              {
-                name: "data",
-                mountPath: "/data",
-                vasStorageName: "vol-1",
-                vasVersionId: "ver-1",
-              },
-            ],
-            artifact: {
-              mountPath: "/artifacts",
-              vasStorageName: "art-1",
-              vasVersionId: "art-ver-1",
-            },
-            featureFlags: { legacyIgnored: true },
-            featureFlagEntries: [
-              { name: "manualMorningBrief", enabled: true },
-              { name: "dummy", enabled: null },
-              { enabled: true },
-            ],
-            networkPolicies: {
-              legacyIgnored: {
-                allow: ["legacy"],
-                deny: [],
-                ask: [],
-                unknownPolicy: "deny",
-              },
-            },
-            networkPolicyEntries: [
-              {
-                name: "github",
-                policy: {
-                  allow: ["repo-read"],
-                  deny: [],
-                  ask: [],
-                  unknownPolicy: "allow",
-                },
-              },
-              { name: "broken", policy: "nope" },
-              { name: "invalid", policy: { unknownPolicy: "bogus" } },
-              {
-                policy: {
-                  allow: ["missing-name"],
-                  deny: [],
-                  ask: [],
-                  unknownPolicy: "allow",
-                },
-              },
-            ],
-          },
-        ],
-      },
-    });
-
-    const contextRead = await api.requestRunContext(actor, runId, [200]);
-    if (contextRead.status !== 200) {
-      throw new Error("Expected the run context read to succeed");
-    }
-    expect(contextRead.body.templateGuidanceBundles).toStrictEqual(
-      templateGuidanceBundles,
-    );
-    expect(contextRead.body).toMatchObject({
-      runId,
-      prompt: "captured diagnostic prompt",
-      appendSystemPrompt: "captured system instructions",
-      secretNames: ["OKOU_TOKEN", "TEST_TOKEN"],
-      vars: { REGION: "launch-region", EMPTY: "" },
-      cliAgentType: "claude-code",
-      sessionId: "bdd-session-1",
-      environment: { NODE_ENV: "production" },
-      networkPolicies: {
-        github: {
-          allow: ["repo-read"],
-          deny: [],
-          ask: [],
-          unknownPolicy: "allow",
-        },
-      },
-      featureFlags: { manualMorningBrief: true },
-      storageMounts: [
-        {
-          name: "vol-1",
-          version: "ver-1",
-          mountPath: "/data",
-          writeback: false,
-        },
-        {
-          name: "art-1",
-          version: "art-ver-1",
-          mountPath: "/artifacts",
-          writeback: true,
-        },
-      ],
-    });
-    expect(contextRead.body.environment).toStrictEqual({
-      NODE_ENV: "production",
-    });
-    expect(Object.keys(contextRead.body.networkPolicies ?? {})).toStrictEqual([
-      "github",
-    ]);
-    // New inline responses retain the previous top-level name/apis shape so
-    // already-loaded web clients can parse them as sanitized firewalls.
-    expect(contextRead.body.firewalls).toStrictEqual([
-      {
-        kind: "builtin",
-        name: "catalog-fw",
-        baseUrlVars: { REGION: "us-east-1" },
-        sourceId: "33333333-3333-4333-8333-333333333333",
-      },
-      {
-        kind: "inline",
-        customConnectorId: "11111111-1111-4111-8111-111111111111",
-        sourceId: "22222222-2222-4222-8222-222222222222",
-        name: "test-fw",
-        apis: [
-          {
-            id: "test-fw:0",
-            base: "https://api.example.com",
-            hostPolicy: { kind: "publicDestination" },
-            auth: {
-              headers: {
-                Authorization: `Bearer \${{ secrets.TEST_TOKEN }}`,
-              },
-              base: "https://auth.example.com",
-              query: { api_key: `\${{ secrets.TEST_QUERY_TOKEN }}` },
-            },
-            permissions: [{ name: "read", rules: ["GET /users/*"] }],
-          },
-          {
-            id: "test-fw:1",
-            base: "https://aws.example.com",
-            auth: {
-              awsSigv4: {
-                accessKeyId: `\${{ secrets.AWS_ACCESS_KEY_ID }}`,
-                secretAccessKey: `\${{ secrets.AWS_SECRET_ACCESS_KEY }}`,
-                sessionToken: `\${{ secrets.AWS_SESSION_TOKEN }}`,
-              },
-            },
-          },
-        ],
-      },
-      {
-        name: "fallback-fw",
-        apis: [
-          {
-            base: "https://fallback.example.com",
-            permissions: [{ name: "fallback", rules: ["GET /fallback"] }],
-          },
-        ],
-      },
-      {
-        name: "historical-fw",
-        apis: [{ base: "https://historical.example.com" }],
-      },
-    ]);
-
-    const noSnapshot = await api.requestRunContext(actor, bareRun.runId, [404]);
-    expectApiError(noSnapshot.body);
-    expect(noSnapshot.body.error.message).toBe("Run context not available");
-
-    // Re-dispatch the full row set for the network read.
-    dispatchAxiomQueries({
-      [runId]: {
-        runContext: [{ runId, cliAgentType: "claude-code" }],
-        network: [
-          {
-            _time: "2026-06-10T11:00:00Z",
-            runId,
-            userId: actor.userId,
-            type: "http",
-            action: "ALLOW",
-            host: "api.example.com",
-            port: 443,
-            method: "GET",
-            url: "[truncated]",
-            url_truncated: true,
-            url_original_char_count: 1_000_001,
-            status: 200,
-            latency_ms: 150,
-            request_size: 100,
-            response_size: 2048,
-            firewall_params: { owner: "okou-ai", broken: 5 },
-            connector_diagnostic_slug: "fal",
-            connector_diagnostic_reason: "not_configured_for_run",
-            connector_diagnostic_env_names: ["FAL_TOKEN"],
-            connector_diagnostic_base: "https://fal.run",
-            request_headers: { accept: "application/json", junk: 9 },
-            request_headers_truncated: true,
-            request_body: "req",
-            request_body_encoding: UTF8_ENCODING,
-            request_body_truncated: false,
-            response_headers: { server: "***", junk: 9 },
-            response_headers_truncated: false,
-            response_body: "cmVz",
-            response_body_encoding: "base64",
-            response_body_truncated: true,
-          },
-          {
-            _time: "2026-06-10T11:00:01Z",
-            runId,
-            userId: actor.userId,
-            type: "tcp",
-            action: "MAYBE",
-            host: "redis.example.com",
-            port: 6379,
-            request_body_encoding: "weird",
-            response_headers_truncated: "false",
-            auth_cache_hit: null,
-          },
-          {
-            _time: "2026-06-10T11:00:02Z",
-            runId,
-            userId: actor.userId,
-            type: "dns",
-            host: "api.github.com",
-            port: 53,
-            dns_event: "reply",
-            dns_result: "140.82.121.4",
-            dns_serial: "42",
-          },
-          {
-            _time: "2026-06-10T11:00:03Z",
-            runId,
-            userId: actor.userId,
-            type: "http",
-            action: "BLOCK",
-            host: "blocked.example.com",
-            port: 443,
-            method: "POST",
-            url: "https://blocked.example.com/v1/connect",
-            status: 424,
-            firewall_error: "connector_not_configured",
-          },
-        ],
-      },
-    });
-
-    const network = await reads.requestAgentRunNetworkLogs(
-      actor,
-      runId,
-      {},
-      [200],
-    );
-    if (network.status !== 200) {
-      throw new Error("Expected the zero network log read to succeed");
-    }
-    expect(network.body.networkLogs).toHaveLength(4);
-    expect(network.body.hasMore).toBeFalsy();
-    expect(network.body.networkLogs[0]).toStrictEqual({
-      timestamp: "2026-06-10T11:00:00Z",
-      type: "http",
-      action: "ALLOW",
-      host: "api.example.com",
-      port: 443,
-      method: "GET",
-      url: "[truncated]",
-      url_truncated: true,
-      url_original_char_count: 1_000_001,
-      status: 200,
-      latency_ms: 150,
-      request_size: 100,
-      response_size: 2048,
-      firewall_params: { owner: "okou-ai" },
-      connector_diagnostic_slug: "fal",
-      connector_diagnostic_reason: "not_configured_for_run",
-      connector_diagnostic_env_names: ["FAL_TOKEN"],
-      connector_diagnostic_base: "https://fal.run",
-      request_headers: { accept: "application/json" },
-      request_headers_truncated: true,
-      request_body: "req",
-      request_body_encoding: UTF8_ENCODING,
-      request_body_truncated: false,
-      response_headers: { server: "***" },
-      response_headers_truncated: false,
-      response_body: "cmVz",
-      response_body_encoding: "base64",
-      response_body_truncated: true,
-    });
-    expect(network.body.networkLogs[1]).toStrictEqual({
-      timestamp: "2026-06-10T11:00:01Z",
-      type: "tcp",
-      host: "redis.example.com",
-      port: 6379,
-    });
-    expect(network.body.networkLogs[2]).toMatchObject({
-      type: "dns",
-      dns_event: "reply",
-      dns_result: "140.82.121.4",
-      dns_serial: "42",
-    });
-    expect(network.body.networkLogs[3]).toMatchObject({
-      type: "http",
-      action: "BLOCK",
-      host: "blocked.example.com",
-      firewall_error: "connector_not_configured",
-    });
-
-    const sinceMs = Date.parse("2026-06-10T10:59:00Z");
-    const pagedNetwork = await reads.requestAgentRunNetworkLogs(
-      actor,
-      runId,
-      { limit: 2, since: sinceMs },
-      [200],
-    );
-    if (pagedNetwork.status !== 200) {
-      throw new Error("Expected the paged zero network log read to succeed");
-    }
-    expect(pagedNetwork.body.networkLogs).toHaveLength(2);
-    expect(pagedNetwork.body.hasMore).toBeTruthy();
-    expect(pagedNetwork.body.nextCursor).toBe(
-      timeLogCursor("asc", "2026-06-10T11:00:01Z", "cursor-0001"),
-    );
-    const networkApl = axiomCallAt(axiomCallCount() - 1)[0];
-    expect(networkApl).toContain(new Date(sinceMs).toISOString());
-
-    const wrongNetworkCursorKind = await reads.requestAgentRunNetworkLogs(
-      actor,
-      runId,
-      { cursor: "sequence:asc:1", limit: 1, order: "asc" },
-      [400],
-    );
-    expectApiError(wrongNetworkCursorKind.body);
-
-    const emptyNetwork = await reads.requestAgentRunNetworkLogs(
-      actor,
-      bareRun.runId,
-      {},
-      [200],
-    );
-    if (emptyNetwork.status !== 200) {
-      throw new Error("Expected the empty zero network log read to succeed");
-    }
-    expect(emptyNetwork.body).toStrictEqual({
-      networkLogs: [],
-      hasMore: false,
-    });
-
-    const memberNetwork = await reads.requestAgentRunNetworkLogs(
-      member,
-      runId,
-      {},
-      [404],
-    );
-    expectApiError(memberNetwork.body);
-    expect(memberNetwork.body.error.message).toBe("Agent run not found");
-
-    // Runner identity stays available after completion without a startup report.
-    const runner = await api.requestRunRunner(actor, runId, [200]);
-    expect(runner.body).toStrictEqual({
-      sandboxStartupPath: null,
-      runnerHostname: `runner-${api.dispatchedRun(runId).runnerId}.okou.app`,
-      runnerVersion: null,
-      runnerId: expect.any(String),
-      runnerHeartbeatGeneration: api.dispatchedRun(runId).heartbeatGeneration,
-    });
-    const bareRunner = await api.requestRunRunner(actor, bareRun.runId, [200]);
-    expect(bareRunner.body).toStrictEqual({
-      sandboxStartupPath: null,
-      runnerHostname: `runner-${api.dispatchedRun(bareRun.runId).runnerId}.okou.app`,
-      runnerVersion: null,
-      runnerId: api.dispatchedRun(bareRun.runId).runnerId,
-      runnerHeartbeatGeneration: api.dispatchedRun(bareRun.runId)
-        .heartbeatGeneration,
-    });
-
-    const memberRunner = await api.requestRunRunner(member, runId, [404]);
-    expectApiError(memberRunner.body);
-    expect(memberRunner.body.error.message).toBe("Agent run not found");
-
-    await api.requestCancelRun(actor, bareRun.runId, [200]);
-  });
-});
-
-describe("RUN-04/OPS-01: agent run logs", () => {
-  async function setupRunLogFixture() {
-    const actor = await entitledActor(undefined, "team");
-    const member = bdd.user({ orgId: actor.orgId, orgRole: "org:member" });
-    await bdd.completeOnboarding(member);
-    await api.ensurePersonalSubscriptionModel(member);
-    await api.ensurePersonalSubscriptionModel(actor, {
-      model: "claude-fable-5-1",
-    });
-
-    const webRun = await api.createThreadRun(actor, {
-      prompt: "first web run",
-    });
-    await api.requestCancelRun(actor, webRun.runId, [200]);
-    const secondWebRun = await api.createThreadRun(actor, {
-      prompt: "second web run",
-    });
-    await api.requestCancelRun(actor, secondWebRun.runId, [200]);
-    // A signed event automation supplies the second public log source.
-    const automationRun = await workflows.startEventAutomationRun(actor);
-    await api.requestCancelRun(actor, automationRun.runId, [200]);
-
-    const memberRun = await api.createThreadRun(member, {
-      prompt: "member run stays invisible",
-      model: "claude-fable-5-1",
-    });
-    await api.requestCancelRun(member, memberRun.runId, [200]);
-
-    return {
-      actor,
-      secondWebRun,
-      automationRun,
-      webRun,
-    };
-  }
-
-  it("lists organization run logs with their filter metadata", async () => {
-    const { actor, secondWebRun, automationRun, webRun } =
-      await setupRunLogFixture();
-    const listed = await reads.requestListLogs(actor, {}, [200]);
-    mustOk(listed, "the logs list");
-    const listedIds = listed.body.data.map((entry) => {
-      return entry.id;
-    });
-    expect([...listedIds].sort()).toStrictEqual(
-      [webRun.runId, secondWebRun.runId, automationRun.runId].sort(),
-    );
-
-    const webEntry = listed.body.data.find((entry) => {
-      return entry.id === webRun.runId;
-    });
-    expect(webEntry).toMatchObject({
-      framework: "claude-code",
-      triggerSource: "web",
-      status: "cancelled",
-      prompt: "first web run",
-    });
-    const automationEntry = listed.body.data.find((entry) => {
-      return entry.id === automationRun.runId;
-    });
-    expect(automationEntry).toMatchObject({
-      triggerSource: "automation-event",
-    });
-    expect(listed.body.filters.statuses).toContain("cancelled");
-    expect([...listed.body.filters.sources].sort()).toStrictEqual([
-      "automation-event",
-      "web",
-    ]);
-  });
-
-  it("pages run logs and falls back from malformed cursors", async () => {
-    const { actor } = await setupRunLogFixture();
-    const pageOne = await reads.requestListLogs(actor, { limit: 1 }, [200]);
-    mustOk(pageOne, "the first log page");
-    expect(pageOne.body.data).toHaveLength(1);
-    expect(pageOne.body.pagination.hasMore).toBeTruthy();
-    expect(pageOne.body.pagination.totalPages).toBe(3);
-    const cursor = pageOne.body.pagination.nextCursor;
-    if (cursor === null) {
-      throw new Error("Expected a next cursor on the first log page");
-    }
-    const pageTwo = await reads.requestListLogs(
-      actor,
-      { limit: 1, cursor },
-      [200],
-    );
-    mustOk(pageTwo, "the second log page");
-    expect(pageTwo.body.data).toHaveLength(1);
-    expect(pageTwo.body.data[0]?.id).not.toBe(pageOne.body.data[0]?.id);
-    expect(pageTwo.body.pagination.totalPages).toBe(3);
-
-    const malformedCursor = await reads.requestListLogs(
-      actor,
-      { limit: 1, cursor: "garbage" },
-      [200],
-    );
-    mustOk(malformedCursor, "malformed cursor list");
-    expect(malformedCursor.body.data[0]?.id).toBe(pageOne.body.data[0]?.id);
-  });
-
-  it("filters run logs by status and source", async () => {
-    const { actor, secondWebRun, webRun } = await setupRunLogFixture();
-    const byStatusAndSource = await reads.requestListLogs(
-      actor,
-      { status: "cancelled", triggerSource: "web" },
-      [200],
-    );
-    mustOk(byStatusAndSource, "the status+source list");
-    expect(
-      byStatusAndSource.body.data
-        .map((entry) => {
-          return entry.id;
-        })
-        .sort(),
-    ).toStrictEqual([webRun.runId, secondWebRun.runId].sort());
-
-    const sourcePage = await reads.requestListLogs(
-      actor,
-      { status: "cancelled", triggerSource: "web", limit: 1 },
-      [200],
-    );
-    mustOk(sourcePage, "the filtered first page");
-    expect(sourcePage.body.data).toHaveLength(1);
-    expect(sourcePage.body.pagination.totalPages).toBe(2);
-
-    const noSourceMatch = await reads.requestListLogs(
-      actor,
-      { triggerSource: "telegram" },
-      [200],
-    );
-    mustOk(noSourceMatch, "the empty source list");
-    expect(noSourceMatch.body.data).toStrictEqual([]);
-  });
-
-  it("returns pending and failed run-log detail residue", async () => {
-    const owned = await publicChatActor(context);
-    const { actor } = owned;
-    await owned.run(async () => {
-      await bdd.updatePersonalInstructions(actor, `Run detail ${randomUUID()}`);
-      const signing = holdDownloadSigning(context);
-      const clientEventId = randomUUID();
-      let pendingRunId: string | undefined;
-      const preparation = await settleIncludingAbort(async () => {
-        const sent = await chat.requestSendEvent(
-          actor,
-          {
-            prompt: "pending detail run",
-            clientEventId,
+            prompt: "member active run",
+            model: memberModel,
+            clientEventId: randomUUID(),
           },
           [201],
         );
-        if (sent.status !== 201) {
-          throw new Error("Expected the pending input to be accepted");
-        }
-        await signing.waitForPending();
-        const messages = await chat.listThreadEvents(actor, sent.body.threadId);
-        pendingRunId = messages.events.find((event) => {
-          return event.revokesEventId === clientEventId;
-        })?.runId;
-        if (!pendingRunId) {
-          throw new Error(
-            "Expected the admitted Run while preparation is held",
-          );
-        }
-        const pendingDetail = await reads.requestReadLogById(
-          actor,
-          pendingRunId,
-          [200],
-        );
-        expect(pendingDetail.body).toMatchObject({
-          id: pendingRunId,
-          status: "pending",
-          sessionId: null,
-          completedAt: null,
-        });
-        const pendingList = await reads.requestListLogs(
-          actor,
-          { status: "pending" },
-          [200],
-        );
-        expect(
-          pendingList.body.data.map((run) => {
-            return run.id;
-          }),
-        ).toContain(pendingRunId);
       });
-      signing.release();
-      if (!preparation.ok) {
-        throw preparation.error;
-      }
       await flushWaitUntilForTest();
-      if (!pendingRunId) {
-        throw new Error("Expected the prepared Run");
-      }
-      const pendingExecution = await owned.executionInput(pendingRunId);
-      await api.requestCancelRun(actor, pendingRunId, [200]);
+
+      const runAId = await findRunIdByPrompt(owner.actor, "target run a");
+      const memberRunId = await findRunIdByPrompt(member, "member active run");
+      const runAToken =
+        runs.dispatchedRun(runAId).executionContext.sandboxToken;
+      const memberToken =
+        runs.dispatchedRun(memberRunId).executionContext.sandboxToken;
+      owner.rememberExecution(runAId, runAToken);
+      memberOwner.rememberExecution(memberRunId, memberToken);
+
+      const fullQueue = await runs.readRunQueue(owner.actor);
+      expect(fullQueue.body.concurrency).toMatchObject({
+        tier: "pro",
+        limit: 2,
+        active: 2,
+        available: 0,
+      });
+      expect(fullQueue.body.runningTasks).toHaveLength(2);
+      expect(fullQueue.body.runningTasks).toStrictEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            runId: runAId,
+            userEmail: owner.actor.email,
+            isOwner: true,
+          }),
+          expect.objectContaining({
+            runId: null,
+            userEmail: "unknown",
+            isOwner: false,
+          }),
+        ]),
+      );
+
+      const waiting = await owner.sendWaitingChatInput(owner.actor, {
+        prompt: "queued third prompt",
+        model: owner.model,
+      });
+      await flushWaitUntilForTest();
+
+      await runs.requestCancelRun(owner.actor, runAId, [200]);
+      await runs.requestCancelRun(member, memberRunId, [200]);
+      await flushWaitUntilForTest();
+
+      const afterCancelQueue = await runs.readRunQueue(owner.actor);
+      expect(afterCancelQueue.body.concurrency.active).toBe(2);
+      const stillWaiting = await chat.listThreadEvents(
+        owner.actor,
+        waiting.threadId,
+      );
+      expect(
+        stillWaiting.events.some((event) => {
+          return event.runId !== undefined;
+        }),
+      ).toBeFalsy();
+
+      await Promise.all([
+        webhooks.requestAgentComplete(
+          { runId: runAId, exitCode: 1, error: "Run cancelled" },
+          { authorization: `Bearer ${runAToken}` },
+          [200],
+        ),
+        webhooks.requestAgentComplete(
+          { runId: memberRunId, exitCode: 1, error: "Run cancelled" },
+          { authorization: `Bearer ${memberToken}` },
+          [200],
+        ),
+      ]);
+      await flushWaitUntilForTest();
+
+      const launched = await waiting.launchedRun();
+      const launchedToken = runs.dispatchedRun(launched.runId).executionContext
+        .sandboxToken;
+      owner.rememberExecution(launched.runId, launchedToken);
+
+      const launchedQueue = await runs.readRunQueue(owner.actor);
+      expect(launchedQueue.body.concurrency.active).toBe(1);
+
+      await runs.requestCancelRun(owner.actor, launched.runId, [200]);
       await webhooks.requestAgentComplete(
-        { runId: pendingRunId, exitCode: 1, error: "Run cancelled" },
-        sandboxHeaders(pendingExecution.sandboxToken),
+        { runId: launched.runId, exitCode: 1, error: "Run cancelled" },
+        { authorization: `Bearer ${launchedToken}` },
+        [200],
+      );
+      await flushWaitUntilForTest();
+
+      const finalQueue = await runs.readRunQueue(owner.actor);
+      expect(finalQueue.body.concurrency.active).toBe(0);
+    },
+  );
+
+  it(
+    "run-reads.bdd-007 rejects cancellation after a run completes",
+    { timeout: TEST_WITH_SINGLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const actor = bdd.user();
+      const orgId = actor.orgId;
+      if (!orgId) {
+        throw new Error("Expected a Pro workspace owner");
+      }
+      const owner = publicRunOwner(context, actor);
+      fixture.chatCallbacks.acceptChatObjectStorage();
+      runs.acceptStorageDownloads();
+      runs.acceptTelemetryIngest();
+      mockOptionalEnv("OPENROUTER_API_KEY", "bdd-run-reads-pro-key");
+      fixture.chatCallbacks.disableVapid();
+      const periodEnd = nowDate();
+      periodEnd.setTime(now() + 30 * 24 * 60 * 60 * 1000);
+      const [runnerGroup] = await Promise.all([
+        runs.configureRunnerGroup(),
+        postSubscriptionInvoicePaid(context.signal, {
+          orgId,
+          userId: actor.userId,
+          tier: "pro",
+          customerId: generatedStripeCustomerId(),
+          subscriptionId: generatedStripeSubscriptionId(),
+          currentPeriodEnd: periodEnd,
+        }),
+      ]);
+
+      await owner.run(() => {
+        return chat.requestSendEvent(
+          actor,
+          {
+            prompt: "complete before cancel",
+            model: null,
+            clientEventId: randomUUID(),
+          },
+          [201],
+        );
+      });
+      const execution = await runs.nextReceivedExecution(runnerGroup);
+      owner.rememberExecution(execution.runId, execution.sandboxToken);
+      const cliAgentType =
+        execution.cliAgentType === "claude-code" ||
+        execution.cliAgentType === "codex" ||
+        execution.cliAgentType === "pi"
+          ? execution.cliAgentType
+          : undefined;
+      await fixture.completeChatRunOk(
+        execution.runId,
+        { authorization: `Bearer ${execution.sandboxToken}` },
+        {
+          cliAgentType,
+          cliAgentSessionId: execution.piSessionId ?? execution.runId,
+        },
+      );
+      await flushWaitUntilForTest();
+
+      const cancelled = await runs.requestCancelRun(
+        actor,
+        execution.runId,
+        [400],
+      );
+      expect(cancelled.status).toBe(400);
+      expectApiError(cancelled.body);
+      expect(cancelled.body.error.code).toBe("RUN_NOT_CANCELLABLE");
+    },
+  );
+
+  it(
+    "run-reads.bdd-012 enforces chat pick concurrency until the cap is disabled",
+    { timeout: TEST_WITH_TRIPLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const owner = await publicChatActor(context, {
+        tier: "pro",
+        runner: { maxConcurrent: 6 },
+      });
+
+      await Promise.all([
+        owner.requestSendEvent(
+          owner.actor,
+          {
+            prompt: "pro slot 1",
+            model: owner.model,
+            clientEventId: randomUUID(),
+          },
+          [201],
+        ),
+        owner.requestSendEvent(
+          owner.actor,
+          {
+            prompt: "pro slot 2",
+            model: owner.model,
+            clientEventId: randomUUID(),
+          },
+          [201],
+        ),
+        owner.requestSendEvent(
+          owner.actor,
+          {
+            prompt: "pro slot 3",
+            model: owner.model,
+            clientEventId: randomUUID(),
+          },
+          [201],
+        ),
+      ]);
+      await flushWaitUntilForTest();
+
+      const launchedLogs = await reads.requestListLogs(
+        owner.actor,
+        { limit: 10 },
+        [200],
+      );
+      expect(launchedLogs.body.data).toHaveLength(3);
+      for (const entry of launchedLogs.body.data) {
+        owner.rememberExecution(
+          entry.id,
+          runs.dispatchedRun(entry.id).executionContext.sandboxToken,
+        );
+      }
+
+      const fourth = await owner.sendWaitingChatInput(owner.actor, {
+        prompt: "pro slot 4 queued",
+        model: owner.model,
+      });
+      await flushWaitUntilForTest();
+
+      const beforeDisable = await chat.listThreadEvents(
+        owner.actor,
+        fourth.threadId,
+      );
+      expect(
+        beforeDisable.events.some((event) => {
+          return event.runId !== undefined;
+        }),
+      ).toBeFalsy();
+
+      mockEnv("CONCURRENT_RUN_LIMIT_CAP", 0);
+      await refreshConcurrencyEntitlement(
+        owner.actor,
+        owner.customerId,
+        context.signal,
+      );
+
+      const fourthRun = await fourth.launchedRun();
+      owner.rememberExecution(
+        fourthRun.runId,
+        runs.dispatchedRun(fourthRun.runId).executionContext.sandboxToken,
+      );
+      const readFourth = await runs.readRun(owner.actor, fourthRun.runId);
+      expect(["pending", "running"]).toContain(readFourth.status);
+    },
+  );
+
+  async function seedTeamCancelledRuns(options: {
+    readonly includeMember: boolean;
+  }) {
+    const actor = bdd.user();
+    const orgId = actor.orgId;
+    if (!orgId) {
+      throw new Error("Expected a team workspace owner");
+    }
+    const owner = publicRunOwner(context, actor);
+    fixture.chatCallbacks.acceptChatObjectStorage();
+    runs.acceptStorageDownloads();
+    runs.acceptTelemetryIngest();
+    mockOptionalEnv("OPENROUTER_API_KEY", "bdd-team-runs-key");
+    fixture.chatCallbacks.disableVapid();
+    const periodEnd = nowDate();
+    periodEnd.setTime(now() + 30 * 24 * 60 * 60 * 1000);
+
+    const [, { model: ownerModel }] = await Promise.all([
+      runs.configureRunnerGroup({ maxConcurrent: 6 }),
+      runs.ensurePersonalSubscriptionModel(actor),
+      deliverOrganizationCreated(context, actor),
+      postSubscriptionInvoicePaid(context.signal, {
+        orgId,
+        userId: actor.userId,
+        tier: "team",
+        customerId: generatedStripeCustomerId(),
+        subscriptionId: generatedStripeSubscriptionId(),
+        currentPeriodEnd: periodEnd,
+      }),
+    ]);
+
+    const member = options.includeMember
+      ? bdd.user({ orgId, orgRole: "org:member" })
+      : null;
+    const memberOwner = member ? publicRunOwner(context, member) : null;
+
+    if (member && memberOwner) {
+      await memberOwner.run(() => {
+        return chat.requestSendEvent(
+          member,
+          {
+            prompt: "member hidden run",
+            model: null,
+            clientEventId: randomUUID(),
+          },
+          [201],
+        );
+      });
+      mockClerkUsers(context, [clerkProfile(actor), clerkProfile(member)]);
+    }
+
+    const [autoRun] = await Promise.all([
+      owner.run(() => {
+        return workflows.startEventAutomationRun(actor);
+      }),
+      owner.run(() => {
+        return chat.requestSendEvent(
+          actor,
+          {
+            prompt: "web log run 1",
+            model: ownerModel,
+            clientEventId: randomUUID(),
+          },
+          [201],
+        );
+      }),
+      owner.run(() => {
+        return chat.requestSendEvent(
+          actor,
+          {
+            prompt: "web log run 2",
+            model: ownerModel,
+            clientEventId: randomUUID(),
+          },
+          [201],
+        );
+      }),
+    ]);
+    await flushWaitUntilForTest();
+
+    const ownerLogs = await reads.requestListLogs(actor, { limit: 10 }, [200]);
+    const web1 = ownerLogs.body.data.find((entry) => {
+      return entry.prompt === "web log run 1";
+    });
+    const web2 = ownerLogs.body.data.find((entry) => {
+      return entry.prompt === "web log run 2";
+    });
+    if (!web1 || !web2) {
+      throw new Error("Expected both team web runs to launch");
+    }
+
+    for (const runId of [web1.id, web2.id, autoRun.runId]) {
+      owner.rememberExecution(
+        runId,
+        runs.dispatchedRun(runId).executionContext.sandboxToken,
+      );
+    }
+
+    await Promise.all([
+      runs.requestCancelRun(actor, web1.id, [200]),
+      runs.requestCancelRun(actor, web2.id, [200]),
+      runs.requestCancelRun(actor, autoRun.runId, [200]),
+    ]);
+
+    let memberRunId: string | null = null;
+    if (member && memberOwner) {
+      memberRunId = await findRunIdByPrompt(member, "member hidden run");
+      memberOwner.rememberExecution(
+        memberRunId,
+        runs.dispatchedRun(memberRunId).executionContext.sandboxToken,
+      );
+      await runs.requestCancelRun(member, memberRunId, [200]);
+    }
+
+    return {
+      owner: { actor },
+      member,
+      web1Id: web1.id,
+      web2Id: web2.id,
+      autoRunId: autoRun.runId,
+      memberRunId,
+    };
+  }
+
+  it(
+    "run-reads.bdd-025 lists organization run logs with their filter metadata",
+    { timeout: TEST_WITH_TRIPLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const seeded = await seedTeamCancelledRuns({ includeMember: true });
+      const list = await reads.requestListLogs(seeded.owner.actor, {}, [200]);
+
+      const returnedIds = list.body.data.map((entry) => {
+        return entry.id;
+      });
+      expect(returnedIds).toHaveLength(3);
+      expect([...returnedIds].sort()).toStrictEqual(
+        [seeded.web1Id, seeded.web2Id, seeded.autoRunId].sort(),
+      );
+      expect(returnedIds).not.toContain(seeded.memberRunId);
+
+      const firstWeb = list.body.data.find((entry) => {
+        return entry.id === seeded.web1Id;
+      });
+      const automation = list.body.data.find((entry) => {
+        return entry.id === seeded.autoRunId;
+      });
+      expect(firstWeb).toMatchObject({
+        id: seeded.web1Id,
+        framework: "claude-code",
+        triggerSource: "web",
+        status: "cancelled",
+        prompt: "web log run 1",
+      });
+      expect(automation).toMatchObject({
+        id: seeded.autoRunId,
+        triggerSource: "automation-event",
+      });
+      expect(list.body.filters.statuses).toContain("cancelled");
+      expect([...list.body.filters.sources].sort()).toStrictEqual([
+        "automation-event",
+        "web",
+      ]);
+    },
+  );
+
+  it(
+    "run-reads.bdd-026 pages run logs and falls back from malformed cursors",
+    { timeout: TEST_WITH_TRIPLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const seeded = await seedTeamCancelledRuns({ includeMember: true });
+
+      const page1 = await reads.requestListLogs(
+        seeded.owner.actor,
+        { limit: 1 },
+        [200],
+      );
+      expect(page1.body.data).toHaveLength(1);
+      expect(page1.body.pagination).toMatchObject({
+        hasMore: true,
+        totalPages: 3,
+      });
+      const firstId = page1.body.data[0]?.id;
+      const nextCursor = page1.body.pagination.nextCursor;
+      if (!firstId || !nextCursor) {
+        throw new Error("Expected page 1 entry and nextCursor");
+      }
+
+      const [page2, fallback] = await Promise.all([
+        reads.requestListLogs(
+          seeded.owner.actor,
+          { limit: 1, cursor: nextCursor },
+          [200],
+        ),
+        reads.requestListLogs(
+          seeded.owner.actor,
+          { limit: 1, cursor: "garbage" },
+          [200],
+        ),
+      ]);
+
+      expect(page2.body.data).toHaveLength(1);
+      expect(page2.body.data[0]?.id).not.toBe(firstId);
+      expect(page2.body.pagination.totalPages).toBe(3);
+
+      expect(fallback.body.data).toHaveLength(1);
+      expect(fallback.body.data[0]?.id).toBe(firstId);
+    },
+  );
+
+  it(
+    "run-reads.bdd-028 (1/2) returns pending run-log detail while download signing is held",
+    { timeout: TEST_WITH_SINGLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const actor = bdd.user();
+      const owner = publicRunOwner(context, actor);
+      fixture.chatCallbacks.acceptChatObjectStorage();
+      runs.acceptStorageDownloads();
+      runs.acceptTelemetryIngest();
+      mockOptionalEnv("OPENROUTER_API_KEY", "bdd-run-reads-pending-key");
+      fixture.chatCallbacks.disableVapid();
+      context.mocks.ably.publish.mockResolvedValue(undefined);
+
+      await Promise.all([
+        runs.configureRunnerGroup(),
+        deliverOrganizationCreated(context, actor),
+        bdd.updatePersonalInstructions(
+          actor,
+          `Keep replies brief ${randomUUID()}`,
+        ),
+      ]);
+
+      const hold = holdDownloadSigning(context);
+      await owner.run(() => {
+        return chat.requestSendEvent(
+          actor,
+          {
+            prompt: "pending download signing run",
+            model: null,
+            clientEventId: randomUUID(),
+          },
+          [201],
+        );
+      });
+      await hold.waitForPending();
+
+      const pendingList = await reads.requestListLogs(
+        actor,
+        { status: "pending" },
+        [200],
+      );
+      const pendingEntry = pendingList.body.data[0];
+      if (!pendingEntry) {
+        throw new Error("Expected pending run in pending logs list");
+      }
+
+      const pendingDetail = await reads.requestReadLogById(
+        actor,
+        pendingEntry.id,
         [200],
       );
 
-      const failedRun = await owned.sendChatRun(actor, {
-        prompt: "failed detail run",
-      });
-      const { execution } = await owned.runExecution(failedRun.runId);
+      hold.release();
+      await flushWaitUntilForTest();
+
+      const pendingToken = runs.dispatchedRun(pendingEntry.id).executionContext
+        .sandboxToken;
+      owner.rememberExecution(pendingEntry.id, pendingToken);
+      await runs.requestCancelRun(actor, pendingEntry.id, [200]);
       await webhooks.requestAgentComplete(
-        { runId: failedRun.runId, exitCode: 1, error: "bdd failure" },
-        sandboxHeaders(execution.sandboxToken),
+        { runId: pendingEntry.id, exitCode: 1, error: "Run cancelled" },
+        { authorization: `Bearer ${pendingToken}` },
         [200],
       );
+      await flushWaitUntilForTest();
+
+      expect(pendingList.body.data).toContainEqual(
+        expect.objectContaining({ id: pendingEntry.id, status: "pending" }),
+      );
+      expect(pendingDetail.body).toMatchObject({
+        id: pendingEntry.id,
+        status: "pending",
+        sessionId: null,
+        completedAt: null,
+      });
+    },
+  );
+
+  it(
+    "run-reads.bdd-028 (2/2) returns failed run-log detail with unknown failure reason",
+    { timeout: TEST_WITH_SINGLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const actor = bdd.user();
+      const owner = publicRunOwner(context, actor);
+      fixture.chatCallbacks.acceptChatObjectStorage();
+      runs.acceptStorageDownloads();
+      runs.acceptTelemetryIngest();
+      mockOptionalEnv("OPENROUTER_API_KEY", "bdd-run-reads-failed-key");
+      fixture.chatCallbacks.disableVapid();
+      context.mocks.ably.publish.mockResolvedValue(undefined);
+
+      const [runnerGroup] = await Promise.all([
+        runs.configureRunnerGroup(),
+        deliverOrganizationCreated(context, actor),
+      ]);
+
+      await owner.run(() => {
+        return chat.requestSendEvent(
+          actor,
+          {
+            prompt: "failing run for log detail",
+            model: null,
+            clientEventId: randomUUID(),
+          },
+          [201],
+        );
+      });
+      const execution = await runs.nextReceivedExecution(runnerGroup);
+      owner.rememberExecution(execution.runId, execution.sandboxToken);
+
+      await webhooks.requestAgentComplete(
+        { runId: execution.runId, exitCode: 1, error: "bdd failure" },
+        { authorization: `Bearer ${execution.sandboxToken}` },
+        [200],
+      );
+      await flushWaitUntilForTest();
+
       const failedDetail = await reads.requestReadLogById(
         actor,
-        failedRun.runId,
+        execution.runId,
         [200],
       );
       expect(failedDetail.body).toMatchObject({
-        id: failedRun.runId,
+        id: execution.runId,
         status: "failed",
         failureReason: "unknown",
       });
-    });
-  });
-
-  it("reads run-log detail when an older Axiom snapshot has null Storage mounts", async () => {
-    const actor = await entitledActor();
-    await prepareChatModel(actor);
-    const run = await api.createThreadRun(actor, {
-      prompt: "read a retained run snapshot",
-    });
-    onTestFinished(async () => {
-      await api.requestCancelRun(actor, run.runId, [200]);
-    });
-    dispatchAxiomQueries({
-      [run.runId]: {
-        runContext: [
-          {
-            runId: run.runId,
-            cliAgentType: "claude-code",
-            storageMounts: null,
-            volumes: [],
-            artifact: null,
-          },
-        ],
-      },
-    });
-
-    const detail = await reads.requestReadLogById(actor, run.runId, [200]);
-    expect(detail.body).toMatchObject({
-      id: run.runId,
-      framework: "claude-code",
-      status: "running",
-      prompt: "read a retained run snapshot",
-    });
-  });
-
-  it("reads run-log list and detail with a dispatched Run token", async () => {
-    const { actor, webRun } = await setupRunLogFixture();
-    const tokenRun = await api.createThreadRun(actor, {
-      prompt: "Okou run token log access",
-    });
-    const tokenExecution = await api.executionInput(tokenRun.runId);
-    const okouToken = tokenExecution.platformEnvironment.OKOU_TOKEN;
-    if (!okouToken) {
-      throw new Error("Expected the dispatched Run to expose an OKOU_TOKEN");
-    }
-    const tokenList = await reads.requestListLogsAs(
-      `Bearer ${okouToken}`,
-      {},
-      [200],
-    );
-    mustOk(tokenList, "the Okou-token log list");
-    expect(
-      tokenList.body.data.map((entry) => {
-        return entry.id;
-      }),
-    ).toContain(webRun.runId);
-    const tokenDetail = await reads.requestReadLogByIdAs(
-      `Bearer ${okouToken}`,
-      webRun.runId,
-      [200],
-    );
-    expect(tokenDetail.body).toMatchObject({ id: webRun.runId });
-
-    await api.requestCancelRun(actor, tokenRun.runId, [200]);
-  });
-
-  it("filters run logs from an exact time boundary", async () => {
-    const { actor } = await setupRunLogFixture();
-    const beforeBoundaryAt = now();
-    const beforeBoundaryRun = await withMockNowForTest(
-      beforeBoundaryAt,
-      async () => {
-        const run = await api.createThreadRun(actor, {
-          prompt: "since boundary hidden run",
-        });
-        await api.requestCancelRun(actor, run.runId, [200]);
-        return run;
-      },
-    );
-    const sinceBoundary = beforeBoundaryAt + 1;
-    const sinceBoundaryRun = await withMockNowForTest(
-      sinceBoundary,
-      async () => {
-        const run = await api.createThreadRun(actor, {
-          prompt: "since boundary visible run",
-        });
-        await api.requestCancelRun(actor, run.runId, [200]);
-        return run;
-      },
-    );
-
-    const sinceFiltered = await reads.requestListLogs(
-      actor,
-      { since: sinceBoundary, limit: 100 },
-      [200],
-    );
-    mustOk(sinceFiltered, "the since-boundary log list");
-    const sinceFilteredIds = sinceFiltered.body.data.map((entry) => {
-      return entry.id;
-    });
-    expect(sinceFilteredIds).toContain(sinceBoundaryRun.runId);
-    expect(sinceFilteredIds).not.toContain(beforeBoundaryRun.runId);
-  });
+    },
+  );
 });

@@ -1,318 +1,237 @@
 import { randomUUID } from "node:crypto";
-
 import { billingPortalContract } from "@okouai/api-contracts/contracts/billing";
-import { createStore } from "ccstate";
+import { webhookStripeContract } from "@okouai/api-contracts/contracts/webhooks";
+import { describe, expect, it } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv, mockOptionalEnv } from "../../../lib/env";
-import {
-  deleteInvoicesOrg$,
-  seedInvoicesOrg$,
-  type InvoicesOrgFixture,
-} from "./helpers/billing-invoices";
-import { createFixtureTracker, createRouteMocks } from "./helpers/route-test";
+import { now } from "../../../lib/time";
 import { billingPortalRoutes } from "../billing-portal";
+import { webhooksStripeRoutes } from "../webhooks-stripe";
+import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
-const store = createStore();
-const mocks = createRouteMocks(context);
 
-const APP_ORIGIN = "http://app.localhost:3002";
-const PORTAL_CONFIGURATION_ID = "bpc_payment_methods";
-const RESTRICTED_PORTAL_CONFIGURATION = {
-  id: PORTAL_CONFIGURATION_ID,
-  active: true,
-  features: {
-    customer_update: { enabled: false },
-    invoice_history: { enabled: false },
-    payment_method_update: { enabled: true },
-    subscription_cancel: { enabled: false },
-    subscription_update: { enabled: false },
-  },
-  login_page: { enabled: false },
-  metadata: { purpose: "payment_method_management" },
-} as const;
+const APP_URL = "http://app.localhost:3002";
+const headers = Object.freeze({ authorization: "Bearer clerk-session" });
+const PORTAL_CONFIGURATION = "bpc_payment_methods";
+const PORTAL_FEATURES = Object.freeze({
+  customer_update: { enabled: false },
+  invoice_history: { enabled: false },
+  payment_method_update: { enabled: true },
+  subscription_cancel: { enabled: false },
+  subscription_update: { enabled: false },
+});
+
+function setup(role: "org:admin" | "org:member" = "org:admin") {
+  mockEnv("APP_URL", APP_URL);
+  mockOptionalEnv("STRIPE_WEBHOOK_SECRET", "whsec_billing_portal");
+  const admin = {
+    orgId: `org_${randomUUID()}`,
+    userId: `user_${randomUUID()}`,
+  };
+  createRouteMocks(context).clerk.session(admin.userId, admin.orgId, role);
+  context.mocks.clerk.organizations.getOrganization.mockResolvedValue({
+    id: admin.orgId,
+    slug: `portal-${admin.orgId.slice(-8)}`,
+    name: "Billing Portal Org",
+    createdBy: admin.userId,
+    createdAt: now(),
+  });
+  const appFor = setupApp({
+    context,
+    routes: [...billingPortalRoutes, ...webhooksStripeRoutes],
+  });
+  const portal = appFor(billingPortalContract);
+  const webhook = appFor(webhookStripeContract);
+
+  /** Stripe records a paid Pro subscription invoice for the organization. */
+  async function subscribePro(): Promise<string> {
+    const customerId = `cus_${randomUUID().slice(0, 8)}`;
+    const subscriptionId = `sub_${randomUUID().slice(0, 8)}`;
+    const periodEnd = Math.floor(now() / 1000) + 30 * 86_400;
+    const period = { start: periodEnd - 30 * 86_400, end: periodEnd };
+    context.mocks.stripe.customers.retrieve.mockResolvedValueOnce({
+      id: customerId,
+      metadata: { orgId: admin.orgId },
+    });
+    context.mocks.stripe.subscriptions.retrieve.mockResolvedValueOnce({
+      id: subscriptionId,
+      status: "active",
+      customer: customerId,
+      cancel_at_period_end: false,
+      cancel_at: null,
+      schedule: null,
+      trial_end: null,
+      metadata: {},
+      items: {
+        data: [
+          {
+            price: { id: "price_bdd_pro" },
+            current_period_start: period.start,
+            current_period_end: period.end,
+          },
+        ],
+      },
+    });
+    const event = {
+      id: `evt_${randomUUID()}`,
+      created: Math.floor(now() / 1000),
+      type: "invoice.paid",
+      data: {
+        object: {
+          id: `in_${randomUUID().slice(0, 8)}`,
+          customer: customerId,
+          metadata: {},
+          parent: {
+            subscription_details: {
+              subscription: subscriptionId,
+              metadata: {},
+            },
+          },
+          lines: {
+            has_more: false,
+            data: [
+              {
+                id: `il_${randomUUID().slice(0, 8)}`,
+                price: { id: "price_bdd_pro" },
+                quantity: 1,
+                parent: { type: "subscription_item_details" },
+                period,
+              },
+            ],
+          },
+        },
+      },
+    };
+    context.mocks.stripe.webhooks.constructEventAsync.mockReturnValueOnce(
+      event,
+    );
+    await accept(
+      webhook.post({
+        body: JSON.stringify(event),
+        extraHeaders: { "stripe-signature": "t=1,v1=billing-portal" },
+      }),
+      [200],
+    );
+    return customerId;
+  }
+
+  return { admin, portal, subscribePro };
+}
+
+function stripePortalSession(): string {
+  const url = `https://billing.stripe.test/session/${randomUUID()}`;
+  context.mocks.stripe.billingPortal.sessions.create.mockResolvedValue({
+    id: `bps_${randomUUID()}`,
+    url,
+  });
+  return url;
+}
+
+function managedConfiguration(
+  features: typeof PORTAL_FEATURES = PORTAL_FEATURES,
+) {
+  return {
+    id: PORTAL_CONFIGURATION,
+    active: true,
+    features,
+    login_page: { enabled: false },
+    metadata: { purpose: "payment_method_management" },
+  };
+}
+
+/** A subscribed admin opens the portal; returns what Stripe received. */
+async function openSubscribedPortal(returnUrl: string) {
+  const { portal, subscribePro } = setup();
+  const customerId = await subscribePro();
+  context.mocks.stripe.billingPortal.configurations.list.mockResolvedValue({
+    data: [managedConfiguration()],
+    has_more: false,
+  });
+  const url = stripePortalSession();
+  const response = await accept(
+    portal.create({ headers, body: { returnUrl } }),
+    [200],
+  );
+  return {
+    body: response.body,
+    url,
+    session:
+      context.mocks.stripe.billingPortal.sessions.create.mock.calls[0]?.[0],
+    expectedSession: {
+      customer: customerId,
+      configuration: PORTAL_CONFIGURATION,
+      return_url: returnUrl,
+    },
+  };
+}
 
 describe("POST /api/billing/portal", () => {
-  const track = createFixtureTracker<InvoicesOrgFixture>((fixture) => {
-    return store.set(deleteInvoicesOrg$, fixture, context.signal);
-  });
-
-  beforeEach(() => {
-    context.mocks.stripe.billingPortal.configurations.list.mockResolvedValue({
-      data: [RESTRICTED_PORTAL_CONFIGURATION],
-    });
-  });
-
-  it("returns 503 when STRIPE_SECRET_KEY is not configured", async () => {
-    mockOptionalEnv("STRIPE_SECRET_KEY", undefined);
-    mocks.clerk.session(`user_${randomUUID()}`, `org_${randomUUID()}`);
-
-    const client = setupApp({ context, routes: billingPortalRoutes })(
-      billingPortalContract,
-    );
-    const response = await accept(
-      client.create({
-        body: { returnUrl: `${APP_ORIGIN}/settings` },
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [503],
-    );
-
-    expect(response.body).toStrictEqual({
-      error: {
-        message: "Billing not configured",
-        code: "PROVIDER_UNAVAILABLE",
-      },
-    });
-  });
-
-  it("returns 401 when not authenticated", async () => {
-    const client = setupApp({ context, routes: billingPortalRoutes })(
-      billingPortalContract,
-    );
+  it("billing-portal-003 refuses the billing portal to a non-admin member", async () => {
+    const { portal } = setup("org:member");
 
     const response = await accept(
-      client.create({
-        body: { returnUrl: `${APP_ORIGIN}/settings` },
-        headers: {},
-      }),
-      [401],
-    );
-
-    expect(response.body).toStrictEqual({
-      error: {
-        message: "Not authenticated",
-        code: "UNAUTHORIZED",
-      },
-    });
-  });
-
-  it("returns 403 for a non-admin org member", async () => {
-    mocks.clerk.session(
-      `user_${randomUUID()}`,
-      `org_${randomUUID()}`,
-      "org:member",
-    );
-
-    const client = setupApp({ context, routes: billingPortalRoutes })(
-      billingPortalContract,
-    );
-    const response = await accept(
-      client.create({
-        body: { returnUrl: `${APP_ORIGIN}/settings` },
-        headers: { authorization: "Bearer clerk-session" },
+      portal.create({
+        headers,
+        body: { returnUrl: `${APP_URL}/settings/billing` },
       }),
       [403],
     );
 
-    expect(response.body).toStrictEqual({
-      error: {
-        message: "Only org admins can manage billing",
-        code: "FORBIDDEN",
-      },
+    expect(response.body.error).toMatchObject({
+      message: "Only org admins can manage billing",
+      code: "FORBIDDEN",
     });
   });
 
-  it.each([
-    `${APP_ORIGIN}/settings/billing`,
-    "https://okou.ai/settings/billing",
-    "https://console.okou.ai/settings/billing",
-    "https://pr-22085-app.omby.ai/settings/billing",
-  ])("returns portal URL to the allowed origin %s", async (returnUrl) => {
-    const customerId = `cus-portal-${randomUUID().slice(0, 8)}`;
-    const fixture = await track(
-      store.set(
-        seedInvoicesOrg$,
-        {
-          stripeCustomerId: customerId,
-          stripeSubscriptionId: `sub-portal-${randomUUID().slice(0, 8)}`,
-          subscriptionStatus: "active",
-          tier: "pro",
-        },
-        context.signal,
-      ),
-    );
-    mockEnv("APP_URL", APP_ORIGIN);
-    mocks.clerk.session(fixture.userId, fixture.orgId, "org:admin");
-    context.mocks.stripe.billingPortal.sessions.create.mockResolvedValue({
-      url: "https://billing.stripe.com/session/test",
-    });
+  it("billing-portal-004 opens the portal returning to the app origin", async () => {
+    const opened = await openSubscribedPortal(`${APP_URL}/settings/billing`);
 
-    const client = setupApp({ context, routes: billingPortalRoutes })(
-      billingPortalContract,
-    );
-    const response = await accept(
-      client.create({
-        body: { returnUrl },
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [200],
-    );
-
-    expect(response.body).toStrictEqual({
-      url: "https://billing.stripe.com/session/test",
-    });
-    expect(
-      context.mocks.stripe.billingPortal.sessions.create,
-    ).toHaveBeenCalledWith({
-      customer: fixture.stripeCustomerId,
-      configuration: PORTAL_CONFIGURATION_ID,
-      return_url: returnUrl,
-    });
+    expect(opened.body).toStrictEqual({ url: opened.url });
+    expect(opened.session).toStrictEqual(opened.expectedSession);
   });
 
-  it("reuses the payment method portal despite unrelated stored metadata", async () => {
-    const customerId = `cus-portal-${randomUUID().slice(0, 8)}`;
-    const fixture = await track(
-      store.set(
-        seedInvoicesOrg$,
-        {
-          stripeCustomerId: customerId,
-          stripeSubscriptionId: `sub-portal-${randomUUID().slice(0, 8)}`,
-          subscriptionStatus: "active",
-          tier: "pro",
-        },
-        context.signal,
-      ),
-    );
-    mockEnv("APP_URL", APP_ORIGIN);
-    mocks.clerk.session(fixture.userId, fixture.orgId, "org:admin");
-    context.mocks.stripe.billingPortal.configurations.list.mockResolvedValue({
-      data: [
-        {
-          ...RESTRICTED_PORTAL_CONFIGURATION,
-          metadata: {
-            ...RESTRICTED_PORTAL_CONFIGURATION.metadata,
-            retired_marker: "present",
-          },
-        },
-      ],
-    });
-    context.mocks.stripe.billingPortal.sessions.create.mockResolvedValue({
-      url: "https://billing.stripe.com/session/manage-billing",
-    });
-
-    const returnUrl = `${APP_ORIGIN}/settings/billing`;
-    const response = await accept(
-      setupApp({ context, routes: billingPortalRoutes })(
-        billingPortalContract,
-      ).create({
-        body: { returnUrl },
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [200],
+  it("billing-portal-005 opens the portal returning to okou.ai", async () => {
+    const opened = await openSubscribedPortal(
+      "https://okou.ai/settings/billing",
     );
 
-    expect(response.body).toStrictEqual({
-      url: "https://billing.stripe.com/session/manage-billing",
-    });
-    expect(
-      context.mocks.stripe.billingPortal.configurations.list,
-    ).toHaveBeenCalledWith({ limit: 100 });
-    expect(
-      context.mocks.stripe.billingPortal.sessions.create,
-    ).toHaveBeenCalledWith({
-      customer: customerId,
-      configuration: PORTAL_CONFIGURATION_ID,
-      return_url: returnUrl,
-    });
+    expect(opened.body).toStrictEqual({ url: opened.url });
+    expect(opened.session).toStrictEqual(opened.expectedSession);
   });
 
-  it.each([
-    [
-      "multiple purpose matches",
-      {
-        data: [
-          RESTRICTED_PORTAL_CONFIGURATION,
-          { ...RESTRICTED_PORTAL_CONFIGURATION, id: "bpc_another" },
-        ],
-      },
-    ],
-    [
-      "an incomplete configuration list",
-      { data: [RESTRICTED_PORTAL_CONFIGURATION], has_more: true },
-    ],
-  ] as const)("does not open a portal with %s", async (_reason, listed) => {
-    const userId = `user_${randomUUID()}`;
-    const orgId = `org_${randomUUID()}`;
-    mockEnv("APP_URL", APP_ORIGIN);
-    mocks.clerk.session(userId, orgId, "org:admin");
-    context.mocks.stripe.customers.create.mockResolvedValue({
-      id: `cus-portal-${randomUUID().slice(0, 8)}`,
-    });
-    context.mocks.stripe.billingPortal.configurations.list.mockResolvedValue(
-      listed,
-    );
-
-    const response = await accept(
-      setupApp({ context, routes: billingPortalRoutes })(
-        billingPortalContract,
-      ).create({
-        body: { returnUrl: `${APP_ORIGIN}/settings/billing` },
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [500],
-    );
-    expect(response.status).toBe(500);
-    expect(
-      context.mocks.stripe.billingPortal.configurations.list,
-    ).toHaveBeenCalledWith({ limit: 100 });
-    expect(
-      context.mocks.stripe.billingPortal.sessions.create,
-    ).not.toHaveBeenCalled();
-  });
-
-  it("creates a customer for payment method management without a subscription", async () => {
-    const userId = `user_${randomUUID()}`;
-    const orgId = `org_${randomUUID()}`;
-    const customerId = `cus-portal-${randomUUID().slice(0, 8)}`;
-    const returnUrl = `${APP_ORIGIN}/settings/billing`;
-    mockEnv("APP_URL", APP_ORIGIN);
-    mocks.clerk.session(userId, orgId, "org:admin");
+  it("billing-portal-011 creates a customer and payment-method portal for an org without a subscription", async () => {
+    const { admin, portal } = setup();
+    const customerId = `cus_${randomUUID().slice(0, 8)}`;
     context.mocks.stripe.customers.create.mockResolvedValue({ id: customerId });
     context.mocks.stripe.billingPortal.configurations.list.mockResolvedValue({
       data: [],
+      has_more: false,
     });
-    context.mocks.stripe.billingPortal.configurations.create.mockResolvedValue({
-      id: PORTAL_CONFIGURATION_ID,
-    });
-    context.mocks.stripe.billingPortal.sessions.create.mockResolvedValue({
-      url: "https://billing.stripe.com/session/payment-method",
-    });
+    context.mocks.stripe.billingPortal.configurations.create.mockResolvedValue(
+      managedConfiguration(),
+    );
+    const url = stripePortalSession();
+    const returnUrl = `${APP_URL}/settings/billing`;
 
     const response = await accept(
-      setupApp({ context, routes: billingPortalRoutes })(
-        billingPortalContract,
-      ).create({
-        body: { returnUrl },
-        headers: { authorization: "Bearer clerk-session" },
-      }),
+      portal.create({ headers, body: { returnUrl } }),
       [200],
     );
 
-    expect(response.body).toStrictEqual({
-      url: "https://billing.stripe.com/session/payment-method",
-    });
+    expect(response.body).toStrictEqual({ url });
     expect(context.mocks.stripe.customers.create).toHaveBeenCalledWith(
-      {
-        metadata: { orgId },
-      },
-      { idempotencyKey: `stripe-customer:development::${orgId}` },
+      { metadata: expect.objectContaining({ orgId: admin.orgId }) },
+      { idempotencyKey: `stripe-customer:development::${admin.orgId}` },
     );
     expect(
       context.mocks.stripe.billingPortal.configurations.create,
     ).toHaveBeenCalledWith(
       {
         name: "Okou payment methods",
-        features: {
-          customer_update: { enabled: false },
-          invoice_history: { enabled: false },
-          payment_method_update: { enabled: true },
-          subscription_cancel: { enabled: false },
-          subscription_update: { enabled: false },
-        },
+        features: PORTAL_FEATURES,
         login_page: { enabled: false },
         metadata: { purpose: "payment_method_management" },
       },
@@ -322,72 +241,41 @@ describe("POST /api/billing/portal", () => {
       context.mocks.stripe.billingPortal.sessions.create,
     ).toHaveBeenCalledWith({
       customer: customerId,
-      configuration: PORTAL_CONFIGURATION_ID,
+      configuration: PORTAL_CONFIGURATION,
       return_url: returnUrl,
     });
   });
 
-  it("repairs a managed portal configuration before creating a session", async () => {
-    const customerId = `cus-portal-${randomUUID().slice(0, 8)}`;
-    const fixture = await track(
-      store.set(
-        seedInvoicesOrg$,
-        {
-          stripeCustomerId: customerId,
-          stripeSubscriptionId: `sub-portal-${randomUUID().slice(0, 8)}`,
-          subscriptionStatus: "active",
-          tier: "pro",
-        },
-        context.signal,
-      ),
-    );
-    mockEnv("APP_URL", APP_ORIGIN);
-    mocks.clerk.session(fixture.userId, fixture.orgId, "org:admin");
+  it("billing-portal-012 repairs a managed portal configuration that allows cancellation", async () => {
+    const { portal, subscribePro } = setup();
+    const customerId = await subscribePro();
     context.mocks.stripe.billingPortal.configurations.list.mockResolvedValue({
       data: [
-        {
-          ...RESTRICTED_PORTAL_CONFIGURATION,
-          features: {
-            ...RESTRICTED_PORTAL_CONFIGURATION.features,
-            subscription_cancel: { enabled: true },
-          },
-        },
+        managedConfiguration({
+          ...PORTAL_FEATURES,
+          subscription_cancel: { enabled: true },
+        }),
       ],
+      has_more: false,
     });
-    context.mocks.stripe.billingPortal.configurations.update.mockResolvedValue({
-      id: PORTAL_CONFIGURATION_ID,
-    });
-    context.mocks.stripe.billingPortal.sessions.create.mockResolvedValue({
-      url: "https://billing.stripe.com/session/restricted",
-    });
+    context.mocks.stripe.billingPortal.configurations.update.mockResolvedValue(
+      managedConfiguration(),
+    );
+    const url = stripePortalSession();
+    const returnUrl = `${APP_URL}/settings/billing`;
 
     const response = await accept(
-      setupApp({ context, routes: billingPortalRoutes })(
-        billingPortalContract,
-      ).create({
-        body: {
-          returnUrl: `${APP_ORIGIN}/settings/billing`,
-        },
-        headers: { authorization: "Bearer clerk-session" },
-      }),
+      portal.create({ headers, body: { returnUrl } }),
       [200],
     );
 
-    expect(response.body).toStrictEqual({
-      url: "https://billing.stripe.com/session/restricted",
-    });
+    expect(response.body).toStrictEqual({ url });
     expect(
       context.mocks.stripe.billingPortal.configurations.update,
-    ).toHaveBeenCalledWith(PORTAL_CONFIGURATION_ID, {
+    ).toHaveBeenCalledWith(PORTAL_CONFIGURATION, {
       active: true,
       name: "Okou payment methods",
-      features: {
-        customer_update: { enabled: false },
-        invoice_history: { enabled: false },
-        payment_method_update: { enabled: true },
-        subscription_cancel: { enabled: false },
-        subscription_update: { enabled: false },
-      },
+      features: PORTAL_FEATURES,
       login_page: { enabled: false },
       metadata: { purpose: "payment_method_management" },
     });
@@ -395,38 +283,48 @@ describe("POST /api/billing/portal", () => {
       context.mocks.stripe.billingPortal.sessions.create,
     ).toHaveBeenCalledWith({
       customer: customerId,
-      configuration: PORTAL_CONFIGURATION_ID,
-      return_url: `${APP_ORIGIN}/settings/billing`,
+      configuration: PORTAL_CONFIGURATION,
+      return_url: returnUrl,
     });
   });
 
-  it.each([
-    "https://evil.example.com/settings/billing",
-    "https://okou.ai.evil.example/settings/billing",
-  ])("returns 400 for the disallowed origin in %s", async (returnUrl) => {
-    mockEnv("APP_URL", APP_ORIGIN);
-    mocks.clerk.session(
-      `user_${randomUUID()}`,
-      `org_${randomUUID()}`,
-      "org:admin",
-    );
+  it("billing-portal-013 rejects a return URL on an unrelated origin", async () => {
+    const { portal } = setup();
 
-    const client = setupApp({ context, routes: billingPortalRoutes })(
-      billingPortalContract,
-    );
     const response = await accept(
-      client.create({
-        body: { returnUrl },
-        headers: { authorization: "Bearer clerk-session" },
+      portal.create({
+        headers,
+        body: { returnUrl: "https://evil.example.com/settings/billing" },
       }),
       [400],
     );
 
-    expect(response.body).toStrictEqual({
-      error: {
-        message: "returnUrl must match the platform origin",
-        code: "BAD_REQUEST",
-      },
+    expect(response.body.error).toStrictEqual({
+      message: "returnUrl must match the platform origin",
+      code: "BAD_REQUEST",
     });
+    expect(
+      context.mocks.stripe.billingPortal.sessions.create,
+    ).not.toHaveBeenCalled();
+  });
+
+  it("billing-portal-014 rejects a return URL that only starts with okou.ai", async () => {
+    const { portal } = setup();
+
+    const response = await accept(
+      portal.create({
+        headers,
+        body: { returnUrl: "https://okou.ai.evil.example/settings/billing" },
+      }),
+      [400],
+    );
+
+    expect(response.body.error).toStrictEqual({
+      message: "returnUrl must match the platform origin",
+      code: "BAD_REQUEST",
+    });
+    expect(
+      context.mocks.stripe.billingPortal.sessions.create,
+    ).not.toHaveBeenCalled();
   });
 });

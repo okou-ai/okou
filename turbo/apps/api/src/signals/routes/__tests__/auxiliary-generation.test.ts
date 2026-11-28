@@ -1,442 +1,614 @@
-import { mockGoogleText, VERTEX_TEXT_URL } from "./helpers/google-text";
-import { uploadsContract } from "@okouai/api-contracts/contracts/uploads";
-import { HttpResponse, http } from "msw";
-import { describe, expect, it, onTestFinished, beforeEach } from "vitest";
-
-import type { UserMessageDocument } from "@okouai/api-contracts/contracts/chat-threads";
-import { setupApp } from "../../../__tests__/test-helpers";
-import { uploadsPrepareRoutes } from "../uploads-prepare";
-import { uploadsCompleteRoutes } from "../uploads-complete";
-import type { VertexVoiceRequest } from "./helpers/google-voice";
-import { createMcpWebApi } from "./helpers/mcp-web-api";
-import { installSharedThreadStorage } from "./helpers/shared-thread-storage";
-import { accept, testContext } from "../../../__tests__/test-context";
-import { mockOptionalEnv } from "../../../lib/env";
-import { server } from "../../../mocks/server";
-import { createDeferredPromise } from "../../utils";
+import { env, mockOptionalEnv } from "../../../lib/env";
+import { sanitizeArtifactFilename } from "../../../lib/file-url";
 import { flushWaitUntilForTest } from "../../context/wait-until";
-import { createBddApi } from "./helpers/api-bdd";
-import { createRunsApi } from "./helpers/api-bdd-runs";
-import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
-import { createChatCallbacksApi } from "./helpers/api-bdd-chat-callbacks";
-import { createBddIntegrationApi } from "./helpers/api-bdd-integrations";
-import { publicChatActor } from "./helpers/public-chat-actor";
+import { createDeferredPromise } from "../../utils";
+import { HttpResponse, http } from "msw";
+import { describe, expect, it } from "vitest";
+import { array, object, string, union, enum as zEnum } from "zod";
 
-const context = testContext();
-beforeEach(() => {
-  mockOptionalEnv("GCP_LLM_PROJECT_ID", undefined);
-});
-const endpoint = VERTEX_TEXT_URL;
-// Never part of a request an external caller makes, so anything carrying it
-// into a thread came from the provider response.
-const secret = "private-provider-payload";
-const prompt = "Prepare the launch checklist";
+import { testContext } from "../../../__tests__/test-context";
+import {
+  TEST_WITH_DOUBLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE,
+  TEST_WITH_SINGLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE,
+} from "../../../__tests__/test-timeouts";
+import { server } from "../../../mocks/server";
+import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
+import { mockClaudeCodeTokenEndpoint } from "./helpers/api-bdd-auth-device";
+import {
+  createBddIntegrationApi,
+  mockSlackIdentityLookup,
+} from "./helpers/api-bdd-integrations";
+import { createChatEventsFixture } from "./helpers/chat-events-fixture";
+import {
+  VERTEX_TEXT_URL,
+  mockGoogleText,
+  vertexTextResponse,
+} from "./helpers/google-text";
+import { captureConnectorExternalState } from "./helpers/public-connector-actor";
+import { publicRunOwner } from "./helpers/public-run-owner";
+import { createPublicSlackOrgApi } from "./helpers/slack-public-install";
 
-function completion(content = "A usable summary") {
-  return HttpResponse.json({
-    candidates: [
-      {
-        finishReason: "STOP",
-        content: {
-          parts: [
-            {
-              text: content,
-            },
-          ],
-        },
-      },
-    ],
-  });
+function parseVoiceTitleRequest(value: unknown) {
+  return object({
+    systemInstruction: object({
+      parts: array(object({ text: string() })),
+    }),
+    contents: array(
+      object({
+        role: zEnum(["user", "model"]),
+        parts: array(
+          union([
+            object({ text: string() }),
+            object({
+              inlineData: object({
+                mimeType: string(),
+                data: string(),
+              }),
+            }),
+          ]),
+        ),
+      }),
+    ),
+  }).parse(value);
 }
 
-async function prepareChatTitle() {
-  const bdd = createBddApi(context);
-  const runs = createRunsApi(context);
-  const chat = createChatFilesBddApi(context);
-  const actor = bdd.user();
-  bdd.acceptStorageWrites();
-  runs.acceptStorageDownloads();
-  runs.acceptTelemetryIngest();
-  await runs.configureRunnerGroup();
-  await runs.grantProEntitlement(actor);
-  await runs.ensurePersonalSubscriptionModel(actor);
-  let threadId: string | undefined;
-  const events = async () => {
-    const listed = await accept(
-      chat.requestThreadEvents(actor, {}, [200]),
-      [200],
-    );
-    return listed.body.events.filter((event) => {
-      return event.chatThreadId === threadId;
+describe("auxiliary generation outcomes", () => {
+  const context = testContext();
+
+  async function readThreadLifecycleEvents(
+    fixture: ReturnType<typeof createChatEventsFixture>,
+    actor: ApiTestUser,
+    threadId?: string,
+  ) {
+    const response = await fixture.chat.requestThreadEvents(actor, {}, [200]);
+    if (response.status !== 200) {
+      throw new Error("Expected chat thread events to load");
+    }
+    return threadId === undefined
+      ? response.body.events
+      : response.body.events.filter((event) => {
+          return event.chatThreadId === threadId;
+        });
+  }
+
+  function renamedTitles(
+    events: Awaited<ReturnType<typeof readThreadLifecycleEvents>>,
+  ): readonly string[] {
+    return events.flatMap((event) => {
+      return event.kind === "renamed" && event.title !== null
+        ? [event.title]
+        : [];
     });
-  };
-  return {
-    actor,
-    create: async (userMessage?: UserMessageDocument) => {
-      const sent = await accept(
-        chat.requestSendEvent(
-          actor,
+  }
+
+  async function createProSubscriptionMember(
+    fixture: ReturnType<typeof createChatEventsFixture>,
+  ) {
+    const actor = fixture.bdd.user({ orgRole: "org:admin" });
+    fixture.chatCallbacks.acceptChatObjectStorage();
+    fixture.api.acceptStorageDownloads();
+    fixture.api.acceptTelemetryIngest();
+    mockOptionalEnv("OPENROUTER_API_KEY", undefined);
+    fixture.chatCallbacks.disableVapid();
+    mockClaudeCodeTokenEndpoint();
+
+    let restoreExternal = captureConnectorExternalState(context);
+    const owner = publicRunOwner(context, actor, {
+      continueAcceptedOperations: true,
+      restoreEnvironment: () => {
+        restoreExternal();
+      },
+    });
+
+    await owner.run(async () => {
+      await Promise.all([
+        fixture.api.configureRunnerGroup(),
+        fixture.api.grantProEntitlement(actor),
+      ]);
+      await fixture.api.createPersonalModelProvider(actor, {
+        type: "claude-code-oauth-token",
+        secret: "bdd-personal-claude-token",
+      });
+    });
+    restoreExternal = captureConnectorExternalState(context);
+
+    return {
+      actor,
+      model: "claude-fable-5-1" as const,
+      run: owner.run,
+    };
+  }
+
+  async function createBuiltInChatMember(
+    fixture: ReturnType<typeof createChatEventsFixture>,
+    options: {
+      readonly actor?: ApiTestUser;
+      readonly runnerAlreadyConfigured?: boolean;
+      readonly restoreExtra?: () => void;
+    } = {},
+  ) {
+    const bdd = createBddApi(context);
+    const actor = options.actor ?? bdd.user({ orgRole: "org:admin" });
+    const storage = fixture.chatCallbacks.acceptChatObjectStorage();
+    fixture.api.acceptStorageDownloads();
+    fixture.api.acceptTelemetryIngest();
+    mockOptionalEnv("OPENROUTER_API_KEY", "bdd-openrouter-key");
+    fixture.chatCallbacks.disableVapid();
+
+    let restoreExternal = captureConnectorExternalState(context);
+    const owner = publicRunOwner(context, actor, {
+      continueAcceptedOperations: true,
+      restoreEnvironment: () => {
+        restoreExternal();
+        options.restoreExtra?.();
+      },
+    });
+
+    await owner.run(async () => {
+      if (options.runnerAlreadyConfigured) {
+        await bdd.bootstrapLimitedFreeOnboarding(actor);
+      } else {
+        await Promise.all([
+          fixture.api.configureRunnerGroup(),
+          bdd.bootstrapLimitedFreeOnboarding(actor),
+        ]);
+      }
+    });
+    restoreExternal = captureConnectorExternalState(context);
+
+    return {
+      actor,
+      storage,
+      run: owner.run,
+    };
+  }
+
+  it(
+    "auxiliary-generation-002 titles the thread from a usable completion",
+    { timeout: TEST_WITH_DOUBLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const fixture = createChatEventsFixture(context);
+      const member = await createProSubscriptionMember(fixture);
+
+      fixture.chatCallbacks.mockVertexCompletions(() => {
+        return "A usable summary";
+      });
+
+      const sent = await member.run(() => {
+        return fixture.chat.requestSendEvent(
+          member.actor,
+          { prompt: "Prepare the launch checklist", model: member.model },
+          [201],
+        );
+      });
+      if (sent.status !== 201) {
+        throw new Error("Expected chat send to be accepted");
+      }
+
+      await flushWaitUntilForTest();
+
+      const events = await readThreadLifecycleEvents(
+        fixture,
+        member.actor,
+        sent.body.threadId,
+      );
+      expect(renamedTitles(events)).toStrictEqual(["A usable summary"]);
+    },
+  );
+
+  it(
+    "auxiliary-generation-003 keeps a member rename when a held title completion arrives later",
+    { timeout: TEST_WITH_SINGLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const fixture = createChatEventsFixture(context);
+      const member = await createProSubscriptionMember(fixture);
+      const titleRequested = createDeferredPromise<void>(context.signal);
+      const releaseTitle = createDeferredPromise<string>(context.signal);
+
+      fixture.chatCallbacks.mockVertexCompletions(async () => {
+        if (!titleRequested.settled()) {
+          titleRequested.resolve();
+        }
+        return await releaseTitle.promise;
+      });
+
+      const sent = await member.run(() => {
+        return fixture.chat.requestSendEvent(
+          member.actor,
+          { prompt: "Prepare the launch checklist", model: member.model },
+          [201],
+        );
+      });
+      if (sent.status !== 201) {
+        throw new Error("Expected chat send to be accepted");
+      }
+
+      await titleRequested.promise;
+
+      await fixture.chat.renameThread(
+        member.actor,
+        sent.body.threadId,
+        "Member chosen title",
+      );
+
+      releaseTitle.resolve("Stale generated title");
+      await flushWaitUntilForTest();
+
+      const events = await readThreadLifecycleEvents(
+        fixture,
+        member.actor,
+        sent.body.threadId,
+      );
+      expect(renamedTitles(events)).toStrictEqual(["Member chosen title"]);
+    },
+  );
+
+  it(
+    "auxiliary-generation-004 leaves the thread untitled after an unavailable provider",
+    { timeout: TEST_WITH_SINGLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const fixture = createChatEventsFixture(context);
+      const member = await createProSubscriptionMember(fixture);
+      const privatePayload = "private-upstream-unavailable-503-detail";
+
+      fixture.chatCallbacks.mockVertexCompletions(() => {
+        return new HttpResponse(privatePayload, { status: 503 });
+      });
+
+      const sent = await member.run(() => {
+        return fixture.chat.requestSendEvent(
+          member.actor,
+          { prompt: "Prepare the launch checklist", model: member.model },
+          [201],
+        );
+      });
+      if (sent.status !== 201) {
+        throw new Error("Expected chat send to be accepted");
+      }
+
+      await flushWaitUntilForTest();
+
+      const events = await readThreadLifecycleEvents(
+        fixture,
+        member.actor,
+        sent.body.threadId,
+      );
+      expect(renamedTitles(events)).toStrictEqual([]);
+      expect(events).toContainEqual(
+        expect.objectContaining({
+          kind: "created",
+          chatThreadId: sent.body.threadId,
+        }),
+      );
+      expect(JSON.stringify(events)).not.toContain(privatePayload);
+    },
+  );
+
+  it(
+    "auxiliary-generation-008 leaves the thread untitled after an exhausted token budget",
+    { timeout: TEST_WITH_SINGLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const fixture = createChatEventsFixture(context);
+      const member = await createProSubscriptionMember(fixture);
+      const privatePayload = "private-truncated-partial-title-fragment";
+
+      fixture.chatCallbacks.mockVertexCompletions(() => {
+        return { content: privatePayload, finishReason: "length" };
+      });
+
+      const sent = await member.run(() => {
+        return fixture.chat.requestSendEvent(
+          member.actor,
+          { prompt: "Prepare the launch checklist", model: member.model },
+          [201],
+        );
+      });
+      if (sent.status !== 201) {
+        throw new Error("Expected chat send to be accepted");
+      }
+
+      await flushWaitUntilForTest();
+
+      const events = await readThreadLifecycleEvents(
+        fixture,
+        member.actor,
+        sent.body.threadId,
+      );
+      expect(renamedTitles(events)).toStrictEqual([]);
+      expect(events).toContainEqual(
+        expect.objectContaining({
+          kind: "created",
+          chatThreadId: sent.body.threadId,
+        }),
+      );
+      expect(JSON.stringify(events)).not.toContain(privatePayload);
+    },
+  );
+
+  it(
+    "auxiliary-generation-009 leaves the thread untitled after generated text that interprets to nothing",
+    { timeout: TEST_WITH_SINGLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const fixture = createChatEventsFixture(context);
+      const member = await createProSubscriptionMember(fixture);
+      const privatePayload = "---";
+
+      fixture.chatCallbacks.mockVertexCompletions(() => {
+        return privatePayload;
+      });
+
+      const sent = await member.run(() => {
+        return fixture.chat.requestSendEvent(
+          member.actor,
+          { prompt: "Prepare the launch checklist", model: member.model },
+          [201],
+        );
+      });
+      if (sent.status !== 201) {
+        throw new Error("Expected chat send to be accepted");
+      }
+
+      await flushWaitUntilForTest();
+
+      const events = await readThreadLifecycleEvents(
+        fixture,
+        member.actor,
+        sent.body.threadId,
+      );
+      expect(renamedTitles(events)).toStrictEqual([]);
+      expect(events).toContainEqual(
+        expect.objectContaining({
+          kind: "created",
+          chatThreadId: sent.body.threadId,
+        }),
+      );
+      expect(JSON.stringify(events)).not.toContain(privatePayload);
+    },
+  );
+
+  it(
+    "auxiliary-generation-001 titles a contextual Slack request using the native thread conversation",
+    { timeout: TEST_WITH_DOUBLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const fixture = createChatEventsFixture(context);
+      const integrations = createBddIntegrationApi(context);
+      const slackOrg = createPublicSlackOrgApi(context);
+      const owner = fixture.bdd.user({ orgRole: "org:admin" });
+      const channelId = "C_ATLAS_BILLING";
+
+      const [installed] = await Promise.all([
+        slackOrg.installOrg({
+          actor: owner,
+          withConnection: true,
+        }),
+        fixture.api.configureRunnerGroup(),
+      ]);
+      await flushWaitUntilForTest();
+
+      const member = await createBuiltInChatMember(fixture, {
+        actor: owner,
+        runnerAlreadyConfigured: true,
+        restoreExtra: () => {
+          context.mocks.slack.apiCall.mockResolvedValue({ ok: true });
+          context.mocks.slack.chat.postMessage.mockResolvedValue({
+            ok: true,
+            ts: "1710000000.000000",
+            channel: channelId,
+          });
+        },
+      });
+
+      const colleagueSlackUserId = "U_ATLAS_FINANCE";
+      mockSlackIdentityLookup(context, {
+        id: colleagueSlackUserId,
+        team_id: installed.slackWorkspaceId,
+        real_name: "Maya Lin",
+        profile: { display_name: "Maya Lin" },
+      });
+
+      const threadTs = "1710000100.000100";
+      const mentionTs = "1710000100.000200";
+      const earlierMessage =
+        "We audited the nightly billing pipeline across every regional ledger and compared each exported batch against settled payment settlements for the entire quarter. After verifying the staging join keys and replay logs, the issue is clear: The Atlas invoice export duplicates payment rows.";
+
+      context.mocks.slack.conversations.replies.mockResolvedValue({
+        ok: true,
+        messages: [
           {
-            prompt: userMessage ? "[Voice message]" : prompt,
-            model: "claude-sonnet-5-5",
-            userMessage,
+            ts: threadTs,
+            user: colleagueSlackUserId,
+            text: earlierMessage,
+          },
+          {
+            ts: mentionTs,
+            user: installed.slackUserId,
+            text: "<@U_OKOU_BOT> Please fix this",
+          },
+        ],
+      });
+
+      const titlePrompts: string[] = [];
+      fixture.chatCallbacks.mockVertexCompletions((body) => {
+        const prompt =
+          body.messages.find((message) => {
+            return message.role === "user";
+          })?.content ?? "";
+        titlePrompts.push(prompt);
+        return prompt.includes(
+          "The Atlas invoice export duplicates payment rows.",
+        )
+          ? "Fix duplicate payments in Atlas invoice exports"
+          : "Untitled contextual request";
+      });
+
+      await member.run(() => {
+        return integrations.postSlackEvent(installed.slackWorkspaceId, {
+          type: "app_mention",
+          user: installed.slackUserId,
+          channel: channelId,
+          channel_type: "channel",
+          ts: mentionTs,
+          thread_ts: threadTs,
+          text: "<@U_OKOU_BOT> Please fix this",
+        });
+      });
+
+      await flushWaitUntilForTest();
+
+      const events = await readThreadLifecycleEvents(fixture, member.actor);
+      expect(renamedTitles(events)).toStrictEqual([
+        "Fix duplicate payments in Atlas invoice exports",
+      ]);
+      expect(titlePrompts).toHaveLength(1);
+      expect(titlePrompts[0]).toContain(earlierMessage);
+      expect(titlePrompts[0]).toContain(
+        "You are currently running inside: Slack",
+      );
+      expect(titlePrompts[0]).toContain("Please fix this");
+    },
+  );
+
+  it(
+    "pf-059 titles a voice-only conversation from its private recordings in order",
+    { timeout: TEST_WITH_SINGLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const fixture = createChatEventsFixture(context);
+      const member = await createBuiltInChatMember(fixture);
+      const privateBucket = env("R2_PRIVATE_ARTIFACTS_BUCKET_NAME");
+      if (!privateBucket) {
+        throw new Error("Expected R2_PRIVATE_ARTIFACTS_BUCKET_NAME");
+      }
+
+      const uploadPrivateClip = async (
+        filename: string,
+        contentType: string,
+        bytes: Buffer,
+      ) => {
+        const prepared = await fixture.chat.prepareUpload(member.actor, {
+          filename,
+          contentType,
+          size: bytes.byteLength,
+        });
+        member.storage.addObject({
+          bucket: privateBucket,
+          key: `private-artifacts/${prepared.id}/${sanitizeArtifactFilename(filename)}`,
+          body: bytes,
+          contentType,
+          size: bytes.byteLength,
+        });
+        await fixture.chat.completeUpload(member.actor, { id: prepared.id });
+        return {
+          id: prepared.id,
+          mimeType: contentType,
+          base64: bytes.toString("base64"),
+        };
+      };
+
+      const [uploadedFirst, uploadedSecond] = await Promise.all([
+        uploadPrivateClip(
+          "clip-one.wav",
+          "audio/wav",
+          Buffer.from("RIFF-first-voice-recording-payload"),
+        ),
+        uploadPrivateClip(
+          "clip-two.webm",
+          "audio/webm",
+          Buffer.from("WEBM-second-voice-recording-payload"),
+        ),
+      ]);
+      // Order clips descending by id so SQL/UUID ordering cannot mask clip order.
+      const orderedClips =
+        uploadedFirst.id.toLowerCase() > uploadedSecond.id.toLowerCase()
+          ? [uploadedFirst, uploadedSecond]
+          : [uploadedSecond, uploadedFirst];
+
+      const capturedAudio: {
+        readonly mimeType: string;
+        readonly data: string;
+      }[] = [];
+      let capturedUserPrompt = "";
+
+      mockGoogleText();
+      server.use(
+        http.post(VERTEX_TEXT_URL, async ({ request }) => {
+          const body = parseVoiceTitleRequest(await request.json());
+          const userContent = body.contents.find((entry) => {
+            return entry.role === "user";
+          });
+          const textParts: string[] = [];
+          const audioParts: {
+            readonly mimeType: string;
+            readonly data: string;
+          }[] = [];
+          for (const part of userContent?.parts ?? []) {
+            if ("text" in part) {
+              textParts.push(part.text);
+            } else {
+              audioParts.push(part.inlineData);
+            }
+          }
+          capturedUserPrompt = textParts.join("\n");
+          capturedAudio.push(...audioParts);
+
+          const matchesExpectedOrder =
+            audioParts.length === 2 &&
+            audioParts[0]?.mimeType === orderedClips[0]?.mimeType &&
+            audioParts[0]?.data === orderedClips[0]?.base64 &&
+            audioParts[1]?.mimeType === orderedClips[1]?.mimeType &&
+            audioParts[1]?.data === orderedClips[1]?.base64;
+
+          return vertexTextResponse(
+            matchesExpectedOrder
+              ? "Quarterly renewal voice memo"
+              : "Unexpected clip ordering",
+          );
+        }),
+      );
+
+      const sent = await member.run(() => {
+        return fixture.chat.requestSendEvent(
+          member.actor,
+          {
+            prompt: "[Voice message: 2 clips]",
+            model: null,
+            userMessage: {
+              version: 1,
+              parts: [
+                {
+                  type: "voice",
+                  clips: orderedClips.map((clip) => {
+                    return { fileId: clip.id };
+                  }),
+                },
+              ],
+            },
             hasTextContent: true,
           },
           [201],
-        ),
-        [201],
-      );
-      threadId = sent.body.threadId;
-    },
-    events,
-    rename: async (value: string) => {
-      if (threadId === undefined) {
-        throw new Error("Create the conversation before renaming it");
-      }
-      await accept(
-        chat.requestRenameThread(actor, threadId, value, [204]),
-        [204],
-      );
-    },
-    titles: async () => {
-      return (await events()).flatMap((event) => {
-        return event.kind === "renamed" ? [event.title] : [];
+        );
       });
-    },
-  };
-}
-
-test("titles a voice-only conversation from its private recordings in order", async () => {
-  const chat = await prepareChatTitle();
-  installSharedThreadStorage(context);
-  const authorize = createMcpWebApi(context).authorize(chat.actor);
-  const headers = {
-    authorization: `Bearer ${authorize({ scope: "okou:chat:send" })}`,
-  };
-  const uploads = setupApp({
-    context,
-    routes: [...uploadsPrepareRoutes, ...uploadsCompleteRoutes],
-  })(uploadsContract);
-  const recordings = [
-    "first recording".repeat(4),
-    "second recording".repeat(4),
-  ];
-  const clips = [];
-  for (const recording of recordings) {
-    const { body } = await accept(
-      uploads.preparePrivate({
-        headers,
-        body: {
-          filename: "voice.wav",
-          contentType: "audio/wav",
-          size: recording.length,
-        },
-      }),
-      [200],
-    );
-    if (!("uploadUrl" in body)) {
-      throw new Error("Expected direct upload");
-    }
-    const uploaded = await fetch(body.uploadUrl, {
-      method: "PUT",
-      headers: body.uploadHeaders,
-      body: recording,
-    });
-    expect(uploaded.status).toBe(200);
-    await accept(uploads.complete({ headers, body: { id: body.id } }), [200]);
-    clips.push({ fileId: body.id });
-  }
-  mockGoogleText();
-  const titleRequests: VertexVoiceRequest[] = [];
-  const title = "Plan the next product launch";
-  server.use(
-    http.post(endpoint, async ({ request }) => {
-      const input = (await request.json()) as VertexVoiceRequest;
-      if (
-        input.systemInstruction.parts[0]?.text.includes(
-          "Generate a short, descriptive title",
-        )
-      ) {
-        titleRequests.push(input);
-        return completion(title);
+      if (sent.status !== 201) {
+        throw new Error("Expected voice-only chat send to be accepted");
       }
-      return completion("Thinking");
-    }),
-  );
 
-  await chat.create({ version: 1, parts: [{ type: "voice", clips }] });
-  await flushWaitUntilForTest();
-
-  expect(titleRequests).toHaveLength(1);
-  const parts = titleRequests[0]?.contents[0]?.parts ?? [];
-  const audioParts = parts.flatMap((part) => {
-    return part.inlineData ?? [];
-  });
-  expect(audioParts).toStrictEqual(
-    recordings.map((recording) => {
-      return {
-        mimeType: "audio/wav",
-        data: Buffer.from(recording).toString("base64"),
-      };
-    }),
-  );
-  expect(parts[0]?.text).not.toContain("okou transcribe");
-  await expect(chat.titles()).resolves.toStrictEqual([title]);
-});
-
-type TitleCompletion =
-  Response | { readonly content: string; readonly finishReason: "length" };
-
-function mockTitleCompletion(response: () => TitleCompletion) {
-  createChatCallbacksApi(context).mockVertexCompletions((body) => {
-    return body.messages[0]?.content.includes(
-      "Generate a short, descriptive title",
-    )
-      ? response()
-      : "Thinking";
-  });
-}
-
-// One shape per externally distinguishable outcome. Reasons the provider
-// classification separates further — which gateway code, which transport
-// fault — reach the thread identically, so they are not enumerated again.
-const untitledCases = Object.freeze([
-  {
-    name: "an unavailable provider",
-    response: () => {
-      return new HttpResponse(secret, { status: 503 });
-    },
-  },
-  {
-    name: "rejected credentials",
-    response: () => {
-      return new HttpResponse(secret, { status: 401 });
-    },
-  },
-  {
-    name: "a response that breaks its contract",
-    response: () => {
-      return new HttpResponse(secret);
-    },
-  },
-  {
-    name: "a transport failure",
-    response: () => {
-      return HttpResponse.error();
-    },
-  },
-  {
-    name: "an exhausted token budget",
-    response: () => {
-      return { content: secret, finishReason: "length" as const };
-    },
-  },
-  {
-    name: "generated text that interprets to nothing",
-    response: () => {
-      return completion("---");
-    },
-  },
-]);
-
-describe("auxiliary generation outcomes", () => {
-  it("titles a contextual Slack request using the native thread conversation", async () => {
-    const owner = await publicChatActor(context);
-    const integrations = createBddIntegrationApi(context);
-    integrations.configureSlackAppMocks();
-    const slackUserId = "U_TITLE_REQUESTER";
-    const { teamId, botUserId } = await owner.run(() => {
-      return integrations.installSlackWorkspace(owner.actor, {
-        installerSlackUserId: slackUserId,
-      });
-    });
-    const nativeTopic = "The Atlas invoice export duplicates payment rows.";
-    const nativeHistory = `${"Investigation notes. ".repeat(30)}${nativeTopic}`;
-    const currentRequest = "Please fix this";
-    context.mocks.slack.conversations.replies.mockResolvedValue({
-      ok: true,
-      messages: [
-        { ts: "2900.000100", user: slackUserId, text: nativeHistory },
-        {
-          ts: "2900.000200",
-          user: slackUserId,
-          text: `<@${botUserId}> ${currentRequest}`,
-        },
-      ],
-    });
-    const titleRequests: string[] = [];
-    const expectedTitle = "Fix duplicate payments in Atlas invoice exports";
-    mockGoogleText();
-    createChatCallbacksApi(context).mockVertexCompletions((body) => {
-      if (
-        body.messages[0]?.content.includes(
-          "Generate a short, descriptive title",
-        )
-      ) {
-        const content = body.messages[1]?.content ?? "";
-        titleRequests.push(content);
-        return content.includes(nativeTopic) ? expectedTitle : "Fix this";
-      }
-      return "Thinking";
-    });
-
-    await owner.run(() => {
-      return integrations.postSlackEvent(teamId, {
-        type: "app_mention",
-        user: slackUserId,
-        text: `<@${botUserId}> ${currentRequest}`,
-        channel: "C_TITLE_CONTEXT",
-        thread_ts: "2900.000100",
-        ts: "2900.000200",
-      });
-    });
-    await flushWaitUntilForTest();
-
-    const listed = await accept(
-      createChatFilesBddApi(context).requestThreadEvents(
-        owner.actor,
-        {},
-        [200],
-      ),
-      [200],
-    );
-    expect(listed.body.events).toContainEqual(
-      expect.objectContaining({ kind: "renamed", title: expectedTitle }),
-    );
-    expect(titleRequests).toHaveLength(1);
-    expect(titleRequests[0]).toContain(nativeHistory);
-    expect(titleRequests[0]).toContain(
-      "You are currently running inside: Slack",
-    );
-    expect(titleRequests[0]).toContain(currentRequest);
-  });
-
-  it("titles the thread from a usable completion", async () => {
-    const title = await prepareChatTitle();
-    mockGoogleText();
-    mockTitleCompletion(() => {
-      return completion();
-    });
-    await title.create();
-    await flushWaitUntilForTest();
-    await expect(title.titles()).resolves.toStrictEqual(["A usable summary"]);
-  });
-
-  it("keeps a member rename when a held title completion arrives later", async () => {
-    const title = await prepareChatTitle();
-    const entered = createDeferredPromise<void>(context.signal);
-    const release = createDeferredPromise<void>(context.signal);
-    onTestFinished(() => {
-      if (!release.settled()) {
-        release.resolve(undefined);
-      }
-    });
-    mockGoogleText();
-    createChatCallbacksApi(context).mockVertexCompletions(async (body) => {
-      if (
-        body.messages[0]?.content.includes(
-          "Generate a short, descriptive title",
-        )
-      ) {
-        entered.resolve(undefined);
-        await release.promise;
-        return "Stale generated title";
-      }
-      return "Thinking";
-    });
-    await title.create();
-    await entered.promise;
-    await title.rename("Member chosen title");
-    release.resolve(undefined);
-    await flushWaitUntilForTest();
-    // The public ordered event stream must contain the member's write only:
-    // a generator that lost the conditional UPDATE cannot append a rename.
-    await expect(title.titles()).resolves.toStrictEqual([
-      "Member chosen title",
-    ]);
-  });
-
-  it.each(untitledCases)(
-    "leaves the thread untitled after $name",
-    async ({ response }) => {
-      const title = await prepareChatTitle();
-      mockGoogleText();
-      mockTitleCompletion(response);
-      await title.create();
       await flushWaitUntilForTest();
-      await expect(title.titles()).resolves.toStrictEqual([]);
-      // The thread itself survives a failed optional generation, and nothing
-      // the provider sent reaches its metadata.
-      const events = await title.events();
-      expect(
-        events.some((event) => {
-          return event.kind === "created";
+
+      const events = await readThreadLifecycleEvents(
+        fixture,
+        member.actor,
+        sent.body.threadId,
+      );
+      expect(renamedTitles(events)).toStrictEqual([
+        "Quarterly renewal voice memo",
+      ]);
+      expect(capturedUserPrompt).toContain(
+        "Listen to the attached voice clips in order",
+      );
+      expect(capturedAudio).toStrictEqual(
+        orderedClips.map((clip) => {
+          return { mimeType: clip.mimeType, data: clip.base64 };
         }),
-      ).toBeTruthy();
-      expect(JSON.stringify(events)).not.toContain(secret);
+      );
     },
   );
-
-  it("leaves the thread untitled and calls no provider when configuration is missing", async () => {
-    const title = await prepareChatTitle();
-    mockOptionalEnv("GCP_LLM_PROJECT_ID", undefined);
-    let requests = 0;
-    server.use(
-      http.post(endpoint, () => {
-        requests += 1;
-        return completion();
-      }),
-    );
-    await title.create();
-    await flushWaitUntilForTest();
-    await expect(title.titles()).resolves.toStrictEqual([]);
-    expect(requests).toBe(0);
-  });
-
-  it("finishes a background title that outlives the response within the request lifetime", async () => {
-    const title = await prepareChatTitle();
-    const titleEntered = createDeferredPromise<void>(context.signal);
-    const releaseTitle = createDeferredPromise<void>(context.signal);
-    onTestFinished(() => {
-      if (!releaseTitle.settled()) {
-        releaseTitle.resolve(undefined);
-      }
-    });
-    mockGoogleText();
-    createChatCallbacksApi(context).mockVertexCompletions(async (body) => {
-      if (
-        body.messages[0]?.content.includes(
-          "Generate a short, descriptive title",
-        )
-      ) {
-        titleEntered.resolve(undefined);
-        await releaseTitle.promise;
-        return "Late generated title";
-      }
-      return "Thinking";
-    });
-    await title.create();
-    await titleEntered.promise;
-    // The response is already delivered while the generation is still running.
-    await expect(title.titles()).resolves.toStrictEqual([]);
-
-    let drained = false;
-    const drainStarted = createDeferredPromise<void>(context.signal);
-    const drain = (async () => {
-      drainStarted.resolve(undefined);
-      await flushWaitUntilForTest();
-      drained = true;
-    })();
-    await drainStarted.promise;
-    // This API read is an observable scheduling boundary. A tracker that lost
-    // the held generation would finish draining before the read completes.
-    await expect(title.titles()).resolves.toStrictEqual([]);
-    expect(drained).toBeFalsy();
-    releaseTitle.resolve(undefined);
-    await drain;
-    expect(drained).toBeTruthy();
-    await expect(title.titles()).resolves.toStrictEqual([
-      "Late generated title",
-    ]);
-  });
 });

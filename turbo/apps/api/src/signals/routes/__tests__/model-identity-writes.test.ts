@@ -1,203 +1,45 @@
+import {
+  chatThreadMetadataContract,
+  chatThreadsContract,
+} from "@okouai/api-contracts/contracts/chat-threads";
 import { describe, expect, it } from "vitest";
-import { chatThreadsContract } from "@okouai/api-contracts/contracts/chat-threads";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { chatThreadCreateRoutes } from "../chat-threads-create";
+import { chatThreadGetRoutes } from "../chat-threads-get";
 import { createBddApi } from "./helpers/api-bdd";
-import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createRunsApi } from "./helpers/api-bdd-runs";
-import { createRunReadsApi } from "./helpers/api-bdd-run-reads";
+import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
-const bdd = createBddApi(context);
-const chat = createChatFilesBddApi(context);
-const runs = createRunsApi(context);
+const headers = Object.freeze({ authorization: "Bearer clerk-session" });
 
 describe("model identity new writes", () => {
-  it.each([null, "auto"])(
-    "creates canonical Auto from intent %s",
-    async (model) => {
-      const actor = bdd.user();
-      const thread = await chat.createThread(actor, { model });
-      await expect(
-        chat.readThreadMetadata(actor, thread.id),
-      ).resolves.toMatchObject({
-        selectedModel: "auto",
-        modelSettings: {},
-        serviceTier: null,
-      });
-      const events = await chat.requestThreadEvents(actor, {}, [200]);
-      expect(events.body).toMatchObject({
-        events: expect.arrayContaining([
-          expect.objectContaining({
-            kind: "created",
-            chatThreadId: thread.id,
-            selectedModel: "auto",
-          }),
-        ]),
-      });
-    },
-  );
-
-  it("resolves an omitted creation model from the member's personal preference", async () => {
-    const actor = bdd.user();
-    await runs.ensurePersonalSubscriptionModel(actor, {
+  it("model-identity-writes-003 resolves an omitted creation model from the member's personal preference", async () => {
+    const actor = createBddApi(context).user();
+    await createRunsApi(context).ensurePersonalSubscriptionModel(actor, {
       model: "claude-sonnet-5-5",
     });
-    const client = setupApp({ context, routes: chatThreadCreateRoutes })(
-      chatThreadsContract,
+    createRouteMocks(context).clerk.session(
+      actor.userId,
+      actor.orgId,
+      actor.orgRole,
     );
+
     const created = await accept(
-      client.create({
-        headers: { authorization: "Bearer clerk-session" },
-        body: {},
-      }),
+      setupApp({ context, routes: chatThreadCreateRoutes })(
+        chatThreadsContract,
+      ).create({ headers, body: {} }),
       [201],
     );
+    const metadata = await accept(
+      setupApp({ context, routes: chatThreadGetRoutes })(
+        chatThreadMetadataContract,
+      ).get({ headers, params: { id: created.body.id } }),
+      [200],
+    );
+
     expect(created.body.selectedModel).toBe("claude-sonnet-5-5");
-    await expect(
-      chat.readThreadMetadata(actor, created.body.id),
-    ).resolves.toMatchObject({ selectedModel: "claude-sonnet-5-5" });
-  });
-
-  it("preserves a personal selection and effort when rename and send omit the model", async () => {
-    const actor = bdd.user();
-    await runs.configureRunnerGroup();
-    runs.acceptStorageDownloads();
-    runs.acceptTelemetryIngest();
-    await runs.grantProEntitlement(actor);
-    await runs.ensurePersonalSubscriptionModel(actor, {
-      model: "claude-sonnet-5-5",
-    });
-    const thread = await chat.createThread(actor, {
-      model: "claude-sonnet-5-5",
-    });
-    await chat.updateThreadModelSelection(
-      actor,
-      thread.id,
-      "claude-sonnet-5-5",
-      { reasoningEffort: "extra" },
-    );
-    await chat.renameThread(actor, thread.id, "Keep my selection");
-    const run = await runs.createThreadRun(actor, {
-      threadId: thread.id,
-      prompt: "Continue my personal model",
-    });
-    await expect(
-      chat.readThreadMetadata(actor, thread.id),
-    ).resolves.toMatchObject({
-      title: "Keep my selection",
-      selectedModel: "claude-sonnet-5-5",
-      modelSettings: { "claude-sonnet-5-5": { effort: "extra" } },
-    });
-    const history = await chat.listThreadEvents(actor, thread.id);
-    expect(history.events).toContainEqual(
-      expect.objectContaining({
-        eventType: "input.prompt",
-        runId: run.runId,
-        userMessage: {
-          version: 1,
-          parts: expect.arrayContaining([
-            expect.objectContaining({
-              type: "model",
-              selectedModel: "claude-sonnet-5-5",
-            }),
-          ]),
-        },
-      }),
-    );
-    const reads = createRunReadsApi(context);
-    const captured = await reads.requestReadLogById(actor, run.runId, [200]);
-    expect(captured.body).toMatchObject({
-      selectedModel: "claude-sonnet-5-5",
-      modelRuntimeProvider: "claude-code-oauth-token",
-      modelRuntimeModel: expect.any(String),
-    });
-    expect(captured.body.modelRuntimeModel).not.toBe("");
-    await chat.updateThreadModelSelection(actor, thread.id, "auto");
-    await runs.requestCancelRun(actor, run.runId, [200]);
-    const retained = await reads.requestReadLogById(actor, run.runId, [200]);
-    expect(retained.body).toMatchObject({
-      selectedModel: captured.body.selectedModel,
-      modelRuntimeProvider: captured.body.modelRuntimeProvider,
-      modelRuntimeModel: captured.body.modelRuntimeModel,
-    });
-  });
-
-  it("keeps personal effort when switching to Auto and rejects Auto effort and Fast", async () => {
-    const actor = bdd.user();
-    await runs.ensurePersonalSubscriptionModel(actor, {
-      model: "claude-sonnet-5-5",
-    });
-    const thread = await chat.createThread(actor, {
-      model: "claude-sonnet-5-5",
-    });
-    await chat.updateThreadModelSelection(
-      actor,
-      thread.id,
-      "claude-sonnet-5-5",
-      { reasoningEffort: "extra" },
-    );
-    await chat.updateThreadModelSelection(actor, thread.id, null);
-    await expect(
-      chat.readThreadMetadata(actor, thread.id),
-    ).resolves.toMatchObject({
-      selectedModel: "auto",
-      modelSettings: { "claude-sonnet-5-5": { effort: "extra" } },
-      serviceTier: null,
-    });
-    await chat.requestUpdateThreadModelSelection(
-      actor,
-      thread.id,
-      "auto",
-      [400],
-      { reasoningEffort: "high" },
-    );
-    await chat.requestUpdateThreadModelSelection(
-      actor,
-      thread.id,
-      "auto",
-      [400],
-      { codexServiceTier: "fast" },
-    );
-    await expect(
-      chat.readThreadMetadata(actor, thread.id),
-    ).resolves.toMatchObject({
-      selectedModel: "auto",
-      modelSettings: { "claude-sonnet-5-5": { effort: "extra" } },
-    });
-  });
-
-  it("writes canonical Auto on a send and launches the managed route", async () => {
-    // The fixed test seed provides the managed key, so an Auto send without a
-    // personal subscription launches on the platform route.
-    const actor = bdd.user();
-    await runs.grantProEntitlement(actor);
-    await runs.configureRunnerGroup();
-    runs.acceptStorageDownloads();
-    const run = await runs.createThreadRun(actor, {
-      prompt: "Use the platform model",
-      model: null,
-    });
-    const history = await chat.listThreadEvents(actor, run.threadId);
-    expect(history.events).toContainEqual(
-      expect.objectContaining({
-        eventType: "input.prompt",
-        runId: run.runId,
-        userMessage: {
-          version: 1,
-          parts: expect.arrayContaining([
-            expect.objectContaining({
-              type: "text",
-              text: "Use the platform model",
-            }),
-          ]),
-        },
-      }),
-    );
-    await expect(
-      chat.readThreadMetadata(actor, run.threadId),
-    ).resolves.toMatchObject({ selectedModel: "auto" });
-    await runs.requestCancelRun(actor, run.runId, [200]);
+    expect(metadata.body.selectedModel).toBe("claude-sonnet-5-5");
   });
 });

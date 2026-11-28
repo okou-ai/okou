@@ -1,524 +1,345 @@
 import { randomUUID } from "node:crypto";
-import { describe, expect, it } from "vitest";
-import {
-  computerUseSessionHostsContract as hosts,
-  computerUseHostsContract as directory,
-  computerUseCommandContract as commands,
-} from "@okouai/api-contracts/contracts/computer-use";
+
+import { computerUseSessionHostsContract } from "@okouai/api-contracts/contracts/computer-use";
+import { expect, test } from "vitest";
+
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockNow, now } from "../../../lib/time";
-import { flushWaitUntilForTest } from "../../context/wait-until";
-import { createDeferredPromise } from "../../utils";
 import { computerUseRoutes } from "../computer-use";
-import { channelsPublishedTo } from "./helpers/realtime-publications";
+import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
+import { createComputerUseBddApi } from "./helpers/api-bdd-computer-use";
+
 const context = testContext();
-const headers = Object.freeze({ authorization: "Bearer clerk-session" });
-const runtime = Object.freeze({
-  hostName: "Presence Mac",
-  appVersion: "99.0.0",
-  osVersion: "macOS 26",
-  supportedCapabilities: ["apps.list"],
-  permissions: { accessibility: true, screenRecording: true },
-});
-function authenticate() {
-  const actor = {
-    userId: `user_${randomUUID()}`,
-    orgId: `org_${randomUUID()}`,
-    sessionId: `sess_${randomUUID()}`,
-  };
+const computerUse = createComputerUseBddApi(context);
+const sessionHeaders = Object.freeze({ authorization: "Bearer clerk-session" });
+
+interface PresenceHost {
+  readonly actor: ApiTestUser;
+  readonly hostId: string;
+  readonly connectionGeneration: number;
+  readonly installationId: string;
+}
+
+function sessionHosts() {
+  return setupApp({ context, routes: computerUseRoutes })(
+    computerUseSessionHostsContract,
+  );
+}
+
+function desktopSession(actor: ApiTestUser, status = "active") {
+  const sessionId = `sess_${actor.userId}`;
   context.mocks.clerk.authenticateRequest.mockResolvedValue({
     isAuthenticated: true,
     toAuth: () => {
-      return { ...actor, orgRole: "org:admin" };
+      return { ...actor, sessionId };
     },
   });
   context.mocks.clerk.sessions.getSession.mockResolvedValue({
-    id: actor.sessionId,
+    id: sessionId,
     userId: actor.userId,
-    status: "active",
+    status,
   });
   context.mocks.clerk.organizations.getOrganizationMembershipList.mockResolvedValue(
     {
       data: [
         {
-          organization: { id: actor.orgId },
+          organization: { id: actor.orgId ?? "" },
           publicUserData: { userId: actor.userId },
-          role: "org:admin",
+          role: actor.orgRole ?? "org:admin",
         },
       ],
       totalCount: 1,
     },
   );
-  return actor;
 }
 
-async function scenario(presenceOnly = false) {
-  const api = await setupApp({ context, routes: computerUseRoutes });
-  const actor = authenticate();
-  const installationId = randomUUID();
-  const registered = await accept(
-    api(hosts).register({
-      headers,
+function runtimeBody(
+  hostName = "BDD Desktop",
+  supportedCapabilities = ["apps.list", "app.state"],
+) {
+  return {
+    hostName,
+    appVersion: "0.52.1",
+    osVersion: "macOS 15",
+    supportedCapabilities,
+    permissions: { accessibility: true, screenRecording: true },
+  };
+}
+
+function setPresence(present: boolean | ((channelName: string) => boolean)) {
+  context.mocks.ably.presenceGet.mockImplementation((channelName: unknown) => {
+    const isPresent =
+      typeof present === "function"
+        ? typeof channelName === "string" && present(channelName)
+        : present;
+    return Promise.resolve({
+      items: isPresent ? [{ clientId: "desktop" }] : [],
+    });
+  });
+}
+
+interface TokenRequestParams {
+  readonly capability: Record<string, readonly string[]>;
+  readonly ttl: number;
+  readonly clientId: string;
+}
+
+function isTokenRequestParams(value: unknown): value is TokenRequestParams {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "capability" in value &&
+    "ttl" in value &&
+    "clientId" in value
+  );
+}
+
+function issueAblyTokenRequests(): TokenRequestParams[] {
+  const requested: TokenRequestParams[] = [];
+  context.mocks.ably.createTokenRequest.mockImplementation(
+    (params: unknown) => {
+      if (!isTokenRequestParams(params)) {
+        throw new Error("Unexpected Ably token request parameters");
+      }
+      requested.push(params);
+      return Promise.resolve({
+        keyName: "app.key",
+        ttl: params.ttl,
+        timestamp: now(),
+        capability: JSON.stringify(params.capability),
+        clientId: params.clientId,
+        nonce: randomUUID(),
+        mac: randomUUID(),
+      });
+    },
+  );
+  return requested;
+}
+
+async function registerPresenceHost(
+  actor: ApiTestUser,
+  options: { installationId?: string; presenceOnly?: true } = {},
+): Promise<PresenceHost> {
+  desktopSession(actor);
+  const installationId = options.installationId ?? randomUUID();
+  const response = await accept(
+    sessionHosts().register({
+      headers: sessionHeaders,
       body: {
-        ...runtime,
+        ...runtimeBody(),
         installationId,
         livenessMode: "presence",
-        presenceOnly,
+        ...(options.presenceOnly ? { presenceOnly: true } : {}),
       },
     }),
     [200],
   );
-  const params = { hostId: registered.body.hostId };
-  const generation = {
-    connectionGeneration: registered.body.connectionGeneration,
-  };
-  const channel = registered.body.commandNotifications.channelName;
-  context.mocks.ably.presenceGet.mockImplementation((name: unknown) => {
-    return Promise.resolve({
-      items: name === channel ? [{ clientId: actor.userId }] : [],
-    });
-  });
   return {
-    api,
     actor,
-    registered,
+    hostId: response.body.hostId,
+    connectionGeneration: response.body.connectionGeneration,
     installationId,
-    params,
-    generation,
-    channel,
   };
 }
 
-describe("Desktop host presence", () => {
-  it("keeps an idle presence host routable beyond heartbeat freshness and follows presence leave", async () => {
-    const s = await scenario();
-    mockNow(now() + 120_000);
-    const online = await accept(s.api(directory).list({ headers }), [200]);
-    expect(online.body.hosts).toContainEqual(
-      expect.objectContaining({ id: s.params.hostId, status: "online" }),
-    );
-    await accept(
-      s.api(commands).create({ headers, body: { kind: "apps.list" } }),
-      [200],
-    );
-    context.mocks.ably.presenceGet.mockResolvedValue({ items: [] });
-    const offline = await accept(s.api(directory).list({ headers }), [200]);
-    expect(offline.body.hosts).toContainEqual(
-      expect.objectContaining({ id: s.params.hostId, status: "offline" }),
-    );
-    await accept(
-      s.api(commands).create({ headers, body: { kind: "apps.list" } }),
-      [409],
-    );
-  });
+async function presentAdminHost(
+  options: { presenceOnly?: true } = {},
+): Promise<PresenceHost> {
+  const bdd = createBddApi(context);
+  const admin = bdd.user();
+  await bdd.provisionWorkspace(admin);
+  setPresence(true);
+  return await registerPresenceHost(admin, options);
+}
 
-  it("issues only current-generation host capabilities and rejects a replaced connection", async () => {
-    const s = await scenario();
-    context.mocks.ably.createTokenRequest.mockResolvedValue({
-      keyName: "test.key",
-      nonce: "nonce",
-      mac: "mac",
-      timestamp: now(),
-      capability: JSON.stringify({ [s.channel]: ["subscribe", "presence"] }),
-      clientId: s.actor.userId,
-      ttl: 3_600_000,
-    });
-    const token = await accept(
-      s
-        .api(hosts)
-        .realtimeToken({ headers, params: s.params, body: s.generation }),
-      [200],
-    );
-    expect(context.mocks.ably.createTokenRequest).toHaveBeenCalledWith({
-      capability: { [s.channel]: ["subscribe", "presence"] },
-      clientId: s.actor.userId,
-      ttl: 3_600_000,
-    });
-    expect(JSON.parse(token.body.capability ?? "{}")).toStrictEqual({
-      [s.channel]: ["subscribe", "presence"],
-    });
-    expect(token.body.clientId).toBe(s.actor.userId);
-    const replacement = await accept(
-      s.api(hosts).register({
-        headers,
-        body: {
-          ...runtime,
-          installationId: s.installationId,
-          livenessMode: "presence",
-        },
-      }),
-      [200],
-    );
-    await accept(
-      s
-        .api(hosts)
-        .realtimeToken({ headers, params: s.params, body: s.generation }),
-      [409],
-    );
-    mockNow(now() + 120_000);
-    const listed = await accept(s.api(directory).list({ headers }), [200]);
-    expect(listed.body.hosts).toContainEqual(
-      expect.objectContaining({
-        id: replacement.body.hostId,
-        status: "offline",
-      }),
-    );
+async function listedHost(host: PresenceHost) {
+  const listing = await computerUse.listComputerUseHosts(host.actor);
+  const listed = listing.hosts.find((candidate) => {
+    return candidate.id === host.hostId;
   });
+  if (!listed) {
+    throw new Error("Expected the Desktop host in the listing");
+  }
+  return listed;
+}
 
-  it("repairs lost wakeups from queued command reads and admits the command once", async () => {
-    const s = await scenario();
-    context.mocks.ably.publish.mockRejectedValue(
-      new Error("publication unavailable"),
-    );
-    const created = await accept(
-      s.api(commands).create({ headers, body: { kind: "apps.list" } }),
-      [200],
-    );
-    context.mocks.ably.publish.mockResolvedValue(undefined);
-    context.mocks.ably.publish.mockClear();
-    context.mocks.ably.channelGet.mockClear();
-    const read = await accept(
-      s
-        .api(commands)
-        .get({ headers, params: { commandId: created.body.commandId } }),
-      [200],
-    );
-    expect(read.body.status).toBe("queued");
-    expect(channelsPublishedTo(context.mocks, "commandsChanged")).toContain(
-      s.channel,
-    );
-    // Simulate the delivered recovery hint by crossing the real claim boundary.
-    const claim = await accept(
-      s.api(hosts).next({
-        headers,
-        params: s.params,
-        body: {
-          ...s.generation,
-          supportedCapabilities: runtime.supportedCapabilities,
-        },
-      }),
-      [200],
-    );
-    expect(claim.body).toMatchObject({
-      status: "command",
-      command: { id: created.body.commandId },
-    });
-    await accept(
-      s.api(hosts).complete({
-        headers,
-        params: { ...s.params, commandId: created.body.commandId },
-        body: { ...s.generation, status: "succeeded", result: { apps: [] } },
-      }),
-      [200],
-    );
-    const completed = await accept(
-      s
-        .api(commands)
-        .get({ headers, params: { commandId: created.body.commandId } }),
-      [200],
-    );
-    expect(completed.body.status).toBe("succeeded");
-    const idle = await accept(
-      s.api(hosts).next({
-        headers,
-        params: s.params,
-        body: {
-          ...s.generation,
-          supportedCapabilities: runtime.supportedCapabilities,
-        },
-      }),
-      [200],
-    );
-    expect(idle.body.status).toBe("idle");
-  });
+async function requestAppsList(
+  host: PresenceHost,
+  statuses: readonly (200 | 409)[],
+) {
+  return await computerUse.requestCreateComputerUseReadCommand(
+    host.actor,
+    { kind: "apps.list" },
+    statuses,
+  );
+}
 
-  it("recovers work through the HTTP queue wait while all Ably wakeup publications fail", async () => {
-    const s = await scenario();
-    context.mocks.ably.publish.mockRejectedValue(
-      new Error("Ably publication unavailable"),
-    );
-    const created = await accept(
-      s.api(commands).create({ headers, body: { kind: "apps.list" } }),
-      [200],
-    );
-    const pending = await accept(
-      s.api(hosts).wait({ headers, params: s.params, body: s.generation }),
-      [200],
-    );
-    expect(pending.body.hasPendingCommands).toBeTruthy();
-    const claim = await accept(
-      s.api(hosts).next({
-        headers,
-        params: s.params,
-        body: {
-          ...s.generation,
-          supportedCapabilities: runtime.supportedCapabilities,
-        },
-      }),
-      [200],
-    );
-    expect(claim.body).toMatchObject({
-      status: "command",
-      command: { id: created.body.commandId },
-    });
-  });
+function hostPath(host: PresenceHost) {
+  desktopSession(host.actor);
+  return {
+    headers: sessionHeaders,
+    params: { hostId: host.hostId },
+    body: { connectionGeneration: host.connectionGeneration },
+  };
+}
 
-  it("keeps a recently received HTTP connection usable during an Ably outage", async () => {
-    const s = await scenario();
-    context.mocks.ably.presenceGet.mockRejectedValue(
-      new Error("Ably unavailable"),
-    );
-    const listed = await accept(s.api(directory).list({ headers }), [200]);
-    expect(listed.body.hosts).toContainEqual(
-      expect.objectContaining({ id: s.params.hostId, status: "online" }),
-    );
-  });
+test("computer-use-host-presence-004 recovers queued work through the HTTP wait when realtime publishing fails", async () => {
+  const host = await presentAdminHost();
+  context.mocks.ably.publish.mockRejectedValue(new Error("Ably unavailable"));
+  context.mocks.ably.batchPublish.mockRejectedValue(
+    new Error("Ably unavailable"),
+  );
 
-  it("removes a revoked host session even when its Ably presence is retained", async () => {
-    const s = await scenario();
-    mockNow(now() + 31_000);
-    context.mocks.clerk.sessions.getSession.mockResolvedValue({
-      id: s.actor.sessionId,
-      userId: s.actor.userId,
-      status: "revoked",
-    });
-    const listed = await accept(s.api(directory).list({ headers }), [200]);
-    expect(listed.body.hosts).toContainEqual(
-      expect.objectContaining({ id: s.params.hostId, status: "offline" }),
-    );
-    await accept(
-      s.api(hosts).next({
-        headers,
-        params: s.params,
-        body: {
-          ...s.generation,
-          supportedCapabilities: runtime.supportedCapabilities,
-        },
-      }),
-      [409],
-    );
-  });
-
-  it("reports presence-provider failure as unavailable instead of offline", async () => {
-    const s = await scenario();
-    mockNow(now() + 120_000);
-    context.mocks.ably.presenceGet.mockRejectedValue(
-      new Error("Ably unavailable"),
-    );
-    const response = await accept(s.api(directory).list({ headers }), [503]);
-    expect(response.body.error.code).toBe("PROVIDER_UNAVAILABLE");
-  });
-
-  it("synchronizes changed capabilities and keeps stop authoritative over lingering presence", async () => {
-    const s = await scenario();
-    await accept(
-      s.api(hosts).state({
-        headers,
-        params: s.params,
-        body: {
-          ...runtime,
-          ...s.generation,
-          hostName: "Updated Mac",
-          supportedCapabilities: ["app.state"],
-        },
-      }),
-      [200],
-    );
-    const listed = await accept(s.api(directory).list({ headers }), [200]);
-    expect(listed.body.hosts).toContainEqual(
-      expect.objectContaining({
-        displayName: "Updated Mac",
-        supportedCapabilities: ["app.state"],
-      }),
-    );
-    await accept(
-      s.api(hosts).stop({ headers, params: s.params, body: s.generation }),
-      [200],
-    );
-    const stopped = await accept(s.api(directory).list({ headers }), [200]);
-    expect(stopped.body.hosts).toContainEqual(
-      expect.objectContaining({ id: s.params.hostId, status: "offline" }),
-    );
-    await accept(
-      s
-        .api(hosts)
-        .realtimeToken({ headers, params: s.params, body: s.generation }),
-      [409],
-    );
+  const created = await requestAppsList(host, [200]);
+  if (created.status !== 200) {
+    throw new Error("Expected the command to be created");
+  }
+  const waited = await accept(sessionHosts().wait(hostPath(host)), [200]);
+  expect(waited.body).toStrictEqual({ hasPendingCommands: true });
+  const claimed = await computerUse.claimNextComputerUseCommand(host);
+  expect(claimed).toMatchObject({
+    status: "command",
+    command: { id: created.body.commandId },
   });
 });
 
-describe("Presence-only Desktop", () => {
-  it("uses presence for a fresh host and reports an unavailable provider explicitly", async () => {
-    const s = await scenario(true);
-    expect(s.registered.body).toMatchObject({
-      livenessMode: "presence",
-      presenceOnly: true,
-    });
-    context.mocks.ably.presenceGet.mockRejectedValue(
-      new Error("Ably unavailable"),
-    );
-    const unavailable = await accept(s.api(directory).list({ headers }), [503]);
-    expect(unavailable.body.error.code).toBe("PROVIDER_UNAVAILABLE");
-    context.mocks.ably.presenceGet.mockResolvedValue({ items: [] });
-    await accept(
-      s.api(hosts).state({
-        headers,
-        params: s.params,
-        body: { ...runtime, ...s.generation },
-      }),
-      [200],
-    );
-    const offline = await accept(s.api(directory).list({ headers }), [200]);
-    expect(offline.body.hosts).toContainEqual(
-      expect.objectContaining({
-        id: s.params.hostId,
-        status: "offline",
-      }),
-    );
+test("computer-use-host-presence-001 keeps an idle present host online and follows presence leave", async () => {
+  const host = await presentAdminHost();
+  mockNow(now() + 120_000);
+
+  await expect(listedHost(host)).resolves.toMatchObject({ status: "online" });
+  await requestAppsList(host, [200]);
+
+  setPresence(false);
+  await expect(listedHost(host)).resolves.toMatchObject({
+    status: "offline",
+  });
+  await requestAppsList(host, [409]);
+});
+
+test("computer-use-host-presence-008 syncs changed capabilities and keeps stop authoritative over presence", async () => {
+  const host = await presentAdminHost();
+
+  await accept(
+    sessionHosts().state({
+      ...hostPath(host),
+      body: {
+        ...runtimeBody("Updated Mac", ["app.state"]),
+        connectionGeneration: host.connectionGeneration,
+      },
+    }),
+    [200],
+  );
+  await expect(listedHost(host)).resolves.toMatchObject({
+    displayName: "Updated Mac",
+    supportedCapabilities: ["app.state"],
   });
 
-  it("accepts only the current connection's diagnostics without granting online status", async () => {
-    const s = await scenario(true);
-    await accept(
-      s.api(hosts).connectionEvent({
-        headers,
-        params: s.params,
-        body: { ...s.generation, event: "ready" },
-      }),
-      [204],
-    );
-    await accept(
-      s.api(hosts).connectionEvent({
-        headers,
-        params: s.params,
-        body: {
-          connectionGeneration: s.generation.connectionGeneration + 1,
-          event: "unavailable",
-          reasonCode: 80_003,
-        },
-      }),
-      [409],
-    );
-    context.mocks.ably.presenceGet.mockResolvedValue({ items: [] });
-    const listed = await accept(s.api(directory).list({ headers }), [200]);
-    expect(listed.body.hosts).toContainEqual(
-      expect.objectContaining({
-        id: s.params.hostId,
-        status: "offline",
-      }),
-    );
+  await accept(sessionHosts().stop(hostPath(host)), [200]);
+  await expect(listedHost(host)).resolves.toMatchObject({
+    status: "offline",
+  });
+  await accept(sessionHosts().realtimeToken(hostPath(host)), [409]);
+});
+
+test("computer-use-host-presence-006 removes a revoked host session despite retained presence", async () => {
+  const host = await presentAdminHost();
+  mockNow(now() + 31_000);
+  context.mocks.clerk.sessions.getSession.mockResolvedValue({
+    id: `sess_${host.actor.userId}`,
+    userId: host.actor.userId,
+    status: "revoked",
   });
 
-  it("expires an unclaimed operation and still admits a fresh command", async () => {
-    const s = await scenario(true);
-    const expired = await accept(
-      s
-        .api(commands)
-        .create({ headers, body: { kind: "apps.list", timeoutMs: 1000 } }),
-      [200],
-    );
-    // Finish notification delivery before making result reads own the timeout.
-    await flushWaitUntilForTest();
-    mockNow(now() + 1001);
-    const idle = await accept(
-      s.api(hosts).next({
-        headers,
-        params: s.params,
-        body: {
-          ...s.generation,
-          supportedCapabilities: runtime.supportedCapabilities,
-        },
-      }),
-      [200],
-    );
-    expect(idle.body.status).toBe("idle");
-    const observed = await accept(
-      s
-        .api(commands)
-        .get({ headers, params: { commandId: expired.body.commandId } }),
-      [200],
-    );
-    expect(observed.body).toMatchObject({
-      status: "failed",
-      error: { code: "timeout" },
-    });
-    const fresh = await accept(
-      s
-        .api(commands)
-        .create({ headers, body: { kind: "apps.list", timeoutMs: 1000 } }),
-      [200],
-    );
-    const claim = await accept(
-      s.api(hosts).next({
-        headers,
-        params: s.params,
-        body: {
-          ...s.generation,
-          supportedCapabilities: runtime.supportedCapabilities,
-        },
-      }),
-      [200],
-    );
-    expect(claim.body).toMatchObject({
-      status: "command",
-      command: { id: fresh.body.commandId },
-    });
-    await accept(
-      s.api(hosts).complete({
-        headers,
-        params: { ...s.params, commandId: fresh.body.commandId },
-        body: { ...s.generation, status: "succeeded", result: { apps: [] } },
-      }),
-      [200],
-    );
+  await expect(listedHost(host)).resolves.toMatchObject({
+    status: "offline",
+  });
+  context.mocks.clerk.authenticateRequest.mockResolvedValue({
+    isAuthenticated: true,
+    toAuth: () => {
+      return { ...host.actor, sessionId: `sess_${host.actor.userId}` };
+    },
+  });
+  await accept(
+    sessionHosts().next({
+      headers: sessionHeaders,
+      params: { hostId: host.hostId },
+      body: {
+        connectionGeneration: host.connectionGeneration,
+        supportedCapabilities: ["apps.list", "app.state"],
+      },
+    }),
+    [409],
+  );
+});
+
+test("computer-use-host-presence-002 issues current-generation realtime capabilities and rejects a replaced connection", async () => {
+  const host = await presentAdminHost();
+  const requested = issueAblyTokenRequests();
+
+  const token = await accept(
+    sessionHosts().realtimeToken(hostPath(host)),
+    [200],
+  );
+  expect(requested).toHaveLength(1);
+  const params = requested[0];
+  if (!params) {
+    throw new Error("Expected one Ably token request");
+  }
+  const channels = Object.keys(params.capability);
+  expect(channels).toHaveLength(1);
+  const hostChannel = channels[0] ?? "";
+  expect(hostChannel).toContain(host.hostId);
+  expect(params).toStrictEqual({
+    capability: { [hostChannel]: ["subscribe", "presence"] },
+    ttl: 60 * 60 * 1000,
+    clientId: host.actor.userId,
+  });
+  expect(token.body).toMatchObject({
+    capability: JSON.stringify(params.capability),
+    clientId: host.actor.userId,
+  });
+  setPresence((channelName) => {
+    return channelName === hostChannel;
   });
 
-  it("repairs failed publication without a result reader or idle Desktop polling", async () => {
-    const s = await scenario(true);
-    const delivered = createDeferredPromise<void>(context.signal);
-    context.mocks.ably.publish
-      .mockRejectedValueOnce(new Error("first publish failed"))
-      .mockRejectedValueOnce(new Error("retry failed"))
-      .mockImplementation(() => {
-        delivered.resolve();
-        return Promise.resolve(undefined);
-      });
-    const created = await accept(
-      s.api(commands).create({ headers, body: { kind: "apps.list" } }),
-      [200],
-    );
-    await delivered.promise;
-    const claim = await accept(
-      s.api(hosts).next({
-        headers,
-        params: s.params,
-        body: {
-          ...s.generation,
-          supportedCapabilities: runtime.supportedCapabilities,
-        },
-      }),
-      [200],
-    );
-    expect(claim.body).toMatchObject({
-      status: "command",
-      command: { id: created.body.commandId },
-    });
-    await accept(
-      s.api(hosts).complete({
-        headers,
-        params: { ...s.params, commandId: created.body.commandId },
-        body: { ...s.generation, status: "succeeded", result: { apps: [] } },
-      }),
-      [200],
-    );
-    const result = await accept(
-      s
-        .api(commands)
-        .get({ headers, params: { commandId: created.body.commandId } }),
-      [200],
-    );
-    expect(result.body.status).toBe("succeeded");
+  await registerPresenceHost(host.actor, {
+    installationId: host.installationId,
   });
+  await accept(sessionHosts().realtimeToken(hostPath(host)), [409]);
+
+  mockNow(now() + 120_000);
+  await expect(listedHost(host)).resolves.toMatchObject({
+    status: "offline",
+  });
+});
+
+test("computer-use-host-presence-011 expires an unclaimed command and still admits a fresh one", async () => {
+  const host = await presentAdminHost({ presenceOnly: true });
+  const expiring = await computerUse.createComputerUseReadCommand(host.actor, {
+    kind: "apps.list",
+    timeoutMs: 1000,
+  });
+
+  mockNow(now() + 1001);
+  await expect(
+    computerUse.claimNextComputerUseCommand(host),
+  ).resolves.toStrictEqual({ status: "idle" });
+  await expect(
+    computerUse.readComputerUseCommand(host.actor, expiring.commandId),
+  ).resolves.toMatchObject({
+    status: "failed",
+    error: { code: "timeout" },
+  });
+
+  const fresh = await computerUse.createComputerUseReadCommand(host.actor, {
+    kind: "apps.list",
+  });
+  const claimed = await computerUse.claimNextComputerUseCommand(host);
+  expect(claimed).toMatchObject({
+    status: "command",
+    command: { id: fresh.commandId },
+  });
+  await computerUse.completeComputerUseCommand(host, fresh.commandId);
 });

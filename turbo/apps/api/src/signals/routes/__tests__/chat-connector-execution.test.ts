@@ -1,1014 +1,752 @@
 import { randomUUID } from "node:crypto";
-import { describe, expect, it, onTestFinished } from "vitest";
-import { runConnectorAccountsContract } from "@okouai/api-contracts/contracts/run-connector-accounts";
 import { chatConnectorAccessContract } from "@okouai/api-contracts/contracts/chat-connector-access";
-import { connectorPermissionsContract } from "@okouai/api-contracts/contracts/connector-permissions";
-import { mcpConnectorsContract } from "@okouai/api-contracts/contracts/mcp-connectors";
-import type {
-  ConnectorAccountSelection,
-  ConnectorAccountTarget,
+import {
+  chatThreadConnectorSelectionContract,
+  chatThreadsContract,
+} from "@okouai/api-contracts/contracts/chat-threads";
+import {
+  connectorAccountsContract,
+  type ConnectorAccountSelection,
 } from "@okouai/api-contracts/contracts/connector-accounts";
-import { UNKNOWN_PERMISSION_GRANT } from "@okouai/connectors/firewall-types";
+import { builtinConnectorManualGrantContract } from "@okouai/api-contracts/contracts/connectors";
+import {
+  customConnectorByIdContract,
+  customConnectorValuesContract,
+  customConnectorsContract,
+} from "@okouai/api-contracts/contracts/custom-connectors";
+import { runConnectorAccountsContract } from "@okouai/api-contracts/contracts/run-connector-accounts";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { mockNow, now } from "../../../lib/time";
+import { describe, expect, it } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { runConnectorAccountRoutes } from "../run-connector-accounts";
+import { now } from "../../../lib/time";
 import { chatConnectorAccessRoutes } from "../chat-connector-access";
-import { connectorPermissionsRoutes } from "../connector-permissions";
-import { mcpConnectorsRoutes } from "../mcp-connectors";
+import { chatThreadConnectorSelectionRoutes } from "../chat-threads-connector-selections";
+import { chatThreadCreateRoutes } from "../chat-threads-create";
+import { connectedConnectorsRoutes } from "../connected-connectors";
+import { connectorAccountRoutes } from "../connector-accounts";
+import { builtinConnectorsRoutes } from "../connectors";
+import { customConnectorsRoutes } from "../custom-connectors";
+import { customConnectorsDeleteRoutes } from "../custom-connectors-delete";
+import { customConnectorsValuesSetRoutes } from "../custom-connectors-values-set";
+import { runConnectorAccountRoutes } from "../run-connector-accounts";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
-import {
-  createConnectorBddApi,
-  manualHttpCustomConnectorCreateBody,
-} from "./helpers/api-bdd-connectors";
-import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
-import { createRunsApi } from "./helpers/api-bdd-runs";
-import { createFirewallApi, secretTemplate } from "./helpers/api-bdd-firewall";
-import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
+import { manualHttpCustomConnectorCreateBody } from "./helpers/api-bdd-connectors";
+import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
 const bdd = createBddApi(context);
-const connectors = createConnectorBddApi(context);
-const chat = createChatFilesBddApi(context);
-const runs = createRunsApi(context);
-const webhooks = createWebhookCallbackApi(context);
-const mocks = createRouteMocks(context);
-const sessionHeaders = { authorization: "Bearer clerk-session" } as const;
-const builtin = { kind: "builtin", connectorSlug: "manual-mcp" } as const;
-const client = () => {
-  return setupApp({ context, routes: runConnectorAccountRoutes })(
-    runConnectorAccountsContract,
-  );
-};
-const access = () => {
-  return setupApp({ context, routes: chatConnectorAccessRoutes })(
-    chatConnectorAccessContract,
-  );
-};
-const permissions = () => {
-  return setupApp({ context, routes: connectorPermissionsRoutes })(
-    connectorPermissionsContract,
-  );
-};
-const mcp = () => {
-  return setupApp({ context, routes: mcpConnectorsRoutes })(
-    mcpConnectorsContract,
-  );
-};
-function session(actor: ApiTestUser) {
-  mocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
+const headers = Object.freeze({ authorization: "Bearer clerk-session" });
+const OPENAI_TARGET = Object.freeze({
+  kind: "builtin" as const,
+  connectorSlug: "openai" as const,
+});
+
+const app = setupApp({
+  context,
+  routes: [
+    ...chatThreadCreateRoutes,
+    ...chatThreadConnectorSelectionRoutes,
+    ...chatConnectorAccessRoutes,
+    ...connectedConnectorsRoutes,
+    ...connectorAccountRoutes,
+    ...builtinConnectorsRoutes,
+    ...customConnectorsRoutes,
+    ...customConnectorsDeleteRoutes,
+    ...customConnectorsValuesSetRoutes,
+    ...runConnectorAccountRoutes,
+  ],
+});
+const threadsApi = app(chatThreadsContract);
+const selectionsApi = app(chatThreadConnectorSelectionContract);
+const accessApi = app(chatConnectorAccessContract);
+const accountsApi = app(connectorAccountsContract);
+const builtinManualGrantApi = app(builtinConnectorManualGrantContract);
+const customConnectorsApi = app(customConnectorsContract);
+const customConnectorByIdApi = app(customConnectorByIdContract);
+const customValuesApi = app(customConnectorValuesContract);
+const runConnectorAccountsApi = app(runConnectorAccountsContract);
+
+function signIn(userId: string, orgId: string) {
+  createRouteMocks(context).clerk.session(userId, orgId, "org:admin");
+  return headers;
 }
 
-async function owner() {
-  const actor = bdd.user();
-  bdd.acceptStorageWrites();
-  runs.acceptStorageDownloads();
-  runs.acceptTelemetryIngest();
-  const runnerGroup = await runs.configureRunnerGroup();
-  await runs.grantProEntitlement(actor);
-  await runs.ensurePersonalSubscriptionModel(actor);
-
-  const thread = await chat.createThread(actor, {});
-  return { actor, threadId: thread.id, runnerGroup };
-}
-async function start(value: Awaited<ReturnType<typeof owner>>) {
-  const run = await runs.createThreadRun(value.actor, {
-    threadId: value.threadId,
-    prompt: "Use this Chat's current connector account",
-  });
-  const receipt: { sandboxToken?: string; completed: boolean } = {
-    completed: false,
-  };
-  onTestFinished(async () => {
-    if (receipt.completed) {
-      return;
-    }
-    await runs.requestCancelRun(value.actor, run.runId, [200]);
-    if (receipt.sandboxToken) {
-      await webhooks.requestAgentComplete(
-        { runId: run.runId, exitCode: 1, error: "Test cleanup" },
-        { authorization: `Bearer ${receipt.sandboxToken}` },
-        [200],
-      );
-    }
-  });
-  await runs.heartbeatRunner(value.runnerGroup);
-  const execution = await runs.executionInput(run.runId);
-  receipt.sandboxToken = execution.sandboxToken;
-  const token = execution.platformEnvironment.OKOU_TOKEN;
-  if (!token) {
-    throw new Error("Execution input did not include an Okou token");
-  }
+function manualMcpBody(displayName: string) {
   return {
-    ...run,
-    execution,
-    headers: { authorization: `Bearer ${token}` },
-    receipt,
+    kind: "mcp" as const,
+    displayName,
+    endpoint: `https://mcp-${randomUUID()}.example.test/mcp`,
+    transport: "streamable-http" as const,
+    authMode: "manual" as const,
+    fields: [
+      {
+        key: "secret",
+        label: "Secret",
+        kind: "secret" as const,
+        required: true,
+      },
+    ],
+    headerInjections: [
+      { name: "Authorization", valueTemplate: "Bearer {{secrets.secret}}" },
+    ],
+    queryInjections: [],
   };
 }
-async function addAccount(actor: ApiTestUser, name: string) {
-  return await connectors.connectManualGrant(
-    actor,
-    "manual-mcp",
-    "api-token",
-    { apiKey: `key-${name}` },
-    { intent: "add", displayName: name },
-  );
-}
-async function current(
-  value: Awaited<ReturnType<typeof owner>>,
-  target: ConnectorAccountTarget,
-) {
-  session(value.actor);
-  return (
-    await accept(
-      access().getThread({
-        headers: sessionHeaders,
-        params: { threadId: value.threadId },
-        query: target,
+
+async function setupMcpAccounts(withSibling = true) {
+  const orgId = `org_${randomUUID()}`;
+  const ownerId = `user_${randomUUID()}`;
+  const ownerHeaders = signIn(ownerId, orgId);
+
+  const [requestingChat, siblingChat, mcpConnector] = await Promise.all([
+    accept(
+      threadsApi.create({ headers: ownerHeaders, body: { model: null } }),
+      [201],
+    ),
+    withSibling
+      ? accept(
+          threadsApi.create({ headers: ownerHeaders, body: { model: null } }),
+          [201],
+        )
+      : Promise.resolve(null),
+    accept(
+      customConnectorsApi.create({
+        headers: ownerHeaders,
+        body: manualMcpBody("Manual MCP"),
+      }),
+      [201],
+    ),
+  ]);
+
+  const [fallbackAccount, requestedAccount] = await Promise.all([
+    withSibling
+      ? accept(
+          customValuesApi.set({
+            headers: ownerHeaders,
+            params: { id: mcpConnector.body.id },
+            body: {
+              values: [
+                { key: "secret", kind: "secret", value: `fb-${randomUUID()}` },
+              ],
+              account: { intent: "add", displayName: "Fallback" },
+            },
+          }),
+          [200],
+        )
+      : Promise.resolve(null),
+    accept(
+      customValuesApi.set({
+        headers: ownerHeaders,
+        params: { id: mcpConnector.body.id },
+        body: {
+          values: [
+            { key: "secret", kind: "secret", value: `req-${randomUUID()}` },
+          ],
+          account: { intent: "add", displayName: "Requested" },
+        },
       }),
       [200],
-    )
-  ).body;
+    ),
+  ]);
+
+  const target = {
+    kind: "custom" as const,
+    customConnectorId: mcpConnector.body.id,
+  };
+  if (siblingChat && fallbackAccount) {
+    await accept(
+      selectionsApi.update({
+        headers: ownerHeaders,
+        params: { id: siblingChat.body.id },
+        body: { target, connectionId: fallbackAccount.body.connectionId },
+      }),
+      [200],
+    );
+  }
+
+  return {
+    orgId,
+    ownerId,
+    ownerHeaders,
+    requestingChatId: requestingChat.body.id,
+    siblingChatId: siblingChat?.body.id ?? "",
+    target,
+    fallbackConnectionId: fallbackAccount?.body.connectionId ?? "",
+    requestedConnectionId: requestedAccount.body.connectionId,
+    requestedSelection: {
+      target,
+      connectionId: requestedAccount.body.connectionId,
+    },
+  };
 }
 
 describe("Chat connector execution", () => {
-  it("uses live member eligibility without replacing the saved Chat account on expiry", async () => {
-    const value = await owner();
-    const fallback = await addAccount(value.actor, "Fallback");
-    const selected = await addAccount(value.actor, "Selected");
-    const thread = { threadId: value.threadId };
-    session(value.actor);
-    await accept(
-      access().setThreadCurrent({
-        headers: sessionHeaders,
-        params: thread,
-        body: { target: builtin, connectionId: selected.id },
+  it("chat-connector-execution-002 (1/3) rejects approval when switch is off, denies account, and rejects foreign Chat and mismatched target", async () => {
+    const setup = await setupMcpAccounts(false);
+    const otherId = `user_${randomUUID()}`;
+    const mismatchedConnector = await accept(
+      customConnectorsApi.create({
+        headers: setup.ownerHeaders,
+        body: manualMcpBody("Other MCP"),
       }),
-      [200],
+      [201],
     );
-    await accept(
-      access().setThreadOverride({
-        headers: sessionHeaders,
-        params: { ...thread, connectionId: fallback.id },
-        body: { target: builtin, enabled: false },
+    const otherChat = await accept(
+      threadsApi.create({
+        headers: signIn(otherId, setup.orgId),
+        body: { model: null },
       }),
-      [200],
+      [201],
     );
-    const policy = () => {
-      return access().updateAccountPolicy({
-        headers: sessionHeaders,
-        params: { connectionId: selected.id },
-        body: { target: builtin, policy: "allow-1h" },
-      });
-    };
-    await accept(policy(), [404]);
-    await connectors.updateFeatureSwitches(value.actor, {
-      [FeatureSwitchKey.MemberConnectorAccountAccess]: true,
-    });
-    const otherMember = { ...value.actor, userId: `user_${randomUUID()}` };
-    await connectors.updateFeatureSwitches(otherMember, {
-      [FeatureSwitchKey.MemberConnectorAccountAccess]: true,
-    });
-    session(otherMember);
-    await accept(policy(), [404]);
-    const otherPolicies = await accept(
-      access().accountPolicies({ headers: sessionHeaders, query: builtin }),
-      [200],
-    );
-    expect(otherPolicies.body).toStrictEqual([]);
 
-    session(value.actor);
-    const expiry = now();
-    mockNow(expiry - 3_600_000);
-    expect((await accept(policy(), [200])).body).toStrictEqual({
-      connectionId: selected.id,
-      allowed: true,
-      enabled: true,
-      expiresAt: new Date(expiry).toISOString(),
-    });
-    expect((await current(value, builtin)).currentConnectionId).toBe(
-      selected.id,
-    );
-    mockNow(expiry);
-    expect((await current(value, builtin)).currentConnectionId).toBe(
-      fallback.id,
-    );
-    const policies = await accept(
-      access().accountPolicies({ headers: sessionHeaders, query: builtin }),
-      [200],
-    );
-    expect(policies.body).toContainEqual({
-      connectionId: selected.id,
-      allowed: true,
-      enabled: false,
-      expiresAt: new Date(expiry).toISOString(),
-    });
+    const authHeaders = signIn(setup.ownerId, setup.orgId);
     await accept(
-      access().setThreadCurrent({
-        headers: sessionHeaders,
-        params: thread,
-        body: { target: builtin, connectionId: selected.id },
-      }),
-      [400],
-    );
-    const run = await start(value);
-    expect(run.execution.connectorRuntimeTargets).toContainEqual(
-      expect.objectContaining({ ...builtin, sourceId: fallback.id }),
-    );
-    const inventory = await accept(
-      client().list({ headers: run.headers }),
-      [200],
-    );
-    expect(inventory.body).not.toHaveProperty("approvalScope");
-    const scopedInventory = await accept(
-      client().list({
-        headers: run.headers,
-        query: { includeApprovalScope: "true" },
-      }),
-      [200],
-    );
-    expect(scopedInventory.body).toStrictEqual({
-      ...inventory.body,
-      approvalScope: "member",
-    });
-    expect(inventory.body.accounts).toStrictEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          connectionId: selected.id,
-          enabled: false,
-          isCurrent: false,
-        }),
-        expect.objectContaining({
-          connectionId: fallback.id,
-          enabled: true,
-          isCurrent: true,
-        }),
-      ]),
-    );
-    session(value.actor);
-    await accept(
-      client().approveMember({
-        headers: run.headers,
-        params: thread,
-        body: { target: builtin, connectionId: selected.id },
-      }),
-      [403],
-    );
-    await accept(
-      client().approve({
-        headers: sessionHeaders,
-        params: thread,
-        body: { target: builtin, connectionId: selected.id },
+      runConnectorAccountsApi.approveMember({
+        headers: authHeaders,
+        params: { threadId: setup.requestingChatId },
+        body: setup.requestedSelection,
       }),
       [404],
     );
-    await accept(policy(), [200]);
-    expect((await current(value, builtin)).currentConnectionId).toBe(
-      selected.id,
-    );
-  });
 
-  it("approves the exact account member-wide and selects it only in the requesting Chat", async () => {
-    const value = await owner();
-    const fallback = await addAccount(value.actor, "Fallback");
-    const requested = await addAccount(value.actor, "Requested");
-    const sibling = await chat.createThread(value.actor, {});
-    const otherActor = { ...value.actor, userId: `user_${randomUUID()}` };
-    const otherChat = await chat.createThread(otherActor, {});
-    const selection = { target: builtin, connectionId: requested.id };
-    const approve = (
-      threadId = value.threadId,
-      body: ConnectorAccountSelection = selection,
-    ) => {
-      return client().approveMember({
-        headers: sessionHeaders,
-        params: { threadId },
-        body,
-      });
-    };
-    session(value.actor);
-    await accept(approve(), [404]);
-    await accept(
-      access().setThreadCurrent({
-        headers: sessionHeaders,
-        params: { threadId: sibling.id },
-        body: { target: builtin, connectionId: fallback.id },
+    await updateFeatureSwitchesForUser(
+      context,
+      { userId: setup.ownerId, orgId: setup.orgId, orgRole: "org:admin" },
+      { [FeatureSwitchKey.MemberConnectorAccountAccess]: true },
+    );
+
+    const denied = await accept(
+      accessApi.updateAccountPolicy({
+        headers: signIn(setup.ownerId, setup.orgId),
+        params: { connectionId: setup.requestedConnectionId },
+        body: { target: setup.target, policy: "deny" },
       }),
       [200],
     );
-    await connectors.updateFeatureSwitches(value.actor, {
-      [FeatureSwitchKey.MemberConnectorAccountAccess]: true,
-    });
-    session(value.actor);
-    await accept(
-      access().updateAccountPolicy({
-        headers: sessionHeaders,
-        params: { connectionId: requested.id },
-        body: { target: builtin, policy: "deny" },
-      }),
-      [200],
-    );
-    await accept(approve(otherChat.id), [404]);
-    await accept(
-      approve(value.threadId, {
-        ...selection,
-        target: { kind: "custom", customConnectorId: randomUUID() },
-      }),
-      [404],
-    );
-    const policies = () => {
-      return access().accountPolicies({
-        headers: sessionHeaders,
-        query: builtin,
-      });
-    };
-    expect((await accept(policies(), [200])).body).toContainEqual({
-      connectionId: requested.id,
+    expect(denied.body).toStrictEqual({
+      connectionId: setup.requestedConnectionId,
       allowed: false,
       enabled: false,
       expiresAt: null,
     });
 
-    const approvedAt = now();
-    mockNow(approvedAt);
-    expect((await accept(approve(), [200])).body).toStrictEqual(selection);
-    expect((await current(value, builtin)).currentConnectionId).toBe(
-      requested.id,
-    );
-    const siblingAccess = await current(
-      { ...value, threadId: sibling.id },
-      builtin,
-    );
-    expect(siblingAccess.currentConnectionId).toBe(fallback.id);
-    expect(siblingAccess.accounts).toContainEqual(
-      expect.objectContaining({
-        connectionId: requested.id,
-        enabled: true,
-      }),
-    );
-    expect((await accept(policies(), [200])).body).toContainEqual({
-      connectionId: requested.id,
-      allowed: true,
-      enabled: true,
-      expiresAt: new Date(approvedAt + 3_600_000).toISOString(),
-    });
-    const longer = await accept(
-      access().updateAccountPolicy({
-        headers: sessionHeaders,
-        params: { connectionId: requested.id },
-        body: { target: builtin, policy: "allow-24h" },
-      }),
-      [200],
-    );
-    await accept(approve(), [200]);
-    expect((await accept(policies(), [200])).body).toContainEqual(longer.body);
-  });
-
-  it("applies member eligibility on the existing Run refresh and MCP reads", async () => {
-    const value = await owner();
-    const selected = await addAccount(value.actor, "Selected");
-    const fallback = await addAccount(value.actor, "Fallback");
-    await connectors.updateFeatureSwitches(value.actor, {
-      [FeatureSwitchKey.MemberConnectorAccountAccess]: true,
-    });
-    const admittedAt = now();
-    mockNow(admittedAt);
-    session(value.actor);
     await accept(
-      access().updateAccountPolicy({
-        headers: sessionHeaders,
-        params: { connectionId: selected.id },
-        body: { target: builtin, policy: "allow-1h" },
-      }),
-      [200],
-    );
-    const run = await start(value);
-    expect(run.execution.connectorRuntimeTargets).toContainEqual(
-      expect.objectContaining({ ...builtin, sourceId: selected.id }),
-    );
-
-    mockNow(admittedAt + 3_600_000);
-    const targets = [{ ...builtin, sourceId: selected.id }];
-    await expect(
-      runs.syncConnectorRuntime(run.runId, { targets }),
-    ).resolves.toContainEqual(
-      expect.objectContaining({
-        target: builtin,
-        state: "available",
-        accountBinding: { connectionId: fallback.id, baseUrlVars: {} },
-      }),
-    );
-    const listed = await accept(mcp().list({ headers: run.headers }), [200]);
-    expect(listed.body.connectors).toStrictEqual([
-      expect.objectContaining({ connectionId: fallback.id }),
-    ]);
-    const reauthorized = await accept(
-      mcp().reauthorizeOAuth({
-        headers: run.headers,
-        body: { target: builtin, scopes: ["read"] },
-      }),
-      [200],
-    );
-    expect(reauthorized.body).toMatchObject({
-      kind: "reconnect",
-      connectionId: fallback.id,
-    });
-
-    session(value.actor);
-    await accept(
-      access().updateAccountPolicy({
-        headers: sessionHeaders,
-        params: { connectionId: fallback.id },
-        body: { target: builtin, policy: "deny" },
-      }),
-      [200],
-    );
-    await expect(
-      runs.syncConnectorRuntime(run.runId, { targets }),
-    ).resolves.toContainEqual({
-      target: builtin,
-      state: "absent",
-      reason: "connector-unavailable",
-    });
-  });
-
-  it("resolves the Chat's selected native credentials alongside a registered MCP account", async () => {
-    const value = await owner();
-    const nativeTarget = {
-      kind: "builtin",
-      connectorSlug: "runtime",
-    } as const;
-    await connectors.connectManualGrant(value.actor, "runtime", "api-token", {
-      apiKey: "default-native-key",
-    });
-    const native = await connectors.connectManualGrant(
-      value.actor,
-      "runtime",
-      "api-token",
-      { apiKey: "selected-native-key" },
-      { intent: "add", displayName: "Selected native account" },
-    );
-    const registered = await addAccount(value.actor, "Registered MCP");
-    for (const [target, connectionId] of [
-      [nativeTarget, native.id],
-      [builtin, registered.id],
-    ] as const) {
-      session(value.actor);
-      await accept(
-        access().setThreadCurrent({
-          headers: sessionHeaders,
-          params: { threadId: value.threadId },
-          body: { target, connectionId },
-        }),
-        [200],
-      );
-    }
-
-    const run = await start(value);
-    expect(run.execution.environment).toMatchObject({
-      RUNTIME_API_KEY: expect.stringMatching(/.+/),
-    });
-    expect(JSON.stringify(run.execution)).not.toContain("selected-native-key");
-    expect(
-      run.execution.secretConnectorMetadataMap?.RUNTIME_API_KEY,
-    ).toMatchObject({ sourceId: native.id });
-    expect(run.execution.connectorRuntimeTargets).toContainEqual(
-      expect.objectContaining({
-        kind: "builtin",
-        connectorSlug: "manual-mcp",
-        sourceId: registered.id,
-      }),
-    );
-    const resolved = await createFirewallApi(context).requestFirewallAuth(
-      { authorization: `Bearer ${run.execution.firewallToken}` },
-      {
-        secretConnectorMap: run.execution.secretConnectorMap ?? undefined,
-        secretConnectorMetadataMap:
-          run.execution.secretConnectorMetadataMap ?? undefined,
-        authHeaders: {
-          Authorization: `Bearer ${secretTemplate("RUNTIME_API_KEY")}`,
-        },
-      },
-      [200],
-    );
-    expect(resolved.body).toMatchObject({
-      headers: { Authorization: "Bearer selected-native-key" },
-    });
-  });
-
-  it("switches HTTP identity and persists the Chat's current account for the next Run", async () => {
-    const value = await owner();
-    const a = await addAccount(value.actor, "A");
-    const b = await addAccount(value.actor, "B");
-    session(value.actor);
-    await accept(
-      access().setThreadCurrent({
-        headers: sessionHeaders,
-        params: { threadId: value.threadId },
-        body: { target: builtin, connectionId: b.id },
-      }),
-      [200],
-    );
-    const run = await start(value);
-    expect(run.execution.connectorRuntimeTargets).toContainEqual(
-      expect.objectContaining({
-        kind: "builtin",
-        connectorSlug: "manual-mcp",
-        sourceId: b.id,
-      }),
-    );
-    const inventory = await accept(
-      client().list({ headers: run.headers }),
-      [200],
-    );
-    expect(inventory.body.accounts).toContainEqual({
-      target: builtin,
-      connectionId: b.id,
-      displayName: "B",
-      enabled: true,
-      isCurrent: true,
-      isDefault: false,
-    });
-    expect(JSON.stringify(inventory.body)).not.toContain("key-B");
-    const scopedInventory = await accept(
-      client().list({
-        headers: run.headers,
-        query: { includeApprovalScope: "true" },
-      }),
-      [200],
-    );
-    expect(scopedInventory.body.approvalScope).toBe("chat");
-    expect(
-      (await accept(mcp().list({ headers: run.headers }), [200])).body
-        .connectors,
-    ).toContainEqual(
-      expect.objectContaining({ target: builtin, connectionId: b.id }),
-    );
-    session(value.actor);
-    await accept(
-      permissions().apply({
-        headers: sessionHeaders,
-        body: {
-          target: builtin,
-          mode: "patch",
-          grants: [{ permission: UNKNOWN_PERMISSION_GRANT, action: "deny" }],
-        },
-      }),
-      [200],
-    );
-    await accept(
-      client().select({
-        headers: run.headers,
-        body: { target: builtin, connectionId: a.id },
-      }),
-      [200],
-    );
-    const results = await runs.syncConnectorRuntime(run.runId, {
-      targets: [
-        { kind: "builtin", connectorSlug: "manual-mcp", sourceId: b.id },
-      ],
-    });
-    expect(results).toContainEqual(
-      expect.objectContaining({
-        target: builtin,
-        state: "available",
-        accountBinding: { connectionId: a.id, baseUrlVars: {} },
-        networkPolicy: expect.objectContaining({ unknownPolicy: "deny" }),
-      }),
-    );
-    const firewall = createFirewallApi(context);
-    const metadata = Object.fromEntries(
-      Object.entries(run.execution.secretConnectorMetadataMap ?? {}).map(
-        ([key, entry]) => {
-          return [
-            key,
-            entry.sourceType === "connector" && entry.sourceId === b.id
-              ? { ...entry, sourceId: a.id }
-              : entry,
-          ];
-        },
-      ),
-    );
-    const auth = await firewall.requestFirewallAuth(
-      { authorization: `Bearer ${run.execution.firewallToken}` },
-      {
-        secretConnectorMap: run.execution.secretConnectorMap ?? undefined,
-        secretConnectorMetadataMap: metadata,
-        authHeaders: {
-          Authorization: `Bearer ${secretTemplate("MCP_API_KEY")}`,
-        },
-        matchedFirewall: {
-          name: "manual-mcp",
-          apiId: "manual-mcp:0",
-          base: "https://manual-mcp.example.test/server",
-          connectorSlug: "manual-mcp",
-          sourceId: a.id,
-          routingVariables: {},
-        },
-      },
-      [200],
-    );
-    if (auth.status !== 200) {
-      throw new Error("Expected firewall credentials");
-    }
-    expect(auth.body.headers.Authorization).toBe("Bearer key-A");
-    expect(
-      (await accept(mcp().list({ headers: run.headers }), [200])).body
-        .connectors,
-    ).toContainEqual(
-      expect.objectContaining({ target: builtin, connectionId: a.id }),
-    );
-    expect(
-      (
-        await accept(
-          mcp().reauthorizeOAuth({
-            headers: run.headers,
-            body: { target: builtin, scopes: ["read"] },
-          }),
-          [200],
-        )
-      ).body,
-    ).toMatchObject({
-      kind: "reconnect",
-      connectionId: a.id,
-      authorizationUrl: expect.stringContaining(`/reconnect/${a.id}`),
-    });
-    expect((await current(value, builtin)).currentConnectionId).toBe(a.id);
-    await webhooks.requestAgentComplete(
-      {
-        runId: run.runId,
-        exitCode: 0,
-        lastEventSequence: 0,
-        completion: {
-          cliAgentType: run.execution.cliAgentType,
-          cliAgentSessionId: run.runId,
-          cliAgentSessionHistoryDisposition: "native_only",
-        },
-      },
-      { authorization: `Bearer ${run.execution.sandboxToken}` },
-      [200],
-    );
-    run.receipt.completed = true;
-    const next = await start(value);
-    expect(next.execution.connectorRuntimeTargets).toContainEqual(
-      expect.objectContaining({
-        kind: "builtin",
-        connectorSlug: "manual-mcp",
-        sourceId: a.id,
-      }),
-    );
-  });
-
-  it("applies a Chat access revocation after startup to the running Run", async () => {
-    const value = await owner();
-    const account = await addAccount(value.actor, "Revocable");
-    const run = await start(value);
-    expect(run.execution.connectorRuntimeTargets).toContainEqual(
-      expect.objectContaining({ sourceId: account.id }),
-    );
-
-    session(value.actor);
-    await accept(
-      access().setThreadOverride({
-        headers: sessionHeaders,
-        params: { threadId: value.threadId, connectionId: account.id },
-        body: { target: builtin, enabled: false },
-      }),
-      [200],
-    );
-    await expect(
-      runs.syncConnectorRuntime(run.runId, {
-        targets: [
-          {
-            kind: "builtin",
-            connectorSlug: "manual-mcp",
-            sourceId: account.id,
-          },
-        ],
-      }),
-    ).resolves.toContainEqual({
-      target: builtin,
-      state: "absent",
-      reason: "connector-unavailable",
-    });
-  });
-
-  it("shows denied accounts, rejects self-grants and foreign ownership, and accepts exact owner confirmation only in that Chat", async () => {
-    const value = await owner();
-    const a = await addAccount(value.actor, "A");
-    const b = await addAccount(value.actor, "B");
-    const otherThread = await chat.createThread(value.actor, {});
-    session(value.actor);
-    await accept(
-      access().setThreadOverride({
-        headers: sessionHeaders,
-        params: { threadId: value.threadId, connectionId: b.id },
-        body: { target: builtin, enabled: false },
-      }),
-      [200],
-    );
-    const run = await start(value);
-    const inventory = (
-      await accept(client().list({ headers: run.headers }), [200])
-    ).body;
-    expect(inventory.accounts).toContainEqual(
-      expect.objectContaining({
-        connectionId: b.id,
-        enabled: false,
-        isCurrent: false,
-      }),
-    );
-    expect(run.execution.connectorRuntimeTargets).toContainEqual(
-      expect.objectContaining({ sourceId: a.id }),
-    );
-    await accept(
-      client().select({
-        headers: run.headers,
-        body: { target: builtin, connectionId: b.id },
-      }),
-      [400],
-    );
-    await accept(
-      client().approve({
-        headers: run.headers,
-        params: { threadId: value.threadId },
-        body: { target: builtin, connectionId: b.id },
-      }),
-      [403],
-    );
-    const foreign = bdd.user();
-    const foreignAccount = await addAccount(foreign, "foreign");
-    await accept(
-      client().select({
-        headers: run.headers,
-        body: { target: builtin, connectionId: foreignAccount.id },
-      }),
-      [400],
-    );
-    session(foreign);
-    await accept(
-      client().approve({
-        headers: sessionHeaders,
-        params: { threadId: value.threadId },
-        body: { target: builtin, connectionId: foreignAccount.id },
+      runConnectorAccountsApi.approveMember({
+        headers: authHeaders,
+        params: { threadId: otherChat.body.id },
+        body: setup.requestedSelection,
       }),
       [404],
     );
-    session(value.actor);
     await accept(
-      client().approve({
-        headers: sessionHeaders,
-        params: { threadId: value.threadId },
-        body: { target: builtin, connectionId: b.id },
+      runConnectorAccountsApi.approveMember({
+        headers: authHeaders,
+        params: { threadId: setup.requestingChatId },
+        body: {
+          target: {
+            kind: "custom",
+            customConnectorId: mismatchedConnector.body.id,
+          },
+          connectionId: setup.requestedConnectionId,
+        },
       }),
-      [200],
+      [404],
     );
-    expect((await current(value, builtin)).currentConnectionId).toBe(b.id);
-    expect(
-      (await current({ ...value, threadId: otherThread.id }, builtin))
-        .currentConnectionId,
-    ).toBe(a.id);
-    expect(
-      (await current(value, builtin)).accounts.find((entry) => {
-        return entry.connectionId === b.id;
-      }),
-    ).toMatchObject({ enabled: true, defaultEnabled: true, isDefault: false });
   });
 
-  it.each(["http", "mcp"] as const)(
-    "rebinds custom %s accounts and retains shared permission expiry",
-    async (kind) => {
-      const value = await owner();
-      const definition = await connectors.createCustomConnector(
-        value.actor,
-        kind === "http"
-          ? manualHttpCustomConnectorCreateBody({
-              slug: `_chat-${randomUUID()}`,
-              displayName: "Chat HTTP",
-              prefixTemplates: ["https://chat-connector.example.test/"],
-              permissionBundleRef: "builtin:slack@1",
-            })
-          : {
-              kind: "mcp",
-              slug: `_chat-${randomUUID()}`,
-              displayName: "Chat MCP",
-              endpoint: "https://chat-connector.example.test/mcp",
-              transport: "streamable-http",
-              fields: [
-                {
-                  key: "secret",
-                  label: "Secret",
-                  kind: "secret",
-                  required: true,
-                },
-              ],
-              headerInjections: [
-                {
-                  name: "Authorization",
-                  valueTemplate: "Bearer {{secrets.secret}}",
-                },
-              ],
-              queryInjections: [],
-              authMode: "manual",
-            },
-      );
-      const a = await connectors.setCustomConnectorValues(
-        value.actor,
-        definition.id,
-        [{ key: "secret", kind: "secret", value: "secret-A" }],
-        { intent: "add", displayName: "A" },
-      );
-      const b = await connectors.setCustomConnectorValues(
-        value.actor,
-        definition.id,
-        [{ key: "secret", kind: "secret", value: "secret-B" }],
-        { intent: "add", displayName: "B" },
-      );
-      const target = {
-        kind: "custom",
-        customConnectorId: definition.id,
-      } as const;
-      session(value.actor);
-      const expiry =
-        kind === "http"
-          ? (
-              await accept(
-                permissions().apply({
-                  headers: sessionHeaders,
-                  body: {
-                    target,
-                    mode: "patch",
-                    grants: [
-                      {
-                        permission: "conversations:read",
-                        action: "allow",
-                        expiresIn: "1h",
-                      },
-                      { permission: "chat:write", action: "deny" },
-                    ],
-                  },
-                }),
-                [200],
-              )
-            ).body.grants.find((rule) => {
-              return rule.permission === "conversations:read";
-            })?.expiresAt
-          : undefined;
-      const run = await start(value);
-      expect(run.execution.connectorRuntimeTargets).toContainEqual(
-        expect.objectContaining({
-          kind: "custom",
-          customConnectorId: definition.id,
-          sourceId: a.connectionId,
-        }),
-      );
-      if (kind === "mcp") {
-        expect(
-          (await accept(mcp().list({ headers: run.headers }), [200])).body
-            .connectors,
-        ).toContainEqual(
-          expect.objectContaining({ target, connectionId: a.connectionId }),
-        );
-      }
-      await accept(
-        client().select({
-          headers: run.headers,
-          body: { target, connectionId: b.connectionId },
-        }),
-        [200],
-      );
-      const synced = await runs.syncConnectorRuntime(run.runId, {
-        targets: [
-          {
-            kind: "custom",
-            customConnectorId: definition.id,
-            sourceId: a.connectionId,
-            baseUrlVars: {},
-          },
-        ],
-      });
-      expect(synced).toContainEqual(
-        expect.objectContaining({
-          target,
-          state: "available",
-          accountBinding: { connectionId: b.connectionId, baseUrlVars: {} },
-          firewall: expect.objectContaining({ sourceId: b.connectionId }),
-        }),
-      );
-      const published = synced.find((result) => {
-        return "firewall" in result;
-      });
-      if (!published || !("firewall" in published)) {
-        throw new Error("Expected an available custom firewall");
-      }
-      const api = published.firewall.firewall.apis[0];
-      if (!api) {
-        throw new Error("Expected a custom API route");
-      }
-      const firewall = createFirewallApi(context);
-      const authenticated = await firewall.requestFirewallAuth(
-        { authorization: `Bearer ${run.execution.firewallToken}` },
-        {
-          authHeaders: api.auth.headers ?? {},
-          matchedFirewall: {
-            name: published.firewall.firewall.name,
-            apiId: `${published.firewall.firewall.name}:0`,
-            base: api.base,
-            customConnectorId: definition.id,
-            sourceId: b.connectionId,
-            routingVariables: published.baseUrlVars,
-          },
-        },
-        [200],
-      );
-      if (authenticated.status !== 200) {
-        throw new Error("Expected custom firewall credentials");
-      }
-      expect(authenticated.body.headers.Authorization).toBe("Bearer secret-B");
-      if (kind === "http") {
-        expect(synced).toContainEqual(
-          expect.objectContaining({
-            nextSyncAt: expiry,
-            networkPolicy: expect.objectContaining({
-              allow: expect.arrayContaining(["conversations:read"]),
-              deny: expect.arrayContaining(["chat:write"]),
-            }),
-          }),
-        );
-      } else {
-        expect(
-          (await accept(mcp().list({ headers: run.headers }), [200])).body
-            .connectors,
-        ).toContainEqual(
-          expect.objectContaining({ target, connectionId: b.connectionId }),
-        );
-      }
-    },
-  );
-
-  it("does not substitute a healthy default for the Chat's current account when its credentials need reconnecting", async () => {
-    const value = await owner();
-    const body = manualHttpCustomConnectorCreateBody({
-      slug: `_chat-${randomUUID()}`,
-      displayName: "Pinned account",
-      prefixTemplates: ["https://pinned-account.example.test/"],
-    });
-    const definition = await connectors.createCustomConnector(
-      value.actor,
-      body,
+  it("chat-connector-execution-002 (2/3) approves the exact account member-wide with 1h expiry and selects it only in the requesting Chat", async () => {
+    const setup = await setupMcpAccounts(true);
+    await updateFeatureSwitchesForUser(
+      context,
+      { userId: setup.ownerId, orgId: setup.orgId, orgRole: "org:admin" },
+      { [FeatureSwitchKey.MemberConnectorAccountAccess]: true },
     );
-    const a = await connectors.setCustomConnectorValues(
-      value.actor,
-      definition.id,
-      [{ key: "secret", kind: "secret", value: "secret-A" }],
-      { intent: "add", displayName: "A" },
-    );
-    const b = await connectors.setCustomConnectorValues(
-      value.actor,
-      definition.id,
-      [{ key: "secret", kind: "secret", value: "secret-B" }],
-      { intent: "add", displayName: "B" },
-    );
-    await connectors.updateCustomConnector(value.actor, definition.id, {
-      ...body,
-      storageVersion: 2,
-    });
-    await connectors.setCustomConnectorValues(
-      value.actor,
-      definition.id,
-      [{ key: "secret", kind: "secret", value: "reconnected-A" }],
-      { intent: "reconnect", connectionId: a.connectionId },
-    );
-    const target = {
-      kind: "custom",
-      customConnectorId: definition.id,
-    } as const;
-    session(value.actor);
+    const authHeaders = signIn(setup.ownerId, setup.orgId);
     await accept(
-      access().setThreadCurrent({
-        headers: sessionHeaders,
-        params: { threadId: value.threadId },
-        body: { target, connectionId: b.connectionId },
+      accessApi.updateAccountPolicy({
+        headers: authHeaders,
+        params: { connectionId: setup.requestedConnectionId },
+        body: { target: setup.target, policy: "deny" },
       }),
       [200],
     );
-    const run = await start(value);
-    expect(run.execution.connectorRuntimeTargets).not.toContainEqual(
-      expect.objectContaining(target),
+
+    const beforeApproveMs = now();
+    const approved = await accept(
+      runConnectorAccountsApi.approveMember({
+        headers: authHeaders,
+        params: { threadId: setup.requestingChatId },
+        body: setup.requestedSelection,
+      }),
+      [200],
     );
-    expect(
-      (await accept(client().list({ headers: run.headers }), [200])).body
-        .accounts,
-    ).toContainEqual(
+    expect(approved.body).toStrictEqual(setup.requestedSelection);
+
+    const [requestingOverview, siblingOverview, policiesAfterApprove] =
+      await Promise.all([
+        accept(
+          accessApi.overviewTarget({
+            headers: authHeaders,
+            query: { threadId: setup.requestingChatId, ...setup.target },
+          }),
+          [200],
+        ),
+        accept(
+          accessApi.overviewTarget({
+            headers: authHeaders,
+            query: { threadId: setup.siblingChatId, ...setup.target },
+          }),
+          [200],
+        ),
+        accept(
+          accessApi.accountPolicies({
+            headers: authHeaders,
+            query: setup.target,
+          }),
+          [200],
+        ),
+      ]);
+
+    expect(requestingOverview.body.connector?.currentConnectionId).toBe(
+      setup.requestedConnectionId,
+    );
+    expect(siblingOverview.body.connector?.currentConnectionId).toBe(
+      setup.fallbackConnectionId,
+    );
+    expect(siblingOverview.body.connector?.accounts).toContainEqual(
       expect.objectContaining({
-        target,
-        connectionId: b.connectionId,
-        isCurrent: true,
+        connectionId: setup.requestedConnectionId,
+        enabled: true,
       }),
     );
+
+    const oneHourPolicy = policiesAfterApprove.body.find((entry) => {
+      return entry.connectionId === setup.requestedConnectionId;
+    });
+    expect(oneHourPolicy).toMatchObject({
+      connectionId: setup.requestedConnectionId,
+      allowed: true,
+      enabled: true,
+    });
+    expect(oneHourPolicy?.expiresAt).toBeTruthy();
+    const expiresMs = Date.parse(oneHourPolicy?.expiresAt ?? "");
+    expect(expiresMs - beforeApproveMs).toBeGreaterThanOrEqual(3_590_000);
+    expect(expiresMs - beforeApproveMs).toBeLessThanOrEqual(3_610_000);
+  });
+
+  it("chat-connector-execution-002 (3/3) preserves an existing 24-hour policy on subsequent approval", async () => {
+    const setup = await setupMcpAccounts(false);
+    await updateFeatureSwitchesForUser(
+      context,
+      { userId: setup.ownerId, orgId: setup.orgId, orgRole: "org:admin" },
+      { [FeatureSwitchKey.MemberConnectorAccountAccess]: true },
+    );
+    const authHeaders = signIn(setup.ownerId, setup.orgId);
+
+    const allow24h = await accept(
+      accessApi.updateAccountPolicy({
+        headers: authHeaders,
+        params: { connectionId: setup.requestedConnectionId },
+        body: { target: setup.target, policy: "allow-24h" },
+      }),
+      [200],
+    );
+    await accept(
+      runConnectorAccountsApi.approveMember({
+        headers: authHeaders,
+        params: { threadId: setup.requestingChatId },
+        body: setup.requestedSelection,
+      }),
+      [200],
+    );
+    const policiesAfter24h = await accept(
+      accessApi.accountPolicies({
+        headers: authHeaders,
+        query: setup.target,
+      }),
+      [200],
+    );
+    const persisted24h = policiesAfter24h.body.find((entry) => {
+      return entry.connectionId === setup.requestedConnectionId;
+    });
+    expect(persisted24h).toStrictEqual(allow24h.body);
+  });
+
+  it("chat-thread-connector-selection.ownership-001 (1/6) selects both accounts and rejects mismatched accounts and targets", async () => {
+    const setup = await selectOwnedBoth(true);
+    const { owner, threadId, openai, custom, initial } = setup;
+
+    await expect(readThreadSelections(owner, threadId)).resolves.toStrictEqual(
+      initial,
+    );
+
+    const invalid: ConnectorAccountSelection[] = [
+      setup.peerOpenai,
+      setup.foreignOpenai,
+      { connectionId: openai.connectionId, target: custom.target },
+      { connectionId: custom.connectionId, target: OPENAI_TARGET },
+    ];
+    const rejections = await Promise.all(
+      invalid.map(async (selection) => {
+        const [current] = await Promise.all([
+          setOwnedCurrent(owner, threadId, selection, 400),
+          selectOwned(owner, threadId, selection, 400),
+          setOwnedOverride(owner, threadId, selection, false, 404),
+        ]);
+        return current.body;
+      }),
+    );
+    for (const rejected of rejections) {
+      expect(rejected).toMatchObject({ error: { code: "BAD_REQUEST" } });
+    }
+    await expect(readThreadSelections(owner, threadId)).resolves.toStrictEqual(
+      initial,
+    );
+  });
+
+  it("chat-thread-connector-selection.ownership-001 (2/6) answers other identities exactly like a missing thread", async () => {
+    const setup = await selectOwnedBoth(true);
+    const { owner, threadId, initial } = setup;
+
+    for (const [outsider, ownAccount] of [
+      [setup.peer, setup.peerOpenai],
+      [setup.ownerElsewhere, setup.foreignOpenai],
+    ] as const) {
+      signInUser(outsider);
+      await accept(
+        selectionsApi.get({ headers, params: { id: threadId } }),
+        [404],
+      );
+      const missingThreadId = randomUUID();
+      const mutations = [
+        (id: string) => {
+          return selectionsApi.update({
+            headers,
+            params: { id },
+            body: ownAccount,
+          });
+        },
+        (id: string) => {
+          return accessApi.setThreadCurrent({
+            headers,
+            params: { threadId: id },
+            body: ownAccount,
+          });
+        },
+        (id: string) => {
+          return accessApi.setThreadOverride({
+            headers,
+            params: { threadId: id, connectionId: ownAccount.connectionId },
+            body: { target: ownAccount.target, enabled: false },
+          });
+        },
+      ];
+      const outcomes = await Promise.all(
+        mutations.map(async (mutate) => {
+          const [foreign, missing] = await Promise.all([
+            mutate(threadId),
+            mutate(missingThreadId),
+          ]);
+          return { foreign, missing };
+        }),
+      );
+      for (const { foreign, missing } of outcomes) {
+        expect(foreign.status).toBeGreaterThanOrEqual(400);
+        expect({ status: foreign.status, body: foreign.body }).toStrictEqual({
+          status: missing.status,
+          body: missing.body,
+        });
+      }
+    }
+    await expect(readThreadSelections(owner, threadId)).resolves.toStrictEqual(
+      initial,
+    );
+  });
+
+  it("chat-thread-connector-selection.ownership-001 (3/6) drops disabled accounts until their overrides are removed", async () => {
+    const setup = await selectOwnedBoth(false);
+    const { owner, threadId, openai, custom, initial } = setup;
+
+    const disabled = await setOwnedOverrides(setup, false);
+    expect(
+      disabled.map((response) => {
+        if (response.status !== 200) {
+          throw new Error("Expected the override to be saved");
+        }
+        return response.body.currentConnectionId;
+      }),
+    ).toStrictEqual([null, null]);
+    await expect(readThreadSelections(owner, threadId)).resolves.toStrictEqual({
+      selections: [],
+      descriptions: [],
+    });
+    await Promise.all(
+      [openai, custom].map((selection) => {
+        return setOwnedCurrent(owner, threadId, selection, 400);
+      }),
+    );
+    await setOwnedOverrides(setup, null);
+    await expect(readThreadSelections(owner, threadId)).resolves.toStrictEqual(
+      initial,
+    );
+  });
+
+  it("chat-thread-connector-selection.ownership-001 (4/6) shows the renamed OpenAI account while keeping the selection", async () => {
+    const setup = await selectOwnedBoth(false);
+
+    await renameOwnedOpenAi(setup);
+
+    const renamed = await readThreadSelections(setup.owner, setup.threadId);
+    expect(renamed.selections).toStrictEqual(setup.initial.selections);
+    expect(renamed.descriptions).toContain(
+      `${setup.openai.connectionId}:Renamed`,
+    );
+  });
+
+  it("chat-thread-connector-selection.ownership-001 (5/6) removes the deleted OpenAI account while keeping the custom selection", async () => {
+    const setup = await selectOwnedBoth(false);
+    const { owner, threadId, openai, custom } = setup;
+    await renameOwnedOpenAi(setup);
+
+    signInUser(owner);
+    await accept(
+      accountsApi.delete({
+        headers,
+        params: { connectionId: openai.connectionId },
+        body: { target: OPENAI_TARGET },
+      }),
+      [200],
+    );
+    await expect(readThreadSelections(owner, threadId)).resolves.toStrictEqual({
+      selections: [custom.connectionId],
+      descriptions: [setup.customDescription],
+    });
+  });
+
+  it("chat-thread-connector-selection.ownership-001 (6/6) clears the remaining selection when the custom connector is deleted", async () => {
+    const setup = await selectOwnedBoth(false);
+    const { owner, threadId, openai } = setup;
+    signInUser(owner);
+    await accept(
+      accountsApi.delete({
+        headers,
+        params: { connectionId: openai.connectionId },
+        body: { target: OPENAI_TARGET },
+      }),
+      [200],
+    );
+
+    await accept(
+      customConnectorByIdApi.delete({
+        headers,
+        params: { id: setup.connectorId },
+      }),
+      [204],
+    );
+    await expect(readThreadSelections(owner, threadId)).resolves.toStrictEqual({
+      selections: [],
+      descriptions: [],
+    });
   });
 });
+
+function signInUser(actor: ApiTestUser): void {
+  createRouteMocks(context).clerk.session(
+    actor.userId,
+    actor.orgId,
+    actor.orgRole,
+  );
+}
+
+async function addOpenAiAccount(
+  actor: ApiTestUser,
+  displayName: string,
+): Promise<ConnectorAccountSelection> {
+  signInUser(actor);
+  const connected = await accept(
+    builtinManualGrantApi.connect({
+      headers,
+      params: { connectorSlug: "openai" },
+      body: {
+        authMethod: "api-token",
+        values: { apiKey: `sk-test-${randomUUID()}` },
+        account: { intent: "add", displayName },
+      },
+    }),
+    [200],
+  );
+  return { connectionId: connected.body.connectionId, target: OPENAI_TARGET };
+}
+
+async function readThreadSelections(actor: ApiTestUser, threadId: string) {
+  signInUser(actor);
+  const response = await accept(
+    selectionsApi.get({ headers, params: { id: threadId } }),
+    [200],
+  );
+  return {
+    selections: response.body.selections
+      .map((selection) => {
+        return selection.connectionId;
+      })
+      .sort(),
+    descriptions: response.body.selectedConnections
+      .map((connection) => {
+        return `${connection.id}:${connection.displayName ?? ""}`;
+      })
+      .sort(),
+  };
+}
+
+async function selectOwned(
+  actor: ApiTestUser,
+  threadId: string,
+  selection: ConnectorAccountSelection,
+  status: 200 | 400 | 404,
+) {
+  signInUser(actor);
+  return await accept(
+    selectionsApi.update({
+      headers,
+      params: { id: threadId },
+      body: selection,
+    }),
+    [status],
+  );
+}
+
+async function setOwnedCurrent(
+  actor: ApiTestUser,
+  threadId: string,
+  selection: ConnectorAccountSelection,
+  status: 200 | 400 | 404,
+) {
+  signInUser(actor);
+  return await accept(
+    accessApi.setThreadCurrent({
+      headers,
+      params: { threadId },
+      body: { target: selection.target, connectionId: selection.connectionId },
+    }),
+    [status],
+  );
+}
+
+async function setOwnedOverride(
+  actor: ApiTestUser,
+  threadId: string,
+  selection: ConnectorAccountSelection,
+  enabled: boolean | null,
+  status: 200 | 404,
+) {
+  signInUser(actor);
+  return await accept(
+    accessApi.setThreadOverride({
+      headers,
+      params: { threadId, connectionId: selection.connectionId },
+      body: { target: selection.target, enabled },
+    }),
+    [status],
+  );
+}
+
+async function selectOwnedBoth(withOutsiders: boolean) {
+  const owner = bdd.user();
+  const peer = bdd.user({ orgId: owner.orgId, orgRole: "org:member" });
+  const ownerElsewhere = bdd.user({ userId: owner.userId });
+  signInUser(owner);
+  const [thread, openai, connector] = await Promise.all([
+    accept(threadsApi.create({ headers, body: { model: null } }), [201]),
+    addOpenAiAccount(owner, "Primary"),
+    accept(
+      customConnectorsApi.create({
+        headers,
+        body: manualHttpCustomConnectorCreateBody({
+          displayName: "Ledger",
+          prefixTemplates: [`https://${randomUUID()}.example.test/api/`],
+        }),
+      }),
+      [201],
+    ),
+  ]);
+  const customSaved = await accept(
+    customValuesApi.set({
+      headers,
+      params: { id: connector.body.id },
+      body: {
+        values: [
+          { key: "secret", kind: "secret", value: `secret-${randomUUID()}` },
+        ],
+        account: { intent: "add", displayName: "Ledger Account" },
+      },
+    }),
+    [200],
+  );
+  const custom: ConnectorAccountSelection = {
+    connectionId: customSaved.body.connectionId,
+    target: { kind: "custom", customConnectorId: connector.body.id },
+  };
+  const peerOpenai = withOutsiders
+    ? await addOpenAiAccount(peer, "Peer")
+    : openai;
+  const foreignOpenai = withOutsiders
+    ? await addOpenAiAccount(ownerElsewhere, "Elsewhere")
+    : openai;
+  const customDescription = `${custom.connectionId}:Ledger Account`;
+
+  await Promise.all([
+    setOwnedCurrent(owner, thread.body.id, openai, 200),
+    setOwnedCurrent(owner, thread.body.id, custom, 200),
+  ]);
+  const initial = {
+    selections: [openai.connectionId, custom.connectionId].sort(),
+    descriptions: [`${openai.connectionId}:Primary`, customDescription].sort(),
+  };
+  return {
+    owner,
+    peer,
+    ownerElsewhere,
+    threadId: thread.body.id,
+    openai,
+    custom,
+    connectorId: connector.body.id,
+    customDescription,
+    peerOpenai,
+    foreignOpenai,
+    initial,
+  };
+}
+
+type OwnedSelectedChat = Awaited<ReturnType<typeof selectOwnedBoth>>;
+
+async function setOwnedOverrides(
+  setup: OwnedSelectedChat,
+  enabled: false | null,
+) {
+  return await Promise.all(
+    [setup.openai, setup.custom].map((selection) => {
+      return setOwnedOverride(
+        setup.owner,
+        setup.threadId,
+        selection,
+        enabled,
+        200,
+      );
+    }),
+  );
+}
+
+async function renameOwnedOpenAi(setup: OwnedSelectedChat) {
+  signInUser(setup.owner);
+  await accept(
+    accountsApi.rename({
+      headers,
+      params: { connectionId: setup.openai.connectionId },
+      body: { target: OPENAI_TARGET, displayName: "Renamed" },
+    }),
+    [200],
+  );
+}

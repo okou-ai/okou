@@ -1,570 +1,1054 @@
-import { randomUUID } from "node:crypto";
+import { Buffer } from "node:buffer";
 import {
-  Client,
-  StreamableHTTPClientTransport,
-} from "@modelcontextprotocol/client";
+  createPrivateKey,
+  generateKeyPairSync,
+  randomUUID,
+  sign,
+} from "node:crypto";
+
 import {
   CHAT_INPUT_STATUS_MAX_RESPONSE_BYTES,
   chatInputStatusContract,
-  chatInputStatusResponseSchema,
 } from "@okouai/api-contracts/contracts/chat-input-status";
+import {
+  chatEventsContract,
+  chatThreadByIdContract,
+  chatThreadEventsContract,
+  chatThreadsContract,
+} from "@okouai/api-contracts/contracts/chat-threads";
+import { logsListContract } from "@okouai/api-contracts/contracts/logs";
 import { mcpSendChatMessageOutputSchema } from "@okouai/api-contracts/contracts/mcp-chat-tools";
-import { describe, expect, it, onTestFinished } from "vitest";
-import { array, boolean, object, string } from "zod";
+import { mcpServerContract } from "@okouai/api-contracts/contracts/mcp-server";
+import { onboardingCompleteContract } from "@okouai/api-contracts/contracts/onboarding";
+import { runsCancelContract } from "@okouai/api-contracts/contracts/run-routes";
+import {
+  runnersHeartbeatContract,
+  runnersSteerContract,
+} from "@okouai/api-contracts/contracts/runners";
+import { webhookCompleteContract } from "@okouai/api-contracts/contracts/webhooks";
+import { createStore } from "ccstate";
+import { http, HttpResponse } from "msw";
+import { beforeAll, describe, expect, it } from "vitest";
+import {
+  array,
+  boolean,
+  literal,
+  object,
+  string,
+  unknown as zUnknown,
+} from "zod";
+
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { createAppWithRoutes } from "../../../app-factory-core";
+import {
+  TEST_WITH_SINGLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE,
+  TEST_WITH_TRIPLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE,
+} from "../../../__tests__/test-timeouts";
+import { mockEnv, mockOptionalEnv, optionalEnv } from "../../../lib/env";
+import { now } from "../../../lib/time";
+import { server } from "../../../mocks/server";
 import { flushWaitUntilForTest } from "../../context/wait-until";
+import { chatEventsRoutes } from "../chat-events";
 import { chatInputStatusRoutes } from "../chat-input-status";
+import { chatThreadRoutes } from "../chat-threads";
+import { chatThreadCreateRoutes } from "../chat-threads-create";
+import { logsRoutes } from "../logs";
 import { mcpServerRoutes } from "../mcp-server";
-import { createBddApi } from "./helpers/api-bdd";
-import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
-import { createRunsApi } from "./helpers/api-bdd-runs";
-import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
+import { onboardingCompleteRoutes } from "../onboarding-complete";
+import { runnersRoutes } from "../runners";
+import { runsCancelRoutes } from "../runs-cancel";
+import { webhooksAgentCompleteRoutes } from "../webhooks-agent-complete";
+import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createChatEventsFixture } from "./helpers/chat-events-fixture";
-import { createMcpWebApi } from "./helpers/mcp-web-api";
-import { publicChatActor } from "./helpers/public-chat-actor";
-import { createPublicChatAdmissionFixture } from "./helpers/public-chat-admission-fixture";
+import { MCP_WEB_SCOPES } from "./helpers/mcp-web-api";
+import { seedOrgMembership$ } from "./helpers/org-membership";
+import { captureConnectorExternalState } from "./helpers/public-connector-actor";
+import { publicRunOwner } from "./helpers/public-run-owner";
+import { createRouteMocks } from "./helpers/route-test";
+
+function createFrozenRsaMaterial(): {
+  readonly privateKeyPem: string;
+  readonly publicJwkJson: string;
+} {
+  const pair = generateKeyPairSync("rsa", { modulusLength: 2048 });
+  return Object.freeze({
+    privateKeyPem: String(
+      pair.privateKey.export({ type: "pkcs8", format: "pem" }),
+    ),
+    publicJwkJson: JSON.stringify(pair.publicKey.export({ format: "jwk" })),
+  });
+}
+
+const MCP_KEY_MATERIAL = createFrozenRsaMaterial();
+const MCP_TEST_KID = "chat-input-status-mcp-kid-1";
+const MCP_ISSUER = "https://clerk.mcp.example.test";
+const MCP_RESOURCE = "https://api.mcp.example.test/mcp";
+const MCP_PROTOCOL_VERSION = "2026-07-28";
+const SESSION_HEADERS = Object.freeze({
+  authorization: "Bearer clerk-session",
+});
+
+const MCP_CALL_REPLY_SCHEMA = object({
+  result: object({
+    isError: boolean().optional(),
+    structuredContent: zUnknown().optional(),
+    content: array(object({ type: literal("text"), text: string() })),
+  }),
+});
 
 const context = testContext();
 const bdd = createBddApi(context);
-const chat = createChatFilesBddApi(context);
-const runs = createRunsApi(context);
-const webhooks = createWebhookCallbackApi(context);
-const lifecycle = createChatEventsFixture(context);
-const mcp = createMcpWebApi(context);
+const fixture = createChatEventsFixture(context);
+const routeMocks = createRouteMocks(context);
 
-function toolBody(result: Awaited<ReturnType<typeof mcp.call>>): unknown {
-  expect(result.isError).not.toBeTruthy();
-  return result.structuredContent;
-}
+const inputStatusClient = setupApp({
+  context,
+  routes: chatInputStatusRoutes,
+})(chatInputStatusContract);
+const mcpClient = setupApp({
+  context,
+  routes: mcpServerRoutes,
+})(mcpServerContract);
+const chatEventsClient = setupApp({
+  context,
+  routes: chatEventsRoutes,
+})(chatEventsContract);
+const chatThreadCreateClient = setupApp({
+  context,
+  routes: chatThreadCreateRoutes,
+})(chatThreadsContract);
+const chatThreadByIdClient = setupApp({
+  context,
+  routes: chatThreadRoutes,
+})(chatThreadByIdContract);
+const chatThreadEventsClient = setupApp({
+  context,
+  routes: chatThreadRoutes,
+})(chatThreadEventsContract);
+const onboardingCompleteClient = setupApp({
+  context,
+  routes: onboardingCompleteRoutes,
+})(onboardingCompleteContract);
+const runnersHeartbeatClient = setupApp({
+  context,
+  routes: runnersRoutes,
+})(runnersHeartbeatContract);
+const runnersSteerClient = setupApp({
+  context,
+  routes: runnersRoutes,
+})(runnersSteerContract);
+const webhookCompleteClient = setupApp({
+  context,
+  routes: webhooksAgentCompleteRoutes,
+})(webhookCompleteContract);
+const runsCancelClient = setupApp({
+  context,
+  routes: runsCancelRoutes,
+})(runsCancelContract);
+const logsListClient = setupApp({
+  context,
+  routes: logsRoutes,
+})(logsListContract);
 
-function statusPath(threadId: string, eventId: string): string {
-  return `/api/chat-threads/${threadId}/inputs/${eventId}/status`;
-}
-
-async function fixture() {
-  const f = await publicChatActor(context, {
-    stripeTransport: "http",
+beforeAll(async () => {
+  context.mocks.clerk.authenticateRequest.mockResolvedValue({
+    isAuthenticated: false,
   });
-  return { ...f, token: mcp.authorize(f.actor) };
+  const warmupThreadId = randomUUID();
+  const warmupEventId = randomUUID();
+  const warmupRunId = randomUUID();
+  await Promise.all([
+    accept(
+      inputStatusClient.get({
+        headers: {},
+        params: { threadId: warmupThreadId, eventId: warmupEventId },
+      }),
+      [401],
+    ),
+    accept(
+      mcpClient.request({
+        extraHeaders: {},
+        body: {
+          jsonrpc: "2.0",
+          id: 1,
+          method: "tools/list",
+          params: {},
+        },
+      }),
+      [401, 503],
+    ),
+    accept(
+      chatEventsClient.send({
+        headers: {},
+        body: {
+          prompt: "warmup",
+          hasTextContent: true,
+          clientEventId: randomUUID(),
+          userMessage: {
+            version: 1,
+            parts: [{ type: "text", text: "warmup" }],
+          },
+        },
+      }),
+      [401],
+    ),
+    accept(
+      chatThreadCreateClient.create({
+        headers: {},
+        body: { title: "warmup", model: null },
+      }),
+      [401],
+    ),
+    accept(
+      chatThreadByIdClient.get({
+        headers: {},
+        params: { id: warmupThreadId },
+      }),
+      [401],
+    ),
+    accept(
+      chatThreadEventsClient.rows({
+        headers: {},
+        params: { threadId: warmupThreadId },
+        query: { sinceSeqId: 0 },
+      }),
+      [401],
+    ),
+    accept(onboardingCompleteClient.complete({ headers: {}, body: {} }), [401]),
+    accept(
+      runnersHeartbeatClient.heartbeat({
+        headers: {},
+        body: {
+          runnerId: randomUUID(),
+          group: "vm0/warmup",
+          snapshotGeneration: 1,
+          snapshotSequence: 1,
+          totalVcpu: 8,
+          totalMemoryMb: 16_384,
+          maxConcurrent: 2,
+          allocatedVcpu: 0,
+          allocatedMemoryMb: 0,
+          runningCount: 0,
+          admittableProfiles: ["vm0/default"],
+          heldSandboxStates: [],
+          heldHomeStates: [],
+          activeReuseProducers: [],
+          mode: "running",
+        },
+      }),
+      [401],
+    ),
+    accept(
+      runnersSteerClient.next({
+        headers: {},
+        params: { runId: warmupRunId },
+      }),
+      [401],
+    ),
+    accept(
+      runnersSteerClient.steered({
+        headers: {},
+        params: { runId: warmupRunId, eventId: warmupEventId },
+        body: {},
+      }),
+      [401],
+    ),
+    accept(
+      webhookCompleteClient.complete({
+        headers: {},
+        body: { runId: warmupRunId, exitCode: 0 },
+      }),
+      [401],
+    ),
+    accept(
+      runsCancelClient.cancel({
+        headers: {},
+        params: { id: warmupRunId },
+      }),
+      [401],
+    ),
+    accept(
+      logsListClient.list({
+        headers: {},
+        query: { limit: 1 },
+      }),
+      [401],
+    ),
+  ]);
+});
+
+function signIn(actor: ApiTestUser) {
+  routeMocks.clerk.session(
+    actor.userId,
+    actor.orgId,
+    actor.orgRole ?? "org:admin",
+  );
+  return SESSION_HEADERS;
 }
 
-async function read(token: string, threadId: string, eventId: string) {
+function bearerHeaders(token: string) {
+  return { authorization: `Bearer ${token}` };
+}
+
+async function mcpCall(
+  token: string,
+  name: string,
+  args: Record<string, unknown> = {},
+) {
   const response = await accept(
-    setupApp({ context, routes: chatInputStatusRoutes })(
-      chatInputStatusContract,
-    ).get({
-      headers: { authorization: `Bearer ${token}` },
-      params: { threadId, eventId },
+    mcpClient.request({
+      extraHeaders: {
+        authorization: `Bearer ${token}`,
+        accept: "application/json, text/event-stream",
+        "MCP-Protocol-Version": MCP_PROTOCOL_VERSION,
+        "MCP-Method": "tools/call",
+        "MCP-Name": name,
+      },
+      body: {
+        jsonrpc: "2.0",
+        id: 1,
+        method: "tools/call",
+        params: {
+          name,
+          arguments: args,
+          _meta: {
+            "io.modelcontextprotocol/protocolVersion": MCP_PROTOCOL_VERSION,
+            "io.modelcontextprotocol/clientCapabilities": {},
+            "io.modelcontextprotocol/clientInfo": {
+              name: "okou-test",
+              version: "1",
+            },
+          },
+        },
+      },
     }),
     [200],
   );
-  expect(response.headers.get("Cache-Control")).toBe("no-store");
-  const result = chatInputStatusResponseSchema.parse(response.body);
-  expect(Buffer.byteLength(JSON.stringify(result))).toBeLessThanOrEqual(
-    CHAT_INPUT_STATUS_MAX_RESPONSE_BYTES,
-  );
-  return result;
+  const rawBody: unknown = response.body;
+  let parsedReply: unknown = rawBody;
+  if (typeof rawBody === "string") {
+    const frame = rawBody.split("\n").find((line) => {
+      return line.startsWith("data: ");
+    });
+    if (!frame) {
+      throw new Error("Expected an MCP SSE reply");
+    }
+    parsedReply = JSON.parse(frame.slice(6)) as unknown;
+  }
+  return MCP_CALL_REPLY_SCHEMA.parse(parsedReply).result;
 }
 
-async function tools(token: string) {
-  return object({
-    result: object({
-      tools: array(
-        object({
-          name: string(),
-          annotations: object({ readOnlyHint: boolean() }).optional(),
-        }),
-      ),
+function installMcpOAuthHarness() {
+  const store = createStore();
+  mockEnv("MCP_RESOURCE_URL", MCP_RESOURCE);
+  mockEnv("MCP_OAUTH_ISSUER", MCP_ISSUER);
+  const publicJwk: unknown = JSON.parse(MCP_KEY_MATERIAL.publicJwkJson);
+  if (typeof publicJwk !== "object" || publicJwk === null) {
+    throw new Error("Expected public JWK object");
+  }
+  server.use(
+    http.get("https://api.clerk.com/v1/jwks", () => {
+      return HttpResponse.json({
+        keys: [
+          {
+            ...publicJwk,
+            kid: MCP_TEST_KID,
+            alg: "RS256",
+            use: "sig",
+          },
+        ],
+      });
     }),
-  }).parse(await mcp.rpc(token, "tools/list")).result.tools;
+  );
+  const privateKey = createPrivateKey(MCP_KEY_MATERIAL.privateKeyPem);
+
+  function signToken(
+    identity: { readonly userId: string; readonly orgId: string },
+    claims: Record<string, unknown> = {},
+  ): string {
+    const seconds = Math.floor(now() / 1000);
+    const encode = (value: Record<string, unknown>) => {
+      return Buffer.from(JSON.stringify(value)).toString("base64url");
+    };
+    const input = `${encode({ alg: "RS256", kid: MCP_TEST_KID, typ: "at+jwt" })}.${encode(
+      {
+        iss: MCP_ISSUER,
+        aud: MCP_RESOURCE,
+        sub: identity.userId,
+        org_id: identity.orgId,
+        client_id: "mcp_test_client",
+        scope: MCP_WEB_SCOPES,
+        iat: seconds,
+        nbf: seconds - 1,
+        exp: seconds + 3600,
+        ...claims,
+      },
+    )}`;
+    return `${input}.${sign("RSA-SHA256", Buffer.from(input), privateKey).toString("base64url")}`;
+  }
+
+  async function addMembership(
+    userId: string,
+    orgId: string,
+    role: "admin" | "member" = "admin",
+  ): Promise<void> {
+    await store.set(
+      seedOrgMembership$,
+      { userId, orgId, role },
+      context.signal,
+    );
+  }
+
+  return { signToken, addMembership };
+}
+
+async function prepareEntitledMcpActor() {
+  const actor = bdd.user();
+  if (!actor.orgId) {
+    throw new Error("Expected actor orgId");
+  }
+  const orgId = actor.orgId;
+  const previousOpenrouterKey = optionalEnv("OPENROUTER_API_KEY");
+  fixture.chatCallbacks.acceptChatObjectStorage();
+  fixture.api.acceptStorageDownloads();
+  fixture.api.acceptTelemetryIngest();
+  fixture.chatCallbacks.disableVapid();
+  mockOptionalEnv("OPENROUTER_API_KEY", "bdd-openrouter-key");
+  const captured = captureConnectorExternalState(context, [
+    "OPENROUTER_API_KEY",
+  ]);
+  const owner = publicRunOwner(context, actor, {
+    restoreEnvironment: () => {
+      captured();
+      mockOptionalEnv("OPENROUTER_API_KEY", previousOpenrouterKey);
+    },
+  });
+  await owner.run(async () => {
+    await Promise.all([
+      bdd.bootstrapLimitedFreeOnboarding(actor),
+      fixture.api.configureRunnerGroup(),
+    ]);
+  });
+  const oauth = installMcpOAuthHarness();
+  await oauth.addMembership(actor.userId, orgId, "admin");
+  const token = oauth.signToken({ userId: actor.userId, orgId });
+  return { actor: { ...actor, orgId }, owner, oauth, token };
+}
+
+async function sendAutoRun(
+  actor: ApiTestUser,
+  token: string,
+  prompt: string,
+  clientEventId = randomUUID(),
+) {
+  const sent = await accept(
+    chatEventsClient.send({
+      headers: signIn(actor),
+      body: {
+        prompt,
+        model: null,
+        hasTextContent: true,
+        clientEventId,
+        userMessage: {
+          version: 1,
+          parts: [{ type: "text", text: prompt }],
+        },
+      },
+    }),
+    [201],
+  );
+  await flushWaitUntilForTest();
+  const status = await accept(
+    inputStatusClient.get({
+      headers: bearerHeaders(token),
+      params: { threadId: sent.body.threadId, eventId: clientEventId },
+    }),
+    [200],
+  );
+  if (status.body.status !== "consumed") {
+    throw new Error(`Expected consumed run, got ${status.body.status}`);
+  }
+  return {
+    threadId: sent.body.threadId,
+    runId: status.body.runId,
+    clientEventId,
+    replacementEventId: status.body.replacement?.eventId ?? null,
+  };
 }
 
 describe("retained chat input observation", () => {
-  it.each([true, false])(
-    "supports SDK discovery and calls (modern=%s)",
-    async (modern) => {
-      const f = await fixture();
-      await f.run(async () => {
-        const thread = await chat.createThread(f.actor, {});
-        const eventId = randomUUID();
-        const app = createAppWithRoutes({
-          routes: mcpServerRoutes,
-          signal: context.signal,
-        });
-        const sdk = new Client(
-          { name: "input-observation", version: "1" },
-          {
-            versionNegotiation: {
-              mode: modern ? { pin: "2026-07-28" } : "legacy",
-            },
-          },
-        );
-        onTestFinished(() => {
-          return sdk.close();
-        });
-        await sdk.connect(
-          new StreamableHTTPClientTransport(
-            new URL("https://api.mcp.example.test/mcp"),
-            {
-              authProvider: {
-                token: () => {
-                  return Promise.resolve(f.token());
-                },
-              },
-              fetch: async (input, init) => {
-                return await app.request(new Request(input, init));
-              },
-            },
-          ),
-        );
-        const listed = await sdk.listTools();
-        expect(
-          listed.tools.some((tool) => {
-            return tool.name === "get_chat_input_status";
-          }),
-        ).toBeTruthy();
-        const result = await sdk.callTool({
-          name: "get_chat_input_status",
-          arguments: { threadId: thread.id, eventId },
-        });
-        expect(result.isError).not.toBeTruthy();
-        expect(
-          chatInputStatusResponseSchema.parse(result.structuredContent),
-        ).toStrictEqual(await read(f.token(), thread.id, eventId));
-      });
-    },
-  );
+  it(
+    "chat-input-status-003 correlates MCP inputs sharing a Run and returns bounded, body-free terminal outcomes",
+    { timeout: TEST_WITH_TRIPLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const { actor, owner, token } = await prepareEntitledMcpActor();
 
-  it("correlates MCP inputs sharing a Run and returns bounded, body-free terminal outcomes", async () => {
-    const f = await fixture();
-    await f.run(async () => {
-      await runs.heartbeatRunner(f.runnerGroup);
-      const first = mcpSendChatMessageOutputSchema.parse(
-        toolBody(
-          await mcp.call(f.token(), "send_chat_message", {
-            prompt: "Observe this accepted input",
-          }),
-        ),
+      const firstSendReply = await mcpCall(token, "send_chat_message", {
+        prompt: "First MCP prompt",
+        model: null,
+      });
+      expect(firstSendReply.isError).toBeFalsy();
+      const firstSent = mcpSendChatMessageOutputSchema.parse(
+        firstSendReply.structuredContent,
       );
       await flushWaitUntilForTest();
-      const assigned = await read(f.token(), first.threadId, first.eventId);
-      expect(assigned).toMatchObject({
-        eventId: first.eventId,
-        input: { eventId: first.eventId },
-        status: "consumed",
-        terminal: null,
-      });
-      if (assigned.status !== "consumed") {
-        throw new Error("Expected the accepted input to identify its Run");
-      }
-      const before = await chat.readThread(f.actor, first.threadId);
-      const execution = await f.runExecution(assigned.runId);
-      const prompt = "x".repeat(32_001);
-      const second = mcpSendChatMessageOutputSchema.parse(
-        toolBody(
-          await mcp.call(f.token(), "send_chat_message", {
-            threadId: first.threadId,
-            prompt,
+
+      const [beforeDetail, firstConsumedHttp] = await Promise.all([
+        accept(
+          chatThreadByIdClient.get({
+            headers: signIn(actor),
+            params: { id: firstSent.threadId },
           }),
+          [200],
         ),
+        accept(
+          inputStatusClient.get({
+            headers: bearerHeaders(token),
+            params: {
+              threadId: firstSent.threadId,
+              eventId: firstSent.eventId,
+            },
+          }),
+          [200],
+        ),
+      ]);
+
+      expect(firstConsumedHttp.headers.get("cache-control")).toBe("no-store");
+      expect(firstConsumedHttp.body.status).toBe("consumed");
+      expect(firstConsumedHttp.body.terminal).toBeNull();
+      expect(firstConsumedHttp.body.input?.eventId).toBe(firstSent.eventId);
+      expect(firstConsumedHttp.body.replacement?.eventId).toStrictEqual(
+        expect.any(String),
       );
-      await expect(
-        read(f.token(), second.threadId, second.eventId),
-      ).resolves.toMatchObject({
+
+      if (firstConsumedHttp.body.status !== "consumed") {
+        throw new Error("Expected first input to be consumed");
+      }
+      const runId = firstConsumedHttp.body.runId;
+      const execution = await owner.executionInput(runId);
+
+      const promptMarker = "long-steer-marker-";
+      const longPrompt = `${promptMarker}${"x".repeat(32_001 - promptMarker.length)}`;
+      expect(longPrompt).toHaveLength(32_001);
+
+      const secondSendReply = await mcpCall(token, "send_chat_message", {
+        threadId: firstSent.threadId,
+        prompt: longPrompt,
+      });
+      expect(secondSendReply.isError).toBeFalsy();
+      const secondSent = mcpSendChatMessageOutputSchema.parse(
+        secondSendReply.structuredContent,
+      );
+      await flushWaitUntilForTest();
+
+      const sandboxHeaders = bearerHeaders(execution.sandboxToken);
+      const [secondQueuedHttp, polled] = await Promise.all([
+        accept(
+          inputStatusClient.get({
+            headers: bearerHeaders(token),
+            params: {
+              threadId: firstSent.threadId,
+              eventId: secondSent.eventId,
+            },
+          }),
+          [200],
+        ),
+        accept(
+          runnersSteerClient.next({
+            headers: sandboxHeaders,
+            params: { runId },
+          }),
+          [200],
+        ),
+      ]);
+
+      expect(secondQueuedHttp.body).toStrictEqual({
+        threadId: firstSent.threadId,
+        eventId: secondSent.eventId,
         status: "queued",
+        input: {
+          eventId: secondSent.eventId,
+          seqId: expect.any(Number),
+          createdAt: expect.any(String),
+        },
+        replacement: null,
         runId: null,
         terminal: null,
       });
-      await runs.nextSteerableInput(
-        execution.execution.sandboxToken,
-        assigned.runId,
+      expect(polled.body.input?.eventId).toBe(secondSent.eventId);
+
+      const steered = await accept(
+        runnersSteerClient.steered({
+          headers: sandboxHeaders,
+          params: { runId, eventId: secondSent.eventId },
+          body: {},
+        }),
+        [200],
       );
-      await runs.declareSteeredInput(
-        execution.execution.sandboxToken,
-        assigned.runId,
-        second.eventId,
+      expect(steered.body).toStrictEqual({ outcome: "steered" });
+
+      const [secondSteeredHttp, secondSteeredMcp] = await Promise.all([
+        accept(
+          inputStatusClient.get({
+            headers: bearerHeaders(token),
+            params: {
+              threadId: firstSent.threadId,
+              eventId: secondSent.eventId,
+            },
+          }),
+          [200],
+        ),
+        mcpCall(token, "get_chat_input_status", {
+          threadId: firstSent.threadId,
+          eventId: secondSent.eventId,
+        }),
+      ]);
+
+      const firstConsumedJson = JSON.stringify(firstConsumedHttp.body);
+      const secondSteeredJson = JSON.stringify(secondSteeredHttp.body);
+      expect(secondSteeredHttp.body.status).toBe("consumed");
+      expect(secondSteeredHttp.body.runId).toBe(runId);
+      expect(secondSteeredHttp.body.terminal).toBeNull();
+      expect(secondSteeredHttp.body.replacement?.eventId).toStrictEqual(
+        expect.any(String),
       );
-      const short = await read(f.token(), first.threadId, first.eventId);
-      const long = await read(f.token(), second.threadId, second.eventId);
-      expect(long).toMatchObject({
-        eventId: second.eventId,
-        input: { eventId: second.eventId },
-        status: "consumed",
-        runId: assigned.runId,
-        terminal: null,
-      });
-      expect(long.replacement?.eventId).not.toBe(second.eventId);
-      expect(Buffer.byteLength(JSON.stringify(long))).toBe(
-        Buffer.byteLength(JSON.stringify(short)),
+      expect(secondSteeredHttp.body.replacement?.eventId).not.toBe(
+        secondSent.eventId,
       );
-      expect(JSON.stringify(long)).not.toContain(prompt);
-      const toolResult = await mcp.call(f.token(), "get_chat_input_status", {
-        threadId: second.threadId,
-        eventId: second.eventId,
-      });
-      expect(toolBody(toolResult)).toStrictEqual(long);
-      expect(Buffer.byteLength(JSON.stringify(toolResult))).toBeLessThanOrEqual(
+      expect(Buffer.byteLength(secondSteeredJson, "utf8")).toBe(
+        Buffer.byteLength(firstConsumedJson, "utf8"),
+      );
+      expect(Buffer.byteLength(secondSteeredJson, "utf8")).toBeLessThanOrEqual(
         CHAT_INPUT_STATUS_MAX_RESPONSE_BYTES,
       );
-      await lifecycle.completeChatRunOk(
-        assigned.runId,
-        execution.sandboxHeaders,
+      expect(secondSteeredJson).not.toContain(promptMarker);
+      expect(secondSteeredMcp.isError).toBeFalsy();
+      expect(secondSteeredMcp.structuredContent).toStrictEqual(
+        secondSteeredHttp.body,
+      );
+
+      await accept(
+        webhookCompleteClient.complete({
+          headers: sandboxHeaders,
+          body: {
+            runId,
+            exitCode: 0,
+            completion: {
+              cliAgentType: "pi",
+              cliAgentSessionId: firstSent.threadId,
+              cliAgentSessionHistoryDisposition: "native_only",
+            },
+          },
+        }),
+        [200],
       );
       await flushWaitUntilForTest();
-      const events = await chat.listThreadEventRows(f.actor, first.threadId);
-      const terminal = events.find((event) => {
-        return (
-          event.runId === assigned.runId && event.eventType === "run.completed"
-        );
-      });
-      if (!terminal) {
-        throw new Error("Expected the public Chat completion event");
-      }
-      for (const eventId of [first.eventId, second.eventId]) {
-        await expect(
-          read(f.token(), first.threadId, eventId),
-        ).resolves.toMatchObject({
-          eventId,
-          status: "completed",
-          runId: assigned.runId,
-          terminal: {
-            eventId: terminal.id,
-            seqId: terminal.seqId,
-            createdAt: terminal.createdAt,
-          },
-        });
-      }
-      expect(
-        toolBody(
-          await mcp.call(f.token(), "get_chat_input_status", {
-            threadId: first.threadId,
-            eventId: second.eventId,
-          }),
-        ),
-      ).toMatchObject({
-        status: "completed",
-        runId: assigned.runId,
-        terminal: { eventId: terminal.id },
-      });
-      expect((await chat.readThread(f.actor, first.threadId)).lastReadAt).toBe(
-        before.lastReadAt,
-      );
-    });
-  });
 
-  it.each(["failed", "cancelled"] as const)(
-    "returns the matching Chat %s event without its error body",
-    async (status) => {
-      const f = await fixture();
-      await f.run(async () => {
-        const eventId = randomUUID();
-        const run = await f.sendChatRun(f.actor, {
-          prompt: "Observe the terminal outcome",
-          clientEventId: eventId,
-        });
-        const execution = await f.runExecution(run.runId);
-        if (status === "failed") {
-          await webhooks.requestAgentComplete(
-            { runId: run.runId, exitCode: 1, error: "private failure detail" },
-            execution.sandboxHeaders,
-            [200],
-          );
-        } else {
-          await runs.requestCancelRun(f.actor, run.runId, [200]);
-          await expect(
-            read(f.token(), run.threadId, eventId),
-          ).resolves.toMatchObject({
-            status: "consumed",
-            runId: run.runId,
-            terminal: null,
-          });
-          await lifecycle.failChatRun(
-            run.runId,
-            execution.sandboxHeaders,
-            "private failure detail",
-          );
-        }
-        await flushWaitUntilForTest();
-        const result = await read(f.token(), run.threadId, eventId);
-        expect(result).toMatchObject({
-          eventId,
-          status,
-          runId: run.runId,
-          terminal: {
-            eventId: expect.any(String),
-            seqId: expect.any(Number),
-            createdAt: expect.any(String),
+      const [
+        firstCompletedHttp,
+        firstCompletedMcp,
+        secondCompletedHttp,
+        secondCompletedMcp,
+        threadRows,
+        afterDetail,
+      ] = await Promise.all([
+        accept(
+          inputStatusClient.get({
+            headers: bearerHeaders(token),
+            params: {
+              threadId: firstSent.threadId,
+              eventId: firstSent.eventId,
+            },
+          }),
+          [200],
+        ),
+        mcpCall(token, "get_chat_input_status", {
+          threadId: firstSent.threadId,
+          eventId: firstSent.eventId,
+        }),
+        accept(
+          inputStatusClient.get({
+            headers: bearerHeaders(token),
+            params: {
+              threadId: firstSent.threadId,
+              eventId: secondSent.eventId,
+            },
+          }),
+          [200],
+        ),
+        mcpCall(token, "get_chat_input_status", {
+          threadId: firstSent.threadId,
+          eventId: secondSent.eventId,
+        }),
+        accept(
+          chatThreadEventsClient.rows({
+            headers: signIn(actor),
+            params: { threadId: firstSent.threadId },
+            query: { sinceSeqId: 0, limit: 50 },
+          }),
+          [200],
+        ),
+        accept(
+          chatThreadByIdClient.get({
+            headers: signIn(actor),
+            params: { id: firstSent.threadId },
+          }),
+          [200],
+        ),
+      ]);
+
+      const completedRow = threadRows.body.rows.find((row) => {
+        return row.eventType === "run.completed" && row.runId === runId;
+      });
+      if (!completedRow) {
+        throw new Error("Expected a retained run.completed row");
+      }
+      const expectedTerminal = {
+        eventId: completedRow.id,
+        seqId: completedRow.seqId,
+        createdAt: completedRow.createdAt,
+      };
+
+      expect(firstCompletedHttp.body).toMatchObject({
+        status: "completed",
+        runId,
+        terminal: expectedTerminal,
+      });
+      expect(secondCompletedHttp.body).toMatchObject({
+        status: "completed",
+        runId,
+        terminal: expectedTerminal,
+      });
+      expect(
+        Buffer.byteLength(JSON.stringify(secondCompletedHttp.body), "utf8"),
+      ).toBeLessThanOrEqual(CHAT_INPUT_STATUS_MAX_RESPONSE_BYTES);
+      expect(JSON.stringify(secondCompletedHttp.body)).not.toContain(
+        promptMarker,
+      );
+      expect(firstCompletedMcp.isError).toBeFalsy();
+      expect(firstCompletedMcp.structuredContent).toStrictEqual(
+        firstCompletedHttp.body,
+      );
+      expect(secondCompletedMcp.isError).toBeFalsy();
+      expect(secondCompletedMcp.structuredContent).toStrictEqual(
+        secondCompletedHttp.body,
+      );
+      expect(afterDetail.body.lastReadAt).toBe(beforeDetail.body.lastReadAt);
+    },
+  );
+
+  it(
+    "chat-input-status-004 returns the matching Chat failed event without its error body",
+    { timeout: TEST_WITH_SINGLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const { actor, owner, token } = await prepareEntitledMcpActor();
+      const started = await sendAutoRun(actor, token, "Trigger failed outcome");
+      const execution = await owner.executionInput(started.runId);
+
+      await accept(
+        webhookCompleteClient.complete({
+          headers: bearerHeaders(execution.sandboxToken),
+          body: {
+            runId: started.runId,
+            exitCode: 1,
+            error: "private failure detail",
           },
-        });
-        expect(JSON.stringify(result)).not.toContain("private failure detail");
+        }),
+        [200],
+      );
+      await flushWaitUntilForTest();
+
+      const [statusResponse, threadRows] = await Promise.all([
+        accept(
+          inputStatusClient.get({
+            headers: bearerHeaders(token),
+            params: {
+              threadId: started.threadId,
+              eventId: started.clientEventId,
+            },
+          }),
+          [200],
+        ),
+        accept(
+          chatThreadEventsClient.rows({
+            headers: signIn(actor),
+            params: { threadId: started.threadId },
+            query: { sinceSeqId: 0, limit: 50 },
+          }),
+          [200],
+        ),
+      ]);
+
+      const failedRow = threadRows.body.rows.find((row) => {
+        return row.eventType === "run.failed" && row.runId === started.runId;
+      });
+      if (!failedRow) {
+        throw new Error("Expected a retained run.failed row");
+      }
+
+      expect(statusResponse.headers.get("cache-control")).toBe("no-store");
+      expect(statusResponse.body).toMatchObject({
+        threadId: started.threadId,
+        eventId: started.clientEventId,
+        status: "failed",
+        runId: started.runId,
+        terminal: {
+          eventId: failedRow.id,
+          seqId: failedRow.seqId,
+          createdAt: failedRow.createdAt,
+        },
+      });
+      expect(JSON.stringify(statusResponse.body)).not.toContain(
+        "private failure detail",
+      );
+    },
+  );
+
+  it(
+    "chat-input-status-007 distinguishes an unassigned queued input, its recall and unavailable evidence",
+    { timeout: TEST_WITH_SINGLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const { actor, owner, token } = await prepareEntitledMcpActor();
+      const activeRun = await sendAutoRun(actor, token, "Keep the thread busy");
+      await owner.executionInput(activeRun.runId);
+
+      const queuedEventId = randomUUID();
+      await accept(
+        chatEventsClient.send({
+          headers: signIn(actor),
+          body: {
+            threadId: activeRun.threadId,
+            prompt: "Queued follow-up to revoke",
+            hasTextContent: true,
+            clientEventId: queuedEventId,
+            userMessage: {
+              version: 1,
+              parts: [{ type: "text", text: "Queued follow-up to revoke" }],
+            },
+          },
+        }),
+        [201],
+      );
+      await flushWaitUntilForTest();
+
+      const queuedStatus = await accept(
+        inputStatusClient.get({
+          headers: bearerHeaders(token),
+          params: {
+            threadId: activeRun.threadId,
+            eventId: queuedEventId,
+          },
+        }),
+        [200],
+      );
+      expect(queuedStatus.body).toStrictEqual({
+        threadId: activeRun.threadId,
+        eventId: queuedEventId,
+        status: "queued",
+        input: {
+          eventId: queuedEventId,
+          seqId: expect.any(Number),
+          createdAt: expect.any(String),
+        },
+        replacement: null,
+        runId: null,
+        terminal: null,
+      });
+
+      const revokeReply = await mcpCall(token, "revoke_queued_message", {
+        threadId: activeRun.threadId,
+        eventId: queuedEventId,
+      });
+      expect(revokeReply.isError).toBeFalsy();
+      await flushWaitUntilForTest();
+
+      const unknownEventId = randomUUID();
+      const [revokedStatus, unavailableStatus] = await Promise.all([
+        accept(
+          inputStatusClient.get({
+            headers: bearerHeaders(token),
+            params: {
+              threadId: activeRun.threadId,
+              eventId: queuedEventId,
+            },
+          }),
+          [200],
+        ),
+        accept(
+          inputStatusClient.get({
+            headers: bearerHeaders(token),
+            params: {
+              threadId: activeRun.threadId,
+              eventId: unknownEventId,
+            },
+          }),
+          [200],
+        ),
+      ]);
+
+      expect(revokedStatus.body).toStrictEqual({
+        threadId: activeRun.threadId,
+        eventId: queuedEventId,
+        status: "revoked",
+        input: queuedStatus.body.input,
+        replacement: {
+          eventId: expect.any(String),
+          seqId: expect.any(Number),
+          createdAt: expect.any(String),
+        },
+        runId: null,
+        terminal: null,
+      });
+      expect(revokedStatus.body.replacement?.eventId).not.toBe(queuedEventId);
+
+      expect(unavailableStatus.body).toStrictEqual({
+        threadId: activeRun.threadId,
+        eventId: unknownEventId,
+        status: "unavailable",
+        input: null,
+        replacement: null,
+        runId: null,
+        terminal: null,
       });
     },
   );
 
-  it("keeps each input's Chat outcome when a later execution uses the same thread", async () => {
-    const f = await fixture();
-    await f.run(async () => {
-      const firstEventId = randomUUID();
-      const first = await f.sendChatRun(f.actor, {
-        prompt: "Complete the first request",
-        clientEventId: firstEventId,
-      });
-      const firstExecution = await f.runExecution(first.runId);
-      await lifecycle.completeChatRunOk(
-        first.runId,
-        firstExecution.sandboxHeaders,
+  it(
+    "chat-input-status-010 preserves user and organization isolation and requires original input identity",
+    { timeout: TEST_WITH_SINGLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const { actor, owner, oauth, token } = await prepareEntitledMcpActor();
+      const started = await sendAutoRun(
+        actor,
+        token,
+        "Original isolated input",
       );
-      await flushWaitUntilForTest();
-      const completed = await read(f.token(), first.threadId, firstEventId);
-      expect(completed).toMatchObject({
-        status: "completed",
-        runId: first.runId,
-        terminal: { eventId: expect.any(String) },
-      });
-
-      const nextEventId = randomUUID();
-      const next = await f.sendChatRun(f.actor, {
-        threadId: first.threadId,
-        prompt: "Start a separate execution",
-        clientEventId: nextEventId,
-      });
-      expect(next.runId).not.toBe(first.runId);
-      await expect(
-        read(f.token(), first.threadId, nextEventId),
-      ).resolves.toMatchObject({
-        status: "consumed",
-        runId: next.runId,
-        terminal: null,
-      });
-      await expect(
-        read(f.token(), first.threadId, firstEventId),
-      ).resolves.toStrictEqual(completed);
-
-      const nextExecution = await f.runExecution(next.runId);
-      await lifecycle.failChatRun(
-        next.runId,
-        nextExecution.sandboxHeaders,
-        "The later request failed",
-      );
-      await flushWaitUntilForTest();
-      await expect(
-        read(f.token(), first.threadId, nextEventId),
-      ).resolves.toMatchObject({
-        status: "failed",
-        runId: next.runId,
-        terminal: { eventId: expect.any(String) },
-      });
-
-      context.mocks.s3.send.mockRejectedValue(
-        new Error("Snapshot provider is unavailable"),
-      );
-      await expect(
-        read(f.token(), first.threadId, firstEventId),
-      ).resolves.toStrictEqual(completed);
-      await expect(
-        read(f.token(), first.threadId, randomUUID()),
-      ).resolves.toMatchObject({
-        status: "unavailable",
-        input: null,
-        replacement: null,
-        runId: null,
-        terminal: null,
-      });
-    });
-  });
-
-  it("distinguishes an unassigned queued input, its recall and unavailable evidence", async () => {
-    const f = await fixture();
-    await f.run(async () => {
-      const active = await f.sendChatRun(f.actor, {
-        prompt: "Wait for additional inputs",
-      });
-      await f.runExecution(active.runId);
-      const eventId = randomUUID();
-      await f.requestSendEvent(
-        f.actor,
-        {
-          threadId: active.threadId,
-          prompt: "Wait for the Runner to consume this input",
-          clientEventId: eventId,
-        },
-        [201],
-      );
-      await expect(
-        read(f.token(), active.threadId, eventId),
-      ).resolves.toMatchObject({
-        status: "queued",
-        input: { eventId },
-        replacement: null,
-        runId: null,
-        terminal: null,
-      });
-      toolBody(
-        await mcp.call(f.token(), "revoke_queued_message", {
-          threadId: active.threadId,
-          eventId,
-        }),
-      );
-      await expect(
-        read(f.token(), active.threadId, eventId),
-      ).resolves.toMatchObject({
-        status: "revoked",
-        runId: null,
-        terminal: null,
-        replacement: { eventId: expect.any(String) },
-      });
-      await expect(
-        read(f.token(), active.threadId, randomUUID()),
-      ).resolves.toMatchObject({
-        status: "unavailable",
-        input: null,
-        replacement: null,
-        runId: null,
-        terminal: null,
-      });
-    });
-  });
-
-  it("reports pre-Run rejection from the canonical replacement", async () => {
-    const f = createPublicChatAdmissionFixture(context);
-    await f.run(async () => {
-      bdd.acceptStorageWrites();
-      f.captureStorageMocks();
-      await bdd.completeOnboarding(f.actor);
-      await f.activateWithoutCredits();
-      await f.suspend(0);
-      const eventId = randomUUID();
-      const sent = await chat.requestSendEvent(
-        f.actor,
-        {
-          prompt: "Rejected before a Run",
-          model: null,
-          clientEventId: eventId,
-        },
-        [201],
-      );
-      if (sent.status !== 201) {
-        throw new Error("Expected the accepted input before its rejection");
+      const replacementEventId = started.replacementEventId;
+      if (!replacementEventId) {
+        throw new Error("Expected consuming replacement event ID");
       }
-      await flushWaitUntilForTest();
-      const token = mcp.authorize(f.actor);
-      await expect(
-        read(token(), sent.body.threadId, eventId),
-      ).resolves.toMatchObject({
-        status: "rejected",
-        input: { eventId },
-        replacement: { eventId: expect.any(String) },
-        runId: null,
-        terminal: null,
-      });
-    });
-  });
 
-  it("exposes observation by default and enforces the read scope and validation", async () => {
-    const f = await fixture();
-    await f.run(async () => {
-      const thread = await chat.createThread(f.actor, {});
-      const eventId = randomUUID();
-      expect(
-        (await tools(f.token())).find((tool) => {
-          return tool.name === "get_chat_input_status";
-        }),
-      ).toMatchObject({
-        annotations: { readOnlyHint: true },
+      const sameOrgPeer = bdd.user({
+        orgId: actor.orgId,
+        orgRole: "org:member",
       });
-      expect(
-        (
-          await mcp.web(
-            f.token({ scope: "user:org:read okou:chat:send" }),
-            statusPath(thread.id, eventId),
-          )
-        ).status,
-      ).toBe(403);
-      await expect(read(f.token(), thread.id, eventId)).resolves.toMatchObject({
-        status: "unavailable",
-      });
-      expect(
-        toolBody(
-          await mcp.call(f.token(), "get_chat_input_status", {
-            threadId: thread.id,
-            eventId,
+      const otherOrgId = `org_${randomUUID()}`;
+
+      const [, otherOwnThread] = await Promise.all([
+        owner.executionInput(started.runId),
+        accept(
+          chatThreadCreateClient.create({
+            headers: signIn(actor),
+            body: { title: "Different own thread", model: null },
           }),
+          [201],
         ),
-      ).toMatchObject({ status: "unavailable" });
-    });
-  });
+        oauth.addMembership(sameOrgPeer.userId, actor.orgId, "member"),
+        oauth.addMembership(actor.userId, otherOrgId, "member"),
+      ]);
 
-  it("preserves user and organization isolation and requires original input identity", async () => {
-    const f = await fixture();
-    await f.run(async () => {
-      const eventId = randomUUID();
-      const run = await f.sendChatRun(f.actor, {
-        prompt: "Owned input",
-        clientEventId: eventId,
+      const sameOrgPeerToken = oauth.signToken({
+        userId: sameOrgPeer.userId,
+        orgId: actor.orgId,
       });
-      const known = await read(f.token(), run.threadId, eventId);
-      if (!known.replacement) {
-        throw new Error("Expected a consuming event coordinate");
-      }
-      const otherThread = await chat.createThread(f.actor, {});
-      await expect(
-        read(f.token(), otherThread.id, eventId),
-      ).resolves.toMatchObject({
+      const sameUserOtherOrgToken = oauth.signToken({
+        userId: actor.userId,
+        orgId: otherOrgId,
+      });
+      const unknownThreadId = randomUUID();
+
+      const [
+        wrongOwnThreadHttp,
+        replacementIdHttp,
+        unknownThreadHttp,
+        peerHttp,
+        peerMcp,
+        otherOrgHttp,
+        otherOrgMcp,
+      ] = await Promise.all([
+        accept(
+          inputStatusClient.get({
+            headers: bearerHeaders(token),
+            params: {
+              threadId: otherOwnThread.body.id,
+              eventId: started.clientEventId,
+            },
+          }),
+          [200],
+        ),
+        accept(
+          inputStatusClient.get({
+            headers: bearerHeaders(token),
+            params: {
+              threadId: started.threadId,
+              eventId: replacementEventId,
+            },
+          }),
+          [400],
+        ),
+        accept(
+          inputStatusClient.get({
+            headers: bearerHeaders(token),
+            params: {
+              threadId: unknownThreadId,
+              eventId: started.clientEventId,
+            },
+          }),
+          [404],
+        ),
+        accept(
+          inputStatusClient.get({
+            headers: bearerHeaders(sameOrgPeerToken),
+            params: {
+              threadId: started.threadId,
+              eventId: started.clientEventId,
+            },
+          }),
+          [404],
+        ),
+        mcpCall(sameOrgPeerToken, "get_chat_input_status", {
+          threadId: started.threadId,
+          eventId: started.clientEventId,
+        }),
+        accept(
+          inputStatusClient.get({
+            headers: bearerHeaders(sameUserOtherOrgToken),
+            params: {
+              threadId: started.threadId,
+              eventId: started.clientEventId,
+            },
+          }),
+          [404],
+        ),
+        mcpCall(sameUserOtherOrgToken, "get_chat_input_status", {
+          threadId: started.threadId,
+          eventId: started.clientEventId,
+        }),
+      ]);
+
+      expect(wrongOwnThreadHttp.body).toStrictEqual({
+        threadId: otherOwnThread.body.id,
+        eventId: started.clientEventId,
         status: "unavailable",
         input: null,
         replacement: null,
         runId: null,
         terminal: null,
       });
-      expect(
-        (
-          await mcp.web(
-            f.token(),
-            statusPath(run.threadId, known.replacement.eventId),
-          )
-        ).status,
-      ).toBe(400);
-      expect(
-        (await mcp.web(f.token(), statusPath(randomUUID(), eventId))).status,
-      ).toBe(404);
-      if (!f.actor.orgId) {
-        throw new Error("Expected an owned workspace");
-      }
-      const orgId = f.actor.orgId;
-      for (const actor of [
-        { ...f.actor, userId: `user_${randomUUID()}`, orgId },
-        { ...f.actor, orgId: `org_${randomUUID()}` },
-      ]) {
-        context.mocks.clerk.users.getOrganizationMembershipList.mockResolvedValue(
-          {
-            data: [
-              {
-                id: randomUUID(),
-                role: "org:member",
-                organization: { id: actor.orgId },
-              },
-            ],
-            totalCount: 1,
-          },
-        );
-        const token = f.token({ sub: actor.userId, org_id: actor.orgId });
-        const response = await mcp.web(
-          token,
-          statusPath(run.threadId, eventId),
-        );
-        expect(response.status).toBe(404);
-        expect(response.body).toMatchObject({ error: { code: "NOT_FOUND" } });
-        expect(
-          (
-            await mcp.call(token, "get_chat_input_status", {
-              threadId: run.threadId,
-              eventId,
-            })
-          ).isError,
-        ).toBeTruthy();
-      }
-    });
-  });
+      expect(replacementIdHttp.body.error.message).toBe(
+        "Use the original accepted input event ID",
+      );
+      expect(unknownThreadHttp.body.error.code).toBe("NOT_FOUND");
+      expect(peerHttp.body.error.code).toBe("NOT_FOUND");
+      expect(peerMcp).toMatchObject({
+        isError: true,
+        structuredContent: { error: { code: "NOT_FOUND" } },
+      });
+      expect(otherOrgHttp.body.error.code).toBe("NOT_FOUND");
+      expect(otherOrgMcp).toMatchObject({
+        isError: true,
+        structuredContent: { error: { code: "NOT_FOUND" } },
+      });
+    },
+  );
 });

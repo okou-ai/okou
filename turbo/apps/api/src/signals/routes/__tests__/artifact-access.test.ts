@@ -1,1213 +1,975 @@
 import { createHash, randomUUID } from "node:crypto";
 import { Readable } from "node:stream";
 import {
-  CopyObjectCommand,
   GetObjectCommand,
   HeadObjectCommand,
   ListObjectsV2Command,
   PutObjectCommand,
 } from "@aws-sdk/client-s3";
-import { array, object, string } from "zod";
-import { beforeEach, expect, test } from "vitest";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import {
-  artifactAccessContract,
-  type ArtifactVisibilityValue,
-} from "@okouai/api-contracts/contracts/artifact-access";
+import { artifactAccessContract } from "@okouai/api-contracts/contracts/artifact-access";
 import { artifactCatalogContract } from "@okouai/api-contracts/contracts/artifact-catalog";
 import { artifactReferencesContract } from "@okouai/api-contracts/contracts/artifact-references";
 import { uploadsContract } from "@okouai/api-contracts/contracts/uploads";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { createStore } from "ccstate";
+import { beforeAll, describe, expect, it } from "vitest";
+
 import { accept, testContext } from "../../../__tests__/test-context";
-import { setupAppWithRoutes } from "../../../__tests__/test-app";
-import { now } from "../../../lib/time";
+import { setupApp } from "../../../__tests__/test-helpers";
+import { nowDate } from "../../../lib/time";
+import { flushWaitUntilForTest } from "../../context/wait-until";
+import { settleIncludingAbort } from "../../utils";
 import { artifactAccessRoutes } from "../artifact-access";
 import { artifactCatalogRoutes } from "../artifact-catalog";
 import { artifactReferenceRoutes } from "../artifact-references";
-import { hostRoutes } from "../host";
 import { uploadsCompleteRoutes } from "../uploads-complete";
 import { uploadsPrepareRoutes } from "../uploads-prepare";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createHostBddApi } from "./helpers/api-bdd-host";
-import { hostedTextFile } from "./helpers/api-bdd-host-files";
-import { createRunsApi } from "./helpers/api-bdd-runs";
 import { mockClerkUsers } from "./helpers/clerk-users";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
+import { seedOrgMembership$ } from "./helpers/org-membership";
 import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
-const headers = { authorization: "Bearer clerk-session" } as const;
-
-beforeEach(() => {
-  context.mocks.resend.send.mockResolvedValue({
-    data: { id: randomUUID() },
-    error: null,
-  });
+const store = createStore();
+const bdd = createBddApi(context);
+const host = createHostBddApi(context);
+const SESSION_HEADERS = Object.freeze({
+  authorization: "Bearer clerk-session",
 });
+const SAMPLE_FILE = Buffer.from("%PDF-1.7 unified artifact access test");
 
-function app(user: ApiTestUser) {
+const accessClient = setupApp({ context, routes: artifactAccessRoutes })(
+  artifactAccessContract,
+);
+const catalogClient = setupApp({ context, routes: artifactCatalogRoutes })(
+  artifactCatalogContract,
+);
+const referencesClient = setupApp({ context, routes: artifactReferenceRoutes })(
+  artifactReferencesContract,
+);
+const uploadsClient = setupApp({
+  context,
+  routes: [...uploadsPrepareRoutes, ...uploadsCompleteRoutes],
+})(uploadsContract);
+
+interface StoredObject {
+  readonly body: Buffer;
+  readonly contentType?: string;
+  readonly metadata?: Readonly<Record<string, string>>;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function stringField(
+  record: Readonly<Record<string, unknown>>,
+  key: string,
+): string | undefined {
+  const value = record[key];
+  return typeof value === "string" ? value : undefined;
+}
+
+function notFoundError(code: "NotFound" | "NoSuchKey" = "NotFound"): Error {
+  return Object.assign(new Error("Not found"), {
+    name: code,
+    Code: code,
+    $metadata: { httpStatusCode: 404 },
+  });
+}
+
+function signIn(actor: ApiTestUser): Readonly<Record<string, string>> {
   createRouteMocks(context).clerk.session(
-    user.userId,
-    user.orgId,
-    user.orgRole,
+    actor.userId,
+    actor.orgId,
+    actor.orgRole,
   );
-  context.mocks.clerk.authenticateRequest.mockImplementation((request) => {
-    return Promise.resolve({
-      isAuthenticated:
-        request instanceof Request &&
-        request.headers.get("Authorization") === headers.authorization,
-      toAuth: () => {
-        return {
-          userId: user.userId,
-          orgId: user.orgId,
-          orgRole: user.orgRole,
-          sessionId: `sess_${user.userId}`,
-        };
-      },
+  if (actor.orgId) {
+    const orgId = actor.orgId;
+    context.mocks.clerk.organizations.getOrganization.mockResolvedValue({
+      id: orgId,
+      name: "Unified Test Workspace",
+      slug: "unified-test-workspace",
     });
-  });
-  context.mocks.clerk.sessions.getSession.mockResolvedValue({
-    id: `sess_${user.userId}`,
-    userId: user.userId,
-    status: "active",
-    expireAt: now() + 86_400_000,
-  });
-  return setupAppWithRoutes({
-    context,
-    routes: [
-      ...artifactAccessRoutes,
-      ...artifactCatalogRoutes,
-      ...artifactReferenceRoutes,
-      ...hostRoutes,
-      ...uploadsPrepareRoutes,
-      ...uploadsCompleteRoutes,
-    ],
-    baseUrl: "https://api.okou.ai",
-  });
+    context.mocks.clerk.users.getOrganizationMembershipList.mockResolvedValue({
+      data: [
+        {
+          id: `mem_${actor.userId}_${orgId}`,
+          role: actor.orgRole ?? "org:member",
+          organization: { id: orgId, name: "Unified Test Workspace" },
+          publicUserData: { userId: actor.userId },
+        },
+      ],
+    });
+  }
+  return SESSION_HEADERS;
 }
 
-function profile(user: ApiTestUser, firstName = "Taylor", lastName = "Owner") {
-  const emailId = `em_${user.userId}`;
-  return {
-    id: user.userId,
-    firstName,
-    lastName,
-    imageUrl: null,
-    banned: false,
-    primaryEmailAddressId: emailId,
-    emailAddresses: [
-      {
-        id: emailId,
-        emailAddress: user.email,
-        verification: { status: "verified" as const },
-      },
-    ],
+function installFileStorage() {
+  const objects = new Map<string, StoredObject>();
+  const signed = new Map<string, { bucket: string; key: string }>();
+  const keyOf = (bucket: string, key: string) => {
+    return `${bucket}/${key}`;
   };
-}
 
-function directory(
-  profiles: ReturnType<typeof profile>[],
-  members: ApiTestUser[],
-) {
-  mockClerkUsers(context, profiles);
-  context.mocks.clerk.organizations.getOrganization.mockImplementation(
-    (input) => {
-      const params = object({ organizationId: string() }).parse(input);
-      return Promise.resolve({
-        id: params.organizationId,
-        name: "Sharing workspace",
-      });
+  context.mocks.s3.getSignedUrl.mockImplementation(
+    (_client: unknown, command: unknown) => {
+      const cmdRecord = isRecord(command) ? command : {};
+      const input = isRecord(cmdRecord.input) ? cmdRecord.input : {};
+      const bucket = stringField(input, "Bucket") ?? "";
+      const key = stringField(input, "Key") ?? "";
+      const url = `https://r2.example.test/${bucket}/${key}?n=${String(signed.size)}`;
+      signed.set(url, { bucket, key });
+      return Promise.resolve(url);
     },
   );
-  context.mocks.clerk.users.getUserList.mockImplementation((input) => {
-    const params = object({ userId: array(string()) }).parse(input);
-    return Promise.resolve({
-      data: profiles.filter((user) => {
-        return params.userId.includes(user.id);
-      }),
-    });
-  });
-  context.mocks.clerk.organizations.getOrganizationMembershipList.mockImplementation(
-    (input) => {
-      const params = object({
-        organizationId: string(),
-        userId: array(string()).optional(),
-        emailAddress: array(string()).optional(),
-      }).parse(input);
-      return Promise.resolve({
-        data: members
-          .filter((member) => {
-            return (
-              member.orgId === params.organizationId &&
-              (!params.userId || params.userId.includes(member.userId)) &&
-              (!params.emailAddress ||
-                params.emailAddress.includes(member.email))
-            );
-          })
-          .map((member) => {
-            return {
-              publicUserData: { userId: member.userId },
-              organization: { id: member.orgId, name: "Sharing workspace" },
-            };
-          }),
-      });
-    },
-  );
-}
 
-function installFileStorageMock(contentType: string) {
-  const objects = new Map<string, Buffer>();
-  context.mocks.s3.send.mockImplementation((operation) => {
-    if (operation instanceof HeadObjectCommand) {
-      const key = operation.input.Key ?? "";
-      const stored = objects.get(key);
-      return Promise.resolve({
-        ContentLength: stored?.length ?? 13,
-        ContentType: contentType,
-        ETag: '"etag"',
-      });
-    }
-    if (operation instanceof ListObjectsV2Command) {
-      return Promise.resolve({ Contents: [] });
-    }
-    if (operation instanceof CopyObjectCommand) {
-      const dest = operation.input.Key ?? "";
-      objects.set(dest, Buffer.from("copied-content"));
-      return Promise.resolve({ CopyObjectResult: { ETag: '"copied"' } });
-    }
-    if (operation instanceof PutObjectCommand) {
-      const key = operation.input.Key ?? "";
-      const body = operation.input.Body;
-      objects.set(
-        key,
-        typeof body === "string"
-          ? Buffer.from(body)
-          : body instanceof Uint8Array
-            ? Buffer.from(body)
-            : Buffer.from(""),
-      );
-      return Promise.resolve({ ETag: '"stored"' });
-    }
-    if (operation instanceof GetObjectCommand) {
-      const key = operation.input.Key ?? "";
-      const body = objects.get(key);
-      if (!body) {
+  context.mocks.s3.send.mockImplementation((command: unknown) => {
+    const cmdRecord = isRecord(command) ? command : {};
+    const input = isRecord(cmdRecord.input) ? cmdRecord.input : {};
+    const bucket = stringField(input, "Bucket") ?? "";
+    const key = stringField(input, "Key") ?? "";
+    const stored = objects.get(keyOf(bucket, key));
+
+    if (command instanceof PutObjectCommand) {
+      if (input.IfNoneMatch === "*" && stored) {
         return Promise.reject(
-          Object.assign(new Error("Missing"), { name: "NoSuchKey" }),
+          Object.assign(new Error("Object exists"), {
+            name: "PreconditionFailed",
+            $metadata: { httpStatusCode: 412 },
+          }),
         );
       }
+      const rawBody = input.Body;
+      const body = Buffer.isBuffer(rawBody)
+        ? rawBody
+        : typeof rawBody === "string"
+          ? Buffer.from(rawBody)
+          : rawBody instanceof Uint8Array
+            ? Buffer.from(rawBody)
+            : Buffer.alloc(0);
+      objects.set(keyOf(bucket, key), {
+        body,
+        contentType: stringField(input, "ContentType"),
+      });
+      return Promise.resolve({ ETag: '"put"' });
+    }
+    if (command instanceof GetObjectCommand) {
+      if (!stored) {
+        return Promise.reject(notFoundError("NoSuchKey"));
+      }
       return Promise.resolve({
-        Body: Readable.from([body]),
-        ETag: `"${createHash("md5").update(body).digest("hex")}"`,
+        Body: Readable.from([stored.body]),
+        ContentLength: stored.body.byteLength,
+        ContentType: stored.contentType,
+        ETag: `"${createHash("sha256").update(stored.body).digest("hex")}"`,
       });
     }
-    throw new Error("Unexpected storage operation");
+    if (command instanceof HeadObjectCommand) {
+      if (!stored) {
+        return Promise.reject(notFoundError());
+      }
+      return Promise.resolve({
+        ContentLength: stored.body.byteLength,
+        ContentType: stored.contentType,
+        LastModified: nowDate(),
+        Metadata: stored.metadata ?? {},
+        ETag: '"head"',
+      });
+    }
+    if (command instanceof ListObjectsV2Command) {
+      return Promise.resolve({ Contents: [], IsTruncated: false });
+    }
+    return Promise.resolve({});
   });
-  return objects;
-}
 
-async function createFileArtifact(
-  owner: ApiTestUser,
-  filename: string,
-  contentType: string,
-) {
-  const objects = installFileStorageMock(contentType);
-  const prepared = await accept(
-    app(owner)(uploadsContract).prepare({
-      headers,
-      body: { filename, contentType, size: 13, purpose: "artifact" },
-    }),
-    [200],
-  );
-  const completed = await accept(
-    app(owner)(uploadsContract).complete({
-      headers,
-      body: { id: prepared.body.id },
-    }),
-    [200],
-  );
-  const catalog = await accept(
-    app(owner)(artifactCatalogContract).list({
-      headers,
-      query: {},
-    }),
-    [200],
-  );
-  const entry = catalog.body.artifacts[0];
-  if (!entry) {
-    throw new Error("Expected catalog entry after artifact upload");
-  }
   return {
-    fileId: prepared.body.id,
-    artifactId: entry.id,
-    reference: new URL(completed.body.url, "https://app.okou.ai").pathname
-      .split("/")
-      .at(-1)!,
-    objects,
-  };
-}
-
-async function createHostedArtifact(
-  owner: ApiTestUser,
-  artifactKind: "hosted-site" | "presentation-html",
-  visibility: ArtifactVisibilityValue = "private",
-) {
-  const bdd = createBddApi(context);
-  const runs = createRunsApi(context);
-  bdd.acceptStorageWrites();
-  runs.acceptStorageDownloads();
-  runs.acceptTelemetryIngest();
-  const runnerGroup = await runs.configureRunnerGroup();
-  await runs.grantProEntitlement(owner);
-  await runs.ensurePersonalSubscriptionModel(owner);
-  await runs.heartbeatRunner(runnerGroup);
-  const run = await runs.createThreadRun(owner, {
-    prompt: `publish ${artifactKind}`,
-  });
-  const execution = await runs.executionInput(run.runId);
-  const bearerToken = execution.platformEnvironment.OKOU_TOKEN;
-  if (!bearerToken) {
-    throw new Error("Expected OKOU_TOKEN in run execution platformEnvironment");
-  }
-
-  const host = createHostBddApi(context);
-  host.captureHostedSitesS3();
-  const siteSlug = `unified-${artifactKind}-${randomUUID().slice(0, 8)}`;
-  const expectedTitle =
-    artifactKind === "presentation-html" ? "Unified Deck" : "Unified Site";
-  const expectedKind =
-    artifactKind === "presentation-html" ? "presentation" : "hosted-site";
-  const prepared = await host.prepareHostedSite(
-    { bearerToken },
-    {
-      site: siteSlug,
-      title: expectedTitle,
-      artifactKind,
-      spaFallback: false,
-      visibility,
-      files: [hostedTextFile("/index.html", "<h1>Unified Artifact</h1>")],
+    upload(
+      uploadUrl: string,
+      body: Buffer,
+      contentType: string,
+      uploadHeaders: Readonly<Record<string, string>> = {},
+    ) {
+      const target = signed.get(uploadUrl);
+      if (!target) {
+        throw new Error(`Unknown upload URL ${uploadUrl}`);
+      }
+      objects.set(keyOf(target.bucket, target.key), {
+        body,
+        contentType,
+        metadata: Object.fromEntries(
+          Object.entries(uploadHeaders).map(([name, value]) => {
+            return [name.replace(/^x-amz-meta-/u, ""), value];
+          }),
+        ),
+      });
     },
-  );
-  await host.completeHostedSite({ bearerToken }, prepared.deploymentId);
-  const catalog = await accept(
-    app(owner)(artifactCatalogContract).list({ headers, query: {} }),
-    [200],
-  );
-  const entry = catalog.body.artifacts.find((item) => {
-    return item.kind === expectedKind && item.title === expectedTitle;
-  });
-  if (!entry) {
-    throw new Error(`Expected catalog entry for ${artifactKind}`);
-  }
-  return {
-    siteId: prepared.siteId,
-    siteSlug,
-    publicSlug: prepared.publicSlug,
-    deploymentId: prepared.deploymentId,
-    artifactId: entry.id,
-    kind: entry.kind,
-    visibility: entry.visibility,
-    bearerToken,
-    host,
   };
 }
 
-test("unified artifact visibility controls file artifacts and reflects immediately in catalog and reference resolution", async () => {
-  const owner = createBddApi(context).user();
-  const colleague = { ...createBddApi(context).user(), orgId: owner.orgId };
-  const outsider = createBddApi(context).user({ orgId: null });
-  directory(
-    [profile(owner), profile(colleague, "Alice", "Member")],
-    [owner, colleague],
-  );
-
-  const { fileId, artifactId, reference } = await createFileArtifact(
-    owner,
-    "report.pdf",
-    "application/pdf",
-  );
-
-  // Resolve returns canonical artifactId for the owner.
-  const ownerResolve = await accept(
-    app(owner)(artifactReferencesContract).resolve({
-      headers,
-      params: { reference },
+function registerClerkDirectory(users: readonly ApiTestUser[]): void {
+  mockClerkUsers(
+    context,
+    users.map((user) => {
+      const emailId = `email_${user.userId}`;
+      return {
+        id: user.userId,
+        username: null,
+        banned: false,
+        firstName: "Workspace",
+        lastName: "Peer",
+        primaryEmailAddressId: emailId,
+        emailAddresses: [
+          {
+            id: emailId,
+            emailAddress: user.email,
+            verification: { status: "verified" },
+          },
+        ],
+      };
     }),
-    [200],
   );
-  expect(ownerResolve.body.artifactId).toBe(artifactId);
+}
 
-  // Private by default: colleague and outsider cannot read.
-  await accept(
-    app(colleague)(artifactReferencesContract).resolve({
-      headers,
-      params: { reference },
-    }),
-    [404],
-  );
-  await accept(
-    app(outsider)(artifactReferencesContract).publicUrl({
-      params: { reference },
-    }),
-    [404],
-  );
-
-  // 1. Update via PATCH /api/artifacts/:artifactId/visibility -> organization
-  const patched = await accept(
-    app(owner)(artifactAccessContract).updateVisibility({
-      headers,
-      params: { artifactId },
-      body: { visibility: "organization" },
-    }),
-    [200],
-  );
-  expect(patched.body.artifactId).toBe(artifactId);
-  expect(patched.body.visibility).toBe("organization");
-  expect(patched.body.shareUrl).not.toBeNull();
-
-  // Organization colleague can now resolve; anonymous publicUrl remains 404.
-  await accept(
-    app(colleague)(artifactReferencesContract).resolve({
-      headers,
-      params: { reference },
-    }),
-    [200],
-  );
-  await accept(
-    app(outsider)(artifactReferencesContract).publicUrl({
-      params: { reference },
-    }),
-    [404],
-  );
-
-  // Catalog reflects updated visibility directly from artifacts.visibility.
-  const catalog = await accept(
-    app(owner)(artifactCatalogContract).list({ headers, query: {} }),
-    [200],
-  );
-  expect(catalog.body.artifacts[0]?.visibility).toBe("organization");
-
-  // 2. Make public -> anonymous publicUrl resolves; then revert to private.
-  await accept(
-    app(owner)(artifactAccessContract).updateVisibility({
-      headers,
-      params: { artifactId },
-      body: { visibility: "public" },
-    }),
-    [200],
-  );
-  await accept(
-    app(outsider)(artifactReferencesContract).publicUrl({
-      params: { reference },
-    }),
-    [200],
-  );
-
-  // Bounded R1 client entity-ID lookup by fileId still resolves canonical artifactId.
-  const byFileId = await accept(
-    app(owner)(artifactAccessContract).getVisibility({
-      headers,
-      params: { artifactId: fileId },
-    }),
-    [200],
-  );
-  expect(byFileId.body.artifactId).toBe(artifactId);
-  expect(byFileId.body.visibility).toBe("public");
-
-  await accept(
-    app(owner)(artifactAccessContract).updateVisibility({
-      headers,
-      params: { artifactId },
-      body: { visibility: "private" },
-    }),
-    [200],
-  );
-  const unifiedRead = await accept(
-    app(owner)(artifactAccessContract).getVisibility({
-      headers,
-      params: { artifactId },
-    }),
-    [200],
-  );
-  expect(unifiedRead.body.visibility).toBe("private");
-  expect(unifiedRead.body.shareUrl).toBeNull();
-  await accept(
-    app(colleague)(artifactReferencesContract).resolve({
-      headers,
-      params: { reference },
-    }),
-    [404],
-  );
-});
-
-test.each([
-  ["hosted-site", "public"],
-  ["hosted-site", "organization"],
-  ["presentation-html", "public"],
-  ["presentation-html", "organization"],
-] as const)(
-  "newly published %s initializes artifacts.visibility to %s and preserves it on re-publish",
-  async (artifactKind, initialVisibility) => {
-    const owner = createBddApi(context).user();
-    directory([profile(owner)], [owner]);
-
-    const created = await createHostedArtifact(
-      owner,
-      artifactKind,
-      initialVisibility,
-    );
-    expect(created.visibility).toBe(initialVisibility);
-
-    // Re-publish without specifying --visibility must preserve non-private visibility.
-    const republished = await created.host.prepareHostedSite(
-      { bearerToken: created.bearerToken },
+async function seedMember(orgId?: string): Promise<ApiTestUser> {
+  const user = bdd.user(orgId ? { orgId, orgRole: "org:member" } : {});
+  if (user.orgId) {
+    await store.set(
+      seedOrgMembership$,
       {
-        site: created.siteSlug,
-        title: "Republished Hosted Artifact",
-        artifactKind,
-        spaFallback: false,
-        files: [hostedTextFile("/index.html", "<h1>Republished</h1>")],
+        orgId: user.orgId,
+        userId: user.userId,
+        role: user.orgRole === "org:admin" ? "admin" : "member",
+        emailAddresses: [user.email],
       },
+      context.signal,
     );
-    await created.host.completeHostedSite(
-      { bearerToken: created.bearerToken },
-      republished.deploymentId,
-    );
-
-    const catalogAfterRepublish = await accept(
-      app(owner)(artifactCatalogContract).list({ headers, query: {} }),
-      [200],
-    );
-    expect(
-      catalogAfterRepublish.body.artifacts.find((item) => {
-        return item.id === created.artifactId;
-      })?.visibility,
-    ).toBe(initialVisibility);
-  },
-);
-
-test("unified artifact shares support userId primary path, email fallback, non-member rejection, and DELETE by userId", async () => {
-  const owner = createBddApi(context).user();
-  const colleague = { ...createBddApi(context).user(), orgId: owner.orgId };
-  const secondColleague = {
-    ...createBddApi(context).user(),
-    orgId: owner.orgId,
-  };
-  if (!owner.orgId) {
-    throw new Error("Fixture requires orgId");
   }
-  await updateFeatureSwitchesForUser(
-    context,
-    { ...owner, orgId: owner.orgId },
-    { [FeatureSwitchKey.ArtifactUserSharing]: true },
-  );
-  directory(
-    [
-      profile(owner, "Owner", "User"),
-      profile(colleague, "Alice", "Member"),
-      profile(secondColleague, "Bob", "Member"),
-    ],
-    [owner, colleague, secondColleague],
-  );
-
-  const { artifactId, reference } = await createFileArtifact(
-    owner,
-    "deck.pdf",
-    "application/pdf",
-  );
-
-  // 1. Primary path: add by userId
-  const addByUserId = await accept(
-    app(owner)(artifactAccessContract).addShare({
-      headers,
-      params: { artifactId },
-      body: { userId: colleague.userId },
-    }),
-    [200],
-  );
-  expect(addByUserId.body.share).toStrictEqual({
-    userId: colleague.userId,
-    email: colleague.email,
-    name: "Alice Member",
-  });
-
-  // Granted colleague can read the private file artifact.
-  await accept(
-    app(colleague)(artifactReferencesContract).resolve({
-      headers,
-      params: { reference },
-    }),
-    [200],
-  );
-
-  // 2. Fallback path: add by email (resolved in current org directory)
-  const addByEmail = await accept(
-    app(owner)(artifactAccessContract).addShare({
-      headers,
-      params: { artifactId },
-      body: { email: secondColleague.email },
-    }),
-    [200],
-  );
-  expect(addByEmail.body.share).toStrictEqual({
-    userId: secondColleague.userId,
-    email: secondColleague.email,
-    name: "Bob Member",
-  });
-
-  // 3. Reject non-workspace members (both email and userId) with 400
-  await accept(
-    app(owner)(artifactAccessContract).addShare({
-      headers,
-      params: { artifactId },
-      body: { email: "outsider@external.example" },
-    }),
-    [400],
-  );
-  await accept(
-    app(owner)(artifactAccessContract).addShare({
-      headers,
-      params: { artifactId },
-      body: { userId: "user_non_member" },
-    }),
-    [400],
-  );
-
-  // 4. Reject self-share
-  await accept(
-    app(owner)(artifactAccessContract).addShare({
-      headers,
-      params: { artifactId },
-      body: { userId: owner.userId },
-    }),
-    [400],
-  );
-
-  // 5. Remove via unified DELETE /api/artifacts/:artifactId/shares/:userId
-  const removedFirst = await accept(
-    app(owner)(artifactAccessContract).removeShare({
-      headers,
-      params: { artifactId, userId: colleague.userId },
-    }),
-    [200],
-  );
-  expect(removedFirst.body).toStrictEqual({ removed: colleague.userId });
-
-  // Revoked colleague loses read access immediately.
-  await accept(
-    app(colleague)(artifactReferencesContract).resolve({
-      headers,
-      params: { reference },
-    }),
-    [404],
-  );
-
-  const afterRemoveUnified = await accept(
-    app(owner)(artifactAccessContract).listShares({
-      headers,
-      params: { artifactId },
-    }),
-    [200],
-  );
-  expect(afterRemoveUnified.body.shares).toStrictEqual([
-    {
-      userId: secondColleague.userId,
-      email: secondColleague.email,
-      name: "Bob Member",
-    },
-  ]);
-
-  // Removing a second time returns 404
-  await accept(
-    app(owner)(artifactAccessContract).removeShare({
-      headers,
-      params: { artifactId, userId: colleague.userId },
-    }),
-    [404],
-  );
-});
-
-test("unified /shares routes are gated by ArtifactUserSharing", async () => {
-  const owner = createBddApi(context).user();
-  if (!owner.orgId) {
-    throw new Error("Fixture requires orgId");
-  }
-  await updateFeatureSwitchesForUser(
-    context,
-    { ...owner, orgId: owner.orgId },
-    { [FeatureSwitchKey.ArtifactUserSharing]: false },
-  );
-  directory([profile(owner)], [owner]);
-
-  const { artifactId } = await createFileArtifact(
-    owner,
-    "gated.pdf",
-    "application/pdf",
-  );
-
-  await accept(
-    app(owner)(artifactAccessContract).listShares({
-      headers,
-      params: { artifactId },
-    }),
-    [404],
-  );
-
-  await updateFeatureSwitchesForUser(
-    context,
-    { ...owner, orgId: owner.orgId },
-    { [FeatureSwitchKey.ArtifactUserSharing]: true },
-  );
-
-  const allowed = await accept(
-    app(owner)(artifactAccessContract).listShares({
-      headers,
-      params: { artifactId },
-    }),
-    [200],
-  );
-  expect(allowed.body.shares).toStrictEqual([]);
-});
-
-async function assertHostedArtifactUnifiedAccess(
-  artifactKind: "hosted-site" | "presentation-html",
-) {
-  const owner = createBddApi(context).user();
-  const colleague = { ...createBddApi(context).user(), orgId: owner.orgId };
-  const secondColleague = {
-    ...createBddApi(context).user(),
-    orgId: owner.orgId,
-  };
-  if (!owner.orgId) {
-    throw new Error("Fixture requires orgId");
-  }
-  await updateFeatureSwitchesForUser(
-    context,
-    { ...owner, orgId: owner.orgId },
-    { [FeatureSwitchKey.ArtifactUserSharing]: true },
-  );
-  const created = await createHostedArtifact(owner, artifactKind);
-  expect(created.kind).toBe(
-    artifactKind === "presentation-html" ? "presentation" : "hosted-site",
-  );
-  directory(
-    [
-      profile(owner, "Owner", "User"),
-      profile(colleague, "Alice", "Member"),
-      profile(secondColleague, "Bob", "Member"),
-    ],
-    [owner, colleague, secondColleague],
-  );
-
-  // 1. Unified PATCH by canonical artifactId -> GET (by artifactId and siteId) + catalog observe it
-  const patched = await accept(
-    app(owner)(artifactAccessContract).updateVisibility({
-      headers,
-      params: { artifactId: created.artifactId },
-      body: { visibility: "organization" },
-    }),
-    [200],
-  );
-  expect(patched.body.artifactId).toBe(created.artifactId);
-  expect(patched.body.visibility).toBe("organization");
-
-  const bySiteId = await accept(
-    app(owner)(artifactAccessContract).getVisibility({
-      headers,
-      params: { artifactId: created.siteId },
-    }),
-    [200],
-  );
-  expect(bySiteId.body.visibility).toBe("organization");
-  expect(bySiteId.body.artifactId).toBe(created.artifactId);
-
-  const catalog = await accept(
-    app(owner)(artifactCatalogContract).list({ headers, query: {} }),
-    [200],
-  );
-  expect(
-    catalog.body.artifacts.find((item) => {
-      return item.id === created.artifactId;
-    })?.visibility,
-  ).toBe("organization");
-
-  // 2. Per-user shares stored directly in artifact_shares
-  const addedFirst = await accept(
-    app(owner)(artifactAccessContract).addShare({
-      headers,
-      params: { artifactId: created.artifactId },
-      body: { userId: colleague.userId },
-    }),
-    [200],
-  );
-  expect(addedFirst.body.share).toStrictEqual({
-    userId: colleague.userId,
-    email: colleague.email,
-    name: "Alice Member",
-  });
-  await accept(
-    app(owner)(artifactAccessContract).addShare({
-      headers,
-      params: { artifactId: created.artifactId },
-      body: { email: secondColleague.email },
-    }),
-    [200],
-  );
-
-  const listed = await accept(
-    app(owner)(artifactAccessContract).listShares({
-      headers,
-      params: { artifactId: created.artifactId },
-    }),
-    [200],
-  );
-  expect(
-    listed.body.shares
-      .map((s) => {
-        return s.userId;
-      })
-      .sort(),
-  ).toStrictEqual([colleague.userId, secondColleague.userId].sort());
-
-  await accept(
-    app(owner)(artifactAccessContract).removeShare({
-      headers,
-      params: { artifactId: created.artifactId, userId: colleague.userId },
-    }),
-    [200],
-  );
-  await accept(
-    app(owner)(artifactAccessContract).removeShare({
-      headers,
-      params: {
-        artifactId: created.artifactId,
-        userId: secondColleague.userId,
-      },
-    }),
-    [200],
-  );
-
-  const finalShares = await accept(
-    app(owner)(artifactAccessContract).listShares({
-      headers,
-      params: { artifactId: created.artifactId },
-    }),
-    [200],
-  );
-  return {
-    kind: created.kind,
-    remainingShares: finalShares.body.shares.length,
-  };
+  return user;
 }
 
-test("unified artifact visibility and shares work for hosted-site artifacts", async () => {
-  const result = await assertHostedArtifactUnifiedAccess("hosted-site");
-  expect(result).toStrictEqual({ kind: "hosted-site", remainingShares: 0 });
-});
-
-test("unified artifact visibility and shares work for presentation artifacts", async () => {
-  const result = await assertHostedArtifactUnifiedAccess("presentation-html");
-  expect(result).toStrictEqual({ kind: "presentation", remainingShares: 0 });
-});
-
-test("standalone hosted sites create a synchronous artifacts row and expose unified visibility", async () => {
-  const owner = createBddApi(context).user();
-  directory([profile(owner)], [owner]);
-
-  const host = createHostBddApi(context);
-  host.captureHostedSitesS3();
-  const prepared = await host.prepareHostedSite(owner, {
-    site: `standalone-${randomUUID().slice(0, 8)}`,
-    title: "Standalone PAT Site",
-    artifactKind: "hosted-site",
-    spaFallback: false,
-    visibility: "private",
-    files: [hostedTextFile("/index.html", "<p>Standalone</p>")],
+function acceptEmails(): void {
+  context.mocks.resend.send.mockResolvedValue({
+    data: { id: `email-${randomUUID()}` },
+    error: null,
   });
-  await host.completeHostedSite(owner, prepared.deploymentId);
+}
 
-  const patched = await accept(
-    app(owner)(artifactAccessContract).updateVisibility({
-      headers,
-      params: { artifactId: prepared.siteId },
-      body: { visibility: "organization" },
-    }),
-    [200],
-  );
-  expect(patched.body.visibility).toBe("organization");
-
-  const read = await accept(
-    app(owner)(artifactAccessContract).getVisibility({
-      headers,
-      params: { artifactId: patched.body.artifactId },
-    }),
-    [200],
-  );
-  expect(read.body.visibility).toBe("organization");
-});
-
-test("unshared user files are owner-only, and library delete soft-deletes artifacts without breaking owner file access", async () => {
-  const owner = createBddApi(context).user();
-  const colleague = { ...createBddApi(context).user(), orgId: owner.orgId };
-  if (!owner.orgId) {
-    throw new Error("Fixture requires orgId");
-  }
-  await updateFeatureSwitchesForUser(
-    context,
-    { ...owner, orgId: owner.orgId },
-    { [FeatureSwitchKey.ArtifactUserSharing]: true },
-  );
-  directory(
-    [profile(owner, "Owner", "User"), profile(colleague, "Alice", "Member")],
-    [owner, colleague],
-  );
-
-  // Principle 3: Composer user upload writes files only (no artifacts row) and is accessible only to (owner, orgId).
-  installFileStorageMock("text/plain");
-  const userUpload = await accept(
-    app(owner)(uploadsContract).prepare({
-      headers,
-      body: { filename: "notes.txt", contentType: "text/plain", size: 13 },
-    }),
-    [200],
-  );
-  const completedUserUpload = await accept(
-    app(owner)(uploadsContract).complete({
-      headers,
-      body: { id: userUpload.body.id },
-    }),
-    [200],
-  );
-  const userFileRef = new URL(
-    completedUserUpload.body.url,
-    "https://app.okou.ai",
-  ).pathname
-    .split("/")
-    .at(-1)!;
-  await accept(
-    app(owner)(artifactReferencesContract).resolve({
-      headers,
-      params: { reference: userFileRef },
-    }),
-    [200],
-  );
-  await accept(
-    app(colleague)(artifactReferencesContract).resolve({
-      headers,
-      params: { reference: userFileRef },
-    }),
-    [404],
-  );
-
-  // Principle 4: Library delete soft-deletes artifacts.deleted_at ONLY; owner still reads the file in chat while shared non-owners lose access.
-  const { artifactId, reference } = await createFileArtifact(
-    owner,
-    "deliverable.pdf",
-    "application/pdf",
-  );
-  await accept(
-    app(owner)(artifactAccessContract).updateVisibility({
-      headers,
-      params: { artifactId },
-      body: { visibility: "organization" },
-    }),
-    [200],
-  );
-  await accept(
-    app(owner)(artifactAccessContract).addShare({
-      headers,
-      params: { artifactId },
-      body: { userId: colleague.userId },
-    }),
-    [200],
-  );
-  await accept(
-    app(colleague)(artifactReferencesContract).resolve({
-      headers,
-      params: { reference },
-    }),
-    [200],
-  );
-
-  await accept(
-    app(owner)(artifactCatalogContract).delete({
-      headers,
-      params: { artifactId },
-    }),
-    [200],
-  );
-
-  const catalogAfterDelete = await accept(
-    app(owner)(artifactCatalogContract).list({ headers, query: {} }),
-    [200],
-  );
-  expect(
-    catalogAfterDelete.body.artifacts.some((item) => {
-      return item.id === artifactId;
-    }),
-  ).toBeFalsy();
-
-  // Owner can still resolve the underlying file from chat history; colleague is blocked.
-  const ownerAfterDelete = await accept(
-    app(owner)(artifactReferencesContract).resolve({
-      headers,
-      params: { reference },
-    }),
-    [200],
-  );
-  expect(ownerAfterDelete.body.filename).toBe("deliverable.pdf");
-  expect(ownerAfterDelete.body.artifactId).toBeUndefined();
-
-  await accept(
-    app(colleague)(artifactReferencesContract).resolve({
-      headers,
-      params: { reference },
-    }),
-    [404],
-  );
-});
-
-test("historical private_hosted_deployments stay read-only and never mutate live site visibility", async () => {
-  const owner: ApiTestUser = {
-    userId: "user_legacy_private_hosted_seed",
-    orgId: "org_legacy_private_hosted_seed",
-    orgRole: "org:admin",
-    email: "legacy-seed-owner@example.test",
-  };
-  directory([profile(owner)], [owner]);
-
-  const legacyDeploymentId = "00000000-0000-4000-8000-000000009003";
-  const liveArtifactId = "00000000-0000-4000-8000-000000009004";
-
-  const legacyRead = await accept(
-    app(owner)(artifactAccessContract).getVisibility({
-      headers,
-      params: { artifactId: legacyDeploymentId },
-    }),
-    [200],
-  );
-  expect(legacyRead.body.artifactId).toBe(legacyDeploymentId);
-  expect(legacyRead.body.visibility).toBe("private");
-
-  // Attempting to broaden visibility on a legacy deployment returns 400 and leaves live site untouched.
-  await accept(
-    app(owner)(artifactAccessContract).updateVisibility({
-      headers,
-      params: { artifactId: legacyDeploymentId },
-      body: { visibility: "public" },
-    }),
-    [400],
-  );
-  // Setting private on a legacy deployment succeeds as a no-op without mutating the live public site.
-  await accept(
-    app(owner)(artifactAccessContract).updateVisibility({
-      headers,
-      params: { artifactId: legacyDeploymentId },
-      body: { visibility: "private" },
-    }),
-    [200],
-  );
-
-  const liveVisibility = await accept(
-    app(owner)(artifactAccessContract).getVisibility({
-      headers,
-      params: { artifactId: liveArtifactId },
-    }),
-    [200],
-  );
-  expect(liveVisibility.body.visibility).toBe("public");
-});
-
-test("addShare returns 404 for unowned or missing artifacts before membership lookup or quota", async () => {
-  const owner = createBddApi(context).user();
-  const otherOwner = { ...createBddApi(context).user(), orgId: owner.orgId };
-  const colleague = { ...createBddApi(context).user(), orgId: owner.orgId };
-  if (!owner.orgId) {
-    throw new Error("Fixture requires orgId");
-  }
-  await updateFeatureSwitchesForUser(
-    context,
-    { ...owner, orgId: owner.orgId },
-    { [FeatureSwitchKey.ArtifactUserSharing]: true },
-  );
-  directory(
-    [
-      profile(owner, "Owner", "User"),
-      profile(otherOwner, "Other", "Owner"),
-      profile(colleague, "Alice", "Member"),
-    ],
-    [owner, otherOwner, colleague],
-  );
-
-  const { artifactId: foreignArtifactId } = await createFileArtifact(
-    otherOwner,
-    "foreign.pdf",
-    "application/pdf",
-  );
-  const { artifactId: ownArtifactId } = await createFileArtifact(
-    owner,
-    "owned.pdf",
-    "application/pdf",
-  );
-  const missingArtifactId = randomUUID();
-
-  context.mocks.clerk.organizations.getOrganizationMembershipList.mockRejectedValue(
-    new Error("Clerk directory should not be queried for unowned artifacts"),
-  );
-
-  for (const targetId of [foreignArtifactId, missingArtifactId]) {
-    await accept(
-      app(owner)(artifactAccessContract).addShare({
-        headers,
-        params: { artifactId: targetId },
-        body: { email: "outsider@external.example" },
-      }),
-      [404],
-    );
-    await accept(
-      app(owner)(artifactAccessContract).addShare({
-        headers,
-        params: { artifactId: targetId },
-        body: { userId: colleague.userId },
-      }),
-      [404],
-    );
-    await accept(
-      app(owner)(artifactAccessContract).addShare({
-        headers,
-        params: { artifactId: targetId },
-        body: { userId: owner.userId },
-      }),
-      [404],
-    );
-  }
-
-  directory(
-    [
-      profile(owner, "Owner", "User"),
-      profile(otherOwner, "Other", "Owner"),
-      profile(colleague, "Alice", "Member"),
-    ],
-    [owner, otherOwner, colleague],
-  );
-  const granted = await accept(
-    app(owner)(artifactAccessContract).addShare({
-      headers,
-      params: { artifactId: ownArtifactId },
-      body: { userId: colleague.userId },
-    }),
-    [200],
-  );
-  expect(granted.body.share.userId).toBe(colleague.userId);
-});
-
-test("hosted-site visibility read propagates unexpected Clerk lookup errors instead of fabricating orgId", async () => {
-  const owner = createBddApi(context).user();
-  directory([profile(owner)], [owner]);
-  const created = await createHostedArtifact(owner, "hosted-site");
-
-  context.mocks.clerk.organizations.getOrganization.mockRejectedValueOnce(
-    new Error("Clerk upstream unavailable"),
-  );
-
-  const failed = await accept(
-    app(owner)(artifactAccessContract).getVisibility({
-      headers,
-      params: { artifactId: created.artifactId },
-    }),
-    [500],
-  );
-  expect(failed.status).toBe(500);
-});
-
-test("run-scoped private artifact upload completes cleanly and exposes unified visibility without duplicate catalog entries", async () => {
-  const owner = createBddApi(context).user();
-
-  const bdd = createBddApi(context);
-  const runs = createRunsApi(context);
-  bdd.acceptStorageWrites();
-  runs.acceptStorageDownloads();
-  runs.acceptTelemetryIngest();
-  const runnerGroup = await runs.configureRunnerGroup();
-  await runs.grantProEntitlement(owner);
-  await runs.ensurePersonalSubscriptionModel(owner);
-  await runs.heartbeatRunner(runnerGroup);
-  const run = await runs.createThreadRun(owner, {
-    prompt: "upload run-scoped private deliverable",
-  });
-  const execution = await runs.executionInput(run.runId);
-  const bearerToken = execution.platformEnvironment.OKOU_TOKEN;
-  if (!bearerToken) {
-    throw new Error("Expected OKOU_TOKEN in run execution platformEnvironment");
-  }
-  const runHeaders = { authorization: `Bearer ${bearerToken}` } as const;
-
-  directory([profile(owner)], [owner]);
-  installFileStorageMock("application/pdf");
+async function uploadPrivateFileArtifact(
+  owner: ApiTestUser,
+  storage: ReturnType<typeof installFileStorage>,
+): Promise<{ readonly artifactId: string; readonly fileId: string }> {
+  const filename = `report-${randomUUID().slice(0, 8)}.pdf`;
+  const headers = signIn(owner);
   const prepared = await accept(
-    app(owner)(uploadsContract).prepare({
-      headers: runHeaders,
+    uploadsClient.prepare({
+      headers,
       body: {
-        filename: "run-report.pdf",
+        filename,
         contentType: "application/pdf",
-        size: 13,
+        size: SAMPLE_FILE.byteLength,
         purpose: "artifact",
       },
     }),
     [200],
   );
+  if ("multipart" in prepared.body) {
+    throw new Error("Expected single upload mode");
+  }
+  storage.upload(
+    prepared.body.uploadUrl,
+    SAMPLE_FILE,
+    "application/pdf",
+    prepared.body.uploadHeaders,
+  );
   await accept(
-    app(owner)(uploadsContract).complete({
-      headers: runHeaders,
+    uploadsClient.complete({
+      headers,
       body: { id: prepared.body.id },
     }),
     [200],
   );
+  const fileId = prepared.body.id;
+  return { artifactId: fileId, fileId };
+}
 
-  const catalog = await accept(
-    app(owner)(artifactCatalogContract).list({ headers, query: {} }),
-    [200],
-  );
-  const matching = catalog.body.artifacts.filter((item) => {
-    return item.title === "run-report.pdf";
+async function publishPrivateSiteArtifact(
+  owner: ApiTestUser,
+): Promise<{ readonly artifactId: string; readonly siteId: string }> {
+  host.captureHostedSitesS3();
+  const slug = `site-${randomUUID().slice(0, 8)}`;
+  const title = `Unified Site ${slug}`;
+  const html = "<h1>Unified Access Site</h1>";
+  const prepared = await host.prepareHostedSite(owner, {
+    site: slug,
+    title,
+    visibility: "private",
+    artifactKind: "hosted-site",
+    spaFallback: false,
+    files: [
+      {
+        path: "/index.html",
+        size: Buffer.byteLength(html),
+        sha256: createHash("sha256").update(html).digest("hex"),
+        contentType: "text/html; charset=utf-8",
+      },
+    ],
   });
-  expect(matching).toHaveLength(1);
-  const artifactId = matching[0]!.id;
+  await host.completeHostedSite(owner, prepared.deploymentId);
+  return { artifactId: prepared.siteId, siteId: prepared.siteId };
+}
 
-  const visibility = await accept(
-    app(owner)(artifactAccessContract).getVisibility({
-      headers,
-      params: { artifactId },
-    }),
-    [200],
-  );
-  expect(visibility.body.artifactId).toBe(artifactId);
-  expect(visibility.body.visibility).toBe("private");
-
-  // Bounded R1 client entity-ID resolution by canonical fileId returns the same artifactId.
-  const byFileId = await accept(
-    app(owner)(artifactAccessContract).getVisibility({
-      headers,
-      params: { artifactId: prepared.body.id },
-    }),
-    [200],
-  );
-  expect(byFileId.body.artifactId).toBe(artifactId);
-  expect(byFileId.body.visibility).toBe("private");
-
-  await accept(
-    app(owner)(artifactAccessContract).updateVisibility({
-      headers,
-      params: { artifactId },
-      body: { visibility: "public" },
-    }),
-    [200],
-  );
-  const updatedCatalog = await accept(
-    app(owner)(artifactCatalogContract).list({ headers, query: {} }),
-    [200],
-  );
-  const updatedItem = updatedCatalog.body.artifacts.find((item) => {
-    return item.id === artifactId;
+describe("Unified artifact access API", () => {
+  beforeAll(async () => {
+    const warmed = await settleIncludingAbort(async () => {
+      context.mocks.clerk.authenticateRequest.mockResolvedValue({
+        isAuthenticated: false,
+      });
+      const warmupId = randomUUID();
+      await Promise.all([
+        accept(
+          accessClient.getVisibility({
+            headers: {},
+            params: { artifactId: warmupId },
+          }),
+          [401],
+        ),
+        accept(
+          accessClient.updateVisibility({
+            headers: {},
+            params: { artifactId: warmupId },
+            body: { visibility: "private" },
+          }),
+          [401],
+        ),
+        accept(
+          accessClient.listShares({
+            headers: {},
+            params: { artifactId: warmupId },
+          }),
+          [401],
+        ),
+        accept(
+          accessClient.searchShareAccounts({
+            headers: {},
+            params: { artifactId: warmupId },
+            query: { query: "wa" },
+          }),
+          [401],
+        ),
+        accept(
+          accessClient.addShare({
+            headers: {},
+            params: { artifactId: warmupId },
+            body: { userId: "user_warmup" },
+          }),
+          [401],
+        ),
+        accept(
+          accessClient.removeShare({
+            headers: {},
+            params: { artifactId: warmupId, userId: "user_warmup" },
+          }),
+          [401],
+        ),
+        accept(
+          uploadsClient.prepare({
+            headers: {},
+            body: {
+              filename: "warmup.pdf",
+              contentType: "application/pdf",
+              size: 16,
+              purpose: "artifact",
+            },
+          }),
+          [401],
+        ),
+        accept(
+          uploadsClient.complete({
+            headers: {},
+            body: { id: warmupId },
+          }),
+          [401],
+        ),
+      ]);
+    });
+    if (!warmed.ok) {
+      throw warmed.error;
+    }
   });
-  expect(updatedItem?.visibility).toBe("public");
+
+  it("pf-158 unified artifact visibility updates file artifacts across private, organization, and public", async () => {
+    const storage = installFileStorage();
+    const owner = await seedMember();
+    const { artifactId } = await uploadPrivateFileArtifact(owner, storage);
+    const headers = signIn(owner);
+
+    const initial = await accept(
+      accessClient.getVisibility({ headers, params: { artifactId } }),
+      [200],
+    );
+    expect(initial.body).toMatchObject({
+      kind: "file",
+      visibility: "private",
+      shareUrl: null,
+      shortUrl: null,
+    });
+    const catalogArtifactId = initial.body.artifactId;
+
+    const orgUpdated = await accept(
+      accessClient.updateVisibility({
+        headers,
+        params: { artifactId: catalogArtifactId },
+        body: { visibility: "organization" },
+      }),
+      [200],
+    );
+    expect(orgUpdated.body.visibility).toBe("organization");
+    expect(orgUpdated.body.shareUrl).toBeTruthy();
+
+    const publicUpdated = await accept(
+      accessClient.updateVisibility({
+        headers,
+        params: { artifactId: catalogArtifactId },
+        body: { visibility: "public" },
+      }),
+      [200],
+    );
+    expect(publicUpdated.body.visibility).toBe("public");
+    expect(publicUpdated.body.shareUrl).toBeTruthy();
+
+    const readPublic = await accept(
+      accessClient.getVisibility({ headers, params: { artifactId } }),
+      [200],
+    );
+    expect(readPublic.body.visibility).toBe("public");
+    expect(readPublic.body.shareUrl).toBeTruthy();
+
+    const backToPrivate = await accept(
+      accessClient.updateVisibility({
+        headers,
+        params: { artifactId },
+        body: { visibility: "private" },
+      }),
+      [200],
+    );
+    expect(backToPrivate.body).toMatchObject({
+      visibility: "private",
+      shareUrl: null,
+      shortUrl: null,
+    });
+
+    const readFinal = await accept(
+      accessClient.getVisibility({ headers, params: { artifactId } }),
+      [200],
+    );
+    expect(readFinal.body.visibility).toBe("private");
+  });
+
+  it("pf-160 unified artifact shares support userId primary path, email fallback, non-member rejection, and DELETE by userId", async () => {
+    const storage = installFileStorage();
+    acceptEmails();
+    const owner = await seedMember();
+    const orgId = owner.orgId ?? "";
+    const [peerA, peerB, outsider] = await Promise.all([
+      seedMember(orgId),
+      seedMember(orgId),
+      seedMember(),
+      updateFeatureSwitchesForUser(
+        context,
+        { userId: owner.userId, orgId, orgRole: owner.orgRole },
+        { [FeatureSwitchKey.ArtifactUserSharing]: true },
+      ),
+    ]);
+    registerClerkDirectory([owner, peerA, peerB, outsider]);
+    const { artifactId } = await uploadPrivateFileArtifact(owner, storage);
+    const headers = signIn(owner);
+
+    const addedByUserId = await accept(
+      accessClient.addShare({
+        headers,
+        params: { artifactId },
+        body: { userId: peerA.userId },
+      }),
+      [200],
+    );
+    expect(addedByUserId.body.share).toMatchObject({
+      userId: peerA.userId,
+      email: peerA.email,
+    });
+
+    const addedByEmail = await accept(
+      accessClient.addShare({
+        headers,
+        params: { artifactId },
+        body: { email: peerB.email },
+      }),
+      [200],
+    );
+    expect(addedByEmail.body.share).toMatchObject({
+      userId: peerB.userId,
+      email: peerB.email,
+    });
+
+    const rejectedOutsider = await accept(
+      accessClient.addShare({
+        headers,
+        params: { artifactId },
+        body: { userId: outsider.userId },
+      }),
+      [400],
+    );
+    expect(rejectedOutsider.status).toBe(400);
+
+    const listedBefore = await accept(
+      accessClient.listShares({ headers, params: { artifactId } }),
+      [200],
+    );
+    expect(
+      listedBefore.body.shares
+        .map((entry) => {
+          return entry.userId;
+        })
+        .sort(),
+    ).toStrictEqual([peerA.userId, peerB.userId].sort());
+
+    const removed = await accept(
+      accessClient.removeShare({
+        headers,
+        params: { artifactId, userId: peerA.userId },
+      }),
+      [200],
+    );
+    expect(removed.body).toStrictEqual({ removed: peerA.userId });
+
+    const listedAfter = await accept(
+      accessClient.listShares({ headers, params: { artifactId } }),
+      [200],
+    );
+    expect(
+      listedAfter.body.shares.map((entry) => {
+        return entry.userId;
+      }),
+    ).toStrictEqual([peerB.userId]);
+    await flushWaitUntilForTest();
+  });
+
+  it("pf-161 unified /shares routes are gated by ArtifactUserSharing independently from HostedSiteEmailSharing", async () => {
+    const storage = installFileStorage();
+    acceptEmails();
+    const owner = await seedMember();
+    const orgId = owner.orgId ?? "";
+    const peer = await seedMember(orgId);
+    registerClerkDirectory([owner, peer]);
+    const { artifactId } = await uploadPrivateFileArtifact(owner, storage);
+
+    await updateFeatureSwitchesForUser(
+      context,
+      { userId: owner.userId, orgId, orgRole: owner.orgRole },
+      {
+        [FeatureSwitchKey.ArtifactUserSharing]: false,
+      },
+    );
+    const headers = signIn(owner);
+    const [listOff, searchOff, addOff, removeOff] = await Promise.all([
+      accept(
+        accessClient.listShares({ headers, params: { artifactId } }),
+        [404],
+      ),
+      accept(
+        accessClient.searchShareAccounts({
+          headers,
+          params: { artifactId },
+          query: { query: peer.email.slice(0, 6) },
+        }),
+        [404],
+      ),
+      accept(
+        accessClient.addShare({
+          headers,
+          params: { artifactId },
+          body: { userId: peer.userId },
+        }),
+        [404],
+      ),
+      accept(
+        accessClient.removeShare({
+          headers,
+          params: { artifactId, userId: peer.userId },
+        }),
+        [404],
+      ),
+    ]);
+    expect([
+      listOff.status,
+      searchOff.status,
+      addOff.status,
+      removeOff.status,
+    ]).toStrictEqual([404, 404, 404, 404]);
+
+    await updateFeatureSwitchesForUser(
+      context,
+      { userId: owner.userId, orgId, orgRole: owner.orgRole },
+      {
+        [FeatureSwitchKey.ArtifactUserSharing]: true,
+      },
+    );
+    const listOn = await accept(
+      accessClient.listShares({
+        headers: signIn(owner),
+        params: { artifactId },
+      }),
+      [200],
+    );
+    const searchOn = await accept(
+      accessClient.searchShareAccounts({
+        headers: signIn(owner),
+        params: { artifactId },
+        query: { query: peer.email.slice(0, 6) },
+      }),
+      [200],
+    );
+    const addOn = await accept(
+      accessClient.addShare({
+        headers: signIn(owner),
+        params: { artifactId },
+        body: { userId: peer.userId },
+      }),
+      [200],
+    );
+    const removeOn = await accept(
+      accessClient.removeShare({
+        headers: signIn(owner),
+        params: { artifactId, userId: peer.userId },
+      }),
+      [200],
+    );
+
+    expect(listOn.body.shares).toStrictEqual([]);
+    expect(
+      searchOn.body.accounts.map((account) => {
+        return account.userId;
+      }),
+    ).toContain(peer.userId);
+    expect(addOn.body.share.userId).toBe(peer.userId);
+    expect(removeOn.body).toStrictEqual({ removed: peer.userId });
+    await flushWaitUntilForTest();
+  });
+
+  it("pf-162 unified artifact visibility and shares manage hosted-site artifacts end-to-end", async () => {
+    acceptEmails();
+    const owner = await seedMember();
+    const orgId = owner.orgId ?? "";
+    const [peer] = await Promise.all([
+      seedMember(orgId),
+      updateFeatureSwitchesForUser(
+        context,
+        { userId: owner.userId, orgId, orgRole: owner.orgRole },
+        {
+          [FeatureSwitchKey.ArtifactUserSharing]: true,
+        },
+      ),
+    ]);
+    registerClerkDirectory([owner, peer]);
+    const { artifactId } = await publishPrivateSiteArtifact(owner);
+    const headers = signIn(owner);
+
+    const initial = await accept(
+      accessClient.getVisibility({ headers, params: { artifactId } }),
+      [200],
+    );
+    expect(initial.body).toMatchObject({
+      kind: "hosted-site",
+      visibility: "private",
+      shareUrl: null,
+    });
+    expect(initial.body.artifactId).toBeTruthy();
+
+    await accept(
+      accessClient.updateVisibility({
+        headers,
+        params: { artifactId },
+        body: { visibility: "organization" },
+      }),
+      [200],
+    );
+
+    const readOrg = await accept(
+      accessClient.getVisibility({ headers, params: { artifactId } }),
+      [200],
+    );
+    expect(readOrg.body.visibility).toBe("organization");
+
+    await accept(
+      accessClient.updateVisibility({
+        headers,
+        params: { artifactId },
+        body: { visibility: "public" },
+      }),
+      [200],
+    );
+
+    const readPublic = await accept(
+      accessClient.getVisibility({ headers, params: { artifactId } }),
+      [200],
+    );
+    expect(readPublic.body.visibility).toBe("public");
+    expect(readPublic.body.shareUrl).toBeTruthy();
+
+    await accept(
+      accessClient.addShare({
+        headers,
+        params: { artifactId },
+        body: { userId: peer.userId },
+      }),
+      [200],
+    );
+    const sharesAfterAdd = await accept(
+      accessClient.listShares({ headers, params: { artifactId } }),
+      [200],
+    );
+    expect(
+      sharesAfterAdd.body.shares.map((share) => {
+        return share.email;
+      }),
+    ).toContain(peer.email);
+
+    await accept(
+      accessClient.removeShare({
+        headers,
+        params: { artifactId, userId: peer.userId },
+      }),
+      [200],
+    );
+    const sharesAfterRemove = await accept(
+      accessClient.listShares({ headers, params: { artifactId } }),
+      [200],
+    );
+    expect(sharesAfterRemove.body.shares).toStrictEqual([]);
+    await flushWaitUntilForTest();
+  });
+
+  it("pf-165 addShare returns 404 for unowned or missing artifacts before membership lookup or quota", async () => {
+    const storage = installFileStorage();
+    acceptEmails();
+    const ownerA = await seedMember();
+    const orgId = ownerA.orgId ?? "";
+    const [ownerB, peer] = await Promise.all([
+      seedMember(orgId),
+      seedMember(orgId),
+    ]);
+    await updateFeatureSwitchesForUser(
+      context,
+      { userId: ownerB.userId, orgId, orgRole: ownerB.orgRole },
+      { [FeatureSwitchKey.ArtifactUserSharing]: true },
+    );
+    registerClerkDirectory([ownerA, ownerB, peer]);
+    const artifactA = await uploadPrivateFileArtifact(ownerA, storage);
+    const artifactB = await uploadPrivateFileArtifact(ownerB, storage);
+
+    const headersB = signIn(ownerB);
+    const missingStatus = await accept(
+      accessClient.addShare({
+        headers: headersB,
+        params: { artifactId: randomUUID() },
+        body: { userId: peer.userId },
+      }),
+      [404],
+    );
+    const foreignStatus = await accept(
+      accessClient.addShare({
+        headers: headersB,
+        params: { artifactId: artifactA.artifactId },
+        body: { userId: peer.userId },
+      }),
+      [404],
+    );
+
+    const ownShare = await accept(
+      accessClient.addShare({
+        headers: headersB,
+        params: { artifactId: artifactB.artifactId },
+        body: { userId: peer.userId },
+      }),
+      [200],
+    );
+
+    expect(missingStatus.status).toBe(404);
+    expect(foreignStatus.status).toBe(404);
+    expect(ownShare.body.share.userId).toBe(peer.userId);
+    await flushWaitUntilForTest();
+  });
+
+  it("pf-171 unified artifact visibility controls file artifacts and reflects immediately in catalog and reference resolution", async () => {
+    const storage = installFileStorage();
+    const owner = await seedMember();
+    const orgId = owner.orgId ?? "";
+    const peer = await seedMember(orgId);
+    const { artifactId, fileId } = await uploadPrivateFileArtifact(
+      owner,
+      storage,
+    );
+    const reference = `${fileId.replace(/-/gu, "")}.pdf`;
+
+    const ownerHeaders = signIn(owner);
+    const initialCatalog = await accept(
+      catalogClient.list({ headers: ownerHeaders, query: {} }),
+      [200],
+    );
+    expect(initialCatalog.body.artifacts[0]?.visibility).toBe("private");
+    await accept(
+      referencesClient.resolve({
+        headers: ownerHeaders,
+        params: { reference },
+        query: {},
+      }),
+      [200],
+    );
+
+    const peerHeaders = signIn(peer);
+    await accept(
+      referencesClient.resolve({
+        headers: peerHeaders,
+        params: { reference },
+        query: {},
+      }),
+      [404],
+    );
+    await accept(referencesClient.publicUrl({ params: { reference } }), [404]);
+
+    await accept(
+      accessClient.updateVisibility({
+        headers: signIn(owner),
+        params: { artifactId },
+        body: { visibility: "organization" },
+      }),
+      [200],
+    );
+    const orgCatalog = await accept(
+      catalogClient.list({ headers: signIn(owner), query: {} }),
+      [200],
+    );
+    expect(orgCatalog.body.artifacts[0]?.visibility).toBe("organization");
+    await accept(
+      referencesClient.resolve({
+        headers: signIn(peer),
+        params: { reference },
+        query: {},
+      }),
+      [200],
+    );
+    await accept(referencesClient.publicUrl({ params: { reference } }), [404]);
+
+    await accept(
+      accessClient.updateVisibility({
+        headers: signIn(owner),
+        params: { artifactId },
+        body: { visibility: "public" },
+      }),
+      [200],
+    );
+    const publicCatalog = await accept(
+      catalogClient.list({ headers: signIn(owner), query: {} }),
+      [200],
+    );
+    expect(publicCatalog.body.artifacts[0]?.visibility).toBe("public");
+    await accept(referencesClient.publicUrl({ params: { reference } }), [200]);
+
+    await accept(
+      accessClient.updateVisibility({
+        headers: signIn(owner),
+        params: { artifactId },
+        body: { visibility: "private" },
+      }),
+      [200],
+    );
+    const privateCatalog = await accept(
+      catalogClient.list({ headers: signIn(owner), query: {} }),
+      [200],
+    );
+    expect(privateCatalog.body.artifacts[0]?.visibility).toBe("private");
+    await accept(
+      referencesClient.resolve({
+        headers: signIn(peer),
+        params: { reference },
+        query: {},
+      }),
+      [404],
+    );
+    await accept(referencesClient.publicUrl({ params: { reference } }), [404]);
+  });
+
+  it("pf-176 unshared user files are owner-only, and library delete soft-deletes artifacts without breaking owner file access", async () => {
+    const storage = installFileStorage();
+    const owner = await seedMember();
+    const orgId = owner.orgId ?? "";
+    const peer = await seedMember(orgId);
+    const { fileId } = await uploadPrivateFileArtifact(owner, storage);
+    const reference = `${fileId.replace(/-/gu, "")}.pdf`;
+
+    const beforeCatalog = await accept(
+      catalogClient.list({ headers: signIn(owner), query: {} }),
+      [200],
+    );
+    const entry = beforeCatalog.body.artifacts[0];
+    expect(entry).toBeDefined();
+    if (!entry) {
+      throw new Error("Expected uploaded file in owner library catalog");
+    }
+
+    await accept(
+      referencesClient.resolve({
+        headers: signIn(peer),
+        params: { reference },
+        query: {},
+      }),
+      [404],
+    );
+
+    const deleted = await accept(
+      catalogClient.delete({
+        headers: signIn(owner),
+        params: { artifactId: entry.id },
+      }),
+      [200],
+    );
+    expect(deleted.body).toStrictEqual({ deleted: true });
+
+    const afterCatalog = await accept(
+      catalogClient.list({ headers: signIn(owner), query: {} }),
+      [200],
+    );
+    expect(afterCatalog.body.artifacts).toStrictEqual([]);
+    await accept(
+      catalogClient.get({
+        headers: signIn(owner),
+        params: { artifactId: entry.id },
+      }),
+      [404],
+    );
+
+    const ownerStillReads = await accept(
+      referencesClient.resolve({
+        headers: signIn(owner),
+        params: { reference },
+        query: {},
+      }),
+      [200],
+    );
+    expect(ownerStillReads.body.target).toStrictEqual({
+      kind: "file",
+      id: fileId,
+    });
+    expect(ownerStillReads.body.artifactId).toBeUndefined();
+    await accept(
+      referencesClient.resolve({
+        headers: signIn(peer),
+        params: { reference },
+        query: {},
+      }),
+      [404],
+    );
+  });
 });

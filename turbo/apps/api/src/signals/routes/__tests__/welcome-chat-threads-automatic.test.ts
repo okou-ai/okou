@@ -1,215 +1,254 @@
-import { describe, expect, it } from "vitest";
+import { randomUUID } from "node:crypto";
 
-import { testContext } from "../../../__tests__/test-context";
+import { onboardingStatusContract } from "@okouai/api-contracts/contracts/onboarding";
+import {
+  chatThreadByIdContract,
+  chatThreadEventsContract,
+  chatThreadMetadataContract,
+  chatThreadsContract,
+} from "@okouai/api-contracts/contracts/chat-threads";
+import { userPreferencesContract } from "@okouai/api-contracts/contracts/user-preferences";
+
+import { accept, testContext } from "../../../__tests__/test-context";
+import { setupApp } from "../../../__tests__/test-helpers";
 import { now } from "../../../lib/time";
 import { flushWaitUntilForTest } from "../../context/wait-until";
-import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
-import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
-import {
-  createWebhookCallbackApi,
-  deliverOrganizationCreated,
-} from "./helpers/api-bdd-webhooks";
+import { chatThreadRoutes } from "../chat-threads";
+import { onboardingStatusRoutes } from "../onboarding-status";
+import { userPreferencesRoutes } from "../user-preferences";
+import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
+import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
-const bdd = createBddApi(context);
-const chat = createChatFilesBddApi(context);
-const webhooks = createWebhookCallbackApi(context);
+const headers = Object.freeze({ authorization: "Bearer clerk-session" });
 
-async function createdThreadIds(
-  actor: ApiTestUser,
-): Promise<readonly string[]> {
-  const response = await chat.requestThreadEvents(actor, {}, [200]);
-  if (response.status !== 200) {
-    throw new Error("Expected chat thread lifecycle events");
-  }
-  return response.body.events.flatMap((event) => {
-    return event.kind === "created" ? [event.chatThreadId] : [];
+interface Member {
+  readonly userId: string;
+  readonly orgId: string;
+}
+
+function newMember(orgId = `org_${randomUUID()}`): Member {
+  return { userId: `user_${randomUUID()}`, orgId };
+}
+
+function signIn(
+  member: Member,
+  role: "org:admin" | "org:member" = "org:member",
+) {
+  createRouteMocks(context).clerk.session(member.userId, member.orgId, role);
+  return setupApp({
+    context,
+    routes: [
+      ...chatThreadRoutes,
+      ...onboardingStatusRoutes,
+      ...userPreferencesRoutes,
+    ],
   });
 }
 
-async function onlyCreatedThreadId(actor: ApiTestUser): Promise<string> {
-  const threadIds = await createdThreadIds(actor);
-  expect(threadIds).toHaveLength(1);
-  const [threadId] = threadIds;
-  if (!threadId) {
+function membershipCreated(member: Member) {
+  return {
+    type: "organizationMembership.created",
+    data: {
+      id: `orgmem_${randomUUID()}`,
+      role: "org:member",
+      created_at: now(),
+      organization: { id: member.orgId },
+      public_user_data: { user_id: member.userId },
+    },
+  } as const;
+}
+
+/** Clerk delivers one signed webhook per event; verification is the SDK boundary. */
+async function deliver(
+  events: readonly (
+    | ReturnType<typeof membershipCreated>
+    | {
+        readonly type: "organization.created";
+        readonly data: Record<string, unknown>;
+      }
+  )[],
+) {
+  const webhooks = createWebhookCallbackApi(context);
+  webhooks.configureClerkWebhookSecret();
+  for (const event of events) {
+    webhooks.verifyNextClerkWebhook(event);
+  }
+  const responses = await Promise.all(
+    events.map(() => {
+      return webhooks.requestClerkWebhook("{}", {}, [200]);
+    }),
+  );
+  await flushWaitUntilForTest();
+  return responses;
+}
+
+async function createdThreadIds(member: Member): Promise<string[]> {
+  const feed = await accept(
+    signIn(member)(chatThreadsContract).events({ headers, query: {} }),
+    [200],
+  );
+  return feed.body.events
+    .filter((event) => {
+      return event.kind === "created";
+    })
+    .map((event) => {
+      return event.chatThreadId;
+    });
+}
+
+async function eventRows(member: Member, threadId: string) {
+  const rows = await accept(
+    signIn(member)(chatThreadEventsContract).rows({
+      headers,
+      params: { threadId },
+      query: { sinceSeqId: 0 },
+    }),
+    [200],
+  );
+  return rows.body.rows;
+}
+
+async function metadataId(member: Member, threadId: string) {
+  const read = await accept(
+    signIn(member)(chatThreadMetadataContract).get({
+      headers,
+      params: { id: threadId },
+    }),
+    [200],
+  );
+  return read.body.id;
+}
+
+async function onlyThread(member: Member): Promise<string> {
+  const ids = await createdThreadIds(member);
+  expect(ids).toHaveLength(1);
+  const [threadId] = ids;
+  if (threadId === undefined) {
     throw new Error("Expected one created thread");
   }
   return threadId;
 }
 
-function membershipEvent(actor: ApiTestUser): void {
-  if (!actor.orgId) {
-    throw new Error("Expected a workspace");
-  }
-  webhooks.configureClerkWebhookSecret();
-  webhooks.verifyNextClerkWebhook({
-    type: "organizationMembership.created",
-    data: {
-      id: `membership-${actor.userId}-${actor.orgId}`,
-      organization: { id: actor.orgId },
-      public_user_data: { user_id: actor.userId },
-      role: actor.orgRole ?? "org:member",
-      created_at: now(),
-    },
-  });
-}
-
-async function deliverMembershipCreated(actor: ApiTestUser): Promise<void> {
-  membershipEvent(actor);
-  await webhooks.requestClerkWebhook("{}", {}, [200]);
-  await flushWaitUntilForTest();
-}
-
-async function welcomeEvents(actor: ApiTestUser, threadId: string) {
-  return await chat.listThreadEventRows(actor, threadId);
-}
-
 describe("automatic welcome thread delivery", () => {
-  it("delivers one welcome thread to an invited member", async () => {
-    const admin = bdd.user();
-    const member = bdd.user({ orgId: admin.orgId, orgRole: "org:member" });
-    await deliverMembershipCreated(member);
+  it("welcome-chat-threads-automatic-001 delivers one welcome thread to an invited member", async () => {
+    const admin = newMember();
+    const member = newMember(admin.orgId);
 
-    const threadId = await onlyCreatedThreadId(member);
-    const metadata = await chat.readThreadMetadata(member, threadId);
-    expect(metadata.id).toBe(threadId);
-    const rows = await welcomeEvents(member, threadId);
-    expect(rows).toMatchObject([
-      { seqId: 1, eventType: "output.message", runId: null },
-    ]);
+    await deliver([membershipCreated(member)]);
+
+    const threadId = await onlyThread(member);
+    await expect(metadataId(member, threadId)).resolves.toBe(threadId);
+    const rows = await eventRows(member, threadId);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      eventType: "output.message",
+      seqId: 1,
+      runId: null,
+    });
   });
 
-  it("delivers personal Instructions guidance to each invited member", async () => {
-    const admin = bdd.user();
-    const firstMember = bdd.user({ orgId: admin.orgId, orgRole: "org:member" });
-    const secondMember = bdd.user({
-      orgId: admin.orgId,
-      orgRole: "org:member",
-    });
+  it("welcome-chat-threads-automatic-003 delivers a separate welcome in each workspace", async () => {
+    const first = newMember();
+    const second = { userId: first.userId, orgId: `org_${randomUUID()}` };
 
-    await deliverMembershipCreated(firstMember);
-    await deliverMembershipCreated(secondMember);
+    await deliver([membershipCreated(first)]);
+    await deliver([membershipCreated(second)]);
 
-    const firstThreadId = await onlyCreatedThreadId(firstMember);
-    const secondThreadId = await onlyCreatedThreadId(secondMember);
-    expect(secondThreadId).not.toBe(firstThreadId);
-    await expect(
-      welcomeEvents(firstMember, firstThreadId),
-    ).resolves.toHaveLength(1);
-    await expect(
-      welcomeEvents(secondMember, secondThreadId),
-    ).resolves.toHaveLength(1);
-    expect(
-      (await welcomeEvents(firstMember, firstThreadId))[0]?.payload?.content,
-    ).toContain("**Your preferences belong in personal Instructions.**");
-    expect(
-      (await welcomeEvents(secondMember, secondThreadId))[0]?.payload?.content,
-    ).toContain("**Your preferences belong in personal Instructions.**");
+    const firstThread = await onlyThread(first);
+    const secondThread = await onlyThread(second);
+    expect(firstThread).not.toBe(secondThread);
+    for (const [member, threadId] of [
+      [first, firstThread],
+      [second, secondThread],
+    ] as const) {
+      const rows = await eventRows(member, threadId);
+      expect(rows).toHaveLength(1);
+      expect(rows[0]?.payload?.content).toContain(
+        "**Your preferences belong in personal Instructions.**",
+      );
+    }
   });
 
-  it("delivers a separate welcome to the same member in each workspace", async () => {
-    const firstAdmin = bdd.user();
-    const secondAdmin = bdd.user();
-    const firstMembership = bdd.user({
-      orgId: firstAdmin.orgId,
-      orgRole: "org:member",
-    });
-    const secondMembership = bdd.user({
-      userId: firstMembership.userId,
-      orgId: secondAdmin.orgId,
-      orgRole: "org:member",
-    });
+  it("welcome-chat-threads-automatic-004 delivers the workspace creator's welcome from organization.created", async () => {
+    const creator = newMember();
 
-    await deliverMembershipCreated(firstMembership);
-    await deliverMembershipCreated(secondMembership);
-
-    const firstThreadId = await onlyCreatedThreadId(firstMembership);
-    const secondThreadId = await onlyCreatedThreadId(secondMembership);
-    expect(secondThreadId).not.toBe(firstThreadId);
-    expect(
-      (await welcomeEvents(firstMembership, firstThreadId))[0]?.payload
-        ?.content,
-    ).toContain("**Your preferences belong in personal Instructions.**");
-    expect(
-      (await welcomeEvents(secondMembership, secondThreadId))[0]?.payload
-        ?.content,
-    ).toContain("**Your preferences belong in personal Instructions.**");
-    await expect(
-      welcomeEvents(firstMembership, firstThreadId),
-    ).resolves.toHaveLength(1);
-    await expect(
-      welcomeEvents(secondMembership, secondThreadId),
-    ).resolves.toHaveLength(1);
-  });
-
-  it.each([
-    {
-      registration: "organization.created",
-      deliver: (actor: ApiTestUser) => {
-        return deliverOrganizationCreated(context, actor);
+    await deliver([
+      {
+        type: "organization.created",
+        data: {
+          id: creator.orgId,
+          created_by: creator.userId,
+          created_at: now(),
+        },
       },
-    },
-    {
-      registration: "organizationMembership.created",
-      deliver: deliverMembershipCreated,
-    },
-  ])(
-    "delivers a workspace creator's welcome from $registration",
-    async ({ deliver }) => {
-      const creator = bdd.user();
-      bdd.acceptStorageWrites();
-      await deliver(creator);
-
-      const threadId = await onlyCreatedThreadId(creator);
-      await expect(
-        chat.readThreadMetadata(creator, threadId),
-      ).resolves.toMatchObject({ id: threadId });
-      await expect(welcomeEvents(creator, threadId)).resolves.toHaveLength(1);
-    },
-  );
-
-  it("keeps one thread across a redelivered event and two concurrent deliveries", async () => {
-    const admin = bdd.user();
-    const member = bdd.user({ orgId: admin.orgId, orgRole: "org:member" });
-    // Two deliveries in flight at once.
-    membershipEvent(member);
-    membershipEvent(member);
-    await Promise.all([
-      webhooks.requestClerkWebhook("{}", {}, [200]),
-      webhooks.requestClerkWebhook("{}", {}, [200]),
     ]);
-    await flushWaitUntilForTest();
-    const threadId = await onlyCreatedThreadId(member);
-    await expect(welcomeEvents(member, threadId)).resolves.toHaveLength(1);
 
-    // A mode/locale change must not change delivery identity or persisted copy.
-    const rows = await welcomeEvents(member, threadId);
-
-    await bdd.updateUserLocale(member, "zh-Hans");
-    await deliverMembershipCreated(member);
-    await expect(welcomeEvents(member, threadId)).resolves.toStrictEqual(rows);
-    await expect(createdThreadIds(member)).resolves.toStrictEqual([threadId]);
-    await expect(welcomeEvents(member, threadId)).resolves.toHaveLength(1);
-    await expect(
-      chat.readThreadMetadata(member, threadId),
-    ).resolves.toMatchObject({ id: threadId });
+    const threadId = await onlyThread(creator);
+    await expect(metadataId(creator, threadId)).resolves.toBe(threadId);
+    await expect(eventRows(creator, threadId)).resolves.toHaveLength(1);
   });
 
-  it("never delivers again after the recipient deletes the thread", async () => {
-    const admin = bdd.user();
-    const member = bdd.user({ orgId: admin.orgId, orgRole: "org:member" });
-    await deliverMembershipCreated(member);
-    const threadId = await onlyCreatedThreadId(member);
-    await chat.requestDeleteThread(member, threadId, [204]);
+  it("welcome-chat-threads-automatic-006 keeps one thread across concurrent deliveries and a redelivery", async () => {
+    const admin = newMember();
+    const member = newMember(admin.orgId);
+    const event = membershipCreated(member);
 
-    // Ordinary app entry. The trigger is the registration event alone: nothing
-    // on this path re-checks whether the recipient still has a welcome.
-    await bdd.readOnboardingStatus(member);
-    await chat.getThreadSnapshot(member);
+    const concurrent = await deliver([event, event]);
+    expect(
+      concurrent.map((response) => {
+        return response.status;
+      }),
+    ).toStrictEqual([200, 200]);
+    const threadId = await onlyThread(member);
+    const rows = await eventRows(member, threadId);
+    expect(rows).toHaveLength(1);
+
+    await accept(
+      signIn(member)(userPreferencesContract).update({
+        headers,
+        body: { locale: "zh-Hans" },
+      }),
+      [200],
+    );
+    await deliver([event]);
+
+    await expect(eventRows(member, threadId)).resolves.toStrictEqual(rows);
+    await expect(onlyThread(member)).resolves.toBe(threadId);
+    await expect(metadataId(member, threadId)).resolves.toBe(threadId);
+  });
+
+  it("welcome-chat-threads-automatic-007 never brings back a welcome thread the member deleted", async () => {
+    const admin = newMember();
+    const member = newMember(admin.orgId);
+    await deliver([membershipCreated(member)]);
+    const threadId = await onlyThread(member);
+    await accept(
+      signIn(member)(chatThreadByIdContract).delete({
+        headers,
+        params: { id: threadId },
+        body: undefined,
+      }),
+      [204],
+    );
+
+    await accept(
+      signIn(member)(onboardingStatusContract).getStatus({ headers }),
+      [200],
+    );
+    await accept(
+      signIn(member)(chatThreadsContract).snapshot({ headers }),
+      [200],
+    );
+    await flushWaitUntilForTest();
+
     await expect(createdThreadIds(member)).resolves.toStrictEqual([threadId]);
-
-    await expect(
-      chat.requestReadThread(member, threadId, [404]),
-    ).resolves.toMatchObject({ status: 404 });
+    await accept(
+      signIn(member)(chatThreadByIdContract).get({
+        headers,
+        params: { id: threadId },
+      }),
+      [404],
+    );
   });
 });

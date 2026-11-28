@@ -1,7 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { describe, expect, it } from "vitest";
-import { HttpResponse, http } from "msw";
-
+import { http, HttpResponse } from "msw";
 import {
   personalModelProviderAccountsByIdContract,
   personalModelProvidersByTypeContract,
@@ -10,1268 +8,610 @@ import {
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { server } from "../../../mocks/server";
 import { mockNow, now } from "../../../lib/time";
-import { createRouteMocks } from "./helpers/route-test";
-import { meModelProviderAccountRoutes } from "../me-model-provider-accounts";
-import { meModelProvidersDeleteRoutes } from "../me-model-providers-delete";
+import { server } from "../../../mocks/server";
 import { meModelProvidersListRoutes } from "../me-model-providers-list";
-import { meModelProvidersResetSubscriptionRoutes } from "../me-model-providers-reset-subscription";
 import { meModelProvidersUpsertRoutes } from "../me-model-providers-upsert";
+import { meModelProvidersResetSubscriptionRoutes } from "../me-model-providers-reset-subscription";
+import { meModelProviderAccountRoutes } from "../me-model-provider-accounts";
+import { createRouteMocks } from "./helpers/route-test";
+import {
+  createCodexExpiryFixture,
+  credentials,
+  detailsUrl,
+  headers,
+  jwt,
+} from "./helpers/codex-reset-credit-expiry";
 
-const personalModelProvidersMainTestRoutes = Object.freeze([
+const context = testContext();
+const mocks = createRouteMocks(context);
+const codexFixture = createCodexExpiryFixture(context);
+const routes = Object.freeze([
   ...meModelProvidersListRoutes,
   ...meModelProvidersUpsertRoutes,
 ]);
 
-const personalModelProvidersByTypeTestRoutes = Object.freeze([
-  ...meModelProvidersDeleteRoutes,
-  ...meModelProvidersResetSubscriptionRoutes,
-]);
+const CODEX_USAGE_URL = "https://chatgpt.com/backend-api/wham/usage";
+const CODEX_CONSUME_URL =
+  "https://chatgpt.com/backend-api/wham/rate-limit-reset-credits/consume";
+const CODEX_REFRESH_URL = "https://auth.openai.com/oauth/token";
+const FIVE_HOURS = 5 * 60 * 60;
+const WEEK = 7 * 24 * 60 * 60;
 
-const personalModelProviderAccountsByIdTestRoutes = Object.freeze([
-  ...meModelProviderAccountRoutes,
-]);
-
-const context = testContext();
-const mocks = createRouteMocks(context);
-
-interface UserModelProviderFixture {
-  readonly orgId: string;
-  readonly userId: string;
+interface CodexProvider {
+  usageTokens: (string | null)[];
+  usageAccounts: (string | null)[];
+  refreshTokens: unknown[];
+  consumed: {
+    bearer: string | null;
+    accountId: string | null;
+    body: unknown;
+  }[];
 }
 
-function uniqueOrgUser(prefix: string): UserModelProviderFixture {
+function codexProvider(options: {
+  usage?: (call: number) => Response;
+  refresh?: () => Response;
+}): CodexProvider {
+  const seen: CodexProvider = {
+    usageTokens: [],
+    usageAccounts: [],
+    refreshTokens: [],
+    consumed: [],
+  };
+  server.use(
+    http.get(CODEX_USAGE_URL, ({ request }) => {
+      seen.usageTokens.push(request.headers.get("authorization"));
+      seen.usageAccounts.push(request.headers.get("chatgpt-account-id"));
+      return options.usage
+        ? options.usage(seen.usageTokens.length)
+        : HttpResponse.json({ plan_type: "pro" });
+    }),
+    http.post(CODEX_REFRESH_URL, async ({ request }) => {
+      const body = (await request.json()) as { refresh_token?: unknown };
+      seen.refreshTokens.push(body.refresh_token);
+      return options.refresh
+        ? options.refresh()
+        : HttpResponse.json({ error: "unexpected" }, { status: 500 });
+    }),
+    http.post(CODEX_CONSUME_URL, async ({ request }) => {
+      seen.consumed.push({
+        bearer: request.headers.get("authorization"),
+        accountId: request.headers.get("chatgpt-account-id"),
+        body: await request.json(),
+      });
+      return HttpResponse.json({ code: "reset", windows_reset: 1 });
+    }),
+  );
+  return seen;
+}
+
+function usageBody() {
+  const fiveHourReset = Math.floor(now() / 1000) + 3600;
+  const weeklyReset = Math.floor(now() / 1000) + 3 * 24 * 3600;
   return {
-    orgId: `org_${prefix}_${randomUUID().slice(0, 8)}`,
-    userId: `user_${prefix}_${randomUUID().slice(0, 8)}`,
+    fiveHourReset,
+    weeklyReset,
+    body: {
+      plan_type: "pro",
+      rate_limit: {
+        primary_window: {
+          used_percent: 25,
+          limit_window_seconds: FIVE_HOURS,
+          reset_at: fiveHourReset,
+        },
+        secondary_window: {
+          used_percent: 40,
+          limit_window_seconds: WEEK,
+          reset_at: weeklyReset,
+        },
+      },
+    },
   };
 }
 
-// ===========================================================================
-// JWT helpers ported inline from the model-providers route test in the
-// removed `apps/web` app. That file no longer exists in the tree, so there
-// is nothing left to keep in sync. Used by codex-oauth tests.
-// ===========================================================================
-
-function base64UrlEncode(input: string): string {
-  return Buffer.from(input, "utf8")
-    .toString("base64")
-    .replace(/\+/g, "-")
-    .replace(/\//g, "_")
-    .replace(/=+$/, "");
+function expiredCredentials() {
+  return credentials(
+    randomUUID(),
+    jwt({ exp: Math.floor(now() / 1000) - 3600, jti: randomUUID() }),
+  );
 }
 
-function makeJwt(payload: Record<string, unknown>): string {
-  const header = base64UrlEncode(JSON.stringify({ alg: "RS256", typ: "JWT" }));
-  const body = base64UrlEncode(JSON.stringify(payload));
-  return `${header}.${body}.fake-signature`;
-}
-
-function makeIdToken(opts: {
-  accountId: string;
-  planType: string;
-  email?: string;
-  workspaceName?: string;
-}): string {
-  const auth: Record<string, unknown> = {
-    chatgpt_account_id: opts.accountId,
-    chatgpt_plan_type: opts.planType,
-  };
-  if (opts.workspaceName !== undefined) {
-    auth.organization = { title: opts.workspaceName };
-  }
-  return makeJwt({
-    email: opts.email ?? "codex.user@example.com",
-    "https://api.openai.com/auth": auth,
+function freshTokens() {
+  const accessToken = jwt({
     exp: Math.floor(now() / 1000) + 3600,
+    jti: randomUUID(),
   });
-}
-
-function makeAuthJsonFixture(
-  overrides: {
-    readonly accessExpiresInSeconds?: number;
-    readonly accountId?: string;
-    readonly planType?: string;
-    readonly refreshToken?: string;
-  } = {},
-): {
-  readonly accessToken: string;
-  readonly accountId: string;
-  readonly raw: string;
-  readonly refreshToken: string;
-} {
-  const accountId = overrides.accountId ?? "ws_acct_from_id_token_personal";
-  const accessToken = makeJwt({
-    exp: Math.floor(now() / 1000) + (overrides.accessExpiresInSeconds ?? 7200),
-  });
-  const refreshToken =
-    overrides.refreshToken ?? "rt_personal_synthetic_high_entropy";
   return {
     accessToken,
-    accountId,
-    refreshToken,
-    raw: JSON.stringify({
-      OPENAI_API_KEY: null,
-      tokens: {
+    response: () => {
+      return HttpResponse.json({
         access_token: accessToken,
-        refresh_token: refreshToken,
-        account_id: "ws_acct_plain",
-        id_token: makeIdToken({
-          accountId,
-          planType: overrides.planType ?? "plus",
-          workspaceName: "Personal Acme",
-        }),
+        refresh_token: `rotated-${randomUUID()}`,
+        expires_in: 3600,
+      });
+    },
+  };
+}
+
+function storedRefreshToken(auth: ReturnType<typeof credentials>) {
+  const parsed = JSON.parse(auth.raw) as { tokens: { refresh_token: string } };
+  return parsed.tokens.refresh_token;
+}
+
+async function importCodex(raw: string) {
+  const client = member();
+  const created = await client.upsert({
+    headers,
+    body: {
+      type: "codex-oauth-token",
+      authMethod: "auth_json",
+      secrets: { CODEX_AUTH_JSON: raw },
+    },
+  });
+  const list = async () => {
+    const result = await accept(client.list({ headers }), [200]);
+    return result.body.modelProviders;
+  };
+  return { created: await accept(Promise.resolve(created), [201]), list };
+}
+
+async function resetByType(idempotencyKey: string) {
+  return await setupApp({
+    context,
+    routes: meModelProvidersResetSubscriptionRoutes,
+  })(personalModelProvidersByTypeContract).resetSubscriptionUsage({
+    headers,
+    params: { type: "codex-oauth-token" },
+    body: { idempotencyKey },
+  });
+}
+
+function member() {
+  const userId = `user_upsert_${randomUUID()}`;
+  const orgId = `org_upsert_${randomUUID()}`;
+  mocks.clerk.session(userId, orgId);
+  return setupApp({ context, routes })(personalModelProvidersMainContract);
+}
+
+function claudeProfile(profile: Record<string, unknown>) {
+  server.use(
+    http.get("https://api.anthropic.com/api/oauth/profile", () => {
+      return HttpResponse.json(profile);
+    }),
+    http.get("https://api.anthropic.com/api/oauth/usage", () => {
+      return HttpResponse.json({});
+    }),
+  );
+}
+
+function codexAuthJson(tokens: Record<string, unknown>) {
+  return JSON.stringify({ tokens });
+}
+
+test("me-model-providers-upsert-003 creates a personal Claude Code OAuth provider", async () => {
+  claudeProfile({});
+  const client = member();
+
+  const result = await accept(
+    client.upsert({
+      headers,
+      body: {
+        type: "claude-code-oauth-token",
+        secret: `sk-ant-oat01-${randomUUID()}`,
       },
     }),
-  };
-}
+    [201],
+  );
 
-function makeAuthJson(overrides?: { readonly planType?: string }): string {
-  return makeAuthJsonFixture(overrides).raw;
-}
-
-function codexUsageResponse() {
-  return {
-    plan_type: "pro",
-    rate_limit: {
-      primary_window: {
-        limit_window_seconds: 18_000,
-        reset_at: 1_893_441_600,
-        used_percent: 25,
-      },
-      secondary_window: {
-        limit_window_seconds: 604_800,
-        reset_at: 1_893_456_000,
-        used_percent: 40,
-      },
-    },
-    rate_limit_reset_credits: {
-      available_count: 3,
-    },
-  };
-}
-
-describe("POST /api/me/model-providers (upsert)", () => {
-  it("returns 401 when unauthenticated", async () => {
-    const client = setupApp({
-      context,
-      routes: personalModelProvidersMainTestRoutes,
-    })(personalModelProvidersMainContract);
-    const response = await accept(
-      client.upsert({
-        body: { type: "claude-code-oauth-token", secret: "sk-ant-test" },
-        headers: {},
-      }),
-      [401],
-    );
-    expect(response.body).toMatchObject({ error: { code: "UNAUTHORIZED" } });
+  expect(result.body).toMatchObject({
+    created: true,
+    provider: { type: "claude-code-oauth-token", framework: "claude-code" },
   });
+});
 
-  it("returns 401 when authenticated session has no organization", async () => {
-    mocks.clerk.session(`user_${randomUUID()}`, null);
-    const client = setupApp({
-      context,
-      routes: personalModelProvidersMainTestRoutes,
-    })(personalModelProvidersMainContract);
-    const response = await accept(
-      client.upsert({
-        body: { type: "claude-code-oauth-token", secret: "sk-ant-test" },
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [401],
-    );
-    expect(response.body).toMatchObject({ error: { code: "UNAUTHORIZED" } });
+test("me-model-providers-upsert-004 shows a Claude Max 5x account as plan max", async () => {
+  claudeProfile({
+    account: { uuid: randomUUID(), email: "max@example.com" },
+    organization: {
+      uuid: randomUUID(),
+      name: "Max Workspace",
+      organization_type: "claude_max",
+      rate_limit_tier: "default_claude_max_5x",
+    },
   });
+  const client = member();
 
-  it("creates a single-secret personal provider", async () => {
-    const fixture = uniqueOrgUser("zmmp-single-create");
-    mocks.clerk.session(fixture.userId, fixture.orgId);
-
-    const client = setupApp({
-      context,
-      routes: personalModelProvidersMainTestRoutes,
-    })(personalModelProvidersMainContract);
-    const response = await accept(
-      client.upsert({
-        body: { type: "claude-code-oauth-token", secret: "sk-ant-test" },
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [201],
-    );
-    expect(response.body).toMatchObject({
-      provider: {
+  const created = await accept(
+    client.upsert({
+      headers,
+      body: {
         type: "claude-code-oauth-token",
-        framework: "claude-code",
+        secret: `sk-ant-oat01-${randomUUID()}`,
       },
-      created: true,
-    });
+    }),
+    [201],
+  );
+  const listed = await accept(client.list({ headers }), [200]);
+
+  expect(created.body.provider.planType).toBe("max");
+  expect(listed.body.modelProviders).toHaveLength(1);
+  expect(listed.body.modelProviders[0]?.planType).toBe("max");
+});
+
+test("me-model-providers-upsert-006 reuses a legacy Claude account after recovering its uuid identity", async () => {
+  const legacySecret = `sk-ant-oat01-${randomUUID()}`;
+  const replacementSecret = `sk-ant-oat01-${randomUUID()}`;
+  const accountUuid = randomUUID();
+  const organizationUuid = randomUUID();
+  let profileAvailable = false;
+  server.use(
+    http.get("https://api.anthropic.com/api/oauth/profile", ({ request }) => {
+      if (!profileAvailable) {
+        return HttpResponse.json({ error: "unavailable" }, { status: 503 });
+      }
+      const legacy =
+        request.headers.get("authorization") === `Bearer ${legacySecret}`;
+      return HttpResponse.json({
+        account: {
+          uuid: accountUuid,
+          email: legacy ? "old-name@example.com" : "claude@example.com",
+          has_claude_pro: true,
+        },
+        organization: {
+          uuid: organizationUuid,
+          name: legacy ? "Old Workspace" : "Recovered Workspace",
+          organization_type: "claude_pro",
+        },
+      });
+    }),
+    http.get("https://api.anthropic.com/api/oauth/usage", () => {
+      return HttpResponse.json({});
+    }),
+  );
+  const client = member();
+  mockNow(Date.parse("2026-03-01T00:00:00.000Z"));
+  const legacy = await accept(
+    client.upsert({
+      headers,
+      body: { type: "claude-code-oauth-token", secret: legacySecret },
+    }),
+    [201],
+  );
+  expect(legacy.body.provider).toMatchObject({
+    accountEmail: null,
+    workspaceName: null,
   });
 
-  it.each([
-    ["default_claude_max_5x", "max"],
-    ["default_claude_max_20x", "ultra"],
-  ] as const)(
-    "names a Claude Max account on the %s tier as %s",
-    async (rateLimitTier, planType) => {
-      const fixture = uniqueOrgUser("zmmp-claude-max-plan");
-      mocks.clerk.session(fixture.userId, fixture.orgId);
-      server.use(
-        http.get("https://api.anthropic.com/api/oauth/profile", () => {
-          return HttpResponse.json({
-            account: {
-              uuid: randomUUID(),
-              email: `max.claude.${randomUUID()}@example.com`,
-              has_claude_max: true,
-            },
-            organization: {
-              uuid: randomUUID(),
-              name: "Claude Max Workspace",
-              organization_type: "claude_max",
-              rate_limit_tier: rateLimitTier,
-            },
-          });
-        }),
-        http.get("https://api.anthropic.com/api/oauth/usage", () => {
-          return HttpResponse.json({});
-        }),
-      );
-
-      const client = setupApp({
-        context,
-        routes: personalModelProvidersMainTestRoutes,
-      })(personalModelProvidersMainContract);
-      const created = await accept(
-        client.upsert({
-          body: {
-            type: "claude-code-oauth-token",
-            secret: "sk-ant-oat-max-plan",
-          },
-          headers: { authorization: "Bearer clerk-session" },
-        }),
-        [201],
-      );
-      expect(created.body.provider).toMatchObject({ planType });
-
-      const listed = await accept(
-        client.list({ headers: { authorization: "Bearer clerk-session" } }),
-        [200],
-      );
-      expect(listed.body.modelProviders).toMatchObject([{ planType }]);
-    },
+  profileAvailable = true;
+  mockNow(Date.parse("2026-03-02T00:00:00.000Z"));
+  const replaced = await accept(
+    client.upsert({
+      headers,
+      body: { type: "claude-code-oauth-token", secret: replacementSecret },
+    }),
+    [200],
   );
+  const listed = await accept(client.list({ headers }), [200]);
 
-  it.each(["uuid", "email-workspace"] as const)(
-    "reuses a legacy Claude account after recovering its %s identity",
-    async (identityKind) => {
-      mockNow(new Date("2026-10-16T06:00:00Z"));
-      const fixture = uniqueOrgUser("zmmp-claude-identity");
-      const accountUuid = randomUUID();
-      const organizationUuid = randomUUID();
-      const previousEmail = `previous.claude.${accountUuid}@example.com`;
-      const recoveredEmail = `legacy.claude.${accountUuid}@example.com`;
-      mocks.clerk.session(fixture.userId, fixture.orgId);
-      server.use(
-        http.get("https://api.anthropic.com/api/oauth/profile", () => {
-          return new HttpResponse(null, { status: 503 });
-        }),
-      );
-      const app = setupApp({
-        context,
-        routes: personalModelProvidersMainTestRoutes,
-      });
-      const client = app(personalModelProvidersMainContract);
-      const original = await accept(
-        client.upsert({
-          body: {
-            type: "claude-code-oauth-token",
-            secret: "sk-ant-oat-legacy-identity",
-          },
-          headers: { authorization: "Bearer clerk-session" },
-        }),
-        [201],
-      );
-      expect(original.body.provider).toMatchObject({
-        accountEmail: null,
-        workspaceName: null,
-      });
+  expect(replaced.body.created).toBeFalsy();
+  expect(replaced.body.provider).toMatchObject({
+    id: legacy.body.provider.id,
+    modelProviderId: legacy.body.provider.modelProviderId,
+    createdAt: legacy.body.provider.createdAt,
+    updatedAt: "2026-03-02T00:00:00.000Z",
+    accountEmail: "claude@example.com",
+    workspaceName: "Recovered Workspace",
+    planType: "pro",
+    isActive: true,
+  });
+  expect(
+    listed.body.modelProviders.map(({ id, accountEmail }) => {
+      return { id, accountEmail };
+    }),
+  ).toStrictEqual([
+    { id: legacy.body.provider.id, accountEmail: "claude@example.com" },
+  ]);
+});
 
-      server.use(
-        http.get(
-          "https://api.anthropic.com/api/oauth/profile",
-          ({ request }) => {
-            const previousProfile =
-              identityKind === "uuid" &&
-              request.headers.get("authorization") ===
-                "Bearer sk-ant-oat-legacy-identity";
-            return HttpResponse.json({
-              account: {
-                uuid: identityKind === "uuid" ? accountUuid : null,
-                email: previousProfile ? previousEmail : recoveredEmail,
-              },
-              organization: {
-                uuid: identityKind === "uuid" ? organizationUuid : null,
-                name: previousProfile
-                  ? "Previous Claude Workspace"
-                  : "Legacy Claude Workspace",
-                organization_type: "claude_pro",
-              },
-            });
-          },
-        ),
-        http.get("https://api.anthropic.com/api/oauth/usage", () => {
-          return HttpResponse.json({});
-        }),
-      );
-      const changedAt = new Date("2026-10-16T06:01:00Z");
-      mockNow(changedAt);
-      const replaced = await accept(
-        client.upsert({
-          body: {
-            type: "claude-code-oauth-token",
-            secret: "sk-ant-oat-recovered-identity",
-          },
-          headers: { authorization: "Bearer clerk-session" },
-        }),
-        [200],
-      );
-      expect(replaced.body).toMatchObject({
-        created: false,
-        provider: {
-          id: original.body.provider.id,
-          modelProviderId: original.body.provider.modelProviderId,
-          createdAt: original.body.provider.createdAt,
-          updatedAt: changedAt.toISOString(),
-          accountEmail: recoveredEmail,
-          workspaceName: "Legacy Claude Workspace",
-          planType: "pro",
-          isActive: true,
-        },
-      });
-      const listed = await accept(
-        client.list({ headers: { authorization: "Bearer clerk-session" } }),
-        [200],
-      );
-      expect(listed.body.modelProviders).toHaveLength(1);
-      expect(listed.body.modelProviders[0]).toMatchObject({
-        id: original.body.provider.id,
-        accountEmail: recoveredEmail,
-        workspaceName: "Legacy Claude Workspace",
+test("me-model-providers-upsert-009 imports Codex auth.json with ID-token account, plan, credits and usage", async () => {
+  const usage = usageBody();
+  const seen = codexProvider({
+    usage: () => {
+      return HttpResponse.json({
+        ...usage.body,
+        workspace: { name: "Personal Acme" },
+        rate_limit_reset_credits: { available_count: 3 },
       });
     },
+  });
+  const earliest = new Date(now() + 2 * 3_600_000).toISOString();
+  server.use(
+    http.get(detailsUrl, () => {
+      return HttpResponse.json({
+        credits: [
+          {
+            status: "redeemed",
+            expires_at: new Date(now() + 600_000).toISOString(),
+          },
+          {
+            status: "available",
+            expires_at: new Date(now() + 9 * 3_600_000).toISOString(),
+          },
+          { status: "available", expires_at: earliest },
+          { status: "available", expires_at: null },
+        ],
+      });
+    }),
   );
-
-  it("rejects codex auth methods other than auth_json and keeps the active account", async () => {
-    const fixture = uniqueOrgUser("zmmp-codex-other-auth");
-    mocks.clerk.session(fixture.userId, fixture.orgId);
-    server.use(
-      http.get("https://chatgpt.com/backend-api/wham/usage", () => {
-        return HttpResponse.json(codexUsageResponse());
-      }),
-    );
-
-    const client = setupApp({
-      context,
-      routes: personalModelProvidersMainTestRoutes,
-    })(personalModelProvidersMainContract);
-    await accept(
-      client.upsert({
-        body: {
-          type: "codex-oauth-token",
-          authMethod: "auth_json",
-          secrets: { CODEX_AUTH_JSON: makeAuthJson() },
+  const idTokenAccountId = randomUUID();
+  const raw = JSON.stringify({
+    tokens: {
+      access_token: jwt({ exp: Math.floor(now() / 1000) + 7200 }),
+      refresh_token: `refresh-${randomUUID()}`,
+      account_id: randomUUID(),
+      id_token: jwt({
+        email: "codex-owner@example.com",
+        "https://api.openai.com/auth": {
+          chatgpt_account_id: idTokenAccountId,
+          chatgpt_plan_type: "pro",
         },
-        headers: { authorization: "Bearer clerk-session" },
       }),
-      [201],
-    );
-
-    const rejected = await accept(
-      client.upsert({
-        body: {
-          type: "codex-oauth-token",
-          authMethod: "oauth_token",
-          secrets: {},
-        },
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [400],
-    );
-    expect(rejected.body).toMatchObject({ error: { code: "BAD_REQUEST" } });
-
-    const listed = await accept(
-      client.list({
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [200],
-    );
-    expect(listed.body.modelProviders).toHaveLength(1);
-    expect(listed.body.modelProviders[0]).toMatchObject({
-      type: "codex-oauth-token",
-      accountEmail: "codex.user@example.com",
-    });
+    },
   });
 
-  it("paste valid auth.json persists derived secrets + metadata", async () => {
-    const fixture = uniqueOrgUser("zmmp-codex-happy");
-    mocks.clerk.session(fixture.userId, fixture.orgId);
-    server.use(
-      http.get("https://chatgpt.com/backend-api/wham/usage", ({ request }) => {
-        expect(request.headers.get("chatgpt-account-id")).toBe(
-          "ws_acct_from_id_token_personal",
-        );
-        return HttpResponse.json({
-          plan_type: "pro",
-          rate_limit: {
-            primary_window: {
-              limit_window_seconds: 18_000,
-              reset_at: 1_893_441_600,
-              used_percent: 25,
-            },
-            secondary_window: {
-              limit_window_seconds: 604_800,
-              reset_at: 1_893_456_000,
-              used_percent: 40,
-            },
-          },
-          rate_limit_reset_credits: {
-            available_count: 3,
-          },
-        });
-      }),
-      http.get(
-        "https://chatgpt.com/backend-api/wham/rate-limit-reset-credits",
-        () => {
-          return HttpResponse.json({
-            available_count: 3,
-            credits: [
-              {
-                id: "credit-later",
-                reset_type: "codex_rate_limits",
-                status: "available",
-                granted_at: "2029-12-01T00:00:00Z",
-                expires_at: "2030-02-01T00:00:00Z",
-              },
-              {
-                id: "credit-soonest",
-                reset_type: "codex_rate_limits",
-                status: "available",
-                granted_at: "2029-12-02T00:00:00Z",
-                expires_at: "2030-01-15T00:00:00Z",
-              },
-              {
-                id: "credit-never-expires",
-                reset_type: "codex_rate_limits",
-                status: "available",
-                granted_at: "2029-12-03T00:00:00Z",
-                expires_at: null,
-              },
-              {
-                id: "credit-redeemed",
-                reset_type: "codex_rate_limits",
-                status: "redeemed",
-                granted_at: "2029-11-01T00:00:00Z",
-                expires_at: "2029-12-15T00:00:00Z",
-              },
-            ],
-          });
-        },
-      ),
-    );
+  const imported = await importCodex(raw);
+  const providers = await imported.list();
 
-    const client = setupApp({
-      context,
-      routes: personalModelProvidersMainTestRoutes,
-    })(personalModelProvidersMainContract);
-    const response = await accept(
-      client.upsert({
-        body: {
-          type: "codex-oauth-token",
-          authMethod: "auth_json",
-          secrets: { CODEX_AUTH_JSON: makeAuthJson() },
+  expect(seen.usageAccounts[0]).toBe(idTokenAccountId);
+  expect(imported.created.body.provider).toMatchObject({
+    type: "codex-oauth-token",
+    workspaceName: "Personal Acme",
+    planType: "pro",
+    subscriptionResetPeriod: "weekly",
+    subscriptionNextResetAt: new Date(usage.weeklyReset * 1000).toISOString(),
+    needsReconnect: false,
+  });
+  expect(providers).toHaveLength(1);
+  expect(providers[0]).toMatchObject({
+    id: imported.created.body.provider.id,
+    accountEmail: "codex-owner@example.com",
+    subscriptionResetCredits: 3,
+    subscriptionResetCreditsNextExpiresAt: earliest,
+    subscriptionUsage: {
+      fiveHour: {
+        usedPercent: 25,
+        resetAt: new Date(usage.fiveHourReset * 1000).toISOString(),
+        windowSeconds: FIVE_HOURS,
+      },
+      weekly: {
+        usedPercent: 40,
+        resetAt: new Date(usage.weeklyReset * 1000).toISOString(),
+        windowSeconds: WEEK,
+      },
+    },
+  });
+});
+
+test("me-model-providers-upsert-011 consumes a Codex reset credit with the idempotency key", async () => {
+  const seen = codexProvider({
+    usage: () => {
+      return HttpResponse.json({
+        plan_type: "pro",
+        rate_limit_reset_credits: { available_count: 2 },
+      });
+    },
+  });
+  const fixture = await codexFixture();
+  const idempotencyKey = randomUUID();
+
+  fixture.session();
+  const result = await accept(resetByType(idempotencyKey), [200]);
+
+  expect(result.body).toMatchObject({ outcome: "reset" });
+  expect(seen.consumed).toStrictEqual([
+    {
+      bearer: `Bearer ${fixture.auth.accessToken}`,
+      accountId: fixture.auth.accountId,
+      body: { redeem_request_id: idempotencyKey },
+    },
+  ]);
+});
+
+test("me-model-providers-upsert-012 refreshes an expired Codex token once before consuming a reset credit", async () => {
+  const fresh = freshTokens();
+  const seen = codexProvider({ refresh: fresh.response });
+  const auth = expiredCredentials();
+  const fixture = await codexFixture({ auth });
+  const idempotencyKey = randomUUID();
+
+  fixture.session();
+  const result = await accept(resetByType(idempotencyKey), [200]);
+
+  expect(result.body).toMatchObject({ outcome: "reset" });
+  expect(seen.refreshTokens).toStrictEqual([storedRefreshToken(auth)]);
+  expect(seen.consumed).toStrictEqual([
+    {
+      bearer: `Bearer ${fresh.accessToken}`,
+      accountId: auth.accountId,
+      body: { redeem_request_id: idempotencyKey },
+    },
+  ]);
+});
+
+test("me-model-providers-upsert-013 marks the account for reconnect without consuming after a terminal refresh failure", async () => {
+  const seen = codexProvider({
+    refresh: () => {
+      return HttpResponse.json(
+        {
+          error: {
+            code: "refresh_token_expired",
+            message: "refresh token expired",
+          },
         },
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [201],
-    );
-    expect(response.body).toMatchObject({
-      provider: {
+        { status: 401 },
+      );
+    },
+  });
+  const fixture = await codexFixture({ auth: expiredCredentials() });
+
+  fixture.session();
+  const reset = await setupApp({
+    context,
+    routes: meModelProviderAccountRoutes,
+  })(personalModelProviderAccountsByIdContract).resetSubscriptionUsage({
+    headers,
+    params: { id: fixture.id },
+    body: { idempotencyKey: randomUUID() },
+  });
+  const refreshesAfterReset = seen.refreshTokens.length;
+  const providers = await fixture.list();
+
+  expect(reset.status).toBe(500);
+  expect(refreshesAfterReset).toBe(1);
+  expect(seen.consumed).toHaveLength(0);
+  expect(providers).toHaveLength(1);
+  expect(providers[0]).toMatchObject({
+    id: fixture.id,
+    needsReconnect: true,
+    lastRefreshErrorCode: "refresh_token_expired",
+  });
+});
+
+test("me-model-providers-upsert-015 refreshes an expired Codex account once and reuses the rotated token", async () => {
+  const fresh = freshTokens();
+  const usage = usageBody();
+  const seen = codexProvider({
+    refresh: fresh.response,
+    usage: (call) => {
+      return call === 1
+        ? HttpResponse.json({ detail: "expired" }, { status: 401 })
+        : HttpResponse.json(usage.body);
+    },
+  });
+  const auth = expiredCredentials();
+
+  const imported = await importCodex(auth.raw);
+  const first = await imported.list();
+  const second = await imported.list();
+
+  const id = imported.created.body.provider.id;
+  expect(imported.created.body.provider.needsReconnect).toBeFalsy();
+  for (const providers of [first, second]) {
+    expect(providers).toHaveLength(1);
+    expect(providers[0]).toMatchObject({
+      id,
+      needsReconnect: false,
+      subscriptionUsage: {
+        fiveHour: { usedPercent: 25 },
+        weekly: { usedPercent: 40 },
+      },
+    });
+  }
+  expect(seen.refreshTokens).toHaveLength(1);
+  expect(seen.usageTokens).toStrictEqual([
+    `Bearer ${auth.accessToken}`,
+    `Bearer ${fresh.accessToken}`,
+    `Bearer ${fresh.accessToken}`,
+  ]);
+  expect(seen.usageAccounts).toStrictEqual([
+    auth.accountId,
+    auth.accountId,
+    auth.accountId,
+  ]);
+});
+
+test("me-model-providers-upsert-019 keeps the Codex provider through an upstream usage outage", async () => {
+  const usage = usageBody();
+  const seen = codexProvider({
+    usage: (call) => {
+      return call <= 2
+        ? HttpResponse.json({ detail: "unavailable" }, { status: 503 })
+        : HttpResponse.json(usage.body);
+    },
+  });
+
+  const imported = await importCodex(credentials().raw);
+  const during = await imported.list();
+  const recovered = await imported.list();
+
+  const id = imported.created.body.provider.id;
+  expect(during).toHaveLength(1);
+  expect(during[0]).toMatchObject({
+    id,
+    needsReconnect: false,
+    lastRefreshErrorCode: null,
+  });
+  expect(during[0]?.subscriptionUsage ?? null).toBeNull();
+  expect(seen.refreshTokens).toHaveLength(0);
+  expect(recovered).toHaveLength(1);
+  expect(recovered[0]).toMatchObject({
+    id,
+    subscriptionUsage: {
+      fiveHour: { usedPercent: 25 },
+      weekly: { usedPercent: 40 },
+    },
+  });
+  expect(seen.usageTokens).toHaveLength(3);
+});
+
+test("me-model-providers-upsert-020 rejects Codex auth.json without a refresh token", async () => {
+  const client = member();
+  const accountId = randomUUID();
+
+  const result = await accept(
+    client.upsert({
+      headers,
+      body: {
         type: "codex-oauth-token",
-        workspaceName: "Personal Acme",
-        planType: "pro",
-        subscriptionResetPeriod: "weekly",
-        subscriptionNextResetAt: "2030-01-01T00:00:00.000Z",
-        needsReconnect: false,
-      },
-    });
-
-    const listed = await accept(
-      client.list({
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [200],
-    );
-    expect(listed.body.modelProviders).toHaveLength(1);
-    expect(listed.body.modelProviders[0]).toMatchObject({
-      type: "codex-oauth-token",
-      accountEmail: "codex.user@example.com",
-      subscriptionResetCredits: 3,
-      subscriptionResetCreditsNextExpiresAt: "2030-01-15T00:00:00.000Z",
-      subscriptionUsage: {
-        fiveHour: {
-          usedPercent: 25,
-          remainingPercent: 75,
-          resetAt: "2029-12-31T20:00:00.000Z",
-          windowSeconds: 18_000,
-        },
-        weekly: {
-          usedPercent: 40,
-          remainingPercent: 60,
-          resetAt: "2030-01-01T00:00:00.000Z",
-          windowSeconds: 604_800,
+        authMethod: "auth_json",
+        secrets: {
+          CODEX_AUTH_JSON: codexAuthJson({
+            access_token: jwt({ exp: Math.floor(now() / 1000) + 3600 }),
+            account_id: accountId,
+            id_token: jwt({
+              "https://api.openai.com/auth": {
+                chatgpt_account_id: accountId,
+                chatgpt_plan_type: "plus",
+              },
+            }),
+          }),
         },
       },
-    });
-  });
+    }),
+    [400],
+  );
 
-  it("keeps reset credits when the expiry read fails", async () => {
-    const fixture = uniqueOrgUser("zmmp-codex-expiry-degraded");
-    mocks.clerk.session(fixture.userId, fixture.orgId);
-    server.use(
-      http.get("https://chatgpt.com/backend-api/wham/usage", () => {
-        return HttpResponse.json({
-          plan_type: "pro",
-          rate_limit_reset_credits: {
-            available_count: 2,
-          },
-        });
-      }),
-      http.get(
-        "https://chatgpt.com/backend-api/wham/rate-limit-reset-credits",
-        () => {
-          return new HttpResponse(null, { status: 500 });
+  expect(result.body.error.code).toBe("CODEX_AUTH_JSON_SHAPE_INVALID");
+});
+
+test("me-model-providers-upsert-021 rejects a free-plan Codex account", async () => {
+  const client = member();
+  const accountId = randomUUID();
+
+  const result = await accept(
+    client.upsert({
+      headers,
+      body: {
+        type: "codex-oauth-token",
+        authMethod: "auth_json",
+        secrets: {
+          CODEX_AUTH_JSON: codexAuthJson({
+            access_token: jwt({ exp: Math.floor(now() / 1000) + 3600 }),
+            refresh_token: `refresh-${randomUUID()}`,
+            account_id: accountId,
+            id_token: jwt({
+              "https://api.openai.com/auth": {
+                chatgpt_account_id: accountId,
+                chatgpt_plan_type: "free",
+              },
+            }),
+          }),
         },
-      ),
-    );
-
-    const client = setupApp({
-      context,
-      routes: personalModelProvidersMainTestRoutes,
-    })(personalModelProvidersMainContract);
-    await accept(
-      client.upsert({
-        body: {
-          type: "codex-oauth-token",
-          authMethod: "auth_json",
-          secrets: { CODEX_AUTH_JSON: makeAuthJson() },
-        },
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [201],
-    );
-
-    const listed = await accept(
-      client.list({
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [200],
-    );
-    expect(listed.body.modelProviders[0]).toMatchObject({
-      type: "codex-oauth-token",
-      subscriptionResetCredits: 2,
-      subscriptionResetCreditsNextExpiresAt: null,
-    });
-  });
-
-  it("consumes a Codex subscription reset credit", async () => {
-    const fixture = uniqueOrgUser("zmmp-codex-reset");
-    mocks.clerk.session(fixture.userId, fixture.orgId);
-    const idempotencyKey = randomUUID();
-    server.use(
-      http.get("https://chatgpt.com/backend-api/wham/usage", () => {
-        return HttpResponse.json({
-          plan_type: "pro",
-          rate_limit_reset_credits: {
-            available_count: 2,
-          },
-        });
-      }),
-      http.post(
-        "https://chatgpt.com/backend-api/wham/rate-limit-reset-credits/consume",
-        async ({ request }) => {
-          expect(request.headers.get("chatgpt-account-id")).toBe(
-            "ws_acct_from_id_token_personal",
-          );
-          await expect(request.json()).resolves.toStrictEqual({
-            redeem_request_id: idempotencyKey,
-          });
-          return HttpResponse.json({
-            code: "reset",
-            windows_reset: 2,
-          });
-        },
-      ),
-    );
-
-    const mainClient = setupApp({
-      context,
-      routes: personalModelProvidersMainTestRoutes,
-    })(personalModelProvidersMainContract);
-    await accept(
-      mainClient.upsert({
-        body: {
-          type: "codex-oauth-token",
-          authMethod: "auth_json",
-          secrets: { CODEX_AUTH_JSON: makeAuthJson() },
-        },
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [201],
-    );
-
-    const byTypeClient = setupApp({
-      context,
-      routes: personalModelProvidersByTypeTestRoutes,
-    })(personalModelProvidersByTypeContract);
-    const response = await accept(
-      byTypeClient.resetSubscriptionUsage({
-        params: { type: "codex-oauth-token" },
-        body: { idempotencyKey },
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [200],
-    );
-
-    expect(response.body).toStrictEqual({ outcome: "reset" });
-  });
-
-  it("refreshes an expired Codex token before consuming a reset credit", async () => {
-    const fixture = uniqueOrgUser("zmmp-codex-reset-refresh");
-    mocks.clerk.session(fixture.userId, fixture.orgId);
-    const connectedAt = now();
-    const authJson = makeAuthJsonFixture({ accessExpiresInSeconds: 3600 });
-    const idempotencyKey = randomUUID();
-    const refreshedAccessToken = "fresh-reset-chatgpt-access-token";
-    let refreshCalls = 0;
-    let consumeCalls = 0;
-    server.use(
-      http.post("https://auth.openai.com/oauth/token", async ({ request }) => {
-        refreshCalls += 1;
-        await expect(request.json()).resolves.toMatchObject({
-          grant_type: "refresh_token",
-          refresh_token: authJson.refreshToken,
-        });
-        return HttpResponse.json({
-          access_token: refreshedAccessToken,
-          refresh_token: "rotated-reset-chatgpt-refresh-token",
-          expires_in: 3600,
-        });
-      }),
-      http.get("https://chatgpt.com/backend-api/wham/usage", () => {
-        return HttpResponse.json(codexUsageResponse());
-      }),
-      http.post(
-        "https://chatgpt.com/backend-api/wham/rate-limit-reset-credits/consume",
-        async ({ request }) => {
-          consumeCalls += 1;
-          expect(request.headers.get("authorization")).toBe(
-            `Bearer ${refreshedAccessToken}`,
-          );
-          expect(request.headers.get("chatgpt-account-id")).toBe(
-            authJson.accountId,
-          );
-          await expect(request.json()).resolves.toStrictEqual({
-            redeem_request_id: idempotencyKey,
-          });
-          return HttpResponse.json({ code: "reset", windows_reset: 2 });
-        },
-      ),
-    );
-
-    const mainClient = setupApp({
-      context,
-      routes: personalModelProvidersMainTestRoutes,
-    })(personalModelProvidersMainContract);
-    await accept(
-      mainClient.upsert({
-        body: {
-          type: "codex-oauth-token",
-          authMethod: "auth_json",
-          secrets: { CODEX_AUTH_JSON: authJson.raw },
-        },
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [201],
-    );
-    mockNow(connectedAt + 2 * 3_600_000);
-
-    const byTypeClient = setupApp({
-      context,
-      routes: personalModelProvidersByTypeTestRoutes,
-    })(personalModelProvidersByTypeContract);
-    const response = await accept(
-      byTypeClient.resetSubscriptionUsage({
-        params: { type: "codex-oauth-token" },
-        body: { idempotencyKey },
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [200],
-    );
-
-    expect(response.body).toStrictEqual({ outcome: "reset" });
-    expect(refreshCalls).toBe(1);
-    expect(consumeCalls).toBe(1);
-  });
-
-  it("does not consume a reset credit after terminal Codex refresh failure", async () => {
-    const fixture = uniqueOrgUser("zmmp-codex-reset-terminal");
-    mocks.clerk.session(fixture.userId, fixture.orgId);
-    const connectedAt = now();
-    const authJson = makeAuthJsonFixture({ accessExpiresInSeconds: 3600 });
-    let refreshCalls = 0;
-    let consumeCalls = 0;
-    server.use(
-      http.post("https://auth.openai.com/oauth/token", () => {
-        refreshCalls += 1;
-        return HttpResponse.json(
-          {
-            error: {
-              code: "refresh_token_expired",
-              message: "refresh token expired",
-            },
-          },
-          { status: 401 },
-        );
-      }),
-      http.get("https://chatgpt.com/backend-api/wham/usage", () => {
-        return HttpResponse.json(codexUsageResponse());
-      }),
-      http.post(
-        "https://chatgpt.com/backend-api/wham/rate-limit-reset-credits/consume",
-        () => {
-          consumeCalls += 1;
-          return HttpResponse.json({ code: "reset", windows_reset: 2 });
-        },
-      ),
-    );
-
-    const mainClient = setupApp({
-      context,
-      routes: personalModelProvidersMainTestRoutes,
-    })(personalModelProvidersMainContract);
-    const connected = await accept(
-      mainClient.upsert({
-        body: {
-          type: "codex-oauth-token",
-          authMethod: "auth_json",
-          secrets: { CODEX_AUTH_JSON: authJson.raw },
-        },
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [201],
-    );
-    mockNow(connectedAt + 2 * 3_600_000);
-
-    const accountClient = setupApp({
-      context,
-      routes: personalModelProviderAccountsByIdTestRoutes,
-    })(personalModelProviderAccountsByIdContract);
-    const failed = await accept(
-      accountClient.resetSubscriptionUsage({
-        params: { id: connected.body.provider.id },
-        body: { idempotencyKey: randomUUID() },
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [500],
-    );
-    expect(failed.status).toBe(500);
-
-    const listed = await accept(
-      mainClient.list({ headers: { authorization: "Bearer clerk-session" } }),
-      [200],
-    );
-    expect(listed.body.modelProviders[0]).toMatchObject({
-      id: connected.body.provider.id,
-      needsReconnect: true,
-      lastRefreshErrorCode: "refresh_token_expired",
-    });
-    expect(refreshCalls).toBe(1);
-    expect(consumeCalls).toBe(0);
-  });
-
-  it("retries reset after transient Codex refresh failure", async () => {
-    const fixture = uniqueOrgUser("zmmp-codex-reset-transient");
-    mocks.clerk.session(fixture.userId, fixture.orgId);
-    const connectedAt = now();
-    const authJson = makeAuthJsonFixture({ accessExpiresInSeconds: 3600 });
-    const idempotencyKey = randomUUID();
-    const refreshedAccessToken = "recovered-reset-chatgpt-access-token";
-    let refreshCalls = 0;
-    let consumeCalls = 0;
-    server.use(
-      http.post("https://auth.openai.com/oauth/token", () => {
-        refreshCalls += 1;
-        if (refreshCalls === 1) {
-          return HttpResponse.json(
-            { error: "temporarily_unavailable" },
-            { status: 503 },
-          );
-        }
-        return HttpResponse.json({
-          access_token: refreshedAccessToken,
-          refresh_token: "recovered-reset-chatgpt-refresh-token",
-          expires_in: 3600,
-        });
-      }),
-      http.get("https://chatgpt.com/backend-api/wham/usage", () => {
-        return HttpResponse.json(codexUsageResponse());
-      }),
-      http.post(
-        "https://chatgpt.com/backend-api/wham/rate-limit-reset-credits/consume",
-        ({ request }) => {
-          consumeCalls += 1;
-          expect(request.headers.get("authorization")).toBe(
-            `Bearer ${refreshedAccessToken}`,
-          );
-          return HttpResponse.json({ code: "reset", windows_reset: 2 });
-        },
-      ),
-    );
-
-    const mainClient = setupApp({
-      context,
-      routes: personalModelProvidersMainTestRoutes,
-    })(personalModelProvidersMainContract);
-    const connected = await accept(
-      mainClient.upsert({
-        body: {
-          type: "codex-oauth-token",
-          authMethod: "auth_json",
-          secrets: { CODEX_AUTH_JSON: authJson.raw },
-        },
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [201],
-    );
-    mockNow(connectedAt + 2 * 3_600_000);
-
-    const accountClient = setupApp({
-      context,
-      routes: personalModelProviderAccountsByIdTestRoutes,
-    })(personalModelProviderAccountsByIdContract);
-    const reset = () => {
-      return accountClient.resetSubscriptionUsage({
-        params: { id: connected.body.provider.id },
-        body: { idempotencyKey },
-        headers: { authorization: "Bearer clerk-session" },
-      });
-    };
-    const unavailable = await accept(reset(), [500]);
-    expect(unavailable.status).toBe(500);
-
-    const recovered = await accept(reset(), [200]);
-    expect(recovered.body).toStrictEqual({ outcome: "reset" });
-    expect(refreshCalls).toBe(2);
-    expect(consumeCalls).toBe(1);
-  });
-
-  it("refreshes an expired Codex account once and reuses the rotated token", async () => {
-    const fixture = uniqueOrgUser("zmmp-codex-refresh");
-    mocks.clerk.session(fixture.userId, fixture.orgId);
-    const authJson = makeAuthJsonFixture({ accessExpiresInSeconds: -60 });
-    const refreshedAccessToken = "fresh-chatgpt-access-token";
-    const refreshedRefreshToken = "rotated-chatgpt-refresh-token";
-    const usageAuthorizations: (string | null)[] = [];
-    let refreshCalls = 0;
-    server.use(
-      http.post("https://auth.openai.com/oauth/token", async ({ request }) => {
-        refreshCalls += 1;
-        await expect(request.json()).resolves.toMatchObject({
-          grant_type: "refresh_token",
-          refresh_token: authJson.refreshToken,
-        });
-        return HttpResponse.json({
-          access_token: refreshedAccessToken,
-          refresh_token: refreshedRefreshToken,
-          expires_in: 3600,
-        });
-      }),
-      http.get("https://chatgpt.com/backend-api/wham/usage", ({ request }) => {
-        const authorization = request.headers.get("authorization");
-        usageAuthorizations.push(authorization);
-        if (authorization === `Bearer ${authJson.accessToken}`) {
-          return HttpResponse.json({ error: "expired" }, { status: 401 });
-        }
-        expect(authorization).toBe(`Bearer ${refreshedAccessToken}`);
-        expect(request.headers.get("chatgpt-account-id")).toBe(
-          authJson.accountId,
-        );
-        return HttpResponse.json(codexUsageResponse());
-      }),
-    );
-
-    const client = setupApp({
-      context,
-      routes: personalModelProvidersMainTestRoutes,
-    })(personalModelProvidersMainContract);
-    const connected = await accept(
-      client.upsert({
-        body: {
-          type: "codex-oauth-token",
-          authMethod: "auth_json",
-          secrets: { CODEX_AUTH_JSON: authJson.raw },
-        },
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [201],
-    );
-    expect(connected.body.provider).toMatchObject({
-      modelProviderId: expect.any(String),
-      needsReconnect: false,
-    });
-    for (let attempt = 0; attempt < 2; attempt += 1) {
-      const listed = await accept(
-        client.list({ headers: { authorization: "Bearer clerk-session" } }),
-        [200],
-      );
-      expect(listed.body.modelProviders[0]).toMatchObject({
-        id: connected.body.provider.id,
-        needsReconnect: false,
-        subscriptionUsage: {
-          fiveHour: { usedPercent: 25 },
-          weekly: { usedPercent: 40 },
-        },
-      });
-    }
-    expect(refreshCalls).toBe(1);
-    expect(usageAuthorizations).toStrictEqual([
-      `Bearer ${authJson.accessToken}`,
-      `Bearer ${refreshedAccessToken}`,
-      `Bearer ${refreshedAccessToken}`,
-    ]);
-  });
-
-  it("returns and short-circuits terminal Codex reconnect state", async () => {
-    const fixture = uniqueOrgUser("zmmp-codex-terminal");
-    mocks.clerk.session(fixture.userId, fixture.orgId);
-    const authJson = makeAuthJsonFixture({ accessExpiresInSeconds: -60 });
-    let refreshCalls = 0;
-    let usageCalls = 0;
-    server.use(
-      http.post("https://auth.openai.com/oauth/token", () => {
-        refreshCalls += 1;
-        return HttpResponse.json(
-          {
-            error: {
-              code: "refresh_token_expired",
-              message: "refresh token expired",
-            },
-          },
-          { status: 401 },
-        );
-      }),
-      http.get("https://chatgpt.com/backend-api/wham/usage", () => {
-        usageCalls += 1;
-        return HttpResponse.json({ error: "expired" }, { status: 401 });
-      }),
-    );
-
-    const client = setupApp({
-      context,
-      routes: personalModelProvidersMainTestRoutes,
-    })(personalModelProvidersMainContract);
-    const connected = await accept(
-      client.upsert({
-        body: {
-          type: "codex-oauth-token",
-          authMethod: "auth_json",
-          secrets: { CODEX_AUTH_JSON: authJson.raw },
-        },
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [201],
-    );
-
-    for (let requestIndex = 0; requestIndex < 2; requestIndex += 1) {
-      const listed = await accept(
-        client.list({
-          headers: { authorization: "Bearer clerk-session" },
-        }),
-        [200],
-      );
-      expect(listed.body.modelProviders[0]).toMatchObject({
-        id: connected.body.provider.id,
-        needsReconnect: true,
-        lastRefreshErrorCode: "refresh_token_expired",
-      });
-    }
-
-    expect(refreshCalls).toBe(1);
-    expect(usageCalls).toBe(1);
-  });
-
-  it("retries transient Codex refresh failure without false reconnect", async () => {
-    const fixture = uniqueOrgUser("zmmp-codex-transient");
-    mocks.clerk.session(fixture.userId, fixture.orgId);
-    const authJson = makeAuthJsonFixture({ accessExpiresInSeconds: -60 });
-    let refreshCalls = 0;
-    let usageCalls = 0;
-    server.use(
-      http.post("https://auth.openai.com/oauth/token", () => {
-        refreshCalls += 1;
-        if (refreshCalls === 1) {
-          return HttpResponse.json(
-            { error: "temporarily_unavailable" },
-            { status: 503 },
-          );
-        }
-        return HttpResponse.json({
-          access_token: "recovered-chatgpt-access-token",
-          refresh_token: "recovered-chatgpt-refresh-token",
-          expires_in: 3600,
-        });
-      }),
-      http.get("https://chatgpt.com/backend-api/wham/usage", ({ request }) => {
-        usageCalls += 1;
-        if (
-          request.headers.get("authorization") ===
-          `Bearer ${authJson.accessToken}`
-        ) {
-          return HttpResponse.json({ error: "expired" }, { status: 401 });
-        }
-        return HttpResponse.json(codexUsageResponse());
-      }),
-    );
-
-    const client = setupApp({
-      context,
-      routes: personalModelProvidersMainTestRoutes,
-    })(personalModelProvidersMainContract);
-    await accept(
-      client.upsert({
-        body: {
-          type: "codex-oauth-token",
-          authMethod: "auth_json",
-          secrets: { CODEX_AUTH_JSON: authJson.raw },
-        },
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [201],
-    );
-
-    const unavailable = await accept(
-      client.list({ headers: { authorization: "Bearer clerk-session" } }),
-      [200],
-    );
-    expect(unavailable.body.modelProviders[0]).toMatchObject({
-      needsReconnect: false,
-      lastRefreshErrorCode: null,
-    });
-    expect(
-      unavailable.body.modelProviders[0]?.subscriptionUsage,
-    ).toBeUndefined();
-
-    const recovered = await accept(
-      client.list({ headers: { authorization: "Bearer clerk-session" } }),
-      [200],
-    );
-    expect(recovered.body.modelProviders[0]).toMatchObject({
-      needsReconnect: false,
-      subscriptionUsage: {
-        fiveHour: { usedPercent: 25 },
-        weekly: { usedPercent: 40 },
       },
-    });
-    expect(refreshCalls).toBe(2);
-    expect(usageCalls).toBe(2);
-  });
+    }),
+    [400],
+  );
 
-  it("isolates Codex usage response failures to account enrichment", async () => {
-    const fixture = uniqueOrgUser("zmmp-codex-usage-errors");
-    mocks.clerk.session(fixture.userId, fixture.orgId);
-    let usageCalls = 0;
-    let refreshCalls = 0;
-    server.use(
-      http.post("https://auth.openai.com/oauth/token", () => {
-        refreshCalls += 1;
-        return HttpResponse.error();
-      }),
-      http.get("https://chatgpt.com/backend-api/wham/usage", () => {
-        usageCalls += 1;
-        if (usageCalls === 1) {
-          return HttpResponse.json(codexUsageResponse());
-        }
-        if (usageCalls === 2) {
-          return HttpResponse.json({ error: "unauthorized" }, { status: 401 });
-        }
-        return HttpResponse.json({ plan_type: 123 });
-      }),
-    );
-
-    const client = setupApp({
-      context,
-      routes: personalModelProvidersMainTestRoutes,
-    })(personalModelProvidersMainContract);
-    const connected = await accept(
-      client.upsert({
-        body: {
-          type: "codex-oauth-token",
-          authMethod: "auth_json",
-          secrets: { CODEX_AUTH_JSON: makeAuthJson() },
-        },
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [201],
-    );
-    const unauthorized = await accept(
-      client.list({ headers: { authorization: "Bearer clerk-session" } }),
-      [200],
-    );
-    expect(unauthorized.body.modelProviders[0]).toMatchObject({
-      id: connected.body.provider.id,
-      needsReconnect: false,
-    });
-    expect(
-      unauthorized.body.modelProviders[0]?.subscriptionUsage,
-    ).toBeUndefined();
-
-    const unrecognized = await accept(
-      client.list({ headers: { authorization: "Bearer clerk-session" } }),
-      [200],
-    );
-    expect(unrecognized.body.modelProviders[0]).toMatchObject({
-      id: connected.body.provider.id,
-      needsReconnect: false,
-    });
-    expect(
-      unrecognized.body.modelProviders[0]?.subscriptionUsage,
-    ).toBeUndefined();
-    expect(refreshCalls).toBe(0);
-    expect(usageCalls).toBe(3);
-  });
-
-  it("keeps the stored Codex provider on an upstream usage outage", async () => {
-    const fixture = uniqueOrgUser("zmmp-codex-usage-unavailable");
-    mocks.clerk.session(fixture.userId, fixture.orgId);
-    let usageCalls = 0;
-    let refreshCalls = 0;
-    server.use(
-      http.post("https://auth.openai.com/oauth/token", () => {
-        refreshCalls += 1;
-        return HttpResponse.error();
-      }),
-      http.get("https://chatgpt.com/backend-api/wham/usage", () => {
-        usageCalls += 1;
-        if (usageCalls <= 2) {
-          return HttpResponse.json(
-            { error: "service_unavailable" },
-            { status: 503 },
-          );
-        }
-        return HttpResponse.json(codexUsageResponse());
-      }),
-    );
-
-    const client = setupApp({
-      context,
-      routes: personalModelProvidersMainTestRoutes,
-    })(personalModelProvidersMainContract);
-    const connected = await accept(
-      client.upsert({
-        body: {
-          type: "codex-oauth-token",
-          authMethod: "auth_json",
-          secrets: { CODEX_AUTH_JSON: makeAuthJson() },
-        },
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [201],
-    );
-
-    const unavailable = await accept(
-      client.list({ headers: { authorization: "Bearer clerk-session" } }),
-      [200],
-    );
-    expect(unavailable.body.modelProviders[0]).toMatchObject({
-      id: connected.body.provider.id,
-      type: "codex-oauth-token",
-      needsReconnect: false,
-      lastRefreshErrorCode: null,
-    });
-    expect(
-      unavailable.body.modelProviders[0]?.subscriptionUsage,
-    ).toBeUndefined();
-    // The outage must not be mistaken for an expired token.
-    expect(refreshCalls).toBe(0);
-
-    const recovered = await accept(
-      client.list({ headers: { authorization: "Bearer clerk-session" } }),
-      [200],
-    );
-    expect(recovered.body.modelProviders[0]).toMatchObject({
-      id: connected.body.provider.id,
-      subscriptionUsage: {
-        fiveHour: { usedPercent: 25 },
-        weekly: { usedPercent: 40 },
-      },
-    });
-    expect(usageCalls).toBe(3);
-  });
-
-  it("returns 400 CODEX_AUTH_JSON_SHAPE_INVALID when tokens.refresh_token missing", async () => {
-    const fixture = uniqueOrgUser("zmmp-codex-missing-rt");
-    mocks.clerk.session(fixture.userId, fixture.orgId);
-
-    const incomplete = JSON.stringify({
-      tokens: {
-        access_token: makeJwt({ exp: now() }),
-        // refresh_token omitted
-        account_id: "ws_acct",
-        id_token: makeIdToken({ accountId: "ws_acct", planType: "plus" }),
-      },
-    });
-
-    const client = setupApp({
-      context,
-      routes: personalModelProvidersMainTestRoutes,
-    })(personalModelProvidersMainContract);
-    const response = await accept(
-      client.upsert({
-        body: {
-          type: "codex-oauth-token",
-          authMethod: "auth_json",
-          secrets: { CODEX_AUTH_JSON: incomplete },
-        },
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [400],
-    );
-    expect(response.body).toMatchObject({
-      error: { code: "CODEX_AUTH_JSON_SHAPE_INVALID" },
-    });
-  });
-
-  it("returns 400 CODEX_FREE_PLAN_REJECTED for free-plan accounts", async () => {
-    const fixture = uniqueOrgUser("zmmp-codex-free");
-    mocks.clerk.session(fixture.userId, fixture.orgId);
-
-    const client = setupApp({
-      context,
-      routes: personalModelProvidersMainTestRoutes,
-    })(personalModelProvidersMainContract);
-    const response = await accept(
-      client.upsert({
-        body: {
-          type: "codex-oauth-token",
-          authMethod: "auth_json",
-          secrets: { CODEX_AUTH_JSON: makeAuthJson({ planType: "free" }) },
-        },
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [400],
-    );
-    expect(response.body).toMatchObject({
-      error: { code: "CODEX_FREE_PLAN_REJECTED" },
-    });
-  });
+  expect(result.body.error.code).toBe("CODEX_FREE_PLAN_REJECTED");
 });

@@ -1,355 +1,514 @@
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import {
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { gzipSync } from "node:zlib";
+import { crc32, gzipSync } from "node:zlib";
+import { describe, expect, it, onTestFinished } from "vitest";
 
-import AdmZip from "adm-zip";
-import { onTestFinished } from "vitest";
-
-import { tarArchive, tarEntry } from "../../test-fixtures/tar-archive";
 import { USER_EXPORT_RESTORE_SCRIPT } from "../user-export-restore";
 
-function sha256(bytes: Buffer): string {
+interface ArchiveEntry {
+  readonly path: string;
+  readonly bytes: Buffer;
+  readonly metadata?: Record<string, unknown>;
+  readonly overrideManifestBytes?: Buffer;
+}
+
+function sha256Hex(bytes: Buffer): string {
   return createHash("sha256").update(bytes).digest("hex");
 }
 
-function json(value: unknown): Buffer {
-  return Buffer.from(JSON.stringify(value));
+function buildStoredZip(
+  entries: readonly { readonly name: string; readonly data: Buffer }[],
+): Buffer {
+  const localParts: Buffer[] = [];
+  const centralParts: Buffer[] = [];
+  let offset = 0;
+
+  for (const entry of entries) {
+    const nameBytes = Buffer.from(entry.name, "utf8");
+    const checksum = crc32(entry.data) >>> 0;
+    const size = entry.data.byteLength;
+
+    const localHeader = Buffer.alloc(30);
+    localHeader.writeUInt32LE(0x04_03_4b_50, 0);
+    localHeader.writeUInt16LE(20, 4);
+    localHeader.writeUInt16LE(0x08_00, 6);
+    localHeader.writeUInt16LE(0, 8);
+    localHeader.writeUInt16LE(0, 10);
+    localHeader.writeUInt16LE(0, 12);
+    localHeader.writeUInt32LE(checksum, 14);
+    localHeader.writeUInt32LE(size, 18);
+    localHeader.writeUInt32LE(size, 22);
+    localHeader.writeUInt16LE(nameBytes.byteLength, 26);
+    localHeader.writeUInt16LE(0, 28);
+
+    localParts.push(localHeader, nameBytes, entry.data);
+
+    const centralHeader = Buffer.alloc(46);
+    centralHeader.writeUInt32LE(0x02_01_4b_50, 0);
+    centralHeader.writeUInt16LE(20, 4);
+    centralHeader.writeUInt16LE(20, 6);
+    centralHeader.writeUInt16LE(0x08_00, 8);
+    centralHeader.writeUInt16LE(0, 10);
+    centralHeader.writeUInt16LE(0, 12);
+    centralHeader.writeUInt16LE(0, 14);
+    centralHeader.writeUInt32LE(checksum, 16);
+    centralHeader.writeUInt32LE(size, 20);
+    centralHeader.writeUInt32LE(size, 24);
+    centralHeader.writeUInt16LE(nameBytes.byteLength, 28);
+    centralHeader.writeUInt16LE(0, 30);
+    centralHeader.writeUInt16LE(0, 32);
+    centralHeader.writeUInt16LE(0, 34);
+    centralHeader.writeUInt16LE(0, 36);
+    centralHeader.writeUInt32LE((0o10_0644 << 16) >>> 0, 38);
+    centralHeader.writeUInt32LE(offset, 42);
+
+    centralParts.push(centralHeader, nameBytes);
+    offset += localHeader.byteLength + nameBytes.byteLength + size;
+  }
+
+  const centralDirectory = Buffer.concat(centralParts);
+  const endRecord = Buffer.alloc(22);
+  endRecord.writeUInt32LE(0x06_05_4b_50, 0);
+  endRecord.writeUInt16LE(0, 4);
+  endRecord.writeUInt16LE(0, 6);
+  endRecord.writeUInt16LE(entries.length, 8);
+  endRecord.writeUInt16LE(entries.length, 10);
+  endRecord.writeUInt32LE(centralDirectory.byteLength, 12);
+  endRecord.writeUInt32LE(offset, 16);
+  endRecord.writeUInt16LE(0, 20);
+
+  return Buffer.concat([...localParts, centralDirectory, endRecord]);
 }
 
-function event(seqId: number) {
-  return {
-    id: `event-${seqId}`,
-    chatThreadId: "thread-a",
-    seqId,
-    eventType: "test-event",
-    payload: { content: `message ${seqId}` },
-    revokesEventId: seqId === 10 ? "event-5" : null,
-  };
-}
-
-function jsonLines(values: readonly unknown[]): Buffer {
-  return Buffer.from(
-    values
-      .map((value) => {
-        return JSON.stringify(value);
-      })
-      .join("\n") + "\n",
-  );
-}
-
-function sources(producer: "guest" | "server" = "guest") {
-  const binary = Buffer.from([0x00, 0xff, 0x61, 0x80, 0xfe]);
-  // Match the active guest ArtifactManifest and server volume manifest writers.
-  const memoryManifest = {
-    version: producer === "guest" ? 1 : "memory-version-a",
-    createdAt: "2026-09-20T00:00:00Z",
-    files: [{ path: "binary.dat", size: binary.length, hash: sha256(binary) }],
-    ...(producer === "server"
-      ? { fileCount: 1, totalSize: binary.length }
-      : {}),
-  };
-  const files = new Map<string, Buffer>([
-    ["README.md", Buffer.from("Export fixture")],
-    ["restore.py", Buffer.from(USER_EXPORT_RESTORE_SCRIPT)],
-    [
-      "instructions/org-a.json",
-      json({
-        orgId: "org-a",
-        userId: "alice",
-        content: "Personal Instructions.",
-      }),
-    ],
-    [
-      "chat-threads/thread-a.json",
-      json({
-        id: "thread-a",
-        title: "Pinned thread",
-        pinnedAt: "2026-09-20T00:00:00Z",
-      }),
-    ],
-    ["chat-threads/empty.json", json({ id: "empty", title: "Empty thread" })],
-    [
-      "chat-messages/thread-a/snapshots/old.ndjson.gz",
-      gzipSync(jsonLines([event(1)])),
-    ],
-    [
-      "chat-messages/thread-a/snapshots/current.ndjson.gz",
-      gzipSync(jsonLines([event(3), event(5), event(8)])),
-    ],
-    [
-      "chat-messages/thread-a/tail/0.jsonl",
-      jsonLines([event(2), event(9), event(10), event(11)]),
-    ],
-    ["chat-messages/thread-a/tail/9.jsonl", jsonLines([event(10)])],
-    [
-      "workflows/workflow-a.json",
-      json({ id: "workflow-a", instruction: "Workflow instruction." }),
-    ],
-    [
-      "memory/org-a/storage-a/archive.tar.gz",
-      gzipSync(
-        tarArchive([
-          tarEntry({ path: "./binary.dat", type: "0", content: binary }),
-        ]),
-      ),
-    ],
-    ["memory/org-a/storage-a/manifest.json", json(memoryManifest)],
-  ]);
-  // Cross the manifest page boundary while keeping fixture content small.
-  for (let index = 0; index < 100; index++) {
-    files.set(
-      `workflows/extra-${index}.json`,
-      json({ id: `extra-${index}`, instructions: null }),
+function buildTarGz(
+  files: readonly { readonly name: string; readonly data: Buffer }[],
+): Buffer {
+  const blocks: Buffer[] = [];
+  for (const file of files) {
+    const header = Buffer.alloc(512, 0);
+    header.write(file.name, 0, 100, "utf8");
+    header.write("0000644\0", 100, 8, "ascii");
+    header.write("0000000\0", 108, 8, "ascii");
+    header.write("0000000\0", 116, 8, "ascii");
+    header.write(
+      `${file.data.byteLength.toString(8).padStart(11, "0")}\0`,
+      124,
+      12,
+      "ascii",
     );
+    header.write("00000000000\0", 136, 12, "ascii");
+    header.fill(0x20, 148, 156);
+    header.write("0", 156, 1, "ascii");
+    header.write("ustar\0", 257, 6, "ascii");
+    header.write("00", 263, 2, "ascii");
+
+    let checksum = 0;
+    for (const byte of header) {
+      checksum += byte;
+    }
+    header.write(
+      `${checksum.toString(8).padStart(6, "0")}\0 `,
+      148,
+      8,
+      "ascii",
+    );
+
+    blocks.push(header, file.data);
+    const remainder = file.data.byteLength % 512;
+    if (remainder !== 0) {
+      blocks.push(Buffer.alloc(512 - remainder, 0));
+    }
   }
-  // The files manifest carries each entry's metadata, so the restore tool needs
-  // no per-thread index file to find a thread's bound or its newest snapshot.
-  const meta = new Map<string, Record<string, unknown>>([
-    ["chat-threads/thread-a.json", { threadId: "thread-a", upperSeqId: 10 }],
-    ["chat-threads/empty.json", { threadId: "empty", upperSeqId: 0 }],
-    [
-      "chat-messages/thread-a/snapshots/old.ndjson.gz",
-      { threadId: "thread-a", lastSeqId: 1 },
-    ],
-    [
-      "chat-messages/thread-a/snapshots/current.ndjson.gz",
-      { threadId: "thread-a", lastSeqId: 8 },
-    ],
-  ]);
-  return { files, meta, binary, memoryManifest };
+  blocks.push(Buffer.alloc(1024, 0));
+  return gzipSync(Buffer.concat(blocks));
 }
 
-function exportZip(
-  files: ReadonlyMap<string, Buffer>,
-  meta: ReadonlyMap<string, Record<string, unknown>> = new Map(),
-): AdmZip {
-  const zip = new AdmZip();
-  const rows = [...files].map(([path, bytes]) => {
-    return {
-      path,
-      size: bytes.length,
-      sha256: sha256(bytes),
-      ...meta.get(path),
-    };
+function buildExportArchive(sourceEntries: readonly ArchiveEntry[]): Buffer {
+  const manifestLines = sourceEntries.map((entry) => {
+    const hashed = entry.overrideManifestBytes ?? entry.bytes;
+    return JSON.stringify({
+      path: entry.path,
+      size: hashed.byteLength,
+      sha256: sha256Hex(hashed),
+      ...entry.metadata,
+    });
   });
-  for (const [path, bytes] of files) {
-    zip.addFile(path, bytes);
+
+  const pageSize = 100;
+  const pageCount = Math.ceil(manifestLines.length / pageSize);
+  const pageEntries: { readonly name: string; readonly data: Buffer }[] = [];
+  const aggregate = createHash("sha256");
+
+  for (let page = 0; page < pageCount; page += 1) {
+    const slice = manifestLines.slice(page * pageSize, (page + 1) * pageSize);
+    const data = Buffer.from(`${slice.join("\n")}\n`, "utf8");
+    aggregate.update(data);
+    pageEntries.push({
+      name: `manifest/files-${String(page * pageSize)}.jsonl`,
+      data,
+    });
   }
-  const pageHash = createHash("sha256");
-  for (let start = 0; start < rows.length; start += 100) {
-    const page = jsonLines(rows.slice(start, start + 100));
-    pageHash.update(page);
-    zip.addFile(`manifest/files-${start}.jsonl`, page);
-  }
-  zip.addFile(
-    "export-manifest.json",
-    json({
-      formatVersion: 4,
-      chatEventSchemaVersion: 7,
+
+  const rootManifest = Buffer.from(
+    JSON.stringify({
+      version: 3,
       filesManifest: {
-        pageCount: Math.ceil(rows.length / 100),
-        pageSize: 100,
+        pageSize,
+        pageCount,
         pathPattern: "manifest/files-{pageStart}.jsonl",
         algorithm: "sha256-concatenated-pages",
-        sha256: pageHash.digest("hex"),
+        sha256: aggregate.digest("hex"),
       },
     }),
+    "utf8",
   );
-  return zip;
+
+  return buildStoredZip([
+    { name: "export-manifest.json", data: rootManifest },
+    ...pageEntries,
+    ...sourceEntries.map((entry) => {
+      return { name: entry.path, data: entry.bytes };
+    }),
+  ]);
 }
 
-async function runRestore(zip: AdmZip) {
-  const directory = await mkdtemp(join(tmpdir(), "okou-export-restore-"));
-  onTestFinished(async () => {
-    await rm(directory, { recursive: true, force: true });
+function chatEvent(threadId: string, seqId: number): Record<string, unknown> {
+  return {
+    id: `evt_${threadId}_${String(seqId)}`,
+    chatThreadId: threadId,
+    seqId,
+    eventType: "output.message",
+    payload: { content: `Message ${String(seqId)}` },
+  };
+}
+
+function jsonlBuffer(records: readonly Record<string, unknown>[]): Buffer {
+  return Buffer.from(
+    `${records
+      .map((record) => {
+        return JSON.stringify(record);
+      })
+      .join("\n")}\n`,
+    "utf8",
+  );
+}
+
+function runRecoveryCli(zipBytes: Buffer): {
+  readonly status: number | null;
+  readonly stdout: string;
+  readonly stderr: string;
+  readonly outputDir: string;
+} {
+  const workDir = mkdtempSync(join(tmpdir(), "okou-export-restore-"));
+  onTestFinished(() => {
+    rmSync(workDir, { recursive: true, force: true });
   });
-  const script = join(directory, "restore.py");
-  const archive = join(directory, "export.zip");
-  const output = join(directory, "restored");
-  for (const entry of zip.getEntries()) {
-    entry.header.method = 0;
-  }
-  await writeFile(script, USER_EXPORT_RESTORE_SCRIPT);
-  await writeFile(archive, zip.toBuffer());
-  const result = spawnSync("python3", [script, archive, output], {
+  const scriptPath = join(workDir, "restore.py");
+  const archivePath = join(workDir, "export.zip");
+  const outputDir = join(workDir, "restored");
+  writeFileSync(scriptPath, USER_EXPORT_RESTORE_SCRIPT, "utf8");
+  writeFileSync(archivePath, zipBytes);
+
+  const result = spawnSync("python3", [scriptPath, archivePath, outputDir], {
     encoding: "utf8",
   });
-  return { result, output };
+  return {
+    status: result.status,
+    stdout: result.stdout,
+    stderr: result.stderr,
+    outputDir,
+  };
 }
 
 describe("downloaded export recovery tool", () => {
-  it.each(["guest", "server"] as const)(
-    "restores verified paged sources, current chat events, instructions and %s binary memory",
-    async (producer) => {
-      const fixture = sources(producer);
-      const { result, output } = await runRestore(
-        exportZip(fixture.files, fixture.meta),
-      );
-      expect(result.error).toBeUndefined();
-      expect(result.stderr).toBe("");
-      expect(result.status).toBe(0);
-      await expect(
-        readFile(join(output, "chat-messages/thread-a.jsonl"), "utf8"),
-      ).resolves.toBe(
-        jsonLines([event(3), event(5), event(8), event(9), event(10)]).toString(
-          "utf8",
-        ),
-      );
-      await expect(
-        readFile(join(output, "chat-messages/empty.jsonl"), "utf8"),
-      ).resolves.toBe("");
-      await expect(
-        readFile(join(output, "memory/org-a/binary.dat")),
-      ).resolves.toStrictEqual(fixture.binary);
-      await expect(
-        readFile(join(output, "instructions.jsonl"), "utf8"),
-      ).resolves.toContain("Personal Instructions.");
-      await expect(
-        readFile(join(output, "workflows.jsonl"), "utf8"),
-      ).resolves.toContain("Workflow instruction.");
-      await expect(
-        readFile(join(output, "chat-threads.jsonl"), "utf8"),
-      ).resolves.toContain("Pinned thread");
-    },
-  );
-
-  it.each(["fileCount", "totalSize"] as const)(
-    "rejects a supplied memory %s that disagrees with the file inventory",
-    async (field) => {
-      const fixture = sources("server");
-      fixture.files.set(
-        "memory/org-a/storage-a/manifest.json",
-        json({
-          ...fixture.memoryManifest,
-          [field]: field === "fileCount" ? 2 : fixture.binary.length + 1,
-        }),
-      );
-      const { result, output } = await runRestore(
-        exportZip(fixture.files, fixture.meta),
-      );
-      expect(result.status).toBe(1);
-      expect(result.stderr).toContain(
-        "Memory manifest totals do not match its files",
-      );
-      await expect(
-        readFile(join(output, "chat-threads.jsonl")),
-      ).rejects.toThrow("ENOENT");
-    },
-  );
-
-  it("raises the thread bound to a snapshot that overtook it mid-export", async () => {
-    const { files, meta } = sources();
-    // The collector records the bound in the `threads` step. A snapshot landing
-    // during paging is retained whole, so it carries the bound past 10.
-    files.set(
-      "chat-messages/thread-a/snapshots/overtaking.ndjson.gz",
-      gzipSync(jsonLines([event(3), event(5), event(8), event(9), event(12)])),
-    );
-    meta.set("chat-messages/thread-a/snapshots/overtaking.ndjson.gz", {
-      threadId: "thread-a",
-      lastSeqId: 12,
-    });
-    const { result, output } = await runRestore(exportZip(files, meta));
-    expect(result.stderr).toBe("");
-    expect(result.status).toBe(0);
-    await expect(
-      readFile(join(output, "chat-messages/thread-a.jsonl"), "utf8"),
-    ).resolves.toBe(
-      // Event 12 proves the bound rose; a stale bound of 10 would drop it. The
-      // snapshot covers through 12, so every tail row at or below it is
-      // superseded — including the revocation that event 10 carried.
-      jsonLines([event(3), event(5), event(8), event(9), event(12)]).toString(
-        "utf8",
-      ),
-    );
-  });
-
-  it("rejects changed source bytes even when their ZIP CRC is internally valid", async () => {
-    const zip = exportZip(sources().files, sources().meta);
-    zip.updateFile(
-      "workflows/workflow-a.json",
-      Buffer.from(
-        zip
-          .readAsText("workflows/workflow-a.json")
-          .replace("Workflow", "Workfl0w"),
-      ),
-    );
-    const { result, output } = await runRestore(zip);
-    expect(result.status).toBe(1);
-    expect(result.stderr).toContain("SHA-256 mismatch");
-    await expect(readFile(join(output, "workflows.jsonl"))).rejects.toThrow(
-      "ENOENT",
-    );
-  });
-
-  it("verifies the concatenated manifest page digest before trusting its file checksums", async () => {
-    const zip = exportZip(sources().files, sources().meta);
-    const original = zip.readAsText("manifest/files-100.jsonl");
-    // Rename whichever padding entry leads this page, so the tamper does not
-    // depend on how many real fixture entries precede the page boundary.
-    zip.updateFile(
-      "manifest/files-100.jsonl",
-      Buffer.from(original.replace("workflows/extra-", "workflows/other-")),
-    );
-    const { result } = await runRestore(zip);
-    expect(result.status).toBe(1);
-    expect(result.stderr).toContain("Manifest page SHA-256 mismatch");
-  });
-
-  it("refuses memory archive links without creating output files", async () => {
-    const { files, meta } = sources();
-    files.set(
-      "memory/org-a/storage-a/archive.tar.gz",
-      gzipSync(
-        tarArchive([
-          tarEntry({ path: "link", type: "2", linkname: "../../outside" }),
-        ]),
-      ),
-    );
-    files.set(
-      "memory/org-a/storage-a/manifest.json",
-      json({ version: "1", fileCount: 0, totalSize: 0, files: [] }),
-    );
-    const { result, output } = await runRestore(exportZip(files, meta));
-    expect(result.status).toBe(1);
-    expect(result.stderr).toContain("link or special file");
-    await expect(readFile(join(output, "chat-threads.jsonl"))).rejects.toThrow(
-      "ENOENT",
-    );
-  });
-  it("refuses a memory manifest path that escapes the restored directory", async () => {
-    const { files, meta, binary } = sources();
-    files.set(
-      "memory/org-a/storage-a/manifest.json",
-      json({
-        version: "1",
-        fileCount: 1,
-        totalSize: binary.length,
+  it("user-export-restore-001 restores verified paged sources, current chat events, instructions and guest binary memory", () => {
+    const activeThreadId = "thread-active";
+    const emptyThreadId = "thread-empty";
+    const binaryPayload = Buffer.from([
+      0x00, 0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0xff, 0xfe, 0x42,
+    ]);
+    const memoryTarGz = buildTarGz([
+      { name: "./bin/sample.bin", data: binaryPayload },
+    ]);
+    const memoryManifestBytes = Buffer.from(
+      JSON.stringify({
+        version: 1,
+        createdAt: "2026-09-09T12:00:00.000Z",
         files: [
-          { path: "../outside", size: binary.length, hash: sha256(binary) },
+          {
+            path: "./bin/sample.bin",
+            size: binaryPayload.byteLength,
+            hash: sha256Hex(binaryPayload),
+          },
         ],
       }),
+      "utf8",
     );
-    const { result, output } = await runRestore(exportZip(files, meta));
-    expect(result.status).toBe(1);
-    expect(result.stderr).toContain("Unsafe archive path");
-    await expect(readFile(join(output, "chat-threads.jsonl"))).rejects.toThrow(
-      "ENOENT",
+
+    const fillerWorkflows: ArchiveEntry[] = Array.from(
+      { length: 95 },
+      (_, index) => {
+        const id = `wf-pad-${String(index).padStart(3, "0")}`;
+        return {
+          path: `workflows/${id}.json`,
+          bytes: Buffer.from(
+            JSON.stringify({
+              id,
+              name: id,
+              instruction: `Pad ${String(index)}`,
+            }),
+            "utf8",
+          ),
+        };
+      },
     );
+
+    const archive = buildExportArchive([
+      {
+        path: `chat-threads/${activeThreadId}.json`,
+        bytes: Buffer.from(
+          JSON.stringify({
+            id: activeThreadId,
+            title: "Pinned release thread",
+            pinnedAt: "2026-09-09T10:00:00.000Z",
+          }),
+          "utf8",
+        ),
+        metadata: { threadId: activeThreadId, upperSeqId: 10 },
+      },
+      {
+        path: `chat-messages/${activeThreadId}/snapshots/snap-0008.jsonl.gz`,
+        bytes: gzipSync(
+          jsonlBuffer([
+            chatEvent(activeThreadId, 3),
+            chatEvent(activeThreadId, 5),
+            chatEvent(activeThreadId, 8),
+          ]),
+        ),
+        metadata: { lastSeqId: 8 },
+      },
+      {
+        path: `chat-messages/${activeThreadId}/tail/part-0001.jsonl`,
+        bytes: jsonlBuffer([
+          chatEvent(activeThreadId, 8),
+          chatEvent(activeThreadId, 9),
+          chatEvent(activeThreadId, 10),
+          chatEvent(activeThreadId, 11),
+        ]),
+      },
+      {
+        path: `chat-threads/${emptyThreadId}.json`,
+        bytes: Buffer.from(
+          JSON.stringify({
+            id: emptyThreadId,
+            title: "Empty thread",
+            pinnedAt: null,
+          }),
+          "utf8",
+        ),
+        metadata: { threadId: emptyThreadId, upperSeqId: 0 },
+      },
+      {
+        path: "instructions/personal-1.json",
+        bytes: Buffer.from(
+          JSON.stringify({
+            id: "personal-1",
+            content: "Always summarize diffs concisely.",
+          }),
+          "utf8",
+        ),
+      },
+      {
+        path: "workflows/wf-primary.json",
+        bytes: Buffer.from(
+          JSON.stringify({
+            id: "wf-primary",
+            name: "release-checklist",
+            instruction: "Run smoke checks before publishing.",
+          }),
+          "utf8",
+        ),
+      },
+      ...fillerWorkflows,
+      {
+        path: "memory/org_alpha/snap_guest/manifest.json",
+        bytes: memoryManifestBytes,
+      },
+      {
+        path: "memory/org_alpha/snap_guest/archive.tar.gz",
+        bytes: memoryTarGz,
+      },
+    ]);
+
+    const result = runRecoveryCli(archive);
+    expect(result.status).toBe(0);
+    expect(result.stderr).toBe("");
+
+    const restoredEvents = readFileSync(
+      join(result.outputDir, "chat-messages", `${activeThreadId}.jsonl`),
+      "utf8",
+    )
+      .trim()
+      .split("\n")
+      .map((line) => {
+        return (JSON.parse(line) as { readonly seqId: number }).seqId;
+      });
+    expect(restoredEvents).toStrictEqual([3, 5, 8, 9, 10]);
+
+    expect(
+      readFileSync(
+        join(result.outputDir, "chat-messages", `${emptyThreadId}.jsonl`),
+        "utf8",
+      ),
+    ).toBe("");
+
+    expect(
+      readFileSync(
+        join(result.outputDir, "memory", "org_alpha", "bin", "sample.bin"),
+      ),
+    ).toStrictEqual(binaryPayload);
+
+    expect(
+      readFileSync(join(result.outputDir, "instructions.jsonl"), "utf8"),
+    ).toContain("Always summarize diffs concisely.");
+    expect(
+      readFileSync(join(result.outputDir, "workflows.jsonl"), "utf8"),
+    ).toContain("Run smoke checks before publishing.");
+    expect(
+      readFileSync(join(result.outputDir, "chat-threads.jsonl"), "utf8"),
+    ).toContain('"pinnedAt":"2026-09-09T10:00:00.000Z"');
   });
 
-  it("refuses ZIP link metadata before processing its contents", async () => {
-    const zip = exportZip(sources().files, sources().meta);
-    const entry = zip.getEntry("workflows/workflow-a.json");
-    if (entry === null) {
-      throw new Error("Expected workflow fixture entry");
-    }
-    entry.attr = 0o12_0777 * 65_536;
-    const { result } = await runRestore(zip);
+  it("user-export-restore-005 raises the thread bound to a snapshot that overtook it mid-export", () => {
+    const threadId = "thread-overtake";
+    const archive = buildExportArchive([
+      {
+        path: `chat-threads/${threadId}.json`,
+        bytes: Buffer.from(
+          JSON.stringify({ id: threadId, title: "Overtaken thread" }),
+          "utf8",
+        ),
+        metadata: { threadId, upperSeqId: 10 },
+      },
+      {
+        path: `chat-messages/${threadId}/snapshots/snap-0012.jsonl.gz`,
+        bytes: gzipSync(
+          jsonlBuffer([
+            chatEvent(threadId, 3),
+            chatEvent(threadId, 5),
+            chatEvent(threadId, 8),
+            chatEvent(threadId, 9),
+            chatEvent(threadId, 12),
+          ]),
+        ),
+        metadata: { lastSeqId: 12 },
+      },
+      {
+        path: `chat-messages/${threadId}/tail/part-0001.jsonl`,
+        bytes: jsonlBuffer([
+          chatEvent(threadId, 9),
+          chatEvent(threadId, 10),
+          chatEvent(threadId, 11),
+        ]),
+      },
+    ]);
+
+    const result = runRecoveryCli(archive);
+    expect(result.status).toBe(0);
+    expect(result.stderr).toBe("");
+
+    const restoredEvents = readFileSync(
+      join(result.outputDir, "chat-messages", `${threadId}.jsonl`),
+      "utf8",
+    )
+      .trim()
+      .split("\n")
+      .map((line) => {
+        return (JSON.parse(line) as { readonly seqId: number }).seqId;
+      });
+    expect(restoredEvents).toStrictEqual([3, 5, 8, 9, 12]);
+  });
+
+  it("user-export-restore-006 rejects changed source bytes even when their ZIP CRC is internally valid", () => {
+    const originalWorkflow = Buffer.from(
+      JSON.stringify({
+        id: "wf-tampered",
+        name: "billing",
+        instruction: "Original instruction.",
+      }),
+      "utf8",
+    );
+    const modifiedWorkflow = Buffer.from(
+      JSON.stringify({
+        id: "wf-tampered",
+        name: "billing",
+        instruction: "Tampered instruction.",
+      }),
+      "utf8",
+    );
+    const archive = buildExportArchive([
+      {
+        path: "workflows/wf-tampered.json",
+        bytes: modifiedWorkflow,
+        overrideManifestBytes: originalWorkflow,
+      },
+    ]);
+
+    const result = runRecoveryCli(archive);
     expect(result.status).toBe(1);
-    expect(result.stderr).toContain("ZIP contains a link");
+    expect(result.stderr).toContain("SHA-256 mismatch");
+    expect(existsSync(join(result.outputDir, "workflows.jsonl"))).toBeFalsy();
+  });
+
+  it("user-export-restore-009 refuses a memory manifest path that escapes the restored directory", () => {
+    const threadId = "thread-before-escape";
+    const escapingBytes = Buffer.from("escaped", "utf8");
+    const archive = buildExportArchive([
+      {
+        path: `chat-threads/${threadId}.json`,
+        bytes: Buffer.from(
+          JSON.stringify({ id: threadId, title: "Should not commit" }),
+          "utf8",
+        ),
+        metadata: { threadId, upperSeqId: 0 },
+      },
+      {
+        path: "memory/org_alpha/snap_bad/manifest.json",
+        bytes: Buffer.from(
+          JSON.stringify({
+            version: 1,
+            createdAt: "2026-09-09T12:00:00.000Z",
+            files: [
+              {
+                path: "../outside.txt",
+                size: escapingBytes.byteLength,
+                hash: sha256Hex(escapingBytes),
+              },
+            ],
+          }),
+          "utf8",
+        ),
+      },
+      {
+        path: "memory/org_alpha/snap_bad/archive.tar.gz",
+        bytes: buildTarGz([{ name: "benign.txt", data: escapingBytes }]),
+      },
+    ]);
+
+    const result = runRecoveryCli(archive);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("Unsafe archive path");
+    expect(
+      existsSync(join(result.outputDir, "chat-threads.jsonl")),
+    ).toBeFalsy();
   });
 });

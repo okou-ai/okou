@@ -1,845 +1,288 @@
 import { randomUUID } from "node:crypto";
-import { sshConnectionsContract } from "@okouai/api-contracts/contracts/ssh-connections";
-import { vncHostsContract } from "@okouai/api-contracts/contracts/vnc-access";
 import { chatRemoteAccessContract } from "@okouai/api-contracts/contracts/chat-remote-access";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { vncHostsContract } from "@okouai/api-contracts/contracts/vnc-access";
+import { vncConnectionsContract } from "@okouai/api-contracts/contracts/vnc-connections";
+import { createStore } from "ccstate";
+import { beforeAll, describe, expect, it } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { now } from "../../../lib/time";
-import { signSandboxJwtForTests } from "../../auth/tokens";
-import { sshConnectionsRoutes } from "../ssh-connections";
-import { vncAccessRoutes } from "../vnc-access";
-import { chatRemoteAccessRoutes } from "../chat-remote-access";
-import { createBddApi } from "./helpers/api-bdd";
-import { createRunsApi } from "./helpers/api-bdd-runs";
-import { createVncExecutionApi } from "./helpers/vnc-execution";
-import { createPublicRemoteAccessRunApi } from "./helpers/public-remote-access-run";
-import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
-import { inlineSshKey } from "./helpers/ssh-credential";
-import { certificateChain, privateKey } from "./helpers/vnc-synthetic-client";
 import {
-  createVncRuntimeApi,
-  initializeVncRuntimeTest,
-  vncConnectionBody,
-  vncRunnerHeaders,
-  vncSessionHeaders as headers,
-} from "./helpers/vnc-runtime";
+  TEST_WITH_DOUBLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE,
+  TEST_WITH_TRIPLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE,
+} from "../../../__tests__/test-timeouts";
+import { mockOptionalEnv } from "../../../lib/env";
+import { flushWaitUntilForTest } from "../../context/wait-until";
+import { chatRemoteAccessRoutes } from "../chat-remote-access";
+import { vncAccessRoutes } from "../vnc-access";
+import { vncConnectionsRoutes } from "../vnc-connections";
+import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
+import { createRunsApi } from "./helpers/api-bdd-runs";
+import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
+import { createChatEventsFixture } from "./helpers/chat-events-fixture";
+import { seedOrgMembership$ } from "./helpers/org-membership";
+import { publicRunOwner } from "./helpers/public-run-owner";
+import { createRouteMocks } from "./helpers/route-test";
+import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
+import { vncConnectionBody } from "./helpers/vnc-runtime";
 
 const context = testContext();
-const api = createVncRuntimeApi(context);
+const headers = Object.freeze({ authorization: "Bearer clerk-session" });
+const clerkDirectory = createStore();
 
-beforeEach(initializeVncRuntimeTest);
-
-interface Owner {
-  readonly orgId: string;
+interface Actor {
   readonly userId: string;
+  readonly orgId: string;
+  readonly role: "admin" | "member";
 }
 
-function owner(overrides: Partial<Owner> = {}) {
-  const value = {
-    orgId: `org_vnc_access_${randomUUID()}`,
-    userId: `user_vnc_access_${randomUUID()}`,
-    ...overrides,
-  };
-  api.authenticate(value);
-  return value;
-}
-
-function token(
-  runtime: Owner & { readonly runId: string },
-  capabilities = ["vnc:read"],
-  expiresInSeconds = 3600,
-) {
-  const seconds = Math.floor(now() / 1000);
-  return {
-    authorization: `Bearer ${signSandboxJwtForTests({
-      scope: "okou",
-      orgId: runtime.orgId,
-      userId: runtime.userId,
-      runId: runtime.runId,
-      capabilities,
-      iat: seconds,
-      exp: seconds + expiresInSeconds,
-    })}`,
-  };
-}
-
-function inventory() {
-  return setupApp({ context, routes: vncAccessRoutes })(vncHostsContract);
-}
-
-function sshConnections() {
-  return setupApp({ context, routes: sshConnectionsRoutes })(
-    sshConnectionsContract,
+function signIn(actor: Actor) {
+  createRouteMocks(context).clerk.session(
+    actor.userId,
+    actor.orgId,
+    actor.role === "admin" ? "org:admin" : "org:member",
   );
+}
+
+const vncConnections = () => {
+  return setupApp({ context, routes: vncConnectionsRoutes })(
+    vncConnectionsContract,
+  );
+};
+const remoteAccess = () => {
+  return setupApp({ context, routes: chatRemoteAccessRoutes })(
+    chatRemoteAccessContract,
+  );
+};
+const vncHosts = () => {
+  return setupApp({ context, routes: vncAccessRoutes })(vncHostsContract);
+};
+
+async function createEnabledVncHost(actor: Actor, displayName: string) {
+  await clerkDirectory.set(seedOrgMembership$, actor, context.signal);
+  signIn(actor);
+  const created = (
+    await accept(
+      vncConnections().create({
+        headers,
+        body: { ...vncConnectionBody(), displayName },
+      }),
+      [201],
+    )
+  ).body;
+  await accept(
+    remoteAccess().updateHostDefault({
+      headers,
+      params: { protocol: "vnc", connectionId: created.id },
+      body: { enabled: true },
+    }),
+    [200],
+  );
+  return created;
+}
+
+async function startAgentRun(
+  actor: Actor,
+  options: {
+    readonly runnerGroup?: string;
+    readonly bootstrapOrg?: boolean;
+    readonly grantTeam?: boolean;
+  } = {},
+) {
+  const fixture = createChatEventsFixture(context);
+  const bdd = createBddApi(context);
+  const runs = createRunsApi(context);
+  const apiUser: ApiTestUser = bdd.user({
+    userId: actor.userId,
+    orgId: actor.orgId,
+    orgRole: actor.role === "admin" ? "org:admin" : "org:member",
+  });
+  const owner = publicRunOwner(context, apiUser);
+  fixture.chatCallbacks.acceptChatObjectStorage();
+  runs.acceptStorageDownloads();
+  runs.acceptTelemetryIngest();
+  mockOptionalEnv("OPENROUTER_API_KEY", undefined);
+  fixture.chatCallbacks.disableVapid();
+
+  const runnerGroup =
+    options.runnerGroup ??
+    (await runs.configureRunnerGroup({ maxConcurrent: 4 }));
+  if (options.bootstrapOrg !== false) {
+    await owner.run(() => {
+      return bdd.bootstrapLimitedFreeOnboarding(apiUser);
+    });
+    if (options.grantTeam) {
+      await runs.grantProEntitlement(apiUser, { tier: "team" });
+    }
+  } else {
+    await owner.run(() => {
+      return bdd.completeOnboarding(apiUser);
+    });
+  }
+
+  const launched = await owner.run(() => {
+    return fixture.sendChatRun(apiUser, {
+      prompt: "Inspect authorized VNC hosts",
+      model: null,
+    });
+  });
+  const execution = await owner.executionInput(launched.runId);
+  const okouToken = execution.platformEnvironment.OKOU_TOKEN;
+  if (!okouToken) {
+    throw new Error("Expected OKOU_TOKEN in Run execution input");
+  }
+  return {
+    apiUser,
+    runId: launched.runId,
+    threadId: launched.threadId,
+    runnerGroup,
+    execution,
+    agentHeaders: { authorization: `Bearer ${okouToken}` },
+  };
 }
 
 describe("live chat VNC Run inventory", () => {
-  const executionApi = createVncExecutionApi(context);
-  const publicRuns = createPublicRemoteAccessRunApi(context);
-  afterEach(async () => {
-    await publicRuns.cleanup();
-    await executionApi.cleanup();
+  beforeAll(() => {
+    setupApp({
+      context,
+      routes: [
+        ...vncConnectionsRoutes,
+        ...chatRemoteAccessRoutes,
+        ...vncAccessRoutes,
+      ],
+    });
   });
 
-  it("advertises the exact client-certificate profile without revealing private material", async () => {
-    const kms = useSecretKmsProbe();
-    const f = await executionApi.fixture({
-      defaultEnabled: false,
-    });
-    api.authenticate(f);
-    const created = await accept(
-      api.connections().create({
-        headers,
-        body: {
-          id: randomUUID(),
-          displayName: "Client certificate QEMU",
-          host: "qemu.example.com",
-          security: { type: "x509_none", trust: { mode: "system" } },
-          credential: {
-            create: {
-              name: "QEMU identity",
-              authentication: {
-                method: "client_certificate",
-                certificateChain,
-                privateKey,
-              },
-            },
-          },
-        },
-      }),
-      [201],
-    );
-    await accept(
-      setupApp({ context, routes: chatRemoteAccessRoutes })(
-        chatRemoteAccessContract,
-      ).updateHostDefault({
-        headers,
-        params: { protocol: "vnc", connectionId: created.body.id },
-        body: { enabled: true },
-      }),
-      [200],
-    );
-    const decryptsBeforeInventory = kms.decryptCalls;
-    const result = await accept(
-      inventory().list({ headers: executionApi.agentHeaders(f) }),
-      [200],
-    );
-    const item = result.body.hosts.find((host) => {
-      return host.id === created.body.id;
-    });
-    expect(item).toMatchObject({
-      authMethod: "client_certificate",
-      securityType: "x509_none",
-      availability: { status: "ready" },
-    });
-    expect(JSON.stringify(result.body)).not.toContain(privateKey);
-    expect(JSON.stringify(result.body)).not.toContain("certificateChain");
-    expect(result.body.identities).toMatchObject([
-      { id: created.body.id, generation: created.body.generation },
-    ]);
-    expect(result.body.identities[0]?.createdAt).toMatch(/\.\d{6}Z$/);
-    expect(kms.decryptCalls).toBe(decryptsBeforeInventory);
-  });
+  it(
+    "vnc-access-011 isolates a shared Agent's inventory by the Run owner",
+    { timeout: TEST_WITH_TRIPLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      useSecretKmsProbe();
+      const orgId = `org_${randomUUID()}`;
+      const creator: Actor = {
+        userId: `user_${randomUUID()}`,
+        orgId,
+        role: "admin",
+      };
+      const colleague: Actor = {
+        userId: `user_${randomUUID()}`,
+        orgId,
+        role: "member",
+      };
+      await Promise.all([
+        clerkDirectory.set(seedOrgMembership$, creator, context.signal),
+        clerkDirectory.set(seedOrgMembership$, colleague, context.signal),
+      ]);
 
-  it("lists the owner-selected QEMU SCRAM pair without exposing its password", async () => {
-    const f = await executionApi.fixture({
-      defaultEnabled: false,
-    });
-    api.authenticate(f);
-    const password = "synthetic-scram-secret";
-    const created = await accept(
-      api.connections().create({
-        headers,
-        body: {
-          id: randomUUID(),
-          displayName: "QEMU SCRAM desktop",
-          host: "qemu.example.com",
-          security: { type: "qemu_x509_sasl", trust: { mode: "system" } },
-          credential: {
-            create: {
-              name: "QEMU SCRAM login",
-              authentication: {
-                method: "qemu_scram_sha256",
-                username: "operator",
-                password,
-              },
-            },
-          },
-        },
-      }),
-      [201],
-    );
-    expect(
-      (
-        await accept(
-          inventory().list({ headers: executionApi.agentHeaders(f) }),
-          [200],
-        )
-      ).body,
-    ).toStrictEqual({ hosts: [], identities: [] });
-    await accept(
-      setupApp({ context, routes: chatRemoteAccessRoutes })(
-        chatRemoteAccessContract,
-      ).updateHostDefault({
-        headers,
-        params: { protocol: "vnc", connectionId: created.body.id },
-        body: { enabled: true },
-      }),
-      [200],
-    );
-    const kms = useSecretKmsProbe();
-    const listed = await accept(
-      inventory().list({ headers: executionApi.agentHeaders(f) }),
-      [200],
-    );
-    expect(listed.body.hosts).toContainEqual({
-      id: created.body.id,
-      displayName: "QEMU SCRAM desktop",
-      host: "qemu.example.com",
-      port: 5900,
-      authMethod: "qemu_scram_sha256",
-      securityType: "qemu_x509_sasl",
-      availability: { status: "ready" },
-    });
-    expect(JSON.stringify(listed.body)).not.toContain(password);
-    expect(kms.decryptCalls).toBe(0);
-  });
-
-  it("filters live chat inventory by VNC access and the exact SSH dependency", async () => {
-    const f = await executionApi.fixture({
-      defaultEnabled: false,
-    });
-    if (!f.threadId) {
-      throw new Error("Missing fixture chat thread");
-    }
-    const threadId = f.threadId;
-    api.authenticate(f);
-    const remote = setupApp({ context, routes: chatRemoteAccessRoutes })(
-      chatRemoteAccessContract,
-    );
-    const listIds = async () => {
-      return (
-        await accept(
-          inventory().list({ headers: executionApi.agentHeaders(f) }),
-          [200],
-        )
-      ).body.hosts.map((host) => {
-        return host.id;
+      const creatorHost = await createEnabledVncHost(
+        creator,
+        "Creator desktop",
+      );
+      const creatorRun = await startAgentRun(creator, { grantTeam: true });
+      const colleagueRun = await startAgentRun(colleague, {
+        runnerGroup: creatorRun.runnerGroup,
+        bootstrapOrg: false,
       });
-    };
-    await expect(listIds()).resolves.toStrictEqual([]);
-    await accept(
-      remote.updateHostDefault({
-        headers,
-        params: { protocol: "vnc", connectionId: f.connectionId },
-        body: { enabled: true },
-      }),
-      [200],
-    );
-    await expect(listIds()).resolves.toStrictEqual([f.connectionId]);
-    const ssh = await accept(
-      sshConnections().create({
-        headers,
-        body: {
-          id: randomUUID(),
-          displayName: "VNC gateway",
-          host: "gateway.example.com",
-          credential: inlineSshKey("deploy", "private-key"),
-        },
-      }),
-      [201],
-    );
-    await accept(
-      api.connections().update({
-        headers,
-        params: { connectionId: f.connectionId },
-        body: {
-          expectedGeneration: 1,
-          transport: { type: "ssh", connectionId: ssh.body.id },
-          security: {
-            ...vncConnectionBody().security,
-            serverName: "desktop.internal",
-          },
-        },
-      }),
-      [200],
-    );
-    await expect(listIds()).resolves.toStrictEqual([]);
-    await accept(
-      remote.updateHostDefault({
-        headers,
-        params: { protocol: "ssh", connectionId: ssh.body.id },
-        body: { enabled: true },
-      }),
-      [200],
-    );
-    await expect(listIds()).resolves.toStrictEqual([f.connectionId]);
-    await accept(
-      remote.setThreadOverride({
-        headers,
-        params: { threadId, protocol: "ssh", connectionId: ssh.body.id },
-        body: { enabled: false },
-      }),
-      [200],
-    );
-    await expect(listIds()).resolves.toStrictEqual([]);
-  });
 
-  async function createHost(host = "vnc.example.com") {
-    return await accept(
-      api.connections().create({
-        headers,
-        body: { ...vncConnectionBody(), host },
-      }),
-      [201],
-    );
-  }
-
-  it("keeps first-host and recreated-host chat access default off", async () => {
-    const current = await executionApi.paidOwner();
-    const runtime = { ...current, ...(await executionApi.runtime(current)) };
-    const first = await createHost();
-    expect(
-      (
-        await accept(
-          inventory().list({ headers: executionApi.agentHeaders(runtime) }),
-          [200],
-        )
-      ).body,
-    ).toStrictEqual({ hosts: [], identities: [] });
-    await accept(
-      api.connections().delete({
-        headers,
-        params: { connectionId: first.body.id },
-        body: { expectedGeneration: first.body.generation },
-      }),
-      [204],
-    );
-    await createHost("replacement.example.com");
-    expect(
-      (
-        await accept(
-          inventory().list({ headers: executionApi.agentHeaders(runtime) }),
-          [200],
-        )
-      ).body,
-    ).toStrictEqual({ hosts: [], identities: [] });
-  });
-
-  it("commits concurrent first hosts without implicit chat access", async () => {
-    const current = await executionApi.paidOwner();
-    const runtime = { ...current, ...(await executionApi.runtime(current)) };
-    await Promise.all([
-      createHost("one.example.com"),
-      createHost("two.example.com"),
-    ]);
-    expect(
-      (await accept(api.connections().list({ headers }), [200])).body
-        .connections,
-    ).toHaveLength(2);
-    expect(
-      (
-        await accept(
-          inventory().list({ headers: executionApi.agentHeaders(runtime) }),
-          [200],
-        )
-      ).body,
-    ).toStrictEqual({ hosts: [], identities: [] });
-  });
-
-  it("lists a chat-enabled host for an Agent without decrypting credentials", async () => {
-    const f = await executionApi.fixture();
-    const listed = await accept(
-      inventory().list({ headers: executionApi.agentHeaders(f) }),
-      [200],
-    );
-    expect(listed.body).toStrictEqual({
-      hosts: [
-        {
-          id: f.connectionId,
-          displayName: "VNC desktop",
-          host: "vnc.example.com",
-          port: 5900,
-          authMethod: "vnc_password",
-          securityType: "x509_vnc",
-          availability: { status: "ready" },
-        },
-      ],
-      identities: [
-        {
-          id: f.connectionId,
-          createdAt: expect.stringMatching(/\.\d{6}Z$/),
-          generation: 1,
-        },
-      ],
-    });
-    const kms = useSecretKmsProbe();
-    await accept(
-      inventory().list({ headers: executionApi.agentHeaders(f) }),
-      [200],
-    );
-    expect(kms.decryptCalls).toBe(0);
-    await accept(
-      api.connections().create({ headers, body: vncConnectionBody() }),
-      [201],
-    );
-    expect(
-      (
-        await accept(
-          inventory().list({ headers: executionApi.agentHeaders(f) }),
-          [200],
-        )
-      ).body,
-    ).toStrictEqual(listed.body);
-  });
-
-  it("returns an authorized empty inventory for current and later Agents", async () => {
-    const current = await executionApi.paidOwner();
-    const runtime = { ...current, ...(await executionApi.runtime(current)) };
-    expect(
-      (
-        await accept(
-          inventory().list({ headers: executionApi.agentHeaders(runtime) }),
-          [200],
-        )
-      ).body,
-    ).toStrictEqual({ hosts: [], identities: [] });
-
-    const other = await executionApi.runtime({
-      ...current,
-    });
-    expect(
-      (
-        await accept(
-          inventory().list({
-            headers: executionApi.agentHeaders({ ...current, ...other }),
-          }),
-          [200],
-        )
-      ).body,
-    ).toStrictEqual({ hosts: [], identities: [] });
-  });
-
-  it("requires both VNC and SSH chat host permissions for SSH-backed inventory rows", async () => {
-    const current = await executionApi.paidOwner();
-    const runtime = { ...current, ...(await executionApi.runtime(current)) };
-    const ssh = await accept(
-      sshConnections().create({
-        headers,
-        body: {
-          id: randomUUID(),
-          displayName: "VNC gateway",
-          host: "gateway.example.com",
-          credential: inlineSshKey("deploy", "private-key"),
-        },
-      }),
-      [201],
-    );
-    const direct = await accept(
-      api.connections().create({
-        headers,
-        body: {
-          ...vncConnectionBody(),
-          displayName: "Direct desktop",
-          host: "direct.example.com",
-        },
-      }),
-      [201],
-    );
-    const tunneled = await accept(
-      api.connections().create({
-        headers,
-        body: {
-          ...vncConnectionBody(),
-          id: randomUUID(),
-          displayName: "Tunneled desktop",
-          host: "127.0.0.1",
-          transport: { type: "ssh", connectionId: ssh.body.id },
-        },
-      }),
-      [201],
-    );
-    await api.enableDefault(current, "vnc", direct.body.id);
-    await api.enableDefault(current, "vnc", tunneled.body.id);
-
-    const listIds = async () => {
-      const result = await accept(
-        inventory().list({ headers: executionApi.agentHeaders(runtime) }),
+      const colleagueBefore = await accept(
+        vncHosts().list({ headers: colleagueRun.agentHeaders }),
         [200],
       );
-      expect(JSON.stringify(result.body)).not.toContain(ssh.body.id);
-      return result.body.hosts.map((entry) => {
-        return entry.id;
+      expect(colleagueBefore.body).toStrictEqual({
+        hosts: [],
+        identities: [],
       });
-    };
 
-    await expect(listIds()).resolves.toStrictEqual([direct.body.id]);
-    await api.enableDefault(current, "ssh", ssh.body.id);
-    await expect(listIds()).resolves.toStrictEqual([
-      direct.body.id,
-      tunneled.body.id,
-    ]);
-    await api.setDefault(current, "ssh", ssh.body.id, false);
-    await expect(listIds()).resolves.toStrictEqual([direct.body.id]);
-  });
-
-  it("lists the authorized Mac classic password profile without exposing its secret", async () => {
-    const current = await executionApi.paidOwner();
-    const runtime = { ...current, ...(await executionApi.runtime(current)) };
-    const ssh = await accept(
-      sshConnections().create({
-        headers,
-        body: {
-          id: randomUUID(),
-          displayName: "Mac SSH",
-          host: "mac.example.com",
-          credential: inlineSshKey("operator", "private-key"),
-        },
-      }),
-      [201],
-    );
-    const saved = await accept(
-      api.connections().create({
-        headers,
-        body: {
-          id: randomUUID(),
-          displayName: "Classic desktop",
-          host: "127.0.0.1",
-          credential: {
-            create: {
-              name: "Classic password",
-              authentication: {
-                method: "vnc_password",
-                password: "testpass",
-              },
-            },
-          },
-          security: { type: "apple_vnc_password" },
-          transport: { type: "ssh", connectionId: ssh.body.id },
-        },
-      }),
-      [201],
-    );
-    await api.enableDefault(current, "vnc", saved.body.id);
-    await api.enableDefault(current, "ssh", ssh.body.id);
-    const kms = useSecretKmsProbe();
-    const listed = await accept(
-      inventory().list({ headers: executionApi.agentHeaders(runtime) }),
-      [200],
-    );
-    expect(listed.body).toStrictEqual({
-      hosts: [
-        {
-          id: saved.body.id,
-          displayName: "Classic desktop",
-          host: "127.0.0.1",
-          port: 5900,
-          authMethod: "vnc_password",
-          securityType: "apple_vnc_password",
-          availability: { status: "ready" },
-        },
-      ],
-      identities: [
-        {
-          id: saved.body.id,
-          createdAt: expect.stringMatching(/\.\d{6}Z$/),
-          generation: saved.body.generation,
-        },
-      ],
-    });
-    expect(JSON.stringify(listed.body)).not.toContain("testpass");
-    expect(kms.decryptCalls).toBe(0);
-    await api.setDefault(current, "ssh", ssh.body.id, false);
-    expect(
-      (
-        await accept(
-          inventory().list({ headers: executionApi.agentHeaders(runtime) }),
-          [200],
-        )
-      ).body,
-    ).toStrictEqual({ hosts: [], identities: [] });
-  });
-
-  it("returns both exact supported pairs without decrypting credentials", async () => {
-    const current = await executionApi.paidOwner();
-    const runtime = { ...current, ...(await executionApi.runtime(current)) };
-    const kms = useSecretKmsProbe();
-    const plain = await accept(
-      api.connections().create({
-        headers,
-        body: {
-          id: randomUUID(),
-          displayName: "Plain desktop",
-          host: "plain.example.com",
-          credential: {
-            create: {
-              name: "Plain credential",
-              authentication: {
-                method: "username_password",
-                username: "operator",
-                password: " private secret ",
-              },
-            },
-          },
-          security: {
-            type: "x509_plain",
-            trust: { mode: "system" },
-          },
-        },
-      }),
-      [201],
-    );
-    expect(plain.body.security.type).toBe("x509_plain");
-    await api.enableDefault(current, "vnc", plain.body.id);
-    expect(
-      (
-        await accept(
-          inventory().list({ headers: executionApi.agentHeaders(runtime) }),
-          [200],
-        )
-      ).body,
-    ).toStrictEqual({
-      hosts: [
-        {
-          id: plain.body.id,
-          displayName: "Plain desktop",
-          host: "plain.example.com",
-          port: 5900,
-          authMethod: "username_password",
-          securityType: "x509_plain",
-          availability: { status: "ready" },
-        },
-      ],
-      identities: [
-        {
-          id: plain.body.id,
-          createdAt: expect.stringMatching(/\.\d{6}Z$/),
-          generation: plain.body.generation,
-        },
-      ],
-    });
-
-    const supported = await createHost("supported.example.com");
-    await api.enableDefault(current, "vnc", supported.body.id);
-    expect(
-      (
-        await accept(
-          inventory().list({ headers: executionApi.agentHeaders(runtime) }),
-          [200],
-        )
-      ).body,
-    ).toStrictEqual({
-      hosts: [
-        {
-          id: plain.body.id,
-          displayName: "Plain desktop",
-          host: "plain.example.com",
-          port: 5900,
-          authMethod: "username_password",
-          securityType: "x509_plain",
-          availability: { status: "ready" },
-        },
-        {
-          id: supported.body.id,
-          displayName: "VNC desktop",
-          host: "supported.example.com",
-          port: 5900,
-          authMethod: "vnc_password",
-          securityType: "x509_vnc",
-          availability: { status: "ready" },
-        },
-      ],
-      identities: [
-        {
-          id: plain.body.id,
-          createdAt: expect.stringMatching(/\.\d{6}Z$/),
-          generation: plain.body.generation,
-        },
-        {
-          id: supported.body.id,
-          createdAt: expect.stringMatching(/\.\d{6}Z$/),
-          generation: supported.body.generation,
-        },
-      ],
-    });
-    expect(kms.decryptCalls).toBe(0);
-  });
-
-  it("isolates a shared Agent's inventory by the Run owner", async () => {
-    const bdd = createBddApi(context);
-    const creatorOwner = await executionApi.paidOwner();
-
-    const creatorHost = await accept(
-      api.connections().create({ headers, body: vncConnectionBody() }),
-      [201],
-    );
-    await api.enableDefault(creatorOwner, "vnc", creatorHost.body.id);
-    const creator = {
-      ...(await executionApi.runtime({
-        ...creatorOwner,
-      })),
-      connectionId: creatorHost.body.id,
-    };
-    const consumer = owner({ orgId: creator.orgId });
-    const consumerActor = bdd.user(consumer);
-    // Memory initialization and model selection are personal to each Run owner.
-    await bdd.completeOnboarding(consumerActor);
-    await createRunsApi(context).ensurePersonalSubscriptionModel(
-      consumerActor,
-      { model: "claude-sonnet-5-5" },
-    );
-    const runtime = {
-      ...consumer,
-      ...(await executionApi.runtime({
-        ...consumer,
-      })),
-    };
-    expect(
-      (
-        await accept(
-          inventory().list({ headers: executionApi.agentHeaders(runtime) }),
-          [200],
-        )
-      ).body,
-    ).toStrictEqual({ hosts: [], identities: [] });
-    const host = await accept(
-      api.connections().create({
-        headers,
-        body: { ...vncConnectionBody(), host: "consumer.example.com" },
-      }),
-      [201],
-    );
-    await api.enableDefault(consumer, "vnc", host.body.id);
-    expect(
-      (
-        await accept(
-          inventory().list({ headers: executionApi.agentHeaders(runtime) }),
-          [200],
-        )
-      ).body.hosts.map((entry) => {
-        return entry.id;
-      }),
-    ).toStrictEqual([host.body.id]);
-    api.authenticate(creator);
-    expect(
-      (
-        await accept(
-          inventory().list({ headers: executionApi.agentHeaders(creator) }),
-          [200],
-        )
-      ).body.hosts.map((entry) => {
-        return entry.id;
-      }),
-    ).toStrictEqual([creator.connectionId]);
-    api.authenticate(consumer);
-    const ownedHosts = await accept(
-      inventory().list({ headers: executionApi.agentHeaders(runtime) }),
-      [200],
-    );
-    expect(
-      ownedHosts.body.hosts.map((item) => {
-        return item.id;
-      }),
-    ).toStrictEqual([host.body.id]);
-  });
-
-  it("does not accept another organization or Run owner from a valid token", async () => {
-    const f = await executionApi.fixture();
-    const foreign = owner({ userId: f.userId });
-    expect(
-      (
-        await accept(
-          inventory().list({ headers: token({ ...foreign, runId: f.runId }) }),
-          [404],
-        )
-      ).status,
-    ).toBe(404);
-    const other = owner({ orgId: f.orgId });
-    expect(
-      (
-        await accept(
-          inventory().list({ headers: token({ ...other, runId: f.runId }) }),
-          [404],
-        )
-      ).status,
-    ).toBe(404);
-    api.authenticate(f);
-    expect(
-      (
-        await accept(
-          inventory().list({ headers: token({ ...f, runId: randomUUID() }) }),
-          [404],
-        )
-      ).status,
-    ).toBe(404);
-  });
-
-  it("lists an active Run's hosts when the Clerk membership lookup is unavailable", async () => {
-    const f = await executionApi.fixture();
-    context.mocks.clerk.organizations.getOrganizationMembershipList.mockRejectedValue(
-      new Error("Clerk membership lookup is unavailable"),
-    );
-    const response = await accept(
-      inventory().list({ headers: executionApi.agentHeaders(f) }),
-      [200],
-    );
-    expect(response.body.hosts).toMatchObject([{ id: f.connectionId }]);
-    expect(response.headers.get("cache-control")).toBe("no-store");
-  });
-
-  it.each(["completed", "cancelled", "failed"] as const)(
-    "rejects inventory for a %s Run despite an enabled host default",
-    async (status) => {
-      const value = owner();
-      const connection = await accept(
-        api.connections().create({ headers, body: vncConnectionBody() }),
-        [201],
+      const colleagueHost = await createEnabledVncHost(
+        colleague,
+        "Colleague desktop",
       );
-      await api.enableDefault(value, "vnc", connection.body.id);
-      const f = await publicRuns.start(value);
-      const runtime = await publicRuns.executionInput(f, vncRunnerHeaders);
-      await publicRuns.finish(runtime, status);
-      api.authenticate(f);
-      const unavailableInventory = await accept(
-        inventory().list({ headers: token(f) }),
-        [404],
-      );
-      expect(unavailableInventory.body.error.code).toBe("VNC_UNAVAILABLE");
+
+      const [colleagueAfter, creatorFinal, colleagueFinal] = await Promise.all([
+        accept(vncHosts().list({ headers: colleagueRun.agentHeaders }), [200]),
+        accept(vncHosts().list({ headers: creatorRun.agentHeaders }), [200]),
+        accept(vncHosts().list({ headers: colleagueRun.agentHeaders }), [200]),
+      ]);
+      expect(
+        colleagueAfter.body.hosts.map((host) => {
+          return host.id;
+        }),
+      ).toStrictEqual([colleagueHost.id]);
+      expect(
+        creatorFinal.body.hosts.map((host) => {
+          return host.id;
+        }),
+      ).toStrictEqual([creatorHost.id]);
+      expect(
+        colleagueFinal.body.hosts.map((host) => {
+          return host.id;
+        }),
+      ).toStrictEqual([colleagueHost.id]);
     },
   );
 
-  it("keeps VNC inventory Agent-token and capability-specific", async () => {
-    const f = await executionApi.fixture();
-    expect((await accept(inventory().list({ headers }), [403])).status).toBe(
-      403,
-    );
-    expect(
-      (
-        await accept(
-          inventory().list({
-            headers: { authorization: `Bearer ${f.sandboxToken}` },
-          }),
-          [403],
-        )
-      ).status,
-    ).toBe(403);
-    for (const capabilities of [
-      [],
-      ["ssh:read", "ssh:write"],
-      ["computer-use:write"],
-      ["vnc:write"],
-    ]) {
-      await accept(
-        inventory().list({ headers: token(f, capabilities) }),
-        [403],
+  it(
+    "vnc-access-014 rejects inventory for a completed Run despite an enabled host default",
+    { timeout: TEST_WITH_DOUBLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      useSecretKmsProbe();
+      const member: Actor = {
+        userId: `user_${randomUUID()}`,
+        orgId: `org_${randomUUID()}`,
+        role: "member",
+      };
+      await clerkDirectory.set(seedOrgMembership$, member, context.signal);
+      await createEnabledVncHost(member, "Completed Run desktop");
+
+      const run = await startAgentRun(member);
+      const sandboxHeaders = {
+        authorization: `Bearer ${run.execution.sandboxToken}`,
+      };
+      const webhooks = createWebhookCallbackApi(context);
+      await webhooks.requestAgentEvents(
+        {
+          runId: run.runId,
+          events: [{ type: "system", sequenceNumber: 0 }],
+        },
+        sandboxHeaders,
+        [200],
       );
-    }
-    await accept(inventory().list({ headers: token(f) }), [200]);
-    await accept(
-      inventory().list({ headers: token(f, ["vnc:read"], -1) }),
-      [401],
-    );
-  });
+      await webhooks.requestAgentComplete(
+        {
+          runId: run.runId,
+          exitCode: 0,
+          lastEventSequence: 0,
+          completion: {
+            cliAgentType:
+              run.execution.cliAgentType === "pi"
+                ? "pi"
+                : run.execution.cliAgentType === "codex"
+                  ? "codex"
+                  : run.execution.cliAgentType === "antigravity"
+                    ? "antigravity"
+                    : "claude-code",
+            cliAgentSessionId: run.execution.piSessionId ?? run.threadId,
+            cliAgentSessionHistoryDisposition: "native_only",
+          },
+        },
+        sandboxHeaders,
+        [200],
+      );
+      await flushWaitUntilForTest();
+
+      const completedRun = await createRunsApi(context).readRun(
+        run.apiUser,
+        run.runId,
+      );
+      expect(completedRun.status).toBe("completed");
+
+      const rejected = await accept(
+        vncHosts().list({ headers: run.agentHeaders }),
+        [404],
+      );
+      expect(rejected.body).toMatchObject({
+        error: { code: "VNC_UNAVAILABLE" },
+      });
+    },
+  );
 });

@@ -1,20 +1,14 @@
-import { gzipSync } from "node:zlib";
+import { randomUUID } from "node:crypto";
+import { presentationTemplatesContract } from "@okouai/api-contracts/contracts/presentation-templates";
+import { describe, expect, it } from "vitest";
 
-import { GetObjectCommand } from "@aws-sdk/client-s3";
-
-import {
-  MAX_PRESENTATION_TEMPLATE_PACKAGE_BYTES,
-  PRESENTATION_TEMPLATE_PACKAGE_CONTENT_TYPE,
-  PRESENTATION_TEMPLATE_PAGE_CONTENT_TYPE,
-  presentationTemplatesContract,
-} from "@okouai/api-contracts/contracts/presentation-templates";
-import { beforeEach, describe, expect, it } from "vitest";
-
-import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { mockEnv } from "../../../lib/env";
+import { accept, testContext } from "../../../__tests__/test-context";
 import { mockNow } from "../../../lib/time";
+import { flushWaitUntilForTest } from "../../context/wait-until";
+import { presentationTemplatesRoutes } from "../presentation-templates";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
+import { channelsPublishedTo } from "./helpers/realtime-publications";
 import { createRouteMocks } from "./helpers/route-test";
 import {
   installS3Fixture,
@@ -22,66 +16,71 @@ import {
   uploadTemplateFile,
   type Fixture,
 } from "./helpers/template-publish-fixture";
-import { presentationTemplatesRoutes } from "../presentation-templates";
 
 const context = testContext();
 const bdd = createBddApi(context);
-const mocks = createRouteMocks(context);
-const ARTIFACTS_BUCKET = "test-user-artifacts";
-
-const SOURCE_CONTENT_TYPE =
+const PPTX =
   "application/vnd.openxmlformats-officedocument.presentationml.presentation";
-const LEGACY_SOURCE_CONTENT_TYPE = "application/vnd.ms-powerpoint";
+const CHANGED = "presentationTemplatesChanged";
 
-function templateClient() {
+function templatesApi() {
   return setupApp({ context, routes: presentationTemplatesRoutes })(
     presentationTemplatesContract,
   );
 }
 
-function webHeaders() {
+function signIn(actor: ApiTestUser) {
+  createRouteMocks(context).clerk.session(
+    actor.userId,
+    actor.orgId,
+    actor.orgRole,
+  );
   return { authorization: "Bearer clerk-session" };
 }
 
-function guidance(): readonly { path: string; content: string }[] {
-  return [
-    { path: "SKILL.md", content: "# Use this template\n" },
-    { path: "design-system.md", content: "Ink on warm paper.\n" },
-  ];
-}
-
-async function uploadInputs(
-  actor: ApiTestUser,
-  fixture: Fixture,
-  archive: Buffer,
-  source: { readonly filename: string; readonly contentType: string } = {
-    filename: "brand-system.pptx",
-    contentType: SOURCE_CONTENT_TYPE,
-  },
-): Promise<{
+interface DeckInputs {
   readonly sourceFileId: string;
   readonly pageFileIds: string[];
   readonly packageFileId: string;
-}> {
+}
+
+async function uploadDeck(
+  actor: ApiTestUser,
+  fixture: Fixture,
+  options: {
+    readonly sourceFilename?: string;
+    readonly sourceType?: string;
+    readonly packageFiles?: readonly { path: string; content: string }[];
+    readonly pageCount?: 1 | 2;
+  } = {},
+): Promise<DeckInputs> {
   const sourceFileId = await uploadTemplateFile(
     context,
     actor,
     fixture,
-    source,
-    Buffer.from("PK deck bytes", "utf8"),
+    {
+      filename: options.sourceFilename ?? "brand-system.pptx",
+      contentType: options.sourceType ?? PPTX,
+    },
+    Buffer.from("deck"),
   );
-  const pageFileIds: string[] = [];
-  for (const index of [0, 1]) {
+  const pageFileIds = [
+    await uploadTemplateFile(
+      context,
+      actor,
+      fixture,
+      { filename: "page-1.png", contentType: "image/png" },
+      Buffer.from("png-1"),
+    ),
+  ];
+  if (options.pageCount !== 1) {
     pageFileIds.push(
       await uploadTemplateFile(
         context,
         actor,
         fixture,
-        {
-          filename: `page-00${(index + 1).toString()}.png`,
-          contentType: PRESENTATION_TEMPLATE_PAGE_CONTENT_TYPE,
-        },
-        Buffer.from(`page ${index.toString()}`, "utf8"),
+        { filename: "page-2.png", contentType: "image/png" },
+        Buffer.from("png-2"),
       ),
     );
   }
@@ -89,657 +88,317 @@ async function uploadInputs(
     context,
     actor,
     fixture,
-    {
-      filename: "package.tar.gz",
-      contentType: PRESENTATION_TEMPLATE_PACKAGE_CONTENT_TYPE,
-    },
-    archive,
+    { filename: "package.tar.gz", contentType: "application/gzip" },
+    tarGz(
+      options.packageFiles ?? [
+        { path: "SKILL.md", content: "# Brand system" },
+        { path: "design-system.md", content: "Use the brand palette." },
+      ],
+    ),
   );
   return { sourceFileId, pageFileIds, packageFileId };
 }
 
-beforeEach(() => {
-  mockEnv("R2_USER_ARTIFACTS_BUCKET_NAME", ARTIFACTS_BUCKET);
-});
+async function publish(actor: ApiTestUser, inputs: DeckInputs, title: string) {
+  const response = await accept(
+    templatesApi().publish({
+      headers: signIn(actor),
+      body: { ...inputs, title },
+    }),
+    [200],
+  );
+  return response.body;
+}
 
 describe("presentation template publish", () => {
-  it("publishes an analysed deck as a ready template", async () => {
-    mockNow(new Date("2026-10-27T17:00:00.000Z"));
-    const actor = bdd.user();
+  it("presentation-template-publish-011 refuses uploads that belong to someone else", async () => {
     const fixture = installS3Fixture(context);
-    const inputs = await uploadInputs(actor, fixture, tarGz(guidance()));
+    const uploader = bdd.user();
+    const inputs = await uploadDeck(uploader, fixture, { pageCount: 1 });
+    const other = bdd.user({ orgId: `org_${randomUUID()}` });
 
-    mocks.clerk.session(actor.userId, actor.orgId);
-    const published = await accept(
-      templateClient().publish({
-        headers: webHeaders(),
-        body: { title: "Brand system", ...inputs },
+    const refused = await accept(
+      templatesApi().publish({
+        headers: signIn(other),
+        body: { ...inputs, title: "Borrowed deck" },
       }),
-      [200],
+      [400],
     );
-    expect(published.body).toMatchObject({
-      title: "Brand system",
-      sourceFilename: "brand-system.pptx",
-      pageCount: 2,
+    expect(refused.body.error.message).toContain("Uploaded file not found");
+  });
+  it("presentation-template-publish-008 refuses a package without its design-system guidance", async () => {
+    const fixture = installS3Fixture(context);
+    const member = bdd.user();
+    const inputs = await uploadDeck(member, fixture, {
+      packageFiles: [{ path: "SKILL.md", content: "# Brand system" }],
     });
-    expect(context.mocks.ably.publish).toHaveBeenCalledWith(
-      "presentationTemplatesChanged",
-      null,
-    );
-    expect(context.mocks.ably.channelGet).toHaveBeenCalledWith(
-      `user:${actor.userId}`,
-    );
+    const api = templatesApi();
 
-    // The row is usable immediately: nothing is pending on a later transition.
-    const listed = await accept(
-      templateClient().list({ headers: webHeaders() }),
-      [200],
-    );
-    expect(listed.body).toHaveLength(1);
-    const catalogPreviewAssets = listed.body[0]?.previewAssets;
-    expect(catalogPreviewAssets).toHaveLength(2);
-    if (catalogPreviewAssets === undefined) {
-      throw new Error("Expected prefetched presentation preview assets");
-    }
-    const detail = await accept(
-      templateClient().get({
-        headers: webHeaders(),
-        params: { templateId: published.body.id },
+    const refused = await accept(
+      api.publish({
+        headers: signIn(member),
+        body: { ...inputs, title: "Brand system" },
       }),
-      [200],
+      [400],
     );
-    expect(detail.body.pageUrls).toHaveLength(2);
-    expect(detail.body.previewAssets).toStrictEqual(catalogPreviewAssets);
-    expect(
-      catalogPreviewAssets.map((asset) => {
-        return asset.url;
-      }),
-    ).toStrictEqual(detail.body.pageUrls);
-    const previewAssetIds = catalogPreviewAssets.map((asset) => {
-      return asset.previewAssetId;
+    expect(refused.body.error.message).toContain("design-system.md");
+    await expect(api.list({ headers: signIn(member) })).resolves.toMatchObject({
+      status: 200,
+      body: [],
     });
-    const firstPreviewUrls = await accept(
-      templateClient().resolvePreviewUrls({
-        headers: webHeaders(),
-        body: { previewAssetIds },
-      }),
-      [200],
-    );
-    const secondPreviewUrls = await accept(
-      templateClient().resolvePreviewUrls({
-        headers: webHeaders(),
-        body: { previewAssetIds },
-      }),
-      [200],
-    );
-    expect(firstPreviewUrls.body.assets).toHaveLength(2);
-    expect(firstPreviewUrls.body.assets[0]?.url).toBe(detail.body.pageUrls[0]);
-    expect(published.body.coverUrl).toBe(detail.body.pageUrls[0]);
-    expect(secondPreviewUrls.body.assets).toStrictEqual(
-      firstPreviewUrls.body.assets,
-    );
-    const firstAsset = firstPreviewUrls.body.assets[0];
-    if (!firstAsset) {
-      throw new Error("Expected a published preview asset");
-    }
-    mockNow(new Date(firstAsset.expiresAt));
-    const refreshed = await accept(
-      templateClient().resolvePreviewUrls({
-        headers: webHeaders(),
-        body: { previewAssetIds },
-      }),
-      [200],
-    );
-    expect(
-      refreshed.body.assets.map((asset) => {
-        return asset.previewAssetId;
-      }),
-    ).toStrictEqual(previewAssetIds);
-    for (const [index, asset] of refreshed.body.assets.entries()) {
-      const previous = firstPreviewUrls.body.assets[index];
-      if (!previous) {
-        throw new Error("Expected the original preview asset");
-      }
-      expect(asset.url).not.toBe(previous.url);
-      expect(Date.parse(asset.expiresAt)).toBeGreaterThan(
-        Date.parse(previous.expiresAt),
-      );
-    }
-    const reused = await accept(
-      templateClient().resolvePreviewUrls({
-        headers: webHeaders(),
-        body: { previewAssetIds },
-      }),
-      [200],
-    );
-    expect(reused.body).toStrictEqual(refreshed.body);
-
-    expect(fixture.keys()).toContainEqual(
-      expect.stringMatching(/^bundles\/v1\/[a-f0-9]{64}\.tar\.gz$/u),
-    );
   });
 
-  it("imports and previews private template files", async () => {
-    const actor = bdd.user();
+  it("presentation-template-publish-003 publishes a legacy PowerPoint source as uploaded", async () => {
     const fixture = installS3Fixture(context);
-    const inputs = await uploadInputs(actor, fixture, tarGz(guidance()));
-    const published = await accept(
-      templateClient().publish({
-        headers: webHeaders(),
-        body: { title: "Private template", ...inputs },
-      }),
-      [200],
-    );
-    const detail = await accept(
-      templateClient().get({
-        headers: webHeaders(),
-        params: { templateId: published.body.id },
-      }),
-      [200],
-    );
-    expect(detail.body.pageUrls).toHaveLength(2);
-    const downloads = context.mocks.s3.send.mock.calls
-      .map(([command]) => {
-        return command;
-      })
-      .filter((command) => {
-        return command instanceof GetObjectCommand;
-      });
-    expect(
-      downloads.some((command) => {
-        return (
-          command.input.Bucket === "test-private-artifacts" &&
-          command.input.Key?.endsWith("package.tar.gz")
-        );
-      }),
-    ).toBeTruthy();
-    const previews = context.mocks.s3.getSignedUrl.mock.calls
-      .map(([, command]) => {
-        return command;
-      })
-      .filter((command) => {
-        return command instanceof GetObjectCommand;
-      });
-    expect(previews.length).toBeGreaterThan(0);
-    expect(
-      previews.every((command) => {
-        return command.input.Bucket === "test-private-artifacts";
-      }),
-    ).toBeTruthy();
-  });
-
-  it("publishes a legacy PowerPoint source without conversion", async () => {
-    const actor = bdd.user();
-    const fixture = installS3Fixture(context);
-    const inputs = await uploadInputs(actor, fixture, tarGz(guidance()), {
-      filename: "legacy-deck.ppt",
-      contentType: LEGACY_SOURCE_CONTENT_TYPE,
+    const member = bdd.user();
+    const inputs = await uploadDeck(member, fixture, {
+      sourceFilename: "legacy-deck.ppt",
+      sourceType: "application/vnd.ms-powerpoint",
     });
 
-    mocks.clerk.session(actor.userId, actor.orgId);
-    const published = await accept(
-      templateClient().publish({
-        headers: webHeaders(),
-        body: { title: "Legacy brand system", ...inputs },
-      }),
-      [200],
-    );
-    expect(published.body).toMatchObject({
+    await expect(
+      publish(member, inputs, "Legacy brand system"),
+    ).resolves.toMatchObject({
       title: "Legacy brand system",
       sourceFilename: "legacy-deck.ppt",
       pageCount: 2,
     });
   });
 
-  it("shares a public template with workspace members while keeping management owner-only", async () => {
-    const owner = bdd.user();
-    if (!owner.orgId) {
-      throw new Error("Presentation template sharing requires an organization");
-    }
-    const member = bdd.user({
-      orgId: owner.orgId,
-      orgRole: "org:member",
-    });
+  it("presentation-template-publish-001 publishes an analysed deck as a ready template with reusable previews", async () => {
     const fixture = installS3Fixture(context);
-    const inputs = await uploadInputs(owner, fixture, tarGz(guidance()));
+    const member = bdd.user();
+    const inputs = await uploadDeck(member, fixture);
+    const published = await publish(member, inputs, "Brand system");
+    expect(published).toMatchObject({
+      title: "Brand system",
+      sourceFilename: "brand-system.pptx",
+      pageCount: 2,
+    });
+    await flushWaitUntilForTest();
+    expect(channelsPublishedTo(context.mocks, CHANGED)).toContain(
+      `user:${member.userId}`,
+    );
 
-    mocks.clerk.session(owner.userId, owner.orgId);
-    const published = await accept(
-      templateClient().publish({
-        headers: webHeaders(),
-        body: { title: "Workspace brand", ...inputs },
-      }),
+    const api = templatesApi();
+    const headers = signIn(member);
+    const list = await accept(api.list({ headers }), [200]);
+    const detail = await accept(
+      api.get({ headers, params: { templateId: published.id } }),
       [200],
     );
-    expect(published.body).toMatchObject({
-      visibility: "private",
-      canManage: true,
-    });
+    expect(list.body).toHaveLength(1);
+    const [entry] = list.body;
+    expect(
+      entry?.previewAssets.map((asset) => {
+        return asset.url;
+      }),
+    ).toStrictEqual(detail.body.pageUrls);
+    expect(detail.body.pageUrls).toHaveLength(2);
+    expect(entry?.coverUrl).toBe(detail.body.pageUrls[0]);
 
-    context.mocks.ably.channelGet.mockClear();
-    context.mocks.ably.publish.mockClear();
+    const previewAssetIds = (entry?.previewAssets ?? []).map((asset) => {
+      return asset.previewAssetId;
+    });
+    const first = await accept(
+      api.resolvePreviewUrls({ headers, body: { previewAssetIds } }),
+      [200],
+    );
+    const repeat = await accept(
+      api.resolvePreviewUrls({ headers, body: { previewAssetIds } }),
+      [200],
+    );
+    expect(repeat.body).toStrictEqual(first.body);
+
+    mockNow(
+      Math.max(
+        ...first.body.assets.map((asset) => {
+          return Date.parse(asset.expiresAt);
+        }),
+      ),
+    );
+    const renewed = await accept(
+      api.resolvePreviewUrls({ headers, body: { previewAssetIds } }),
+      [200],
+    );
+    expect(
+      renewed.body.assets.map((asset) => {
+        return asset.previewAssetId;
+      }),
+    ).toStrictEqual(previewAssetIds);
+    for (const [index, asset] of renewed.body.assets.entries()) {
+      const previous = first.body.assets[index];
+      expect(asset.url).not.toBe(previous?.url);
+      expect(Date.parse(asset.expiresAt)).toBeGreaterThan(
+        Date.parse(previous?.expiresAt ?? ""),
+      );
+    }
+    await expect(
+      api.resolvePreviewUrls({ headers, body: { previewAssetIds } }),
+    ).resolves.toMatchObject({ status: 200, body: renewed.body });
+    expect(
+      fixture.keys().filter((key) => {
+        return /bundles\/v1\/[a-f0-9]{64}\.tar\.gz$/u.test(key);
+      }),
+    ).toHaveLength(1);
+  });
+
+  it("presentation-template-publish-004 shares a public template with the workspace while only the owner manages it", async () => {
+    const fixture = installS3Fixture(context);
+    const owner = bdd.user();
+    const member = bdd.user({ orgId: owner.orgId, orgRole: "org:member" });
+    const published = await publish(
+      owner,
+      await uploadDeck(owner, fixture),
+      "Brand system",
+    );
+    expect(published).toMatchObject({ visibility: "private", canManage: true });
+    const api = templatesApi();
+    const params = { templateId: published.id };
+
     const shared = await accept(
-      templateClient().update({
-        headers: webHeaders(),
-        params: { templateId: published.body.id },
+      api.update({
+        headers: signIn(owner),
+        params,
         body: { visibility: "public" },
       }),
       [200],
     );
-    expect(shared.body).toMatchObject({
-      visibility: "public",
-      canManage: true,
-    });
-    expect(context.mocks.ably.channelGet).toHaveBeenCalledWith(
-      `org:${owner.orgId}`,
+    expect(shared.body.visibility).toBe("public");
+    await flushWaitUntilForTest();
+    expect(channelsPublishedTo(context.mocks, CHANGED)).toContain(
+      `org:${owner.orgId ?? ""}`,
     );
-    expect(context.mocks.ably.publish).toHaveBeenCalledWith(
-      "presentationTemplatesChanged",
-      null,
-    );
-
-    context.mocks.ably.channelGet.mockClear();
     context.mocks.ably.publish.mockRejectedValueOnce(
-      new Error("workspace template invalidation failed"),
+      new Error("Ably unavailable"),
     );
-    const renamed = await accept(
-      templateClient().update({
-        headers: webHeaders(),
-        params: { templateId: published.body.id },
-        body: { title: "Workspace brand refreshed" },
+    await accept(
+      api.update({
+        headers: signIn(owner),
+        params,
+        body: { title: "Shared brand system" },
       }),
       [200],
     );
-    expect(renamed.body.title).toBe("Workspace brand refreshed");
-    expect(context.mocks.ably.channelGet).toHaveBeenCalledWith(
-      `org:${owner.orgId}`,
-    );
+    await flushWaitUntilForTest();
 
-    mocks.clerk.session(member.userId, member.orgId);
-    const listedForMember = await accept(
-      templateClient().list({ headers: webHeaders() }),
-      [200],
-    );
-    expect(listedForMember.body).toStrictEqual([
-      expect.objectContaining({
-        id: published.body.id,
-        title: "Workspace brand refreshed",
-        visibility: "public",
+    const memberHeaders = signIn(member);
+    const list = await accept(api.list({ headers: memberHeaders }), [200]);
+    expect(list.body).toMatchObject([
+      {
+        id: published.id,
+        title: "Shared brand system",
         canManage: false,
-        previewAssets: expect.arrayContaining([
-          expect.objectContaining({
-            previewAssetId: expect.stringMatching(/^ptp:/),
-          }),
-        ]),
-      }),
-    ]);
-    const detailForMember = await accept(
-      templateClient().get({
-        headers: webHeaders(),
-        params: { templateId: published.body.id },
-      }),
-      [200],
-    );
-    expect(detailForMember.body.pageUrls).toHaveLength(2);
-    expect(detailForMember.body.canManage).toBeFalsy();
-    expect(detailForMember.body.previewAssets).toStrictEqual(
-      listedForMember.body[0]?.previewAssets,
-    );
-    const memberPreviewAssetIds = listedForMember.body[0]?.previewAssets?.map(
-      (asset) => {
-        return asset.previewAssetId;
       },
+    ]);
+    const detail = await accept(
+      api.get({ headers: memberHeaders, params }),
+      [200],
     );
-    if (memberPreviewAssetIds === undefined) {
-      throw new Error("Expected shared presentation preview asset ids");
-    }
-    const memberPreviewUrls = await accept(
-      templateClient().resolvePreviewUrls({
-        headers: webHeaders(),
-        body: { previewAssetIds: memberPreviewAssetIds },
+    expect(detail.body.pageUrls).toHaveLength(2);
+    const previewAssetIds = detail.body.previewAssets.map((asset) => {
+      return asset.previewAssetId;
+    });
+    expect(
+      previewAssetIds.every((id) => {
+        return id.startsWith("ptp:");
+      }),
+    ).toBeTruthy();
+    const resolved = await accept(
+      api.resolvePreviewUrls({
+        headers: memberHeaders,
+        body: { previewAssetIds },
       }),
       [200],
     );
-    expect(memberPreviewUrls.body.assets).toHaveLength(2);
-
+    expect(resolved.body.assets).toHaveLength(2);
     await accept(
-      templateClient().update({
-        headers: webHeaders(),
-        params: { templateId: published.body.id },
-        body: { title: "Member rename" },
+      api.update({
+        headers: memberHeaders,
+        params,
+        body: { title: "Taken over" },
       }),
       [404],
     );
-    await accept(
-      templateClient().delete({
-        headers: webHeaders(),
-        params: { templateId: published.body.id },
-      }),
-      [404],
-    );
+    await accept(api.delete({ headers: memberHeaders, params }), [404]);
 
-    mocks.clerk.session(owner.userId, owner.orgId);
-    context.mocks.ably.channelGet.mockClear();
     await accept(
-      templateClient().update({
-        headers: webHeaders(),
-        params: { templateId: published.body.id },
+      api.update({
+        headers: signIn(owner),
+        params,
         body: { visibility: "private" },
       }),
       [200],
     );
-    expect(context.mocks.ably.channelGet).toHaveBeenCalledWith(
-      `org:${owner.orgId}`,
-    );
-
-    mocks.clerk.session(member.userId, member.orgId);
-    const privateList = await accept(
-      templateClient().list({ headers: webHeaders() }),
-      [200],
-    );
-    expect(privateList.body).toStrictEqual([]);
-    await accept(
-      templateClient().get({
-        headers: webHeaders(),
-        params: { templateId: published.body.id },
+    const retractedHeaders = signIn(member);
+    await expect(
+      api.list({ headers: retractedHeaders }),
+    ).resolves.toMatchObject({ status: 200, body: [] });
+    await accept(api.get({ headers: retractedHeaders, params }), [404]);
+    await expect(
+      api.resolvePreviewUrls({
+        headers: retractedHeaders,
+        body: { previewAssetIds },
       }),
-      [404],
-    );
-    const revokedPreviewUrls = await accept(
-      templateClient().resolvePreviewUrls({
-        headers: webHeaders(),
-        body: { previewAssetIds: memberPreviewAssetIds },
-      }),
-      [200],
-    );
-    expect(revokedPreviewUrls.body.assets).toStrictEqual([]);
+    ).resolves.toMatchObject({ status: 200, body: { assets: [] } });
   });
 
-  it("renames a private template without sharing it and rejects another workspace", async () => {
-    mockNow(new Date("2026-10-09T12:00:00.000Z"));
-    const owner = bdd.user();
+  it("presentation-template-publish-005 renames a private template for its owner and hides it from another workspace", async () => {
     const fixture = installS3Fixture(context);
-    const inputs = await uploadInputs(owner, fixture, tarGz(guidance()));
-    mocks.clerk.session(owner.userId, owner.orgId);
-    const client = templateClient();
-    const published = await accept(
-      client.publish({
-        headers: webHeaders(),
-        body: { title: "Private brand", ...inputs },
-      }),
-      [200],
+    const owner = bdd.user();
+    const published = await publish(
+      owner,
+      await uploadDeck(owner, fixture),
+      "Brand system",
     );
-    const params = { templateId: published.body.id };
+    const api = templatesApi();
+    const params = { templateId: published.id };
+    mockNow(Date.parse(published.updatedAt) + 60_000);
     context.mocks.ably.channelGet.mockClear();
     context.mocks.ably.publish.mockClear();
+
     const renamed = await accept(
-      client.update({
-        headers: webHeaders(),
+      api.update({
+        headers: signIn(owner),
         params,
         body: { title: "  Renamed private brand  " },
       }),
       [200],
     );
     expect(renamed.body).toStrictEqual({
-      ...published.body,
+      ...published,
       title: "Renamed private brand",
       updatedAt: renamed.body.updatedAt,
     });
-    expect(renamed.body.updatedAt).not.toBe(published.body.updatedAt);
-    expect(context.mocks.ably.channelGet).toHaveBeenCalledWith(
+    expect(Date.parse(renamed.body.updatedAt)).toBeGreaterThan(
+      Date.parse(published.updatedAt),
+    );
+    await flushWaitUntilForTest();
+    expect(channelsPublishedTo(context.mocks, CHANGED)).toStrictEqual([
       `user:${owner.userId}`,
-    );
-    expect(context.mocks.ably.publish).toHaveBeenCalledWith(
-      "presentationTemplatesChanged",
-      null,
-    );
+    ]);
 
-    const otherWorkspace = bdd.user();
-    mocks.clerk.session(owner.userId, otherWorkspace.orgId);
-    const rejected = await accept(
-      client.update({
-        headers: webHeaders(),
+    const elsewhere = bdd.user({ userId: owner.userId });
+    const foreign = await accept(
+      api.update({
+        headers: signIn(elsewhere),
         params,
-        body: { title: "Wrong workspace", visibility: "public" },
+        body: { title: "Moved", visibility: "public" },
       }),
       [404],
     );
-    expect(rejected.body).toStrictEqual({
-      error: {
-        message: `Presentation template not found: ${published.body.id}`,
-        code: "NOT_FOUND",
-      },
+    expect(foreign.body.error).toStrictEqual({
+      code: "NOT_FOUND",
+      message: `Presentation template not found: ${published.id}`,
     });
-    mocks.clerk.session(owner.userId, owner.orgId);
     const detail = await accept(
-      client.get({ headers: webHeaders(), params }),
+      api.get({ headers: signIn(owner), params }),
       [200],
     );
-    expect(detail.body).toMatchObject(renamed.body);
-  });
-
-  it("preserves concurrent field updates and notifies the workspace on retraction", async () => {
-    const owner = bdd.user();
-    const fixture = installS3Fixture(context);
-    const inputs = await uploadInputs(owner, fixture, tarGz(guidance()));
-    mocks.clerk.session(owner.userId, owner.orgId);
-    const client = templateClient();
-    const published = await accept(
-      client.publish({
-        headers: webHeaders(),
-        body: { title: "Brand", ...inputs },
-      }),
-      [200],
-    );
-    const params = { templateId: published.body.id };
-    await Promise.all([
-      accept(
-        client.update({
-          headers: webHeaders(),
-          params,
-          body: { title: "Concurrent brand" },
-        }),
-        [200],
-      ),
-      accept(
-        client.update({
-          headers: webHeaders(),
-          params,
-          body: { visibility: "public" },
-        }),
-        [200],
-      ),
-    ]);
-    const shared = await accept(
-      client.get({ headers: webHeaders(), params }),
-      [200],
-    );
-    expect(shared.body).toMatchObject({
-      title: "Concurrent brand",
-      visibility: "public",
-      sourceFilename: published.body.sourceFilename,
-      pageCount: published.body.pageCount,
-      coverUrl: published.body.coverUrl,
-      createdAt: published.body.createdAt,
-      canManage: true,
-    });
-
-    context.mocks.ably.channelGet.mockClear();
-    const retracted = await Promise.all(
-      [0, 1].map(() => {
-        return accept(
-          client.update({
-            headers: webHeaders(),
-            params,
-            body: { visibility: "private" },
-          }),
-          [200],
-        );
-      }),
-    );
-    for (const result of retracted) {
-      expect(result.body).toMatchObject({
-        title: "Concurrent brand",
-        visibility: "private",
-      });
-    }
-    expect(context.mocks.ably.channelGet.mock.calls).toStrictEqual(
-      expect.arrayContaining([
-        [`org:${owner.orgId}`],
-        [`user:${owner.userId}`],
-      ]),
-    );
-    expect(context.mocks.ably.channelGet).toHaveBeenCalledTimes(2);
-    const privateDetail = await accept(
-      client.get({ headers: webHeaders(), params }),
-      [200],
-    );
-    expect(privateDetail.body).toMatchObject({
-      title: "Concurrent brand",
+    expect(detail.body).toMatchObject({
+      title: "Renamed private brand",
       visibility: "private",
+      updatedAt: renamed.body.updatedAt,
     });
-  });
-
-  it("deletes a template exactly once when two requests race", async () => {
-    const actor = bdd.user();
-    const fixture = installS3Fixture(context);
-    const inputs = await uploadInputs(actor, fixture, tarGz(guidance()));
-
-    mocks.clerk.session(actor.userId, actor.orgId);
-    const published = await accept(
-      templateClient().publish({
-        headers: webHeaders(),
-        body: { title: "Brand system", ...inputs },
-      }),
-      [200],
-    );
-
-    await accept(
-      templateClient().update({
-        headers: webHeaders(),
-        params: { templateId: published.body.id },
-        body: { visibility: "public" },
-      }),
-      [200],
-    );
-    context.mocks.ably.channelGet.mockClear();
-
-    const params = { templateId: published.body.id };
-    const [first, second] = await Promise.all([
-      accept(
-        templateClient().delete({ headers: webHeaders(), params }),
-        [204, 404],
-      ),
-      accept(
-        templateClient().delete({ headers: webHeaders(), params }),
-        [204, 404],
-      ),
-    ]);
-    const statuses = [first.status, second.status].sort((left, right) => {
-      return left - right;
-    });
-    expect(statuses).toStrictEqual([204, 404]);
-    expect(context.mocks.ably.channelGet).toHaveBeenCalledTimes(1);
-    expect(context.mocks.ably.channelGet).toHaveBeenCalledWith(
-      `org:${actor.orgId}`,
-    );
-
-    const listed = await accept(
-      templateClient().list({ headers: webHeaders() }),
-      [200],
-    );
-    expect(listed.body).toHaveLength(0);
-  });
-
-  it("refuses a package that omits its required guidance", async () => {
-    const actor = bdd.user();
-    const fixture = installS3Fixture(context);
-    const inputs = await uploadInputs(
-      actor,
-      fixture,
-      tarGz([{ path: "SKILL.md", content: "# Only half of it\n" }]),
-    );
-
-    mocks.clerk.session(actor.userId, actor.orgId);
-    const rejected = await accept(
-      templateClient().publish({
-        headers: webHeaders(),
-        body: { title: "Half a package", ...inputs },
-      }),
-      [400],
-    );
-    expect(rejected.body.error.message).toContain("design-system.md");
-
-    // Nothing is created by a rejected publish.
-    const listed = await accept(
-      templateClient().list({ headers: webHeaders() }),
-      [200],
-    );
-    expect(listed.body).toStrictEqual([]);
-  });
-
-  it("refuses a package path that escapes its root", async () => {
-    const actor = bdd.user();
-    const fixture = installS3Fixture(context);
-    const inputs = await uploadInputs(
-      actor,
-      fixture,
-      tarGz([...guidance(), { path: "../escaped.md", content: "nope\n" }]),
-    );
-
-    mocks.clerk.session(actor.userId, actor.orgId);
-    const rejected = await accept(
-      templateClient().publish({
-        headers: webHeaders(),
-        body: { title: "Traversal", ...inputs },
-      }),
-      [400],
-    );
-    expect(rejected.body.error.message).toContain("Unsafe package path");
-  });
-
-  it("refuses a package that unpacks past the size cap", async () => {
-    const actor = bdd.user();
-    const fixture = installS3Fixture(context);
-    // Compresses to a few hundred kilobytes, so the stored object clears every
-    // size check that reads the upload's own size. Only a cap on the
-    // decompressed output can reject it.
-    const bomb = gzipSync(
-      Buffer.alloc(MAX_PRESENTATION_TEMPLATE_PACKAGE_BYTES + 1),
-    );
-    const inputs = await uploadInputs(actor, fixture, bomb);
-
-    mocks.clerk.session(actor.userId, actor.orgId);
-    const rejected = await accept(
-      templateClient().publish({
-        headers: webHeaders(),
-        body: { title: "Zip bomb", ...inputs },
-      }),
-      [400],
-    );
-    expect(rejected.body.error.message).toContain("must unpack to");
-
-    const listed = await accept(
-      templateClient().list({ headers: webHeaders() }),
-      [200],
-    );
-    expect(listed.body).toStrictEqual([]);
-  });
-
-  it("refuses uploads that belong to someone else", async () => {
-    const owner = bdd.user();
-    const stranger = bdd.user();
-    const fixture = installS3Fixture(context);
-    const inputs = await uploadInputs(owner, fixture, tarGz(guidance()));
-
-    mocks.clerk.session(stranger.userId, stranger.orgId);
-    const rejected = await accept(
-      templateClient().publish({
-        headers: webHeaders(),
-        body: { title: "Not mine", ...inputs },
-      }),
-      [400],
-    );
-    expect(rejected.body.error.message).toContain("Uploaded file not found");
   });
 });

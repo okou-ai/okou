@@ -1,38 +1,25 @@
-import { describe, expect, it } from "vitest";
-import { testContext } from "../../../__tests__/test-context";
+import { expect, test } from "vitest";
 
+import { testContext } from "../../../__tests__/test-context";
 import { createDesktopUpdatePublicApi } from "./helpers/desktop-update-public";
 
 const context = testContext();
-const {
-  appcastRequest,
-  mockDesktopUpdateManifest,
-  stableManifest,
-  darwinArm64Release,
-  okouZipUrl,
-} = createDesktopUpdatePublicApi(context);
+const desktop = createDesktopUpdatePublicApi(context);
 
-// Default Vitest file isolation gives this scenario a fresh module cache.
-describe("desktop update routes", () => {
-  it("serves the authoritative R2 release feed", async () => {
-    const zipUrl = okouZipUrl("1.2.3");
-    mockDesktopUpdateManifest(
-      stableManifest("1.2.3", {
-        "1.2.3": darwinArm64Release("1.2.3", zipUrl),
-      }),
-    );
+test("desktop-updates-09-serves-an-okou-release-only-from-the-isolated-okou-001 serves the R2 manifest release in the Sparkle feed", async () => {
+  desktop.mockDesktopUpdateManifest(
+    desktop.stableManifest("1.2.3", {
+      "1.2.3": desktop.darwinArm64Release("1.2.3", desktop.okouZipUrl("1.2.3")),
+    }),
+  );
 
-    const response = await appcastRequest();
-    expect(response.status).toBe(200);
+  const appcast = await desktop.appcastRequest();
 
-    const responseXml = await response.text();
-
-    expect(responseXml).toContain("<sparkle:version>1.2.3</sparkle:version>");
-    expect(responseXml).toContain("<title>Okou 1.2.3</title>");
-    expect(responseXml).toContain(
-      "<pubDate>Mon, 08 Jun 2026 00:00:00 GMT</pubDate>",
-    );
-    expect(responseXml).toContain("<description>Release 1.2.3</description>");
-    expect(responseXml).toContain(`<enclosure url="${zipUrl}"`);
-  });
+  expect(appcast.status).toBe(200);
+  const xml = await appcast.text();
+  expect(xml).toContain("<sparkle:version>1.2.3</sparkle:version>");
+  expect(xml).toContain("<title>Okou 1.2.3</title>");
+  expect(xml).toContain("<pubDate>Mon, 08 Jun 2026 00:00:00 GMT</pubDate>");
+  expect(xml).toContain("<description>Release 1.2.3</description>");
+  expect(xml).toContain(`<enclosure url="${desktop.okouZipUrl("1.2.3")}"`);
 });

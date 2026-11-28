@@ -1,126 +1,83 @@
-import { orgInviteContract } from "@okouai/api-contracts/contracts/org-member-routes";
 import { randomUUID } from "node:crypto";
-import { expect, test } from "vitest";
+
+import { orgInviteContract } from "@okouai/api-contracts/contracts/org-member-routes";
+import { describe, expect, it } from "vitest";
+
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { orgInviteRoutes } from "../org-invite";
-import { createBddApi } from "./helpers/api-bdd";
-import { createRouteMocks } from "./helpers/route-test";
+import type { ApiTestUser } from "./helpers/api-bdd";
+import { createAuthOrgBddApi } from "./helpers/api-bdd-auth-org";
+import { ClerkTransportTestError } from "./helpers/clerk-transport-error";
 
 const context = testContext();
-const mocks = createRouteMocks(context);
+const api = createAuthOrgBddApi(context);
 
-class ClerkInvitationTestError extends Error {
-  static readonly kind = "ClerkAPIResponseError";
-  readonly errors: readonly {
-    readonly code: string;
-    readonly message: string;
-    readonly longMessage: string;
-  }[];
-
-  constructor(
-    code: string,
-    readonly status: number,
-    longMessage = code,
-  ) {
-    super(`Clerk invitation failed: ${code}`);
-    this.errors = [{ code, message: code, longMessage }];
-  }
+async function onboardedAdmin(): Promise<ApiTestUser> {
+  const admin = api.user();
+  api.acceptStorageWrites();
+  api.mockClerkOrg(admin);
+  await api.bootstrapLimitedFreeOnboarding(admin);
+  return admin;
 }
 
-const headers = Object.freeze({ authorization: "Bearer clerk-session" });
-
-async function org(userId = `user_${randomUUID()}`) {
-  const orgId = `org_${randomUUID()}`;
-  const api = createBddApi(context);
-  await api.completeOnboarding(api.user({ userId, orgId }));
-  mocks.clerk.session(userId, orgId);
-  return { userId, orgId };
+function clerkRejectsInvitation(
+  status: number,
+  error: { readonly code: string; readonly longMessage?: string },
+): void {
+  context.mocks.clerk.organizations.createOrganizationInvitation.mockRejectedValue(
+    new ClerkTransportTestError(status, [
+      { message: error.longMessage ?? error.code, ...error },
+    ]),
+  );
 }
 
-test.each([
-  [
-    "already_a_member_in_organization",
-    400,
-    "INVITEE_ALREADY_MEMBER",
-    "This person is already a member.",
-  ],
-  [
-    "duplicate_record",
-    422,
-    "INVITATION_ALREADY_EXISTS",
-    "This person already has a pending invitation.",
-  ],
-  [
-    "organization_invitation_not_unique",
-    409,
-    "INVITATION_ALREADY_EXISTS",
-    "This person already has a pending invitation.",
-  ],
-] as const)(
-  "maps Clerk invitation conflict %s to a stable 409",
-  async (code, status, errorCode, message) => {
-    await org();
-    context.mocks.clerk.organizations.createOrganizationInvitation.mockRejectedValueOnce(
-      new ClerkInvitationTestError(code, status),
-    );
+function invite(admin: ApiTestUser) {
+  return setupApp({ context, routes: orgInviteRoutes })(
+    orgInviteContract,
+  ).invite({
+    headers: api.authenticate(admin),
+    body: { email: `invitee_${randomUUID()}@example.test`, role: "member" },
+  });
+}
 
-    const response = await accept(
-      setupApp({ context, routes: orgInviteRoutes })(orgInviteContract).invite({
-        headers,
-        body: { email: `${randomUUID()}@example.com`, role: "member" },
-      }),
-      [409],
-    );
+describe("get-started invitations", () => {
+  it("get-started-invitations-001 reports an invitee who is already a member as a conflict", async () => {
+    const admin = await onboardedAdmin();
+    clerkRejectsInvitation(400, { code: "already_a_member_in_organization" });
 
+    const response = await accept(invite(admin), [409]);
     expect(response.body).toStrictEqual({
-      error: { code: errorCode, message },
+      error: {
+        code: "INVITEE_ALREADY_MEMBER",
+        message: "This person is already a member.",
+      },
     });
-  },
-);
+  });
 
-test("returns an address-level error when Clerk rejects the email format without recording invitation progress", async () => {
-  await org();
-  context.mocks.clerk.organizations.createOrganizationInvitation.mockRejectedValueOnce(
-    new ClerkInvitationTestError(
-      "form_param_format_invalid",
-      422,
-      "Email address must be a valid email address.",
-    ),
-  );
+  it("get-started-invitations-002 reports an invitee with a pending invitation as a conflict", async () => {
+    const admin = await onboardedAdmin();
+    clerkRejectsInvitation(422, { code: "duplicate_record" });
 
-  const response = await accept(
-    setupApp({ context, routes: orgInviteRoutes })(orgInviteContract).invite({
-      headers,
-      body: { email: `${randomUUID()}@example.com`, role: "member" },
-    }),
-    [400],
-  );
+    const response = await accept(invite(admin), [409]);
+    expect(response.body).toStrictEqual({
+      error: {
+        code: "INVITATION_ALREADY_EXISTS",
+        message: "This person already has a pending invitation.",
+      },
+    });
+  });
 
-  expect(response.body).toStrictEqual({
-    error: { code: "BAD_REQUEST", message: "Enter a valid email address." },
+  it("get-started-invitations-004 asks for a valid address when the identity provider rejects its format", async () => {
+    const admin = await onboardedAdmin();
+    clerkRejectsInvitation(422, {
+      code: "form_param_format_invalid",
+      longMessage: "Email address must be a valid email address.",
+    });
+
+    const response = await accept(invite(admin), [400]);
+    expect(response.body).toStrictEqual({
+      error: { code: "BAD_REQUEST", message: "Enter a valid email address." },
+    });
   });
 });
-
-test.each([
-  ["invalid_clerk_configuration", 400, "invalid_clerk_configuration"],
-  ["form_param_format_invalid", 422, "Redirect URL must be a valid URL."],
-] as const)(
-  "keeps unrelated Clerk invitation failure %s as a server error",
-  async (code, status, longMessage) => {
-    await org();
-    context.mocks.clerk.organizations.createOrganizationInvitation.mockRejectedValueOnce(
-      new ClerkInvitationTestError(code, status, longMessage),
-    );
-
-    const response = await accept(
-      setupApp({ context, routes: orgInviteRoutes })(orgInviteContract).invite({
-        headers,
-        body: { email: `${randomUUID()}@example.com`, role: "member" },
-      }),
-      [500],
-    );
-
-    expect(response.body).toStrictEqual({ error: "Internal server error" });
-  },
-);

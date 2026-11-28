@@ -1,473 +1,648 @@
-import type { ComputerUseTestConnection } from "./helpers/api-bdd-computer-use";
 import { randomUUID } from "node:crypto";
 
-import { aroundEach, describe, expect, it } from "vitest";
+import {
+  remoteDevicesContract,
+  type RemoteDeviceAccess,
+} from "@okouai/api-contracts/contracts/remote-devices";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { describe, expect, it, onTestFinished } from "vitest";
 
-import { testContext } from "../../../__tests__/test-context";
-import { mockNow, now, withMockNowForTest } from "../../../lib/time";
-import { expectApiError, type ApiTestUser } from "./helpers/api-bdd";
+import {
+  accept,
+  testContext,
+  type TestContext,
+} from "../../../__tests__/test-context";
+import { setupApp } from "../../../__tests__/test-helpers";
+import { TEST_WITH_TRIPLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE } from "../../../__tests__/test-timeouts";
+import { mockOptionalEnv } from "../../../lib/env";
+import { clearMockNow, mockNow, now, nowDate } from "../../../lib/time";
+import { flushWaitUntilForTest } from "../../context/wait-until";
+import { remoteDevicesRoutes } from "../remote-devices";
+import {
+  createBddApi,
+  expectApiError,
+  type ApiTestUser,
+} from "./helpers/api-bdd";
+import { createAuthOrgBddApi } from "./helpers/api-bdd-auth-org";
+import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { mockClerkMembership } from "./helpers/api-bdd-clerk";
-import { createPublicComputerUseScenario } from "./helpers/public-computer-use-scenario";
+import { createComputerUseBddApi } from "./helpers/api-bdd-computer-use";
+import { createRunsApi } from "./helpers/api-bdd-runs";
+import {
+  createWebhookCallbackApi,
+  deliverOrganizationCreated,
+} from "./helpers/api-bdd-webhooks";
+import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
+import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
 
-const STARTED_AT_MS = now();
-const CASE_TIMEOUT_MS = 30_000;
+const PNG_SIGNATURE = Buffer.from([
+  0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
+]);
 
-interface RunningCommand {
-  readonly commandId: string;
-  readonly agentToken: string;
+function requireOrgId(actor: ApiTestUser): string {
+  if (!actor.orgId) {
+    throw new Error("Expected an organization member");
+  }
+  return actor.orgId;
 }
 
-aroundEach(async (runTest) => {
-  await withMockNowForTest(STARTED_AT_MS, runTest);
-});
+function sessionHeaders(testCtx: TestContext, actor: ApiTestUser) {
+  createRouteMocks(testCtx).clerk.session(
+    actor.userId,
+    actor.orgId,
+    actor.orgRole,
+  );
+  return { authorization: "Bearer clerk-session" };
+}
 
-function createScenario() {
-  const scenario = createPublicComputerUseScenario(context);
-  const bdd = { user: scenario.user };
-  const computerUse = scenario.computerUse;
-  const authOrg = { createCliToken: scenario.createCliToken };
-
-  function orgScoped(
-    actor: ApiTestUser,
-  ): ApiTestUser & { readonly orgId: string } {
-    if (actor.orgId === null) {
-      throw new Error("Computer Use command reads require an organization");
-    }
-    return { ...actor, orgId: actor.orgId };
-  }
-
-  async function agentTokenFor(
-    actor: ApiTestUser,
-    hostId: string | undefined,
-  ): Promise<string> {
-    return (await scenario.launchRun(actor, hostId)).token;
-  }
-
-  async function createRunningWriteCommand(args: {
-    readonly actor: ApiTestUser & { readonly orgId: string };
-    readonly host: {
-      readonly hostId: string;
-      readonly connection: ComputerUseTestConnection;
-    };
-    readonly timeoutMs: number;
-    readonly app?: string;
-  }): Promise<RunningCommand> {
-    const agentToken = await agentTokenFor(args.actor, args.host.hostId);
-    const created = await computerUse.createComputerUseWriteCommand(
-      { bearer: agentToken },
-      {
-        kind: "app.open",
-        app: args.app ?? "Safari",
-        timeoutMs: args.timeoutMs,
-      },
-    );
-    const claimed = await computerUse.claimNextComputerUseCommand(
-      args.host.connection,
-    );
-    expect(claimed).toMatchObject({
-      status: "command",
-      command: { id: created.commandId, status: "running" },
+async function findDesktopDevice(
+  testCtx: TestContext,
+  actor: ApiTestUser,
+  hostId: string,
+) {
+  const client = setupApp({ context: testCtx, routes: remoteDevicesRoutes })(
+    remoteDevicesContract,
+  );
+  const response = await accept(
+    client.list({ headers: sessionHeaders(testCtx, actor) }),
+    [200],
+  );
+  const device = response.body.devices.find((candidate) => {
+    return candidate.channels.some((channel) => {
+      return channel.kind === "desktop" && channel.id === hostId;
     });
-    return { commandId: created.commandId, agentToken };
+  });
+  if (!device) {
+    throw new Error(`Expected remote device for desktop host ${hostId}`);
   }
+  return device;
+}
+
+async function setDeviceAccess(
+  testCtx: TestContext,
+  actor: ApiTestUser,
+  deviceId: string,
+  body: RemoteDeviceAccess,
+) {
+  const client = setupApp({ context: testCtx, routes: remoteDevicesRoutes })(
+    remoteDevicesContract,
+  );
+  const response = await accept(
+    client.setAccess({
+      headers: sessionHeaders(testCtx, actor),
+      params: { deviceId },
+      body,
+    }),
+    [200],
+  );
+  return response.body;
+}
+
+async function createRunLauncher(testCtx: TestContext, actor: ApiTestUser) {
+  const bdd = createBddApi(testCtx);
+  const runs = createRunsApi(testCtx);
+  const chat = createChatFilesBddApi(testCtx);
+  bdd.acceptStorageWrites();
+  runs.acceptStorageDownloads();
+  runs.acceptTelemetryIngest();
+  mockOptionalEnv("OPENROUTER_API_KEY", "bdd-issued-credential-key");
+
+  const [, runnerGroup] = await Promise.all([
+    deliverOrganizationCreated(testCtx, actor),
+    runs.configureRunnerGroup(),
+  ]);
+
+  let activeRun:
+    | {
+        readonly runId: string;
+        readonly sandboxToken: string;
+        readonly issuedAt: number;
+      }
+    | undefined;
+
+  async function cancelActiveRun(restoreRealClock = false): Promise<void> {
+    if (!activeRun) {
+      if (restoreRealClock) {
+        clearMockNow();
+      }
+      return;
+    }
+    const toCancel = activeRun;
+    activeRun = undefined;
+    const savedNow = now();
+    mockNow(toCancel.issuedAt);
+    await runs.requestCancelRun(actor, toCancel.runId, [200, 400]);
+    await createWebhookCallbackApi(testCtx).requestAgentComplete(
+      { runId: toCancel.runId, exitCode: 1, error: "Run cancelled" },
+      { authorization: `Bearer ${toCancel.sandboxToken}` },
+      [200, 400],
+    );
+    await flushWaitUntilForTest();
+    if (restoreRealClock) {
+      clearMockNow();
+    } else {
+      mockNow(savedNow);
+    }
+  }
+
+  onTestFinished(async () => {
+    await cancelActiveRun(true);
+  });
+
   return {
-    ...scenario,
-    bdd,
-    authOrg,
-    computerUse,
-    orgScoped,
-    agentTokenFor,
-    createRunningWriteCommand,
+    async launch(hostId?: string) {
+      await cancelActiveRun();
+      const beforeCount = runs.receivedDispatches(runnerGroup).length;
+      const sent = await chat.requestSendEvent(
+        actor,
+        {
+          prompt: "Inspect my computer-use command",
+          model: null,
+          clientEventId: randomUUID(),
+          computerUseHostId: hostId ?? null,
+        },
+        [201],
+      );
+      if (sent.status !== 201) {
+        throw new Error("Expected an accepted chat send");
+      }
+      await flushWaitUntilForTest();
+      const dispatches = runs.receivedDispatches(runnerGroup);
+      const dispatch = dispatches.at(-1);
+      if (dispatches.length <= beforeCount || !dispatch) {
+        throw new Error("Expected chat send to dispatch a Run");
+      }
+      const token = dispatch.executionContext.platformEnvironment.OKOU_TOKEN;
+      if (!token) {
+        throw new Error("Expected dispatched Run OKOU_TOKEN");
+      }
+      activeRun = {
+        runId: dispatch.executionContext.runId,
+        sandboxToken: dispatch.executionContext.sandboxToken,
+        issuedAt: now(),
+      };
+      return {
+        token,
+        runId: dispatch.executionContext.runId,
+        threadId: sent.body.threadId,
+        sandboxToken: dispatch.executionContext.sandboxToken,
+      };
+    },
   };
 }
 
 describe("GET /api/computer-use/commands/:commandId", () => {
+  it("computer-use-command-get-002 (1/2) preserves queued, running and succeeded offloaded response fields", async () => {
+    const start = Date.parse("2026-02-01T12:00:00.000Z");
+    mockNow(start);
+    const bdd = createBddApi(context);
+    const api = createComputerUseBddApi(context);
+    const member = bdd.user({ orgRole: "org:member" });
+    const storage = api.installComputerUseS3Fake();
+    const host = await api.startComputerUseHost(member, {
+      hostName: "Projection Desktop",
+    });
+
+    mockNow(start + 1000);
+    const createdAt = nowDate().toISOString();
+    const readCommand = await api.createComputerUseReadCommand(member, {
+      kind: "app.state",
+      app: "Safari",
+      timeoutMs: 15_000,
+    });
+    const queued = await api.readComputerUseCommand(
+      member,
+      readCommand.commandId,
+    );
+
+    expect(queued).toStrictEqual({
+      id: readCommand.commandId,
+      kind: "app.state",
+      status: "queued",
+      hostId: host.hostId,
+      hostName: "Projection Desktop",
+      payload: { app: "Safari" },
+      timeoutMs: 15_000,
+      createdAt,
+      claimedAt: null,
+      completedAt: null,
+    });
+
+    mockNow(start + 2000);
+    const claimedAt = nowDate().toISOString();
+    const claimedRead = await api.claimNextComputerUseCommand(host.connection);
+    expect(claimedRead).toMatchObject({
+      status: "command",
+      command: { id: readCommand.commandId },
+    });
+    const running = await api.readComputerUseCommand(
+      member,
+      readCommand.commandId,
+    );
+
+    expect(running).toStrictEqual({
+      id: readCommand.commandId,
+      kind: "app.state",
+      status: "running",
+      hostId: host.hostId,
+      hostName: "Projection Desktop",
+      payload: { app: "Safari" },
+      timeoutMs: 15_000,
+      createdAt,
+      claimedAt,
+      completedAt: null,
+    });
+
+    mockNow(start + 3000);
+    const completedAt = nowDate().toISOString();
+    const png = Buffer.concat([PNG_SIGNATURE, Buffer.alloc(64, 9)]);
+    const dataUrl = `data:image/png;base64,${png.toString("base64")}`;
+    const visibleText = "Safari — 検索結果 café";
+    await api.completeComputerUseCommandWith(
+      host.connection,
+      readCommand.commandId,
+      {
+        status: "succeeded",
+        result: {
+          snapshotId: "snap_projection_1",
+          visibleText,
+          screenshot: dataUrl,
+          screenshotWidth: 1280,
+          screenshotHeight: 720,
+        },
+      },
+    );
+    const succeeded = await api.readComputerUseCommand(
+      member,
+      readCommand.commandId,
+    );
+
+    expect(succeeded).toStrictEqual({
+      id: readCommand.commandId,
+      kind: "app.state",
+      status: "succeeded",
+      hostId: host.hostId,
+      hostName: "Projection Desktop",
+      payload: { app: "Safari" },
+      result: {
+        snapshotId: "snap_projection_1",
+        visibleText,
+        screenshot: {
+          type: "s3",
+          mimeType: "image/png",
+          sizeBytes: png.length,
+          width: 1280,
+          height: 720,
+        },
+        screenshotWidth: 1280,
+        screenshotHeight: 720,
+      },
+      timeoutMs: 15_000,
+      createdAt,
+      claimedAt,
+      completedAt,
+    });
+    expect(JSON.stringify(succeeded)).not.toContain(png.toString("base64"));
+    expect(storage.puts).toHaveLength(1);
+  });
+
+  it("computer-use-command-get-002 (2/2) preserves failed response fields without a result", async () => {
+    const start = Date.parse("2026-02-01T12:00:00.000Z");
+    mockNow(start);
+    const bdd = createBddApi(context);
+    const api = createComputerUseBddApi(context);
+    const member = bdd.user({ orgRole: "org:member" });
+    api.installComputerUseS3Fake();
+    const host = await api.startComputerUseHost(member, {
+      hostName: "Projection Desktop",
+    });
+
+    mockNow(start + 4000);
+    const writeCreatedAt = nowDate().toISOString();
+    const writeCommand = await api.createComputerUseWriteCommand(member, {
+      kind: "app.open",
+      app: "Finder",
+    });
+
+    mockNow(start + 5000);
+    const writeClaimedAt = nowDate().toISOString();
+    const claimedWrite = await api.claimNextComputerUseCommand(host.connection);
+    expect(claimedWrite).toMatchObject({
+      status: "command",
+      command: { id: writeCommand.commandId },
+    });
+
+    mockNow(start + 6000);
+    const writeCompletedAt = nowDate().toISOString();
+    const failureMessage = "Finder が見つかりません — résumé";
+    await api.completeComputerUseCommandWith(
+      host.connection,
+      writeCommand.commandId,
+      {
+        status: "failed",
+        error: {
+          code: "app_not_found",
+          message: failureMessage,
+        },
+      },
+    );
+    const failed = await api.readComputerUseCommand(
+      member,
+      writeCommand.commandId,
+    );
+
+    expect(failed).toStrictEqual({
+      id: writeCommand.commandId,
+      kind: "app.open",
+      status: "failed",
+      hostId: host.hostId,
+      hostName: "Projection Desktop",
+      payload: { app: "Finder" },
+      error: {
+        code: "app_not_found",
+        message: failureMessage,
+      },
+      timeoutMs: 60_000,
+      createdAt: writeCreatedAt,
+      claimedAt: writeClaimedAt,
+      completedAt: writeCompletedAt,
+    });
+    expect(failed).not.toHaveProperty("result");
+  });
+
   it(
-    "preserves session, PAT and supported Agent auth with exact owner and host isolation",
-    { timeout: CASE_TIMEOUT_MS },
+    "computer-use-command-get-001 preserves session, PAT and supported Agent auth with exact owner, host and device-policy isolation",
+    { timeout: TEST_WITH_TRIPLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
     async () => {
-      const scenario = createScenario();
-      const { bdd, authOrg, computerUse, orgScoped, agentTokenFor } = scenario;
-      return await scenario.run(async () => {
-        const actor = orgScoped(bdd.user());
-        const sameOrgPeer = orgScoped(bdd.user({ orgId: actor.orgId }));
-        const foreignOrg = orgScoped(
-          bdd.user({ orgId: `org_${randomUUID()}` }),
-        );
-        const host = await computerUse.startComputerUseHost(actor, {
-          hostName: "Bound Desktop",
-        });
-        const otherHost = await computerUse.startComputerUseHost(actor, {
-          hostName: "Wrong Desktop",
-        });
-        const token = await agentTokenFor(actor, host.hostId);
-        const created = await computerUse.createComputerUseWriteCommand(
-          { bearer: token },
-          { kind: "app.open", app: "Safari", timeoutMs: 15_000 },
-        );
+      const bdd = createBddApi(context);
+      const authOrg = createAuthOrgBddApi(context);
+      const api = createComputerUseBddApi(context);
+      const member = bdd.user({ orgRole: "org:member" });
+      const memberOrgId = requireOrgId(member);
+      const noOrg = bdd.user({ orgId: null });
+      const peer = bdd.user({ orgId: member.orgId, orgRole: "org:member" });
+      const outsider = bdd.user({ orgRole: "org:member" });
 
-        const unauthenticated = await computerUse.requestReadComputerUseCommand(
-          null,
-          created.commandId,
-          [401],
-        );
-        expectApiError(unauthenticated.body);
-        const noOrganization = await computerUse.requestReadComputerUseCommand(
-          bdd.user({ orgId: null }),
-          created.commandId,
-          [401],
-        );
-        expectApiError(noOrganization.body);
-
-        const session = await computerUse.readComputerUseCommand(
-          actor,
-          created.commandId,
-        );
-        const { token: pat } = await authOrg.createCliToken(actor);
-        mockClerkMembership(context, actor, "org:admin");
-        await expect(
-          computerUse.readComputerUseCommand(
-            { bearer: pat },
-            created.commandId,
-          ),
-        ).resolves.toStrictEqual(session);
-        await expect(
-          computerUse.readComputerUseCommand(
-            { bearer: token },
-            created.commandId,
-          ),
-        ).resolves.toStrictEqual(session);
-
-        const wrongHost = await agentTokenFor(actor, otherHost.hostId);
-        const wrongHostRead = await computerUse.requestReadComputerUseCommand(
-          { bearer: wrongHost },
-          created.commandId,
-          [404],
-        );
-        expect(wrongHostRead.body).toStrictEqual({
-          error: {
-            message: "Computer-use command not found",
-            code: "NOT_FOUND",
-          },
-        });
-        const unbound = await agentTokenFor(actor, undefined);
-        const capabilityDenied =
-          await computerUse.requestReadComputerUseCommand(
-            { bearer: unbound },
-            created.commandId,
-            [403],
-          );
-        expectApiError(capabilityDenied.body);
-
-        for (const foreignActor of [sameOrgPeer, foreignOrg]) {
-          const denied = await computerUse.requestReadComputerUseCommand(
-            foreignActor,
-            created.commandId,
-            [404],
-          );
-          expect(denied.body).toStrictEqual({
-            error: {
-              message: "Computer-use command not found",
-              code: "NOT_FOUND",
-            },
-          });
-        }
+      const firstHost = await api.startComputerUseHost(member, {
+        hostName: "Primary Desktop",
       });
+      const secondHost = await api.startComputerUseHost(member, {
+        hostName: "Secondary Desktop",
+      });
+
+      const launcher = await createRunLauncher(context, member);
+      const secondHostRun = await launcher.launch(secondHost.hostId);
+      const unboundRun = await launcher.launch();
+      const boundRun = await launcher.launch(firstHost.hostId);
+
+      mockClerkMembership(context, member, "org:member");
+      const created = await api.createComputerUseWriteCommand(
+        { bearer: boundRun.token },
+        { kind: "app.open", app: "Safari" },
+      );
+      const pat = await authOrg.createCliToken(member);
+
+      const anonymous = await api.requestReadComputerUseCommand(
+        null,
+        created.commandId,
+        [401],
+      );
+      expectApiError(anonymous.body);
+
+      const withoutOrg = await api.requestReadComputerUseCommand(
+        noOrg,
+        created.commandId,
+        [401],
+      );
+      expectApiError(withoutOrg.body);
+
+      const sessionRead = await api.readComputerUseCommand(
+        member,
+        created.commandId,
+      );
+
+      mockClerkMembership(context, member, "org:member");
+      const patRead = await api.readComputerUseCommand(
+        { bearer: pat.token },
+        created.commandId,
+      );
+      const boundRead = await api.readComputerUseCommand(
+        { bearer: boundRun.token },
+        created.commandId,
+      );
+      expect(patRead).toStrictEqual(sessionRead);
+      expect(boundRead).toStrictEqual(sessionRead);
+
+      const expectedNotFound = {
+        error: {
+          message: "Computer-use command not found",
+          code: "NOT_FOUND",
+        },
+      };
+      const wrongHostRead = await api.requestReadComputerUseCommand(
+        { bearer: secondHostRun.token },
+        created.commandId,
+        [404],
+      );
+      expect(wrongHostRead.body).toStrictEqual(expectedNotFound);
+
+      const unboundRead = await api.requestReadComputerUseCommand(
+        { bearer: unboundRun.token },
+        created.commandId,
+        [403],
+      );
+      expectApiError(unboundRead.body);
+
+      const peerRead = await api.requestReadComputerUseCommand(
+        peer,
+        created.commandId,
+        [404],
+      );
+      expect(peerRead.body).toStrictEqual(expectedNotFound);
+
+      const outsiderRead = await api.requestReadComputerUseCommand(
+        outsider,
+        created.commandId,
+        [404],
+      );
+      expect(outsiderRead.body).toStrictEqual(expectedNotFound);
+
+      await updateFeatureSwitchesForUser(
+        context,
+        { userId: member.userId, orgId: memberOrgId, orgRole: member.orgRole },
+        { [FeatureSwitchKey.RemoteDevices]: true },
+      );
+
+      mockClerkMembership(context, member, "org:member");
+      const deniedByDevicePolicy = await api.requestReadComputerUseCommand(
+        { bearer: boundRun.token },
+        created.commandId,
+        [404],
+      );
+      expect(deniedByDevicePolicy.body).toStrictEqual(expectedNotFound);
+
+      const device = await findDesktopDevice(context, member, firstHost.hostId);
+      expect(device).toMatchObject({ accessAllowed: false });
+      await setDeviceAccess(context, member, device.id, { mode: "always" });
+
+      mockClerkMembership(context, member, "org:member");
+      const admittedRead = await api.readComputerUseCommand(
+        { bearer: boundRun.token },
+        created.commandId,
+      );
+      expect(admittedRead).toStrictEqual(sessionRead);
     },
   );
+});
 
+describe("Computer Use screenshot download URLs", () => {
   it(
-    "preserves queued, running, succeeded, failed and offloaded response fields",
-    { timeout: CASE_TIMEOUT_MS },
+    "computer-use-content-get-001 returns private screenshot metadata with owner, host and device-policy authorization",
+    { timeout: TEST_WITH_TRIPLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
     async () => {
-      const scenario = createScenario();
-      const { bdd, computerUse, orgScoped } = scenario;
-      return await scenario.run(async () => {
-        const fake = computerUse.installComputerUseS3Fake();
-        const actor = orgScoped(bdd.user());
-        const host = await computerUse.startComputerUseHost(actor, {
-          hostName: "Projection Desktop",
-        });
-        const created = await computerUse.createComputerUseReadCommand(actor, {
-          kind: "app.state",
-          app: "Safari",
-          timeoutMs: 15_000,
-        });
+      mockNow(Date.parse("2026-02-01T12:00:00.000Z"));
+      const bdd = createBddApi(context);
+      const authOrg = createAuthOrgBddApi(context);
+      const api = createComputerUseBddApi(context);
+      const owner = bdd.user({ orgRole: "org:admin" });
+      const ownerOrgId = requireOrgId(owner);
+      const noOrg = bdd.user({ orgId: null });
+      const peer = bdd.user({ orgId: owner.orgId, orgRole: "org:member" });
+      const outsider = bdd.user({ orgRole: "org:member" });
 
-        const queued = await computerUse.readComputerUseCommand(
-          actor,
-          created.commandId,
-        );
-        expect(queued).toStrictEqual({
-          id: created.commandId,
-          kind: "app.state",
-          status: "queued",
-          hostId: host.hostId,
-          hostName: "Projection Desktop",
-          payload: { app: "Safari" },
-          timeoutMs: 15_000,
-          createdAt: new Date(STARTED_AT_MS).toISOString(),
-          claimedAt: null,
-          completedAt: null,
-        });
-
-        const claimed = await computerUse.claimNextComputerUseCommand(
-          host.connection,
-        );
-        expect(claimed).toMatchObject({
-          status: "command",
-          command: {
-            id: created.commandId,
-            status: "running",
-            claimedAt: new Date(STARTED_AT_MS).toISOString(),
-          },
-        });
-        const running = await computerUse.readComputerUseCommand(
-          actor,
-          created.commandId,
-        );
-        expect(running).toMatchObject({
-          status: "running",
-          claimedAt: new Date(STARTED_AT_MS).toISOString(),
-          completedAt: null,
-        });
-
-        const screenshot = Buffer.from("private screenshot bytes");
-        await computerUse.completeComputerUseCommandWith(
-          host.connection,
-          created.commandId,
-          {
-            status: "succeeded",
-            result: {
-              snapshotId: "snapshot_projection",
-              visibleText: "你好🙂",
-              screenshot: `data:image/png;base64,${screenshot.toString("base64")}`,
-              screenshotWidth: 1280,
-              screenshotHeight: 720,
-            },
-          },
-        );
-        const succeeded = await computerUse.readComputerUseCommand(
-          actor,
-          created.commandId,
-        );
-        expect(succeeded).toMatchObject({
-          status: "succeeded",
-          result: {
-            snapshotId: "snapshot_projection",
-            visibleText: "你好🙂",
-            screenshot: {
-              type: "s3",
-              mimeType: "image/png",
-              sizeBytes: screenshot.length,
-              width: 1280,
-              height: 720,
-            },
-          },
-          completedAt: new Date(STARTED_AT_MS).toISOString(),
-        });
-        expect(JSON.stringify(succeeded)).not.toContain(
-          screenshot.toString("base64"),
-        );
-        expect(fake.puts).toHaveLength(1);
-
-        const failedCommand = await computerUse.createComputerUseWriteCommand(
-          actor,
-          { kind: "app.open", app: "Finder", timeoutMs: 15_000 },
-        );
-        await computerUse.claimNextComputerUseCommand(host.connection);
-        await computerUse.completeComputerUseCommandWith(
-          host.connection,
-          failedCommand.commandId,
-          {
-            status: "failed",
-            error: {
-              code: "app_not_found",
-              message: "Finder is unavailable 中文🙂",
-            },
-          },
-        );
-        const failed = await computerUse.readComputerUseCommand(
-          actor,
-          failedCommand.commandId,
-        );
-        expect(failed).toMatchObject({
-          id: failedCommand.commandId,
-          status: "failed",
-          error: {
-            code: "app_not_found",
-            message: "Finder is unavailable 中文🙂",
-          },
-        });
-        expect(failed).not.toHaveProperty("result");
+      const host = await api.startComputerUseHost(owner, {
+        hostName: "Screenshot Owner Desktop",
       });
-    },
-  );
-
-  it(
-    "fails a running command once it passes its timeout, audits it once and keeps late completions from overwriting it",
-    { timeout: CASE_TIMEOUT_MS },
-    async () => {
-      const scenario = createScenario();
-      const { bdd, computerUse, orgScoped, createRunningWriteCommand } =
-        scenario;
-      return await scenario.run(async () => {
-        const actor = orgScoped(bdd.user());
-        const host = await computerUse.startComputerUseHost(actor, {
-          hostName: "Timeout Desktop",
-        });
-        const running = await createRunningWriteCommand({
-          actor,
-          host,
-          timeoutMs: 1000,
-        });
-
-        mockNow(STARTED_AT_MS + 500);
-        await expect(
-          computerUse.readComputerUseCommand(actor, running.commandId),
-        ).resolves.toMatchObject({ status: "running" });
-
-        mockNow(STARTED_AT_MS + 2000);
-        const [first, second, desktopPoll] = await Promise.all([
-          computerUse.readComputerUseCommand(actor, running.commandId),
-          computerUse.readComputerUseCommand(actor, running.commandId),
-          computerUse.claimNextComputerUseCommand(host.connection),
-        ]);
-        expect(desktopPoll).toStrictEqual({ status: "idle" });
-        const timedOut = await computerUse.readComputerUseCommand(
-          actor,
-          running.commandId,
-        );
-        expect(timedOut).toMatchObject({
-          status: "failed",
-          error: {
-            code: "timeout",
-            message: "Computer-use command timed out after 1000ms",
-          },
-          completedAt: new Date(STARTED_AT_MS + 2000).toISOString(),
-        });
-        for (const read of [first, second]) {
-          expect(["running", "failed"]).toContain(read.status);
-        }
-        const audit = await computerUse.listComputerUseAuditEvents(actor, {
-          commandId: running.commandId,
-        });
-        expect(audit.auditEvents).toHaveLength(1);
-
-        await computerUse.completeComputerUseCommand(
-          host.connection,
-          running.commandId,
-        );
-        await expect(
-          computerUse.readComputerUseCommand(actor, running.commandId),
-        ).resolves.toMatchObject({ status: "failed" });
+      const otherHost = await api.startComputerUseHost(owner, {
+        hostName: "Screenshot Other Desktop",
       });
-    },
-  );
 
-  it(
-    "lets Desktop polling expire a blocker after the strict timeout boundary and preserves its audit through late completions",
-    { timeout: CASE_TIMEOUT_MS },
-    async () => {
-      const scenario = createScenario();
-      const { bdd, computerUse, orgScoped, createRunningWriteCommand } =
-        scenario;
-      return await scenario.run(async () => {
-        const actor = orgScoped(bdd.user());
-        const host = await computerUse.startComputerUseHost(actor, {
-          hostName: "Queued Successor Desktop",
-        });
-        const running = await createRunningWriteCommand({
-          actor,
-          host,
-          timeoutMs: 1000,
-        });
-        const successor = await computerUse.createComputerUseWriteCommand(
-          { bearer: running.agentToken },
-          { kind: "app.open", app: "Finder" },
-        );
+      const launcher = await createRunLauncher(context, owner);
+      const wrongHostRun = await launcher.launch(otherHost.hostId);
+      const unboundRun = await launcher.launch();
+      const boundRun = await launcher.launch(host.hostId);
 
-        mockNow(STARTED_AT_MS + 1000);
-        await expect(
-          computerUse.claimNextComputerUseCommand(host.connection),
-        ).resolves.toStrictEqual({ status: "idle" });
-        await expect(
-          computerUse.readComputerUseCommand(actor, running.commandId),
-        ).resolves.toMatchObject({ status: "running", completedAt: null });
-        await expect(
-          computerUse.listComputerUseAuditEvents(actor, {
-            commandId: running.commandId,
-          }),
-        ).resolves.toStrictEqual({ auditEvents: [] });
+      const storage = api.installComputerUseS3Fake();
+      const pat = await authOrg.createCliToken(owner);
 
-        mockNow(STARTED_AT_MS + 2000);
-        await expect(
-          computerUse.claimNextComputerUseCommand(host.connection),
-        ).resolves.toMatchObject({
-          status: "command",
-          command: { id: successor.commandId, status: "running" },
-        });
-        const timedOut = await computerUse.readComputerUseCommand(
-          actor,
-          running.commandId,
-        );
-        expect(timedOut).toMatchObject({
-          id: running.commandId,
-          status: "failed",
-          error: {
-            code: "timeout",
-            message: "Computer-use command timed out after 1000ms",
-          },
-          completedAt: new Date(STARTED_AT_MS + 2000).toISOString(),
-        });
-        const audit = await computerUse.listComputerUseAuditEvents(actor, {
-          commandId: running.commandId,
-        });
-        expect(audit.auditEvents).toStrictEqual([
-          {
-            id: expect.any(String),
-            commandId: running.commandId,
-            runId: expect.any(String),
-            hostId: host.hostId,
-            kind: "app.open",
-            app: "Safari",
-            event: "completed",
-            redactedResult: null,
-            error: timedOut.error,
-            createdAt: timedOut.completedAt,
-          },
-        ]);
-
-        await computerUse.completeComputerUseCommand(
-          host.connection,
-          running.commandId,
-        );
-        await computerUse.completeComputerUseCommandWith(
-          host.connection,
-          running.commandId,
-          {
-            status: "failed",
-            error: { code: "app_not_found", message: "Late Desktop failure" },
-          },
-        );
-        await expect(
-          computerUse.readComputerUseCommand(actor, running.commandId),
-        ).resolves.toStrictEqual(timedOut);
-        await expect(
-          computerUse.listComputerUseAuditEvents(actor, {
-            commandId: running.commandId,
-          }),
-        ).resolves.toStrictEqual(audit);
-        await computerUse.completeComputerUseCommand(
-          host.connection,
-          successor.commandId,
-        );
-        await expect(
-          computerUse.readComputerUseCommand(actor, successor.commandId),
-        ).resolves.toMatchObject({ status: "succeeded" });
+      mockClerkMembership(context, owner, "org:admin");
+      const { commandId } = await api.createComputerUseReadCommand(
+        { bearer: boundRun.token },
+        { kind: "app.state", app: "Safari" },
+      );
+      await api.claimNextComputerUseCommand(host.connection);
+      const png = Buffer.concat([PNG_SIGNATURE, Buffer.alloc(48, 5)]);
+      await api.completeComputerUseCommandWith(host.connection, commandId, {
+        status: "succeeded",
+        result: {
+          snapshotId: "snap_content_get_1",
+          screenshot: `data:image/png;base64,${png.toString("base64")}`,
+          screenshotWidth: 1280,
+          screenshotHeight: 720,
+        },
       });
+      expect(storage.puts).toHaveLength(1);
+
+      const ownerMeta = await api.resolveComputerUseScreenshot(
+        owner,
+        commandId,
+      );
+      mockClerkMembership(context, owner, "org:admin");
+      const patMeta = await api.resolveComputerUseScreenshot(
+        { bearer: pat.token },
+        commandId,
+      );
+      const boundMeta = await api.resolveComputerUseScreenshot(
+        { bearer: boundRun.token },
+        commandId,
+      );
+
+      const expectedKey = `computer-use/${ownerOrgId}/${owner.userId}/${commandId}/screenshot.png`;
+      expect(ownerMeta).toStrictEqual({
+        downloadUrl: expect.stringContaining(encodeURIComponent(expectedKey)),
+        filename: "screenshot.png",
+        contentType: "image/png",
+        size: png.length,
+        cacheControl: "private, no-store",
+      });
+      expect(patMeta).toStrictEqual(ownerMeta);
+      expect(boundMeta).toStrictEqual(ownerMeta);
+
+      const anonymous = await api.requestComputerUseScreenshot(
+        null,
+        commandId,
+        [401],
+      );
+      expectApiError(anonymous.body);
+
+      const withoutOrg = await api.requestComputerUseScreenshot(
+        noOrg,
+        commandId,
+        [401],
+      );
+      expectApiError(withoutOrg.body);
+
+      const expectedNotFound = {
+        error: {
+          code: "NOT_FOUND",
+          message: "Computer-use command screenshot not found",
+        },
+      };
+      const peerResponse = await api.requestComputerUseScreenshot(
+        peer,
+        commandId,
+        [404],
+      );
+      expect(peerResponse.body).toStrictEqual(expectedNotFound);
+
+      const outsiderResponse = await api.requestComputerUseScreenshot(
+        outsider,
+        commandId,
+        [404],
+      );
+      expect(outsiderResponse.body).toStrictEqual(expectedNotFound);
+
+      mockClerkMembership(context, owner, "org:admin");
+      const wrongHostResponse = await api.requestComputerUseScreenshot(
+        { bearer: wrongHostRun.token },
+        commandId,
+        [404],
+      );
+      expect(wrongHostResponse.body).toStrictEqual(expectedNotFound);
+
+      const unboundResponse = await api.requestComputerUseScreenshot(
+        { bearer: unboundRun.token },
+        commandId,
+        [403],
+      );
+      expectApiError(unboundResponse.body);
+
+      await updateFeatureSwitchesForUser(
+        context,
+        { userId: owner.userId, orgId: ownerOrgId, orgRole: owner.orgRole },
+        { [FeatureSwitchKey.RemoteDevices]: true },
+      );
+
+      mockClerkMembership(context, owner, "org:admin");
+      const deniedByDevicePolicy = await api.requestComputerUseScreenshot(
+        { bearer: boundRun.token },
+        commandId,
+        [404],
+      );
+      expect(deniedByDevicePolicy.body).toStrictEqual(expectedNotFound);
+
+      const device = await findDesktopDevice(context, owner, host.hostId);
+      expect(device).toMatchObject({ accessAllowed: false });
+      await setDeviceAccess(context, owner, device.id, { mode: "always" });
+
+      mockClerkMembership(context, owner, "org:admin");
+      const admittedMeta = await api.resolveComputerUseScreenshot(
+        { bearer: boundRun.token },
+        commandId,
+      );
+      expect(admittedMeta).toStrictEqual(ownerMeta);
     },
   );
 });

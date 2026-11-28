@@ -1,173 +1,183 @@
-import { CONNECTOR_RUNTIME_SYNC_RUN_TERMINAL_ERROR_CODE } from "@okouai/api-contracts/contracts/runners";
-import { describe, expect, it } from "vitest";
-
+import { randomUUID } from "node:crypto";
+import { HttpResponse } from "msw";
+import { describe, expect, it, onTestFinished } from "vitest";
 import { testContext } from "../../../__tests__/test-context";
+import { TEST_WITH_TRIPLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE } from "../../../__tests__/test-timeouts";
+import { mockOptionalEnv } from "../../../lib/env";
+import { createDeferredPromise } from "../../utils";
 import { createBddApi } from "./helpers/api-bdd";
 import { createRunsApi } from "./helpers/api-bdd-runs";
-import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
-import { publicChatActor } from "./helpers/public-chat-actor";
-
-const context = testContext();
+import { createChatEventsFixture } from "./helpers/chat-events-fixture";
+import { publicRunOwner } from "./helpers/public-run-owner";
 
 describe("Runner run lookup ownership", () => {
-  it("scopes active runtime synchronization to its owner without exposing terminal state", async () => {
-    const api = createRunsApi(context);
-    const webhooks = createWebhookCallbackApi(context);
-    const owned = await publicChatActor(context);
-    const { actor } = owned;
-    const member = createBddApi(context).user({
-      orgId: actor.orgId,
-      orgRole: "org:member",
-    });
-    const body = {
-      targets: [{ kind: "builtin" as const, connectorSlug: "missing-builtin" }],
-    };
+  const context = testContext();
 
-    await owned.run(async () => {
-      await api.updateUserModelPreference(actor, "claude-fable-5-1");
-      const ownerKey = await api.createCliToken(actor);
-      const memberKey = await api.createCliToken(member);
-      const ownerBearer = `Bearer ${ownerKey.token}`;
-      const memberBearer = `Bearer ${memberKey.token}`;
-      const run = await api.createThreadRun(actor, {
-        prompt: "the owner's queued lookup",
+  it(
+    "runners-run-lookups-001 scopes active runtime synchronization to its owner without exposing terminal state",
+    { timeout: TEST_WITH_TRIPLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const fixture = createChatEventsFixture(context);
+      const bdd = createBddApi(context);
+      const runs = createRunsApi(context);
+      const owner = bdd.user();
+      const foreignMember = bdd.user({
+        orgId: owner.orgId,
+        orgRole: "org:member",
+      });
+      const dispatchArrived = createDeferredPromise<string>(context.signal);
+      const releaseDispatch = createDeferredPromise<void>(context.signal);
+      let dispatchReleased = false;
+      const release = () => {
+        if (!dispatchReleased) {
+          dispatchReleased = true;
+          releaseDispatch.resolve();
+        }
+      };
+      onTestFinished(release);
+
+      const runOwner = publicRunOwner(context, owner);
+      fixture.chatCallbacks.acceptChatObjectStorage();
+      fixture.api.acceptStorageDownloads();
+      fixture.api.acceptTelemetryIngest();
+      mockOptionalEnv("OPENROUTER_API_KEY", undefined);
+      fixture.chatCallbacks.disableVapid();
+
+      const runnerIdentity = {
+        runnerId: randomUUID(),
+        heartbeatGeneration: 1,
+      };
+      await fixture.api.configureRunnerGroup({
+        runnerIdentity,
+        reply: async (envelope) => {
+          dispatchArrived.resolve(envelope.executionContext.runId);
+          await releaseDispatch.promise;
+          return HttpResponse.json({
+            ...runnerIdentity,
+            runId: envelope.executionContext.runId,
+            disposition: "accepted",
+          });
+        },
       });
 
-      await api.requestSyncConnectorRuntimeAs(
-        memberBearer,
-        run.runId,
-        body,
+      await runOwner.run(async () => {
+        await bdd.bootstrapLimitedFreeOnboarding(owner);
+        await fixture.api.ensurePersonalSubscriptionModel(owner);
+      });
+
+      const ownerCli = await runOwner.run(() => {
+        return fixture.api.createCliToken(owner);
+      });
+      const foreignCli = await runOwner.run(() => {
+        return fixture.api.createCliToken(foreignMember);
+      });
+
+      const prompt = "Verify runtime synchronization ownership";
+      const missingConnectorSlug = "missing-builtin-connector";
+      const syncBody = {
+        targets: [
+          {
+            kind: "builtin" as const,
+            connectorSlug: missingConnectorSlug,
+          },
+        ],
+      };
+
+      const sent = await runOwner.run(() => {
+        return fixture.chat.requestSendEvent(
+          owner,
+          {
+            prompt,
+            clientEventId: randomUUID(),
+          },
+          [201],
+        );
+      });
+      expect(sent.status).toBe(201);
+
+      const runId = await dispatchArrived.promise;
+
+      const foreignBeforeDispatch = await runs.requestSyncConnectorRuntimeAs(
+        `Bearer ${foreignCli.token}`,
+        runId,
+        syncBody,
         [403],
       );
-      const execution = await owned.executionInput(run.runId);
-      expect(execution).toMatchObject({
-        prompt: "the owner's queued lookup",
-        isFirstRun: true,
-        cliAgentType: "claude-code",
-      });
-      await expect(api.readRun(actor, run.runId)).resolves.toMatchObject({
-        status: "running",
-      });
-      const synced = await api.requestSyncConnectorRuntimeAs(
-        ownerBearer,
-        run.runId,
-        body,
+      expect(foreignBeforeDispatch.status).toBe(403);
+
+      release();
+
+      const execution = await runOwner.executionInput(runId);
+      const sandboxHeaders = {
+        authorization: `Bearer ${execution.sandboxToken}`,
+      };
+      expect(execution.prompt).toBe(prompt);
+      expect(execution.isFirstRun).toBeTruthy();
+      expect(execution.cliAgentType).toBe("claude-code");
+
+      const foreignDuringExecution = await runs.requestSyncConnectorRuntimeAs(
+        `Bearer ${foreignCli.token}`,
+        runId,
+        syncBody,
+        [403],
+      );
+      expect(foreignDuringExecution.status).toBe(403);
+      if (foreignDuringExecution.status !== 403) {
+        throw new Error("Expected 403 for foreign member during execution");
+      }
+      expect(foreignDuringExecution.body.error.message).toBe(
+        "Run does not belong to user",
+      );
+
+      const ownerDuringExecution = await runs.requestSyncConnectorRuntimeAs(
+        `Bearer ${ownerCli.token}`,
+        runId,
+        syncBody,
         [200],
       );
-      expect(synced.body.results).toStrictEqual([
+      expect(ownerDuringExecution.status).toBe(200);
+      if (ownerDuringExecution.status !== 200) {
+        throw new Error("Expected 200 for owner during execution");
+      }
+      expect(ownerDuringExecution.body.results).toStrictEqual([
         {
-          target: body.targets[0],
+          target: {
+            kind: "builtin",
+            connectorSlug: missingConnectorSlug,
+          },
           state: "absent",
           reason: "connector-unavailable",
         },
       ]);
-      const foreign = await api.requestSyncConnectorRuntimeAs(
-        memberBearer,
-        run.runId,
-        body,
-        [403],
-      );
-      expect(foreign.body.error.message).toBe("Run does not belong to user");
 
-      await webhooks.requestAgentComplete(
-        {
-          runId: run.runId,
-          exitCode: 0,
-          lastEventSequence: 0,
-          completion: {
-            cliAgentType: "claude-code",
-            cliAgentSessionId: run.runId,
-            cliAgentSessionHistoryDisposition: "native_only",
-          },
-        },
-        { authorization: `Bearer ${execution.sandboxToken}` },
-        [200],
-      );
-      await expect(api.readRun(actor, run.runId)).resolves.toMatchObject({
+      await runOwner.run(() => {
+        return fixture.completeChatRunOk(runId, sandboxHeaders, {
+          cliAgentType: "claude-code",
+        });
+      });
+      await expect(fixture.api.readRun(owner, runId)).resolves.toMatchObject({
         status: "completed",
       });
-      const terminal = await api.requestSyncConnectorRuntimeAs(
-        ownerBearer,
-        run.runId,
-        body,
+
+      const ownerAfterCompletion = await runs.requestSyncConnectorRuntimeAs(
+        `Bearer ${ownerCli.token}`,
+        runId,
+        syncBody,
         [409],
       );
-      expect(terminal.body.error.code).toBe(
-        CONNECTOR_RUNTIME_SYNC_RUN_TERMINAL_ERROR_CODE,
-      );
-      await api.requestSyncConnectorRuntimeAs(
-        memberBearer,
-        run.runId,
-        body,
+      expect(ownerAfterCompletion.status).toBe(409);
+      if (ownerAfterCompletion.status !== 409) {
+        throw new Error("Expected 409 for owner after completion");
+      }
+      expect(ownerAfterCompletion.body.error.code).toBe("RUN_TERMINAL");
+
+      const foreignAfterCompletion = await runs.requestSyncConnectorRuntimeAs(
+        `Bearer ${foreignCli.token}`,
+        runId,
+        syncBody,
         [404],
       );
-    });
-  });
-
-  it("keeps completed and running lookups separate across distinct executions", async () => {
-    const api = createRunsApi(context);
-    const webhooks = createWebhookCallbackApi(context);
-    const owned = await publicChatActor(context);
-    const { actor } = owned;
-    const body = {
-      targets: [{ kind: "builtin" as const, connectorSlug: "missing-builtin" }],
-    };
-
-    await owned.run(async () => {
-      await api.updateUserModelPreference(actor, "claude-fable-5-1");
-      const key = await api.createCliToken(actor);
-      const bearer = `Bearer ${key.token}`;
-      const first = await api.createThreadRun(actor, {
-        prompt: "complete this lookup first",
-      });
-      const firstExecution = await owned.executionInput(first.runId);
-      expect(firstExecution.cliAgentType).toBe("claude-code");
-      await webhooks.requestAgentComplete(
-        {
-          runId: first.runId,
-          exitCode: 0,
-          lastEventSequence: 0,
-          completion: {
-            cliAgentType: "claude-code",
-            cliAgentSessionId: first.runId,
-            cliAgentSessionHistoryDisposition: "native_only",
-          },
-        },
-        { authorization: `Bearer ${firstExecution.sandboxToken}` },
-        [200],
-      );
-      await expect(api.readRun(actor, first.runId)).resolves.toMatchObject({
-        status: "completed",
-      });
-
-      const next = await api.createThreadRun(actor, {
-        prompt: "a distinct queued lookup",
-      });
-      expect(next.status).toBe("running");
-      await api.requestSyncConnectorRuntimeAs(bearer, first.runId, body, [409]);
-
-      const nextExecution = await owned.executionInput(next.runId);
-      expect(nextExecution).toMatchObject({
-        prompt: "a distinct queued lookup",
-        isFirstRun: true,
-      });
-      const current = await api.requestSyncConnectorRuntimeAs(
-        bearer,
-        next.runId,
-        body,
-        [200],
-      );
-      expect(current.body.results).toStrictEqual([
-        {
-          target: body.targets[0],
-          state: "absent",
-          reason: "connector-unavailable",
-        },
-      ]);
-      await api.requestSyncConnectorRuntimeAs(bearer, first.runId, body, [409]);
-      await expect(api.readRun(actor, next.runId)).resolves.toMatchObject({
-        status: "running",
-      });
-    });
-  });
+      expect(foreignAfterCompletion.status).toBe(404);
+    },
+  );
 });

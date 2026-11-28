@@ -1,273 +1,146 @@
 import { randomUUID } from "node:crypto";
-
 import { authContract } from "@okouai/api-contracts/contracts/auth";
-import { authMeRoutes } from "../auth-me";
-import { createUserConfigBddApi } from "./helpers/api-bdd-user-config";
-import { buildInfoContract } from "@okouai/api-contracts/contracts/build-info";
-import { healthContract } from "@okouai/api-contracts/contracts/health";
 import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { describe, expect, it } from "vitest";
-
-import apiPackage from "../../../../package.json";
-import { accept, testContext } from "../../../__tests__/test-context";
+import { healthContract } from "@okouai/api-contracts/contracts/health";
+import { createStore } from "ccstate";
+import { expect, test } from "vitest";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { mockEnv } from "../../../lib/env";
-import {
-  createBddApi,
-  expectApiError,
-  type ApiTestUser,
-} from "./helpers/api-bdd";
-import { createRouteMocks } from "./helpers/route-test";
-import { buildInfoRoutes } from "../build-info";
-import { healthRoutes } from "../health";
+import { accept, testContext } from "../../../__tests__/test-context";
+import { authMeRoutes } from "../auth-me";
 import { featureSwitchesRoutes } from "../feature-switches";
-
-/*
-helper gap: HOOK-01 signed callbacks still need API-visible builders for
-run/chat/schedule/integration source state before they can avoid DB fixtures.
-helper gap: HOOK-02 external provider webhooks still need visible source-state
-builders for Stripe, Clerk, GitHub, storage, run outputs, and generation runs.
-*/
+import { healthRoutes } from "../health";
+import { mockClerkUsers } from "./helpers/clerk-users";
+import { seedOrgMembership$ } from "./helpers/org-membership";
+import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
-const api = createBddApi(context);
-const routeMocks = createRouteMocks(context);
+const headers = Object.freeze({ authorization: "Bearer clerk-session" });
 
-function healthClient() {
-  return setupApp({ context, routes: healthRoutes })(healthContract);
-}
-
-function buildInfoClient() {
-  return setupApp({ context, routes: buildInfoRoutes })(buildInfoContract);
-}
-
-function authClient() {
-  return setupApp({ context, routes: authMeRoutes })(authContract);
-}
-
-function featureSwitchesClient() {
+const switchesApi = () => {
   return setupApp({ context, routes: featureSwitchesRoutes })(
     featureSwitchesContract,
   );
+};
+
+interface Member {
+  readonly userId: string;
+  readonly orgId: string;
 }
 
-function headersFor(actor: ApiTestUser | null): {
-  readonly authorization?: string;
-} {
-  if (!actor) {
-    context.mocks.clerk.authenticateRequest.mockResolvedValue({
-      isAuthenticated: false,
-    });
-    return {};
-  }
-
-  routeMocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
-  return { authorization: "Bearer clerk-session" };
+async function workspaceMember(orgId = `org_${randomUUID()}`) {
+  const member: Member = { userId: `user_${randomUUID()}`, orgId };
+  await createStore().set(
+    seedOrgMembership$,
+    { ...member, role: "member" },
+    context.signal,
+  );
+  return member;
 }
 
-function expectRecord(
-  value: unknown,
-): asserts value is Record<string, unknown> {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) {
-    throw new Error("Expected object response body");
-  }
+function signIn(member: Member) {
+  createRouteMocks(context).clerk.session(
+    member.userId,
+    member.orgId,
+    "org:member",
+  );
 }
 
-describe("OPS-02: API health and auth boundary", () => {
-  it("returns public build info with a configured commit SHA", async () => {
-    const commitSha = "0123456789abcdef0123456789abcdef01234567";
-    mockEnv("GIT_COMMIT_SHA", commitSha);
+async function readSwitches(member: Member) {
+  signIn(member);
+  return (await accept(switchesApi().get({ headers }), [200])).body.switches;
+}
 
-    const response = await accept(buildInfoClient().get(), [200]);
+async function updateSwitches(
+  member: Member,
+  switches: Record<string, boolean>,
+) {
+  signIn(member);
+  return (
+    await accept(switchesApi().update({ headers, body: { switches } }), [200])
+  ).body.switches;
+}
 
-    expect(response.body).toStrictEqual({
-      commitSha,
-      version: apiPackage.version,
-    });
-    expect(response.headers.get("cache-control")).toBe("no-store");
-  });
+async function deleteSwitches(member: Member) {
+  signIn(member);
+  return (await accept(switchesApi().delete({ headers }), [200])).body;
+}
 
-  it("returns null build info for local commit placeholders", async () => {
-    mockEnv("GIT_COMMIT_SHA", "local-dev");
+test("hooks-ops.bdd-003 reports health and guards the identity read", async () => {
+  const member = await workspaceMember();
 
-    const response = await accept(buildInfoClient().get(), [200]);
+  const health = await accept(
+    setupApp({ context, routes: healthRoutes })(healthContract).check(),
+    [200],
+  );
+  const auth = setupApp({ context, routes: authMeRoutes })(authContract);
+  const anonymous = await accept(auth.me({ headers: {} }), [401]);
 
-    expect(response.body).toStrictEqual({
-      commitSha: null,
-      version: apiPackage.version,
-    });
-    expect(response.headers.get("cache-control")).toBe("no-store");
-  });
+  signIn(member);
+  mockClerkUsers(context, [
+    {
+      id: member.userId,
+      emailAddresses: [
+        { id: "email_primary", emailAddress: "member@example.com" },
+      ],
+      primaryEmailAddressId: "email_primary",
+      firstName: "Ops",
+      lastName: "Member",
+      imageUrl: null,
+    },
+  ]);
+  const me = await accept(auth.me({ headers }), [200]);
 
-  it("checks public health and the auth boundary through HTTP routes", async () => {
-    const admin = api.user();
-    createUserConfigBddApi(context).mockClerkUsers([admin]);
-
-    const health = await accept(healthClient().check(), [200]);
-    expect(health.body).toStrictEqual({ status: "ok" });
-
-    const unauthorized = await accept(
-      authClient().me({
-        headers: headersFor(null),
-      }),
-      [401],
-    );
-    expectApiError(unauthorized.body);
-    expect(unauthorized.body.error.code).toBe("UNAUTHORIZED");
-
-    const authenticated = await accept(
-      authClient().me({
-        headers: headersFor(admin),
-      }),
-      [200],
-    );
-    expectRecord(authenticated.body);
-    expect(authenticated.body.userId).toBe(admin.userId);
-    expect(authenticated.body.orgId).toBe(admin.orgId);
-    expect(authenticated.body.email).toBe(admin.email);
+  expect(health.body).toStrictEqual({ status: "ok" });
+  expect(anonymous.body).toMatchObject({ error: { code: "UNAUTHORIZED" } });
+  expect(me.body).toMatchObject({
+    userId: member.userId,
+    orgId: member.orgId,
+    email: "member@example.com",
   });
 });
 
-describe("OPS-01: feature switch routes", () => {
-  it("updates, reads, merges, and deletes feature switch overrides through API", async () => {
-    const admin = api.user();
+test("hooks-ops.bdd-004 updates, reads, merges and deletes personal overrides", async () => {
+  const member = await workspaceMember();
 
-    const initial = await accept(
-      featureSwitchesClient().get({ headers: headersFor(admin) }),
-      [200],
-    );
-    expect(initial.body.switches[FeatureSwitchKey.Dummy]).toBeUndefined();
+  const initial = await readSwitches(member);
+  const first = await updateSwitches(member, { _dummy: false });
+  const second = await updateSwitches(member, { _dummy: true });
+  const reread = await readSwitches(member);
+  const deleted = await deleteSwitches(member);
+  const afterDelete = await readSwitches(member);
 
-    const enabled = await accept(
-      featureSwitchesClient().update({
-        headers: headersFor(admin),
-        body: {
-          switches: {
-            [FeatureSwitchKey.Dummy]: false,
-          },
-        },
-      }),
-      [200],
-    );
-    expect(enabled.body.switches[FeatureSwitchKey.Dummy]).toBeFalsy();
+  expect(initial).not.toHaveProperty("_dummy");
+  expect(first).toMatchObject({ _dummy: false });
+  expect(second).toMatchObject({ _dummy: true });
+  expect(reread).toStrictEqual(second);
+  expect(deleted).toStrictEqual({ deleted: true });
+  expect(afterDelete).not.toHaveProperty("_dummy");
+});
 
-    const merged = await accept(
-      featureSwitchesClient().update({
-        headers: headersFor(admin),
-        body: {
-          switches: {
-            [FeatureSwitchKey.Dummy]: true,
-          },
-        },
-      }),
-      [200],
-    );
-    expect(merged.body.switches[FeatureSwitchKey.Dummy]).toBeTruthy();
+test("hooks-ops.bdd-005 keeps workspace overrides apart from personal ones", async () => {
+  const owner = await workspaceMember();
+  const peer = await workspaceMember(owner.orgId);
+  const outsider = await workspaceMember();
 
-    const read = await accept(
-      featureSwitchesClient().get({ headers: headersFor(admin) }),
-      [200],
-    );
-    expect(read.body.switches).toStrictEqual(merged.body.switches);
-
-    const deleted = await accept(
-      featureSwitchesClient().delete({ headers: headersFor(admin) }),
-      [200],
-    );
-    expect(deleted.body).toStrictEqual({ deleted: true });
-
-    const readAfterDelete = await accept(
-      featureSwitchesClient().get({ headers: headersFor(admin) }),
-      [200],
-    );
-    expect(
-      readAfterDelete.body.switches[FeatureSwitchKey.Dummy],
-    ).toBeUndefined();
+  const ownerUpdate = await updateSwitches(owner, {
+    larkIntegration: true,
+    _dummy: false,
   });
+  const peerRead = await readSwitches(peer);
+  const outsiderRead = await readSwitches(outsider);
+  const peerUpdate = await updateSwitches(peer, { larkIntegration: false });
+  const ownerRead = await readSwitches(owner);
+  const deleted = await deleteSwitches(owner);
+  const peerAfterDelete = await readSwitches(peer);
 
-  it("stores org-scoped feature switch overrides separately from personal overrides", async () => {
-    const orgId = `org_${randomUUID()}`;
-    const owner = api.user({ orgId });
-    const peer = api.user({ orgId });
-    const outsider = api.user();
-
-    const ownerUpdate = await accept(
-      featureSwitchesClient().update({
-        headers: headersFor(owner),
-        body: {
-          switches: {
-            [FeatureSwitchKey.LarkIntegration]: true,
-            [FeatureSwitchKey.Dummy]: false,
-          },
-        },
-      }),
-      [200],
-    );
-    expect(
-      ownerUpdate.body.switches[FeatureSwitchKey.LarkIntegration],
-    ).toBeTruthy();
-    expect(ownerUpdate.body.switches[FeatureSwitchKey.Dummy]).toBeFalsy();
-
-    const peerRead = await accept(
-      featureSwitchesClient().get({ headers: headersFor(peer) }),
-      [200],
-    );
-    expect(
-      peerRead.body.switches[FeatureSwitchKey.LarkIntegration],
-    ).toBeTruthy();
-    expect(peerRead.body.switches[FeatureSwitchKey.Dummy]).toBeUndefined();
-
-    const outsiderRead = await accept(
-      featureSwitchesClient().get({ headers: headersFor(outsider) }),
-      [200],
-    );
-    expect(
-      outsiderRead.body.switches[FeatureSwitchKey.LarkIntegration],
-    ).toBeUndefined();
-
-    const peerUpdate = await accept(
-      featureSwitchesClient().update({
-        headers: headersFor(peer),
-        body: {
-          switches: {
-            [FeatureSwitchKey.LarkIntegration]: false,
-          },
-        },
-      }),
-      [200],
-    );
-    expect(
-      peerUpdate.body.switches[FeatureSwitchKey.LarkIntegration],
-    ).toBeFalsy();
-    expect(peerUpdate.body.switches[FeatureSwitchKey.Dummy]).toBeUndefined();
-
-    const ownerReadAfterPeerUpdate = await accept(
-      featureSwitchesClient().get({ headers: headersFor(owner) }),
-      [200],
-    );
-    expect(
-      ownerReadAfterPeerUpdate.body.switches[FeatureSwitchKey.LarkIntegration],
-    ).toBeFalsy();
-    expect(
-      ownerReadAfterPeerUpdate.body.switches[FeatureSwitchKey.Dummy],
-    ).toBeFalsy();
-
-    const deleted = await accept(
-      featureSwitchesClient().delete({ headers: headersFor(owner) }),
-      [200],
-    );
-    expect(deleted.body).toStrictEqual({ deleted: true });
-
-    const peerReadAfterDelete = await accept(
-      featureSwitchesClient().get({ headers: headersFor(peer) }),
-      [200],
-    );
-    expect(
-      peerReadAfterDelete.body.switches[FeatureSwitchKey.LarkIntegration],
-    ).toBeUndefined();
-    expect(
-      peerReadAfterDelete.body.switches[FeatureSwitchKey.Dummy],
-    ).toBeUndefined();
-  });
+  expect(ownerUpdate).toMatchObject({ larkIntegration: true, _dummy: false });
+  expect(peerRead).toMatchObject({ larkIntegration: true });
+  expect(peerRead).not.toHaveProperty("_dummy");
+  expect(outsiderRead).not.toHaveProperty("larkIntegration");
+  expect(peerUpdate).toMatchObject({ larkIntegration: false });
+  expect(peerUpdate).not.toHaveProperty("_dummy");
+  expect(ownerRead).toMatchObject({ larkIntegration: false, _dummy: false });
+  expect(deleted).toStrictEqual({ deleted: true });
+  expect(peerAfterDelete).not.toHaveProperty("larkIntegration");
+  expect(peerAfterDelete).not.toHaveProperty("_dummy");
 });

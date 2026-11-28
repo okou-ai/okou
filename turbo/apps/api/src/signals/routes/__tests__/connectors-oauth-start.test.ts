@@ -1,2283 +1,1496 @@
 import { createHash, randomUUID } from "node:crypto";
-
+import { builtinConnectorOauthStartContract } from "@okouai/api-contracts/contracts/connectors";
+import { builtinConnectorsSlugCallbackContract } from "@okouai/api-contracts/contracts/connectors-slug-callback";
 import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
-import type { ConnectorAuthMethodId } from "@okouai/api-contracts/contracts/connector-identity";
-import { builtinConnectorOauthStartResponseSchema } from "@okouai/api-contracts/contracts/connector-schemas";
-import { http, HttpResponse, type JsonBodyType } from "msw";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { record, string, uuid } from "zod";
-
-import { createApp } from "../../../app-factory";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { http, HttpResponse } from "msw";
+import { describe, expect, it } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { server } from "../../../mocks/server";
-import { clearMockNow } from "../../../lib/time";
-import { API_TEST_CONNECTOR_CATALOG } from "../../../test-fixtures/connector-catalog";
-import { connectorAccountRoutes } from "../connector-accounts";
-import { builtinConnectorsSlugCallbackRoutes } from "../connectors-slug-callback";
 import { builtinConnectorsRoutes } from "../connectors";
+import { builtinConnectorsSlugCallbackRoutes } from "../connectors-slug-callback";
+import { connectorAccountRoutes } from "../connector-accounts";
+import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { createRouteMocks } from "./helpers/route-test";
-
-const TEST_APP_ROUTES = Object.freeze([
-  ...builtinConnectorsSlugCallbackRoutes,
-  ...builtinConnectorsRoutes,
-]);
 
 const context = testContext();
 const mocks = createRouteMocks(context);
+const headers = Object.freeze({ authorization: "Bearer clerk-session" });
+const STATE = /^[0-9a-f]{64}$/;
+const BASE64URL = /^[A-Za-z0-9_-]+$/;
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
-const BASE_URL = "https://app.okou.test";
-const API_ORIGIN = "https://api.okou.ai";
-const WEB_ORIGIN = "https://www.okou.ai";
-const LOCAL_ORIGIN = "http://localhost:3000";
-const LOCAL_WEB_ORIGIN = "https://www.okou.ai:8443";
-const ASANA_OAUTH_TOKEN_URL = "https://app.asana.com/-/oauth_token";
-const BOX_OAUTH_TOKEN_URL = "https://api.box.com/oauth2/token";
-const BOX_CURRENT_USER_URL = "https://api.box.com/2.0/users/me";
-const CLOUDFLARE_OAUTH_TOKEN_URL = "https://dash.cloudflare.com/oauth2/token";
-const CLOUDFLARE_USERINFO_URL = "https://dash.cloudflare.com/oauth2/userinfo";
-const GITHUB_OAUTH_TOKEN_URL = "https://github.com/login/oauth/access_token";
-const GITHUB_USER_URL = "https://api.github.com/user";
-const GITHUB_OAUTH_SCOPES = ["repo", "project", "workflow"] as const;
-const GOOGLE_OAUTH_TOKEN_URL = "https://oauth2.googleapis.com/token";
-const GOOGLE_OPENID_USERINFO_URL =
-  "https://openidconnect.googleapis.com/v1/userinfo";
-const GUMROAD_OAUTH_TOKEN_URL = "https://gumroad.com/oauth/token";
-const GUMROAD_USER_URL = "https://api.gumroad.com/v2/user";
-const HUBSPOT_OAUTH_TOKEN_URL = "https://api.hubapi.com/oauth/v1/token";
-const HUBSPOT_TOKEN_INFO_URL = "https://api.hubapi.com/oauth/v1/access-tokens";
-const INTERVALS_ICU_OAUTH_TOKEN_URL = "https://intervals.icu/api/oauth/token";
-const LINEAR_OAUTH_TOKEN_URL = "https://api.linear.app/oauth/token";
-const LINEAR_GRAPHQL_URL = "https://api.linear.app/graphql";
-const META_ADS_OAUTH_TOKEN_URL =
-  "https://graph.facebook.com/v22.0/oauth/access_token";
-const META_ADS_USER_URL = "https://graph.facebook.com/v22.0/me";
-const MONDAY_OAUTH_TOKEN_URL = "https://auth.monday.com/oauth2/token";
-const MONDAY_GRAPHQL_URL = "https://api.monday.com/v2";
-const NOTION_OAUTH_TOKEN_URL = "https://api.notion.com/v1/oauth/token";
-const QUICKBOOKS_OAUTH_TOKEN_URL =
-  "https://oauth.platform.intuit.com/oauth2/v1/tokens/bearer";
-const QUICKBOOKS_USERINFO_URL =
-  "https://accounts.platform.intuit.com/v1/openid_connect/userinfo";
-const SENTRY_OAUTH_TOKEN_URL = "https://sentry.io/oauth/token/";
-const STRAVA_OAUTH_TOKEN_URL = "https://www.strava.com/oauth/token";
-const STRAVA_ATHLETE_URL = "https://www.strava.com/api/v3/athlete";
-const STRIPE_OAUTH_TOKEN_URL = "https://api.stripe.com/v1/oauth/token";
-const STRIPE_ACCOUNT_URL = "https://api.stripe.com/v1/account";
-const TIKTOK_ADS_OAUTH_TOKEN_URL =
-  "https://business-api.tiktok.com/open_api/v1.3/oauth2/access_token/";
-const TODOIST_OAUTH_TOKEN_URL = "https://todoist.com/oauth/access_token";
-const TODOIST_USER_URL = "https://api.todoist.com/api/v1/user";
-const VERCEL_OAUTH_TOKEN_URL = "https://api.vercel.com/v2/oauth/access_token";
-const VERCEL_USER_URL = "https://api.vercel.com/v2/user";
-// Stubbed at module-load time by src/__tests__/env-stub.ts.
-const VERCEL_INTEGRATION_SLUG = "okou-test-integration";
-const X_OAUTH_TOKEN_URL = "https://api.x.com/2/oauth2/token";
-const X_USERS_ME_URL = "https://api.x.com/2/users/me";
-const XERO_OAUTH_TOKEN_URL = "https://identity.xero.com/connect/token";
-const XERO_USERINFO_URL = "https://identity.xero.com/connect/userinfo";
-const AIRTABLE_OAUTH_TOKEN_URL = "https://airtable.com/oauth2/v1/token";
-const AIRTABLE_WHOAMI_URL = "https://api.airtable.com/v0/meta/whoami";
-const AUTH_REQUEST_USER_ID_PREFIX = "user_okou_connectors_oauth_start_";
-const YOUTUBE_OAUTH_SCOPES = [
-  "https://www.googleapis.com/auth/youtube",
-  "https://www.googleapis.com/auth/youtube.force-ssl",
-  "https://www.googleapis.com/auth/youtube.readonly",
-  "https://www.googleapis.com/auth/youtube.upload",
-  "https://www.googleapis.com/auth/userinfo.email",
-] as const;
-
-function oauthStartUrl(connectorSlug: string, origin = BASE_URL): string {
-  return new URL(
-    `/api/connectors/${connectorSlug}/oauth/start`,
-    origin,
-  ).toString();
+interface StartOptions {
+  readonly callbackTarget?: "app";
 }
 
-function authHeaders(): Record<string, string> {
-  return { authorization: "Bearer clerk-session" };
+interface Member {
+  readonly userId: string;
+  readonly orgId: string;
 }
 
-function mockAuthenticatedSession(): void {
-  mocks.clerk.session(
-    `${AUTH_REQUEST_USER_ID_PREFIX}${randomUUID()}`,
-    `org_${randomUUID()}`,
-  );
+function signIn(): Member {
+  const member = {
+    userId: `user_${randomUUID()}`,
+    orgId: `org_${randomUUID()}`,
+  };
+  mocks.clerk.session(member.userId, member.orgId, "org:member");
+  return member;
 }
 
-// #30570 pre-stages launch-gated OAuth connectors on the direct Okou App
-// callback. Each case pins the provider-specific authorization and token
-// exchange contract that must survive the callback change.
-type LaunchGatedDirectOkouCase = {
-  readonly connectorSlug: string;
-  readonly label: string;
-  readonly authorizationEndpoint: string;
-  readonly tokenUrl: string;
-  readonly tokenResponse: JsonBodyType;
-  // The authorization URL carries a PKCE challenge and the token exchange
-  // replays the verifier.
-  readonly pkce?: true;
-  // Webflow posts a JSON token request instead of a form body.
-  readonly jsonTokenRequest?: true;
-  // Datadog resolves its token host from a callback query parameter.
-  readonly callbackQuery?: Readonly<Record<string, string>>;
-  readonly mockUserInfo?: () => void;
-} & (
-  { readonly clientEnvPrefix: string } | { readonly publicClientId: string }
-);
-
-const LAUNCH_GATED_DIRECT_OKOU_CASES: readonly LaunchGatedDirectOkouCase[] = [
-  {
-    connectorSlug: "cal-com",
-    label: "Cal.com",
-    clientEnvPrefix: "CAL_COM",
-    authorizationEndpoint: "https://app.cal.com/auth/oauth2/authorize",
-    tokenUrl: "https://api.cal.com/v2/auth/oauth2/token",
-    tokenResponse: {
-      access_token: "cal-com-test-token",
-      refresh_token: "cal-com-refresh-token",
-      expires_in: 3600,
-    },
-    mockUserInfo: () => {
-      server.use(
-        http.get("https://api.cal.com/v2/me", () => {
-          return HttpResponse.json({
-            data: {
-              id: "cal-com-user-123",
-              username: "cal-com-test-user",
-              email: "cal-com@example.test",
-            },
-          });
-        }),
-      );
-    },
-  },
-  {
-    connectorSlug: "calendly",
-    label: "Calendly",
-    clientEnvPrefix: "CALENDLY",
-    authorizationEndpoint: "https://auth.calendly.com/oauth/authorize",
-    tokenUrl: "https://auth.calendly.com/oauth/token",
-    pkce: true,
-    jsonTokenRequest: true,
-    tokenResponse: {
-      token_type: "Bearer",
-      access_token: "calendly-test-token",
-      refresh_token: "calendly-refresh-token",
-      expires_in: 7200,
-      scope: "users:read scheduled_events:read scheduled_events:write",
-    },
-    mockUserInfo: () => {
-      server.use(
-        http.get("https://api.calendly.com/users/me", () => {
-          return HttpResponse.json({
-            resource: {
-              uri: "https://api.calendly.com/users/calendly-test-user",
-              name: "Calendly Test User",
-              email: "calendly@example.test",
-            },
-          });
-        }),
-      );
-    },
-  },
-  {
-    connectorSlug: "close",
-    label: "Close",
-    clientEnvPrefix: "CLOSE",
-    authorizationEndpoint: "https://app.close.com/oauth2/authorize/",
-    tokenUrl: "https://api.close.com/oauth2/token/",
-    tokenResponse: {
-      access_token: "close-test-token",
-      refresh_token: "close-refresh-token",
-      expires_in: 3600,
-      organization_id: "close-org-123",
-    },
-    mockUserInfo: () => {
-      server.use(
-        http.get("https://api.close.com/api/v1/me/", () => {
-          return HttpResponse.json({
-            id: "close-user-123",
-            email: "close@example.test",
-          });
-        }),
-      );
-    },
-  },
-  {
-    connectorSlug: "copper",
-    label: "Copper",
-    clientEnvPrefix: "COPPER",
-    authorizationEndpoint: "https://app.copper.com/oauth/authorize",
-    tokenUrl: "https://app.copper.com/oauth/token",
-    tokenResponse: { access_token: "copper-test-token" },
-    mockUserInfo: () => {
-      server.use(
-        http.get("https://api.copper.com/developer_api/v1/account", () => {
-          return HttpResponse.json({
-            id: "copper-account-123",
-            name: "Copper Test Account",
-          });
-        }),
-      );
-    },
-  },
-  {
-    connectorSlug: "datadog",
-    label: "Datadog",
-    clientEnvPrefix: "DATADOG",
-    authorizationEndpoint: "https://app.datadoghq.com/oauth2/v1/authorize",
-    // Datadog resolves the token host from the domain it returns on the
-    // callback, so the exchange never reaches a fixed provider host.
-    tokenUrl: "https://api.datadoghq.com/oauth2/v1/token",
-    pkce: true,
-    callbackQuery: { domain: "datadoghq.com" },
-    tokenResponse: {
-      access_token: "datadog-test-token",
-      refresh_token: "datadog-refresh-token",
-      expires_in: 3600,
-    },
-  },
-  {
-    connectorSlug: "docusign",
-    label: "DocuSign",
-    clientEnvPrefix: "DOCUSIGN",
-    authorizationEndpoint: "https://account-d.docusign.com/oauth/auth",
-    tokenUrl: "https://account-d.docusign.com/oauth/token",
-    pkce: true,
-    tokenResponse: {
-      access_token: "docusign-test-token",
-      refresh_token: "docusign-refresh-token",
-      expires_in: 28_800,
-    },
-    mockUserInfo: () => {
-      server.use(
-        http.get("https://account-d.docusign.com/oauth/userinfo", () => {
-          return HttpResponse.json({
-            sub: "docusign-user-123",
-            name: "DocuSign Test User",
-            email: "docusign@example.test",
-          });
-        }),
-      );
-    },
-  },
-  {
-    connectorSlug: "dropbox",
-    label: "Dropbox",
-    clientEnvPrefix: "DROPBOX",
-    authorizationEndpoint: "https://www.dropbox.com/oauth2/authorize",
-    tokenUrl: "https://api.dropboxapi.com/oauth2/token",
-    tokenResponse: {
-      access_token: "dropbox-test-token",
-      refresh_token: "dropbox-refresh-token",
-      expires_in: 14_400,
-    },
-    mockUserInfo: () => {
-      server.use(
-        http.post(
-          "https://api.dropboxapi.com/2/users/get_current_account",
-          () => {
-            return HttpResponse.json({
-              account_id: "dbid:dropbox-user-123",
-              name: { display_name: "Dropbox Test User" },
-              email: "dropbox@example.test",
-            });
-          },
-        ),
-      );
-    },
-  },
-  {
-    connectorSlug: "figma",
-    label: "Figma",
-    clientEnvPrefix: "FIGMA",
-    authorizationEndpoint: "https://www.figma.com/oauth",
-    tokenUrl: "https://api.figma.com/v1/oauth/token",
-    tokenResponse: {
-      access_token: "figma-test-token",
-      refresh_token: "figma-refresh-token",
-      expires_in: 7_776_000,
-    },
-    mockUserInfo: () => {
-      server.use(
-        http.get("https://api.figma.com/v1/me", () => {
-          return HttpResponse.json({
-            id: "figma-user-123",
-            email: "figma@example.test",
-            handle: "figma-test-user",
-          });
-        }),
-      );
-    },
-  },
-  {
-    connectorSlug: "mailchimp",
-    label: "Mailchimp",
-    clientEnvPrefix: "MAILCHIMP",
-    authorizationEndpoint: "https://login.mailchimp.com/oauth2/authorize",
-    tokenUrl: "https://login.mailchimp.com/oauth2/token",
-    tokenResponse: { access_token: "mailchimp-test-token" },
-    mockUserInfo: () => {
-      server.use(
-        http.get("https://login.mailchimp.com/oauth2/metadata", () => {
-          return HttpResponse.json({
-            dc: "us1",
-            user_id: 123,
-            accountname: "Mailchimp Test Account",
-            login: {
-              login_name: "Mailchimp Test User",
-              login_email: "mailchimp@example.test",
-            },
-            api_endpoint: "https://us1.api.mailchimp.com",
-          });
-        }),
-      );
-    },
-  },
-  {
-    connectorSlug: "mercury",
-    label: "Mercury",
-    clientEnvPrefix: "MERCURY",
-    authorizationEndpoint: "https://oauth2.mercury.com/oauth2/auth",
-    tokenUrl: "https://oauth2.mercury.com/oauth2/token",
-    pkce: true,
-    tokenResponse: {
-      access_token: "mercury-test-token",
-      refresh_token: "mercury-refresh-token",
-      expires_in: 3600,
-    },
-    mockUserInfo: () => {
-      server.use(
-        http.get("https://api.mercury.com/api/v1/organization", () => {
-          return HttpResponse.json({
-            organization: {
-              id: "mercury-org-123",
-              legalBusinessName: "Mercury Test Org",
-            },
-          });
-        }),
-      );
-    },
-  },
-  {
-    connectorSlug: "posthog",
-    label: "PostHog",
-    publicClientId: "https://app.okou.ai/connectors/posthog/metadata.json",
-    authorizationEndpoint: "https://oauth.posthog.com/oauth/authorize/",
-    tokenUrl: "https://oauth.posthog.com/oauth/token/",
-    pkce: true,
-    tokenResponse: {
-      access_token: "posthog-test-token",
-      refresh_token: "posthog-refresh-token",
-      expires_in: 3600,
-      posthog_region: "eu",
-      posthog_base_url: "https://eu.posthog.com",
-    },
-    mockUserInfo: () => {
-      server.use(
-        http.get("https://eu.posthog.com/api/users/@me/", () => {
-          return HttpResponse.json({
-            id: 123,
-            first_name: "PostHog",
-            last_name: "Test User",
-            email: "posthog@example.test",
-          });
-        }),
-      );
-    },
-  },
-  {
-    connectorSlug: "spotify",
-    label: "Spotify",
-    clientEnvPrefix: "SPOTIFY",
-    authorizationEndpoint: "https://accounts.spotify.com/authorize",
-    tokenUrl: "https://accounts.spotify.com/api/token",
-    tokenResponse: {
-      access_token: "spotify-test-token",
-      refresh_token: "spotify-refresh-token",
-      expires_in: 3600,
-    },
-    mockUserInfo: () => {
-      server.use(
-        http.get("https://api.spotify.com/v1/me", () => {
-          return HttpResponse.json({
-            account_id: "spotify-user-123",
-            display_name: "Spotify Test User",
-            email: "spotify@example.test",
-          });
-        }),
-      );
-    },
-  },
-  {
-    connectorSlug: "webflow",
-    label: "Webflow",
-    clientEnvPrefix: "WEBFLOW",
-    authorizationEndpoint: "https://webflow.com/oauth/authorize",
-    tokenUrl: "https://api.webflow.com/oauth/access_token",
-    jsonTokenRequest: true,
-    tokenResponse: {
-      access_token: "webflow-test-token",
-      token_type: "bearer",
-    },
-    mockUserInfo: () => {
-      server.use(
-        http.get("https://api.webflow.com/v2/token/authorized_by", () => {
-          return HttpResponse.json({
-            id: "webflow-user-123",
-            email: "webflow@example.test",
-            firstName: "Webflow",
-            lastName: "Test User",
-          });
-        }),
-      );
-    },
-  },
-  {
-    connectorSlug: "zoom",
-    label: "Zoom",
-    clientEnvPrefix: "ZOOM",
-    authorizationEndpoint: "https://zoom.us/oauth/authorize",
-    tokenUrl: "https://zoom.us/oauth/token",
-    tokenResponse: {
-      access_token: "zoom-test-token",
-      refresh_token: "zoom-refresh-token",
-      expires_in: 3600,
-    },
-    mockUserInfo: () => {
-      server.use(
-        http.get("https://api.zoom.us/v2/users/me", () => {
-          return HttpResponse.json({
-            id: "zoom-user-123",
-            email: "zoom@example.test",
-            display_name: "Zoom Test User",
-          });
-        }),
-      );
-    },
-  },
-];
-
-const jsonTokenRequestSchema = record(string(), string());
-
-function launchGatedTokenRequestParams(
-  providerCase: LaunchGatedDirectOkouCase,
-  body: string,
-): URLSearchParams {
-  if (providerCase.jsonTokenRequest !== true) {
-    return new URLSearchParams(body);
-  }
-  const parsed: unknown = JSON.parse(body);
-  return new URLSearchParams(
-    Object.entries(jsonTokenRequestSchema.parse(parsed)),
-  );
+async function signInWithSwitch(key: FeatureSwitchKey): Promise<void> {
+  const member = signIn();
+  await updateFeatureSwitchesForUser(context, member, { [key]: true });
+  mocks.clerk.session(member.userId, member.orgId, "org:member");
 }
 
-function launchGatedClientId(providerCase: LaunchGatedDirectOkouCase): string {
-  return "publicClientId" in providerCase
-    ? providerCase.publicClientId
-    : `${providerCase.connectorSlug}-test-client-id`;
+function okouHosts(): void {
+  mockEnv("APP_URL", "https://app.okou.ai");
+  mockEnv("OKOU_WEB_URL", "https://www.okou.ai");
+  mockEnv("OKOU_API_BACKEND_URL", "https://api.okou.ai");
 }
 
-function mockLaunchGatedOAuthEnv(): void {
-  for (const providerCase of LAUNCH_GATED_DIRECT_OKOU_CASES) {
-    if (!("clientEnvPrefix" in providerCase)) {
-      continue;
-    }
-    mockOptionalEnv(
-      `${providerCase.clientEnvPrefix}_OAUTH_CLIENT_ID`,
-      launchGatedClientId(providerCase),
-    );
-    mockOptionalEnv(
-      `${providerCase.clientEnvPrefix}_OAUTH_CLIENT_SECRET`,
-      `${providerCase.connectorSlug}-test-client-secret`,
-    );
-  }
+function configureClient(envPrefix: string, clientId: string): void {
+  okouHosts();
+  mockOptionalEnv(`${envPrefix}_OAUTH_CLIENT_ID`, clientId);
+  mockOptionalEnv(`${envPrefix}_OAUTH_CLIENT_SECRET`, `${clientId}-secret`);
 }
 
-function mockOAuthEnv(): void {
-  mockLaunchGatedOAuthEnv();
-  mockOptionalEnv("ASANA_OAUTH_CLIENT_ID", "asana-test-client-id");
-  mockOptionalEnv("ASANA_OAUTH_CLIENT_SECRET", "asana-test-client-secret");
-  mockOptionalEnv("BOX_OAUTH_CLIENT_ID", "box-test-client-id");
-  mockOptionalEnv("BOX_OAUTH_CLIENT_SECRET", "box-test-client-secret");
-  mockOptionalEnv("GH_OAUTH_CLIENT_ID", "test-client-id");
-  mockOptionalEnv("GH_OAUTH_CLIENT_SECRET", "test-client-secret");
-  mockOptionalEnv("AIRTABLE_OAUTH_CLIENT_ID", "airtable-test-client-id");
-  mockOptionalEnv(
-    "AIRTABLE_OAUTH_CLIENT_SECRET",
-    "airtable-test-client-secret",
-  );
-  mockOptionalEnv("CLOUDFLARE_OAUTH_CLIENT_ID", "cloudflare-test-client-id");
-  mockOptionalEnv(
-    "CLOUDFLARE_OAUTH_CLIENT_SECRET",
-    "cloudflare-test-client-secret",
-  );
-  mockOptionalEnv("GOOGLE_OAUTH_CLIENT_ID", "google-test-client-id");
-  mockOptionalEnv("GOOGLE_OAUTH_CLIENT_SECRET", "google-test-client-secret");
-  mockOptionalEnv("GUMROAD_OAUTH_CLIENT_ID", "gumroad-test-client-id");
-  mockOptionalEnv("GUMROAD_OAUTH_CLIENT_SECRET", "gumroad-test-client-secret");
-  mockOptionalEnv("HUBSPOT_OAUTH_CLIENT_ID", "hubspot-test-client-id");
-  mockOptionalEnv("HUBSPOT_OAUTH_CLIENT_SECRET", "hubspot-test-client-secret");
-  mockOptionalEnv(
-    "INTERVALS_ICU_OAUTH_CLIENT_ID",
-    "intervals-icu-test-client-id",
-  );
-  mockOptionalEnv(
-    "INTERVALS_ICU_OAUTH_CLIENT_SECRET",
-    "intervals-icu-test-client-secret",
-  );
-  mockOptionalEnv("LINEAR_OAUTH_CLIENT_ID", "linear-test-client-id");
-  mockOptionalEnv("LINEAR_OAUTH_CLIENT_SECRET", "linear-test-client-secret");
-  mockOptionalEnv("META_ADS_OAUTH_CLIENT_ID", "meta-ads-test-client-id");
-  mockOptionalEnv(
-    "META_ADS_OAUTH_CLIENT_SECRET",
-    "meta-ads-test-client-secret",
-  );
-  mockOptionalEnv("MONDAY_OAUTH_CLIENT_ID", "monday-test-client-id");
-  mockOptionalEnv("MONDAY_OAUTH_CLIENT_SECRET", "monday-test-client-secret");
-  mockOptionalEnv("NOTION_OAUTH_CLIENT_ID", "notion-test-client-id");
-  mockOptionalEnv("NOTION_OAUTH_CLIENT_SECRET", "notion-test-client-secret");
-  mockOptionalEnv("QUICKBOOKS_OAUTH_CLIENT_ID", "quickbooks-test-client-id");
-  mockOptionalEnv(
-    "QUICKBOOKS_OAUTH_CLIENT_SECRET",
-    "quickbooks-test-client-secret",
-  );
-  mockOptionalEnv("SENTRY_OAUTH_CLIENT_ID", "sentry-test-client-id");
-  mockOptionalEnv("SENTRY_OAUTH_CLIENT_SECRET", "sentry-test-client-secret");
-  mockOptionalEnv("SLACK_OAUTH_CLIENT_ID", "test-slack-client-id");
-  mockOptionalEnv("SLACK_OAUTH_CLIENT_SECRET", "test-slack-client-secret");
-  mockOptionalEnv("STRAVA_OAUTH_CLIENT_ID", "strava-test-client-id");
-  mockOptionalEnv("STRAVA_OAUTH_CLIENT_SECRET", "strava-test-client-secret");
-  mockOptionalEnv("STRIPE_OAUTH_CLIENT_ID", "stripe-test-client-id");
-  mockOptionalEnv("STRIPE_OAUTH_CLIENT_SECRET", "stripe-test-client-secret");
-  mockOptionalEnv("TIKTOK_ADS_OAUTH_CLIENT_ID", "tiktok-ads-test-client-id");
-  mockOptionalEnv(
-    "TIKTOK_ADS_OAUTH_CLIENT_SECRET",
-    "tiktok-ads-test-client-secret",
-  );
-  mockOptionalEnv("TODOIST_OAUTH_CLIENT_ID", "todoist-test-client-id");
-  mockOptionalEnv("TODOIST_OAUTH_CLIENT_SECRET", "todoist-test-client-secret");
-  mockOptionalEnv("VERCEL_OAUTH_CLIENT_ID", "vercel-test-client-id");
-  mockOptionalEnv("VERCEL_OAUTH_CLIENT_SECRET", "vercel-test-client-secret");
-  mockOptionalEnv("X_OAUTH_CLIENT_ID", "x-test-client-id");
-  mockOptionalEnv("X_OAUTH_CLIENT_SECRET", "x-test-client-secret");
-  mockOptionalEnv("XERO_OAUTH_CLIENT_ID", "xero-test-client-id");
-  mockOptionalEnv("XERO_OAUTH_CLIENT_SECRET", "xero-test-client-secret");
-}
-
-function expectCloudflareAuthorizationScopes(authorizationUrl: URL): void {
-  const method = API_TEST_CONNECTOR_CATALOG.connectors
-    .find((connector) => {
-      return connector.slug === "cloudflare";
-    })
-    ?.authMethods.find((authMethod) => {
-      return authMethod.id === "oauth";
-    });
-  if (method?.grant.kind !== "auth-code") {
-    throw new Error("Expected Cloudflare OAuth auth-code fixture");
-  }
-  expect(authorizationUrl.searchParams.get("scope")?.split(" ")).toStrictEqual(
-    method.grant.scopes,
-  );
-  expect(method.grant.scopes).toContain("offline_access");
-}
-
-async function requestOauthStart(
+async function requestStart(
   connectorSlug: string,
-  options: {
-    readonly authMethod?: ConnectorAuthMethodId;
-    readonly authenticated?: boolean;
-    readonly callbackTarget?: "app";
-    readonly headers?: RequestInit["headers"];
-    readonly origin?: string;
-  } = {},
-): Promise<Response> {
-  if (options.authenticated) {
-    mockAuthenticatedSession();
-  }
-  const headers = new Headers(options.headers);
-  if (options.authenticated) {
-    headers.set("authorization", "Bearer clerk-session");
-  }
-  headers.set("content-type", "application/json");
-  const app = createApp({ signal: context.signal, routes: TEST_APP_ROUTES });
-  return await app.request(oauthStartUrl(connectorSlug, options.origin), {
-    method: "POST",
-    headers,
-    body: JSON.stringify({
-      authMethod: options.authMethod ?? "oauth",
-      account: { intent: "add" },
-      ...(options.callbackTarget
-        ? { callbackTarget: options.callbackTarget }
-        : {}),
+  options: StartOptions,
+  statuses: readonly (200 | 400 | 401 | 403)[],
+  baseUrl = "https://api.okou.ai",
+) {
+  const client = setupApp({
+    context,
+    routes: builtinConnectorsRoutes,
+    baseUrl,
+  })(builtinConnectorOauthStartContract);
+  return await accept(
+    client.start({
+      headers,
+      params: { connectorSlug },
+      body: { authMethod: "oauth", account: { intent: "add" }, ...options },
     }),
-  });
-}
-
-async function authorizationUrlFromResponse(response: Response): Promise<URL> {
-  const body = builtinConnectorOauthStartResponseSchema.parse(
-    await response.json(),
+    statuses,
   );
-  return new URL(body.authorizationUrl);
 }
 
-function expectOauthState(authorizationUrl: URL): string {
-  const state = authorizationUrl.searchParams.get("state");
-  expect(state).toMatch(/^[0-9a-f]{64}$/);
-  return state!;
-}
-
-interface DirectOkouTokenExchangeCase {
-  readonly connectorSlug: string;
-  readonly label: string;
-  readonly authorizationEndpoint: string;
-  readonly clientId: string;
-  readonly tokenUrl: string;
-  readonly tokenResponse: JsonBodyType;
-  readonly callbackQuery?: Readonly<Record<string, string>>;
-  readonly mockUserInfo?: () => void;
-}
-
-// Providers whose token exchange replays the exact redirect URI persisted at
-// OAuth start. Airtable and X are covered separately because they also assert
-// PKCE behavior.
-const DIRECT_OKOU_TOKEN_EXCHANGE_CASES: readonly DirectOkouTokenExchangeCase[] =
-  [
-    {
-      connectorSlug: "asana",
-      label: "Asana",
-      authorizationEndpoint: "https://app.asana.com/-/oauth_authorize",
-      clientId: "asana-test-client-id",
-      tokenUrl: ASANA_OAUTH_TOKEN_URL,
-      tokenResponse: {
-        access_token: "asana-test-token",
-        refresh_token: "asana-refresh-token",
-        expires_in: 3600,
-        data: {
-          gid: "asana-user-123",
-          name: "Asana Test User",
-          email: "asana@example.test",
-        },
-      },
-    },
-    {
-      connectorSlug: "gumroad",
-      label: "Gumroad",
-      authorizationEndpoint: "https://gumroad.com/oauth/authorize",
-      clientId: "gumroad-test-client-id",
-      tokenUrl: GUMROAD_OAUTH_TOKEN_URL,
-      tokenResponse: {
-        access_token: "gumroad-test-token",
-        refresh_token: "gumroad-refresh-token",
-        scope: "view_profile view_sales",
-      },
-      mockUserInfo: () => {
-        server.use(
-          http.get(GUMROAD_USER_URL, () => {
-            return HttpResponse.json({
-              user: {
-                id: "gumroad-user-123",
-                name: "Gumroad Test User",
-                email: "gumroad@example.test",
-              },
-            });
-          }),
-        );
-      },
-    },
-    {
-      connectorSlug: "linear",
-      label: "Linear",
-      authorizationEndpoint: "https://linear.app/oauth/authorize",
-      clientId: "linear-test-client-id",
-      tokenUrl: LINEAR_OAUTH_TOKEN_URL,
-      tokenResponse: {
-        access_token: "linear-test-token",
-        refresh_token: "linear-refresh-token",
-        expires_in: 86_399,
-        scope: "read,write",
-      },
-      mockUserInfo: () => {
-        server.use(
-          http.post(LINEAR_GRAPHQL_URL, () => {
-            return HttpResponse.json({
-              data: {
-                viewer: {
-                  id: "linear-user-123",
-                  name: "Linear Test User",
-                  email: "linear@example.test",
-                },
-              },
-            });
-          }),
-        );
-      },
-    },
-    {
-      connectorSlug: "monday",
-      label: "Monday.com",
-      authorizationEndpoint: "https://auth.monday.com/oauth2/authorize",
-      clientId: "monday-test-client-id",
-      tokenUrl: MONDAY_OAUTH_TOKEN_URL,
-      tokenResponse: {
-        access_token: "monday-test-token",
-        refresh_token: "monday-refresh-token",
-        scope: "me:read boards:read boards:write",
-      },
-      mockUserInfo: () => {
-        server.use(
-          http.post(MONDAY_GRAPHQL_URL, () => {
-            return HttpResponse.json({
-              data: {
-                me: {
-                  id: "monday-user-123",
-                  name: "Monday Test User",
-                  email: "monday@example.test",
-                },
-              },
-            });
-          }),
-        );
-      },
-    },
-    {
-      connectorSlug: "quickbooks",
-      label: "QuickBooks",
-      authorizationEndpoint: "https://appcenter.intuit.com/connect/oauth2",
-      clientId: "quickbooks-test-client-id",
-      tokenUrl: QUICKBOOKS_OAUTH_TOKEN_URL,
-      tokenResponse: {
-        access_token: "quickbooks-test-token",
-        refresh_token: "quickbooks-refresh-token",
-        expires_in: 3600,
-        scope: "com.intuit.quickbooks.accounting openid profile email",
-      },
-      callbackQuery: { realmId: "quickbooks-realm-123" },
-      mockUserInfo: () => {
-        server.use(
-          http.get(QUICKBOOKS_USERINFO_URL, () => {
-            return HttpResponse.json({
-              sub: "quickbooks-user-123",
-              givenName: "QuickBooks",
-              familyName: "Test User",
-              email: "quickbooks@example.test",
-            });
-          }),
-        );
-      },
-    },
-    {
-      connectorSlug: "sentry",
-      label: "Sentry",
-      authorizationEndpoint: "https://sentry.io/oauth/authorize/",
-      clientId: "sentry-test-client-id",
-      tokenUrl: SENTRY_OAUTH_TOKEN_URL,
-      tokenResponse: {
-        access_token: "sentry-test-token",
-        refresh_token: "sentry-refresh-token",
-        expires_in: 2_592_000,
-        scope: "org:read project:read event:read",
-        user: {
-          id: "sentry-user-123",
-          name: "Sentry Test User",
-          email: "sentry@example.test",
-        },
-      },
-    },
-    {
-      connectorSlug: "todoist",
-      label: "Todoist",
-      authorizationEndpoint: "https://todoist.com/oauth/authorize",
-      clientId: "todoist-test-client-id",
-      tokenUrl: TODOIST_OAUTH_TOKEN_URL,
-      tokenResponse: {
-        access_token: "todoist-test-token",
-        token_type: "Bearer",
-      },
-      mockUserInfo: () => {
-        server.use(
-          http.get(TODOIST_USER_URL, () => {
-            return HttpResponse.json({
-              id: "todoist-user-123",
-              full_name: "Todoist Test User",
-              email: "todoist@example.test",
-            });
-          }),
-        );
-      },
-    },
-    {
-      connectorSlug: "xero",
-      label: "Xero",
-      authorizationEndpoint:
-        "https://login.xero.com/identity/connect/authorize",
-      clientId: "xero-test-client-id",
-      tokenUrl: XERO_OAUTH_TOKEN_URL,
-      tokenResponse: {
-        access_token: "xero-test-token",
-        refresh_token: "xero-refresh-token",
-        expires_in: 1800,
-        scope: "openid profile email accounting.transactions offline_access",
-      },
-      mockUserInfo: () => {
-        server.use(
-          http.get(XERO_USERINFO_URL, () => {
-            return HttpResponse.json({
-              sub: "xero-user-123",
-              name: "Xero Test User",
-              email: "xero@example.test",
-            });
-          }),
-        );
-      },
-    },
-  ];
-
-// Every newly ready connector whose authorization URL carries the redirect URI.
-// Vercel is excluded because its Integration URL controls routing instead.
-const REDIRECTING_DIRECT_OKOU_CONNECTOR_SLUGS = [
-  "airtable",
-  "asana",
-  "gumroad",
-  "intervals-icu",
-  "linear",
-  "monday",
-  "quickbooks",
-  "sentry",
-  "strava",
-  "stripe",
-  "todoist",
-  "x",
-  "xero",
-] as const;
-
-async function completeAppOauthCallback(
+async function start(
   connectorSlug: string,
-  state: string,
-  callbackQuery: Readonly<Record<string, string>> = {},
-): Promise<URL> {
-  const app = createApp({ signal: context.signal, routes: TEST_APP_ROUTES });
-  const callback = await app.request(
-    `${API_ORIGIN}/api/connectors/${connectorSlug}/callback?${new URLSearchParams(
-      {
-        code: `${connectorSlug}-authorization-code`,
-        state,
-        ...callbackQuery,
-      },
-    )}`,
-    { headers: { "x-okou-web-origin": "https://okou.ai" } },
-  );
-
-  expect(callback.status).toBe(307);
-  return new URL(callback.headers.get("location") ?? "");
+  options: StartOptions = { callbackTarget: "app" },
+  baseUrl?: string,
+) {
+  const response = await requestStart(connectorSlug, options, [200], baseUrl);
+  if (!("authorizationUrl" in response.body)) {
+    throw new Error("Expected an authorization URL");
+  }
+  const url = new URL(response.body.authorizationUrl);
+  const state = url.searchParams.get("state");
+  if (!state) {
+    throw new Error("Expected OAuth state");
+  }
+  return { body: response.body, url, state };
 }
 
-async function completeLaunchGatedOauthCallback(
-  providerCase: LaunchGatedDirectOkouCase,
-  state: string,
+async function callbackAt(
+  baseUrl: string,
+  connectorSlug: string,
+  query: Readonly<Record<string, string>>,
 ): Promise<URL> {
-  return await completeAppOauthCallback(
-    providerCase.connectorSlug,
-    state,
-    providerCase.callbackQuery ?? {},
+  const client = setupApp({
+    context,
+    routes: builtinConnectorsSlugCallbackRoutes,
+    baseUrl,
+  })(builtinConnectorsSlugCallbackContract);
+  const response = await accept(
+    client.callback({ params: { connectorSlug }, query, headers: {} }),
+    [307],
+  );
+  return new URL(response.headers.get("location") ?? "");
+}
+
+/**
+ * The provider returns the browser to the API callback; connectors whose
+ * callback lives on the Web origin are first sent to that canonical callback,
+ * which the browser follows.
+ */
+async function callback(
+  connectorSlug: string,
+  query: Readonly<Record<string, string>>,
+): Promise<URL> {
+  const location = await callbackAt(
+    "https://api.okou.ai",
+    connectorSlug,
+    query,
+  );
+  if (
+    location.origin !== "https://www.okou.ai" ||
+    location.pathname !== `/api/connectors/${connectorSlug}/callback`
+  ) {
+    return location;
+  }
+  return await callbackAt(
+    "https://www.okou.ai",
+    connectorSlug,
+    Object.fromEntries(location.searchParams),
   );
 }
 
-async function rejectProviderAuthorization(
-  authorizationUrl: URL,
-): Promise<void> {
-  const redirectUri = authorizationUrl.searchParams.get("redirect_uri");
-  const state = authorizationUrl.searchParams.get("state");
-  expect(redirectUri).toBeTruthy();
-  expect(state).toBeTruthy();
+function redirectTarget(location: URL): string {
+  return `${location.origin}${location.pathname}`;
+}
 
-  const callbackUrl = new URL(redirectUri!);
-  callbackUrl.searchParams.set("error", "access_denied");
-  callbackUrl.searchParams.set("state", state!);
+interface ProviderRequest {
+  readonly body: URLSearchParams;
+  readonly json: boolean;
+  readonly authorization: string | null;
+}
 
-  const app = createApp({ signal: context.signal, routes: TEST_APP_ROUTES });
-  await app.request(callbackUrl.toString());
+async function readProviderRequest(request: Request): Promise<ProviderRequest> {
+  const body = new URL(request.url).searchParams;
+  const text = request.method === "GET" ? "" : await request.text();
+  const json = (request.headers.get("content-type") ?? "").includes("json");
+  if (json) {
+    const parsed: unknown = JSON.parse(text);
+    if (typeof parsed === "object" && parsed !== null) {
+      for (const [key, value] of Object.entries(parsed)) {
+        body.set(key, String(value));
+      }
+    }
+  } else {
+    for (const [key, value] of new URLSearchParams(text)) {
+      body.set(key, value);
+    }
+  }
+  return { body, json, authorization: request.headers.get("authorization") };
+}
+
+function mockTokenEndpoint(
+  url: string,
+  response: Readonly<Record<string, unknown>>,
+  method: "get" | "post" = "post",
+): ProviderRequest[] {
+  const requests: ProviderRequest[] = [];
+  server.use(
+    http[method](url, async ({ request }) => {
+      requests.push(await readProviderRequest(request));
+      return HttpResponse.json(response);
+    }),
+  );
+  return requests;
+}
+
+function mockJson(
+  method: "get" | "post",
+  url: string,
+  response: Readonly<Record<string, unknown>>,
+): void {
+  server.use(
+    http[method](url, () => {
+      return HttpResponse.json(response);
+    }),
+  );
+}
+
+const tokens = Object.freeze({
+  access_token: "provider-access-token",
+  refresh_token: "provider-refresh-token",
+  expires_in: 3600,
+  token_type: "Bearer",
+});
+
+async function connectThroughApp(
+  connectorSlug: string,
+  query: Readonly<Record<string, string>> = {
+    code: `${connectorSlug}-authorization-code`,
+  },
+) {
+  const started = await start(connectorSlug);
+  const location = await callback(connectorSlug, {
+    ...query,
+    state: started.state,
+  });
+  return { ...started, location };
+}
+
+function appCallback(connectorSlug: string): string {
+  return `https://app.okou.ai/connectors/${connectorSlug}/callback`;
+}
+
+function expectAppAuthorization(
+  started: { readonly url: URL; readonly state: string },
+  args: {
+    readonly authorizeUrl: string;
+    readonly clientId: string;
+    readonly connectorSlug: string;
+    readonly clientIdParam?: string;
+  },
+): void {
+  expect(`${started.url.origin}${started.url.pathname}`).toBe(
+    args.authorizeUrl,
+  );
+  expect(started.url.searchParams.get(args.clientIdParam ?? "client_id")).toBe(
+    args.clientId,
+  );
+  expect(started.url.searchParams.get("redirect_uri")).toBe(
+    appCallback(args.connectorSlug),
+  );
+  expect(started.state).toMatch(STATE);
+}
+
+function expectSingleTokenRedirect(
+  requests: readonly ProviderRequest[],
+  connectorSlug: string,
+): void {
+  expect(requests).toHaveLength(1);
+  expect(requests[0]?.body.get("redirect_uri")).toBe(
+    appCallback(connectorSlug),
+  );
+}
+
+function expectNoPkce(url: URL): void {
+  expect(url.searchParams.get("code_challenge")).toBeNull();
+  expect(url.searchParams.get("code_challenge_method")).toBeNull();
+}
+
+function expectPkce(url: URL, requests: readonly ProviderRequest[]): string {
+  const challenge = url.searchParams.get("code_challenge");
+  expect(challenge).toMatch(BASE64URL);
+  expect(url.searchParams.get("code_challenge_method")).toBe("S256");
+  const verifier = requests[0]?.body.get("code_verifier") ?? "";
+  expect(verifier).toMatch(BASE64URL);
+  return verifier;
+}
+
+function expectPkceVerifier(
+  url: URL,
+  requests: readonly ProviderRequest[],
+): void {
+  const verifier = expectPkce(url, requests);
+  expect(createHash("sha256").update(verifier).digest("base64url")).toBe(
+    url.searchParams.get("code_challenge"),
+  );
 }
 
 describe("POST /api/connectors/:connectorSlug/oauth/start", () => {
-  beforeEach(() => {
-    mockEnv("OKOU_API_BACKEND_URL", API_ORIGIN);
-    mockEnv("OKOU_WEB_URL", WEB_ORIGIN);
-    mockOAuthEnv();
-  });
-
-  afterEach(() => {
-    clearMockNow();
-  });
-
-  it("allows auth-code OAuth start when the connector feature is disabled", async () => {
-    const response = await requestOauthStart("test-oauth", {
-      authenticated: true,
+  it("connectors-oauth-start-087 returns 401 instead of relying on browser cookies when unauthenticated", async () => {
+    context.mocks.clerk.authenticateRequest.mockResolvedValue({
+      isAuthenticated: false,
     });
-
-    expect(response.status).toBe(200);
-    const authorizationUrl = await authorizationUrlFromResponse(response);
-    expectOauthState(authorizationUrl);
-  });
-
-  it("returns the future connection id for an unnamed account addition", async () => {
-    const response = await requestOauthStart("test-oauth", {
-      authenticated: true,
-    });
-
-    expect(response.status).toBe(200);
-    const body = builtinConnectorOauthStartResponseSchema.parse(
-      await response.json(),
+    const client = setupApp({ context, routes: builtinConnectorsRoutes })(
+      builtinConnectorOauthStartContract,
     );
-    expect(body.connectionId).toBeTruthy();
-    const authorizationUrl = new URL(body.authorizationUrl);
-    expectOauthState(authorizationUrl);
-    await rejectProviderAuthorization(authorizationUrl);
+
+    const response = await accept(
+      client.start({
+        headers: {},
+        params: { connectorSlug: "github" },
+        body: { authMethod: "oauth", account: { intent: "add" } },
+      }),
+      [401],
+    );
+
+    expect(response.body).toStrictEqual({
+      error: { message: "Not authenticated", code: "UNAUTHORIZED" },
+    });
   });
 
-  it("keeps an omitted callback target on the existing Web callback", async () => {
-    mockAuthenticatedSession();
+  it("connectors-oauth-start-002 returns the future connection id for an unnamed account addition", async () => {
+    signIn();
 
-    const response = await requestOauthStart("youtube", {
-      headers: authHeaders(),
-      origin: API_ORIGIN,
-    });
+    const started = await start("test-oauth", {});
 
-    expect(response.status).toBe(200);
-    const authorizationUrl = await authorizationUrlFromResponse(response);
-    expect(`${authorizationUrl.origin}${authorizationUrl.pathname}`).toBe(
+    expect(started.body.connectionId).toBeTruthy();
+    expect(started.state).toMatch(STATE);
+  });
+
+  it("connectors-oauth-start-003 keeps an omitted callback target on the existing Web callback", async () => {
+    configureClient("GOOGLE", "google-test-client-id");
+    signIn();
+
+    const started = await start("youtube", {});
+
+    expect(`${started.url.origin}${started.url.pathname}`).toBe(
       "https://accounts.google.com/o/oauth2/v2/auth",
     );
-    expect(authorizationUrl.searchParams.get("client_id")).toBe(
+    expect(started.url.searchParams.get("client_id")).toBe(
       "google-test-client-id",
     );
-    expect(authorizationUrl.searchParams.get("redirect_uri")).toBe(
-      `${WEB_ORIGIN}/api/connectors/youtube/callback`,
+    expect(started.url.searchParams.get("redirect_uri")).toBe(
+      "https://www.okou.ai/api/connectors/youtube/callback",
     );
-    expect(
-      authorizationUrl.searchParams.get("scope")?.split(" "),
-    ).toStrictEqual([...YOUTUBE_OAUTH_SCOPES]);
-    expect(authorizationUrl.searchParams.get("access_type")).toBe("offline");
-    expect(authorizationUrl.searchParams.get("prompt")).toBe("consent");
-    expectOauthState(authorizationUrl);
-    await rejectProviderAuthorization(authorizationUrl);
+    expect(started.url.searchParams.get("scope")?.split(" ")).toStrictEqual([
+      "https://www.googleapis.com/auth/youtube",
+      "https://www.googleapis.com/auth/youtube.force-ssl",
+      "https://www.googleapis.com/auth/youtube.readonly",
+      "https://www.googleapis.com/auth/youtube.upload",
+      "https://www.googleapis.com/auth/userinfo.email",
+    ]);
+    expect(started.url.searchParams.get("access_type")).toBe("offline");
+    expect(started.url.searchParams.get("prompt")).toBe("consent");
+    expect(started.state).toMatch(STATE);
   });
 
-  it("returns the provider authorization URL without an API redirect", async () => {
-    mockAuthenticatedSession();
+  it("connectors-oauth-start-004 returns the provider authorization URL without an API redirect", async () => {
+    configureClient("GH", "test-client-id");
+    signIn();
 
-    const response = await requestOauthStart("github", {
-      headers: authHeaders(),
-      origin: WEB_ORIGIN,
-    });
+    const started = await start("github", {}, "https://www.okou.ai");
 
-    expect(response.status).toBe(200);
-    const authorizationUrl = await authorizationUrlFromResponse(response);
-    expect(`${authorizationUrl.origin}${authorizationUrl.pathname}`).toBe(
+    expect(`${started.url.origin}${started.url.pathname}`).toBe(
       "https://github.com/login/oauth/authorize",
     );
-    expect(authorizationUrl.searchParams.get("client_id")).toBe(
-      "test-client-id",
+    expect(started.url.searchParams.get("client_id")).toBe("test-client-id");
+    expect(started.url.searchParams.get("redirect_uri")).toBe(
+      "https://www.okou.ai/api/connectors/github/callback",
     );
-    expect(authorizationUrl.searchParams.get("redirect_uri")).toBe(
-      `${WEB_ORIGIN}/api/connectors/github/callback`,
-    );
-    expectOauthState(authorizationUrl);
-    await rejectProviderAuthorization(authorizationUrl);
+    expect(started.state).toMatch(STATE);
   });
 
-  it("uses the configured web origin for local OAuth callback URLs", async () => {
-    mockEnv("OKOU_WEB_URL", LOCAL_WEB_ORIGIN);
-    mockAuthenticatedSession();
-
-    const response = await requestOauthStart("github", {
-      headers: authHeaders(),
-      origin: LOCAL_ORIGIN,
-    });
-
-    expect(response.status).toBe(200);
-    const authorizationUrl = await authorizationUrlFromResponse(response);
-    expect(authorizationUrl.searchParams.get("redirect_uri")).toBe(
-      `${LOCAL_WEB_ORIGIN}/api/connectors/github/callback`,
+  it("connectors-oauth-start-009 uses the direct Okou App callback for GitHub and reuses its exact redirect URI", async () => {
+    configureClient("GH", "test-client-id");
+    const requests = mockTokenEndpoint(
+      "https://github.com/login/oauth/access_token",
+      { access_token: "github-access-token", scope: "repo,project,workflow" },
     );
-    expectOauthState(authorizationUrl);
-    await rejectProviderAuthorization(authorizationUrl);
+    mockJson("get", "https://api.github.com/user", {
+      id: 4242,
+      login: "github-test-user",
+      email: "github-test-user@example.test",
+    });
+    signIn();
+
+    const started = await connectThroughApp("github");
+
+    expectAppAuthorization(started, {
+      authorizeUrl: "https://github.com/login/oauth/authorize",
+      clientId: "test-client-id",
+      connectorSlug: "github",
+    });
+    expect(started.url.searchParams.get("scope")).toBe("repo project workflow");
+    expect(redirectTarget(started.location), started.location.href).toBe(
+      "https://app.okou.ai/connector/success",
+    );
+    expectSingleTokenRedirect(requests, "github");
   });
 
-  it("uses the direct Okou App callback for a ready Google connector", async () => {
-    mockEnv("APP_URL", "https://app.okou.ai");
-    mockAuthenticatedSession();
+  it("connectors-oauth-start-010 returns github provider denial to the configured Okou app", async () => {
+    configureClient("GH", "test-client-id");
+    signIn();
 
-    const response = await requestOauthStart("google-maps", {
-      callbackTarget: "app",
-      headers: authHeaders(),
-      origin: API_ORIGIN,
+    const started = await connectThroughApp("github", {
+      error: "access_denied",
     });
 
-    expect(response.status).toBe(200);
-    const authorizationUrl = await authorizationUrlFromResponse(response);
-    expect(authorizationUrl.searchParams.get("redirect_uri")).toBe(
-      "https://app.okou.ai/connectors/google-maps/callback",
+    expect(started.state).toMatch(STATE);
+    expect(redirectTarget(started.location), started.location.href).toBe(
+      "https://app.okou.ai/connector/error",
     );
-    expectOauthState(authorizationUrl);
-    await rejectProviderAuthorization(authorizationUrl);
   });
 
-  it.each(["google-maps", "test-oauth"])(
-    "returns %s App callback errors to the configured Okou app",
-    async (connectorSlug) => {
-      mockEnv("APP_URL", "https://app.okou.ai");
-      mockAuthenticatedSession();
-      const response = await requestOauthStart(connectorSlug, {
-        callbackTarget: "app",
-        headers: authHeaders(),
-        origin: API_ORIGIN,
-      });
-      expect(response.status).toBe(200);
-      const authorizationUrl = await authorizationUrlFromResponse(response);
-      expect(authorizationUrl.searchParams.get("redirect_uri")).toBe(
-        `https://app.okou.ai/connectors/${connectorSlug}/callback`,
-      );
-      const state = expectOauthState(authorizationUrl);
-
-      const app = createApp({
-        signal: context.signal,
-        routes: TEST_APP_ROUTES,
-      });
-      const callback = await app.request(
-        `${API_ORIGIN}/api/connectors/${connectorSlug}/callback?${new URLSearchParams(
-          {
-            error: "access_denied",
-            state,
-          },
-        )}`,
-        { headers: { "x-okou-web-origin": "https://okou.ai" } },
-      );
-      expect(callback.status).toBe(307);
-      const location = new URL(callback.headers.get("location") ?? "");
-      expect(location.origin).toBe("https://app.okou.ai");
-      expect(location.pathname).toBe("/connector/error");
-    },
-  );
-
-  it("uses the direct Okou App callback for GitHub and reuses its exact redirect URI", async () => {
-    const tokenBodies: URLSearchParams[] = [];
-    server.use(
-      http.post(GITHUB_OAUTH_TOKEN_URL, async ({ request }) => {
-        tokenBodies.push(new URLSearchParams(await request.text()));
-        return HttpResponse.json({
-          access_token: "github-test-token",
-          scope: GITHUB_OAUTH_SCOPES.join(","),
-        });
-      }),
-      http.get(GITHUB_USER_URL, () => {
-        return HttpResponse.json({
-          id: 4242,
-          login: "github-test-user",
-          email: "github@example.test",
-        });
-      }),
-    );
-    mockEnv("APP_URL", "https://app.okou.ai");
-    mockAuthenticatedSession();
-
-    const response = await requestOauthStart("github", {
-      callbackTarget: "app",
-      headers: authHeaders(),
-      origin: API_ORIGIN,
+  it("connectors-oauth-start-013 uses the direct Okou App callback for Airtable and reuses its exact PKCE redirect URI", async () => {
+    configureClient("AIRTABLE", "airtable-test-client-id");
+    const requests = mockTokenEndpoint("https://airtable.com/oauth2/v1/token", {
+      ...tokens,
+      scope: "data.records:read",
     });
-
-    expect(response.status).toBe(200);
-    const authorizationUrl = await authorizationUrlFromResponse(response);
-    expect(`${authorizationUrl.origin}${authorizationUrl.pathname}`).toBe(
-      "https://github.com/login/oauth/authorize",
-    );
-    expect(authorizationUrl.searchParams.get("client_id")).toBe(
-      "test-client-id",
-    );
-    const redirectUri = authorizationUrl.searchParams.get("redirect_uri");
-    expect(redirectUri).toBe("https://app.okou.ai/connectors/github/callback");
-    expect(
-      authorizationUrl.searchParams.get("scope")?.split(" "),
-    ).toStrictEqual([...GITHUB_OAUTH_SCOPES]);
-    const state = expectOauthState(authorizationUrl);
-
-    const app = createApp({ signal: context.signal, routes: TEST_APP_ROUTES });
-    const callback = await app.request(
-      `${API_ORIGIN}/api/connectors/github/callback?${new URLSearchParams({
-        code: "github-authorization-code",
-        state,
-      })}`,
-      { headers: { "x-okou-web-origin": "https://okou.ai" } },
-    );
-
-    expect(callback.status).toBe(307);
-    const callbackLocation = new URL(callback.headers.get("location") ?? "");
-    expect(callbackLocation.origin).toBe("https://app.okou.ai");
-    expect(callbackLocation.pathname).toBe("/connector/success");
-    expect(tokenBodies).toHaveLength(1);
-    expect(tokenBodies[0]?.get("redirect_uri")).toBe(redirectUri);
-  });
-
-  it.each(["github", "quickbooks", "stripe"])(
-    "returns %s provider denial to the configured Okou app",
-    async (connectorSlug) => {
-      mockEnv("APP_URL", "https://app.okou.ai");
-      mockAuthenticatedSession();
-      const response = await requestOauthStart(connectorSlug, {
-        callbackTarget: "app",
-        headers: authHeaders(),
-        origin: API_ORIGIN,
-      });
-      expect(response.status).toBe(200);
-      const authorizationUrl = await authorizationUrlFromResponse(response);
-      const state = expectOauthState(authorizationUrl);
-
-      const app = createApp({
-        signal: context.signal,
-        routes: TEST_APP_ROUTES,
-      });
-      const callback = await app.request(
-        `${API_ORIGIN}/api/connectors/${connectorSlug}/callback?${new URLSearchParams(
-          {
-            error: "access_denied",
-            state,
-          },
-        )}`,
-        { headers: { "x-okou-web-origin": "https://okou.ai" } },
-      );
-      expect(callback.status).toBe(307);
-      const location = new URL(callback.headers.get("location") ?? "");
-      expect(location.origin).toBe("https://app.okou.ai");
-      expect(location.pathname).toBe("/connector/error");
-    },
-  );
-
-  it("uses the direct Okou App callback for Airtable and reuses its exact PKCE redirect URI", async () => {
-    const tokenBodies: URLSearchParams[] = [];
-    server.use(
-      http.post(AIRTABLE_OAUTH_TOKEN_URL, async ({ request }) => {
-        tokenBodies.push(new URLSearchParams(await request.text()));
-        return HttpResponse.json({
-          access_token: "airtable-test-token",
-          refresh_token: "airtable-refresh-token",
-          expires_in: 3600,
-          scope: "data.records:read",
-        });
-      }),
-      http.get(AIRTABLE_WHOAMI_URL, () => {
-        return HttpResponse.json({
-          id: "airtable-user-123",
-          email: "airtable@example.test",
-        });
-      }),
-    );
-    mockEnv("APP_URL", "https://app.okou.ai");
-    mockAuthenticatedSession();
-
-    const response = await requestOauthStart("airtable", {
-      callbackTarget: "app",
-      headers: authHeaders(),
-      origin: API_ORIGIN,
+    mockJson("get", "https://api.airtable.com/v0/meta/whoami", {
+      id: "airtable-user-123",
+      email: "airtable-user@example.test",
     });
+    signIn();
 
-    expect(response.status).toBe(200);
-    const startBody = builtinConnectorOauthStartResponseSchema.parse(
-      await response.json(),
-    );
-    const connectionId = uuid().parse(startBody.connectionId);
-    const authorizationUrl = new URL(startBody.authorizationUrl);
-    expect(`${authorizationUrl.origin}${authorizationUrl.pathname}`).toBe(
-      "https://airtable.com/oauth2/v1/authorize",
-    );
-    expect(authorizationUrl.searchParams.get("client_id")).toBe(
-      "airtable-test-client-id",
-    );
-    const redirectUri = authorizationUrl.searchParams.get("redirect_uri");
-    expect(redirectUri).toBe(
-      "https://app.okou.ai/connectors/airtable/callback",
-    );
-    expect(authorizationUrl.searchParams.get("code_challenge")).toMatch(
-      /^[A-Za-z0-9_-]+$/,
-    );
-    expect(authorizationUrl.searchParams.get("code_challenge_method")).toBe(
-      "S256",
-    );
-    const state = expectOauthState(authorizationUrl);
+    const started = await connectThroughApp("airtable");
 
-    const app = createApp({ signal: context.signal, routes: TEST_APP_ROUTES });
-    const callback = await app.request(
-      `${API_ORIGIN}/api/connectors/airtable/callback?${new URLSearchParams({
-        code: "airtable-authorization-code",
-        state,
-      })}`,
-      { headers: { "x-okou-web-origin": "https://okou.ai" } },
-    );
-
-    expect(callback.status).toBe(307);
-    expect(new URL(callback.headers.get("location") ?? "").origin).toBe(
-      "https://app.okou.ai",
-    );
-    expect(tokenBodies).toHaveLength(1);
-    expect(tokenBodies[0]?.get("redirect_uri")).toBe(redirectUri);
-    expect(tokenBodies[0]?.get("code_verifier")).toMatch(/^[A-Za-z0-9_-]+$/u);
-    const connected = await accept(
+    expect(started.body.connectionId).toMatch(UUID);
+    expectAppAuthorization(started, {
+      authorizeUrl: "https://airtable.com/oauth2/v1/authorize",
+      clientId: "airtable-test-client-id",
+      connectorSlug: "airtable",
+    });
+    expect(started.location.origin).toBe("https://app.okou.ai");
+    expectSingleTokenRedirect(requests, "airtable");
+    expectPkce(started.url, requests);
+    const account = await accept(
       setupApp({ context, routes: connectorAccountRoutes })(
         connectorAccountsContract,
       ).connection({
-        params: { connectionId },
+        headers,
+        params: { connectionId: started.body.connectionId ?? "" },
         query: { kind: "builtin", connectorSlug: "airtable" },
-        headers: authHeaders(),
       }),
       [200],
     );
-    expect(connected.body).toMatchObject({
-      id: connectionId,
+    expect(account.body).toMatchObject({
+      id: started.body.connectionId,
       target: { kind: "builtin", connectorSlug: "airtable" },
       connectionStatus: "connected",
     });
   });
 
-  it("reuses the direct Okou redirect URI for a Google token exchange", async () => {
-    const tokenBodies: URLSearchParams[] = [];
-    server.use(
-      http.post(GOOGLE_OAUTH_TOKEN_URL, async ({ request }) => {
-        tokenBodies.push(new URLSearchParams(await request.text()));
-        return HttpResponse.json({
-          access_token: "gmail-test-token",
-          refresh_token: "gmail-refresh-token",
-          expires_in: 3600,
-          scope: "https://www.googleapis.com/auth/gmail.modify",
-        });
-      }),
-      http.get(GOOGLE_OPENID_USERINFO_URL, () => {
-        return HttpResponse.json({
-          sub: "gmail-user-123",
-          email: "gmail@example.test",
-          name: "Gmail Test User",
-        });
-      }),
-    );
-    mockEnv("APP_URL", "https://app.okou.ai");
-    mockAuthenticatedSession();
-
-    const response = await requestOauthStart("gmail", {
-      callbackTarget: "app",
-      headers: authHeaders(),
-      origin: API_ORIGIN,
+  it("connectors-oauth-start-014 reuses the direct Okou redirect URI for a Google token exchange", async () => {
+    configureClient("GOOGLE", "google-test-client-id");
+    const requests = mockTokenEndpoint("https://oauth2.googleapis.com/token", {
+      ...tokens,
+      scope: "https://www.googleapis.com/auth/gmail.modify",
     });
+    mockJson("get", "https://openidconnect.googleapis.com/v1/userinfo", {
+      sub: "google-user-1",
+      email: "google-user@example.test",
+      name: "Google User",
+    });
+    signIn();
 
-    expect(response.status).toBe(200);
-    const authorizationUrl = await authorizationUrlFromResponse(response);
-    const redirectUri = authorizationUrl.searchParams.get("redirect_uri");
-    expect(redirectUri).toBe("https://app.okou.ai/connectors/gmail/callback");
-    const state = expectOauthState(authorizationUrl);
+    const started = await connectThroughApp("gmail");
 
-    const app = createApp({ signal: context.signal, routes: TEST_APP_ROUTES });
-    const callback = await app.request(
-      `${API_ORIGIN}/api/connectors/gmail/callback?${new URLSearchParams({
-        code: "gmail-authorization-code",
-        state,
-      })}`,
-      { headers: { "x-okou-web-origin": "https://okou.ai" } },
+    expect(started.url.searchParams.get("redirect_uri")).toBe(
+      appCallback("gmail"),
     );
-
-    expect(callback.status).toBe(307);
-    const callbackLocation = new URL(callback.headers.get("location") ?? "");
-    expect(callbackLocation.origin).toBe("https://app.okou.ai");
-    expect(callbackLocation.pathname).toBe("/connector/success");
-    expect(tokenBodies).toHaveLength(1);
-    expect(tokenBodies[0]?.get("redirect_uri")).toBe(redirectUri);
+    expect(started.state).toMatch(STATE);
+    expect(redirectTarget(started.location), started.location.href).toBe(
+      "https://app.okou.ai/connector/success",
+    );
+    expectSingleTokenRedirect(requests, "gmail");
   });
 
-  it("uses the direct Okou App callback for Box and reuses its exact redirect URI", async () => {
-    const tokenBodies: URLSearchParams[] = [];
-    server.use(
-      http.post(BOX_OAUTH_TOKEN_URL, async ({ request }) => {
-        tokenBodies.push(new URLSearchParams(await request.text()));
-        return HttpResponse.json({
-          access_token: "box-test-token",
-          refresh_token: "box-refresh-token",
-          expires_in: 3600,
-          scope: "root_readwrite",
-        });
-      }),
-      http.get(BOX_CURRENT_USER_URL, () => {
-        return HttpResponse.json({
-          id: "box-user-123",
-          name: "Box Test User",
-          login: "box@example.test",
-        });
-      }),
+  it("connectors-oauth-start-015 uses the direct Okou App callback for Box and reuses its exact redirect URI", async () => {
+    configureClient("BOX", "box-test-client-id");
+    const requests = mockTokenEndpoint(
+      "https://api.box.com/oauth2/token",
+      tokens,
     );
-    mockEnv("APP_URL", "https://app.okou.ai");
-    mockAuthenticatedSession();
-
-    const response = await requestOauthStart("box", {
-      callbackTarget: "app",
-      headers: authHeaders(),
-      origin: API_ORIGIN,
+    mockJson("get", "https://api.box.com/2.0/users/me", {
+      id: "box-user-1",
+      name: "Box User",
+      login: "box-user@example.test",
     });
+    signIn();
 
-    expect(response.status).toBe(200);
-    const authorizationUrl = await authorizationUrlFromResponse(response);
-    expect(`${authorizationUrl.origin}${authorizationUrl.pathname}`).toBe(
-      "https://account.box.com/api/oauth2/authorize",
-    );
-    expect(authorizationUrl.searchParams.get("client_id")).toBe(
-      "box-test-client-id",
-    );
-    const redirectUri = authorizationUrl.searchParams.get("redirect_uri");
-    expect(redirectUri).toBe("https://app.okou.ai/connectors/box/callback");
-    const state = expectOauthState(authorizationUrl);
+    const started = await connectThroughApp("box");
 
-    const app = createApp({ signal: context.signal, routes: TEST_APP_ROUTES });
-    const callback = await app.request(
-      `${API_ORIGIN}/api/connectors/box/callback?${new URLSearchParams({
-        code: "box-authorization-code",
-        state,
-      })}`,
-      { headers: { "x-okou-web-origin": "https://okou.ai" } },
+    expectAppAuthorization(started, {
+      authorizeUrl: "https://account.box.com/api/oauth2/authorize",
+      clientId: "box-test-client-id",
+      connectorSlug: "box",
+    });
+    expect(redirectTarget(started.location), started.location.href).toBe(
+      "https://app.okou.ai/connector/success",
     );
-
-    expect(callback.status).toBe(307);
-    const callbackLocation = new URL(callback.headers.get("location") ?? "");
-    expect(callbackLocation.origin).toBe("https://app.okou.ai");
-    expect(callbackLocation.pathname).toBe("/connector/success");
-    expect(tokenBodies).toHaveLength(1);
-    expect(tokenBodies[0]?.get("redirect_uri")).toBe(redirectUri);
+    expectSingleTokenRedirect(requests, "box");
   });
 
-  it("uses the direct Okou App callback for HubSpot and reuses its exact redirect URI", async () => {
-    const tokenBodies: URLSearchParams[] = [];
-    server.use(
-      http.post(HUBSPOT_OAUTH_TOKEN_URL, async ({ request }) => {
-        tokenBodies.push(new URLSearchParams(await request.text()));
-        return HttpResponse.json({
-          access_token: "hubspot-test-token",
-          refresh_token: "hubspot-refresh-token",
-          expires_in: 1800,
-        });
-      }),
-      http.get(`${HUBSPOT_TOKEN_INFO_URL}/hubspot-test-token`, () => {
-        return HttpResponse.json({
-          user_id: 123,
-          user: "hubspot@example.test",
-          hub_domain: "example.test",
-        });
-      }),
+  it("connectors-oauth-start-016 uses the direct Okou App callback for HubSpot and reuses its exact redirect URI", async () => {
+    configureClient("HUBSPOT", "hubspot-test-client-id");
+    const requests = mockTokenEndpoint(
+      "https://api.hubapi.com/oauth/v1/token",
+      tokens,
     );
-    mockEnv("APP_URL", "https://app.okou.ai");
-    mockAuthenticatedSession();
-
-    const response = await requestOauthStart("hubspot", {
-      callbackTarget: "app",
-      headers: authHeaders(),
-      origin: API_ORIGIN,
-    });
-
-    expect(response.status).toBe(200);
-    const authorizationUrl = await authorizationUrlFromResponse(response);
-    expect(`${authorizationUrl.origin}${authorizationUrl.pathname}`).toBe(
-      "https://app.hubspot.com/oauth/authorize",
-    );
-    expect(authorizationUrl.searchParams.get("client_id")).toBe(
-      "hubspot-test-client-id",
-    );
-    const redirectUri = authorizationUrl.searchParams.get("redirect_uri");
-    expect(redirectUri).toBe("https://app.okou.ai/connectors/hubspot/callback");
-    const state = expectOauthState(authorizationUrl);
-
-    const app = createApp({ signal: context.signal, routes: TEST_APP_ROUTES });
-    const callback = await app.request(
-      `${API_ORIGIN}/api/connectors/hubspot/callback?${new URLSearchParams({
-        code: "hubspot-authorization-code",
-        state,
-      })}`,
-      { headers: { "x-okou-web-origin": "https://okou.ai" } },
-    );
-
-    expect(callback.status).toBe(307);
-    const callbackLocation = new URL(callback.headers.get("location") ?? "");
-    expect(callbackLocation.origin).toBe("https://app.okou.ai");
-    expect(callbackLocation.pathname).toBe("/connector/success");
-    expect(tokenBodies).toHaveLength(1);
-    expect(tokenBodies[0]?.get("redirect_uri")).toBe(redirectUri);
-  });
-
-  it("uses the direct Okou App callback for Meta Ads and reuses its exact redirect URI", async () => {
-    const tokenBodies: URLSearchParams[] = [];
-    server.use(
-      http.post(META_ADS_OAUTH_TOKEN_URL, async ({ request }) => {
-        tokenBodies.push(new URLSearchParams(await request.text()));
-        return HttpResponse.json({
-          access_token: "meta-ads-short-lived-token",
-          token_type: "bearer",
-          expires_in: 3600,
-        });
-      }),
-      http.get(META_ADS_OAUTH_TOKEN_URL, () => {
-        return HttpResponse.json({
-          access_token: "meta-ads-long-lived-token",
-          token_type: "bearer",
-          expires_in: 5_184_000,
-        });
-      }),
-      http.get(META_ADS_USER_URL, () => {
-        return HttpResponse.json({
-          id: "meta-ads-user-123",
-          name: "Meta Ads Test User",
-          email: "meta-ads@example.test",
-        });
-      }),
-    );
-    mockEnv("APP_URL", "https://app.okou.ai");
-    mockAuthenticatedSession();
-
-    const response = await requestOauthStart("meta-ads", {
-      callbackTarget: "app",
-      headers: authHeaders(),
-      origin: API_ORIGIN,
-    });
-
-    expect(response.status).toBe(200);
-    const authorizationUrl = await authorizationUrlFromResponse(response);
-    expect(`${authorizationUrl.origin}${authorizationUrl.pathname}`).toBe(
-      "https://www.facebook.com/v22.0/dialog/oauth",
-    );
-    expect(authorizationUrl.searchParams.get("client_id")).toBe(
-      "meta-ads-test-client-id",
-    );
-    const redirectUri = authorizationUrl.searchParams.get("redirect_uri");
-    expect(redirectUri).toBe(
-      "https://app.okou.ai/connectors/meta-ads/callback",
-    );
-    const state = expectOauthState(authorizationUrl);
-
-    const app = createApp({ signal: context.signal, routes: TEST_APP_ROUTES });
-    const callback = await app.request(
-      `${API_ORIGIN}/api/connectors/meta-ads/callback?${new URLSearchParams({
-        code: "meta-ads-authorization-code",
-        state,
-      })}`,
-      { headers: { "x-okou-web-origin": "https://okou.ai" } },
-    );
-
-    expect(callback.status).toBe(307);
-    const callbackLocation = new URL(callback.headers.get("location") ?? "");
-    expect(callbackLocation.origin).toBe("https://app.okou.ai");
-    expect(callbackLocation.pathname).toBe("/connector/success");
-    expect(tokenBodies).toHaveLength(1);
-    expect(tokenBodies[0]?.get("redirect_uri")).toBe(redirectUri);
-  });
-
-  it("uses the direct Okou App callback for TikTok Ads without adding a token redirect URI", async () => {
-    const tokenBodies: unknown[] = [];
-    server.use(
-      http.post(TIKTOK_ADS_OAUTH_TOKEN_URL, async ({ request }) => {
-        tokenBodies.push(await request.json());
-        return HttpResponse.json({
-          data: {
-            access_token: "tiktok-ads-test-token",
-            advertiser_ids: ["1234567890"],
-          },
-          request_id: "tiktok-ads-request-id",
-        });
-      }),
-    );
-    mockEnv("APP_URL", "https://app.okou.ai");
-    mockAuthenticatedSession();
-
-    const response = await requestOauthStart("tiktok-ads", {
-      callbackTarget: "app",
-      headers: authHeaders(),
-      origin: API_ORIGIN,
-    });
-
-    expect(response.status).toBe(200);
-    const authorizationUrl = await authorizationUrlFromResponse(response);
-    expect(`${authorizationUrl.origin}${authorizationUrl.pathname}`).toBe(
-      "https://business-api.tiktok.com/portal/auth",
-    );
-    expect(authorizationUrl.searchParams.get("app_id")).toBe(
-      "tiktok-ads-test-client-id",
-    );
-    expect(authorizationUrl.searchParams.get("redirect_uri")).toBe(
-      "https://app.okou.ai/connectors/tiktok-ads/callback",
-    );
-    const state = expectOauthState(authorizationUrl);
-
-    const app = createApp({ signal: context.signal, routes: TEST_APP_ROUTES });
-    const callback = await app.request(
-      `${API_ORIGIN}/api/connectors/tiktok-ads/callback?${new URLSearchParams({
-        auth_code: "tiktok-ads-authorization-code",
-        state,
-      })}`,
-      { headers: { "x-okou-web-origin": "https://okou.ai" } },
-    );
-
-    expect(callback.status).toBe(307);
-    const callbackLocation = new URL(callback.headers.get("location") ?? "");
-    expect(callbackLocation.origin).toBe("https://app.okou.ai");
-    expect(callbackLocation.pathname).toBe("/connector/success");
-    expect(tokenBodies).toStrictEqual([
+    mockJson(
+      "get",
+      "https://api.hubapi.com/oauth/v1/access-tokens/provider-access-token",
       {
-        app_id: "tiktok-ads-test-client-id",
-        secret: "tiktok-ads-test-client-secret",
-        auth_code: "tiktok-ads-authorization-code",
+        user_id: 1001,
+        hub_id: 2002,
+        user: "hubspot-user@example.test",
+        hub_domain: "example.hubspot.com",
       },
-    ]);
+    );
+    signIn();
+
+    const started = await connectThroughApp("hubspot");
+
+    expectAppAuthorization(started, {
+      authorizeUrl: "https://app.hubspot.com/oauth/authorize",
+      clientId: "hubspot-test-client-id",
+      connectorSlug: "hubspot",
+    });
+    expect(redirectTarget(started.location), started.location.href).toBe(
+      "https://app.okou.ai/connector/success",
+    );
+    expectSingleTokenRedirect(requests, "hubspot");
   });
 
-  it.each(["box", "hubspot", "meta-ads", "tiktok-ads"] as const)(
-    "keeps an omitted %s callback target on the existing Web callback",
-    async (connectorSlug) => {
-      mockAuthenticatedSession();
+  it("connectors-oauth-start-017 uses the direct Okou App callback for Meta Ads and reuses its exact redirect URI", async () => {
+    configureClient("META_ADS", "meta-ads-test-client-id");
+    const tokenUrl = "https://graph.facebook.com/v22.0/oauth/access_token";
+    const tokenResponse = { access_token: "meta-token", token_type: "bearer" };
+    const posted = mockTokenEndpoint(tokenUrl, tokenResponse);
+    const fetched = mockTokenEndpoint(tokenUrl, tokenResponse, "get");
+    mockJson("get", "https://graph.facebook.com/v22.0/me", {
+      id: "meta-user-1",
+      name: "Meta User",
+      email: "meta-user@example.test",
+    });
+    signIn();
 
-      const response = await requestOauthStart(connectorSlug, {
-        headers: authHeaders(),
-        origin: API_ORIGIN,
-      });
+    const started = await connectThroughApp("meta-ads");
 
-      expect(response.status).toBe(200);
-      const authorizationUrl = await authorizationUrlFromResponse(response);
-      expect(authorizationUrl.searchParams.get("redirect_uri")).toBe(
-        `${WEB_ORIGIN}/api/connectors/${connectorSlug}/callback`,
-      );
-      expectOauthState(authorizationUrl);
-      await rejectProviderAuthorization(authorizationUrl);
-    },
-  );
-
-  it.each(DIRECT_OKOU_TOKEN_EXCHANGE_CASES)(
-    "uses the direct Okou App callback for $label and reuses its exact redirect URI",
-    async (providerCase) => {
-      const tokenBodies: URLSearchParams[] = [];
-      server.use(
-        http.post(providerCase.tokenUrl, async ({ request }) => {
-          tokenBodies.push(new URLSearchParams(await request.text()));
-          return HttpResponse.json(providerCase.tokenResponse);
-        }),
-      );
-      providerCase.mockUserInfo?.();
-      mockEnv("APP_URL", "https://app.okou.ai");
-      mockAuthenticatedSession();
-
-      const response = await requestOauthStart(providerCase.connectorSlug, {
-        callbackTarget: "app",
-        headers: authHeaders(),
-        origin: API_ORIGIN,
-      });
-
-      expect(response.status).toBe(200);
-      const authorizationUrl = await authorizationUrlFromResponse(response);
-      expect(`${authorizationUrl.origin}${authorizationUrl.pathname}`).toBe(
-        providerCase.authorizationEndpoint,
-      );
-      expect(authorizationUrl.searchParams.get("client_id")).toBe(
-        providerCase.clientId,
-      );
-      const redirectUri = authorizationUrl.searchParams.get("redirect_uri");
-      expect(redirectUri).toBe(
-        `https://app.okou.ai/connectors/${providerCase.connectorSlug}/callback`,
-      );
-      const state = expectOauthState(authorizationUrl);
-
-      const location = await completeAppOauthCallback(
-        providerCase.connectorSlug,
-        state,
-        providerCase.callbackQuery,
-      );
-
-      expect(location.origin).toBe("https://app.okou.ai");
-      expect(location.pathname).toBe("/connector/success");
-      expect(tokenBodies).toHaveLength(1);
-      expect(tokenBodies[0]?.get("redirect_uri")).toBe(redirectUri);
-    },
-  );
-
-  it("uses the direct Okou App callback for Stripe Marketplace OAuth", async () => {
-    const tokenBodies: URLSearchParams[] = [];
-    server.use(
-      http.post(STRIPE_OAUTH_TOKEN_URL, async ({ request }) => {
-        tokenBodies.push(new URLSearchParams(await request.text()));
-        return HttpResponse.json({
-          access_token: "stripe-test-token",
-          refresh_token: "stripe-refresh-token",
-          expires_in: 3600,
-          livemode: true,
-          stripe_user_id: "acct_stripe_test",
-        });
-      }),
-      http.get(STRIPE_ACCOUNT_URL, () => {
-        return HttpResponse.json({
-          id: "acct_stripe_test",
-          business_profile: { name: "Stripe Test Account" },
-          email: "stripe@example.test",
-        });
-      }),
+    expectAppAuthorization(started, {
+      authorizeUrl: "https://www.facebook.com/v22.0/dialog/oauth",
+      clientId: "meta-ads-test-client-id",
+      connectorSlug: "meta-ads",
+    });
+    expect(redirectTarget(started.location), started.location.href).toBe(
+      "https://app.okou.ai/connector/success",
     );
-    mockEnv("APP_URL", "https://app.okou.ai");
-    mockAuthenticatedSession();
+    const withRedirect = [...posted, ...fetched].filter((request) => {
+      return request.body.has("redirect_uri");
+    });
+    expectSingleTokenRedirect(withRedirect, "meta-ads");
+  });
 
-    const response = await requestOauthStart("stripe", {
-      callbackTarget: "app",
-      headers: authHeaders(),
-      origin: API_ORIGIN,
+  it("connectors-oauth-start-018 uses the direct Okou App callback for TikTok Ads without adding a token redirect URI", async () => {
+    configureClient("TIKTOK_ADS", "tiktok-ads-test-client-id");
+    const requests = mockTokenEndpoint(
+      "https://business-api.tiktok.com/open_api/v1.3/oauth2/access_token/",
+      {
+        code: 0,
+        message: "OK",
+        data: {
+          access_token: "tiktok-ads-access-token",
+          advertiser_ids: ["7000000001"],
+        },
+      },
+    );
+    signIn();
+
+    const started = await connectThroughApp("tiktok-ads", {
+      auth_code: "tiktok-ads-authorization-code",
     });
 
-    expect(response.status).toBe(200);
-    const authorizationUrl = await authorizationUrlFromResponse(response);
-    expect(`${authorizationUrl.origin}${authorizationUrl.pathname}`).toBe(
-      "https://marketplace.stripe.com/oauth/v2/authorize",
+    expectAppAuthorization(started, {
+      authorizeUrl: "https://business-api.tiktok.com/portal/auth",
+      clientId: "tiktok-ads-test-client-id",
+      connectorSlug: "tiktok-ads",
+      clientIdParam: "app_id",
+    });
+    expect(redirectTarget(started.location), started.location.href).toBe(
+      "https://app.okou.ai/connector/success",
     );
-    expect(authorizationUrl.searchParams.get("client_id")).toBe(
-      "stripe-test-client-id",
-    );
-    expect(authorizationUrl.searchParams.get("redirect_uri")).toBe(
-      "https://app.okou.ai/connectors/stripe/callback",
-    );
-    const state = expectOauthState(authorizationUrl);
+    expect(requests).toHaveLength(1);
+    expect(Object.fromEntries(requests[0]?.body ?? [])).toStrictEqual({
+      app_id: "tiktok-ads-test-client-id",
+      secret: "tiktok-ads-test-client-id-secret",
+      auth_code: "tiktok-ads-authorization-code",
+    });
+  });
 
-    const location = await completeAppOauthCallback("stripe", state);
+  it("connectors-oauth-start-023 uses the direct Okou App callback for Asana and reuses its exact redirect URI", async () => {
+    configureClient("ASANA", "asana-test-client-id");
+    const requests = mockTokenEndpoint(
+      "https://app.asana.com/-/oauth_token",
+      tokens,
+    );
+    mockJson("get", "https://app.asana.com/api/1.0/users/me", {
+      data: {
+        gid: "asana-user-1",
+        name: "Asana User",
+        email: "asana-user@example.test",
+      },
+    });
+    signIn();
 
-    expect(location.origin).toBe("https://app.okou.ai");
-    expect(location.pathname).toBe("/connector/success");
-    expect(tokenBodies).toHaveLength(1);
-    expect(Object.fromEntries(tokenBodies[0]!)).toStrictEqual({
+    const started = await connectThroughApp("asana");
+
+    expectAppAuthorization(started, {
+      authorizeUrl: "https://app.asana.com/-/oauth_authorize",
+      clientId: "asana-test-client-id",
+      connectorSlug: "asana",
+    });
+    expect(redirectTarget(started.location), started.location.href).toBe(
+      "https://app.okou.ai/connector/success",
+    );
+    expectSingleTokenRedirect(requests, "asana");
+  });
+
+  it("connectors-oauth-start-024 uses the direct Okou App callback for Gumroad and reuses its exact redirect URI", async () => {
+    configureClient("GUMROAD", "gumroad-test-client-id");
+    const requests = mockTokenEndpoint(
+      "https://gumroad.com/oauth/token",
+      tokens,
+    );
+    mockJson("get", "https://api.gumroad.com/v2/user", {
+      success: true,
+      user: {
+        id: "gumroad-user-1",
+        name: "Gumroad User",
+        email: "gumroad-user@example.test",
+      },
+    });
+    signIn();
+
+    const started = await connectThroughApp("gumroad");
+
+    expectAppAuthorization(started, {
+      authorizeUrl: "https://gumroad.com/oauth/authorize",
+      clientId: "gumroad-test-client-id",
+      connectorSlug: "gumroad",
+    });
+    expect(redirectTarget(started.location), started.location.href).toBe(
+      "https://app.okou.ai/connector/success",
+    );
+    expectSingleTokenRedirect(requests, "gumroad");
+  });
+
+  it("connectors-oauth-start-025 uses the direct Okou App callback for Linear and reuses its exact redirect URI", async () => {
+    configureClient("LINEAR", "linear-test-client-id");
+    const requests = mockTokenEndpoint(
+      "https://api.linear.app/oauth/token",
+      tokens,
+    );
+    mockJson("post", "https://api.linear.app/graphql", {
+      data: {
+        viewer: {
+          id: "linear-user-1",
+          name: "Linear User",
+          email: "linear-user@example.test",
+        },
+      },
+    });
+    signIn();
+
+    const started = await connectThroughApp("linear");
+
+    expectAppAuthorization(started, {
+      authorizeUrl: "https://linear.app/oauth/authorize",
+      clientId: "linear-test-client-id",
+      connectorSlug: "linear",
+    });
+    expect(redirectTarget(started.location), started.location.href).toBe(
+      "https://app.okou.ai/connector/success",
+    );
+    expectSingleTokenRedirect(requests, "linear");
+  });
+
+  it("connectors-oauth-start-026 uses the direct Okou App callback for Monday.com and reuses its exact redirect URI", async () => {
+    configureClient("MONDAY", "monday-test-client-id");
+    const requests = mockTokenEndpoint(
+      "https://auth.monday.com/oauth2/token",
+      tokens,
+    );
+    mockJson("post", "https://api.monday.com/v2", {
+      data: {
+        me: {
+          id: "1234",
+          name: "Monday User",
+          email: "monday-user@example.test",
+        },
+      },
+    });
+    signIn();
+
+    const started = await connectThroughApp("monday");
+
+    expectAppAuthorization(started, {
+      authorizeUrl: "https://auth.monday.com/oauth2/authorize",
+      clientId: "monday-test-client-id",
+      connectorSlug: "monday",
+    });
+    expect(redirectTarget(started.location), started.location.href).toBe(
+      "https://app.okou.ai/connector/success",
+    );
+    expectSingleTokenRedirect(requests, "monday");
+  });
+
+  it("connectors-oauth-start-027 uses the direct Okou App callback for QuickBooks and reuses its exact redirect URI", async () => {
+    configureClient("QUICKBOOKS", "quickbooks-test-client-id");
+    const requests = mockTokenEndpoint(
+      "https://oauth.platform.intuit.com/oauth2/v1/tokens/bearer",
+      tokens,
+    );
+    mockJson(
+      "get",
+      "https://accounts.platform.intuit.com/v1/openid_connect/userinfo",
+      { sub: "quickbooks-user-1", email: "quickbooks-user@example.test" },
+    );
+    signIn();
+
+    const started = await connectThroughApp("quickbooks", {
+      code: "quickbooks-authorization-code",
+      realmId: "quickbooks-realm-123",
+    });
+
+    expectAppAuthorization(started, {
+      authorizeUrl: "https://appcenter.intuit.com/connect/oauth2",
+      clientId: "quickbooks-test-client-id",
+      connectorSlug: "quickbooks",
+    });
+    expect(redirectTarget(started.location), started.location.href).toBe(
+      "https://app.okou.ai/connector/success",
+    );
+    expectSingleTokenRedirect(requests, "quickbooks");
+  });
+
+  it("connectors-oauth-start-028 uses the direct Okou App callback for Sentry and reuses its exact redirect URI", async () => {
+    configureClient("SENTRY", "sentry-test-client-id");
+    const requests = mockTokenEndpoint("https://sentry.io/oauth/token/", {
+      ...tokens,
+      user: {
+        id: "sentry-user-1",
+        name: "Sentry User",
+        email: "sentry-user@example.test",
+      },
+    });
+    signIn();
+
+    const started = await connectThroughApp("sentry");
+
+    expectAppAuthorization(started, {
+      authorizeUrl: "https://sentry.io/oauth/authorize/",
+      clientId: "sentry-test-client-id",
+      connectorSlug: "sentry",
+    });
+    expect(redirectTarget(started.location), started.location.href).toBe(
+      "https://app.okou.ai/connector/success",
+    );
+    expectSingleTokenRedirect(requests, "sentry");
+  });
+
+  it("connectors-oauth-start-029 uses the direct Okou App callback for Todoist and reuses its exact redirect URI", async () => {
+    configureClient("TODOIST", "todoist-test-client-id");
+    const requests = mockTokenEndpoint(
+      "https://todoist.com/oauth/access_token",
+      {
+        access_token: "todoist-access-token",
+        token_type: "Bearer",
+      },
+    );
+    mockJson("get", "https://api.todoist.com/api/v1/user", {
+      id: "todoist-user-1",
+      full_name: "Todoist User",
+      email: "todoist-user@example.test",
+    });
+    signIn();
+
+    const started = await connectThroughApp("todoist");
+
+    expectAppAuthorization(started, {
+      authorizeUrl: "https://todoist.com/oauth/authorize",
+      clientId: "todoist-test-client-id",
+      connectorSlug: "todoist",
+    });
+    expect(redirectTarget(started.location), started.location.href).toBe(
+      "https://app.okou.ai/connector/success",
+    );
+    expectSingleTokenRedirect(requests, "todoist");
+  });
+
+  it("connectors-oauth-start-030 uses the direct Okou App callback for Xero and reuses its exact redirect URI", async () => {
+    configureClient("XERO", "xero-test-client-id");
+    const requests = mockTokenEndpoint(
+      "https://identity.xero.com/connect/token",
+      tokens,
+    );
+    mockJson("get", "https://identity.xero.com/connect/userinfo", {
+      sub: "xero-user-1",
+      name: "Xero User",
+      email: "xero-user@example.test",
+    });
+    signIn();
+
+    const started = await connectThroughApp("xero");
+
+    expectAppAuthorization(started, {
+      authorizeUrl: "https://login.xero.com/identity/connect/authorize",
+      clientId: "xero-test-client-id",
+      connectorSlug: "xero",
+    });
+    expect(redirectTarget(started.location), started.location.href).toBe(
+      "https://app.okou.ai/connector/success",
+    );
+    expectSingleTokenRedirect(requests, "xero");
+  });
+
+  it("connectors-oauth-start-031 uses the direct Okou App callback for Stripe Marketplace OAuth", async () => {
+    configureClient("STRIPE", "stripe-test-client-id");
+    const requests = mockTokenEndpoint(
+      "https://api.stripe.com/v1/oauth/token",
+      {
+        access_token: "stripe-access-token",
+        refresh_token: "stripe-refresh-token",
+        livemode: false,
+        stripe_user_id: "acct_stripe_test",
+      },
+    );
+    mockJson("get", "https://api.stripe.com/v1/account", {
+      id: "acct_stripe_test",
+      email: "stripe-account@example.test",
+      business_profile: { name: "Stripe Test Account" },
+    });
+    signIn();
+
+    const started = await connectThroughApp("stripe");
+
+    expectAppAuthorization(started, {
+      authorizeUrl: "https://marketplace.stripe.com/oauth/v2/authorize",
+      clientId: "stripe-test-client-id",
+      connectorSlug: "stripe",
+    });
+    expect(redirectTarget(started.location), started.location.href).toBe(
+      "https://app.okou.ai/connector/success",
+    );
+    expect(requests).toHaveLength(1);
+    expect(Object.fromEntries(requests[0]?.body ?? [])).toStrictEqual({
       code: "stripe-authorization-code",
       grant_type: "authorization_code",
     });
   });
 
-  it("uses the direct Okou App callback for X and reuses its exact PKCE redirect URI", async () => {
-    const tokenBodies: URLSearchParams[] = [];
-    server.use(
-      http.post(X_OAUTH_TOKEN_URL, async ({ request }) => {
-        tokenBodies.push(new URLSearchParams(await request.text()));
-        return HttpResponse.json({
-          access_token: "x-test-token",
-          refresh_token: "x-refresh-token",
-          expires_in: 7200,
-          scope: "tweet.read tweet.write users.read offline.access",
-        });
-      }),
-      http.get(X_USERS_ME_URL, () => {
-        return HttpResponse.json({
-          data: {
-            id: "x-user-123",
-            username: "x-test-user",
-            name: "X Test User",
-          },
-        });
-      }),
-    );
-    mockEnv("APP_URL", "https://app.okou.ai");
-    mockAuthenticatedSession();
-
-    const response = await requestOauthStart("x", {
-      callbackTarget: "app",
-      headers: authHeaders(),
-      origin: API_ORIGIN,
+  it("connectors-oauth-start-032 uses the direct Okou App callback for X and reuses its exact PKCE redirect URI", async () => {
+    configureClient("X", "x-test-client-id");
+    const requests = mockTokenEndpoint("https://api.x.com/2/oauth2/token", {
+      ...tokens,
+      scope: "tweet.read tweet.write users.read offline.access",
     });
+    mockJson("get", "https://api.x.com/2/users/me", {
+      data: { id: "x-user-1", username: "x-test-user", name: "X User" },
+    });
+    signIn();
 
-    expect(response.status).toBe(200);
-    const authorizationUrl = await authorizationUrlFromResponse(response);
-    expect(`${authorizationUrl.origin}${authorizationUrl.pathname}`).toBe(
-      "https://x.com/i/oauth2/authorize",
-    );
-    expect(authorizationUrl.searchParams.get("client_id")).toBe(
-      "x-test-client-id",
-    );
-    const redirectUri = authorizationUrl.searchParams.get("redirect_uri");
-    expect(redirectUri).toBe("https://app.okou.ai/connectors/x/callback");
-    expect(authorizationUrl.searchParams.get("code_challenge")).toMatch(
-      /^[A-Za-z0-9_-]+$/u,
-    );
-    expect(authorizationUrl.searchParams.get("code_challenge_method")).toBe(
-      "S256",
-    );
-    const state = expectOauthState(authorizationUrl);
+    const started = await connectThroughApp("x");
 
-    const location = await completeAppOauthCallback("x", state);
-
-    expect(location.origin).toBe("https://app.okou.ai");
-    expect(location.pathname).toBe("/connector/success");
-    expect(tokenBodies).toHaveLength(1);
-    expect(tokenBodies[0]?.get("redirect_uri")).toBe(redirectUri);
-    expect(tokenBodies[0]?.get("code_verifier")).toMatch(/^[A-Za-z0-9_-]+$/u);
+    expectAppAuthorization(started, {
+      authorizeUrl: "https://x.com/i/oauth2/authorize",
+      clientId: "x-test-client-id",
+      connectorSlug: "x",
+    });
+    expect(redirectTarget(started.location), started.location.href).toBe(
+      "https://app.okou.ai/connector/success",
+    );
+    expectSingleTokenRedirect(requests, "x");
+    expectPkce(started.url, requests);
   });
 
-  it("uses the direct Okou App callback for Intervals.icu without adding a token redirect URI", async () => {
-    const tokenBodies: URLSearchParams[] = [];
-    server.use(
-      http.post(INTERVALS_ICU_OAUTH_TOKEN_URL, async ({ request }) => {
-        tokenBodies.push(new URLSearchParams(await request.text()));
-        return HttpResponse.json({
-          access_token: "intervals-icu-test-token",
-          athlete: { id: "i123456", name: "Intervals Test Athlete" },
-        });
-      }),
+  it("connectors-oauth-start-033 uses the direct Okou App callback for Intervals.icu without adding a token redirect URI", async () => {
+    configureClient("INTERVALS_ICU", "intervals-icu-test-client-id");
+    const requests = mockTokenEndpoint(
+      "https://intervals.icu/api/oauth/token",
+      {
+        access_token: "intervals-icu-access-token",
+        athlete: { id: "i12345", name: "Intervals Athlete" },
+      },
     );
-    mockEnv("APP_URL", "https://app.okou.ai");
-    mockAuthenticatedSession();
+    signIn();
 
-    const response = await requestOauthStart("intervals-icu", {
-      callbackTarget: "app",
-      headers: authHeaders(),
-      origin: API_ORIGIN,
+    const started = await connectThroughApp("intervals-icu");
+
+    expectAppAuthorization(started, {
+      authorizeUrl: "https://intervals.icu/oauth/authorize",
+      clientId: "intervals-icu-test-client-id",
+      connectorSlug: "intervals-icu",
     });
-
-    expect(response.status).toBe(200);
-    const authorizationUrl = await authorizationUrlFromResponse(response);
-    expect(`${authorizationUrl.origin}${authorizationUrl.pathname}`).toBe(
-      "https://intervals.icu/oauth/authorize",
+    expect(redirectTarget(started.location), started.location.href).toBe(
+      "https://app.okou.ai/connector/success",
     );
-    expect(authorizationUrl.searchParams.get("client_id")).toBe(
-      "intervals-icu-test-client-id",
-    );
-    expect(authorizationUrl.searchParams.get("redirect_uri")).toBe(
-      "https://app.okou.ai/connectors/intervals-icu/callback",
-    );
-    const state = expectOauthState(authorizationUrl);
-
-    const location = await completeAppOauthCallback("intervals-icu", state);
-
-    expect(location.origin).toBe("https://app.okou.ai");
-    expect(location.pathname).toBe("/connector/success");
-    expect(tokenBodies).toHaveLength(1);
-    expect(tokenBodies[0]?.get("redirect_uri")).toBeNull();
-    expect(tokenBodies[0]?.get("code")).toBe(
+    expect(requests).toHaveLength(1);
+    expect(requests[0]?.body.get("code")).toBe(
       "intervals-icu-authorization-code",
     );
+    expect(requests[0]?.body.has("redirect_uri")).toBeFalsy();
   });
 
-  it("uses the direct Okou App callback for Strava without adding a token redirect URI", async () => {
-    const tokenBodies: URLSearchParams[] = [];
-    server.use(
-      http.post(STRAVA_OAUTH_TOKEN_URL, async ({ request }) => {
-        tokenBodies.push(new URLSearchParams(await request.text()));
-        return HttpResponse.json({
-          access_token: "strava-test-token",
-          refresh_token: "strava-refresh-token",
-          expires_in: 21_600,
-          scope: "read,activity:read_all",
-          athlete: { id: 987_654, firstname: "Strava", lastname: "Athlete" },
-        });
-      }),
-      http.get(STRAVA_ATHLETE_URL, () => {
-        return HttpResponse.json({
-          id: 987_654,
-          firstname: "Strava",
-          lastname: "Athlete",
-        });
-      }),
-    );
-    mockEnv("APP_URL", "https://app.okou.ai");
-    mockAuthenticatedSession();
-
-    const response = await requestOauthStart("strava", {
-      callbackTarget: "app",
-      headers: authHeaders(),
-      origin: API_ORIGIN,
+  it("connectors-oauth-start-034 uses the direct Okou App callback for Strava without adding a token redirect URI", async () => {
+    configureClient("STRAVA", "strava-test-client-id");
+    const requests = mockTokenEndpoint("https://www.strava.com/oauth/token", {
+      ...tokens,
+      scope: "read,activity:read_all,profile:read_all",
+      athlete: { id: 5150, firstname: "Strava", lastname: "Athlete" },
     });
+    mockJson("get", "https://www.strava.com/api/v3/athlete", {
+      id: 5150,
+      firstname: "Strava",
+      lastname: "Athlete",
+    });
+    signIn();
 
-    expect(response.status).toBe(200);
-    const authorizationUrl = await authorizationUrlFromResponse(response);
-    expect(`${authorizationUrl.origin}${authorizationUrl.pathname}`).toBe(
-      "https://www.strava.com/oauth/authorize",
-    );
-    expect(authorizationUrl.searchParams.get("client_id")).toBe(
-      "strava-test-client-id",
-    );
-    expect(authorizationUrl.searchParams.get("redirect_uri")).toBe(
-      "https://app.okou.ai/connectors/strava/callback",
-    );
-    const state = expectOauthState(authorizationUrl);
+    const started = await connectThroughApp("strava");
 
-    const location = await completeAppOauthCallback("strava", state);
-
-    expect(location.origin).toBe("https://app.okou.ai");
-    expect(location.pathname).toBe("/connector/success");
-    expect(tokenBodies).toHaveLength(1);
-    expect(tokenBodies[0]?.get("redirect_uri")).toBeNull();
-    expect(tokenBodies[0]?.get("code")).toBe("strava-authorization-code");
+    expectAppAuthorization(started, {
+      authorizeUrl: "https://www.strava.com/oauth/authorize",
+      clientId: "strava-test-client-id",
+      connectorSlug: "strava",
+    });
+    expect(redirectTarget(started.location), started.location.href).toBe(
+      "https://app.okou.ai/connector/success",
+    );
+    expect(requests).toHaveLength(1);
+    expect(requests[0]?.body.get("code")).toBe("strava-authorization-code");
+    expect(requests[0]?.body.has("redirect_uri")).toBeFalsy();
   });
 
-  // Vercel routes authorization through its Integration URL, so the
-  // authorization URL carries no redirect URI. Callback selection is only
-  // observable through the persisted URI replayed at token exchange.
-  it.each([
-    {
-      target: "the direct Okou App callback",
-      origin: API_ORIGIN,
-      callbackTarget: "app" as const,
-      expectedRedirectUri: "https://app.okou.ai/connectors/vercel/callback",
-      expectedLocationOrigin: "https://app.okou.ai",
-    },
-    {
-      target: "the existing Web callback",
-      origin: API_ORIGIN,
-      callbackTarget: undefined,
-      expectedRedirectUri: `${WEB_ORIGIN}/api/connectors/vercel/callback`,
-      expectedLocationOrigin: "https://app.okou.ai",
-    },
-  ])(
-    "propagates $target through the Vercel token exchange",
-    async (routingCase) => {
-      const tokenBodies: URLSearchParams[] = [];
-      server.use(
-        http.post(VERCEL_OAUTH_TOKEN_URL, async ({ request }) => {
-          tokenBodies.push(new URLSearchParams(await request.text()));
-          return HttpResponse.json({
-            access_token: "vercel-test-token",
-            token_type: "Bearer",
-            team_id: "team_test",
-            installation_id: "icfg_test",
-          });
-        }),
-        http.get(VERCEL_USER_URL, () => {
-          return HttpResponse.json({
-            user: {
-              id: "vercel-user-123",
-              username: "vercel-test-user",
-              email: "vercel@example.test",
-            },
-          });
-        }),
-      );
-      mockEnv("APP_URL", "https://app.okou.ai");
-      mockAuthenticatedSession();
+  it("connectors-oauth-start-035 propagates the direct Okou App callback through the Vercel token exchange", async () => {
+    configureClient("VERCEL", "vercel-test-client-id");
+    const requests = mockVercel();
+    signIn();
 
-      const response = await requestOauthStart("vercel", {
-        ...(routingCase.callbackTarget === undefined
-          ? {}
-          : { callbackTarget: routingCase.callbackTarget }),
-        headers: authHeaders(),
-        origin: routingCase.origin,
-      });
+    const started = await connectThroughApp("vercel");
 
-      expect(response.status).toBe(200);
-      const authorizationUrl = await authorizationUrlFromResponse(response);
-      expect(`${authorizationUrl.origin}${authorizationUrl.pathname}`).toBe(
-        `https://vercel.com/integrations/${VERCEL_INTEGRATION_SLUG}/new`,
-      );
-      expect(authorizationUrl.searchParams.get("redirect_uri")).toBeNull();
-      const state = authorizationUrl.searchParams.get("state") ?? "";
-      expect(state).toMatch(/^[0-9a-f]{64}$/u);
-
-      const location = await completeAppOauthCallback("vercel", state);
-
-      expect(location.origin).toBe(routingCase.expectedLocationOrigin);
-      expect(location.pathname).toBe("/connector/success");
-      expect(tokenBodies).toHaveLength(1);
-      expect(tokenBodies[0]?.get("redirect_uri")).toBe(
-        routingCase.expectedRedirectUri,
-      );
-    },
-  );
-
-  it.each(REDIRECTING_DIRECT_OKOU_CONNECTOR_SLUGS)(
-    "keeps an omitted %s callback target on the existing Web callback",
-    async (connectorSlug) => {
-      mockAuthenticatedSession();
-
-      const response = await requestOauthStart(connectorSlug, {
-        headers: authHeaders(),
-        origin: API_ORIGIN,
-      });
-
-      expect(response.status).toBe(200);
-      const authorizationUrl = await authorizationUrlFromResponse(response);
-      expect(authorizationUrl.searchParams.get("redirect_uri")).toBe(
-        `${WEB_ORIGIN}/api/connectors/${connectorSlug}/callback`,
-      );
-      expectOauthState(authorizationUrl);
-      await rejectProviderAuthorization(authorizationUrl);
-    },
-  );
-
-  it("uses the direct Okou App callback for Notion and reuses its exact redirect URI", async () => {
-    const tokenBodies: unknown[] = [];
-    server.use(
-      http.post(NOTION_OAUTH_TOKEN_URL, async ({ request }) => {
-        tokenBodies.push(await request.json());
-        return HttpResponse.json({
-          access_token: "notion-test-token",
-          refresh_token: "notion-refresh-token",
-          expires_in: 3600,
-          owner: {
-            user: {
-              id: "notion-user-123",
-              name: "Notion Test User",
-              person: { email: "notion@example.test" },
-            },
-          },
-        });
-      }),
+    expect(`${started.url.origin}${started.url.pathname}`).toBe(
+      "https://vercel.com/integrations/okou-test-integration/new",
     );
-    mockEnv("APP_URL", "https://app.okou.ai");
-    mockAuthenticatedSession();
+    expect(started.url.searchParams.has("redirect_uri")).toBeFalsy();
+    expect(started.state).toMatch(STATE);
+    expect(redirectTarget(started.location), started.location.href).toBe(
+      "https://app.okou.ai/connector/success",
+    );
+    expectSingleTokenRedirect(requests, "vercel");
+  });
 
-    const response = await requestOauthStart("notion", {
-      callbackTarget: "app",
-      headers: authHeaders(),
-      origin: API_ORIGIN,
+  it("connectors-oauth-start-036 propagates the existing Web callback through the Vercel token exchange", async () => {
+    configureClient("VERCEL", "vercel-test-client-id");
+    const requests = mockVercel();
+    signIn();
+
+    const started = await start("vercel", {});
+    const location = await callback("vercel", {
+      code: "vercel-authorization-code",
+      state: started.state,
     });
 
-    expect(response.status).toBe(200);
-    const authorizationUrl = await authorizationUrlFromResponse(response);
-    expect(`${authorizationUrl.origin}${authorizationUrl.pathname}`).toBe(
-      "https://api.notion.com/v1/oauth/authorize",
+    expect(`${started.url.origin}${started.url.pathname}`).toBe(
+      "https://vercel.com/integrations/okou-test-integration/new",
     );
-    expect(authorizationUrl.searchParams.get("client_id")).toBe(
-      "notion-test-client-id",
+    expect(started.url.searchParams.has("redirect_uri")).toBeFalsy();
+    expect(started.state).toMatch(STATE);
+    expect(redirectTarget(location), location.href).toBe(
+      "https://app.okou.ai/connector/success",
     );
-    const redirectUri = authorizationUrl.searchParams.get("redirect_uri");
-    expect(redirectUri).toBe("https://app.okou.ai/connectors/notion/callback");
-    const state = expectOauthState(authorizationUrl);
+    expect(requests).toHaveLength(1);
+    expect(requests[0]?.body.get("redirect_uri")).toBe(
+      "https://www.okou.ai/api/connectors/vercel/callback",
+    );
+  });
 
-    const app = createApp({ signal: context.signal, routes: TEST_APP_ROUTES });
-    const callback = await app.request(
-      `${API_ORIGIN}/api/connectors/notion/callback?${new URLSearchParams({
-        code: "notion-authorization-code",
-        state,
-      })}`,
-      { headers: { "x-okou-web-origin": "https://okou.ai" } },
-    );
-
-    expect(callback.status).toBe(307);
-    const callbackLocation = new URL(callback.headers.get("location") ?? "");
-    expect(callbackLocation.origin).toBe("https://app.okou.ai");
-    expect(callbackLocation.pathname).toBe("/connector/success");
-    expect(tokenBodies).toStrictEqual([
+  it("connectors-oauth-start-050 uses the direct Okou App callback for Notion and reuses its exact redirect URI", async () => {
+    configureClient("NOTION", "notion-test-client-id");
+    const requests = mockTokenEndpoint(
+      "https://api.notion.com/v1/oauth/token",
       {
-        grant_type: "authorization_code",
-        code: "notion-authorization-code",
-        redirect_uri: redirectUri,
+        access_token: "notion-access-token",
+        refresh_token: "notion-refresh-token",
+        bot_id: "notion-bot-1",
+        owner: {
+          user: {
+            id: "notion-user-1",
+            name: "Notion User",
+            person: { email: "notion-user@example.test" },
+          },
+        },
       },
-    ]);
-  });
-
-  it("keeps an omitted Notion callback target on the existing Web callback", async () => {
-    mockAuthenticatedSession();
-
-    const response = await requestOauthStart("notion", {
-      headers: authHeaders(),
-      origin: API_ORIGIN,
-    });
-
-    expect(response.status).toBe(200);
-    const authorizationUrl = await authorizationUrlFromResponse(response);
-    expect(authorizationUrl.searchParams.get("redirect_uri")).toBe(
-      `${WEB_ORIGIN}/api/connectors/notion/callback`,
     );
-    expectOauthState(authorizationUrl);
-    await rejectProviderAuthorization(authorizationUrl);
+    signIn();
+
+    const started = await connectThroughApp("notion");
+
+    expectAppAuthorization(started, {
+      authorizeUrl: "https://api.notion.com/v1/oauth/authorize",
+      clientId: "notion-test-client-id",
+      connectorSlug: "notion",
+    });
+    expect(redirectTarget(started.location), started.location.href).toBe(
+      "https://app.okou.ai/connector/success",
+    );
+    expect(requests).toHaveLength(1);
+    expect(requests[0]?.json).toBeTruthy();
+    expect(Object.fromEntries(requests[0]?.body ?? [])).toStrictEqual({
+      grant_type: "authorization_code",
+      code: "notion-authorization-code",
+      redirect_uri: appCallback("notion"),
+    });
   });
+});
 
-  it.each(LAUNCH_GATED_DIRECT_OKOU_CASES)(
-    "uses the direct Okou App callback for $label and reuses its exact redirect URI",
-    async (providerCase) => {
-      const tokenBodies: URLSearchParams[] = [];
-      server.use(
-        http.post(providerCase.tokenUrl, async ({ request }) => {
-          if ("publicClientId" in providerCase) {
-            expect(request.headers.get("authorization")).toBeNull();
-          }
-          tokenBodies.push(
-            launchGatedTokenRequestParams(providerCase, await request.text()),
-          );
-          return HttpResponse.json(providerCase.tokenResponse);
-        }),
-      );
-      providerCase.mockUserInfo?.();
-      mockEnv("APP_URL", "https://app.okou.ai");
-      mockAuthenticatedSession();
-
-      const response = await requestOauthStart(providerCase.connectorSlug, {
-        callbackTarget: "app",
-        headers: authHeaders(),
-        origin: API_ORIGIN,
-      });
-
-      expect(response.status).toBe(200);
-      const authorizationUrl = await authorizationUrlFromResponse(response);
-      expect(`${authorizationUrl.origin}${authorizationUrl.pathname}`).toBe(
-        providerCase.authorizationEndpoint,
-      );
-      expect(authorizationUrl.searchParams.get("client_id")).toBe(
-        launchGatedClientId(providerCase),
-      );
-      const redirectUri = authorizationUrl.searchParams.get("redirect_uri");
-      expect(redirectUri).toBe(
-        `https://app.okou.ai/connectors/${providerCase.connectorSlug}/callback`,
-      );
-      // A `null` expectation proves the non-PKCE providers still send no
-      // challenge and no verifier.
-      const pkceValue = expect.stringMatching(/^[A-Za-z0-9_-]+$/u);
-      const expectedCodeChallenge =
-        providerCase.pkce === true ? pkceValue : null;
-      const expectedCodeChallengeMethod =
-        providerCase.pkce === true ? "S256" : null;
-      expect(authorizationUrl.searchParams.get("code_challenge")).toStrictEqual(
-        expectedCodeChallenge,
-      );
-      expect(authorizationUrl.searchParams.get("code_challenge_method")).toBe(
-        expectedCodeChallengeMethod,
-      );
-      const state = expectOauthState(authorizationUrl);
-
-      const location = await completeLaunchGatedOauthCallback(
-        providerCase,
-        state,
-      );
-
-      expect(location.origin).toBe("https://app.okou.ai");
-      expect(location.pathname).toBe("/connector/success");
-      const expectedCodeVerifier =
-        providerCase.pkce === true ? pkceValue : null;
-      expect(tokenBodies).toHaveLength(1);
-      expect(tokenBodies[0]?.get("redirect_uri")).toBe(redirectUri);
-      expect(tokenBodies[0]?.get("code_verifier")).toStrictEqual(
-        expectedCodeVerifier,
-      );
-      if (providerCase.pkce === true) {
-        const codeVerifier = string().parse(
-          tokenBodies[0]?.get("code_verifier"),
-        );
-        expect(authorizationUrl.searchParams.get("code_challenge")).toBe(
-          createHash("sha256").update(codeVerifier).digest("base64url"),
-        );
-      }
-      if ("publicClientId" in providerCase) {
-        expect(tokenBodies[0]?.get("client_id")).toBe(
-          providerCase.publicClientId,
-        );
-        expect(tokenBodies[0]?.get("client_secret")).toBeNull();
-      }
+function mockVercel(): ProviderRequest[] {
+  const requests = mockTokenEndpoint(
+    "https://api.vercel.com/v2/oauth/access_token",
+    {
+      access_token: "vercel-access-token",
+      token_type: "Bearer",
+      team_id: null,
+      installation_id: "icfg_vercel",
     },
   );
-
-  it.each(LAUNCH_GATED_DIRECT_OKOU_CASES)(
-    "keeps an omitted $label callback target on the existing Web callback",
-    async ({ connectorSlug }) => {
-      mockAuthenticatedSession();
-
-      const response = await requestOauthStart(connectorSlug, {
-        headers: authHeaders(),
-        origin: API_ORIGIN,
-      });
-
-      expect(response.status).toBe(200);
-      const authorizationUrl = await authorizationUrlFromResponse(response);
-      expect(authorizationUrl.searchParams.get("redirect_uri")).toBe(
-        `${WEB_ORIGIN}/api/connectors/${connectorSlug}/callback`,
-      );
-      expectOauthState(authorizationUrl);
-      await rejectProviderAuthorization(authorizationUrl);
+  mockJson("get", "https://api.vercel.com/v2/user", {
+    user: {
+      id: "vercel-user-1",
+      username: "vercel-user",
+      email: "vercel-user@example.test",
     },
-  );
-
-  it("uses the configured App callback for a catalog OAuth connector", async () => {
-    mockEnv("APP_URL", "https://app.okou.ai");
-    mockAuthenticatedSession();
-
-    const response = await requestOauthStart("test-oauth", {
-      headers: authHeaders(),
-      origin: API_ORIGIN,
-      callbackTarget: "app",
-    });
-
-    expect(response.status).toBe(200);
-    const authorizationUrl = await authorizationUrlFromResponse(response);
-    expect(authorizationUrl.searchParams.get("redirect_uri")).toBe(
-      "https://app.okou.ai/connectors/test-oauth/callback",
-    );
-    expectOauthState(authorizationUrl);
-    await rejectProviderAuthorization(authorizationUrl);
   });
+  return requests;
+}
 
-  it("uses the direct Okou App callback for Cloudflare and reuses its exact redirect URI", async () => {
-    const tokenBodies: URLSearchParams[] = [];
-    server.use(
-      http.post(CLOUDFLARE_OAUTH_TOKEN_URL, async ({ request }) => {
-        tokenBodies.push(new URLSearchParams(await request.text()));
-        return HttpResponse.json({
-          access_token: "cloudflare-test-token",
-          refresh_token: "cloudflare-refresh-token",
-          expires_in: 3600,
-          scope: "offline_access",
-        });
-      }),
-      http.get(CLOUDFLARE_USERINFO_URL, () => {
-        return HttpResponse.json({
-          sub: "cloudflare-user-123",
-          email: "cloudflare@example.test",
-          name: "Cloudflare Test User",
-        });
-      }),
+describe("POST /api/connectors/:connectorSlug/oauth/start for launch-gated connectors", () => {
+  it("connectors-oauth-start-052 uses the direct Okou App callback for Cal.com and reuses its exact redirect URI", async () => {
+    configureClient("CAL_COM", "cal-com-test-client-id");
+    const requests = mockTokenEndpoint(
+      "https://api.cal.com/v2/auth/oauth2/token",
+      tokens,
     );
-    mockEnv("APP_URL", "https://app.okou.ai");
-    mockAuthenticatedSession();
-
-    const response = await requestOauthStart("cloudflare", {
-      headers: authHeaders(),
-      origin: API_ORIGIN,
-      callbackTarget: "app",
-    });
-
-    expect(response.status).toBe(200);
-    const authorizationUrl = await authorizationUrlFromResponse(response);
-    expect(`${authorizationUrl.origin}${authorizationUrl.pathname}`).toBe(
-      "https://dash.cloudflare.com/oauth2/auth",
-    );
-    expect(authorizationUrl.searchParams.get("client_id")).toBe(
-      "cloudflare-test-client-id",
-    );
-    const redirectUri = authorizationUrl.searchParams.get("redirect_uri");
-    expect(redirectUri).toBe(
-      "https://app.okou.ai/connectors/cloudflare/callback",
-    );
-    expectCloudflareAuthorizationScopes(authorizationUrl);
-    const state = expectOauthState(authorizationUrl);
-
-    const app = createApp({ signal: context.signal, routes: TEST_APP_ROUTES });
-    const callback = await app.request(
-      `${API_ORIGIN}/api/connectors/cloudflare/callback?${new URLSearchParams({
-        code: "cloudflare-authorization-code",
-        state,
-      })}`,
-      { headers: { "x-okou-web-origin": "https://okou.ai" } },
-    );
-
-    expect(callback.status).toBe(307);
-    const callbackLocation = new URL(callback.headers.get("location") ?? "");
-    expect(callbackLocation.origin).toBe("https://app.okou.ai");
-    expect(callbackLocation.pathname).toBe("/connector/success");
-    expect(tokenBodies).toHaveLength(1);
-    expect(tokenBodies[0]?.get("redirect_uri")).toBe(redirectUri);
-  });
-
-  it("keeps an omitted Cloudflare callback target on the existing API callback", async () => {
-    mockAuthenticatedSession();
-
-    const response = await requestOauthStart("cloudflare", {
-      headers: authHeaders(),
-      origin: API_ORIGIN,
-    });
-
-    expect(response.status).toBe(200);
-    const authorizationUrl = await authorizationUrlFromResponse(response);
-    expect(authorizationUrl.searchParams.get("redirect_uri")).toBe(
-      `${API_ORIGIN}/api/connectors/cloudflare/callback`,
-    );
-    expectCloudflareAuthorizationScopes(authorizationUrl);
-    expectOauthState(authorizationUrl);
-    await rejectProviderAuthorization(authorizationUrl);
-  });
-
-  it("uses the direct Okou App callback for Slack", async () => {
-    mockEnv("APP_URL", "https://app.okou.ai");
-    mockAuthenticatedSession();
-
-    const response = await requestOauthStart("slack", {
-      headers: authHeaders(),
-      origin: API_ORIGIN,
-      callbackTarget: "app",
-    });
-
-    expect(response.status).toBe(200);
-    const authorizationUrl = await authorizationUrlFromResponse(response);
-    expect(authorizationUrl.searchParams.get("redirect_uri")).toBe(
-      "https://app.okou.ai/connectors/slack/callback",
-    );
-    expectOauthState(authorizationUrl);
-    await rejectProviderAuthorization(authorizationUrl);
-  });
-
-  it("keeps API-origin OAuth callbacks on the PR API when WWW uses Omby staging", async () => {
-    mockAuthenticatedSession();
-    mockEnv("OKOU_API_BACKEND_URL", "https://pr-19337-api.vm6.ai");
-    mockEnv("OKOU_WEB_URL", "https://staging-www.omby.ai");
-
-    const response = await requestOauthStart("cloudflare", {
-      headers: authHeaders(),
-      origin: "https://pr-19337-api.vm6.ai",
-    });
-
-    expect(response.status).toBe(200);
-    const authorizationUrl = await authorizationUrlFromResponse(response);
-    expect(authorizationUrl.searchParams.get("redirect_uri")).toBe(
-      "https://pr-19337-api.vm6.ai/api/connectors/cloudflare/callback",
-    );
-    expectCloudflareAuthorizationScopes(authorizationUrl);
-    expectOauthState(authorizationUrl);
-    await rejectProviderAuthorization(authorizationUrl);
-  });
-
-  it("uses the canonical API origin when OKOU_API_BACKEND_URL is localhost", async () => {
-    mockAuthenticatedSession();
-    mockEnv("OKOU_API_BACKEND_URL", LOCAL_ORIGIN);
-    mockEnv("OKOU_WEB_URL", WEB_ORIGIN);
-
-    const response = await requestOauthStart("cloudflare", {
-      headers: authHeaders(),
-      origin: LOCAL_ORIGIN,
-    });
-
-    expect(response.status).toBe(200);
-    const authorizationUrl = await authorizationUrlFromResponse(response);
-    expect(authorizationUrl.searchParams.get("redirect_uri")).toBe(
-      `${API_ORIGIN}/api/connectors/cloudflare/callback`,
-    );
-    expectCloudflareAuthorizationScopes(authorizationUrl);
-    expectOauthState(authorizationUrl);
-    await rejectProviderAuthorization(authorizationUrl);
-  });
-
-  it("keeps Cloudflare OAuth callbacks on the canonical API origin when OKOU_API_BACKEND_URL is a tunnel", async () => {
-    mockAuthenticatedSession();
-    mockEnv("OKOU_API_BACKEND_URL", "https://tunnel-liangyou-vm2-www.vm7.ai");
-    mockEnv("OKOU_WEB_URL", "https://www.vm7.ai:8443");
-
-    const response = await requestOauthStart("cloudflare", {
-      headers: authHeaders(),
-      origin: "https://www.vm7.ai:8443",
-    });
-
-    expect(response.status).toBe(200);
-    const authorizationUrl = await authorizationUrlFromResponse(response);
-    expect(authorizationUrl.searchParams.get("redirect_uri")).toBe(
-      "https://api.vm7.ai:8443/api/connectors/cloudflare/callback",
-    );
-    expectCloudflareAuthorizationScopes(authorizationUrl);
-    expectOauthState(authorizationUrl);
-    await rejectProviderAuthorization(authorizationUrl);
-  });
-
-  it("returns 401 instead of relying on browser cookies when unauthenticated", async () => {
-    const response = await requestOauthStart("github");
-
-    expect(response.status).toBe(401);
-    await expect(response.json()).resolves.toStrictEqual({
-      error: {
-        message: "Not authenticated",
-        code: "UNAUTHORIZED",
+    mockJson("get", "https://api.cal.com/v2/me", {
+      status: "success",
+      data: {
+        id: 77,
+        username: "cal-user",
+        email: "cal-user@example.test",
+        name: "Cal User",
       },
     });
+    signIn();
+
+    const started = await connectThroughApp("cal-com");
+
+    expectAppAuthorization(started, {
+      authorizeUrl: "https://app.cal.com/auth/oauth2/authorize",
+      clientId: "cal-com-test-client-id",
+      connectorSlug: "cal-com",
+    });
+    expectNoPkce(started.url);
+    expect(redirectTarget(started.location), started.location.href).toBe(
+      "https://app.okou.ai/connector/success",
+    );
+    expectSingleTokenRedirect(requests, "cal-com");
+    expect(requests[0]?.body.has("code_verifier")).toBeFalsy();
   });
 
-  it("returns 400 when starting OAuth for a connector without an auth-code grant", async () => {
-    const response = await requestOauthStart("serpapi", {
-      authenticated: true,
+  it("connectors-oauth-start-053 uses the direct Okou App callback for Calendly and reuses its exact redirect URI", async () => {
+    configureClient("CALENDLY", "calendly-test-client-id");
+    const requests = mockTokenEndpoint(
+      "https://auth.calendly.com/oauth/token",
+      tokens,
+    );
+    mockJson("get", "https://api.calendly.com/users/me", {
+      resource: {
+        uri: "https://api.calendly.com/users/calendly-user-1",
+        name: "Calendly User",
+        email: "calendly-user@example.test",
+      },
+    });
+    signIn();
+
+    const started = await connectThroughApp("calendly");
+
+    expectAppAuthorization(started, {
+      authorizeUrl: "https://auth.calendly.com/oauth/authorize",
+      clientId: "calendly-test-client-id",
+      connectorSlug: "calendly",
+    });
+    expect(redirectTarget(started.location), started.location.href).toBe(
+      "https://app.okou.ai/connector/success",
+    );
+    expectSingleTokenRedirect(requests, "calendly");
+    expectPkceVerifier(started.url, requests);
+  });
+
+  it("connectors-oauth-start-054 uses the direct Okou App callback for Close and reuses its exact redirect URI", async () => {
+    configureClient("CLOSE", "close-test-client-id");
+    const requests = mockTokenEndpoint("https://api.close.com/oauth2/token/", {
+      ...tokens,
+      user_id: "user_close_1",
+      organization_id: "orga_close_1",
+    });
+    mockJson("get", "https://api.close.com/api/v1/me/", {
+      id: "user_close_1",
+      email: "close-user@example.test",
+    });
+    signIn();
+
+    const started = await connectThroughApp("close");
+
+    expectAppAuthorization(started, {
+      authorizeUrl: "https://app.close.com/oauth2/authorize/",
+      clientId: "close-test-client-id",
+      connectorSlug: "close",
+    });
+    expectNoPkce(started.url);
+    expect(redirectTarget(started.location), started.location.href).toBe(
+      "https://app.okou.ai/connector/success",
+    );
+    expectSingleTokenRedirect(requests, "close");
+    expect(requests[0]?.body.has("code_verifier")).toBeFalsy();
+  });
+
+  it("connectors-oauth-start-055 uses the direct Okou App callback for Copper and reuses its exact redirect URI", async () => {
+    configureClient("COPPER", "copper-test-client-id");
+    const requests = mockTokenEndpoint(
+      "https://app.copper.com/oauth/token",
+      tokens,
+    );
+    mockJson("get", "https://api.copper.com/developer_api/v1/account", {
+      id: 8080,
+      name: "Copper Account",
+    });
+    signIn();
+
+    const started = await connectThroughApp("copper");
+
+    expectAppAuthorization(started, {
+      authorizeUrl: "https://app.copper.com/oauth/authorize",
+      clientId: "copper-test-client-id",
+      connectorSlug: "copper",
+    });
+    expectNoPkce(started.url);
+    expect(redirectTarget(started.location), started.location.href).toBe(
+      "https://app.okou.ai/connector/success",
+    );
+    expectSingleTokenRedirect(requests, "copper");
+    expect(requests[0]?.body.has("code_verifier")).toBeFalsy();
+  });
+
+  it("connectors-oauth-start-056 uses the direct Okou App callback for Datadog and reuses its exact redirect URI", async () => {
+    configureClient("DATADOG", "datadog-test-client-id");
+    const requests = mockTokenEndpoint(
+      "https://api.datadoghq.com/oauth2/v1/token",
+      { ...tokens, scope: "dashboards_read" },
+    );
+    signIn();
+
+    const started = await connectThroughApp("datadog", {
+      code: "datadog-authorization-code",
+      domain: "datadoghq.com",
     });
 
-    expect(response.status).toBe(400);
-    await expect(response.json()).resolves.toStrictEqual({
+    expectAppAuthorization(started, {
+      authorizeUrl: "https://app.datadoghq.com/oauth2/v1/authorize",
+      clientId: "datadog-test-client-id",
+      connectorSlug: "datadog",
+    });
+    expect(redirectTarget(started.location), started.location.href).toBe(
+      "https://app.okou.ai/connector/success",
+    );
+    expectSingleTokenRedirect(requests, "datadog");
+    expectPkceVerifier(started.url, requests);
+  });
+
+  it("connectors-oauth-start-057 uses the direct Okou App callback for DocuSign and reuses its exact redirect URI", async () => {
+    configureClient("DOCUSIGN", "docusign-test-client-id");
+    const requests = mockTokenEndpoint(
+      "https://account-d.docusign.com/oauth/token",
+      tokens,
+    );
+    mockJson("get", "https://account-d.docusign.com/oauth/userinfo", {
+      sub: "docusign-user-1",
+      name: "DocuSign User",
+      email: "docusign-user@example.test",
+    });
+    await signInWithSwitch(FeatureSwitchKey.DocuSignConnector);
+
+    const started = await connectThroughApp("docusign");
+
+    expectAppAuthorization(started, {
+      authorizeUrl: "https://account-d.docusign.com/oauth/auth",
+      clientId: "docusign-test-client-id",
+      connectorSlug: "docusign",
+    });
+    expect(redirectTarget(started.location), started.location.href).toBe(
+      "https://app.okou.ai/connector/success",
+    );
+    expectSingleTokenRedirect(requests, "docusign");
+    expectPkceVerifier(started.url, requests);
+  });
+
+  it("connectors-oauth-start-058 uses the direct Okou App callback for Dropbox and reuses its exact redirect URI", async () => {
+    configureClient("DROPBOX", "dropbox-test-client-id");
+    const requests = mockTokenEndpoint(
+      "https://api.dropboxapi.com/oauth2/token",
+      { ...tokens, account_id: "dbid:dropbox-user-1" },
+    );
+    mockJson("post", "https://api.dropboxapi.com/2/users/get_current_account", {
+      account_id: "dbid:dropbox-user-1",
+      email: "dropbox-user@example.test",
+      name: { display_name: "Dropbox User" },
+    });
+    signIn();
+
+    const started = await connectThroughApp("dropbox");
+
+    expectAppAuthorization(started, {
+      authorizeUrl: "https://www.dropbox.com/oauth2/authorize",
+      clientId: "dropbox-test-client-id",
+      connectorSlug: "dropbox",
+    });
+    expectNoPkce(started.url);
+    expect(redirectTarget(started.location), started.location.href).toBe(
+      "https://app.okou.ai/connector/success",
+    );
+    expectSingleTokenRedirect(requests, "dropbox");
+    expect(requests[0]?.body.has("code_verifier")).toBeFalsy();
+  });
+
+  it("connectors-oauth-start-059 uses the direct Okou App callback for Figma and reuses its exact redirect URI", async () => {
+    configureClient("FIGMA", "figma-test-client-id");
+    const requests = mockTokenEndpoint(
+      "https://api.figma.com/v1/oauth/token",
+      tokens,
+    );
+    mockJson("get", "https://api.figma.com/v1/me", {
+      id: "figma-user-1",
+      handle: "Figma User",
+      email: "figma-user@example.test",
+    });
+    signIn();
+
+    const started = await connectThroughApp("figma");
+
+    expectAppAuthorization(started, {
+      authorizeUrl: "https://www.figma.com/oauth",
+      clientId: "figma-test-client-id",
+      connectorSlug: "figma",
+    });
+    expectNoPkce(started.url);
+    expect(redirectTarget(started.location), started.location.href).toBe(
+      "https://app.okou.ai/connector/success",
+    );
+    expectSingleTokenRedirect(requests, "figma");
+    expect(requests[0]?.body.has("code_verifier")).toBeFalsy();
+  });
+
+  it("connectors-oauth-start-060 uses the direct Okou App callback for Mailchimp and reuses its exact redirect URI", async () => {
+    configureClient("MAILCHIMP", "mailchimp-test-client-id");
+    const requests = mockTokenEndpoint(
+      "https://login.mailchimp.com/oauth2/token",
+      { access_token: "mailchimp-access-token", scope: null },
+    );
+    mockJson("get", "https://login.mailchimp.com/oauth2/metadata", {
+      dc: "us1",
+      api_endpoint: "https://us1.api.mailchimp.com",
+      accountname: "Mailchimp Account",
+      user_id: 4040,
+      login: {
+        login_id: 4040,
+        login_name: "mailchimp-user",
+        login_email: "mailchimp-user@example.test",
+      },
+    });
+    signIn();
+
+    const started = await connectThroughApp("mailchimp");
+
+    expectAppAuthorization(started, {
+      authorizeUrl: "https://login.mailchimp.com/oauth2/authorize",
+      clientId: "mailchimp-test-client-id",
+      connectorSlug: "mailchimp",
+    });
+    expectNoPkce(started.url);
+    expect(redirectTarget(started.location), started.location.href).toBe(
+      "https://app.okou.ai/connector/success",
+    );
+    expectSingleTokenRedirect(requests, "mailchimp");
+    expect(requests[0]?.body.has("code_verifier")).toBeFalsy();
+  });
+
+  it("connectors-oauth-start-061 uses the direct Okou App callback for Mercury and reuses its exact redirect URI", async () => {
+    configureClient("MERCURY", "mercury-test-client-id");
+    const requests = mockTokenEndpoint(
+      "https://oauth2.mercury.com/oauth2/token",
+      tokens,
+    );
+    mockJson("get", "https://api.mercury.com/api/v1/organization", {
+      organization: { id: "mercury-org-1", legalBusinessName: "Mercury Org" },
+    });
+    signIn();
+
+    const started = await connectThroughApp("mercury");
+
+    expectAppAuthorization(started, {
+      authorizeUrl: "https://oauth2.mercury.com/oauth2/auth",
+      clientId: "mercury-test-client-id",
+      connectorSlug: "mercury",
+    });
+    expect(redirectTarget(started.location), started.location.href).toBe(
+      "https://app.okou.ai/connector/success",
+    );
+    expectSingleTokenRedirect(requests, "mercury");
+    expectPkceVerifier(started.url, requests);
+  });
+
+  it("connectors-oauth-start-062 uses the direct Okou App callback for PostHog and reuses its exact redirect URI", async () => {
+    okouHosts();
+    const requests = mockTokenEndpoint(
+      "https://oauth.posthog.com/oauth/token/",
+      {
+        ...tokens,
+        posthog_region: "us",
+        posthog_base_url: "https://us.posthog.com",
+      },
+    );
+    mockJson("get", "https://us.posthog.com/api/users/@me/", {
+      id: 9090,
+      email: "posthog-user@example.test",
+      first_name: "PostHog",
+      last_name: "User",
+    });
+    signIn();
+
+    const started = await connectThroughApp("posthog");
+
+    expectAppAuthorization(started, {
+      authorizeUrl: "https://oauth.posthog.com/oauth/authorize/",
+      clientId: "https://app.okou.ai/connectors/posthog/metadata.json",
+      connectorSlug: "posthog",
+    });
+    expect(redirectTarget(started.location), started.location.href).toBe(
+      "https://app.okou.ai/connector/success",
+    );
+    expectSingleTokenRedirect(requests, "posthog");
+    expectPkceVerifier(started.url, requests);
+    expect(requests[0]?.authorization).toBeNull();
+    expect(requests[0]?.body.get("client_id")).toBe(
+      "https://app.okou.ai/connectors/posthog/metadata.json",
+    );
+    expect(requests[0]?.body.has("client_secret")).toBeFalsy();
+  });
+
+  it("connectors-oauth-start-063 uses the direct Okou App callback for Spotify and reuses its exact redirect URI", async () => {
+    configureClient("SPOTIFY", "spotify-test-client-id");
+    const requests = mockTokenEndpoint(
+      "https://accounts.spotify.com/api/token",
+      tokens,
+    );
+    mockJson("get", "https://api.spotify.com/v1/me", {
+      id: "spotify-user-1",
+      display_name: "Spotify User",
+      email: "spotify-user@example.test",
+    });
+    await signInWithSwitch(FeatureSwitchKey.SpotifyConnector);
+
+    const started = await connectThroughApp("spotify");
+
+    expectAppAuthorization(started, {
+      authorizeUrl: "https://accounts.spotify.com/authorize",
+      clientId: "spotify-test-client-id",
+      connectorSlug: "spotify",
+    });
+    expectNoPkce(started.url);
+    expect(redirectTarget(started.location), started.location.href).toBe(
+      "https://app.okou.ai/connector/success",
+    );
+    expectSingleTokenRedirect(requests, "spotify");
+    expect(requests[0]?.body.has("code_verifier")).toBeFalsy();
+  });
+
+  it("connectors-oauth-start-064 uses the direct Okou App callback for Webflow and reuses its exact redirect URI", async () => {
+    configureClient("WEBFLOW", "webflow-test-client-id");
+    const requests = mockTokenEndpoint(
+      "https://api.webflow.com/oauth/access_token",
+      { access_token: "webflow-access-token", token_type: "bearer" },
+    );
+    mockJson("get", "https://api.webflow.com/v2/token/authorized_by", {
+      id: "webflow-user-1",
+      email: "webflow-user@example.test",
+      firstName: "Webflow",
+      lastName: "User",
+    });
+    signIn();
+
+    const started = await connectThroughApp("webflow");
+
+    expectAppAuthorization(started, {
+      authorizeUrl: "https://webflow.com/oauth/authorize",
+      clientId: "webflow-test-client-id",
+      connectorSlug: "webflow",
+    });
+    expectNoPkce(started.url);
+    expect(redirectTarget(started.location), started.location.href).toBe(
+      "https://app.okou.ai/connector/success",
+    );
+    expectSingleTokenRedirect(requests, "webflow");
+    expect(requests[0]?.body.has("code_verifier")).toBeFalsy();
+  });
+
+  it("connectors-oauth-start-065 uses the direct Okou App callback for Zoom and reuses its exact redirect URI", async () => {
+    configureClient("ZOOM", "zoom-test-client-id");
+    const requests = mockTokenEndpoint("https://zoom.us/oauth/token", tokens);
+    mockJson("get", "https://api.zoom.us/v2/users/me", {
+      id: "zoom-user-1",
+      display_name: "Zoom User",
+      email: "zoom-user@example.test",
+    });
+    await signInWithSwitch(FeatureSwitchKey.ZoomConnector);
+
+    const started = await connectThroughApp("zoom");
+
+    expectAppAuthorization(started, {
+      authorizeUrl: "https://zoom.us/oauth/authorize",
+      clientId: "zoom-test-client-id",
+      connectorSlug: "zoom",
+    });
+    expectNoPkce(started.url);
+    expect(redirectTarget(started.location), started.location.href).toBe(
+      "https://app.okou.ai/connector/success",
+    );
+    expectSingleTokenRedirect(requests, "zoom");
+    expect(requests[0]?.body.has("code_verifier")).toBeFalsy();
+  });
+
+  it("connectors-oauth-start-081 uses the direct Okou App callback for Cloudflare and reuses its exact redirect URI", async () => {
+    configureClient("CLOUDFLARE", "cloudflare-test-client-id");
+    const requests = mockTokenEndpoint(
+      "https://dash.cloudflare.com/oauth2/token",
+      { ...tokens, scope: "dns-firewall.read offline_access" },
+    );
+    mockJson("get", "https://dash.cloudflare.com/oauth2/userinfo", {
+      sub: "cloudflare-user-1",
+      email: "cloudflare-user@example.test",
+      name: "Cloudflare User",
+    });
+    signIn();
+
+    const started = await connectThroughApp("cloudflare");
+
+    expectAppAuthorization(started, {
+      authorizeUrl: "https://dash.cloudflare.com/oauth2/auth",
+      clientId: "cloudflare-test-client-id",
+      connectorSlug: "cloudflare",
+    });
+    expect(started.url.searchParams.get("scope")).toBe(
+      "dns-firewall.read offline_access",
+    );
+    expect(redirectTarget(started.location), started.location.href).toBe(
+      "https://app.okou.ai/connector/success",
+    );
+    expectSingleTokenRedirect(requests, "cloudflare");
+  });
+});
+
+describe("POST /api/connectors/:connectorSlug/oauth/start callback targets and errors", () => {
+  it("connectors-oauth-start-082 keeps an omitted Cloudflare callback target on the existing API callback", async () => {
+    configureClient("CLOUDFLARE", "cloudflare-test-client-id");
+    signIn();
+
+    const started = await start("cloudflare", {});
+
+    expect(started.url.searchParams.get("redirect_uri")).toBe(
+      "https://api.okou.ai/api/connectors/cloudflare/callback",
+    );
+    expect(started.url.searchParams.get("scope")).toBe(
+      "dns-firewall.read offline_access",
+    );
+    expect(started.state).toMatch(STATE);
+  });
+
+  it("connectors-oauth-start-083 uses the direct Okou App callback for Slack", async () => {
+    configureClient("SLACK", "slack-test-client-id");
+    signIn();
+
+    const started = await start("slack");
+
+    expect(started.url.searchParams.get("redirect_uri")).toBe(
+      appCallback("slack"),
+    );
+    expect(started.state).toMatch(STATE);
+  });
+
+  it("connectors-oauth-start-088 returns 400 when starting OAuth for a connector without an auth-code grant", async () => {
+    signIn();
+
+    const response = await requestStart("serpapi", {}, [400]);
+
+    expect(response.body).toStrictEqual({
       error: {
         message: "serpapi connector does not use an auth-code grant",
         code: "BAD_REQUEST",
@@ -2285,49 +1498,13 @@ describe("POST /api/connectors/:connectorSlug/oauth/start", () => {
     });
   });
 
-  it("returns 400 when starting browser OAuth for a device authorization connector", async () => {
-    mockAuthenticatedSession();
-
-    const response = await requestOauthStart("test-oauth-device", {
-      headers: authHeaders(),
-    });
-
-    expect(response.status).toBe(400);
-    await expect(response.json()).resolves.toStrictEqual({
-      error: {
-        message: "test-oauth-device connector does not use an auth-code grant",
-        code: "BAD_REQUEST",
-      },
-    });
-  });
-
-  it("returns 400 when starting OAuth with a missing selected auth method", async () => {
-    mockAuthenticatedSession();
-
-    const response = await requestOauthStart("github", {
-      authMethod: "api-token",
-      headers: authHeaders(),
-    });
-
-    expect(response.status).toBe(400);
-    await expect(response.json()).resolves.toStrictEqual({
-      error: {
-        message: "github connector does not have api-token auth method",
-        code: "BAD_REQUEST",
-      },
-    });
-  });
-
-  it("returns 403 when the auth method lacks executable platform configuration", async () => {
+  it("connectors-oauth-start-091 returns 403 when the auth method lacks executable platform configuration", async () => {
     mockOptionalEnv("GH_OAUTH_CLIENT_ID", undefined);
-    mockAuthenticatedSession();
+    signIn();
 
-    const response = await requestOauthStart("github", {
-      headers: authHeaders(),
-    });
+    const response = await requestStart("github", {}, [403]);
 
-    expect(response.status).toBe(403);
-    await expect(response.json()).resolves.toStrictEqual({
+    expect(response.body).toStrictEqual({
       error: {
         message: "github connector is not available",
         code: "FORBIDDEN",

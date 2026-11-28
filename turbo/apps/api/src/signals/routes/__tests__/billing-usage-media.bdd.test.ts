@@ -1,783 +1,608 @@
-import { publicPlanLifecycle } from "./helpers/public-plan-lifecycle";
-// helper gap:
-// - Paid media completion uses Stripe webhook-granted credits and real usage
-//   pricing. Full provider matrices still stay out of this BDD slice.
-// - Billing settlement needs Stripe webhooks or checkout completion that grants
-//   entitlements. This file asserts the route-visible checkout, portal, invoice,
-//   campaign redemption, status, and usage surfaces without direct database fixtures.
-// - Banking success needs a current Okou run, banking connection, account grant,
-//   and provider account state. This file covers the public credential gate and
-//   records the success-chain gap instead of seeding banking tables.
-
+import { Buffer } from "node:buffer";
 import { randomUUID } from "node:crypto";
 
-import { HttpResponse, http } from "msw";
-import { describe, expect, it } from "vitest";
+import { billingStatusContract } from "@okouai/api-contracts/contracts/billing";
+import { builtInGenerationContract } from "@okouai/api-contracts/contracts/built-in-generation";
+import { imageIoGenerateContract } from "@okouai/api-contracts/contracts/image-io-generate";
+import type { ImageModelId } from "@okouai/api-contracts/contracts/image-models";
+import { usageRecordContract } from "@okouai/api-contracts/contracts/usage-record";
+import { userModelPreferenceContract } from "@okouai/api-contracts/contracts/user-model-preference";
+import { http, HttpResponse } from "msw";
+import { expect, test } from "vitest";
 
-import { testContext } from "../../../__tests__/test-context";
+import { accept, testContext } from "../../../__tests__/test-context";
+import { setupApp } from "../../../__tests__/test-helpers";
+import { createAppWithRoutes } from "../../../app-factory-core";
+import { mockEnv } from "../../../lib/env";
+import { now, nowDate } from "../../../lib/time";
 import { server } from "../../../mocks/server";
-
-import {
-  createBddApi,
-  expectApiError,
-  type ApiTestUser,
-} from "./helpers/api-bdd";
-import { createBillingMediaApi } from "./helpers/api-bdd-billing-media";
+import { flushWaitUntilForTest } from "../../context/wait-until";
+import { billingStatusRoutes } from "../billing-status";
+import { builtInGenerationRoutes } from "../built-in-generation";
+import { imageIoGenerateRoutes } from "../image-io-generate";
+import { usageRecordRoutes } from "../usage-record";
+import { userModelPreferenceRoutes } from "../user-model-preference";
+import { webhooksBuiltInGenerationRoutes } from "../webhooks-built-in-generations";
+import { webhooksStripeRoutes } from "../webhooks-stripe";
+import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
+import { tokenRequest } from "./helpers/public-image-run";
+import { createRouteMocks } from "./helpers/route-test";
+
+const AUTH_HEADERS = Object.freeze({ authorization: "Bearer clerk-session" });
+const TINY_PNG_BYTES = Buffer.from(
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a8b8AAAAASUVORK5CYII=",
+  "base64",
+);
+const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
 
 const context = testContext();
-const appUrl = "http://localhost:3002";
-const RESTRICTED_PORTAL_CONFIGURATION = {
-  id: "bpc_payment_methods",
-  active: true,
-  features: {
-    customer_update: { enabled: false },
-    invoice_history: { enabled: false },
-    payment_method_update: { enabled: true },
-    subscription_cancel: { enabled: false },
-    subscription_update: { enabled: false },
-  },
-  login_page: { enabled: false },
-  metadata: { purpose: "payment_method_management" },
-} as const;
-type ApiUuid = `${string}-${string}-${string}-${string}-${string}`;
+const billingStatus = setupApp({ context, routes: billingStatusRoutes })(
+  billingStatusContract,
+);
+const userModelPreference = setupApp({
+  context,
+  routes: userModelPreferenceRoutes,
+})(userModelPreferenceContract);
+const imageIoGenerate = setupApp({ context, routes: imageIoGenerateRoutes })(
+  imageIoGenerateContract,
+);
+const builtInGeneration = setupApp({
+  context,
+  routes: builtInGenerationRoutes,
+})(builtInGenerationContract);
+const usageRecord = setupApp({ context, routes: usageRecordRoutes })(
+  usageRecordContract,
+);
 
-function apiUuid(value: string): ApiUuid {
-  if (
-    !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
-      value,
-    )
-  ) {
-    throw new Error(`Expected API UUID, received ${value}`);
+function signIn(actor: ApiTestUser): void {
+  if (!actor.orgId) {
+    throw new Error("Expected an org-scoped actor");
   }
-  return value as ApiUuid;
+  createRouteMocks(context).clerk.session(
+    actor.userId,
+    actor.orgId,
+    actor.orgRole ?? "org:admin",
+  );
 }
 
-function testActors() {
-  const base = createBddApi(context);
-  const api = createBillingMediaApi(context);
-  const admin = base.user();
-  const member = base.user({ orgId: admin.orgId, orgRole: "org:member" });
-  base.acceptStorageWrites();
-  return { api, admin, member };
+async function onboardFreeAdmin(): Promise<
+  ApiTestUser & { readonly orgId: string }
+> {
+  const bdd = createBddApi(context);
+  const admin = bdd.user({ orgRole: "org:admin" });
+  if (!admin.orgId) {
+    throw new Error("Expected an org-scoped admin");
+  }
+  const onboarded = await bdd.completeOnboarding(admin);
+  expect(onboarded.status).toBe(200);
+  return { ...admin, orgId: admin.orgId };
 }
 
-async function completeVisibleOnboarding(admin: ApiTestUser): Promise<void> {
-  const completed = await createBddApi(context).completeOnboarding(admin);
-  expect(completed.status).toBe(200);
+async function readCredits(actor: ApiTestUser): Promise<number> {
+  signIn(actor);
+  const response = await accept(
+    billingStatus.get({ headers: AUTH_HEADERS }),
+    [200],
+  );
+  return response.body.credits;
 }
 
-function checkoutUrls() {
-  return {
-    successUrl: `${appUrl}/settings/billing/success`,
-    cancelUrl: `${appUrl}/settings/billing/cancel`,
-  };
-}
-
-describe("BILL-01: billing status and Stripe-backed actions through public API", () => {
-  it("chains status, checkout, portal, invoices, campaigns, and admin errors without hidden DB state", async () => {
-    const { api, admin, member } = testActors();
-    await completeVisibleOnboarding(admin);
-
-    const initialStatus = await api.readBillingStatus(admin);
-    expect(initialStatus).toMatchObject({
-      tier: "limited-free-1",
-      credits: 0,
-      hasSubscription: false,
-      autoRecharge: { enabled: false, threshold: null, amount: null },
-    });
-
-    const initialRecharge = await api.readAutoRecharge(admin);
-    expect(initialRecharge).toStrictEqual({
-      enabled: false,
-      threshold: null,
-      amount: null,
-    });
-
-    const invalidRecharge = await api.updateAutoRecharge(
-      admin,
-      { enabled: true, threshold: 1000, amount: 1000 },
-      [400],
-    );
-    expectApiError(invalidRecharge.body);
-    expect(invalidRecharge.body.error.code).toBe("BAD_REQUEST");
-
-    const disabledRecharge = await api.updateAutoRecharge(
-      admin,
-      { enabled: false },
-      [200],
-    );
-    expect(disabledRecharge.body).toStrictEqual({
-      enabled: false,
-      threshold: null,
-      amount: null,
-    });
-
-    api.configureBillingPrices();
-    const stripeIdSuffix = admin.userId.replaceAll("-", "");
-    const stripeCustomerId = `cus_${stripeIdSuffix}`;
-    const subscriptionSessionId = `cs_sub_${stripeIdSuffix}`;
-    const campaignSessionId = `cs_campaign_${stripeIdSuffix}`;
-    context.mocks.stripe.customers.create.mockResolvedValue({
-      id: stripeCustomerId,
-    });
-    context.mocks.stripe.checkout.sessions.create
-      .mockResolvedValueOnce({
-        id: subscriptionSessionId,
-        url: "https://checkout.stripe.test/subscription",
-      })
-      .mockResolvedValueOnce({
-        id: `cs_credit_${stripeIdSuffix}`,
-        url: "https://checkout.stripe.test/credits",
-      })
-      .mockResolvedValueOnce({
-        id: campaignSessionId,
-        url: "https://checkout.stripe.test/campaign",
-      });
-
-    const memberCheckout = await api.requestCheckout(
-      member,
-      { tier: "pro", ...checkoutUrls() },
-      [403],
-    );
-    expectApiError(memberCheckout.body);
-    expect(memberCheckout.body.error.message).toBe(
-      "Only org admins can manage billing",
-    );
-
-    const checkout = await api.startCheckout(admin, {
-      tier: "pro",
-      ...checkoutUrls(),
-    });
-    expect(checkout.body).toStrictEqual({
-      url: "https://checkout.stripe.test/subscription",
-    });
-
-    context.mocks.stripe.checkout.sessions.retrieve.mockResolvedValue({
-      id: subscriptionSessionId,
-      customer: "cus_other",
-      status: "complete",
-      mode: "subscription",
-      subscription: "sub_other",
-    });
-    const mismatch = await api.completeCheckout(
-      admin,
-      { sessionId: subscriptionSessionId },
-      [400],
-    );
-    expectApiError(mismatch.body);
-
-    context.mocks.stripe.customers.retrieve.mockResolvedValue({
-      id: stripeCustomerId,
-      discount: null,
-    });
-    const creditCheckout = await api.requestCreditCheckout(
-      admin,
-      {
-        credits: 2000,
-        ...checkoutUrls(),
-      },
-      [200],
-    );
-    expect(creditCheckout.body).toStrictEqual({
-      url: "https://checkout.stripe.test/credits",
-    });
-
-    context.mocks.stripe.billingPortal.configurations.list.mockResolvedValue({
-      data: [RESTRICTED_PORTAL_CONFIGURATION],
-    });
-    context.mocks.stripe.billingPortal.sessions.create.mockResolvedValue({
-      url: "https://billing.stripe.test/session",
-    });
-    const portal = await api.openPortal(admin, {
-      returnUrl: `${appUrl}/settings/billing`,
-    });
-    expect(portal.body).toStrictEqual({
-      url: "https://billing.stripe.test/session",
-    });
-    expect(
-      context.mocks.stripe.billingPortal.sessions.create,
-    ).toHaveBeenCalledWith(
-      expect.objectContaining({
-        configuration: RESTRICTED_PORTAL_CONFIGURATION.id,
-        return_url: `${appUrl}/settings/billing`,
-      }),
-    );
-
-    context.mocks.stripe.invoices.list.mockResolvedValue({
-      data: [
-        {
-          id: "in_bdd",
-          number: "INV-BDD",
-          created: 1_700_000_000,
-          amount_paid: 2500,
-          status: "paid",
-          hosted_invoice_url: "https://billing.stripe.test/invoices/in_bdd",
-        },
-      ],
-    });
-    const invoices = await api.readInvoices(admin);
-    expect(invoices.invoices).toStrictEqual([
-      {
-        id: "in_bdd",
-        number: "INV-BDD",
-        date: 1_700_000_000,
-        amount: 2500,
-        status: "paid",
-        hostedInvoiceUrl: "https://billing.stripe.test/invoices/in_bdd",
-      },
-    ]);
-
-    const memberInvoices = await api.requestInvoices(member, [403]);
-    expectApiError(memberInvoices.body);
-    expect(memberInvoices.body.error.message).toBe(
-      "Only org admins can view invoices",
-    );
-
-    const downgrade = await api.downgradeBilling(
-      admin,
-      { targetTier: "limited-free-1", returnUrl: `${appUrl}/settings/billing` },
-      [409],
-    );
-    expectApiError(downgrade.body);
-    expect(downgrade.body.error.message).toBe("Org has no active subscription");
-
-    const restore = await api.restoreBilling(
-      admin,
-      { returnUrl: `${appUrl}/settings/billing` },
-      [409],
-    );
-    expectApiError(restore.body);
-    expect(restore.body.error.message).toBe("Org has no active subscription");
-
-    const missingCampaign = await api.redeemCampaign(
-      admin,
-      "UNKNOWN",
-      checkoutUrls(),
-    );
-    expect(missingCampaign.body).toStrictEqual({
-      status: "error",
-      reason: "campaign_misconfigured",
-    });
-
-    api.configureCampaign();
-    const readyCampaign = await api.redeemCampaign(
-      admin,
-      "ZERO100",
-      checkoutUrls(),
-    );
-    expect(readyCampaign.body).toStrictEqual({
-      status: "ready",
-      checkoutUrl: "https://checkout.stripe.test/campaign",
-    });
-
-    const finalStatus = await api.readBillingStatus(admin);
-    expect(finalStatus.credits).toBe(0);
-    expect(finalStatus.hasSubscription).toBeFalsy();
-  });
-
-  it("grants Stripe checkout and invoice credits idempotently through webhook-visible billing status", async () => {
-    const { api, admin } = testActors();
-    await completeVisibleOnboarding(admin);
-    if (!admin.orgId) {
-      throw new Error("Expected billing webhook test user to have an org");
-    }
-
-    const webhooks = createWebhookCallbackApi(context);
-    webhooks.configureStripeWebhookSecret();
-
-    const checkoutSessionId = `cs_bdd_credit_${randomUUID()}`;
-    webhooks.acceptNextStripeWebhookEvent({
-      id: `evt_bdd_checkout_${randomUUID()}`,
-      type: "checkout.session.completed",
-      data: {
-        object: {
-          id: checkoutSessionId,
-          invoice: null,
-          subscription: null,
-          customer: null,
-          metadata: {
-            purpose: "credit_purchase",
-            orgId: admin.orgId,
-            creditsAmountMode: "amount_total",
-          },
-          amount_total: 2500,
-          payment_status: "paid",
-        },
-      },
-    });
-    const checkout = await webhooks.requestStripeWebhook(
-      "{}",
-      { "stripe-signature": "valid-signature" },
-      [200],
-    );
-    expect(checkout.body).toBe("OK");
-
-    const afterCheckout = await api.readBillingStatus(admin);
-    expect(afterCheckout.credits).toBe(25_000);
-
-    webhooks.acceptNextStripeWebhookEvent({
-      id: `evt_bdd_checkout_duplicate_${randomUUID()}`,
-      type: "checkout.session.completed",
-      data: {
-        object: {
-          id: checkoutSessionId,
-          invoice: null,
-          subscription: null,
-          customer: null,
-          metadata: {
-            purpose: "credit_purchase",
-            orgId: admin.orgId,
-            creditsAmountMode: "amount_total",
-          },
-          amount_total: 2500,
-          payment_status: "paid",
-        },
-      },
-    });
-    const duplicateCheckout = await webhooks.requestStripeWebhook(
-      "{}",
-      { "stripe-signature": "valid-signature" },
-      [200],
-    );
-    expect(duplicateCheckout.body).toBe("OK");
-
-    const afterDuplicateCheckout = await api.readBillingStatus(admin);
-    expect(afterDuplicateCheckout.credits).toBe(25_000);
-
-    const autoRechargeInvoiceId = `in_bdd_auto_${randomUUID()}`;
-    webhooks.acceptNextStripeWebhookEvent({
-      id: `evt_bdd_auto_${randomUUID()}`,
-      type: "invoice.paid",
-      data: {
-        object: {
-          id: autoRechargeInvoiceId,
-          customer: null,
-          metadata: {
-            type: "auto_recharge",
-            orgId: admin.orgId,
-            creditsAmount: "3000",
-          },
-          subtotal: null,
-          lines: {
-            has_more: false,
-            data: [],
-          },
-          parent: null,
-        },
-      },
-    });
-    const autoRecharge = await webhooks.requestStripeWebhook(
-      "{}",
-      { "stripe-signature": "valid-signature" },
-      [200],
-    );
-    expect(autoRecharge.body).toBe("OK");
-
-    const afterAutoRecharge = await api.readBillingStatus(admin);
-    expect(afterAutoRecharge.credits).toBe(28_000);
-
-    webhooks.acceptNextStripeWebhookEvent({
-      id: `evt_bdd_auto_duplicate_${randomUUID()}`,
-      type: "invoice.paid",
-      data: {
-        object: {
-          id: autoRechargeInvoiceId,
-          customer: null,
-          metadata: {
-            type: "auto_recharge",
-            orgId: admin.orgId,
-            creditsAmount: "3000",
-          },
-          subtotal: null,
-          lines: {
-            has_more: false,
-            data: [],
-          },
-          parent: null,
-        },
-      },
-    });
-    const duplicateAutoRecharge = await webhooks.requestStripeWebhook(
-      "{}",
-      { "stripe-signature": "valid-signature" },
-      [200],
-    );
-    expect(duplicateAutoRecharge.body).toBe("OK");
-
-    const afterDuplicateAutoRecharge = await api.readBillingStatus(admin);
-    expect(afterDuplicateAutoRecharge.credits).toBe(28_000);
-
-    const creditPurchaseInvoiceId = `in_bdd_credit_${randomUUID()}`;
-    webhooks.acceptNextStripeWebhookEvent({
-      id: `evt_bdd_invoice_${randomUUID()}`,
-      type: "invoice.paid",
-      data: {
-        object: {
-          id: creditPurchaseInvoiceId,
-          customer: null,
-          metadata: {
-            type: "credit_purchase",
-            orgId: admin.orgId,
-          },
-          subtotal: 1200,
-          lines: {
-            has_more: false,
-            data: [],
-          },
-          parent: null,
-        },
-      },
-    });
-    const invoicePurchase = await webhooks.requestStripeWebhook(
-      "{}",
-      { "stripe-signature": "valid-signature" },
-      [200],
-    );
-    expect(invoicePurchase.body).toBe("OK");
-
-    const afterInvoicePurchase = await api.readBillingStatus(admin);
-    expect(afterInvoicePurchase.credits).toBe(40_000);
-
-    webhooks.acceptNextStripeWebhookEvent({
-      id: `evt_bdd_invoice_duplicate_${randomUUID()}`,
-      type: "invoice.paid",
-      data: {
-        object: {
-          id: creditPurchaseInvoiceId,
-          customer: null,
-          metadata: {
-            type: "credit_purchase",
-            orgId: admin.orgId,
-          },
-          subtotal: 1200,
-          lines: {
-            has_more: false,
-            data: [],
-          },
-          parent: null,
-        },
-      },
-    });
-    const duplicateInvoicePurchase = await webhooks.requestStripeWebhook(
-      "{}",
-      { "stripe-signature": "valid-signature" },
-      [200],
-    );
-    expect(duplicateInvoicePurchase.body).toBe("OK");
-
-    const finalStatus = await api.readBillingStatus(admin);
-    expect(finalStatus.credits).toBe(40_000);
-  });
-});
-
-describe("BILL-02: usage reads", () => {
-  it("reads empty usage records through visible APIs", async () => {
-    const { api, admin } = testActors();
-    await completeVisibleOnboarding(admin);
-
-    const usageMembers = await api.readUsageMembers(admin);
-    expect(usageMembers.body).toStrictEqual({ period: null, members: [] });
-
-    const fixedPeriod = await api.readUsageMembers(admin, {
-      range: "7d",
-      tz: "Asia/Shanghai",
-    });
-    expect(fixedPeriod.body.period).not.toBeNull();
-    expect(fixedPeriod.body.members).toStrictEqual([]);
-
-    const usageRecord = await api.readUsageRecord(admin);
-    expect(usageRecord.body.pagination.total).toBe(0);
-    expect(usageRecord.body.rows).toStrictEqual([]);
-  });
-});
-
-describe("FILE-02 and CHAIN-BILLING-MEDIA: media generation, quota, and status APIs", () => {
-  it("queues and completes an image generation through Stripe credits, Fal webhook, and status GET", async () => {
-    const { api, admin } = testActors();
-    await completeVisibleOnboarding(admin);
-    if (!admin.orgId) {
-      throw new Error("Expected media generation test user to have an org");
-    }
-
-    const webhooks = createWebhookCallbackApi(context);
-    webhooks.configureStripeWebhookSecret();
-    webhooks.acceptNextStripeWebhookEvent({
-      id: `evt_bdd_media_credit_${randomUUID()}`,
-      type: "checkout.session.completed",
-      data: {
-        object: {
-          id: `cs_bdd_media_credit_${randomUUID()}`,
-          invoice: null,
-          subscription: null,
-          customer: null,
-          metadata: {
-            purpose: "credit_purchase",
-            orgId: admin.orgId,
-            creditsAmount: "1000000",
-          },
-          payment_status: "paid",
-        },
-      },
-    });
-    const credits = await webhooks.requestStripeWebhook(
-      "{}",
-      { "stripe-signature": "valid-signature" },
-      [200],
-    );
-    expect(credits.body).toBe("OK");
-
-    const afterCredits = await api.readBillingStatus(admin);
-    expect(afterCredits.credits).toBe(1_000_000);
-
-    context.mocks.ably.createTokenRequest.mockResolvedValueOnce({
-      keyName: "ably-key",
-      timestamp: 1_700_000_000,
-      capability: JSON.stringify({ [`user:${admin.userId}`]: ["subscribe"] }),
-      nonce: "nonce",
-      mac: "mac",
-    });
-    context.mocks.s3.send.mockResolvedValue({});
-    server.use(
-      http.post("https://queue.fal.run/*", () => {
-        return HttpResponse.json({
-          request_id: `fal_bdd_${randomUUID()}`,
-          status_url: "https://queue.fal.run/status/bdd-image",
-          response_url: "https://queue.fal.run/response/bdd-image",
-        });
-      }),
-      http.get("https://assets.example.test/generated-bdd-image.png", () => {
-        return new HttpResponse(new Uint8Array([137, 80, 78, 71]).buffer, {
-          status: 200,
-          headers: { "Content-Type": "image/png" },
-        });
-      }),
-    );
-
-    await api.selectImageModel(admin, "gpt-image-1");
-    const queued = await api.requestImageIoGenerate(
-      admin,
-      { prompt: "a compact billing usage chart" },
-      [202],
-    );
-    if (queued.status !== 202) {
-      throw new Error(
-        `Expected image generation to queue, got ${queued.status}`,
-      );
-    }
-    const generationId = apiUuid(queued.body.generationId);
-    expect(queued.body).toMatchObject({
-      type: "image",
-      status: "queued",
-    });
-
-    const running = await api.readBuiltInGeneration(admin, generationId, [200]);
-    if (running.status !== 200) {
-      throw new Error(`Expected running generation, got ${running.status}`);
-    }
-    expect(running.body).toMatchObject({
-      generationId,
-      type: "image",
-      status: "running",
-    });
-
-    const completed = await webhooks.requestFalGenerationWebhook({
-      generationId,
-      token: webhooks.falGenerationWebhookToken(generationId),
+async function selectImageModel(
+  actor: ApiTestUser,
+  selectedImageModel: ImageModelId,
+): Promise<void> {
+  signIn(actor);
+  await accept(
+    userModelPreference.update({
+      headers: AUTH_HEADERS,
       body: {
+        selectedModel: null,
+        serviceTier: null,
+        selectedImageModel,
+      },
+    }),
+    [200],
+  );
+}
+
+async function deliverStripeWebhook(
+  stripeApp: ReturnType<typeof createAppWithRoutes>,
+  event: Readonly<Record<string, unknown>>,
+): Promise<void> {
+  const stripeEvent = {
+    created: Math.floor(now() / 1000),
+    ...event,
+  };
+  context.mocks.stripe.webhooks.constructEventAsync.mockReturnValueOnce(
+    stripeEvent,
+  );
+  const response = await stripeApp.request("/api/webhooks/stripe", {
+    method: "POST",
+    headers: { "stripe-signature": "t=1,v1=bdd" },
+    body: JSON.stringify(stripeEvent),
+  });
+  expect(response.status).toBe(200);
+  await expect(response.text()).resolves.toBe("OK");
+  await flushWaitUntilForTest();
+}
+
+function configureImageProviderMocks(): void {
+  mockEnv("OKOU_API_BACKEND_URL", "https://api.okou.ai");
+  mockEnv("OKOU_WEB_URL", "https://www.okou.ai");
+  mockEnv("FAL_KEY", "fal-test-key");
+  mockEnv("OPENAI_API_KEY", "openai-test-key");
+  mockEnv("R2_PRIVATE_ARTIFACTS_BUCKET_NAME", "private-artifacts-test");
+  context.mocks.ably.createTokenRequest.mockResolvedValue(tokenRequest);
+  context.mocks.ably.publish.mockResolvedValue(undefined);
+  context.mocks.s3.send.mockResolvedValue({});
+}
+
+function futureExpiresIso(): string {
+  return new Date(nowDate().getTime() + THIRTY_DAYS_MS).toISOString();
+}
+
+async function fundOneMillionCredits(
+  admin: ApiTestUser & { readonly orgId: string },
+): Promise<void> {
+  createWebhookCallbackApi(context).configureStripeBillingEnv();
+  const stripeApp = createAppWithRoutes({
+    signal: context.signal,
+    routes: webhooksStripeRoutes,
+  });
+  await deliverStripeWebhook(stripeApp, {
+    id: `evt_media_credits_${randomUUID()}`,
+    type: "checkout.session.completed",
+    data: {
+      object: {
+        id: `cs_media_${randomUUID()}`,
+        invoice: null,
+        subscription: null,
+        customer: null,
+        mode: "payment",
+        payment_status: "paid",
+        amount_subtotal: 100_000,
+        amount_total: 100_000,
+        metadata: {
+          purpose: "credit_purchase",
+          orgId: admin.orgId,
+          creditsAmountMode: "amount_total",
+          creditsExpiresAt: futureExpiresIso(),
+        },
+      },
+    },
+  });
+}
+
+test("billing-usage-media.bdd-005 (1/2) gates zero-credit image generation and rejects unsupported size, background, compression, and seed options", async () => {
+  configureImageProviderMocks();
+  const admin = await onboardFreeAdmin();
+  await selectImageModel(admin, "gpt-image-1");
+
+  signIn(admin);
+  const insufficient = await accept(
+    imageIoGenerate.postPrivate({
+      headers: AUTH_HEADERS,
+      body: { prompt: "A clear morning sky" },
+    }),
+    [402],
+  );
+  expect(insufficient.body.error.code).toBe("INSUFFICIENT_CREDITS");
+
+  const badSize = await accept(
+    imageIoGenerate.postPrivate({
+      headers: AUTH_HEADERS,
+      body: { prompt: "A clear morning sky", size: "42x42" },
+    }),
+    [400],
+  );
+  expect(badSize.body.error.message).toContain("Unsupported image size");
+
+  await selectImageModel(admin, "gpt-image-2");
+  signIn(admin);
+  const badBackground = await accept(
+    imageIoGenerate.postPrivate({
+      headers: AUTH_HEADERS,
+      body: { prompt: "A clear morning sky", background: "transparent" },
+    }),
+    [400],
+  );
+  expect(badBackground.body.error.message).toContain(
+    "gpt-image-2 does not support transparent backgrounds",
+  );
+
+  await selectImageModel(admin, "gpt-image-1");
+  signIn(admin);
+  const badCompression = await accept(
+    imageIoGenerate.postPrivate({
+      headers: AUTH_HEADERS,
+      body: {
+        prompt: "A clear morning sky",
+        outputFormat: "png",
+        outputCompression: 50,
+      },
+    }),
+    [400],
+  );
+  expect(badCompression.body.error.message).toContain(
+    "outputCompression is only supported for jpeg or webp output",
+  );
+
+  const badSeed = await accept(
+    imageIoGenerate.postPrivate({
+      headers: AUTH_HEADERS,
+      body: { prompt: "A clear morning sky", seed: 1 },
+    }),
+    [400],
+  );
+  expect(badSeed.body.error.message).toContain(
+    "seed is not supported for gpt-image-1",
+  );
+});
+
+test("billing-usage-media.bdd-005 (2/2) rejects unsupported safety, enhance, mask, and fidelity options and reports 404/zero usage", async () => {
+  configureImageProviderMocks();
+  const admin = await onboardFreeAdmin();
+  await selectImageModel(admin, "gpt-image-1");
+
+  signIn(admin);
+  const badSafety = await accept(
+    imageIoGenerate.postPrivate({
+      headers: AUTH_HEADERS,
+      body: { prompt: "A clear morning sky", safetyTolerance: "6" },
+    }),
+    [400],
+  );
+  expect(badSafety.body.error.message).toContain(
+    "safetyTolerance is not supported for gpt-image-1",
+  );
+
+  const badEnhance = await accept(
+    imageIoGenerate.postPrivate({
+      headers: AUTH_HEADERS,
+      body: { prompt: "A clear morning sky", enhancePrompt: true },
+    }),
+    [400],
+  );
+  expect(badEnhance.body.error.message).toContain(
+    "enhancePrompt is not supported for gpt-image-1",
+  );
+
+  const badMask = await accept(
+    imageIoGenerate.postPrivate({
+      headers: AUTH_HEADERS,
+      body: {
+        prompt: "A clear morning sky",
+        maskImageUrl: "https://example.test/mask.png",
+      },
+    }),
+    [400],
+  );
+  expect(badMask.body.error.message).toContain(
+    "maskImageUrl requires imageUrl",
+  );
+
+  const badFidelity = await accept(
+    imageIoGenerate.postPrivate({
+      headers: AUTH_HEADERS,
+      body: {
+        prompt: "A clear morning sky",
+        inputFidelity: "high",
+      },
+    }),
+    [400],
+  );
+  expect(badFidelity.body.error.message).toContain(
+    "inputFidelity requires imageUrl",
+  );
+
+  const missingGeneration = await accept(
+    builtInGeneration.get({
+      headers: AUTH_HEADERS,
+      params: { generationId: randomUUID() },
+    }),
+    [404],
+  );
+  expect(missingGeneration.body.error.message).toContain(
+    "Built-in generation not found",
+  );
+
+  await expect(readCredits(admin)).resolves.toBe(0);
+  const usage = await accept(
+    usageRecord.get({
+      headers: AUTH_HEADERS,
+      query: {
+        page: 1,
+        pageSize: 20,
+        scope: "mine",
+        range: "24h",
+        tz: "UTC",
+      },
+    }),
+    [200],
+  );
+  expect(usage.body.rows).toStrictEqual([]);
+});
+
+test("billing-usage-media.bdd-002 (1/2) grants checkout and auto-recharge credits idempotently", async () => {
+  createWebhookCallbackApi(context).configureStripeBillingEnv();
+  const admin = await onboardFreeAdmin();
+  const stripeApp = createAppWithRoutes({
+    signal: context.signal,
+    routes: webhooksStripeRoutes,
+  });
+  const expiresAt = futureExpiresIso();
+
+  const checkoutSession = {
+    id: `cs_credit_${randomUUID()}`,
+    invoice: null,
+    subscription: null,
+    customer: null,
+    mode: "payment",
+    payment_status: "paid",
+    amount_subtotal: 2500,
+    amount_total: 2500,
+    metadata: {
+      purpose: "credit_purchase",
+      orgId: admin.orgId,
+      creditsAmountMode: "amount_total",
+      creditsExpiresAt: expiresAt,
+    },
+  };
+  await deliverStripeWebhook(stripeApp, {
+    id: `evt_checkout_1_${randomUUID()}`,
+    type: "checkout.session.completed",
+    data: { object: checkoutSession },
+  });
+  await expect(readCredits(admin)).resolves.toBe(25_000);
+
+  await deliverStripeWebhook(stripeApp, {
+    id: `evt_checkout_2_${randomUUID()}`,
+    type: "checkout.session.completed",
+    data: { object: checkoutSession },
+  });
+  await expect(readCredits(admin)).resolves.toBe(25_000);
+
+  const autoRechargeInvoice = {
+    id: `in_auto_${randomUUID()}`,
+    customer: null,
+    subtotal: 0,
+    metadata: {
+      type: "auto_recharge",
+      orgId: admin.orgId,
+      creditsAmount: "3000",
+    },
+    parent: null,
+    lines: { has_more: false, data: [] },
+  };
+  await deliverStripeWebhook(stripeApp, {
+    id: `evt_auto_1_${randomUUID()}`,
+    type: "invoice.paid",
+    data: { object: autoRechargeInvoice },
+  });
+  await expect(readCredits(admin)).resolves.toBe(28_000);
+
+  await deliverStripeWebhook(stripeApp, {
+    id: `evt_auto_2_${randomUUID()}`,
+    type: "invoice.paid",
+    data: { object: autoRechargeInvoice },
+  });
+  await expect(readCredits(admin)).resolves.toBe(28_000);
+});
+
+test("billing-usage-media.bdd-002 (2/2) grants credit purchase invoice credits idempotently after checkout and auto-recharge", async () => {
+  createWebhookCallbackApi(context).configureStripeBillingEnv();
+  const admin = await onboardFreeAdmin();
+  const stripeApp = createAppWithRoutes({
+    signal: context.signal,
+    routes: webhooksStripeRoutes,
+  });
+  const expiresAt = futureExpiresIso();
+
+  await deliverStripeWebhook(stripeApp, {
+    id: `evt_checkout_${randomUUID()}`,
+    type: "checkout.session.completed",
+    data: {
+      object: {
+        id: `cs_credit_${randomUUID()}`,
+        invoice: null,
+        subscription: null,
+        customer: null,
+        mode: "payment",
+        payment_status: "paid",
+        amount_subtotal: 2500,
+        amount_total: 2500,
+        metadata: {
+          purpose: "credit_purchase",
+          orgId: admin.orgId,
+          creditsAmountMode: "amount_total",
+          creditsExpiresAt: expiresAt,
+        },
+      },
+    },
+  });
+  await deliverStripeWebhook(stripeApp, {
+    id: `evt_auto_${randomUUID()}`,
+    type: "invoice.paid",
+    data: {
+      object: {
+        id: `in_auto_${randomUUID()}`,
+        customer: null,
+        subtotal: 0,
+        metadata: {
+          type: "auto_recharge",
+          orgId: admin.orgId,
+          creditsAmount: "3000",
+        },
+        parent: null,
+        lines: { has_more: false, data: [] },
+      },
+    },
+  });
+
+  const creditPurchaseInvoice = {
+    id: `in_credit_${randomUUID()}`,
+    customer: null,
+    subtotal: 1200,
+    metadata: {
+      type: "credit_purchase",
+      orgId: admin.orgId,
+      creditsExpiresAt: expiresAt,
+    },
+    parent: null,
+    lines: { has_more: false, data: [] },
+  };
+  await deliverStripeWebhook(stripeApp, {
+    id: `evt_credit_1_${randomUUID()}`,
+    type: "invoice.paid",
+    data: { object: creditPurchaseInvoice },
+  });
+  await expect(readCredits(admin)).resolves.toBe(40_000);
+
+  await deliverStripeWebhook(stripeApp, {
+    id: `evt_credit_2_${randomUUID()}`,
+    type: "invoice.paid",
+    data: { object: creditPurchaseInvoice },
+  });
+  await expect(readCredits(admin)).resolves.toBe(40_000);
+});
+
+test("billing-usage-media.bdd-004 (1/2) queues a funded image generation and reports running on status GET", async () => {
+  configureImageProviderMocks();
+  const admin = await onboardFreeAdmin();
+  await fundOneMillionCredits(admin);
+
+  server.use(
+    http.post("https://queue.fal.run/*", () => {
+      const requestId = `fal_req_${randomUUID()}`;
+      return HttpResponse.json({
+        request_id: requestId,
+        status_url: `https://queue.fal.run/fal-ai/gpt-image-1/requests/${requestId}/status`,
+        response_url: `https://queue.fal.run/fal-ai/gpt-image-1/requests/${requestId}`,
+      });
+    }),
+  );
+
+  await expect(readCredits(admin)).resolves.toBe(1_000_000);
+  await selectImageModel(admin, "gpt-image-1");
+
+  signIn(admin);
+  const queued = await accept(
+    imageIoGenerate.postPrivate({
+      headers: AUTH_HEADERS,
+      body: { prompt: "Minimal studio product render" },
+    }),
+    [202],
+  );
+  expect(queued.body).toMatchObject({
+    generationId: expect.any(String),
+    type: "image",
+    status: "queued",
+  });
+
+  signIn(admin);
+  const running = await accept(
+    builtInGeneration.get({
+      headers: AUTH_HEADERS,
+      params: { generationId: queued.body.generationId },
+    }),
+    [200],
+  );
+  expect(running.body).toMatchObject({
+    generationId: queued.body.generationId,
+    type: "image",
+    status: "running",
+  });
+});
+
+test("billing-usage-media.bdd-004 (2/2) completes the queued image generation via Fal webhook and returns its result", async () => {
+  configureImageProviderMocks();
+  const admin = await onboardFreeAdmin();
+  await fundOneMillionCredits(admin);
+
+  let capturedFalWebhookUrl: string | null = null;
+  const generatedImageUrl = "https://fal.media/files/billing-media-test.png";
+  server.use(
+    http.post("https://queue.fal.run/*", ({ request }) => {
+      capturedFalWebhookUrl = new URL(request.url).searchParams.get(
+        "fal_webhook",
+      );
+      const requestId = `fal_req_${randomUUID()}`;
+      return HttpResponse.json({
+        request_id: requestId,
+        status_url: `https://queue.fal.run/fal-ai/gpt-image-1/requests/${requestId}/status`,
+        response_url: `https://queue.fal.run/fal-ai/gpt-image-1/requests/${requestId}`,
+      });
+    }),
+    http.get(generatedImageUrl, () => {
+      return new HttpResponse(TINY_PNG_BYTES, {
+        status: 200,
+        headers: { "content-type": "image/png" },
+      });
+    }),
+  );
+
+  await selectImageModel(admin, "gpt-image-1");
+  signIn(admin);
+  const queued = await accept(
+    imageIoGenerate.postPrivate({
+      headers: AUTH_HEADERS,
+      body: { prompt: "Minimal studio product render" },
+    }),
+    [202],
+  );
+  const generationId = queued.body.generationId;
+
+  if (!capturedFalWebhookUrl) {
+    throw new Error("Expected Fal submission to include fal_webhook URL");
+  }
+  const webhookTarget = new URL(capturedFalWebhookUrl);
+  const falWebhookApp = createAppWithRoutes({
+    signal: context.signal,
+    routes: webhooksBuiltInGenerationRoutes,
+  });
+  const webhookResponse = await falWebhookApp.request(
+    `${webhookTarget.pathname}${webhookTarget.search}`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
         status: "COMPLETED",
         payload: {
           images: [
             {
-              url: "https://assets.example.test/generated-bdd-image.png",
+              url: generatedImageUrl,
               content_type: "image/png",
               width: 1024,
               height: 1024,
             },
           ],
-          prompt: "a compact billing usage chart",
           seed: 123,
         },
-      },
-      statuses: [200],
-    });
-    expect(completed.body).toBe("OK");
+      }),
+    },
+  );
+  expect(webhookResponse.status).toBe(200);
+  await expect(webhookResponse.json()).resolves.toBe("OK");
+  await flushWaitUntilForTest();
 
-    const finalGeneration = await api.readBuiltInGeneration(
-      admin,
-      generationId,
-      [200],
-    );
-    if (finalGeneration.status !== 200) {
-      throw new Error(
-        `Expected completed generation, got ${finalGeneration.status}`,
-      );
-    }
-    expect(finalGeneration.body.status).toBe("completed");
-    expect(finalGeneration.body.result).toMatchObject({
+  signIn(admin);
+  const completed = await accept(
+    builtInGeneration.get({
+      headers: AUTH_HEADERS,
+      params: { generationId },
+    }),
+    [200],
+  );
+  expect(completed.body).toMatchObject({
+    generationId,
+    type: "image",
+    status: "completed",
+    result: {
       provider: "fal",
       outputFormat: "png",
       imageSize: "1024x1024",
       seed: 123,
-    });
-  });
-
-  it("chains media quota, generation gates, and status reads through API-visible state", async () => {
-    const { api, admin } = testActors();
-    await completeVisibleOnboarding(admin);
-    if (!admin.orgId) {
-      throw new Error("Expected media quota test user to have an org");
-    }
-    await publicPlanLifecycle(context, admin).update("canceled");
-
-    // The validations below describe gpt-image-1, selected as the member's
-    // image model.
-    await api.selectImageModel(admin, "gpt-image-1");
-
-    // A valid request passes validation with the member's model and reaches
-    // the credit gate.
-    const creditGatedImageIo = await api.requestImageIoGenerate(
-      admin,
-      { prompt: "a concise billing usage chart" },
-      [402],
-    );
-    expectApiError(creditGatedImageIo.body);
-    expect(creditGatedImageIo.body.error.code).toBe("INSUFFICIENT_CREDITS");
-
-    const unsupportedImageSize = await api.requestImageIoGenerate(
-      admin,
-      {
-        prompt: "a concise billing usage chart",
-        size: "42x42",
-      },
-      [400],
-    );
-    expectApiError(unsupportedImageSize.body);
-    expect(unsupportedImageSize.body.error.message).toContain(
-      "Unsupported image size",
-    );
-
-    await api.selectImageModel(admin, "gpt-image-2");
-    const transparentGptImage2 = await api.requestImageIoGenerate(
-      admin,
-      {
-        prompt: "a concise billing usage chart",
-        background: "transparent",
-      },
-      [400],
-    );
-    expectApiError(transparentGptImage2.body);
-    expect(transparentGptImage2.body.error.message).toBe(
-      "gpt-image-2 does not support transparent backgrounds",
-    );
-    await api.selectImageModel(admin, "gpt-image-1");
-
-    const unsupportedImageCompression = await api.requestImageIoGenerate(
-      admin,
-      {
-        prompt: "a concise billing usage chart",
-        outputFormat: "png",
-        outputCompression: 50,
-      },
-      [400],
-    );
-    expectApiError(unsupportedImageCompression.body);
-    expect(unsupportedImageCompression.body.error.message).toBe(
-      "outputCompression is only supported for jpeg or webp output",
-    );
-
-    const unsupportedImageSeed = await api.requestImageIoGenerate(
-      admin,
-      {
-        prompt: "a concise billing usage chart",
-        seed: 1,
-      },
-      [400],
-    );
-    expectApiError(unsupportedImageSeed.body);
-    expect(unsupportedImageSeed.body.error.message).toBe(
-      "seed is not supported for gpt-image-1",
-    );
-
-    const unsupportedImageSafetyTolerance = await api.requestImageIoGenerate(
-      admin,
-      {
-        prompt: "a concise billing usage chart",
-        safetyTolerance: "6",
-      },
-      [400],
-    );
-    expectApiError(unsupportedImageSafetyTolerance.body);
-    expect(unsupportedImageSafetyTolerance.body.error.message).toBe(
-      "safetyTolerance is not supported for gpt-image-1",
-    );
-
-    const unsupportedImageEnhancePrompt = await api.requestImageIoGenerate(
-      admin,
-      {
-        prompt: "a concise billing usage chart",
-        enhancePrompt: true,
-      },
-      [400],
-    );
-    expectApiError(unsupportedImageEnhancePrompt.body);
-    expect(unsupportedImageEnhancePrompt.body.error.message).toBe(
-      "enhancePrompt is not supported for gpt-image-1",
-    );
-
-    const maskWithoutSource = await api.requestImageIoGenerate(
-      admin,
-      {
-        prompt: "a concise billing usage chart",
-        maskImageUrl: "https://assets.example.test/mask.png",
-      },
-      [400],
-    );
-    expectApiError(maskWithoutSource.body);
-    expect(maskWithoutSource.body.error.message).toBe(
-      "maskImageUrl requires imageUrl",
-    );
-
-    const inputFidelityWithoutSource = await api.requestImageIoGenerate(
-      admin,
-      {
-        prompt: "a concise billing usage chart",
-        inputFidelity: "high",
-      },
-      [400],
-    );
-    expectApiError(inputFidelityWithoutSource.body);
-    expect(inputFidelityWithoutSource.body.error.message).toBe(
-      "inputFidelity requires imageUrl",
-    );
-
-    const missingGeneration = await api.readBuiltInGeneration(
-      admin,
-      undefined,
-      [404],
-    );
-    expectApiError(missingGeneration.body);
-    expect(missingGeneration.body.error.message).toBe(
-      "Built-in generation not found",
-    );
-
-    const status = await api.readBillingStatus(admin);
-    expect(status.credits).toBe(0);
-
-    const usageRecord = await api.readUsageRecord(admin);
-    expect(usageRecord.body.rows).toStrictEqual([]);
-  });
-});
-
-describe("BILL-02: banking credential boundary", () => {
-  it("rejects a browser session on the banking API credential boundary", async () => {
-    const { api, admin } = testActors();
-    await completeVisibleOnboarding(admin);
-
-    const bankingWithSession = await api.requestBankingAccounts(admin, [403]);
-    expectApiError(bankingWithSession.body);
-    expect(bankingWithSession.body.error.message).toBe(
-      "This endpoint does not accept the provided credential type",
-    );
+    },
   });
 });

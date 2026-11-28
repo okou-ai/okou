@@ -1,1747 +1,675 @@
-import { Buffer } from "node:buffer";
 import { randomUUID } from "node:crypto";
-
-import {
-  voiceIoTranscribeContract,
-  type VoiceIoEditorContext,
-} from "@okouai/api-contracts/contracts/voice-io-transcribe";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { voiceIoPolishSegmentsContract } from "@okouai/api-contracts/contracts/voice-io-polish";
-import { voiceIoPolishRoutes } from "../voice-io-polish";
 import { voiceIoQuotaContract } from "@okouai/api-contracts/contracts/voice-io-quota";
-import { billingStatusContract } from "@okouai/api-contracts/contracts/billing";
-import { billingStatusRoutes } from "../billing-status";
-import { CLIENT_REQUEST_ID_HEADER } from "@okouai/api-contracts/contracts/client-headers";
+import { voiceIoTranscribeContract } from "@okouai/api-contracts/contracts/voice-io-transcribe";
+import { http, HttpResponse } from "msw";
+import { describe, expect, it, onTestFinished } from "vitest";
+import { stubTestVercelRuntimeToken } from "../../../__tests__/env-stub";
+import { accept, testContext } from "../../../__tests__/test-context";
+import { setupApp } from "../../../__tests__/test-helpers";
+import { now } from "../../../lib/time";
+import { server } from "../../../mocks/server";
+import { flushWaitUntilForTest } from "../../context/wait-until";
 import { voiceIoQuotaRoutes } from "../voice-io-quota";
-import { HttpResponse, http } from "msw";
+import { voiceIoTranscribeRoutes } from "../voice-io-transcribe";
+import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
+import { createRunsApi } from "./helpers/api-bdd-runs";
+import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import {
   mockGoogleVoice,
-  GOOGLE_STS_URL,
-  GOOGLE_IMPERSONATION_URL,
   VERTEX_VOICE_URL,
   vertexVoiceResponse,
   type VertexVoiceRequest,
 } from "./helpers/google-voice";
-
-import { accept, testContext } from "../../../__tests__/test-context";
-import { stubTestVercelRuntimeToken } from "../../../__tests__/env-stub";
-import { setupApp } from "../../../__tests__/test-helpers";
-import { env, mockEnv } from "../../../lib/env";
-import { mockNow, now } from "../../../lib/time";
-import { flushWaitUntilForTest } from "../../context/wait-until";
-import { createDeferredPromise, settleIncludingAbort } from "../../utils";
-import { server } from "../../../mocks/server";
-import { createRunsApi } from "./helpers/api-bdd-runs";
-import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
-import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
-import { createFixtureOperationOwner } from "./helpers/fixture-operation-owner";
-import {
-  deleteFeatureSwitchesForUser,
-  updateFeatureSwitchesForUser,
-} from "./helpers/feature-switches";
-import { createRouteMocks } from "./helpers/route-test";
-import { voiceIoTranscribeRoutes } from "../voice-io-transcribe";
 import { createMcpWebApi } from "./helpers/mcp-web-api";
+import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
-const mocks = createRouteMocks(context);
-beforeEach(() => {
-  mockGoogleVoice();
+const bdd = createBddApi(context);
+const runs = createRunsApi(context);
+const webhooks = createWebhookCallbackApi(context);
+const headers = Object.freeze({ authorization: "Bearer clerk-session" });
+
+const COMPACT_SAMPLE_RATE = 100;
+
+const voiceApp = setupApp({
+  context,
+  routes: [...voiceIoTranscribeRoutes, ...voiceIoQuotaRoutes],
 });
-afterEach(() => {
-  stubTestVercelRuntimeToken(undefined);
-});
+const transcribeApi = voiceApp(voiceIoTranscribeContract);
+const quotaApi = voiceApp(voiceIoQuotaContract);
 
-function recoveredVoiceResponse() {
-  return vertexVoiceResponse(
-    JSON.stringify({
-      transcript: "Recorded speech.",
-
-      language: "en",
-    }),
-  );
-}
-
-function client() {
-  return setupApp({ context, routes: voiceIoTranscribeRoutes })(
-    voiceIoTranscribeContract,
-  );
-}
-
-function writeAscii(bytes: Uint8Array, offset: number, value: string): void {
-  for (let index = 0; index < value.length; index += 1) {
-    bytes[offset + index] = value.charCodeAt(index);
-  }
-}
-
-function wavBytes(
-  marker: number,
-  durationSeconds = 1,
+function makeWavBytes(
+  durationSeconds: number,
+  options: {
+    readonly totalBytes?: number;
+    readonly sampleRate?: number;
+    readonly bitsPerSample?: 8 | 16;
+  } = {},
 ): Uint8Array<ArrayBuffer> {
-  const sampleRate = 16_000;
-  const dataSize = sampleRate * durationSeconds * 2;
-  const buffer = new ArrayBuffer(44 + dataSize);
+  const sampleRate = options.sampleRate ?? COMPACT_SAMPLE_RATE;
+  const bitsPerSample = options.bitsPerSample ?? 8;
+  const bytesPerSample = bitsPerSample / 8;
+  const bytesPerSecond = sampleRate * bytesPerSample;
+  const sampleCount = Math.round(durationSeconds * sampleRate);
+  const dataBytes = sampleCount * bytesPerSample;
+  const headerBytes = 44;
+  const junkChunkBytes =
+    options.totalBytes === undefined
+      ? 0
+      : options.totalBytes - headerBytes - dataBytes;
+  if (junkChunkBytes < 0 || (junkChunkBytes > 0 && junkChunkBytes < 8)) {
+    throw new Error("Invalid WAV totalBytes padding");
+  }
+  const totalBytes = headerBytes + dataBytes + junkChunkBytes;
+  const buffer = new ArrayBuffer(totalBytes);
   const bytes = new Uint8Array(buffer);
   const view = new DataView(buffer);
-  writeAscii(bytes, 0, "RIFF");
-  view.setUint32(4, 36 + dataSize, true);
-  writeAscii(bytes, 8, "WAVE");
-  writeAscii(bytes, 12, "fmt ");
+
+  bytes.set([0x52, 0x49, 0x46, 0x46], 0); // RIFF
+  view.setUint32(4, totalBytes - 8, true);
+  bytes.set([0x57, 0x41, 0x56, 0x45], 8); // WAVE
+  bytes.set([0x66, 0x6d, 0x74, 0x20], 12); // fmt
   view.setUint32(16, 16, true);
-  view.setUint16(20, 1, true);
-  view.setUint16(22, 1, true);
+  view.setUint16(20, 1, true); // PCM
+  view.setUint16(22, 1, true); // mono
   view.setUint32(24, sampleRate, true);
-  view.setUint32(28, sampleRate * 2, true);
-  view.setUint16(32, 2, true);
-  view.setUint16(34, 16, true);
-  writeAscii(bytes, 36, "data");
-  view.setUint32(40, dataSize, true);
-  view.setInt16(44, marker, true);
+  view.setUint32(28, bytesPerSecond, true);
+  view.setUint16(32, bytesPerSample, true);
+  view.setUint16(34, bitsPerSample, true);
+  bytes.set([0x64, 0x61, 0x74, 0x61], 36); // data
+  view.setUint32(40, dataBytes, true);
+
+  if (junkChunkBytes >= 8) {
+    const junkOffset = headerBytes + dataBytes;
+    bytes.set([0x4a, 0x55, 0x4e, 0x4b], junkOffset); // JUNK
+    view.setUint32(junkOffset + 4, junkChunkBytes - 8, true);
+  }
   return bytes;
 }
 
-function audioFile(marker: number, durationSeconds = 1): File {
-  return new File(
-    [wavBytes(marker, durationSeconds)],
-    `voice-${String(marker)}.wav`,
-    {
-      type: "audio/wav",
-    },
-  );
-}
-
-function form(
-  files: readonly File[],
-  editorContext?: VoiceIoEditorContext,
-): FormData {
-  const data = new FormData();
-  for (const file of files) {
-    data.append("file", file);
+function makeSegmentForm(options: {
+  readonly file?: File | null;
+  readonly durationSeconds?: number;
+  readonly totalDurationSeconds?: number;
+  readonly previousTranscript?: string;
+  readonly overlapDurationSeconds?: number;
+  readonly editorContext?: {
+    readonly before: string;
+    readonly selected: string;
+    readonly after: string;
+  };
+}): FormData {
+  const form = new FormData();
+  const durationSeconds = options.durationSeconds ?? 1;
+  if (options.file !== null) {
+    const audioFile =
+      options.file ??
+      new File([makeWavBytes(durationSeconds)], "segment.wav", {
+        type: "audio/wav",
+      });
+    form.append("file", audioFile);
   }
-  if (editorContext !== undefined) {
-    data.append("editorContext", JSON.stringify(editorContext));
-  }
-  data.append(
+  form.append(
     "options",
     JSON.stringify({
-      previousTranscript: "",
-
-      totalDurationSeconds: files.reduce((total, file) => {
-        return total + (file.size - 44) / 32_000;
-      }, 0),
+      previousTranscript: options.previousTranscript ?? "",
+      overlapDurationSeconds: options.overlapDurationSeconds ?? 0,
+      totalDurationSeconds: options.totalDurationSeconds ?? durationSeconds,
     }),
   );
-  return data;
+  if (options.editorContext !== undefined) {
+    form.append("editorContext", JSON.stringify(options.editorContext));
+  }
+  return form;
 }
 
-async function voiceActor(
-  overrides: Partial<Record<FeatureSwitchKey, boolean>> = {},
+function setupVertexVoice(
+  handler: (args: {
+    readonly request: Request;
+    readonly callNumber: number;
+  }) => Promise<Response> | Response,
 ) {
-  const actor = createBddApi(context).user();
-  if (!actor.orgId) {
-    throw new Error("Voice draft tests require an organization");
-  }
-  await createRunsApi(context).grantProEntitlement(actor);
-  mocks.clerk.session(actor.userId, actor.orgId, "org:admin");
-  if (Object.keys(overrides).length > 0) {
-    await updateFeatureSwitchesForUser(
-      context,
-      { userId: actor.userId, orgId: actor.orgId, orgRole: "org:admin" },
-      overrides,
-    );
-  }
+  onTestFinished(() => {
+    stubTestVercelRuntimeToken(undefined);
+  });
+  mockGoogleVoice();
+  let calls = 0;
+  server.use(
+    http.post(VERTEX_VOICE_URL, async ({ request }) => {
+      calls += 1;
+      return await handler({ request, callNumber: calls });
+    }),
+  );
+  return {
+    get calls() {
+      return calls;
+    },
+  };
+}
+
+function vertexTranscriptJson(transcript: string, language = "en"): Response {
+  return vertexVoiceResponse(JSON.stringify({ transcript, language }));
+}
+
+async function setupProAdmin(): Promise<{
+  readonly actor: ApiTestUser;
+  readonly customerId: string;
+  readonly subscriptionId: string;
+}> {
+  const actor = bdd.user({ orgRole: "org:admin" });
+  const entitlement = await runs.grantProEntitlement(actor);
+  createRouteMocks(context).clerk.session(
+    actor.userId,
+    actor.orgId,
+    actor.orgRole,
+  );
+  return {
+    actor,
+    customerId: entitlement.customerId,
+    subscriptionId: entitlement.subscriptionId,
+  };
+}
+
+async function setupLimitedFreeAdmin(): Promise<ApiTestUser> {
+  const { actor, customerId, subscriptionId } = await setupProAdmin();
+  webhooks.configureStripeBillingEnv();
+  await webhooks.postStripeEvent(
+    {
+      id: `evt_voice_cancel_${randomUUID()}`,
+      type: "customer.subscription.deleted",
+      created: Math.floor(now() / 1000),
+      data: {
+        object: {
+          id: subscriptionId,
+          customer: customerId,
+          status: "canceled",
+          metadata: {},
+          items: { data: [{ price: { id: "price_bdd_pro" } }] },
+        },
+      },
+    },
+    [200],
+  );
+  await flushWaitUntilForTest();
+  createRouteMocks(context).clerk.session(
+    actor.userId,
+    actor.orgId,
+    actor.orgRole,
+  );
   return actor;
 }
 
-function voiceAuthHeaders(actor: ApiTestUser) {
-  mocks.clerk.session(actor.userId, actor.orgId, "org:admin");
-  return { authorization: "Bearer clerk-session" };
-}
-
-function voiceBillingClient() {
-  return setupApp({ context, routes: billingStatusRoutes })(
-    billingStatusContract,
-  );
-}
-
-async function voiceCredits(actor: ApiTestUser): Promise<number> {
-  const response = await accept(
-    voiceBillingClient().get({ headers: voiceAuthHeaders(actor) }),
-    [200],
-  );
-  return response.body.credits;
-}
-
-interface FundedVoiceActor {
-  readonly actor: ApiTestUser;
-  readonly orgId: string;
-  readonly customerId: string;
-  readonly subscriptionId: string;
-  readonly invoiceId: string;
-  readonly storageBucket: string;
-  readonly kmsKeyId: string | undefined;
-  readonly resetFeatureSwitches: boolean;
-  readonly limitedFree: boolean;
-}
-
-async function cleanupFundedVoiceActor(owned: FundedVoiceActor): Promise<void> {
-  mockEnv("R2_USER_STORAGES_BUCKET_NAME", owned.storageBucket);
-  mockEnv("SECRETS_KMS_KEY_ID", owned.kmsKeyId);
-  context.mocks.s3.send.mockResolvedValue({
-    Contents: [],
-    IsTruncated: false,
-  });
-  context.mocks.ably.publish.mockResolvedValue(undefined);
-  await flushWaitUntilForTest();
-
-  const webhooks = createWebhookCallbackApi(context);
-  webhooks.configureStripeBillingEnv();
-  context.mocks.stripe.subscriptions.list.mockResolvedValue({
-    data: [],
-    has_more: false,
-  });
-  context.mocks.stripe.subscriptions.retrieve.mockResolvedValue({
-    id: owned.subscriptionId,
-    status: "active",
-    metadata: {},
-    items: { data: [{ price: { id: "price_bdd_pro" } }] },
-  });
-  context.mocks.stripe.subscriptions.update.mockResolvedValue({
-    id: owned.subscriptionId,
-  });
-  context.mocks.stripe.subscriptions.cancel.mockResolvedValue({
-    id: owned.subscriptionId,
-    status: "canceled",
-  });
-  // This one-time credit invoice has no subscription invoice to refund.
-  context.mocks.stripe.invoices.list.mockResolvedValue({
-    data: [],
-    has_more: false,
-  });
-  if (owned.resetFeatureSwitches) {
-    await deleteFeatureSwitchesForUser(context, {
-      userId: owned.actor.userId,
-      orgId: owned.orgId,
-      orgRole: "org:admin",
-    });
-  }
-  webhooks.configureClerkWebhookSecret();
-  webhooks.verifyNextClerkWebhook({
-    type: "organization.deleted",
-    data: { id: owned.orgId },
-  });
-  await webhooks.requestClerkWebhook("{}", {}, [200]);
-  await flushWaitUntilForTest();
-
-  // Clerk deletion stops active work; wallets, Memory, billing history and
-  // voice daily counts remain retained under these unique IDs.
-}
-
-async function publicVoiceActor({
-  debug = false,
-  limitedFree = false,
-}: { readonly debug?: boolean; readonly limitedFree?: boolean } = {}) {
-  const actor = createBddApi(context).user();
-  if (!actor.orgId) {
-    throw new Error("Voice test actor must belong to an organization");
-  }
-  const suffix = randomUUID();
-  const owned = {
-    actor,
-    orgId: actor.orgId,
-    customerId: `cus_voice_${suffix}`,
-    subscriptionId: `sub_voice_${suffix}`,
-    invoiceId: `in_voice_${suffix}`,
-    storageBucket: env("R2_USER_STORAGES_BUCKET_NAME"),
-    kmsKeyId: env("SECRETS_KMS_KEY_ID"),
-    resetFeatureSwitches: debug,
-    limitedFree,
-  };
-  const owner = createFixtureOperationOwner(async () => {
-    await cleanupFundedVoiceActor(owned);
-  });
-  await owner.run(async () => {
-    await createBddApi(context).completeOnboarding(actor);
-    await expect(voiceCredits(actor)).resolves.toBe(0);
-
-    const webhooks = createWebhookCallbackApi(context);
-    webhooks.configureStripeBillingEnv();
-    context.mocks.stripe.customers.retrieve.mockResolvedValue({
-      id: owned.customerId,
-      metadata: { orgId: owned.orgId },
-    });
-    const subscription = {
-      id: owned.subscriptionId,
-      customer: owned.customerId,
-      status: "active",
-      metadata: {},
-      cancel_at_period_end: false,
-      cancel_at: null,
-      schedule: null,
-      trial_end: null,
-      items: { data: [{ price: { id: "price_bdd_pro" } }] },
-    };
-    await webhooks.postStripeEvent(
-      {
-        id: `evt_voice_created_${suffix}`,
-        type: "customer.subscription.created",
-        created: Math.floor(now() / 1000),
-        data: { object: subscription },
-      },
-      [200],
-    );
-    await webhooks.postStripeEvent(
-      {
-        id: `evt_voice_updated_${suffix}`,
-        type: "customer.subscription.updated",
-        created: Math.floor(now() / 1000),
-        data: { object: subscription },
-      },
-      [200],
-    );
-    const subscribed = await accept(
-      voiceBillingClient().get({
-        headers: voiceAuthHeaders(actor),
-      }),
-      [200],
-    );
-    expect(subscribed.body).toMatchObject({
-      tier: "pro",
-      status: "active",
-      credits: 0,
-    });
-
-    await webhooks.postStripeEvent(
-      {
-        id: `evt_voice_paid_${suffix}`,
-        type: "invoice.paid",
-        created: Math.floor(now() / 1000),
-        data: {
-          object: {
-            id: owned.invoiceId,
-            customer: owned.customerId,
-            amount_paid: 1000,
-            metadata: {
-              type: "auto_recharge",
-              orgId: owned.orgId,
-              creditsAmount: "10000",
-            },
-            parent: null,
-            lines: { has_more: false, data: [] },
-          },
-        },
-      },
-      [200],
-    );
-    await flushWaitUntilForTest();
-    const funded = await accept(
-      voiceBillingClient().get({
-        headers: voiceAuthHeaders(actor),
-      }),
-      [200],
-    );
-    expect(funded.body).toMatchObject({
-      tier: "pro",
-      status: "active",
-      credits: 10_000,
-    });
-    // Subscription cancellation restores free Voice limits and retains purchased cash.
-    if (owned.limitedFree) {
-      await webhooks.postStripeEvent(
-        {
-          id: `evt_voice_deleted_${suffix}`,
-          type: "customer.subscription.deleted",
-          created: Math.floor(now() / 1000),
-          data: { object: { ...subscription, status: "canceled" } },
-        },
-        [200],
-      );
-      await flushWaitUntilForTest();
-      const downgraded = await accept(
-        voiceBillingClient().get({ headers: voiceAuthHeaders(actor) }),
-        [200],
-      );
-      expect(downgraded.body).toMatchObject({
-        tier: "limited-free-1",
-        status: "active",
-        credits: 10_000,
-      });
-    }
-    if (debug) {
-      await updateFeatureSwitchesForUser(
-        context,
-        { userId: actor.userId, orgId: owned.orgId, orgRole: "org:admin" },
-        { [FeatureSwitchKey.OkouDebug]: true },
-      );
-    }
-  });
-  return owner;
-}
-
-function requestAudioParts(request: VertexVoiceRequest) {
-  const parts = request.contents[0]?.parts;
-  if (!parts) {
-    throw new Error("Expected native Google content");
-  }
-  return parts;
-}
-
 describe("voice input routing and reference context", () => {
-  describe("maximum-size voice upload", () => {
-    let wav: File;
-    let owner: Awaited<ReturnType<typeof publicVoiceActor>>;
+  it("voice-io-transcribe-025 requires audio even when an earlier transcript exists", async () => {
+    await setupProAdmin();
 
-    beforeEach(async () => {
-      owner = await publicVoiceActor();
-      const pcm = wavBytes(1, 75);
-      const bytes = new Uint8Array(25 * 1024 * 1024);
-      bytes.set(pcm);
-      const view = new DataView(bytes.buffer);
-      view.setUint32(4, bytes.length - 8, true);
-      writeAscii(bytes, pcm.length, "JUNK");
-      view.setUint32(pcm.length + 4, bytes.length - pcm.length - 8, true);
-      wav = new File([bytes], "boundary.wav", { type: "audio/wav" });
-    });
-
-    it("accepts 25 MiB WAV with a base64-expanded native payload", async () => {
-      await owner.run(async () => {
-        server.use(
-          http.post(VERTEX_VOICE_URL, async ({ request }) => {
-            // Smaller cases assert full JSON/audio contents. Count this large
-            // request as a stream instead of allocating another complete payload.
-            const reader = request.body?.getReader();
-            if (!reader) {
-              throw new Error("Expected a native Google request body");
-            }
-            const countBodyBytes = async () => {
-              let payloadBytes = 0;
-              while (true) {
-                const chunk = await reader.read();
-                if (chunk.done) {
-                  return payloadBytes;
-                }
-                payloadBytes += chunk.value.byteLength;
-              }
-            };
-            const payloadBytes = await countBodyBytes().finally(() => {
-              reader.releaseLock();
-            });
-            expect(request.headers.get("content-type")).toBe(
-              "application/json",
-            );
-            expect(payloadBytes).toBeGreaterThan(4 * Math.ceil(wav.size / 3));
-            return vertexVoiceResponse(
-              JSON.stringify({
-                transcript: "Recorded speech.",
-                language: "en",
-              }),
-            );
-          }),
-        );
-        const result = await accept(
-          client().segment({
-            headers: { authorization: "Bearer clerk-session" },
-            body: segmentForm([wav], "", 75),
-          }),
-          [200],
-        );
-        expect(result.body).toStrictEqual({
-          transcript: "Recorded speech.",
-          language: "en",
-        });
-      });
-    });
-  });
-
-  it("rejects uploads above 25 MiB before any provider request", async () => {
-    const owner = await publicVoiceActor();
-    await owner.run(async () => {
-      const tooLarge = new File(
-        [new Uint8Array(25 * 1024 * 1024 + 1)],
-        "oversize.wav",
-        { type: "audio/wav" },
-      );
-      const result = await accept(
-        client().segment({
-          headers: { authorization: "Bearer clerk-session" },
-          body: segmentForm([tooLarge], "", 75),
-        }),
-        [400],
-      );
-      expect(result.body.error.message).toBe(
-        "Audio files are too large (max 25 MB)",
-      );
-    });
-  });
-
-  it.each([
-    { promptFeedback: { blockReason: "SAFETY" }, candidates: [] },
-    {
-      candidates: [
-        {
-          finishReason: "MAX_TOKENS",
-          content: { parts: [{ text: "truncated" }] },
-        },
-      ],
-    },
-    {
-      candidates: [
-        {
-          finishReason: "STOP",
-          content: { parts: [{ text: "thinking only", thought: true }] },
-        },
-      ],
-    },
-  ])("rejects unusable native candidates without retry: %j", async (body) => {
-    const owner = await publicVoiceActor();
-    await owner.run(async () => {
-      let calls = 0;
-      server.use(
-        http.post(VERTEX_VOICE_URL, () => {
-          calls += 1;
-          return HttpResponse.json(body);
-        }),
-      );
-      await accept(
-        client().segment({
-          headers: { authorization: "Bearer clerk-session" },
-          body: form([audioFile(1)]),
-        }),
-        [502],
-      );
-      expect(calls).toBe(1);
-    });
-  });
-
-  it("ignores thought parts and rejects an oversized native response", async () => {
-    const owner = await publicVoiceActor();
-    await owner.run(async () => {
-      const headers = { authorization: "Bearer clerk-session" };
-      server.use(
-        http.post(VERTEX_VOICE_URL, () => {
-          return HttpResponse.json({
-            candidates: [
-              {
-                finishReason: "STOP",
-                content: {
-                  parts: [
-                    { text: "private reasoning", thought: true },
-                    {
-                      text: JSON.stringify({
-                        transcript: "Hello.",
-
-                        language: "en",
-                      }),
-                    },
-                  ],
-                },
-              },
-            ],
-          });
-        }),
-      );
-      const response = await accept(
-        client().segment({ headers, body: form([audioFile(1)]) }),
-        [200],
-      );
-      expect(response.body.transcript).toBe("Hello.");
-      server.use(
-        http.post(VERTEX_VOICE_URL, () => {
-          return new HttpResponse("x".repeat(1024 * 1024 + 1));
-        }),
-      );
-      await accept(
-        client().segment({ headers, body: form([audioFile(1)]) }),
-        [502],
-      );
-    });
-  });
-
-  it("routes voice input to Gemini 3.1 Flash-Lite on Vertex", async () => {
-    const google = mockGoogleVoice();
-    const owner = await publicVoiceActor({ debug: true });
-    await owner.run(async () => {
-      const headers = { authorization: "Bearer clerk-session" };
-      let calls = 0;
-      server.use(
-        http.post(VERTEX_VOICE_URL, async ({ request }) => {
-          calls += 1;
-          expect(request.url).toBe(
-            `https://aiplatform.us.rep.googleapis.com/v1/projects/${google.project}/locations/us/publishers/google/models/gemini-3.1-flash-lite:generateContent`,
-          );
-          expect(request.headers.get("authorization")).toBe(
-            "Bearer synthetic-google-token",
-          );
-          const body = (await request.json()) as VertexVoiceRequest;
-          expect(body.generationConfig).toMatchObject({
-            thinkingConfig: { thinkingLevel: "MINIMAL" },
-            temperature: 0,
-            maxOutputTokens: 4096,
-            responseMimeType: "application/json",
-            responseSchema: {
-              required: ["transcript", "language"],
-            },
-          });
-          return vertexVoiceResponse(
-            JSON.stringify({
-              transcript: "Ship on Monday.",
-
-              language: "en",
-            }),
-          );
-        }),
-      );
-      const response = await accept(
-        client().segment({ headers, body: form([audioFile(1)]) }),
-        [200],
-      );
-      expect(response.body.transcript).toBe("Ship on Monday.");
-      expect(response.headers.get("Server-Timing")).toContain(
-        "voice_segment;dur=",
-      );
-      expect(calls).toBe(1);
-    });
-  });
-
-  it.each([0.56, 60])(
-    "transcribes a %s-second recording without polishing",
-    async (durationSeconds) => {
-      const owner = await publicVoiceActor();
-      await owner.run(async () => {
-        const editorContext = {
-          before: "Please review Project Nebula\n",
-          selected: "the previous scope",
-          after: " before shipping version 1.5.",
-        };
-        let providerRequest: VertexVoiceRequest | undefined;
-        server.use(
-          http.post(VERTEX_VOICE_URL, async ({ request }) => {
-            providerRequest = (await request.json()) as VertexVoiceRequest;
-            return HttpResponse.json({
-              candidates: [
-                {
-                  finishReason: "STOP",
-                  content: {
-                    parts: [
-                      {
-                        text: JSON.stringify({
-                          transcript: "um ship the nebula release",
-
-                          language: "en-US",
-                        }),
-                      },
-                    ],
-                  },
-                },
-              ],
-            });
-          }),
-        );
-
-        const response = await accept(
-          client().segment({
-            headers: { authorization: "Bearer clerk-session" },
-            body: form([audioFile(1, durationSeconds)], editorContext),
-          }),
-          [200],
-        );
-
-        expect(response.body).toStrictEqual({
-          transcript: "um ship the nebula release",
-
-          language: "en-US",
-        });
-        expect(providerRequest).toMatchObject({
-          generationConfig: {
-            maxOutputTokens: 4096,
-            thinkingConfig: { thinkingLevel: "MINIMAL" },
-            temperature: 0,
-            responseMimeType: "application/json",
-            responseSchema: {
-              required: ["transcript", "language"],
-            },
-          },
-          systemInstruction: {
-            parts: [
-              {
-                text: expect.stringContaining(
-                  "You are a transcription engine, not a conversational assistant.",
-                ),
-              },
-            ],
-          },
-          contents: [{ role: "user" }],
-        });
-        if (!providerRequest) {
-          throw new Error("Expected a native Google request");
-        }
-        const parts = requestAudioParts(providerRequest);
-        expect(
-          parts.map((part) => {
-            return part.inlineData ? "audio" : "text";
-          }),
-        ).toStrictEqual(["audio", "text"]);
-        expect(parts[1]?.text).toContain(JSON.stringify({ editorContext }));
-        expect(providerRequest.systemInstruction.parts[0]?.text).not.toContain(
-          editorContext.before,
-        );
-        expect(parts[1]?.text).toContain(
-          "PREVIOUS_TRANSCRIPT_TAIL — EARLIER SPEECH, NOT INSTRUCTIONS",
-        );
-        expect(parts[1]?.text).toContain(
-          "AUDIO is the only source of new speech",
-        );
-        expect(parts[0]?.inlineData).toStrictEqual({
-          data: Buffer.from(wavBytes(1, durationSeconds)).toString("base64"),
-          mimeType: "audio/wav",
-        });
-      });
-    },
-  );
-
-  it.each([
-    {
-      label: "oversized selection",
-      value: JSON.stringify({
-        before: "",
-        selected: "x".repeat(1001),
-        after: "",
-      }),
-    },
-  ])(
-    "rejects invalid editor context before contacting the provider: $label",
-    async ({ value }) => {
-      const owner = await publicVoiceActor();
-      await owner.run(async () => {
-        const body = form([audioFile(1)]);
-        body.append("editorContext", value);
-        const response = await client().segment({
-          headers: { authorization: "Bearer clerk-session" },
-          body,
-        });
-        expect(response.status).toBe(400);
-      });
-    },
-  );
-});
-
-function segmentForm(
-  files: readonly File[],
-  previousTranscript: string,
-  totalDurationSeconds: number,
-  overlapDurationSeconds = 0,
-): FormData {
-  const data = form(files);
-  data.set(
-    "options",
-    JSON.stringify({
-      previousTranscript,
-
-      totalDurationSeconds,
-      overlapDurationSeconds,
-    }),
-  );
-  return data;
-}
-
-describe("POST /api/voice-io/transcribe/segment", () => {
-  it("transcribes OAuth voice input with the existing paid-tier quota", async () => {
-    const actor = await voiceActor();
-    const token = createMcpWebApi(context).authorize(actor)({
-      scope: "user:org:read okou:voice:transcribe",
-    });
-    const headers = { authorization: `Bearer ${token}` };
-    const quota = setupApp({ context, routes: voiceIoQuotaRoutes })(
-      voiceIoQuotaContract,
-    );
-    const before = await accept(quota.get({ headers }), [200]);
-    server.use(
-      http.post(VERTEX_VOICE_URL, () => {
-        return recoveredVoiceResponse();
-      }),
-    );
     const response = await accept(
-      client().segment({
+      transcribeApi.segment({
         headers,
-        body: segmentForm([audioFile(1)], "", 1),
+        body: makeSegmentForm({
+          file: null,
+          previousTranscript: "Earlier speech.",
+          totalDurationSeconds: 60,
+        }),
+      }),
+      [400],
+    );
+
+    expect(response.body.error.message).toBe("No audio file provided");
+  });
+
+  it("voice-io-transcribe-010 rejects invalid editor context before contacting the provider: oversized selection", async () => {
+    await setupProAdmin();
+
+    const response = await accept(
+      transcribeApi.segment({
+        headers,
+        body: makeSegmentForm({
+          durationSeconds: 1,
+          editorContext: {
+            before: "before",
+            selected: "x".repeat(1001),
+            after: "after",
+          },
+        }),
+      }),
+      [400],
+    );
+
+    expect(response.status).toBe(400);
+  });
+
+  it("voice-io-transcribe-012 rejects a previous transcript beyond the bounded prefix", async () => {
+    await setupProAdmin();
+
+    const response = await accept(
+      transcribeApi.segment({
+        headers,
+        body: makeSegmentForm({
+          durationSeconds: 1,
+          previousTranscript: "a".repeat(1001),
+          totalDurationSeconds: 61,
+        }),
+      }),
+      [400],
+    );
+
+    expect(response.status).toBe(400);
+  });
+
+  it("voice-io-transcribe-028 rejects an oversized segment before invoking the provider", async () => {
+    await setupProAdmin();
+
+    const response = await accept(
+      transcribeApi.segment({
+        headers,
+        body: makeSegmentForm({
+          durationSeconds: 76,
+          totalDurationSeconds: 76,
+        }),
+      }),
+      [400],
+    );
+
+    expect(response.status).toBe(400);
+  });
+
+  it("voice-io-transcribe-003 rejects unusable native candidates without retry", async () => {
+    await setupProAdmin();
+    const vertex = setupVertexVoice(() => {
+      return HttpResponse.json({
+        promptFeedback: { blockReason: "SAFETY" },
+        candidates: [],
+      });
+    });
+
+    const response = await accept(
+      transcribeApi.segment({
+        headers,
+        body: makeSegmentForm({ durationSeconds: 1 }),
+      }),
+      [502],
+    );
+
+    expect(response.status).toBe(502);
+    expect(vertex.calls).toBe(1);
+  });
+
+  it("voice-io-transcribe-006 ignores thought parts and rejects an oversized native response", async () => {
+    await setupProAdmin();
+    setupVertexVoice(({ callNumber }) => {
+      if (callNumber === 1) {
+        return HttpResponse.json({
+          candidates: [
+            {
+              finishReason: "STOP",
+              content: {
+                role: "model",
+                parts: [
+                  { text: "internal reasoning thought", thought: true },
+                  {
+                    text: JSON.stringify({
+                      transcript: "Hello.",
+                      language: "en",
+                    }),
+                  },
+                ],
+              },
+            },
+          ],
+        });
+      }
+      return new HttpResponse("x".repeat(1024 * 1024 + 128), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    });
+
+    const first = await accept(
+      transcribeApi.segment({
+        headers,
+        body: makeSegmentForm({ durationSeconds: 1 }),
       }),
       [200],
     );
+    expect(first.body).toStrictEqual({
+      transcript: "Hello.",
+      language: "en",
+    });
+    expect(first.body.transcript).not.toContain("internal reasoning");
+
+    const second = await accept(
+      transcribeApi.segment({
+        headers,
+        body: makeSegmentForm({ durationSeconds: 1 }),
+      }),
+      [502],
+    );
+    expect(second.status).toBe(502);
+  });
+
+  it("voice-io-transcribe-008 transcribes a 0.56-second recording without polishing", async () => {
+    await setupProAdmin();
+    const editorContext = {
+      before: "Draft header before cursor",
+      selected: "selected nebula snippet",
+      after: "trailing footer after cursor",
+    };
+    let capturedBody: VertexVoiceRequest | undefined;
+
+    setupVertexVoice(async ({ request }) => {
+      capturedBody = (await request.json()) as VertexVoiceRequest;
+      return vertexTranscriptJson("um ship the nebula release", "en-US");
+    });
+
+    const response = await accept(
+      transcribeApi.segment({
+        headers,
+        body: makeSegmentForm({
+          durationSeconds: 0.56,
+          totalDurationSeconds: 0.56,
+          editorContext,
+        }),
+      }),
+      [200],
+    );
+
     expect(response.body).toStrictEqual({
+      transcript: "um ship the nebula release",
+      language: "en-US",
+    });
+    if (!capturedBody) {
+      throw new Error("Expected Vertex voice request body");
+    }
+    expect(capturedBody.generationConfig.maxOutputTokens).toBe(4096);
+    expect(capturedBody.generationConfig.thinkingConfig.thinkingLevel).toBe(
+      "MINIMAL",
+    );
+    expect(capturedBody.generationConfig.temperature).toBe(0);
+    expect(
+      capturedBody.generationConfig.responseSchema?.required,
+    ).toStrictEqual(["transcript", "language"]);
+
+    const systemText = capturedBody.systemInstruction.parts
+      .map((part) => {
+        return part.text;
+      })
+      .join("\n");
+    expect(systemText).toContain("transcription engine");
+    expect(systemText).not.toContain(editorContext.before);
+    expect(systemText).not.toContain(editorContext.selected);
+    expect(systemText).not.toContain(editorContext.after);
+
+    const userParts = capturedBody.contents[0]?.parts ?? [];
+    expect(userParts[0]?.inlineData?.mimeType).toBe("audio/wav");
+    expect(userParts[0]?.inlineData?.data).toBeTruthy();
+    const textPart = userParts[1]?.text ?? "";
+    expect(textPart).toContain(JSON.stringify({ editorContext }));
+    expect(textPart).toContain("PREVIOUS_TRANSCRIPT_TAIL");
+    expect(textPart).toContain("AUDIO is the only source of new speech");
+  });
+
+  it("voice-io-transcribe-011 transcribes OAuth voice input with the existing paid-tier quota", async () => {
+    const { actor } = await setupProAdmin();
+    const issue = createMcpWebApi(context).authorize(actor);
+    context.mocks.clerk.users.getOrganizationMembershipList.mockResolvedValue({
+      data: [{ role: "org:admin", organization: { id: actor.orgId } }],
+      totalCount: 1,
+    });
+    const oauthToken = issue({ scope: "user:org:read okou:voice:transcribe" });
+    const oauthHeaders = { authorization: `Bearer ${oauthToken}` };
+
+    setupVertexVoice(() => {
+      return vertexTranscriptJson("Recorded speech.", "en");
+    });
+
+    const quotaBefore = await accept(
+      quotaApi.get({ headers: oauthHeaders }),
+      [200],
+    );
+    expect(quotaBefore.body.allowed).toBeTruthy();
+    expect(quotaBefore.body.count).toBe(0);
+
+    const segment = await accept(
+      transcribeApi.segment({
+        headers: oauthHeaders,
+        body: makeSegmentForm({ durationSeconds: 1 }),
+      }),
+      [200],
+    );
+    expect(segment.body).toStrictEqual({
       transcript: "Recorded speech.",
       language: "en",
     });
-    const after = await accept(quota.get({ headers }), [200]);
-    expect(before.body).toMatchObject({ allowed: true, count: 0 });
-    expect(after.body).toStrictEqual(before.body);
+
+    const quotaAfter = await accept(
+      quotaApi.get({ headers: oauthHeaders }),
+      [200],
+    );
+    expect(quotaAfter.body).toStrictEqual(quotaBefore.body);
   });
 
-  it("rejects a previous transcript beyond the bounded prefix", async () => {
-    const owner = await publicVoiceActor();
-    await owner.run(async () => {
-      const response = await client().segment({
-        headers: { authorization: "Bearer clerk-session" },
-        body: segmentForm([audioFile(1)], "x".repeat(1001), 61),
-      });
-      expect(response.status).toBe(400);
+  it("voice-io-transcribe-014 accepts the 60-minute recording boundary and rejects longer recordings", async () => {
+    await setupProAdmin();
+    setupVertexVoice(() => {
+      return vertexTranscriptJson("Recorded speech.", "en");
     });
-  });
 
-  it("retains bounded failure evidence without private content or duplicate reports", async () => {
-    context.mocks.signalTimers.delay.mockResolvedValue(undefined);
-    // The single redaction check covers the incident's diagnostic contract
-    // through the real endpoint; other cases assert HTTP/recovery behavior.
-    await voiceActor();
-    const secret = "private-voice-content-credential-and-provider-body";
-    const longText = secret.repeat(8);
-    const requestId = randomUUID();
-    const deployment = "a".repeat(40);
-    mockEnv("GIT_COMMIT_SHA", deployment);
-    const output = context.mocks.console.log;
-    onTestFinished(context.mocks.console.capture());
-    const native = (transcript: string) => {
-      return vertexVoiceResponse(
-        JSON.stringify({ transcript, language: "en" }),
-      );
-    };
-    const cases: readonly {
-      name: string;
-      response: () => Response;
-      previous?: string;
-      status?: 204 | 503;
-      expected?: Readonly<Record<string, unknown>>;
-      absent?: readonly string[];
-      reported?: boolean;
-      privateCorrelation?: boolean;
-    }[] = [
-      {
-        name: "segment rate",
-        response: () => {
-          return native(longText);
-        },
-        previous: secret,
-        expected: {
-          stage: "output_validation",
-          reason: "transcription_rate_exceeded",
-          transcript_chars: longText.length,
-        },
-      },
-
-      {
-        name: "Google truncation with bounded provider metadata",
-        response: () => {
-          return HttpResponse.json({
-            modelVersion: "gemini-3.1-flash-lite-001",
-            usageMetadata: {
-              promptTokenCount: 12_345,
-              candidatesTokenCount: 65_536,
-              thoughtsTokenCount: 1234,
-              toolUsePromptTokenCount: 5,
-              cachedContentTokenCount: 678,
-              totalTokenCount: 79_120,
-            },
-            candidates: [
-              {
-                finishReason: "MAX_TOKENS",
-                content: {
-                  parts: [
-                    { text: secret },
-                    { text: `thought-${secret}`, thought: true },
-                  ],
-                },
-              },
-            ],
-          });
-        },
-        previous: secret,
-        expected: {
-          stage: "transcription",
-          reason: "output_truncated",
-          location: "us",
-          operation: "voice_transcript",
-          previous_transcript_chars: secret.length,
-          prompt_tokens: 12_345,
-          candidate_tokens: 65_536,
-          thought_tokens: 1234,
-          tool_use_prompt_tokens: 5,
-          cached_content_tokens: 678,
-          total_tokens: 79_120,
-          candidate_chars: secret.length,
-          thought_chars: `thought-${secret}`.length,
-          provider_model_version: "gemini-3.1-flash-lite-001",
-        },
-      },
-      {
-        name: "Google omits malformed optional diagnostics independently",
-        response: () => {
-          return HttpResponse.json({
-            modelVersion: `K-model-${secret}`,
-            usageMetadata: {
-              promptTokenCount: 12,
-              candidatesTokenCount: "65536",
-              thoughtsTokenCount: -1,
-              toolUsePromptTokenCount: 1.5,
-              cachedContentTokenCount: Number.MAX_SAFE_INTEGER + 1,
-              totalTokenCount: 34,
-            },
-            candidates: [
-              {
-                finishReason: "MAX_TOKENS",
-                content: { parts: [{ text: secret }] },
-              },
-            ],
-          });
-        },
-        expected: {
-          stage: "transcription",
-          reason: "output_truncated",
-          prompt_tokens: 12,
-          total_tokens: 34,
-          candidate_chars: secret.length,
-          thought_chars: 0,
-        },
-        absent: [
-          "candidate_tokens",
-          "thought_tokens",
-          "tool_use_prompt_tokens",
-          "cached_content_tokens",
-          "provider_model_version",
-        ],
-      },
-      {
-        name: "Google omits missing optional diagnostics",
-        response: () => {
-          return vertexVoiceResponse(secret);
-        },
-        expected: {
-          stage: "transcription",
-          reason: "invalid_output",
-          candidate_chars: secret.length,
-          thought_chars: 0,
-        },
-        absent: [
-          "prompt_tokens",
-          "candidate_tokens",
-          "thought_tokens",
-          "tool_use_prompt_tokens",
-          "cached_content_tokens",
-          "total_tokens",
-          "provider_model_version",
-        ],
-      },
-      {
-        name: "Google HTTP rejection",
-        response: () => {
-          return new HttpResponse(secret, { status: 403 });
-        },
-        expected: { stage: "transcription", reason: "http" },
-      },
-      {
-        name: "private correlation metadata",
-        response: () => {
-          return native(longText);
-        },
-        previous: secret,
-        expected: {
-          stage: "output_validation",
-          reason: "transcription_rate_exceeded",
-        },
-        privateCorrelation: true,
-      },
-      {
-        name: "recovery owns exhausted capacity",
-        response: () => {
-          return new HttpResponse(secret, {
-            status: 429,
-            headers: { "Retry-After": "60" },
-          });
-        },
-        status: 503,
-        reported: true,
-      },
-      {
-        name: "accepted no speech",
-        response: () => {
-          return native("[NO_SPEECH]");
-        },
-        status: 204,
-      },
-    ];
-    for (const scenario of cases) {
-      mockEnv(
-        "GIT_COMMIT_SHA",
-        scenario.privateCorrelation ? secret : deployment,
-      );
-      server.use(
-        http.post(VERTEX_VOICE_URL, () => {
-          return scenario.response();
-        }),
-      );
-      const body = segmentForm([audioFile(1)], scenario.previous ?? "", 1);
-      body.set(
-        "editorContext",
-        JSON.stringify({
-          before: secret,
-          selected: secret,
-          after: secret,
-        }),
-      );
-      const before = output.mock.calls.length;
-      const headers = {
-        authorization: "Bearer clerk-session",
-        [CLIENT_REQUEST_ID_HEADER]: scenario.privateCorrelation
-          ? secret
-          : requestId,
-      };
-      const response = await client().segment({
+    const atLimit = await accept(
+      transcribeApi.segment({
         headers,
-        body,
-      });
-      expect(response.status, scenario.name).toBe(scenario.status ?? 502);
-      const calls = output.mock.calls.slice(before);
-      const records = calls.flatMap(([, fields]) => {
-        return typeof fields === "object" &&
-          fields !== null &&
-          "type" in fields &&
-          fields.type === "voice_transcription_failure"
-          ? [fields]
-          : [];
-      });
-      if (scenario.expected) {
-        expect(records, scenario.name).toHaveLength(1);
-        expect(records[0], scenario.name).toMatchObject({
-          ...scenario.expected,
-          model: "google/gemini-3.1-flash-lite",
-          provider: "vertex",
-          has_audio: true,
-          audio_duration_seconds: 1,
-          total_duration_seconds: 1,
-          ...(scenario.privateCorrelation
-            ? {}
-            : {
-                x_client_request_id: requestId,
-                deployment_commit_sha: deployment,
-              }),
-        });
-        for (const field of scenario.absent ?? []) {
-          expect(records[0], scenario.name).not.toHaveProperty(field);
-        }
-        if (scenario.privateCorrelation) {
-          expect(records[0]).not.toHaveProperty("x_client_request_id");
-          expect(records[0]).not.toHaveProperty("deployment_commit_sha");
-        }
-      } else {
-        expect(records, scenario.name).toHaveLength(0);
-      }
-      const terminal = calls.filter(([message]) => {
-        return (
-          typeof message === "string" &&
-          /\[(?:VoiceSegment|VertexVoice|VoiceProvider)\]/u.test(message)
-        );
-      });
-      expect(terminal, scenario.name).toHaveLength(
-        scenario.expected || scenario.reported ? 1 : 0,
-      );
-      expect(JSON.stringify({ calls, response }), scenario.name).not.toContain(
-        secret,
-      );
-    }
-  });
+        body: makeSegmentForm({
+          durationSeconds: 1,
+          totalDurationSeconds: 3600,
+        }),
+      }),
+      [200],
+    );
+    expect(atLimit.body.transcript).toBe("Recorded speech.");
 
-  it("accepts the 60-minute recording boundary and rejects longer recordings", async () => {
-    const owner = await publicVoiceActor();
-    await owner.run(async () => {
-      server.use(
-        http.post(VERTEX_VOICE_URL, () => {
-          return HttpResponse.json({
-            candidates: [
-              {
-                finishReason: "STOP",
-                content: {
-                  parts: [
-                    {
-                      text: JSON.stringify({
-                        transcript: "Recorded speech.",
-                        language: "en",
-                      }),
-                    },
-                  ],
-                },
-              },
-            ],
-          });
-        }),
-      );
-      const headers = { authorization: "Bearer clerk-session" };
-      await accept(
-        client().segment({
-          headers,
-          body: segmentForm([audioFile(1)], "", 60 * 60),
-        }),
-        [200],
-      );
-      const tooLong = await client().segment({
+    const overLimit = await accept(
+      transcribeApi.segment({
         headers,
-        body: segmentForm([audioFile(2)], "", 60 * 60 + 1),
-      });
-      expect(tooLong.status).toBe(400);
-    });
+        body: makeSegmentForm({
+          durationSeconds: 1,
+          totalDurationSeconds: 3601,
+        }),
+      }),
+      [400],
+    );
+    expect(overLimit.status).toBe(400);
   });
 
-  it("returns no content for silent audio without discarding client-owned earlier text", async () => {
-    const owner = await publicVoiceActor();
-    await owner.run(async () => {
-      server.use(
-        http.post(VERTEX_VOICE_URL, () => {
-          return vertexVoiceResponse(
-            JSON.stringify({ transcript: "[NO_SPEECH]", language: "und" }),
-          );
-        }),
-      );
-      const response = await accept(
-        client().segment({
-          headers: { authorization: "Bearer clerk-session" },
-          body: segmentForm([audioFile(1)], "Earlier speech.", 61),
-        }),
-        [204],
-      );
-      expect(response.body).toBeUndefined();
+  it("voice-io-transcribe-015 returns no content for silent audio without discarding client-owned earlier text", async () => {
+    await setupProAdmin();
+    setupVertexVoice(() => {
+      return vertexTranscriptJson("[NO_SPEECH]", "und");
     });
+
+    const response = await accept(
+      transcribeApi.segment({
+        headers,
+        body: makeSegmentForm({
+          durationSeconds: 1,
+          previousTranscript: "Earlier speech.",
+          totalDurationSeconds: 61,
+        }),
+      }),
+      [204],
+    );
+
+    expect(response.status).toBe(204);
+    expect(response.body).toBeFalsy();
   });
 
-  it.each([
-    { transcript: "x".repeat(99), duration: 1, status: 200 },
-    { transcript: "x".repeat(100), duration: 4, status: 200 },
-    { transcript: "x".repeat(100), duration: 1, status: 502 },
-    {
-      transcript:
-        "Hello, I am calling to inquire about the status of my recent order, number 45678. Could you please provide an update on when I might expect delivery?",
-      duration: 0.1,
-      status: 502,
-    },
-  ])(
-    "keeps plausible speech and leaves suspicious short audio retryable: %j",
-    async ({ transcript, duration, status }) => {
-      const owner = await publicVoiceActor();
-      await owner.run(async () => {
-        server.use(
-          http.post(VERTEX_VOICE_URL, () => {
-            return vertexVoiceResponse(
-              JSON.stringify({ transcript, language: "en" }),
-            );
-          }),
-        );
-        const response = await client().segment({
-          headers: { authorization: "Bearer clerk-session" },
-          body: segmentForm([audioFile(1, duration)], "", duration),
-        });
-        expect(response.status).toBe(status);
-      });
-    },
-  );
-
-  it("rejects implausible final output without discarding saved speech", async () => {
-    const owner = await publicVoiceActor();
-    await owner.run(async () => {
-      const invented = "x".repeat(200);
-      server.use(
-        http.post(VERTEX_VOICE_URL, () => {
-          return HttpResponse.json({
-            candidates: [
-              {
-                finishReason: "STOP",
-                content: {
-                  parts: [
-                    {
-                      text: JSON.stringify({
-                        transcript: invented,
-
-                        language: "en",
-                      }),
-                    },
-                  ],
-                },
-              },
-            ],
-          });
-        }),
-      );
-      const response = await accept(
-        client().segment({
-          headers: { authorization: "Bearer clerk-session" },
-          body: segmentForm([audioFile(1)], "Earlier speech.", 61),
-        }),
-        [502],
-      );
-      expect(response.body.error.code).toBe("VOICE_TRANSCRIPTION_FAILED");
+  it("voice-io-transcribe-019 keeps plausible speech and leaves suspicious short audio retryable", async () => {
+    await setupProAdmin();
+    const hallucinated =
+      "Hello, I am calling to inquire about the status of my recent order, number 45678. Could you please provide an update on when I might expect delivery?";
+    setupVertexVoice(() => {
+      return vertexTranscriptJson(hallucinated, "en");
     });
+
+    const response = await accept(
+      transcribeApi.segment({
+        headers,
+        body: makeSegmentForm({
+          durationSeconds: 0.1,
+          totalDurationSeconds: 0.1,
+        }),
+      }),
+      [502],
+    );
+
+    expect(response.status).toBe(502);
   });
 
-  it("counts a recording only after independent polish succeeds", async () => {
-    context.mocks.signalTimers.delay.mockResolvedValue(undefined);
-    const owner = await publicVoiceActor({ limitedFree: true });
-    await owner.run(async () => {
-      const headers = { authorization: "Bearer clerk-session" };
-      const quota = setupApp({ context, routes: voiceIoQuotaRoutes })(
-        voiceIoQuotaContract,
-      );
-      const polish = setupApp({ context, routes: voiceIoPolishRoutes })(
-        voiceIoPolishSegmentsContract,
-      );
-      server.use(
-        http.post(VERTEX_VOICE_URL, () => {
-          return recoveredVoiceResponse();
-        }),
-      );
-      await accept(
-        client().segment({
-          headers,
-          body: segmentForm([audioFile(1, 60)], "", 60),
-        }),
-        [200],
-      );
-      await accept(
-        client().segment({
-          headers,
-          body: segmentForm([audioFile(2, 3)], "First part.", 61, 2),
-        }),
-        [200],
-      );
-      expect((await accept(quota.get({ headers }), [200])).body).toMatchObject({
-        allowed: true,
-        count: 0,
-      });
-      server.use(
-        http.post(VERTEX_VOICE_URL, () => {
-          return new HttpResponse(null, {
-            status: 503,
-            headers: { "Retry-After": "60" },
-          });
-        }),
-      );
-      await accept(
-        polish.post({
-          headers,
-          body: { segments: ["First part.", "Second part."] },
-        }),
-        [503],
-      );
-      expect((await accept(quota.get({ headers }), [200])).body).toMatchObject({
-        allowed: true,
-        count: 0,
-      });
-      server.use(
-        http.post(VERTEX_VOICE_URL, () => {
-          return vertexVoiceResponse("First part. Second part.");
-        }),
-      );
-      const completed = await accept(
-        polish.post({
-          headers,
-          body: { segments: ["First part.", "Second part."] },
-        }),
-        [200],
-      );
-      expect(completed.body.text).toBe("First part. Second part.");
-      expect((await accept(quota.get({ headers }), [200])).body).toMatchObject({
-        allowed: true,
-        count: 1,
-      });
+  it("voice-io-transcribe-020 rejects implausible final output without discarding saved speech", async () => {
+    await setupProAdmin();
+    setupVertexVoice(() => {
+      return vertexTranscriptJson("word ".repeat(40).trim(), "en");
     });
+
+    const response = await accept(
+      transcribeApi.segment({
+        headers,
+        body: makeSegmentForm({
+          durationSeconds: 1,
+          previousTranscript: "Earlier speech.",
+          totalDurationSeconds: 61,
+        }),
+      }),
+      [502],
+    );
+
+    expect(response.body.error.code).toBe("VOICE_TRANSCRIPTION_FAILED");
   });
 
-  it("reports daily request exhaustion through quota and rejects further segments", async () => {
-    mockNow(new Date("2026-10-02T12:00:00Z"));
-    const owner = await publicVoiceActor({ limitedFree: true });
-    await owner.run(async () => {
-      server.use(
-        http.post(VERTEX_VOICE_URL, () => {
-          return vertexVoiceResponse(
-            JSON.stringify({ transcript: "New speech.", language: "en" }),
-          );
-        }),
-      );
-      const headers = { authorization: "Bearer clerk-session" };
-      const quota = setupApp({ context, routes: voiceIoQuotaRoutes })(
-        voiceIoQuotaContract,
-      );
-      const initial = await accept(quota.get({ headers }), [200]);
-      expect(initial.body).toMatchObject({ allowed: true, count: 0 });
+  it("voice-io-transcribe-023 meters unique recording time without charging the boundary overlap twice", async () => {
+    await setupLimitedFreeAdmin();
+    setupVertexVoice(() => {
+      return vertexTranscriptJson("Recorded speech.", "en");
+    });
 
-      for (let index = 0; index < 40; index += 1) {
-        await accept(
-          client().segment({
+    const initialSegments = [75, 75, 75, 75, 75, 75, 32];
+    await Promise.all([
+      ...initialSegments.map((seconds) => {
+        return accept(
+          transcribeApi.segment({
             headers,
-            body: segmentForm([audioFile(index + 1)], "", 1),
+            body: makeSegmentForm({
+              durationSeconds: seconds,
+              totalDurationSeconds: seconds,
+            }),
           }),
           [200],
         );
-      }
-      const exhausted = await accept(quota.get({ headers }), [200]);
-      expect(exhausted.body).toStrictEqual({
-        allowed: false,
-        count: 40,
-        limit: 40,
-      });
-      const rejected = await accept(
-        client().segment({
+      }),
+      accept(
+        transcribeApi.segment({
           headers,
-          body: segmentForm([audioFile(41)], "", 1),
-        }),
-        [429],
-      );
-      expect(rejected.body.error.code).toBe("DAILY_RATE_LIMIT_EXCEEDED");
-    });
-  });
-
-  it("meters unique recording time without charging the boundary overlap twice", async () => {
-    const owner = await publicVoiceActor({ limitedFree: true });
-    await owner.run(async () => {
-      server.use(
-        http.post(VERTEX_VOICE_URL, () => {
-          return HttpResponse.json({
-            candidates: [
-              {
-                finishReason: "STOP",
-                content: {
-                  parts: [
-                    {
-                      text: JSON.stringify({
-                        transcript: "New speech.",
-                        language: "en",
-                      }),
-                    },
-                  ],
-                },
-              },
-            ],
-          });
-        }),
-      );
-      const headers = { authorization: "Bearer clerk-session" };
-      // Accumulate 482 seconds through the API while leaving room under the
-      // free daily request limit for the two overlapping segments below.
-      for (const durationSeconds of [75, 75, 75, 75, 75, 75, 32]) {
-        await accept(
-          client().segment({
-            headers,
-            body: segmentForm(
-              [audioFile(1, durationSeconds)],
-              "",
-              durationSeconds,
-            ),
+          body: makeSegmentForm({
+            durationSeconds: 60,
+            totalDurationSeconds: 60,
           }),
-          [200],
-        );
-      }
-      await accept(
-        client().segment({
-          headers,
-          body: segmentForm([audioFile(1, 60)], "", 60),
         }),
         [200],
-      );
-      await accept(
-        client().segment({
+      ),
+      accept(
+        transcribeApi.segment({
           headers,
-          body: segmentForm([audioFile(2, 60)], "Earlier speech.", 118, 2),
+          body: makeSegmentForm({
+            durationSeconds: 60,
+            totalDurationSeconds: 118,
+            overlapDurationSeconds: 2,
+          }),
         }),
         [200],
-      );
-      const quota = setupApp({ context, routes: voiceIoQuotaRoutes })(
-        voiceIoQuotaContract,
-      );
-      const result = await accept(quota.get({ headers }), [200]);
-      expect(result.body).toMatchObject({
-        allowed: false,
-        count: 600,
-        limit: 600,
-      });
-      const rejected = await accept(
-        client().segment({
-          headers,
-          body: segmentForm([audioFile(3)], "", 1),
-        }),
-        [429],
-      );
-      expect(rejected.body.error.code).toBe("DAILY_DURATION_LIMIT_EXCEEDED");
+      ),
+    ]);
+
+    const quota = await accept(quotaApi.get({ headers }), [200]);
+    expect(quota.body).toStrictEqual({
+      allowed: false,
+      count: 600,
+      limit: 600,
     });
+
+    const extra = await accept(
+      transcribeApi.segment({
+        headers,
+        body: makeSegmentForm({ durationSeconds: 1 }),
+      }),
+      [429],
+    );
+    expect(extra.body.error.code).toBe("DAILY_DURATION_LIMIT_EXCEEDED");
   });
 
-  it("transcribes every segment with the same prompt and returns only new text", async () => {
-    const owner = await publicVoiceActor();
-    await owner.run(async () => {
-      const inputs: VertexVoiceRequest[] = [];
-      server.use(
-        http.post(VERTEX_VOICE_URL, async ({ request }) => {
-          inputs.push((await request.json()) as VertexVoiceRequest);
-          return vertexVoiceResponse(
-            JSON.stringify({
-              transcript:
-                inputs.length === 1
-                  ? "LaunchPad is ready."
-                  : "Send it tomorrow.",
-              language: "en",
-            }),
-          );
-        }),
-      );
-      const headers = { authorization: "Bearer clerk-session" };
-      const first = await accept(
-        client().segment({
-          headers,
-          body: segmentForm([audioFile(1, 60)], "", 60),
-        }),
-        [200],
-      );
-      const last = await accept(
-        client().segment({
-          headers,
-          body: segmentForm([audioFile(2, 3)], first.body.transcript, 61, 2),
-        }),
-        [200],
-      );
-      expect(last.body).toStrictEqual({
-        transcript: "Send it tomorrow.",
-        language: "en",
-      });
-      expect(inputs[1]?.systemInstruction).toStrictEqual(
-        inputs[0]?.systemInstruction,
-      );
-      expect(inputs[1]?.generationConfig.maxOutputTokens).toBe(4096);
-      expect(requestAudioParts(inputs[1]!)).toContainEqual(
-        expect.objectContaining({
-          text: expect.stringContaining(first.body.transcript),
-        }),
-      );
+  it("voice-io-transcribe-024 transcribes every segment with the same prompt and returns only new text", async () => {
+    await setupProAdmin();
+    const captured: VertexVoiceRequest[] = [];
+    setupVertexVoice(async ({ request, callNumber }) => {
+      captured.push((await request.json()) as VertexVoiceRequest);
+      return callNumber === 1
+        ? vertexTranscriptJson("LaunchPad is ready.", "en")
+        : vertexTranscriptJson("Send it tomorrow.", "en");
     });
+
+    const first = await accept(
+      transcribeApi.segment({
+        headers,
+        body: makeSegmentForm({
+          durationSeconds: 60,
+          totalDurationSeconds: 60,
+        }),
+      }),
+      [200],
+    );
+    expect(first.body).toStrictEqual({
+      transcript: "LaunchPad is ready.",
+      language: "en",
+    });
+
+    const second = await accept(
+      transcribeApi.segment({
+        headers,
+        body: makeSegmentForm({
+          durationSeconds: 3,
+          previousTranscript: "LaunchPad is ready.",
+          totalDurationSeconds: 61,
+          overlapDurationSeconds: 2,
+        }),
+      }),
+      [200],
+    );
+    expect(second.body).toStrictEqual({
+      transcript: "Send it tomorrow.",
+      language: "en",
+    });
+
+    expect(captured[0]?.systemInstruction).toStrictEqual(
+      captured[1]?.systemInstruction,
+    );
+    expect(captured[1]?.generationConfig.maxOutputTokens).toBe(4096);
+    const secondUserText = captured[1]?.contents[0]?.parts[1]?.text ?? "";
+    expect(secondUserText).toContain("LaunchPad is ready.");
   });
 
-  it("requires audio even when an earlier transcript exists", async () => {
-    const owner = await publicVoiceActor();
-    await owner.run(async () => {
-      const result = await accept(
-        client().segment({
-          headers: { authorization: "Bearer clerk-session" },
-          body: segmentForm([], "Earlier speech.", 60),
-        }),
-        [400],
-      );
-      expect(result.body.error.message).toBe("No audio file provided");
+  it("voice-io-transcribe-031 returns provider-unavailability for a connection failure", async () => {
+    await setupProAdmin();
+    const vertex = setupVertexVoice(() => {
+      return HttpResponse.error();
     });
-  });
 
-  it.each([
-    { audioSeconds: 2, totalSeconds: 62, overlapSeconds: 2 },
-    { audioSeconds: 36.57, totalSeconds: 36.56, overlapSeconds: 0 },
-  ])(
-    "rejects invalid segment duration $audioSeconds / $totalSeconds / $overlapSeconds",
-    async ({ audioSeconds, totalSeconds, overlapSeconds }) => {
-      const owner = await publicVoiceActor();
-      await owner.run(async () => {
-        const result = await client().segment({
-          headers: { authorization: "Bearer clerk-session" },
-          body: segmentForm(
-            [audioFile(1, audioSeconds)],
-            "Earlier speech.",
-            totalSeconds,
-            overlapSeconds,
-          ),
-        });
-        expect(result.status).toBe(400);
-      });
-    },
-  );
+    const response = await accept(
+      transcribeApi.segment({
+        headers,
+        body: makeSegmentForm({ durationSeconds: 1 }),
+      }),
+      [503],
+    );
 
-  it("rejects an oversized segment before invoking the provider", async () => {
-    const owner = await publicVoiceActor();
-    await owner.run(async () => {
-      const result = await client().segment({
-        headers: { authorization: "Bearer clerk-session" },
-        body: segmentForm([audioFile(1, 76)], "", 76),
-      });
-      expect(result.status).toBe(400);
-    });
-  });
-});
-
-describe("voice provider immediate failures", () => {
-  it.each([
-    { url: GOOGLE_STS_URL, attempts: 3 },
-    { url: GOOGLE_IMPERSONATION_URL, attempts: 3 },
-    { url: VERTEX_VOICE_URL, attempts: 1 },
-  ])(
-    "returns provider-unavailability for a connection failure at $url",
-    async ({ url, attempts }) => {
-      const owner = await publicVoiceActor();
-      await owner.run(async () => {
-        context.mocks.signalTimers.delay.mockResolvedValue(undefined);
-        let calls = 0;
-        server.use(
-          http.post(url, () => {
-            calls += 1;
-            return HttpResponse.error();
-          }),
-        );
-        const response = await accept(
-          client().segment({
-            headers: { authorization: "Bearer clerk-session" },
-            body: form([audioFile(1)]),
-          }),
-          [503],
-        );
-        expect(response.body.error.code).toBe("PROVIDER_UNAVAILABLE");
-        expect(calls).toBe(attempts);
-      });
-    },
-  );
-
-  it("reports invalid structured Google output as a transcription failure", async () => {
-    const owner = await publicVoiceActor();
-    await owner.run(async () => {
-      server.use(
-        http.post(VERTEX_VOICE_URL, () => {
-          return vertexVoiceResponse(
-            JSON.stringify({
-              transcript: "private transcript without required fields",
-            }),
-          );
-        }),
-      );
-      const response = await accept(
-        client().segment({
-          headers: { authorization: "Bearer clerk-session" },
-          body: form([audioFile(1)]),
-        }),
-        [502],
-      );
-      expect(response.body.error.code).toBe("VOICE_TRANSCRIPTION_FAILED");
-    });
-  });
-});
-
-describe("voice provider capacity recovery", () => {
-  beforeEach(() => {
-    context.mocks.signalTimers.delay.mockResolvedValue(undefined);
-  });
-
-  it.each([
-    {
-      name: "HTTP 429",
-      failure: () => {
-        return new HttpResponse(null, { status: 429 });
-      },
-    },
-    {
-      name: "HTTP 503",
-      failure: () => {
-        return new HttpResponse(null, { status: 503 });
-      },
-    },
-  ])(
-    "recovers $name without prematurely counting a recording",
-    async ({ failure }) => {
-      const owner = await publicVoiceActor({ limitedFree: true });
-      await owner.run(async () => {
-        const requests: string[] = [];
-        server.use(
-          http.post(VERTEX_VOICE_URL, async ({ request }) => {
-            requests.push(await request.text());
-            return requests.length === 1 ? failure() : recoveredVoiceResponse();
-          }),
-        );
-        const headers = { authorization: "Bearer clerk-session" };
-        const result = await accept(
-          client().segment({ headers, body: form([audioFile(1)]) }),
-          [200],
-        );
-        expect(result.body.transcript).toBe("Recorded speech.");
-        expect(requests).toHaveLength(2);
-        expect(requests[1]).toBe(requests[0]);
-        const quota = setupApp({ context, routes: voiceIoQuotaRoutes })(
-          voiceIoQuotaContract,
-        );
-        const usage = await accept(quota.get({ headers }), [200]);
-        expect(usage.body).toMatchObject({ count: 0, allowed: true });
-      });
-    },
-  );
-
-  it("ends persistent capacity failures after three attempts", async () => {
-    const owner = await publicVoiceActor();
-    await owner.run(async () => {
-      let attempts = 0;
-      server.use(
-        http.post(VERTEX_VOICE_URL, () => {
-          attempts += 1;
-          return attempts <= 3
-            ? new HttpResponse(null, { status: 429 })
-            : recoveredVoiceResponse();
-        }),
-      );
-      const response = await accept(
-        client().segment({
-          headers: { authorization: "Bearer clerk-session" },
-          body: form([audioFile(1)]),
-        }),
-        [503],
-      );
-      expect(response.body.error).toStrictEqual({
-        code: "PROVIDER_UNAVAILABLE",
-        message:
-          "Speech recognition is temporarily busy. Please retry in a moment.",
-      });
-      expect(attempts).toBe(3);
-    });
-  });
-
-  it.each([
-    { value: "2", wait: 2000 },
-    { value: "60", wait: 60_000 },
-    { value: "Wed, 09 Sep 2026 08:00:03 GMT", wait: 3000 },
-    { value: "invalid", wait: 1000 },
-  ])("honors Retry-After $value during recovery", async ({ value, wait }) => {
-    const owner = await publicVoiceActor();
-    await owner.run(async () => {
-      const outcome = await settleIncludingAbort(
-        (async () => {
-          mockNow(new Date("2026-09-09T08:00:00Z"));
-          const requestedAt: number[] = [];
-          context.mocks.signalTimers.delay.mockImplementation((ms) => {
-            mockNow(now() + ms);
-            return Promise.resolve();
-          });
-          let available = false;
-          server.use(
-            http.post(VERTEX_VOICE_URL, () => {
-              requestedAt.push(now());
-              if (available) {
-                return recoveredVoiceResponse();
-              }
-              available = true;
-              return new HttpResponse(null, {
-                status: 429,
-                headers: { "Retry-After": value },
-              });
-            }),
-          );
-          const result = await accept(
-            client().segment({
-              headers: { authorization: "Bearer clerk-session" },
-              body: form([audioFile(1)]),
-            }),
-            [200],
-          );
-          expect(result.body.transcript).toBe("Recorded speech.");
-          expect(requestedAt).toStrictEqual([
-            new Date("2026-09-09T08:00:00Z").getTime(),
-            new Date("2026-09-09T08:00:00Z").getTime() + wait,
-          ]);
-        })(),
-      );
-      context.mocks.signalTimers.delay.mockResolvedValue(undefined);
-      if (!outcome.ok) {
-        throw outcome.error;
-      }
-    });
-  });
-
-  it("keeps provider authentication errors non-retryable", async () => {
-    const owner = await publicVoiceActor();
-    await owner.run(async () => {
-      let attempts = 0;
-      server.use(
-        http.post(VERTEX_VOICE_URL, () => {
-          attempts += 1;
-          return attempts === 1
-            ? new HttpResponse(null, { status: 401 })
-            : recoveredVoiceResponse();
-        }),
-      );
-      const response = await accept(
-        client().segment({
-          headers: { authorization: "Bearer clerk-session" },
-          body: form([audioFile(1)]),
-        }),
-        [502],
-      );
-      expect(response.body.error.code).toBe("VOICE_TRANSCRIPTION_FAILED");
-      expect(attempts).toBe(1);
-    });
-  });
-
-  it("keeps an invalid successful response as a genuine transcription failure", async () => {
-    const owner = await publicVoiceActor();
-    await owner.run(async () => {
-      let attempts = 0;
-      server.use(
-        http.post(VERTEX_VOICE_URL, () => {
-          attempts += 1;
-          return HttpResponse.json({ candidates: [] });
-        }),
-      );
-      const response = await accept(
-        client().segment({
-          headers: { authorization: "Bearer clerk-session" },
-          body: form([audioFile(1)]),
-        }),
-        [502],
-      );
-      expect(response.body.error.code).toBe("VOICE_TRANSCRIPTION_FAILED");
-
-      expect(attempts).toBe(1);
-    });
-  });
-
-  it("cancels backoff with the request owner", async () => {
-    const owner = await publicVoiceActor();
-    await owner.run(async () => {
-      const controller = new AbortController();
-      const waiting = createDeferredPromise<void>(context.signal);
-      context.mocks.signalTimers.delay.mockImplementation((_ms, options) => {
-        const signal = options?.signal;
-        if (!signal) {
-          throw new Error("Expected an owned voice recovery delay");
-        }
-        waiting.resolve();
-        return createDeferredPromise<void>(signal).promise;
-      });
-      let attempts = 0;
-      server.use(
-        http.post(VERTEX_VOICE_URL, () => {
-          attempts += 1;
-          return new HttpResponse(null, { status: 429 });
-        }),
-      );
-      const scopedClient = setupApp({
-        context,
-        routes: voiceIoTranscribeRoutes,
-        signal: AbortSignal.any([context.signal, controller.signal]),
-        rethrowErrors: true,
-      })(voiceIoTranscribeContract);
-      const pending = scopedClient.segment({
-        headers: { authorization: "Bearer clerk-session" },
-        body: form([audioFile(1)]),
-      });
-      const outcome = Promise.allSettled([pending]);
-      const settled = await settleIncludingAbort(
-        (async () => {
-          await waiting.promise;
-          controller.abort(new DOMException("Request cancelled", "AbortError"));
-          const [result] = await outcome;
-          expect(result).toMatchObject({
-            status: "rejected",
-            reason: { name: "AbortError", message: "Request cancelled" },
-          });
-          expect(attempts).toBe(1);
-        })(),
-      );
-      controller.abort();
-      await outcome;
-      context.mocks.signalTimers.delay.mockResolvedValue(undefined);
-      if (!settled.ok) {
-        throw settled.error;
-      }
-    });
+    expect(response.body.error.code).toBe("PROVIDER_UNAVAILABLE");
+    expect(vertex.calls).toBe(1);
   });
 });

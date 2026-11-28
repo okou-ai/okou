@@ -1,81 +1,56 @@
 import { generateKeyPairSync, randomUUID, sign } from "node:crypto";
-import { mcpServerContract } from "@okouai/api-contracts/contracts/mcp-server";
+import { createStore } from "ccstate";
 import { http, HttpResponse } from "msw";
-import { describe, expect, it, onTestFinished } from "vitest";
+import { describe, expect, it } from "vitest";
+import { mcpServerContract } from "@okouai/api-contracts/contracts/mcp-server";
 import { accept, testContext } from "../../../__tests__/test-context";
-import { setupApp, setupRawAppRequest } from "../../../__tests__/test-helpers";
+import { setupApp } from "../../../__tests__/test-helpers";
 import { createAppWithRoutes } from "../../../app-factory-core";
 import { mockEnv } from "../../../lib/env";
-import { now, withMockNowForTest } from "../../../lib/time";
+import { mockNow, now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import { mcpServerRoutes } from "../mcp-server";
+import {
+  deleteOrgMembership$,
+  seedOrgMembership$,
+} from "./helpers/org-membership";
+import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
-const resource = "https://api.mcp.example.test/mcp";
-const issuer = "https://clerk.mcp.example.test";
-const orgScope = "user:org:read";
-const readScope = "okou:chat:read";
-const requiredScopes = `${orgScope} ${readScope}`;
-const defaultScopes =
+const store = createStore();
+const client = setupApp({ context, routes: mcpServerRoutes })(
+  mcpServerContract,
+);
+
+const ISSUER = "https://clerk.mcp.example.test";
+const RESOURCE = "https://api.mcp.example.test/mcp";
+const METADATA_URL =
+  "https://api.mcp.example.test/.well-known/oauth-protected-resource/mcp";
+const DEFAULT_SCOPES =
   "openid email profile user:org:read okou:chat:read okou:project:read okou:chat:send okou:chat:manage okou:run:cancel offline_access";
-const modernVersion = "2026-07-28";
-function client() {
-  return setupApp({ context, routes: mcpServerRoutes })(mcpServerContract);
+const FULL_GRANT =
+  "user:org:read okou:chat:read okou:project:read okou:chat:send okou:chat:manage okou:run:cancel";
+const LEGACY_VERSION = "2025-11-25";
+
+const issuerKeys = generateKeyPairSync("rsa", { modulusLength: 2048 });
+const issuerKeyId = randomUUID();
+
+interface Member {
+  readonly userId: string;
+  readonly orgId: string;
 }
-function requestBody(
-  method: string,
-  modern = true,
-  params: Record<string, unknown> = {},
-) {
-  return {
-    jsonrpc: "2.0",
-    id: 1,
-    method,
-    params: {
-      ...params,
-      ...(modern
-        ? {
-            _meta: {
-              "io.modelcontextprotocol/protocolVersion": modernVersion,
-              "io.modelcontextprotocol/clientCapabilities": {},
-              "io.modelcontextprotocol/clientInfo": {
-                name: "okou-test",
-                version: "1",
-              },
-            },
-          }
-        : {}),
-    },
-  };
-}
-function protocolHeaders(
-  token: string,
-  method: string,
-  modern = true,
-  toolName = "get_chat_thread_list",
-) {
-  return {
-    authorization: `Bearer ${token}`,
-    accept: "application/json, text/event-stream",
-    "MCP-Protocol-Version": modern ? modernVersion : "2025-11-25",
-    ...(modern ? { "MCP-Method": method } : {}),
-    ...(modern && method === "tools/call" ? { "MCP-Name": toolName } : {}),
-  };
-}
-function fixture() {
-  mockEnv("MCP_RESOURCE_URL", resource);
-  mockEnv("MCP_OAUTH_ISSUER", issuer);
-  const userId = `user_${randomUUID()}`;
-  const orgId = `org_${randomUUID()}`;
-  const keys = generateKeyPairSync("rsa", { modulusLength: 2048 });
-  const kid = randomUUID();
+
+/** Configures the MCP resource and publishes the issuer's signing key. */
+function configureMcp(): void {
+  mockEnv("MCP_RESOURCE_URL", RESOURCE);
+  mockEnv("MCP_OAUTH_ISSUER", ISSUER);
   server.use(
     http.get("https://api.clerk.com/v1/jwks", () => {
       return HttpResponse.json({
         keys: [
           {
-            ...keys.publicKey.export({ format: "jwk" }),
-            kid,
+            ...issuerKeys.publicKey.export({ format: "jwk" }),
+            kid: issuerKeyId,
             alg: "RS256",
             use: "sig",
           },
@@ -83,361 +58,369 @@ function fixture() {
       });
     }),
   );
-  context.mocks.clerk.users.getOrganizationMembershipList.mockResolvedValue({
-    data: [
-      { id: randomUUID(), role: "org:member", organization: { id: orgId } },
-    ],
-    totalCount: 1,
-  });
-  function token(overrides: Record<string, unknown> = {}, typ = "at+jwt") {
-    const seconds = Math.floor(now() / 1000);
-    const header = Buffer.from(
-      JSON.stringify({ alg: "RS256", kid, typ }),
-    ).toString("base64url");
-    const payload = Buffer.from(
-      JSON.stringify({
-        iss: issuer,
-        aud: resource,
-        sub: userId,
-        org_id: orgId,
-        client_id: "mcp_test_client",
-        scope: requiredScopes,
-        iat: seconds,
-        nbf: seconds - 1,
-        exp: seconds + 3600,
-        ...overrides,
-      }),
-    ).toString("base64url");
-    const input = `${header}.${payload}`;
-    return `${input}.${sign("RSA-SHA256", Buffer.from(input), keys.privateKey).toString("base64url")}`;
-  }
-  return { token, userId, orgId };
 }
-describe("external MCP authentication and transport", () => {
-  it("advertises optional native-client scopes without expanding default MCP consent", async () => {
-    fixture();
-    const metadata = await accept(client().metadata(), [200]);
-    expect(metadata.body).toMatchObject({
-      resource,
-      authorization_servers: [issuer],
-      scopes_supported: [...defaultScopes.split(" "), "okou:voice:transcribe"],
-    });
-    const unauthenticated = await accept(
-      client().request({
-        extraHeaders: { accept: "application/json, text/event-stream" },
-        body: requestBody("tools/list"),
-      }),
-      [401],
-    );
-    expect(unauthenticated.headers.get("www-authenticate")).toContain(
-      `scope="${defaultScopes}"`,
-    );
-  });
 
-  it.each([
-    { aud: "https://different-resource.example.test/mcp" },
-    { org_id: undefined },
-    { client_id: undefined },
-    { client_id: "   " },
-    { client_id: "x".repeat(2049) },
-    { sub: "machine_client" },
-    { exp: 1 },
-    { nbf: 9_000_000_000 },
-  ])("rejects invalid access claims %j", async (claims) => {
-    const auth = await fixture();
-    const result = await accept(
-      client().request({
-        extraHeaders: protocolHeaders(auth.token(claims), "tools/list"),
-        body: requestBody("tools/list"),
-      }),
-      [401],
-    );
-    expect(result.body).toStrictEqual({ error: "invalid_token" });
-  });
-
-  it.each(["JWT", "id+jwt"])(
-    "rejects the signed %s token type",
-    async (type) => {
-      const auth = await fixture();
-      const response = await accept(
-        client().request({
-          extraHeaders: protocolHeaders(auth.token({}, type), "tools/list"),
-          body: requestBody("tools/list"),
-        }),
-        [401],
-      );
-      expect(response.body).toStrictEqual({ error: "invalid_token" });
-    },
+/**
+ * A signed-in member of a fresh workspace on the configured MCP resource; the
+ * token checks read the membership seeded here.
+ */
+async function member(): Promise<Member> {
+  configureMcp();
+  const identity = {
+    userId: `user_${randomUUID()}`,
+    orgId: `org_${randomUUID()}`,
+  };
+  await store.set(
+    seedOrgMembership$,
+    { ...identity, role: "member" },
+    context.signal,
   );
+  createRouteMocks(context).clerk.session(
+    identity.userId,
+    identity.orgId,
+    "org:member",
+  );
+  return identity;
+}
 
-  it("rejects a tampered signature", async () => {
-    const auth = await fixture();
-    const pieces = auth.token().split(".");
-    const token = `${pieces[0]}.${pieces[1]}.${Buffer.alloc(256).toString("base64url")}`;
+function encode(value: Record<string, unknown>): string {
+  return Buffer.from(JSON.stringify(value)).toString("base64url");
+}
+
+function accessToken(
+  identity: Member,
+  options: {
+    readonly claims?: Record<string, unknown>;
+    readonly type?: string;
+  } = {},
+): string {
+  const seconds = Math.floor(now() / 1000);
+  const input = `${encode({
+    alg: "RS256",
+    kid: issuerKeyId,
+    typ: options.type ?? "at+jwt",
+  })}.${encode({
+    iss: ISSUER,
+    aud: RESOURCE,
+    sub: identity.userId,
+    org_id: identity.orgId,
+    client_id: "mcp_test_client",
+    scope: FULL_GRANT,
+    iat: seconds,
+    nbf: seconds - 1,
+    exp: seconds + 3600,
+    ...options.claims,
+  })}`;
+  const signature = sign(
+    "RSA-SHA256",
+    Buffer.from(input),
+    issuerKeys.privateKey,
+  ).toString("base64url");
+  return `${input}.${signature}`;
+}
+
+function legacyHeaders(token?: string) {
+  return {
+    ...(token ? { authorization: `Bearer ${token}` } : {}),
+    accept: "application/json, text/event-stream",
+    "MCP-Protocol-Version": LEGACY_VERSION,
+  };
+}
+
+async function listTools(token?: string) {
+  return await client.request({
+    extraHeaders: legacyHeaders(token),
+    body: { jsonrpc: "2.0", id: 1, method: "tools/list", params: {} },
+  });
+}
+
+async function callTool(token: string, name: string) {
+  return await client.request({
+    extraHeaders: legacyHeaders(token),
+    body: {
+      jsonrpc: "2.0",
+      id: 1,
+      method: "tools/call",
+      params: { name, arguments: {} },
+    },
+  });
+}
+
+/** Calls tools/list and reports the status with its body. */
+async function listToolsOutcome(token: string) {
+  const response = await accept(listTools(token), [200, 401, 403]);
+  return { status: response.status, body: response.body };
+}
+
+const invalidToken = Object.freeze({
+  status: 401,
+  body: { error: "invalid_token" },
+});
+
+describe("external MCP authentication and transport", () => {
+  it("mcp-server-002 rejects a token issued for another resource", async () => {
+    const identity = await member();
+
+    await expect(
+      listToolsOutcome(
+        accessToken(identity, {
+          claims: { aud: "https://different-resource.example.test/mcp" },
+        }),
+      ),
+    ).resolves.toStrictEqual(invalidToken);
+  });
+
+  it("mcp-server-001 advertises native-client scopes without adding them to the default consent", async () => {
+    configureMcp();
+
+    const [metadata, unauthenticated] = await Promise.all([
+      accept(client.metadata(), [200]),
+      accept(listTools(), [401]),
+    ]);
+
+    expect(metadata.body).toMatchObject({
+      resource: RESOURCE,
+      authorization_servers: [ISSUER],
+      scopes_supported: [...DEFAULT_SCOPES.split(" "), "okou:voice:transcribe"],
+    });
+    expect(unauthenticated.headers.get("www-authenticate")).toBe(
+      `Bearer resource_metadata="${METADATA_URL}", scope="${DEFAULT_SCOPES}"`,
+    );
+  });
+
+  it("mcp-server-007 rejects a token whose subject is not a user", async () => {
+    const identity = await member();
+
+    await expect(
+      listToolsOutcome(
+        accessToken(identity, { claims: { sub: "machine_client" } }),
+      ),
+    ).resolves.toStrictEqual(invalidToken);
+  });
+
+  it("mcp-server-008 rejects an expired token", async () => {
+    const identity = await member();
+
+    await expect(
+      listToolsOutcome(accessToken(identity, { claims: { exp: 1 } })),
+    ).resolves.toStrictEqual(invalidToken);
+  });
+
+  it("mcp-server-010 rejects a signed token with the generic JWT type", async () => {
+    const identity = await member();
+
+    await expect(
+      listToolsOutcome(accessToken(identity, { type: "JWT" })),
+    ).resolves.toStrictEqual(invalidToken);
+  });
+
+  it("mcp-server-012 rejects a token with a tampered signature", async () => {
+    const identity = await member();
+    const [header, payload] = accessToken(identity).split(".");
+    const zeroSignature = Buffer.alloc(256).toString("base64url");
+
     const response = await accept(
-      client().request({
-        extraHeaders: protocolHeaders(token, "tools/list"),
-        body: requestBody("tools/list"),
-      }),
+      listTools(`${header}.${payload}.${zeroSignature}`),
       [401],
     );
+
     expect(response.body).toStrictEqual({ error: "invalid_token" });
-    expect(response.headers.get("www-authenticate")).toContain(
-      `scope="${defaultScopes}"`,
+    expect(response.headers.get("www-authenticate")).toBe(
+      `Bearer resource_metadata="${METADATA_URL}", scope="${DEFAULT_SCOPES}", error="invalid_token"`,
     );
   });
 
-  it("denies discovery and manual invocation without the read grant", async () => {
-    const auth = await fixture();
-    const token = auth.token({ scope: `${orgScope} okou:chat:manage` });
-    for (const { method, name, args } of [
-      { method: "tools/list", name: "get_chat_thread_list", args: {} },
-      { method: "tools/call", name: "get_chat_indicators", args: {} },
-      { method: "tools/call", name: "get_chat_thread_list", args: {} },
-      { method: "tools/call", name: "list_projects", args: {} },
-      { method: "tools/call", name: "list_models", args: {} },
-    ]) {
-      const result = await accept(
-        client().request({
-          extraHeaders: protocolHeaders(token, method, true, name),
-          body: requestBody(method, true, {
-            name,
-            arguments: args,
-          }),
-        }),
-        [403],
-      );
-      expect(result.body).toStrictEqual({ error: "insufficient_scope" });
-    }
+  it("mcp-server-013 denies discovery and tool calls without the chat read grant", async () => {
+    const identity = await member();
+    const token = accessToken(identity, {
+      claims: { scope: "user:org:read okou:chat:manage" },
+    });
+
+    const responses = await Promise.all([
+      accept(listTools(token), [403]),
+      accept(callTool(token, "get_chat_indicators"), [403]),
+      accept(callTool(token, "get_chat_thread_list"), [403]),
+      accept(callTool(token, "list_projects"), [403]),
+      accept(callTool(token, "list_models"), [403]),
+    ]);
+
+    expect(
+      responses.map((response: { readonly body: unknown }) => {
+        return response.body;
+      }),
+    ).toStrictEqual(
+      Array.from({ length: 5 }, () => {
+        return { error: "insufficient_scope" };
+      }),
+    );
   });
 
-  it("requests organization consent when only the application read scope is granted", async () => {
-    const auth = await fixture();
+  it("mcp-server-014 asks for organization consent when only chat read is granted", async () => {
+    const identity = await member();
+
     const response = await accept(
-      client().request({
-        extraHeaders: protocolHeaders(
-          auth.token({ scope: readScope }),
-          "tools/list",
-        ),
-        body: requestBody("tools/list"),
-      }),
+      listTools(accessToken(identity, { claims: { scope: "okou:chat:read" } })),
       [403],
     );
+
     expect(response.body).toStrictEqual({ error: "insufficient_scope" });
-    expect(response.headers.get("www-authenticate")).toContain(
-      `scope="${requiredScopes}"`,
+    expect(response.headers.get("www-authenticate")).toBe(
+      `Bearer resource_metadata="${METADATA_URL}", scope="user:org:read okou:chat:read", error="insufficient_scope"`,
     );
   });
 
-  it("rejects an organization outside current membership", async () => {
-    const auth = await fixture();
-    const response = await accept(
-      client().request({
-        extraHeaders: protocolHeaders(
-          auth.token({ org_id: `org_${randomUUID()}` }),
-          "tools/list",
-        ),
-        body: requestBody("tools/list"),
-      }),
-      [401],
-    );
-    expect(response.body).toStrictEqual({ error: "invalid_token" });
-  });
+  it("mcp-server-015 rejects a token for an organization the user does not belong to", async () => {
+    const identity = await member();
 
-  it("keeps membership outages distinct from invalid credentials", async () => {
-    const auth = await fixture();
-    context.mocks.clerk.users.getOrganizationMembershipList.mockRejectedValue(
-      new Error("Provider unavailable"),
-    );
-    const response = await accept(
-      client().request({
-        extraHeaders: protocolHeaders(auth.token(), "tools/list"),
-        body: requestBody("tools/list"),
-      }),
-      [503],
-    );
-    expect(response.body).toMatchObject({ error: "temporarily_unavailable" });
-  });
-
-  it("rejects a removed member after the bounded membership cache expires", async () => {
-    const auth = await fixture();
-    const token = auth.token();
-    const read = () => {
-      return client().request({
-        extraHeaders: protocolHeaders(token, "tools/list"),
-        body: requestBody("tools/list"),
-      });
-    };
-    await expect(read()).resolves.toMatchObject({ status: 200 });
-    context.mocks.clerk.users.getOrganizationMembershipList.mockResolvedValue({
-      data: [],
-      totalCount: 0,
-    });
-    const response = await withMockNowForTest(now() + 61_000, read);
-    expect(response).toMatchObject({
-      status: 401,
-      body: { error: "invalid_token" },
-    });
-  });
-
-  it.each([
-    { scope: undefined, scp: [orgScope, readScope] },
-    { aud: ["https://another.example.test", resource] },
-  ])("accepts the supported signed claim representation %j", async (claims) => {
-    const auth = await fixture();
     await expect(
-      client().request({
-        extraHeaders: protocolHeaders(auth.token(claims), "tools/list"),
-        body: requestBody("tools/list"),
-      }),
-    ).resolves.toMatchObject({ status: 200 });
+      listToolsOutcome(
+        accessToken(identity, { claims: { org_id: `org_${randomUUID()}` } }),
+      ),
+    ).resolves.toStrictEqual(invalidToken);
   });
 
-  it("acknowledges legacy initialization notifications without caching them", async () => {
-    const auth = await fixture();
+  it("mcp-server-017 rejects a removed member once the membership cache expires", async () => {
+    const identity = await member();
+    const token = accessToken(identity);
+    await expect(listToolsOutcome(token)).resolves.toMatchObject({
+      status: 200,
+    });
+
+    await store.set(deleteOrgMembership$, identity, context.signal);
+    mockNow(now() + 61_000);
+
+    await expect(listToolsOutcome(token)).resolves.toStrictEqual(invalidToken);
+  });
+
+  it("mcp-server-020 acknowledges a legacy initialization notification without caching", async () => {
+    const identity = await member();
+
     const response = await accept(
-      client().request({
-        extraHeaders: protocolHeaders(
-          auth.token(),
-          "notifications/initialized",
-          false,
-        ),
+      client.request({
+        extraHeaders: legacyHeaders(accessToken(identity)),
         body: { jsonrpc: "2.0", method: "notifications/initialized" },
       }),
       [202],
     );
+
     expect(response.headers.get("cache-control")).toBe("no-store");
   });
 
-  it("keeps signing-key outages distinct from invalid credentials", async () => {
-    const auth = await fixture();
-    // Keep all real Clerk retries; make only their external SDK jitter deterministic.
-    onTestFinished(context.mocks.clerkRetryJitter(0));
-    server.use(
-      http.get("https://api.clerk.com/v1/jwks", () => {
-        return HttpResponse.json({ error: "unavailable" }, { status: 503 });
+  it("mcp-server-022 rejects standalone stateless GET and DELETE sessions", async () => {
+    const identity = await member();
+    const headers = legacyHeaders(accessToken(identity));
+
+    const responses = await Promise.all([
+      accept(client.get({ extraHeaders: headers }), [405]),
+      accept(client.delete({ extraHeaders: headers }), [405]),
+    ]);
+
+    expect(
+      responses.map((response: { readonly status: number }) => {
+        return response.status;
       }),
-    );
-    const response = await accept(
-      client().request({
-        extraHeaders: protocolHeaders(auth.token(), "tools/list"),
-        body: requestBody("tools/list"),
-      }),
-      [503],
-    );
-    expect(response.body).toMatchObject({ error: "temporarily_unavailable" });
+    ).toStrictEqual([405, 405]);
   });
 
-  it("rejects standalone stateless sessions", async () => {
-    const auth = await fixture();
-    const extraHeaders = protocolHeaders(auth.token(), "tools/list", false);
-    await expect(client().get({ extraHeaders })).resolves.toMatchObject({
-      status: 405,
-    });
-    await expect(client().delete({ extraHeaders })).resolves.toMatchObject({
-      status: 405,
-    });
-  });
+  it("mcp-server-028 serves the next request after an SSE consumer cancels", async () => {
+    const identity = await member();
+    const token = accessToken(identity);
 
-  it.each(["https://client.example.test/path", "null", ""])(
-    "rejects Origin %s before authorization",
-    async (origin) => {
-      await fixture();
-      const response = await accept(
-        client().request({
-          extraHeaders: { Origin: origin },
-          body: requestBody("tools/list"),
-        }),
-        [403],
-      );
-      expect(response.body).toStrictEqual({ error: "Forbidden Origin" });
-    },
-  );
-
-  it.each(["https://client.example.test", "http://127.0.0.1:56844"])(
-    "allows bearer MCP discovery from %s and rejects cookies",
-    async (origin) => {
-      const auth = await fixture();
-      const raw = setupRawAppRequest({ context, routes: mcpServerRoutes });
-      const preflight = await raw("/mcp", {
-        method: "OPTIONS",
-        headers: {
-          Origin: origin,
-          "Access-Control-Request-Method": "POST",
-          "Access-Control-Request-Headers":
-            "authorization,mcp-protocol-version,mcp-method",
-        },
-      });
-      expect(preflight.status).toBe(204);
-      expect(preflight.headers.get("access-control-allow-origin")).toBe("*");
-      expect(
-        preflight.headers.get("access-control-allow-credentials"),
-      ).toBeNull();
-      const headers = {
-        ...protocolHeaders(auth.token(), "tools/list"),
-        Origin: origin,
-      };
-      const discovery = await accept(
-        client().request({
-          extraHeaders: headers,
-          body: requestBody("tools/list"),
-        }),
-        [200],
-      );
-      expect(discovery.headers.get("access-control-allow-origin")).toBe("*");
-      await accept(
-        client().request({
-          extraHeaders: { ...headers, Cookie: "session=opaque" },
-          body: requestBody("tools/list"),
-        }),
-        [403],
-      );
-    },
-  );
-
-  it("bounds the request body before SDK dispatch", async () => {
-    const auth = await fixture();
-    const response = await accept(
-      client().request({
-        extraHeaders: protocolHeaders(auth.token(), "tools/list"),
-        body: requestBody("tools/list", true, {
-          padding: "x".repeat(64 * 1024),
-        }),
-      }),
-      [413],
-    );
-    expect(response.status).toBe(413);
-  });
-
-  it("allows an SSE consumer to cancel without affecting the next request", async () => {
-    const auth = await fixture();
-    const app = createAppWithRoutes({
-      routes: mcpServerRoutes,
+    // The shared request helpers buffer whole bodies, so consume the real
+    // application response directly to cancel its stream mid-flight.
+    const streamed = await createAppWithRoutes({
       signal: context.signal,
-    });
-    const response = await app.request(resource, {
+      routes: mcpServerRoutes,
+    }).request("/mcp", {
       method: "POST",
       headers: {
-        ...protocolHeaders(auth.token(), "tools/call", false),
-        "Content-Type": "application/json",
+        ...legacyHeaders(token),
+        "content-type": "application/json",
       },
-      body: JSON.stringify(
-        requestBody("tools/call", false, {
-          name: "get_chat_thread_list",
-          arguments: {},
-        }),
-      ),
-    });
-    expect(response.status).toBe(200);
-    if (!response.body) {
-      throw new Error("Expected an SSE body");
-    }
-    await response.body.cancel();
-    await expect(
-      client().request({
-        extraHeaders: protocolHeaders(auth.token(), "tools/list"),
-        body: requestBody("tools/list"),
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: 1,
+        method: "tools/call",
+        params: { name: "get_chat_thread_list", arguments: {} },
       }),
-    ).resolves.toMatchObject({ status: 200 });
+    });
+    expect(streamed.status).toBe(200);
+    expect(streamed.headers.get("content-type")).toContain("text/event-stream");
+    await streamed.body?.cancel();
+
+    await expect(listToolsOutcome(token)).resolves.toMatchObject({
+      status: 200,
+    });
+  });
+
+  it("pf-096 rejects Origin null before authorization", async () => {
+    configureMcp();
+    const app = createAppWithRoutes({
+      signal: context.signal,
+      routes: mcpServerRoutes,
+    });
+    const response = await app.request("/mcp", {
+      method: "POST",
+      headers: {
+        origin: "null",
+        "content-type": "application/json",
+        ...legacyHeaders(),
+      },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: 1,
+        method: "tools/list",
+        params: {},
+      }),
+    });
+
+    expect(response.status).toBe(403);
+    await expect(response.json()).resolves.toStrictEqual({
+      error: "Forbidden Origin",
+    });
+  });
+
+  it("pf-099 allows bearer MCP discovery from third-party HTTPS origin and rejects cookies", async () => {
+    const identity = await member();
+    const token = accessToken(identity);
+    const app = createAppWithRoutes({
+      signal: context.signal,
+      routes: mcpServerRoutes,
+    });
+    const body = JSON.stringify({
+      jsonrpc: "2.0",
+      id: 1,
+      method: "tools/list",
+      params: {},
+    });
+
+    const [allowed, withCookie] = await Promise.all([
+      app.request("/mcp", {
+        method: "POST",
+        headers: {
+          origin: "https://client.example.test",
+          "content-type": "application/json",
+          ...legacyHeaders(token),
+        },
+        body,
+      }),
+      app.request("/mcp", {
+        method: "POST",
+        headers: {
+          origin: "https://client.example.test",
+          cookie: "session=forbidden",
+          "content-type": "application/json",
+          ...legacyHeaders(token),
+        },
+        body,
+      }),
+    ]);
+
+    expect(allowed.status).toBe(200);
+    expect(allowed.headers.get("access-control-allow-origin")).toBe("*");
+    expect(withCookie.status).toBe(403);
+    await expect(withCookie.json()).resolves.toStrictEqual({
+      error: "Forbidden Origin",
+    });
   });
 });

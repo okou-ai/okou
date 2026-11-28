@@ -1,70 +1,105 @@
+import { randomUUID } from "node:crypto";
+import { personalModelProvidersMainContract } from "@okouai/api-contracts/contracts/personal-model-providers";
 import { userModelPreferenceContract } from "@okouai/api-contracts/contracts/user-model-preference";
+import { http, HttpResponse } from "msw";
+import { describe, expect, it } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { createAuthOrgBddApi } from "./helpers/api-bdd-auth-org";
-import { createChatEventsFixture } from "./helpers/chat-events-fixture";
+import { server } from "../../../mocks/server";
+import { meModelProvidersUpsertRoutes } from "../me-model-providers-upsert";
 import { userModelPreferenceRoutes } from "../user-model-preference";
+import { createBddApi } from "./helpers/api-bdd";
+import { credentials } from "./helpers/codex-reset-credit-expiry";
 
 const context = testContext();
-const authOrgApi = createAuthOrgBddApi(context);
-const { api, bdd, configureSubscriptionPiModel, sessionHeaders } =
-  createChatEventsFixture(context);
-function preferencesApi() {
-  return setupApp({ context, routes: userModelPreferenceRoutes })(
-    userModelPreferenceContract,
+const headers = Object.freeze({ authorization: "Bearer clerk-session" });
+const app = setupApp({
+  context,
+  routes: [...meModelProvidersUpsertRoutes, ...userModelPreferenceRoutes],
+});
+
+function mockSubscriptionProviders() {
+  server.use(
+    http.get("https://api.anthropic.com/api/oauth/profile", () => {
+      return HttpResponse.json({});
+    }),
+    http.get("https://api.anthropic.com/api/oauth/usage", () => {
+      return HttpResponse.json({});
+    }),
+    http.get("https://chatgpt.com/backend-api/wham/usage", () => {
+      return HttpResponse.json({ plan_type: "pro" });
+    }),
   );
 }
 
-async function connectedActor() {
-  const actor = authOrgApi.user();
-  if (!actor.orgId) {
-    throw new Error("Expected organization member");
-  }
-  authOrgApi.acceptStorageWrites();
-  await authOrgApi.provisionWorkspace(actor);
-  await bdd.completeOnboarding(actor);
-  await expect(api.readBillingStatus(actor)).resolves.toMatchObject({
-    tier: "limited-free-1",
-    status: "active",
-  });
-  await configureSubscriptionPiModel(actor);
-  return actor;
+async function connectFableAndAstraSubscriptions() {
+  const api = createBddApi(context);
+  await api.bootstrapLimitedFreeOnboarding(api.user());
+  mockSubscriptionProviders();
+  const client = app(personalModelProvidersMainContract);
+  await Promise.all([
+    accept(
+      client.upsert({
+        headers,
+        body: {
+          type: "claude-code-oauth-token",
+          secret: `sk-ant-oat01-${randomUUID()}`,
+        },
+      }),
+      [201],
+    ),
+    accept(
+      client.upsert({
+        headers,
+        body: {
+          type: "codex-oauth-token",
+          authMethod: "auth_json",
+          secrets: { CODEX_AUTH_JSON: credentials().raw },
+        },
+      }),
+      [201],
+    ),
+  ]);
 }
 
 describe("personal model route capabilities", () => {
-  it("rejects max and accepts xhigh for the connected Luna subscription", async () => {
-    const actor = await connectedActor();
-    const model = "gpt-6-luna";
-    const update = (effort: "max" | "xhigh") => {
-      return preferencesApi().update({
-        headers: sessionHeaders(actor),
-        body: {
-          selectedModel: model,
-          serviceTier: null,
-          modelSettingsPatch: { model, effort },
-        },
-      });
-    };
-    await accept(update("max"), [400]);
-    const saved = await accept(update("xhigh"), [200]);
-    expect(saved.body.modelSettings).toStrictEqual({
-      [model]: { effort: "xhigh" },
-    });
+  it("model-route-capabilities-002 (1/2) rejects Fast priority for a connected Claude Fable subscription", async () => {
+    await connectFableAndAstraSubscriptions();
+    const client = app(userModelPreferenceContract);
+
+    const fable = await accept(
+      client.update({
+        headers,
+        body: { selectedModel: "claude-fable-5-1", serviceTier: "priority" },
+      }),
+      [400],
+    );
+
+    expect(fable.body.error.message).toBe(
+      "Codex fast mode is only available for GPT 5.6 runs",
+    );
   });
 
-  it("offers Fast only for a connected model whose route supports priority", async () => {
-    const actor = await connectedActor();
-    await api.ensurePersonalSubscriptionModel(actor, {
-      model: "claude-fable-5-1",
+  it("model-route-capabilities-002 (2/2) saves Fast priority for a connected GPT-6 Astra subscription", async () => {
+    await connectFableAndAstraSubscriptions();
+    const client = app(userModelPreferenceContract);
+
+    const astra = await accept(
+      client.update({
+        headers,
+        body: { selectedModel: "gpt-6-astra", serviceTier: "priority" },
+      }),
+      [200],
+    );
+
+    expect(astra.body).toMatchObject({
+      selectedModel: "gpt-6-astra",
+      serviceTier: "priority",
     });
-    const selectFast = (model: string) => {
-      return preferencesApi().update({
-        headers: sessionHeaders(actor),
-        body: { selectedModel: model, serviceTier: "priority" },
-      });
-    };
-    await accept(selectFast("claude-fable-5-1"), [400]);
-    const saved = await accept(selectFast("gpt-6-astra"), [200]);
-    expect(saved.body.serviceTier).toBe("priority");
+    const saved = await accept(client.get({ headers }), [200]);
+    expect(saved.body).toMatchObject({
+      selectedModel: "gpt-6-astra",
+      serviceTier: "priority",
+    });
   });
 });

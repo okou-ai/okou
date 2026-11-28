@@ -1,13 +1,14 @@
 import { randomUUID } from "node:crypto";
-
 import { connectorCatalogContract } from "@okouai/api-contracts/contracts/connector-catalog";
 import {
   ONBOARDING_RECOMMENDATION_CONNECTOR_SLUGS,
   onboardingSourcesContract,
 } from "@okouai/api-contracts/contracts/onboarding";
-
+import { expect, test } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
+import { connectorCatalogRoutes } from "../connector-catalog";
+import { onboardingSourcesRoutes } from "../onboarding-sources";
 import { createBddApi } from "./helpers/api-bdd";
 import {
   createConnectorBddApi,
@@ -15,78 +16,64 @@ import {
 } from "./helpers/api-bdd-connectors";
 import { assertPublicConnectorCatalogHasNoPrivateFields } from "./helpers/connector-catalog-public-leak";
 import { createRouteMocks } from "./helpers/route-test";
-import { connectorCatalogRoutes } from "../connector-catalog";
-import { onboardingSourcesRoutes } from "../onboarding-sources";
 
 const context = testContext();
-const mocks = createRouteMocks(context);
-const bdd = createBddApi(context);
-const connectorsApi = createConnectorBddApi(context);
+const headers = Object.freeze({ authorization: "Bearer clerk-session" });
 
-function stateFromAuthorizationUrl(authorizationUrl: string): string {
-  const state = new URL(authorizationUrl).searchParams.get("state");
+test("onboarding-sources-002 lists the visible onboarding sources in recommendation order", async () => {
+  mockGitHubConnectorOAuth();
+  const actor = createBddApi(context).user();
+  const connectors = createConnectorBddApi(context);
+  const started = await connectors.startOauth(actor, "github", "oauth");
+  const state = new URL(started.authorizationUrl).searchParams.get("state");
   if (!state) {
-    throw new Error("Expected connector authorization URL to include state");
+    throw new Error("Expected OAuth state");
   }
-  return state;
-}
+  const connected = await connectors.completeOauthCallbackResult("github", {
+    state,
+    code: `code-${randomUUID()}`,
+  });
+  expect(connected.body.status).toBe("success");
+  createRouteMocks(context).clerk.session(
+    actor.userId,
+    actor.orgId,
+    actor.orgRole,
+  );
 
-describe("GET /api/onboarding/sources", () => {
-  it("returns 401 when not authenticated", async () => {
-    const client = setupApp({ context, routes: onboardingSourcesRoutes })(
+  const sources = await accept(
+    setupApp({ context, routes: onboardingSourcesRoutes })(
       onboardingSourcesContract,
-    );
-    const response = await accept(client.list({ headers: {} }), [401]);
+    ).list({ headers }),
+    [200],
+  );
+  const catalog = await accept(
+    setupApp({ context, routes: connectorCatalogRoutes })(
+      connectorCatalogContract,
+    ).status({ headers }),
+    [200],
+  );
 
-    expect(response.body.error.code).toBe("UNAUTHORIZED");
+  const visible = new Set(
+    catalog.body.connectors.map((connector) => {
+      return connector.slug;
+    }),
+  );
+  expect(
+    sources.body.connectors.map((connector) => {
+      return connector.slug;
+    }),
+  ).toStrictEqual(
+    ONBOARDING_RECOMMENDATION_CONNECTOR_SLUGS.filter((slug) => {
+      return visible.has(slug);
+    }),
+  );
+  const github = sources.body.connectors.find((connector) => {
+    return connector.slug === "github";
   });
-
-  it("returns the visible onboarding sources with the caller's connection status", async () => {
-    const actor = bdd.user();
-    mockGitHubConnectorOAuth();
-    const start = await connectorsApi.startOauth(actor, "github", "oauth");
-    await connectorsApi.completeOauthCallback("github", {
-      code: `github-${randomUUID()}`,
-      state: stateFromAuthorizationUrl(start.authorizationUrl),
-    });
-    mocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
-    const headers = { authorization: "Bearer clerk-session" };
-
-    const sources = await accept(
-      setupApp({ context, routes: onboardingSourcesRoutes })(
-        onboardingSourcesContract,
-      ).list({ headers }),
-      [200],
-    );
-    const status = await accept(
-      setupApp({ context, routes: connectorCatalogRoutes })(
-        connectorCatalogContract,
-      ).status({ headers }),
-      [200],
-    );
-
-    assertPublicConnectorCatalogHasNoPrivateFields(sources.body);
-    // The visible onboarding sources, in the order onboarding names them.
-    const visibleSlugs = new Set(
-      status.body.connectors.map((connector) => {
-        return connector.slug;
-      }),
-    );
-    expect(
-      sources.body.connectors.map((connector) => {
-        return connector.slug;
-      }),
-    ).toStrictEqual(
-      ONBOARDING_RECOMMENDATION_CONNECTOR_SLUGS.filter((slug) => {
-        return visibleSlugs.has(slug);
-      }),
-    );
-    const github = sources.body.connectors.find((connector) => {
-      return connector.slug === "github";
-    });
-    expect(github).toMatchObject({
-      singleAuthCodeAuthMethodId: "oauth",
-    });
-    expect(github).not.toHaveProperty("permissionSummary");
+  expect(github).toMatchObject({
+    singleAuthCodeAuthMethodId: "oauth",
+    authMethods: [expect.objectContaining({ id: "oauth" })],
   });
+  expect(github).not.toHaveProperty("permissionSummary");
+  assertPublicConnectorCatalogHasNoPrivateFields(sources.body);
 });

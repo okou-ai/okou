@@ -1,824 +1,339 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
+import { Readable } from "node:stream";
+import {
+  GetObjectCommand,
+  HeadObjectCommand,
+  PutObjectCommand,
+} from "@aws-sdk/client-s3";
 
-import type { UserMessageInputDocument } from "@okouai/api-contracts/contracts/chat-threads";
 import { describe, expect, it } from "vitest";
 
 import { testContext } from "../../../__tests__/test-context";
 import { flushWaitUntilForTest } from "../../context/wait-until";
-import { createBddApi, expectApiError } from "./helpers/api-bdd";
+import { createBddApi } from "./helpers/api-bdd";
 import {
   createChatFilesBddApi,
   persistedAttachment,
 } from "./helpers/api-bdd-chat-files";
-import { hostedTextFile } from "./helpers/api-bdd-host-files";
 import { createHostBddApi } from "./helpers/api-bdd-host";
-import { createRunsApi } from "./helpers/api-bdd-runs";
-import { createChatEventsFixture } from "./helpers/chat-events-fixture";
-import { createChatCallbacksApi } from "./helpers/api-bdd-chat-callbacks";
-
-/*
-helper gap:
-- CHAT-02 signed assistant callback, integration-message, and event-consumer
-  ingestion still need a visible API helper that creates a run and exposes the
-  callback signing material without reading agent_run_callbacks.
-- CHAT-03 non-empty run artifacts and Google Drive status live in
-  chat-threads.bdd.test.ts.
-- FILE-01 raw hosted-content download does not have an exported typed contract;
-  this file covers typed upload and host APIs instead of using DB or untyped
-  route fallbacks.
-- CHAIN-CHAT callback-signing branches are blocked by the CHAT-02 callback
-  signing gap; the run-to-artifact path is covered through public run and
-  sandbox upload APIs in chat-threads.bdd.test.ts.
-*/
+import { channelsPublishedTo } from "./helpers/realtime-publications";
+import { nowDate } from "../../../lib/time";
 
 const context = testContext();
-const bdd = createBddApi(context);
-const api = createChatFilesBddApi(context);
 
-describe("CHAT-01 chat thread lifecycle", () => {
-  it("creates, mutates, searches, and deletes a thread through visible APIs", async () => {
-    const actor = bdd.user();
-    const created = await api.createThread(actor, {
-      title: "Launch notes",
-    });
-
-    expect(created.title).toBe("Launch notes");
-
-    let detail = await api.readThread(actor, created.id);
-    expect(detail).toStrictEqual({
-      lastReadAt: expect.any(String),
-      cancellationRecoveryPending: false,
-    });
-    await expect(api.readThreadDraft(actor, created.id)).resolves.toStrictEqual(
-      {
-        draftUserMessage: null,
-        draftAttachments: null,
-      },
-    );
-
-    await api.patchThread(actor, created.id, {
-      draftUserMessage: {
-        version: 1,
-        parts: [
-          { type: "text", text: "follow up on " },
-          {
-            type: "chat_thread",
-            threadId: created.id,
-            titleSnapshot: "Launch notes",
-          },
-        ],
-      },
-      draftAttachments: [
-        persistedAttachment(
-          randomUUID(),
-          "brief.txt",
-          "text/plain",
-          "follow up on the launch".length,
-        ),
-      ],
-    });
-    const draft = await api.readThreadDraft(actor, created.id);
-    expect(draft.draftUserMessage).toStrictEqual({
-      version: 1,
-      parts: [
-        { type: "text", text: "follow up on " },
-        {
-          type: "chat_thread",
-          threadId: created.id,
-          titleSnapshot: "Launch notes",
-        },
-      ],
-    });
-    expect(draft.draftAttachments).toHaveLength(1);
-    await expect(api.listThreadDrafts(actor)).resolves.toContain(created.id);
-
-    await api.patchThread(actor, created.id, {
-      draftUserMessage: null,
-      draftAttachments: null,
-    });
-    await expect(api.readThreadDraft(actor, created.id)).resolves.toStrictEqual(
-      {
-        draftUserMessage: null,
-        draftAttachments: null,
-      },
-    );
-    await expect(api.listThreadDrafts(actor)).resolves.not.toContain(
-      created.id,
-    );
-
-    await api.renameThread(actor, created.id, "Renamed launch notes");
-    detail = await api.readThread(actor, created.id);
-    expect(detail.lastReadAt).toStrictEqual(expect.any(String));
-
-    await api.pinThread(actor, created.id);
-    await api.unpinThread(actor, created.id);
-
-    const markedRead = await api.markThreadRead(actor, created.id);
-    expect(markedRead).toStrictEqual({
-      lastReadAt: expect.any(String),
-    });
-
-    context.mocks.ably.publish.mockClear();
-    context.mocks.ably.channelGet.mockClear();
-    const markedUnread = await api.markThreadUnread(actor, created.id);
-    expect(markedUnread).toStrictEqual({
-      lastReadAt: null,
-    });
-    expect(context.mocks.ably.channelGet.mock.calls).toStrictEqual([
-      [`user-org:${actor.userId}:${actor.orgId}`],
-    ]);
-    expect(context.mocks.ably.publish).toHaveBeenCalledWith(
-      "chatThreadReadCursorUpdated",
-      {
-        threadId: created.id,
-        lastReadAt: null,
-      },
-    );
-    detail = await api.readThread(actor, created.id);
-    expect(detail.lastReadAt).toBeNull();
-
-    await api.updateThreadModelSelection(actor, created.id, null);
-
-    const messages = await api.listThreadEvents(actor, created.id);
-    expect(messages.events).toStrictEqual([]);
-
-    const artifacts = await api.listThreadArtifacts(actor, created.id);
-    expect(artifacts.runs).toStrictEqual([]);
-
-    const search = await api.searchChat(actor, "launch");
-    expect(search.results).toStrictEqual([]);
-
-    await api.deleteThread(actor, created.id);
-    const deletedRead = await api.requestReadThread(actor, created.id, [404]);
-    expectApiError(deletedRead.body);
-    expect(deletedRead.body.error.code).toBe("NOT_FOUND");
-  });
-
-  it("hides owned threads from peer users and other organizations", async () => {
-    const orgId = `org_${randomUUID()}`;
-    const owner = bdd.user({ orgId });
-    const peer = bdd.user({ orgId });
-    const outsider = bdd.user();
-    const thread = await api.createThread(owner, {
-      title: "Private planning",
-    });
-
-    await expect(api.readThread(owner, thread.id)).resolves.toHaveProperty(
-      "lastReadAt",
-    );
-
-    const peerRead = await api.requestReadThread(peer, thread.id, [404]);
-    expectApiError(peerRead.body);
-    expect(peerRead.body.error.code).toBe("NOT_FOUND");
-    await api.requestReadThreadDraft(peer, thread.id, [404]);
-    await api.patchThread(owner, thread.id, {
-      draftAttachments: null,
-      draftUserMessage: {
-        version: 1,
-        parts: [{ type: "text", text: "private draft" }],
-      },
-    });
-    await expect(api.readThreadDraft(owner, thread.id)).resolves.toMatchObject({
-      draftUserMessage: {
-        version: 1,
-        parts: [{ type: "text", text: "private draft" }],
-      },
-    });
-    await api.requestReadThreadDraft(peer, thread.id, [404]);
-    await expect(api.listThreadDrafts(peer)).resolves.not.toContain(thread.id);
-
-    const outsiderRead = await api.requestReadThread(
-      outsider,
-      thread.id,
-      [404],
-    );
-    expectApiError(outsiderRead.body);
-    expect(outsiderRead.body.error.code).toBe("NOT_FOUND");
-
-    const peerEvents = await api.requestThreadEvents(peer, {}, [200]);
-    expect(peerEvents.status).toBe(200);
-    if (peerEvents.status !== 200) {
-      throw new Error("Expected chat thread events to load");
-    }
-    expect(
-      peerEvents.body.events.some((event) => {
-        return event.chatThreadId === thread.id;
-      }),
-    ).toBeFalsy();
-  });
-
-  it("given an owned thread, when mutation routes are chained, then only owner-visible state changes", async () => {
-    const orgId = `org_${randomUUID()}`;
-    const owner = bdd.user({ orgId });
-    const peer = bdd.user({ orgId });
-    const thread = await api.createThread(owner, {
-      title: "Owner launch plan",
-    });
-
-    await api.renameThread(owner, thread.id, "Pinned launch plan");
-    await createChatEventsFixture(context).configureSubscriptionPiModel(owner);
-    await createRunsApi(context).updateUserModelPreference(owner, null);
-    await api.updateThreadModelSelection(owner, thread.id, "gpt-6-luna");
-    await api.pinThread(owner, thread.id);
-    const readEmpty = await api.markThreadRead(owner, thread.id);
-
-    expect(readEmpty).toStrictEqual({
-      lastReadAt: expect.any(String),
-    });
-
-    let detail = await api.readThread(owner, thread.id);
-    expect(detail.lastReadAt).toStrictEqual(expect.any(String));
-    const ownerEvents = await api.requestThreadEvents(owner, {}, [200]);
-    expect(ownerEvents.status).toBe(200);
-    if (ownerEvents.status !== 200) {
-      throw new Error("Expected owner chat thread events to load");
-    }
-    expect(ownerEvents.body.events).toContainEqual(
-      expect.objectContaining({
-        kind: "model_selection_updated",
-        chatThreadId: thread.id,
-        selectedModel: "gpt-6-luna",
-      }),
-    );
-
-    const peerRename = await api.requestRenameThread(
-      peer,
-      thread.id,
-      "Peer rewrite",
-      [404],
-    );
-    expectApiError(peerRename.body);
-    expect(peerRename.body.error.code).toBe("NOT_FOUND");
-
-    const peerModelSelection = await api.requestUpdateThreadModelSelection(
-      peer,
-      thread.id,
-      null,
-      [404],
-    );
-    expectApiError(peerModelSelection.body);
-    expect(peerModelSelection.body.error.code).toBe("NOT_FOUND");
-
-    const peerUnpin = await api.requestUnpinThread(peer, thread.id, [404]);
-    expectApiError(peerUnpin.body);
-    expect(peerUnpin.body.error.code).toBe("NOT_FOUND");
-
-    const peerPin = await api.requestPinThread(peer, thread.id, [404]);
-    expectApiError(peerPin.body);
-    expect(peerPin.body.error.code).toBe("NOT_FOUND");
-
-    const peerMarkRead = await api.requestMarkThreadRead(
-      peer,
-      thread.id,
-      [404],
-    );
-    expectApiError(peerMarkRead.body);
-    expect(peerMarkRead.body.error.code).toBe("NOT_FOUND");
-
-    const peerMarkUnread = await api.requestMarkThreadUnread(
-      peer,
-      thread.id,
-      [404],
-    );
-    expectApiError(peerMarkUnread.body);
-    expect(peerMarkUnread.body.error.code).toBe("NOT_FOUND");
-
-    detail = await api.readThread(owner, thread.id);
-    expect(detail.lastReadAt).toStrictEqual(expect.any(String));
-
-    await api.unpinThread(owner, thread.id);
-    await api.updateThreadModelSelection(owner, thread.id, null);
-
-    detail = await api.readThread(owner, thread.id);
-    expect(detail.lastReadAt).toStrictEqual(expect.any(String));
-    const clearedEvents = await api.requestThreadEvents(owner, {}, [200]);
-    expect(clearedEvents.status).toBe(200);
-    if (clearedEvents.status !== 200) {
-      throw new Error("Expected cleared chat thread events to load");
-    }
-    expect(clearedEvents.body.events).toContainEqual(
-      expect.objectContaining({
-        kind: "model_selection_updated",
-        chatThreadId: thread.id,
-        selectedModel: "auto",
-      }),
-    );
-  });
-});
-
-describe("CHAT-02 chat messages and visible validation", () => {
-  it("sends chat messages through API-visible no-credit, recall, and interrupt branches", async () => {
-    const actor = bdd.user();
-    const peer = bdd.user({ orgId: actor.orgId });
-    const uploadId = randomUUID();
-    const clientEventId = randomUUID();
-    api.mockCompletedUploadObject(actor, uploadId, "launch-plan.txt", 24);
-    const expectedUserMessage: UserMessageInputDocument = {
-      version: 1,
-      parts: [
-        { type: "text", text: "Build a launch-plan presentation" },
-        {
-          type: "file",
-          fileId: uploadId,
-          filenameSnapshot: "launch-plan.txt",
-          contentType: "text/plain",
-        },
-      ],
-    };
-    const sent = await api.requestSendEvent(
-      actor,
-      {
-        prompt: "Build a launch-plan presentation",
-        userMessage: expectedUserMessage,
-        hasTextContent: false,
-        clientEventId,
-      },
-      [201],
-    );
-    if (sent.status !== 201) {
-      throw new Error(
-        "Expected chat send to create visible no-credit messages",
-      );
-    }
-    expect(sent.body.threadId).toStrictEqual(expect.any(String));
-    // The background pick rejects the input for missing credits.
-    await flushWaitUntilForTest();
-
-    const threadId = sent.body.threadId;
-    await expect(api.readThreadDraft(actor, threadId)).resolves.toStrictEqual({
-      draftUserMessage: null,
-      draftAttachments: null,
-    });
-
-    const messages = await api.listThreadEvents(actor, threadId);
-    expect(messages.events).toHaveLength(3);
-
-    const queuedMessage = messages.events.find((message) => {
-      return (
-        message.eventType === "input.prompt" && message.id === clientEventId
-      );
-    });
-    const rejectedUserMessage = messages.events.find((message) => {
-      return (
-        message.eventType === "input.rejected" &&
-        message.revokesEventId === clientEventId
-      );
-    });
-    const assistantMessage = messages.events.find((message) => {
-      return message.eventType === "output.error";
-    });
-
-    expect(queuedMessage).toMatchObject({
-      eventType: "input.prompt",
-      content: null,
-      userMessage: expectedUserMessage,
-    });
-    expect(rejectedUserMessage).toMatchObject({
-      eventType: "input.rejected",
-      content: null,
-      userMessage: expectedUserMessage,
-      error: "insufficient_credits",
-      revokesEventId: clientEventId,
-    });
-    expect(assistantMessage?.content).toContain("Insufficient credits");
-    expect(assistantMessage?.error).toBe("insufficient_credits");
-
-    const retried = await api.requestSendEvent(
-      actor,
-      {
-        threadId,
-        prompt: "Retry the same client message",
-        clientEventId,
-      },
-      [201],
-    );
-    expect(retried.body).toMatchObject({
-      threadId,
-      createdAt: expect.any(String),
-    });
-
-    const afterRetry = await api.listThreadEvents(actor, threadId);
-    expect(afterRetry.events).toHaveLength(3);
-
-    const secondThread = await api.createThread(actor, {
-      title: "Duplicate client message id",
-    });
-    const duplicateAcrossThreads = await api.requestSendEvent(
-      actor,
-      {
-        threadId: secondThread.id,
-        prompt: "Reuse the client message id in another thread",
-        clientEventId,
-      },
-      [201],
-    );
-    expect(duplicateAcrossThreads.body).toMatchObject({
-      threadId: secondThread.id,
-    });
-    const secondThreadEvents = await api.listThreadEvents(
-      actor,
-      secondThread.id,
-    );
-    expect(secondThreadEvents.events).toStrictEqual([]);
-
-    if (!rejectedUserMessage) {
-      throw new Error("Expected the no-credit send to create a user message");
-    }
-
-    const unavailableFollowup = await api.requestSendEvent(
-      actor,
-      {
-        threadId,
-        prompt: "Use a stale recommended follow-up",
-        revokesEventId: rejectedUserMessage.id,
-      },
-      [400],
-    );
-    expectApiError(unavailableFollowup.body);
-    expect(unavailableFollowup.body.error.code).toBe("BAD_REQUEST");
-    expect(unavailableFollowup.body.error.message).toBe(
-      "Recommended follow-up is no longer available",
-    );
-
-    const peerRecall = await api.requestSendEvent(
-      peer,
-      {
-        threadId,
-        revokesEventId: rejectedUserMessage.id,
-      },
-      [404],
-    );
-    expectApiError(peerRecall.body);
-    expect(peerRecall.body.error.code).toBe("NOT_FOUND");
-
-    const recalled = await api.requestSendEvent(
-      actor,
-      {
-        threadId,
-        revokesEventId: rejectedUserMessage.id,
-        clientEventId: randomUUID(),
-      },
-      [201],
-    );
-    if (recalled.status !== 201) {
-      throw new Error("Expected chat recall to create a visible message");
-    }
-    expect(recalled.body).toMatchObject({
-      threadId,
-      createdAt: expect.any(String),
-    });
-
-    const afterRecall = await api.listThreadEvents(actor, threadId);
-    expect(
-      afterRecall.events.some((message) => {
-        return message.revokesEventId === rejectedUserMessage.id;
-      }),
-    ).toBeTruthy();
-
-    const repeatedRecall = await api.requestSendEvent(
-      actor,
-      {
-        threadId,
-        revokesEventId: rejectedUserMessage.id,
-      },
-      [201],
-    );
-    expect(repeatedRecall.body).toMatchObject({
-      threadId,
-      createdAt: expect.any(String),
-    });
-    const afterRepeatedRecall = await api.listThreadEvents(actor, threadId);
-    expect(
-      afterRepeatedRecall.events.filter((message) => {
-        return message.revokesEventId === rejectedUserMessage.id;
-      }),
-    ).toHaveLength(1);
-
-    const interrupted = await api.requestSendEvent(
-      actor,
-      {
-        threadId,
-        interruptsRunId: randomUUID(),
-      },
-      [400],
-    );
-    expectApiError(interrupted.body);
-    expect(interrupted.body.error.code).toBe("BAD_REQUEST");
-    expect(interrupted.body.error.message).toBe(
-      "Only active chat runs can be interrupted",
-    );
-  });
-
-  it("rejects invalid generation template and reused client thread ids through the send API", async () => {
-    const actor = bdd.user();
-
-    const clientThreadId = randomUUID();
-    const first = await api.requestSendEvent(
-      actor,
-      {
-        prompt: "First client-thread send",
-        clientThreadId,
-      },
-      [201],
-    );
-    if (first.status !== 201) {
-      throw new Error("Expected first client-thread send to create the thread");
-    }
-    expect(first.body.threadId).toBe(clientThreadId);
-
-    // A retried first send without a client event id settles on the
-    // thread's first input instead of enqueuing a second one.
-    const retry = await api.requestSendEvent(
-      actor,
-      {
-        prompt: "Retry the first client-thread send",
-        clientThreadId,
-      },
-      [201],
-    );
-    expect(retry.body).toStrictEqual(first.body);
-    await flushWaitUntilForTest();
-    const retriedEvents = await api.listThreadEvents(actor, clientThreadId);
-    expect(
-      retriedEvents.events.filter((event) => {
-        return (
-          event.eventType === "input.prompt" &&
-          event.revokesEventId === undefined
-        );
-      }),
-    ).toHaveLength(1);
-    const reusedClientThreadForOtherAgent = await api.requestSendEvent(
-      actor,
-      {
-        prompt: "Reuse a client thread id for another agent",
-        clientThreadId,
-      },
-      [201],
-    );
-    expect(reusedClientThreadForOtherAgent.body).toStrictEqual(first.body);
-
-    const peer = bdd.user({ orgId: actor.orgId });
-    const ownerThread = await api.createThread(actor, {
-      title: "Owner-only send target",
-    });
-    const peerSendToOwnerThread = await api.requestSendEvent(
-      peer,
-      {
-        threadId: ownerThread.id,
-        prompt: "Post into another user's thread",
-      },
-      [404],
-    );
-    expectApiError(peerSendToOwnerThread.body);
-    expect(peerSendToOwnerThread.body.error.code).toBe("NOT_FOUND");
-
-    const modelSelected = await api.requestSendEvent(
-      actor,
-      {
-        prompt: "Persist the model selected at send time",
-        model: "gpt-6-luna",
-      },
-      [201],
-    );
-    if (modelSelected.status !== 201) {
-      throw new Error("Expected model-selected chat send to create a thread");
-    }
-    const modelSelectedEvents = await api.requestThreadEvents(actor, {}, [200]);
-    expect(modelSelectedEvents.status).toBe(200);
-    if (modelSelectedEvents.status !== 200) {
-      throw new Error("Expected model-selected thread events to load");
-    }
-    expect(modelSelectedEvents.body.events).toContainEqual(
-      expect.objectContaining({
-        kind: "created",
-        chatThreadId: modelSelected.body.threadId,
-        selectedModel: "gpt-6-luna",
-      }),
-    );
-  });
-
-  it("lists visible events and rejects invalid send requests without hidden fixtures", async () => {
-    const actor = bdd.user();
-    const peer = bdd.user({ orgId: actor.orgId });
-    const thread = await api.createThread(actor, {
-      title: "Message validation",
-    });
-
-    const initialMessages = await api.listThreadEvents(actor, thread.id);
-    expect(initialMessages.events).toStrictEqual([]);
-
-    const unauthenticated = await api.requestSendEvent(
-      null,
-      { prompt: "hello" },
-      [401],
-    );
-    expectApiError(unauthenticated.body);
-    expect(unauthenticated.body.error.code).toBe("UNAUTHORIZED");
-
-    const legacySend = await api.requestSendEvent(
-      actor,
-      { prompt: "hello" },
-      [201],
-    );
-    expect(legacySend.body).toHaveProperty("threadId");
-    const peerSend = await api.requestSendEvent(
-      peer,
-      { threadId: thread.id, prompt: "send to another member's thread" },
-      [404],
-    );
-    expectApiError(peerSend.body);
-    expect(peerSend.body.error.code).toBe("NOT_FOUND");
-  });
-
-  it("given an empty chat thread, when event rows are requested, then only the owner sees zero rows", async () => {
-    const orgId = `org_${randomUUID()}`;
-    const owner = bdd.user({ orgId });
-    const peer = bdd.user({ orgId });
-    const thread = await api.createThread(owner, {
-      title: "Empty message boundary",
-    });
-
-    const ownerMessages = await api.listThreadEvents(owner, thread.id, {
-      limit: 1,
-    });
-    expect(ownerMessages).toStrictEqual({
-      events: [],
-    });
-
-    const peerMessages = await api.requestListThreadEvents(
-      peer,
-      thread.id,
-      { limit: 1 },
-      [404],
-    );
-    expectApiError(peerMessages.body);
-    expect(peerMessages.body.error.code).toBe("NOT_FOUND");
-
-    const missingMessages = await api.requestListThreadEvents(
-      owner,
-      randomUUID(),
-      {},
-      [404],
-    );
-    expectApiError(missingMessages.body);
-    expect(missingMessages.body.error.code).toBe("NOT_FOUND");
-  });
-});
-
-describe("CHAT-03 artifacts", () => {
-  it("exposes empty artifact state through the list API", async () => {
-    const actor = bdd.user();
-    const thread = await api.createThread(actor, {
-      title: "Artifacts",
-    });
-
-    const artifacts = await api.listThreadArtifacts(actor, thread.id);
-    expect(artifacts.runs).toStrictEqual([]);
-
-    const missingArtifacts = await api.requestListThreadArtifacts(
-      actor,
-      randomUUID(),
-      [404],
-    );
-    expectApiError(missingArtifacts.body);
-    expect(missingArtifacts.body.error.code).toBe("NOT_FOUND");
-  });
-});
-
-describe("FILE-01 uploads, storage, and host APIs", () => {
-  it("prepares and completes an upload through S3 boundary state", async () => {
-    const actor = bdd.user();
-
-    context.mocks.s3.getSignedUrl.mockResolvedValue(
-      "https://r2.example.com/upload?sig=test",
-    );
-    const objectStore =
-      createChatCallbacksApi(context).acceptChatObjectStorage();
-    const prepared = await api.prepareUpload(actor, {
+function siteFile(path: string, content: string) {
+  return {
+    path,
+    size: Buffer.byteLength(content),
+    sha256: createHash("sha256").update(content).digest("hex"),
+    contentType: "text/html; charset=utf-8",
+  };
+}
+
+describe("uploads, storage and host APIs", () => {
+  it("chat-files.bdd-009 prepares and completes an upload through storage", async () => {
+    const bdd = createBddApi(context);
+    const chat = createChatFilesBddApi(context);
+    const member = bdd.user();
+    const other = bdd.user();
+    bdd.acceptStorageWrites();
+
+    const prepared = await chat.prepareUpload(member, {
       filename: "notes.txt",
       contentType: "Text/Plain; Charset=UTF-8",
       size: 12,
     });
-    expect(prepared).toMatchObject({
+    if ("multipart" in prepared) {
+      throw new Error("Expected a single-part upload");
+    }
+    expect(prepared.filename).toBe("notes.txt");
+    expect(prepared.contentType).toBe("text/plain; charset=utf-8");
+    expect(prepared.size).toBe(12);
+    expect(prepared.uploadUrl).toMatch(/^https?:\/\//);
+    expect(new URL(prepared.url).pathname).toMatch(
+      /^\/artifacts\/[A-Za-z0-9_-]{10}\.txt$/,
+    );
+    expect(prepared.url).not.toContain(member.userId);
+
+    context.mocks.s3.send.mockImplementation((command: unknown) => {
+      if (command instanceof HeadObjectCommand) {
+        return Promise.resolve({
+          ContentLength: 12,
+          LastModified: nowDate(),
+        });
+      }
+      if (command instanceof GetObjectCommand) {
+        if (!command.input.Key?.startsWith("private-artifacts/")) {
+          return Promise.reject(
+            Object.assign(new Error("Missing object"), { name: "NoSuchKey" }),
+          );
+        }
+        return Promise.resolve({
+          ContentLength: 12,
+          LastModified: nowDate(),
+          Body: Readable.from([Buffer.alloc(12, 0x61)]),
+        });
+      }
+      if (command instanceof PutObjectCommand) {
+        return Promise.resolve({ ETag: '"etag-1"' });
+      }
+      return Promise.resolve({});
+    });
+    await expect(
+      chat.completeUpload(member, { id: prepared.id }),
+    ).resolves.toMatchObject({
+      id: prepared.id,
       filename: "notes.txt",
       contentType: "text/plain; charset=utf-8",
       size: 12,
+      url: new URL(
+        `/artifacts/${prepared.id.replace(/-/gu, "")}.txt`,
+        prepared.url,
+      ).href,
     });
-    expect("uploadUrl" in prepared ? prepared.uploadUrl : "").toMatch(
-      /^https?:\/\//,
-    );
-    expect(prepared.url).toMatch(
-      /^https?:\/\/[^/]+\/artifacts\/[a-z0-9]{10}\.txt$/u,
-    );
-    expect(prepared.url).not.toContain(actor.userId);
-
-    objectStore.addObject({
-      bucket: "test-private-artifacts",
-      key: `private-artifacts/${prepared.id}/notes.txt`,
-      size: 12,
-      body: Buffer.from("upload notes"),
-      contentType: "text/plain; charset=utf-8",
-      metadata: { "artifact-id": prepared.id },
-    });
-    const completed = await api.completeUpload(actor, {
-      id: prepared.id,
-      contentType: prepared.contentType,
-    });
-    expect(completed).toMatchObject({
-      id: prepared.id,
-      filename: "notes.txt",
-      contentType: "text/plain; charset=utf-8",
-      size: 12,
-      url: prepared.url,
-    });
-
-    const otherActor = bdd.user();
-    const crossUserComplete = await api.requestCompleteUpload(
-      otherActor,
+    const foreign = await chat.requestCompleteUpload(
+      other,
       { id: prepared.id },
       [404],
     );
-    expectApiError(crossUserComplete.body);
-    expect(crossUserComplete.body.error.code).toBe("NOT_FOUND");
+    if (!("error" in foreign.body)) {
+      throw new Error("Expected an error body");
+    }
+    expect(foreign.body.error.code).toBe("NOT_FOUND");
 
-    const generic = await api.prepareUpload(actor, {
+    bdd.acceptStorageWrites();
+    const custom = await chat.prepareUpload(member, {
       filename: "capture.custom",
       contentType: "application/x-custom",
       size: 10,
     });
-    expect(generic).toMatchObject({
-      filename: "capture.custom",
-      contentType: "application/octet-stream",
-      size: 10,
-    });
+    expect(custom.contentType).toBe("application/octet-stream");
   });
 
-  it("prepares and completes a hosted-site deployment through host APIs", async () => {
-    createHostBddApi(context).captureHostedSitesS3();
-    const actor = bdd.user();
-    const site = `bdd-site-${randomUUID().slice(0, 8)}`;
+  it("chat-files.bdd-010 prepares and completes a hosted-site deployment through host APIs", async () => {
+    const bdd = createBddApi(context);
+    const chat = createChatFilesBddApi(context);
+    const host = createHostBddApi(context);
+    const member = bdd.user();
+    const other = bdd.user();
+    host.captureHostedSitesS3();
 
-    const prepared = await api.prepareHostedSite(actor, {
-      site,
-      title: site,
-      slugSuffix: "release-01",
+    const prepared = await chat.prepareHostedSite(member, {
+      site: `site-${randomUUID().slice(0, 8)}`,
+      title: "Launch site",
       artifactKind: "hosted-site",
-      spaFallback: true,
+      spaFallback: false,
       files: [
-        hostedTextFile("/index.html", "<main>BDD hosted site</main>"),
-        hostedTextFile(
-          "/assets/app-4f3a9c12.js",
-          "console.log('bdd');",
-          "application/javascript",
-        ),
+        siteFile("/index.html", "<h1>Launch</h1>"),
+        {
+          ...siteFile("/assets/app-3f9a1c2b.js", "console.info('launch')"),
+          contentType: "text/javascript",
+          immutable: true,
+        },
       ],
     });
-    expect(prepared).toMatchObject({
-      publicSlug: site,
-      aliasUrl: prepared.url,
-      deploymentVersion: 1,
-      artifactUrl: expect.stringContaining(`dpl-${prepared.deploymentId}.`),
-    });
+    expect(prepared.aliasUrl).toBe(prepared.url);
+    expect(new URL(prepared.url).hostname.split(".")[0]).toBe(
+      prepared.publicSlug,
+    );
+    expect(prepared.deploymentVersion).toBe(1);
+    expect(prepared.artifactUrl).toContain(`dpl-${prepared.deploymentId}.`);
     expect(prepared.uploads).toHaveLength(2);
 
-    const otherActor = bdd.user();
-    const crossOrgComplete = await api.requestCompleteHostedSite(
-      otherActor,
+    const foreign = await chat.requestCompleteHostedSite(
+      other,
       prepared.deploymentId,
       [404],
     );
-    expectApiError(crossOrgComplete.body);
-    expect(crossOrgComplete.body.error.code).toBe("NOT_FOUND");
-
-    const completed = await api.completeHostedSite(
-      actor,
-      prepared.deploymentId,
-    );
-    expect(completed).toMatchObject({
-      siteId: prepared.siteId,
-      deploymentId: prepared.deploymentId,
-      publicSlug: prepared.publicSlug,
-      url: prepared.url,
+    if (!("error" in foreign.body)) {
+      throw new Error("Expected an error body");
+    }
+    expect(foreign.body.error.code).toBe("NOT_FOUND");
+    await expect(
+      chat.completeHostedSite(member, prepared.deploymentId),
+    ).resolves.toMatchObject({
       status: "ready",
       deploymentVersion: 1,
-      artifactUrl: prepared.artifactUrl,
-      aliasUrl: prepared.url,
       isActive: true,
       activeDeploymentVersion: 1,
+      url: prepared.url,
+      aliasUrl: prepared.aliasUrl,
+      artifactUrl: prepared.artifactUrl,
     });
 
-    const invalid = await api.requestPrepareHostedSite(
-      actor,
+    const missingIndex = await chat.requestPrepareHostedSite(
+      member,
       {
-        site: `bdd-invalid-${randomUUID().slice(0, 8)}`,
-        title: "BDD invalid",
+        site: `site-${randomUUID().slice(0, 8)}`,
+        title: "About only",
         artifactKind: "hosted-site",
         spaFallback: false,
-        files: [hostedTextFile("/about.html", "<main>missing index</main>")],
+        files: [siteFile("/about.html", "<h1>About</h1>")],
       },
       [400],
     );
-    expectApiError(invalid.body);
-    expect(invalid.body.error.message).toContain("must include /index.html");
+    if (!("error" in missingIndex.body)) {
+      throw new Error("Expected an error body");
+    }
+    expect(missingIndex.body.error.message).toContain(
+      "must include /index.html",
+    );
+  });
+});
+
+describe("chat thread lifecycle", () => {
+  it("chat-files.bdd-001 (1/2) creates a thread and saves then clears its composer draft", async () => {
+    const bdd = createBddApi(context);
+    const chat = createChatFilesBddApi(context);
+    const member = bdd.user();
+
+    const created = await chat.createThread(member, { title: "Launch notes" });
+    expect(created.title).toBe("Launch notes");
+    const initial = await chat.readThread(member, created.id);
+    expect(initial.lastReadAt).toBeTruthy();
+    expect(initial.cancellationRecoveryPending).toBeFalsy();
+    await expect(
+      chat.readThreadDraft(member, created.id),
+    ).resolves.toMatchObject({
+      draftUserMessage: null,
+      draftAttachments: null,
+    });
+
+    const attachment = persistedAttachment(
+      randomUUID(),
+      "brief.txt",
+      "text/plain",
+      12,
+    );
+    const draftUserMessage = {
+      version: 1 as const,
+      parts: [
+        { type: "text" as const, text: "Draft launch notes" },
+        {
+          type: "chat_thread" as const,
+          threadId: created.id,
+          titleSnapshot: "Launch notes",
+        },
+      ],
+    };
+    await chat.patchThread(member, created.id, {
+      draftUserMessage,
+      draftAttachments: [attachment],
+    });
+    const saved = await chat.readThreadDraft(member, created.id);
+    expect(saved.draftUserMessage).toStrictEqual(draftUserMessage);
+    expect(saved.draftAttachments).toHaveLength(1);
+    await expect(chat.listThreadDrafts(member)).resolves.toContain(created.id);
+
+    await chat.patchThread(member, created.id, {
+      draftUserMessage: null,
+      draftAttachments: null,
+    });
+    await expect(
+      chat.readThreadDraft(member, created.id),
+    ).resolves.toMatchObject({
+      draftUserMessage: null,
+      draftAttachments: null,
+    });
+    await expect(chat.listThreadDrafts(member)).resolves.not.toContain(
+      created.id,
+    );
+  });
+
+  it("chat-files.bdd-001 (2/2) renames, pins, marks read state, searches and deletes the thread", async () => {
+    const bdd = createBddApi(context);
+    const chat = createChatFilesBddApi(context);
+    const member = bdd.user();
+    const created = await chat.createThread(member, { title: "Launch notes" });
+
+    await chat.renameThread(member, created.id, "Launch notes v2");
+    await chat.pinThread(member, created.id);
+    await chat.unpinThread(member, created.id);
+
+    const read = await chat.markThreadRead(member, created.id);
+    expect(read.lastReadAt).toBeTruthy();
+    await flushWaitUntilForTest();
+    context.mocks.ably.channelGet.mockClear();
+    context.mocks.ably.publish.mockClear();
+    const unread = await chat.markThreadUnread(member, created.id);
+    expect(unread.lastReadAt).toBeNull();
+    await flushWaitUntilForTest();
+    expect(
+      channelsPublishedTo(context.mocks, "chatThreadReadCursorUpdated"),
+    ).toStrictEqual([`user-org:${member.userId}:${member.orgId}`]);
+    expect(context.mocks.ably.publish).toHaveBeenCalledWith(
+      "chatThreadReadCursorUpdated",
+      { threadId: created.id, lastReadAt: null },
+    );
+    await expect(chat.readThread(member, created.id)).resolves.toMatchObject({
+      lastReadAt: null,
+    });
+
+    await chat.updateThreadModelSelection(member, created.id, null);
+    await expect(
+      chat.listThreadEvents(member, created.id),
+    ).resolves.toStrictEqual({ events: [] });
+    await expect(
+      chat.listThreadArtifacts(member, created.id),
+    ).resolves.toStrictEqual({ runs: [] });
+    const search = await chat.searchChat(member, "launch");
+    expect(search.results).toStrictEqual([]);
+
+    await chat.deleteThread(member, created.id);
+    const deleted = await chat.requestReadThread(member, created.id, [404]);
+    if (!("error" in deleted.body)) {
+      throw new Error("Expected an error body");
+    }
+    expect(deleted.body.error.code).toBe("NOT_FOUND");
+  });
+
+  it("chat-files.bdd-002 hides owned threads from peer users and other organizations", async () => {
+    const bdd = createBddApi(context);
+    const chat = createChatFilesBddApi(context);
+    const owner = bdd.user();
+    const peer = bdd.user({ orgId: owner.orgId, orgRole: "org:member" });
+    const outsider = bdd.user();
+    const thread = await chat.createThread(owner, {
+      title: "Private planning",
+    });
+
+    await expect(chat.readThread(owner, thread.id)).resolves.toMatchObject({
+      cancellationRecoveryPending: false,
+    });
+    const peerRead = await chat.requestReadThread(peer, thread.id, [404]);
+    if (!("error" in peerRead.body)) {
+      throw new Error("Expected an error body");
+    }
+    expect(peerRead.body.error.code).toBe("NOT_FOUND");
+    const outsiderRead = await chat.requestReadThread(
+      outsider,
+      thread.id,
+      [404],
+    );
+    if (!("error" in outsiderRead.body)) {
+      throw new Error("Expected an error body");
+    }
+    expect(outsiderRead.body.error.code).toBe("NOT_FOUND");
+    await chat.requestReadThreadDraft(peer, thread.id, [404]);
+
+    const draftUserMessage = {
+      version: 1 as const,
+      parts: [{ type: "text" as const, text: "Private draft" }],
+    };
+    await chat.patchThread(owner, thread.id, {
+      draftUserMessage,
+      draftAttachments: null,
+    });
+    await expect(chat.readThreadDraft(owner, thread.id)).resolves.toMatchObject(
+      { draftUserMessage },
+    );
+
+    await chat.requestReadThreadDraft(peer, thread.id, [404]);
+    await expect(chat.listThreadDrafts(peer)).resolves.not.toContain(thread.id);
+    const peerEvents = await chat.requestThreadEvents(peer, {}, [200]);
+    if (peerEvents.status !== 200) {
+      throw new Error("Expected the peer thread events");
+    }
+    expect(JSON.stringify(peerEvents.body.events)).not.toContain(thread.id);
   });
 });

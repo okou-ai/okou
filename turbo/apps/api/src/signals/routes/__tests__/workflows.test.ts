@@ -1,1466 +1,794 @@
-import {
-  contentBundleDigest,
-  readContentBundle,
-} from "@okouai/core/content-bundle";
 import { randomUUID } from "node:crypto";
-import { HeadObjectCommand } from "@aws-sdk/client-s3";
-import { flushWaitUntilForTest } from "../../context/wait-until";
-import { createBddIntegrationApi } from "./helpers/api-bdd-integrations";
-import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
-import { createPublicAutomationRunApi } from "./helpers/public-automation-run";
-
-import { chatThreadConnectorSelectionContract } from "@okouai/api-contracts/contracts/chat-threads";
+import { gunzipSync } from "node:zlib";
 import {
-  workflowAutomationsContract,
+  chatSearchContract,
+  chatThreadsContract,
+} from "@okouai/api-contracts/contracts/chat-threads";
+import {
   workflowsCollectionContract,
   workflowsDetailContract,
+  workflowAutomationsContract,
   workflowVisibilityContract,
-  type WorkflowCreateRequest,
-  type WorkflowUpdateRequest,
 } from "@okouai/api-contracts/contracts/workflows";
-import { http, HttpResponse } from "msw";
-import { onTestFinished } from "vitest";
-
-import { accept, testContext } from "../../../__tests__/test-context";
+import { readContentBundle } from "@okouai/core/content-bundle";
+import { beforeAll, describe, expect, it, onTestFinished } from "vitest";
 import { setupApp } from "../../../__tests__/test-helpers";
+import { accept, testContext } from "../../../__tests__/test-context";
+import {
+  TEST_WITH_DOUBLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE,
+  TEST_WITH_SINGLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE,
+} from "../../../__tests__/test-timeouts";
 import { mockOptionalEnv } from "../../../lib/env";
-import { extractFilesFromTarGz } from "../../../lib/tar";
 import { mockNow, now } from "../../../lib/time";
-import { server } from "../../../mocks/server";
-import { createDeferredPromise } from "../../utils";
+import { flushWaitUntilForTest } from "../../context/wait-until";
+import { settleIncludingAbort } from "../../utils";
 import { chatThreadRoutes } from "../chat-threads";
+import { chatThreadCreateRoutes } from "../chat-threads-create";
 import { workflowAutomationsRoutes } from "../workflow-automations";
 import { workflowsRoutes } from "../workflows";
-import {
-  createBddApi,
-  type ApiTestUser,
-  type ApiTestUserOptions,
-} from "./helpers/api-bdd";
+import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
+import { createChatCallbacksApi } from "./helpers/api-bdd-chat-callbacks";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
-import {
-  createConnectorBddApi,
-  mockGmailConnectorOAuth,
-  mockGoogleFormsConnectorOAuth,
-} from "./helpers/api-bdd-connectors";
-import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
 import { createRunsApi } from "./helpers/api-bdd-runs";
-import {
-  mockGoogleCalendarConnectorOAuth,
-  mockNotionConnectorOAuth,
-} from "./helpers/api-bdd-workflows";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
-import { createFixtureTracker, createRouteMocks } from "./helpers/route-test";
-
+import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
+import { createWorkflowsBddApi } from "./helpers/api-bdd-workflows";
+import { createPublicAutomationRunApi } from "./helpers/public-automation-run";
+import { channelsPublishedTo } from "./helpers/realtime-publications";
+import { createRouteMocks } from "./helpers/route-test";
 import { installWorkflowVolumeS3Fixture } from "./helpers/workflow-volume-s3";
 
 const context = testContext();
-const bdd = createBddApi(context);
-const chat = createChatFilesBddApi(context);
-const miscApi = createMiscRoutesApi(context);
-const mocks = createRouteMocks(context);
-const api = createRunsApi(context);
-const automationRuns = createPublicAutomationRunApi(context);
-const connectorApi = createConnectorBddApi(context);
-const STAFF_ORG_ID = "org_3ANttyrbWYJk6JKRSTRLEsbsDLe";
-
-type StaffFixture = {
-  readonly actor: ApiTestUser;
-  readonly workflowId: string;
-};
-
-async function cleanupStaffFixture(fixture: StaffFixture): Promise<void> {
-  await miscApi.deleteWorkflow(fixture.actor, fixture.workflowId, [204]);
-}
-
-const trackStaffFixture =
-  createFixtureTracker<StaffFixture>(cleanupStaffFixture);
-
-function registerStaffFixture(fixture: StaffFixture): Promise<StaffFixture> {
-  return trackStaffFixture(Promise.resolve(fixture));
-}
-
-function user(options: ApiTestUserOptions = {}): ApiTestUser {
-  return bdd.user(options);
-}
-
-function authHeaders(actor: ApiTestUser) {
-  mocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
-  return { authorization: "Bearer clerk-session" };
-}
-
-function collectionClient() {
-  return setupApp({ context, routes: workflowsRoutes })(
-    workflowsCollectionContract,
-  );
-}
-
-function detailClient() {
-  return setupApp({ context, routes: workflowsRoutes })(
-    workflowsDetailContract,
-  );
-}
-
-function chatThreadConnectorSelectionsClient() {
-  return setupApp({ context, routes: chatThreadRoutes })(
-    chatThreadConnectorSelectionContract,
-  );
-}
-
-/**
- * Runs read back from a workflow thread. A workflow run only enqueues its
- * slash command; background picks bind launched inputs to their runs.
- */
-async function readLaunchedWorkflowRunIds(
-  actor: ApiTestUser,
-  chatThreadId: string,
-): Promise<readonly string[]> {
-  await flushWaitUntilForTest();
-  const { events } = await chat.listThreadEvents(actor, chatThreadId);
-  return [
-    ...new Set(
-      events.flatMap((event) => {
-        return event.eventType === "input.prompt" && event.runId !== undefined
-          ? [event.runId]
-          : [];
-      }),
-    ),
-  ];
-}
-
-async function runWorkflowAndLaunch(
-  actor: ApiTestUser,
-  workflowId: string,
-): Promise<{ readonly chatThreadId: string; readonly runId: string }> {
-  const sent = await accept(
-    detailClient().run({
-      headers: authHeaders(actor),
-      params: { workflowId },
-    }),
-    [200],
-  );
-  expect(sent.body.runId).toBeNull();
-  const runIds = await readLaunchedWorkflowRunIds(
-    actor,
-    sent.body.chatThreadId,
-  );
-  const runId = runIds.at(-1);
-  if (runId === undefined) {
-    throw new Error("Expected the workflow run to launch");
-  }
-  return { chatThreadId: sent.body.chatThreadId, runId };
-}
-
-function installVolumeS3Fixture(objects = new Map<string, Buffer>()) {
-  return installWorkflowVolumeS3Fixture(context, objects);
-}
-
-function visibilityClient() {
-  return setupApp({ context, routes: workflowsRoutes })(
-    workflowVisibilityContract,
-  );
-}
-
-function automationsClient() {
-  return setupApp({ context, routes: workflowAutomationsRoutes })(
-    workflowAutomationsContract,
-  );
-}
-
-beforeEach(() => {
-  installVolumeS3Fixture();
+const app = setupApp({
+  context,
+  routes: [
+    ...workflowsRoutes,
+    ...workflowAutomationsRoutes,
+    ...chatThreadCreateRoutes,
+  ],
 });
+const headers = { authorization: "Bearer clerk-session" } as const;
 
-async function createWorkflow(actor: ApiTestUser, body: WorkflowCreateRequest) {
-  const workflow = await accept(
-    collectionClient().create({
-      headers: authHeaders(actor),
-      body,
-    }),
-    [201],
-  );
-  if (actor.orgId === STAFF_ORG_ID) {
-    await registerStaffFixture({
-      actor,
-      workflowId: workflow.body.id,
-    });
-  }
-  return workflow;
+interface Member {
+  readonly userId: string;
+  readonly orgId: string;
+  readonly role: "org:admin" | "org:member";
 }
 
-async function enableWorkflowRuns(actor: ApiTestUser): Promise<void> {
-  await api.grantProEntitlement(actor);
-  // Fable keeps workflow runs on the native Runner execution route.
-  await api.ensurePersonalSubscriptionModel(actor, {
-    model: "claude-fable-5-1",
-  });
-  await api.configureRunnerGroup();
+function workspace(): string {
+  installWorkflowVolumeS3Fixture(context);
+  return `org_${randomUUID()}`;
 }
 
-async function connectGoogleCalendarAccount(
-  actor: ApiTestUser,
-  args: {
-    readonly accessToken: string;
-    readonly email: string;
-    readonly subject: string;
-    readonly account?: { readonly intent: "add"; readonly displayName: string };
+function member(
+  orgId: string,
+  role: "org:admin" | "org:member" = "org:admin",
+): Member {
+  return { userId: `user_${randomUUID()}`, orgId, role };
+}
+
+function as(actor: Member, role: Member["role"] = actor.role) {
+  createRouteMocks(context).clerk.session(actor.userId, actor.orgId, role);
+  return headers;
+}
+
+function slug(prefix = "flow"): string {
+  return `${prefix}-${randomUUID().slice(0, 8)}`;
+}
+
+function collection() {
+  return app(workflowsCollectionContract);
+}
+
+function detail() {
+  return app(workflowsDetailContract);
+}
+
+function visibility() {
+  return app(workflowVisibilityContract);
+}
+
+async function createWorkflow(
+  actor: Member,
+  body: {
+    readonly name: string;
+    readonly visibility?: "public" | "private";
+    readonly chatThreadId?: string;
+    readonly displayName?: string;
+    readonly description?: string;
+    readonly instruction?: string;
+    readonly files?: { path: string; content: string }[];
   },
 ) {
-  mockGoogleCalendarConnectorOAuth({
-    accessToken: args.accessToken,
-    email: args.email,
-    subject: args.subject,
-  });
-  const start = await connectorApi.startOauth(
-    actor,
-    "google-calendar",
-    "oauth",
-    args.account,
+  const response = await accept(
+    collection().create({ headers: as(actor), body }),
+    [201],
   );
-  const state = new URL(start.authorizationUrl).searchParams.get("state");
-  if (!state) {
-    throw new Error("Expected Google Calendar OAuth state");
+  return response.body;
+}
+
+interface StorageWrite {
+  readonly key: string;
+  readonly body: Buffer;
+}
+
+function attachmentArchives(
+  writes: readonly StorageWrite[],
+): readonly StorageWrite[] {
+  return writes.filter((write) => {
+    return write.key.startsWith("workflow-attachments/");
+  });
+}
+
+/** A NUL-terminated tar header field. */
+function tarField(header: Buffer, start: number, end: number): string {
+  const field = header.subarray(start, end);
+  const terminator = field.indexOf(0);
+  return field
+    .subarray(0, terminator === -1 ? field.length : terminator)
+    .toString("utf8");
+}
+
+/** Entry paths of a gzipped tar archive in stored order. */
+function archivePaths(archive: Buffer | undefined): readonly string[] {
+  if (!archive) {
+    throw new Error("Expected an attachment archive");
   }
-  await connectorApi.completeOauthCallback("google-calendar", {
-    code: `google-calendar-copy-${randomUUID()}`,
-    state,
-  });
-  const accounts = await connectorApi.listBuiltinConnectorAccounts(
-    actor,
-    "google-calendar",
-  );
-  const account = accounts.find((candidate) => {
-    return candidate.externalEmail === args.email;
-  });
-  if (!account) {
-    throw new Error(`Expected Google Calendar account ${args.email}`);
+  const tar = gunzipSync(archive);
+  const paths: string[] = [];
+  let offset = 0;
+  while (offset + 512 <= tar.length && tar[offset] !== 0) {
+    const header = tar.subarray(offset, offset + 512);
+    const path = tarField(header, 0, 100);
+    const size = Number.parseInt(tarField(header, 124, 136).trim(), 8);
+    paths.push(path);
+    offset += 512 + Math.ceil(size / 512) * 512;
   }
-  return account;
+  return paths;
 }
 
-async function requestCreateWorkflow<
-  TStatus extends 400 | 401 | 403 | 404 | 409,
->(
-  actor: ApiTestUser,
-  body: WorkflowCreateRequest,
-  statuses: readonly TStatus[],
-) {
-  return await accept(
-    collectionClient().create({
-      headers: authHeaders(actor),
-      body,
+function readPackage(
+  write: StorageWrite | undefined,
+): ReadonlyMap<string, string> {
+  const sha256 = /^bundles\/v1\/([a-f0-9]{64})\.tar\.gz$/u.exec(
+    write?.key ?? "",
+  )?.[1];
+  if (!write || !sha256) {
+    throw new Error("Expected one published workflow package");
+  }
+  return new Map(
+    readContentBundle(write.body, {
+      sha256,
+      archiveBytes: write.body.byteLength,
+    }).map((file) => {
+      return [file.path, file.content.toString("utf8")];
     }),
-    statuses,
   );
 }
 
-async function updateWorkflow(
-  actor: ApiTestUser,
-  workflowId: string,
-  body: WorkflowUpdateRequest,
-) {
-  return await accept(
-    detailClient().update({
-      headers: authHeaders(actor),
-      params: { workflowId },
-      body,
-    }),
-    [200],
-  );
+function ownerProfileLookups(userId: string): number {
+  return context.mocks.clerk.users.getUser.mock.calls.filter((call) => {
+    return call[0] === userId;
+  }).length;
 }
 
-async function requestUpdateWorkflow<
-  TStatus extends 400 | 401 | 403 | 404 | 409,
->(
-  actor: ApiTestUser,
-  workflowId: string,
-  body: WorkflowUpdateRequest,
-  statuses: readonly TStatus[],
-) {
-  return await accept(
-    detailClient().update({
-      headers: authHeaders(actor),
-      params: { workflowId },
-      body,
-    }),
-    statuses,
-  );
-}
-
-function names(workflows: readonly { readonly name: string }[]): string[] {
-  return workflows.map((workflow) => {
-    return workflow.name;
+function mockOwnerProfile(userId: string): void {
+  context.mocks.clerk.users.getUser.mockImplementation((id: unknown) => {
+    if (id !== userId) {
+      return Promise.reject(new Error(`Unexpected owner lookup ${String(id)}`));
+    }
+    return Promise.resolve({
+      id: userId,
+      firstName: "Workflow",
+      lastName: "Author",
+      imageUrl: "https://example.com/author.png",
+      primaryEmailAddressId: "email_author",
+      emailAddresses: [
+        { id: "email_author", emailAddress: "author@example.com" },
+      ],
+    });
   });
 }
 
 describe("workflows", () => {
-  it("creates private workflows by default and hides them from other org members", async () => {
-    const owner = user();
-    const otherMember = user({ orgId: owner.orgId, orgRole: "org:member" });
-
-    const created = await createWorkflow(owner, {
-      name: `owner-workflow-${randomUUID().slice(0, 8)}`,
-      displayName: "Owner Workflow",
-      instruction: "# owner workflow",
+  it("workflows-019 rejects renaming a private workflow to another same-owner private slug", async () => {
+    const admin = member(workspace());
+    const existing = slug("private-existing");
+    await createWorkflow(admin, { name: existing, visibility: "private" });
+    const source = await createWorkflow(admin, {
+      name: slug(),
+      visibility: "private",
     });
 
+    const renamed = await accept(
+      detail().update({
+        headers: as(admin),
+        params: { workflowId: source.id },
+        body: { name: existing },
+      }),
+      [409],
+    );
+
+    expect(renamed.body.error.message).toContain(
+      `private workflow named "/${existing}"`,
+    );
+  });
+
+  it("workflows-001 creates private workflows by default and hides them from other org members", async () => {
+    const orgId = workspace();
+    const admin = member(orgId);
+    const other = member(orgId, "org:member");
+
+    const created = await accept(
+      collection().create({
+        headers: as(admin),
+        body: { name: slug(), displayName: "Default Private" },
+      }),
+      [201],
+    );
+    const adminList = await accept(
+      collection().list({ headers: as(admin), query: { scope: "workspace" } }),
+      [200],
+    );
+    const otherList = await accept(
+      collection().list({ headers: as(other), query: {} }),
+      [200],
+    );
+
     expect(created.body).toMatchObject({
-      displayName: "Owner Workflow",
       visibility: "private",
-      ownerUserId: owner.userId,
+      ownerUserId: admin.userId,
       canManage: true,
       canPublish: true,
     });
-
-    const ownerList = await accept(
-      collectionClient().list({
-        headers: authHeaders(owner),
-        query: { scope: "workspace" },
+    expect(
+      adminList.body.map((workflow) => {
+        return workflow.id;
       }),
-      [200],
-    );
-    expect(names(ownerList.body)).toContain(created.body.name);
-
-    const memberList = await accept(
-      collectionClient().list({ headers: authHeaders(otherMember) }),
-      [200],
-    );
-    expect(names(memberList.body)).not.toContain(created.body.name);
+    ).toContain(created.body.id);
+    expect(
+      otherList.body.map((workflow) => {
+        return workflow.id;
+      }),
+    ).not.toContain(created.body.id);
   });
 
-  it("runs a workflow slash command with workflow timing attribution", async () => {
-    const actor = user({ orgRole: "org:admin" });
-    await api.grantProEntitlement(actor);
-
-    await createBddIntegrationApi(context).configureNativeSubscriptionModels(
-      actor,
-    );
-    await api.updateUserModelPreference(actor, "gpt-6-astra");
-
-    const runnerGroup = await api.configureRunnerGroup();
-
-    const created = await createWorkflow(actor, {
-      name: `run-attribution-workflow-${randomUUID().slice(0, 8)}`,
-      displayName: "Run Attribution Workflow",
-      instruction: "# run attribution workflow",
+  it("workflows-005 allows the workflow owner to maintain a public workspace workflow", async () => {
+    const author = member(workspace());
+    const created = await createWorkflow(author, {
+      name: slug(),
+      visibility: "public",
+      instruction: "# original content",
     });
-    const prepared = await accept(
-      detailClient().chatThread({
-        headers: authHeaders(actor),
-        params: { workflowId: created.body.id },
+    const maintainer = as(author, "org:member");
+
+    const listed = await accept(
+      collection().list({ headers: maintainer, query: {} }),
+      [200],
+    );
+    const before = await accept(
+      detail().get({ headers: maintainer, params: { workflowId: created.id } }),
+      [200],
+    );
+    await accept(
+      detail().update({
+        headers: maintainer,
+        params: { workflowId: created.id },
+        body: { instruction: "# maintained content" },
       }),
       [200],
     );
-
-    const run = await runWorkflowAndLaunch(actor, created.body.id);
-    expect(run.chatThreadId).toBe(prepared.body.chatThreadId);
-
-    const queued = await accept(
-      detailClient().run({
-        headers: authHeaders(actor),
-        params: { workflowId: created.body.id },
-      }),
+    const after = await accept(
+      detail().get({ headers: maintainer, params: { workflowId: created.id } }),
       [200],
     );
-    expect(queued.body).toStrictEqual({
-      chatThreadId: run.chatThreadId,
-      runId: null,
+    const deleted = await detail().delete({
+      headers: maintainer,
+      params: { workflowId: created.id },
+      body: undefined,
     });
-    // The busy thread keeps the second invocation queued behind the first run.
-    await expect(
-      readLaunchedWorkflowRunIds(actor, run.chatThreadId),
-    ).resolves.toStrictEqual([run.runId]);
-
-    await api.heartbeatRunner(runnerGroup);
-    const execution = await api.executionInput(run.runId);
-    expect(execution.cliAgentType).toBe("codex");
-    expect(execution.environment?.OPENAI_MODEL).toBe("gpt-6-astra");
-    expect(execution.environment?.ANTHROPIC_MODEL).toBeUndefined();
-    await api.requestCancelRun(actor, run.runId, [200]);
-  });
-
-  it("resolves concurrent first workflow runs to one automation thread", async () => {
-    const actor = user({ orgRole: "org:admin" });
-    await enableWorkflowRuns(actor);
-
-    const created = await createWorkflow(actor, {
-      name: `concurrent-run-workflow-${randomUUID().slice(0, 8)}`,
-      displayName: "Concurrent Run Workflow",
-      instruction: "# concurrent run workflow",
+    const gone = await detail().get({
+      headers: maintainer,
+      params: { workflowId: created.id },
     });
-    const client = detailClient();
-    const headers = authHeaders(actor);
-
-    const runs = await Promise.all([
-      accept(
-        client.run({
-          headers,
-          params: { workflowId: created.body.id },
-        }),
-        [200],
-      ),
-      accept(
-        client.run({
-          headers,
-          params: { workflowId: created.body.id },
-        }),
-        [200],
-      ),
-    ]);
 
     expect(
-      new Set(
-        runs.map((run) => {
-          return run.body.chatThreadId;
-        }),
-      ).size,
-    ).toBe(1);
-    const [firstRun] = runs;
-    const runIds = await readLaunchedWorkflowRunIds(
-      actor,
-      firstRun.body.chatThreadId,
-    );
-    // The shared thread launches one run; the other invocation queues behind it.
-    expect(runIds).toHaveLength(1);
-    for (const runId of runIds) {
-      await api.requestCancelRun(actor, runId, [200]);
-    }
-  });
-
-  it("runs public workflows for members and hides another member's private workflow", async () => {
-    const owner = user({ orgRole: "org:admin" });
-    const member = user({ orgId: owner.orgId, orgRole: "org:member" });
-    await bdd.completeOnboarding(member);
-    await enableWorkflowRuns(owner);
-    if (!owner.orgId) {
-      throw new Error("Expected a workflow owner organization");
-    }
-    // A member's workflow thread starts from their own model preference.
-    await api.ensurePersonalSubscriptionModel(member, {
-      model: "claude-fable-5-1",
-    });
-
-    const publicWorkflow = await createWorkflow(owner, {
-      name: `public-run-workflow-${randomUUID().slice(0, 8)}`,
-      visibility: "public",
-      instruction: "# public run workflow",
-    });
-
-    const publicRun = await runWorkflowAndLaunch(
-      member,
-      publicWorkflow.body.id,
-    );
-
-    const privateWorkflow = await createWorkflow(owner, {
-      name: `private-run-workflow-${randomUUID().slice(0, 8)}`,
-      visibility: "private",
-      instruction: "# private run workflow",
-    });
-    const hidden = await accept(
-      detailClient().run({
-        headers: authHeaders(member),
-        params: { workflowId: privateWorkflow.body.id },
+      listed.body.find((workflow) => {
+        return workflow.id === created.id;
       }),
-      [404],
-    );
-    expect(hidden.body.error.code).toBe("NOT_FOUND");
-
-    await api.requestCancelRun(member, publicRun.runId, [200]);
-  });
-
-  it.each(["workflow owner", "org admin"] as const)(
-    "allows the %s to maintain a public workspace workflow",
-    async (maintainer) => {
-      const admin = user();
-      const author = user({ orgId: admin.orgId });
-
-      const workflow = await createWorkflow(author, {
-        name: `public-maintenance-${randomUUID().slice(0, 8)}`,
-        visibility: "public",
-        instruction: "# original content",
-      });
-      // The author no longer has the org admin role.
-      const maintainers: Record<typeof maintainer, ApiTestUser> = {
-        "workflow owner": { ...author, orgRole: "org:member" },
-        "org admin": user({ orgId: admin.orgId }),
-      };
-      const actor = maintainers[maintainer];
-      const listed = await accept(
-        collectionClient().list({ headers: authHeaders(actor) }),
-        [200],
-      );
-      expect(listed.body).toContainEqual(
-        expect.objectContaining({ id: workflow.body.id, canManage: true }),
-      );
-      const detail = await accept(
-        detailClient().get({
-          headers: authHeaders(actor),
-          params: { workflowId: workflow.body.id },
-        }),
-        [200],
-      );
-      expect(detail.body).toMatchObject({
-        ownerUserId: author.userId,
-        visibility: "public",
-        canManage: true,
-        canPublish: false,
-      });
-
-      await updateWorkflow(actor, workflow.body.id, {
-        instruction: "# maintained content",
-      });
-      const updated = await accept(
-        detailClient().get({
-          headers: authHeaders(actor),
-          params: { workflowId: workflow.body.id },
-        }),
-        [200],
-      );
-      expect(updated.body).toMatchObject({
-        instruction: "# maintained content",
-        ownerUserId: author.userId,
-        visibility: "public",
-      });
-      await accept(
-        detailClient().delete({
-          headers: authHeaders(actor),
-          params: { workflowId: workflow.body.id },
-        }),
-        [204],
-      );
-      await accept(
-        detailClient().get({
-          headers: authHeaders(actor),
-          params: { workflowId: workflow.body.id },
-        }),
-        [404],
-      );
-    },
-  );
-
-  it("allows a public workflow owner to withdraw sharing without gaining publication rights", async () => {
-    const admin = user();
-    const author = user({ orgId: admin.orgId });
-
-    const workflow = await createWorkflow(author, {
-      name: `withdraw-sharing-${randomUUID().slice(0, 8)}`,
+    ).toMatchObject({ canManage: true });
+    expect(before.body).toMatchObject({
+      ownerUserId: author.userId,
       visibility: "public",
-      instruction: "# shared content",
-    });
-    const member: ApiTestUser = { ...author, orgRole: "org:member" };
-    const demoted = await accept(
-      visibilityClient().demote({
-        headers: authHeaders(member),
-        params: { workflowId: workflow.body.id },
-      }),
-      [200],
-    );
-    expect(demoted.body).toMatchObject({
-      visibility: "private",
-      ownerUserId: member.userId,
       canManage: true,
       canPublish: false,
     });
-    await accept(
-      visibilityClient().publish({
-        headers: authHeaders(member),
-        params: { workflowId: workflow.body.id },
-      }),
-      [403],
-    );
-    await accept(
-      detailClient().get({
-        headers: authHeaders(admin),
-        params: { workflowId: workflow.body.id },
-      }),
-      [404],
-    );
-  });
-
-  it("binds a newly created workflow only to the member’s own chat thread", async () => {
-    const actor = user();
-
-    const sourceThread = await chat.createThread(actor, {
-      title: "Source chat",
-    });
-
-    context.mocks.ably.publish.mockClear();
-    const sourceWorkflow = await createWorkflow(actor, {
-      chatThreadId: sourceThread.id,
-      name: `source-workflow-${randomUUID().slice(0, 8)}`,
-      instruction: "# source workflow",
-    });
-    const preparedSource = await accept(
-      detailClient().chatThread({
-        headers: authHeaders(actor),
-        params: { workflowId: sourceWorkflow.body.id },
-      }),
-      [200],
-    );
-    expect(context.mocks.ably.publish).toHaveBeenCalledWith(
-      `chatThreadWorkflowsChanged:${sourceThread.id}`,
-      null,
-    );
-    expect(preparedSource.body.chatThreadId).toBe(sourceThread.id);
-    expect(preparedSource.body.prompt).toContain(sourceWorkflow.body.id);
-
-    context.mocks.ably.publish.mockClear();
-    const peer = user({ orgId: actor.orgId, orgRole: "org:member" });
-    const targetWorkflow = await createWorkflow(peer, {
-      chatThreadId: sourceThread.id,
-      name: `target-workflow-${randomUUID().slice(0, 8)}`,
-      instruction: "# target workflow",
-    });
-    const preparedTarget = await accept(
-      detailClient().chatThread({
-        headers: authHeaders(peer),
-        params: { workflowId: targetWorkflow.body.id },
-      }),
-      [200],
-    );
-    expect(preparedTarget.body.chatThreadId).not.toBe(sourceThread.id);
-    expect(context.mocks.ably.publish).not.toHaveBeenCalledWith(
-      `chatThreadWorkflowsChanged:${sourceThread.id}`,
-      null,
-    );
-  });
-
-  it("creates a workflow when its chat thread notification fails", async () => {
-    const actor = user();
-
-    const thread = await chat.createThread(actor, {
-      title: "Realtime failure chat",
-    });
-
-    context.mocks.ably.publish.mockClear();
-    context.mocks.ably.publish.mockRejectedValueOnce(
-      new Error("Ably unavailable"),
-    );
-
-    await createWorkflow(actor, {
-      chatThreadId: thread.id,
-      name: `realtime-failure-workflow-${randomUUID().slice(0, 8)}`,
-      instruction: "# realtime failure workflow",
-    });
-
-    expect(context.mocks.ably.publish).toHaveBeenCalledWith(
-      `chatThreadWorkflowsChanged:${thread.id}`,
-      null,
-    );
-  });
-
-  it("protects public workflow slugs while allowing private overrides", async () => {
-    const actor = user();
-
-    const other = user();
-
-    const workflowName = `shared-workflow-${randomUUID().slice(0, 8)}`;
-
-    const publicWorkflow = await createWorkflow(actor, {
-      name: workflowName,
-      displayName: "Public Workflow",
+    expect(after.body).toMatchObject({
+      instruction: "# maintained content",
+      ownerUserId: author.userId,
       visibility: "public",
-      instruction: "# shared workflow",
     });
-    const privateWorkflow = await createWorkflow(actor, {
-      name: workflowName,
+    expect(deleted.status).toBe(204);
+    expect(gone.status).toBe(404);
+  });
+
+  it("workflows-006 allows the org admin to maintain a public workspace workflow", async () => {
+    const orgId = workspace();
+    const author = member(orgId);
+    const admin = member(orgId);
+    const created = await createWorkflow(author, {
+      name: slug(),
+      visibility: "public",
+      instruction: "# original content",
+    });
+
+    const listed = await accept(
+      collection().list({ headers: as(admin), query: {} }),
+      [200],
+    );
+    const before = await accept(
+      detail().get({ headers: as(admin), params: { workflowId: created.id } }),
+      [200],
+    );
+    await accept(
+      detail().update({
+        headers: as(admin),
+        params: { workflowId: created.id },
+        body: { instruction: "# maintained content" },
+      }),
+      [200],
+    );
+    const after = await accept(
+      detail().get({ headers: as(admin), params: { workflowId: created.id } }),
+      [200],
+    );
+    const deleted = await detail().delete({
+      headers: as(admin),
+      params: { workflowId: created.id },
+      body: undefined,
+    });
+    const gone = await detail().get({
+      headers: as(admin),
+      params: { workflowId: created.id },
+    });
+
+    expect(
+      listed.body.find((workflow) => {
+        return workflow.id === created.id;
+      }),
+    ).toMatchObject({ canManage: true });
+    expect(before.body).toMatchObject({
+      ownerUserId: author.userId,
+      visibility: "public",
+      canManage: true,
+      canPublish: false,
+    });
+    expect(after.body).toMatchObject({
+      instruction: "# maintained content",
+      ownerUserId: author.userId,
+      visibility: "public",
+    });
+    expect(deleted.status).toBe(204);
+    expect(gone.status).toBe(404);
+  });
+
+  it("workflows-007 allows a public workflow owner to withdraw sharing without gaining publication rights", async () => {
+    const orgId = workspace();
+    const author = member(orgId);
+    const admin = member(orgId);
+    const created = await createWorkflow(author, {
+      name: slug(),
+      visibility: "public",
+    });
+
+    const demoted = await accept(
+      visibility().demote({
+        headers: as(author, "org:member"),
+        params: { workflowId: created.id },
+        body: undefined,
+      }),
+      [200],
+    );
+    const republished = await visibility().publish({
+      headers: as(author, "org:member"),
+      params: { workflowId: created.id },
+      body: undefined,
+    });
+    const adminRead = await detail().get({
+      headers: as(admin),
+      params: { workflowId: created.id },
+    });
+
+    expect(demoted.body).toMatchObject({
+      visibility: "private",
+      ownerUserId: author.userId,
+      canManage: true,
+      canPublish: false,
+    });
+    expect(republished.status).toBe(403);
+    expect(adminRead.status).toBe(404);
+  });
+
+  it("workflows-010 protects public workflow slugs while allowing private overrides", async () => {
+    const admin = member(workspace());
+    const foreign = member(`org_${randomUUID()}`);
+    const name = slug("x");
+    const publicWorkflow = await createWorkflow(admin, {
+      name,
+      visibility: "public",
+    });
+    const privateWorkflow = await createWorkflow(admin, {
+      name,
+      visibility: "private",
       displayName: "Private Workflow",
-      instruction: "# private override",
     });
-    await createWorkflow(other, {
-      name: workflowName,
+    const foreignWorkflow = await createWorkflow(foreign, {
+      name,
       visibility: "public",
-      instruction: "# other workspace workflow",
     });
 
-    const duplicate = await requestCreateWorkflow(
-      actor,
-      {
-        name: workflowName,
-        visibility: "public",
-        instruction: "# duplicate public workflow",
-      },
+    const duplicate = await accept(
+      collection().create({
+        headers: as(admin),
+        body: { name, visibility: "public" },
+      }),
       [409],
     );
-    expect(duplicate.body.error.message).toContain(
-      `/${workflowName}" already exists in this workspace`,
-    );
-
-    const scopedList = await accept(
-      collectionClient().list({
-        headers: authHeaders(actor),
-        query: {},
-      }),
+    const listed = await accept(
+      collection().list({ headers: as(admin), query: {} }),
       [200],
     );
-    expect(scopedList.body).toContainEqual(
-      expect.objectContaining({
-        id: publicWorkflow.body.id,
-        shadowedBy: {
-          id: privateWorkflow.body.id,
-          name: workflowName,
-          displayName: "Private Workflow",
-        },
+
+    expect(duplicate.body.error.message).toContain(
+      `/${name}" already exists in this workspace`,
+    );
+    const byId = new Map(
+      listed.body.map((workflow) => {
+        return [workflow.id, workflow];
       }),
     );
-    expect(scopedList.body).toContainEqual(
-      expect.objectContaining({
-        id: privateWorkflow.body.id,
-        shadowedBy: null,
-      }),
-    );
+    expect(byId.get(publicWorkflow.id)?.shadowedBy).toStrictEqual({
+      id: privateWorkflow.id,
+      name,
+      displayName: "Private Workflow",
+    });
+    expect(byId.get(privateWorkflow.id)?.shadowedBy).toBeNull();
+    expect(byId.has(foreignWorkflow.id)).toBeFalsy();
   });
 
-  it("lists unshadowed workspace workflows with composer fields", async () => {
-    const actor = user();
-
-    const other = user();
-
-    const workflowName = `composer-workflow-${randomUUID().slice(0, 8)}`;
-
-    const publicWorkflow = await createWorkflow(actor, {
-      name: workflowName,
-      displayName: "Public Workflow",
-      visibility: "public",
-      instruction: "# shared workflow",
-    });
-    const privateWorkflow = await createWorkflow(actor, {
-      name: workflowName,
-      displayName: "Private Workflow",
-      description: "Private override",
-      instruction: "# private override",
-    });
-    const otherWorkspaceWorkflow = await createWorkflow(other, {
-      name: `other-${workflowName}`,
-      instruction: "# other workspace workflow",
-    });
-
-    const composerList = await accept(
-      collectionClient().composer({
-        headers: authHeaders(actor),
-        query: {},
-      }),
-      [200],
-    );
-
-    expect(composerList.body).toContainEqual({
-      id: privateWorkflow.body.id,
-      name: workflowName,
+  it("workflows-011 lists unshadowed workspace workflows with composer fields", async () => {
+    const admin = member(workspace());
+    const foreign = member(`org_${randomUUID()}`);
+    const name = slug("x");
+    await createWorkflow(admin, { name, visibility: "public" });
+    const privateWorkflow = await createWorkflow(admin, {
+      name,
+      visibility: "private",
       displayName: "Private Workflow",
       description: "Private override",
     });
-    const listedIds = composerList.body.map((workflow) => {
-      return workflow.id;
-    });
-    expect(listedIds).not.toContain(publicWorkflow.body.id);
-    expect(listedIds).not.toContain(otherWorkspaceWorkflow.body.id);
+    await createWorkflow(foreign, { name: slug(), visibility: "public" });
+
+    const composer = await accept(
+      collection().composer({ headers: as(admin), query: {} }),
+      [200],
+    );
+
+    expect(composer.body).toStrictEqual([
+      {
+        id: privateWorkflow.id,
+        name,
+        displayName: "Private Workflow",
+        description: "Private override",
+      },
+    ]);
   });
 
-  it("rejects same-owner private workflow slugs while allowing other-owner private slugs", async () => {
-    const actor = user();
-    const other = user({ orgId: actor.orgId, orgRole: "org:member" });
+  it("workflows-012 rejects same-owner private workflow slugs while allowing other-owner private slugs", async () => {
+    const orgId = workspace();
+    const admin = member(orgId);
+    const other = member(orgId, "org:member");
+    const name = slug("x");
+    await createWorkflow(admin, { name, visibility: "private" });
 
-    const workflowName = `private-workflow-${randomUUID().slice(0, 8)}`;
-
-    await createWorkflow(actor, {
-      name: workflowName,
-      instruction: "# private workflow",
-    });
-
-    const duplicate = await requestCreateWorkflow(
-      actor,
-      {
-        name: workflowName,
-        instruction: "# duplicate private workflow",
-      },
+    const duplicate = await accept(
+      collection().create({
+        headers: as(admin),
+        body: { name, visibility: "private" },
+      }),
       [409],
     );
-    expect(duplicate.body.error.message).toContain(
-      `private workflow named "/${workflowName}"`,
+    const otherCreated = await accept(
+      collection().create({
+        headers: as(other),
+        body: { name, visibility: "private" },
+      }),
+      [201],
     );
 
-    const otherPrivate = await createWorkflow(other, {
-      name: workflowName,
-      instruction: "# other user private workflow",
-    });
-    expect(otherPrivate.body).toMatchObject({
-      name: workflowName,
+    expect(duplicate.body.error.message).toContain(
+      `private workflow named "/${name}"`,
+    );
+    expect(otherCreated.body).toMatchObject({
+      name,
       ownerUserId: other.userId,
       visibility: "private",
     });
   });
 
-  it.each(["private", "public"] as const)(
-    "returns one creation and one name conflict for concurrent %s workflows",
-    async (visibility) => {
-      const actor = user();
-
-      const workflowName = `create-race-${randomUUID().slice(0, 8)}`;
-      const results = await Promise.all(
-        ["First", "Second"].map((instruction) => {
-          return accept(
-            collectionClient().create({
-              headers: authHeaders(actor),
-              body: {
-                name: workflowName,
-                visibility,
-                instruction,
-              },
-            }),
-            [201, 409],
-          );
-        }),
-      );
-      expect(
-        results
-          .map((result) => {
-            return result.status;
-          })
-          .sort(),
-      ).toStrictEqual([201, 409]);
-      const listed = await accept(
-        collectionClient().list({
-          headers: authHeaders(actor),
-          query: {},
-        }),
-        [200],
-      );
-      expect(listed.body).toHaveLength(1);
-      expect(listed.body[0]).toMatchObject({ name: workflowName, visibility });
-    },
-  );
-
-  it.each(["private", "public"] as const)(
-    "returns one update and one name conflict for concurrent %s renames",
-    async (visibility) => {
-      const actor = user();
-
-      const workflowName = `rename-race-${randomUUID().slice(0, 8)}`;
-      const sources = await Promise.all(
-        ["first", "second"].map((suffix) => {
-          return createWorkflow(actor, {
-            name: `${workflowName}-${suffix}`,
-            visibility,
-            instruction: `Preserve ${suffix}`,
-          });
-        }),
-      );
-      const results = await Promise.all(
-        sources.map((source) => {
-          return accept(
-            detailClient().update({
-              headers: authHeaders(actor),
-              params: { workflowId: source.body.id },
-              body: { name: workflowName },
-            }),
-            [200, 409],
-          );
-        }),
-      );
-      expect(
-        results
-          .map((result) => {
-            return result.status;
-          })
-          .sort(),
-      ).toStrictEqual([200, 409]);
-      for (const [index, source] of sources.entries()) {
-        const detail = await accept(
-          detailClient().get({
-            headers: authHeaders(actor),
-            params: { workflowId: source.body.id },
-          }),
-          [200],
-        );
-        expect(detail.body.name).toBe(
-          results[index]?.status === 200 ? workflowName : source.body.name,
-        );
-        expect(detail.body.instruction).toBe(
-          index === 0 ? "Preserve first" : "Preserve second",
-        );
-      }
-    },
-  );
-
-  it("rejects a body edit without its source attachments and supports explicit replacement", async () => {
-    const actor = user();
-
-    const s3 = installVolumeS3Fixture();
-    const workflow = await createWorkflow(actor, {
-      visibility: "public",
-      name: `unavailable-source-${randomUUID().slice(0, 8)}`,
-      instruction: "Keep the existing attachments",
-      files: [{ path: "keep.txt", content: "retained" }],
-    });
-    const retainedObjects = new Map(s3.objects);
-    s3.objects.clear();
-    s3.clearWrites();
-    const client = setupApp({
-      context,
-      routes: workflowsRoutes,
-      rethrowErrors: true,
-    })(workflowsDetailContract);
-    await expect(
-      client.copy({
-        headers: authHeaders(actor),
-        params: { workflowId: workflow.body.id },
-        body: {},
-      }),
-    ).rejects.toThrow("Workflow attachment source is unavailable");
-    await expect(
-      client.update({
-        headers: authHeaders(actor),
-        params: { workflowId: workflow.body.id },
-        body: { instruction: "Updated instruction" },
-      }),
-    ).rejects.toThrow("Missing S3 object");
-    expect(s3.writes).toHaveLength(0);
-    for (const [key, body] of retainedObjects) {
-      s3.objects.set(key, body);
-    }
-    const preserved = await accept(
-      client.get({
-        headers: authHeaders(actor),
-        params: { workflowId: workflow.body.id },
-      }),
-      [200],
-    );
-    expect(preserved.body.instruction).toBe("Keep the existing attachments");
-    expect(preserved.body.fileContents).toStrictEqual([
-      { path: "keep.txt", content: "retained" },
-    ]);
-    s3.objects.clear();
-    // An explicit replacement remains recoverable without guessing old content.
-    await accept(
-      client.update({
-        headers: authHeaders(actor),
-        params: { workflowId: workflow.body.id },
-        body: { files: [], instruction: "Explicitly cleared" },
-      }),
-      [200],
-    );
-    const detail = await accept(
-      client.get({
-        headers: authHeaders(actor),
-        params: { workflowId: workflow.body.id },
-      }),
-      [200],
-    );
-    expect(detail.body.files).toStrictEqual([]);
-  });
-
-  it("renames workflow slugs through metadata update and rejects duplicate public slugs", async () => {
-    const actor = user();
-
-    const existingName = `existing-workflow-${randomUUID().slice(0, 8)}`;
-    const renamedName = `renamed-workflow-${randomUUID().slice(0, 8)}`;
-    await createWorkflow(actor, {
-      name: existingName,
-      visibility: "public",
-      instruction: "# existing workflow",
-    });
-    const source = await createWorkflow(actor, {
-      name: `rename-source-${randomUUID().slice(0, 8)}`,
+  it("workflows-018 renames workflow slugs through metadata update and rejects duplicate public slugs", async () => {
+    const admin = member(workspace());
+    const existing = slug("existing");
+    await createWorkflow(admin, { name: existing, visibility: "public" });
+    const source = await createWorkflow(admin, {
+      name: slug("rename-source"),
       visibility: "public",
       displayName: "Rename Source",
-      description: "Original description",
-      instruction: "# rename source",
     });
+    const renamedName = slug("renamed");
 
-    const renamed = await updateWorkflow(actor, source.body.id, {
-      name: renamedName,
-      displayName: "Renamed Workflow",
-      description: "Use when workflow metadata needs a new slug.",
-    });
+    const renamed = await accept(
+      detail().update({
+        headers: as(admin),
+        params: { workflowId: source.id },
+        body: {
+          name: renamedName,
+          displayName: "Renamed Workflow",
+          description: "Renamed description",
+        },
+      }),
+      [200],
+    );
+    const duplicate = await accept(
+      detail().update({
+        headers: as(admin),
+        params: { workflowId: source.id },
+        body: { name: existing },
+      }),
+      [409],
+    );
+
     expect(renamed.body).toMatchObject({
       name: renamedName,
       displayName: "Renamed Workflow",
-      description: "Use when workflow metadata needs a new slug.",
+      description: "Renamed description",
     });
-
-    const duplicate = await requestUpdateWorkflow(
-      actor,
-      source.body.id,
-      { name: existingName },
-      [409],
-    );
     expect(duplicate.body.error.message).toContain(
-      `/${existingName}" already exists in this workspace`,
+      `/${existing}" already exists in this workspace`,
     );
   });
 
-  it("rejects renaming a private workflow to another same-owner private slug", async () => {
-    const actor = user();
-
-    const existingName = `private-existing-${randomUUID().slice(0, 8)}`;
-    await createWorkflow(actor, {
-      name: existingName,
-      instruction: "# existing private workflow",
-    });
-    const source = await createWorkflow(actor, {
-      name: `private-rename-source-${randomUUID().slice(0, 8)}`,
-      instruction: "# source private workflow",
+  it("workflows-020 rejects publishing a private workflow when the public slug is already taken", async () => {
+    const admin = member(workspace());
+    const name = slug("x");
+    await createWorkflow(admin, { name, visibility: "public" });
+    const privateWorkflow = await createWorkflow(admin, {
+      name,
+      visibility: "private",
     });
 
-    const duplicate = await requestUpdateWorkflow(
-      actor,
-      source.body.id,
-      { name: existingName },
-      [409],
-    );
-    expect(duplicate.body.error.message).toContain(
-      `private workflow named "/${existingName}"`,
-    );
-  });
-
-  it("rejects publishing a private workflow when the public slug is already taken", async () => {
-    const actor = user();
-
-    const workflowName = `publish-conflict-${randomUUID().slice(0, 8)}`;
-    await createWorkflow(actor, {
-      name: workflowName,
-      visibility: "public",
-      instruction: "# public workflow",
-    });
-    const privateWorkflow = await createWorkflow(actor, {
-      name: workflowName,
-      instruction: "# private workflow",
-    });
-
-    const response = await accept(
-      visibilityClient().publish({
-        headers: authHeaders(actor),
-        params: { workflowId: privateWorkflow.body.id },
+    const published = await accept(
+      visibility().publish({
+        headers: as(admin),
+        params: { workflowId: privateWorkflow.id },
+        body: undefined,
       }),
       [409],
     );
-    expect(response.body.error.message).toContain(
-      `/${workflowName}" already exists in this workspace`,
+
+    expect(published.body.error.message).toContain(
+      `/${name}" already exists in this workspace`,
     );
   });
 
-  it("rejects a slow attachment update after its private Workflow is published", async () => {
-    const actor = user();
-
-    const s3 = installVolumeS3Fixture();
-    const workflow = await createWorkflow(actor, {
-      name: `pending-publication-${randomUUID().slice(0, 8)}`,
-      instruction: "# original private workflow",
+  it("workflows-026 makes a deleted Workflow unavailable for reading, editing and publishing", async () => {
+    const admin = member(workspace());
+    const files = [{ path: "owned.txt", content: "owned attachment" }];
+    const created = await createWorkflow(admin, {
+      name: slug(),
+      visibility: "private",
+      files,
     });
-    const signal = AbortSignal.timeout(10_000);
-    const uploadEntered = createDeferredPromise<void>(signal);
-    const uploadReleased = createDeferredPromise<void>(signal);
-    s3.beforeNextArchiveWrite(async () => {
-      uploadEntered.resolve();
-      await uploadReleased.promise;
-    });
-
-    const update = requestUpdateWorkflow(
-      actor,
-      workflow.body.id,
-      {
-        instruction: "# body and files must commit together",
-        files: [{ path: "late.txt", content: "late" }],
-      },
-      [409],
-    );
-    await uploadEntered.promise;
-    await accept(
-      visibilityClient().publish({
-        headers: authHeaders(actor),
-        params: { workflowId: workflow.body.id },
-      }),
+    const before = await accept(
+      detail().get({ headers: as(admin), params: { workflowId: created.id } }),
       [200],
     );
-    uploadReleased.resolve();
-    await expect(update).resolves.toMatchObject({ status: 409 });
-    await expect(
-      accept(
-        visibilityClient().publish({
-          headers: authHeaders(actor),
-          params: { workflowId: workflow.body.id },
-        }),
-        [200],
-      ),
-    ).resolves.toMatchObject({ body: { visibility: "public" } });
-    const retained = await accept(
-      detailClient().get({
-        headers: authHeaders(actor),
-        params: { workflowId: workflow.body.id },
-      }),
-      [200],
+    expect(before.body.fileContents).toStrictEqual(files);
+
+    const deleted = await detail().delete({
+      headers: as(admin),
+      params: { workflowId: created.id },
+      body: undefined,
+    });
+    const read = await accept(
+      detail().get({ headers: as(admin), params: { workflowId: created.id } }),
+      [404],
     );
-    expect(retained.body).toMatchObject({
+    const updated = await detail().update({
+      headers: as(admin),
+      params: { workflowId: created.id },
+      body: { instruction: "edited after deletion" },
+    });
+    const published = await visibility().publish({
+      headers: as(admin),
+      params: { workflowId: created.id },
+      body: undefined,
+    });
+
+    expect(deleted.status).toBe(204);
+    expect(read.body.error.code).toBe("NOT_FOUND");
+    expect(updated.status).toBe(404);
+    expect(published.status).toBe(404);
+  });
+
+  it("workflows-027 rejects copying a workflow when the caller already has that private slug in the workspace", async () => {
+    const admin = member(workspace());
+    const name = slug("x");
+    const publicWorkflow = await createWorkflow(admin, {
+      name,
       visibility: "public",
-      instruction: "# original private workflow",
-      files: [],
     });
-  });
+    await createWorkflow(admin, { name, visibility: "private" });
 
-  it.each(["private", "public"] as const)(
-    "rejects an older %s Workflow upload after a newer update publishes",
-    async (visibility) => {
-      const actor = user();
-      bdd.acceptStorageWrites();
-
-      const s3 = installVolumeS3Fixture();
-      const workflow = await createWorkflow(actor, {
-        name: `superseded-update-${randomUUID().slice(0, 8)}`,
-        visibility,
-        instruction: "# original Workflow",
-        files: [{ path: "notes.md", content: "original notes" }],
-      });
-      const signal = AbortSignal.timeout(10_000);
-      const uploadEntered = createDeferredPromise<void>(signal);
-      const uploadReleased = createDeferredPromise<void>(signal);
-      s3.beforeNextArchiveWrite(async () => {
-        uploadEntered.resolve();
-        await uploadReleased.promise;
-      });
-      const older = requestUpdateWorkflow(
-        actor,
-        workflow.body.id,
-        {
-          instruction: "# older Workflow",
-          files: [{ path: "notes.md", content: "older notes" }],
-        },
-        [409],
-      );
-      let released = false;
-      onTestFinished(async () => {
-        if (!released) {
-          uploadReleased.resolve();
-        }
-        await older;
-      });
-      await uploadEntered.promise;
-
-      const newer = await updateWorkflow(actor, workflow.body.id, {
-        instruction: "# newer Workflow",
-        files: [{ path: "notes.md", content: "newer notes" }],
-      });
-      expect(newer.body).toMatchObject({
-        instruction: "# newer Workflow",
-        files: [{ path: "notes.md", size: 11 }],
-      });
-      released = true;
-      uploadReleased.resolve();
-      expect((await older).body.error.message).toBe(
-        "Workflow changed during update; retry the request",
-      );
-      const current = await accept(
-        detailClient().get({
-          headers: authHeaders(actor),
-          params: { workflowId: workflow.body.id },
-        }),
-        [200],
-      );
-      expect(current.body).toMatchObject({
-        instruction: "# newer Workflow",
-        fileContents: [{ path: "notes.md", content: "newer notes" }],
-      });
-    },
-  );
-
-  it("rejects an older attachment publication after a metadata-only edit at the same clock instant", async () => {
-    const actor = user();
-
-    const s3 = installVolumeS3Fixture();
-    const workflow = await createWorkflow(actor, {
-      name: `metadata-edit-${randomUUID().slice(0, 8)}`,
-      instruction: "# original Workflow",
-    });
-    mockNow(now());
-    const signal = AbortSignal.timeout(10_000);
-    const uploadEntered = createDeferredPromise<void>(signal);
-    const uploadReleased = createDeferredPromise<void>(signal);
-    s3.beforeNextArchiveWrite(async () => {
-      uploadEntered.resolve();
-      await uploadReleased.promise;
-    });
-    const older = accept(
-      detailClient().update({
-        headers: authHeaders(actor),
-        params: { workflowId: workflow.body.id },
-        body: {
-          displayName: "Older label",
-          files: [{ path: "notes.md", content: "older attachment" }],
-        },
-      }),
-      [200, 409],
-    );
-    let released = false;
-    onTestFinished(async () => {
-      if (!released) {
-        uploadReleased.resolve();
-      }
-      await older;
-    });
-    await uploadEntered.promise;
-    await updateWorkflow(actor, workflow.body.id, {
-      displayName: "Newer label",
-    });
-    released = true;
-    uploadReleased.resolve();
-    expect((await older).status).toBe(409);
-    const current = await accept(
-      detailClient().get({
-        headers: authHeaders(actor),
-        params: { workflowId: workflow.body.id },
-      }),
-      [200],
-    );
-    expect(current.body).toMatchObject({
-      displayName: "Newer label",
-      instruction: "# original Workflow",
-      fileContents: [],
-    });
-  });
-
-  it("preserves concurrent Workflow instruction updates", async () => {
-    const actor = user();
-
-    installVolumeS3Fixture();
-    const first = await createWorkflow(actor, {
-      name: `first-update-${randomUUID().slice(0, 8)}`,
-      instruction: "# first original",
-    });
-    const second = await createWorkflow(actor, {
-      name: `second-update-${randomUUID().slice(0, 8)}`,
-      instruction: "# second original",
-    });
-
-    await Promise.all([
-      updateWorkflow(actor, first.body.id, { instruction: "# first updated" }),
-      updateWorkflow(actor, second.body.id, {
-        instruction: "# second updated",
-      }),
-    ]);
-
-    for (const [workflowId, instruction] of [
-      [first.body.id, "# first updated"],
-      [second.body.id, "# second updated"],
-    ] as const) {
-      const current = await accept(
-        detailClient().get({
-          headers: authHeaders(actor),
-          params: { workflowId },
-        }),
-        [200],
-      );
-      expect(current.body).toMatchObject({ instruction });
-    }
-  });
-
-  it("makes a deleted Workflow unavailable for reading, editing and publishing", async () => {
-    const actor = user();
-
-    const workflow = await createWorkflow(actor, {
-      name: `deleted-workflow-${randomUUID().slice(0, 8)}`,
-      instruction: "# removed with its Agent",
-      files: [{ path: "owned.txt", content: "Owned package to retire" }],
-    });
-    const current = await accept(
-      detailClient().get({
-        headers: authHeaders(actor),
-        params: { workflowId: workflow.body.id },
-      }),
-      [200],
-    );
-    expect(current.body.fileContents).toStrictEqual([
-      { path: "owned.txt", content: "Owned package to retire" },
-    ]);
-
-    await accept(
-      detailClient().delete({
-        headers: authHeaders(actor),
-        params: { workflowId: workflow.body.id },
-      }),
-      [204],
-    );
-
-    const missing = await accept(
-      detailClient().get({
-        headers: authHeaders(actor),
-        params: { workflowId: workflow.body.id },
-      }),
-      [404],
-    );
-    expect(missing.body).toMatchObject({ error: { code: "NOT_FOUND" } });
-    await requestUpdateWorkflow(
-      actor,
-      workflow.body.id,
-      { instruction: "# cannot restore a deleted Workflow" },
-      [404],
-    );
-    await accept(
-      visibilityClient().publish({
-        headers: authHeaders(actor),
-        params: { workflowId: workflow.body.id },
-      }),
-      [404],
-    );
-  });
-
-  it("rejects copying a workflow when the caller already has that private slug in the workspace", async () => {
-    const actor = user();
-
-    const workflowName = `copy-conflict-${randomUUID().slice(0, 8)}`;
-    const source = await createWorkflow(actor, {
-      visibility: "public",
-      name: workflowName,
-      instruction: "# source workflow",
-    });
-    await createWorkflow(actor, {
-      name: workflowName,
-      instruction: "# existing private workflow",
-    });
-
-    const duplicate = await accept(
-      detailClient().copy({
-        headers: authHeaders(actor),
-        params: { workflowId: source.body.id },
+    const copied = await accept(
+      detail().copy({
+        headers: as(admin),
+        params: { workflowId: publicWorkflow.id },
         body: {},
       }),
       [409],
     );
-    expect(duplicate.body.error.message).toContain(
-      `private workflow named "/${workflowName}"`,
+
+    expect(copied.body.error.message).toContain(
+      `private workflow named "/${name}"`,
     );
   });
 
-  it("publishes one complete private copy when concurrent requests compete for the same slug", async () => {
-    const actor = user();
-
-    const workflowName = `concurrent-copy-${randomUUID().slice(0, 8)}`;
-    const instruction = "# Source workflow";
-    const source = await createWorkflow(actor, {
-      name: workflowName,
+  it("workflows-029 rejects demoting a public workflow when the owner already has that private slug", async () => {
+    const admin = member(workspace());
+    const name = slug("x");
+    await createWorkflow(admin, { name, visibility: "private" });
+    const publicWorkflow = await createWorkflow(admin, {
+      name,
       visibility: "public",
-      instruction,
-    });
-    const sources = [0, 1].map(() => {
-      return {
-        workflowId: source.body.id,
-        instruction,
-      };
-    });
-    const copies = await Promise.all(
-      sources.map(async (source) => {
-        const response = await accept(
-          detailClient().copy({
-            headers: authHeaders(actor),
-            params: { workflowId: source.workflowId },
-            body: {},
-          }),
-          [201, 409],
-        );
-        return { source, response };
-      }),
-    );
-    expect(
-      copies
-        .map((copy) => {
-          return copy.response.status;
-        })
-        .sort(),
-    ).toStrictEqual([201, 409]);
-    const winner = copies.find((copy) => {
-      return copy.response.status === 201;
-    });
-    const rejected = copies.find((copy) => {
-      return copy.response.status === 409;
-    });
-    if (winner?.response.status !== 201 || rejected?.response.status !== 409) {
-      throw new Error("Expected one successful copy and one name conflict");
-    }
-    expect(rejected.response.body.error.message).toContain(
-      `private workflow named "/${workflowName}"`,
-    );
-
-    const targetWorkflows = await accept(
-      collectionClient().list({
-        headers: authHeaders(actor),
-        query: {},
-      }),
-      [200],
-    );
-    const privateCopies = targetWorkflows.body.filter((item) => {
-      return item.visibility === "private";
-    });
-    expect(privateCopies).toHaveLength(1);
-    expect(privateCopies[0]).toMatchObject({
-      id: winner.response.body.id,
-      name: workflowName,
-      visibility: "private",
-    });
-    for (const workflow of [
-      ...sources,
-      {
-        workflowId: winner.response.body.id,
-        instruction: winner.source.instruction,
-      },
-    ]) {
-      const current = await accept(
-        detailClient().get({
-          headers: authHeaders(actor),
-          params: { workflowId: workflow.workflowId },
-        }),
-        [200],
-      );
-      expect(current.body).toMatchObject({
-        name: workflowName,
-        instruction: workflow.instruction,
-        official: null,
-      });
-    }
-  });
-
-  it("rejects demoting a public workflow when the owner already has that private slug", async () => {
-    const actor = user();
-
-    const workflowName = `demote-conflict-${randomUUID().slice(0, 8)}`;
-    await createWorkflow(actor, {
-      name: workflowName,
-      instruction: "# existing private workflow",
-    });
-    const publicWorkflow = await createWorkflow(actor, {
-      name: workflowName,
-      visibility: "public",
-      instruction: "# public workflow",
     });
 
-    const duplicate = await accept(
-      visibilityClient().demote({
-        headers: authHeaders(actor),
-        params: { workflowId: publicWorkflow.body.id },
+    const demoted = await accept(
+      visibility().demote({
+        headers: as(admin),
+        params: { workflowId: publicWorkflow.id },
+        body: undefined,
       }),
       [409],
     );
-    expect(duplicate.body.error.message).toContain(
-      `private workflow named "/${workflowName}"`,
+
+    expect(demoted.body.error.message).toContain(
+      `private workflow named "/${name}"`,
     );
   });
 
-  it("copies workflows and caller-owned automations through the API", async () => {
-    const actor = user();
-    if (!actor.orgId) {
-      throw new Error("Expected workflow copy actor to belong to an org");
-    }
-    await api.grantProEntitlement(actor, { tier: "team" });
-    // Event Automation creation pins its shared thread model immediately.
-    await api.ensurePersonalSubscriptionModel(actor, {
-      model: "claude-fable-5-1",
+  it("workflows-038 reads and updates workflow content, audit metadata, and deletion through API responses", async () => {
+    const orgId = workspace();
+    const creator = member(orgId);
+    const updater = member(orgId);
+    const created = await createWorkflow(creator, {
+      name: slug(),
+      visibility: "public",
+      displayName: "Audit Workflow",
+      instruction: "Audit the notes",
+      files: [{ path: "notes.md", content: "first notes" }],
     });
 
-    const workflow = await createWorkflow(actor, {
-      visibility: "public",
-      name: `copy-source-${randomUUID().slice(0, 8)}`,
-      instruction: "# copy source",
+    const initial = await accept(
+      detail().get({
+        headers: as(creator),
+        params: { workflowId: created.id },
+      }),
+      [200],
+    );
+    const updated = await accept(
+      detail().update({
+        headers: as(updater),
+        params: { workflowId: created.id },
+        body: {
+          displayName: "Audited Workflow",
+          instruction: "Audit the revised notes",
+          files: [{ path: "notes.md", content: "revised notes" }],
+        },
+      }),
+      [200],
+    );
+    const deleted = await detail().delete({
+      headers: as(updater),
+      params: { workflowId: created.id },
+      body: undefined,
     });
-    const automation = await accept(
-      automationsClient().create({
-        headers: authHeaders(actor),
-        params: { workflowId: workflow.body.id },
+    const gone = await accept(
+      detail().get({
+        headers: as(creator),
+        params: { workflowId: created.id },
+      }),
+      [404],
+    );
+
+    expect(initial.body).toMatchObject({
+      createdByUserId: creator.userId,
+      updatedByUserId: creator.userId,
+      ownerUserId: creator.userId,
+      instruction: "Audit the notes",
+      createdAt: expect.any(String),
+      updatedAt: expect.any(String),
+    });
+    expect(updated.body).toMatchObject({
+      createdByUserId: creator.userId,
+      updatedByUserId: updater.userId,
+      displayName: "Audited Workflow",
+      instruction: "Audit the revised notes",
+    });
+    expect(deleted.status).toBe(204);
+    expect(gone.body.error.code).toBe("NOT_FOUND");
+  });
+
+  it("workflows-008 binds a newly created workflow only to the member’s own chat thread", async () => {
+    const orgId = workspace();
+    const admin = member(orgId);
+    const peer = member(orgId, "org:member");
+    const thread = await accept(
+      app(chatThreadsContract).create({
+        headers: as(admin),
+        body: { title: "Source chat", model: null },
+      }),
+      [201],
+    );
+    const topic = `chatThreadWorkflowsChanged:${thread.body.id}`;
+
+    const adminWorkflow = await createWorkflow(admin, {
+      name: slug(),
+      chatThreadId: thread.body.id,
+    });
+    await flushWaitUntilForTest();
+    const adminChannels = channelsPublishedTo(context.mocks, topic);
+    const adminPrepared = await accept(
+      detail().chatThread({
+        headers: as(admin),
+        params: { workflowId: adminWorkflow.id },
+        body: undefined,
+      }),
+      [200],
+    );
+    const peerWorkflow = await createWorkflow(peer, {
+      name: slug(),
+      chatThreadId: thread.body.id,
+    });
+    await flushWaitUntilForTest();
+    const peerPrepared = await accept(
+      detail().chatThread({
+        headers: as(peer),
+        params: { workflowId: peerWorkflow.id },
+        body: undefined,
+      }),
+      [200],
+    );
+
+    expect(adminChannels).toStrictEqual([`user:${admin.userId}`]);
+    expect(adminPrepared.body.chatThreadId).toBe(thread.body.id);
+    expect(adminPrepared.body.prompt).toContain(adminWorkflow.id);
+    expect(peerPrepared.body.chatThreadId).not.toBe(thread.body.id);
+    expect(channelsPublishedTo(context.mocks, topic)).toStrictEqual(
+      adminChannels,
+    );
+  });
+
+  it("workflows-031 copies schedule-only workflows without binding a chat thread", async () => {
+    const admin = member(workspace());
+    const source = await createWorkflow(admin, {
+      name: slug(),
+      visibility: "public",
+    });
+    const automations = app(workflowAutomationsContract);
+    await accept(
+      automations.create({
+        headers: as(admin),
+        params: { workflowId: source.id },
         body: {
           kind: "schedule",
           schedule: { type: "loop", intervalSeconds: 900 },
@@ -1468,811 +796,94 @@ describe("workflows", () => {
       }),
       [201],
     );
-    const webhookAutomation = await accept(
-      automationsClient().create({
-        headers: authHeaders(actor),
-        params: { workflowId: workflow.body.id },
-        body: {
-          kind: "event",
-          eventType: "webhook-received",
-        },
-      }),
-      [201],
-    );
-    expect(webhookAutomation.body).toMatchObject({
-      kind: "event",
-      eventType: "webhook-received",
-    });
-    const runnerGroup = await api.configureRunnerGroup();
-    api.acceptTelemetryIngest();
-    onTestFinished(async () => {
-      await automationRuns.cleanup(actor);
-    });
-    const sourceRun = await automationRuns.start(
-      actor,
-      automation.body.id,
-      runnerGroup,
-    );
-    await automationRuns.complete(actor, sourceRun.runId, runnerGroup, {
-      output: "Ordinary source result",
-    });
-    const copied = await accept(
-      detailClient().copy({
-        headers: authHeaders(actor),
-        params: { workflowId: workflow.body.id },
-        body: {},
-      }),
-      [201],
-    );
-    expect(copied.body).toMatchObject({
-      name: workflow.body.name,
-      ownerUserId: actor.userId,
-    });
-    expect(copied.body.id).not.toBe(workflow.body.id);
-
-    const copiedAutomations = await accept(
-      automationsClient().list({
-        headers: authHeaders(actor),
-        params: { workflowId: copied.body.id },
-      }),
-      [200],
-    );
-    expect(copiedAutomations.body).toContainEqual(
-      expect.objectContaining({
-        kind: "schedule",
-        ownerUserId: actor.userId,
-        enabled: automation.body.enabled,
-      }),
-    );
-    const copiedSchedule = copiedAutomations.body.find((copiedAutomation) => {
-      return copiedAutomation.kind === "schedule";
-    });
-    if (!copiedSchedule) {
-      throw new Error("Expected the copied schedule automation");
-    }
-    expect(
-      copiedAutomations.body.some((copiedAutomation) => {
-        return (
-          copiedAutomation.kind === "event" &&
-          copiedAutomation.eventType === "webhook-received"
-        );
-      }),
-    ).toBeTruthy();
-    const copiedRun = await automationRuns.start(
-      actor,
-      copiedSchedule.id,
-      runnerGroup,
-    );
-    await automationRuns.complete(actor, copiedRun.runId, runnerGroup, {
-      output: "Ordinary copied result",
-    });
-  });
-
-  it("copies a user-created morning-brief workflow and its schedule without binding a chat thread", async () => {
-    const actor = user();
-
-    const workflow = await createWorkflow(actor, {
-      visibility: "public",
-      name: "morning-brief",
-      instruction: "# schedule copy source",
-    });
-    const automation = await accept(
-      automationsClient().create({
-        headers: authHeaders(actor),
-        params: { workflowId: workflow.body.id },
-        body: {
-          kind: "schedule",
-          schedule: { type: "loop", intervalSeconds: 900 },
-        },
-      }),
-      [201],
-    );
-    expect(automation.body.chatThreadId).toBeNull();
 
     const copied = await accept(
-      detailClient().copy({
-        headers: authHeaders(actor),
-        params: { workflowId: workflow.body.id },
+      detail().copy({
+        headers: as(admin),
+        params: { workflowId: source.id },
         body: {},
       }),
       [201],
     );
     const copiedAutomations = await accept(
-      automationsClient().list({
-        headers: authHeaders(actor),
+      automations.list({
+        headers: as(admin),
         params: { workflowId: copied.body.id },
       }),
       [200],
     );
 
-    expect(copied.body).toMatchObject({
-      name: "morning-brief",
-      visibility: "private",
-      official: null,
-    });
     expect(copiedAutomations.body).toHaveLength(1);
     expect(copiedAutomations.body[0]).toMatchObject({
       kind: "schedule",
-      enabled: automation.body.enabled,
-      schedule: automation.body.schedule,
       chatThreadId: null,
     });
   });
+});
 
-  it("rebinds copied Gmail automations to the target thread default account", async () => {
-    const actor = user();
-    if (!actor.orgId) {
-      throw new Error("Expected Gmail workflow copy actor to belong to an org");
-    }
-    await api.grantProEntitlement(actor, { tier: "team" });
-    await updateFeatureSwitchesForUser(
-      context,
-      { ...actor, orgId: actor.orgId },
-      {},
-    );
-
-    const workflow = await createWorkflow(actor, {
-      visibility: "public",
-      name: `gmail-copy-${randomUUID().slice(0, 8)}`,
-      instruction: "# Gmail copy source",
-    });
-
-    mockOptionalEnv(
-      "GMAIL_PUBSUB_TOPIC_NAME",
-      "projects/vm0-ai-488909/topics/gmail-events",
-    );
-    const watchedTokens: string[] = [];
-    server.use(
-      http.post(
-        "https://gmail.googleapis.com/gmail/v1/users/me/watch",
-        ({ request }) => {
-          const authorization = request.headers.get("authorization");
-          if (!authorization) {
-            throw new Error("Expected Gmail watch authorization");
-          }
-          watchedTokens.push(authorization);
-          return HttpResponse.json({
-            historyId: String(watchedTokens.length),
-            expiration: "4102444800000",
-          });
-        },
-      ),
-      http.post("https://gmail.googleapis.com/gmail/v1/users/me/stop", () => {
-        return new HttpResponse(null, { status: 204 });
-      }),
-    );
-
-    const firstEmail = `gmail-copy-first-${randomUUID()}@example.test`;
-    mockGmailConnectorOAuth({
-      accessToken: "gmail-copy-first-token",
-      email: firstEmail,
-      subject: `gmail-copy-first-${randomUUID()}`,
-    });
-    const firstStart = await connectorApi.startOauth(actor, "gmail", "oauth");
-    const firstState = new URL(firstStart.authorizationUrl).searchParams.get(
-      "state",
-    );
-    if (!firstState) {
-      throw new Error("Expected first Gmail OAuth state");
-    }
-    await connectorApi.completeOauthCallback("gmail", {
-      code: "gmail-copy-first-code",
-      state: firstState,
-    });
-
-    const secondEmail = `gmail-copy-second-${randomUUID()}@example.test`;
-    mockGmailConnectorOAuth({
-      accessToken: "gmail-copy-second-token",
-      email: secondEmail,
-      subject: `gmail-copy-second-${randomUUID()}`,
-    });
-    const secondStart = await connectorApi.startOauth(actor, "gmail", "oauth", {
-      intent: "add",
-      displayName: "Gmail Copy Second",
-    });
-    const secondState = new URL(secondStart.authorizationUrl).searchParams.get(
-      "state",
-    );
-    if (!secondState) {
-      throw new Error("Expected second Gmail OAuth state");
-    }
-    await connectorApi.completeOauthCallback("gmail", {
-      code: "gmail-copy-second-code",
-      state: secondState,
-    });
-    const accounts = await connectorApi.listBuiltinConnectorAccounts(
-      actor,
-      "gmail",
-    );
-    const secondAccount = accounts.find((account) => {
-      return account.externalEmail === secondEmail;
-    });
-    if (!secondAccount) {
-      throw new Error("Expected second Gmail account");
-    }
-
-    const automation = await accept(
-      automationsClient().create({
-        headers: authHeaders(actor),
-        params: { workflowId: workflow.body.id },
-        body: {
-          kind: "event",
-          eventType: "gmail-new-message",
-          eventConfig: { provider: "gmail", event: "new_message" },
-        },
-      }),
-      [201],
-    );
-    if (automation.body.kind !== "event" || !automation.body.chatThreadId) {
-      throw new Error("Expected Gmail automation thread");
-    }
-    await accept(
-      chatThreadConnectorSelectionsClient().update({
-        headers: authHeaders(actor),
-        params: { id: automation.body.chatThreadId },
-        body: {
-          connectionId: secondAccount.id,
-          target: { kind: "builtin", connectorSlug: "gmail" },
-        },
-      }),
-      [200],
-    );
-    expect(watchedTokens).toStrictEqual([
-      "Bearer gmail-copy-first-token",
-      "Bearer gmail-copy-second-token",
-    ]);
-
-    await accept(
-      detailClient().copy({
-        headers: authHeaders(actor),
-        params: { workflowId: workflow.body.id },
-        body: {},
-      }),
-      [201],
-    );
-    expect(watchedTokens).toStrictEqual([
-      "Bearer gmail-copy-first-token",
-      "Bearer gmail-copy-second-token",
-      "Bearer gmail-copy-first-token",
-    ]);
-  });
-
-  it("rebinds copied Calendar automations to the target thread default account", async () => {
-    const actor = user();
-    if (!actor.orgId) {
-      throw new Error(
-        "Expected Calendar workflow copy actor to belong to an org",
-      );
-    }
-    await api.grantProEntitlement(actor, { tier: "team" });
-
-    const workflow = await createWorkflow(actor, {
-      visibility: "public",
-      name: `calendar-copy-${randomUUID().slice(0, 8)}`,
-      instruction: "# Calendar copy source",
-    });
-
-    const watchedTokens: string[] = [];
-    server.use(
-      http.get(
-        "https://www.googleapis.com/calendar/v3/calendars/:calendarId/events",
-        () => {
-          return HttpResponse.json({
-            items: [],
-            nextSyncToken: `calendar-copy-sync-${watchedTokens.length}`,
-          });
-        },
-      ),
-      http.post(
-        "https://www.googleapis.com/calendar/v3/calendars/:calendarId/events/watch",
-        async ({ request }) => {
-          const authorization = request.headers.get("authorization");
-          if (!authorization) {
-            throw new Error("Expected Calendar watch authorization");
-          }
-          watchedTokens.push(authorization);
-          const body = (await request.json()) as { readonly id?: string };
-          if (!body.id) {
-            throw new Error("Expected Calendar watch channel id");
-          }
-          return HttpResponse.json({
-            id: body.id,
-            resourceId: `calendar-copy-resource-${watchedTokens.length}`,
-            resourceUri:
-              "https://www.googleapis.com/calendar/v3/calendars/primary/events",
-            expiration: "4102444800000",
-          });
-        },
-      ),
-      http.post("https://www.googleapis.com/calendar/v3/channels/stop", () => {
-        return new HttpResponse(null, { status: 204 });
-      }),
-    );
-
-    await connectGoogleCalendarAccount(actor, {
-      accessToken: "calendar-copy-first-token",
-      email: `calendar-copy-first-${randomUUID()}@example.test`,
-      subject: `calendar-copy-first-${randomUUID()}`,
-    });
-    const secondAccount = await connectGoogleCalendarAccount(actor, {
-      accessToken: "calendar-copy-second-token",
-      email: `calendar-copy-second-${randomUUID()}@example.test`,
-      subject: `calendar-copy-second-${randomUUID()}`,
-      account: { intent: "add", displayName: "Calendar Copy Second" },
-    });
-    const automation = await accept(
-      automationsClient().create({
-        headers: authHeaders(actor),
-        params: { workflowId: workflow.body.id },
-        body: {
-          kind: "event",
-          eventType: "google-calendar-event-created",
-        },
-      }),
-      [201],
-    );
-    if (automation.body.kind !== "event" || !automation.body.chatThreadId) {
-      throw new Error("Expected Calendar automation thread");
-    }
-    await accept(
-      chatThreadConnectorSelectionsClient().update({
-        headers: authHeaders(actor),
-        params: { id: automation.body.chatThreadId },
-        body: {
-          connectionId: secondAccount.id,
-          target: { kind: "builtin", connectorSlug: "google-calendar" },
-        },
-      }),
-      [200],
-    );
-    expect(watchedTokens).toStrictEqual([
-      "Bearer calendar-copy-first-token",
-      "Bearer calendar-copy-second-token",
-    ]);
-
-    await accept(
-      detailClient().copy({
-        headers: authHeaders(actor),
-        params: { workflowId: workflow.body.id },
-        body: {},
-      }),
-      [201],
-    );
-    expect(watchedTokens).toStrictEqual([
-      "Bearer calendar-copy-first-token",
-      "Bearer calendar-copy-second-token",
-      "Bearer calendar-copy-first-token",
-    ]);
-  });
-
-  it("rebinds copied Notion automations before exposing the destination workflow", async () => {
-    const actor = user();
-    if (!actor.orgId) {
-      throw new Error(
-        "Expected Notion workflow copy actor to belong to an org",
-      );
-    }
-    await api.grantProEntitlement(actor, { tier: "team" });
-
-    const workflow = await createWorkflow(actor, {
-      visibility: "public",
-      name: `notion-copy-${randomUUID().slice(0, 8)}`,
-      instruction: "# Notion copy source",
-    });
-
-    const parentPageId = randomUUID();
-    const parentPageUrl = `https://www.notion.so/Roadmap-${parentPageId.replaceAll("-", "")}`;
-    server.use(
-      http.get(
-        `https://api.notion.com/v1/pages/${parentPageId}`,
-        ({ request }) => {
-          expect(request.headers.get("authorization")).toBe(
-            "Bearer notion-copy-default-token",
-          );
-          return HttpResponse.json({
-            object: "page",
-            id: parentPageId,
-            created_time: "2026-09-01T00:00:00.000Z",
-            last_edited_time: "2026-09-01T00:00:00.000Z",
-            archived: false,
-            in_trash: false,
-            url: parentPageUrl,
-            parent: { type: "workspace" },
-            properties: {
-              title: {
-                id: "title",
-                type: "title",
-                title: [{ type: "text", plain_text: "Roadmap" }],
-              },
-            },
-          });
-        },
-      ),
-    );
-
-    mockNotionConnectorOAuth({
-      accessToken: "notion-copy-default-token",
-      ownerId: "notion-copy-default-user",
-      ownerName: "Notion Copy Default",
-    });
-    const defaultStart = await connectorApi.startOauth(
-      actor,
-      "notion",
-      "oauth",
-    );
-    const defaultState = new URL(
-      defaultStart.authorizationUrl,
-    ).searchParams.get("state");
-    if (!defaultState) {
-      throw new Error("Expected default Notion OAuth state");
-    }
-    await connectorApi.completeOauthCallback("notion", {
-      code: "notion-copy-default-code",
-      state: defaultState,
-    });
-
-    mockNotionConnectorOAuth({
-      accessToken: "notion-copy-selected-token",
-      ownerId: "notion-copy-selected-user",
-      ownerName: "Notion Copy Selected",
-    });
-    const selectedStart = await connectorApi.startOauth(
-      actor,
-      "notion",
-      "oauth",
-      { intent: "add", displayName: "Notion Copy Selected" },
-    );
-    const selectedState = new URL(
-      selectedStart.authorizationUrl,
-    ).searchParams.get("state");
-    if (!selectedState) {
-      throw new Error("Expected selected Notion OAuth state");
-    }
-    await connectorApi.completeOauthCallback("notion", {
-      code: "notion-copy-selected-code",
-      state: selectedState,
-    });
-    const accounts = await connectorApi.listBuiltinConnectorAccounts(
-      actor,
-      "notion",
-    );
-    const defaultAccount = accounts.find((account) => {
-      return account.externalId === "notion-copy-default-user";
-    });
-    const selectedAccount = accounts.find((account) => {
-      return account.externalId === "notion-copy-selected-user";
-    });
-    if (!defaultAccount || !selectedAccount) {
-      throw new Error("Expected both Notion accounts");
-    }
-
-    const sourceAutomation = await accept(
-      automationsClient().create({
-        headers: authHeaders(actor),
-        params: { workflowId: workflow.body.id },
-        body: {
-          kind: "event",
-          eventType: "notion-child-page-created",
-          eventConfig: {
-            provider: "notion",
-            event: "child_page_created",
-            parentPageUrl,
-          },
-        },
-      }),
-      [201],
-    );
-    if (
-      sourceAutomation.body.kind !== "event" ||
-      sourceAutomation.body.eventType !== "notion-child-page-created" ||
-      !sourceAutomation.body.chatThreadId
-    ) {
-      throw new Error("Expected a source Notion automation thread");
-    }
-    await accept(
-      chatThreadConnectorSelectionsClient().update({
-        headers: authHeaders(actor),
-        params: { id: sourceAutomation.body.chatThreadId },
-        body: {
-          connectionId: selectedAccount.id,
-          target: { kind: "builtin", connectorSlug: "notion" },
-        },
-      }),
-      [200],
-    );
-
-    const copied = await accept(
-      detailClient().copy({
-        headers: authHeaders(actor),
-        params: { workflowId: workflow.body.id },
-        body: {},
-      }),
-      [201],
-    );
-    const copiedAutomations = await accept(
-      automationsClient().list({
-        headers: authHeaders(actor),
-        params: { workflowId: copied.body.id },
-      }),
-      [200],
-    );
-    const copiedAutomation = copiedAutomations.body.find((automation) => {
-      return (
-        automation.kind === "event" &&
-        automation.eventType === "notion-child-page-created"
-      );
-    });
-    if (
-      !copiedAutomation ||
-      copiedAutomation.kind !== "event" ||
-      copiedAutomation.eventType !== "notion-child-page-created" ||
-      !copiedAutomation.chatThreadId
-    ) {
-      throw new Error("Expected the copied Notion automation");
-    }
-    expect(copiedAutomation).toMatchObject({
-      enabled: true,
-      eventConfig: { connectorId: defaultAccount.id },
-    });
-    const copiedSelections = await accept(
-      chatThreadConnectorSelectionsClient().get({
-        headers: authHeaders(actor),
-        params: { id: copiedAutomation.chatThreadId },
-      }),
-      [200],
-    );
-    expect(copiedSelections.body.selections).toStrictEqual([]);
-
-    const sourceAutomations = await accept(
-      automationsClient().list({
-        headers: authHeaders(actor),
-        params: { workflowId: workflow.body.id },
-      }),
-      [200],
-    );
-    expect(sourceAutomations.body).toContainEqual(
-      expect.objectContaining({
-        id: sourceAutomation.body.id,
-        eventConfig: expect.objectContaining({
-          connectorId: selectedAccount.id,
-        }),
-      }),
-    );
-  });
-
-  it("rebinds copied Google Forms automations to the target thread default account", async () => {
-    const actor = user();
-    if (!actor.orgId) {
-      throw new Error(
-        "Expected Google Forms workflow copy actor to belong to an org",
-      );
-    }
-    await api.grantProEntitlement(actor, { tier: "team" });
-
-    const workflow = await createWorkflow(actor, {
-      visibility: "public",
-      name: `google-forms-copy-${randomUUID().slice(0, 8)}`,
-      instruction: "# Google Forms copy source",
-    });
-    const formId = `googleFormsCopy${randomUUID().replaceAll("-", "")}`;
-    const topicName = "projects/vm0-ai-488909/topics/forms-copy-events";
-    mockOptionalEnv("GOOGLE_FORMS_PUBSUB_TOPIC_NAME", topicName);
-    mockOptionalEnv(
-      "GOOGLE_FORMS_PUBSUB_PUSH_AUDIENCE",
-      "https://api.okou.ai/api/webhooks/google-forms",
-    );
-    mockOptionalEnv(
-      "GOOGLE_FORMS_PUBSUB_PUSH_SERVICE_ACCOUNT_EMAIL",
-      "gmail-pubsub-push@vm0-ai-488909.iam.gserviceaccount.com",
-    );
-    const watchedTokens: string[] = [];
-    server.use(
-      http.get(
-        "https://forms.googleapis.com/v1/forms/:formId",
-        ({ params }) => {
-          expect(params.formId).toBe(formId);
-          return HttpResponse.json({
-            formId,
-            info: { title: "Copy form" },
-            publishSettings: {
-              publishState: {
-                isPublished: true,
-                isAcceptingResponses: true,
-              },
-            },
-          });
-        },
-      ),
-      http.get(
-        "https://forms.googleapis.com/v1/forms/:formId/responses",
-        ({ params }) => {
-          expect(params.formId).toBe(formId);
-          return HttpResponse.json({ responses: [] });
-        },
-      ),
-      http.post(
-        "https://forms.googleapis.com/v1/forms/:formId/watches",
-        ({ request, params }) => {
-          expect(params.formId).toBe(formId);
-          const authorization = request.headers.get("authorization");
-          if (!authorization) {
-            throw new Error("Expected Google Forms watch authorization");
-          }
-          watchedTokens.push(authorization);
-          return HttpResponse.json({
-            id: `forms-copy-watch-${randomUUID()}`,
-            createTime: "2026-09-01T10:00:00Z",
-            expireTime: "2099-09-01T10:00:00Z",
-            eventType: "RESPONSES",
-            target: { topic: { topicName } },
-          });
-        },
-      ),
-      http.delete(
-        "https://forms.googleapis.com/v1/forms/:formId/watches/:watchId",
-        () => {
-          return new HttpResponse(null, { status: 204 });
-        },
-      ),
-    );
-
-    mockGoogleFormsConnectorOAuth({
-      accessToken: "google-forms-copy-first-token",
-      email: "google-forms-copy-first@example.test",
-      subject: `google-forms-copy-first-${randomUUID()}`,
-    });
-    const firstStart = await connectorApi.startOauth(
-      actor,
-      "google-forms",
-      "oauth",
-    );
-    const firstState = new URL(firstStart.authorizationUrl).searchParams.get(
-      "state",
-    );
-    if (!firstState) {
-      throw new Error("Expected first Google Forms OAuth state");
-    }
-    await connectorApi.completeOauthCallback("google-forms", {
-      code: "google-forms-copy-first-code",
-      state: firstState,
-    });
-    const firstAccount = await connectorApi.readDefaultBuiltinAccount(
-      actor,
-      "google-forms",
-    );
-
-    mockGoogleFormsConnectorOAuth({
-      accessToken: "google-forms-copy-second-token",
-      email: "google-forms-copy-second@example.test",
-      subject: `google-forms-copy-second-${randomUUID()}`,
-    });
-    const secondStart = await connectorApi.startOauth(
-      actor,
-      "google-forms",
-      "oauth",
-      { intent: "add", displayName: "Google Forms Copy Second" },
-    );
-    const secondState = new URL(secondStart.authorizationUrl).searchParams.get(
-      "state",
-    );
-    if (!secondState) {
-      throw new Error("Expected second Google Forms OAuth state");
-    }
-    await connectorApi.completeOauthCallback("google-forms", {
-      code: "google-forms-copy-second-code",
-      state: secondState,
-    });
-    const accounts = await connectorApi.listBuiltinConnectorAccounts(
-      actor,
-      "google-forms",
-    );
-    const secondAccount = accounts.find((account) => {
-      return account.externalEmail === "google-forms-copy-second@example.test";
-    });
-    if (!secondAccount) {
-      throw new Error("Expected second Google Forms account");
-    }
-
-    const automation = await accept(
-      automationsClient().create({
-        headers: authHeaders(actor),
-        params: { workflowId: workflow.body.id },
-        body: {
-          kind: "event",
-          eventType: "google-forms-response-submitted",
-          eventConfig: {
-            provider: "google-forms",
-            event: "response_submitted",
-            formUrl: `https://docs.google.com/forms/d/${formId}/edit`,
-          },
-        },
-      }),
-      [201],
-    );
-    if (automation.body.kind !== "event" || !automation.body.chatThreadId) {
-      throw new Error("Expected Google Forms automation thread");
-    }
-    await accept(
-      chatThreadConnectorSelectionsClient().update({
-        headers: authHeaders(actor),
-        params: { id: automation.body.chatThreadId },
-        body: {
-          connectionId: secondAccount.id,
-          target: { kind: "builtin", connectorSlug: "google-forms" },
-        },
-      }),
-      [200],
-    );
-    expect(watchedTokens).toStrictEqual([
-      "Bearer google-forms-copy-first-token",
-      "Bearer google-forms-copy-second-token",
-    ]);
-
-    const copied = await accept(
-      detailClient().copy({
-        headers: authHeaders(actor),
-        params: { workflowId: workflow.body.id },
-        body: {},
-      }),
-      [201],
-    );
-    expect(watchedTokens).toStrictEqual([
-      "Bearer google-forms-copy-first-token",
-      "Bearer google-forms-copy-second-token",
-      "Bearer google-forms-copy-first-token",
-    ]);
-    const copiedAutomations = await accept(
-      automationsClient().list({
-        headers: authHeaders(actor),
-        params: { workflowId: copied.body.id },
-      }),
-      [200],
-    );
-    const copiedAutomation = copiedAutomations.body.find((candidate) => {
-      return (
-        candidate.kind === "event" &&
-        candidate.eventType === "google-forms-response-submitted"
-      );
-    });
-    if (
-      !copiedAutomation ||
-      copiedAutomation.kind !== "event" ||
-      copiedAutomation.eventType !== "google-forms-response-submitted"
-    ) {
-      throw new Error("Expected copied Google Forms automation");
-    }
-    expect(copiedAutomation.eventConfig.connectorId).toBe(firstAccount.id);
-  });
-
-  it("reuses current attachment bytes across body edits and file ordering, and never reactivates retired packages", async () => {
-    const actor = user();
-
-    const s3 = installVolumeS3Fixture();
+describe("workflow attachments", () => {
+  it("workflows-036 reuses current attachment bytes across body edits and file ordering, and never reactivates retired packages", async () => {
+    const admin = member(`org_${randomUUID()}`);
+    const storage = installWorkflowVolumeS3Fixture(context);
     const files = [
       { path: "zeta.txt", content: "附件" },
       { path: "alpha.txt", content: "alpha" },
     ];
-    const workflow = await createWorkflow(actor, {
-      name: `attachment-reuse-${randomUUID().slice(0, 8)}`,
+    const created = await createWorkflow(admin, {
+      name: slug(),
       instruction: "first body",
       files,
     });
-    expect(
-      s3.writes.filter((write) => {
-        return write.key.startsWith("workflow-attachments/");
-      }),
-    ).toHaveLength(1);
-    const first = s3.writes.find((write) => {
-      return write.key.startsWith("workflow-attachments/");
-    })!;
-    expect(extractFilesFromTarGz(first.body)).toStrictEqual([
-      { path: "alpha.txt", content: "alpha" },
-      { path: "zeta.txt", content: "附件" },
+    const createdArchives = attachmentArchives(storage.writes);
+    expect(createdArchives).toHaveLength(1);
+    expect(archivePaths(createdArchives[0]?.body)).toStrictEqual([
+      "alpha.txt",
+      "zeta.txt",
     ]);
-    s3.clearWrites();
-    const edited = await updateWorkflow(actor, workflow.body.id, {
-      instruction: "second body",
-    });
+
+    storage.clearWrites();
+    const edited = await accept(
+      detail().update({
+        headers: as(admin),
+        params: { workflowId: created.id },
+        body: { instruction: "second body" },
+      }),
+      [200],
+    );
+    const editWrites = [...storage.writes];
+    storage.clearWrites();
+    await accept(
+      detail().update({
+        headers: as(admin),
+        params: { workflowId: created.id },
+        body: { files: [...files].reverse() },
+      }),
+      [200],
+    );
+    const reorderedArchives = attachmentArchives(storage.writes);
+    await accept(
+      detail().update({
+        headers: as(admin),
+        params: { workflowId: created.id },
+        body: { files: [] },
+      }),
+      [200],
+    );
+    storage.clearWrites();
+    await accept(
+      detail().update({
+        headers: as(admin),
+        params: { workflowId: created.id },
+        body: { files },
+      }),
+      [200],
+    );
+    const readdedArchives = attachmentArchives(storage.writes);
+    const read = await accept(
+      detail().get({ headers: as(admin), params: { workflowId: created.id } }),
+      [200],
+    );
+
     expect(edited.body).toMatchObject({
       instruction: "second body",
       fileContents: null,
@@ -2281,519 +892,561 @@ describe("workflows", () => {
         { path: "zeta.txt", size: 6 },
       ],
     });
-    const complete = [...s3.writes].reverse().find((write) => {
+    expect(attachmentArchives(editWrites)).toHaveLength(0);
+    const packages = editWrites.filter((write) => {
       return write.key.startsWith("bundles/v1/");
     });
-    if (!complete) {
-      throw new Error("Expected complete Workflow package");
-    }
-    const filesInBundle = readContentBundle(complete.body, {
-      sha256: contentBundleDigest(complete.body),
-      archiveBytes: complete.body.length,
-    });
-    expect(
-      filesInBundle
-        .find((file) => {
-          return file.path === "SKILL.md";
-        })
-        ?.content.toString(),
-    ).toContain("second body");
-    expect(
-      filesInBundle
-        .filter((file) => {
-          return file.path !== "SKILL.md";
-        })
-        .map((file) => {
-          return { path: file.path, content: file.content.toString() };
-        }),
-    ).toStrictEqual([
+    expect(packages).toHaveLength(1);
+    const packaged = readPackage(packages[0]);
+    expect(packaged.get("SKILL.md")).toContain("second body");
+    expect(packaged.get("alpha.txt")).toBe("alpha");
+    expect(packaged.get("zeta.txt")).toBe("附件");
+    expect(reorderedArchives).toHaveLength(0);
+    expect(readdedArchives).toHaveLength(1);
+    expect(readdedArchives[0]?.key).not.toBe(createdArchives[0]?.key);
+    expect(read.body.fileContents).toStrictEqual([
       { path: "alpha.txt", content: "alpha" },
       { path: "zeta.txt", content: "附件" },
     ]);
-    await updateWorkflow(actor, workflow.body.id, {
-      files: [...files].reverse(),
-    });
-    expect(
-      s3.writes.filter((write) => {
-        return write.key.startsWith("workflow-attachments/");
-      }),
-    ).toHaveLength(0);
-    await updateWorkflow(actor, workflow.body.id, { files: [] });
-    await updateWorkflow(actor, workflow.body.id, { files });
-    expect(
-      s3.writes.filter((write) => {
-        return write.key.startsWith("workflow-attachments/");
-      }),
-    ).toHaveLength(1);
-    expect(
-      s3.writes.find((write) => {
-        return write.key.startsWith("workflow-attachments/");
-      })!.key,
-    ).not.toBe(first.key);
-    const detail = await accept(
-      detailClient().get({
-        headers: authHeaders(actor),
-        params: { workflowId: workflow.body.id },
-      }),
-      [200],
-    );
-    expect(detail.body.fileContents).toStrictEqual([
-      { path: "alpha.txt", content: "alpha" },
-      { path: "zeta.txt", content: "附件" },
-    ]);
-  });
-
-  it("normalizes duplicate attachment paths consistently across order and umask", async () => {
-    const actor = user();
-
-    const s3 = installVolumeS3Fixture();
-    const files = [
-      { path: "duplicate.txt", content: "first duplicate" },
-      { path: "duplicate.txt", content: "second duplicate" },
-    ];
-    const workflow = await createWorkflow(actor, {
-      name: `duplicate-${randomUUID().slice(0, 8)}`,
-      instruction: "body",
-      files,
-    });
-    const first = await accept(
-      detailClient().get({
-        headers: authHeaders(actor),
-        params: { workflowId: workflow.body.id },
-      }),
-      [200],
-    );
-    expect(first.body.fileContents).toStrictEqual([
-      { path: "duplicate.txt", content: "second duplicate" },
-    ]);
-    const originalBundle = [...s3.writes].reverse().find((write) => {
-      return write.key.startsWith("bundles/v1/");
-    });
-    if (!originalBundle) {
-      throw new Error("Expected the published Workflow bundle");
-    }
-    s3.clearWrites();
-    context.mocks.s3.send.mockClear();
-    const previous = process.umask(0o077);
-    onTestFinished(() => {
-      process.umask(previous);
-    });
-    await updateWorkflow(actor, workflow.body.id, {
-      files: [...files].reverse(),
-    });
-    process.umask(previous);
-    const reusedKeys = context.mocks.s3.send.mock.calls.flatMap(([request]) => {
-      return request instanceof HeadObjectCommand &&
-        request.input.Key?.startsWith("bundles/v1/")
-        ? [request.input.Key]
-        : [];
-    });
-    expect(reusedKeys).toStrictEqual([originalBundle.key]);
-    expect(s3.objects.get(originalBundle.key)).toStrictEqual(
-      originalBundle.body,
-    );
-    expect(s3.writes).toHaveLength(0);
-    const second = await accept(
-      detailClient().get({
-        headers: authHeaders(actor),
-        params: { workflowId: workflow.body.id },
-      }),
-      [200],
-    );
-    expect(second.body.fileContents).toStrictEqual(first.body.fileContents);
-  });
-
-  it("reads and updates workflow content, audit metadata, and deletion through API responses", async () => {
-    const creator = user();
-    const updater = user({ orgId: creator.orgId, orgRole: "org:admin" });
-
-    const workflow = await createWorkflow(creator, {
-      name: `audit-workflow-${randomUUID().slice(0, 8)}`,
-      displayName: "Audit Workflow",
-      instruction: "# audit workflow",
-      files: [{ path: "notes.md", content: "initial notes" }],
-      visibility: "public",
-    });
-
-    const initial = await accept(
-      detailClient().get({
-        headers: authHeaders(creator),
-        params: { workflowId: workflow.body.id },
-      }),
-      [200],
-    );
-    expect(initial.body).toMatchObject({
-      createdByUserId: creator.userId,
-      updatedByUserId: creator.userId,
-      instruction: "# audit workflow",
-      ownerUserId: creator.userId,
-    });
-    expect(typeof initial.body.createdAt).toBe("string");
-    expect(typeof initial.body.updatedAt).toBe("string");
-
-    const updated = await updateWorkflow(updater, workflow.body.id, {
-      displayName: "Updated Audit Workflow",
-      instruction: "# updated workflow",
-      files: [{ path: "notes.md", content: "updated notes" }],
-    });
-    expect(updated.body).toMatchObject({
-      createdByUserId: creator.userId,
-      updatedByUserId: updater.userId,
-      displayName: "Updated Audit Workflow",
-      instruction: "# updated workflow",
-    });
-
-    await accept(
-      detailClient().delete({
-        headers: authHeaders(updater),
-        params: { workflowId: workflow.body.id },
-      }),
-      [204],
-    );
-    const missing = await accept(
-      detailClient().get({
-        headers: authHeaders(creator),
-        params: { workflowId: workflow.body.id },
-      }),
-      [404],
-    );
-    expect(missing.body.error.code).toBe("NOT_FOUND");
   });
 });
 
-class WorkflowProfileClerkError extends Error {
-  static readonly kind = "ClerkAPIResponseError";
-  readonly retryAfter = 1;
-  constructor(readonly status: number) {
-    super(`Clerk profile request failed: ${status}`);
-  }
-}
-
-function ownerProfileUser(ownerUserId: string) {
-  return {
-    id: ownerUserId,
-    firstName: "Workflow",
-    lastName: "Author",
-    imageUrl: "https://example.com/author.png",
-    primaryEmailAddressId: "primary",
-    emailAddresses: [{ id: "primary", emailAddress: "author@example.com" }],
-  };
-}
-
-async function ownerProfileFixture(
-  visibility: "public" | "private" = "public",
-) {
-  const owner = user();
-
-  const workflow = await createWorkflow(owner, {
-    name: `profile-${randomUUID().slice(0, 8)}`,
-    visibility,
-  });
-  return { owner, workflow: workflow.body };
-}
-
-function readOwnerProfile(actor: ApiTestUser, workflowId: string) {
-  return detailClient().ownerProfile({
-    headers: authHeaders(actor),
-    params: { workflowId },
-  });
-}
-
 describe("workflow owner profiles", () => {
-  it("keeps ordinary list, detail and mutation responses independent of profile enrichment", async () => {
-    const { owner, workflow } = await ownerProfileFixture();
-    mockNow(now() + 16 * 60 * 1000);
-    context.mocks.clerk.users.getUserList.mockClear();
-    context.mocks.clerk.users.getUser.mockRejectedValue(
-      new Error("Profiles are offline"),
-    );
-    const listed = await accept(
-      collectionClient().list({ headers: authHeaders(owner) }),
-      [200],
-    );
-    const detail = await accept(
-      detailClient().get({
-        headers: authHeaders(owner),
-        params: { workflowId: workflow.id },
-      }),
-      [200],
-    );
-    const updated = await updateWorkflow(owner, workflow.id, {
-      displayName: "Profile-independent update",
+  it("workflows-040 authorizes each profile read including warm-cache private and cross-org misses", async () => {
+    const orgId = workspace();
+    const owner = member(orgId);
+    const otherAdmin = member(orgId);
+    const outsider = member(`org_${randomUUID()}`);
+    const created = await createWorkflow(owner, {
+      name: slug(),
+      visibility: "private",
     });
-    for (const response of [
-      listed.body.find((row) => {
-        return row.id === workflow.id;
-      }),
-      detail.body,
-      updated.body,
-    ]) {
-      expect(response).toMatchObject({ ownerUserId: owner.userId });
-    }
-    expect(context.mocks.clerk.users.getUser).not.toHaveBeenCalled();
-    expect(context.mocks.clerk.users.getUserList).not.toHaveBeenCalled();
-  });
-
-  it("authorizes each profile read including warm-cache private and cross-org misses", async () => {
-    const { owner, workflow } = await ownerProfileFixture("private");
     mockNow(now() + 16 * 60 * 1000);
-    context.mocks.clerk.users.getUser.mockResolvedValue(
-      ownerProfileUser(owner.userId),
+    mockOwnerProfile(owner.userId);
+
+    const ownerRead = await accept(
+      detail().ownerProfile({
+        headers: as(owner),
+        params: { workflowId: created.id },
+      }),
+      [200],
     );
-    const profile = await accept(readOwnerProfile(owner, workflow.id), [200]);
-    expect(profile.body).toStrictEqual({
+    const lookupsAfterOwner = ownerProfileLookups(owner.userId);
+    const otherAdminRead = await detail().ownerProfile({
+      headers: as(otherAdmin),
+      params: { workflowId: created.id },
+    });
+    const outsiderRead = await detail().ownerProfile({
+      headers: as(outsider),
+      params: { workflowId: created.id },
+    });
+    const unknownRead = await detail().ownerProfile({
+      headers: as(owner),
+      params: { workflowId: randomUUID() },
+    });
+    const anonymousRead = await detail().ownerProfile({
+      headers: {},
+      params: { workflowId: created.id },
+    });
+
+    expect(ownerRead.body).toStrictEqual({
       displayName: "Workflow Author",
       imageUrl: "https://example.com/author.png",
     });
-    context.mocks.clerk.users.getUser.mockClear();
-    const other = user({ orgId: owner.orgId, orgRole: "org:admin" });
-    await accept(readOwnerProfile(other, workflow.id), [404]);
-    await accept(readOwnerProfile(user(), workflow.id), [404]);
-    await accept(readOwnerProfile(owner, randomUUID()), [404]);
-    context.mocks.clerk.authenticateRequest.mockResolvedValue({
-      isAuthenticated: false,
+    expect(otherAdminRead.status).toBe(404);
+    expect(outsiderRead.status).toBe(404);
+    expect(unknownRead.status).toBe(404);
+    expect(anonymousRead.status).toBe(401);
+    expect(lookupsAfterOwner).toBe(1);
+    expect(ownerProfileLookups(owner.userId)).toBe(1);
+  });
+
+  it("workflows-041 does not disclose a workflow profile after sharing is withdrawn", async () => {
+    const orgId = workspace();
+    const owner = member(orgId);
+    const viewer = member(orgId, "org:member");
+    const created = await createWorkflow(owner, {
+      name: slug(),
+      visibility: "public",
     });
-    await accept(
-      detailClient().ownerProfile({ params: { workflowId: workflow.id } }),
-      [401],
-    );
-    expect(context.mocks.clerk.users.getUser).not.toHaveBeenCalled();
-  });
-
-  it("does not disclose a workflow profile after sharing is withdrawn", async () => {
-    const { owner, workflow } = await ownerProfileFixture();
-    const other = user({ orgId: owner.orgId, orgRole: "org:member" });
     mockNow(now() + 16 * 60 * 1000);
-    context.mocks.clerk.users.getUser.mockResolvedValue(
-      ownerProfileUser(owner.userId),
-    );
-    await accept(readOwnerProfile(other, workflow.id), [200]);
-    await accept(
-      visibilityClient().demote({
-        headers: authHeaders(owner),
-        params: { workflowId: workflow.id },
-      }),
-      [200],
-    );
-    context.mocks.clerk.users.getUser.mockClear();
-    await accept(readOwnerProfile(other, workflow.id), [404]);
-    expect(context.mocks.clerk.users.getUser).not.toHaveBeenCalled();
-  });
+    mockOwnerProfile(owner.userId);
 
-  it("reuses positive profiles and refreshes them after fifteen minutes", async () => {
-    const { owner, workflow } = await ownerProfileFixture();
-    mockNow(now() + 16 * 60 * 1000);
-    context.mocks.clerk.users.getUser.mockResolvedValue(
-      ownerProfileUser(owner.userId),
-    );
-    await accept(readOwnerProfile(owner, workflow.id), [200]);
-    context.mocks.clerk.users.getUser.mockResolvedValue({
-      ...ownerProfileUser(owner.userId),
-      firstName: "Updated",
+    const first = await detail().ownerProfile({
+      headers: as(viewer),
+      params: { workflowId: created.id },
     });
-    expect(
-      (await accept(readOwnerProfile(owner, workflow.id), [200])).body
-        .displayName,
-    ).toBe("Workflow Author");
-    mockNow(now() + 15 * 60 * 1000);
-    expect(
-      (await accept(readOwnerProfile(owner, workflow.id), [200])).body
-        .displayName,
-    ).toBe("Updated Author");
+    const lookupsAfterFirst = ownerProfileLookups(owner.userId);
+    const demoted = await visibility().demote({
+      headers: as(owner),
+      params: { workflowId: created.id },
+      body: undefined,
+    });
+    const second = await detail().ownerProfile({
+      headers: as(viewer),
+      params: { workflowId: created.id },
+    });
+
+    expect(first.status).toBe(200);
+    expect(demoted.status).toBe(200);
+    expect(second.status).toBe(404);
+    expect(ownerProfileLookups(owner.userId)).toBe(lookupsAfterFirst);
+  });
+});
+
+describe("workflows execution", () => {
+  const bdd = createBddApi(context);
+  const runsApi = createRunsApi(context);
+
+  const workflowsBdd = createWorkflowsBddApi(context);
+  const chatApi = createChatFilesBddApi(context);
+  const webhooksApi = createWebhookCallbackApi(context);
+  const chatCallbacks = createChatCallbacksApi(context);
+  const publicAutomationRun = createPublicAutomationRunApi(context);
+
+  beforeAll(async () => {
+    await settleIncludingAbort(async () => {
+      await workflowsBdd.setupWorkflowOrg({ tier: "pro" });
+      await runsApi.configureRunnerGroup();
+    });
   });
 
-  it("bounds missing profiles to sixty seconds and never serves stale identity after authoritative absence", async () => {
-    const { owner, workflow } = await ownerProfileFixture();
-    mockNow(now() + 16 * 60 * 1000);
-    context.mocks.clerk.users.getUser.mockResolvedValue(
-      ownerProfileUser(owner.userId),
+  function asUser(actor: ApiTestUser) {
+    createRouteMocks(context).clerk.session(
+      actor.userId,
+      actor.orgId,
+      actor.orgRole,
     );
-    await accept(readOwnerProfile(owner, workflow.id), [200]);
-    mockNow(now() + 15 * 60 * 1000);
-    context.mocks.clerk.users.getUser.mockRejectedValue(
-      new WorkflowProfileClerkError(404),
-    );
-    expect(
-      (await accept(readOwnerProfile(owner, workflow.id), [200])).body,
-    ).toStrictEqual({ displayName: null, imageUrl: null });
-    context.mocks.clerk.users.getUser.mockResolvedValue(
-      ownerProfileUser(owner.userId),
-    );
-    expect(
-      (await accept(readOwnerProfile(owner, workflow.id), [200])).body
-        .displayName,
-    ).toBeNull();
-    mockNow(now() + 60 * 1000);
-    expect(
-      (await accept(readOwnerProfile(owner, workflow.id), [200])).body
-        .displayName,
-    ).toBe("Workflow Author");
-  });
+    return headers;
+  }
 
-  it.each([429, 503, "network"] as const)(
-    "keeps %s profile failures retryable",
-    async (failure) => {
-      const { owner, workflow } = await ownerProfileFixture();
-      mockNow(now() + 16 * 60 * 1000);
-      context.mocks.clerk.users.getUser.mockRejectedValue(
-        failure === "network"
-          ? new Error("Connection reset")
-          : new WorkflowProfileClerkError(failure),
+  function installExecutionBoundaries() {
+    installWorkflowVolumeS3Fixture(context);
+    runsApi.acceptStorageDownloads();
+    runsApi.acceptTelemetryIngest();
+    chatCallbacks.disableVapid();
+    mockOptionalEnv("OPENROUTER_API_KEY", undefined);
+  }
+
+  function registerRunCleanup(actor: ApiTestUser, runnerGroup: () => string) {
+    onTestFinished(async () => {
+      await flushWaitUntilForTest();
+      for (let round = 0; round < 5; round++) {
+        const dispatches = runsApi.receivedDispatches(runnerGroup());
+        let cleanedAny = false;
+        for (const envelope of dispatches) {
+          const { runId, sandboxToken } = envelope.executionContext;
+          const current = await runsApi.readRun(actor, runId);
+          if (current.status === "pending" || current.status === "running") {
+            await runsApi.requestCancelRun(actor, runId, [200]);
+            await webhooksApi.requestAgentComplete(
+              { runId, exitCode: 1, error: "Cancelled by test cleanup" },
+              { authorization: `Bearer ${sandboxToken}` },
+              [200],
+            );
+            await flushWaitUntilForTest();
+            cleanedAny = true;
+          }
+        }
+        if (!cleanedAny) {
+          break;
+        }
+      }
+    });
+  }
+
+  it(
+    "workflows-004 runs public workflows for members and hides another member's private workflow",
+    { timeout: TEST_WITH_SINGLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const { actor: admin } = await workflowsBdd.setupWorkflowOrg({
+        tier: "pro",
+      });
+      if (!admin.orgId) {
+        throw new Error("Expected org-scoped admin");
+      }
+      const peer = bdd.user({ orgId: admin.orgId, orgRole: "org:member" });
+      await bdd.completeOnboarding(peer);
+      await runsApi.ensurePersonalSubscriptionModel(peer);
+      installExecutionBoundaries();
+      const runnerGroup = await runsApi.configureRunnerGroup();
+
+      const publicWorkflowId = await workflowsBdd.createWorkflow(admin, {
+        name: slug("public"),
+        visibility: "public",
+      });
+      const privateWorkflowId = await workflowsBdd.createWorkflow(admin, {
+        name: slug("private"),
+        visibility: "private",
+      });
+
+      registerRunCleanup(peer, () => {
+        return runnerGroup;
+      });
+
+      const publicRun = await accept(
+        detail().run({
+          headers: asUser(peer),
+          params: { workflowId: publicWorkflowId },
+          body: undefined,
+        }),
+        [200],
       );
-      await accept(readOwnerProfile(owner, workflow.id), [
-        failure === 429 ? 429 : failure === 503 ? 503 : 500,
+      await flushWaitUntilForTest();
+
+      const events = await workflowsBdd.readThreadEvents(
+        publicRun.body.chatThreadId,
+      );
+      const launched = events.find((event) => {
+        return event.eventType === "input.prompt" && event.runId !== undefined;
+      });
+      if (!launched?.runId) {
+        throw new Error("Expected public workflow run to launch a Run");
+      }
+
+      const privateRun = await accept(
+        detail().run({
+          headers: asUser(peer),
+          params: { workflowId: privateWorkflowId },
+          body: undefined,
+        }),
+        [404],
+      );
+      expect(privateRun.body.error.code).toBe("NOT_FOUND");
+    },
+  );
+
+  it(
+    "workflows-030 copies workflows and caller-owned automations through the API",
+    { timeout: TEST_WITH_DOUBLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const { actor } = await workflowsBdd.setupWorkflowOrg({ tier: "team" });
+      installExecutionBoundaries();
+      const runnerGroup = await runsApi.configureRunnerGroup();
+
+      const sourceName = slug("copy-src");
+      const sourceWorkflowId = await workflowsBdd.createWorkflow(actor, {
+        name: sourceName,
+        visibility: "public",
+        instruction: "# Source workflow",
+      });
+      const automations = app(workflowAutomationsContract);
+      const scheduleAutomation = await accept(
+        automations.create({
+          headers: asUser(actor),
+          params: { workflowId: sourceWorkflowId },
+          body: {
+            kind: "schedule",
+            schedule: { type: "loop", intervalSeconds: 900 },
+          },
+        }),
+        [201],
+      );
+      await accept(
+        automations.create({
+          headers: asUser(actor),
+          params: { workflowId: sourceWorkflowId },
+          body: { kind: "event", eventType: "webhook-received" },
+        }),
+        [201],
+      );
+
+      const firstRun = await publicAutomationRun.start(
+        actor,
+        scheduleAutomation.body.id,
+        runnerGroup,
+      );
+      await publicAutomationRun.complete(actor, firstRun.runId, runnerGroup, {
+        output: "Initial schedule run finished",
+      });
+
+      const copied = await accept(
+        detail().copy({
+          headers: asUser(actor),
+          params: { workflowId: sourceWorkflowId },
+          body: {},
+        }),
+        [201],
+      );
+      expect(copied.body).toMatchObject({
+        name: sourceName,
+        ownerUserId: actor.userId,
+      });
+      expect(copied.body.id).not.toBe(sourceWorkflowId);
+
+      const copiedAutomations = await accept(
+        automations.list({
+          headers: asUser(actor),
+          params: { workflowId: copied.body.id },
+        }),
+        [200],
+      );
+      const copiedSchedule = copiedAutomations.body.find((item) => {
+        return item.kind === "schedule";
+      });
+      const copiedWebhook = copiedAutomations.body.find((item) => {
+        return item.kind === "event" && item.eventType === "webhook-received";
+      });
+      expect(copiedSchedule).toMatchObject({
+        kind: "schedule",
+        ownerUserId: actor.userId,
+        enabled: scheduleAutomation.body.enabled,
+      });
+      expect(copiedWebhook).toMatchObject({
+        kind: "event",
+        eventType: "webhook-received",
+      });
+      if (!copiedSchedule) {
+        throw new Error("Expected copied schedule automation");
+      }
+
+      const copiedRun = await publicAutomationRun.start(
+        actor,
+        copiedSchedule.id,
+        runnerGroup,
+      );
+      await publicAutomationRun.complete(actor, copiedRun.runId, runnerGroup, {
+        output: "Copied schedule run finished",
+      });
+      const completedCopiedRun = await runsApi.readRun(actor, copiedRun.runId);
+      expect(completedCopiedRun.status).toBe("completed");
+      expect(completedCopiedRun.result?.frameworkSessionId).toStrictEqual(
+        expect.any(String),
+      );
+    },
+  );
+
+  it(
+    "workflows-050 promotes a queued workflow after failure and completes it with a real Runner execution",
+    { timeout: TEST_WITH_DOUBLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const { actor } = await workflowsBdd.setupWorkflowOrg({ tier: "pro" });
+      installExecutionBoundaries();
+      const runnerGroup = await runsApi.configureRunnerGroup();
+
+      const workflowId = await workflowsBdd.createWorkflow(actor, {
+        name: slug("promote"),
+        instruction: "# Promote after failure",
+      });
+
+      const firstTrigger = await accept(
+        detail().run({
+          headers: asUser(actor),
+          params: { workflowId },
+          body: undefined,
+        }),
+        [200],
+      );
+      await flushWaitUntilForTest();
+      const threadId = firstTrigger.body.chatThreadId;
+
+      const secondTrigger = await accept(
+        detail().run({
+          headers: asUser(actor),
+          params: { workflowId },
+          body: undefined,
+        }),
+        [200],
+      );
+      await flushWaitUntilForTest();
+      expect(secondTrigger.body).toStrictEqual({
+        chatThreadId: threadId,
+        runId: null,
+      });
+
+      const eventsBeforeFail = await workflowsBdd.readThreadEvents(threadId);
+      const firstRunId = eventsBeforeFail.find((event) => {
+        return event.eventType === "input.prompt" && event.runId !== undefined;
+      })?.runId;
+      if (!firstRunId) {
+        throw new Error("Expected first workflow run to launch");
+      }
+
+      registerRunCleanup(actor, () => {
+        return runnerGroup;
+      });
+
+      await runsApi.heartbeatRunner(runnerGroup);
+      const firstExec = await runsApi.executionInput(firstRunId);
+      const failComplete = await webhooksApi.requestAgentComplete(
+        {
+          runId: firstRunId,
+          exitCode: 1,
+          error: "Simulated workflow failure",
+        },
+        { authorization: `Bearer ${firstExec.sandboxToken}` },
+        [200],
+      );
+      expect(failComplete.status).toBe(200);
+      await flushWaitUntilForTest();
+
+      const eventsAfterFail = await workflowsBdd.readThreadEvents(threadId);
+      const launchedRunIds = eventsAfterFail.flatMap((event) => {
+        return event.eventType === "input.prompt" && event.runId !== undefined
+          ? [event.runId]
+          : [];
+      });
+      expect(launchedRunIds).toHaveLength(2);
+      const secondRunId = launchedRunIds.find((id) => {
+        return id !== firstRunId;
+      });
+      if (!secondRunId) {
+        throw new Error("Expected queued workflow invocation to promote");
+      }
+
+      await runsApi.heartbeatRunner(runnerGroup);
+      const secondExec = await runsApi.executionInput(secondRunId);
+      const successComplete = await webhooksApi.requestAgentComplete(
+        {
+          runId: secondRunId,
+          exitCode: 0,
+          completion: {
+            cliAgentType: "claude-code",
+            cliAgentSessionId: `promote-${secondRunId}`,
+            cliAgentSessionHistoryDisposition: "native_only",
+          },
+        },
+        { authorization: `Bearer ${secondExec.sandboxToken}` },
+        [200],
+      );
+      expect(successComplete.status).toBe(200);
+      await flushWaitUntilForTest();
+
+      const [firstRun, secondRun] = await Promise.all([
+        runsApi.readRun(actor, firstRunId),
+        runsApi.readRun(actor, secondRunId),
       ]);
-      context.mocks.clerk.users.getUser.mockResolvedValue(
-        ownerProfileUser(owner.userId),
+      expect(firstRun.status).toBe("failed");
+      expect(secondRun.status).toBe("completed");
+
+      const deleted = await detail().delete({
+        headers: asUser(actor),
+        params: { workflowId },
+        body: undefined,
+      });
+      expect(deleted.status).toBe(204);
+    },
+  );
+
+  it(
+    "cron-project-chat-event-search-002 withdraws recalled queued messages while another input is published",
+    { timeout: TEST_WITH_SINGLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const { actor } = await workflowsBdd.setupWorkflowOrg({ tier: "pro" });
+      installExecutionBoundaries();
+      const runnerGroup = await runsApi.configureRunnerGroup();
+
+      const chatSearchClient = setupApp({ context, routes: chatThreadRoutes })(
+        chatSearchContract,
+      );
+      const blocker = await runsApi.createThreadRun(actor, {
+        prompt: "Hold the thread open while testing recall",
+      });
+      registerRunCleanup(actor, () => {
+        return runnerGroup;
+      });
+
+      const firstKeyword = `recallalpha${randomUUID().replaceAll("-", "").slice(0, 10)}`;
+      const secondKeyword = `recallbeta${randomUUID().replaceAll("-", "").slice(0, 10)}`;
+      const firstEventId = randomUUID();
+
+      await chatApi.requestSendEvent(
+        actor,
+        {
+          threadId: blocker.threadId,
+          prompt: `Queued ${firstKeyword} message`,
+          clientEventId: firstEventId,
+        },
+        [201],
+      );
+      await flushWaitUntilForTest();
+
+      const beforeRevoke = await accept(
+        chatSearchClient.search({
+          headers: asUser(actor),
+          query: { keyword: firstKeyword },
+        }),
+        [200],
       );
       expect(
-        (await accept(readOwnerProfile(owner, workflow.id), [200])).body
-          .displayName,
-      ).toBe("Workflow Author");
+        beforeRevoke.body.results.map((item) => {
+          return item.chatThreadId;
+        }),
+      ).toStrictEqual([blocker.threadId]);
+
+      await chatApi.requestSendEvent(
+        actor,
+        {
+          threadId: blocker.threadId,
+          revokesEventId: firstEventId,
+        },
+        [201],
+      );
+      await flushWaitUntilForTest();
+
+      const afterRevoke = await accept(
+        chatSearchClient.search({
+          headers: asUser(actor),
+          query: { keyword: firstKeyword },
+        }),
+        [200],
+      );
+      expect(afterRevoke.body.results).toStrictEqual([]);
+
+      const secondEventId = randomUUID();
+      await chatApi.requestSendEvent(
+        actor,
+        {
+          threadId: blocker.threadId,
+          prompt: `Queued again ${firstKeyword}`,
+          clientEventId: secondEventId,
+        },
+        [201],
+      );
+      await flushWaitUntilForTest();
+
+      await Promise.all([
+        chatApi.requestSendEvent(
+          actor,
+          {
+            threadId: blocker.threadId,
+            revokesEventId: secondEventId,
+          },
+          [201],
+        ),
+        chatApi.requestSendEvent(
+          actor,
+          {
+            threadId: blocker.threadId,
+            prompt: `Surviving ${secondKeyword} message`,
+          },
+          [201],
+        ),
+      ]);
+      await flushWaitUntilForTest();
+
+      const [revokedSearch, survivingSearch] = await Promise.all([
+        accept(
+          chatSearchClient.search({
+            headers: asUser(actor),
+            query: { keyword: firstKeyword },
+          }),
+          [200],
+        ),
+        accept(
+          chatSearchClient.search({
+            headers: asUser(actor),
+            query: { keyword: secondKeyword },
+          }),
+          [200],
+        ),
+      ]);
+      expect(revokedSearch.body.results).toStrictEqual([]);
+      expect(
+        survivingSearch.body.results.map((item) => {
+          return item.chatThreadId;
+        }),
+      ).toStrictEqual([blocker.threadId]);
     },
   );
-
-  it("coalesces concurrent requests without reading workflow storage", async () => {
-    const { owner, workflow } = await ownerProfileFixture();
-    mockNow(now() + 16 * 60 * 1000);
-    const started = createDeferredPromise<void>(context.signal);
-    const response = createDeferredPromise<ReturnType<typeof ownerProfileUser>>(
-      context.signal,
-    );
-    context.mocks.clerk.users.getUser.mockImplementation(() => {
-      started.resolve(undefined);
-      return response.promise;
-    });
-    context.mocks.s3.send.mockClear();
-    const first = readOwnerProfile(owner, workflow.id);
-    await started.promise;
-    const second = readOwnerProfile(owner, workflow.id);
-    response.resolve(ownerProfileUser(owner.userId));
-    const results = await Promise.all([
-      accept(first, [200]),
-      accept(second, [200]),
-    ]);
-    expect(
-      results.map((result) => {
-        return result.body.displayName;
-      }),
-    ).toStrictEqual(["Workflow Author", "Workflow Author"]);
-    expect(context.mocks.clerk.users.getUser).toHaveBeenCalledTimes(1);
-    expect(context.mocks.s3.send).not.toHaveBeenCalled();
-  });
-
-  it("returns a real user's name without inventing a cache email", async () => {
-    const { owner, workflow } = await ownerProfileFixture();
-    mockNow(now() + 16 * 60 * 1000);
-    context.mocks.clerk.users.getUser.mockResolvedValue({
-      ...ownerProfileUser(owner.userId),
-      emailAddresses: [],
-      primaryEmailAddressId: null,
-    });
-    expect(
-      (await accept(readOwnerProfile(owner, workflow.id), [200])).body
-        .displayName,
-    ).toBe("Workflow Author");
-  });
-});
-
-describe("workflow owner profile cancellation", () => {
-  it("retries after cancellation and ignores a late missing result", async () => {
-    const { owner, workflow } = await ownerProfileFixture();
-    mockNow(now() + 16 * 60 * 1000);
-    const controller = new AbortController();
-    const started = createDeferredPromise<void>(context.signal);
-    const missing = createDeferredPromise<void>(context.signal);
-    context.mocks.clerk.users.getUser.mockImplementation(async () => {
-      started.resolve(undefined);
-      await missing.promise;
-      throw new WorkflowProfileClerkError(404);
-    });
-    const pending = setupApp({
-      context,
-      routes: workflowsRoutes,
-      signal: controller.signal,
-    })(workflowsDetailContract).ownerProfile({
-      headers: authHeaders(owner),
-      params: { workflowId: workflow.id },
-    });
-    await started.promise;
-    controller.abort(
-      new DOMException("Owner profile request cancelled", "AbortError"),
-    );
-    await accept(pending, [500]);
-    missing.resolve(undefined);
-    context.mocks.clerk.users.getUser.mockResolvedValue(
-      ownerProfileUser(owner.userId),
-    );
-    expect(
-      (await accept(readOwnerProfile(owner, workflow.id), [200])).body
-        .displayName,
-    ).toBe("Workflow Author");
-  });
-});
-
-test("promotes a queued workflow after failure and completes it with a real Runner execution", async () => {
-  const actor = user({ orgRole: "org:admin" });
-  await enableWorkflowRuns(actor);
-  const runnerGroup = await api.configureRunnerGroup();
-
-  const workflow = await createWorkflow(actor, {
-    name: `reward-${randomUUID().slice(0, 8)}`,
-    instruction: "Produce a short summary",
-  });
-  if (!actor.orgId) {
-    throw new Error("Expected workflow org");
-  }
-  const first = await runWorkflowAndLaunch(actor, workflow.body.id);
-  const queued = await accept(
-    detailClient().run({
-      headers: authHeaders(actor),
-      params: { workflowId: workflow.body.id },
-    }),
-    [200],
-  );
-  expect(queued.body.runId).toBeNull();
-  const webhooks = createWebhookCallbackApi(context);
-  await api.heartbeatRunner(runnerGroup);
-  const firstExecution = await api.executionInput(first.runId);
-  await webhooks.requestAgentComplete(
-    { runId: first.runId, exitCode: 1, error: "Synthetic failure" },
-    {
-      authorization: `Bearer ${firstExecution.sandboxToken}`,
-    },
-    [200],
-  );
-  await flushWaitUntilForTest();
-  const events = await chat.listThreadEvents(actor, first.chatThreadId);
-  const next = events.events.find((event) => {
-    return event.runId && event.runId !== first.runId;
-  });
-  if (!next?.runId) {
-    throw new Error("Expected the queued workflow to start after failure");
-  }
-  await api.heartbeatRunner(runnerGroup);
-  const nextExecution = await api.executionInput(next.runId);
-  const sessionId = `workflow-session-${next.runId}`;
-  await webhooks.requestAgentComplete(
-    {
-      runId: next.runId,
-      exitCode: 0,
-      completion: {
-        cliAgentType: "claude-code",
-        cliAgentSessionId: sessionId,
-        cliAgentSessionHistoryDisposition: "native_only",
-      },
-    },
-    { authorization: `Bearer ${nextExecution.sandboxToken}` },
-    [200],
-  );
-  await flushWaitUntilForTest();
-  await expect(api.readRun(actor, first.runId)).resolves.toMatchObject({
-    status: "failed",
-  });
-  await expect(api.readRun(actor, next.runId)).resolves.toMatchObject({
-    status: "completed",
-  });
-  await miscApi.deleteWorkflow(actor, workflow.body.id, [204]);
 });

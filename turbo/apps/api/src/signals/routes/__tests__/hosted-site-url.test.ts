@@ -1,343 +1,370 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { hostContract } from "@okouai/api-contracts/contracts/host";
-import { expect, test } from "vitest";
+import { createStore } from "ccstate";
+import { describe, expect, it } from "vitest";
+
 import { accept, testContext } from "../../../__tests__/test-context";
-import { setupAppWithRoutes } from "../../../__tests__/test-app";
+import { setupApp } from "../../../__tests__/test-helpers";
+import { now } from "../../../lib/time";
 import { hostRoutes } from "../host";
+import { hostedSiteUrlRoutes } from "../hosted-site-url";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createHostBddApi } from "./helpers/api-bdd-host";
-import { hostedTextFile } from "./helpers/api-bdd-host-files";
+import { seedOrgMembership$ } from "./helpers/org-membership";
 import { createRouteMocks } from "./helpers/route-test";
-import { createRunsApi } from "./helpers/api-bdd-runs";
+import {
+  generatedStripeCustomerId,
+  generatedStripeSubscriptionId,
+  postSubscriptionInvoicePaid,
+} from "./helpers/stripe-billing-webhook";
 
 const context = testContext();
-const headers = Object.freeze({ authorization: "Bearer clerk-session" });
-function client(user: ApiTestUser) {
-  createRouteMocks(context).clerk.session(
-    user.userId,
-    user.orgId,
-    user.orgRole,
-  );
-  return setupAppWithRoutes({
-    context,
-    routes: hostRoutes,
-    baseUrl: "https://api.okou.ai",
-  })(hostContract);
-}
-async function publish() {
-  const owner = createBddApi(context).user();
-  await createRunsApi(context).grantProEntitlement(owner);
-  const api = createHostBddApi(context);
-  api.captureHostedSitesS3();
-  const name = `url-${randomUUID().slice(0, 8)}`;
-  const prepared = await api.prepareHostedSite(owner, {
-    site: name,
-    title: name,
-    artifactKind: "hosted-site",
-    spaFallback: false,
-    visibility: "public",
-    files: [hostedTextFile("/index.html", "<p>one</p>")],
-  });
-  await api.completeHostedSite(owner, prepared.deploymentId);
-  return { owner, api, name, prepared };
+const store = createStore();
+const bdd = createBddApi(context);
+const host = createHostBddApi(context);
+
+function hostApi() {
+  return setupApp({ context, routes: hostedSiteUrlRoutes })(hostContract);
 }
 
-test("renames only the active address while immutable versions and the CLI site identity survive", async () => {
-  const { owner, api, name, prepared } = await publish();
-  const http = client(owner);
-  const next = `${name}-new`;
-  const response = await accept(
-    http.updateSiteUrl({
-      headers,
-      params: { siteId: prepared.siteId },
-      body: { publicSlug: next, expectedPublicSlug: name },
-    }),
-    [200],
+function deliveryApi() {
+  return setupApp({ context, routes: hostRoutes })(hostContract);
+}
+
+function signIn(actor: ApiTestUser) {
+  createRouteMocks(context).clerk.session(
+    actor.userId,
+    actor.orgId,
+    actor.orgRole,
   );
-  expect(response.body).toMatchObject({
-    siteId: prepared.siteId,
-    publicSlug: next,
-    url: `https://${next}.okou.app`,
-    isActive: true,
+  return { authorization: "Bearer clerk-session" };
+}
+
+async function member(
+  orgId: string | undefined,
+  role: "admin" | "member",
+): Promise<ApiTestUser> {
+  const user = bdd.user({
+    ...(orgId ? { orgId } : {}),
+    orgRole: role === "admin" ? "org:admin" : "org:member",
   });
-  const read = await accept(
-    http.siteUrl({
-      headers,
-      params: { publicSlug: `dpl-${prepared.deploymentId}` },
-      query: { hostname: `dpl-${prepared.deploymentId}.okou.app` },
-    }),
-    [200],
+  await store.set(
+    seedOrgMembership$,
+    { orgId: user.orgId ?? "", userId: user.userId, role },
+    context.signal,
   );
-  expect(read.body).toStrictEqual(response.body);
-  const alias = await accept(
-    http.resolveAlias({
-      params: { publicSlug: next },
-      query: { publicBrand: "okou" },
-    }),
-    [200],
-  );
-  expect(alias.body.pointer).toMatchObject({
+  return user;
+}
+
+/** A Pro owner: Stripe records a paid Pro invoice for the owner's workspace. */
+async function proOwner(): Promise<ApiTestUser> {
+  const owner = await member(undefined, "admin");
+  await postSubscriptionInvoicePaid(context.signal, {
+    orgId: owner.orgId ?? "",
+    userId: owner.userId,
+    tier: "pro",
+    customerId: generatedStripeCustomerId(),
+    subscriptionId: generatedStripeSubscriptionId(),
+    currentPeriodEnd: new Date(now() + 30 * 86_400_000),
+  });
+  return owner;
+}
+
+async function publishPublicSite(owner: ApiTestUser, site: string) {
+  host.captureHostedSitesS3();
+  const html = "<h1>Hosted</h1>";
+  const prepared = await host.prepareHostedSite(owner, {
+    site,
+    title: "Hosted page",
+    visibility: "public",
+    artifactKind: "hosted-site",
+    spaFallback: false,
+    files: [
+      {
+        path: "/index.html",
+        size: Buffer.byteLength(html),
+        sha256: createHash("sha256").update(html).digest("hex"),
+        contentType: "text/html; charset=utf-8",
+      },
+    ],
+  });
+  await host.completeHostedSite(owner, prepared.deploymentId);
+  return {
     siteId: prepared.siteId,
+    publicSlug: prepared.publicSlug,
     deploymentId: prepared.deploymentId,
-    publicSlug: name,
-  });
-  const old = await accept(
-    http.resolveAlias({
-      params: { publicSlug: name },
-      query: { publicBrand: "okou" },
-    }),
-    [200],
-  );
-  expect(old.body.pointer).toBeNull();
-  const pointer = alias.body.pointer!;
-  const authorization = {
-    publicSlug: pointer.publicSlug,
-    publicBrand: "okou" as const,
-    prefix: pointer.prefix,
-    manifestKey: pointer.manifestKey,
   };
-  for (const [address, allowed] of [
-    [next, true],
-    [name, false],
-    [`dpl-${prepared.deploymentId}`, true],
-  ] as const) {
-    const result = await accept(
-      http.deliveryAuthorization({
-        params: {
-          siteId: prepared.siteId,
-          deploymentId: prepared.deploymentId,
+}
+
+function siteName(): string {
+  return `site-${randomUUID().slice(0, 8)}`;
+}
+
+describe("hosted site URL", () => {
+  it("hosted-site-url-002 validates addresses and hides other owners' websites", async () => {
+    const owner = await proOwner();
+    const peer = await member(owner.orgId ?? "", "member");
+    const site = await publishPublicSite(owner, siteName());
+
+    const reserved = [];
+    for (const publicSlug of ["dpl-reserved", "pv-private"]) {
+      reserved.push(
+        await accept(
+          hostApi().updateSiteUrl({
+            headers: signIn(owner),
+            params: { siteId: site.siteId },
+            body: { publicSlug, expectedPublicSlug: site.publicSlug },
+          }),
+          [400],
+        ),
+      );
+    }
+    const peerHeaders = signIn(peer);
+    await accept(
+      hostApi().updateSiteUrl({
+        headers: peerHeaders,
+        params: { siteId: site.siteId },
+        body: {
+          publicSlug: `${site.publicSlug}-peer`,
+          expectedPublicSlug: site.publicSlug,
         },
-        query: { ...authorization, alias: address },
+      }),
+      [404],
+    );
+    await accept(
+      hostApi().siteUrlAvailability({
+        headers: peerHeaders,
+        params: { siteId: site.siteId },
+        query: { publicSlug: `${site.publicSlug}-peer` },
+      }),
+      [404],
+    );
+    await accept(
+      hostApi().siteUrl({
+        headers: peerHeaders,
+        params: { publicSlug: site.publicSlug },
+        query: { hostname: `${site.publicSlug}.okou.app` },
+      }),
+      [404],
+    );
+    const ownerRead = await accept(
+      hostApi().siteUrl({
+        headers: signIn(owner),
+        params: { publicSlug: site.publicSlug },
+        query: { hostname: `${site.publicSlug}.okou.app` },
       }),
       [200],
     );
-    expect(result.body.allowed).toBe(allowed);
-  }
-  const upload = await api.prepareHostedSite(owner, {
-    site: name,
-    title: name,
-    artifactKind: "hosted-site",
-    spaFallback: false,
-    files: [hostedTextFile("/index.html", "<p>two</p>")],
-  });
-  expect(upload.siteId).toBe(prepared.siteId);
-  expect(upload.publicSlug).toBe(next);
-  const completed = await api.completeHostedSite(owner, upload.deploymentId);
-  expect(completed.url).toBe(`https://${next}.okou.app`);
-  await accept(
-    http.updateSiteUrl({
-      headers,
-      params: { siteId: prepared.siteId },
-      body: { publicSlug: name, expectedPublicSlug: next },
-    }),
-    [200],
-  );
-  const restored = await accept(
-    http.resolveAlias({
-      params: { publicSlug: name },
-      query: { publicBrand: "okou" },
-    }),
-    [200],
-  );
-  expect(restored.body.pointer?.deploymentId).toBe(upload.deploymentId);
-});
 
-test("validates addresses and hides other owners' websites", async () => {
-  const { owner, prepared, name } = await publish();
-  const rename = {
-    headers,
-    params: { siteId: prepared.siteId },
-    body: { publicSlug: `${name}-new`, expectedPublicSlug: name },
-  };
-  for (const publicSlug of ["dpl-reserved", "pv-private"]) {
-    await accept(
-      client(owner).updateSiteUrl({
-        ...rename,
-        body: { ...rename.body, publicSlug },
+    expect(
+      reserved.map((response) => {
+        return response.status;
       }),
-      [400],
+    ).toStrictEqual([400, 400]);
+    expect(ownerRead.body).toMatchObject({
+      siteId: site.siteId,
+      publicSlug: site.publicSlug,
+      url: `https://${site.publicSlug}.okou.app`,
+      isActive: true,
+    });
+  });
+
+  it("hosted-site-url-003 rejects stale edits and reserves previous published names for their owner", async () => {
+    const owner = await proOwner();
+    const name = siteName();
+    const site = await publishPublicSite(owner, name);
+    await accept(
+      hostApi().updateSiteUrl({
+        headers: signIn(owner),
+        params: { siteId: site.siteId },
+        body: {
+          publicSlug: `${site.publicSlug}-new`,
+          expectedPublicSlug: site.publicSlug,
+        },
+      }),
+      [200],
     );
-  }
-  const peer = createBddApi(context).user({ orgId: owner.orgId });
-  await accept(client(peer).updateSiteUrl(rename), [404]);
-  await accept(
-    client(peer).siteUrlAvailability({
-      headers,
-      params: { siteId: prepared.siteId },
-      query: { publicSlug: `${name}-new` },
-    }),
-    [404],
-  );
-  await accept(
-    client(peer).siteUrl({
-      headers,
-      params: { publicSlug: name },
-      query: { hostname: `${name}.okou.app` },
-    }),
-    [404],
-  );
-  const unchanged = await accept(
-    client(owner).siteUrl({
-      headers,
-      params: { publicSlug: name },
-      query: { hostname: `${name}.okou.app` },
-    }),
-    [200],
-  );
-  expect(unchanged.body).toMatchObject({
-    siteId: prepared.siteId,
-    publicSlug: name,
-    url: `https://${name}.okou.app`,
-    isActive: true,
-  });
-  const withoutHostname = await accept(
-    client(owner).siteUrl({
-      headers,
-      params: { publicSlug: name },
-      query: {},
-    }),
-    [200],
-  );
-  expect(withoutHostname.body).toStrictEqual(unchanged.body);
-  expect(withoutHostname.body.artifactId).toStrictEqual(expect.any(String));
-  await accept(
-    client(peer).siteUrl({
-      headers,
-      params: { publicSlug: name },
-      query: {},
-    }),
-    [404],
-  );
-});
+    const other = await proOwner();
 
-test("rejects stale edits and reserves previous published names for their owner", async () => {
-  const { owner, api, name, prepared } = await publish();
-  const http = client(owner);
-  await accept(
-    http.updateSiteUrl({
-      headers,
-      params: { siteId: prepared.siteId },
-      body: { publicSlug: `${name}-new`, expectedPublicSlug: name },
-    }),
-    [200],
-  );
-  await accept(
-    http.updateSiteUrl({
-      headers,
-      params: { siteId: prepared.siteId },
-      body: { publicSlug: `${name}-other`, expectedPublicSlug: name },
-    }),
-    [409],
-  );
-  const other = createBddApi(context).user();
-  await createRunsApi(context).grantProEntitlement(other);
-  const upload = await api.prepareHostedSite(other, {
-    site: name,
-    title: name,
-    artifactKind: "hosted-site",
-    spaFallback: false,
-    files: [hostedTextFile("/index.html", "<p>other</p>")],
-  });
-  expect(upload.publicSlug).not.toBe(name);
-  await api.completeHostedSite(other, upload.deploymentId);
-  const availability = await accept(
-    client(other).siteUrlAvailability({
-      headers,
-      params: { siteId: upload.siteId },
-      query: { publicSlug: name },
-    }),
-    [200],
-  );
-  expect(availability.body.available).toBeFalsy();
-  await accept(
-    client(other).updateSiteUrl({
-      headers,
-      params: { siteId: upload.siteId },
-      body: { publicSlug: name, expectedPublicSlug: upload.publicSlug },
-    }),
-    [409],
-  );
-});
+    await accept(
+      hostApi().updateSiteUrl({
+        headers: signIn(owner),
+        params: { siteId: site.siteId },
+        body: {
+          publicSlug: `${site.publicSlug}-other`,
+          expectedPublicSlug: site.publicSlug,
+        },
+      }),
+      [409],
+    );
+    const otherSite = await publishPublicSite(other, site.publicSlug);
+    const availability = await accept(
+      hostApi().siteUrlAvailability({
+        headers: signIn(other),
+        params: { siteId: otherSite.siteId },
+        query: { publicSlug: site.publicSlug },
+      }),
+      [200],
+    );
+    await accept(
+      hostApi().updateSiteUrl({
+        headers: signIn(other),
+        params: { siteId: otherSite.siteId },
+        body: {
+          publicSlug: site.publicSlug,
+          expectedPublicSlug: otherSite.publicSlug,
+        },
+      }),
+      [409],
+    );
 
-test("an upload prepared before renaming completes at the new address", async () => {
-  const { owner, api, name, prepared } = await publish();
-  const pending = await api.prepareHostedSite(owner, {
-    site: name,
-    title: name,
-    artifactKind: "hosted-site",
-    spaFallback: false,
-    files: [hostedTextFile("/index.html", "<p>next</p>")],
+    expect(otherSite.publicSlug).not.toBe(site.publicSlug);
+    expect(availability.body).toMatchObject({ available: false });
   });
-  await accept(
-    client(owner).updateSiteUrl({
-      headers,
-      params: { siteId: prepared.siteId },
-      body: { publicSlug: `${name}-new`, expectedPublicSlug: name },
-    }),
-    [200],
-  );
-  const result = await api.completeHostedSite(owner, pending.deploymentId);
-  expect(result.url).toBe(`https://${name}-new.okou.app`);
-  const alias = await accept(
-    client(owner).resolveAlias({
-      params: { publicSlug: `${name}-new` },
-      query: { publicBrand: "okou" },
-    }),
-    [200],
-  );
-  expect(alias.body.pointer?.deploymentId).toBe(pending.deploymentId);
-});
 
-test("concurrent websites cannot claim the same address", async () => {
-  const { owner, api, name, prepared } = await publish();
-  const other = await api.prepareHostedSite(owner, {
-    site: `${name}-second`,
-    title: `${name}-second`,
-    artifactKind: "hosted-site",
-    spaFallback: false,
-    files: [hostedTextFile("/index.html", "<p>second</p>")],
-  });
-  await api.completeHostedSite(owner, other.deploymentId);
-  const http = client(owner);
-  const publicSlug = `${name}-claimed`;
-  const results = await Promise.all(
-    [prepared, other].map((site) => {
-      return accept(
-        http.updateSiteUrl({
-          headers,
-          params: { siteId: site.siteId },
-          body: { publicSlug, expectedPublicSlug: site.publicSlug },
+  it("hosted-site-url-001 (1/2) renames active address while immutable version reads, aliases, and delivery checks stay consistent", async () => {
+    const owner = await proOwner();
+    const name = siteName();
+    const site = await publishPublicSite(owner, name);
+    const renamedSlug = `${site.publicSlug}-new`;
+    const dplSlug = `dpl-${site.deploymentId}`;
+
+    const renamed = await accept(
+      hostApi().updateSiteUrl({
+        headers: signIn(owner),
+        params: { siteId: site.siteId },
+        body: { publicSlug: renamedSlug, expectedPublicSlug: site.publicSlug },
+      }),
+      [200],
+    );
+    const [immutableRead, newAlias, oldAlias] = await Promise.all([
+      accept(
+        hostApi().siteUrl({
+          headers: signIn(owner),
+          params: { publicSlug: dplSlug },
+          query: { hostname: `${dplSlug}.okou.app` },
         }),
-        [200, 409],
+        [200],
+      ),
+      accept(
+        hostApi().resolveAlias({
+          params: { publicSlug: renamedSlug },
+          query: { publicBrand: "okou" },
+        }),
+        [200],
+      ),
+      accept(
+        hostApi().resolveAlias({
+          params: { publicSlug: site.publicSlug },
+          query: { publicBrand: "okou" },
+        }),
+        [200],
+      ),
+    ]);
+    const pointer = newAlias.body.pointer;
+    if (!pointer) {
+      throw new Error("Expected resolved pointer for the renamed alias");
+    }
+    context.mocks.clerk.authenticateRequest.mockResolvedValue({
+      isAuthenticated: false,
+    });
+    const checkDelivery = (alias: string) => {
+      return accept(
+        deliveryApi().deliveryAuthorization({
+          headers: {},
+          params: { siteId: site.siteId, deploymentId: site.deploymentId },
+          query: {
+            alias,
+            publicSlug: pointer.publicSlug,
+            publicBrand: "okou",
+            prefix: pointer.prefix,
+            manifestKey: pointer.manifestKey,
+          },
+        }),
+        [200],
       );
-    }),
-  );
-  expect(
-    results
-      .map((result) => {
-        return result.status;
-      })
-      .sort(),
-  ).toStrictEqual([200, 409]);
-  const live = await accept(
-    http.resolveAlias({
-      params: { publicSlug },
-      query: { publicBrand: "okou" },
-    }),
-    [200],
-  );
-  expect(live.body.pointer?.siteId).toBe(
-    results.find((result) => {
-      return result.status === 200;
-    })?.body.siteId,
-  );
-  await api.deleteHostedSite(owner, publicSlug);
-  const deleted = await accept(
-    http.resolveAlias({
-      params: { publicSlug },
-      query: { publicBrand: "okou" },
-    }),
-    [200],
-  );
-  expect(deleted.body.pointer).toBeNull();
+    };
+    const [newDelivery, dplDelivery, oldDelivery] = await Promise.all([
+      checkDelivery(renamedSlug),
+      checkDelivery(dplSlug),
+      checkDelivery(site.publicSlug),
+    ]);
+
+    expect(renamed.body).toStrictEqual({
+      artifactId: expect.any(String) as string,
+      siteId: site.siteId,
+      publicSlug: renamedSlug,
+      url: `https://${renamedSlug}.okou.app`,
+      isActive: true,
+    });
+    expect(immutableRead.body).toStrictEqual(renamed.body);
+    expect(pointer).toMatchObject({
+      siteId: site.siteId,
+      deploymentId: site.deploymentId,
+      publicSlug: site.publicSlug,
+    });
+    expect(oldAlias.body.pointer).toBeNull();
+    expect(newDelivery.body.decision).toBe("allow");
+    expect(dplDelivery.body.decision).toBe("allow");
+    expect(oldDelivery.body.decision).toBe("deny");
+  });
+
+  it("hosted-site-url-001 (2/2) preserves CLI site identity across redeploy and resolves the renamed-back address to the new deployment", async () => {
+    const owner = await proOwner();
+    const name = siteName();
+    const site = await publishPublicSite(owner, name);
+    const renamedSlug = `${site.publicSlug}-new`;
+    await accept(
+      hostApi().updateSiteUrl({
+        headers: signIn(owner),
+        params: { siteId: site.siteId },
+        body: { publicSlug: renamedSlug, expectedPublicSlug: site.publicSlug },
+      }),
+      [200],
+    );
+
+    const html = "<h1>Hosted v2</h1>";
+    const redeployed = await host.prepareHostedSite(owner, {
+      site: name,
+      title: "Hosted page v2",
+      visibility: "public",
+      artifactKind: "hosted-site",
+      spaFallback: false,
+      files: [
+        {
+          path: "/index.html",
+          size: Buffer.byteLength(html),
+          sha256: createHash("sha256").update(html).digest("hex"),
+          contentType: "text/html; charset=utf-8",
+        },
+      ],
+    });
+    const completed = await host.completeHostedSite(
+      owner,
+      redeployed.deploymentId,
+    );
+    await accept(
+      hostApi().updateSiteUrl({
+        headers: signIn(owner),
+        params: { siteId: site.siteId },
+        body: { publicSlug: site.publicSlug, expectedPublicSlug: renamedSlug },
+      }),
+      [200],
+    );
+    const restoredAlias = await accept(
+      hostApi().resolveAlias({
+        params: { publicSlug: site.publicSlug },
+        query: { publicBrand: "okou" },
+      }),
+      [200],
+    );
+
+    expect(redeployed.siteId).toBe(site.siteId);
+    expect(redeployed.publicSlug).toBe(renamedSlug);
+    expect(completed.url).toBe(`https://${renamedSlug}.okou.app`);
+    expect(restoredAlias.body.pointer).toMatchObject({
+      siteId: site.siteId,
+      deploymentId: redeployed.deploymentId,
+    });
+  });
 });

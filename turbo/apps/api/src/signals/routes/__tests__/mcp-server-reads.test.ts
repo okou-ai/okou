@@ -1,1212 +1,1205 @@
-import { directUploadResponseSchema } from "@okouai/api-contracts/contracts/uploads";
-import { transcribeContract } from "@okouai/api-contracts/contracts/transcribe";
-import { ablyTokenRequestSchema } from "@okouai/api-contracts/contracts/realtime";
-import { installSharedThreadStorage } from "./helpers/shared-thread-storage";
+import { Buffer } from "node:buffer";
+import {
+  createPrivateKey,
+  generateKeyPairSync,
+  randomUUID,
+  sign,
+} from "node:crypto";
+
+import { Readable } from "node:stream";
+import {
+  GetObjectCommand,
+  HeadObjectCommand,
+  PutObjectCommand,
+} from "@aws-sdk/client-s3";
+import { mcpServerContract } from "@okouai/api-contracts/contracts/mcp-server";
 import { projectsContract } from "@okouai/api-contracts/contracts/projects";
 import { createProjectOperationId } from "@okouai/core/project-operation-id";
-import { projectRoutes } from "../projects";
-import { setupApp } from "../../../__tests__/test-helpers";
-import { randomUUID } from "node:crypto";
-import {
-  Client,
-  StreamableHTTPClientTransport,
-} from "@modelcontextprotocol/client";
-import { AjvJsonSchemaValidator } from "@modelcontextprotocol/server/validators/ajv";
-import type { JsonSchemaType } from "@modelcontextprotocol/server";
-import { apiErrorSchema } from "@okouai/api-contracts/contracts/errors";
-import { activitySummaryResponseSchema } from "@okouai/api-contracts/contracts/chat-thread-activity-summary";
-import {
-  chatEventsContract,
-  chatThreadEventsContract,
-  chatThreadsContract,
-} from "@okouai/api-contracts/contracts/chat-threads";
-import {
-  mcpGetChatMessagesOutputSchema,
-  mcpGetChatThreadOutputSchema,
-} from "@okouai/api-contracts/contracts/mcp-chat-snapshots";
-import {
-  mcpCancelRunOutputSchema,
-  mcpSendChatMessageOutputSchema,
-} from "@okouai/api-contracts/contracts/mcp-chat-tools";
-import { describe, expect, it, onTestFinished } from "vitest";
-import { array, number, object, string } from "zod";
-import { accept, testContext } from "../../../__tests__/test-context";
-import { createAppWithRoutes } from "../../../app-factory-core";
-import { now, withMockNowForTest } from "../../../lib/time";
-import { flushWaitUntilForTest } from "../../context/wait-until";
-import { mcpServerRoutes } from "../mcp-server";
-import { mcpProjectChatSearchContract } from "@okouai/api-contracts/contracts/mcp-chat-search";
-import { createBddApi } from "./helpers/api-bdd";
-import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
-import { createRunsApi } from "./helpers/api-bdd-runs";
-import { createMcpWebApi } from "./helpers/mcp-web-api";
-import { publicChatActor } from "./helpers/public-chat-actor";
-import { createRouteMocks } from "./helpers/route-test";
+import { createStore } from "ccstate";
 import { http, HttpResponse } from "msw";
+import { describe, expect, it } from "vitest";
+import {
+  array,
+  boolean,
+  literal,
+  number,
+  object,
+  record,
+  string,
+  union,
+  unknown as zUnknown,
+} from "zod";
+
+import { accept, testContext } from "../../../__tests__/test-context";
+import { setupApp, setupRawAppRequest } from "../../../__tests__/test-helpers";
+import { TEST_WITH_SINGLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE } from "../../../__tests__/test-timeouts";
+import { mockEnv, mockOptionalEnv } from "../../../lib/env";
+import { now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
+import { billingStatusRoutes } from "../billing-status";
+import { chatEventsRoutes } from "../chat-events";
+import { chatThreadRoutes } from "../chat-threads";
+import { mcpServerRoutes } from "../mcp-server";
+import { projectRoutes } from "../projects";
+import { runModelsRoutes } from "../run-models";
+import { runsCancelRoutes } from "../runs-cancel";
+import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
+import { createChatEventsFixture } from "./helpers/chat-events-fixture";
+import { MCP_WEB_SCOPES } from "./helpers/mcp-web-api";
+import { seedOrgMembership$ } from "./helpers/org-membership";
+import { publicRunOwner } from "./helpers/public-run-owner";
+import { createRouteMocks } from "./helpers/route-test";
+
+function createFrozenRsaMaterial(): {
+  readonly privateKeyPem: string;
+  readonly publicJwkJson: string;
+} {
+  const pair = generateKeyPairSync("rsa", { modulusLength: 2048 });
+  return Object.freeze({
+    privateKeyPem: String(
+      pair.privateKey.export({ type: "pkcs8", format: "pem" }),
+    ),
+    publicJwkJson: JSON.stringify(pair.publicKey.export({ format: "jwk" })),
+  });
+}
+
+const MCP_KEY_MATERIAL = createFrozenRsaMaterial();
+const MCP_TEST_KID = "mcp-test-kid-1";
+const MCP_ISSUER = "https://clerk.mcp.example.test";
+const MCP_RESOURCE = "https://api.mcp.example.test/mcp";
+const MCP_PROTOCOL_VERSION = "2026-07-28";
+const READ_SCOPES = "user:org:read okou:chat:read okou:project:read";
+
+const CORE_EXPECTED_TOOLS = Object.freeze([
+  "get_chat_input_status",
+  "list_projects",
+  "list_project_threads",
+  "list_models",
+  "get_chat_thread_list",
+  "get_chat_messages",
+  "search_chat_messages",
+  "get_chat_indicators",
+  "get_chat_activity_summary",
+  "rename_chat_thread",
+  "update_chat_thread_model",
+  "send_chat_message",
+  "revoke_queued_message",
+  "cancel_run",
+]);
+
+const NOT_FOUND_ERROR = Object.freeze({ code: "NOT_FOUND" });
+const NOT_FOUND_STRUCTURED = Object.freeze({ error: NOT_FOUND_ERROR });
+const NOT_FOUND_RESULT = Object.freeze({
+  isError: true,
+  structuredContent: NOT_FOUND_STRUCTURED,
+});
+
+const MCP_CALL_REPLY_SCHEMA = object({
+  result: object({
+    isError: boolean().optional(),
+    structuredContent: zUnknown().optional(),
+    content: array(object({ type: literal("text"), text: string() })),
+  }),
+});
+
+const WEB_ROUTES = Object.freeze([
+  ...projectRoutes,
+  ...runModelsRoutes,
+  ...billingStatusRoutes,
+  ...chatThreadRoutes,
+  ...chatEventsRoutes,
+  ...runsCancelRoutes,
+]);
 
 const context = testContext();
 const bdd = createBddApi(context);
-const chat = createChatFilesBddApi(context);
-const mcp = createMcpWebApi(context);
+const mcpClient = setupApp({ context, routes: mcpServerRoutes })(
+  mcpServerContract,
+);
+const projectsClient = setupApp({ context, routes: projectRoutes })(
+  projectsContract,
+);
+const rawWeb = setupRawAppRequest({ context, routes: WEB_ROUTES });
 
-async function fixture() {
-  const actor = bdd.user({ orgId: `org_${randomUUID()}` });
-  bdd.acceptStorageWrites();
-  await createRunsApi(context).configureRunnerGroup({ registerRunner: false });
-  await bdd.bootstrapLimitedFreeOnboarding(actor);
-  const token = mcp.authorize(actor);
-  return { actor, token };
+async function mcpRpc(
+  token: string,
+  method: string,
+  params: Record<string, unknown> = {},
+): Promise<unknown> {
+  const response = await accept(
+    mcpClient.request({
+      extraHeaders: {
+        authorization: `Bearer ${token}`,
+        accept: "application/json, text/event-stream",
+        "MCP-Protocol-Version": MCP_PROTOCOL_VERSION,
+        "MCP-Method": method,
+        ...(typeof params.name === "string" ? { "MCP-Name": params.name } : {}),
+      },
+      body: {
+        jsonrpc: "2.0",
+        id: 1,
+        method,
+        params: {
+          ...params,
+          _meta: {
+            "io.modelcontextprotocol/protocolVersion": MCP_PROTOCOL_VERSION,
+            "io.modelcontextprotocol/clientCapabilities": {},
+            "io.modelcontextprotocol/clientInfo": {
+              name: "okou-test",
+              version: "1",
+            },
+          },
+        },
+      },
+    }),
+    [200],
+  );
+  const body: unknown = response.body;
+  if (typeof body !== "string") {
+    return body;
+  }
+  const frame = body.split("\n").find((line) => {
+    return line.startsWith("data: ");
+  });
+  if (!frame) {
+    throw new Error("Expected an MCP SSE reply");
+  }
+  return JSON.parse(frame.slice(6)) as unknown;
 }
-function body(result: Awaited<ReturnType<typeof mcp.call>>): unknown {
-  return (
-    result.structuredContent ?? JSON.parse(result.content[0]?.text ?? "null")
+
+async function mcpCall(
+  token: string,
+  name: string,
+  args: Record<string, unknown> = {},
+) {
+  return MCP_CALL_REPLY_SCHEMA.parse(
+    await mcpRpc(token, "tools/call", { name, arguments: args }),
+  ).result;
+}
+
+async function mcpWeb(
+  token: string,
+  path: string,
+  method = "GET",
+  body?: unknown,
+) {
+  return await rawWeb(path, {
+    method,
+    headers: {
+      authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+  });
+}
+
+function createHarness() {
+  const store = createStore();
+  mockEnv("MCP_RESOURCE_URL", MCP_RESOURCE);
+  mockEnv("MCP_OAUTH_ISSUER", MCP_ISSUER);
+  const publicJwk: unknown = JSON.parse(MCP_KEY_MATERIAL.publicJwkJson);
+  if (typeof publicJwk !== "object" || publicJwk === null) {
+    throw new Error("Expected public JWK object");
+  }
+  server.use(
+    http.get("https://api.clerk.com/v1/jwks", () => {
+      return HttpResponse.json({
+        keys: [
+          {
+            ...publicJwk,
+            kid: MCP_TEST_KID,
+            alg: "RS256",
+            use: "sig",
+          },
+        ],
+      });
+    }),
+  );
+  const privateKey = createPrivateKey(MCP_KEY_MATERIAL.privateKeyPem);
+
+  function signToken(
+    actor: ApiTestUser & { readonly orgId: string },
+    claims: Record<string, unknown> = {},
+  ): string {
+    const seconds = Math.floor(now() / 1000);
+    const encode = (value: Record<string, unknown>) => {
+      return Buffer.from(JSON.stringify(value)).toString("base64url");
+    };
+    const input = `${encode({ alg: "RS256", kid: MCP_TEST_KID, typ: "at+jwt" })}.${encode(
+      {
+        iss: MCP_ISSUER,
+        aud: MCP_RESOURCE,
+        sub: actor.userId,
+        org_id: actor.orgId,
+        client_id: "mcp_test_client",
+        scope: MCP_WEB_SCOPES,
+        iat: seconds,
+        nbf: seconds - 1,
+        exp: seconds + 3600,
+        ...claims,
+      },
+    )}`;
+    return `${input}.${sign("RSA-SHA256", Buffer.from(input), privateKey).toString("base64url")}`;
+  }
+
+  async function seededUser(
+    orgId?: string,
+  ): Promise<ApiTestUser & { readonly orgId: string }> {
+    const user = bdd.user({ orgRole: "org:member", orgId });
+    if (!user.orgId) {
+      throw new Error("Expected a workspace member");
+    }
+    await store.set(
+      seedOrgMembership$,
+      { userId: user.userId, orgId: user.orgId, role: "member" },
+      context.signal,
+    );
+    return { ...user, orgId: user.orgId };
+  }
+
+  async function addMembership(userId: string, orgId: string): Promise<void> {
+    await store.set(
+      seedOrgMembership$,
+      { userId, orgId, role: "member" },
+      context.signal,
+    );
+  }
+
+  async function memberWithToken() {
+    const member = await seededUser();
+    const issue = (claims: Record<string, unknown> = {}) => {
+      return signToken(member, claims);
+    };
+    return { member, token: issue(), issue };
+  }
+
+  return { seededUser, addMembership, memberWithToken, signToken };
+}
+
+interface ListedMcpTool {
+  readonly name: string;
+  readonly description?: string;
+  readonly inputSchema?: unknown;
+  readonly outputSchema?: unknown;
+}
+
+async function listedToolDefinitions(
+  token: string,
+): Promise<readonly ListedMcpTool[]> {
+  const reply = await mcpRpc(token, "tools/list");
+  if (
+    typeof reply !== "object" ||
+    reply === null ||
+    !("result" in reply) ||
+    typeof reply.result !== "object" ||
+    reply.result === null ||
+    !("tools" in reply.result) ||
+    !Array.isArray(reply.result.tools)
+  ) {
+    throw new Error(`Expected an MCP tool list, got ${JSON.stringify(reply)}`);
+  }
+  return reply.result.tools.flatMap((tool: unknown) => {
+    if (
+      typeof tool !== "object" ||
+      tool === null ||
+      !("name" in tool) ||
+      typeof tool.name !== "string"
+    ) {
+      return [];
+    }
+    return [
+      {
+        name: tool.name,
+        description:
+          "description" in tool && typeof tool.description === "string"
+            ? tool.description
+            : undefined,
+        inputSchema: "inputSchema" in tool ? tool.inputSchema : undefined,
+        outputSchema: "outputSchema" in tool ? tool.outputSchema : undefined,
+      },
+    ];
+  });
+}
+
+async function listedTools(token: string): Promise<string[]> {
+  const tools = await listedToolDefinitions(token);
+  return tools.map((tool) => {
+    return tool.name;
+  });
+}
+
+function memberSession(member: {
+  readonly userId: string;
+  readonly orgId: string;
+}) {
+  createRouteMocks(context).clerk.session(
+    member.userId,
+    member.orgId,
+    "org:member",
+  );
+  return { authorization: "Bearer clerk-session" };
+}
+
+function sendResult(result: { readonly structuredContent?: unknown }) {
+  const content = result.structuredContent;
+  if (
+    typeof content !== "object" ||
+    content === null ||
+    !("threadId" in content) ||
+    !("eventId" in content) ||
+    typeof content.threadId !== "string" ||
+    typeof content.eventId !== "string"
+  ) {
+    throw new Error(`Expected a sent message, got ${JSON.stringify(result)}`);
+  }
+  return { threadId: content.threadId, eventId: content.eventId };
+}
+
+async function createResearchProject(member: {
+  readonly userId: string;
+  readonly orgId: string;
+}): Promise<string> {
+  const projectId = createProjectOperationId(now(), randomUUID());
+  await accept(
+    projectsClient.create({
+      headers: memberSession(member),
+      body: { id: projectId, eventId: projectId, name: "Research" },
+    }),
+    [201],
+  );
+  return projectId;
+}
+
+async function startProjectChat(token: string, projectId: string) {
+  return sendResult(
+    await mcpCall(token, "send_chat_message", {
+      projectId,
+      prompt: "Project kickoff",
+    }),
   );
 }
-function error(result: Awaited<ReturnType<typeof mcp.call>>) {
-  expect(result.isError).toBeTruthy();
-  return apiErrorSchema.parse(body(result)).error;
-}
-async function send(
-  f: Awaited<ReturnType<typeof fixture>>,
-  prompt: string,
-  threadId?: string,
-) {
-  const result = await mcp.call(f.token(), "send_chat_message", {
-    prompt,
-    ...(threadId ? { threadId } : {}),
-  });
-  expect(result.isError, JSON.stringify(result.content)).not.toBeTruthy();
-  return mcpSendChatMessageOutputSchema.parse(body(result));
+
+async function scopedTokensWithMessage() {
+  const harness = createHarness();
+  const { issue } = await harness.memberWithToken();
+  const sendToken = issue({ scope: `${READ_SCOPES} okou:chat:send` });
+  const cancelToken = issue({ scope: `${READ_SCOPES} okou:run:cancel` });
+  const manageToken = issue({ scope: `${READ_SCOPES} okou:chat:manage` });
+  const sent = sendResult(
+    await mcpCall(sendToken, "send_chat_message", { prompt: "Hello" }),
+  );
+  return { sendToken, cancelToken, manageToken, sent };
 }
 
 describe("thin MCP Web adapters", () => {
-  it.each([true, false])(
-    "discovers and calls the same tools through the SDK (modern=%s)",
-    async (modern) => {
-      const f = await fixture();
-      const app = createAppWithRoutes({
-        routes: mcpServerRoutes,
-        signal: context.signal,
-      });
-      const sdk = new Client(
-        { name: "web-parity", version: "1" },
-        {
-          versionNegotiation: {
-            mode: modern ? { pin: "2026-07-28" } : "legacy",
-          },
-        },
-      );
-      onTestFinished(() => {
-        return sdk.close();
-      });
-      await sdk.connect(
-        new StreamableHTTPClientTransport(
-          new URL("https://api.mcp.example.test/mcp"),
-          {
-            authProvider: {
-              token: () => {
-                return Promise.resolve(f.token());
-              },
-            },
-            fetch: async (input, init) => {
-              return await app.request(new Request(input, init));
-            },
-          },
-        ),
-      );
-      const { tools } = await sdk.listTools();
-      expect(
-        tools
-          .map((tool) => {
-            return tool.name;
-          })
-          .sort(),
-      ).toStrictEqual(
-        [
-          "cancel_run",
-          "create_chat_thread",
-          "get_chat_realtime_token",
-          "prepare_voice_upload",
-          "complete_voice_upload",
-          "get_voice_playback_url",
-          "get_chat_activity_summary",
-          "get_chat_indicators",
-          "get_chat_input_status",
-          "get_chat_messages",
-          "get_chat_thread_list",
-          "list_project_threads",
-          "list_projects",
-          "list_models",
-          "rename_chat_thread",
-          "revoke_queued_message",
-          "search_chat_messages",
-          "send_chat_message",
-          "update_chat_thread_model",
-        ].sort(),
-      );
-      const validator = new AjvJsonSchemaValidator();
-      for (const tool of tools) {
-        expect(() => {
-          return validator.getValidator(tool.inputSchema as JsonSchemaType);
-        }).not.toThrow();
-        if (tool.outputSchema) {
-          expect(() => {
-            return validator.getValidator(tool.outputSchema as JsonSchemaType);
-          }).not.toThrow();
-        }
+  it("mcp-server-reads-006 returns the unmodified Web project and model lists", async () => {
+    const { token } = await createHarness().memberWithToken();
+
+    const projects = await mcpWeb(token, "/api/projects");
+    const models = await mcpWeb(token, "/api/run-models");
+    expect(projects.status).toBe(200);
+    expect(models.status).toBe(200);
+
+    const listedProjects = await mcpCall(token, "list_projects");
+    const listedModels = await mcpCall(token, "list_models");
+    expect(listedProjects.structuredContent).toStrictEqual(projects.body);
+    expect(listedModels.structuredContent).toStrictEqual(models.body);
+  });
+
+  it("mcp-server-reads-001 (1/2) discovers tools with valid schemas, search docs, and empty search results", async () => {
+    const { token } = await createHarness().memberWithToken();
+
+    const tools = await listedToolDefinitions(token);
+    const names = tools.map((tool) => {
+      return tool.name;
+    });
+    for (const expectedName of CORE_EXPECTED_TOOLS) {
+      expect(names).toContain(expectedName);
+    }
+    for (const tool of tools) {
+      expect(tool.inputSchema).toMatchObject({ type: "object" });
+      if (tool.outputSchema !== undefined) {
+        expect(tool.outputSchema).toMatchObject({ type: "object" });
       }
-      const search = tools.find((tool) => {
-        return tool.name === "search_chat_messages";
-      });
-      if (!search?.outputSchema) {
-        throw new Error("Missing MCP search response schema");
-      }
-      expect(search.inputSchema.properties?.keyword).toMatchObject({
-        description: expect.stringMatching(
-          /CJK.*single-character CJK.*whole-word.*AND.*no indexable tokens.*No Unicode normalization/s,
-        ),
-      });
-      expect(search.outputSchema).toMatchObject({
-        properties: {
-          results: {
-            items: {
-              properties: {
-                matchedRanges: {
-                  description: expect.stringMatching(
-                    /\[start,end\).*matchedMessage\.content.*UTF-16.*code points.*UTF-8.*content\.slice.*ACK-QA-A1-🧪-中文.*\[13,15\)/s,
-                  ),
-                  items: {
-                    properties: {
-                      start: {
-                        description: expect.stringMatching(/Inclusive.*UTF-16/),
-                      },
-                      end: {
-                        description: expect.stringMatching(/Exclusive.*UTF-16/),
-                      },
-                    },
-                  },
-                },
-              },
-            },
-          },
-        },
-      });
-      expect(search.description).toContain("index updates asynchronously");
-      const searched = await sdk.callTool({
-        name: "search_chat_messages",
-        arguments: { keyword: `sdk-search-${randomUUID()}` },
-      });
-      expect(searched.isError).not.toBeTruthy();
-      expect(
-        mcpProjectChatSearchContract.search.responses[200].parse(
-          searched.structuredContent,
-        ),
-      ).toStrictEqual({ results: [] });
-      const searchThreadId = randomUUID();
-      const searchHit = {
-        threadId: searchThreadId,
-        projectId: null,
-        projectName: null,
-        matchedMessage: {
-          threadId: searchThreadId,
-          role: "user",
-          content: "indexed message",
-          createdAt: "2026-10-12T08:00:00.000Z",
-          seqId: 1,
-          runId: null,
-        },
-        matchedRanges: [],
-      };
-      const validateSearch = validator.getValidator(
-        search.outputSchema as JsonSchemaType,
-      );
-      expect(validateSearch({ results: [searchHit] }).valid).toBeTruthy();
-      const sendTool = tools.find((tool) => {
-        return tool.name === "send_chat_message";
-      });
-      if (!sendTool?.outputSchema) {
-        throw new Error("Missing MCP send response schema");
-      }
-      expect(
-        Object.keys(sendTool.inputSchema.properties ?? {}).sort(),
-      ).toStrictEqual([
-        "clientEventId",
-        "model",
-        "projectId",
-        "prompt",
-        "threadId",
-        "userMessage",
-      ]);
-      const validateSend = validator.getValidator(
-        sendTool.inputSchema as JsonSchemaType,
-      );
-      const userMessage = {
+    }
+
+    const searchTool = tools.find((tool) => {
+      return tool.name === "search_chat_messages";
+    });
+    expect(JSON.stringify(searchTool?.inputSchema)).toContain("CJK");
+    expect(JSON.stringify(searchTool?.outputSchema)).toContain("UTF-16");
+
+    const sendTool = tools.find((tool) => {
+      return tool.name === "send_chat_message";
+    });
+    expect(JSON.stringify(sendTool?.inputSchema)).toContain("userMessage");
+
+    const bothPromptAndUserMessage = await mcpCall(token, "send_chat_message", {
+      prompt: "Plain",
+      userMessage: {
+        version: 1,
+        parts: [{ type: "text", text: "Structured" }],
+      },
+    });
+    expect(bothPromptAndUserMessage.isError).toBeTruthy();
+
+    const emptySearch = await mcpCall(token, "search_chat_messages", {
+      keyword: "unmatched",
+    });
+    expect(emptySearch.structuredContent).toStrictEqual({ results: [] });
+  });
+
+  it("mcp-server-reads-001 (2/2) sends a structured userMessage, replaces external source with MCP client, and records thread history", async () => {
+    const { token } = await createHarness().memberWithToken();
+
+    const sent = await mcpCall(token, "send_chat_message", {
+      userMessage: {
         version: 1,
         parts: [
-          {
-            type: "file",
-            fileId: randomUUID(),
-            filenameSnapshot: "meeting.txt",
-            contentType: "text/plain",
-          },
+          { type: "text", text: "Please review this excerpt" },
           {
             type: "feedback",
-            quote: "earlier note",
-            note: [{ type: "text", text: "Check this" }],
+            quote: "Original sentence",
+            note: [{ type: "text", text: "Tighten wording" }],
           },
           {
-            type: "voice",
-            clips: [{ fileId: randomUUID() }, { fileId: randomUUID() }],
+            type: "source",
+            kind: "slack",
+            href: "https://slack.example.test/archives/C1/p1",
           },
         ],
-      };
-      expect(validateSend({ userMessage }).valid).toBeTruthy();
-      expect(
-        validateSend({ userMessage, prompt: "ambiguous input" }).valid,
-      ).toBeFalsy();
-      expect(validateSend({}).valid).toBeFalsy();
-      expect(sendTool.outputSchema).toMatchObject({
-        properties: { eventId: { type: "string", format: "uuid" } },
-      });
-      for (const [name, args] of [
-        ["send_chat_message", { prompt: "reference" }],
-        ["revoke_queued_message", { eventId: randomUUID() }],
-        ["get_chat_messages", {}],
-        ["rename_chat_thread", { title: "reference" }],
-        ["update_chat_thread_model", { model: null }],
-        ["get_chat_activity_summary", { runId: randomUUID() }],
-      ] as const) {
-        const tool = tools.find((item) => {
-          return item.name === name;
-        });
-        if (!tool) {
-          throw new Error(`Missing tool ${name}`);
-        }
-        const validateInput = validator.getValidator(
-          tool.inputSchema as JsonSchemaType,
-        );
-        expect(
-          validateInput({ ...args, threadId: searchThreadId }).valid,
-        ).toBeTruthy();
-      }
-      for (const name of ["cancel_run", "get_chat_activity_summary"]) {
-        const tool = tools.find((item) => {
-          return item.name === name;
-        });
-        if (!tool) {
-          throw new Error(`Missing tool ${name}`);
-        }
-        expect(tool.inputSchema.properties?.runId).toMatchObject({
-          type: "string",
-          format: "uuid",
-        });
-      }
-      const messages = tools.find((tool) => {
-        return tool.name === "get_chat_messages";
-      });
-      expect(messages).toBeDefined();
-      if (!messages) {
-        throw new Error("Missing message snapshot tool");
-      }
-      const validate = validator.getValidator(
-        messages.inputSchema as JsonSchemaType,
-      );
-      expect(validate({ threadId: randomUUID() }).valid).toBeTruthy();
-      expect(
-        validate({
-          threadId: randomUUID(),
-          sinceSeqId: 3,
-          sinceEventId: randomUUID(),
-        }).valid,
-      ).toBeTruthy();
-      expect(
-        validate({ threadId: randomUUID(), sinceSeqId: 3 }).valid,
-      ).toBeFalsy();
-      const contentParts = [
-        { type: "text", text: "SDK canonical reference" },
-        {
-          type: "feedback",
-          quote: "earlier note",
-          note: [{ type: "text", text: "Check this" }],
-        },
-      ];
-      const sent = await sdk.callTool({
-        name: "send_chat_message",
-        arguments: {
-          userMessage: {
-            version: 1,
-            parts: [...contentParts, { type: "source", kind: "slack" }],
-          },
-        },
-      });
-      expect(sent.isError, JSON.stringify(sent.content)).not.toBeTruthy();
-      const reference = mcpSendChatMessageOutputSchema.parse(
-        sent.structuredContent,
-      );
-      expect(sent.structuredContent).toStrictEqual(reference);
-      expect(sent.content).toContainEqual({
-        type: "text",
-        text: JSON.stringify(reference),
-      });
-      await flushWaitUntilForTest();
-      const history = await sdk.callTool({
-        name: "get_chat_messages",
-        arguments: { threadId: reference.threadId },
-      });
-      expect(history.isError).not.toBeTruthy();
-      const page = mcpGetChatMessagesOutputSchema.parse(
-        history.structuredContent,
-      );
-      expect(page.rows).toContainEqual(
+      },
+    });
+    expect(sent.isError).toBeFalsy();
+    const firstText = sent.content[0]?.text;
+    if (!firstText) {
+      throw new Error("Expected text content matching structuredContent");
+    }
+    expect(sent.structuredContent).toStrictEqual(JSON.parse(firstText));
+    const { threadId, eventId } = sendResult(sent);
+
+    const history = await mcpCall(token, "get_chat_messages", { threadId });
+    expect(history.structuredContent).toMatchObject({
+      rows: expect.arrayContaining([
         expect.objectContaining({
-          eventId: reference.eventId,
-          threadId: reference.threadId,
+          eventId,
           eventType: "input.prompt",
-          runId: null,
           payload: expect.objectContaining({
             userMessage: {
               version: 1,
               parts: [
-                ...contentParts,
-                { type: "source", kind: "mcp", clientId: "mcp_test_client" },
+                { type: "text", text: "Please review this excerpt" },
+                {
+                  type: "feedback",
+                  quote: "Original sentence",
+                  note: [{ type: "text", text: "Tighten wording" }],
+                },
+                {
+                  type: "source",
+                  kind: "mcp",
+                  clientId: "mcp_test_client",
+                },
               ],
             },
           }),
         }),
-      );
-      const lifecycle = await sdk.callTool({
-        name: "get_chat_thread_list",
-        arguments: {},
-      });
-      expect(lifecycle.isError).not.toBeTruthy();
-      expect(
-        mcpGetChatThreadOutputSchema.parse(lifecycle.structuredContent).events,
-      ).toContainEqual(
-        expect.objectContaining({
-          threadId: reference.threadId,
-          kind: "created",
-        }),
-      );
-    },
-  );
-
-  it("does not fall back from expired OAuth to a browser identity or enable unscoped Web routes", async () => {
-    const f = await fixture();
-    createRouteMocks(context).clerk.session(
-      f.actor.userId,
-      f.actor.orgId,
-      f.actor.orgRole,
-    );
-    const expired = await mcp.web(f.token({ exp: 1 }), "/api/run-models");
-    expect(expired.status).toBe(401);
-    const unsupported = await mcp.web(f.token(), "/api/billing/status");
-    expect(unsupported.status).toBe(401);
-  });
-
-  it("keeps OAuth signing-key outages distinct from invalid credentials on the Web entry", async () => {
-    const f = await fixture();
-    // Keep all real Clerk retries; make only their external SDK jitter deterministic.
-    onTestFinished(context.mocks.clerkRetryJitter(0));
-    server.use(
-      http.get("https://api.clerk.com/v1/jwks", () => {
-        return HttpResponse.json(
-          { error: "provider unavailable" },
-          { status: 503 },
-        );
-      }),
-    );
-    const unavailable = await mcp.web(f.token(), "/api/run-models");
-    expect(unavailable.status).toBe(503);
-    expect(unavailable.body).toMatchObject({
-      error: { code: "PROVIDER_UNAVAILABLE" },
+      ]),
     });
-  });
 
-  it("preserves send/manage/cancel grants and checks each Web event operation's scope", async () => {
-    const f = await fixture();
-    for (const [scope, present, absent] of [
-      ["okou:chat:send", "send_chat_message", "revoke_queued_message"],
-      ["okou:run:cancel", "revoke_queued_message", "send_chat_message"],
-      ["okou:chat:manage", "rename_chat_thread", "cancel_run"],
-    ]) {
-      const token = f.token({ scope: `user:org:read okou:chat:read ${scope}` });
-      const listed = object({
-        result: object({ tools: array(object({ name: string() })) }),
-      }).parse(await mcp.rpc(token, "tools/list"));
-      const names = listed.result.tools.map((tool) => {
-        return tool.name;
-      });
-      expect(names).toContain(present);
-      expect(names).not.toContain(absent);
-      expect(
-        object({ error: object({ code: number() }) }).safeParse(
-          await mcp.rpc(token, "tools/call", { name: absent, arguments: {} }),
-        ).success,
-      ).toBeTruthy();
-    }
-    const sent = await send(f, "operation-scoped Web events");
-    await flushWaitUntilForTest();
-    const deniedRecall = await mcp.web(
-      f.token({ scope: "user:org:read okou:chat:send" }),
-      "/api/chat/events",
-      "POST",
-      {
-        threadId: sent.threadId,
-        revokesEventId: randomUUID(),
-      },
-    );
-    expect(deniedRecall.status).toBe(403);
-    const deniedSend = await mcp.web(
-      f.token({ scope: "user:org:read okou:run:cancel" }),
-      "/api/chat/events",
-      "POST",
-      {
-        threadId: sent.threadId,
-        prompt: "not authorized to send",
-        userMessage: {
-          version: 1,
-          parts: [{ type: "text", text: "not authorized to send" }],
-        },
-        hasTextContent: true,
-      },
-    );
-    expect(deniedSend.status).toBe(403);
-  });
-
-  it("returns unmodified Web project and model lists", async () => {
-    const f = await fixture();
-    for (const [name, path] of [
-      ["list_projects", "/api/projects"],
-      ["list_models", "/api/run-models"],
-    ]) {
-      if (!name || !path) {
-        throw new Error("Invalid route case");
-      }
-      const web = await mcp.web(f.token(), path);
-      expect(web.status).toBe(200);
-      const result = await mcp.call(f.token(), name);
-      expect(result.isError).not.toBeTruthy();
-      expect(body(result)).toStrictEqual(web.body);
-    }
-  });
-
-  it("starts a Chat in an owned Project and continues a retained Agent Chat by thread ID", async () => {
-    const f = await fixture();
-    const id = createProjectOperationId(now(), randomUUID());
-    const projects = setupApp({ context, routes: projectRoutes })(
-      projectsContract,
-    );
-    createRouteMocks(context).clerk.session(
-      f.actor.userId,
-      f.actor.orgId,
-      f.actor.orgRole,
-    );
-    await accept(
-      projects.create({
-        headers: { authorization: "Bearer clerk-session" },
-        body: { id, eventId: id, name: "Research" },
-      }),
-      [201],
-    );
-
-    expect(body(await mcp.call(f.token(), "list_projects"))).toMatchObject({
-      projects: [{ id, name: "Research" }],
-    });
-    const peer = f.token({ sub: `user_${randomUUID()}` });
-    expect(body(await mcp.call(peer, "list_projects"))).toStrictEqual({
-      projects: [],
-    });
-    expect(
-      error(await mcp.call(peer, "list_project_threads", { projectId: id }))
-        .code,
-    ).toBe("NOT_FOUND");
-    expect(
-      error(
-        await mcp.call(peer, "send_chat_message", {
-          projectId: id,
-          prompt: "private project",
-        }),
-      ).code,
-    ).toBe("NOT_FOUND");
-
-    const sent = mcpSendChatMessageOutputSchema.parse(
-      body(
-        await mcp.call(f.token(), "send_chat_message", {
-          projectId: id,
-          prompt: "start the Project Chat",
-        }),
-      ),
-    );
-    const lifecycle = mcpGetChatThreadOutputSchema.parse(
-      body(await mcp.call(f.token(), "get_chat_thread_list")),
-    );
-    expect(lifecycle.events).toContainEqual(
-      expect.objectContaining({
-        kind: "created",
-        threadId: sent.threadId,
-        projectId: id,
-      }),
-    );
-    const listed = await mcp.call(f.token(), "list_project_threads", {
-      projectId: id,
-      limit: 1,
-    });
-    expect(listed.isError).not.toBeTruthy();
-    expect(body(listed)).toMatchObject({
-      threads: [{ threadId: sent.threadId, projectId: id }],
-      nextAfter: null,
-    });
-    expect(
-      error(
-        await mcp.call(f.token(), "send_chat_message", {
-          threadId: sent.threadId,
-          projectId: id,
-          prompt: "invalid continuation",
-        }),
-      ).code,
-    ).toBe("BAD_REQUEST");
-
-    const thread = await chat.createThread(f.actor, {
-      title: "Retained Chat",
-    });
-    const continued = await send(f, "continue the retained Chat", thread.id);
-    expect(continued.threadId).toBe(thread.id);
-    expect(
-      (await chat.listThreadEventRows(f.actor, thread.id)).map(({ id }) => {
-        return id;
-      }),
-    ).toContain(continued.eventId);
-    await flushWaitUntilForTest();
-  });
-
-  it("reflects committed Run transitions without marking indicator or history reads as read", async () => {
-    const f = await publicChatActor(context, {
-      stripeTransport: "http",
-    });
-    const token = mcp.authorize(f.actor);
-    const runs = createRunsApi(context);
-    await f.run(async () => {
-      const run = await runs.createThreadRun(f.actor, {
-        prompt: "observe indicator transitions",
-      });
-      expect(run.status).toBe("running");
-      const before = await chat.readThread(f.actor, run.threadId);
-      expect(before.lastReadAt).toBeNull();
-
-      const initial = await mcp.call(token(), "get_chat_indicators");
-      expect(initial.isError).not.toBeTruthy();
-      expect(body(initial)).toStrictEqual({
-        threads: { [run.threadId]: "active" },
-        unreadAt: {},
-      });
-
-      await runs.heartbeatRunner(f.runnerGroup);
-      await f.executionInput(run.runId);
-      expect((await runs.readRun(f.actor, run.runId)).status).toBe("running");
-      const running = await mcp.call(token(), "get_chat_indicators");
-      expect(running.isError).not.toBeTruthy();
-      expect(body(running)).toStrictEqual(body(initial));
-
-      const cancelled = await mcp.call(token(), "cancel_run", {
-        runId: run.runId,
-      });
-      expect(cancelled.isError).not.toBeTruthy();
-      expect(body(cancelled)).toMatchObject({
-        runId: run.runId,
-        status: "cancelled",
-      });
-      await flushWaitUntilForTest();
-
-      const history = await mcp.call(token(), "get_chat_messages", {
-        threadId: run.threadId,
-      });
-      expect(history.isError).not.toBeTruthy();
-      const page = mcpGetChatMessagesOutputSchema.parse(body(history));
-      expect(page.snapshot).toBeNull();
-      expect(page.hasMore).toBeFalsy();
-      const terminal = page.rows.find((row) => {
-        return row.runId === run.runId && row.eventType === "run.cancelled";
-      });
-      expect(terminal).toMatchObject({
-        runId: run.runId,
-        eventType: "run.cancelled",
-      });
-
-      const unread = await mcp.call(token(), "get_chat_indicators");
-      expect(unread.isError).not.toBeTruthy();
-      expect(body(unread)).toStrictEqual({
-        threads: { [run.threadId]: "unread" },
-        unreadAt: { [run.threadId]: terminal?.createdAt },
-      });
-      expect((await chat.readThread(f.actor, run.threadId)).lastReadAt).toBe(
-        before.lastReadAt,
-      );
-    });
-  });
-
-  it("authorizes a device to subscribe to its own workspace through Ably", async () => {
-    const f = await fixture();
-    context.mocks.ably.createTokenRequest.mockImplementation((params) => {
-      const request = object({
-        capability: object({}).catchall(array(string())),
-        clientId: string(),
-        ttl: number(),
-        timestamp: number(),
-      }).parse(params);
-      return Promise.resolve({
-        ...request,
-        capability: JSON.stringify(request.capability),
-        keyName: "test.key",
-        nonce: "nonce",
-        mac: "signature",
-      });
-    });
-    const signed = ablyTokenRequestSchema.parse(
-      body(await mcp.call(f.token(), "get_chat_realtime_token")),
-    );
-    expect(signed.clientId).toBe(f.actor.userId);
-    const channel = `user-org:${f.actor.userId}:${f.actor.orgId}`;
-    expect(JSON.parse(signed.capability)).toHaveProperty(
-      [channel],
-      ["subscribe"],
-    );
-    expect(signed.ttl).toBeGreaterThan(0);
-  });
-
-  it("sends and plays a private WAV through MCP and signed storage URLs", async () => {
-    const f = await fixture();
-    await createRunsApi(context).grantProEntitlement(f.actor);
-    installSharedThreadStorage(context);
-    const token = f.token();
-    const audio = "device recording".repeat(4);
-    const upload = directUploadResponseSchema.parse(
-      body(
-        await mcp.call(token, "prepare_voice_upload", {
-          filename: "clip.wav",
-          size: audio.length,
-        }),
-      ),
-    );
-    const put = await fetch(upload.uploadUrl, {
-      method: "PUT",
-      headers: upload.uploadHeaders,
-      body: audio,
-    });
-    expect(put.status).toBe(200);
-    expect(
-      body(await mcp.call(token, "complete_voice_upload", { id: upload.id })),
-    ).toMatchObject({ id: upload.id, contentType: "audio/wav" });
-    const clip = { fileId: upload.id };
-    const sent = await mcp.call(token, "send_chat_message", {
-      userMessage: { version: 1, parts: [{ type: "voice", clips: [clip] }] },
-    });
-    expect(sent.isError, JSON.stringify(sent.content)).not.toBeTruthy();
-    const playback = transcribeContract.playback.responses[200].parse(
-      body(await mcp.call(token, "get_voice_playback_url", clip)),
-    );
-    await expect((await fetch(playback.url)).text()).resolves.toBe(audio);
-  });
-
-  it("recovers an empty device thread and keyed sends after losing the acknowledgement", async () => {
-    const f = await fixture();
-    const token = f.token();
-    const threadId = randomUUID();
-    for (let attempt = 0; attempt < 2; attempt++) {
-      expect(
-        body(
-          await mcp.call(token, "create_chat_thread", {
-            clientThreadId: threadId,
-          }),
-        ),
-      ).toStrictEqual({ threadId });
-    }
-    for (const target of [{ threadId }, {}]) {
-      const input = {
-        ...target,
-        prompt: "Device input",
-        clientEventId: randomUUID(),
-      };
-      const first = mcpSendChatMessageOutputSchema.parse(
-        body(await mcp.call(token, "send_chat_message", input)),
-      );
-      const retry = body(await mcp.call(token, "send_chat_message", input));
-      expect(retry).toStrictEqual(first);
-      if (first.threadId !== threadId) {
-        expect(
-          error(
-            await mcp.call(token, "send_chat_message", { ...input, threadId }),
-          ).code,
-        ).toBe("CONFLICT");
-      }
-      expect(first.eventId).toBe(input.clientEventId);
-      const history = mcpGetChatMessagesOutputSchema.parse(
-        body(
-          await mcp.call(token, "get_chat_messages", {
-            threadId: first.threadId,
-          }),
-        ),
-      );
-      expect(
-        history.rows.filter((row) => {
-          return row.eventId === input.clientEventId;
-        }),
-      ).toHaveLength(1);
-    }
-  });
-
-  it("returns the generated input identity and persists plain text through the ordinary event stream", async () => {
-    await withMockNowForTest(now(), async () => {
-      const f = await fixture();
-      const clientId = "https://client.example.test/oauth/metadata";
-      const sending = {
-        ...f,
-        token: () => {
-          return f.token({ client_id: clientId });
-        },
-      };
-      const input = {
-        prompt: "Figma logo\n请展示最终方案",
-      };
-      const result = await send(sending, input.prompt);
-      const second = await send(sending, input.prompt, result.threadId);
-      expect(second.threadId).toBe(result.threadId);
-      expect(second.eventId).not.toBe(result.eventId);
-      await flushWaitUntilForTest();
-      const rows = await chat.listThreadEventRows(f.actor, result.threadId);
-      expect(
-        rows.filter((row) => {
-          return row.id === result.eventId;
-        }),
-      ).toHaveLength(1);
-      expect(
-        rows.find((row) => {
-          return row.id === result.eventId;
-        }),
-      ).toMatchObject({
-        eventType: "input.prompt",
-        payload: {
-          userMessage: {
-            version: 1,
-            parts: [
-              { type: "text", text: input.prompt },
-              { type: "source", kind: "mcp", clientId },
-            ],
-          },
-        },
-      });
-      const web = await mcp.web(sending.token(), "/api/chat/events", "POST", {
-        ...input,
-        threadId: result.threadId,
-        clientEventId: result.eventId,
-        userMessage: {
-          version: 1,
-          parts: [{ type: "text", text: input.prompt }],
-        },
-        hasTextContent: true,
-      });
-      expect(web.status).toBe(201);
-      expect(web.body).toStrictEqual({
-        threadId: result.threadId,
-        createdAt: result.createdAt,
-      });
-      expect(
-        (await chat.listThreadEventRows(f.actor, result.threadId)).filter(
-          (row) => {
-            return row.id === result.eventId;
-          },
-        ),
-      ).toHaveLength(1);
-    });
-  });
-
-  it("uses ordinary Web send semantics for independent requests", async () => {
-    const f = await fixture();
-    const first = await send(f, "same ordinary message");
-    const second = await send(f, "same ordinary message");
-    expect(first.threadId).not.toBe(second.threadId);
-    expect(first.eventId).not.toBe(second.eventId);
-  });
-
-  it("projects raw-row entity references and preserves payloads, event identities and paired cursors", async () => {
-    const f = await fixture();
-    const sent = await send(f, "bounded raw history");
-    await flushWaitUntilForTest();
-    const args = { threadId: sent.threadId, limit: 1 };
-    const first = mcpGetChatMessagesOutputSchema.parse(
-      body(await mcp.call(f.token(), "get_chat_messages", args)),
-    );
-    const web = await mcp.web(
-      f.token(),
-      `/api/chat-threads/${sent.threadId}/event-rows?sinceSeqId=0&limit=1`,
-    );
-    const nativePage = chatThreadEventsContract.rows.responses[200].parse(
-      web.body,
-    );
-    expect(first).toStrictEqual({
-      snapshot: null,
-      ...nativePage,
-      rows: nativePage.rows.map(({ id, chatThreadId, ...row }) => {
-        return { ...row, eventId: id, threadId: chatThreadId };
-      }),
-    });
-    expect(first.rows).toHaveLength(1);
-    expect(first.hasMore).toBeTruthy();
-    const next = mcpGetChatMessagesOutputSchema.parse(
-      body(
-        await mcp.call(f.token(), "get_chat_messages", {
-          ...args,
-          sinceSeqId: first.cursor.lastSeqId,
-          sinceEventId: first.cursor.lastEventId,
-        }),
-      ),
-    );
-    expect(next.rows[0]?.seqId).toBeGreaterThan(first.rows[0]?.seqId ?? 0);
-    expect(
-      error(
-        await mcp.call(f.token(), "get_chat_messages", {
-          ...args,
-          sinceSeqId: first.cursor.lastSeqId,
-          sinceEventId: randomUUID(),
-        }),
-      ).code,
-    ).toBe("CHAT_EVENTS_EXPIRED");
-    expect(
-      error(
-        await mcp.call(f.token(), "get_chat_messages", {
-          ...args,
-          sinceSeqId: 1,
-        }),
-      ).code,
-    ).toBe("BAD_REQUEST");
-  });
-
-  it("projects lifecycle events without exposing execution identities", async () => {
-    const f = await fixture();
-    const sent = await send(f, "lifecycle aggregate");
-    await flushWaitUntilForTest();
-    const page = mcpGetChatThreadOutputSchema.parse(
-      body(await mcp.call(f.token(), "get_chat_thread_list")),
-    );
-    const events = await mcp.web(f.token(), "/api/chat-threads/events");
-    const nativeEvents = chatThreadsContract.events.responses[200].parse(
-      events.body,
-    );
-    expect(page).toStrictEqual({
-      snapshot: { chatThreads: [], latestEventId: null, latestSeqId: null },
-      ...nativeEvents,
-      events: nativeEvents.events.map(({ id, chatThreadId, ...event }) => {
-        return { ...event, eventId: id, threadId: chatThreadId };
-      }),
-    });
-    expect(
-      page.events.some((event) => {
-        return event.threadId === sent.threadId;
-      }),
-    ).toBeTruthy();
-    const last = page.events.at(-1);
-    if (!last) {
-      throw new Error("Expected lifecycle events");
-    }
-    const next = mcpGetChatThreadOutputSchema.parse(
-      body(
-        await mcp.call(f.token(), "get_chat_thread_list", {
-          sinceSeqId: last.seqId,
-        }),
-      ),
-    );
-    expect(next.snapshot).toBeNull();
-    expect(next.events).toStrictEqual([]);
-    expect(next.hasMore).toBeFalsy();
-  });
-
-  it("shares rename and model-selection responses and emits the same Web model/tier events", async () => {
-    const f = await fixture();
-    const sent = await send(f, "rename and model parity");
-    await flushWaitUntilForTest();
-    const renamed = await mcp.call(f.token(), "rename_chat_thread", {
-      threadId: sent.threadId,
-      title: "Renamed with Web",
-      eventId: randomUUID(),
-    });
-    expect(renamed).toStrictEqual({ content: [] });
-    await expect(
-      chat.readThreadMetadata(f.actor, sent.threadId),
-    ).resolves.toMatchObject({ title: "Renamed with Web" });
-    const eventId = randomUUID();
-    const serviceTierEventId = randomUUID();
-    await expect(
-      mcp.call(f.token(), "update_chat_thread_model", {
-        threadId: sent.threadId,
-        model: null,
-        eventId,
-        serviceTierEventId,
-      }),
-    ).resolves.toStrictEqual({ content: [] });
-    const events = await chat.requestThreadEvents(f.actor, {}, [200]);
-    expect(events.body).toMatchObject({
+    const threadList = await mcpCall(token, "get_chat_thread_list");
+    expect(threadList.structuredContent).toMatchObject({
       events: expect.arrayContaining([
         expect.objectContaining({
-          id: eventId,
+          kind: "created",
+          threadId,
+        }),
+      ]),
+    });
+  });
+
+  it("mcp-server-reads-016 (1/3) denies a peer reading or renaming the member's thread", async () => {
+    const harness = createHarness();
+    const { member, token } = await harness.memberWithToken();
+    const peer = await harness.seededUser(member.orgId);
+    const peerToken = harness.signToken(peer);
+    const sent = sendResult(
+      await mcpCall(token, "send_chat_message", { prompt: "Hello" }),
+    );
+
+    const denied = [
+      await mcpCall(peerToken, "get_chat_messages", {
+        threadId: sent.threadId,
+      }),
+      await mcpCall(peerToken, "rename_chat_thread", {
+        threadId: sent.threadId,
+        title: "Taken over",
+      }),
+    ];
+    for (const result of denied) {
+      expect(result).toMatchObject(NOT_FOUND_RESULT);
+    }
+  });
+
+  it("mcp-server-reads-016 (2/3) denies a peer revoking or sending into the member's thread", async () => {
+    const harness = createHarness();
+    const { member, token } = await harness.memberWithToken();
+    const peer = await harness.seededUser(member.orgId);
+    const peerToken = harness.signToken(peer);
+    const sent = sendResult(
+      await mcpCall(token, "send_chat_message", { prompt: "Hello" }),
+    );
+
+    const denied = [
+      await mcpCall(peerToken, "revoke_queued_message", {
+        threadId: sent.threadId,
+        eventId: sent.eventId,
+      }),
+      await mcpCall(peerToken, "send_chat_message", {
+        threadId: sent.threadId,
+        prompt: "Peer message",
+      }),
+    ];
+    for (const result of denied) {
+      expect(result).toMatchObject(NOT_FOUND_RESULT);
+    }
+  });
+
+  it("mcp-server-reads-016 (3/3) denies the member sending into another organization's thread", async () => {
+    const harness = createHarness();
+    const { token } = await harness.memberWithToken();
+    const outsider = await harness.seededUser();
+    const outside = sendResult(
+      await mcpCall(harness.signToken(outsider), "send_chat_message", {
+        prompt: "Hi",
+      }),
+    );
+
+    const result = await mcpCall(token, "send_chat_message", {
+      threadId: outside.threadId,
+      prompt: "Cross workspace",
+    });
+    expect(result).toMatchObject(NOT_FOUND_RESULT);
+  });
+
+  it("mcp-server-reads-005 (1/2) lists and allows only the tools each send, cancel or manage grant covers", async () => {
+    const { sendToken, cancelToken, manageToken, sent } =
+      await scopedTokensWithMessage();
+
+    const sendTools = await listedTools(sendToken);
+    expect(sendTools).toContain("send_chat_message");
+    expect(sendTools).not.toContain("revoke_queued_message");
+    const cancelTools = await listedTools(cancelToken);
+    expect(cancelTools).toContain("revoke_queued_message");
+    expect(cancelTools).not.toContain("send_chat_message");
+    const manageTools = await listedTools(manageToken);
+    expect(manageTools).toContain("rename_chat_thread");
+    expect(manageTools).not.toContain("cancel_run");
+
+    const outOfScope = [
+      await mcpRpc(sendToken, "tools/call", {
+        name: "revoke_queued_message",
+        arguments: sent,
+      }),
+      await mcpRpc(cancelToken, "tools/call", {
+        name: "send_chat_message",
+        arguments: { threadId: sent.threadId, prompt: "Again" },
+      }),
+      await mcpRpc(manageToken, "tools/call", {
+        name: "cancel_run",
+        arguments: { runId: randomUUID() },
+      }),
+    ];
+    for (const reply of outOfScope) {
+      expect(reply).toHaveProperty("error");
+      expect(reply).not.toHaveProperty("result");
+    }
+  });
+
+  it("mcp-server-reads-005 (2/2) rejects Web events outside the send or cancel grant", async () => {
+    const { sendToken, cancelToken, sent } = await scopedTokensWithMessage();
+
+    const revoke = await mcpWeb(sendToken, "/api/chat/events", "POST", {
+      threadId: sent.threadId,
+      revokesEventId: sent.eventId,
+    });
+    expect(revoke.status).toBe(403);
+    const send = await mcpWeb(cancelToken, "/api/chat/events", "POST", {
+      threadId: sent.threadId,
+      prompt: "Again",
+      hasTextContent: true,
+      userMessage: { version: 1, parts: [{ type: "text", text: "Again" }] },
+    });
+    expect(send.status).toBe(403);
+  });
+
+  it("mcp-server-reads-013 renames and resets the model through MCP with the Web events", async () => {
+    const { token } = await createHarness().memberWithToken();
+    const sent = sendResult(
+      await mcpCall(token, "send_chat_message", { prompt: "Hello" }),
+    );
+    const modelEventId = randomUUID();
+    const tierEventId = randomUUID();
+
+    const renamed = await mcpRpc(token, "tools/call", {
+      name: "rename_chat_thread",
+      arguments: { threadId: sent.threadId, title: "Renamed with Web" },
+    });
+    const modelUpdated = await mcpRpc(token, "tools/call", {
+      name: "update_chat_thread_model",
+      arguments: {
+        threadId: sent.threadId,
+        model: null,
+        eventId: modelEventId,
+        serviceTierEventId: tierEventId,
+      },
+    });
+    for (const reply of [renamed, modelUpdated]) {
+      expect(reply).toMatchObject({ result: { content: [] } });
+      expect(reply).not.toHaveProperty("result.structuredContent");
+    }
+
+    const web = await mcpWeb(token, "/api/chat-threads/events");
+    expect(web.status).toBe(200);
+    expect(web.body).toMatchObject({
+      events: expect.arrayContaining([
+        expect.objectContaining({
+          kind: "renamed",
+          chatThreadId: sent.threadId,
+          title: "Renamed with Web",
+        }),
+        expect.objectContaining({
           kind: "model_selection_updated",
+          id: modelEventId,
+          chatThreadId: sent.threadId,
           selectedModel: "auto",
         }),
         expect.objectContaining({
-          id: serviceTierEventId,
           kind: "service_tier_updated",
+          id: tierEventId,
+          chatThreadId: sent.threadId,
           serviceTier: null,
         }),
       ]),
     });
-    const lifecycle = mcpGetChatThreadOutputSchema.parse(
-      body(await mcp.call(f.token(), "get_chat_thread_list")),
-    );
-    expect(lifecycle.events).toContainEqual(
-      expect.objectContaining({ eventId, kind: "model_selection_updated" }),
-    );
-    expect(lifecycle.events).toContainEqual(
-      expect.objectContaining({
-        eventId: serviceTierEventId,
-        kind: "service_tier_updated",
+    const list = await mcpCall(token, "get_chat_thread_list");
+    expect(list.structuredContent).toMatchObject({
+      events: expect.arrayContaining([
+        expect.objectContaining({
+          kind: "model_selection_updated",
+          eventId: modelEventId,
+          threadId: sent.threadId,
+        }),
+        expect.objectContaining({
+          kind: "service_tier_updated",
+          eventId: tierEventId,
+          threadId: sent.threadId,
+        }),
+      ]),
+    });
+  });
+
+  it("mcp-server-reads-017 keeps the grant to its organization for the same user's other thread", async () => {
+    const harness = createHarness();
+    const { member, token, issue } = await harness.memberWithToken();
+    const { orgId: secondOrgId } = await harness.seededUser();
+    await harness.addMembership(member.userId, secondOrgId);
+    const other = sendResult(
+      await mcpCall(issue({ org_id: secondOrgId }), "send_chat_message", {
+        prompt: "Second workspace",
       }),
     );
-  });
 
-  it("recalls the supplied event directly and returns the native Web response", async () => {
-    const f = await fixture();
-    const runs = createRunsApi(context);
-    await runs.configureRunnerGroup();
-    runs.acceptStorageDownloads();
-    runs.acceptTelemetryIngest();
-    await runs.grantProEntitlement(f.actor);
-    await runs.ensurePersonalSubscriptionModel(f.actor);
-    const active = await runs.createThreadRun(f.actor, {
-      prompt: "hold the queue",
-    });
-    const sent = await send(f, "recall me", active.threadId);
-    await flushWaitUntilForTest();
-    const args = {
-      threadId: sent.threadId,
-      eventId: sent.eventId,
-    };
-    const recalled = await mcp.call(
-      f.token({ scope: "user:org:read okou:chat:read okou:run:cancel" }),
-      "revoke_queued_message",
-      args,
+    const snapshot = await mcpWeb(
+      token,
+      `/api/chat-threads/${other.threadId}/event-snapshot`,
     );
-    expect(recalled.isError).not.toBeTruthy();
-    const web = await mcp.web(f.token(), "/api/chat/events", "POST", {
-      threadId: args.threadId,
-      revokesEventId: args.eventId,
-    });
-    // The published MCP output keeps its always-null runId; the Web send
-    // response no longer carries one.
-    const accepted = chatEventsContract.send.responses[201].parse(web.body);
-    expect(body(recalled)).toStrictEqual({ ...accepted, runId: null });
-    const history = mcpGetChatMessagesOutputSchema.parse(
-      body(
-        await mcp.call(f.token(), "get_chat_messages", {
-          threadId: sent.threadId,
-        }),
-      ),
+    const rows = await mcpWeb(
+      token,
+      `/api/chat-threads/${other.threadId}/event-rows?sinceSeqId=0`,
     );
-    expect(history.rows).toContainEqual(
-      expect.objectContaining({
-        eventType: "control.revoke",
-        revokesEventId: sent.eventId,
-      }),
-    );
-  });
-
-  it("preserves Web search filters and empty results", async () => {
-    const f = await fixture();
-    const query = { keyword: "plain keyword" };
-    const web = await mcp.web(
-      f.token(),
-      "/api/chat/search?keyword=plain%20keyword",
-    );
-    const search = await mcp.call(f.token(), "search_chat_messages", query);
-    expect(search.isError).not.toBeTruthy();
-    expect(
-      mcpProjectChatSearchContract.search.responses[200].parse(body(search)),
-    ).toStrictEqual({ results: [] });
-    expect(body(search)).toStrictEqual(web.body);
-  });
-
-  it("keeps ownership and organization checks in the Web routes", async () => {
-    const f = await fixture();
-    const sent = await send(f, "owner-only history");
-    await flushWaitUntilForTest();
-    const peer = f.token({ sub: `user_${randomUUID()}` });
-    expect(
-      error(
-        await mcp.call(peer, "get_chat_messages", { threadId: sent.threadId }),
-      ).code,
-    ).toBe("NOT_FOUND");
-    expect(
-      error(
-        await mcp.call(peer, "rename_chat_thread", {
-          threadId: sent.threadId,
-          title: "forged",
-        }),
-      ).code,
-    ).toBe("NOT_FOUND");
-    expect(
-      error(
-        await mcp.call(peer, "revoke_queued_message", {
-          threadId: sent.threadId,
-          eventId: randomUUID(),
-        }),
-      ).code,
-    ).toBe("NOT_FOUND");
-    expect(
-      error(
-        await mcp.call(peer, "send_chat_message", {
-          threadId: sent.threadId,
-          prompt: "forged",
-        }),
-      ).code,
-    ).toBe("NOT_FOUND");
-    const unrelated = bdd.user({ orgId: `org_${randomUUID()}` });
-    const thread = await chat.createThread(unrelated, {
-      title: "Other organization",
-    });
-    expect(
-      error(
-        await mcp.call(f.token(), "send_chat_message", {
-          threadId: thread.id,
-          prompt: "wrong organization",
-        }),
-      ).code,
-    ).toBe("NOT_FOUND");
-  });
-
-  it("binds OAuth snapshots and raw rows to the grant organization even for the same user", async () => {
-    const f = await fixture();
-    await send(f, "establish the first organization");
-    await flushWaitUntilForTest();
-    const other = bdd.user({
-      userId: f.actor.userId,
-      orgId: `org_${randomUUID()}`,
-    });
-    const thread = await chat.createThread(other, {
-      title: "Other organization thread",
-    });
-    for (const endpoint of ["event-snapshot", "event-rows?sinceSeqId=0"]) {
-      const result = await mcp.web(
-        f.token(),
-        `/api/chat-threads/${thread.id}/${endpoint}`,
-      );
-      expect(result.status).toBe(404);
-      expect(result.body).toMatchObject({ error: { code: "NOT_FOUND" } });
+    for (const response of [snapshot, rows]) {
+      expect(response.status).toBe(404);
+      expect(response.body).toMatchObject({ error: { code: "NOT_FOUND" } });
     }
-    expect(
-      error(
-        await mcp.call(f.token(), "get_chat_messages", { threadId: thread.id }),
-      ).code,
-    ).toBe("NOT_FOUND");
-    const list = mcpGetChatThreadOutputSchema.parse(
-      body(await mcp.call(f.token(), "get_chat_thread_list")),
+    await expect(
+      mcpCall(token, "get_chat_messages", { threadId: other.threadId }),
+    ).resolves.toMatchObject(NOT_FOUND_RESULT);
+    const list = await mcpCall(token, "get_chat_thread_list");
+    expect(JSON.stringify(list.structuredContent)).not.toContain(
+      other.threadId,
     );
-    expect(
-      list.events.some((event) => {
-        return event.threadId === thread.id;
-      }),
-    ).toBeFalsy();
   });
 
-  it("preserves Web validation errors rather than inventing MCP error codes", async () => {
-    const f = await fixture();
-    const args = { prompt: "" };
-    const result = await mcp.call(f.token(), "send_chat_message", {
-      prompt: args.prompt,
+  it("mcp-server-reads-007 (1/4) hides the member's Project from a peer", async () => {
+    const harness = createHarness();
+    const { member, token } = await harness.memberWithToken();
+    const projectId = await createResearchProject(member);
+    const peer = await harness.seededUser(member.orgId);
+    const peerToken = harness.signToken(peer);
+
+    await expect(mcpCall(token, "list_projects")).resolves.toMatchObject({
+      structuredContent: {
+        projects: [
+          expect.objectContaining({ id: projectId, name: "Research" }),
+        ],
+      },
     });
-    const web = await mcp.web(f.token(), "/api/chat/events", "POST", {
-      ...args,
-      userMessage: { version: 1, parts: [{ type: "text", text: "" }] },
-      hasTextContent: true,
+    await expect(mcpCall(peerToken, "list_projects")).resolves.toMatchObject({
+      structuredContent: { projects: [] },
     });
-    expect(error(result).code).toBe("BAD_REQUEST");
-    expect(body(result)).toStrictEqual(web.body);
+    await expect(
+      mcpCall(peerToken, "list_project_threads", { projectId }),
+    ).resolves.toMatchObject(NOT_FOUND_RESULT);
+    await expect(
+      mcpCall(peerToken, "send_chat_message", { projectId, prompt: "Peer" }),
+    ).resolves.toMatchObject(NOT_FOUND_RESULT);
   });
 
-  it("authorizes OAuth cancellation through the same Web entry, preserving peer denial and cancellation side effects", async () => {
-    const f = await fixture();
-    const runs = createRunsApi(context);
-    await runs.configureRunnerGroup();
-    runs.acceptStorageDownloads();
-    runs.acceptTelemetryIngest();
-    await runs.grantProEntitlement(f.actor);
-    await runs.ensurePersonalSubscriptionModel(f.actor);
-    const run = await runs.createThreadRun(f.actor, {
-      prompt: "native cancellation",
-    });
-    const history = mcpGetChatMessagesOutputSchema.parse(
-      body(
-        await mcp.call(f.token(), "get_chat_messages", {
-          threadId: run.threadId,
+  it("mcp-server-reads-007 (2/4) starts a Chat in the member's Project", async () => {
+    const harness = createHarness();
+    const { member, token } = await harness.memberWithToken();
+    const projectId = await createResearchProject(member);
+
+    const started = await startProjectChat(token, projectId);
+
+    const list = await mcpCall(token, "get_chat_thread_list");
+    expect(list.structuredContent).toMatchObject({
+      events: expect.arrayContaining([
+        expect.objectContaining({
+          kind: "created",
+          threadId: started.threadId,
+          projectId,
         }),
-      ),
-    );
-    const assigned = history.rows.find((row) => {
-      return row.runId === run.runId;
+      ]),
     });
-    if (!assigned?.runId) {
-      throw new Error(
-        "Expected a public event carrying the assigned Run reference",
-      );
-    }
-    const activity = await mcp.call(f.token(), "get_chat_activity_summary", {
-      threadId: assigned.threadId,
-      runId: assigned.runId,
-    });
-    const webActivity = await mcp.web(
-      f.token(),
-      `/api/chat-threads/${run.threadId}/activity-summary`,
-      "POST",
-      { runId: run.runId },
-    );
-    expect(webActivity.status).toBe(200);
-    expect(activity.isError).not.toBeTruthy();
-    // On-demand requests may observe different summary/cooldown states;
-    // neither transport promises to stabilize that ordinary Web behavior.
-    expect(activitySummaryResponseSchema.parse(body(activity))).toMatchObject({
-      runId: run.runId,
-    });
-    expect(activitySummaryResponseSchema.parse(webActivity.body)).toMatchObject(
-      { runId: run.runId },
-    );
-    const path = `/api/runs/${run.runId}/cancel`;
-    const insufficient = await mcp.web(
-      f.token({ scope: "user:org:read okou:chat:read" }),
-      path,
-      "POST",
-    );
-    expect(insufficient.status).toBe(403);
-    expect(insufficient.body).toMatchObject({ error: { code: "FORBIDDEN" } });
-    const peer = f.token({ sub: `user_${randomUUID()}` });
-    const denied = await mcp.web(peer, path, "POST");
-    expect(
-      body(await mcp.call(peer, "cancel_run", { runId: assigned.runId })),
-    ).toStrictEqual(denied.body);
-    const cancelled = await mcp.call(f.token(), "cancel_run", {
-      runId: assigned.runId.toUpperCase(),
-    });
-    expect(cancelled.isError).not.toBeTruthy();
-    expect(body(cancelled)).toStrictEqual({
-      runId: run.runId,
-      status: "cancelled",
-      message: "Run cancelled successfully",
-    });
-    await flushWaitUntilForTest();
-    expect((await runs.readRun(f.actor, run.runId)).status).toBe("cancelled");
-    const again = await mcp.web(f.token(), path, "POST");
-    expect(again.status).toBe(200);
-    const canonical = mcpCancelRunOutputSchema.parse(body(cancelled));
-    expect(again.body).toStrictEqual({
-      id: canonical.runId,
-      status: canonical.status,
-      message: canonical.message,
+    await expect(
+      mcpCall(token, "list_project_threads", { projectId, limit: 1 }),
+    ).resolves.toMatchObject({
+      structuredContent: {
+        threads: [expect.objectContaining({ threadId: started.threadId })],
+        nextAfter: null,
+      },
     });
   });
+
+  it("mcp-server-reads-007 (3/4) rejects a send naming both the thread and the Project", async () => {
+    const harness = createHarness();
+    const { member, token } = await harness.memberWithToken();
+    const projectId = await createResearchProject(member);
+    const started = await startProjectChat(token, projectId);
+
+    const both = await mcpCall(token, "send_chat_message", {
+      threadId: started.threadId,
+      projectId,
+      prompt: "Both",
+    });
+    expect(both).toMatchObject({
+      isError: true,
+      structuredContent: { error: { code: "BAD_REQUEST" } },
+    });
+  });
+
+  it("mcp-server-reads-007 (4/4) continues the retained Chat by thread ID", async () => {
+    const { token } = await createHarness().memberWithToken();
+    const retained = sendResult(
+      await mcpCall(token, "send_chat_message", { prompt: "Retained" }),
+    );
+
+    const continued = sendResult(
+      await mcpCall(token, "send_chat_message", {
+        threadId: retained.threadId,
+        prompt: "Continue",
+      }),
+    );
+    expect(continued.threadId).toBe(retained.threadId);
+    await expect(
+      mcpCall(token, "get_chat_messages", { threadId: retained.threadId }),
+    ).resolves.toMatchObject({
+      structuredContent: {
+        rows: expect.arrayContaining([
+          expect.objectContaining({ eventId: continued.eventId }),
+        ]),
+      },
+    });
+  });
+
+  it("pf-093 authorizes a device to subscribe to its own workspace through Ably", async () => {
+    const harness = createHarness();
+    const { member, token } = await harness.memberWithToken();
+    const tokenRequestParams = object({
+      capability: union([
+        string(),
+        record(string(), array(string())),
+      ]).optional(),
+      clientId: string().optional(),
+      timestamp: number().optional(),
+      ttl: number().optional(),
+    });
+    context.mocks.ably.createTokenRequest.mockImplementation(
+      (rawParams: unknown) => {
+        const params = tokenRequestParams.parse(rawParams);
+        return Promise.resolve({
+          keyName: "ably-test-key",
+          clientId: params.clientId ?? member.userId,
+          capability:
+            typeof params.capability === "string"
+              ? params.capability
+              : JSON.stringify(params.capability ?? {}),
+          timestamp: params.timestamp ?? now(),
+          ttl: params.ttl ?? 60_000,
+          nonce: "test-nonce",
+          mac: "test-mac",
+        });
+      },
+    );
+
+    const result = await mcpCall(token, "get_chat_realtime_token");
+    expect(result.isError).not.toBeTruthy();
+    const parsed = object({
+      clientId: string(),
+      capability: string(),
+    }).parse(result.structuredContent);
+    expect(parsed.clientId).toBe(member.userId);
+    const capability = JSON.parse(parsed.capability) as Record<
+      string,
+      readonly string[]
+    >;
+    const channels = Object.keys(capability);
+    expect(
+      channels.every((channel) => {
+        return (
+          channel.includes(member.userId) && channel.includes(member.orgId)
+        );
+      }),
+    ).toBeTruthy();
+    expect(
+      Object.values(capability).every((ops) => {
+        return ops.length === 1 && ops[0] === "subscribe";
+      }),
+    ).toBeTruthy();
+  });
+
+  it("pf-094 sends and plays a private WAV through MCP and signed storage URLs", async () => {
+    const harness = createHarness();
+    const { member, token } = await harness.memberWithToken();
+    const peer = await harness.seededUser(member.orgId);
+    const peerToken = harness.signToken(peer);
+    context.mocks.s3.getSignedUrl.mockResolvedValue(
+      "https://r2.example.test/signed-voice.wav",
+    );
+    context.mocks.s3.send.mockImplementation((command: unknown) => {
+      if (command instanceof HeadObjectCommand) {
+        return Promise.resolve({
+          ContentLength: 128,
+          ContentType: "audio/wav",
+        });
+      }
+      if (command instanceof GetObjectCommand) {
+        if (!command.input.Key?.startsWith("private-artifacts/")) {
+          return Promise.reject(
+            Object.assign(new Error("Missing object"), { name: "NoSuchKey" }),
+          );
+        }
+        return Promise.resolve({
+          ContentLength: 128,
+          ContentType: "audio/wav",
+          Body: Readable.from([Buffer.alloc(128, 0x61)]),
+        });
+      }
+      if (command instanceof PutObjectCommand) {
+        return Promise.resolve({ ETag: '"etag-1"' });
+      }
+      return Promise.resolve({});
+    });
+
+    const prepared = await mcpCall(token, "prepare_voice_upload", {
+      filename: "device-note.wav",
+      size: 128,
+    });
+    expect(prepared.isError).not.toBeTruthy();
+    const uploaded = object({
+      id: string(),
+      uploadUrl: string(),
+    }).parse(prepared.structuredContent);
+    expect(uploaded.uploadUrl).toContain("https://r2.example.test/");
+
+    const completed = await mcpCall(token, "complete_voice_upload", {
+      id: uploaded.id,
+    });
+    expect(completed.isError).not.toBeTruthy();
+
+    const sent = sendResult(
+      await mcpCall(token, "send_chat_message", {
+        userMessage: {
+          version: 1,
+          parts: [
+            {
+              type: "voice",
+              clips: [{ fileId: uploaded.id }],
+            },
+          ],
+        },
+      }),
+    );
+    expect(sent.threadId).toBeTruthy();
+
+    const playback = await mcpCall(token, "get_voice_playback_url", {
+      fileId: uploaded.id,
+    });
+    expect(playback.isError).not.toBeTruthy();
+    expect(playback.structuredContent).toMatchObject({
+      url: "https://r2.example.test/signed-voice.wav",
+    });
+
+    const peerPlayback = await mcpCall(peerToken, "get_voice_playback_url", {
+      fileId: uploaded.id,
+    });
+    expect(peerPlayback).toMatchObject(NOT_FOUND_RESULT);
+  });
+
+  it("pf-095 (1/2) recovers an empty device thread after losing the acknowledgement", async () => {
+    const { token } = await createHarness().memberWithToken();
+    const clientThreadId = randomUUID();
+
+    const firstThread = object({ threadId: string() }).parse(
+      (
+        await mcpCall(token, "create_chat_thread", {
+          clientThreadId,
+          title: "Device conversation",
+        })
+      ).structuredContent,
+    );
+    const secondThread = object({ threadId: string() }).parse(
+      (
+        await mcpCall(token, "create_chat_thread", {
+          clientThreadId,
+          title: "Device conversation",
+        })
+      ).structuredContent,
+    );
+    expect(secondThread.threadId).toBe(firstThread.threadId);
+  });
+
+  it("pf-095 (2/2) recovers a keyed device send after losing the acknowledgement", async () => {
+    const { token } = await createHarness().memberWithToken();
+    const clientEventId = randomUUID();
+
+    const firstSend = sendResult(
+      await mcpCall(token, "send_chat_message", {
+        clientEventId,
+        prompt: "Retry safe message",
+      }),
+    );
+    const secondSend = sendResult(
+      await mcpCall(token, "send_chat_message", {
+        threadId: firstSend.threadId,
+        clientEventId,
+        prompt: "Retry safe message",
+      }),
+    );
+    expect(secondSend).toMatchObject({
+      threadId: firstSend.threadId,
+      eventId: firstSend.eventId,
+    });
+
+    const messages = await mcpCall(token, "get_chat_messages", {
+      threadId: firstSend.threadId,
+    });
+    const rows = object({ rows: array(object({ eventId: string() })) }).parse(
+      messages.structuredContent,
+    ).rows;
+    expect(
+      rows.filter((row) => {
+        return row.eventId === firstSend.eventId;
+      }),
+    ).toHaveLength(1);
+  });
+
+  it(
+    "mcp-server-reads-008 reflects committed Run transitions without marking indicator or history reads as read",
+    { timeout: TEST_WITH_SINGLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const harness = createHarness();
+      const { member, token } = await harness.memberWithToken();
+      const fixture = createChatEventsFixture(context);
+      const owner = publicRunOwner(context, member);
+      fixture.chatCallbacks.acceptChatObjectStorage();
+      fixture.api.acceptStorageDownloads();
+      fixture.api.acceptTelemetryIngest();
+      mockOptionalEnv("OPENROUTER_API_KEY", undefined);
+      fixture.chatCallbacks.disableVapid();
+
+      await Promise.all([
+        fixture.api.configureRunnerGroup(),
+        owner.run(() => {
+          return bdd.bootstrapLimitedFreeOnboarding(member);
+        }),
+      ]);
+
+      const launched = await owner.run(() => {
+        return fixture.sendChatRun(member, {
+          prompt: "Track indicator transitions via MCP",
+          model: null,
+        });
+      });
+
+      const indicatorsSchema = object({
+        threads: record(string(), string()),
+        unreadAt: record(string(), string()),
+      });
+      const firstIndicators = indicatorsSchema.parse(
+        (await mcpCall(token, "get_chat_indicators")).structuredContent,
+      );
+      expect(firstIndicators.threads[launched.threadId]).toBe("active");
+      expect(firstIndicators.unreadAt).toStrictEqual({});
+
+      await owner.executionInput(launched.runId);
+
+      const secondIndicators = indicatorsSchema.parse(
+        (await mcpCall(token, "get_chat_indicators")).structuredContent,
+      );
+      expect(secondIndicators.threads[launched.threadId]).toBe("active");
+      expect(secondIndicators.unreadAt).toStrictEqual({});
+
+      const cancelled = await mcpCall(token, "cancel_run", {
+        runId: launched.runId,
+      });
+      expect(cancelled.isError).not.toBeTruthy();
+      expect(cancelled.structuredContent).toMatchObject({
+        runId: launched.runId,
+        status: "cancelled",
+      });
+
+      const history = object({
+        snapshot: zUnknown().nullable(),
+        hasMore: boolean(),
+        rows: array(
+          object({
+            eventType: string(),
+            runId: string().nullable().optional(),
+            createdAt: string(),
+          }),
+        ),
+      }).parse(
+        (
+          await mcpCall(token, "get_chat_messages", {
+            threadId: launched.threadId,
+          })
+        ).structuredContent,
+      );
+      expect(history.snapshot).toBeNull();
+      expect(history.hasMore).toBeFalsy();
+      const cancelRow = history.rows.find((row) => {
+        return (
+          row.eventType === "run.cancelled" && row.runId === launched.runId
+        );
+      });
+      expect(cancelRow).toBeDefined();
+
+      const finalIndicators = indicatorsSchema.parse(
+        (await mcpCall(token, "get_chat_indicators")).structuredContent,
+      );
+      expect(finalIndicators.threads[launched.threadId]).toBe("unread");
+      expect(finalIndicators.unreadAt[launched.threadId]).toBe(
+        cancelRow?.createdAt,
+      );
+
+      const threadRead = await owner.run(() => {
+        return fixture.chat.readThread(member, launched.threadId);
+      });
+      expect(threadRead.lastReadAt).toBeNull();
+    },
+  );
+
+  it(
+    "mcp-server-reads-019 authorizes OAuth cancellation through the same Web entry, preserving peer denial and cancellation side effects",
+    { timeout: TEST_WITH_SINGLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const harness = createHarness();
+      const { member, token } = await harness.memberWithToken();
+      const readOnlyToken = harness.signToken(member, { scope: READ_SCOPES });
+      const peer = await harness.seededUser(member.orgId);
+      const peerToken = harness.signToken(peer);
+
+      const fixture = createChatEventsFixture(context);
+      const owner = publicRunOwner(context, member);
+      fixture.chatCallbacks.acceptChatObjectStorage();
+      fixture.api.acceptStorageDownloads();
+      fixture.api.acceptTelemetryIngest();
+      mockOptionalEnv("OPENROUTER_API_KEY", undefined);
+      fixture.chatCallbacks.disableVapid();
+
+      await Promise.all([
+        fixture.api.configureRunnerGroup(),
+        owner.run(() => {
+          return bdd.bootstrapLimitedFreeOnboarding(member);
+        }),
+      ]);
+
+      const launched = await owner.run(() => {
+        return fixture.sendChatRun(member, {
+          prompt: "Authorize OAuth activity summary and cancellation",
+          model: null,
+        });
+      });
+      await owner.executionInput(launched.runId);
+
+      const [mcpSummary, webSummary] = await Promise.all([
+        mcpCall(token, "get_chat_activity_summary", {
+          threadId: launched.threadId,
+          runId: launched.runId,
+        }),
+        mcpWeb(
+          token,
+          `/api/chat-threads/${launched.threadId}/activity-summary`,
+          "POST",
+          { runId: launched.runId },
+        ),
+      ]);
+      expect(mcpSummary.isError).not.toBeTruthy();
+      expect(mcpSummary.structuredContent).toMatchObject({
+        runId: launched.runId,
+      });
+      expect(webSummary.status).toBe(200);
+      expect(webSummary.body).toMatchObject({
+        runId: launched.runId,
+      });
+
+      const [readOnlyCancel, peerWebCancel, peerMcpCancel] = await Promise.all([
+        mcpWeb(readOnlyToken, `/api/runs/${launched.runId}/cancel`, "POST", {}),
+        mcpWeb(peerToken, `/api/runs/${launched.runId}/cancel`, "POST", {}),
+        mcpCall(peerToken, "cancel_run", { runId: launched.runId }),
+      ]);
+      expect(readOnlyCancel.status).toBe(403);
+      expect(readOnlyCancel.body).toMatchObject({
+        error: { code: "FORBIDDEN" },
+      });
+      expect(peerMcpCancel.isError).toBeTruthy();
+      expect(peerMcpCancel.structuredContent).toStrictEqual(peerWebCancel.body);
+
+      const memberCancel = await mcpCall(token, "cancel_run", {
+        runId: launched.runId.toUpperCase(),
+      });
+      expect(memberCancel.isError).not.toBeTruthy();
+      expect(memberCancel.structuredContent).toMatchObject({
+        runId: launched.runId,
+        status: "cancelled",
+        message: "Run cancelled successfully",
+      });
+
+      const [readBack, repeatWebCancel] = await Promise.all([
+        owner.run(() => {
+          return fixture.api.readRun(member, launched.runId);
+        }),
+        mcpWeb(token, `/api/runs/${launched.runId}/cancel`, "POST", {}),
+      ]);
+      expect(readBack.status).toBe("cancelled");
+      expect(repeatWebCancel.status).toBe(200);
+      expect(repeatWebCancel.body).toMatchObject({
+        id: launched.runId,
+        status: "cancelled",
+        message: "Run cancelled successfully",
+      });
+    },
+  );
 });

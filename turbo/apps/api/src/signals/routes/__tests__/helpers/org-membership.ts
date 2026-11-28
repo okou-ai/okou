@@ -13,6 +13,11 @@ interface SeedOrgMembershipValues {
    * is how a test expresses a member leaving and rejoining.
    */
   readonly membershipId?: string;
+  /**
+   * The member's Clerk email addresses. Clerk's organization membership list
+   * filters by them when a caller passes `emailAddress`.
+   */
+  readonly emailAddresses?: readonly string[];
 }
 
 export interface OrgMembershipFixture {
@@ -27,6 +32,7 @@ interface MockMembership {
   readonly name: string;
   readonly role: "admin" | "member";
   readonly membershipId: string;
+  readonly emailAddresses: readonly string[];
 }
 
 const orgMemberships$ = state<readonly MockMembership[]>([]);
@@ -47,6 +53,25 @@ function clerkMembership(membership: MockMembership) {
     publicUserData: { userId: membership.userId },
     createdAt: Date.parse("2026-01-01T00:00:00.000Z"),
   };
+}
+
+/** The lower-cased `emailAddress` filter of a membership-list request, if any. */
+function emailAddressFilter(args: unknown): readonly string[] | null {
+  if (
+    typeof args !== "object" ||
+    args === null ||
+    !("emailAddress" in args) ||
+    !Array.isArray(args.emailAddress)
+  ) {
+    return null;
+  }
+  return args.emailAddress
+    .filter((email): email is string => {
+      return typeof email === "string";
+    })
+    .map((email) => {
+      return email.toLowerCase();
+    });
 }
 
 function installMembershipMocks(memberships: readonly MockMembership[]): void {
@@ -78,10 +103,17 @@ function installMembershipMocks(memberships: readonly MockMembership[]): void {
         typeof args.organizationId === "string"
           ? args.organizationId
           : "";
+      const queriedEmails = emailAddressFilter(args);
       return Promise.resolve({
         data: memberships
           .filter((membership) => {
-            return membership.orgId === organizationId;
+            return (
+              membership.orgId === organizationId &&
+              (queriedEmails === null ||
+                membership.emailAddresses.some((email) => {
+                  return queriedEmails.includes(email.toLowerCase());
+                }))
+            );
           })
           .map(clerkMembership),
       });
@@ -124,6 +156,7 @@ export const seedOrgMembership$ = command(
       membershipId:
         values.membershipId ??
         `orgmem_${values.orgId.slice(-8)}_${values.userId.slice(-8)}`,
+      emailAddresses: values.emailAddresses ?? [],
     };
     const memberships = [
       ...get(orgMemberships$).filter((candidate) => {

@@ -1,127 +1,215 @@
-import { randomUUID } from "node:crypto";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { tailscaleContract } from "@okouai/api-contracts/contracts/tailscale";
+import { createHash, randomUUID } from "node:crypto";
+import { chatRemoteAccessContract } from "@okouai/api-contracts/contracts/chat-remote-access";
+import { runnerSshContract } from "@okouai/api-contracts/contracts/runner-ssh";
 import { sshConnectionsContract } from "@okouai/api-contracts/contracts/ssh-connections";
 import { sshCredentialsContract } from "@okouai/api-contracts/contracts/ssh-credentials";
-import { runnerSshContract } from "@okouai/api-contracts/contracts/runner-ssh";
-import { chatRemoteAccessContract } from "@okouai/api-contracts/contracts/chat-remote-access";
+import { tailscaleContract } from "@okouai/api-contracts/contracts/tailscale";
+import { createStore } from "ccstate";
+import { beforeAll, describe, expect, it } from "vitest";
+
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp, setupRawAppRequest } from "../../../__tests__/test-helpers";
-import { mockEnv } from "../../../lib/env";
+import {
+  TEST_WITH_DOUBLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE,
+  TEST_WITH_SINGLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE,
+} from "../../../__tests__/test-timeouts";
+import { env, mockOptionalEnv } from "../../../lib/env";
 import { nowDate } from "../../../lib/time";
-import { tailscaleRoutes } from "../tailscale";
-import { sshConnectionsRoutes } from "../ssh-connections";
-import { runnerSshRoutes } from "../runner-ssh";
+import { createDeferredPromise } from "../../utils";
 import { chatRemoteAccessRoutes } from "../chat-remote-access";
+import { runnerSshRoutes } from "../runner-ssh";
+import { sshConnectionsRoutes } from "../ssh-connections";
+import { tailscaleRoutes } from "../tailscale";
+import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
+import { createRunsApi } from "./helpers/api-bdd-runs";
+import { createChatEventsFixture } from "./helpers/chat-events-fixture";
+import { seedOrgMembership$ } from "./helpers/org-membership";
+import { publicRunOwner } from "./helpers/public-run-owner";
 import { createRouteMocks } from "./helpers/route-test";
-import { createSshExecutionApi } from "./helpers/ssh-execution";
 import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
-import { flushWaitUntilForTest } from "../../context/wait-until";
-import { createDeferredPromise, joinAll } from "../../utils";
 
 const context = testContext();
-const mocks = createRouteMocks(context);
 const headers = Object.freeze({ authorization: "Bearer clerk-session" });
-const secret = "e".repeat(64);
-const runnerHeaders = Object.freeze({
-  authorization: `Bearer vm0_official_${secret}`,
-});
-const oauth = Object.freeze({
-  clientId: "oauth-id-canary",
-  clientSecret: "oauth-secret-canary",
-});
-const login = Object.freeze({
-  name: "Login",
-  username: "deploy",
-  authentication: {
-    method: "password" as const,
-    password: " ssh-login-canary ",
-  },
-});
-const key = Object.freeze({
-  algorithm: "ssh-ed25519" as const,
-  fingerprint: `SHA256:${Buffer.alloc(32, 4).toString("base64").replace(/=+$/u, "")}`,
-});
-type Owner = { orgId: string; userId: string };
-function authenticate(
-  owner: Owner,
-  role: "org:member" | "org:admin" = "org:member",
-) {
-  mocks.clerk.session(owner.userId, owner.orgId, role);
-  context.mocks.clerk.users.getOrganizationMembershipList.mockResolvedValue({
-    data: [
-      {
-        role,
-        organization: { id: owner.orgId },
-        publicUserData: { userId: owner.userId },
-      },
-    ],
-  });
+const clerkDirectory = createStore();
+
+interface Actor {
+  readonly userId: string;
+  readonly orgId: string;
+  readonly role: "admin" | "member";
 }
-function owner(
-  partial: Partial<Owner> = {},
-  role: "org:member" | "org:admin" = "org:member",
-) {
-  const result = {
-    orgId: `org_tailscale_${randomUUID()}`,
-    userId: `user_tailscale_${randomUUID()}`,
-    ...partial,
+
+async function member(
+  options: { readonly orgId?: string; readonly role?: "admin" | "member" } = {},
+): Promise<Actor> {
+  const actor: Actor = {
+    userId: `user_${randomUUID()}`,
+    orgId: options.orgId ?? `org_${randomUUID()}`,
+    role: options.role ?? "member",
   };
-  authenticate(result, role);
-  return result;
+  await clerkDirectory.set(seedOrgMembership$, actor, context.signal);
+  return actor;
 }
-const configs = () => {
-  return setupApp({ context, routes: tailscaleRoutes })(tailscaleContract);
-};
+
+function signIn(actor: Actor) {
+  createRouteMocks(context).clerk.session(
+    actor.userId,
+    actor.orgId,
+    actor.role === "admin" ? "org:admin" : "org:member",
+  );
+}
+
 const hosts = () => {
   return setupApp({ context, routes: sshConnectionsRoutes })(
     sshConnectionsContract,
   );
 };
-const credentials = () => {
+const logins = () => {
   return setupApp({ context, routes: sshConnectionsRoutes })(
     sshCredentialsContract,
   );
 };
-const runner = () => {
-  return setupApp({ context, routes: runnerSshRoutes })(runnerSshContract);
+const tailscale = () => {
+  return setupApp({ context, routes: tailscaleRoutes })(tailscaleContract);
 };
-const remote = () => {
+const remoteAccess = () => {
   return setupApp({ context, routes: chatRemoteAccessRoutes })(
     chatRemoteAccessContract,
   );
 };
-const observations = () => {
-  return { list: hosts().observations };
+const runnerSsh = () => {
+  return setupApp({ context, routes: runnerSshRoutes })(runnerSshContract);
 };
-async function config(scope: "personal" | "organization" = "personal") {
+
+function runnerHeaders() {
+  return {
+    authorization: `Bearer vm0_official_${env("OFFICIAL_RUNNER_SECRET")}`,
+  };
+}
+
+function hostKeyFor(seed: string) {
+  return {
+    algorithm: "ssh-ed25519" as const,
+    fingerprint: `SHA256:${createHash("sha256")
+      .update(seed)
+      .digest("base64")
+      .replace(/=+$/u, "")}`,
+  };
+}
+
+function pinnedGeneration(body: {
+  readonly outcome: string;
+  readonly generation?: number;
+}): number {
+  if (body.outcome !== "pinned" || typeof body.generation !== "number") {
+    throw new Error(`Expected pinned outcome, received ${body.outcome}`);
+  }
+  return body.generation;
+}
+
+async function launchMemberRun(actor: Actor) {
+  const fixture = createChatEventsFixture(context);
+  const bdd = createBddApi(context);
+  const runs = createRunsApi(context);
+  const apiUser: ApiTestUser = bdd.user({
+    userId: actor.userId,
+    orgId: actor.orgId,
+    orgRole: actor.role === "admin" ? "org:admin" : "org:member",
+  });
+  const owner = publicRunOwner(context, apiUser);
+  fixture.chatCallbacks.acceptChatObjectStorage();
+  runs.acceptStorageDownloads();
+  runs.acceptTelemetryIngest();
+  mockOptionalEnv("OPENROUTER_API_KEY", undefined);
+  fixture.chatCallbacks.disableVapid();
+
+  await Promise.all([
+    runs.configureRunnerGroup(),
+    owner.run(() => {
+      return bdd.bootstrapLimitedFreeOnboarding(apiUser);
+    }),
+  ]);
+  const launched = await owner.run(() => {
+    return fixture.sendChatRun(apiUser, {
+      prompt: "Connect to my Tailscale SSH host",
+      model: null,
+    });
+  });
+  await owner.executionInput(launched.runId);
+  const dispatched = runs.dispatchedRun(launched.runId);
+  return {
+    runId: launched.runId,
+    threadId: launched.threadId,
+    runnerIdentity: {
+      runnerId: dispatched.runnerId,
+      heartbeatGeneration: dispatched.heartbeatGeneration,
+    },
+  };
+}
+
+function inlineLogin() {
+  return {
+    create: {
+      name: `Login ${randomUUID().slice(0, 8)}`,
+      username: "deploy",
+      authentication: {
+        method: "password" as const,
+        password: `pw-${randomUUID()}`,
+      },
+    },
+  };
+}
+
+function oauthClient() {
+  return {
+    clientId: `client-${randomUUID()}`,
+    clientSecret: `secret-${randomUUID()}`,
+  };
+}
+
+function inlineNetwork(credentials = oauthClient()) {
+  return {
+    name: `Inline tailnet ${randomUUID().slice(0, 8)}`,
+    credentials,
+    tags: ["tag:okou"],
+  };
+}
+
+async function createConfig(
+  options: {
+    readonly id?: string;
+    readonly scope?: "personal" | "organization";
+  } = {},
+) {
+  const id = options.id ?? randomUUID();
   return (
     await accept(
-      configs().create({
+      tailscale().create({
         headers,
         body: {
-          id: randomUUID(),
-          name: "Private network",
-          credentials: oauth,
+          id,
+          name: `Tailnet ${id.slice(0, 8)}`,
+          credentials: oauthClient(),
           tags: ["tag:okou"],
-          scope,
+          ...(options.scope ? { scope: options.scope } : {}),
         },
       }),
       [201],
     )
   ).body;
 }
-async function host(configId: string, peer = "peer.tail-test.ts.net") {
+
+/** A host bound to a saved network through a newly created inline login. */
+async function boundHost(configId: string, host = "100.64.0.10", port = 22) {
   return (
     await accept(
       hosts().create({
         headers,
         body: {
           id: randomUUID(),
-          displayName: "Private host",
-          host: peer,
-          port: 2222,
-          credential: { create: login },
+          displayName: `Host ${randomUUID().slice(0, 8)}`,
+          host,
+          port,
+          credential: inlineLogin(),
           transport: { type: "tailscale", configId },
         },
       }),
@@ -129,424 +217,483 @@ async function host(configId: string, peer = "peer.tail-test.ts.net") {
     )
   ).body;
 }
-async function resources() {
+
+/** Everything the signed-in member can see about hosts, logins and networks. */
+async function inventory() {
+  const [hostList, loginList, configList] = await Promise.all([
+    accept(hosts().list({ headers }), [200]),
+    accept(logins().list({ headers }), [200]),
+    accept(tailscale().list({ headers }), [200]),
+  ]);
   return {
-    configs: (await accept(configs().list({ headers }), [200])).body.configs,
-    hosts: (await accept(hosts().list({ headers }), [200])).body.connections,
-    logins: (await accept(credentials().list({ headers }), [200])).body
-      .credentials,
+    hosts: hostList.body.connections,
+    logins: loginList.body.credentials,
+    configs: configList.body.configs,
   };
 }
-const ordinary = createSshExecutionApi(context, {
-  runnerHeaders,
-  authenticate,
-});
-beforeEach(() => {
-  mockEnv("OFFICIAL_RUNNER_SECRET", secret);
-  useSecretKmsProbe();
-});
 
 describe("Tailscale configuration and saved-host authority", () => {
-  afterEach(ordinary.cleanup);
-  it("creates a credential-free Tailscale SSH host, enforces transitions and retains network identity", async () => {
-    const first = owner();
-    const c = await config();
-    const created = (
-      await accept(
-        hosts().create({
-          headers,
-          body: {
-            id: randomUUID(),
-            displayName: "Identity host",
-            host: "peer",
-            username: "ubuntu",
-            transport: { type: "tailscale_ssh", configId: c.id },
-          },
-        }),
-        [201],
-      )
-    ).body;
-    expect(created).toMatchObject({
-      username: "ubuntu",
-      port: 22,
-      transport: { type: "tailscale_ssh", configId: c.id },
+  beforeAll(() => {
+    setupApp({
+      context,
+      routes: [
+        ...tailscaleRoutes,
+        ...sshConnectionsRoutes,
+        ...chatRemoteAccessRoutes,
+        ...runnerSshRoutes,
+      ],
     });
-    expect(created).not.toHaveProperty("credentialId");
-    expect(created).not.toHaveProperty("credentialName");
-    expect((await resources()).logins).toStrictEqual([]);
-    const params = { connectionId: created.id };
-    for (const changes of [
-      { port: 2222 },
-      { credential: { create: login } },
-      { transport: { type: "direct" as const } },
-    ]) {
-      await accept(
-        hosts().update({
-          headers,
-          params,
-          body: { expectedGeneration: created.generation, ...changes },
-        }),
-        [400],
-      );
-    }
-    const renamed = (
-      await accept(
-        hosts().update({
-          headers,
-          params,
-          body: { expectedGeneration: created.generation, username: "deploy" },
-        }),
-        [200],
-      )
-    ).body;
-    expect(renamed).toMatchObject({
-      username: "deploy",
-      transport: { type: "tailscale_ssh", configId: c.id },
-    });
-    const converted = (
-      await accept(
-        hosts().update({
-          headers,
-          params,
-          body: {
-            expectedGeneration: renamed.generation,
-            transport: { type: "tailscale", configId: c.id },
-            port: 2022,
-            credential: { create: login },
-          },
-        }),
-        [200],
-      )
-    ).body;
-    expect(converted).toHaveProperty("credentialId");
-    const identity = (
-      await accept(
-        hosts().update({
-          headers,
-          params,
-          body: {
-            expectedGeneration: converted.generation,
-            transport: { type: "tailscale_ssh", configId: c.id },
-            port: 22,
-            username: "ubuntu",
-          },
-        }),
-        [200],
-      )
-    ).body;
-    expect(identity).not.toHaveProperty("credentialId");
-    expect((await resources()).logins).toHaveLength(1);
-    owner({ orgId: first.orgId });
+  });
+
+  it("tailscale-009 rejects the non-peer target 10.0.0.1 without saving resources", async () => {
+    signIn(await member());
+    const before = await inventory();
+
     await accept(
       hosts().create({
         headers,
         body: {
           id: randomUUID(),
-          displayName: "Forbidden",
-          host: "peer",
-          username: "ubuntu",
-          transport: { type: "tailscale_ssh", configId: c.id },
+          displayName: "Private address",
+          host: "10.0.0.1",
+          credential: inlineLogin(),
+          transport: { type: "tailscale", create: inlineNetwork() },
         },
       }),
-      [404],
+      [400],
     );
-    expect((await resources()).hosts).toStrictEqual([]);
+
+    await expect(inventory()).resolves.toStrictEqual(before);
   });
-  it("resolves only authorized Tailscale SSH identity and preserves pin/config-generation fences", async () => {
-    const o = owner();
-    const c = await config();
-    const h = (
-      await accept(
-        hosts().create({
-          headers,
-          body: {
-            id: randomUUID(),
-            displayName: "Identity",
-            host: "peer",
-            username: "test-user",
-            transport: { type: "tailscale_ssh", configId: c.id },
-          },
-        }),
-        [201],
-      )
-    ).body;
-    const r = await ordinary.runtime(o);
-    const params = { runId: r.runId };
-    const body = { connectionId: h.id, runnerIdentity: r.runnerIdentity };
-    expect(
-      (
-        await accept(
-          runner().resolve({ headers: runnerHeaders, params, body }),
-          [200],
-        )
-      ).body,
-    ).toStrictEqual({ outcome: "unavailable" });
+
+  it("tailscale-018 rejects the non-peer target https://peer without saving resources", async () => {
+    signIn(await member());
+    const before = await inventory();
+
     await accept(
-      remote().updateHostDefault({
-        headers,
-        params: { protocol: "ssh", connectionId: h.id },
-        body: { enabled: true },
-      }),
-      [200],
-    );
-    const resolved = (
-      await accept(
-        runner().resolve({ headers: runnerHeaders, params, body }),
-        [200],
-      )
-    ).body;
-    expect(resolved).toMatchObject({
-      outcome: "resolved_tailscale_ssh",
-      username: "test-user",
-      port: 22,
-      tailscale: { ...oauth, configId: c.id },
-    });
-    expect(resolved).not.toHaveProperty("authentication");
-    const pin = {
-      ...body,
-      expectedGeneration: h.generation,
-      observedHostKey: key,
-    };
-    expect(
-      (
-        await accept(
-          runner().pin({ headers: runnerHeaders, params, body: pin }),
-          [200],
-        )
-      ).body,
-    ).toStrictEqual({ outcome: "pinned", generation: h.generation + 1 });
-    await accept(
-      configs().update({
-        headers,
-        params: { configId: c.id },
-        body: { expectedRevision: 1, tags: ["tag:next"] },
-      }),
-      [200],
-    );
-    expect(
-      (
-        await accept(
-          runner().resolve({ headers: runnerHeaders, params, body }),
-          [200],
-        )
-      ).body,
-    ).toMatchObject({
-      outcome: "resolved_tailscale_ssh",
-      generation: h.generation + 2,
-      learnedHostKey: key,
-      tailscale: { generation: 2 },
-    });
-    const reset = (
-      await accept(
-        hosts().resetHostKey({
-          headers,
-          params: { connectionId: h.id },
-          body: { expectedGeneration: h.generation + 2 },
-        }),
-        [200],
-      )
-    ).body;
-    expect(reset.learnedHostKey).toBeNull();
-    expect(reset).not.toHaveProperty("credentialId");
-    expect((await resources()).logins).toStrictEqual([]);
-  });
-  it("creates an inline identity network without a login and preserves the mode through adoption and rebind", async () => {
-    const initial = owner();
-    const h = (
-      await accept(
-        hosts().create({
-          headers,
-          body: {
-            id: randomUUID(),
-            displayName: "Inline identity",
-            host: "peer",
-            username: "ubuntu",
-            transport: {
-              type: "tailscale_ssh",
-              create: {
-                name: "Shared identity network",
-                credentials: oauth,
-                tags: ["tag:okou"],
-              },
-            },
-          },
-        }),
-        [201],
-      )
-    ).body;
-    const inventory = await resources();
-    expect(inventory.logins).toStrictEqual([]);
-    expect(inventory.configs).toHaveLength(1);
-    const c = inventory.configs[0];
-    expect(c).toBeDefined();
-    if (!c) {
-      throw new Error("Created network is missing");
-    }
-    authenticate(initial, "org:admin");
-    await accept(
-      configs().convertToOrganization({
-        headers,
-        params: { configId: c.id },
-        body: { expectedRevision: c.revision },
-      }),
-      [200],
-    );
-    owner({ orgId: initial.orgId }, "org:admin");
-    const impact = (
-      await accept(
-        configs().impactPreview({
-          headers,
-          params: { configId: c.id },
-          query: { operation: "convert" },
-        }),
-        [200],
-      )
-    ).body;
-    await accept(
-      configs().convertToPersonal({
-        headers,
-        params: { configId: c.id },
-        body: {
-          expectedRevision: impact.expectedRevision,
-          impactSnapshot: impact.impactSnapshot,
-        },
-      }),
-      [200],
-    );
-    authenticate(initial);
-    const retained = (await resources()).hosts[0];
-    expect(retained).toMatchObject({
-      id: h.id,
-      username: "ubuntu",
-      transport: { type: "tailscale_ssh", needsRebind: true },
-    });
-    if (!retained) {
-      throw new Error("Retained host is missing");
-    }
-    const replacement = await config();
-    const rebound = (
-      await accept(
-        hosts().update({
-          headers,
-          params: { connectionId: h.id },
-          body: {
-            expectedGeneration: retained.generation,
-            transport: { type: "tailscale_ssh", configId: replacement.id },
-          },
-        }),
-        [200],
-      )
-    ).body;
-    expect(rebound).toMatchObject({
-      username: "ubuntu",
-      port: 22,
-      transport: { type: "tailscale_ssh", configId: replacement.id },
-    });
-    expect((await resources()).logins).toStrictEqual([]);
-  });
-  it("keeps OAuth write-only, supports explicit-ID reconciliation and separates metadata/effective generations", async () => {
-    owner();
-    const body = {
-      id: randomUUID(),
-      name: "Network",
-      credentials: oauth,
-      tags: ["tag:okou"],
-    };
-    const created = (await accept(configs().create({ headers, body }), [201]))
-      .body;
-    expect(created).toMatchObject({
-      revision: 1,
-      generation: 1,
-      scope: "personal",
-      sshHosts: [],
-    });
-    await accept(
-      configs().create({
+      hosts().create({
         headers,
         body: {
-          ...body,
-          credentials: { ...oauth, clientSecret: "replacement-cannot-replay" },
+          id: randomUUID(),
+          displayName: "URL target",
+          host: "https://peer",
+          credential: inlineLogin(),
+          transport: { type: "tailscale", create: inlineNetwork() },
         },
+      }),
+      [400],
+    );
+
+    await expect(inventory()).resolves.toStrictEqual(before);
+  });
+
+  it("tailscale-023 keeps the peer.tail-test.ts.net. binding when the host is renamed", async () => {
+    signIn(await member());
+    const config = await createConfig();
+    const host = await boundHost(config.id, "peer.tail-test.ts.net.", 2222);
+
+    const renamed = await accept(
+      hosts().update({
+        headers,
+        params: { connectionId: host.id },
+        body: { expectedGeneration: host.generation, displayName: "Renamed" },
+      }),
+      [200],
+    );
+
+    expect(renamed.body).toMatchObject({
+      displayName: "Renamed",
+      port: 2222,
+      transport: { type: "tailscale", configId: config.id },
+    });
+  });
+
+  it("tailscale-024 keeps the 100.64.0.1 binding when the host is renamed", async () => {
+    signIn(await member());
+    const config = await createConfig();
+    const host = await boundHost(config.id, "100.64.0.1", 2222);
+
+    const renamed = await accept(
+      hosts().update({
+        headers,
+        params: { connectionId: host.id },
+        body: { expectedGeneration: host.generation, displayName: "Renamed" },
+      }),
+      [200],
+    );
+
+    expect(renamed.body).toMatchObject({
+      displayName: "Renamed",
+      port: 2222,
+      transport: { type: "tailscale", configId: config.id },
+    });
+  });
+
+  it("tailscale-025 keeps the fd7a:115c:a1e0::1 binding when the host is renamed", async () => {
+    signIn(await member());
+    const config = await createConfig();
+    const host = await boundHost(config.id, "fd7a:115c:a1e0::1", 2222);
+
+    const renamed = await accept(
+      hosts().update({
+        headers,
+        params: { connectionId: host.id },
+        body: { expectedGeneration: host.generation, displayName: "Renamed" },
+      }),
+      [200],
+    );
+
+    expect(renamed.body).toMatchObject({
+      displayName: "Renamed",
+      port: 2222,
+      transport: { type: "tailscale", configId: config.id },
+    });
+  });
+
+  it("tailscale-034 rejects scope conversion, empty tags and malformed credentials in a config update", async () => {
+    signIn(await member());
+    const config = await createConfig();
+    const request = setupRawAppRequest({ context, routes: tailscaleRoutes });
+    const patch = (body: Record<string, unknown>) => {
+      return request(`/api/tailscale/configs/${config.id}`, {
+        method: "PATCH",
+        headers: { ...headers, "content-type": "application/json" },
+        body: JSON.stringify({ expectedRevision: 1, ...body }),
+      });
+    };
+
+    const responses = await Promise.all([
+      patch({ scope: "organization" }),
+      patch({ tags: [] }),
+      patch({
+        credentials: {
+          clientId: `client-${randomUUID()}`,
+          clientSecret: `\nsecret-${randomUUID()}`,
+        },
+      }),
+    ]);
+
+    expect(
+      responses.map((response) => {
+        return response.status;
+      }),
+    ).toStrictEqual([400, 400, 400]);
+    const { configs } = await inventory();
+    expect(configs).toStrictEqual([
+      expect.objectContaining({ id: config.id, revision: 1, generation: 1 }),
+    ]);
+  });
+
+  it("tailscale-004 keeps OAuth write-only through explicit-ID replay, rename, credential replacement and delete", async () => {
+    signIn(await member());
+    const id = randomUUID();
+    const original = oauthClient();
+    const created = await accept(
+      tailscale().create({
+        headers,
+        body: {
+          id,
+          name: "Tailnet",
+          credentials: original,
+          tags: ["tag:okou"],
+        },
+      }),
+      [201],
+    );
+    const replay = oauthClient();
+    const repeated = await accept(
+      tailscale().create({
+        headers,
+        body: { id, name: "Tailnet", credentials: replay, tags: ["tag:okou"] },
       }),
       [204],
     );
-    const renamed = (
-      await accept(
-        configs().update({
-          headers,
-          params: { configId: created.id },
-          body: { expectedRevision: 1, name: "Renamed" },
-        }),
-        [200],
-      )
-    ).body;
-    expect(renamed).toMatchObject({ revision: 2, generation: 1 });
-    const replaced = (
-      await accept(
-        configs().update({
-          headers,
-          params: { configId: created.id },
-          body: { expectedRevision: 2, credentials: oauth },
-        }),
-        [200],
-      )
-    ).body;
-    expect(replaced).toMatchObject({ revision: 3, generation: 2 });
-    await accept(
-      configs().update({
+    const renamed = await accept(
+      tailscale().update({
         headers,
-        params: { configId: created.id },
+        params: { configId: id },
+        body: { expectedRevision: 1, name: "Renamed tailnet" },
+      }),
+      [200],
+    );
+    const replacement = oauthClient();
+    const replaced = await accept(
+      tailscale().update({
+        headers,
+        params: { configId: id },
+        body: { expectedRevision: 2, credentials: replacement },
+      }),
+      [200],
+    );
+    await accept(
+      tailscale().update({
+        headers,
+        params: { configId: id },
         body: { expectedRevision: 2, name: "Stale rename" },
       }),
       [409],
     );
-    const metadata = await resources();
-    expect(JSON.stringify(metadata)).not.toMatch(
-      /oauth-id-canary|oauth-secret-canary|encryptedClient|clientSecret|clientId/u,
-    );
-    expect(metadata.configs).toStrictEqual([replaced]);
+    const listed = await inventory();
+
+    expect(created.body).toMatchObject({
+      revision: 1,
+      generation: 1,
+      scope: "personal",
+      sshHosts: [],
+      vncHosts: [],
+    });
+    expect(repeated.status).toBe(204);
+    expect(renamed.body).toMatchObject({ revision: 2, generation: 1 });
+    expect(replaced.body).toMatchObject({ revision: 3, generation: 2 });
+    const disclosed = JSON.stringify([
+      created.body,
+      renamed.body,
+      replaced.body,
+      listed,
+    ]);
+    for (const secret of [original, replay, replacement].flatMap((client) => {
+      return [client.clientId, client.clientSecret];
+    })) {
+      expect(disclosed).not.toContain(secret);
+    }
+    expect(disclosed).not.toMatch(/clientId|clientSecret|credentials/u);
+    expect(listed.configs).toStrictEqual([replaced.body]);
+
     await accept(
-      configs().delete({
+      tailscale().delete({
         headers,
-        params: { configId: created.id },
+        params: { configId: id },
         body: { expectedRevision: 3 },
       }),
       [204],
     );
   });
-  it("permits only admin shared management, hides Personal/tenant IDs and other members' host references", async () => {
-    const admin = owner({}, "org:admin");
-    const shared = await config("organization");
-    const personal = await config();
-    const member = owner({ orgId: admin.orgId });
-    const saved = await host(shared.id);
-    expect((await resources()).configs).toMatchObject([
-      { id: shared.id, sshHosts: [{ id: saved.id }] },
+
+  it("tailscale-001 creates a credential-free Tailscale SSH host and enforces its transitions", async () => {
+    const owner = await member();
+    const peer = await member({ orgId: owner.orgId });
+    signIn(owner);
+    const config = await createConfig();
+    const hostId = randomUUID();
+    const created = await accept(
+      hosts().create({
+        headers,
+        body: {
+          id: hostId,
+          displayName: "Tailscale SSH",
+          host: "peer",
+          username: "ubuntu",
+          transport: { type: "tailscale_ssh", configId: config.id },
+        },
+      }),
+      [201],
+    );
+    expect(created.body).toMatchObject({
+      username: "ubuntu",
+      port: 22,
+      transport: { type: "tailscale_ssh", configId: config.id },
+    });
+    expect(created.body).not.toHaveProperty("credentialId");
+    expect(created.body).not.toHaveProperty("credentialName");
+    expect((await inventory()).logins).toStrictEqual([]);
+
+    const update = (
+      expectedGeneration: number,
+      body: Omit<
+        NonNullable<Parameters<ReturnType<typeof hosts>["update"]>[0]>["body"],
+        "expectedGeneration"
+      >,
+    ) => {
+      return hosts().update({
+        headers,
+        params: { connectionId: hostId },
+        body: { expectedGeneration, ...body },
+      });
+    };
+    const generation = created.body.generation;
+    await accept(update(generation, { port: 2222 }), [400]);
+    await accept(update(generation, { credential: inlineLogin() }), [400]);
+    await accept(update(generation, { transport: { type: "direct" } }), [400]);
+
+    const deploy = await accept(
+      update(generation, { username: "deploy" }),
+      [200],
+    );
+    expect(deploy.body).toMatchObject({
+      username: "deploy",
+      transport: { type: "tailscale_ssh", configId: config.id },
+    });
+
+    const converted = await accept(
+      update(deploy.body.generation, {
+        port: 2022,
+        credential: inlineLogin(),
+        transport: { type: "tailscale", configId: config.id },
+      }),
+      [200],
+    );
+    expect(converted.body).toMatchObject({
+      port: 2022,
+      credentialId: expect.any(String),
+      transport: { type: "tailscale", configId: config.id },
+    });
+
+    const back = await accept(
+      update(converted.body.generation, {
+        port: 22,
+        username: "ubuntu",
+        transport: { type: "tailscale_ssh", configId: config.id },
+      }),
+      [200],
+    );
+    expect(back.body).toMatchObject({
+      port: 22,
+      username: "ubuntu",
+      transport: { type: "tailscale_ssh", configId: config.id },
+    });
+    expect(back.body).not.toHaveProperty("credentialId");
+    expect((await inventory()).logins).toHaveLength(1);
+
+    signIn(peer);
+    await accept(
+      hosts().create({
+        headers,
+        body: {
+          id: randomUUID(),
+          displayName: "Borrowed network",
+          host: "peer",
+          username: "ubuntu",
+          transport: { type: "tailscale_ssh", configId: config.id },
+        },
+      }),
+      [404],
+    );
+    expect((await inventory()).hosts).toStrictEqual([]);
+  });
+
+  it("tailscale-003 keeps an inline Tailscale SSH network login-free through adoption and rebind", async () => {
+    const owner = await member({ role: "admin" });
+    const admin = await member({ orgId: owner.orgId, role: "admin" });
+    signIn(owner);
+    const hostId = randomUUID();
+    await accept(
+      hosts().create({
+        headers,
+        body: {
+          id: hostId,
+          displayName: "Inline SSH network",
+          host: "peer",
+          username: "ubuntu",
+          transport: { type: "tailscale_ssh", create: inlineNetwork() },
+        },
+      }),
+      [201],
+    );
+    const created = await inventory();
+    expect(created.logins).toStrictEqual([]);
+    expect(created.configs).toHaveLength(1);
+    const network = created.configs[0]!;
+
+    const promoted = await accept(
+      tailscale().convertToOrganization({
+        headers,
+        params: { configId: network.id },
+        body: { expectedRevision: network.revision },
+      }),
+      [200],
+    );
+    signIn(admin);
+    const preview = await accept(
+      tailscale().impactPreview({
+        headers,
+        params: { configId: network.id },
+        query: { operation: "convert" },
+      }),
+      [200],
+    );
+    await accept(
+      tailscale().convertToPersonal({
+        headers,
+        params: { configId: network.id },
+        body: {
+          expectedRevision: promoted.body.revision,
+          impactSnapshot: preview.body.impactSnapshot,
+        },
+      }),
+      [200],
+    );
+
+    signIn(owner);
+    const orphaned = await inventory();
+    expect(orphaned.hosts).toStrictEqual([
+      expect.objectContaining({
+        id: hostId,
+        username: "ubuntu",
+        transport: { type: "tailscale_ssh", needsRebind: true },
+      }),
+    ]);
+    const replacement = await createConfig();
+    const rebound = await accept(
+      hosts().update({
+        headers,
+        params: { connectionId: hostId },
+        body: {
+          expectedGeneration: orphaned.hosts[0]!.generation,
+          transport: { type: "tailscale_ssh", configId: replacement.id },
+        },
+      }),
+      [200],
+    );
+    expect(rebound.body).toMatchObject({
+      username: "ubuntu",
+      port: 22,
+      transport: { type: "tailscale_ssh", configId: replacement.id },
+    });
+    expect((await inventory()).logins).toStrictEqual([]);
+  });
+
+  it("tailscale-005 limits shared management to admins and hides personal networks and other members' hosts", async () => {
+    const admin = await member({ role: "admin" });
+    const regular = await member({ orgId: admin.orgId });
+    const outsider = await member();
+    signIn(admin);
+    const shared = await createConfig({ scope: "organization" });
+    const personal = await createConfig();
+
+    signIn(regular);
+    const host = await boundHost(shared.id);
+    const memberView = await inventory();
+    expect(memberView.configs).toStrictEqual([
+      expect.objectContaining({
+        id: shared.id,
+        sshHosts: [{ id: host.id, displayName: host.displayName }],
+      }),
     ]);
     await accept(
-      configs().update({
+      tailscale().update({
         headers,
         params: { configId: shared.id },
-        body: { expectedRevision: 1, name: "Forbidden rename" },
+        body: { expectedRevision: shared.revision, name: "Member rename" },
       }),
       [403],
     );
     await accept(
-      configs().create({
+      tailscale().create({
         headers,
         body: {
           id: randomUUID(),
-          name: "Forbidden",
-          scope: "organization",
-          credentials: oauth,
+          name: "Member shared",
+          credentials: oauthClient(),
           tags: ["tag:okou"],
+          scope: "organization",
         },
       }),
       [403],
     );
+    const afterForbidden = await inventory();
     expect(
-      (await resources()).configs.map((value) => {
-        return value.id;
+      afterForbidden.configs.map((config) => {
+        return config.id;
       }),
     ).not.toContain(personal.id);
     await accept(
@@ -554,942 +701,928 @@ describe("Tailscale configuration and saved-host authority", () => {
         headers,
         body: {
           id: randomUUID(),
-          displayName: "Hidden",
-          host: "peer",
-          credential: { create: login },
+          displayName: "Admin personal network",
+          host: "100.64.0.11",
+          credential: inlineLogin(),
           transport: { type: "tailscale", configId: personal.id },
         },
       }),
       [404],
     );
-    expect((await resources()).logins).toHaveLength(1);
-    authenticate(admin, "org:admin");
-    expect(
-      (await resources()).configs.find((value) => {
-        return value.id === shared.id;
-      })?.sshHosts,
-    ).toStrictEqual([]);
-    const inUse = await accept(
-      configs().delete({
+    expect((await inventory()).logins).toHaveLength(1);
+
+    signIn(admin);
+    const adminView = await inventory();
+    expect(adminView.configs).toContainEqual(
+      expect.objectContaining({ id: shared.id, sshHosts: [] }),
+    );
+    const referenced = await accept(
+      tailscale().delete({
         headers,
         params: { configId: shared.id },
-        body: { expectedRevision: 1 },
+        body: { expectedRevision: shared.revision },
       }),
       [409],
     );
-    expect(JSON.stringify(inUse.body)).not.toContain(saved.id);
-    owner();
-    expect((await resources()).configs).toStrictEqual([]);
-    authenticate(member);
+    expect(JSON.stringify(referenced.body)).not.toContain(host.id);
+
+    signIn(outsider);
+    expect((await inventory()).configs).toStrictEqual([]);
+
+    signIn(regular);
     await accept(
       hosts().delete({
         headers,
-        params: { connectionId: saved.id },
-        body: { expectedGeneration: saved.generation },
+        params: { connectionId: host.id },
+        body: { expectedGeneration: host.generation },
       }),
       [204],
     );
-    authenticate(admin, "org:admin");
+    signIn(admin);
     await accept(
-      configs().delete({
+      tailscale().delete({
         headers,
         params: { configId: shared.id },
-        body: { expectedRevision: 1 },
+        body: { expectedRevision: shared.revision },
       }),
       [204],
     );
   });
-  it.each(["create", "update"] as const)(
-    "%s atomically binds inline and saved networks and logins",
-    async (operation) => {
-      owner();
-      const existing = await config();
-      let current = await host(existing.id);
-      const combinations =
-        operation === "create"
-          ? [
-              [false, false],
-              [true, false],
-              [true, true],
-            ]
-          : [
-              [false, true],
-              [true, false],
-              [true, true],
-            ];
-      for (const [newNetwork, newLogin] of combinations) {
-        const before = await resources();
-        const transport = newNetwork
-          ? {
-              type: "tailscale" as const,
-              create: {
-                name: "Inline network",
-                credentials: oauth,
-                tags: ["tag:okou"],
-              },
-            }
-          : { type: "tailscale" as const, configId: existing.id };
-        if (!("credentialId" in current)) {
-          throw new Error("Expected a credential-backed test host");
-        }
-        const fields = {
-          displayName: "Combined",
-          host: "100.64.2.3",
-          port: 65_535,
-          transport,
-          credential: newLogin
-            ? { create: login }
-            : { id: current.credentialId },
-        };
-        current =
-          operation === "create"
-            ? (
-                await accept(
-                  hosts().create({
-                    headers,
-                    body: { id: randomUUID(), ...fields },
-                  }),
-                  [201],
-                )
-              ).body
-            : (
-                await accept(
-                  hosts().update({
-                    headers,
-                    params: { connectionId: current.id },
-                    body: {
-                      expectedGeneration: current.generation,
-                      ...fields,
-                    },
-                  }),
-                  [200],
-                )
-              ).body;
-        const after = await resources();
-        expect(current).toMatchObject({
-          port: 65_535,
-          transport: { type: "tailscale" },
-        });
-        expect(after.configs).toHaveLength(
-          before.configs.length + Number(newNetwork),
-        );
-        expect(after.logins).toHaveLength(
-          before.logins.length + Number(newLogin),
-        );
-        expect(JSON.stringify(current)).not.toContain(oauth.clientSecret);
-      }
-      if (operation === "create") {
-        return;
-      }
-      const before = await resources();
-      await accept(
-        hosts().update({
-          headers,
-          params: { connectionId: current.id },
-          body: {
-            expectedGeneration: current.generation + 1,
-            credential: { create: login },
-            transport: {
-              type: "tailscale",
-              create: {
-                name: "Should rollback",
-                credentials: oauth,
-                tags: ["tag:okou"],
-              },
-            },
-          },
-        }),
-        [409],
-      );
-      await expect(resources()).resolves.toStrictEqual(before);
-    },
-  );
-  it("reconciles a host-create retry without overwriting its inline resources and rolls back conflicts", async () => {
-    const first = owner();
-    const body = {
-      id: randomUUID(),
-      displayName: "Atomic",
-      host: "peer",
-      credential: { create: login },
-      transport: {
-        type: "tailscale" as const,
-        create: {
-          name: "Inline",
-          credentials: oauth,
-          tags: ["tag:okou"],
-        },
+
+  it("tailscale-006 binds saved and inline networks and logins atomically on create", async () => {
+    signIn(await member());
+    const config = await createConfig();
+    const first = await boundHost(config.id);
+    if (!("credentialId" in first)) {
+      throw new Error("Expected a login-backed host");
+    }
+    const steps = [
+      {
+        credential: { id: first.credentialId },
+        transport: { type: "tailscale" as const, configId: config.id },
+        configs: 0,
+        logins: 0,
       },
-    };
-    await accept(hosts().create({ headers, body }), [201]);
-    const before = await resources();
-    await accept(hosts().create({ headers, body }), [204]);
-    await expect(resources()).resolves.toStrictEqual(before);
-    await accept(
-      hosts().create({ headers, body: { ...body, id: randomUUID() } }),
-      [201],
-    );
-    expect((await resources()).configs).toHaveLength(before.configs.length + 1);
-    owner({ orgId: first.orgId });
-    await accept(hosts().create({ headers, body }), [409]);
-    await expect(resources()).resolves.toStrictEqual({
-      configs: [],
-      hosts: [],
-      logins: [],
-    });
-  });
-  it.each([
-    "10.0.0.1",
-    "127.0.0.1",
-    "100.63.255.1",
-    "100.128.0.1",
-    "::1",
-    "fd00::1",
-    "peer%zone",
-    "100.064.0.1",
-    "*.tail.net",
-    "https://peer",
-    "host..tail.net",
-    "秘密.tail.net",
-    "0x7f000001",
-  ])(
-    "rejects non-peer target syntax %s without saving resources",
-    async (peer) => {
-      owner();
-      const before = await resources();
-      await accept(
+      {
+        credential: { id: first.credentialId },
+        transport: { type: "tailscale" as const, create: inlineNetwork() },
+        configs: 1,
+        logins: 0,
+      },
+      {
+        credential: inlineLogin(),
+        transport: { type: "tailscale" as const, create: inlineNetwork() },
+        configs: 1,
+        logins: 1,
+      },
+    ];
+    for (const step of steps) {
+      const before = await inventory();
+      const secret = step.transport.create?.credentials.clientSecret;
+      const created = await accept(
         hosts().create({
           headers,
           body: {
             id: randomUUID(),
-            displayName: "Invalid",
-            host: peer,
-            credential: { create: login },
-            transport: {
-              type: "tailscale",
-              create: {
-                name: "No side effects",
-                credentials: oauth,
-                tags: ["tag:okou"],
-              },
-            },
+            displayName: `Peer ${randomUUID().slice(0, 8)}`,
+            host: "100.64.2.3",
+            port: 65_535,
+            credential: step.credential,
+            transport: step.transport,
           },
         }),
-        [400],
+        [201],
       );
-      await expect(resources()).resolves.toStrictEqual(before);
-    },
-  );
-  it.each([
-    "PEER",
-    "peer.tail-test.ts.net.",
-    "100.64.0.1",
-    "fd7a:115c:a1e0::1",
-  ])(
-    "accepts syntax-only peer target %s and retains its binding on edit",
-    async (peer) => {
-      owner();
-      const c = await config();
-      const saved = await host(c.id, peer);
-      const updated = (
-        await accept(
-          hosts().update({
-            headers,
-            params: { connectionId: saved.id },
-            body: {
-              expectedGeneration: saved.generation,
-              displayName: "Rename",
-            },
-          }),
-          [200],
-        )
-      ).body;
-      expect(updated).toMatchObject({
-        transport: { type: "tailscale", configId: c.id },
-        port: 2222,
+      expect(created.body).toMatchObject({
+        port: 65_535,
+        transport: { type: "tailscale" },
       });
-    },
-  );
-  it("uses current winning process/host/chat/config authority and the shared host generation fence without a backend rollout flag", async () => {
-    const o = owner();
-    const c = await config();
-    const h = await host(c.id);
-    const r = await ordinary.runtime(o);
-    const params = { runId: r.runId };
-    const body = { connectionId: h.id, runnerIdentity: r.runnerIdentity };
-    let probe = useSecretKmsProbe();
-    expect(
-      (
-        await accept(
-          runner().resolve({ headers: runnerHeaders, params, body }),
-          [200],
-        )
-      ).body,
-    ).toStrictEqual({ outcome: "unavailable" });
-    expect(probe.decryptCalls).toBe(0);
-    await accept(
-      remote().updateHostDefault({
-        headers,
-        params: { protocol: "ssh", connectionId: h.id },
-        body: { enabled: true },
-      }),
-      [200],
-    );
-    const resolved = (
-      await accept(
-        runner().resolve({ headers: runnerHeaders, params, body }),
-        [200],
-      )
-    ).body;
-    expect(resolved).toMatchObject({
-      outcome: "resolved_tailscale",
-      host: h.host,
-      authentication: login.authentication,
-      tailscale: {
-        ...oauth,
-        configId: c.id,
-        generation: 1,
-        tags: ["tag:okou"],
-      },
-    });
-    probe = useSecretKmsProbe();
-    for (const stale of [
-      { ...body, connectionId: randomUUID() },
-      {
-        ...body,
-        runnerIdentity: { ...r.runnerIdentity, runnerId: randomUUID() },
-      },
-      {
-        ...body,
-        runnerIdentity: {
-          ...r.runnerIdentity,
-          heartbeatGeneration: r.runnerIdentity.heartbeatGeneration + 1,
-        },
-      },
-    ]) {
-      expect(
-        (
-          await accept(
-            runner().resolve({ headers: runnerHeaders, params, body: stale }),
-            [200],
-          )
-        ).body,
-      ).toStrictEqual({ outcome: "unavailable" });
+      if (secret) {
+        expect(JSON.stringify(created.body)).not.toContain(secret);
+      }
+      const after = await inventory();
+      expect(after.configs).toHaveLength(before.configs.length + step.configs);
+      expect(after.logins).toHaveLength(before.logins.length + step.logins);
     }
-    await accept(runner().resolve({ headers, params, body }), [401]);
-    expect(probe.decryptCalls).toBe(0);
-    const pinInput = {
-      ...body,
-      expectedGeneration: h.generation,
-      observedHostKey: key,
-    };
-    expect(
-      (
-        await accept(
-          runner().pin({
-            headers: runnerHeaders,
-            params,
-            body: { ...pinInput, expectedGeneration: h.generation + 1 },
-          }),
-          [200],
-        )
-      ).body,
-    ).toStrictEqual({ outcome: "configuration_changed" });
-    expect(probe.decryptCalls).toBe(0);
-    expect(
-      (
-        await accept(
-          runner().pin({ headers: runnerHeaders, params, body: pinInput }),
-          [200],
-        )
-      ).body,
-    ).toStrictEqual({ outcome: "pinned", generation: h.generation + 1 });
-    const obs = {
-      ...body,
-      expectedGeneration: h.generation + 1,
-      expectedCreatedAt: h.createdAt,
-      observedAt: nowDate().toISOString(),
-      failureReason: null,
-    };
-    expect(
-      (
-        await accept(
-          runner().observe({ headers: runnerHeaders, params, body: obs }),
-          [200],
-        )
-      ).body,
-    ).toStrictEqual({ outcome: "recorded" });
-    expect(
-      (await accept(observations().list({ headers }), [200])).body.observations,
-    ).toHaveLength(1);
-    const rotated = (
-      await accept(
-        configs().update({
+  });
+
+  it("tailscale-007 binds saved and inline networks and logins atomically on update", async () => {
+    signIn(await member());
+    const config = await createConfig();
+    const host = await boundHost(config.id);
+    if (!("credentialId" in host)) {
+      throw new Error("Expected a login-backed host");
+    }
+    const steps = [
+      {
+        credential: inlineLogin(),
+        transport: { type: "tailscale" as const, configId: config.id },
+        configs: 0,
+        logins: 1,
+      },
+      {
+        credential: { id: host.credentialId },
+        transport: { type: "tailscale" as const, create: inlineNetwork() },
+        configs: 1,
+        logins: 0,
+      },
+      {
+        credential: inlineLogin(),
+        transport: { type: "tailscale" as const, create: inlineNetwork() },
+        configs: 1,
+        logins: 1,
+      },
+    ];
+    let generation = host.generation;
+    for (const step of steps) {
+      const before = await inventory();
+      const secret = step.transport.create?.credentials.clientSecret;
+      const updated = await accept(
+        hosts().update({
           headers,
-          params: { configId: c.id },
-          body: { expectedRevision: 1, tags: ["tag:next"] },
+          params: { connectionId: host.id },
+          body: {
+            expectedGeneration: generation,
+            host: "100.64.2.3",
+            port: 65_535,
+            credential: step.credential,
+            transport: step.transport,
+          },
         }),
         [200],
-      )
-    ).body;
-    expect(rotated.generation).toBe(2);
-    expect(
-      (await accept(hosts().list({ headers }), [200])).body.connections[0],
-    ).toMatchObject({ generation: h.generation + 2, learnedHostKey: key });
-    expect(
-      (await accept(observations().list({ headers }), [200])).body.observations,
-    ).toStrictEqual([]);
-    expect(
-      (
-        await accept(
-          runner().pin({
-            headers: runnerHeaders,
-            params,
-            body: {
-              ...pinInput,
-            },
-          }),
-          [200],
-        )
-      ).body,
-    ).toStrictEqual({ outcome: "configuration_changed" });
-    expect(
-      (
-        await accept(
-          runner().observe({ headers: runnerHeaders, params, body: obs }),
-          [200],
-        )
-      ).body,
-    ).toStrictEqual({ outcome: "ignored" });
-    expect(
-      (
-        await accept(
-          runner().resolve({ headers: runnerHeaders, params, body }),
-          [200],
-        )
-      ).body,
-    ).toMatchObject({
-      outcome: "resolved_tailscale",
-      generation: h.generation + 2,
-      learnedHostKey: key,
-      tailscale: { configId: c.id, generation: 2, tags: ["tag:next"] },
-    });
+      );
+      expect(updated.body).toMatchObject({
+        port: 65_535,
+        transport: { type: "tailscale" },
+      });
+      if (secret) {
+        expect(JSON.stringify(updated.body)).not.toContain(secret);
+      }
+      const after = await inventory();
+      expect(after.configs).toHaveLength(before.configs.length + step.configs);
+      expect(after.logins).toHaveLength(before.logins.length + step.logins);
+      generation = updated.body.generation;
+    }
+
+    const beforeStale = await inventory();
     await accept(
-      remote().setThreadOverride({
+      hosts().update({
         headers,
-        params: { threadId: r.threadId, protocol: "ssh", connectionId: h.id },
-        body: { enabled: false },
+        params: { connectionId: host.id },
+        body: {
+          expectedGeneration: host.generation,
+          credential: inlineLogin(),
+          transport: { type: "tailscale", create: inlineNetwork() },
+        },
       }),
-      [200],
+      [409],
     );
-    probe = useSecretKmsProbe();
-    expect(
-      (
-        await accept(
-          runner().resolve({ headers: runnerHeaders, params, body }),
-          [200],
-        )
-      ).body.outcome,
-    ).toBe("unavailable");
-    expect(probe.decryptCalls).toBe(0);
-    await accept(
-      remote().clearThreadOverride({
-        headers,
-        params: { threadId: r.threadId, protocol: "ssh", connectionId: h.id },
-      }),
-      [200],
-    );
-    expect(
-      (
-        await accept(
-          runner().resolve({ headers: runnerHeaders, params, body }),
-          [200],
-        )
-      ).body,
-    ).toMatchObject({
-      outcome: "resolved_tailscale",
-      tailscale: {
-        configId: c.id,
-        generation: rotated.generation,
-        tags: ["tag:next"],
-      },
-    });
-    await flushWaitUntilForTest();
+    await expect(inventory()).resolves.toStrictEqual(beforeStale);
   });
-  it.each(["create", "rebind"] as const)(
-    "fences a first credential binding via %s during rotation and keeps the admitted handoff snapshot",
-    async (binding) => {
-      const o = owner();
-      const c = await config();
-      const r = await ordinary.runtime(o);
-      const existingHost = binding === "rebind" ? await host(c.id) : null;
-      const l = (
+
+  it("tailscale-008 reconciles a host-create retry and rolls back a conflicting create", async () => {
+    const owner = await member();
+    const peer = await member({ orgId: owner.orgId });
+    signIn(owner);
+    const body = {
+      id: randomUUID(),
+      displayName: "Inline everything",
+      host: "100.64.0.12",
+      credential: inlineLogin(),
+      transport: { type: "tailscale" as const, create: inlineNetwork() },
+    };
+    await accept(hosts().create({ headers, body }), [201]);
+    const created = await inventory();
+
+    await accept(hosts().create({ headers, body }), [204]);
+    await expect(inventory()).resolves.toStrictEqual(created);
+
+    await accept(
+      hosts().create({ headers, body: { ...body, id: randomUUID() } }),
+      [201],
+    );
+    expect((await inventory()).configs).toHaveLength(
+      created.configs.length + 1,
+    );
+
+    signIn(peer);
+    await accept(hosts().create({ headers, body }), [409]);
+    await expect(inventory()).resolves.toStrictEqual({
+      hosts: [],
+      logins: [],
+      configs: [],
+    });
+  });
+
+  it(
+    "tailscale-002 resolves only authorized Tailscale SSH identity and preserves pin/config-generation fences",
+    { timeout: TEST_WITH_DOUBLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      useSecretKmsProbe();
+      const actor = await member();
+      signIn(actor);
+      const credentials = oauthClient();
+      const config = (
         await accept(
-          credentials().create({
+          tailscale().create({
             headers,
-            body: { id: randomUUID(), ...login },
+            body: {
+              id: randomUUID(),
+              name: "Identity tailnet",
+              credentials,
+              tags: ["tag:okou"],
+            },
           }),
           [201],
         )
       ).body;
-      const rotationEntered = createDeferredPromise<void>(context.signal);
-      const releaseRotation = createDeferredPromise<void>(context.signal);
-      const handoffEntered = createDeferredPromise<void>(context.signal);
-      const releaseHandoff = createDeferredPromise<void>(context.signal);
-      useSecretKmsProbe(async (request) => {
-        rotationEntered.resolve();
-        await releaseRotation.promise;
-        return {
-          keyId: request.keyId,
-          plaintext: Buffer.from("0123456789abcdef0123456789abcdef", "utf8"),
-          encryptedDataKey: Buffer.from("test-wrapped-key", "utf8"),
-        };
-      });
-      const rotation = accept(
-        credentials().update({
-          headers,
-          params: { credentialId: l.id },
-          body: {
-            expectedRevision: l.revision,
-            username: "rotated-user",
-            authentication: { method: "password", password: "rotated-canary" },
-          },
-        }),
-        [200],
-      );
-      await joinAll([
-        (async () => {
-          await rotationEntered.promise;
-          const h =
-            existingHost === null
-              ? (
-                  await accept(
-                    hosts().create({
-                      headers,
-                      body: {
-                        id: randomUUID(),
-                        displayName: "First binding during login rotation",
-                        host: "peer",
-                        credential: { id: l.id },
-                        transport: { type: "tailscale", configId: c.id },
-                      },
-                    }),
-                    [201],
-                  )
-                ).body
-              : (
-                  await accept(
-                    hosts().update({
-                      headers,
-                      params: { connectionId: existingHost.id },
-                      body: {
-                        expectedGeneration: existingHost.generation,
-                        credential: { id: l.id },
-                      },
-                    }),
-                    [200],
-                  )
-                ).body;
-          await accept(
-            remote().updateHostDefault({
-              headers,
-              params: { protocol: "ssh", connectionId: h.id },
-              body: { enabled: true },
-            }),
-            [200],
-          );
-          const params = { runId: r.runId };
-          const body = { connectionId: h.id, runnerIdentity: r.runnerIdentity };
-          const probe = useSecretKmsProbe();
-          const initial = await accept(
-            runner().resolve({ headers: runnerHeaders, params, body }),
-            [200],
-          );
-          expect(initial.body).toMatchObject({
-            outcome: "resolved_tailscale",
-            username: login.username,
-            authentication: login.authentication,
-          });
-          const decryptsBeforeHandoff = probe.decryptCalls;
-          expect(decryptsBeforeHandoff).toBeGreaterThan(0);
-          useSecretKmsProbe(undefined, async (_request, call) => {
-            if (call === decryptsBeforeHandoff) {
-              handoffEntered.resolve();
-              await releaseHandoff.promise;
-            }
-            return Buffer.from("0123456789abcdef0123456789abcdef", "utf8");
-          });
-          const handoff = accept(
-            runner().resolve({ headers: runnerHeaders, params, body }),
-            [200],
-          );
-          await joinAll([
-            (async () => {
-              await handoffEntered.promise;
-              releaseRotation.resolve();
-              await rotation;
-            })().finally(() => {
-              if (!releaseRotation.settled()) {
-                releaseRotation.resolve();
-              }
-              if (!releaseHandoff.settled()) {
-                releaseHandoff.resolve();
-              }
-            }),
-            handoff,
-          ]);
-          expect((await handoff).body).toMatchObject({
-            outcome: "resolved_tailscale",
-            generation: h.generation,
-            username: l.username,
-            authentication: login.authentication,
-          });
-          expect((await rotation).body).toMatchObject({
-            revision: l.revision + 1,
-            username: "rotated-user",
-            // Main's update projection predates the KMS pause and first binding.
-            // The following public Host/Runner assertions check current authority.
-            hosts: [],
-          });
-          expect((await resources()).hosts).toMatchObject([
-            {
-              id: h.id,
-              generation: h.generation + 1,
-              username: "rotated-user",
-            },
-          ]);
-          const currentProbe = useSecretKmsProbe();
-          expect(
-            (
-              await accept(
-                runner().pin({
-                  headers: runnerHeaders,
-                  params,
-                  body: {
-                    ...body,
-                    expectedGeneration: h.generation,
-                    observedHostKey: key,
-                  },
-                }),
-                [200],
-              )
-            ).body,
-          ).toStrictEqual({ outcome: "configuration_changed" });
-          expect(currentProbe.decryptCalls).toBe(0);
-          expect(
-            (
-              await accept(
-                runner().resolve({ headers: runnerHeaders, params, body }),
-                [200],
-              )
-            ).body,
-          ).toMatchObject({
-            outcome: "resolved_tailscale",
-            generation: h.generation + 1,
-            username: "rotated-user",
-            authentication: { method: "password", password: "rotated-canary" },
-          });
-        })().finally(() => {
-          if (!releaseRotation.settled()) {
-            releaseRotation.resolve();
-          }
-          if (!releaseHandoff.settled()) {
-            releaseHandoff.resolve();
-          }
-        }),
-        rotation,
-      ]);
-    },
-  );
-  it.each([null, " private-passphrase-canary\n"])(
-    "protects private-key JIT with passphrase %j using the admitted snapshot, then denies fresh resolution after revocation",
-    async (passphrase) => {
-      const o = owner();
-      const c = await config();
-      const authentication = {
-        method: "private_key" as const,
-        privateKey: "  private-key-canary\n",
-        passphrase,
-      };
-      const h = (
+      const host = (
         await accept(
           hosts().create({
             headers,
             body: {
               id: randomUUID(),
-              displayName: "Key-authenticated private host",
+              displayName: "Tailscale SSH node",
               host: "peer",
-              port: 2222,
-              credential: {
-                create: {
-                  name: "Independent SSH key",
-                  username: "key-user",
-                  authentication,
-                },
-              },
-              transport: { type: "tailscale", configId: c.id },
+              port: 22,
+              username: "test-user",
+              transport: { type: "tailscale_ssh", configId: config.id },
             },
           }),
           [201],
         )
       ).body;
-      const metadata = JSON.stringify(await resources());
-      for (const value of [
-        oauth.clientId,
-        oauth.clientSecret,
-        authentication.privateKey,
-        ...(passphrase === null ? [] : [passphrase]),
-      ]) {
-        expect(metadata).not.toContain(value.trim());
-      }
-      const r = await ordinary.runtime(o);
-      const params = { runId: r.runId };
-      const body = { connectionId: h.id, runnerIdentity: r.runnerIdentity };
+
+      const run = await launchMemberRun(actor);
+
+      const beforeEnable = await accept(
+        runnerSsh().resolve({
+          headers: runnerHeaders(),
+          params: { runId: run.runId },
+          body: {
+            connectionId: host.id,
+            runnerIdentity: run.runnerIdentity,
+          },
+        }),
+        [200],
+      );
+      expect(beforeEnable.body).toStrictEqual({ outcome: "unavailable" });
+
+      signIn(actor);
       await accept(
-        remote().updateHostDefault({
+        remoteAccess().updateHostDefault({
           headers,
-          params: { protocol: "ssh", connectionId: h.id },
+          params: { protocol: "ssh", connectionId: host.id },
           body: { enabled: true },
         }),
         [200],
       );
-      const probe = useSecretKmsProbe();
+
       const resolved = await accept(
-        runner().resolve({ headers: runnerHeaders, params, body }),
+        runnerSsh().resolve({
+          headers: runnerHeaders(),
+          params: { runId: run.runId },
+          body: {
+            connectionId: host.id,
+            runnerIdentity: run.runnerIdentity,
+          },
+        }),
         [200],
       );
-      expect(resolved.body).toStrictEqual({
-        outcome: "resolved_tailscale",
-        host: h.host,
-        port: h.port,
-        username: "key-user",
-        generation: h.generation,
+      expect(resolved.body).toMatchObject({
+        outcome: "resolved_tailscale_ssh",
+        host: "peer",
+        port: 22,
+        username: "test-user",
+        generation: host.generation,
         learnedHostKey: null,
-        authentication,
         tailscale: {
-          ...oauth,
-          configId: c.id,
-          generation: c.generation,
-          tags: c.tags,
+          configId: config.id,
+          generation: 1,
+          clientId: credentials.clientId,
+          clientSecret: credentials.clientSecret,
+          tags: ["tag:okou"],
         },
       });
-      expect(probe.decryptCalls).toBeGreaterThan(0);
-      const decryptsBeforeHandoff = probe.decryptCalls;
-      const revoked = useSecretKmsProbe(undefined, async (_request, call) => {
-        // Revoke at the final external decrypt, including the optional passphrase.
-        if (call === decryptsBeforeHandoff) {
-          await accept(
-            remote().setThreadOverride({
-              headers,
-              params: {
-                threadId: r.threadId,
-                protocol: "ssh",
-                connectionId: h.id,
-              },
-              body: { enabled: false },
-            }),
-            [200],
-          );
-        }
-        return Buffer.from("0123456789abcdef0123456789abcdef", "utf8");
-      });
-      const denied = await accept(
-        runner().resolve({ headers: runnerHeaders, params, body }),
+      expect("authentication" in resolved.body).toBeFalsy();
+
+      const key = hostKeyFor(`ts-002-${host.id}`);
+      const pin = await accept(
+        runnerSsh().pin({
+          headers: runnerHeaders(),
+          params: { runId: run.runId },
+          body: {
+            connectionId: host.id,
+            runnerIdentity: run.runnerIdentity,
+            expectedGeneration: host.generation,
+            observedHostKey: key,
+          },
+        }),
         [200],
       );
-      expect(revoked.decryptCalls).toBe(decryptsBeforeHandoff);
-      expect(denied.body).toStrictEqual(resolved.body);
-      const unauthorized = useSecretKmsProbe();
-      expect(
-        (
-          await accept(
-            runner().resolve({ headers: runnerHeaders, params, body }),
-            [200],
-          )
-        ).body,
-      ).toStrictEqual({ outcome: "unavailable" });
-      expect(unauthorized.decryptCalls).toBe(0);
-    },
-  );
-  it("completes the admitted network snapshot during rotation without holding DB locks across decryption", async () => {
-    const o = owner();
-    const c = await config();
-    const h = await host(c.id);
-    const r = await ordinary.runtime(o);
-    await accept(
-      remote().updateHostDefault({
-        headers,
-        params: { protocol: "ssh", connectionId: h.id },
-        body: { enabled: true },
-      }),
-      [200],
-    );
-    const probe = useSecretKmsProbe(undefined, async (_request, call) => {
-      if (call === 1) {
+      expect(pin.body).toStrictEqual({
+        outcome: "pinned",
+        generation: host.generation + 1,
+      });
+
+      signIn(actor);
+      await accept(
+        tailscale().update({
+          headers,
+          params: { configId: config.id },
+          body: {
+            expectedRevision: config.revision,
+            tags: ["tag:next"],
+          },
+        }),
+        [200],
+      );
+
+      const resolvedAfterTag = await accept(
+        runnerSsh().resolve({
+          headers: runnerHeaders(),
+          params: { runId: run.runId },
+          body: {
+            connectionId: host.id,
+            runnerIdentity: run.runnerIdentity,
+          },
+        }),
+        [200],
+      );
+      expect(resolvedAfterTag.body).toMatchObject({
+        outcome: "resolved_tailscale_ssh",
+        generation: host.generation + 2,
+        learnedHostKey: key,
+        tailscale: {
+          configId: config.id,
+          generation: 2,
+          tags: ["tag:next"],
+        },
+      });
+
+      signIn(actor);
+      const reset = (
         await accept(
-          configs().update({
+          hosts().resetHostKey({
             headers,
-            params: { configId: c.id },
-            body: { expectedRevision: 1, tags: ["tag:rotated"] },
+            params: { connectionId: host.id },
+            body: { expectedGeneration: host.generation + 2 },
           }),
           [200],
-        );
-      }
-      return Buffer.from("0123456789abcdef0123456789abcdef", "utf8");
-    });
-    const result = await accept(
-      runner().resolve({
-        headers: runnerHeaders,
-        params: { runId: r.runId },
-        body: { connectionId: h.id, runnerIdentity: r.runnerIdentity },
-      }),
-      [200],
-    );
-    expect(probe.decryptCalls).toBeGreaterThan(0);
-    expect(result.body).toMatchObject({
-      outcome: "resolved_tailscale",
-      generation: h.generation,
-      tailscale: {
-        ...oauth,
-        configId: c.id,
-        generation: c.generation,
-        tags: c.tags,
-      },
-    });
-    useSecretKmsProbe();
-    const fresh = await accept(
-      runner().resolve({
-        headers: runnerHeaders,
-        params: { runId: r.runId },
-        body: { connectionId: h.id, runnerIdentity: r.runnerIdentity },
-      }),
-      [200],
-    );
-    expect(fresh.body).toMatchObject({
-      outcome: "resolved_tailscale",
-      generation: h.generation + 1,
-      tailscale: { generation: c.generation + 1, tags: ["tag:rotated"] },
-    });
-  });
-  it("serializes shared config CAS and host CAS without orphan inline resources", async () => {
-    owner();
-    const c = await config();
-    const h = await host(c.id);
-    const configsRace = await Promise.all(
-      ["tag:first", "tag:second"].map((tag) => {
-        return accept(
-          configs().update({
+        )
+      ).body;
+      expect(reset.learnedHostKey).toBeNull();
+      expect("credentialId" in reset).toBeFalsy();
+      expect((await inventory()).logins).toStrictEqual([]);
+    },
+  );
+
+  it(
+    "tailscale-026 uses current winning process/host/chat/config authority and the shared host generation fence without a backend rollout flag",
+    { timeout: TEST_WITH_SINGLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const kms = useSecretKmsProbe();
+      const actor = await member();
+      signIn(actor);
+      const credentials = oauthClient();
+      const config = (
+        await accept(
+          tailscale().create({
             headers,
-            params: { configId: c.id },
-            body: { expectedRevision: 1, tags: [tag] },
-          }),
-          [200, 409],
-        );
-      }),
-    );
-    expect(
-      configsRace
-        .map((result) => {
-          return result.status;
-        })
-        .sort(),
-    ).toStrictEqual([200, 409]);
-    const before = await resources();
-    const [current] = before.hosts;
-    if (!current) {
-      throw new Error("Owned host is missing after configuration rotation");
-    }
-    expect(current.generation).toBe(h.generation + 1);
-    const hostRace = await Promise.all(
-      ["first", "second"].map((name) => {
-        return accept(
-          hosts().update({
-            headers,
-            params: { connectionId: h.id },
             body: {
-              expectedGeneration: current.generation,
-              credential: { create: { ...login, name } },
-              transport: {
-                type: "tailscale",
-                create: {
-                  name,
-                  credentials: oauth,
-                  tags: ["tag:okou"],
-                },
-              },
+              id: randomUUID(),
+              name: "Authority tailnet",
+              credentials,
+              tags: ["tag:okou"],
             },
           }),
-          [200, 409],
-        );
-      }),
-    );
-    expect(
-      hostRace
-        .map((result) => {
-          return result.status;
-        })
-        .sort(),
-    ).toStrictEqual([200, 409]);
-    const after = await resources();
-    expect(after.configs).toHaveLength(before.configs.length + 1);
-    expect(after.logins).toHaveLength(before.logins.length + 1);
-    expect(after.hosts).toHaveLength(1);
-  });
-  it("bind/delete races preserve restrictive FK ownership and creation atomicity", async () => {
-    owner();
-    const c = await config();
-    const [binding, deletion] = await Promise.all([
-      accept(
+          [201],
+        )
+      ).body;
+      const password = `pw-${randomUUID()}`;
+      const host = (
+        await accept(
+          hosts().create({
+            headers,
+            body: {
+              id: randomUUID(),
+              displayName: "Authority box",
+              host: "100.64.0.26",
+              port: 2222,
+              credential: {
+                create: {
+                  name: "Authority login",
+                  username: "ops",
+                  authentication: { method: "password", password },
+                },
+              },
+              transport: { type: "tailscale", configId: config.id },
+            },
+          }),
+          [201],
+        )
+      ).body;
+
+      const run = await launchMemberRun(actor);
+
+      const decryptsBeforeDisabled = kms.decryptCalls;
+      const beforeEnable = await accept(
+        runnerSsh().resolve({
+          headers: runnerHeaders(),
+          params: { runId: run.runId },
+          body: {
+            connectionId: host.id,
+            runnerIdentity: run.runnerIdentity,
+          },
+        }),
+        [200],
+      );
+      expect(beforeEnable.body).toStrictEqual({ outcome: "unavailable" });
+      expect(kms.decryptCalls).toBe(decryptsBeforeDisabled);
+
+      signIn(actor);
+      await accept(
+        remoteAccess().updateHostDefault({
+          headers,
+          params: { protocol: "ssh", connectionId: host.id },
+          body: { enabled: true },
+        }),
+        [200],
+      );
+
+      const resolved = await accept(
+        runnerSsh().resolve({
+          headers: runnerHeaders(),
+          params: { runId: run.runId },
+          body: {
+            connectionId: host.id,
+            runnerIdentity: run.runnerIdentity,
+          },
+        }),
+        [200],
+      );
+      expect(resolved.body).toMatchObject({
+        outcome: "resolved_tailscale",
+        host: "100.64.0.26",
+        port: 2222,
+        username: "ops",
+        generation: host.generation,
+        authentication: { method: "password", password },
+        tailscale: {
+          configId: config.id,
+          generation: 1,
+          clientId: credentials.clientId,
+          clientSecret: credentials.clientSecret,
+          tags: ["tag:okou"],
+        },
+      });
+
+      const decryptsBeforeInvalid = kms.decryptCalls;
+      signIn(actor);
+      const [unknownConn, otherRunner, newerGen, memberAuth] =
+        await Promise.all([
+          accept(
+            runnerSsh().resolve({
+              headers: runnerHeaders(),
+              params: { runId: run.runId },
+              body: {
+                connectionId: randomUUID(),
+                runnerIdentity: run.runnerIdentity,
+              },
+            }),
+            [200],
+          ),
+          accept(
+            runnerSsh().resolve({
+              headers: runnerHeaders(),
+              params: { runId: run.runId },
+              body: {
+                connectionId: host.id,
+                runnerIdentity: {
+                  runnerId: randomUUID(),
+                  heartbeatGeneration: run.runnerIdentity.heartbeatGeneration,
+                },
+              },
+            }),
+            [200],
+          ),
+          accept(
+            runnerSsh().resolve({
+              headers: runnerHeaders(),
+              params: { runId: run.runId },
+              body: {
+                connectionId: host.id,
+                runnerIdentity: {
+                  runnerId: run.runnerIdentity.runnerId,
+                  heartbeatGeneration:
+                    run.runnerIdentity.heartbeatGeneration + 1,
+                },
+              },
+            }),
+            [200],
+          ),
+          accept(
+            runnerSsh().resolve({
+              headers,
+              params: { runId: run.runId },
+              body: {
+                connectionId: host.id,
+                runnerIdentity: run.runnerIdentity,
+              },
+            }),
+            [401],
+          ),
+        ]);
+      expect(unknownConn.body).toStrictEqual({ outcome: "unavailable" });
+      expect(otherRunner.body).toStrictEqual({ outcome: "unavailable" });
+      expect(newerGen.body).toStrictEqual({ outcome: "unavailable" });
+      expect(memberAuth.status).toBe(401);
+      expect(kms.decryptCalls).toBe(decryptsBeforeInvalid);
+
+      const key = hostKeyFor(`ts-026-${host.id}`);
+      const wrongPin = await accept(
+        runnerSsh().pin({
+          headers: runnerHeaders(),
+          params: { runId: run.runId },
+          body: {
+            connectionId: host.id,
+            runnerIdentity: run.runnerIdentity,
+            expectedGeneration: host.generation + 10,
+            observedHostKey: key,
+          },
+        }),
+        [200],
+      );
+      expect(wrongPin.body).toStrictEqual({
+        outcome: "configuration_changed",
+      });
+
+      const rightPin = await accept(
+        runnerSsh().pin({
+          headers: runnerHeaders(),
+          params: { runId: run.runId },
+          body: {
+            connectionId: host.id,
+            runnerIdentity: run.runnerIdentity,
+            expectedGeneration: host.generation,
+            observedHostKey: key,
+          },
+        }),
+        [200],
+      );
+      const pinnedGen = pinnedGeneration(rightPin.body);
+      expect(pinnedGen).toBe(host.generation + 1);
+
+      const firstObservation = await accept(
+        runnerSsh().observe({
+          headers: runnerHeaders(),
+          params: { runId: run.runId },
+          body: {
+            connectionId: host.id,
+            runnerIdentity: run.runnerIdentity,
+            expectedGeneration: pinnedGen,
+            expectedCreatedAt: host.createdAt,
+            observedAt: nowDate().toISOString(),
+            failureReason: null,
+          },
+        }),
+        [200],
+      );
+      expect(firstObservation.body).toStrictEqual({ outcome: "recorded" });
+
+      signIn(actor);
+      const observationsBeforeTag = (
+        await accept(hosts().observations({ headers }), [200])
+      ).body.observations;
+      expect(observationsBeforeTag).toHaveLength(1);
+      expect(observationsBeforeTag[0]?.connectionId).toBe(host.id);
+
+      const updatedConfig = (
+        await accept(
+          tailscale().update({
+            headers,
+            params: { configId: config.id },
+            body: {
+              expectedRevision: config.revision,
+              tags: ["tag:next"],
+            },
+          }),
+          [200],
+        )
+      ).body;
+      expect(updatedConfig.generation).toBe(2);
+
+      const [storedHost] = (await inventory()).hosts;
+      expect(storedHost).toMatchObject({
+        id: host.id,
+        generation: host.generation + 2,
+        learnedHostKey: key,
+      });
+      const observationsAfterTag = (
+        await accept(hosts().observations({ headers }), [200])
+      ).body.observations;
+      expect(observationsAfterTag).toStrictEqual([]);
+
+      const [stalePin, staleObservation, refreshedResolve] = await Promise.all([
+        accept(
+          runnerSsh().pin({
+            headers: runnerHeaders(),
+            params: { runId: run.runId },
+            body: {
+              connectionId: host.id,
+              runnerIdentity: run.runnerIdentity,
+              expectedGeneration: host.generation,
+              observedHostKey: key,
+            },
+          }),
+          [200],
+        ),
+        accept(
+          runnerSsh().observe({
+            headers: runnerHeaders(),
+            params: { runId: run.runId },
+            body: {
+              connectionId: host.id,
+              runnerIdentity: run.runnerIdentity,
+              expectedGeneration: pinnedGen,
+              expectedCreatedAt: host.createdAt,
+              observedAt: nowDate().toISOString(),
+              failureReason: null,
+            },
+          }),
+          [200],
+        ),
+        accept(
+          runnerSsh().resolve({
+            headers: runnerHeaders(),
+            params: { runId: run.runId },
+            body: {
+              connectionId: host.id,
+              runnerIdentity: run.runnerIdentity,
+            },
+          }),
+          [200],
+        ),
+      ]);
+      expect(stalePin.body).toStrictEqual({
+        outcome: "configuration_changed",
+      });
+      expect(staleObservation.body).toStrictEqual({ outcome: "ignored" });
+      expect(refreshedResolve.body).toMatchObject({
+        outcome: "resolved_tailscale",
+        generation: host.generation + 2,
+        tailscale: expect.objectContaining({
+          generation: 2,
+          tags: ["tag:next"],
+        }),
+      });
+
+      signIn(actor);
+      await accept(
+        remoteAccess().setThreadOverride({
+          headers,
+          params: {
+            threadId: run.threadId,
+            protocol: "ssh",
+            connectionId: host.id,
+          },
+          body: { enabled: false },
+        }),
+        [200],
+      );
+      const decryptsBeforeRevoked = kms.decryptCalls;
+      const revokedResolve = await accept(
+        runnerSsh().resolve({
+          headers: runnerHeaders(),
+          params: { runId: run.runId },
+          body: {
+            connectionId: host.id,
+            runnerIdentity: run.runnerIdentity,
+          },
+        }),
+        [200],
+      );
+      expect(revokedResolve.body).toStrictEqual({ outcome: "unavailable" });
+      expect(kms.decryptCalls).toBe(decryptsBeforeRevoked);
+
+      signIn(actor);
+      await accept(
+        remoteAccess().clearThreadOverride({
+          headers,
+          params: {
+            threadId: run.threadId,
+            protocol: "ssh",
+            connectionId: host.id,
+          },
+        }),
+        [200],
+      );
+      const restoredResolve = await accept(
+        runnerSsh().resolve({
+          headers: runnerHeaders(),
+          params: { runId: run.runId },
+          body: {
+            connectionId: host.id,
+            runnerIdentity: run.runnerIdentity,
+          },
+        }),
+        [200],
+      );
+      expect(restoredResolve.body).toMatchObject({
+        outcome: "resolved_tailscale",
+        tailscale: expect.objectContaining({
+          generation: 2,
+          tags: ["tag:next"],
+        }),
+      });
+    },
+  );
+
+  async function verifyPrivateKeyJitRevocation(passphrase: string | null) {
+    const hold: { callNumber: number | undefined } = {
+      callNumber: undefined,
+    };
+    const entered = createDeferredPromise<void>(context.signal);
+    const released = createDeferredPromise<void>(context.signal);
+    const kms = useSecretKmsProbe(undefined, (_request, callNumber) => {
+      if (callNumber !== hold.callNumber) {
+        return undefined;
+      }
+      return (async () => {
+        entered.resolve();
+        await released.promise;
+        return Buffer.from("0123456789abcdef0123456789abcdef", "utf8");
+      })();
+    });
+
+    const actor = await member();
+    signIn(actor);
+    const credentials = oauthClient();
+    const config = (
+      await accept(
+        tailscale().create({
+          headers,
+          body: {
+            id: randomUUID(),
+            name: "Private key tailnet",
+            credentials,
+            tags: ["tag:okou"],
+          },
+        }),
+        [201],
+      )
+    ).body;
+    const privateKey = `-----BEGIN OPENSSH PRIVATE KEY-----\nkey-${randomUUID()}\n-----END OPENSSH PRIVATE KEY-----`;
+    const host = (
+      await accept(
         hosts().create({
           headers,
           body: {
             id: randomUUID(),
-            displayName: "Racing host",
+            displayName: "Key peer",
             host: "peer",
-            credential: { create: login },
-            transport: { type: "tailscale", configId: c.id },
+            port: 2222,
+            credential: {
+              create: {
+                name: "Key login",
+                username: "key-user",
+                authentication: {
+                  method: "private_key",
+                  privateKey,
+                  passphrase,
+                },
+              },
+            },
+            transport: { type: "tailscale", configId: config.id },
           },
         }),
-        [201, 404],
-      ),
-      accept(
-        configs().delete({
-          headers,
-          params: { configId: c.id },
-          body: { expectedRevision: 1 },
-        }),
-        [204, 409],
-      ),
-    ]);
-    const saved = await resources();
-    if (binding.status === 201) {
-      expect(deletion.status).toBe(409);
-      expect(saved.configs).toHaveLength(1);
-      expect(saved.hosts).toHaveLength(1);
-      expect(saved.logins).toHaveLength(1);
-    } else {
-      expect(deletion.status).toBe(204);
-      expect(saved).toStrictEqual({ configs: [], hosts: [], logins: [] });
+        [201],
+      )
+    ).body;
+    await accept(
+      remoteAccess().updateHostDefault({
+        headers,
+        params: { protocol: "ssh", connectionId: host.id },
+        body: { enabled: true },
+      }),
+      [200],
+    );
+    const run = await launchMemberRun(actor);
+
+    signIn(actor);
+    const listed = await inventory();
+    const serializedInventory = JSON.stringify(listed);
+    expect(serializedInventory).not.toContain(credentials.clientId);
+    expect(serializedInventory).not.toContain(credentials.clientSecret);
+    expect(serializedInventory).not.toContain(privateKey);
+    if (passphrase !== null) {
+      expect(serializedInventory).not.toContain(passphrase);
     }
-  });
-  it("requires reviewed scope conversion and rejects invalid tags/credentials through real request validation", async () => {
-    owner();
-    const c = await config();
-    const request = setupRawAppRequest({ context, routes: tailscaleRoutes });
-    for (const fields of [
-      { scope: "organization" },
-      { tags: [] },
-      { credentials: { clientId: "id", clientSecret: "\nunsafe" } },
-    ]) {
-      const response = await request(`/api/tailscale/configs/${c.id}`, {
-        method: "PATCH",
-        headers: { ...headers, "content-type": "application/json" },
-        body: JSON.stringify({ expectedRevision: 1, ...fields }),
-      });
-      expect(response.status).toBe(400);
-    }
-    expect((await resources()).configs[0]).toMatchObject({
-      revision: 1,
-      generation: 1,
+
+    const decryptsBeforeFirst = kms.decryptCalls;
+    const firstResolve = await accept(
+      runnerSsh().resolve({
+        headers: runnerHeaders(),
+        params: { runId: run.runId },
+        body: {
+          connectionId: host.id,
+          runnerIdentity: run.runnerIdentity,
+        },
+      }),
+      [200],
+    );
+    const decryptsPerResolve = kms.decryptCalls - decryptsBeforeFirst;
+    expect(decryptsPerResolve).toBeGreaterThan(0);
+    expect(firstResolve.body).toStrictEqual({
+      outcome: "resolved_tailscale",
+      host: "peer",
+      port: 2222,
+      username: "key-user",
+      generation: host.generation,
+      learnedHostKey: null,
+      authentication: {
+        method: "private_key",
+        privateKey,
+        passphrase,
+      },
+      tailscale: {
+        configId: config.id,
+        generation: 1,
+        clientId: credentials.clientId,
+        clientSecret: credentials.clientSecret,
+        tags: ["tag:okou"],
+      },
     });
-  });
+
+    hold.callNumber = kms.decryptCalls + decryptsPerResolve;
+    const secondResolvePromise = accept(
+      runnerSsh().resolve({
+        headers: runnerHeaders(),
+        params: { runId: run.runId },
+        body: {
+          connectionId: host.id,
+          runnerIdentity: run.runnerIdentity,
+        },
+      }),
+      [200],
+    );
+    await entered.promise;
+    signIn(actor);
+    await accept(
+      remoteAccess().setThreadOverride({
+        headers,
+        params: {
+          threadId: run.threadId,
+          protocol: "ssh",
+          connectionId: host.id,
+        },
+        body: { enabled: false },
+      }),
+      [200],
+    );
+    released.resolve();
+    const secondResolve = await secondResolvePromise;
+    expect(secondResolve.body).toStrictEqual(firstResolve.body);
+
+    const decryptsBeforeThird = kms.decryptCalls;
+    const thirdResolve = await accept(
+      runnerSsh().resolve({
+        headers: runnerHeaders(),
+        params: { runId: run.runId },
+        body: {
+          connectionId: host.id,
+          runnerIdentity: run.runnerIdentity,
+        },
+      }),
+      [200],
+    );
+    expect(kms.decryptCalls).toBe(decryptsBeforeThird);
+    return {
+      first: firstResolve.body,
+      second: secondResolve.body,
+      third: thirdResolve.body,
+    };
+  }
+
+  it(
+    "tailscale-029 protects private-key JIT with passphrase null using the admitted snapshot, then denies fresh resolution after revocation",
+    { timeout: TEST_WITH_SINGLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const outcome = await verifyPrivateKeyJitRevocation(null);
+      expect(outcome.second).toStrictEqual(outcome.first);
+      expect(outcome.third).toStrictEqual({ outcome: "unavailable" });
+    },
+  );
+
+  it(
+    "tailscale-030 protects private-key JIT with a canary passphrase using the admitted snapshot, then denies fresh resolution after revocation",
+    { timeout: TEST_WITH_SINGLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const outcome = await verifyPrivateKeyJitRevocation(
+        " private-passphrase-canary\n",
+      );
+      expect(outcome.second).toStrictEqual(outcome.first);
+      expect(outcome.third).toStrictEqual({ outcome: "unavailable" });
+    },
+  );
 });

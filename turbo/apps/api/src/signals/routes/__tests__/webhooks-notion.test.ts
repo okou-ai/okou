@@ -1,238 +1,119 @@
-import { createHmac, randomUUID } from "node:crypto";
-
-import { chatThreadConnectorSelectionContract } from "@okouai/api-contracts/contracts/chat-threads";
+import { randomUUID } from "node:crypto";
 import { chatConnectorAccessContract } from "@okouai/api-contracts/contracts/chat-connector-access";
-import { cronExecuteWorkflowAutomationsContract } from "@okouai/api-contracts/contracts/cron";
-import { runConnectorAccountsContract } from "@okouai/api-contracts/contracts/run-connector-accounts";
-import { webhookNotionContract } from "@okouai/api-contracts/contracts/webhooks";
-import { workflowAutomationsContract } from "@okouai/api-contracts/contracts/workflows";
+import { chatThreadsContract } from "@okouai/api-contracts/contracts/chat-threads";
+import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
+import { builtinConnectorOauthStartContract } from "@okouai/api-contracts/contracts/connectors";
+import { builtinConnectorsSlugCallbackContract } from "@okouai/api-contracts/contracts/connectors-slug-callback";
+import {
+  workflowAutomationsContract,
+  workflowsCollectionContract,
+} from "@okouai/api-contracts/contracts/workflows";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { HttpResponse, http } from "msw";
-import { onTestFinished } from "vitest";
+import { http, HttpResponse } from "msw";
+import { describe, expect, it } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { mockEnv } from "../../../lib/env";
-import { mockNow, now } from "../../../lib/time";
+import { mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { server } from "../../../mocks/server";
-import type { ApiTestUser } from "./helpers/api-bdd";
-import { createRunsApi } from "./helpers/api-bdd-runs";
-import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
-import { createConnectorBddApi } from "./helpers/api-bdd-connectors";
-import {
-  createWorkflowsBddApi,
-  mockNotionConnectorOAuth,
-} from "./helpers/api-bdd-workflows";
-import { chatEventDisplayText } from "./helpers/chat-event";
-import { createRouteMocks } from "./helpers/route-test";
-import { chatThreadRoutes } from "../chat-threads";
 import { chatConnectorAccessRoutes } from "../chat-connector-access";
-import { cronExecuteWorkflowAutomationsRoutes } from "../cron-execute-workflow-automations";
-import { runConnectorAccountRoutes } from "../run-connector-accounts";
-import { webhooksNotionRoutes } from "../webhooks-notion";
+import { chatThreadCreateRoutes } from "../chat-threads-create";
+import { connectorAccountRoutes } from "../connector-accounts";
+import { builtinConnectorsRoutes } from "../connectors";
+import { builtinConnectorsSlugCallbackRoutes } from "../connectors-slug-callback";
 import { workflowAutomationsRoutes } from "../workflow-automations";
+import { workflowsRoutes } from "../workflows";
+import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
+import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
+const headers = Object.freeze({ authorization: "Bearer clerk-session" });
+const NOTION_TARGET = Object.freeze({
+  kind: "builtin" as const,
+  connectorSlug: "notion" as const,
+});
 
-const mocks = createRouteMocks(context);
-const wf = createWorkflowsBddApi(context);
-const runsApi = createRunsApi(context);
-const connectorsApi = createConnectorBddApi(context);
-const WORKFLOW_NAME = "notion-webhook-workflow";
-const NOTION_WEBHOOK_TOKEN = "notion-webhook-verification-token";
-const NOTION_WORKSPACE_ID = "33333333-3333-4333-8333-333333333333";
-const NOTION_SUBSCRIPTION_ID = "44444444-4444-4444-8444-444444444444";
-const NOTION_INTEGRATION_ID = "55555555-5555-4555-8555-555555555555";
-const NOTION_AUTHOR_ID = "66666666-6666-4666-8666-666666666666";
+const app = setupApp({
+  context,
+  routes: [
+    ...builtinConnectorsRoutes,
+    ...builtinConnectorsSlugCallbackRoutes,
+    ...connectorAccountRoutes,
+    ...chatConnectorAccessRoutes,
+    ...chatThreadCreateRoutes,
+    ...workflowsRoutes,
+    ...workflowAutomationsRoutes,
+  ],
+});
 
-interface WorkflowsFixture {
-  readonly orgId: string;
-  readonly userId: string;
+const oauthStart = app(builtinConnectorOauthStartContract);
+const oauthCallback = app(builtinConnectorsSlugCallbackContract);
+const connectorAccounts = app(connectorAccountsContract);
+const chatConnectorAccess = app(chatConnectorAccessContract);
+const chatThreads = app(chatThreadsContract);
+const workflows = app(workflowsCollectionContract);
+const workflowAutomations = app(workflowAutomationsContract);
+
+function bearerToken(request: Request): string {
+  return request.headers.get("authorization")?.replace(/^Bearer /, "") ?? "";
 }
 
-/**
- * Per-test Notion entity ids. The webhook fans out to every automation in the
- * database watching the same Notion page; distinct ids model separate provider
- * entities, including in the account-only cases using shared PostgreSQL.
- */
-interface NotionEntities {
-  readonly parentPageId: string;
-  readonly childPageId: string;
-  readonly databaseId: string;
-  readonly dataSourceId: string;
-  readonly parentPageUrl: string;
-  readonly childPageUrl: string;
-  readonly databaseUrl: string;
-  readonly dataSourceUrl: string;
+function notionPageUrl(pageId: string): string {
+  return `https://www.notion.so/Page-${pageId.replace(/-/gu, "")}`;
 }
 
-function newNotionEntities(): NotionEntities {
-  const parentPageId = randomUUID();
-  const childPageId = randomUUID();
-  const databaseId = randomUUID();
-  const dataSourceId = randomUUID();
-  const compact = (id: string) => {
-    return id.replaceAll("-", "");
-  };
-  return {
-    parentPageId,
-    childPageId,
-    databaseId,
-    dataSourceId,
-    parentPageUrl: `https://www.notion.so/Roadmap-${compact(parentPageId)}`,
-    childPageUrl: `https://www.notion.so/Launch-notes-${compact(childPageId)}`,
-    databaseUrl: `https://www.notion.so/${compact(databaseId)}?v=aaaaaaaaaaaa4aaa8aaaaaaaaaaaaaaa&source=copy_link`,
-    dataSourceUrl: `https://www.notion.so/Bug-Bash-${compact(dataSourceId)}`,
-  };
-}
-
-function authHeaders() {
-  return { authorization: "Bearer clerk-session" };
-}
-
-function automationsClient() {
-  return setupApp({ context, routes: workflowAutomationsRoutes })(
-    workflowAutomationsContract,
-  );
-}
-
-function chatThreadConnectorSelectionsClient() {
-  return setupApp({ context, routes: chatThreadRoutes })(
-    chatThreadConnectorSelectionContract,
-  );
-}
-
-function configureNotionParentPageMock(
-  entities: NotionEntities,
-  accessToken = "notion-access-token",
+function setupNotionBoundaries(
+  pageTokenRules: Readonly<Record<string, readonly string[]>> = {},
 ): void {
-  server.use(
-    http.get(
-      `https://api.notion.com/v1/pages/${entities.parentPageId}`,
-      ({ request }) => {
-        expect(request.headers.get("authorization")).toBe(
-          `Bearer ${accessToken}`,
-        );
-        expect(request.headers.get("notion-version")).toBe("2026-03-11");
-        return HttpResponse.json({
-          object: "page",
-          id: entities.parentPageId,
-          created_time: "2026-07-01T00:00:00.000Z",
-          last_edited_time: "2026-07-01T00:00:00.000Z",
-          archived: false,
-          in_trash: false,
-          url: entities.parentPageUrl,
-          parent: { type: "workspace" },
-          properties: {
-            title: {
-              id: "title",
-              type: "title",
-              title: [{ type: "text", plain_text: "Roadmap" }],
-            },
-          },
-        });
-      },
-    ),
-  );
-}
+  mockEnv("OKOU_WEB_URL", "https://www.okou.ai");
+  mockOptionalEnv("NOTION_OAUTH_CLIENT_ID", "notion-client-id");
+  mockOptionalEnv("NOTION_OAUTH_CLIENT_SECRET", "notion-client-secret");
+  context.mocks.s3.send.mockResolvedValue({});
 
-function configureNotionChildPageMock(
-  entities: NotionEntities,
-  parent?:
-    | { readonly type: "page_id"; readonly page_id: string }
-    | {
-        readonly type: "data_source_id";
-        readonly data_source_id: string;
-        readonly database_id?: string;
-      },
-  options: {
-    readonly accessToken?: string;
-    readonly title?: string;
-    readonly lastEditedTime?: string;
-    readonly extraProperties?: Record<string, unknown>;
-    readonly once?: boolean;
-  } = {},
-): void {
-  const title = options.title ?? "Launch notes";
-  const resolvedParent = parent ?? {
-    type: "page_id" as const,
-    page_id: entities.parentPageId,
-  };
   server.use(
-    http.get(
-      `https://api.notion.com/v1/pages/${entities.childPageId}`,
-      ({ request }) => {
-        expect(request.headers.get("authorization")).toBe(
-          `Bearer ${options.accessToken ?? "notion-access-token"}`,
-        );
-        expect(request.headers.get("notion-version")).toBe("2026-03-11");
-        return HttpResponse.json({
-          object: "page",
-          id: entities.childPageId,
-          created_time: "2026-07-01T00:00:00.000Z",
-          last_edited_time:
-            options.lastEditedTime ?? "2026-07-06T12:00:00.000Z",
-          archived: false,
-          in_trash: false,
-          url: entities.childPageUrl,
-          parent: resolvedParent,
-          properties: {
-            title: {
-              id: "title",
-              type: "title",
-              title: [{ type: "text", plain_text: title }],
-            },
-            ...options.extraProperties,
+    http.post("https://api.notion.com/v1/oauth/token", async ({ request }) => {
+      const payload: unknown = await request.json();
+      const code =
+        typeof payload === "object" &&
+        payload !== null &&
+        "code" in payload &&
+        typeof payload.code === "string"
+          ? payload.code
+          : "code-1";
+      const suffix = code.replace(/^code-/u, "");
+      return HttpResponse.json({
+        access_token: `notion-token-${suffix}`,
+        bot_id: `bot-${suffix}`,
+        refresh_token: `refresh-${suffix}`,
+        expires_in: 3600,
+        owner: {
+          user: {
+            id: `notion-user-${suffix}`,
+            name: `Notion ${suffix}`,
           },
-        });
-      },
-      { once: options.once },
-    ),
-  );
-}
-
-function configureNotionParentAndChildPageMock(entities: NotionEntities): void {
-  server.use(
+        },
+      });
+    }),
     http.get(
       "https://api.notion.com/v1/pages/:pageId",
-      ({ request, params }) => {
-        expect(request.headers.get("authorization")).toBe(
-          "Bearer notion-access-token",
-        );
-        expect(request.headers.get("notion-version")).toBe("2026-03-11");
-        if (params.pageId === entities.parentPageId) {
-          return HttpResponse.json({
-            object: "page",
-            id: entities.parentPageId,
-            created_time: "2026-07-01T00:00:00.000Z",
-            last_edited_time: "2026-07-01T00:00:00.000Z",
-            archived: false,
-            in_trash: false,
-            url: entities.parentPageUrl,
-            parent: { type: "workspace" },
-            properties: {
-              title: {
-                id: "title",
-                type: "title",
-                title: [{ type: "text", plain_text: "Roadmap" }],
-              },
-            },
-          });
+      ({ params, request }) => {
+        const pageId = String(params.pageId);
+        const allowedTokens = pageTokenRules[pageId];
+        if (allowedTokens && !allowedTokens.includes(bearerToken(request))) {
+          return HttpResponse.json(
+            { object: "error", status: 404, code: "object_not_found" },
+            { status: 404 },
+          );
         }
-        expect(params.pageId).toBe(entities.childPageId);
         return HttpResponse.json({
           object: "page",
-          id: entities.childPageId,
-          created_time: "2026-07-01T00:00:00.000Z",
-          last_edited_time: "2026-07-06T12:00:00.000Z",
-          archived: false,
-          in_trash: false,
-          url: entities.childPageUrl,
-          parent: { type: "page_id", page_id: entities.parentPageId },
+          id: pageId,
+          url: notionPageUrl(pageId),
+          parent: { type: "workspace", workspace: true },
           properties: {
             title: {
               id: "title",
               type: "title",
-              title: [{ type: "text", plain_text: "Launch notes" }],
+              title: [{ plain_text: `Parent ${pageId.slice(0, 8)}` }],
             },
           },
         });
@@ -241,1693 +122,460 @@ function configureNotionParentAndChildPageMock(entities: NotionEntities): void {
   );
 }
 
-function configureNotionDatabaseMock(
-  entities: NotionEntities,
-  accessToken = "notion-access-token",
-): void {
-  server.use(
-    http.get(
-      "https://api.notion.com/v1/databases/:databaseId",
-      ({ request, params }) => {
-        expect(params.databaseId).toBe(entities.databaseId);
-        expect(request.headers.get("authorization")).toBe(
-          `Bearer ${accessToken}`,
-        );
-        expect(request.headers.get("notion-version")).toBe("2026-03-11");
-        return HttpResponse.json({
-          object: "database",
-          id: entities.databaseId,
-          url: entities.databaseUrl,
-          title: [{ plain_text: "Bug Bash" }],
-          data_sources: [{ id: entities.dataSourceId, name: "Bug Bash" }],
-        });
-      },
-    ),
-    http.get(
-      "https://api.notion.com/v1/data_sources/:dataSourceId",
-      ({ request, params }) => {
-        expect(params.dataSourceId).toBe(entities.dataSourceId);
-        expect(request.headers.get("authorization")).toBe(
-          `Bearer ${accessToken}`,
-        );
-        expect(request.headers.get("notion-version")).toBe("2026-03-11");
-        return HttpResponse.json({
-          object: "data_source",
-          id: entities.dataSourceId,
-          name: "Bug Bash",
-          url: entities.dataSourceUrl,
-          parent: {
-            type: "database_id",
-            database_id: entities.databaseId,
-          },
-        });
-      },
-    ),
-  );
-}
-
-function notionSignature(
-  rawBody: string,
-  token = NOTION_WEBHOOK_TOKEN,
-): string {
-  return `sha256=${createHmac("sha256", token).update(rawBody).digest("hex")}`;
-}
-
-function notionPageEvent(args: {
-  readonly entities: NotionEntities;
-  readonly type: string;
-  readonly timestamp: string;
-  readonly pageId?: string;
-  readonly accessibleBy?: readonly string[];
-  readonly parent?: {
-    readonly id?: string;
-    readonly type?: string;
-    readonly data_source_id?: string;
-  };
-}): { readonly id: string; readonly rawBody: string } {
-  const id = randomUUID();
-  return {
-    id,
-    rawBody: JSON.stringify({
-      id,
-      timestamp: args.timestamp,
-      workspace_id: NOTION_WORKSPACE_ID,
-      workspace_name: "Nova Test Workspace",
-      subscription_id: NOTION_SUBSCRIPTION_ID,
-      integration_id: NOTION_INTEGRATION_ID,
-      type: args.type,
-      authors: [{ id: NOTION_AUTHOR_ID, type: "person" }],
-      accessible_by: args.accessibleBy?.map((id) => {
-        return { id, type: "person" };
-      }),
-      attempt_number: 1,
-      entity: {
-        id: args.pageId ?? args.entities.childPageId,
-        type: "page",
-      },
-      data: {
-        parent: args.parent ?? {
-          id: args.entities.parentPageId,
-          type: "page",
-        },
+async function startNotionOauth(index: number): Promise<string> {
+  const started = await accept(
+    oauthStart.start({
+      headers,
+      params: { connectorSlug: "notion" },
+      body: {
+        authMethod: "oauth",
+        account: { intent: "add", displayName: `Notion ${index}` },
       },
     }),
-  };
-}
-
-async function postNotionWebhook(
-  args: { readonly rawBody: string; readonly signature?: string },
-  client = setupApp({ context, routes: webhooksNotionRoutes })(
-    webhookNotionContract,
-  ),
-): Promise<{ readonly status: number; readonly body: unknown }> {
-  const response = await client.post({
-    extraHeaders: {
-      "content-type": "application/json",
-      ...(args.signature ? { "X-Notion-Signature": args.signature } : {}),
-    },
-    body: args.rawBody,
-  });
-  return { status: response.status, body: response.body };
-}
-
-/** Exercise Notion's one-time provider handshake. */
-async function verifyNotionWebhook(
-  client = setupApp({ context, routes: webhooksNotionRoutes })(
-    webhookNotionContract,
-  ),
-): Promise<void> {
-  const verification = await postNotionWebhook(
-    {
-      rawBody: JSON.stringify({ verification_token: NOTION_WEBHOOK_TOKEN }),
-    },
-    client,
+    [200],
   );
-  expect(verification).toStrictEqual({
-    status: 200,
-    body: {
-      success: true,
-      kind: "verification",
-      pending: 0,
-      refreshed: 0,
-      duplicates: 0,
-    },
-  });
+  const state = new URL(started.body.authorizationUrl).searchParams.get(
+    "state",
+  );
+  if (!state) {
+    throw new Error("Expected state parameter in Notion authorization URL");
+  }
+  return state;
 }
 
-/** Reuse the shared provider authority while each scenario owns its Notion pages. */
-async function prepareSharedNotionWebhook(
-  client: Parameters<typeof postNotionWebhook>[1],
+async function completeNotionOauth(
+  index: number,
+  state: string,
 ): Promise<void> {
-  const event = notionPageEvent({
-    entities: newNotionEntities(),
-    type: "page.moved",
-    timestamp: "2026-07-13T04:00:00.000Z",
-  });
-  const signedEvent = {
-    rawBody: event.rawBody,
-    signature: notionSignature(event.rawBody),
-  };
-  let readiness = await postNotionWebhook(signedEvent, client);
-  if (readiness.status === 503) {
-    await verifyNotionWebhook(client);
-    readiness = await postNotionWebhook(signedEvent, client);
+  const completed = await accept(
+    oauthCallback.callback({
+      params: { connectorSlug: "notion" },
+      query: { state, code: `code-${index}`, responseMode: "json" },
+    }),
+    [200],
+  );
+  if (completed.body.status !== "success") {
+    throw new Error(
+      `Notion OAuth callback failed: ${JSON.stringify(completed.body)}`,
+    );
   }
-  expect(readiness).toStrictEqual({
-    status: 200,
-    body: {
-      success: true,
-      kind: "event",
-      pending: 0,
-      refreshed: 0,
-      duplicates: 0,
-    },
+}
+
+async function setupNotionChatAutomation(
+  accountCount: number,
+  options: {
+    readonly enableAccountAccessSwitch?: boolean;
+    readonly pageTokenRules?: Readonly<Record<string, readonly string[]>>;
+  } = {},
+) {
+  const userId = `user_${randomUUID()}`;
+  const orgId = `org_${randomUUID()}`;
+  createRouteMocks(context).clerk.session(userId, orgId, "org:member");
+  setupNotionBoundaries(options.pageTokenRules);
+
+  const indices = Array.from({ length: accountCount }, (_unused, offset) => {
+    return offset + 1;
   });
+  const [thread, _featureUpdate, ...states] = await Promise.all([
+    accept(chatThreads.create({ headers, body: { model: null } }), [201]),
+    options.enableAccountAccessSwitch
+      ? updateFeatureSwitchesForUser(
+          context,
+          { userId, orgId },
+          { [FeatureSwitchKey.MemberConnectorAccountAccess]: true },
+        ).then(() => {
+          createRouteMocks(context).clerk.session(userId, orgId, "org:member");
+        })
+      : Promise.resolve(),
+    ...indices.map((index) => {
+      return startNotionOauth(index);
+    }),
+  ]);
+
+  const [workflow] = await Promise.all([
+    accept(
+      workflows.create({
+        headers,
+        body: {
+          name: `notion-wf-${randomUUID().slice(0, 8)}`,
+          visibility: "private",
+          chatThreadId: thread.body.id,
+        },
+      }),
+      [201],
+    ),
+    ...states.map((state, offset) => {
+      return completeNotionOauth(offset + 1, state);
+    }),
+  ]);
+
+  const parentPageId = randomUUID();
+  const [listed, automation] = await Promise.all([
+    accept(
+      connectorAccounts.connections({
+        headers,
+        query: NOTION_TARGET,
+      }),
+      [200],
+    ),
+    accept(
+      workflowAutomations.create({
+        headers,
+        params: { workflowId: workflow.body.id },
+        body: {
+          kind: "event",
+          eventType: "notion-child-page-created",
+          eventConfig: {
+            provider: "notion",
+            event: "child_page_created",
+            parentPageUrl: notionPageUrl(parentPageId),
+          },
+          enabled: false,
+        },
+      }),
+      [201],
+    ),
+  ]);
+
+  const defaultConnection = listed.body.connections.find((connection) => {
+    return connection.isDefault;
+  });
+  if (!defaultConnection) {
+    throw new Error("Expected default connected Notion account");
+  }
+  const nonDefaultConnections = listed.body.connections.filter((connection) => {
+    return connection.id !== defaultConnection.id;
+  });
+  const orderedConnections = [defaultConnection, ...nonDefaultConnections];
+  const accountIds = orderedConnections.map((connection) => {
+    return connection.id;
+  });
+  const accountTokens = orderedConnections.map((connection) => {
+    const suffix = (connection.displayName ?? "Notion 1").replace(
+      /^Notion /u,
+      "",
+    );
+    return `notion-token-${suffix}`;
+  });
+
+  return {
+    accountIds,
+    accountTokens,
+    threadId: thread.body.id,
+    workflowId: workflow.body.id,
+    automationId: automation.body.id,
+  };
+}
+
+async function readAutomationConnectorId(
+  automationId: string,
+): Promise<string> {
+  const response = await accept(
+    workflowAutomations.get({
+      headers,
+      params: { id: automationId },
+    }),
+    [200],
+  );
+  if (
+    response.body.kind !== "event" ||
+    response.body.eventType !== "notion-child-page-created"
+  ) {
+    throw new Error("Expected notion-child-page-created automation");
+  }
+  return response.body.eventConfig.connectorId;
 }
 
 describe("POST /api/webhooks/notion", () => {
-  it("publishes the first verification token and preserves its signing authority", async () => {
-    const app = await setupApp({
-      context,
-      routes: webhooksNotionRoutes,
-      isolatePg: true,
-    });
-    const webhook = app(webhookNotionContract);
-    const event = notionPageEvent({
-      entities: newNotionEntities(),
-      type: "page.created",
-      timestamp: "2026-07-13T04:00:00.000Z",
-    });
-    const signedEvent = {
-      rawBody: event.rawBody,
-      signature: notionSignature(event.rawBody),
-    };
-    await expect(
-      postNotionWebhook(signedEvent, webhook),
-    ).resolves.toStrictEqual({
-      status: 503,
-      body: { error: "Notion webhook verification token is not configured" },
-    });
-
-    await verifyNotionWebhook();
-    const replacementToken = "replacement-verification-token";
-    await expect(
-      postNotionWebhook({
-        rawBody: JSON.stringify({ verification_token: replacementToken }),
-      }),
-    ).resolves.toStrictEqual({
-      status: 401,
-      body: { error: "Unauthorized" },
-    });
-    await expect(
-      postNotionWebhook({
-        rawBody: event.rawBody,
-        signature: notionSignature(event.rawBody, replacementToken),
-      }),
-    ).resolves.toStrictEqual({
-      status: 401,
-      body: { error: "Unauthorized" },
-    });
-    await expect(postNotionWebhook(signedEvent)).resolves.toStrictEqual({
-      status: 200,
-      body: {
-        success: true,
-        kind: "event",
-        pending: 0,
-        refreshed: 0,
-        duplicates: 0,
-      },
-    });
-  });
-
-  async function setupFixture(): Promise<{
-    readonly fixture: WorkflowsFixture;
-    readonly actor: ApiTestUser;
-    readonly workflowId: string;
-    readonly entities: NotionEntities;
-  }> {
-    const { actor } = await wf.setupWorkflowOrg();
-    if (!actor.orgId) {
-      throw new Error("Expected an org-scoped workflow actor");
-    }
-    // Fable keeps Notion workflow runs on the native Runner execution route.
-    await runsApi.ensurePersonalSubscriptionModel(actor, {
-      model: "claude-fable-5-1",
-    });
-    const workflowId = await wf.createWorkflow(actor, {
-      name: WORKFLOW_NAME,
-    });
-    const fixture = { orgId: actor.orgId, userId: actor.userId };
-    mocks.clerk.session(fixture.userId, fixture.orgId, "org:member");
-    context.mocks.s3.send.mockResolvedValue({});
-    return {
-      fixture,
-      actor,
-      workflowId,
-      entities: newNotionEntities(),
-    };
-  }
-
-  async function connectNotion(scenario: {
-    readonly fixture: WorkflowsFixture;
-    readonly actor: ApiTestUser;
-  }): Promise<void> {
-    mockNotionConnectorOAuth();
-    await wf.connectConnector(scenario.actor, "notion");
-    mocks.clerk.session(
-      scenario.fixture.userId,
-      scenario.fixture.orgId,
-      "org:member",
-    );
-  }
-
-  it("acknowledges unsupported signed events", async () => {
-    const app = await setupApp({
-      context,
-      routes: webhooksNotionRoutes,
-      isolatePg: true,
-    });
-    const webhook = app(webhookNotionContract);
-    const entities = newNotionEntities();
-    await verifyNotionWebhook(webhook);
-
-    const unsupportedEvent = notionPageEvent({
-      entities,
-      type: "page.moved",
-      timestamp: "2026-07-13T04:00:00.000Z",
-    });
-    const unsupportedResponse = {
-      status: 200,
-      body: {
-        success: true,
-        kind: "event",
-        pending: 0,
-        refreshed: 0,
-        duplicates: 0,
-      },
-    };
-    await expect(
-      postNotionWebhook({
-        rawBody: unsupportedEvent.rawBody,
-        signature: notionSignature(unsupportedEvent.rawBody),
-      }),
-    ).resolves.toStrictEqual(unsupportedResponse);
-  });
-
-  it("rejects invalid signatures", async () => {
-    const app = await setupApp({
-      context,
-      routes: webhooksNotionRoutes,
-      isolatePg: true,
-    });
-    const webhook = app(webhookNotionContract);
-    const event = notionPageEvent({
-      entities: newNotionEntities(),
-      type: "page.created",
-      timestamp: "2026-07-13T04:00:00.000Z",
-    });
-    await verifyNotionWebhook(webhook);
-    await expect(
-      postNotionWebhook({
-        rawBody: event.rawBody,
-        signature: "sha256=invalid",
-      }),
-    ).resolves.toStrictEqual({
-      status: 401,
-      body: { error: "Unauthorized" },
-    });
-  });
-
-  it("enqueues and debounces page content updated events for a page scope", async () => {
-    const app = setupApp({
-      context,
-      routes: webhooksNotionRoutes,
-    });
-    const webhook = app(webhookNotionContract);
-    await prepareSharedNotionWebhook(webhook);
-    const scenario = await setupFixture();
-    const { workflowId, entities } = scenario;
-    await connectNotion(scenario);
-    configureNotionChildPageMock(entities, {
-      type: "data_source_id",
-      data_source_id: entities.dataSourceId,
-    });
-
-    const created = await accept(
-      automationsClient().create({
-        headers: authHeaders(),
-        params: { workflowId },
-        body: {
-          kind: "event",
-          eventType: "notion-page-content-updated",
-          eventConfig: {
-            provider: "notion",
-            event: "page_content_updated",
-            pageUrl: entities.childPageUrl,
-          },
-        },
-      }),
-      [201],
-    );
-    if (
-      created.body.kind !== "event" ||
-      created.body.eventType !== "notion-page-content-updated"
-    ) {
-      throw new Error("Expected a Notion page content updated automation");
+  it("webhooks-notion-021 does not reactivate a denied Notion default when deletion leaves no allowed account", async () => {
+    const { accountIds, threadId, automationId } =
+      await setupNotionChatAutomation(2);
+    const [firstAccount, secondAccount] = accountIds;
+    if (!firstAccount || !secondAccount) {
+      throw new Error("Expected two Notion accounts");
     }
 
-    const contentEvent = notionPageEvent({
-      entities,
-      parent: { id: entities.dataSourceId, type: "data_source" },
-      type: "page.content_updated",
-      timestamp: "2026-07-06T12:00:00.000Z",
-    });
-    const first = await postNotionWebhook({
-      rawBody: contentEvent.rawBody,
-      signature: notionSignature(contentEvent.rawBody),
-    });
-    expect(first).toStrictEqual({
-      status: 200,
-      body: {
-        success: true,
-        kind: "event",
-        pending: 1,
-        refreshed: 0,
-        duplicates: 0,
-      },
-    });
-
-    // A properties-only update neither enqueues nor refreshes the pending
-    // content event.
-    const propertiesEvent = notionPageEvent({
-      entities,
-      parent: { id: entities.dataSourceId, type: "data_source" },
-      type: "page.properties_updated",
-      timestamp: "2026-07-06T12:05:00.000Z",
-    });
-    const properties = await postNotionWebhook({
-      rawBody: propertiesEvent.rawBody,
-      signature: notionSignature(propertiesEvent.rawBody),
-    });
-    expect(properties).toStrictEqual({
-      status: 200,
-      body: {
-        success: true,
-        kind: "event",
-        pending: 0,
-        refreshed: 0,
-        duplicates: 0,
-      },
-    });
-
-    // A later content update refreshes the debounce window instead of adding
-    // a second pending event.
-    const secondContentEvent = notionPageEvent({
-      entities,
-      parent: { id: entities.dataSourceId, type: "data_source" },
-      type: "page.content_updated",
-      timestamp: "2026-07-06T12:10:00.000Z",
-    });
-    const second = await postNotionWebhook({
-      rawBody: secondContentEvent.rawBody,
-      signature: notionSignature(secondContentEvent.rawBody),
-    });
-    expect(second).toStrictEqual({
-      status: 200,
-      body: {
-        success: true,
-        kind: "event",
-        pending: 0,
-        refreshed: 1,
-        duplicates: 0,
-      },
-    });
-  });
-
-  it("enqueues page content updated events for a database scope", async () => {
-    const app = setupApp({
-      context,
-      routes: webhooksNotionRoutes,
-    });
-    const webhook = app(webhookNotionContract);
-    await prepareSharedNotionWebhook(webhook);
-    const scenario = await setupFixture();
-    const { workflowId, entities } = scenario;
-    await connectNotion(scenario);
-    configureNotionDatabaseMock(entities);
-
-    const created = await accept(
-      automationsClient().create({
-        headers: authHeaders(),
-        params: { workflowId },
-        body: {
-          kind: "event",
-          eventType: "notion-page-content-updated",
-          eventConfig: {
-            provider: "notion",
-            event: "page_content_updated",
-            databaseUrl: entities.databaseUrl,
-          },
-        },
+    const override = await accept(
+      chatConnectorAccess.setThreadOverride({
+        headers,
+        params: { threadId, connectionId: firstAccount },
+        body: { target: NOTION_TARGET, enabled: false },
       }),
-      [201],
+      [200],
     );
-    if (
-      created.body.kind !== "event" ||
-      created.body.eventType !== "notion-page-content-updated"
-    ) {
-      throw new Error("Expected a Notion page content updated automation");
-    }
+    expect(override.body.currentConnectionId).toBe(secondAccount);
 
-    const contentEvent = notionPageEvent({
-      entities,
-      type: "page.content_updated",
-      timestamp: "2026-07-06T12:00:00.000Z",
-      parent: { id: entities.dataSourceId, type: "data_source" },
-    });
-    const first = await postNotionWebhook({
-      rawBody: contentEvent.rawBody,
-      signature: notionSignature(contentEvent.rawBody),
-    });
-    expect(first).toStrictEqual({
-      status: 200,
-      body: {
-        success: true,
-        kind: "event",
-        pending: 1,
-        refreshed: 0,
-        duplicates: 0,
-      },
-    });
-  });
-
-  it("deduplicates concurrent delivery of the same signed content event", async () => {
-    const app = setupApp({
-      context,
-      routes: webhooksNotionRoutes,
-    });
-    const webhook = app(webhookNotionContract);
-    await prepareSharedNotionWebhook(webhook);
-    const scenario = await setupFixture();
-    await connectNotion(scenario);
-    configureNotionChildPageMock(scenario.entities, {
-      type: "data_source_id",
-      data_source_id: scenario.entities.dataSourceId,
-    });
     await accept(
-      automationsClient().create({
-        headers: authHeaders(),
-        params: { workflowId: scenario.workflowId },
-        body: {
-          kind: "event",
-          eventType: "notion-page-content-updated",
-          eventConfig: {
-            provider: "notion",
-            event: "page_content_updated",
-            pageUrl: scenario.entities.childPageUrl,
-          },
-        },
+      connectorAccounts.delete({
+        headers,
+        params: { connectionId: secondAccount },
+        body: { target: NOTION_TARGET },
       }),
-      [201],
+      [200],
     );
-    const event = notionPageEvent({
-      entities: scenario.entities,
-      parent: { id: scenario.entities.dataSourceId, type: "data_source" },
-      type: "page.content_updated",
-      timestamp: "2026-07-06T12:00:00.000Z",
-    });
-    const delivery = {
-      rawBody: event.rawBody,
-      signature: notionSignature(event.rawBody),
-    };
-    const outcomes = await Promise.all([
-      postNotionWebhook(delivery),
-      postNotionWebhook(delivery),
+
+    const [access] = await Promise.all([
+      accept(
+        chatConnectorAccess.getThread({
+          headers,
+          params: { threadId },
+          query: NOTION_TARGET,
+        }),
+        [200],
+      ),
+      accept(
+        workflowAutomations.enable({
+          headers,
+          params: { id: automationId },
+        }),
+        [400],
+      ),
     ]);
-    expect(outcomes).toStrictEqual(
-      expect.arrayContaining([
-        {
-          status: 200,
-          body: {
-            success: true,
-            kind: "event",
-            pending: 1,
-            refreshed: 0,
-            duplicates: 0,
-          },
-        },
-        {
-          status: 200,
-          body: {
-            success: true,
-            kind: "event",
-            pending: 0,
-            refreshed: 0,
-            duplicates: 1,
-          },
-        },
-      ]),
-    );
+    expect(access.body.currentConnectionId).toBeNull();
+    expect(access.body.available).toBeFalsy();
   });
 
-  it("refreshes pending child page creation after a content update", async () => {
-    const app = setupApp({
-      context,
-      routes: webhooksNotionRoutes,
-    });
-    const webhook = app(webhookNotionContract);
-    await prepareSharedNotionWebhook(webhook);
-    const scenario = await setupFixture();
-    const { workflowId, entities } = scenario;
-    await connectNotion(scenario);
-    configureNotionParentAndChildPageMock(entities);
-
-    await accept(
-      automationsClient().create({
-        headers: authHeaders(),
-        params: { workflowId },
-        body: {
-          kind: "event",
-          eventType: "notion-child-page-created",
-          eventConfig: {
-            provider: "notion",
-            event: "child_page_created",
-            parentPageUrl: entities.parentPageUrl,
-          },
-        },
-      }),
-      [201],
-    );
-
-    const createdEvent = notionPageEvent({
-      entities,
-      type: "page.created",
-      timestamp: "2026-07-06T12:00:00.000Z",
-    });
-    const created = await postNotionWebhook({
-      rawBody: createdEvent.rawBody,
-      signature: notionSignature(createdEvent.rawBody),
-    });
-    expect(created).toStrictEqual({
-      status: 200,
-      body: {
-        success: true,
-        kind: "event",
-        pending: 1,
-        refreshed: 0,
-        duplicates: 0,
-      },
-    });
-
-    // The content update only refreshes the child-page automation's pending event.
-    const contentEvent = notionPageEvent({
-      entities,
-      type: "page.content_updated",
-      timestamp: "2026-07-06T12:05:00.000Z",
-    });
-    const content = await postNotionWebhook({
-      rawBody: contentEvent.rawBody,
-      signature: notionSignature(contentEvent.rawBody),
-    });
-    expect(content).toStrictEqual({
-      status: 200,
-      body: {
-        success: true,
-        kind: "event",
-        pending: 0,
-        refreshed: 1,
-        duplicates: 0,
-      },
-    });
-  });
-
-  it("refreshes pending database item creation after a content update", async () => {
-    const app = setupApp({
-      context,
-      routes: webhooksNotionRoutes,
-    });
-    const webhook = app(webhookNotionContract);
-    await prepareSharedNotionWebhook(webhook);
-    const scenario = await setupFixture();
-    const { workflowId, entities } = scenario;
-    await connectNotion(scenario);
-    configureNotionDatabaseMock(entities);
-
-    await accept(
-      automationsClient().create({
-        headers: authHeaders(),
-        params: { workflowId },
-        body: {
-          kind: "event",
-          eventType: "notion-database-item-created",
-          eventConfig: {
-            provider: "notion",
-            event: "database_item_created",
-            databaseUrl: entities.databaseUrl,
-          },
-        },
-      }),
-      [201],
-    );
-
-    const createdEvent = notionPageEvent({
-      entities,
-      type: "page.created",
-      timestamp: "2026-07-06T12:00:00.000Z",
-      parent: {
-        id: entities.databaseId,
-        data_source_id: entities.dataSourceId,
-      },
-    });
-    const created = await postNotionWebhook({
-      rawBody: createdEvent.rawBody,
-      signature: notionSignature(createdEvent.rawBody),
-    });
-    expect(created).toStrictEqual({
-      status: 200,
-      body: {
-        success: true,
-        kind: "event",
-        pending: 1,
-        refreshed: 0,
-        duplicates: 0,
-      },
-    });
-
-    const contentEvent = notionPageEvent({
-      entities,
-      type: "page.content_updated",
-      timestamp: "2026-07-06T12:05:00.000Z",
-      parent: { id: entities.dataSourceId, type: "data_source" },
-    });
-    const content = await postNotionWebhook({
-      rawBody: contentEvent.rawBody,
-      signature: notionSignature(contentEvent.rawBody),
-    });
-    expect(content).toStrictEqual({
-      status: 200,
-      body: {
-        success: true,
-        kind: "event",
-        pending: 0,
-        refreshed: 1,
-        duplicates: 0,
-      },
-    });
-  });
-
-  async function setupNotionAccountLifecycle() {
-    const runnerGroup = await runsApi.configureRunnerGroup();
-    const scenario = await setupFixture();
-    const { actor, fixture, workflowId, entities } = scenario;
-    await connectNotion(scenario);
-    const [firstAccount] = await connectorsApi.listBuiltinConnectorAccounts(
-      actor,
-      "notion",
-    );
-    if (!firstAccount) {
-      throw new Error("Expected the default Notion account");
-    }
-
-    mockNotionConnectorOAuth({
-      accessToken: "notion-second-access-token",
-      ownerId: "notion-user-2",
-      ownerName: "Second Notion User",
-    });
-    const oauth = await connectorsApi.startOauth(actor, "notion", "oauth", {
-      intent: "add",
-      displayName: "Second Notion",
-    });
-    const state = new URL(oauth.authorizationUrl).searchParams.get("state");
-    if (!state) {
-      throw new Error("Expected the Notion OAuth start URL to include state");
-    }
-    await connectorsApi.completeOauthCallback("notion", {
-      code: "notion-code",
-      state,
-    });
-    const accounts = await connectorsApi.listBuiltinConnectorAccounts(
-      actor,
-      "notion",
-    );
-    const secondAccount = accounts.find((account) => {
-      return account.externalId === "notion-user-2";
-    });
+  it("webhooks-notion-009 (1/2) moves the Notion automation to the new default account", async () => {
+    const { accountIds, automationId } = await setupNotionChatAutomation(2);
+    const [, secondAccount] = accountIds;
     if (!secondAccount) {
-      throw new Error("Expected the second Notion account");
+      throw new Error("Expected second Notion account");
     }
 
-    mocks.clerk.session(fixture.userId, fixture.orgId, "org:member");
-    configureNotionParentPageMock(entities);
-    const created = await accept(
-      automationsClient().create({
-        headers: authHeaders(),
-        params: { workflowId },
-        body: {
-          kind: "event",
-          eventType: "notion-child-page-created",
-          eventConfig: {
-            provider: "notion",
-            event: "child_page_created",
-            parentPageUrl: entities.parentPageUrl,
-          },
-        },
+    await accept(
+      connectorAccounts.setDefault({
+        headers,
+        params: { connectionId: secondAccount },
+        body: { target: NOTION_TARGET },
       }),
-      [201],
+      [200],
     );
+    await expect(readAutomationConnectorId(automationId)).resolves.toBe(
+      secondAccount,
+    );
+  });
+
+  it("webhooks-notion-009 (2/2) restores the Notion automation when switching default back to the first account", async () => {
+    const { accountIds, automationId } = await setupNotionChatAutomation(2);
+    const [firstAccount, secondAccount] = accountIds;
+    if (!firstAccount || !secondAccount) {
+      throw new Error("Expected two Notion accounts");
+    }
+
+    await accept(
+      connectorAccounts.setDefault({
+        headers,
+        params: { connectionId: secondAccount },
+        body: { target: NOTION_TARGET },
+      }),
+      [200],
+    );
+    await accept(
+      connectorAccounts.setDefault({
+        headers,
+        params: { connectionId: firstAccount },
+        body: { target: NOTION_TARGET },
+      }),
+      [200],
+    );
+    await expect(readAutomationConnectorId(automationId)).resolves.toBe(
+      firstAccount,
+    );
+  });
+
+  it("webhooks-notion-010 (1/2) keeps Notion listening on the first account when a denied account becomes default", async () => {
+    const { accountIds, automationId } = await setupNotionChatAutomation(2, {
+      enableAccountAccessSwitch: true,
+    });
+    const [firstAccount, secondAccount] = accountIds;
+    if (!firstAccount || !secondAccount) {
+      throw new Error("Expected two Notion accounts");
+    }
+
+    await accept(
+      chatConnectorAccess.updateAccountPolicy({
+        headers,
+        params: { connectionId: secondAccount },
+        body: { target: NOTION_TARGET, policy: "deny" },
+      }),
+      [200],
+    );
+    await accept(
+      connectorAccounts.setDefault({
+        headers,
+        params: { connectionId: secondAccount },
+        body: { target: NOTION_TARGET },
+      }),
+      [200],
+    );
+    await expect(readAutomationConnectorId(automationId)).resolves.toBe(
+      firstAccount,
+    );
+  });
+
+  it("webhooks-notion-010 (2/2) moves Notion listening to the default account once its policy becomes allow-always", async () => {
+    const { accountIds, automationId } = await setupNotionChatAutomation(2, {
+      enableAccountAccessSwitch: true,
+    });
+    const [, secondAccount] = accountIds;
+    if (!secondAccount) {
+      throw new Error("Expected second Notion account");
+    }
+
+    await accept(
+      chatConnectorAccess.updateAccountPolicy({
+        headers,
+        params: { connectionId: secondAccount },
+        body: { target: NOTION_TARGET, policy: "deny" },
+      }),
+      [200],
+    );
+    await accept(
+      connectorAccounts.setDefault({
+        headers,
+        params: { connectionId: secondAccount },
+        body: { target: NOTION_TARGET },
+      }),
+      [200],
+    );
+    await accept(
+      chatConnectorAccess.updateAccountPolicy({
+        headers,
+        params: { connectionId: secondAccount },
+        body: { target: NOTION_TARGET, policy: "allow-always" },
+      }),
+      [200],
+    );
+    await expect(readAutomationConnectorId(automationId)).resolves.toBe(
+      secondAccount,
+    );
+  });
+
+  it("webhooks-notion-012 inherits explicit Notion account selection in new automations", async () => {
+    const secondParentPageId = randomUUID();
+    const pageTokenRules: Record<string, readonly string[]> = {};
+    const { accountIds, accountTokens, threadId, workflowId, automationId } =
+      await setupNotionChatAutomation(2, { pageTokenRules });
+    const [, secondAccount] = accountIds;
+    const [, secondToken] = accountTokens;
+    if (!secondAccount || !secondToken) {
+      throw new Error("Expected second Notion account");
+    }
+    pageTokenRules[secondParentPageId] = [secondToken];
+
+    await accept(
+      chatConnectorAccess.setThreadCurrent({
+        headers,
+        params: { threadId },
+        body: { target: NOTION_TARGET, connectionId: secondAccount },
+      }),
+      [200],
+    );
+    const [existingConnectorId, created] = await Promise.all([
+      readAutomationConnectorId(automationId),
+      accept(
+        workflowAutomations.create({
+          headers,
+          params: { workflowId },
+          body: {
+            kind: "event",
+            eventType: "notion-child-page-created",
+            eventConfig: {
+              provider: "notion",
+              event: "child_page_created",
+              parentPageUrl: notionPageUrl(secondParentPageId),
+            },
+            enabled: false,
+          },
+        }),
+        [201],
+      ),
+    ]);
+
+    expect(existingConnectorId).toBe(secondAccount);
     if (
       created.body.kind !== "event" ||
-      created.body.eventType !== "notion-child-page-created" ||
-      !created.body.chatThreadId
+      created.body.eventType !== "notion-child-page-created"
     ) {
-      throw new Error("Expected a thread-bound Notion automation");
+      throw new Error("Expected notion-child-page-created automation");
     }
-    const expectAutomationConnector = async (
-      connectorId: string,
-    ): Promise<void> => {
-      const automation = await wf.readAutomation(created.body.id);
-      if (
-        automation.kind !== "event" ||
-        automation.eventType !== "notion-child-page-created"
-      ) {
-        throw new Error("Expected the current Notion automation");
-      }
-      expect(automation.eventConfig).toMatchObject({ connectorId });
-    };
-    await expectAutomationConnector(firstAccount.id);
+    expect(created.body.eventConfig.connectorId).toBe(secondAccount);
+  });
 
-    const threadId = created.body.chatThreadId;
-    const selectAccount = async (connectionId: string): Promise<void> => {
-      await accept(
-        chatThreadConnectorSelectionsClient().update({
-          headers: authHeaders(),
-          params: { id: threadId },
-          body: {
-            connectionId,
-            target: { kind: "builtin", connectorSlug: "notion" },
-          },
+  it("webhooks-notion-019 (1/2) listens on the Chat's selected third Notion account before deletion", async () => {
+    const { accountIds, threadId, automationId } =
+      await setupNotionChatAutomation(3);
+    const [firstAccount, , thirdAccount] = accountIds;
+    if (!firstAccount || !thirdAccount) {
+      throw new Error("Expected three Notion accounts");
+    }
+
+    await accept(
+      chatConnectorAccess.setThreadOverride({
+        headers,
+        params: { threadId, connectionId: firstAccount },
+        body: { target: NOTION_TARGET, enabled: false },
+      }),
+      [200],
+    );
+    await accept(
+      chatConnectorAccess.setThreadCurrent({
+        headers,
+        params: { threadId },
+        body: { target: NOTION_TARGET, connectionId: thirdAccount },
+      }),
+      [200],
+    );
+    await expect(readAutomationConnectorId(automationId)).resolves.toBe(
+      thirdAccount,
+    );
+  });
+
+  it("webhooks-notion-019 (2/2) falls back to the allowed second Notion account after deleting the selected third account", async () => {
+    const { accountIds, threadId, automationId } =
+      await setupNotionChatAutomation(3);
+    const [firstAccount, secondAccount, thirdAccount] = accountIds;
+    if (!firstAccount || !secondAccount || !thirdAccount) {
+      throw new Error("Expected three Notion accounts");
+    }
+
+    await accept(
+      chatConnectorAccess.setThreadOverride({
+        headers,
+        params: { threadId, connectionId: firstAccount },
+        body: { target: NOTION_TARGET, enabled: false },
+      }),
+      [200],
+    );
+    await accept(
+      chatConnectorAccess.setThreadCurrent({
+        headers,
+        params: { threadId },
+        body: { target: NOTION_TARGET, connectionId: thirdAccount },
+      }),
+      [200],
+    );
+    await accept(
+      connectorAccounts.delete({
+        headers,
+        params: { connectionId: thirdAccount },
+        body: { target: NOTION_TARGET },
+      }),
+      [200],
+    );
+
+    const [access, listenerConnectorId] = await Promise.all([
+      accept(
+        chatConnectorAccess.getThread({
+          headers,
+          params: { threadId },
+          query: NOTION_TARGET,
         }),
         [200],
-      );
-    };
-    return {
-      ...scenario,
-      runnerGroup,
-      firstAccount,
-      secondAccount,
-      automationId: created.body.id,
-      threadId,
-      expectAutomationConnector,
-      selectAccount,
-    };
-  }
-
-  it("follows changes to the default Notion account", async () => {
-    const { actor, automationId, firstAccount, secondAccount } =
-      await setupNotionAccountLifecycle();
-    await connectorsApi.setDefaultBuiltinConnectorAccount(
-      actor,
-      "notion",
-      secondAccount.id,
-    );
-    await expect(wf.readAutomation(automationId)).resolves.toMatchObject({
-      kind: "event",
-      eventType: "notion-child-page-created",
-      eventConfig: { connectorId: secondAccount.id },
-    });
-    await connectorsApi.setDefaultBuiltinConnectorAccount(
-      actor,
-      "notion",
-      firstAccount.id,
-    );
-    await expect(wf.readAutomation(automationId)).resolves.toMatchObject({
-      kind: "event",
-      eventType: "notion-child-page-created",
-      eventConfig: { connectorId: firstAccount.id },
-    });
-  });
-
-  it("keeps Notion listening on an eligible account when an ineligible account becomes the default", async () => {
-    const {
-      actor,
-      automationId,
-      firstAccount,
-      secondAccount,
-      expectAutomationConnector,
-    } = await setupNotionAccountLifecycle();
-    await connectorsApi.updateFeatureSwitches(actor, {
-      [FeatureSwitchKey.MemberConnectorAccountAccess]: true,
-    });
-    const access = setupApp({ context, routes: chatConnectorAccessRoutes })(
-      chatConnectorAccessContract,
-    );
-    const account = {
-      headers: authHeaders(),
-      params: { connectionId: secondAccount.id },
-      body: { target: { kind: "builtin", connectorSlug: "notion" } as const },
-    };
-    await accept(
-      access.updateAccountPolicy({
-        ...account,
-        body: { ...account.body, policy: "deny" },
-      }),
-      [200],
-    );
-    await connectorsApi.setDefaultBuiltinConnectorAccount(
-      actor,
-      "notion",
-      secondAccount.id,
-    );
-    await expect(wf.readAutomation(automationId)).resolves.toMatchObject({
-      eventConfig: { connectorId: firstAccount.id },
-    });
-
-    await accept(
-      access.updateAccountPolicy({
-        ...account,
-        body: { ...account.body, policy: "allow-always" },
-      }),
-      [200],
-    );
-    await expectAutomationConnector(secondAccount.id);
-  });
-
-  it("repairs Notion selection after account deletion and re-add", async () => {
-    const {
-      actor,
-      threadId,
-      firstAccount,
-      secondAccount,
-      selectAccount,
-      expectAutomationConnector,
-    } = await setupNotionAccountLifecycle();
-    await selectAccount(secondAccount.id);
-    await connectorsApi.deleteBuiltinConnectorAccount(
-      actor,
-      "notion",
-      secondAccount.id,
-    );
-    await expectAutomationConnector(firstAccount.id);
-
-    mockNotionConnectorOAuth({
-      accessToken: "notion-second-readded-token",
-      ownerId: "notion-user-2",
-      ownerName: "Second Notion User",
-    });
-    const readdOauth = await connectorsApi.startOauth(
-      actor,
-      "notion",
-      "oauth",
-      { intent: "add", displayName: "Second Notion Re-added" },
-    );
-    const readdState = new URL(readdOauth.authorizationUrl).searchParams.get(
-      "state",
-    );
-    if (!readdState) {
-      throw new Error("Expected the Notion re-add URL to include state");
-    }
-    await connectorsApi.completeOauthCallback("notion", {
-      code: "notion-readd-code",
-      state: readdState,
-    });
-    const readdedAccounts = await connectorsApi.listBuiltinConnectorAccounts(
-      actor,
-      "notion",
-    );
-    const readdedAccount = readdedAccounts.find((account) => {
-      return account.externalId === "notion-user-2";
-    });
-    if (!readdedAccount) {
-      throw new Error("Expected the re-added Notion account");
-    }
-    expect(readdedAccount.id).not.toBe(secondAccount.id);
-    await accept(
-      chatThreadConnectorSelectionsClient().update({
-        headers: authHeaders(),
-        params: { id: threadId },
-        body: {
-          connectionId: readdedAccount.id,
-          target: { kind: "builtin", connectorSlug: "notion" },
-        },
-      }),
-      [200],
-    );
-    await expectAutomationConnector(readdedAccount.id);
-  });
-
-  it("inherits explicit Notion account selection in new automations", async () => {
-    const { threadId, workflowId, secondAccount, expectAutomationConnector } =
-      await setupNotionAccountLifecycle();
-    await accept(
-      chatThreadConnectorSelectionsClient().update({
-        headers: authHeaders(),
-        params: { id: threadId },
-        body: {
-          connectionId: secondAccount.id,
-          target: { kind: "builtin", connectorSlug: "notion" },
-        },
-      }),
-      [200],
-    );
-    await expectAutomationConnector(secondAccount.id);
-
-    const selectedEntities = newNotionEntities();
-    configureNotionParentPageMock(
-      selectedEntities,
-      "notion-second-access-token",
-    );
-    const selectedCreation = await accept(
-      automationsClient().create({
-        headers: authHeaders(),
-        params: { workflowId },
-        body: {
-          kind: "event",
-          eventType: "notion-child-page-created",
-          eventConfig: {
-            provider: "notion",
-            event: "child_page_created",
-            parentPageUrl: selectedEntities.parentPageUrl,
-          },
-          enabled: false,
-        },
-      }),
-      [201],
-    );
-    if (
-      selectedCreation.body.kind !== "event" ||
-      selectedCreation.body.eventType !== "notion-child-page-created"
-    ) {
-      throw new Error("Expected the selected-account Notion automation");
-    }
-    expect(selectedCreation.body.eventConfig).toMatchObject({
-      connectorId: secondAccount.id,
-    });
-  });
-
-  it("follows an allowance replacement before the Chat's first explicit account selection", async () => {
-    const { threadId, firstAccount, secondAccount, expectAutomationConnector } =
-      await setupNotionAccountLifecycle();
-
-    const changed = await accept(
-      setupApp({ context, routes: chatConnectorAccessRoutes })(
-        chatConnectorAccessContract,
-      ).setThreadOverride({
-        headers: authHeaders(),
-        params: { threadId, connectionId: firstAccount.id },
-        body: {
-          target: { kind: "builtin", connectorSlug: "notion" },
-          enabled: false,
-        },
-      }),
-      [200],
-    );
-    expect(changed.body.currentConnectionId).toBe(secondAccount.id);
-    await expectAutomationConnector(secondAccount.id);
-  });
-
-  it("repairs the Notion binding when the selected account's timed access expires", async () => {
-    const app = await setupApp({
-      context,
-      routes: webhooksNotionRoutes,
-      isolatePg: true,
-    });
-    const webhook = app(webhookNotionContract);
-    await verifyNotionWebhook(webhook);
-    const {
-      actor,
-      entities,
-      firstAccount,
-      secondAccount,
-      selectAccount,
-      expectAutomationConnector,
-    } = await setupNotionAccountLifecycle();
-    await connectorsApi.updateFeatureSwitches(actor, {
-      [FeatureSwitchKey.MemberConnectorAccountAccess]: true,
-    });
-    await selectAccount(secondAccount.id);
-
-    const expiresAt = now();
-    mockNow(expiresAt - 3_600_000);
-    await accept(
-      setupApp({ context, routes: chatConnectorAccessRoutes })(
-        chatConnectorAccessContract,
-      ).updateAccountPolicy({
-        headers: authHeaders(),
-        params: { connectionId: secondAccount.id },
-        body: {
-          target: { kind: "builtin", connectorSlug: "notion" },
-          policy: "allow-1h",
-        },
-      }),
-      [200],
-    );
-    async function deliver(owner: string, pageId: string) {
-      const { rawBody } = notionPageEvent({
-        entities,
-        type: "page.created",
-        timestamp: new Date(now()).toISOString(),
-        accessibleBy: [owner],
-        pageId,
-      });
-      return await postNotionWebhook(
-        { rawBody, signature: notionSignature(rawBody) },
-        webhook,
-      );
-    }
-
-    mockNow(expiresAt - 1);
-    await expect(
-      deliver("notion-user-2", entities.childPageId),
-    ).resolves.toMatchObject({
-      status: 200,
-      body: { pending: 1 },
-    });
-    await expectAutomationConnector(secondAccount.id);
-
-    mockNow(expiresAt);
-    await expect(deliver("notion-user-2", randomUUID())).resolves.toMatchObject(
-      {
-        status: 200,
-        body: { pending: 0 },
-      },
-    );
-    await expectAutomationConnector(firstAccount.id);
-    await expect(deliver("notion-user-1", randomUUID())).resolves.toMatchObject(
-      {
-        status: 200,
-        body: { pending: 1 },
-      },
-    );
-  });
-
-  it.each(["page.created", "page.content_updated"] as const)(
-    "accepts a redelivered %s after a temporary Notion repair failure",
-    async (type) => {
-      const app = await setupApp({
-        context,
-        routes: webhooksNotionRoutes,
-        isolatePg: true,
-      });
-      const webhook = app(webhookNotionContract);
-      await verifyNotionWebhook(webhook);
-      const { actor, entities, workflowId, firstAccount } =
-        await setupNotionAccountLifecycle();
-      if (type === "page.content_updated") {
-        const unrelated = newNotionEntities();
-        configureNotionDatabaseMock(unrelated);
-        await accept(
-          automationsClient().create({
-            headers: authHeaders(),
-            params: { workflowId },
-            body: {
-              kind: "event",
-              eventType: "notion-page-content-updated",
-              eventConfig: {
-                provider: "notion",
-                event: "page_content_updated",
-                pageUrl: entities.parentPageUrl,
-              },
-            },
-          }),
-          [201],
-        );
-        await accept(
-          automationsClient().create({
-            headers: authHeaders(),
-            params: { workflowId },
-            body: {
-              kind: "event",
-              eventType: "notion-page-content-updated",
-              eventConfig: {
-                provider: "notion",
-                event: "page_content_updated",
-                databaseUrl: unrelated.databaseUrl,
-              },
-            },
-          }),
-          [201],
-        );
-        server.use(
-          http.get(
-            `https://api.notion.com/v1/data_sources/${unrelated.dataSourceId}`,
-            () => {
-              return HttpResponse.json(
-                { code: "rate_limited" },
-                { status: 429 },
-              );
-            },
-          ),
-        );
-      }
-      await connectorsApi.updateFeatureSwitches(actor, {
-        [FeatureSwitchKey.MemberConnectorAccountAccess]: true,
-      });
-      const expiresAt = now();
-      mockNow(expiresAt - 3_600_000);
-      await accept(
-        setupApp({ context, routes: chatConnectorAccessRoutes })(
-          chatConnectorAccessContract,
-        ).updateAccountPolicy({
-          headers: authHeaders(),
-          params: { connectionId: firstAccount.id },
-          body: {
-            target: { kind: "builtin", connectorSlug: "notion" },
-            policy: "allow-1h",
-          },
-        }),
-        [200],
-      );
-
-      mockNow(expiresAt);
-      server.use(
-        http.get(
-          `https://api.notion.com/v1/pages/${entities.parentPageId}`,
-          () => {
-            return HttpResponse.json({ code: "rate_limited" }, { status: 429 });
-          },
-        ),
-      );
-      const event = notionPageEvent({
-        entities,
-        type,
-        timestamp: new Date(expiresAt).toISOString(),
-        accessibleBy: ["notion-user-2"],
-        pageId:
-          type === "page.created"
-            ? entities.childPageId
-            : entities.parentPageId,
-      });
-      const delivery = {
-        rawBody: event.rawBody,
-        signature: notionSignature(event.rawBody),
-      };
-      await expect(postNotionWebhook(delivery, webhook)).resolves.toMatchObject(
-        {
-          status: 503,
-        },
-      );
-
-      configureNotionParentPageMock(entities, "notion-second-access-token");
-      await expect(postNotionWebhook(delivery, webhook)).resolves.toMatchObject(
-        {
-          status: 200,
-          body: { pending: 1, duplicates: 0 },
-        },
-      );
-      await expect(postNotionWebhook(delivery, webhook)).resolves.toMatchObject(
-        {
-          status: 200,
-          body: { pending: 0, duplicates: 1 },
-        },
-      );
-    },
-  );
-
-  it("uses the verified page parent when dispatching a repaired data-source listener", async () => {
-    const webhook = (
-      await setupApp({ context, routes: webhooksNotionRoutes, isolatePg: true })
-    )(webhookNotionContract);
-    await verifyNotionWebhook(webhook);
-    const { actor, entities, workflowId, firstAccount } =
-      await setupNotionAccountLifecycle();
-    configureNotionDatabaseMock(entities);
-    await accept(
-      automationsClient().create({
-        headers: authHeaders(),
-        params: { workflowId },
-        body: {
-          kind: "event",
-          eventType: "notion-page-content-updated",
-          eventConfig: {
-            provider: "notion",
-            event: "page_content_updated",
-            databaseUrl: entities.databaseUrl,
-          },
-        },
-      }),
-      [201],
-    );
-    await connectorsApi.updateFeatureSwitches(actor, {
-      [FeatureSwitchKey.MemberConnectorAccountAccess]: true,
-    });
-    const expiresAt = now();
-    mockNow(expiresAt - 3_600_000);
-    await accept(
-      setupApp({ context, routes: chatConnectorAccessRoutes })(
-        chatConnectorAccessContract,
-      ).updateAccountPolicy({
-        headers: authHeaders(),
-        params: { connectionId: firstAccount.id },
-        body: {
-          target: { kind: "builtin", connectorSlug: "notion" },
-          policy: "allow-1h",
-        },
-      }),
-      [200],
-    );
-    mockNow(expiresAt);
-    const replacementToken = "notion-second-access-token";
-    configureNotionDatabaseMock(entities, replacementToken);
-    server.use(
-      http.get(
-        `https://api.notion.com/v1/pages/${entities.childPageId}`,
-        () => {
-          return HttpResponse.json({ code: "rate_limited" }, { status: 429 });
-        },
       ),
-    );
-    configureNotionChildPageMock(
-      entities,
-      { type: "data_source_id", data_source_id: entities.dataSourceId },
-      { accessToken: replacementToken, once: true },
-    );
-    const { rawBody } = notionPageEvent({
-      entities,
-      type: "page.content_updated",
-      timestamp: new Date(expiresAt).toISOString(),
-      accessibleBy: ["notion-user-2"],
-    });
-    await expect(
-      postNotionWebhook(
-        { rawBody, signature: notionSignature(rawBody) },
-        webhook,
-      ),
-    ).resolves.toMatchObject({ status: 200, body: { pending: 1 } });
-  });
-
-  it("repairs a denied Notion binding only when the replacement can access the resource", async () => {
-    const cronSecret = "notion-listener-cron-secret";
-    mockEnv("CRON_SECRET", cronSecret);
-    const webhook = (
-      await setupApp({
-        context,
-        routes: webhooksNotionRoutes,
-        isolatePg: true,
-      })
-    )(webhookNotionContract);
-    await verifyNotionWebhook(webhook);
-    const {
-      actor,
-      entities,
-      threadId,
-      firstAccount,
-      secondAccount,
-      expectAutomationConnector,
-    } = await setupNotionAccountLifecycle();
-    const access = setupApp({ context, routes: chatConnectorAccessRoutes })(
-      chatConnectorAccessContract,
-    );
-    const target = { kind: "builtin", connectorSlug: "notion" } as const;
-    await accept(
-      access.setThreadOverride({
-        headers: authHeaders(),
-        params: { threadId, connectionId: secondAccount.id },
-        body: { target, enabled: false },
-      }),
-      [200],
-    );
-    await accept(
-      access.setThreadOverride({
-        headers: authHeaders(),
-        params: { threadId, connectionId: firstAccount.id },
-        body: { target, enabled: false },
-      }),
-      [200],
-    );
-    // The account is a valid member default and is denied in this Workflow Chat.
-    await connectorsApi.setDefaultBuiltinConnectorAccount(
-      actor,
-      "notion",
-      secondAccount.id,
-    );
-
-    async function deliver(
-      owner: string | undefined,
-      type: "page.created" | "page.properties_updated" = "page.created",
-    ) {
-      const { rawBody } = notionPageEvent({
-        entities,
-        type,
-        timestamp: "2026-07-06T12:00:00.000Z",
-        accessibleBy: owner === undefined ? undefined : [owner],
-      });
-      return await postNotionWebhook(
-        { rawBody, signature: notionSignature(rawBody) },
-        webhook,
-      );
-    }
-    await expect(deliver("notion-user-2")).resolves.toMatchObject({
-      status: 200,
-      body: { pending: 0 },
-    });
-
-    const replacementOwner = "notion-replacement-user";
-    const replacementToken = "notion-replacement-token";
-    mockNotionConnectorOAuth({
-      ownerId: replacementOwner,
-      accessToken: replacementToken,
-    });
-    const oauth = await connectorsApi.startOauth(actor, "notion", "oauth", {
-      intent: "add",
-      displayName: "Notion Replacement",
-    });
-    const state = new URL(oauth.authorizationUrl).searchParams.get("state");
-    if (!state) {
-      throw new Error("Expected replacement Notion account OAuth state");
-    }
-    await connectorsApi.completeOauthCallback("notion", {
-      code: "notion-replacement-code",
-      state,
-    });
-    const replacement = (
-      await connectorsApi.listBuiltinConnectorAccounts(actor, "notion")
-    ).find((account) => {
-      return account.externalId === replacementOwner;
-    });
-    if (!replacement) {
-      throw new Error("Expected the replacement Notion account");
-    }
-    server.use(
-      http.get(
-        `https://api.notion.com/v1/pages/${entities.parentPageId}`,
-        ({ request }) => {
-          expect(request.headers.get("authorization")).toBe(
-            `Bearer ${replacementToken}`,
-          );
-          return HttpResponse.json(
-            { code: "object_not_found" },
-            { status: 404 },
-          );
-        },
-      ),
-    );
-    await expect(deliver("notion-user-2")).resolves.toMatchObject({
-      status: 200,
-      body: { pending: 0 },
-    });
-    await expect(deliver(replacementOwner)).resolves.toMatchObject({
-      status: 200,
-      body: { pending: 0 },
-    });
-
-    configureNotionParentPageMock(entities, replacementToken);
-    await expect(deliver(undefined)).resolves.toMatchObject({
-      status: 200,
-      body: { pending: 0 },
-    });
-    await expectAutomationConnector(replacement.id);
-    await expect(deliver("notion-user-2")).resolves.toMatchObject({
-      status: 200,
-      body: { pending: 0 },
-    });
-    await expect(deliver(replacementOwner)).resolves.toMatchObject({
-      status: 200,
-      body: { pending: 1 },
-    });
-    await expect(
-      deliver("notion-user-2", "page.properties_updated"),
-    ).resolves.toMatchObject({
-      status: 200,
-      body: { refreshed: 0 },
-    });
-    await expect(
-      deliver(replacementOwner, "page.properties_updated"),
-    ).resolves.toMatchObject({
-      status: 200,
-      body: { refreshed: 1 },
-    });
-
-    configureNotionChildPageMock(entities, undefined, {
-      accessToken: replacementToken,
-    });
-    runsApi.acceptStorageDownloads();
-    runsApi.acceptTelemetryIngest();
-    const cron = setupApp({
-      context,
-      routes: cronExecuteWorkflowAutomationsRoutes,
-    })(cronExecuteWorkflowAutomationsContract);
-    const executed = await accept(
-      cron.execute({ headers: { authorization: `Bearer ${cronSecret}` } }),
-      [200],
-    );
-    expect(executed.body).toStrictEqual({
-      success: true,
-      executed: 1,
-      skipped: 0,
-    });
-    const events = await wf.readThreadEvents(threadId);
-    const inputs = events.filter((event) => {
-      return (
-        event.eventType === "input.automation" ||
-        event.eventType === "input.prompt"
-      );
-    });
-    expect(inputs.map(chatEventDisplayText)).toStrictEqual([
-      'Notion page "Launch notes" was created under the configured parent page.',
+      readAutomationConnectorId(automationId),
     ]);
-  });
-
-  it.each(["selected", "default"] as const)(
-    "keeps an allowed Notion listener after deleting the %s account",
-    async (deletedAccount) => {
-      const {
-        actor,
-        threadId,
-        firstAccount,
-        secondAccount,
-        expectAutomationConnector,
-      } = await setupNotionAccountLifecycle();
-
-      const thirdOwner = randomUUID();
-      mockNotionConnectorOAuth({
-        accessToken: "notion-third-access-token",
-        ownerId: thirdOwner,
-        ownerName: "Third Notion User",
-      });
-      const oauth = await connectorsApi.startOauth(actor, "notion", "oauth", {
-        intent: "add",
-        displayName: "Third Notion",
-      });
-      const state = new URL(oauth.authorizationUrl).searchParams.get("state");
-      if (!state) {
-        throw new Error("Expected third Notion account OAuth state");
-      }
-      await connectorsApi.completeOauthCallback("notion", {
-        code: "notion-third-code",
-        state,
-      });
-      const thirdAccount = (
-        await connectorsApi.listBuiltinConnectorAccounts(actor, "notion")
-      ).find((account) => {
-        return account.externalId === thirdOwner;
-      });
-      if (!thirdAccount) {
-        throw new Error("Expected the third Notion account");
-      }
-      const target = { kind: "builtin", connectorSlug: "notion" } as const;
-      const access = setupApp({ context, routes: chatConnectorAccessRoutes })(
-        chatConnectorAccessContract,
-      );
-      const denied =
-        deletedAccount === "selected" ? firstAccount : secondAccount;
-      const selected =
-        deletedAccount === "selected" ? thirdAccount : firstAccount;
-      const expected =
-        deletedAccount === "selected" ? secondAccount : thirdAccount;
-      await accept(
-        access.setThreadOverride({
-          headers: authHeaders(),
-          params: { threadId, connectionId: denied.id },
-          body: { target, enabled: false },
-        }),
-        [200],
-      );
-      await accept(
-        access.setThreadCurrent({
-          headers: authHeaders(),
-          params: { threadId },
-          body: { target, connectionId: selected.id },
-        }),
-        [200],
-      );
-      await expectAutomationConnector(selected.id);
-      await connectorsApi.deleteBuiltinConnectorAccount(
-        actor,
-        "notion",
-        selected.id,
-      );
-      const current = await accept(
-        access.getThread({
-          headers: authHeaders(),
-          params: { threadId },
-          query: target,
-        }),
-        [200],
-      );
-      expect(current.body.currentConnectionId).toBe(expected.id);
-      await expectAutomationConnector(expected.id);
-    },
-  );
-
-  it("does not reactivate a denied Notion default when deletion leaves no allowed account", async () => {
-    const { actor, threadId, automationId, firstAccount, secondAccount } =
-      await setupNotionAccountLifecycle();
-
-    const target = { kind: "builtin", connectorSlug: "notion" } as const;
-    const access = setupApp({ context, routes: chatConnectorAccessRoutes })(
-      chatConnectorAccessContract,
-    );
-    const selected = await accept(
-      access.setThreadOverride({
-        headers: authHeaders(),
-        params: { threadId, connectionId: firstAccount.id },
-        body: { target, enabled: false },
-      }),
-      [200],
-    );
-    expect(selected.body.currentConnectionId).toBe(secondAccount.id);
-    await connectorsApi.deleteBuiltinConnectorAccount(
-      actor,
-      "notion",
-      secondAccount.id,
-    );
-    const current = await accept(
-      access.getThread({
-        headers: authHeaders(),
-        params: { threadId },
-        query: target,
-      }),
-      [200],
-    );
-    expect(current.body).toMatchObject({
-      currentConnectionId: null,
-      available: false,
-    });
-    await accept(
-      automationsClient().enable({
-        headers: authHeaders(),
-        params: { id: automationId },
-      }),
-      [400],
-    );
-  });
-
-  it("synchronizes Notion listeners after Chat, Run, approval and account allowance changes", async () => {
-    const {
-      actor,
-      threadId,
-      runnerGroup,
-      firstAccount,
-      secondAccount,
-      expectAutomationConnector,
-    } = await setupNotionAccountLifecycle();
-
-    const target = { kind: "builtin", connectorSlug: "notion" } as const;
-    const access = setupApp({ context, routes: chatConnectorAccessRoutes })(
-      chatConnectorAccessContract,
-    );
-    const runAccounts = setupApp({
-      context,
-      routes: runConnectorAccountRoutes,
-    })(runConnectorAccountsContract);
-    const switched = await accept(
-      access.setThreadCurrent({
-        headers: authHeaders(),
-        params: { threadId },
-        body: { target, connectionId: secondAccount.id },
-      }),
-      [200],
-    );
-    expect(switched.body.currentConnectionId).toBe(secondAccount.id);
-    await expectAutomationConnector(secondAccount.id);
-
-    const run = await runsApi.createThreadRun(actor, {
-      threadId,
-      model: "claude-fable-5-1",
-      prompt: "Switch this automation Chat's Notion account",
-    });
-    await runsApi.heartbeatRunner(runnerGroup);
-    const execution = await runsApi.executionInput(run.runId);
-    onTestFinished(async () => {
-      await createWebhookCallbackApi(context).requestAgentComplete(
-        {
-          runId: run.runId,
-          exitCode: 0,
-          completion: {
-            cliAgentType: "claude-code",
-            cliAgentSessionId: `notion-workflow-cli-${run.runId}`,
-            cliAgentSessionHistoryDisposition: "native_only",
-          },
-        },
-        { authorization: `Bearer ${execution.sandboxToken}` },
-        [200],
-      );
-    });
-    const token = execution.platformEnvironment.OKOU_TOKEN;
-    if (!token) {
-      throw new Error("Expected an Okou token from the Runner execution");
-    }
-    await accept(
-      runAccounts.select({
-        headers: { authorization: `Bearer ${token}` },
-        body: { target, connectionId: firstAccount.id },
-      }),
-      [200],
-    );
-    await expectAutomationConnector(firstAccount.id);
-
-    await accept(
-      access.setThreadOverride({
-        headers: authHeaders(),
-        params: { threadId, connectionId: secondAccount.id },
-        body: { target, enabled: false },
-      }),
-      [200],
-    );
-    await accept(
-      access.setThreadCurrent({
-        headers: authHeaders(),
-        params: { threadId },
-        body: { target, connectionId: secondAccount.id },
-      }),
-      [400],
-    );
-    await expectAutomationConnector(firstAccount.id);
-    await accept(
-      runAccounts.approve({
-        headers: authHeaders(),
-        params: { threadId },
-        body: { target, connectionId: secondAccount.id },
-      }),
-      [200],
-    );
-    await expectAutomationConnector(secondAccount.id);
-
-    await accept(
-      access.setThreadOverride({
-        headers: authHeaders(),
-        params: { threadId, connectionId: secondAccount.id },
-        body: { target, enabled: false },
-      }),
-      [200],
-    );
-    await expectAutomationConnector(firstAccount.id);
-    await accept(
-      access.setThreadOverride({
-        headers: authHeaders(),
-        params: { threadId, connectionId: secondAccount.id },
-        body: { target, enabled: null },
-      }),
-      [200],
-    );
-    await accept(
-      access.updateAccountDefault({
-        headers: authHeaders(),
-        params: { connectionId: firstAccount.id },
-        body: { target, enabled: false },
-      }),
-      [200],
-    );
-    await expectAutomationConnector(secondAccount.id);
+    expect(access.body.currentConnectionId).toBe(secondAccount);
+    expect(listenerConnectorId).toBe(secondAccount);
   });
 });

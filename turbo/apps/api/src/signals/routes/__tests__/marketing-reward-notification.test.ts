@@ -1,488 +1,365 @@
 import { randomUUID } from "node:crypto";
-import { expect, test } from "vitest";
 import { getStartedContract } from "@okouai/api-contracts/contracts/get-started";
-import { cronProcessBackgroundJobsContract } from "@okouai/api-contracts/contracts/cron";
 import { marketingRewardNotificationContract } from "@okouai/api-contracts/contracts/marketing-reward-notification";
 import { orgInviteContract } from "@okouai/api-contracts/contracts/org-member-routes";
-import { marketingRewardSettlementContract } from "@okouai/api-contracts/contracts/marketing-reward-settlement";
-import { accept, testContext } from "../../../__tests__/test-context";
-import { setupApp } from "../../../__tests__/test-helpers";
-import { mockEnv } from "../../../lib/env";
+import { http, HttpResponse } from "msw";
+import { describe, expect, it } from "vitest";
+import {
+  accept,
+  testContext,
+  type TestContext,
+} from "../../../__tests__/test-context";
+import { setupApp, setupRawAppRequest } from "../../../__tests__/test-helpers";
+import { env, mockEnv } from "../../../lib/env";
+import {
+  marketingRewardCheckinEventSchema,
+  type MarketingRewardSourceEvent,
+} from "../../../lib/marketing-reward-events";
 import { mockNow } from "../../../lib/time";
-import { getStartedRoutes } from "../get-started";
-import { cronProcessBackgroundJobsRoutes } from "../cron-process-background-jobs";
+import { server } from "../../../mocks/server";
 import { flushWaitUntilForTest } from "../../context/wait-until";
+import { getStartedRoutes } from "../get-started";
 import { marketingRewardNotificationRoutes } from "../marketing-reward-notification";
-import { marketingRewardSettlementRoutes } from "../marketing-reward-settlement";
 import { orgInviteRoutes } from "../org-invite";
-import { createRouteMocks } from "./helpers/route-test";
-import { captureRewardProjectionPublications } from "./helpers/reward-projection-publications";
-import { createBddApi } from "./helpers/api-bdd";
+import type { ApiTestUser } from "./helpers/api-bdd";
+import { createAuthOrgBddApi } from "./helpers/api-bdd-auth-org";
 import { createBddIntegrationApi } from "./helpers/api-bdd-integrations";
 import {
   campaignRequest,
   marketingRewardConsumer,
-  marketingCheckinCampaign,
+  settleMarketingRequest,
 } from "./helpers/marketing-reward-consumer";
+import { captureRewardProjectionPublications } from "./helpers/reward-projection-publications";
+import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
-const bdd = createBddApi(context);
-const projectionSecret =
-  "projection-notification-service-secret-123456789012345";
-const settlementSecret = "settlement-financial-service-secret-123456789012345";
-const headers = Object.freeze({ authorization: `Bearer ${projectionSecret}` });
+const api = createAuthOrgBddApi(context);
+const integrations = createBddIntegrationApi(context);
+const notifications = setupApp({
+  context,
+  routes: marketingRewardNotificationRoutes,
+})(marketingRewardNotificationContract);
+const occurredAtMs = Date.parse("2026-10-12T08:00:00.000Z");
 
-function projectionClient() {
-  mockEnv("MARKETING_REWARDS_PROJECTION_SECRET", projectionSecret);
-  return setupApp({ context, routes: marketingRewardNotificationRoutes })(
-    marketingRewardNotificationContract,
+function configureProjection(ctx: TestContext) {
+  mockEnv("ENV", "development");
+  mockNow(occurredAtMs);
+  const secret = `projection-${randomUUID()}`;
+  mockEnv("MARKETING_REWARDS_PROJECTION_SECRET", secret);
+  return {
+    publications: captureRewardProjectionPublications(ctx),
+    headers: { authorization: `Bearer ${secret}` },
+  };
+}
+
+/** Clerk keeps the invitation pending while the inviter's claim is retained. */
+function clerkKeepsInvitationsPending(orgId: string) {
+  server.use(
+    http.get(
+      "https://api.clerk.com/v1/organizations/:orgId/invitations/:invitationId",
+      ({ params }) => {
+        return HttpResponse.json({
+          id: String(params.invitationId),
+          organization_id: orgId,
+          status: "pending",
+          expires_at: occurredAtMs + 24 * 60 * 60 * 1000,
+        });
+      },
+    ),
   );
 }
 
-async function invitationFixture() {
-  const consumer = marketingRewardConsumer();
-  const actor = bdd.user();
-  await bdd.completeOnboarding(actor);
-  createRouteMocks(context).clerk.session(actor.userId, actor.orgId);
-  context.mocks.clerk.organizations.createOrganizationInvitation.mockResolvedValueOnce(
-    { id: `inv_${randomUUID()}` },
+async function onboardedInviter(): Promise<ApiTestUser & { orgId: string }> {
+  const inviter = api.user();
+  api.acceptStorageWrites();
+  api.mockClerkOrg(inviter);
+  await api.bootstrapLimitedFreeOnboarding(inviter);
+  const orgId = inviter.orgId;
+  if (!orgId) {
+    throw new Error("expected a workspace inviter");
+  }
+  clerkKeepsInvitationsPending(orgId);
+  return { ...inviter, orgId };
+}
+
+async function inviteTeammate(inviter: ApiTestUser) {
+  const invitationId = `orginv_${randomUUID()}`;
+  context.mocks.clerk.organizations.createOrganizationInvitation.mockResolvedValue(
+    { id: invitationId },
   );
   await accept(
     setupApp({ context, routes: orgInviteRoutes })(orgInviteContract).invite({
-      headers: { authorization: "Bearer clerk-session" },
-      body: { email: `${randomUUID()}@example.com`, role: "member" },
+      headers: api.authenticate(inviter),
+      body: { email: `invitee_${randomUUID()}@example.test`, role: "member" },
     }),
     [200],
   );
   await flushWaitUntilForTest();
-  const source = consumer.received.find((event) => {
-    return event.type === "invitation.attributed";
-  });
-  if (!source || source.type !== "invitation.attributed") {
-    throw new Error("Expected original invitation proof");
-  }
-  return { actor, source, consumer };
+  return invitationId;
 }
 
-test("authenticates nonfinancial refreshes before resolving source proofs and rejects another environment", async () => {
-  const api = projectionClient();
-  const body = {
-    kind: "progress" as const,
+function sourceEvent(
+  received: readonly MarketingRewardSourceEvent[],
+  type: MarketingRewardSourceEvent["type"],
+): MarketingRewardSourceEvent {
+  const event = received.find((candidate) => {
+    return candidate.type === type;
+  });
+  if (!event) {
+    throw new Error(`expected a ${type} source event`);
+  }
+  return event;
+}
+
+/** The member checks in; the campaign acknowledges and settles the retained source. */
+async function settledCheckin() {
+  const consumer = marketingRewardConsumer();
+  mockEnv(
+    "MARKETING_REWARDS_CAMPAIGN_SECRET",
+    `campaign-${randomUUID()}-${randomUUID()}`,
+  );
+  server.use(
+    http.post(
+      "https://marketing-consumer.example.test/api/internal/marketing/get-started/check-in",
+      () => {
+        return HttpResponse.json({ status: "pending" }, { status: 202 });
+      },
+    ),
+  );
+  const userId = `user_${randomUUID()}`;
+  const orgId = `org_${randomUUID()}`;
+  createRouteMocks(context).clerk.session(userId, orgId, "org:member");
+  await accept(
+    setupApp({ context, routes: getStartedRoutes })(getStartedContract).checkin(
+      { headers: { authorization: "Bearer clerk-session" } },
+    ),
+    [202],
+  );
+  await flushWaitUntilForTest();
+  const source = marketingRewardCheckinEventSchema.parse(
+    sourceEvent(consumer.received, "checkin.requested"),
+  );
+  const day = source.occurredAt.slice(0, 10);
+  const terms = {
     version: 1 as const,
-    environment: "development" as const,
-    source: { kind: "event" as const, eventId: randomUUID() },
+    environment: source.environment,
+    policy: "get-started-v1" as const,
+    sourceEventId: source.id,
+    questKey: "checkin" as const,
+    sourceKey: day,
+    rewardKey: `checkin:${userId}:${day}`,
+    orgId,
+    actorUserId: userId,
+    beneficiaryUserId: userId,
+    rewardTarget: "user" as const,
+    rewardAmount: 100,
+    completedAt: source.occurredAt,
   };
-  for (const credential of [
-    "clerk-session",
-    settlementSecret,
-    "source-read-secret",
-  ]) {
-    const response = await api.notify({
-      body,
-      headers: { authorization: `Bearer ${credential}` },
+  const settled = await settleMarketingRequest(context, terms);
+  return {
+    userId,
+    orgId,
+    intent: campaignRequest(terms),
+    receipt: settled.body.receipt,
+  };
+}
+
+describe("POST /api/internal/marketing/get-started/notifications", () => {
+  it("marketing-reward-notification-005 requires a dedicated projection credential and the exact committed financial receipt before queueing a refresh", async () => {
+    const { userId, orgId, intent, receipt } = await settledCheckin();
+    const { publications, headers } = configureProjection(context);
+    mockEnv("CRON_SECRET", `cron-${randomUUID()}`);
+    const settlement = { kind: "settlement" as const, version: 1 as const };
+    createRouteMocks(context).clerk.session(userId, orgId, "org:member");
+
+    const wrongCredentials = await Promise.all(
+      [
+        "Bearer clerk-session",
+        `Bearer ${env("CRON_SECRET")}`,
+        `Bearer ${env("MARKETING_REWARDS_SETTLEMENT_SECRET")}`,
+      ].map((authorization) => {
+        return notifications.notify({
+          headers: { authorization },
+          body: { ...settlement, intent, receipt },
+        });
+      }),
+    );
+    const altered = await Promise.all(
+      [
+        { ...receipt, orgId: `org_${randomUUID()}` },
+        { ...receipt, beneficiaryUserId: `user_${randomUUID()}` },
+        { ...receipt, rewardAmount: receipt.rewardAmount + 1 },
+        { ...receipt, memberCreditGrantId: randomUUID() },
+      ].map((changed) => {
+        return notifications.notify({
+          headers,
+          body: { ...settlement, intent, receipt: changed },
+        });
+      }),
+    );
+    await flushWaitUntilForTest();
+    mockEnv("MARKETING_REWARDS_PROJECTION_SECRET", undefined);
+    const unconfigured = await notifications.notify({
+      headers,
+      body: { ...settlement, intent, receipt },
     });
-    expect(response.status).toBe(401);
-    expect(response.headers.get("cache-control")).toBe("no-store");
-  }
-  expect((await api.notify({ body, headers })).status).toBe(404);
-  expect(
-    (
-      await api.notify({
-        body: { ...body, environment: "production" },
-        headers,
-      })
-    ).status,
-  ).toBe(409);
-  mockEnv("MARKETING_REWARDS_PROJECTION_SECRET", undefined);
-  expect((await api.notify({ body, headers })).status).toBe(503);
-});
 
-test("deduplicates source refreshes durably without changing pending invitations or choosing the recipient from the request", async () => {
-  const fixture = await invitationFixture();
-  const api = projectionClient();
-  const publications = captureRewardProjectionPublications(context);
-  const body = {
-    kind: "progress" as const,
-    version: 1 as const,
-    environment: "development" as const,
-    source: { kind: "event" as const, eventId: fixture.source.id },
-  };
-  const forged = { ...body, beneficiaryUserId: "caller-chosen-user" };
-  expect((await api.notify({ body: forged, headers })).status).toBe(400);
-  const acknowledgements = await Promise.all(
-    Array.from({ length: 4 }, () => {
-      return accept(api.notify({ body, headers }), [200]);
-    }),
-  );
-  const first = acknowledgements[0];
-  if (!first) {
-    throw new Error("Expected durable progress acknowledgement");
-  }
-  for (const result of acknowledgements) {
-    expect(result.body).toStrictEqual(first.body);
-  }
-  expect(first.body).toMatchObject({
-    version: body.version,
-    environment: body.environment,
-    source: body.source,
-    notificationId: expect.any(String),
+    for (const response of wrongCredentials) {
+      expect(response.status).toBe(401);
+      expect(response.headers.get("cache-control")).toBe("no-store");
+    }
+    expect(
+      altered.map((response) => {
+        return response.status;
+      }),
+    ).toStrictEqual([409, 409, 409, 409]);
+    expect(publications).toStrictEqual([]);
+    expect(unconfigured.status).toBe(503);
   });
-  await flushWaitUntilForTest();
-  expect(publications).toStrictEqual([
-    {
-      channel: `user:${fixture.actor.userId}`,
-      name: "getStartedRewardsChanged",
-    },
-  ]);
-  expect(
-    (await accept(api.notify({ body, headers }), [200])).body,
-  ).toStrictEqual(first.body);
-  await flushWaitUntilForTest();
-  expect(publications).toHaveLength(1);
-});
 
-test("validates the original invitation claim reference and recovers failed nonfinancial delivery without settlement credentials", async () => {
-  const fixture = await invitationFixture();
-  const otherOwner = await invitationFixture();
-  const api = projectionClient();
-  const publications = captureRewardProjectionPublications(context, true);
-  const body = {
-    kind: "progress" as const,
-    version: 1 as const,
-    environment: "development" as const,
-    source: {
-      kind: "invitation-claim" as const,
-      claimId: fixture.source.claimId,
-      invitationId: fixture.source.invitationId,
-    },
-  };
-  expect(
-    (
-      await api.notify({
-        body: { ...body, source: { ...body.source, claimId: randomUUID() } },
-        headers,
-      })
-    ).status,
-  ).toBe(404);
-  expect(
-    (
-      await api.notify({
-        body: {
-          ...body,
-          source: { ...body.source, invitationId: "another-invitation" },
-        },
-        headers,
-      })
-    ).status,
-  ).toBe(409);
-  // Make A's failed attempt due before B submits its own refresh.
-  mockNow(new Date("2026-01-01T00:00:00.000Z"));
-  const ack = await accept(api.notify({ body, headers }), [200]);
-  expect(ack.body).toMatchObject({
-    version: body.version,
-    environment: body.environment,
-    source: body.source,
-  });
-  await flushWaitUntilForTest();
-  expect(publications).toStrictEqual([]);
-  await accept(
-    api.notify({
-      body: {
-        kind: "progress",
-        version: 1,
-        environment: "development",
-        source: { kind: "event", eventId: otherOwner.source.id },
-      },
-      headers,
-    }),
-    [200],
-  );
-  await flushWaitUntilForTest();
-  const otherPublication = {
-    channel: `user:${otherOwner.actor.userId}`,
-    name: "getStartedRewardsChanged",
-  };
-  expect(publications).toStrictEqual([otherPublication]);
-  expect(
-    (await accept(api.notify({ body, headers }), [200])).body,
-  ).toStrictEqual(ack.body);
-  await flushWaitUntilForTest();
-  expect(publications).toStrictEqual([
-    otherPublication,
-    {
-      channel: `user:${fixture.actor.userId}`,
-      name: "getStartedRewardsChanged",
-    },
-  ]);
-});
-
-test("refreshes a signed revocation using its retained original inviter", async () => {
-  const fixture = await invitationFixture();
-  context.mocks.clerk.organizations.revokeOrganizationInvitation.mockResolvedValueOnce(
-    { id: fixture.source.invitationId },
-  );
-  await accept(
-    setupApp({ context, routes: orgInviteRoutes })(orgInviteContract).revoke({
-      headers: { authorization: "Bearer clerk-session" },
-      body: { invitationId: fixture.source.invitationId },
-    }),
-    [200],
-  );
-  await flushWaitUntilForTest();
-  const source = fixture.consumer.received.find((event) => {
-    return event.type === "invitation.revoked";
-  });
-  if (!source) {
-    throw new Error("Expected signed invitation revocation");
-  }
-  const publications = captureRewardProjectionPublications(context);
-  await accept(
-    projectionClient().notify({
-      headers,
-      body: {
-        kind: "progress",
-        version: 1,
-        environment: "development",
-        source: { kind: "event", eventId: source.id },
-      },
-    }),
-    [200],
-  );
-  await flushWaitUntilForTest();
-  expect(publications).toStrictEqual([
-    {
-      channel: `user:${fixture.actor.userId}`,
-      name: "getStartedRewardsChanged",
-    },
-  ]);
-});
-
-async function receiptFixture(slack = false) {
-  const consumer = slack
-    ? marketingRewardConsumer()
-    : marketingCheckinCampaign(context);
-  const actor = bdd.user();
-  if (slack) {
-    const integrations = createBddIntegrationApi(context);
-    integrations.configureSlackAppMocks();
-    await integrations.installSlackWorkspace(actor);
-  } else {
-    createRouteMocks(context).clerk.session(actor.userId, actor.orgId);
+  it("marketing-reward-notification-004 refreshes a signed revocation using its retained original inviter", async () => {
+    const consumer = marketingRewardConsumer();
+    const inviter = await onboardedInviter();
+    const invitationId = await inviteTeammate(inviter);
     await accept(
-      setupApp({ context, routes: getStartedRoutes })(
-        getStartedContract,
-      ).checkin({
-        headers: { authorization: "Bearer clerk-session" },
+      setupApp({ context, routes: orgInviteRoutes })(orgInviteContract).revoke({
+        headers: api.authenticate(inviter),
+        body: { invitationId },
       }),
       [200],
     );
-  }
-  await flushWaitUntilForTest();
-  const fact = consumer.received.find((event) => {
-    return (
-      event.type === (slack ? "slack.oauth-authorized" : "checkin.requested")
-    );
-  });
-  if (!fact) {
-    throw new Error("Expected retained financial source");
-  }
-  const sourceKey =
-    fact.type === "slack.oauth-authorized"
-      ? fact.workspaceId
-      : fact.occurredAt.slice(0, 10);
-  const intent = campaignRequest({
-    version: 1,
-    environment: fact.environment,
-    policy: "get-started-v1",
-    sourceEventId: fact.id,
-    questKey: slack ? "slack" : "checkin",
-    sourceKey,
-    rewardKey: slack
-      ? `slack:${sourceKey}`
-      : `checkin:${fact.userId}:${sourceKey}`,
-    orgId: fact.orgId,
-    actorUserId: fact.userId,
-    beneficiaryUserId: slack ? null : fact.userId,
-    rewardTarget: slack ? "org" : "user",
-    rewardAmount: slack ? 2000 : 100,
-    completedAt: fact.occurredAt,
-  });
-  mockEnv("MARKETING_REWARDS_SETTLEMENT_SECRET", settlementSecret);
-  const result = await accept(
-    setupApp({ context, routes: marketingRewardSettlementRoutes })(
-      marketingRewardSettlementContract,
-    ).settle({
-      body: intent,
-      headers: { authorization: `Bearer ${settlementSecret}` },
-    }),
-    [200],
-  );
-  return {
-    actor,
-    body: {
-      kind: "settlement" as const,
-      version: 1 as const,
-      intent,
-      receipt: result.body.receipt,
-    },
-  };
-}
+    await flushWaitUntilForTest();
+    const revoked = sourceEvent(consumer.received, "invitation.revoked");
+    const { publications, headers } = configureProjection(context);
 
-test("requires a dedicated projection credential and the exact committed financial receipt before queueing a refresh", async () => {
-  const fixture = await receiptFixture();
-  const api = projectionClient();
-  const publications = captureRewardProjectionPublications(context);
-  for (const credential of [
-    "clerk-session",
-    "marketing-consumer-cron",
-    settlementSecret,
-  ]) {
-    const denied = await api.notify({
-      body: fixture.body,
-      headers: { authorization: `Bearer ${credential}` },
-    });
-    expect(denied.status).toBe(401);
-    expect(denied.headers.get("cache-control")).toBe("no-store");
-  }
-  for (const receipt of [
-    { ...fixture.body.receipt, orgId: "other-org" },
-    { ...fixture.body.receipt, beneficiaryUserId: "other-user" },
-    { ...fixture.body.receipt, rewardAmount: 9999 },
-    { ...fixture.body.receipt, memberCreditGrantId: randomUUID() },
-  ]) {
-    expect(
-      (await api.notify({ body: { ...fixture.body, receipt }, headers }))
-        .status,
-    ).toBe(409);
-  }
-  await flushWaitUntilForTest();
-  expect(publications).toStrictEqual([]);
-  mockEnv("MARKETING_REWARDS_PROJECTION_SECRET", undefined);
-  expect((await api.notify({ body: fixture.body, headers })).status).toBe(503);
-});
-
-test("cron recovers an acknowledged refresh without caller activity or renewing the financial receipt", async () => {
-  await setupApp({
-    context,
-    routes: marketingRewardNotificationRoutes,
-    isolatePg: true,
-  });
-  mockEnv("CRON_SECRET", "projection-recovery-cron");
-  const fixture = await receiptFixture();
-  const api = projectionClient();
-  const publications = captureRewardProjectionPublications(context, true);
-  mockNow(new Date("2026-01-01T00:00:00.000Z"));
-  const original = (
-    await accept(api.notify({ body: fixture.body, headers }), [200])
-  ).body;
-  expect(original).toMatchObject({
-    version: 1,
-    intentId: fixture.body.intent.id,
-    receiptId: fixture.body.receipt.id,
-    notificationId: expect.any(String),
-  });
-  await flushWaitUntilForTest();
-  expect(publications).toStrictEqual([]);
-
-  // The caller already accepted the durable 200. Recovery must not need
-  // another notify request or any owner activity after the failed publish.
-  await accept(
-    setupApp({ context, routes: cronProcessBackgroundJobsRoutes })(
-      cronProcessBackgroundJobsContract,
-    ).process({
-      headers: { authorization: "Bearer projection-recovery-cron" },
-    }),
-    [200],
-  );
-  await flushWaitUntilForTest();
-  expect(publications).toStrictEqual([
-    {
-      channel: `user:${fixture.actor.userId}`,
-      name: "getStartedRewardsChanged",
-    },
-  ]);
-
-  const acknowledgements = await Promise.all(
-    Array.from({ length: 4 }, () => {
-      return accept(api.notify({ body: fixture.body, headers }), [200]);
-    }),
-  );
-  for (const result of acknowledgements) {
-    expect(result.body).toStrictEqual(original);
-  }
-  await flushWaitUntilForTest();
-  expect(publications).toHaveLength(1);
-  const financial = await accept(
-    setupApp({ context, routes: marketingRewardSettlementRoutes })(
-      marketingRewardSettlementContract,
-    ).settle({
-      body: fixture.body.intent,
-      headers: { authorization: `Bearer ${settlementSecret}` },
-    }),
-    [200],
-  );
-  expect(financial.body.receipt).toStrictEqual(fixture.body.receipt);
-});
-
-test("routes an organization reward refresh only to its original actor and organization", async () => {
-  const fixture = await receiptFixture(true);
-  const api = projectionClient();
-  const publications = captureRewardProjectionPublications(context);
-  await accept(api.notify({ body: fixture.body, headers }), [200]);
-  await flushWaitUntilForTest();
-  expect(publications).toStrictEqual(
-    expect.arrayContaining([
-      {
-        channel: `user:${fixture.actor.userId}`,
-        name: "getStartedRewardsChanged",
-      },
-      { channel: `org:${fixture.actor.orgId}`, name: "slack:changed" },
-    ]),
-  );
-  expect(publications).toHaveLength(2);
-});
-
-test("one user's failed refresh does not block another owner's notification", async () => {
-  const fixtures = [
-    await receiptFixture(),
-    await receiptFixture(),
-    await receiptFixture(),
-  ];
-  const api = projectionClient();
-  const publications = captureRewardProjectionPublications(context, true);
-  mockNow(new Date("2026-01-01T00:00:00.000Z"));
-  const acknowledgements = [];
-  for (const fixture of fixtures) {
-    acknowledgements.push(
-      (await accept(api.notify({ body: fixture.body, headers }), [200])).body,
+    await accept(
+      notifications.notify({
+        headers,
+        body: {
+          kind: "progress",
+          version: 1,
+          environment: "development",
+          source: { kind: "event", eventId: revoked.id },
+        },
+      }),
+      [200],
     );
     await flushWaitUntilForTest();
-  }
-  expect(publications).toStrictEqual(
-    fixtures.slice(1).map((fixture) => {
-      return {
-        channel: `user:${fixture.actor.userId}`,
-        name: "getStartedRewardsChanged",
-      };
-    }),
-  );
-  const first = fixtures[0];
-  if (!first) {
-    throw new Error("Expected an owner notification");
-  }
-  expect(
-    (await accept(api.notify({ body: first.body, headers }), [200])).body,
-  ).toStrictEqual(acknowledgements[0]);
-  await flushWaitUntilForTest();
-  expect(publications).toHaveLength(3);
-  expect(publications).toStrictEqual(
-    expect.arrayContaining(
-      fixtures.map((fixture) => {
-        return {
-          channel: `user:${fixture.actor.userId}`,
-          name: "getStartedRewardsChanged",
-        };
+
+    expect(publications).toStrictEqual([
+      { channel: `user:${inviter.userId}`, name: "getStartedRewardsChanged" },
+    ]);
+  });
+
+  it("marketing-reward-notification-002 deduplicates source refreshes durably without changing pending invitations or choosing the recipient from the request", async () => {
+    const consumer = marketingRewardConsumer();
+    const inviter = await onboardedInviter();
+    await inviteTeammate(inviter);
+    const attributed = sourceEvent(consumer.received, "invitation.attributed");
+    const { publications, headers } = configureProjection(context);
+    const progress = {
+      kind: "progress" as const,
+      version: 1 as const,
+      environment: "development" as const,
+      source: { kind: "event" as const, eventId: attributed.id },
+    };
+
+    // The strict contract cannot express a caller-chosen recipient.
+    const chosen = await setupRawAppRequest({
+      context,
+      routes: marketingRewardNotificationRoutes,
+    })("/api/internal/marketing/get-started/notifications", {
+      method: "POST",
+      headers: { ...headers, "content-type": "application/json" },
+      body: JSON.stringify({
+        ...progress,
+        beneficiaryUserId: `user_${randomUUID()}`,
       }),
-    ),
-  );
+    });
+    const concurrent = await Promise.all(
+      Array.from({ length: 4 }, () => {
+        return accept(notifications.notify({ headers, body: progress }), [200]);
+      }),
+    );
+    await flushWaitUntilForTest();
+    const afterConcurrent = [...publications];
+    const repeated = await accept(
+      notifications.notify({ headers, body: progress }),
+      [200],
+    );
+    await flushWaitUntilForTest();
+
+    expect(chosen.status).toBe(400);
+    const [first] = concurrent;
+    if (!first) {
+      throw new Error("expected concurrent refresh responses");
+    }
+    expect(first.body).toStrictEqual({
+      version: 1,
+      environment: "development",
+      source: progress.source,
+      notificationId: expect.any(String),
+    });
+    for (const response of [...concurrent, repeated]) {
+      expect(response.body).toStrictEqual(first.body);
+    }
+    expect(afterConcurrent).toStrictEqual([
+      { channel: `user:${inviter.userId}`, name: "getStartedRewardsChanged" },
+    ]);
+    expect(publications).toStrictEqual(afterConcurrent);
+  });
+
+  it("marketing-reward-notification-007 routes an organization reward refresh only to its original actor and organization", async () => {
+    mockEnv("ENV", "development");
+    mockNow(occurredAtMs);
+    const consumer = marketingRewardConsumer();
+    integrations.configureSlackAppMocks();
+    const actor = integrations.user({ orgRole: "org:admin" });
+    const orgId = actor.orgId;
+    if (!orgId) {
+      throw new Error("expected an organization actor");
+    }
+    const { teamId } = await integrations.installSlackWorkspace(actor);
+    await flushWaitUntilForTest();
+    const authorized = sourceEvent(consumer.received, "slack.oauth-authorized");
+    const terms = {
+      version: 1 as const,
+      environment: authorized.environment,
+      policy: "get-started-v1" as const,
+      sourceEventId: authorized.id,
+      questKey: "slack" as const,
+      sourceKey: teamId,
+      rewardKey: `slack:${teamId}`,
+      orgId,
+      actorUserId: actor.userId,
+      beneficiaryUserId: null,
+      rewardTarget: "org" as const,
+      rewardAmount: 2000,
+      completedAt: authorized.occurredAt,
+    };
+    const settled = await settleMarketingRequest(context, terms);
+    const { publications, headers } = configureProjection(context);
+
+    await accept(
+      notifications.notify({
+        headers,
+        body: {
+          kind: "settlement",
+          version: 1,
+          intent: campaignRequest(terms),
+          receipt: settled.body.receipt,
+        },
+      }),
+      [200],
+    );
+    await flushWaitUntilForTest();
+
+    expect(publications).toHaveLength(2);
+    expect(publications).toStrictEqual(
+      expect.arrayContaining([
+        { channel: `user:${actor.userId}`, name: "getStartedRewardsChanged" },
+        { channel: `org:${orgId}`, name: "slack:changed" },
+      ]),
+    );
+  });
 });
