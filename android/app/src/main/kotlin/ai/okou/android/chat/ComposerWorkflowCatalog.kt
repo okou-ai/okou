@@ -100,8 +100,7 @@ internal class ComposerWorkflowCatalog(
         }
 
     fun accepted(text: String) {
-        if ('/' !in text) return
-        val commands = text.split(whitespace).filter { it.startsWith("/") }.toSet()
+        val commands = sentWorkflowNames(text)
         if (commands.isEmpty()) return
         scope.launch {
             hydrate()
@@ -111,7 +110,7 @@ internal class ComposerWorkflowCatalog(
             }
             updates.withLock {
                 val snapshot = mutable.value.snapshot ?: return@withLock
-                val ids = snapshot.workflows.filter { "/${it.name}" in commands }.map { it.id }
+                val ids = snapshot.workflows.filter { it.name in commands }.map { it.id }
                 if (!authorized() || ids.isEmpty()) return@withLock
                 val recent =
                     try {
@@ -120,7 +119,7 @@ internal class ComposerWorkflowCatalog(
                         throw cancelled
                     } catch (error: Exception) {
                         reportSessionFailure(error)
-                        (ids + snapshot.recent).distinct().take(50)
+                        (ids + snapshot.recent).distinct()
                     }
                 if (authorized()) publish(snapshot.copy(recent = recent))
             }
@@ -171,9 +170,5 @@ internal class ComposerWorkflowCatalog(
                 // A confirmed response remains usable in memory when the cache cannot be written.
             }
         }
-    }
-
-    private companion object {
-        val whitespace = Regex("(?U)\\s+")
     }
 }

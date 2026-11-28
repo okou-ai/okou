@@ -9,6 +9,15 @@ import org.junit.Test
 
 class ComposerWorkflowMatchingTest {
     @Test
+    fun acceptedCommandsUseTheSameUnicodeWhitespaceAsTheEditor() {
+        assertEquals(
+            setOf("release-check", "review-changes"),
+            sentWorkflowNames("run\u00a0/release-check\n/review-changes\t/release-check /"),
+        )
+        assertEquals(emptySet<String>(), sentWorkflowNames("https://example.com/ordinary"))
+    }
+
+    @Test
     fun onlyAnEditableSlashTokenOffersCompletion() {
         assertEquals(
             WorkflowToken(TextRange(5, 8), "发"),

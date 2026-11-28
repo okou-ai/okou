@@ -53,6 +53,18 @@ internal fun TextFieldValue.insertWorkflow(name: String, token: WorkflowToken?):
     return TextFieldValue(prefix + command + suffix, TextRange(cursor))
 }
 
+internal fun sentWorkflowNames(text: String): Set<String> {
+    if ('/' !in text) return emptySet()
+    return buildSet {
+        var start = 0
+        for (end in 0..text.length) {
+            if (end < text.length && !text[end].isWhitespace()) continue
+            if (end > start + 1 && text[start] == '/') add(text.substring(start + 1, end))
+            start = end + 1
+        }
+    }
+}
+
 internal data class WorkflowMatch(
     val workflow: ComposerWorkflowsItem,
     val ranges: List<IntRange>,
