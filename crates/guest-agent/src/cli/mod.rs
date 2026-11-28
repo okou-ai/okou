@@ -43,6 +43,7 @@ mod exec_boundary;
 mod jsonl_result;
 mod line_reader;
 mod message_event_delivery;
+mod native_execution;
 mod pi_preparation_timing;
 mod pi_rpc;
 mod pi_startup;
