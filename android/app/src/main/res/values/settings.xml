@@ -10,7 +10,6 @@
     <string name="settings_tools_unavailable">Tools are temporarily unavailable.</string>
     <string name="settings_tool_save_failed">Couldn’t confirm this change.</string>
     <string name="settings_tool_image_save_failed">Couldn’t save the image generation model</string>
-    <string name="settings_save_checking">Checking the result…</string>
     <string name="settings_preferences_save_rolled_back">Couldn’t save settings. Restored the previous values.</string>
     <string name="settings_appearance_sync_failed">Couldn’t sync appearance. Applied it to this device.</string>
     <string name="settings_email_updates">Email updates</string>

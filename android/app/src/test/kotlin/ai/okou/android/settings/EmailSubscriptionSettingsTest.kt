@@ -51,7 +51,7 @@ class EmailSubscriptionSettingsTest {
     }
 
     @Test
-    fun onlyReadsWhenOpenedAndChecksAnAmbiguousHttpWriteWithoutRepeatingIt() = runTest {
+    fun ambiguousHttpWriteRollsBackUntilThePanelReadsNormally() = runTest {
         ChatListApiFixture().use { api ->
             val fixture = SettingsApiFixture(api)
             val model = model(api)
@@ -59,6 +59,7 @@ class EmailSubscriptionSettingsTest {
             assertEquals(0, fixture.emailReads.get())
             assertNull(model.state.value.checked)
 
+            model.setPanelOpen(true)
             model.visible(true)
             assertEquals(initial, model.state.first { it.read.value != null }.read.value)
             fixture.emailWriteStatus = 503
@@ -66,6 +67,14 @@ class EmailSubscriptionSettingsTest {
             model.subscribe(true)
             assertEquals(true, model.state.value.checked)
             assertEquals(initial, model.state.value.read.value)
+            val rolledBack = model.state.first { it.updateFailed }
+            assertEquals(false, rolledBack.checked)
+            assertTrue(rolledBack.canChange)
+            assertEquals(1, fixture.emailReads.get())
+            model.setPanelOpen(false)
+            model.visible(false)
+            model.setPanelOpen(true)
+            model.visible(true)
             val confirmed = model.state.first { it.read.value?.subscribed == true }
             assertNull(confirmed.desired)
             assertEquals(listOf(true), fixture.emailWrites)
@@ -148,7 +157,7 @@ class EmailSubscriptionSettingsTest {
     }
 
     @Test
-    fun rejectedToggleRollsBackAndReportsFailureWhereTheUserIs() = runTest {
+    fun ambiguousToggleRollsBackAndReportsFailureWhereTheUserIs() = runTest {
         ChatListApiFixture().use { api ->
             var release = CompletableDeferred<Unit>()
             val service =
@@ -157,7 +166,7 @@ class EmailSubscriptionSettingsTest {
 
                     override suspend fun updateEmailSubscription(subscribed: Boolean): Nothing {
                         release.await()
-                        throw ApiFailure.Http(400, null, null, null)
+                        throw ApiFailure.Http(503, null, null, null)
                     }
                 }
             val model = model(api, service)
@@ -193,63 +202,6 @@ class EmailSubscriptionSettingsTest {
             assertTrue(model.state.value.canChange)
             assertFalse(model.state.value.updateFailed)
             assertEquals(listOf(SettingsNotice.EmailSubscriptionFailed), notices)
-        }
-    }
-
-    @Test
-    fun aStaleReadKeepsTheTogglePendingUntilExhaustionAndLaterSyncsNormally() = runTest {
-        ChatListApiFixture().use { api ->
-            var confirmed = initial
-            val reads = mutableListOf<Long>()
-            var writes = 0
-            val service =
-                object : WorkspaceSession by api.service {
-                    override suspend fun emailSubscription(): EmailSubscription {
-                        reads += currentTime
-                        if (reads.size == 3) throw ApiFailure.Http(503, null, null, 1L)
-                        return confirmed
-                    }
-
-                    override suspend fun updateEmailSubscription(
-                        subscribed: Boolean,
-                    ): EmailSubscriptionUpdate {
-                        writes++
-                        throw ApiFailure.Http(503, null, null, null)
-                    }
-                }
-            val model = model(api, service)
-            model.visible(true)
-            runCurrent()
-            model.subscribe(true)
-            runCurrent()
-            assertFalse(model.state.value.canChange)
-            assertEquals(true, model.state.value.checked)
-            assertEquals(initial, model.state.value.read.value)
-            assertEquals(listOf(0L, 0L), reads)
-            assertTrue(notices.isEmpty())
-            model.subscribe(false)
-            advanceTimeBy(3_999)
-            runCurrent()
-            assertEquals(listOf(0L, 0L, 3_000L), reads)
-            assertFalse(model.state.value.canChange)
-            advanceTimeBy(1)
-            runCurrent()
-            assertEquals(listOf(0L, 0L, 3_000L, 4_000L), reads)
-            assertTrue(model.state.value.canChange)
-            assertEquals(false, model.state.value.checked)
-            assertNull(model.state.value.desired)
-            assertEquals(listOf(SettingsNotice.EmailSubscriptionFailed), notices)
-            assertEquals(1, writes)
-
-            model.visible(false)
-            confirmed = initial.copy(subscribed = true)
-            model.visible(true)
-            runCurrent()
-            assertTrue(model.state.value.canChange)
-            assertEquals(true, model.state.value.checked)
-            assertNull(model.state.value.desired)
-            assertEquals(listOf(SettingsNotice.EmailSubscriptionFailed), notices)
-            assertEquals(1, writes)
         }
     }
 
