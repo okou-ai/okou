@@ -174,7 +174,7 @@ internal fun NewConversationWelcome(modifier: Modifier = Modifier) {
         ) {
             if (!short)
                 Image(
-                    painterResource(R.drawable.okou_conversation_avatar),
+                    painterResource(R.drawable.ic_okou_welcome_avatar),
                     contentDescription = null,
                     modifier = Modifier.padding(bottom = 22.dp).size(68.dp),
                 )
