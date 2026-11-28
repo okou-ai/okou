@@ -17,6 +17,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.builtins.SetSerializer
 import kotlinx.serialization.builtins.serializer
 
@@ -207,7 +208,10 @@ internal class BuiltInToolsSettings(
     private suspend fun saveTool(id: String, first: Boolean) {
         var attempted = first
         while (authorized()) {
-            val write = writeWithRetry { service.setEnabled(id, attempted) } ?: return
+            val write =
+                writeWithRetry(isCurrent = { it.savingTools[id]?.enabled == attempted }) {
+                    service.setEnabled(id, attempted)
+                } ?: return
             val confirmed =
                 when (write) {
                     is SettingWrite.Acknowledged -> write.value
@@ -278,8 +282,9 @@ internal class BuiltInToolsSettings(
         var attempted = first
         while (authorized()) {
             val write =
-                writeWithRetry { service.selectImageModel(attempted) ?: defaultImageToolModel }
-                    ?: return
+                writeWithRetry(isCurrent = { it.pendingImage?.id == attempted }) {
+                    service.selectImageModel(attempted) ?: defaultImageToolModel
+                } ?: return
             val confirmed =
                 when (write) {
                     is SettingWrite.Acknowledged -> write.value
@@ -348,7 +353,10 @@ internal class BuiltInToolsSettings(
         return null
     }
 
-    private suspend fun <T : Any> writeWithRetry(send: suspend () -> T): SettingWrite<T>? {
+    private suspend fun <T : Any> writeWithRetry(
+        isCurrent: (BuiltInToolsState) -> Boolean,
+        send: suspend () -> T,
+    ): SettingWrite<T>? {
         var retries = 0
         while (authorized()) {
             try {
@@ -371,8 +379,9 @@ internal class BuiltInToolsSettings(
                         SettingWrite.Rejected
                     else SettingWrite.NeedsReadback
                 }
-                delay(wait)
+                val superseded = withTimeoutOrNull(wait) { state.first { !isCurrent(it) } }
                 currentCoroutineContext().ensureActive()
+                if (superseded != null || !isCurrent(state.value)) return SettingWrite.Rejected
             }
         }
         return null
