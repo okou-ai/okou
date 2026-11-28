@@ -272,6 +272,10 @@ dependencies {
     androidTestImplementation(libs.test.runner)
     androidTestImplementation(libs.test.uiautomator)
     androidTestImplementation(libs.test.storage)
+    if (screenshotScenarioDir != null) {
+        androidTestImplementation(platform(libs.compose.bom))
+        androidTestImplementation(libs.compose.ui.test)
+    }
     androidTestImplementation(libs.mockwebserver)
     androidTestImplementation(libs.okhttp.tls)
     androidTestCompileOnly(libs.errorprone.annotations)

@@ -1758,14 +1758,17 @@ internal class ChatConversationLinkRootTest : ChatListRootTestFixture() {
     }
 
     @Test
-    @Config(qualifiers = "en-rUS-w960dp-h800dp")
+    @Config(qualifiers = "en-rUS-w960dp-h800dp-notnight")
     @GraphicsMode(GraphicsMode.Mode.NATIVE)
     fun messageLinkOpensTheNativeReadingTargetAndReturnsToTheSourceDraft() {
         InstrumentationRegistry.getInstrumentation().setInTouchMode(false)
         compose.activityRule.scenario.recreate()
         val app = compose.activity.application as ChatListApplication
+        val title =
+            "Project update with the complete launch checklist, outstanding decisions, " +
+                "and next steps for the whole team"
         app.fixture.historyReply =
-            "Read [Project update](/chats/$CHAT_IN_PROJECT#event-output).\n\n" +
+            "Read [$title](/chats/$CHAT_IN_PROJECT#event-output).\n\n" +
                 "[Unavailable conversation](/chats/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa)"
         // Keep background warming from supplying the target before the held read.
         app.fixture.historyCatchUp = { jsonResponse("""{"events":{},"notFoundThreads":[]}""") }
@@ -1784,7 +1787,20 @@ internal class ChatConversationLinkRootTest : ChatListRootTestFixture() {
             awaitListAndNames()
             compose.onNodeWithText("Personal chat").performClick()
             val source = compose.onNodeWithText("Read ", substring = true)
-            val link = awaitInlineLink("Project update")
+            val link = awaitInlineLink(title)
+            val layouts = mutableListOf<TextLayoutResult>()
+            source.performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(layouts) }
+            val layout = layouts.single()
+            val annotated = layout.layoutInput.text
+            val range = annotated.getLinkAnnotations(0, annotated.length).single()
+            assertTrue(
+                layout.getLineForOffset(range.start) < layout.getLineForOffset(range.end - 1),
+            )
+            val linkStyle = checkNotNull(range.item.styles?.style)
+            val onSurface =
+                resolvePalette(UserPreferencesColorTheme.DEFAULT, dark = false).onSurface
+            assertEquals(onSurface, linkStyle.color)
+            assertEquals(TextDecoration.Underline, linkStyle.textDecoration)
             val editor = compose.onNode(hasTestTag("message_input") and hasSetTextAction())
             editor.performTextInput("Source draft")
             val sourceBounds = source.getUnclippedBoundsInRoot()
