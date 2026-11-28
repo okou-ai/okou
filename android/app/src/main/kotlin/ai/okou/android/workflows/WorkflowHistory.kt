@@ -46,7 +46,6 @@ import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 
 private val historyIconSize = 18.dp
 
@@ -83,6 +82,7 @@ internal fun WorkflowHistoryPending(
         WorkflowReadFailureContent(modifier)
     } else if (showSkeleton) {
         val label = stringResource(R.string.workflow_history_loading)
+        val typography = MaterialTheme.typography
         Column(
             Modifier.fillMaxWidth().testTag("workflow_history_loading").semantics {
                 contentDescription = label
@@ -94,9 +94,11 @@ internal fun WorkflowHistoryPending(
                     modifier = Modifier.fillMaxWidth().testTag("workflow_history_loading_row"),
                     leadingContent = { ChatSkeletonBlock(Modifier.size(historyIconSize)) },
                     trailingContent = { Spacer(Modifier.size(historyIconSize)) },
-                    supportingContent = { WorkflowSkeletonLine(.32f, 20.sp) },
+                    supportingContent = {
+                        WorkflowSkeletonLine(.32f, typography.bodyMedium.lineHeight)
+                    },
                 ) {
-                    WorkflowSkeletonLine(.56f, 24.sp)
+                    WorkflowSkeletonLine(.56f, typography.bodyLarge.lineHeight)
                 }
             }
         }
@@ -133,6 +135,7 @@ internal fun WorkflowHistoryRow(
     val supporting: @Composable () -> Unit = {
         val trigger = stringResource(run.triggerLabel)
         val status = stringResource(run.status.label)
+        val statusSize = MaterialTheme.typography.bodySmall.fontSize
         val indicator =
             with(LocalDensity.current) {
                 Placeholder(12.dp.toSp(), 7.dp.toSp(), PlaceholderVerticalAlign.TextCenter)
@@ -143,7 +146,7 @@ internal fun WorkflowHistoryRow(
                 append(trigger)
                 append(" · ")
                 appendInlineContent("statusIndicator", "\u2060")
-                withStyle(SpanStyle(fontSize = 12.sp, color = colors.onSurfaceVariant)) {
+                withStyle(SpanStyle(fontSize = statusSize, color = colors.onSurfaceVariant)) {
                     append(status)
                 }
             },

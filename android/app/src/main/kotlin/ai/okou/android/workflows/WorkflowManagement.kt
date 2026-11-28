@@ -51,6 +51,7 @@ import androidx.compose.foundation.text.input.TextFieldLineLimits
 import androidx.compose.foundation.text.input.TextFieldState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
@@ -493,7 +494,7 @@ internal fun WorkflowEditor(
             }
         },
     ) {
-        WorkflowDivider()
+        HorizontalDivider()
         Column(
             Modifier.fillMaxWidth().padding(horizontal = horizontalPadding, vertical = 8.dp),
             horizontalAlignment = Alignment.End,

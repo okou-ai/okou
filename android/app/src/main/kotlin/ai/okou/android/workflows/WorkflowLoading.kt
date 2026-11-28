@@ -14,6 +14,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -26,23 +28,23 @@ import androidx.compose.ui.semantics.progressBarRangeInfo
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 
 @Composable
 internal fun WorkflowDirectorySkeleton(modifier: Modifier) {
     if (!rememberContentReadSkeleton()) return
+    val typography = MaterialTheme.typography
     Column(modifier.workflowLoading()) {
         repeat(5) {
             WorkspaceToolDirectoryRowSkeleton(
                 Modifier.heightIn(min = 88.dp),
                 supportingContent = {
                     Column {
-                        WorkflowSkeletonLine(.82f, 20.sp)
-                        WorkflowSkeletonLine(.5f, 20.sp)
+                        WorkflowSkeletonLine(.82f, typography.bodyMedium.lineHeight)
+                        WorkflowSkeletonLine(.5f, typography.bodyMedium.lineHeight)
                     }
                 },
             ) {
-                WorkflowSkeletonLine(.7f, 24.sp)
+                WorkflowSkeletonLine(.7f, typography.bodyLarge.lineHeight)
             }
         }
     }
@@ -51,10 +53,11 @@ internal fun WorkflowDirectorySkeleton(modifier: Modifier) {
 @Composable
 internal fun WorkflowDetailSkeleton(modifier: Modifier) {
     if (!rememberContentReadSkeleton()) return
+    val typography = MaterialTheme.typography
     Column(modifier.workflowLoading()) {
         val density = LocalDensity.current
-        val titleLineHeight = with(density) { 32.sp.toDp() }
-        val descriptionLineHeight = with(density) { 24.sp.toDp() }
+        val titleLineHeight = with(density) { typography.headlineSmall.lineHeight.toDp() }
+        val descriptionLineHeight = with(density) { typography.bodyLarge.lineHeight.toDp() }
         val titleBarHeight = 24.dp
         // Reserve the scaled text slots without changing the gap between the bars.
         Column(
@@ -68,9 +71,13 @@ internal fun WorkflowDetailSkeleton(modifier: Modifier) {
         }
         Spacer(Modifier.height(12.dp))
         // Leave room for the padded command chip and the adjacent scope label.
-        WorkflowSkeletonLine(.44f, 16.sp, modifier = Modifier.padding(vertical = 4.dp))
+        WorkflowSkeletonLine(
+            .44f,
+            typography.bodySmall.lineHeight,
+            modifier = Modifier.padding(vertical = 4.dp),
+        )
         Spacer(Modifier.height(20.dp))
-        val tabsHeight = with(density) { 20.sp.toDp() + 16.dp }
+        val tabsHeight = with(density) { typography.labelLarge.lineHeight.toDp() + 16.dp }
         Row(
             Modifier.fillMaxWidth()
                 .heightIn(min = maxOf(48.dp, tabsHeight))
@@ -83,10 +90,10 @@ internal fun WorkflowDetailSkeleton(modifier: Modifier) {
                 }
             }
         }
-        WorkflowDivider()
+        HorizontalDivider()
         Spacer(Modifier.height(12.dp))
-        WorkflowSkeletonLine(.8f, 24.sp)
-        WorkflowSkeletonLine(.64f, 24.sp)
+        WorkflowSkeletonLine(.8f, typography.bodyLarge.lineHeight)
+        WorkflowSkeletonLine(.64f, typography.bodyLarge.lineHeight)
     }
 }
 
