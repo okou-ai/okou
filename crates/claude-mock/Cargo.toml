@@ -1,6 +1,6 @@
 [package]
 name = "claude-mock"
-version = "0.22.146"
+version = "0.22.147"
 edition.workspace = true
 
 [dependencies]

@@ -1,5 +1,7 @@
 # Changelog
 
+## [0.28.67](https://github.com/okou-ai/okou/compare/sandbox-v0.28.66...sandbox-v0.28.67) (2026-11-28)
+
 ## [0.28.66](https://github.com/okou-ai/okou/compare/sandbox-v0.28.65...sandbox-v0.28.66) (2026-11-27)
 
 ## [0.28.65](https://github.com/okou-ai/okou/compare/sandbox-v0.28.64...sandbox-v0.28.65) (2026-11-27)
