@@ -27,6 +27,9 @@ internal fun Exception.definitivelyRejectedWrite(): Boolean =
     this is ApiFailure.Unauthenticated ||
         this is ApiFailure.Http && status in 400..499 && status != 408
 
+internal fun Exception.canRetryRejectedSettingWrite(): Boolean =
+    this is ApiFailure.Network && connectionFailed || this is ApiFailure.Http && status == 429
+
 /** Read failures and observations that do not confirm the write share one retry budget. */
 internal suspend fun verifySettingWrite(read: suspend () -> Boolean): Boolean {
     var retries = 0
