@@ -17,7 +17,6 @@ import type { SelectResultFields } from "drizzle-orm/query-builders/select.types
 import { and, eq } from "drizzle-orm";
 
 import { db$ } from "../external/db";
-import { voiceModeForFramework } from "../../lib/conversation-guidance";
 import { resolveThreadGenerationTemplates } from "../../lib/thread-generation-template";
 import { loadAgentPhoneQueuedLaunchMaterial$ } from "./agentphone-queued-launch-context.service";
 import {
@@ -129,7 +128,6 @@ export const materializeActiveInputSource$ = command(
       readonly orgId: string;
       readonly userId: string;
       readonly runId: string;
-      readonly framework: string | null;
     },
     signal: AbortSignal,
   ): Promise<string> => {
@@ -163,7 +161,6 @@ export const materializeActiveInputSource$ = command(
         orgId: auth.orgId,
         userId: auth.userId,
         runId: auth.runId,
-        framework: auth.framework,
         featureSwitchContext,
       },
       signal,
@@ -252,7 +249,6 @@ const materializeActiveInputPrompt$ = command(
       readonly orgId: string;
       readonly userId: string;
       readonly runId: string;
-      readonly framework: string | null;
       readonly featureSwitchContext: FeatureSwitchContext;
     },
     signal: AbortSignal,
@@ -281,9 +277,7 @@ const materializeActiveInputPrompt$ = command(
         `${args.event.contextType} active input is missing launch material`,
       );
     }
-    const projection = projectUserMessage(userMessage, {
-      voiceMode: voiceModeForFramework(args.framework),
-    });
+    const projection = projectUserMessage(userMessage);
     const [disabledImageGeneration] =
       projection.templates.length === 0
         ? []
