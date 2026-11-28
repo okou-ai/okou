@@ -131,6 +131,35 @@ classified AS (
 	FROM batch b
 	LEFT JOIN "image_artifacts" existing_ia ON existing_ia."file_id" = b."target_file_id"
 ),
+dup_rows AS (
+	SELECT
+		c."id" AS "dup_ia_id",
+		c."existing_ia_id",
+		c."survivor_ia_id",
+		c."target_file_id",
+		dup_art."id" AS "dup_art_id",
+		dup_art."visibility" AS "dup_visibility",
+		surv_art."id" AS "surv_art_id",
+		COALESCE(
+			surv_art."id",
+			FIRST_VALUE(dup_art."id") OVER (
+				PARTITION BY c."survivor_ia_id"
+				ORDER BY (dup_art."id" IS NULL), dup_art."deleted_at" NULLS FIRST, c."id"
+			)
+		) AS "effective_surv_art_id",
+		ROW_NUMBER() OVER (
+			PARTITION BY c."survivor_ia_id"
+			ORDER BY (dup_art."id" IS NULL), dup_art."deleted_at" NULLS FIRST, c."id"
+		) AS "art_rn"
+	FROM classified c
+	LEFT JOIN "artifacts" dup_art
+		ON dup_art."kind" = 'image'
+		AND dup_art."entity_id" = c."id"
+	LEFT JOIN "artifacts" surv_art
+		ON surv_art."kind" = 'image'
+		AND surv_art."entity_id" = c."survivor_ia_id"
+	WHERE c."existing_ia_id" IS NOT NULL OR c."rn" > 1
+),
 repointed_ia AS (
 	UPDATE "image_artifacts" ia
 	SET "file_id" = c."target_file_id",
@@ -143,38 +172,70 @@ repointed_ia AS (
 ),
 updated_winner_artifacts AS (
 	UPDATE "artifacts" a
-	SET "projection_file_id" = r."target_file_id",
+	SET "projection_file_id" = CASE
+			WHEN a."projection_file_id" = r."shadow_file_id" THEN r."target_file_id"
+			ELSE a."projection_file_id"
+		END,
+		"visibility" = CASE
+			WHEN a."visibility" = 'public' OR COALESCE(agg."max_rank", 0) = 2 THEN 'public'
+			WHEN a."visibility" = 'organization' OR COALESCE(agg."max_rank", 0) = 1 THEN 'organization'
+			ELSE a."visibility"
+		END,
 		"updated_at" = now()
 	FROM repointed_ia r
+	LEFT JOIN (
+		SELECT
+			d."survivor_ia_id",
+			MAX(
+				CASE
+					WHEN d."dup_visibility" = 'public' THEN 2
+					WHEN d."dup_visibility" = 'organization' THEN 1
+					ELSE 0
+				END
+			) AS "max_rank"
+		FROM dup_rows d
+		WHERE d."existing_ia_id" IS NULL
+			AND d."dup_art_id" IS NOT NULL
+		GROUP BY d."survivor_ia_id"
+	) agg ON agg."survivor_ia_id" = r."id"
 	WHERE a."kind" = 'image'
 		AND a."entity_id" = r."id"
-		AND a."projection_file_id" = r."shadow_file_id"
+		AND (
+			a."projection_file_id" = r."shadow_file_id"
+			OR COALESCE(agg."max_rank", 0) > CASE
+				WHEN a."visibility" = 'public' THEN 2
+				WHEN a."visibility" = 'organization' THEN 1
+				ELSE 0
+			END
+		)
 	RETURNING a."id"
-),
-dup_rows AS (
-	SELECT
-		c."id" AS "dup_ia_id",
-		c."survivor_ia_id",
-		c."target_file_id",
-		dup_art."id" AS "dup_art_id",
-		dup_art."visibility" AS "dup_visibility",
-		surv_art."id" AS "surv_art_id",
-		ROW_NUMBER() OVER (PARTITION BY c."survivor_ia_id" ORDER BY dup_art."deleted_at" NULLS FIRST, c."id") AS "art_rn"
-	FROM classified c
-	LEFT JOIN "artifacts" dup_art
-		ON dup_art."kind" = 'image'
-		AND dup_art."entity_id" = c."id"
-	LEFT JOIN "artifacts" surv_art
-		ON surv_art."kind" = 'image'
-		AND surv_art."entity_id" = c."survivor_ia_id"
-	WHERE c."existing_ia_id" IS NOT NULL OR c."rn" > 1
 ),
 repointed_dup_art AS (
 	UPDATE "artifacts" a
 	SET "entity_id" = d."survivor_ia_id",
 		"projection_file_id" = d."target_file_id",
+		"visibility" = CASE
+			WHEN a."visibility" = 'public' OR COALESCE(agg."max_rank", 0) = 2 THEN 'public'
+			WHEN a."visibility" = 'organization' OR COALESCE(agg."max_rank", 0) = 1 THEN 'organization'
+			ELSE a."visibility"
+		END,
 		"updated_at" = now()
 	FROM dup_rows d
+	LEFT JOIN (
+		SELECT
+			d2."survivor_ia_id",
+			MAX(
+				CASE
+					WHEN d2."dup_visibility" = 'public' THEN 2
+					WHEN d2."dup_visibility" = 'organization' THEN 1
+					ELSE 0
+				END
+			) AS "max_rank"
+		FROM dup_rows d2
+		WHERE d2."surv_art_id" IS NULL
+			AND d2."dup_art_id" IS NOT NULL
+		GROUP BY d2."survivor_ia_id"
+	) agg ON agg."survivor_ia_id" = d."survivor_ia_id"
 	WHERE a."id" = d."dup_art_id"
 		AND d."surv_art_id" IS NULL
 		AND d."art_rn" = 1
@@ -182,19 +243,23 @@ repointed_dup_art AS (
 ),
 merged_dup_shares AS (
 	INSERT INTO "artifact_user_shares" ("user_id", "org_id", "artifact_id", "email", "created_at")
-	SELECT s."user_id", s."org_id", d."surv_art_id", s."email", s."created_at"
+	SELECT s."user_id", s."org_id", d."effective_surv_art_id", s."email", s."created_at"
 	FROM dup_rows d
 	INNER JOIN "artifact_user_shares" s ON s."artifact_id" = d."dup_art_id"
-	WHERE d."surv_art_id" IS NOT NULL
+	WHERE d."effective_surv_art_id" IS NOT NULL
+		AND d."dup_art_id" IS NOT NULL
+		AND (d."surv_art_id" IS NOT NULL OR d."art_rn" > 1)
 	ON CONFLICT ("user_id", "org_id", "artifact_id") DO NOTHING
 	RETURNING "artifact_id"
 ),
 merged_dup_favorites AS (
 	INSERT INTO "artifact_favorites" ("org_id", "user_id", "artifact_id", "created_at")
-	SELECT fav."org_id", fav."user_id", d."surv_art_id", fav."created_at"
+	SELECT fav."org_id", fav."user_id", d."effective_surv_art_id", fav."created_at"
 	FROM dup_rows d
 	INNER JOIN "artifact_favorites" fav ON fav."artifact_id" = d."dup_art_id"
-	WHERE d."surv_art_id" IS NOT NULL
+	WHERE d."effective_surv_art_id" IS NOT NULL
+		AND d."dup_art_id" IS NOT NULL
+		AND (d."surv_art_id" IS NOT NULL OR d."art_rn" > 1)
 	ON CONFLICT ("org_id", "user_id", "artifact_id") DO NOTHING
 	RETURNING "artifact_id"
 ),
@@ -224,7 +289,8 @@ merged_dup_visibility AS (
 				END
 			) AS "max_rank"
 		FROM dup_rows d
-		WHERE d."surv_art_id" IS NOT NULL
+		WHERE d."existing_ia_id" IS NOT NULL
+			AND d."surv_art_id" IS NOT NULL
 			AND d."dup_art_id" IS NOT NULL
 		GROUP BY d."surv_art_id"
 	) agg
@@ -501,7 +567,16 @@ video_targets AS (
 		FIRST_VALUE(b."id") OVER (
 			PARTITION BY COALESCE(real_f."id", b."raw_file_id", b."entity_id")
 			ORDER BY b."deleted_at" NULLS FIRST, b."id"
-		) AS "batch_winner_id"
+		) AS "batch_winner_id",
+		MAX(
+			CASE
+				WHEN b."visibility" = 'public' THEN 2
+				WHEN b."visibility" = 'organization' THEN 1
+				ELSE 0
+			END
+		) OVER (
+			PARTITION BY COALESCE(real_f."id", b."raw_file_id", b."entity_id")
+		) AS "partition_max_visibility_rank"
 	FROM batch b
 	LEFT JOIN "run_uploaded_files" ruf
 		ON b."raw_file_id" IS NOT NULL
@@ -521,6 +596,11 @@ converted_winners AS (
 		"entity_id" = vt."target_entity_id",
 		"projection_file_id" = COALESCE(vt."canonical_file_id", a."projection_file_id"),
 		"display_kind" = CASE WHEN a."display_kind" = 'video' THEN NULL ELSE a."display_kind" END,
+		"visibility" = CASE
+			WHEN a."visibility" = 'public' OR vt."partition_max_visibility_rank" = 2 THEN 'public'
+			WHEN a."visibility" = 'organization' OR vt."partition_max_visibility_rank" = 1 THEN 'organization'
+			ELSE a."visibility"
+		END,
 		"category" = COALESCE(
 			a."category",
 			CASE WHEN a."display_kind" = 'avatar' THEN 'other' ELSE 'video' END
@@ -535,6 +615,7 @@ converted_winners AS (
 colliding_videos AS (
 	SELECT
 		vt."id" AS "dup_art_id",
+		vt."existing_file_art_id",
 		COALESCE(vt."existing_file_art_id", vt."batch_winner_id") AS "surv_art_id",
 		vt."visibility" AS "dup_visibility"
 	FROM video_targets vt
@@ -569,11 +650,15 @@ merged_video_visibility AS (
 			WHEN surv."visibility" = 'organization' OR agg."max_rank" = 1 THEN 'organization'
 			ELSE surv."visibility"
 		END,
+		"display_kind" = CASE
+			WHEN surv."display_kind" = 'video' THEN NULL
+			ELSE surv."display_kind"
+		END,
 		"category" = COALESCE(surv."category", 'video'),
 		"updated_at" = now()
 	FROM (
 		SELECT
-			c."surv_art_id",
+			c."existing_file_art_id" AS "surv_art_id",
 			MAX(
 				CASE
 					WHEN c."dup_visibility" = 'public' THEN 2
@@ -582,11 +667,13 @@ merged_video_visibility AS (
 				END
 			) AS "max_rank"
 		FROM colliding_videos c
-		GROUP BY c."surv_art_id"
+		WHERE c."existing_file_art_id" IS NOT NULL
+		GROUP BY c."existing_file_art_id"
 	) agg
 	WHERE surv."id" = agg."surv_art_id"
 		AND (
 			surv."category" IS NULL
+			OR surv."display_kind" = 'video'
 			OR agg."max_rank" > CASE
 				WHEN surv."visibility" = 'public' THEN 2
 				WHEN surv."visibility" = 'organization' THEN 1
@@ -610,6 +697,11 @@ cleared_display_kind AS (
 	WHERE a."id" = b."id"
 		AND b."kind" <> 'video'
 		AND b."display_kind" = 'video'
+		AND NOT EXISTS (
+			SELECT 1
+			FROM colliding_videos c
+			WHERE c."existing_file_art_id" = b."id"
+		)
 	RETURNING a."id"
 )
 SELECT (SELECT "id" FROM batch ORDER BY "id" DESC LIMIT 1) AS next_cursor;

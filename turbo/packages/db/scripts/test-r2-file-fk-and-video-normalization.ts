@@ -4,6 +4,7 @@ import { readFile } from "node:fs/promises";
 import postgres from "postgres";
 import { array, object, string } from "zod";
 import { applyPendingMigrations } from "./migration-runner";
+import { createPgRepository as createR2BackfillPgRepository } from "./migrations/001-r2-artifact-visibility-backfill/backfill";
 
 function highUuid(n: number): string {
   return `eeeeeeee-eeee-4eee-8eee-${n.toString(16).padStart(12, "0")}`;
@@ -48,6 +49,35 @@ function createR2Ids() {
     collidingVideoArtifactId: highUuid(29),
     displayVideoFileId: highUuid(30),
     displayVideoArtifactId: highUuid(31),
+    // Same-batch colliding shadow image_artifacts (no existing canonical image_artifacts)
+    batchDupImgRealFileId: highUuid(32),
+    batchDupImgShadowRufAId: highUuid(33),
+    batchDupImgShadowRufBId: highUuid(34),
+    batchDupImgEntityWinnerId: highUuid(35),
+    batchDupImgEntityLoserId: highUuid(36),
+    batchDupImgArtWinnerId: highUuid(37),
+    batchDupImgArtLoserId: highUuid(38),
+    // Same-batch colliding kind='video' (no existing kind='file' artifact)
+    batchDupVideoFileId: highUuid(39),
+    batchDupVideoShadowRufId: highUuid(56),
+    batchDupVideoEntityAId: highUuid(40),
+    batchDupVideoEntityBId: highUuid(41),
+    batchDupVideoArtWinnerId: highUuid(42),
+    batchDupVideoArtLoserId: highUuid(43),
+    // kind='video' (public) colliding with existing kind='file' + display_kind='video' (private)
+    collideDisplayVideoFileId: highUuid(44),
+    collideDisplayVideoExistingArtId: highUuid(45),
+    collideDisplayVideoEntityId: highUuid(46),
+    collideDisplayVideoArtId: highUuid(47),
+    // existing_ia without artifact + 2 shadow dup_arts (art_rn=1 private, art_rn=2 public)
+    orphanSurvImgFileId: highUuid(48),
+    orphanSurvImgEntityId: highUuid(49),
+    orphanSurvShadowRufAId: highUuid(50),
+    orphanSurvShadowRufBId: highUuid(51),
+    orphanSurvShadowEntityAId: highUuid(52),
+    orphanSurvShadowEntityBId: highUuid(53),
+    orphanSurvShadowArtAId: highUuid(54),
+    orphanSurvShadowArtBId: highUuid(55),
   };
 }
 
@@ -112,7 +142,16 @@ async function seedR2Fixtures(sql: postgres.Sql, ids: R2Ids) {
       (${ids.videoFileId}::uuid, 'agent', ${ids.videoFileId}, ${ids.ownerUserId}, ${ids.orgId}, 'clip.mp4', 'video/mp4', 500, 'private-artifacts/' || ${ids.videoFileId} || '/clip.mp4', 'published-output', '{}'::jsonb),
       (${ids.avatarFileId}::uuid, 'agent', ${ids.avatarFileId}, ${ids.ownerUserId}, ${ids.orgId}, 'avatar.mp4', 'video/mp4', 600, 'private-artifacts/' || ${ids.avatarFileId} || '/avatar.mp4', 'published-output', '{}'::jsonb),
       (${ids.collidingVideoFileId}::uuid, 'agent', ${ids.collidingVideoFileId}, ${ids.ownerUserId}, ${ids.orgId}, 'collide.mp4', 'video/mp4', 700, 'private-artifacts/' || ${ids.collidingVideoFileId} || '/collide.mp4', 'published-output', '{}'::jsonb),
-      (${ids.displayVideoFileId}::uuid, 'agent', ${ids.displayVideoFileId}, ${ids.ownerUserId}, ${ids.orgId}, 'display.mp4', 'video/mp4', 800, 'private-artifacts/' || ${ids.displayVideoFileId} || '/display.mp4', 'published-output', '{}'::jsonb)
+      (${ids.displayVideoFileId}::uuid, 'agent', ${ids.displayVideoFileId}, ${ids.ownerUserId}, ${ids.orgId}, 'display.mp4', 'video/mp4', 800, 'private-artifacts/' || ${ids.displayVideoFileId} || '/display.mp4', 'published-output', '{}'::jsonb),
+      (${ids.batchDupImgRealFileId}::uuid, 'web', ${ids.batchDupImgRealFileId}, ${ids.ownerUserId}, ${ids.orgId}, 'batch-dup.png', 'image/png', 210, 'private-artifacts/' || ${ids.batchDupImgRealFileId} || '/batch-dup.png', 'published-output', '{}'::jsonb),
+      (${ids.batchDupImgShadowRufAId}::uuid, 'web', ${ids.batchDupImgRealFileId}, ${ids.ownerUserId}, ${ids.orgId}, 'batch-dup.png', 'image/png', 210, NULL, 'published-output', jsonb_build_object('generatedBy', 'zero-official-image', 's3Key', 'private-artifacts/' || ${ids.batchDupImgRealFileId} || '/batch-dup.png')),
+      (${ids.batchDupImgShadowRufBId}::uuid, 'web', ${ids.batchDupImgRealFileId}, ${ids.ownerUserId}, ${ids.orgId}, 'batch-dup.png', 'image/png', 210, NULL, 'published-output', jsonb_build_object('generatedBy', 'zero-official-image', 's3Key', 'private-artifacts/' || ${ids.batchDupImgRealFileId} || '/batch-dup.png')),
+      (${ids.batchDupVideoFileId}::uuid, 'agent', ${ids.batchDupVideoFileId}, ${ids.ownerUserId}, ${ids.orgId}, 'batch-video.mp4', 'video/mp4', 710, 'private-artifacts/' || ${ids.batchDupVideoFileId} || '/batch-video.mp4', 'published-output', '{}'::jsonb),
+      (${ids.batchDupVideoShadowRufId}::uuid, 'web', ${ids.batchDupVideoFileId}, ${ids.ownerUserId}, ${ids.orgId}, 'batch-video.mp4', 'video/mp4', 710, NULL, 'published-output', jsonb_build_object('s3Key', 'private-artifacts/' || ${ids.batchDupVideoFileId} || '/batch-video.mp4')),
+      (${ids.collideDisplayVideoFileId}::uuid, 'agent', ${ids.collideDisplayVideoFileId}, ${ids.ownerUserId}, ${ids.orgId}, 'collide-display.mp4', 'video/mp4', 720, 'private-artifacts/' || ${ids.collideDisplayVideoFileId} || '/collide-display.mp4', 'published-output', '{}'::jsonb),
+      (${ids.orphanSurvImgFileId}::uuid, 'web', ${ids.orphanSurvImgFileId}, ${ids.ownerUserId}, ${ids.orgId}, 'orphan-surv.png', 'image/png', 220, 'private-artifacts/' || ${ids.orphanSurvImgFileId} || '/orphan-surv.png', 'published-output', '{}'::jsonb),
+      (${ids.orphanSurvShadowRufAId}::uuid, 'web', ${ids.orphanSurvImgFileId}, ${ids.ownerUserId}, ${ids.orgId}, 'orphan-surv.png', 'image/png', 220, NULL, 'published-output', jsonb_build_object('generatedBy', 'zero-official-image')),
+      (${ids.orphanSurvShadowRufBId}::uuid, 'web', ${ids.orphanSurvImgFileId}, ${ids.ownerUserId}, ${ids.orgId}, 'orphan-surv.png', 'image/png', 220, NULL, 'published-output', jsonb_build_object('generatedBy', 'zero-official-image'))
   `;
 
   // Seed files that R1 already dual-wrote (deliberately omitting missedRealImageFileId and videoFileId)
@@ -126,10 +165,14 @@ async function seedR2Fixtures(sql: postgres.Sql, ids: R2Ids) {
       (${ids.realFileId}::uuid, ${ids.orgId}, ${ids.ownerUserId}, 'private-artifacts/' || ${ids.realFileId} || '/doc.pdf', 'doc.pdf', 'application/pdf', 400, 'agent'),
       (${ids.avatarFileId}::uuid, ${ids.orgId}, ${ids.ownerUserId}, 'private-artifacts/' || ${ids.avatarFileId} || '/avatar.mp4', 'avatar.mp4', 'video/mp4', 600, 'agent'),
       (${ids.collidingVideoFileId}::uuid, ${ids.orgId}, ${ids.ownerUserId}, 'private-artifacts/' || ${ids.collidingVideoFileId} || '/collide.mp4', 'collide.mp4', 'video/mp4', 700, 'agent'),
-      (${ids.displayVideoFileId}::uuid, ${ids.orgId}, ${ids.ownerUserId}, 'private-artifacts/' || ${ids.displayVideoFileId} || '/display.mp4', 'display.mp4', 'video/mp4', 800, 'agent')
+      (${ids.displayVideoFileId}::uuid, ${ids.orgId}, ${ids.ownerUserId}, 'private-artifacts/' || ${ids.displayVideoFileId} || '/display.mp4', 'display.mp4', 'video/mp4', 800, 'agent'),
+      (${ids.batchDupImgRealFileId}::uuid, ${ids.orgId}, ${ids.ownerUserId}, 'private-artifacts/' || ${ids.batchDupImgRealFileId} || '/batch-dup.png', 'batch-dup.png', 'image/png', 210, 'agent'),
+      (${ids.batchDupVideoFileId}::uuid, ${ids.orgId}, ${ids.ownerUserId}, 'private-artifacts/' || ${ids.batchDupVideoFileId} || '/batch-video.mp4', 'batch-video.mp4', 'video/mp4', 710, 'agent'),
+      (${ids.collideDisplayVideoFileId}::uuid, ${ids.orgId}, ${ids.ownerUserId}, 'private-artifacts/' || ${ids.collideDisplayVideoFileId} || '/collide-display.mp4', 'collide-display.mp4', 'video/mp4', 720, 'agent'),
+      (${ids.orphanSurvImgFileId}::uuid, ${ids.orgId}, ${ids.ownerUserId}, 'private-artifacts/' || ${ids.orphanSurvImgFileId} || '/orphan-surv.png', 'orphan-surv.png', 'image/png', 220, 'agent')
   `;
 
-  // Seed image_artifacts (including R1 shadow-row pointers + duplicate shadow + missed real file)
+  // Seed image_artifacts (including R1 shadow-row pointers + duplicate shadow + missed real file + same-batch colliding shadows + orphan canonical image_artifact)
   await sql`
     INSERT INTO image_artifacts (id, file_id)
     VALUES
@@ -137,7 +180,12 @@ async function seedR2Fixtures(sql: postgres.Sql, ids: R2Ids) {
       (${ids.shadowImageEntityId}::uuid, ${ids.shadowPrivateImageRufId}::uuid),
       (${ids.dupRealImageEntityId}::uuid, ${ids.dupRealImageFileId}::uuid),
       (${ids.dupShadowImageEntityId}::uuid, ${ids.dupShadowRufId}::uuid),
-      (${ids.missedRealImageEntityId}::uuid, ${ids.missedRealImageFileId}::uuid)
+      (${ids.missedRealImageEntityId}::uuid, ${ids.missedRealImageFileId}::uuid),
+      (${ids.batchDupImgEntityWinnerId}::uuid, ${ids.batchDupImgShadowRufAId}::uuid),
+      (${ids.batchDupImgEntityLoserId}::uuid, ${ids.batchDupImgShadowRufBId}::uuid),
+      (${ids.orphanSurvImgEntityId}::uuid, ${ids.orphanSurvImgFileId}::uuid),
+      (${ids.orphanSurvShadowEntityAId}::uuid, ${ids.orphanSurvShadowRufAId}::uuid),
+      (${ids.orphanSurvShadowEntityBId}::uuid, ${ids.orphanSurvShadowRufBId}::uuid)
   `;
 
   // Seed video_artifacts
@@ -146,7 +194,10 @@ async function seedR2Fixtures(sql: postgres.Sql, ids: R2Ids) {
     VALUES
       (${ids.videoEntityId}::uuid, ${ids.videoFileId}::uuid),
       (${ids.avatarEntityId}::uuid, ${ids.avatarFileId}::uuid),
-      (${ids.collidingVideoEntityId}::uuid, ${ids.collidingVideoFileId}::uuid)
+      (${ids.collidingVideoEntityId}::uuid, ${ids.collidingVideoFileId}::uuid),
+      (${ids.batchDupVideoEntityAId}::uuid, ${ids.batchDupVideoFileId}::uuid),
+      (${ids.batchDupVideoEntityBId}::uuid, ${ids.batchDupVideoShadowRufId}::uuid),
+      (${ids.collideDisplayVideoEntityId}::uuid, ${ids.collideDisplayVideoFileId}::uuid)
   `;
 
   // Seed artifacts across all normalization cases
@@ -165,7 +216,15 @@ async function seedR2Fixtures(sql: postgres.Sql, ids: R2Ids) {
       (${ids.avatarArtifactId}::uuid, ${ids.orgId}, ${ids.ownerUserId}, 'video', ${ids.avatarEntityId}::uuid, 'file:avatar-' || ${ids.tag}, 'avatar', ${ids.avatarFileId}::uuid, now(), 'avatar.mp4', 'private', NULL),
       (${ids.collidingExistingFileArtifactId}::uuid, ${ids.orgId}, ${ids.ownerUserId}, 'file', ${ids.collidingVideoFileId}::uuid, 'file:collide-existing-' || ${ids.tag}, NULL, ${ids.collidingVideoFileId}::uuid, now(), 'collide.mp4', 'private', NULL),
       (${ids.collidingVideoArtifactId}::uuid, ${ids.orgId}, ${ids.ownerUserId}, 'video', ${ids.collidingVideoEntityId}::uuid, 'file:collide-video-' || ${ids.tag}, 'video', ${ids.collidingVideoFileId}::uuid, now(), 'collide.mp4', 'public', 'video'),
-      (${ids.displayVideoArtifactId}::uuid, ${ids.orgId}, ${ids.ownerUserId}, 'file', ${ids.displayVideoFileId}::uuid, 'file:display-video-' || ${ids.tag}, 'video', ${ids.displayVideoFileId}::uuid, now(), 'display.mp4', 'private', NULL)
+      (${ids.displayVideoArtifactId}::uuid, ${ids.orgId}, ${ids.ownerUserId}, 'file', ${ids.displayVideoFileId}::uuid, 'file:display-video-' || ${ids.tag}, 'video', ${ids.displayVideoFileId}::uuid, now(), 'display.mp4', 'private', NULL),
+      (${ids.batchDupImgArtWinnerId}::uuid, ${ids.orgId}, ${ids.ownerUserId}, 'image', ${ids.batchDupImgEntityWinnerId}::uuid, 'image:batch-dup-winner-' || ${ids.tag}, NULL, ${ids.batchDupImgShadowRufAId}::uuid, now(), 'batch-dup.png', 'private', 'image'),
+      (${ids.batchDupImgArtLoserId}::uuid, ${ids.orgId}, ${ids.ownerUserId}, 'image', ${ids.batchDupImgEntityLoserId}::uuid, 'image:batch-dup-loser-' || ${ids.tag}, NULL, ${ids.batchDupImgShadowRufBId}::uuid, now(), 'batch-dup.png', 'public', 'image'),
+      (${ids.batchDupVideoArtWinnerId}::uuid, ${ids.orgId}, ${ids.ownerUserId}, 'video', ${ids.batchDupVideoEntityAId}::uuid, 'file:batch-video-winner-' || ${ids.tag}, 'video', ${ids.batchDupVideoFileId}::uuid, now(), 'batch-video.mp4', 'private', NULL),
+      (${ids.batchDupVideoArtLoserId}::uuid, ${ids.orgId}, ${ids.ownerUserId}, 'video', ${ids.batchDupVideoEntityBId}::uuid, 'file:batch-video-loser-' || ${ids.tag}, 'video', ${ids.batchDupVideoFileId}::uuid, now(), 'batch-video.mp4', 'public', 'video'),
+      (${ids.collideDisplayVideoExistingArtId}::uuid, ${ids.orgId}, ${ids.ownerUserId}, 'file', ${ids.collideDisplayVideoFileId}::uuid, 'file:collide-display-existing-' || ${ids.tag}, 'video', ${ids.collideDisplayVideoFileId}::uuid, now(), 'collide-display.mp4', 'private', NULL),
+      (${ids.collideDisplayVideoArtId}::uuid, ${ids.orgId}, ${ids.ownerUserId}, 'video', ${ids.collideDisplayVideoEntityId}::uuid, 'file:collide-display-video-' || ${ids.tag}, NULL, ${ids.collideDisplayVideoFileId}::uuid, now(), 'collide-display.mp4', 'public', 'video'),
+      (${ids.orphanSurvShadowArtAId}::uuid, ${ids.orgId}, ${ids.ownerUserId}, 'image', ${ids.orphanSurvShadowEntityAId}::uuid, 'image:orphan-surv-a-' || ${ids.tag}, NULL, ${ids.orphanSurvShadowRufAId}::uuid, now(), 'orphan-surv.png', 'private', 'image'),
+      (${ids.orphanSurvShadowArtBId}::uuid, ${ids.orgId}, ${ids.ownerUserId}, 'image', ${ids.orphanSurvShadowEntityBId}::uuid, 'image:orphan-surv-b-' || ${ids.tag}, NULL, ${ids.orphanSurvShadowRufBId}::uuid, now(), 'orphan-surv.png', 'public', 'image')
   `;
 
   // Attach user shares & favorites to duplicate artifacts to confirm merge preservation
@@ -173,14 +232,61 @@ async function seedR2Fixtures(sql: postgres.Sql, ids: R2Ids) {
     INSERT INTO artifact_user_shares (user_id, org_id, artifact_id, email)
     VALUES
       (${ids.viewerUserId}, ${ids.orgId}, ${ids.dupShadowImageArtifactId}::uuid, ${ids.viewerEmail}),
-      (${ids.viewerUserId}, ${ids.orgId}, ${ids.collidingVideoArtifactId}::uuid, ${ids.viewerEmail})
+      (${ids.viewerUserId}, ${ids.orgId}, ${ids.collidingVideoArtifactId}::uuid, ${ids.viewerEmail}),
+      (${ids.viewerUserId}, ${ids.orgId}, ${ids.batchDupImgArtLoserId}::uuid, ${ids.viewerEmail}),
+      (${ids.viewerUserId}, ${ids.orgId}, ${ids.batchDupVideoArtLoserId}::uuid, ${ids.viewerEmail}),
+      (${ids.viewerUserId}, ${ids.orgId}, ${ids.collideDisplayVideoArtId}::uuid, ${ids.viewerEmail}),
+      (${ids.viewerUserId}, ${ids.orgId}, ${ids.orphanSurvShadowArtBId}::uuid, ${ids.viewerEmail})
   `;
   await sql`
     INSERT INTO artifact_favorites (org_id, user_id, artifact_id)
     VALUES
       (${ids.orgId}, ${ids.ownerUserId}, ${ids.dupShadowImageArtifactId}::uuid),
-      (${ids.orgId}, ${ids.ownerUserId}, ${ids.collidingVideoArtifactId}::uuid)
+      (${ids.orgId}, ${ids.ownerUserId}, ${ids.collidingVideoArtifactId}::uuid),
+      (${ids.orgId}, ${ids.ownerUserId}, ${ids.batchDupImgArtLoserId}::uuid),
+      (${ids.orgId}, ${ids.ownerUserId}, ${ids.batchDupVideoArtLoserId}::uuid),
+      (${ids.orgId}, ${ids.ownerUserId}, ${ids.collideDisplayVideoArtId}::uuid),
+      (${ids.orgId}, ${ids.ownerUserId}, ${ids.orphanSurvShadowArtBId}::uuid)
   `;
+}
+
+async function verifyPre1656BackfillPgLookup(sql: postgres.Sql, ids: R2Ids) {
+  const repo = createR2BackfillPgRepository(sql);
+  const matches = await repo.findActiveFileArtifactsBatch([
+    ids.realPrivateImageFileId,
+    ids.shadowPrivateImageRufId,
+    ids.orphanSurvImgFileId,
+    ids.videoFileId,
+    ids.batchDupVideoShadowRufId,
+  ]);
+
+  const artifactIdsFor = (fileId: string): string[] => {
+    return (matches.get(fileId) ?? [])
+      .map((m) => {
+        return m.artifactId;
+      })
+      .sort();
+  };
+
+  // Canonical fileId discovers shadow image artifact via storage_key / s3Key / external_id
+  assert.deepEqual(artifactIdsFor(ids.realPrivateImageFileId), [
+    ids.shadowImageArtifactId,
+  ]);
+  assert.deepEqual(artifactIdsFor(ids.shadowPrivateImageRufId), [
+    ids.shadowImageArtifactId,
+  ]);
+  // Reverse external_id shadow link (shadows without storage_key/s3Key) discovers both shadow image artifacts
+  assert.deepEqual(
+    artifactIdsFor(ids.orphanSurvImgFileId),
+    [ids.orphanSurvShadowArtAId, ids.orphanSurvShadowArtBId].sort(),
+  );
+  // Pre-1656 kind='video' artifact matched through video_artifacts
+  assert.deepEqual(artifactIdsFor(ids.videoFileId), [ids.videoArtifactId]);
+  // Shadow video fileId discovers both canonical and shadow kind='video' artifacts
+  assert.deepEqual(
+    artifactIdsFor(ids.batchDupVideoShadowRufId),
+    [ids.batchDupVideoArtWinnerId, ids.batchDupVideoArtLoserId].sort(),
+  );
 }
 
 async function verifyR2MigrationResults(sql: postgres.Sql, ids: R2Ids) {
@@ -197,7 +303,7 @@ async function verifyR2MigrationResults(sql: postgres.Sql, ids: R2Ids) {
     }),
   );
 
-  // 2. Shadow image_artifacts repointed to canonical files.id; duplicate merged cleanly
+  // 2. Shadow image_artifacts repointed to canonical files.id; duplicates merged cleanly
   const imageEntities = await sql<{ id: string; file_id: string }[]>`
     SELECT id, file_id FROM image_artifacts
     WHERE id = ANY(${[
@@ -206,6 +312,11 @@ async function verifyR2MigrationResults(sql: postgres.Sql, ids: R2Ids) {
       ids.dupRealImageEntityId,
       ids.dupShadowImageEntityId,
       ids.missedRealImageEntityId,
+      ids.batchDupImgEntityWinnerId,
+      ids.batchDupImgEntityLoserId,
+      ids.orphanSurvImgEntityId,
+      ids.orphanSurvShadowEntityAId,
+      ids.orphanSurvShadowEntityBId,
     ]}::uuid[])
     ORDER BY id
   `;
@@ -216,6 +327,8 @@ async function verifyR2MigrationResults(sql: postgres.Sql, ids: R2Ids) {
       { id: ids.shadowImageEntityId, file_id: ids.realPrivateImageFileId },
       { id: ids.dupRealImageEntityId, file_id: ids.dupRealImageFileId },
       { id: ids.missedRealImageEntityId, file_id: ids.missedRealImageFileId },
+      { id: ids.batchDupImgEntityWinnerId, file_id: ids.batchDupImgRealFileId },
+      { id: ids.orphanSurvImgEntityId, file_id: ids.orphanSurvImgFileId },
     ].sort((a, b) => {
       return a.id.localeCompare(b.id);
     }),
@@ -260,6 +373,30 @@ async function verifyR2MigrationResults(sql: postgres.Sql, ids: R2Ids) {
     artifactsById.get(ids.dupRealImageArtifactId)?.visibility,
     "public",
   );
+
+  // Same-batch colliding shadow image_artifacts (no existing canonical image_artifact)
+  assert.equal(artifactsById.has(ids.batchDupImgArtLoserId), false);
+  assert.deepEqual(artifactsById.get(ids.batchDupImgArtWinnerId), {
+    id: ids.batchDupImgArtWinnerId,
+    kind: "image",
+    entity_id: ids.batchDupImgEntityWinnerId,
+    projection_file_id: ids.batchDupImgRealFileId,
+    display_kind: null,
+    visibility: "public",
+    category: "image",
+  });
+
+  // Existing canonical image_artifact without artifact + 2 colliding shadow dup_arts
+  assert.equal(artifactsById.has(ids.orphanSurvShadowArtBId), false);
+  assert.deepEqual(artifactsById.get(ids.orphanSurvShadowArtAId), {
+    id: ids.orphanSurvShadowArtAId,
+    kind: "image",
+    entity_id: ids.orphanSurvImgEntityId,
+    projection_file_id: ids.orphanSurvImgFileId,
+    display_kind: null,
+    visibility: "public",
+    category: "image",
+  });
 
   assert.equal(
     artifactsById.get(ids.shadowFileArtifactId)?.entity_id,
@@ -308,7 +445,40 @@ async function verifyR2MigrationResults(sql: postgres.Sql, ids: R2Ids) {
     category: "video",
   });
 
+  // Same-batch colliding kind='video' (no existing kind='file' row)
+  assert.equal(artifactsById.has(ids.batchDupVideoArtLoserId), false);
+  assert.deepEqual(artifactsById.get(ids.batchDupVideoArtWinnerId), {
+    id: ids.batchDupVideoArtWinnerId,
+    kind: "file",
+    entity_id: ids.batchDupVideoFileId,
+    projection_file_id: ids.batchDupVideoFileId,
+    display_kind: null,
+    visibility: "public",
+    category: "video",
+  });
+
+  // kind='video' (public) colliding with existing kind='file' + display_kind='video' (private)
+  assert.equal(artifactsById.has(ids.collideDisplayVideoArtId), false);
+  assert.deepEqual(artifactsById.get(ids.collideDisplayVideoExistingArtId), {
+    id: ids.collideDisplayVideoExistingArtId,
+    kind: "file",
+    entity_id: ids.collideDisplayVideoFileId,
+    projection_file_id: ids.collideDisplayVideoFileId,
+    display_kind: null,
+    visibility: "public",
+    category: "video",
+  });
+
   // 4. Merged duplicates preserved shares & favorites on surviving artifacts
+  const expectedSurvivingSharedIds = [
+    ids.dupRealImageArtifactId,
+    ids.collidingExistingFileArtifactId,
+    ids.batchDupImgArtWinnerId,
+    ids.batchDupVideoArtWinnerId,
+    ids.collideDisplayVideoExistingArtId,
+    ids.orphanSurvShadowArtAId,
+  ].sort();
+
   const shares = await sql<{ artifact_id: string }[]>`
     SELECT artifact_id FROM artifact_user_shares
     WHERE org_id = ${ids.orgId} AND user_id = ${ids.viewerUserId}
@@ -316,11 +486,9 @@ async function verifyR2MigrationResults(sql: postgres.Sql, ids: R2Ids) {
   `;
   assert.deepEqual(
     [...shares],
-    [ids.dupRealImageArtifactId, ids.collidingExistingFileArtifactId]
-      .sort()
-      .map((artifactId) => {
-        return { artifact_id: artifactId };
-      }),
+    expectedSurvivingSharedIds.map((artifactId) => {
+      return { artifact_id: artifactId };
+    }),
   );
   const favorites = await sql<{ artifact_id: string }[]>`
     SELECT artifact_id FROM artifact_favorites
@@ -329,11 +497,9 @@ async function verifyR2MigrationResults(sql: postgres.Sql, ids: R2Ids) {
   `;
   assert.deepEqual(
     [...favorites],
-    [ids.dupRealImageArtifactId, ids.collidingExistingFileArtifactId]
-      .sort()
-      .map((artifactId) => {
-        return { artifact_id: artifactId };
-      }),
+    expectedSurvivingSharedIds.map((artifactId) => {
+      return { artifact_id: artifactId };
+    }),
   );
 
   // 5. FK on image_artifacts.file_id now targets files(id) and is validated
@@ -454,6 +620,7 @@ export async function validateR2FileFkAndVideoNormalization(
   try {
     await applyPendingMigrations(sql, { beforeMillis: normalizeMillis });
     await seedR2Fixtures(sql, ids);
+    await verifyPre1656BackfillPgLookup(sql, ids);
     await applyPendingMigrations(sql, { beforeMillis: fkCutoverMillis + 1 });
 
     await verifyR2MigrationResults(sql, ids);
