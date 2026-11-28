@@ -282,6 +282,48 @@ async def test_connector_intent_selects_auth_template_in_both_firewall_orders(
 
 
 @pytest.mark.parametrize(
+    ("credential_headers", "chosen"),
+    [
+        ((("Authorization", "Bearer fixture-PRIMARY_TOKEN"),), "primary"),
+        (
+            (
+                ("Authorization", "Bearer fixture-PRIMARY_TOKEN"),
+                ("Authorization", "Bearer fixture-AUDITOR_TOKEN"),
+            ),
+            None,
+        ),
+    ],
+)
+async def test_credential_placeholders_select_dispatch_owner(
+    tmp_path, real_flow, mitm_ctx, fake_firewall_headers, headers, credential_headers, chosen
+):
+    reg_path = _write_registry(tmp_path, sandbox_info=_shared_route_sandbox(tmp_path))
+    flow = real_flow(
+        with_response=False,
+        client_ip="10.200.0.5",
+        host="shared.example.com",
+        path="/items/123",
+        request_headers=headers(("Host", "shared.example.com"), *credential_headers),
+    )
+    with (
+        mitm_ctx(registry_path=str(reg_path), api_url="https://api.okou.ai"),
+        fake_firewall_headers(headers={"Authorization": "Bearer resolved-primary"}) as auth_fetch,
+    ):
+        await mitm_addon.request(flow)
+
+    assert flow.response is None
+    if chosen is None:
+        auth_fetch.assert_not_awaited()
+        assert flow.request.headers.get_all("Authorization") == [
+            value for _, value in credential_headers
+        ]
+    else:
+        auth_fetch.assert_awaited_once()
+        assert flow.metadata[metadata_keys.FIREWALL_NAME] == chosen
+        assert flow.request.headers["Authorization"] == "Bearer resolved-primary"
+
+
+@pytest.mark.parametrize(
     ("intent_headers", "reason"),
     [
         ((), "connector_intent_required"),

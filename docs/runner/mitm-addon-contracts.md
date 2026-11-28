@@ -282,7 +282,14 @@ without an API, CLI, registry or database migration.
 ## Ordinary connector firewall owner selection
 
 Outside the platform API admission path, the addon first gathers active firewall
-base matches, then selects an owner in this order:
+base matches. When several firewall owners match, a complete credential value
+in a configured auth header or query parameter can identify one owner. The addon
+derives these values from the active registry's declared placeholders and the
+matching APIs' credential templates. It then applies route specificity,
+permissions, and URI authorization checks within that owner. Conflicting
+placeholder owners use ordinary egress without connector credential injection.
+
+Requests without a usable placeholder during caller migration use this order:
 
 1. **Filter registered connector candidates.** The registry classifies builtin
    and custom firewalls only when their identities are registered in

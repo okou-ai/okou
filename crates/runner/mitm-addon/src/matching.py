@@ -42,6 +42,7 @@ from firewall_matching.patterns import (
     _match_compiled_path_segments,
     _split_path_segments,
 )
+from firewall_matching.placeholders import CredentialHints, compile_credential_hints
 from path_automaton import (
     Applicability,
     CompiledForm,
@@ -261,6 +262,7 @@ class _CompiledApiCore(NamedTuple):
     injects_ordinary_upstream_credentials: bool
     permissionless: bool
     routing_identity: str | None
+    credential_hints: CredentialHints
     # True when API compilation encountered malformed permissions/rules config.
     has_malformed_rules: bool
     paths: _CompiledApiPaths | None = None
@@ -444,6 +446,7 @@ class FirewallRequestContext(NamedTuple):
     headers: tuple[tuple[str, str], ...] = ()
     body: bytes | None = None
     aws_inspection_available: bool = True
+    raw_header_fields: tuple[tuple[bytes, bytes], ...] = ()
 
 
 def _api_auth_uses_aws_sigv4(api_entry: dict) -> bool:
@@ -1184,6 +1187,7 @@ def compile_firewall_core(fw_entry: object) -> CompiledFirewallCore | None:
                 injects_ordinary_upstream_credentials,
                 permissionless,
                 routing_identity,
+                compile_credential_hints(api_entry.get("auth"), fw_entry.get("placeholders")),
                 has_malformed_rules,
                 paths,
             )
@@ -1209,7 +1213,8 @@ def bind_compiled_firewall_core(
     """Bind compatible raw API shell entries to reusable compiled firewall data.
 
     ``fw_entry`` must describe the same matcher definition that produced ``core``. Its firewall
-    name and raw ``apis`` positional structure must be unchanged, including which entries compile.
+    name, placeholders and raw ``apis`` structure must be unchanged, including which entries
+    compile.
     At every retained position, ``base``, ``auth``, optional ``hostPolicy``, permissions, permission
     names, rules, and their ordering must have the same values. Each API core is paired with the raw
     dictionary at its original ``raw_api_index``; reordering or replacing entries is incompatible
@@ -1412,6 +1417,7 @@ ConnectorRouteAmbiguityReason = Literal[
     "connector_intent_required",
     "malformed_connector_intent",
     "connector_intent_not_candidate",
+    "conflicting_credential_placeholders",
 ]
 
 
@@ -1439,6 +1445,7 @@ class _FirewallInterpretation(NamedTuple):
 
     decision: FirewallAllow | FirewallPolicyAllow | FirewallBlock | FirewallAmbiguous | None
     authorization_routes: frozenset[_AuthorizationRoute]
+    placeholder_owner: str | None = None
 
 
 class _BaseMatch(NamedTuple):
@@ -2355,6 +2362,39 @@ def _match_compiled_firewall_request_with_api_candidates(
         )
         base_matches.append(api_match)
 
+    placeholder_owner: str | None = None
+    if (
+        not is_asterisk_form
+        and request_context is not None
+        and request_context.aws_inspection_available
+        and len(base_matches) > 1
+        and len({match.firewall.name for match in base_matches}) > 1
+    ):
+        headers = frozenset(
+            (name.lower(), value) for name, value in request_context.raw_header_fields
+        )
+        owners = {
+            match.firewall.name
+            for match in base_matches
+            if not match.firewall.name_malformed
+            and match.api.core.credential_hints.matches(headers, get_query_pairs)
+        }
+        if len(owners) > 1:
+            return _FirewallInterpretation(
+                FirewallAmbiguous(
+                    upper_method,
+                    decision_path,
+                    tuple(sorted(owners)),
+                    "conflicting_credential_placeholders",
+                ),
+                frozenset(),
+            )
+        if owners:
+            placeholder_owner = next(iter(owners))
+            base_matches = [
+                match for match in base_matches if match.firewall.name == placeholder_owner
+            ]
+
     custom_connector_matches = any(
         match.firewall.connector_runtime_kind == "custom" for match in base_matches
     )
@@ -2444,6 +2484,7 @@ def _match_compiled_firewall_request_with_api_candidates(
         frozenset(applicable_routes.get(selected_name, ()))
         if applicable_routes is not None and selected_name is not None
         else frozenset(),
+        placeholder_owner,
     )
 
 
@@ -2831,6 +2872,10 @@ def _match_request_interpretations(
             ):
                 return invalid
             return None
+        placeholder_owner = original_match.placeholder_owner
+        if placeholder_owner is not None:
+            # Reuse the URI certificate inside the explicitly selected owner.
+            authorities = tuple(c for c in authorities if c.firewall.name == placeholder_owner)
         if not _certify_raw_firewall_allow(
             original,
             original_match.authorization_routes,

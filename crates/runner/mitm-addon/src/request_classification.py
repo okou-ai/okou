@@ -114,6 +114,7 @@ def _aws_firewall_request_context(flow: http.HTTPFlow) -> matching.FirewallReque
     return matching.FirewallRequestContext(
         headers=tuple(selected),
         body=flow.request.raw_content,
+        raw_header_fields=raw_fields,
     )
 
 
@@ -624,7 +625,10 @@ def _classify_request(
         )
         if isinstance(result, matching.FirewallInvalidInput):
             return FirewallInvalidInput(sandbox_info=sandbox_info, firewall_invalid_input=result)
-        if isinstance(result, matching.FirewallAmbiguous):
+        if (
+            isinstance(result, matching.FirewallAmbiguous)
+            and result.reason != "conflicting_credential_placeholders"
+        ):
             if platform_connector_api_fallback is not None:
                 return platform_connector_api_fallback
             return FirewallAmbiguous(
