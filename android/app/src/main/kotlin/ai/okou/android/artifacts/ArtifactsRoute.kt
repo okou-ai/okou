@@ -27,6 +27,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.input.rememberTextFieldState
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.VerticalDivider
@@ -379,7 +380,12 @@ internal fun rememberArtifactExportControls(
                                 ArtifactSaveResult.Failed -> R.string.artifact_share_failed
                                 else -> null
                             }
-                        if (message != null) snackbar.showSnackbar(resources.getString(message))
+                        if (message != null) {
+                            snackbar.showSnackbar(
+                                resources.getString(message),
+                                duration = SnackbarDuration.Indefinite,
+                            )
+                        }
                     }
                 }
             }
