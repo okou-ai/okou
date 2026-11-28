@@ -251,7 +251,7 @@ internal fun OkouApp(
         key(workflowRoute.id) {
             WorkflowTab.entries.map { tab -> key(tab) { rememberLazyListState() } }
         }
-    val workflowState = workflows?.state?.collectAsStateWithLifecycle()?.value
+    val workflowInput = workflows?.state?.collectAsStateWithLifecycle()
     val readAnnouncements =
         workflowReadAnnouncements ?: remember(workflows) { WorkflowReadAnnouncements() }
     val showWorkflows =
@@ -297,12 +297,16 @@ internal fun OkouApp(
     }
     val requestedTarget = artifactSource?.let { WorkspaceTarget.Chat(it) } ?: navigation.target
     val restoringFirstSend =
-        !workspaceReady &&
-            requestedTarget is WorkspaceTarget.NewChat &&
-            composerInput
-                ?.value
-                ?.entry(ComposerTarget(projectId = requestedTarget.projectId))
-                ?.let { it.pending != null || it.createdThreadId != null } == true
+        remember(workspaceReady, requestedTarget, composerInput) {
+            derivedStateOf(structuralEqualityPolicy()) {
+                !workspaceReady &&
+                    requestedTarget is WorkspaceTarget.NewChat &&
+                    composerInput
+                        ?.value
+                        ?.entry(ComposerTarget(projectId = requestedTarget.projectId))
+                        ?.let { it.pending != null || it.createdThreadId != null } == true
+            }
+        }.value
     // Let protected destinations wait for preparation without blocking authorized chat navigation.
     val target =
         if (
@@ -1067,7 +1071,10 @@ internal fun OkouApp(
                 list.projectsPhase == ChatReadPhase.Ready &&
                 list.projects.none { it.id == id }
         }
-    val composerRestored = composerInput?.value?.journal != null
+    val composerRestored =
+        remember(composerInput) {
+            derivedStateOf(structuralEqualityPolicy()) { composerInput?.value?.journal != null }
+        }.value
     LaunchedEffect(newChat, deletedNewChatProject, provisionalId, composerRestored) {
         if (
             deletedNewChatProject != null &&
@@ -1086,7 +1093,12 @@ internal fun OkouApp(
     val needsWorkflowSourceChats =
         showWorkflows &&
             workflowRoute.tab == WorkflowTab.History &&
-            workflowState?.history?.runs?.any { it.chatThreadId != null } == true
+            remember(workflowInput) {
+                    derivedStateOf(structuralEqualityPolicy()) {
+                        workflowInput?.value?.history?.runs?.any { it.chatThreadId != null } == true
+                    }
+                }
+                .value
     // An open conversation uses the live list projection for its title and chat actions.
     val needsChatList =
         needsWorkflowSourceChats ||
@@ -1323,12 +1335,12 @@ internal fun OkouApp(
         )
     }
 
-    if (showWorkflows && workflowState != null) {
+    if (showWorkflows && workflowInput != null) {
         val creation = stringResource(R.string.workflow_creation_prompt)
         workflowPageState.SaveableStateProvider("workflow") {
             WorkflowScreen(
                 model = workflows,
-                state = workflowState,
+                state = workflowInput.value,
                 route = workflowRoute,
                 changeRoute = {
                     if (it.id != workflowRoute.id && workflowDraftError?.workflowId != null)
@@ -1892,6 +1904,7 @@ internal fun OkouApp(
                             if (searchActive) {
                                 val remote =
                                     workspaceSearch?.results?.collectAsStateWithLifecycle()?.value
+                                val workflowState = workflowInput?.value
                                 val workflowRead =
                                     remember(
                                         workflowState?.catalog,
