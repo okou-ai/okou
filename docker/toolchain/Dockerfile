@@ -69,7 +69,7 @@ RUN ARCH=$(dpkg --print-architecture) \
 
 # Install Rust toolchain with runner Linux musl targets.
 # Used for building runner and guest binaries for Firecracker VMs.
-ARG RUST_VERSION=1.100.0
+ARG RUST_VERSION=1.100.1
 ENV RUSTUP_HOME=/usr/local/rustup \
     CARGO_HOME=/usr/local/cargo \
     PATH=/usr/local/cargo/bin:$PATH

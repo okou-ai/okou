@@ -1,4 +1,5 @@
 [toolchain]
-channel = "1.100.0"
+channel = "1.100.1"
 profile = "minimal"
-components = ["rustfmt", "clippy"]
+components = ["rustfmt", "clippy", "rust-src", "llvm-tools-preview"]
+targets = ["aarch64-unknown-linux-musl", "x86_64-unknown-linux-musl"]
