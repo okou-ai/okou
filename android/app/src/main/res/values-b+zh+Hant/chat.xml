@@ -72,10 +72,8 @@
     <string name="chat_project_create">新增專案</string>
     <string name="chat_project_create_confirm">建立</string>
     <string name="chat_project_creating">正在建立…</string>
-    <string name="chat_project_create_close">關閉</string>
     <string name="chat_project_checking">正在核對…</string>
     <string name="chat_project_create_failed">無法建立專案，名稱已保留</string>
-    <string name="chat_project_create_unconfirmed">尚未確認專案建立結果</string>
     <string name="chat_project_name_too_long">專案名稱不得超過 %1$d 個字元</string>
     <string name="chat_project_rename_rejected">無法重新命名專案。</string>
     <string name="chat_project_rename_save">儲存</string>

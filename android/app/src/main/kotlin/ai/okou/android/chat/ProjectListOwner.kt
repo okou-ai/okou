@@ -27,7 +27,7 @@ internal enum class ProjectCreatePhase {
         get() = this == Creating || this == Checking
 }
 
-internal data class ProjectCreation(val id: String, val phase: ProjectCreatePhase)
+internal data class ProjectCreation(val id: String, val name: String, val phase: ProjectCreatePhase)
 
 data class ProjectRenameRejection internal constructor(val projectId: String, val eventId: String)
 
@@ -190,16 +190,18 @@ internal class ProjectListOwner(
         val phase = state.creation?.phase
         val name = input.trim()
         if (
-            (phase != null && phase != ProjectCreatePhase.Rejected) ||
+            phase?.inProgress == true ||
+                phase == ProjectCreatePhase.Confirmed ||
                 name.length !in 1..ProjectNameLimit
         )
             return
-        submitCreation(CreateRequest(newProjectOperationId(wallMillis()), name), checking = false)
-    }
-
-    fun checkProjectCreation() {
-        if (!current() || state.creation?.phase != ProjectCreatePhase.Unconfirmed) return
-        createRequest?.let { submitCreation(it, checking = true) }
+        val retry = createRequest?.takeIf {
+            phase == ProjectCreatePhase.Unconfirmed && it.name == name
+        }
+        submitCreation(
+            retry ?: CreateRequest(newProjectOperationId(wallMillis()), name),
+            checking = retry != null,
+        )
     }
 
     fun dismissProjectCreation() {
@@ -211,8 +213,13 @@ internal class ProjectListOwner(
     private fun submitCreation(request: CreateRequest, checking: Boolean) {
         createRequest = request
         val phase = if (checking) ProjectCreatePhase.Checking else ProjectCreatePhase.Creating
-        state = state.copy(creation = ProjectCreation(request.id, phase))
+        state = state.copy(creation = ProjectCreation(request.id, request.name, phase))
         scope.launch {
+            fun showPhase(phase: ProjectCreatePhase) {
+                val creation = checkNotNull(state.creation)
+                if (creation.phase != phase)
+                    state = state.copy(creation = creation.copy(phase = phase))
+            }
             var uncertain = checking
             var retries = 0
             while (true) {
@@ -223,6 +230,7 @@ internal class ProjectListOwner(
                     val project =
                         observed
                             ?: try {
+                                showPhase(ProjectCreatePhase.Creating)
                                 service.createProject(request.id, request.name)
                             } catch (error: Exception) {
                                 if (error is CancellationException) throw error
@@ -242,6 +250,7 @@ internal class ProjectListOwner(
                 } catch (error: Exception) {
                     requireCurrent()
                     if (createRequest !== request) return@launch
+                    if (uncertain) showPhase(ProjectCreatePhase.Checking)
                     val retryDelay = dependencyRetryDelayMillis(error, retries)
                     if (retryDelay != null && retries < ChatDependencyRetryCount) {
                         retries++
@@ -261,7 +270,7 @@ internal class ProjectListOwner(
                             if (uncertain) ProjectCreatePhase.Unconfirmed
                             else ProjectCreatePhase.Rejected
                         if (!uncertain) createRequest = null
-                        state = state.copy(creation = ProjectCreation(request.id, result))
+                        showPhase(result)
                     }
                     return@launch
                 }
@@ -302,7 +311,8 @@ internal class ProjectListOwner(
             createReceipts[id] = project
         }
         createRequest = null
-        publishProjects(state.copy(creation = ProjectCreation(id, ProjectCreatePhase.Confirmed)))
+        val creation = checkNotNull(state.creation)
+        publishProjects(state.copy(creation = creation.copy(phase = ProjectCreatePhase.Confirmed)))
         invalidate()
     }
 

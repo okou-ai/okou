@@ -3,6 +3,7 @@ package ai.okou.android
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertTextContains
@@ -212,7 +213,7 @@ internal class ChatListProjectCreationRootTest : ChatListRootTestFixture() {
     }
 
     @Test
-    fun anUnconfirmedResponseResumesAfterCloseAndChecksTheOriginalIdWithoutAnotherCreate() {
+    fun anUnconfirmedResponseRestoresEditingAndCreateChecksTheOriginalId() {
         val app = compose.activity.application as ChatListApplication
         val id = AtomicReference<String>()
         val writes = AtomicInteger()
@@ -243,17 +244,20 @@ internal class ChatListProjectCreationRootTest : ChatListRootTestFixture() {
         val field = openCreate()
         field.performTextReplacement("Field notes")
         confirm().performClick()
-        val check = hasText("Check result")
-        compose.waitUntilExactlyOneExists(check, 10_000)
+        val failed = hasText("Couldn’t create the project. The name has been kept.")
+        compose.waitUntilExactlyOneExists(failed, 10_000)
         assertEquals(1, writes.get())
         assertEquals(1, lookups.get())
         field.assertTextContains("Field notes")
-        compose.onNodeWithText("Project creation hasn’t been confirmed").assertIsDisplayed()
-        compose.onNodeWithText("Close").performClick()
+        confirm().assertIsEnabled()
+        field.performTextReplacement("Another draft")
+        field.assertTextContains("Another draft")
+        compose.onNodeWithText("Cancel").performClick()
         field.assertDoesNotExist()
-        openCreate().assertTextContains("Field notes")
+        openCreate().assertTextContains("Another draft")
+        field.performTextReplacement("  Field notes  ")
         committed.set(true)
-        compose.onNode(check).performClick()
+        confirm().performClick()
         compose.waitUntilExactlyOneExists(createdProject(), 10_000)
         field.assertDoesNotExist()
         compose.onNodeWithText("New chat in this Project").assertIsDisplayed()
