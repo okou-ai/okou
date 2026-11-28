@@ -1,7 +1,7 @@
 import { command } from "ccstate";
 import { and, eq, inArray, isNull, or } from "drizzle-orm";
 import { artifacts, imageArtifacts } from "@okouai/db/schema/artifact";
-import { artifactUserShares } from "@okouai/db/schema/artifact-user-share";
+import { artifactShares } from "@okouai/db/schema/artifact-share";
 import { db$ } from "../external/db";
 import type { PrivateArtifactRecord } from "./private-artifact-storage.service";
 import { resolveArtifactPreviewUrl$ } from "./artifact-preview-url.service";
@@ -62,7 +62,7 @@ export const findActiveArtifactForFile$ = command(
   },
 );
 
-/** Grant temporary file credentials when the viewer has an active `artifact_user_shares` row. */
+/** Grant temporary file credentials when the viewer has an active `artifact_shares` row. */
 export const resolveInvitedArtifactFile$ = command(
   async (
     { get, set },
@@ -78,13 +78,13 @@ export const resolveInvitedArtifactFile$ = command(
       return null;
     }
     const [share] = await get(db$)
-      .select({ userId: artifactUserShares.userId })
-      .from(artifactUserShares)
+      .select({ userId: artifactShares.userId })
+      .from(artifactShares)
       .where(
         and(
-          eq(artifactUserShares.artifactId, artifact.id),
-          eq(artifactUserShares.orgId, file.orgId),
-          eq(artifactUserShares.userId, args.userId),
+          eq(artifactShares.artifactId, artifact.id),
+          eq(artifactShares.orgId, file.orgId),
+          eq(artifactShares.userId, args.userId),
         ),
       )
       .limit(1);

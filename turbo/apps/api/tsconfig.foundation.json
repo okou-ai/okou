@@ -326,6 +326,7 @@
     "src/signals/services/artifact-reference.service.ts",
     "src/signals/services/artifact-share-probe.service.ts",
     "src/signals/services/artifact-storage.service.ts",
+    "src/signals/services/hosted-site-artifact.service.ts",
     "src/signals/services/assistant-event-id.ts",
     "src/signals/services/billable-operation-admission.service.ts",
     "src/signals/services/built-in-generation-usage-idempotency.ts",

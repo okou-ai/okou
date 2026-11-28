@@ -82,6 +82,10 @@ import { safeJsonParse, safeUrlParse } from "../utils";
 import { inferMimetype } from "./chat-event-shared.service";
 import { artifactReferenceRecord$ } from "./artifact-reference.service";
 import { probeLegacyArtifactSharePolicy$ } from "./artifact-share-probe.service";
+import {
+  privateDeploymentSiteArtifactPredicate,
+  siteArtifactIdentityPredicate,
+} from "./hosted-site-artifact.service";
 
 const ARTIFACT_CATALOG_DEFAULT_LIMIT = 60;
 
@@ -599,7 +603,7 @@ export const upsertHostedSiteArtifact$ = command(
       .where(
         and(
           eq(artifacts.orgId, args.orgId),
-          eq(artifacts.logicalKey, logicalKey),
+          siteArtifactIdentityPredicate(args.siteId),
         ),
       )
       .limit(1);
@@ -1026,22 +1030,11 @@ function artifactCatalogIdentityFilter(args: GetArtifactCatalogEntryArgs) {
       );
     }
     case "html": {
-      const qb = new QueryBuilder();
-      const sites = qb
-        .select({
-          logicalKey: sql`'site:' || ${privateHostedDeployments.siteId}::text`
-            .mapWith(artifacts.logicalKey)
-            .as("logical_key"),
-        })
-        .from(privateHostedDeployments)
-        .where(
-          and(
-            eq(privateHostedDeployments.id, args.artifactId),
-            eq(privateHostedDeployments.orgId, args.orgId),
-            eq(privateHostedDeployments.userId, args.userId),
-          ),
-        );
-      return inArray(artifacts.logicalKey, sites);
+      return privateDeploymentSiteArtifactPredicate({
+        deploymentId: args.artifactId,
+        orgId: args.orgId,
+        userId: args.userId,
+      });
     }
     case "shared-thread": {
       return eq(
@@ -1050,7 +1043,7 @@ function artifactCatalogIdentityFilter(args: GetArtifactCatalogEntryArgs) {
       );
     }
     case "site": {
-      return eq(artifacts.logicalKey, `site:${args.artifactId}`);
+      return siteArtifactIdentityPredicate(args.artifactId);
     }
     case undefined: {
       return eq(artifacts.id, args.artifactId);

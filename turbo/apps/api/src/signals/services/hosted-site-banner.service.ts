@@ -2,10 +2,16 @@ import { randomUUID } from "node:crypto";
 import { command } from "ccstate";
 import { and, eq, exists, isNull, sql } from "drizzle-orm";
 import { hostedSites, hostedDeployments } from "@okouai/db/runtime/hosted-site";
-import { artifacts } from "@okouai/db/schema/artifact";
+import { presentationArtifacts } from "@okouai/db/schema/artifact";
 import { db$, writeDb$ } from "../external/db";
 import { hostedLinkOrigin } from "../../lib/link-layout";
 import { artifactPaywallApplies$ } from "./artifact-paywall.service";
+import {
+  hostedSiteDirectArtifact,
+  hostedSiteDirectArtifactJoin,
+  hostedSitePresentationArtifact,
+  hostedSitePresentationArtifactJoin,
+} from "./hosted-site-artifact.service";
 
 type Owner = {
   readonly siteId: string;
@@ -109,16 +115,21 @@ export const hostedSitePresentation$ = command(
         publicSlug: hostedSites.publicSlug,
         slug: hostedSites.slug,
         showBanner: hostedSites.showBanner,
-        title: artifacts.title,
+        directTitle: hostedSiteDirectArtifact.title,
+        presentationTitle: hostedSitePresentationArtifact.title,
       })
       .from(hostedSites)
       .leftJoin(
-        artifacts,
-        and(
-          eq(artifacts.logicalKey, sql`'site:' || ${hostedSites.id}::text`),
-          eq(artifacts.orgId, hostedSites.orgId),
-          eq(artifacts.authorUserId, hostedSites.userId),
-        ),
+        presentationArtifacts,
+        eq(presentationArtifacts.hostedSiteId, hostedSites.id),
+      )
+      .leftJoin(
+        hostedSiteDirectArtifact,
+        hostedSiteDirectArtifactJoin({ matchAuthor: true }),
+      )
+      .leftJoin(
+        hostedSitePresentationArtifact,
+        hostedSitePresentationArtifactJoin({ matchAuthor: true }),
       )
       .where(
         and(
@@ -138,7 +149,7 @@ export const hostedSitePresentation$ = command(
     return {
       showBanner: site.showBanner || paywalled,
       downloadAllowed: !paywalled,
-      title: site.title ?? site.slug,
+      title: site.directTitle ?? site.presentationTitle ?? site.slug,
       siteUrl: `${hostedLinkOrigin("current", site.publicSlug)}/`,
     };
   },

@@ -730,7 +730,7 @@ async function assertHostedArtifactUnifiedAccess(
     })?.visibility,
   ).toBe("organization");
 
-  // 2. Per-user shares stored directly in artifact_user_shares
+  // 2. Per-user shares stored directly in artifact_shares
   const addedFirst = await accept(
     app(owner)(artifactAccessContract).addShare({
       headers,

@@ -4,7 +4,8 @@ import { Client } from "pg";
 
 /**
  * Permanent schema contract for `files`, `artifacts.visibility` / `category`,
- * and `artifact_user_shares` on both replayed and freshly generated schemas.
+ * `artifact_shares`, and absence of retired artifact/sharing tables & columns
+ * on both replayed and freshly generated schemas.
  */
 export async function validatePermanentFilesAndArtifactAccess(
   databaseUrl: string,
@@ -25,6 +26,51 @@ export async function validatePermanentFilesAndArtifactAccess(
   const cascadeArtifactId = randomUUID();
 
   try {
+    // 0. Verify 9 retired tables + staging table and 3 redundant columns are absent,
+    // while active retained tables remain present.
+    const retirementState = await client.query<{
+      retired_absent: boolean;
+      retained_present: boolean;
+      dropped_columns_count: string;
+      dropped_index_absent: boolean;
+    }>(`
+      SELECT
+        to_regclass('public.artifact_catalog_pending_files') IS NULL AND
+        to_regclass('public.artifact_file_shares') IS NULL AND
+        to_regclass('public.canonical_asset_deliveries') IS NULL AND
+        to_regclass('public.video_artifacts') IS NULL AND
+        to_regclass('public.run_uploaded_files') IS NULL AND
+        to_regclass('public.hosted_site_visibility') IS NULL AND
+        to_regclass('public.hosted_site_shares') IS NULL AND
+        to_regclass('public.image_artifact_edit_snapshots') IS NULL AND
+        to_regclass('public.artifact_user_shares') IS NULL AS retired_absent,
+        to_regclass('public.files') IS NOT NULL AND
+        to_regclass('public.artifacts') IS NOT NULL AND
+        to_regclass('public.artifact_shares') IS NOT NULL AND
+        to_regclass('public.hosted_site_share_rate_limits') IS NOT NULL AND
+        to_regclass('public.private_hosted_deployments') IS NOT NULL AS retained_present,
+        (
+          SELECT count(*)::text
+          FROM information_schema.columns
+          WHERE table_schema = 'public'
+            AND table_name = 'artifacts'
+            AND column_name IN (
+              'projection_file_id',
+              'projection_created_at',
+              'video_source_url'
+            )
+        ) AS dropped_columns_count,
+        to_regclass('public.artifacts_projection_file_org_idx') IS NULL AS dropped_index_absent
+    `);
+    assert.deepEqual(retirementState.rows, [
+      {
+        retired_absent: true,
+        retained_present: true,
+        dropped_columns_count: "0",
+        dropped_index_absent: true,
+      },
+    ]);
+
     // 1. Verify CHECK constraints and accepted origins on files
     await assert.rejects(
       client.query(
@@ -63,8 +109,8 @@ export async function validatePermanentFilesAndArtifactAccess(
     await assert.rejects(
       client.query(
         `INSERT INTO artifacts (id, org_id, author_user_id, kind, entity_id,
-           logical_key, projection_created_at, title, visibility)
-         VALUES ($1, $2, $3, 'file', $4, $5, now(), 'Invalid visibility', 'unlisted')`,
+           logical_key, title, visibility)
+         VALUES ($1, $2, $3, 'file', $4, $5, 'Invalid visibility', 'unlisted')`,
         [randomUUID(), orgId, ownerUserId, randomUUID(), `file:bad-vis-${tag}`],
       ),
       { code: "23514", constraint: "artifacts_visibility_check" },
@@ -95,11 +141,11 @@ export async function validatePermanentFilesAndArtifactAccess(
     }>(
       `INSERT INTO artifacts
          (id, org_id, author_user_id, kind, entity_id, logical_key,
-          projection_file_id, projection_created_at, title, category)
+          title, category)
        VALUES
-         ($1::uuid, $4, $5, 'file', $6::uuid, 'file:perm-' || ($6::uuid)::text, $6::uuid, now(), 'report.pdf', 'document'),
-         ($2::uuid, $4, $5, 'hosted-site', $7::uuid, 'site:perm-' || ($7::uuid)::text, NULL, now(), 'Site', 'website'),
-         ($3::uuid, $4, $5, 'file', $8::uuid, 'file:cascade-' || ($8::uuid)::text, $8::uuid, now(), 'Cascade', 'document')
+         ($1::uuid, $4, $5, 'file', $6::uuid, 'file:perm-' || ($6::uuid)::text, 'report.pdf', 'document'),
+         ($2::uuid, $4, $5, 'hosted-site', $7::uuid, 'site:perm-' || ($7::uuid)::text, 'Site', 'website'),
+         ($3::uuid, $4, $5, 'file', $8::uuid, 'file:cascade-' || ($8::uuid)::text, 'Cascade', 'document')
        RETURNING id, visibility, category`,
       [
         fileArtifactId,
@@ -116,10 +162,49 @@ export async function validatePermanentFilesAndArtifactAccess(
       assert.equal(row.visibility, "private");
     }
 
-    // 3. Verify artifact_user_shares NOT NULL email, composite PK uniqueness, and ON DELETE CASCADE
+    // 3. Verify canonical artifact_shares constraints, index, NOT NULL email,
+    // composite PK uniqueness, and ON DELETE CASCADE.
+    const shareConstraints = await client.query<{
+      conname: string;
+      contype: string;
+      validated: boolean;
+      confdeltype: string;
+    }>(
+      `SELECT conname, contype, convalidated AS validated, confdeltype
+       FROM pg_constraint
+       WHERE conrelid = 'public.artifact_shares'::regclass
+         AND contype IN ('p', 'f')
+       ORDER BY contype, conname`,
+    );
+    assert.deepEqual(shareConstraints.rows, [
+      {
+        conname: "artifact_shares_artifact_id_artifacts_id_fk",
+        contype: "f",
+        validated: true,
+        confdeltype: "c",
+      },
+      {
+        conname: "artifact_shares_pk",
+        contype: "p",
+        validated: true,
+        confdeltype: " ",
+      },
+    ]);
+
+    const shareIndex = await client.query<{
+      valid: boolean;
+      definition: string;
+    }>(
+      `SELECT i.indisvalid AS valid, pg_get_indexdef(i.indexrelid) AS definition
+       FROM pg_index i
+       WHERE i.indexrelid = 'public.artifact_shares_artifact_idx'::regclass`,
+    );
+    assert.equal(shareIndex.rows[0]?.valid, true);
+    assert.match(shareIndex.rows[0]?.definition ?? "", /\(artifact_id\)/);
+
     await assert.rejects(
       client.query(
-        `INSERT INTO artifact_user_shares (user_id, org_id, artifact_id, email)
+        `INSERT INTO artifact_shares (user_id, org_id, artifact_id, email)
          VALUES ($1, $2, $3, NULL)`,
         [viewerUserId, orgId, siteArtifactId],
       ),
@@ -127,21 +212,21 @@ export async function validatePermanentFilesAndArtifactAccess(
     );
 
     await client.query(
-      `INSERT INTO artifact_user_shares (user_id, org_id, artifact_id, email)
+      `INSERT INTO artifact_shares (user_id, org_id, artifact_id, email)
        VALUES ($1, $2, $3, $4)`,
       [viewerUserId, orgId, siteArtifactId, `viewer-${tag}@example.com`],
     );
     await assert.rejects(
       client.query(
-        `INSERT INTO artifact_user_shares (user_id, org_id, artifact_id, email)
+        `INSERT INTO artifact_shares (user_id, org_id, artifact_id, email)
          VALUES ($1, $2, $3, 'dup@example.com')`,
         [viewerUserId, orgId, siteArtifactId],
       ),
-      { code: "23505", constraint: "artifact_user_shares_pk" },
+      { code: "23505", constraint: "artifact_shares_pk" },
     );
 
     await client.query(
-      `INSERT INTO artifact_user_shares (user_id, org_id, artifact_id, email)
+      `INSERT INTO artifact_shares (user_id, org_id, artifact_id, email)
        VALUES ($1, $2, $3, 'cascade@example.com')`,
       [viewerUserId, orgId, cascadeArtifactId],
     );
@@ -149,7 +234,7 @@ export async function validatePermanentFilesAndArtifactAccess(
       cascadeArtifactId,
     ]);
     const remainingCascade = await client.query(
-      `SELECT 1 FROM artifact_user_shares WHERE artifact_id = $1`,
+      `SELECT 1 FROM artifact_shares WHERE artifact_id = $1`,
       [cascadeArtifactId],
     );
     assert.equal(remainingCascade.rowCount, 0);
@@ -165,7 +250,7 @@ export async function validatePermanentFilesAndArtifactAccess(
     );
     assert.equal(afterSoftDelete.rows[0]?.deleted_at, null);
 
-    // 5. Verify image_artifacts.file_id FK targets files(id) ON DELETE CASCADE (not run_uploaded_files)
+    // 5. Verify image_artifacts.file_id FK targets files(id) ON DELETE CASCADE
     const imageArtifactFks = await client.query<{
       conname: string;
       validated: boolean;
@@ -216,7 +301,7 @@ export async function validatePermanentFilesAndArtifactAccess(
     assert.equal(remainingImage.rowCount, 0);
 
     console.log(
-      "Permanent files, image_artifacts FK, artifact visibility, and artifact_user_shares schema invariants verified",
+      "Permanent files, image_artifacts FK, artifact visibility, artifact_shares, and retirement invariants verified",
     );
   } finally {
     try {

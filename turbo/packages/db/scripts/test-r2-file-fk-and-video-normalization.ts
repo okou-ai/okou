@@ -4,7 +4,6 @@ import { readFile } from "node:fs/promises";
 import postgres from "postgres";
 import { array, object, string } from "zod";
 import { applyPendingMigrations } from "./migration-runner";
-import { createPgRepository as createR2BackfillPgRepository } from "./migrations/001-r2-artifact-visibility-backfill/backfill";
 
 function highUuid(n: number): string {
   return `eeeeeeee-eeee-4eee-8eee-${n.toString(16).padStart(12, "0")}`;
@@ -248,45 +247,6 @@ async function seedR2Fixtures(sql: postgres.Sql, ids: R2Ids) {
       (${ids.orgId}, ${ids.ownerUserId}, ${ids.collideDisplayVideoArtId}::uuid),
       (${ids.orgId}, ${ids.ownerUserId}, ${ids.orphanSurvShadowArtBId}::uuid)
   `;
-}
-
-async function verifyPre1656BackfillPgLookup(sql: postgres.Sql, ids: R2Ids) {
-  const repo = createR2BackfillPgRepository(sql);
-  const matches = await repo.findActiveFileArtifactsBatch([
-    ids.realPrivateImageFileId,
-    ids.shadowPrivateImageRufId,
-    ids.orphanSurvImgFileId,
-    ids.videoFileId,
-    ids.batchDupVideoShadowRufId,
-  ]);
-
-  const artifactIdsFor = (fileId: string): string[] => {
-    return (matches.get(fileId) ?? [])
-      .map((m) => {
-        return m.artifactId;
-      })
-      .sort();
-  };
-
-  // Canonical fileId discovers shadow image artifact via storage_key / s3Key / external_id
-  assert.deepEqual(artifactIdsFor(ids.realPrivateImageFileId), [
-    ids.shadowImageArtifactId,
-  ]);
-  assert.deepEqual(artifactIdsFor(ids.shadowPrivateImageRufId), [
-    ids.shadowImageArtifactId,
-  ]);
-  // Reverse external_id shadow link (shadows without storage_key/s3Key) discovers both shadow image artifacts
-  assert.deepEqual(
-    artifactIdsFor(ids.orphanSurvImgFileId),
-    [ids.orphanSurvShadowArtAId, ids.orphanSurvShadowArtBId].sort(),
-  );
-  // Pre-1656 kind='video' artifact matched through video_artifacts
-  assert.deepEqual(artifactIdsFor(ids.videoFileId), [ids.videoArtifactId]);
-  // Shadow video fileId discovers both canonical and shadow kind='video' artifacts
-  assert.deepEqual(
-    artifactIdsFor(ids.batchDupVideoShadowRufId),
-    [ids.batchDupVideoArtWinnerId, ids.batchDupVideoArtLoserId].sort(),
-  );
 }
 
 async function verifyR2MigrationResults(sql: postgres.Sql, ids: R2Ids) {
@@ -620,7 +580,6 @@ export async function validateR2FileFkAndVideoNormalization(
   try {
     await applyPendingMigrations(sql, { beforeMillis: normalizeMillis });
     await seedR2Fixtures(sql, ids);
-    await verifyPre1656BackfillPgLookup(sql, ids);
     await applyPendingMigrations(sql, { beforeMillis: fkCutoverMillis + 1 });
 
     await verifyR2MigrationResults(sql, ids);

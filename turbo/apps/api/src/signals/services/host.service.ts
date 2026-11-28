@@ -10,6 +10,7 @@ import {
   checkHostedSiteAccess$,
   prepareHostedSiteVisibility$,
 } from "./hosted-site-access.service";
+import { siteArtifactIdentityPredicate } from "./hosted-site-artifact.service";
 import { command } from "ccstate";
 import {
   hostedSiteAssetNameError,
@@ -810,7 +811,7 @@ export const prepareHostedSiteDeployment$ = command(
       .where(
         and(
           eq(artifacts.orgId, args.orgId),
-          eq(artifacts.logicalKey, `site:${siteAndDeployment.site.id}`),
+          siteArtifactIdentityPredicate(siteAndDeployment.site.id),
         ),
       )
       .limit(1);

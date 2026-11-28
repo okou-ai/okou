@@ -74,6 +74,7 @@ import { validatePermanentArtifactThreadCatalog } from "./test-artifact-thread-c
 import { validatePermanentFilesAndArtifactAccess } from "./test-files-and-artifact-access-permanent";
 import { validateFilesAndArtifactAccessBackfill } from "./test-files-and-artifact-access-backfill";
 import { validateR2FileFkAndVideoNormalization } from "./test-r2-file-fk-and-video-normalization";
+import { validateArtifactStorageRetirement } from "./test-artifact-storage-retirement";
 import { validateBillingRunLifecycle } from "./test-billing-run-lifecycle-permanent";
 import { validatePermanentBuiltInModelKeyState } from "./test-built-in-model-keys-permanent";
 import { validateCanonicalModelSelections } from "./test-canonical-model-selections-permanent";
@@ -2943,6 +2944,12 @@ async function main(): Promise<void> {
         "1656_normalize_video_and_repoint_file_references",
       ),
       await migrationTimestamp("1657_switch_image_artifacts_file_fk"),
+    );
+    await validateArtifactStorageRetirement(
+      dbUrl1,
+      await migrationTimestamp(
+        "1658_drop_retired_artifact_tables_and_rename_shares",
+      ),
     );
     await runMigrations(dbUrl1);
     console.log("   ✅ Migrations applied successfully\n");

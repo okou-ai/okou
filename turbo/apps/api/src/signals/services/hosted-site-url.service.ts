@@ -19,6 +19,7 @@ import { nowDate } from "../../lib/time";
 import type { HostedSitePointer } from "../../lib/hosted-site-pointer";
 import { settle } from "../utils";
 import { artifactPaywallApplies$ } from "./artifact-paywall.service";
+import { siteArtifactIdentityPredicate } from "./hosted-site-artifact.service";
 
 const IMMUTABLE_DEPLOYMENT_HOST_PATTERN =
   /^dpl-([0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$/u;
@@ -75,7 +76,7 @@ const activeSiteArtifactId$ = command(
       .where(
         and(
           eq(artifacts.orgId, args.orgId),
-          eq(artifacts.logicalKey, `site:${args.siteId}`),
+          siteArtifactIdentityPredicate(args.siteId),
           isNull(artifacts.deletedAt),
         ),
       )

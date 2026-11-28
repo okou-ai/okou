@@ -34,14 +34,12 @@ export async function validatePermanentArtifactThreadCatalog(
       kind: "file" as const,
       entityId: randomUUID(),
       logicalKey: `file:${threadId}`,
-      projectionCreatedAt: new Date("2026-10-19T00:00:00Z"),
       title: "Avatar without a video extension",
       thumbnail: { url: "https://example.test/poster.png" },
       chatThreadId: threadId,
       displayKind: "avatar" as const,
       sourceUrl: "https://example.test/unusual-extension.bin",
       aliasUrl: "https://example.test/alias?x=1&name=原样%20unchanged",
-      videoSourceUrl: "https://example.test/unusual-extension.bin",
     };
     const [created] = await db
       .insert(artifacts)
@@ -63,8 +61,8 @@ export async function validatePermanentArtifactThreadCatalog(
     for (const [offset, kind] of oldKinds.entries()) {
       await client.query(
         `INSERT INTO artifacts (id, org_id, author_user_id, kind, entity_id,
-         logical_key, projection_created_at, title)
-         VALUES ($1, $2, $3, $4, $5, $6, now(), 'Old API output')`,
+         logical_key, title)
+         VALUES ($1, $2, $3, $4, $5, $6, 'Old API output')`,
         [
           ids[offset + 1],
           values.orgId,
@@ -106,8 +104,8 @@ export async function validatePermanentArtifactThreadCatalog(
     );
     assert.deepEqual(avatars.rows, [{ id: ids[0] }]);
     const oldSummaries = await client.query(
-      `SELECT id, chat_thread_id, display_kind, source_url, alias_url,
-         video_source_url FROM artifacts WHERE id = ANY($1::uuid[]) ORDER BY id`,
+      `SELECT id, chat_thread_id, display_kind, source_url, alias_url
+       FROM artifacts WHERE id = ANY($1::uuid[]) ORDER BY id`,
       [ids.slice(1)],
     );
     assert.deepEqual(
@@ -122,7 +120,6 @@ export async function validatePermanentArtifactThreadCatalog(
             display_kind: null,
             source_url: null,
             alias_url: null,
-            video_source_url: null,
           };
         }),
     );
@@ -135,7 +132,6 @@ export async function validatePermanentArtifactThreadCatalog(
     assert.equal(old.displayKind, null);
     assert.equal(old.sourceUrl, null);
     assert.equal(old.aliasUrl, null);
-    assert.equal(old.videoSourceUrl, null);
     const constraints = await client.query<{
       validated: boolean;
       deletion: string;

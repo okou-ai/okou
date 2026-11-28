@@ -35,7 +35,7 @@ interface PackageFile {
  * id resolves to an object only when that object's stored metadata names this
  * user. Ownership is therefore never taken from the request body, and this
  * works for browser and run uploads, including private ownership records and
- * historical public objects without a `run_uploaded_files` row.
+ * historical public objects without a stored file metadata row.
  */
 export const resolveTemplateUploads$ = command(
   async (

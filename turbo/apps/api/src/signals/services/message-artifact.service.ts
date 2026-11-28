@@ -25,6 +25,7 @@ import { inferMimetype } from "../../lib/mimetype";
 import { db$, type ReadonlyDb } from "../external/db";
 import type { ArtifactReferenceRecord } from "./artifact-reference.service";
 import { probeLegacyArtifactSharePolicy$ } from "./artifact-share-probe.service";
+import { siteArtifactIdentityPredicate } from "./hosted-site-artifact.service";
 import { resolveFileUrl$ } from "./private-artifact-storage.service";
 import {
   googleDriveArtifactStatusFields,
@@ -402,7 +403,7 @@ const hostedSiteMessageDetail$ = command(
     const [catalog] = await catalogBy(
       db,
       owner,
-      eq(artifacts.logicalKey, `site:${site.id}`),
+      siteArtifactIdentityPredicate(site.id),
     );
     signal.throwIfAborted();
     if (catalog?.deletedAt) {
