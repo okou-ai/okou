@@ -2,6 +2,7 @@ package ai.okou.android.artifacts
 
 import ai.okou.android.ContentReadFeedbackDelayMillis
 import ai.okou.android.R
+import ai.okou.android.WorkspaceFeedbackHost
 import ai.okou.android.api.retryAfter
 import ai.okou.android.chat.ConfirmedChat
 import ai.okou.android.rememberContentReadFeedbackAfter
@@ -47,7 +48,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.ProvideTextStyle
-import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -290,8 +290,17 @@ internal fun ArtifactPreview(
                 }
             }
         }
-        SnackbarHost(shareSnackbar, Modifier.align(Alignment.BottomCenter))
+        ArtifactActionFeedback(shareSnackbar, Modifier.align(Alignment.BottomCenter))
     }
+}
+
+@Composable
+internal fun ArtifactActionFeedback(state: SnackbarHostState, modifier: Modifier = Modifier) {
+    WorkspaceFeedbackHost(
+        state,
+        modifier.padding(bottom = 8.dp),
+        surfaceModifier = Modifier.testTag("artifact_action_feedback"),
+    )
 }
 
 @Composable

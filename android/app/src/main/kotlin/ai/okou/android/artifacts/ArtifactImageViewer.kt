@@ -595,25 +595,29 @@ private fun ImageViewport(
                         problem ?: R.string.artifact_preview_only.takeIf { previewOnly }
                     } else null
             }
-        if (feedback != null) {
-            Surface(
-                modifier = Modifier.align(Alignment.BottomCenter).padding(16.dp),
-                color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                contentColor = MaterialTheme.colorScheme.onSurface,
-                shape = RoundedCornerShape(4.dp),
-            ) {
-                Text(
-                    stringResource(feedback),
-                    Modifier.padding(horizontal = 12.dp, vertical = 8.dp).semantics {
-                        liveRegion = LiveRegionMode.Polite
-                    },
-                    textAlign = TextAlign.Center,
-                    style = MaterialTheme.typography.bodyMedium,
-                )
+        Column(
+            Modifier.align(Alignment.BottomCenter),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            if (feedback != null) {
+                Surface(
+                    modifier = Modifier.padding(16.dp),
+                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    contentColor = MaterialTheme.colorScheme.onSurface,
+                    shape = RoundedCornerShape(4.dp),
+                ) {
+                    Text(
+                        stringResource(feedback),
+                        Modifier.padding(horizontal = 12.dp, vertical = 8.dp).semantics {
+                            liveRegion = LiveRegionMode.Polite
+                        },
+                        textAlign = TextAlign.Center,
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                }
             }
+            if (shareSnackbar != null) ArtifactActionFeedback(shareSnackbar)
         }
-        if (shareSnackbar != null)
-            SnackbarHost(shareSnackbar, Modifier.align(Alignment.BottomCenter))
     }
 }
 
