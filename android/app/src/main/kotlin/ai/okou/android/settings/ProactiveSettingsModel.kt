@@ -228,14 +228,14 @@ internal class ProactiveSettingOwner(
                 requireCurrent()
                 onSessionFailure(error)
                 requireCurrent()
-                if (error is ApiFailure.Network && error.connectionFailed) {
+                if (error.canRetryRejectedSettingWrite()) {
                     resolve(sent, mutable.value.confirmed, rejected = true)
                     return WriteOutcome.NotApplied
                 }
                 if (
                     error is ApiFailure.Http &&
                         error.status in 400..499 &&
-                        error.status !in setOf(408, 409, 429)
+                        error.status !in setOf(408, 409)
                 ) {
                     if (error.status == 403) discardConfirmation()
                     resolve(sent, mutable.value.confirmed, rejected = true)
@@ -254,8 +254,9 @@ internal class ProactiveSettingOwner(
         while (true) {
             try {
                 return service.update(setting, sent.enabled).also { requireCurrent() }
-            } catch (error: ApiFailure.Network) {
-                if (!error.connectionFailed) throw error
+            } catch (error: ApiFailure) {
+                if (!error.canRetryRejectedSettingWrite()) throw error
+                requireCurrent()
                 val wait = boundedRetryDelayMillis(retries++, error) ?: throw error
                 delay(wait)
                 requireCurrent()

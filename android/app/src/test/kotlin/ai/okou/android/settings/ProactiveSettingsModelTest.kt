@@ -134,9 +134,9 @@ class ProactiveSettingsModelTest {
     }
 
     @Test
-    fun revertingAQueuedToggleSkipsTheWriteWhenTheEarlierChoiceIsRejected() = runTest {
+    fun revertingAQueuedToggleSkipsTheRetryWhenTheEarlierChoiceIsThrottled() = runTest {
         ChatListApiFixture().use { api ->
-            val fixture = ProactiveSettingsApiFixture(api).apply { morningWriteStatus = 400 }
+            val fixture = ProactiveSettingsApiFixture(api).apply { morningWriteStatus = 429 }
             val writeStarted = CountDownLatch(1)
             val releaseWrite = CountDownLatch(1)
             fixture.beforeMorningWrite = {
@@ -192,6 +192,27 @@ class ProactiveSettingsModelTest {
             model.refresh()
             model.morningBrief.state.first { it.enabled == true && !it.checking }
             assertEquals(listOf(ProactiveSetting.MorningBrief to true), fixture.writes)
+        }
+    }
+
+    @Test
+    fun exhaustedThrottleRollsBackWithoutReadback() = runTest {
+        ChatListApiFixture().use { api ->
+            val fixture = ProactiveSettingsApiFixture(api).apply { morningWriteStatus = 429 }
+            val model = model(api)
+            model.visible(true)
+            model.morningBrief.state.first { it.confirmed != null }
+            model.morningBrief.choose(true)
+            assertEquals(true, model.morningBrief.state.value.enabled)
+            val rolledBack = model.morningBrief.state.first { it.choice == null }
+            assertEquals(false, rolledBack.enabled)
+            assertFalse(rolledBack.checking)
+            assertEquals(List(3) { ProactiveSetting.MorningBrief to true }, fixture.writes)
+            assertEquals(1, fixture.reads.count { it == "morning-brief" })
+            assertEquals(
+                ProactiveSetting.MorningBrief,
+                model.saveFailures.first { it.isNotEmpty() }.single().value,
+            )
         }
     }
 

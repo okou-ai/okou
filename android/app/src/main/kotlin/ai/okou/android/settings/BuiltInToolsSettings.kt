@@ -359,14 +359,12 @@ internal class BuiltInToolsSettings(
                 currentCoroutineContext().ensureActive()
                 if (authorized()) onSessionFailure(error)
                 if (!authorized()) return null
-                val undelivered = error is ApiFailure.Network && error.connectionFailed
-                val throttled = error is ApiFailure.Http && error.status == 429
+                val retryableRejection = error.canRetryRejectedSettingWrite()
                 val wait =
-                    if (undelivered || throttled) boundedRetryDelayMillis(retries++, error)
-                    else null
+                    if (retryableRejection) boundedRetryDelayMillis(retries++, error) else null
                 if (wait == null) {
                     return if (
-                        undelivered ||
+                        retryableRejection ||
                             error.definitivelyRejectedWrite() ||
                             error is ApiFailure.UpdateRequired
                     )
