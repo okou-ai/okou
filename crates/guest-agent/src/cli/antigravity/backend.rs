@@ -3,7 +3,6 @@
 use std::collections::HashSet;
 use std::future::Future;
 use std::path::PathBuf;
-use std::pin::Pin;
 use std::time::Duration;
 
 use guest_contracts::diagnostics::{
@@ -13,16 +12,16 @@ use guest_contracts::diagnostics::{
 use guest_telemetry::{log_info, log_warn};
 use serde_json::{Value, json};
 use tokio::sync::oneshot;
-use tokio_util::sync::CancellationToken;
 
-use crate::active_input::{ActiveInputController, ActiveInputFrame, ActiveInputWriter};
+use crate::active_input::{ActiveInputFrame, ActiveInputWriter};
 use crate::cli::event_delivery::{EventDeliveryRuntime, EventDeliverySender};
 use crate::cli::jsonl_result::JsonlResultSummary;
+use crate::cli::native_execution::{NativeRunOutcome, run_with_execution_deadline};
 use crate::cli::{
-    AgentExecutionDeadline, BestEffortAgentLog, CliEventIngestor, CliExecutionControls,
-    CliExecutionResult, CliFailureDiagnostic, CliRuntimeConfig, CliStartupTiming, HeartbeatMonitor,
-    HeartbeatStatus, LOG_TAG, ParsedEventAction, child_env, cli_exit_summary_from_status,
-    session_output, user_env_value,
+    BestEffortAgentLog, CliEventIngestor, CliExecutionControls, CliExecutionResult,
+    CliFailureDiagnostic, CliRuntimeConfig, CliStartupTiming, HeartbeatMonitor, HeartbeatStatus,
+    LOG_TAG, ParsedEventAction, child_env, cli_exit_summary_from_status, session_output,
+    user_env_value,
 };
 use crate::env::Framework;
 use crate::error::AgentError;
@@ -44,12 +43,6 @@ enum AcpRunEvent {
     ActiveInput(Option<ActiveInputFrame>),
 }
 
-enum AcpRunOutcome {
-    Completed(Box<Result<CliExecutionResult, AcpRunError>>),
-    ExecutionTimedOut { timeout_secs: u64 },
-    UserCancelled,
-}
-
 enum AcpRunError {
     Execution(AgentError),
     Heartbeat(AcpHeartbeatFailure),
@@ -64,15 +57,6 @@ struct AcpHeartbeatFailure {
 impl From<AgentError> for AcpRunError {
     fn from(error: AgentError) -> Self {
         Self::Execution(error)
-    }
-}
-
-impl AcpRunOutcome {
-    fn is_heartbeat_failure(&self) -> bool {
-        matches!(
-            self,
-            Self::Completed(result) if matches!(result.as_ref(), Err(AcpRunError::Heartbeat(_)))
-        )
     }
 }
 
@@ -418,7 +402,7 @@ async fn run_antigravity_acp(
 
     let cancelled_cleanly = if matches!(
         &run_outcome,
-        AcpRunOutcome::ExecutionTimedOut { .. } | AcpRunOutcome::UserCancelled
+        NativeRunOutcome::ExecutionTimedOut { .. } | NativeRunOutcome::UserCancelled
     ) && let Some(session_id) = active_session_id.as_deref()
         && !in_flight_prompts.is_empty()
     {
@@ -456,8 +440,8 @@ async fn run_antigravity_acp(
     };
 
     let shutdown_result = match &run_outcome {
-        AcpRunOutcome::Completed(result) if result.is_ok() => client.shutdown().await,
-        AcpRunOutcome::ExecutionTimedOut { .. } | AcpRunOutcome::UserCancelled
+        NativeRunOutcome::Completed(result) if result.is_ok() => client.shutdown().await,
+        NativeRunOutcome::ExecutionTimedOut { .. } | NativeRunOutcome::UserCancelled
             if cancelled_cleanly =>
         {
             match client.shutdown().await {
@@ -472,9 +456,9 @@ async fn run_antigravity_acp(
                 }
             }
         }
-        AcpRunOutcome::Completed(_)
-        | AcpRunOutcome::ExecutionTimedOut { .. }
-        | AcpRunOutcome::UserCancelled => client.terminate().await,
+        NativeRunOutcome::Completed(_)
+        | NativeRunOutcome::ExecutionTimedOut { .. }
+        | NativeRunOutcome::UserCancelled => client.terminate().await,
     };
 
     // Keep the temporary hooks directory alive until the child has exited.
@@ -483,7 +467,7 @@ async fn run_antigravity_acp(
     if shutdown_result.is_ok()
         && matches!(
             &run_outcome,
-            AcpRunOutcome::ExecutionTimedOut { .. } | AcpRunOutcome::UserCancelled
+            NativeRunOutcome::ExecutionTimedOut { .. } | NativeRunOutcome::UserCancelled
         )
         && active_input_controller.sink_in_flight()
     {
@@ -496,7 +480,8 @@ async fn run_antigravity_acp(
 
     match active_input_finalized {
         Ok(()) => {}
-        Err(active_input_error) if run_outcome.is_heartbeat_failure() => {
+        Err(active_input_error) if matches!(&run_outcome, NativeRunOutcome::Completed(result) if matches!(result.as_ref(), Err(AcpRunError::Heartbeat(_)))) =>
+        {
             log_warn!(
                 LOG_TAG,
                 "Antigravity active-input cleanup failed after heartbeat failure: {}",
@@ -515,7 +500,7 @@ async fn run_antigravity_acp(
     }
 
     match run_outcome {
-        AcpRunOutcome::Completed(run_result) => match (*run_result, shutdown_result) {
+        NativeRunOutcome::Completed(run_result) => match (*run_result, shutdown_result) {
             (Ok(result), Ok(())) => Ok(result),
             (Ok(_), Err(error)) => Err(AgentError::Execution(format!(
                 "antigravity acp shutdown failed: {}",
@@ -548,7 +533,7 @@ async fn run_antigravity_acp(
                 })
             }
         },
-        AcpRunOutcome::ExecutionTimedOut { timeout_secs } => {
+        NativeRunOutcome::ExecutionTimedOut { timeout_secs } => {
             if let Err(shutdown_error) = shutdown_result {
                 log_warn!(
                     LOG_TAG,
@@ -571,7 +556,7 @@ async fn run_antigravity_acp(
                 )
             })
         }
-        AcpRunOutcome::UserCancelled => {
+        NativeRunOutcome::UserCancelled => {
             if let Err(shutdown_error) = shutdown_result {
                 log_warn!(
                     LOG_TAG,
@@ -752,68 +737,6 @@ async fn next_acp_run_event(
             Err(heartbeat_error(heartbeat_result))
         }
     }
-}
-
-async fn settle_active_input_before_stop<Run>(
-    mut run: Pin<&mut Run>,
-    active_input: &ActiveInputController,
-    stopped: AcpRunOutcome,
-) -> AcpRunOutcome
-where
-    Run: Future<Output = Result<CliExecutionResult, AcpRunError>>,
-{
-    active_input.close_terminal();
-    if !active_input.sink_in_flight() {
-        return stopped;
-    }
-
-    let settle = async {
-        tokio::select! {
-            biased;
-            _ = run.as_mut() => {}
-            _ = active_input.wait_for_sink_idle() => {}
-        }
-    };
-    let _ = tokio::time::timeout(
-        Duration::from_secs(crate::constants::ACTIVE_INPUT_SINK_QUIESCENCE_TIMEOUT_SECS),
-        settle,
-    )
-    .await;
-    stopped
-}
-
-async fn run_with_execution_deadline(
-    run: impl Future<Output = Result<CliExecutionResult, AcpRunError>>,
-    deadline: Option<AgentExecutionDeadline>,
-    user_cancellation: &CancellationToken,
-    active_input: &ActiveInputController,
-) -> AcpRunOutcome {
-    tokio::pin!(run);
-
-    let deadline = deadline.map(|deadline| {
-        let at = tokio::time::Instant::from_std(deadline.at);
-        (tokio::time::sleep_until(at), deadline.timeout_secs)
-    });
-    let deadline_elapsed = async move {
-        match deadline {
-            Some((sleep, timeout_secs)) => {
-                sleep.await;
-                timeout_secs
-            }
-            None => std::future::pending().await,
-        }
-    };
-    tokio::pin!(deadline_elapsed);
-
-    let stopped = tokio::select! {
-        biased;
-        result = &mut run => return AcpRunOutcome::Completed(Box::new(result)),
-        () = user_cancellation.cancelled() => AcpRunOutcome::UserCancelled,
-        timeout_secs = &mut deadline_elapsed => AcpRunOutcome::ExecutionTimedOut {
-            timeout_secs,
-        },
-    };
-    settle_active_input_before_stop(run.as_mut(), active_input, stopped).await
 }
 
 fn build_acp_config(
