@@ -93,6 +93,10 @@ class ScreenshotScenario {
                         ) == true,
                     )
                     ScreenshotCapture.capture("workflow-sent.png")
+                    await(By.pkg(app.packageName).desc("Chat options")).click()
+                    await(By.pkg(app.packageName).text("Workflows")).click()
+                    await(By.textContains("/daily-digest"))
+                    ScreenshotCapture.capture("workflow-picker.png")
                 }
             } finally {
                 device.executeShellCommand("wm size $size")
