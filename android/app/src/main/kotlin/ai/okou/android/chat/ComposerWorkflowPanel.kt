@@ -32,8 +32,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.input.InputMode
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalInputModeManager
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -237,7 +240,10 @@ private fun WorkflowCandidate(
     val item = match.workflow
     val colors = MaterialTheme.colorScheme
     val shape = RoundedCornerShape(8.dp)
-    val subdued = if (highlighted) colors.onSecondaryContainer else colors.onSurfaceVariant
+    var focused by remember { mutableStateOf(false) }
+    val active =
+        highlighted || focused && LocalInputModeManager.current.inputMode == InputMode.Keyboard
+    val subdued = if (active) colors.onSecondaryContainer else colors.onSurfaceVariant
     val title = item.displayName?.takeIf { it.isNotBlank() && it != item.name }
     val details =
         listOfNotNull(title, item.description?.takeIf(String::isNotBlank)).joinToString(" · ")
@@ -258,13 +264,14 @@ private fun WorkflowCandidate(
         }
     Surface(
         shape = shape,
-        color = if (highlighted) colors.secondaryContainer else colors.surface,
-        contentColor = if (highlighted) colors.onSecondaryContainer else colors.onSurface,
+        color = if (active) colors.secondaryContainer else colors.surface,
+        contentColor = if (active) colors.onSecondaryContainer else colors.onSurface,
     ) {
         Row(
             Modifier.fillMaxWidth()
                 .heightIn(min = 56.dp)
-                .then(if (highlighted) Modifier.border(2.dp, colors.primary, shape) else Modifier)
+                .then(if (active) Modifier.border(2.dp, colors.primary, shape) else Modifier)
+                .onFocusChanged { focused = it.isFocused }
                 .clickable { select(item) }
                 .semantics { selected = highlighted }
                 .padding(8.dp),
