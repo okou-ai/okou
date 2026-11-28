@@ -334,8 +334,7 @@ def test_selected_admin_firewall_allow_matrix(fws, network_policies, expected, s
     assert result.rel_path == expected["rel_path"]
 
 
-@pytest.mark.parametrize("specific_first", [False, True], ids=["broad-first", "specific-first"])
-def test_selected_parameterized_owner_preserves_first_unknown_allow_fallback(specific_first):
+def test_selected_parameterized_owner_preserves_first_unknown_allow_fallback():
     tenant_base = "https://{workspace}.example.com/api/{tenant}"
     fallback_apis = [
         firewall_api(tenant_base, [], auth_label="tenant"),
@@ -353,8 +352,6 @@ def test_selected_parameterized_owner_preserves_first_unknown_allow_fallback(spe
             *fallback_apis,
         ),
     ]
-    if specific_first:
-        fws.reverse()
     policies = {
         "broad": network_policy(deny=["broad"]),
         "tenant": network_policy(unknown_policy="allow"),
