@@ -294,9 +294,8 @@ async function readDispatchedRun(runnerGroup: string): Promise<{
   readonly environment: Record<string, string> | null;
   readonly serviceTier: string | undefined;
 }> {
-  const runs = createRunsApi(context);
-  await runs.heartbeatRunner(runnerGroup);
-  const execution = await runs.nextReceivedExecution(runnerGroup);
+  const execution =
+    await createRunsApi(context).nextReceivedExecution(runnerGroup);
   const runId = execution.runId;
   if (
     execution.cliAgentType !== "claude-code" &&
