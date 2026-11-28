@@ -43,8 +43,8 @@ class ScreenshotScenario {
     private val subject = By.clazz("android.widget.EditText").hasDescendant(By.desc("Subject contains"))
 
     @Test
-    fun captureWorkflowPanes() = withDeviceSettings {
-        captureWindow(412, 892, UserPreferencesTheme.LIGHT) { scenario, fixture ->
+    fun captureRegularWorkflowPanes() = withDeviceSettings {
+        captureWindow(412, 892, UserPreferencesTheme.LIGHT) { _, fixture ->
             val release = By.text(fixture.releaseTitle)
             val result = action(release)
             assertTrue(node(By.desc("Search workflows")).visibleBounds.bottom <= result.visibleBounds.top)
@@ -54,26 +54,42 @@ class ScreenshotScenario {
             assertTrue(action(use).isEnabled)
             node(By.text("Trigger rules"))
             ScreenshotCapture.capture("phone-automations.png")
+        }
 
-            device.pressBack()
-            node(By.desc("Search workflows"))
-            val compactWidth = 360
-            val compactHeight = 280
-            resize(scenario, compactWidth, compactHeight, 2f)
+        captureWindow(1180, 820, UserPreferencesTheme.DARK) { _, fixture ->
+            val directoryRow = action(By.text(fixture.releaseTitle))
+            val left = directoryRow.visibleBounds
+            directoryRow.click()
+            action(By.text("Automations")).click()
+            node(By.text("Trigger rules"))
+            val right = action(use)
+            assertTrue(left.right < right.visibleBounds.left)
+            assertTrue(right.isEnabled)
+            ScreenshotCapture.capture("wide-workflows.png")
+        }
+    }
+
+    @Test
+    fun captureCompactDirectoryReturn() = withDeviceSettings {
+        captureWindow(360, 280, UserPreferencesTheme.LIGHT, scale = 2f) { _, fixture ->
+            val release = By.text(fixture.releaseTitle)
             val compactResult = reveal(release, ::clickableAncestor)
             val compactBounds = compactResult.visibleBounds
             assertTrue(compactBounds.height() >= 48)
             ScreenshotCapture.capture("short-directory.png")
             compactResult.click()
-            node(By.text("Instructions"))
-            device.pressBack()
+            assertTrue(action(use).isEnabled)
+            action(By.desc("Back")).click()
             node(By.desc("Search workflows"))
             val returnedResult = action(release)
             assertEquals("Returning preserves the visible directory row", compactBounds, returnedResult.visibleBounds)
-            returnedResult.click()
-            node(By.text("Instructions"))
+        }
+    }
 
-            resize(scenario, 412, 892, 1f)
+    @Test
+    fun captureCompactEditorFeedback() = withDeviceSettings {
+        captureWindow(412, 892, UserPreferencesTheme.LIGHT) { scenario, fixture ->
+            action(By.text(fixture.releaseTitle)).click()
             action(By.text("Automations")).click()
             action(By.text("Add automation")).click()
             action(By.text("Event")).click()
@@ -84,7 +100,7 @@ class ScreenshotScenario {
             assertEquals(draft, node(subject).text)
             closeIme(scenario)
 
-            resize(scenario, compactWidth, compactHeight, 2f)
+            resize(scenario, 360, 280, 2f)
             val initialSave = reveal(save, ::disabledButton)
             val saveBounds = initialSave.visibleBounds
             assertTrue(action(viewConnections).isEnabled)
@@ -110,24 +126,13 @@ class ScreenshotScenario {
             assertTrue(action(viewConnections).isEnabled)
             ScreenshotCapture.capture("short-editor-actions.png")
         }
-
-        captureWindow(1180, 820, UserPreferencesTheme.DARK) { _, fixture ->
-            val directoryRow = action(By.text(fixture.releaseTitle))
-            val left = directoryRow.visibleBounds
-            directoryRow.click()
-            action(By.text("Automations")).click()
-            node(By.text("Trigger rules"))
-            val right = action(use)
-            assertTrue(left.right < right.visibleBounds.left)
-            assertTrue(right.isEnabled)
-            ScreenshotCapture.capture("wide-workflows.png")
-        }
     }
 
     private fun captureWindow(
         width: Int,
         height: Int,
         theme: UserPreferencesTheme,
+        scale: Float = 1f,
         capture: (ActivityScenario<MainActivity>, WorkflowApiFixture) -> Unit,
     ) {
         WorkflowApiFixture().use { fixture ->
@@ -142,7 +147,7 @@ class ScreenshotScenario {
                 val previousConnectors = app.connectorService
                 try {
                     device.executeShellCommand("wm size ${width}x${height}")
-                    device.executeShellCommand("settings put system font_scale 1.0")
+                    device.executeShellCommand("settings put system font_scale $scale")
                     app.chatService = fixture.service
                     app.composerService = fixture.service
                     app.workflows = fixture.service
@@ -153,7 +158,7 @@ class ScreenshotScenario {
                     auth.state.value = testAuthenticationState(user = "user-a", session = UUID.randomUUID().toString())
                     ActivityScenario.launch(MainActivity::class.java).use { scenario ->
                         try {
-                            awaitWindow(scenario, width, height, 1f)
+                            awaitWindow(scenario, width, height, scale)
                             node(By.desc("Workflows").enabled(true)).click()
                             capture(scenario, fixture)
                         } catch (error: Throwable) {
