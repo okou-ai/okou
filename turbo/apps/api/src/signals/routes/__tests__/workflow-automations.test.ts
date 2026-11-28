@@ -12,14 +12,19 @@ import {
   workflowsDetailContract,
 } from "@okouai/api-contracts/contracts/workflows";
 import { http, HttpResponse } from "msw";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, onTestFinished } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { apiTestEnvironment } from "../../../__tests__/test-environment";
 import { setupApp, setupRawAppRequest } from "../../../__tests__/test-helpers";
+import {
+  TEST_WITH_DOUBLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE,
+  TEST_WITH_SINGLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE,
+} from "../../../__tests__/test-timeouts";
 import { mockEnv, mockOptionalEnv } from "../../../lib/env";
-import { mockNow, now } from "../../../lib/time";
+import { clearMockNow, mockNow, now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
+import { flushWaitUntilForTest } from "../../context/wait-until";
 import { chatThreadDeleteRoutes } from "../chat-threads-delete";
 import { chatThreadGetRoutes } from "../chat-threads-get";
 import { githubOauthRoutes } from "../github-oauth";
@@ -27,12 +32,15 @@ import { webhooksStripeRoutes } from "../webhooks-stripe";
 import { workflowAutomationsRoutes } from "../workflow-automations";
 import { workflowsRoutes } from "../workflows";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
+import { createChatCallbacksApi } from "./helpers/api-bdd-chat-callbacks";
+import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { mockClerkMembership } from "./helpers/api-bdd-clerk";
 import {
   mockGmailConnectorOAuth,
   mockGoogleFormsConnectorOAuth,
 } from "./helpers/api-bdd-connectors";
 import { createRunsApi } from "./helpers/api-bdd-runs";
+import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import {
   createWorkflowsBddApi,
   mockGoogleCalendarConnectorOAuth,
@@ -41,6 +49,7 @@ import {
 import { mockClerkUsers } from "./helpers/clerk-users";
 import { channelsPublishedTo } from "./helpers/realtime-publications";
 import { createRouteMocks } from "./helpers/route-test";
+import { installWorkflowVolumeS3Fixture } from "./helpers/workflow-volume-s3";
 
 const context = testContext();
 const bdd = createBddApi(context);
@@ -2427,4 +2436,333 @@ describe("okou workflow automations", () => {
       message: "Only the automation owner can manage this automation",
     });
   });
+});
+
+describe("okou workflow automations execution", () => {
+  const chatApi = createChatFilesBddApi(context);
+  const webhooksApi = createWebhookCallbackApi(context);
+  const chatCallbacks = createChatCallbacksApi(context);
+
+  function installExecutionBoundaries() {
+    installWorkflowVolumeS3Fixture(context);
+    runsApi.acceptStorageDownloads();
+    runsApi.acceptTelemetryIngest();
+    chatCallbacks.disableVapid();
+    mockOptionalEnv("OPENROUTER_API_KEY", undefined);
+  }
+
+  async function cleanupDispatchedRuns(
+    actors: readonly ApiTestUser[],
+    runnerGroup: string,
+  ): Promise<void> {
+    await flushWaitUntilForTest();
+    for (let round = 0; round < 5; round++) {
+      const dispatches = runsApi.receivedDispatches(runnerGroup);
+      let cleanedAny = false;
+      for (const envelope of dispatches) {
+        const { runId, sandboxToken } = envelope.executionContext;
+        for (const actor of actors) {
+          const read = await runsApi.requestReadRun(actor, runId, [200, 404]);
+          if (read.status !== 200) {
+            continue;
+          }
+          if (
+            read.body.status === "pending" ||
+            read.body.status === "running"
+          ) {
+            await runsApi.requestCancelRun(actor, runId, [200]);
+            await webhooksApi.requestAgentComplete(
+              { runId, exitCode: 1, error: "Cancelled by test cleanup" },
+              { authorization: `Bearer ${sandboxToken}` },
+              [200],
+            );
+            await flushWaitUntilForTest();
+            cleanedAny = true;
+          }
+          break;
+        }
+      }
+      if (!cleanedAny) {
+        break;
+      }
+    }
+  }
+
+  it(
+    "workflow-automations-057 schedules a loop from its last run after updates and re-enabling, then converts it to cron",
+    { timeout: TEST_WITH_SINGLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      mockNow(new Date("2026-06-28T06:00:00.000Z"));
+      const { actor } = await workflowsBdd.setupWorkflowOrg({ tier: "pro" });
+      installExecutionBoundaries();
+      const runnerGroup = await runsApi.configureRunnerGroup();
+
+      onTestFinished(async () => {
+        await cleanupDispatchedRuns([actor], runnerGroup);
+        clearMockNow();
+      });
+      const workflowId = await workflowsBdd.createWorkflow(actor, {
+        name: `loop-last-run-${randomUUID().slice(0, 8)}`,
+        visibility: "public",
+      });
+      const { asActor, automations } = setupClients();
+      asActor(actor);
+
+      const created = await accept(
+        automations.create({
+          headers: AUTH_HEADERS,
+          params: { workflowId },
+          body: {
+            kind: "schedule",
+            schedule: { type: "loop", intervalSeconds: 600 },
+          },
+        }),
+        [201],
+      );
+      expect(created.body.nextRunAt).toBe("2026-06-28T06:00:00.000Z");
+
+      mockNow(new Date("2026-06-28T06:05:00.000Z"));
+      await accept(
+        automations.run({
+          headers: AUTH_HEADERS,
+          params: { id: created.body.id },
+        }),
+        [201],
+      );
+      await flushWaitUntilForTest();
+
+      mockNow(new Date("2026-06-28T06:10:00.000Z"));
+      const updatedInterval = await accept(
+        automations.update({
+          headers: AUTH_HEADERS,
+          params: { id: created.body.id },
+          body: { schedule: { type: "loop", intervalSeconds: 3600 } },
+        }),
+        [200],
+      );
+      expect(updatedInterval.body.nextRunAt).toBe("2026-06-28T07:05:00.000Z");
+
+      const disabled = await accept(
+        automations.disable({
+          headers: AUTH_HEADERS,
+          params: { id: created.body.id },
+        }),
+        [200],
+      );
+      expect(disabled.body.nextRunAt).toBeNull();
+
+      mockNow(new Date("2026-06-28T06:12:00.000Z"));
+      const reenabled = await accept(
+        automations.enable({
+          headers: AUTH_HEADERS,
+          params: { id: created.body.id },
+        }),
+        [200],
+      );
+      expect(reenabled.body).toMatchObject({
+        enabled: true,
+        nextRunAt: "2026-06-28T07:05:00.000Z",
+      });
+
+      const converted = await accept(
+        automations.update({
+          headers: AUTH_HEADERS,
+          params: { id: created.body.id },
+          body: {
+            schedule: {
+              type: "cron",
+              cronExpression: "*/15 * * * *",
+              timezone: "UTC",
+            },
+          },
+        }),
+        [200],
+      );
+      expect(converted.body).toMatchObject({
+        kind: "schedule",
+        schedule: {
+          type: "cron",
+          cronExpression: "*/15 * * * *",
+          timezone: "UTC",
+        },
+        nextRunAt: "2026-06-28T06:15:00.000Z",
+      });
+    },
+  );
+
+  it(
+    "workflow-automations-063 repairs a lazy destination after public thread deletion without reusing its identity",
+    { timeout: TEST_WITH_DOUBLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const startTime = Date.parse("2026-07-10T09:00:00.000Z");
+      mockNow(startTime);
+      const { actor } = await workflowsBdd.setupWorkflowOrg({ tier: "pro" });
+      installExecutionBoundaries();
+      const runnerGroup = await runsApi.configureRunnerGroup();
+
+      onTestFinished(async () => {
+        await cleanupDispatchedRuns([actor], runnerGroup);
+        clearMockNow();
+      });
+      const workflowId = await workflowsBdd.createWorkflow(actor, {
+        name: `repair-lazy-${randomUUID().slice(0, 8)}`,
+        visibility: "public",
+      });
+      const {
+        asActor,
+        automations,
+        workflowDetail,
+        chatThreadById,
+        chatThreadMetadata,
+      } = setupClients();
+      asActor(actor);
+
+      const created = await accept(
+        automations.create({
+          headers: AUTH_HEADERS,
+          params: { workflowId },
+          body: {
+            kind: "schedule",
+            schedule: {
+              type: "once",
+              atTime: "2026-07-11T09:00:00.000Z",
+              timezone: "UTC",
+            },
+          },
+        }),
+        [201],
+      );
+
+      const firstTrigger = await accept(
+        automations.run({
+          headers: AUTH_HEADERS,
+          params: { id: created.body.id },
+        }),
+        [201],
+      );
+      await flushWaitUntilForTest();
+      const firstThreadId = firstTrigger.body.chatThreadId;
+
+      const firstEvents = await workflowsBdd.readThreadEvents(firstThreadId);
+      const firstRunId = firstEvents.find((event) => {
+        return event.eventType === "input.prompt" && event.runId !== undefined;
+      })?.runId;
+      if (!firstRunId) {
+        throw new Error("Expected first run to launch");
+      }
+
+      const firstExec = await runsApi.executionInput(firstRunId);
+      await runsApi.requestCancelRun(actor, firstRunId, [200]);
+      await webhooksApi.requestAgentComplete(
+        { runId: firstRunId, exitCode: 1, error: "Run cancelled" },
+        { authorization: `Bearer ${firstExec.sandboxToken}` },
+        [200],
+      );
+      await flushWaitUntilForTest();
+
+      asActor(actor);
+      await accept(
+        chatThreadById.delete({
+          headers: AUTH_HEADERS,
+          params: { id: firstThreadId },
+        }),
+        [204],
+      );
+
+      const afterDelete = await accept(
+        automations.get({
+          headers: AUTH_HEADERS,
+          params: { id: created.body.id },
+        }),
+        [200],
+      );
+      expect(afterDelete.body).toMatchObject({
+        chatThreadId: null,
+        enabled: false,
+      });
+
+      const lifecycleBefore = await chatApi.requestThreadEvents(
+        actor,
+        {},
+        [200],
+      );
+      const prevEvents = lifecycleBefore.body.events;
+      const prevLastSeqId = prevEvents.at(-1)?.seqId ?? 0;
+
+      mockNow(startTime + 1000);
+      asActor(actor);
+      const secondTrigger = await accept(
+        automations.run({
+          headers: AUTH_HEADERS,
+          params: { id: created.body.id },
+        }),
+        [201],
+      );
+      await flushWaitUntilForTest();
+      const secondThreadId = secondTrigger.body.chatThreadId;
+      expect(secondThreadId).not.toBe(firstThreadId);
+
+      const history = await accept(
+        workflowDetail.runHistory({
+          headers: AUTH_HEADERS,
+          params: { workflowId },
+          query: {},
+        }),
+        [200],
+      );
+      expect(history.body.runs).toHaveLength(2);
+      expect(history.body.runs[0]).toMatchObject({
+        chatThreadId: secondThreadId,
+        trigger: "manual",
+      });
+      expect(history.body.runs[1]).toMatchObject({
+        id: firstRunId,
+        status: "cancelled",
+        chatThreadId: null,
+        trigger: null,
+      });
+
+      const afterRepair = await accept(
+        automations.get({
+          headers: AUTH_HEADERS,
+          params: { id: created.body.id },
+        }),
+        [200],
+      );
+      expect(afterRepair.body.chatThreadId).toBe(secondThreadId);
+
+      await Promise.all([
+        accept(
+          chatThreadMetadata.get({
+            headers: AUTH_HEADERS,
+            params: { id: firstThreadId },
+          }),
+          [404],
+        ),
+        accept(
+          chatThreadMetadata.get({
+            headers: AUTH_HEADERS,
+            params: { id: secondThreadId },
+          }),
+          [200],
+        ),
+      ]);
+
+      const lifecycleAfter = await chatApi.requestThreadEvents(
+        actor,
+        {},
+        [200],
+      );
+      expect(
+        lifecycleAfter.body.events.slice(0, prevEvents.length),
+      ).toStrictEqual(prevEvents);
+      const addedEvents = lifecycleAfter.body.events.slice(prevEvents.length);
+      expect(addedEvents).toHaveLength(1);
+      expect(addedEvents[0]).toMatchObject({
+        kind: "created",
+        chatThreadId: secondThreadId,
+        seqId: prevLastSeqId + 1,
+      });
+    },
+  );
 });

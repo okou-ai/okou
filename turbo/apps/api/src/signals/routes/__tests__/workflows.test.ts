@@ -1,21 +1,38 @@
 import { randomUUID } from "node:crypto";
 import { gunzipSync } from "node:zlib";
-import { chatThreadsContract } from "@okouai/api-contracts/contracts/chat-threads";
 import {
-  workflowAutomationsContract,
+  chatSearchContract,
+  chatThreadsContract,
+} from "@okouai/api-contracts/contracts/chat-threads";
+import {
   workflowsCollectionContract,
   workflowsDetailContract,
+  workflowAutomationsContract,
   workflowVisibilityContract,
 } from "@okouai/api-contracts/contracts/workflows";
 import { readContentBundle } from "@okouai/core/content-bundle";
-import { describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it, onTestFinished } from "vitest";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { accept, testContext } from "../../../__tests__/test-context";
+import {
+  TEST_WITH_DOUBLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE,
+  TEST_WITH_SINGLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE,
+} from "../../../__tests__/test-timeouts";
+import { mockOptionalEnv } from "../../../lib/env";
 import { mockNow, now } from "../../../lib/time";
 import { flushWaitUntilForTest } from "../../context/wait-until";
+import { settleIncludingAbort } from "../../utils";
+import { chatThreadRoutes } from "../chat-threads";
 import { chatThreadCreateRoutes } from "../chat-threads-create";
 import { workflowAutomationsRoutes } from "../workflow-automations";
 import { workflowsRoutes } from "../workflows";
+import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
+import { createChatCallbacksApi } from "./helpers/api-bdd-chat-callbacks";
+import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
+import { createRunsApi } from "./helpers/api-bdd-runs";
+import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
+import { createWorkflowsBddApi } from "./helpers/api-bdd-workflows";
+import { createPublicAutomationRunApi } from "./helpers/public-automation-run";
 import { channelsPublishedTo } from "./helpers/realtime-publications";
 import { createRouteMocks } from "./helpers/route-test";
 import { installWorkflowVolumeS3Fixture } from "./helpers/workflow-volume-s3";
@@ -975,4 +992,461 @@ describe("workflow owner profiles", () => {
     expect(second.status).toBe(404);
     expect(ownerProfileLookups(owner.userId)).toBe(lookupsAfterFirst);
   });
+});
+
+describe("workflows execution", () => {
+  const bdd = createBddApi(context);
+  const runsApi = createRunsApi(context);
+
+  const workflowsBdd = createWorkflowsBddApi(context);
+  const chatApi = createChatFilesBddApi(context);
+  const webhooksApi = createWebhookCallbackApi(context);
+  const chatCallbacks = createChatCallbacksApi(context);
+  const publicAutomationRun = createPublicAutomationRunApi(context);
+
+  beforeAll(async () => {
+    await settleIncludingAbort(async () => {
+      await workflowsBdd.setupWorkflowOrg({ tier: "pro" });
+      await runsApi.configureRunnerGroup();
+    });
+  });
+
+  function asUser(actor: ApiTestUser) {
+    createRouteMocks(context).clerk.session(
+      actor.userId,
+      actor.orgId,
+      actor.orgRole,
+    );
+    return headers;
+  }
+
+  function installExecutionBoundaries() {
+    installWorkflowVolumeS3Fixture(context);
+    runsApi.acceptStorageDownloads();
+    runsApi.acceptTelemetryIngest();
+    chatCallbacks.disableVapid();
+    mockOptionalEnv("OPENROUTER_API_KEY", undefined);
+  }
+
+  function registerRunCleanup(actor: ApiTestUser, runnerGroup: () => string) {
+    onTestFinished(async () => {
+      await flushWaitUntilForTest();
+      for (let round = 0; round < 5; round++) {
+        const dispatches = runsApi.receivedDispatches(runnerGroup());
+        let cleanedAny = false;
+        for (const envelope of dispatches) {
+          const { runId, sandboxToken } = envelope.executionContext;
+          const current = await runsApi.readRun(actor, runId);
+          if (current.status === "pending" || current.status === "running") {
+            await runsApi.requestCancelRun(actor, runId, [200]);
+            await webhooksApi.requestAgentComplete(
+              { runId, exitCode: 1, error: "Cancelled by test cleanup" },
+              { authorization: `Bearer ${sandboxToken}` },
+              [200],
+            );
+            await flushWaitUntilForTest();
+            cleanedAny = true;
+          }
+        }
+        if (!cleanedAny) {
+          break;
+        }
+      }
+    });
+  }
+
+  it(
+    "workflows-004 runs public workflows for members and hides another member's private workflow",
+    { timeout: TEST_WITH_SINGLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const { actor: admin } = await workflowsBdd.setupWorkflowOrg({
+        tier: "pro",
+      });
+      if (!admin.orgId) {
+        throw new Error("Expected org-scoped admin");
+      }
+      const peer = bdd.user({ orgId: admin.orgId, orgRole: "org:member" });
+      await bdd.completeOnboarding(peer);
+      await runsApi.ensurePersonalSubscriptionModel(peer);
+      installExecutionBoundaries();
+      const runnerGroup = await runsApi.configureRunnerGroup();
+
+      const publicWorkflowId = await workflowsBdd.createWorkflow(admin, {
+        name: slug("public"),
+        visibility: "public",
+      });
+      const privateWorkflowId = await workflowsBdd.createWorkflow(admin, {
+        name: slug("private"),
+        visibility: "private",
+      });
+
+      registerRunCleanup(peer, () => {
+        return runnerGroup;
+      });
+
+      const publicRun = await accept(
+        detail().run({
+          headers: asUser(peer),
+          params: { workflowId: publicWorkflowId },
+          body: undefined,
+        }),
+        [200],
+      );
+      await flushWaitUntilForTest();
+
+      const events = await workflowsBdd.readThreadEvents(
+        publicRun.body.chatThreadId,
+      );
+      const launched = events.find((event) => {
+        return event.eventType === "input.prompt" && event.runId !== undefined;
+      });
+      if (!launched?.runId) {
+        throw new Error("Expected public workflow run to launch a Run");
+      }
+
+      const privateRun = await accept(
+        detail().run({
+          headers: asUser(peer),
+          params: { workflowId: privateWorkflowId },
+          body: undefined,
+        }),
+        [404],
+      );
+      expect(privateRun.body.error.code).toBe("NOT_FOUND");
+    },
+  );
+
+  it(
+    "workflows-030 copies workflows and caller-owned automations through the API",
+    { timeout: TEST_WITH_DOUBLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const { actor } = await workflowsBdd.setupWorkflowOrg({ tier: "team" });
+      installExecutionBoundaries();
+      const runnerGroup = await runsApi.configureRunnerGroup();
+
+      const sourceName = slug("copy-src");
+      const sourceWorkflowId = await workflowsBdd.createWorkflow(actor, {
+        name: sourceName,
+        visibility: "public",
+        instruction: "# Source workflow",
+      });
+      const automations = app(workflowAutomationsContract);
+      const scheduleAutomation = await accept(
+        automations.create({
+          headers: asUser(actor),
+          params: { workflowId: sourceWorkflowId },
+          body: {
+            kind: "schedule",
+            schedule: { type: "loop", intervalSeconds: 900 },
+          },
+        }),
+        [201],
+      );
+      await accept(
+        automations.create({
+          headers: asUser(actor),
+          params: { workflowId: sourceWorkflowId },
+          body: { kind: "event", eventType: "webhook-received" },
+        }),
+        [201],
+      );
+
+      const firstRun = await publicAutomationRun.start(
+        actor,
+        scheduleAutomation.body.id,
+        runnerGroup,
+      );
+      await publicAutomationRun.complete(actor, firstRun.runId, runnerGroup, {
+        output: "Initial schedule run finished",
+      });
+
+      const copied = await accept(
+        detail().copy({
+          headers: asUser(actor),
+          params: { workflowId: sourceWorkflowId },
+          body: {},
+        }),
+        [201],
+      );
+      expect(copied.body).toMatchObject({
+        name: sourceName,
+        ownerUserId: actor.userId,
+      });
+      expect(copied.body.id).not.toBe(sourceWorkflowId);
+
+      const copiedAutomations = await accept(
+        automations.list({
+          headers: asUser(actor),
+          params: { workflowId: copied.body.id },
+        }),
+        [200],
+      );
+      const copiedSchedule = copiedAutomations.body.find((item) => {
+        return item.kind === "schedule";
+      });
+      const copiedWebhook = copiedAutomations.body.find((item) => {
+        return item.kind === "event" && item.eventType === "webhook-received";
+      });
+      expect(copiedSchedule).toMatchObject({
+        kind: "schedule",
+        ownerUserId: actor.userId,
+        enabled: scheduleAutomation.body.enabled,
+      });
+      expect(copiedWebhook).toMatchObject({
+        kind: "event",
+        eventType: "webhook-received",
+      });
+      if (!copiedSchedule) {
+        throw new Error("Expected copied schedule automation");
+      }
+
+      const copiedRun = await publicAutomationRun.start(
+        actor,
+        copiedSchedule.id,
+        runnerGroup,
+      );
+      await publicAutomationRun.complete(actor, copiedRun.runId, runnerGroup, {
+        output: "Copied schedule run finished",
+      });
+      const completedCopiedRun = await runsApi.readRun(actor, copiedRun.runId);
+      expect(completedCopiedRun.status).toBe("completed");
+      expect(completedCopiedRun.result?.frameworkSessionId).toStrictEqual(
+        expect.any(String),
+      );
+    },
+  );
+
+  it(
+    "workflows-050 promotes a queued workflow after failure and completes it with a real Runner execution",
+    { timeout: TEST_WITH_DOUBLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const { actor } = await workflowsBdd.setupWorkflowOrg({ tier: "pro" });
+      installExecutionBoundaries();
+      const runnerGroup = await runsApi.configureRunnerGroup();
+
+      const workflowId = await workflowsBdd.createWorkflow(actor, {
+        name: slug("promote"),
+        instruction: "# Promote after failure",
+      });
+
+      const firstTrigger = await accept(
+        detail().run({
+          headers: asUser(actor),
+          params: { workflowId },
+          body: undefined,
+        }),
+        [200],
+      );
+      await flushWaitUntilForTest();
+      const threadId = firstTrigger.body.chatThreadId;
+
+      const secondTrigger = await accept(
+        detail().run({
+          headers: asUser(actor),
+          params: { workflowId },
+          body: undefined,
+        }),
+        [200],
+      );
+      await flushWaitUntilForTest();
+      expect(secondTrigger.body).toStrictEqual({
+        chatThreadId: threadId,
+        runId: null,
+      });
+
+      const eventsBeforeFail = await workflowsBdd.readThreadEvents(threadId);
+      const firstRunId = eventsBeforeFail.find((event) => {
+        return event.eventType === "input.prompt" && event.runId !== undefined;
+      })?.runId;
+      if (!firstRunId) {
+        throw new Error("Expected first workflow run to launch");
+      }
+
+      registerRunCleanup(actor, () => {
+        return runnerGroup;
+      });
+
+      await runsApi.heartbeatRunner(runnerGroup);
+      const firstExec = await runsApi.executionInput(firstRunId);
+      const failComplete = await webhooksApi.requestAgentComplete(
+        {
+          runId: firstRunId,
+          exitCode: 1,
+          error: "Simulated workflow failure",
+        },
+        { authorization: `Bearer ${firstExec.sandboxToken}` },
+        [200],
+      );
+      expect(failComplete.status).toBe(200);
+      await flushWaitUntilForTest();
+
+      const eventsAfterFail = await workflowsBdd.readThreadEvents(threadId);
+      const launchedRunIds = eventsAfterFail.flatMap((event) => {
+        return event.eventType === "input.prompt" && event.runId !== undefined
+          ? [event.runId]
+          : [];
+      });
+      expect(launchedRunIds).toHaveLength(2);
+      const secondRunId = launchedRunIds.find((id) => {
+        return id !== firstRunId;
+      });
+      if (!secondRunId) {
+        throw new Error("Expected queued workflow invocation to promote");
+      }
+
+      await runsApi.heartbeatRunner(runnerGroup);
+      const secondExec = await runsApi.executionInput(secondRunId);
+      const successComplete = await webhooksApi.requestAgentComplete(
+        {
+          runId: secondRunId,
+          exitCode: 0,
+          completion: {
+            cliAgentType: "claude-code",
+            cliAgentSessionId: `promote-${secondRunId}`,
+            cliAgentSessionHistoryDisposition: "native_only",
+          },
+        },
+        { authorization: `Bearer ${secondExec.sandboxToken}` },
+        [200],
+      );
+      expect(successComplete.status).toBe(200);
+      await flushWaitUntilForTest();
+
+      const [firstRun, secondRun] = await Promise.all([
+        runsApi.readRun(actor, firstRunId),
+        runsApi.readRun(actor, secondRunId),
+      ]);
+      expect(firstRun.status).toBe("failed");
+      expect(secondRun.status).toBe("completed");
+
+      const deleted = await detail().delete({
+        headers: asUser(actor),
+        params: { workflowId },
+        body: undefined,
+      });
+      expect(deleted.status).toBe(204);
+    },
+  );
+
+  it(
+    "cron-project-chat-event-search-002 withdraws recalled queued messages while another input is published",
+    { timeout: TEST_WITH_SINGLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const { actor } = await workflowsBdd.setupWorkflowOrg({ tier: "pro" });
+      installExecutionBoundaries();
+      const runnerGroup = await runsApi.configureRunnerGroup();
+
+      const chatSearchClient = setupApp({ context, routes: chatThreadRoutes })(
+        chatSearchContract,
+      );
+      const blocker = await runsApi.createThreadRun(actor, {
+        prompt: "Hold the thread open while testing recall",
+      });
+      registerRunCleanup(actor, () => {
+        return runnerGroup;
+      });
+
+      const firstKeyword = `recallalpha${randomUUID().replaceAll("-", "").slice(0, 10)}`;
+      const secondKeyword = `recallbeta${randomUUID().replaceAll("-", "").slice(0, 10)}`;
+      const firstEventId = randomUUID();
+
+      await chatApi.requestSendEvent(
+        actor,
+        {
+          threadId: blocker.threadId,
+          prompt: `Queued ${firstKeyword} message`,
+          clientEventId: firstEventId,
+        },
+        [201],
+      );
+      await flushWaitUntilForTest();
+
+      const beforeRevoke = await accept(
+        chatSearchClient.search({
+          headers: asUser(actor),
+          query: { keyword: firstKeyword },
+        }),
+        [200],
+      );
+      expect(
+        beforeRevoke.body.results.map((item) => {
+          return item.chatThreadId;
+        }),
+      ).toStrictEqual([blocker.threadId]);
+
+      await chatApi.requestSendEvent(
+        actor,
+        {
+          threadId: blocker.threadId,
+          revokesEventId: firstEventId,
+        },
+        [201],
+      );
+      await flushWaitUntilForTest();
+
+      const afterRevoke = await accept(
+        chatSearchClient.search({
+          headers: asUser(actor),
+          query: { keyword: firstKeyword },
+        }),
+        [200],
+      );
+      expect(afterRevoke.body.results).toStrictEqual([]);
+
+      const secondEventId = randomUUID();
+      await chatApi.requestSendEvent(
+        actor,
+        {
+          threadId: blocker.threadId,
+          prompt: `Queued again ${firstKeyword}`,
+          clientEventId: secondEventId,
+        },
+        [201],
+      );
+      await flushWaitUntilForTest();
+
+      await Promise.all([
+        chatApi.requestSendEvent(
+          actor,
+          {
+            threadId: blocker.threadId,
+            revokesEventId: secondEventId,
+          },
+          [201],
+        ),
+        chatApi.requestSendEvent(
+          actor,
+          {
+            threadId: blocker.threadId,
+            prompt: `Surviving ${secondKeyword} message`,
+          },
+          [201],
+        ),
+      ]);
+      await flushWaitUntilForTest();
+
+      const [revokedSearch, survivingSearch] = await Promise.all([
+        accept(
+          chatSearchClient.search({
+            headers: asUser(actor),
+            query: { keyword: firstKeyword },
+          }),
+          [200],
+        ),
+        accept(
+          chatSearchClient.search({
+            headers: asUser(actor),
+            query: { keyword: secondKeyword },
+          }),
+          [200],
+        ),
+      ]);
+      expect(revokedSearch.body.results).toStrictEqual([]);
+      expect(
+        survivingSearch.body.results.map((item) => {
+          return item.chatThreadId;
+        }),
+      ).toStrictEqual([blocker.threadId]);
+    },
+  );
 });
