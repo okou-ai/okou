@@ -2338,8 +2338,12 @@ def _match_compiled_firewall_request_with_api_candidates(
     selection_hint: Literal["intent", "placeholder"] | None = (
         "placeholder" if selected_name is not None else None
     )
-    owners = {match.firewall.name for match in owner_matches if not match.firewall.name_malformed}
-    if selected_name is None and len(owners) > 1:
+    owners = (
+        {match.firewall.name for match in owner_matches if not match.firewall.name_malformed}
+        if selected_name is None
+        else set()
+    )
+    if len(owners) > 1:
         if intent.status == "present" and intent.value is not None:
             selected_name = _owner_name_for_intent(owner_matches, intent.value)
             if selected_name is not None:
@@ -2384,7 +2388,7 @@ def _match_compiled_firewall_request_with_api_candidates(
                 ),
                 frozenset(),
             )
-    elif selected_name is None and owners:
+    elif owners:
         selected_name = next(iter(owners))
 
     collection = _FirewallMatchCollection()
