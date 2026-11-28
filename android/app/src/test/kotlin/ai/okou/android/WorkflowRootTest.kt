@@ -2052,7 +2052,9 @@ internal class WorkflowHistoryRootTest : WorkflowRootTestFixture() {
             )
         detailList.performScrollToKey(run.id)
         historyTab.assertIsDisplayed().assertIsSelected()
-        val row = compose.onNode(hasTestTag("workflow_run_${run.id}") and hasClickAction())
+        val source = hasTestTag("workflow_run_${run.id}") and hasClickAction()
+        compose.waitUntil(10_000) { compose.onAllNodes(source).fetchSemanticsNodes().isNotEmpty() }
+        val row = compose.onNode(source)
         row.performSemanticsAction(SemanticsActions.RequestFocus).assertIsFocused()
         row.performKeyInput { pressKey(Key.Enter) }
         waitForTag("conversation")
