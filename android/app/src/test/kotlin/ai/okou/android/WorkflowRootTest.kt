@@ -46,12 +46,14 @@ import androidx.compose.ui.test.performFirstLinkClick
 import androidx.compose.ui.test.performKeyInput
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performScrollToKey
+import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTextInputSelection
 import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.pressKey
+import androidx.compose.ui.test.swipeUp
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.TextRange
@@ -219,7 +221,155 @@ internal abstract class WorkflowRootTestFixture {
     qualifiers = "en-rUS-w412dp-h840dp",
     application = WorkflowRootApplication::class,
 )
+@GraphicsMode(GraphicsMode.Mode.NATIVE)
+internal class WorkflowPaneRootTest : WorkflowRootTestFixture() {
+    @Test
+    fun shortDirectoryKeepsFilteredResultsReachable() {
+        val originalQualifiers = RuntimeEnvironment.getQualifiers()
+        val originalScale = RuntimeEnvironment.getFontScale()
+        try {
+            app.gate.countDown()
+            compose.onNodeWithContentDescription("Workflows").performClick()
+            val rowTag = "workflow_row_$WORKFLOW_RELEASE"
+            waitForTag(rowTag)
+            val query = compose.onNodeWithTag("workflow_query")
+            query.performTextReplacement("release")
+            selectScope("Only me")
+
+            RuntimeEnvironment.setQualifiers("en-rUS-w360dp-h230dp")
+            RuntimeEnvironment.setFontScale(2f)
+            compose.activityRule.scenario.recreate()
+            waitForTag("workflow_directory")
+            query.assertTextContains("release")
+            compose.onNodeWithTag("workflow_scope_Private").assertIsSelected()
+
+            compose.onNodeWithTag("workflow_directory").performTouchInput {
+                swipeUp(startY = height * .9f, endY = height * .45f)
+            }
+            val row = compose.onNodeWithTag(rowTag).assertIsDisplayed()
+            val resultBounds = row.fetchSemanticsNode().boundsInRoot
+            assertTrue(
+                "Reachable result height: ${resultBounds.height} px",
+                resultBounds.height >= with(compose.density) { 48.dp.toPx() },
+            )
+            row.performTouchInput { click() }
+            waitForTag("workflow_detail_title")
+            compose
+                .onNodeWithTag("workflow_detail_title")
+                .assertTextContains(app.fixture.releaseTitle)
+
+            back()
+            waitForTag(rowTag)
+            assertEquals(resultBounds, row.fetchSemanticsNode().boundsInRoot)
+        } finally {
+            RuntimeEnvironment.setQualifiers(originalQualifiers)
+            RuntimeEnvironment.setFontScale(originalScale)
+        }
+    }
+
+    @Test
+    fun shortDetailKeepsTheEditActionClearOfTheTabs() {
+        val originalQualifiers = RuntimeEnvironment.getQualifiers()
+        val originalScale = RuntimeEnvironment.getFontScale()
+        try {
+            openWorkflowDetail()
+            RuntimeEnvironment.setQualifiers("en-rUS-w360dp-h210dp")
+            RuntimeEnvironment.setFontScale(2f)
+            compose.activityRule.scenario.recreate()
+            waitForTag("workflow_detail_title")
+
+            val editLabel = "Edit instructions"
+            compose.onNode(hasScrollToIndexAction()).performScrollToNode(hasText(editLabel))
+            val edit = compose.onNodeWithText(editLabel).performScrollTo().assertIsEnabled()
+            val bounds = edit.fetchSemanticsNode().boundsInRoot
+            val tabsBottom =
+                compose
+                    .onAllNodesWithTag("workflow_tab_history")
+                    .fetchSemanticsNodes()
+                    .singleOrNull()
+                    ?.boundsInRoot
+                    ?.bottom ?: bounds.top
+            val visibleHeight = bounds.bottom - maxOf(bounds.top, tabsBottom)
+            assertTrue(
+                "Edit action unobscured height: ${visibleHeight}px",
+                visibleHeight >= with(compose.density) { 48.dp.toPx() },
+            )
+            edit.performTouchInput { click() }
+            waitForTag("workflow_editor_fields")
+        } finally {
+            RuntimeEnvironment.setQualifiers(originalQualifiers)
+            RuntimeEnvironment.setFontScale(originalScale)
+        }
+    }
+
+    @Test
+    fun shortAutomationEditorKeepsTheDraftActionsAndRefreshFeedbackReachable() {
+        val originalQualifiers = RuntimeEnvironment.getQualifiers()
+        val originalScale = RuntimeEnvironment.getFontScale()
+        try {
+            openWorkflowDetail(WORKFLOW_SHARED)
+            compose.onNodeWithTag("workflow_tab_automations").performClick()
+            compose.onNodeWithText("Add automation").performClick()
+            selectGmailTrigger()
+            val subject = compose.onNodeWithContentDescription("Subject contains")
+            subject.performScrollTo().performTextReplacement("Release summary")
+            waitFor("View connections")
+
+            RuntimeEnvironment.setQualifiers("en-rUS-w360dp-h230dp")
+            RuntimeEnvironment.setFontScale(2f)
+            compose.activityRule.scenario.recreate()
+            waitForTag("workflow_editor_fields")
+            val fields = compose.onNodeWithTag("workflow_editor_fields").getUnclippedBoundsInRoot()
+            assertTrue(
+                "Editor viewport: ${fields.bottom - fields.top}",
+                fields.bottom - fields.top >= 48.dp,
+            )
+            subject.performScrollTo().assertIsDisplayed().assertTextContains("Release summary")
+            compose
+                .onNodeWithText("View connections")
+                .performScrollTo()
+                .assertIsDisplayed()
+                .assertIsEnabled()
+            val save = compose.onNodeWithTag("workflow_save")
+            val saveBounds =
+                save
+                    .performScrollTo()
+                    .assertIsDisplayed()
+                    .assertIsNotEnabled()
+                    .getUnclippedBoundsInRoot()
+
+            val fixture = app.fixture
+            val respond = fixture.chats.commandResponse
+            fixture.chats.commandResponse = { request ->
+                if (request.requestUrl?.encodedPath == "/api/connectors/connected")
+                    MockResponse().setResponseCode(400)
+                else respond(request)
+            }
+            compose.activityRule.scenario.moveToState(Lifecycle.State.STARTED)
+            compose.activityRule.scenario.moveToState(Lifecycle.State.RESUMED)
+            val feedback = "Could not refresh. Showing last loaded data."
+            waitFor(feedback)
+            compose.onNodeWithText(feedback).assertIsDisplayed()
+            assertEquals(saveBounds, save.getUnclippedBoundsInRoot())
+            compose.onNodeWithContentDescription("Dismiss").assertIsDisplayed().performClick()
+            compose.onNodeWithText(feedback).assertDoesNotExist()
+            save.assertIsDisplayed().assertIsNotEnabled()
+            assertEquals(saveBounds, save.getUnclippedBoundsInRoot())
+        } finally {
+            RuntimeEnvironment.setQualifiers(originalQualifiers)
+            RuntimeEnvironment.setFontScale(originalScale)
+        }
+    }
+}
+
+@RunWith(RobolectricTestRunner::class)
+@Config(
+    sdk = [35],
+    qualifiers = "en-rUS-w412dp-h840dp",
+    application = WorkflowRootApplication::class,
+)
 internal class WorkflowRootTest : WorkflowRootTestFixture() {
+
     @Test
     fun blankWorkflowNameUsesTheCommandWithoutRenamingOnPurposeSave() {
         val blankTitle = "   "
@@ -1114,6 +1264,7 @@ internal class WorkflowRuleRootTest : WorkflowRootTestFixture() {
         val filterScroll =
             compose.onNode(
                 hasAnyDescendant(hasTestTag("workflow_scope_Private")) and
+                    SemanticsMatcher.keyIsDefined(SemanticsProperties.HorizontalScrollAxisRange) and
                     SemanticsMatcher.keyIsDefined(SemanticsActions.ScrollBy),
             )
         filterScroll.assertExists()
@@ -1576,62 +1727,6 @@ internal class WorkflowRuleRootTest : WorkflowRootTestFixture() {
         calendar.assertTextContains("test-calendar")
         compose.onNodeWithTag("workflow_save").assertIsNotEnabled()
     }
-
-    @Test
-    @GraphicsMode(GraphicsMode.Mode.NATIVE)
-    fun shortAutomationEditorKeepsTheDraftActionsAndRefreshFeedbackReachable() {
-        val originalQualifiers = RuntimeEnvironment.getQualifiers()
-        val originalScale = RuntimeEnvironment.getFontScale()
-        try {
-            openWorkflowDetail(WORKFLOW_SHARED)
-            compose.onNodeWithTag("workflow_tab_automations").performClick()
-            compose.onNodeWithText("Add automation").performClick()
-            selectGmailTrigger()
-            val subject = compose.onNodeWithContentDescription("Subject contains")
-            subject.performScrollTo().performTextReplacement("Release summary")
-            waitFor("View connections")
-
-            RuntimeEnvironment.setQualifiers("en-rUS-w360dp-h230dp")
-            RuntimeEnvironment.setFontScale(2f)
-            compose.activityRule.scenario.recreate()
-            waitForTag("workflow_editor_fields")
-            val fields = compose.onNodeWithTag("workflow_editor_fields").getUnclippedBoundsInRoot()
-            assertTrue(
-                "Editor viewport: ${fields.bottom - fields.top}",
-                fields.bottom - fields.top >= 48.dp,
-            )
-            subject.performScrollTo().assertIsDisplayed().assertTextContains("Release summary")
-            compose
-                .onNodeWithText("View connections")
-                .performScrollTo()
-                .assertIsDisplayed()
-                .assertIsEnabled()
-            val save = compose.onNodeWithTag("workflow_save")
-            val saveBounds =
-                save
-                    .performScrollTo()
-                    .assertIsDisplayed()
-                    .assertIsNotEnabled()
-                    .getUnclippedBoundsInRoot()
-
-            val fixture = app.fixture
-            val respond = fixture.chats.commandResponse
-            fixture.chats.commandResponse = { request ->
-                if (request.requestUrl?.encodedPath == "/api/connectors/connected")
-                    MockResponse().setResponseCode(400)
-                else respond(request)
-            }
-            compose.activityRule.scenario.moveToState(Lifecycle.State.STARTED)
-            compose.activityRule.scenario.moveToState(Lifecycle.State.RESUMED)
-            val feedback = "Could not refresh. Showing last loaded data."
-            waitFor(feedback)
-            compose.onNodeWithText(feedback).assertIsDisplayed()
-            assertEquals(saveBounds, save.getUnclippedBoundsInRoot())
-        } finally {
-            RuntimeEnvironment.setQualifiers(originalQualifiers)
-            RuntimeEnvironment.setFontScale(originalScale)
-        }
-    }
 }
 
 @RunWith(RobolectricTestRunner::class)
@@ -1940,9 +2035,23 @@ internal class WorkflowHistoryRootTest : WorkflowRootTestFixture() {
     @Test
     @Config(qualifiers = "en-rUS-w1180dp-h800dp")
     fun sourceChatBackRestoresTheFocusedHistoryRow() = withHardwareKeyboard {
+        val initialPage = app.fixture.firstRunHistory
+        val run = initialPage.runs.last()
+        val earlierRows =
+            List(18) { index ->
+                initialPage.runs.first().copy(id = UUID(0, index.toLong()).toString())
+            }
+        app.fixture.firstRunHistory = initialPage.copy(runs = earlierRows + initialPage.runs)
         openWorkflowDetail()
-        compose.onNodeWithTag("workflow_tab_history").performClick()
-        val run = app.fixture.firstRunHistory.runs.last()
+        val historyTab = compose.onNodeWithTag("workflow_tab_history")
+        historyTab.performClick()
+        waitForTag("workflow_run_${earlierRows.first().id}")
+        val detailList =
+            compose.onNode(
+                hasScrollToIndexAction() and hasAnyAncestor(hasTestTag("workflow_detail")),
+            )
+        detailList.performScrollToKey(run.id)
+        historyTab.assertIsDisplayed().assertIsSelected()
         val source = hasTestTag("workflow_run_${run.id}") and hasClickAction()
         compose.waitUntil(10_000) { compose.onAllNodes(source).fetchSemanticsNodes().isNotEmpty() }
         val row = compose.onNode(source)
@@ -1951,7 +2060,7 @@ internal class WorkflowHistoryRootTest : WorkflowRootTestFixture() {
         waitForTag("conversation")
 
         back()
-        compose.onNodeWithTag("workflow_tab_history").assertIsSelected()
+        historyTab.assertIsDisplayed().assertIsSelected()
         row.assertIsFocused()
     }
 

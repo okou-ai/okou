@@ -744,17 +744,20 @@ private fun ChatRowFailureFeedback(
 }
 
 @Composable
-internal fun WorkspaceFeedbackTimeout(state: SnackbarHostState) {
+internal fun WorkspaceFeedbackTimeout(
+    state: SnackbarHostState,
+    showDismissAction: Boolean = false,
+) {
     val accessibility = LocalAccessibilityManager.current
     val current = state.currentSnackbarData
     val timed = current?.visuals?.withDismissAction == false
-    LaunchedEffect(current, timed, accessibility) {
+    LaunchedEffect(current, timed, accessibility, showDismissAction) {
         if (current != null && timed) {
             val duration =
                 accessibility?.calculateRecommendedTimeoutMillis(
                     5_000L,
                     containsText = true,
-                    containsControls = current.visuals.actionLabel != null,
+                    containsControls = showDismissAction || current.visuals.actionLabel != null,
                 ) ?: 5_000L
             delay(duration)
             current.dismiss()
@@ -794,9 +797,10 @@ internal fun WorkspaceFeedbackHost(
     modifier: Modifier,
     manageTimeout: Boolean = true,
     surfaceModifier: Modifier = Modifier,
+    showDismissAction: Boolean = false,
     restorePaneFocus: (() -> Unit)? = null,
 ) {
-    if (manageTimeout) WorkspaceFeedbackTimeout(state)
+    if (manageTimeout) WorkspaceFeedbackTimeout(state, showDismissAction)
     val input = LocalInputModeManager.current
     val focused = remember(state) { mutableStateOf<SnackbarData?>(null) }
     val current = state.currentSnackbarData
@@ -806,12 +810,14 @@ internal fun WorkspaceFeedbackHost(
                 focused.value != null &&
                 focused.value !== current &&
                 !current.visuals.withDismissAction &&
+                !showDismissAction &&
                 input.inputMode == InputMode.Keyboard
         )
             restorePaneFocus?.invoke()
     }
     SnackbarHost(state) { data ->
         val visuals = data.visuals
+        val dismissible = visuals.withDismissAction || showDismissAction
         val style = MaterialTheme.typography.bodyMedium
         Surface(
             modifier =
@@ -830,7 +836,7 @@ internal fun WorkspaceFeedbackHost(
                     Modifier.animateContentSize(alignment = Alignment.BottomCenter)
                         .padding(
                             start = feedbackStartPadding,
-                            end = if (visuals.withDismissAction) 0.dp else feedbackEndPadding,
+                            end = if (dismissible) 0.dp else feedbackEndPadding,
                         ),
                 textSize = style.fontSize,
                 message = {
@@ -842,11 +848,13 @@ internal fun WorkspaceFeedbackHost(
                 },
                 actions = {
                     FeedbackActions(
-                        data,
-                        Modifier.onFocusChanged {
-                            if (it.hasFocus) focused.value = data
-                            else if (focused.value === data) focused.value = null
-                        },
+                        data = data,
+                        dismissible = dismissible,
+                        modifier =
+                            Modifier.onFocusChanged {
+                                if (it.hasFocus) focused.value = data
+                                else if (focused.value === data) focused.value = null
+                            },
                     ) {
                         focused.value === data && input.inputMode == InputMode.Keyboard
                     }
@@ -859,13 +867,13 @@ internal fun WorkspaceFeedbackHost(
 @Composable
 private fun FeedbackActions(
     data: SnackbarData,
+    dismissible: Boolean,
     modifier: Modifier,
     keyboardFocused: () -> Boolean,
 ) {
     val visuals = data.visuals
     val action = visuals as? ChatFeedbackSnackbar
     val label = visuals.actionLabel
-    val dismissible = visuals.withDismissAction
     if (label == null && !dismissible) return
     val accent = SnackbarDefaults.actionContentColor
     Row(

@@ -51,6 +51,7 @@ import androidx.compose.foundation.text.input.TextFieldLineLimits
 import androidx.compose.foundation.text.input.TextFieldState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
@@ -72,7 +73,6 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
-import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -420,8 +420,10 @@ internal fun WorkflowEditor(
             saveFocus.requestFocus()
         }
     }
-    WorkflowEditorLayout(
-        fields = {
+    WorkflowPaneLayout(
+        minimumBodyHeight = workflowEditorMinimumFieldHeight(),
+        feedback = feedback,
+        body = {
             Column(
                 Modifier.fillMaxSize()
                     .testTag("workflow_editor_fields")
@@ -491,8 +493,8 @@ internal fun WorkflowEditor(
                 }
             }
         },
-        feedback = feedback,
     ) {
+        HorizontalDivider()
         Column(
             Modifier.fillMaxWidth().padding(horizontal = horizontalPadding, vertical = 8.dp),
             horizontalAlignment = Alignment.End,
@@ -580,67 +582,18 @@ internal fun WorkflowEditor(
 }
 
 @Composable
-private fun WorkflowEditorLayout(
-    fields: @Composable () -> Unit,
-    feedback: @Composable () -> Unit,
-    actions: @Composable () -> Unit,
-) {
+private fun workflowEditorMinimumFieldHeight(): Dp {
     val typography = MaterialTheme.typography
     val fieldPadding = OutlinedTextFieldDefaults.contentPaddingWithoutLabel()
-    val minimumFieldHeight =
-        with(LocalDensity.current) {
-            val outlineHeight =
-                maxOf(
-                    OutlinedTextFieldDefaults.MinHeight,
-                    typography.bodyLarge.lineHeight.toDp() +
-                        fieldPadding.calculateTopPadding() +
-                        fieldPadding.calculateBottomPadding(),
-                )
-            (outlineHeight + typography.bodySmall.lineHeight.toDp() + NativeAboveLabelPadding)
-                .roundToPx()
-        }
-    val scroll = rememberScrollState()
-    BoxWithConstraints(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
-        val viewportHeight = constraints.maxHeight
-        Layout(
-            content = {
-                fields()
-                Column {
-                    WorkflowDivider()
-                    actions()
-                }
-                Box { feedback() }
-            },
-            modifier =
-                Modifier.widthIn(max = WorkflowPaneMaxContentWidth)
-                    .fillMaxWidth()
-                    .verticalScroll(scroll),
-        ) { children, constraints ->
-            val loose = constraints.copy(minHeight = 0)
-            val footer = children[1].measure(loose)
-            // Keep a labeled field usable before letting the action group scroll into view.
-            val fieldsHeight =
-                maxOf(
-                    viewportHeight - footer.height,
-                    minimumFieldHeight.coerceAtMost(viewportHeight),
-                )
-            val body =
-                children[0].measure(loose.copy(minHeight = fieldsHeight, maxHeight = fieldsHeight))
-            val notice = children[2].measure(loose.copy(maxHeight = viewportHeight))
-            layout(constraints.maxWidth, body.height + footer.height) {
-                body.placeRelative(0, 0)
-                footer.placeRelative(0, body.height)
-                if (notice.height > 0) {
-                    // The overlay stays in view as the footer scrolls past the form.
-                    val viewportTop = scroll.value
-                    val visibleFormBottom = minOf(body.height, viewportTop + viewportHeight)
-                    notice.placeRelative(
-                        (constraints.maxWidth - notice.width) / 2,
-                        (visibleFormBottom - notice.height).coerceAtLeast(viewportTop),
-                    )
-                }
-            }
-        }
+    return with(LocalDensity.current) {
+        val outlineHeight =
+            maxOf(
+                OutlinedTextFieldDefaults.MinHeight,
+                typography.bodyLarge.lineHeight.toDp() +
+                    fieldPadding.calculateTopPadding() +
+                    fieldPadding.calculateBottomPadding(),
+            )
+        outlineHeight + typography.bodySmall.lineHeight.toDp() + NativeAboveLabelPadding
     }
 }
 

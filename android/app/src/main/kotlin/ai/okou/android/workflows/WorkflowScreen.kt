@@ -28,6 +28,7 @@ import ai.okou.android.state.WorkflowTab
 import ai.okou.android.state.WorkflowsRoute
 import ai.okou.android.state.rememberWorkflowDiscardConfirmation
 import ai.okou.android.state.rememberWorkflowEditorReturnFocus
+import ai.okou.android.state.rememberWorkflowPageState
 import ai.okou.android.updates.updateFocusOutline
 import ai.okou.android.workspaceSearchFocusOutline
 import androidx.activity.compose.BackHandler
@@ -83,6 +84,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -99,6 +101,8 @@ import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalInputModeManager
 import androidx.compose.ui.platform.LocalLayoutDirection
@@ -125,12 +129,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 private const val SECTION_EDITOR_FOCUS = "section"
+private val workflowDirectoryListPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 20.dp)
 
 // Keep the stroke within a 40 dp surface centered in the 48 dp touch target.
 internal val WorkflowFilledActionFocusInset = 6.dp
-internal val WorkflowPaneMaxContentWidth = 730.dp
-
-internal fun workflowPaneHorizontalInset(wide: Boolean) = if (wide) 32.dp else 20.dp
 
 @Composable
 internal fun WorkflowScreen(
@@ -225,7 +227,7 @@ internal fun WorkflowScreen(
             workflowReadErrors(notices, readAnnouncements.detail, detailSnackbar),
             detailSnackbar,
         )
-        WorkspaceFeedbackTimeout(detailSnackbar)
+        WorkspaceFeedbackTimeout(detailSnackbar, showDismissAction = true)
     }
     val detailFeedback: @Composable () -> Unit = {
         WorkflowSnackbarHost(detailSnackbar, manageTimeout = false)
@@ -233,6 +235,7 @@ internal fun WorkflowScreen(
     var editorReturnFocus by rememberWorkflowEditorReturnFocus(route.id, route.tab)
     var discard by rememberWorkflowDiscardConfirmation(route.id, editing != null)
     val returnFocus = remember(query, query.keyword, route.scope) { DirectoryReturnFocus() }
+    val directoryState = rememberWorkflowPageState()
     val draftFocusAction = route.draftReturn?.action
     val canNavigate = editing == null && !state.writing
     fun exitEditor() {
@@ -279,42 +282,46 @@ internal fun WorkflowScreen(
             .imePadding(),
     ) {
         if (wide || route.id == null) {
-            WorkflowDirectory(
-                state = state,
-                route = route,
-                query = query,
-                announced = readAnnouncements.directory,
-                modifier =
-                    if (listWidth != null)
-                        Modifier.widthIn(min = (listWidth - 1).dp, max = (listWidth - 1).dp)
-                            .fillMaxHeight()
-                    else Modifier.weight(1f).fillMaxHeight(),
-                onBack = onClose,
-                onCreate = onCreate,
-                restoreCreateFocus =
-                    !handoffPending && draftFocusAction == WorkflowDraftAction.Create,
-                onCreateFocusRestored = onDraftFocusRestored,
-                canNavigate = canNavigate && !handoffPending,
-                keepCreateFocus =
-                    canNavigate && handoffPending && draftFocusAction == WorkflowDraftAction.Create,
-                createError = createError,
-                onScope = {
-                    if (it != route.scope) {
-                        query.position.requestScrollToItem(0)
-                        changeRoute(route.copy(scope = it))
-                    }
-                },
-                onSelect = {
-                    returnFocus.cancel()
-                    if (!wide || inputMode.inputMode != InputMode.Keyboard) focus.clearFocus()
-                    keyboard?.hide()
-                    if (it != route.id)
-                        changeRoute(route.copy(id = it, tab = WorkflowTab.Instructions))
-                },
-                returnFocus = returnFocus,
-            )
+            directoryState.SaveableStateProvider("directory") {
+                WorkflowDirectory(
+                    state = state,
+                    route = route,
+                    query = query,
+                    announced = readAnnouncements.directory,
+                    modifier =
+                        if (listWidth != null)
+                            Modifier.widthIn(min = (listWidth - 1).dp, max = (listWidth - 1).dp)
+                                .fillMaxHeight()
+                        else Modifier.weight(1f).fillMaxHeight(),
+                    onBack = onClose,
+                    onCreate = onCreate,
+                    restoreCreateFocus =
+                        !handoffPending && draftFocusAction == WorkflowDraftAction.Create,
+                    onCreateFocusRestored = onDraftFocusRestored,
+                    canNavigate = canNavigate && !handoffPending,
+                    keepCreateFocus =
+                        canNavigate &&
+                            handoffPending &&
+                            draftFocusAction == WorkflowDraftAction.Create,
+                    createError = createError,
+                    onScope = {
+                        if (it != route.scope) {
+                            query.position.requestScrollToItem(0)
+                            changeRoute(route.copy(scope = it))
+                        }
+                    },
+                    onSelect = {
+                        returnFocus.cancel()
+                        if (!wide || inputMode.inputMode != InputMode.Keyboard) focus.clearFocus()
+                        keyboard?.hide()
+                        if (it != route.id)
+                            changeRoute(route.copy(id = it, tab = WorkflowTab.Instructions))
+                    },
+                    returnFocus = returnFocus,
+                )
+            }
         }
-        if (wide) VerticalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+        if (wide) VerticalDivider()
         if (wide || route.id != null) {
             Column(Modifier.weight(1f).fillMaxHeight()) {
                 if (!wide || editing != null)
@@ -419,13 +426,12 @@ private fun WorkflowToolbar(
                 style =
                     MaterialTheme.typography.titleLarge.copy(
                         fontSize = 20.sp,
-                        lineHeight = 28.sp,
                         fontWeight = FontWeight.SemiBold,
                     ),
             )
             action?.invoke()
         }
-        WorkflowDivider()
+        HorizontalDivider()
     }
 }
 
@@ -566,84 +572,92 @@ private fun WorkflowDirectory(
             }
             return@Column
         }
-        Column(
-            Modifier.widthIn(max = WorkflowPaneMaxContentWidth)
-                .fillMaxWidth()
-                .padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            if (createError != null) WorkflowNotice(createError)
-            WorkspaceSearchInput(
-                value = query.query,
-                onValueChange = query::edit,
-                label = stringResource(R.string.workflow_search),
-                onClear = clearQuery,
-                modifier =
-                    Modifier.fillMaxWidth()
-                        .focusRequester(searchFocus)
-                        .onFocusChanged { if (!it.isFocused) query.cancelComposition() }
-                        .testTag("workflow_query"),
-                clearLabel = stringResource(R.string.workflow_clear_search),
-                enabled = inputEnabled,
-            )
-            WorkspaceFilterRow(
-                WorkflowScope.entries,
-                route.scope,
-                Role.RadioButton,
-                label = { stringResource(it.label) },
-                modifier = Modifier.fillMaxWidth(),
-                optionModifier = { Modifier.testTag("workflow_scope_${it.name}") },
-                enabled = inputEnabled,
-                onSelect = onScope,
-            )
-        }
-        Box(Modifier.weight(1f).widthIn(max = WorkflowPaneMaxContentWidth).fillMaxWidth()) {
-            when {
-                catalog == null && state.catalogFailure != null ->
-                    WorkflowReadFailureContent(Modifier.fillMaxSize().padding(horizontal = 16.dp))
-                catalog == null ->
-                    WorkflowDirectorySkeleton(
-                        modifier = Modifier.padding(horizontal = 16.dp),
-                    )
-                else ->
-                    LazyColumn(
-                        Modifier.fillMaxSize(),
-                        state = query.position,
-                        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 20.dp),
-                        userScrollEnabled = inputEnabled,
-                    ) {
-                        if (accessFeedback != null)
-                            item(key = DIRECTORY_READ_FEEDBACK) {
-                                WorkflowNotice(accessFeedback, PaddingValues(bottom = 12.dp))
-                            }
-                        if (rows.isEmpty())
-                            item(key = "workflow_directory_empty") {
-                                WorkflowEmpty(
-                                    route.scope,
-                                    text,
-                                    clearQuery,
-                                    onScope,
-                                    enabled = inputEnabled,
-                                    topPadding = if (accessFeedback == null) 24.dp else 0.dp,
+        WorkflowPaneLayout(
+            modifier = Modifier.weight(1f),
+            controlsAtTop = true,
+            minimumBodyHeight = 48.dp + workflowDirectoryListPadding.calculateBottomPadding(),
+            scrollEnabled = inputEnabled,
+            feedback = {
+                key(route.scope, text) { WorkflowReadFeedbackHost(readNotices, announced) }
+            },
+            body = {
+                when {
+                    catalog == null && state.catalogFailure != null ->
+                        WorkflowReadFailureContent(
+                            Modifier.fillMaxSize().padding(horizontal = 16.dp),
+                        )
+                    catalog == null ->
+                        WorkflowDirectorySkeleton(
+                            modifier = Modifier.padding(horizontal = 16.dp),
+                        )
+                    else ->
+                        LazyColumn(
+                            Modifier.fillMaxSize(),
+                            state = query.position,
+                            contentPadding = workflowDirectoryListPadding,
+                            userScrollEnabled = inputEnabled,
+                        ) {
+                            if (accessFeedback != null)
+                                item(key = DIRECTORY_READ_FEEDBACK) {
+                                    WorkflowNotice(accessFeedback, PaddingValues(bottom = 12.dp))
+                                }
+                            if (rows.isEmpty())
+                                item(key = "workflow_directory_empty") {
+                                    WorkflowEmpty(
+                                        route.scope,
+                                        text,
+                                        clearQuery,
+                                        onScope,
+                                        enabled = inputEnabled,
+                                        topPadding = if (accessFeedback == null) 24.dp else 0.dp,
+                                    )
+                                }
+                            items(rows, key = { it.id }) { row ->
+                                WorkflowRow(
+                                    row,
+                                    rules?.let { it[row.id].orEmpty() },
+                                    connections,
+                                    row.id == route.id,
+                                    canNavigate,
+                                    modifier =
+                                        if (row.id == restoreRow) Modifier.focusRequester(rowFocus)
+                                        else Modifier,
+                                    onSelect = { onSelect(row.id) },
                                 )
                             }
-                        items(rows, key = { it.id }) { row ->
-                            WorkflowRow(
-                                row,
-                                rules?.let { it[row.id].orEmpty() },
-                                connections,
-                                row.id == route.id,
-                                canNavigate,
-                                modifier =
-                                    if (row.id == restoreRow) Modifier.focusRequester(rowFocus)
-                                    else Modifier,
-                                onSelect = { onSelect(row.id) },
-                            )
                         }
-                    }
-            }
-            Box(Modifier.align(Alignment.BottomCenter)) {
-                key(route.scope, text) { WorkflowReadFeedbackHost(readNotices, announced) }
+                }
+            },
+        ) {
+            Column(
+                Modifier.fillMaxWidth()
+                    .padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                if (createError != null) WorkflowNotice(createError)
+                WorkspaceSearchInput(
+                    value = query.query,
+                    onValueChange = query::edit,
+                    label = stringResource(R.string.workflow_search),
+                    onClear = clearQuery,
+                    modifier =
+                        Modifier.fillMaxWidth()
+                            .focusRequester(searchFocus)
+                            .onFocusChanged { if (!it.isFocused) query.cancelComposition() }
+                            .testTag("workflow_query"),
+                    clearLabel = stringResource(R.string.workflow_clear_search),
+                    enabled = inputEnabled,
+                )
+                WorkspaceFilterRow(
+                    WorkflowScope.entries,
+                    route.scope,
+                    Role.RadioButton,
+                    label = { stringResource(it.label) },
+                    modifier = Modifier.fillMaxWidth(),
+                    optionModifier = { Modifier.testTag("workflow_scope_${it.name}") },
+                    enabled = inputEnabled,
+                    onSelect = onScope,
+                )
             }
         }
     }
@@ -816,13 +830,20 @@ private fun WorkflowDetailPane(
     onEarlierRuns: () -> Unit,
     historySkeletonVisible: Boolean,
 ) {
-    val contentWidth = Modifier.widthIn(max = WorkflowPaneMaxContentWidth).fillMaxWidth()
     val listPadding = workflowDetailPadding(wide)
+    val minimumBodyHeight = 48.dp + listPadding.calculateBottomPadding()
     // An empty loading layout must not clamp the saved position of a long history.
     val pendingHistory = tab == WorkflowTab.History && state.history == null
     val listState = if (pendingHistory) rememberLazyListState() else position
     val historyLayout =
         if (pendingHistory) remember(listPadding) { WorkflowHistoryLayout(listPadding) } else null
+    var listHeight by remember { mutableIntStateOf(0) }
+    var tabsHeight by remember { mutableIntStateOf(0) }
+    val pinTabs =
+        with(LocalDensity.current) {
+            // Compose the tabs even when a restored list starts below them.
+            listHeight == 0 || listHeight - tabsHeight >= minimumBodyHeight.roundToPx()
+        }
     val editEnabled = !state.writing && !handoffPending
     val historyRowFocus = remember { FocusRequester() }
     val historyTabFocus = remember { FocusRequester() }
@@ -843,22 +864,32 @@ private fun WorkflowDetailPane(
                         } == true,
             )
         else Modifier
-    Column(
-        Modifier.fillMaxSize().then(returnModifier).testTag("workflow_detail"),
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        Box(contentWidth.weight(1f)) {
+    WorkflowPaneLayout(
+        modifier = returnModifier.testTag("workflow_detail"),
+        minimumBodyHeight = minimumBodyHeight,
+        feedback = feedback,
+        body = {
+            val tabs: @Composable () -> Unit = {
+                WorkflowTabs(
+                    tab,
+                    onTab,
+                    (historyLayout?.tabs ?: Modifier).onSizeChanged { tabsHeight = it.height },
+                    historyTabFocus,
+                )
+            }
             LazyColumn(
-                Modifier.fillMaxSize().then(historyLayout?.list ?: Modifier),
+                Modifier.fillMaxSize().then(historyLayout?.list ?: Modifier).onSizeChanged {
+                    listHeight = it.height
+                },
                 state = listState,
                 contentPadding = listPadding,
             ) {
                 item(key = "header") {
                     WorkflowDetailHeader(detail, historyLayout?.detail ?: Modifier)
                 }
-                stickyHeader(key = "tabs") {
-                    WorkflowTabs(tab, onTab, historyLayout?.tabs ?: Modifier, historyTabFocus)
-                }
+                // Keep an action clear of the tabs even when the detail viewport is short.
+                if (pinTabs) stickyHeader(key = "tabs") { tabs() }
+                else item(key = "tabs") { tabs() }
                 when (tab) {
                     WorkflowTab.Instructions ->
                         item {
@@ -928,7 +959,7 @@ private fun WorkflowDetailPane(
                                 restoreConnectionFocus = connectionReturn?.ruleId == rule.id,
                                 onConnectionFocusRestored = onConnectionFocusRestored,
                             )
-                            if (detail.automations.lastOrNull()?.id != rule.id) WorkflowDivider()
+                            if (detail.automations.lastOrNull()?.id != rule.id) HorizontalDivider()
                         }
                     }
                     WorkflowTab.History -> {
@@ -997,8 +1028,8 @@ private fun WorkflowDetailPane(
                     }
                 }
             }
-            Box(Modifier.align(Alignment.BottomCenter)) { feedback() }
-        }
+        },
+    ) {
         WorkflowUseBar(
             wide = wide,
             enabled =
@@ -1018,12 +1049,15 @@ private fun WorkflowPendingDetail(
     failure: WorkflowReadFailure?,
     feedback: @Composable () -> Unit,
 ) {
-    Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
-        Box(Modifier.weight(1f).widthIn(max = WorkflowPaneMaxContentWidth).fillMaxWidth()) {
+    val listPadding = workflowDetailPadding(wide)
+    WorkflowPaneLayout(
+        minimumBodyHeight = 48.dp + listPadding.calculateBottomPadding(),
+        feedback = feedback,
+        body = {
             when (failure) {
                 null ->
                     WorkflowDetailSkeleton(
-                        modifier = Modifier.padding(workflowDetailPadding(wide)),
+                        modifier = Modifier.padding(listPadding),
                     )
                 WorkflowReadFailure.Unavailable ->
                     WorkflowInitialReadError(R.string.workflow_unavailable)
@@ -1033,8 +1067,8 @@ private fun WorkflowPendingDetail(
                             .padding(horizontal = workflowPaneHorizontalInset(wide)),
                     )
             }
-            Box(Modifier.align(Alignment.BottomCenter)) { feedback() }
-        }
+        },
+    ) {
         WorkflowUseBar(wide = wide, enabled = false, onUse = {})
     }
 }
@@ -1049,11 +1083,10 @@ private fun WorkflowUseBar(
     onFocusRestored: () -> Unit = {},
     onUse: (Boolean) -> Unit,
 ) {
-    WorkflowDivider()
+    HorizontalDivider()
     val colors = MaterialTheme.colorScheme
     Column(
-        Modifier.widthIn(max = WorkflowPaneMaxContentWidth)
-            .fillMaxWidth()
+        Modifier.fillMaxWidth()
             .padding(horizontal = workflowPaneHorizontalInset(wide))
             .padding(top = 8.dp, bottom = 10.dp),
         horizontalAlignment = if (wide) Alignment.End else Alignment.CenterHorizontally,
@@ -1088,12 +1121,7 @@ private fun WorkflowDetailHeader(detail: WorkflowDetail, modifier: Modifier = Mo
         Text(
             workflowDisplayTitle(detail.name, detail.displayName),
             Modifier.semantics { heading() }.testTag("workflow_detail_title"),
-            style =
-                MaterialTheme.typography.headlineSmall.copy(
-                    fontSize = 24.sp,
-                    lineHeight = 32.sp,
-                    fontWeight = FontWeight.SemiBold,
-                ),
+            style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.SemiBold),
         )
         detail.description
             ?.takeIf { it.isNotBlank() }
@@ -1112,8 +1140,7 @@ private fun WorkflowDetailHeader(detail: WorkflowDetail, modifier: Modifier = Mo
                     )
                     .padding(horizontal = 8.dp, vertical = 4.dp),
                 color = colors.onTertiaryContainer,
-                style =
-                    MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp, lineHeight = 16.sp),
+                style = MaterialTheme.typography.bodySmall,
             )
             WorkflowSecondary(
                 stringResource(
@@ -1155,12 +1182,9 @@ private fun WorkflowTabs(
                 TabRowDefaults.PrimaryIndicator(
                     Modifier.tabIndicatorOffset(current.ordinal, matchContentSize = true),
                     width = Dp.Unspecified,
-                    height = 3.dp,
                     shape = RoundedCornerShape(topStart = 3.dp, topEnd = 3.dp),
-                    color = colors.primary,
                 )
             },
-            divider = { WorkflowDivider() },
         ) {
             tabs.forEachIndexed { index, tab ->
                 Tab(
@@ -1188,7 +1212,6 @@ private fun WorkflowTabs(
                                 true
                             }
                             .testTag("workflow_tab_${tab.name.lowercase()}"),
-                    selectedContentColor = colors.primary,
                     unselectedContentColor = colors.onSurfaceVariant,
                 ) {
                     Text(
@@ -1332,16 +1355,13 @@ internal fun WorkflowActionRipple(pending: Boolean, content: @Composable () -> U
 }
 
 @Composable
-internal fun WorkflowDivider() = HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-
-@Composable
 internal fun WorkflowSecondary(text: String, small: Boolean = false) {
     Text(
         text,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
         style =
             if (small) workflowSmallStyle()
-            else workflowBodyStyle().copy(fontSize = 14.sp, lineHeight = 20.sp),
+            else MaterialTheme.typography.bodyMedium.copy(letterSpacing = 0.sp),
     )
 }
 
@@ -1352,7 +1372,7 @@ private fun WorkflowPlaceholder(label: Int) {
             stringResource(label),
             textAlign = TextAlign.Center,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
-            style = workflowBodyStyle().copy(fontSize = 14.sp, lineHeight = 20.sp),
+            style = MaterialTheme.typography.bodyMedium.copy(letterSpacing = 0.sp),
         )
     }
 }
@@ -1390,7 +1410,7 @@ internal fun WorkflowNotice(label: Int, padding: PaddingValues = PaddingValues(v
         stringResource(label),
         Modifier.padding(padding).semantics { liveRegion = LiveRegionMode.Polite },
         color = MaterialTheme.colorScheme.onSurfaceVariant,
-        style = workflowBodyStyle().copy(fontSize = 14.sp, lineHeight = 20.sp),
+        style = MaterialTheme.typography.bodyMedium.copy(letterSpacing = 0.sp),
     )
 }
 
@@ -1407,24 +1427,15 @@ internal fun WorkflowStatus(
         Box(Modifier.size(7.dp).background(color, CircleShape))
         Text(
             label,
-            style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp, lineHeight = 16.sp),
+            style = MaterialTheme.typography.bodySmall,
             color = textColor,
         )
     }
 }
 
 @Composable
-internal fun workflowBodyStyle() =
-    MaterialTheme.typography.bodyLarge.copy(
-        fontSize = 16.sp,
-        lineHeight = 24.sp,
-        letterSpacing = 0.sp,
-    )
+internal fun workflowBodyStyle() = MaterialTheme.typography.bodyLarge.copy(letterSpacing = 0.sp)
 
 @Composable
 internal fun workflowSmallStyle() =
-    MaterialTheme.typography.bodySmall.copy(
-        fontSize = 13.sp,
-        lineHeight = 20.sp,
-        letterSpacing = 0.sp,
-    )
+    MaterialTheme.typography.bodyMedium.copy(fontSize = 13.sp, letterSpacing = 0.sp)
