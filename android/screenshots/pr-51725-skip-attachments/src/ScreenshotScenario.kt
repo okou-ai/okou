@@ -1,5 +1,6 @@
 package ai.okou.android.screenshots
 
+import ai.okou.android.BuildConfig
 import ai.okou.android.CHAT_PERSONAL
 import ai.okou.android.ChatCacheSnapshot
 import ai.okou.android.ComposerApiFixture
@@ -70,7 +71,7 @@ class ScreenshotScenario {
             try {
                 runBlocking {
                     journal.persist(
-                        fixture.identity,
+                        fixture.identity.copy(apiOrigin = BuildConfig.API_ORIGIN),
                         ComposerJournal(
                             format = 3,
                             drafts = mapOf(
