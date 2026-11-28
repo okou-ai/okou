@@ -333,6 +333,22 @@ describe("run lifecycle and context", () => {
             ETag: `"etag-${entry.size}"`,
           });
         }
+        if (name === "GetObjectCommand") {
+          const entry = artifactObjects.get(key);
+          if (!entry) {
+            return Promise.reject(
+              Object.assign(new Error("No such key"), { name: "NoSuchKey" }),
+            );
+          }
+          return Promise.resolve({
+            Body: s3ReadableBody(Buffer.alloc(Math.max(1, entry.size), 0x61)),
+            ContentLength: entry.size,
+            ContentType: entry.contentType,
+            LastModified: entry.lastModified,
+            Metadata: entry.metadata,
+            ETag: `"etag-${entry.size}"`,
+          });
+        }
       }
 
       if (bucket === hostedSitesBucket) {
@@ -1186,36 +1202,27 @@ describe("run lifecycle and context", () => {
           expect(secondComplete.status).toBe(200);
           expect(firstComplete.body).toStrictEqual(secondComplete.body);
 
-          const initialThreadArtifacts = await chat.listThreadArtifacts(
-            actor,
-            launched.threadId,
-          );
-          expect(initialThreadArtifacts.runs).toHaveLength(1);
-          const initialFiles = initialThreadArtifacts.runs[0]?.files ?? [];
-          expect(initialFiles).toHaveLength(1);
-          const originalFile = initialFiles[0];
-          expect(originalFile).toMatchObject({
-            filename: "report.txt",
-            contentType: "text/plain",
-            size: 7,
-          });
-          const originalFileId = originalFile?.id;
-          const originalArtifactId = originalFile?.artifactId;
-          if (!originalFileId || !originalArtifactId) {
-            throw new Error(
-              "Expected recorded thread artifact file and catalog IDs",
-            );
+          const initialCatalog = await chat.listArtifactCatalog(actor);
+          expect(initialCatalog.artifacts).toHaveLength(1);
+          const originalArtifact = initialCatalog.artifacts[0];
+          const originalArtifactId = originalArtifact?.id;
+          if (!originalArtifactId) {
+            throw new Error("Expected recorded catalog artifact ID");
           }
           const initialDetail = await chat.getArtifactCatalogEntry(
             actor,
             originalArtifactId,
           );
           expect(initialDetail.kind).toBe("file");
-          const initialDetailFileId =
-            initialDetail.kind === "file" ? initialDetail.file.id : undefined;
-          if (!initialDetailFileId) {
-            throw new Error("Expected initial catalog detail file ID");
+          if (initialDetail.kind !== "file") {
+            throw new Error("Expected initial catalog detail to be a file");
           }
+          expect(initialDetail.file).toMatchObject({
+            filename: "report.txt",
+            contentType: "text/plain",
+            size: 7,
+          });
+          const initialDetailFileId = initialDetail.file.id;
 
           storage.resizeArtifactObject(objectKey, 19);
 
@@ -1226,18 +1233,19 @@ describe("run lifecycle and context", () => {
           );
           expect(mismatchedComplete.status).toBe(500);
 
-          const afterMismatch = await chat.listThreadArtifacts(
+          const afterMismatch = await chat.getArtifactCatalogEntry(
             actor,
-            launched.threadId,
+            originalArtifactId,
           );
-          expect(afterMismatch.runs[0]?.files).toMatchObject([
-            {
-              id: originalFileId,
+          expect(afterMismatch.kind).toBe("file");
+          if (afterMismatch.kind === "file") {
+            expect(afterMismatch.file).toMatchObject({
+              id: initialDetailFileId,
               filename: "report.txt",
               contentType: "text/plain",
               size: 7,
-            },
-          ]);
+            });
+          }
 
           const finalComplete = await chat.completeUploadWithBearer(
             `Bearer ${okouToken}`,
@@ -1252,19 +1260,11 @@ describe("run lifecycle and context", () => {
             url: prepared.url,
           });
 
-          const [updatedThreadArtifacts, catalog] = await Promise.all([
+          const [legacyThreadArtifacts, catalog] = await Promise.all([
             chat.listThreadArtifacts(actor, launched.threadId),
             chat.listArtifactCatalog(actor),
           ]);
-          expect(updatedThreadArtifacts.runs[0]?.files).toMatchObject([
-            {
-              id: originalFileId,
-              artifactId: originalArtifactId,
-              filename: "report.txt",
-              contentType: "text/plain",
-              size: 19,
-            },
-          ]);
+          expect(legacyThreadArtifacts.runs).toStrictEqual([]);
 
           expect(catalog.artifacts).toHaveLength(1);
           expect(catalog.artifacts[0]).toMatchObject({

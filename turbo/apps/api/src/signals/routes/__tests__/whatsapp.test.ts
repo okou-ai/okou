@@ -1,4 +1,5 @@
 import { randomInt, randomUUID } from "node:crypto";
+import { Readable } from "node:stream";
 import { integrationsWhatsappContract } from "@okouai/api-contracts/contracts/integrations-whatsapp";
 import { uploadsContract } from "@okouai/api-contracts/contracts/uploads";
 import { webFilesContract } from "@okouai/api-contracts/contracts/web-files";
@@ -316,6 +317,24 @@ function installArtifactStorage() {
           LastModified: new Date("2026-01-01T00:00:00.000Z"),
           Metadata: {},
           ETag: '"head"',
+        });
+      }
+      case "GetObjectCommand": {
+        if (!stored) {
+          return Promise.reject(
+            Object.assign(new Error("Not found"), {
+              name: "NoSuchKey",
+              $metadata: { httpStatusCode: 404 },
+            }),
+          );
+        }
+        return Promise.resolve({
+          ContentLength: stored.body.byteLength,
+          ContentType: stored.contentType,
+          LastModified: new Date("2026-01-01T00:00:00.000Z"),
+          Metadata: {},
+          ETag: '"get"',
+          Body: Readable.from([stored.body]),
         });
       }
       default: {

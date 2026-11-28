@@ -5,7 +5,12 @@ import {
   randomInt,
   randomUUID,
 } from "node:crypto";
-import { HeadObjectCommand, PutObjectCommand } from "@aws-sdk/client-s3";
+import { Readable } from "node:stream";
+import {
+  GetObjectCommand,
+  HeadObjectCommand,
+  PutObjectCommand,
+} from "@aws-sdk/client-s3";
 import {
   integrationsGithubUploadCompleteContract,
   integrationsGithubUploadInitContract,
@@ -133,6 +138,26 @@ function installPrivateUploadStorage() {
         LastModified: nowDate(),
       });
     }
+    if (command instanceof GetObjectCommand) {
+      const bytes = stored.get(`${command.input.Bucket}/${command.input.Key}`);
+      if (bytes === undefined) {
+        return Promise.reject(
+          Object.assign(new Error("NoSuchKey"), {
+            name: "NoSuchKey",
+            $metadata: { httpStatusCode: 404 },
+          }),
+        );
+      }
+      return Promise.resolve({
+        ContentLength: Buffer.byteLength(bytes),
+        ContentType: "text/plain",
+        LastModified: nowDate(),
+        Body: Readable.from([Buffer.from(bytes)]),
+      });
+    }
+    if (command instanceof PutObjectCommand) {
+      return Promise.resolve({ ETag: '"etag-1"' });
+    }
     return Promise.resolve({});
   });
   return { presigned };
@@ -242,7 +267,12 @@ test("private-integration-uploads-005 keeps a Telegram upload private through co
   expect(storage.presigned).toStrictEqual([
     expect.objectContaining({ bucket: privateBucket }),
   ]);
-  expect(completed.body.url).toBe(init.body.fileUrl);
+  expect(completed.body.url).toBe(
+    new URL(
+      `/artifacts/${init.body.uploadId.replace(/-/gu, "")}.txt`,
+      init.body.fileUrl,
+    ).href,
+  );
   expect(sentDocuments).toHaveLength(1);
   expect(preview.body.publicUrl).toBeNull();
   const downloaded = new URL(preview.body.downloadUrl).searchParams.get(
@@ -425,7 +455,12 @@ test("private-integration-uploads-003 keeps a GitHub upload private through comp
   expect(storage.presigned).toStrictEqual([
     expect.objectContaining({ bucket: privateBucket }),
   ]);
-  expect(completed.body.url).toBe(init.body.fileUrl);
+  expect(completed.body.url).toBe(
+    new URL(
+      `/artifacts/${init.body.uploadId.replace(/-/gu, "")}.txt`,
+      init.body.fileUrl,
+    ).href,
+  );
   expect(preview.body.publicUrl).toBeNull();
   const downloaded = new URL(preview.body.downloadUrl).searchParams.get(
     "object",

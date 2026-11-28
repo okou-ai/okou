@@ -1,4 +1,10 @@
 import { randomUUID } from "node:crypto";
+import { Readable } from "node:stream";
+import {
+  GetObjectCommand,
+  HeadObjectCommand,
+  PutObjectCommand,
+} from "@aws-sdk/client-s3";
 
 import {
   chatEventsContract,
@@ -826,9 +832,29 @@ describe("chat messages and visible validation", () => {
     if ("multipart" in prepared.body) {
       throw new Error("Expected a single-part upload");
     }
-    context.mocks.s3.send.mockResolvedValue({
-      ContentLength: 24,
-      LastModified: nowDate(),
+    context.mocks.s3.send.mockImplementation((command: unknown) => {
+      if (command instanceof HeadObjectCommand) {
+        return Promise.resolve({
+          ContentLength: 24,
+          LastModified: nowDate(),
+        });
+      }
+      if (command instanceof GetObjectCommand) {
+        if (!command.input.Key?.startsWith("private-artifacts/")) {
+          return Promise.reject(
+            Object.assign(new Error("Missing object"), { name: "NoSuchKey" }),
+          );
+        }
+        return Promise.resolve({
+          ContentLength: 24,
+          LastModified: nowDate(),
+          Body: Readable.from([Buffer.alloc(24, 0x61)]),
+        });
+      }
+      if (command instanceof PutObjectCommand) {
+        return Promise.resolve({ ETag: '"etag-1"' });
+      }
+      return Promise.resolve({});
     });
     const completed = await accept(
       uploadsClient.complete({

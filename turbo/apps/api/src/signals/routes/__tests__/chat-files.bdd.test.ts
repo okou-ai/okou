@@ -1,4 +1,10 @@
 import { createHash, randomUUID } from "node:crypto";
+import { Readable } from "node:stream";
+import {
+  GetObjectCommand,
+  HeadObjectCommand,
+  PutObjectCommand,
+} from "@aws-sdk/client-s3";
 
 import { describe, expect, it } from "vitest";
 
@@ -49,9 +55,29 @@ describe("uploads, storage and host APIs", () => {
     );
     expect(prepared.url).not.toContain(member.userId);
 
-    context.mocks.s3.send.mockResolvedValue({
-      ContentLength: 12,
-      LastModified: nowDate(),
+    context.mocks.s3.send.mockImplementation((command: unknown) => {
+      if (command instanceof HeadObjectCommand) {
+        return Promise.resolve({
+          ContentLength: 12,
+          LastModified: nowDate(),
+        });
+      }
+      if (command instanceof GetObjectCommand) {
+        if (!command.input.Key?.startsWith("private-artifacts/")) {
+          return Promise.reject(
+            Object.assign(new Error("Missing object"), { name: "NoSuchKey" }),
+          );
+        }
+        return Promise.resolve({
+          ContentLength: 12,
+          LastModified: nowDate(),
+          Body: Readable.from([Buffer.alloc(12, 0x61)]),
+        });
+      }
+      if (command instanceof PutObjectCommand) {
+        return Promise.resolve({ ETag: '"etag-1"' });
+      }
+      return Promise.resolve({});
     });
     await expect(
       chat.completeUpload(member, { id: prepared.id }),
@@ -60,7 +86,10 @@ describe("uploads, storage and host APIs", () => {
       filename: "notes.txt",
       contentType: "text/plain; charset=utf-8",
       size: 12,
-      url: prepared.url,
+      url: new URL(
+        `/artifacts/${prepared.id.replace(/-/gu, "")}.txt`,
+        prepared.url,
+      ).href,
     });
     const foreign = await chat.requestCompleteUpload(
       other,

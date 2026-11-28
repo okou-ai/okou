@@ -1,5 +1,11 @@
 import { randomUUID } from "node:crypto";
-import { HeadObjectCommand, ListObjectsV2Command } from "@aws-sdk/client-s3";
+import { Readable } from "node:stream";
+import {
+  GetObjectCommand,
+  HeadObjectCommand,
+  ListObjectsV2Command,
+  PutObjectCommand,
+} from "@aws-sdk/client-s3";
 import { isChatRunTerminalEventType } from "@okouai/api-contracts/contracts/chat-events";
 import { chatEventsContract } from "@okouai/api-contracts/contracts/chat-event-send";
 import {
@@ -368,6 +374,31 @@ async function prepareAndCompletePrivateUpload(
         ContentType: args.contentType,
         LastModified: nowDate(),
       });
+    }
+    if (
+      command instanceof GetObjectCommand &&
+      typeof command.input.Key === "string" &&
+      command.input.Key.includes(prepared.body.id)
+    ) {
+      return Promise.resolve({
+        ContentLength: args.size,
+        ContentType: args.contentType,
+        LastModified: nowDate(),
+        Body: Readable.from([Buffer.alloc(Math.max(1, args.size), 0x61)]),
+      });
+    }
+    if (
+      command instanceof GetObjectCommand &&
+      typeof command.input.Key === "string" &&
+      (command.input.Key.startsWith("artifact-references/") ||
+        command.input.Key.startsWith("artifact-shares/"))
+    ) {
+      return Promise.reject(
+        Object.assign(new Error("Missing object"), { name: "NoSuchKey" }),
+      );
+    }
+    if (command instanceof PutObjectCommand) {
+      return Promise.resolve({ ETag: '"etag-1"' });
     }
     return previousS3?.(command) ?? Promise.resolve({});
   });

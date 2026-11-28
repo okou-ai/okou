@@ -6,7 +6,12 @@ import {
   sign,
 } from "node:crypto";
 
-import { HeadObjectCommand } from "@aws-sdk/client-s3";
+import { Readable } from "node:stream";
+import {
+  GetObjectCommand,
+  HeadObjectCommand,
+  PutObjectCommand,
+} from "@aws-sdk/client-s3";
 import { mcpServerContract } from "@okouai/api-contracts/contracts/mcp-server";
 import { projectsContract } from "@okouai/api-contracts/contracts/projects";
 import { createProjectOperationId } from "@okouai/core/project-operation-id";
@@ -880,11 +885,28 @@ describe("thin MCP Web adapters", () => {
       "https://r2.example.test/signed-voice.wav",
     );
     context.mocks.s3.send.mockImplementation((command: unknown) => {
-      return Promise.resolve(
-        command instanceof HeadObjectCommand
-          ? { ContentLength: 128, ContentType: "audio/wav" }
-          : {},
-      );
+      if (command instanceof HeadObjectCommand) {
+        return Promise.resolve({
+          ContentLength: 128,
+          ContentType: "audio/wav",
+        });
+      }
+      if (command instanceof GetObjectCommand) {
+        if (!command.input.Key?.startsWith("private-artifacts/")) {
+          return Promise.reject(
+            Object.assign(new Error("Missing object"), { name: "NoSuchKey" }),
+          );
+        }
+        return Promise.resolve({
+          ContentLength: 128,
+          ContentType: "audio/wav",
+          Body: Readable.from([Buffer.alloc(128, 0x61)]),
+        });
+      }
+      if (command instanceof PutObjectCommand) {
+        return Promise.resolve({ ETag: '"etag-1"' });
+      }
+      return Promise.resolve({});
     });
 
     const prepared = await mcpCall(token, "prepare_voice_upload", {

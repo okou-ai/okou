@@ -1,4 +1,9 @@
-import { GetObjectCommand, HeadObjectCommand } from "@aws-sdk/client-s3";
+import { Readable } from "node:stream";
+import {
+  GetObjectCommand,
+  HeadObjectCommand,
+  PutObjectCommand,
+} from "@aws-sdk/client-s3";
 import {
   artifactCatalogContract,
   type ArtifactCatalogListQuery,
@@ -55,15 +60,30 @@ async function upload(
   });
   // The browser has written the bytes to R2; storage reports the object.
   context.mocks.s3.send.mockImplementation((command: unknown) => {
-    return Promise.resolve(
-      command instanceof HeadObjectCommand
-        ? {
-            ContentLength: 5,
-            ContentType: contentType,
-            LastModified: nowDate(),
-          }
-        : {},
-    );
+    if (command instanceof HeadObjectCommand) {
+      return Promise.resolve({
+        ContentLength: 5,
+        ContentType: contentType,
+        LastModified: nowDate(),
+      });
+    }
+    if (command instanceof GetObjectCommand) {
+      if (!command.input.Key?.startsWith("private-artifacts/")) {
+        return Promise.reject(
+          Object.assign(new Error("Missing object"), { name: "NoSuchKey" }),
+        );
+      }
+      return Promise.resolve({
+        ContentLength: 5,
+        ContentType: contentType,
+        LastModified: nowDate(),
+        Body: Readable.from([Buffer.from("hello")]),
+      });
+    }
+    if (command instanceof PutObjectCommand) {
+      return Promise.resolve({ ETag: '"etag-1"' });
+    }
+    return Promise.resolve({});
   });
   await files.completeUpload(actor, { id: prepared.id });
   return prepared.id;

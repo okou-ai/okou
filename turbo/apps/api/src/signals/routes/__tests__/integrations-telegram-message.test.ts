@@ -1,4 +1,5 @@
 import { randomInt, randomUUID } from "node:crypto";
+import { Readable } from "node:stream";
 
 import {
   integrationsTelegramMessageContract,
@@ -481,14 +482,30 @@ describe("official Telegram self delivery", () => {
       );
     });
     context.mocks.s3.send.mockImplementation((command: unknown) => {
-      const name = (
-        command as { readonly constructor: { readonly name: string } }
-      ).constructor.name;
-      if (name === "HeadObjectCommand") {
+      const { constructor, input } = command as {
+        readonly constructor: { readonly name: string };
+        readonly input?: { readonly Key?: string };
+      };
+      if (constructor.name === "HeadObjectCommand") {
         return Promise.resolve({
           ContentLength: uploadedBytes,
           ContentType: "application/pdf",
         });
+      }
+      if (constructor.name === "GetObjectCommand") {
+        if (!input?.Key?.startsWith("private-artifacts/")) {
+          return Promise.reject(
+            Object.assign(new Error("Missing object"), { name: "NoSuchKey" }),
+          );
+        }
+        return Promise.resolve({
+          ContentLength: uploadedBytes,
+          ContentType: "application/pdf",
+          Body: Readable.from([Buffer.alloc(Math.max(1, uploadedBytes), 0x61)]),
+        });
+      }
+      if (constructor.name === "PutObjectCommand") {
+        return Promise.resolve({ ETag: '"etag-1"' });
       }
       return Promise.resolve({});
     });

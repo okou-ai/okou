@@ -369,10 +369,10 @@ describe("Published member instructions in direct Runs", () => {
       });
 
       const attachmentKey = `private-artifacts/${prepared.id}/${filename}`;
-      // Completing with an object size different from the fixed-size PUT
-      // declaration forces POST /api/chat/events to verify the stored object
-      // via HeadObjectCommand instead of skipping object verification.
-      const completedSize = 24;
+      // Leaving the upload pending (with its bytes in storage) forces
+      // POST /api/chat/events to verify the stored object via HeadObjectCommand
+      // instead of reusing completed file size metadata (#51627).
+      const pendingSize = 24;
       const privateBucket = env("R2_PRIVATE_ARTIFACTS_BUCKET_NAME");
       if (!privateBucket) {
         throw new Error("Expected R2_PRIVATE_ARTIFACTS_BUCKET_NAME");
@@ -380,14 +380,9 @@ describe("Published member instructions in direct Runs", () => {
       chatStorage.addObject({
         bucket: privateBucket,
         key: attachmentKey,
-        size: completedSize,
+        size: pendingSize,
         contentType: "text/plain",
       });
-
-      const completed = await owner.run(() => {
-        return fixture.chat.completeUpload(actor, { id: prepared.id });
-      });
-      expect(completed.size).toBe(completedSize);
 
       const previousSend = context.mocks.s3.send.getMockImplementation();
       context.mocks.s3.send.mockImplementation(async (command: unknown) => {
@@ -415,9 +410,9 @@ describe("Published member instructions in direct Runs", () => {
                 { type: "text", text: "Summarize the attached note" },
                 {
                   type: "file",
-                  fileId: completed.id,
-                  filenameSnapshot: completed.filename,
-                  contentType: completed.contentType,
+                  fileId: prepared.id,
+                  filenameSnapshot: filename,
+                  contentType: "text/plain",
                 },
               ],
             },
