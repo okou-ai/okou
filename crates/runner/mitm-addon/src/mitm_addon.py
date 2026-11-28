@@ -1466,10 +1466,9 @@ def _revalidate_current_firewall_authorization_for_request(
 ) -> bool:
     current_classification = _current_firewall_authorization_classification(
         flow,
+        allow,
         original_authority=expected_request.authority,
-        applied_credential_owner=(
-            allow.name if credentials_applied and allow.selection_hint == "placeholder" else None
-        ),
+        credentials_applied=credentials_applied,
     )
     current_allow = _equivalent_current_firewall_allow(
         current_classification,
@@ -1511,9 +1510,10 @@ def _revalidate_current_firewall_authorization_for_request(
 
 def _current_firewall_authorization_classification(
     flow: http.HTTPFlow,
+    allow: matching.FirewallAllow,
     *,
     original_authority: request_authority.TrustedAuthority,
-    applied_credential_owner: str | None = None,
+    credentials_applied: bool,
 ) -> request_classification.RequestClassification:
     preserved_probe_metadata = {
         key: flow.metadata[key]
@@ -1528,6 +1528,9 @@ def _current_firewall_authorization_classification(
     request_classification.restore_request_headers_probe_metadata(
         flow,
         preserved_probe_metadata,
+    )
+    applied_credential_owner = (
+        allow.name if credentials_applied and allow.selection_hint == "placeholder" else None
     )
     classification = _classify_request_for_flow(
         flow, applied_credential_owner=applied_credential_owner
@@ -1576,10 +1579,9 @@ def _firewall_authorization_is_current_for_requestheaders(
 ) -> bool:
     current_classification = _current_firewall_authorization_classification(
         flow,
+        allow,
         original_authority=expected_request.authority,
-        applied_credential_owner=(
-            allow.name if credentials_applied and allow.selection_hint == "placeholder" else None
-        ),
+        credentials_applied=credentials_applied,
     )
     current_allow = _equivalent_current_firewall_allow(
         current_classification,
