@@ -135,7 +135,7 @@ jobs:
             output=$(pnpm --dir turbo -F @okouai/db exec tsx \
               scripts/migrations/001-r2-artifact-visibility-backfill/backfill.ts \
               --concurrency "$BACKFILL_CONCURRENCY" "$@")
-            printf '### %s\n\n```json\n%s\n```\n\n' "$label" "$output" >> "$GITHUB_STEP_SUMMARY"
+            printf '### %s\n\n~~~json\n%s\n~~~\n\n' "$label" "$output" >> "$GITHUB_STEP_SUMMARY"
             printf '=== %s ===\n%s\n' "$label" "$output"
             printf '%s' "$output" > "${RUNNER_TEMP}/last-backfill.json"
           }
@@ -152,5 +152,5 @@ jobs:
           reconcile_output=$(pnpm --dir turbo -F @okouai/db exec tsx \
             scripts/migrations/002-r2-files-reconciliation-and-invite-cleanup/reconcile.ts \
             --strict)
-          printf '### 002 Files Reconciliation (--strict)\n\n```json\n%s\n```\n\n' "$reconcile_output" >> "$GITHUB_STEP_SUMMARY"
+          printf '### 002 Files Reconciliation (--strict)\n\n~~~json\n%s\n~~~\n\n' "$reconcile_output" >> "$GITHUB_STEP_SUMMARY"
           printf '=== 002 Files Reconciliation (--strict) ===\n%s\n' "$reconcile_output"
