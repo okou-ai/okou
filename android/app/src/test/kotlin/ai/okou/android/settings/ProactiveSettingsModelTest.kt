@@ -15,6 +15,7 @@ import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import kotlinx.coroutines.test.currentTime
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withContext
@@ -134,9 +135,9 @@ class ProactiveSettingsModelTest {
     }
 
     @Test
-    fun revertingAQueuedToggleSkipsTheWriteWhenTheEarlierChoiceIsRejected() = runTest {
+    fun revertingAQueuedToggleSettlesWithoutWaitingForTheThrottledRetry() = runTest {
         ChatListApiFixture().use { api ->
-            val fixture = ProactiveSettingsApiFixture(api).apply { morningWriteStatus = 400 }
+            val fixture = ProactiveSettingsApiFixture(api).apply { morningWriteStatus = 429 }
             val writeStarted = CountDownLatch(1)
             val releaseWrite = CountDownLatch(1)
             fixture.beforeMorningWrite = {
@@ -151,9 +152,11 @@ class ProactiveSettingsModelTest {
                 withContext(Dispatchers.IO) { assertTrue(writeStarted.await(10, TimeUnit.SECONDS)) }
                 model.morningBrief.choose(false)
                 assertEquals(false, model.morningBrief.state.value.enabled)
+                val revertedAt = currentTime
                 releaseWrite.countDown()
 
                 val settled = model.morningBrief.state.first { it.choice == null }
+                assertEquals(revertedAt, currentTime)
                 assertEquals(false, settled.enabled)
                 assertEquals(listOf(ProactiveSetting.MorningBrief to true), fixture.writes)
                 runCurrent()
@@ -192,6 +195,27 @@ class ProactiveSettingsModelTest {
             model.refresh()
             model.morningBrief.state.first { it.enabled == true && !it.checking }
             assertEquals(listOf(ProactiveSetting.MorningBrief to true), fixture.writes)
+        }
+    }
+
+    @Test
+    fun exhaustedThrottleRollsBackWithoutReadback() = runTest {
+        ChatListApiFixture().use { api ->
+            val fixture = ProactiveSettingsApiFixture(api).apply { morningWriteStatus = 429 }
+            val model = model(api)
+            model.visible(true)
+            model.morningBrief.state.first { it.confirmed != null }
+            model.morningBrief.choose(true)
+            assertEquals(true, model.morningBrief.state.value.enabled)
+            val rolledBack = model.morningBrief.state.first { it.choice == null }
+            assertEquals(false, rolledBack.enabled)
+            assertFalse(rolledBack.checking)
+            assertEquals(List(3) { ProactiveSetting.MorningBrief to true }, fixture.writes)
+            assertEquals(1, fixture.reads.count { it == "morning-brief" })
+            assertEquals(
+                ProactiveSetting.MorningBrief,
+                model.saveFailures.first { it.isNotEmpty() }.single().value,
+            )
         }
     }
 
