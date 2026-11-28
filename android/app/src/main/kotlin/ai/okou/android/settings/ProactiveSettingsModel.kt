@@ -13,7 +13,9 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 
 internal data class ProactiveChoice(val enabled: Boolean, val visit: Long)
 
@@ -258,9 +260,9 @@ internal class ProactiveSettingOwner(
                 if (!error.canRetryRejectedSettingWrite()) throw error
                 requireCurrent()
                 val wait = boundedRetryDelayMillis(retries++, error) ?: throw error
-                delay(wait)
+                val superseded = withTimeoutOrNull(wait) { state.first { it.choice != sent } }
                 requireCurrent()
-                if (mutable.value.choice != sent) return null
+                if (superseded != null || mutable.value.choice != sent) return null
             }
         }
     }
