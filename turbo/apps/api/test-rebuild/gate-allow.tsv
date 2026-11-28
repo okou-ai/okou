@@ -46,6 +46,7 @@ voice-google-auth-retry-018	Google Cloud LLM authentication rejected	Given: Goog
 billing-usage-pack-subscriptions-052	organizationInvitation.accepted activation failed	When: two concurrent acceptance deliveries; the losing delivery is rejected because the invitation purchase changed
 connectors-oauth-start-091	Connector runtime capability is unavailable	Given: no GitHub OAuth client ID is configured
 cron-connector-catalog-v4-006	Connector catalog candidate rejected	Given: the catalog source has no objects (source-unavailable)
+cron-connector-catalog-v4-007	Connector catalog candidate rejected	Given: the catalog source publishes a malformed v4 release with a numeric firewall header value (invalid-artifact, connector-catalog-sync.service.ts:78)
 computer-use-host-presence-004	Unable to publish computer-use command wakeup	Given: every realtime publication fails
 computer-use-screenshot-completion-001	Unhandled request error: Object storage is unavailable	Given: object storage fails the first upload; Then: completion returns HTTP 500
 discord-ingress-022	Discord ingress processing deferred to recovery	Given: the sender or bot lost the permission to create public threads; Then: no canonical input
