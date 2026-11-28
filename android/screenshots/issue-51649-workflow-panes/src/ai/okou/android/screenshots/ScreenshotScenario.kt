@@ -55,7 +55,8 @@ class ScreenshotScenario {
             node(By.text("Trigger rules"))
             ScreenshotCapture.capture("phone-automations.png")
 
-            assertTrue(device.pressBack())
+            device.pressBack()
+            node(By.desc("Search workflows"))
             val compactWidth = 360
             val compactHeight = 280
             resize(scenario, compactWidth, compactHeight, 2f)
@@ -65,7 +66,8 @@ class ScreenshotScenario {
             ScreenshotCapture.capture("short-directory.png")
             compactResult.click()
             node(By.text("Instructions"))
-            assertTrue(device.pressBack())
+            device.pressBack()
+            node(By.desc("Search workflows"))
             val returnedResult = action(release)
             assertEquals("Returning preserves the visible directory row", compactBounds, returnedResult.visibleBounds)
             returnedResult.click()
@@ -238,7 +240,7 @@ class ScreenshotScenario {
             return visible
         }
         if (imeVisible()) {
-            assertTrue(device.pressBack())
+            device.pressBack()
             val hidden = object : Condition<UiDevice, Boolean> {
                 override fun apply(device: UiDevice) = !imeVisible()
             }
