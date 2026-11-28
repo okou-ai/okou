@@ -53,16 +53,18 @@ class ScreenshotScenario {
             assertTrue(node(By.desc("Search workflows")).visibleBounds.bottom <= result.visibleBounds.top)
             ScreenshotCapture.capture("phone-directory.png")
             result.click()
+            action(By.text("Automations")).click()
+            assertTrue(action(use).isEnabled)
+            node(By.text("Trigger rules"))
+            ScreenshotCapture.capture("phone-automations.png")
+            action(By.text("Instructions")).click()
+            node(By.text("Workflow instructions"))
             val history = By.text("Run history")
             val tabBounds = node(history).visibleBounds
             val useBounds = action(use).visibleBounds
             assertTrue(device.swipe(40, useBounds.top - 28, 40, tabBounds.bottom + 8, 60))
             assertTrue(device.wait(Until.gone(scoped(release)), 5_000))
             assertTrue("Normal-height tabs stay pinned", node(history).visibleBounds.top < tabBounds.top)
-            action(By.text("Automations")).click()
-            assertTrue(action(use).isEnabled)
-            node(By.text("Trigger rules"))
-            ScreenshotCapture.capture("phone-automations.png")
         }
 
         captureWindow(1180, 820, UserPreferencesTheme.DARK) { _, fixture ->
