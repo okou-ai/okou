@@ -127,13 +127,15 @@ fn extract_tar(
             .allow_payload(&mut entry)
             .map_err(|e| archive_error("Failed to read archive entry", e))?;
 
-        let entry_path = entry
-            .path()
-            .map_err(|e| archive_error("Failed to read entry path", e))?
-            .into_owned();
-
         let entry_type = entry.header().entry_type();
-        validate_entry(&entry_path, entry_type, entry.size(), entry.header())?;
+        validate_entry(
+            &entry
+                .path()
+                .map_err(|e| archive_error("Failed to read entry path", e))?,
+            entry_type,
+            entry.size(),
+            entry.header(),
+        )?;
 
         #[cfg(target_os = "linux")]
         {
@@ -144,9 +146,12 @@ fn extract_tar(
                     .pax_extensions()
                     .map_err(|e| archive_error("Failed to read entry metadata", e))?
                     .is_none()
-                && rooted.try_unpack(&entry_path, &mut entry).map_err(|e| {
+                && rooted.try_unpack(&mut entry).map_err(|e| {
                     unpack_error(
-                        format!("Failed to extract entry {}", entry_path.display()),
+                        format!(
+                            "Failed to extract entry {}",
+                            String::from_utf8_lossy(&entry.path_bytes())
+                        ),
                         e,
                         &http_body_read_failure,
                     )
@@ -158,6 +163,11 @@ fn extract_tar(
             // permissions. Never reuse ancestry across one of those operations.
             rooted.invalidate();
         }
+
+        let entry_path = entry
+            .path()
+            .map_err(|e| archive_error("Failed to read entry path", e))?
+            .into_owned();
 
         // Check that the entry path lexically stays within the target directory
         // (normalize to collapse any .. components before checking)
