@@ -8,7 +8,6 @@ import ai.okou.android.currentWindowSizeDp
 import ai.okou.android.isShortWindowHeight
 import ai.okou.android.settingsPanelContentPadding
 import androidx.compose.foundation.focusable
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -26,6 +25,7 @@ import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
@@ -387,50 +387,37 @@ private fun QueueRow(
             if (workflow == null) R.string.conversation_revoke
             else R.string.conversation_skip_automation,
         )
-    Row(
-        modifier
-            .fillMaxWidth()
-            .heightIn(min = 72.dp)
-            .testTag("message_${message.id}")
-            .padding(8.dp),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Icon(
-            painterResource(
-                if (workflow == null) R.drawable.ic_chat_bubble else R.drawable.ic_schedule,
-            ),
-            null,
-            Modifier.size(24.dp),
-            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        Column(Modifier.weight(1f)) {
-            Text(
-                summary.ifBlank { metadata },
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-                style = MaterialTheme.typography.bodyLarge,
+    ListItem(
+        modifier = modifier.fillMaxWidth().testTag("message_${message.id}"),
+        leadingContent = {
+            Icon(
+                painterResource(
+                    if (workflow == null) R.drawable.ic_chat_bubble else R.drawable.ic_schedule,
+                ),
+                null,
+                Modifier.size(24.dp),
             )
+        },
+        supportingContent =
             if (summary.isNotBlank()) {
-                Text(
-                    metadata,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-        }
-        IconButton(
-            onClick = {
-                beforeAction()
-                revoke?.invoke()
-            },
-            enabled = revoke != null,
-            modifier =
-                Modifier.size(48.dp).semantics {
-                    contentDescription = "$action, ${summary.ifBlank { metadata }}"
+                { Text(metadata) }
+            } else null,
+        trailingContent = {
+            IconButton(
+                onClick = {
+                    beforeAction()
+                    revoke?.invoke()
                 },
-        ) {
-            Icon(painterResource(R.drawable.ic_close), null, Modifier.size(24.dp))
-        }
+                enabled = revoke != null,
+                modifier =
+                    Modifier.size(48.dp).semantics {
+                        contentDescription = "$action, ${summary.ifBlank { metadata }}"
+                    },
+            ) {
+                Icon(painterResource(R.drawable.ic_close), null, Modifier.size(24.dp))
+            }
+        },
+    ) {
+        Text(summary.ifBlank { metadata }, maxLines = 2, overflow = TextOverflow.Ellipsis)
     }
 }
