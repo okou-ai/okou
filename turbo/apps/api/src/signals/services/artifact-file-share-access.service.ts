@@ -42,7 +42,6 @@ export const findActiveArtifactForFile$ = command(
           eq(artifacts.authorUserId, file.userId),
           isNull(artifacts.deletedAt),
           or(
-            eq(artifacts.projectionFileId, file.id),
             and(eq(artifacts.kind, "file"), eq(artifacts.entityId, file.id)),
             and(
               eq(artifacts.kind, "image"),

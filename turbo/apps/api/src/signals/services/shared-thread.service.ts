@@ -11,10 +11,7 @@ import type { SharedThreadMessageAttachments } from "@okouai/db/jsonb-contracts/
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import { command, state } from "ccstate";
 
-import {
-  nullableDriverValueDecoder,
-  pgBooleanDecoder,
-} from "../../lib/db-structured-result";
+import { pgBooleanDecoder } from "../../lib/db-structured-result";
 import { isUniqueViolation } from "../../lib/pg-errors";
 import { nowDate } from "../../lib/time";
 import {
@@ -392,67 +389,39 @@ const insertSharedThreadIdentity$ = command(
     } else {
       // The ordinary share and its catalog entry are one SQL statement.
       // The CTE gates catalog creation on this request's actual insert.
-      const created = database.$with("created_shared_thread").as(insertion);
-      await database
-        .with(created)
-        .insert(artifacts)
-        .select(
-          database
-            .select({
-              id: sql`${randomUUID()}::uuid`.mapWith(artifacts.id).as("id"),
-              orgId: sql`${args.orgId}`.mapWith(artifacts.orgId).as("org_id"),
-              authorUserId:
-                sql`${sharedThreadArtifactAuthorUserId(args.userId)}`
-                  .mapWith(artifacts.authorUserId)
-                  .as("author_user_id"),
-              kind: sql`'file'`.mapWith(artifacts.kind).as("kind"),
-              entityId: created.id,
-              logicalKey: sql`${sharedThreadArtifactLogicalKey(id)}`
-                .mapWith(artifacts.logicalKey)
-                .as("logical_key"),
-              chatThreadId: sql`${args.threadId}::uuid`
-                .mapWith(nullableDriverValueDecoder(artifacts.chatThreadId))
-                .as("chat_thread_id"),
-              displayKind: sql`'shared-thread'`
-                .mapWith(nullableDriverValueDecoder(artifacts.displayKind))
-                .as("display_kind"),
-              sourceUrl: sql`NULL::text`
-                .mapWith(nullableDriverValueDecoder(artifacts.sourceUrl))
-                .as("source_url"),
-              aliasUrl: sql`NULL::text`
-                .mapWith(nullableDriverValueDecoder(artifacts.aliasUrl))
-                .as("alias_url"),
-              videoSourceUrl: sql`NULL::text`
-                .mapWith(nullableDriverValueDecoder(artifacts.videoSourceUrl))
-                .as("video_source_url"),
-              projectionFileId: sql`NULL::uuid`
-                .mapWith(nullableDriverValueDecoder(artifacts.projectionFileId))
-                .as("projection_file_id"),
-              projectionCreatedAt: sql`${createdAt}::timestamp`
-                .mapWith(artifacts.projectionCreatedAt)
-                .as("projection_created_at"),
-              title: sql`${initialTitle}`.mapWith(artifacts.title).as("title"),
-              thumbnail: sql`NULL::jsonb`
-                .mapWith(nullableDriverValueDecoder(artifacts.thumbnail))
-                .as("thumbnail"),
-              visibility: sql`'private'`
-                .mapWith(artifacts.visibility)
-                .as("visibility"),
-              category: sql`'other'`
-                .mapWith(nullableDriverValueDecoder(artifacts.category))
-                .as("category"),
-              deletedAt: sql`NULL::timestamp`
-                .mapWith(nullableDriverValueDecoder(artifacts.deletedAt))
-                .as("deleted_at"),
-              createdAt: sql`${createdAt}::timestamp`
-                .mapWith(artifacts.createdAt)
-                .as("created_at"),
-              updatedAt: sql`${createdAt}::timestamp`
-                .mapWith(artifacts.updatedAt)
-                .as("updated_at"),
-            })
-            .from(created),
-        );
+      await database.execute(sql`
+        WITH "created_shared_thread" AS ${insertion}
+        INSERT INTO ${artifacts} (
+          "id",
+          "org_id",
+          "author_user_id",
+          "kind",
+          "entity_id",
+          "logical_key",
+          "chat_thread_id",
+          "display_kind",
+          "title",
+          "visibility",
+          "category",
+          "created_at",
+          "updated_at"
+        )
+        SELECT
+          ${randomUUID()}::uuid,
+          ${args.orgId},
+          ${sharedThreadArtifactAuthorUserId(args.userId)},
+          'file',
+          "created_shared_thread"."id",
+          ${sharedThreadArtifactLogicalKey(id)},
+          ${args.threadId}::uuid,
+          'shared-thread',
+          ${initialTitle},
+          'private',
+          'other',
+          ${createdAt}::timestamp,
+          ${createdAt}::timestamp
+        FROM "created_shared_thread"
+      `);
     }
     signal.throwIfAborted();
   },

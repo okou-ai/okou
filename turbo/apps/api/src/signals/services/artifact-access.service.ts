@@ -121,7 +121,6 @@ interface OwnedArtifactRow {
   readonly displayKind: ArtifactCatalogKind | null;
   readonly entityId: string;
   readonly logicalKey: string;
-  readonly projectionFileId: string | null;
   readonly visibility: ArtifactVisibilityValue;
   readonly orgId: string;
   readonly authorUserId: string;
@@ -133,7 +132,6 @@ const OWNED_ARTIFACT_SELECTION = {
   displayKind: artifacts.displayKind,
   entityId: artifacts.entityId,
   logicalKey: artifacts.logicalKey,
-  projectionFileId: artifacts.projectionFileId,
   visibility: artifacts.visibility,
   orgId: artifacts.orgId,
   authorUserId: artifacts.authorUserId,
@@ -221,11 +219,9 @@ const resolveFileAccessTarget$ = command(
         .where(eq(imageArtifacts.id, row.entityId))
         .limit(1);
       signal.throwIfAborted();
-      fileId = image?.fileId ?? row.projectionFileId;
+      fileId = image?.fileId ?? null;
     } else if (row.kind === "file") {
       fileId = row.entityId;
-    } else {
-      fileId = row.projectionFileId;
     }
     if (!fileId) {
       return null;
@@ -435,7 +431,6 @@ export const resolveOwnedArtifactAccessTarget$ = command(
           or(
             eq(artifacts.id, args.artifactId),
             eq(artifacts.entityId, args.artifactId),
-            eq(artifacts.projectionFileId, args.artifactId),
             eq(artifacts.logicalKey, `site:${args.artifactId}`),
           ),
           eq(artifacts.orgId, args.orgId),

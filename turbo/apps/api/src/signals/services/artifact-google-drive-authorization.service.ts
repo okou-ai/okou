@@ -290,7 +290,7 @@ const ownedDriveCatalogArtifact$ = command(
         .where(eq(imageArtifacts.id, artifact.entityId))
         .limit(1);
       signal.throwIfAborted();
-      fileId = image?.fileId ?? artifact.projectionFileId;
+      fileId = image?.fileId ?? null;
     }
     if (!fileId) {
       return null;

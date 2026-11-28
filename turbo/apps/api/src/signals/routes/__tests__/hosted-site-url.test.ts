@@ -190,6 +190,24 @@ test("validates addresses and hides other owners' websites", async () => {
     url: `https://${name}.okou.app`,
     isActive: true,
   });
+  const withoutHostname = await accept(
+    client(owner).siteUrl({
+      headers,
+      params: { publicSlug: name },
+      query: {},
+    }),
+    [200],
+  );
+  expect(withoutHostname.body).toStrictEqual(unchanged.body);
+  expect(withoutHostname.body.artifactId).toStrictEqual(expect.any(String));
+  await accept(
+    client(peer).siteUrl({
+      headers,
+      params: { publicSlug: name },
+      query: {},
+    }),
+    [404],
+  );
 });
 
 test("rejects stale edits and reserves previous published names for their owner", async () => {

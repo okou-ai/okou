@@ -40,7 +40,6 @@ import {
 import { settle } from "../utils";
 import { hostedLinkOrigin } from "../../lib/link-layout";
 import { nowDate } from "../../lib/time";
-import { nullableDriverValueDecoder } from "../../lib/db-structured-result";
 import { signHostedSiteFiles$ } from "./hosted-site-files.service";
 import { checkHostedSiteAccess$ } from "./hosted-site-access.service";
 import { privateArtifactsBucket } from "./private-artifact-storage.service";
@@ -429,68 +428,42 @@ const changeSharedThreadArtifactPhase$ = command(
     // while the snapshot still exists. Deleting its source chat only clears
     // the catalog association; the snapshot and global catalog entry survive.
     const database = set(writeDb$);
-    await database
-      .insert(artifacts)
-      .select(
-        database
-          .select({
-            id: sql`${randomUUID()}::uuid`.mapWith(artifacts.id).as("id"),
-            orgId: sql`${current.policy.orgId}`
-              .mapWith(artifacts.orgId)
-              .as("org_id"),
-            authorUserId: sql`${sharedThreadArtifactAuthorUserId(row.userId)}`
-              .mapWith(artifacts.authorUserId)
-              .as("author_user_id"),
-            kind: sql`'file'`.mapWith(artifacts.kind).as("kind"),
-            entityId: sharedThreads.id,
-            logicalKey: sql`${sharedThreadArtifactLogicalKey(row.id)}`
-              .mapWith(artifacts.logicalKey)
-              .as("logical_key"),
-            chatThreadId: sharedThreads.sourceChatThreadId,
-            displayKind: sql`'shared-thread'`
-              .mapWith(nullableDriverValueDecoder(artifacts.displayKind))
-              .as("display_kind"),
-            sourceUrl: sql`NULL::text`
-              .mapWith(nullableDriverValueDecoder(artifacts.sourceUrl))
-              .as("source_url"),
-            aliasUrl: sql`NULL::text`
-              .mapWith(nullableDriverValueDecoder(artifacts.aliasUrl))
-              .as("alias_url"),
-            videoSourceUrl: sql`NULL::text`
-              .mapWith(nullableDriverValueDecoder(artifacts.videoSourceUrl))
-              .as("video_source_url"),
-            projectionFileId: sql`NULL::uuid`
-              .mapWith(nullableDriverValueDecoder(artifacts.projectionFileId))
-              .as("projection_file_id"),
-            projectionCreatedAt: sharedThreads.createdAt,
-            title: sharedThreads.title,
-            thumbnail: sql`NULL::jsonb`
-              .mapWith(nullableDriverValueDecoder(artifacts.thumbnail))
-              .as("thumbnail"),
-            visibility: sql`'private'`
-              .mapWith(artifacts.visibility)
-              .as("visibility"),
-            category: sql`'other'`
-              .mapWith(nullableDriverValueDecoder(artifacts.category))
-              .as("category"),
-            deletedAt: sql`NULL::timestamp`
-              .mapWith(nullableDriverValueDecoder(artifacts.deletedAt))
-              .as("deleted_at"),
-            createdAt: sharedThreads.createdAt,
-            updatedAt: sharedThreads.createdAt,
-          })
-          .from(sharedThreads)
-          .where(
-            and(
-              eq(sharedThreads.id, row.id),
-              eq(sharedThreads.userId, row.userId),
-              eq(sharedThreads.orgId, current.policy.orgId),
-            ),
-          ),
+    await database.execute(sql`
+      INSERT INTO ${artifacts} (
+        "id",
+        "org_id",
+        "author_user_id",
+        "kind",
+        "entity_id",
+        "logical_key",
+        "chat_thread_id",
+        "display_kind",
+        "title",
+        "visibility",
+        "category",
+        "created_at",
+        "updated_at"
       )
-      .onConflictDoNothing({
-        target: [artifacts.orgId, artifacts.authorUserId, artifacts.logicalKey],
-      });
+      SELECT
+        ${randomUUID()}::uuid,
+        ${current.policy.orgId},
+        ${sharedThreadArtifactAuthorUserId(row.userId)},
+        'file',
+        ${sharedThreads.id},
+        ${sharedThreadArtifactLogicalKey(row.id)},
+        ${sharedThreads.sourceChatThreadId},
+        'shared-thread',
+        ${sharedThreads.title},
+        'private',
+        'other',
+        ${sharedThreads.createdAt},
+        ${sharedThreads.createdAt}
+      FROM ${sharedThreads}
+      WHERE ${sharedThreads.id} = ${row.id}
+        AND ${sharedThreads.userId} = ${row.userId}
+        AND ${sharedThreads.orgId} = ${current.policy.orgId}
+      ON CONFLICT ("org_id", "author_user_id", "logical_key") DO NOTHING
+    `);
     signal.throwIfAborted();
   },
 );

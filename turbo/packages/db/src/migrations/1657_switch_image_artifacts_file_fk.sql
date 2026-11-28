@@ -27,6 +27,8 @@ ALTER TABLE "image_artifacts" VALIDATE CONSTRAINT "image_artifacts_file_id_files
 --> statement-breakpoint
 ALTER TABLE "image_artifacts" DROP CONSTRAINT IF EXISTS "image_artifacts_file_id_run_uploaded_files_id_fk";
 --> statement-breakpoint
+ALTER TABLE "artifacts" ALTER COLUMN "projection_created_at" SET DEFAULT now();
+--> statement-breakpoint
 RESET statement_timeout;
 --> statement-breakpoint
 RESET lock_timeout;

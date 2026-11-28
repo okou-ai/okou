@@ -122,7 +122,7 @@ const ownedSite$ = command(
 export const getHostedSiteUrl$ = command(
   async (
     { get, set },
-    args: Owner & { readonly publicSlug: string; readonly hostname: string },
+    args: Owner & { readonly publicSlug: string; readonly hostname?: string },
     signal: AbortSignal,
   ): Promise<HostedSiteUrlResult> => {
     const deploymentId = IMMUTABLE_DEPLOYMENT_HOST_PATTERN.exec(
@@ -152,12 +152,13 @@ export const getHostedSiteUrl$ = command(
     signal.throwIfAborted();
     if (
       !row ||
-      new URL(
-        hostedLinkOrigin(
-          linkLayoutFromSegment(row.site.linkLayoutSegment),
-          args.publicSlug,
-        ),
-      ).hostname !== args.hostname.toLowerCase()
+      (args.hostname !== undefined &&
+        new URL(
+          hostedLinkOrigin(
+            linkLayoutFromSegment(row.site.linkLayoutSegment),
+            args.publicSlug,
+          ),
+        ).hostname !== args.hostname.toLowerCase())
     ) {
       return { status: "not_found", message: "Published website not found" };
     }

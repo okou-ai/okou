@@ -2641,7 +2641,8 @@
           "name": "projection_created_at",
           "type": "timestamp",
           "primaryKey": false,
-          "notNull": true
+          "notNull": true,
+          "default": "now()"
         },
         "title": {
           "name": "title",

@@ -338,7 +338,7 @@ export const hostContract = c.router({
     method: "GET",
     path: "/api/host/sites/:publicSlug/url",
     pathParams: object({ publicSlug: hostedSitePublicSlugSchema }),
-    query: object({ hostname: string().max(253) }),
+    query: object({ hostname: string().max(253).optional() }),
     headers: authHeadersSchema,
     responses: {
       200: hostedSiteUrlSchema,

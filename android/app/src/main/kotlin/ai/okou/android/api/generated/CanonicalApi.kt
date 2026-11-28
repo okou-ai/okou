@@ -248,7 +248,7 @@ internal interface CanonicalApi {
     suspend fun `artifactSiteUrl`(
         @Header("Authorization") token: String,
         @Path("publicSlug") `pathPublicSlug`: String,
-        @Query("hostname") `queryHostname`: String,
+        @Query("hostname") `queryHostname`: String? = null,
     ): Response<ArtifactSiteUrl>
 
     @GET("/api/connectors/connected")

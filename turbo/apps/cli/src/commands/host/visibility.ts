@@ -2,7 +2,7 @@ import { Argument, Command } from "commander";
 import chalk from "chalk";
 import { hostedSitePublicSlugSchema } from "@okouai/api-contracts/contracts/host";
 import {
-  assertHostedSiteEmailSharing,
+  assertArtifactUserSharing,
   getHostedSiteVisibility,
   updateHostedSiteVisibility,
 } from "../../lib/api/domains/hosted-site-sharing";
@@ -71,7 +71,7 @@ Notes:
           ]);
           const publicSlug = hostedSitePublicSlugSchema.parse(site.trim());
           if (visibility === "email") {
-            await assertHostedSiteEmailSharing();
+            await assertArtifactUserSharing();
           }
           const sharing =
             visibility === "email"

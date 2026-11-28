@@ -159,7 +159,6 @@ function catalogBy(db: ReadonlyDb, owner: Owner, predicate: SQL) {
       title: artifacts.title,
       sourceUrl: artifacts.sourceUrl,
       thumbnail: artifacts.thumbnail,
-      projectionFileId: artifacts.projectionFileId,
       deletedAt: artifacts.deletedAt,
     })
     .from(artifacts)
@@ -452,7 +451,7 @@ const lookupCatalogFileByUrls$ = command(
     if (!catalog || catalog.deletedAt) {
       return { catalog, file: undefined };
     }
-    let resolvedFileId: string | null = catalog.projectionFileId;
+    let resolvedFileId: string | null = null;
     if (catalog.kind === "file") {
       resolvedFileId = catalog.entityId;
     } else if (catalog.kind === "image") {
@@ -462,7 +461,7 @@ const lookupCatalogFileByUrls$ = command(
         .where(eq(imageArtifacts.id, catalog.entityId))
         .limit(1);
       signal.throwIfAborted();
-      resolvedFileId = img?.fileId ?? catalog.projectionFileId;
+      resolvedFileId = img?.fileId ?? null;
     }
     if (!resolvedFileId) {
       return { catalog, file: undefined };
@@ -491,7 +490,6 @@ const fileMessageDetail$ = command(
           db,
           owner,
           or(
-            eq(artifacts.projectionFileId, file.id),
             and(eq(artifacts.kind, "file"), eq(artifacts.entityId, file.id)),
             and(
               eq(artifacts.kind, "image"),

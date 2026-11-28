@@ -26,7 +26,7 @@ export interface HostedSiteVisibilityStatus {
   readonly visibility: ArtifactVisibilityValue;
 }
 
-export async function assertHostedSiteEmailSharing(): Promise<void> {
+export async function assertArtifactUserSharing(): Promise<void> {
   const client = initClient(featureSwitchesContract, await getClientConfig());
   const response = await client.get({
     fetchOptions: { cache: "no-store" },
@@ -48,24 +48,28 @@ export async function getHostedSiteVisibility(
   publicSlug: string,
 ): Promise<HostedSiteVisibilityStatus> {
   const client = initClient(hostContract, await getClientConfig());
-  const alias = await client.resolveAlias({
+  const site = await client.siteUrl({
     params: { publicSlug },
-    query: { publicBrand: "okou" },
+    query: {},
     fetchOptions: { cache: "no-store" },
   });
-  if (alias.status !== 200) {
-    handleError(alias, "Published website not found");
+  if (site.status !== 200) {
+    handleError(site, "Published website not found");
   }
-  if (!alias.body.pointer) {
-    throw new ApiRequestError("Published website not found", "NOT_FOUND", 404);
+  const { siteId, artifactId } = site.body;
+  if (!artifactId) {
+    throw new ApiRequestError(
+      "Website visibility is not available",
+      "NOT_FOUND",
+      404,
+    );
   }
-  const { siteId } = alias.body.pointer;
   const accessClient = initClient(
     artifactAccessContract,
     await getClientConfig(),
   );
   const response = await accessClient.getVisibility({
-    params: { artifactId: siteId },
+    params: { artifactId },
     fetchOptions: { cache: "no-store" },
   });
   if (response.status !== 200) {

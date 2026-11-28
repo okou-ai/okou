@@ -94,7 +94,6 @@ export const uploadedArtifactPreviewImageUrl$ = command(
           isNull(artifacts.deletedAt),
           isNotNull(artifacts.thumbnail),
           or(
-            eq(artifacts.projectionFileId, args.id),
             and(eq(artifacts.kind, "file"), eq(artifacts.entityId, args.id)),
             and(
               eq(artifacts.kind, "image"),

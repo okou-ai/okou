@@ -83,7 +83,9 @@ export const artifacts = pgTable(
     aliasUrl: text("alias_url"),
     videoSourceUrl: text("video_source_url"),
     projectionFileId: uuid("projection_file_id"),
-    projectionCreatedAt: timestamp("projection_created_at").notNull(),
+    projectionCreatedAt: timestamp("projection_created_at")
+      .defaultNow()
+      .notNull(),
     title: text("title").notNull(),
     thumbnail: jsonb("thumbnail").$type<ArtifactThumbnail>(),
     visibility: varchar("visibility", { length: 16 })
