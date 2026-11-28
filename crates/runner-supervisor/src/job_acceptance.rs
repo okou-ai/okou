@@ -146,13 +146,15 @@ pub(crate) async fn accept_supplied(
         (AcceptedResource::Finalizing(handoff), None)
     } else {
         let Some(resource) = acquire_local_acceptance_resource(
-            run_id,
-            context.reuse_key().filter(|key| !key.is_empty()),
-            expected_source_run_id,
-            request.profile_name,
-            request.job_vcpu,
-            request.job_memory,
-            request.device_rate_limits,
+            LocalAcceptanceResourceRequest {
+                run_id,
+                reuse_key: context.reuse_key().filter(|key| !key.is_empty()),
+                expected_source_run_id,
+                profile_name: request.profile_name,
+                job_vcpu: request.job_vcpu,
+                job_memory: request.job_memory,
+                device_rate_limits: request.device_rate_limits,
+            },
             ctx,
         )
         .await
@@ -203,13 +205,15 @@ pub async fn accept_and_claim(
 ) -> LocalAcceptanceOutcome {
     let run_id = candidate.run_id();
     let Some((resource, blank_pool_selection)) = acquire_local_acceptance_resource(
-        run_id,
-        candidate.reuse_key(),
-        None,
-        request.profile_name,
-        request.job_vcpu,
-        request.job_memory,
-        request.device_rate_limits,
+        LocalAcceptanceResourceRequest {
+            run_id,
+            reuse_key: candidate.reuse_key(),
+            expected_source_run_id: None,
+            profile_name: request.profile_name,
+            job_vcpu: request.job_vcpu,
+            job_memory: request.job_memory,
+            device_rate_limits: request.device_rate_limits,
+        },
         ctx,
     )
     .await
@@ -258,16 +262,29 @@ pub async fn accept_and_claim(
     }))
 }
 
-async fn acquire_local_acceptance_resource(
+struct LocalAcceptanceResourceRequest<'a> {
     run_id: RunId,
-    reuse_key: Option<&str>,
+    reuse_key: Option<&'a str>,
     expected_source_run_id: Option<RunId>,
-    profile_name: &str,
+    profile_name: &'a str,
     job_vcpu: u32,
     job_memory: u32,
-    device_rate_limits: &Option<sandbox::DeviceRateLimits>,
+    device_rate_limits: &'a Option<sandbox::DeviceRateLimits>,
+}
+
+async fn acquire_local_acceptance_resource(
+    request: LocalAcceptanceResourceRequest<'_>,
     ctx: &AcceptanceResources<'_>,
 ) -> Option<(AcceptedResource, Option<BlankPoolSelection>)> {
+    let LocalAcceptanceResourceRequest {
+        run_id,
+        reuse_key,
+        expected_source_run_id,
+        profile_name,
+        job_vcpu,
+        job_memory,
+        device_rate_limits,
+    } = request;
     let IdlePressureOutcome {
         selection,
         blank_pool_selection,

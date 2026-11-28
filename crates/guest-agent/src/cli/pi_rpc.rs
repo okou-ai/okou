@@ -559,8 +559,9 @@ impl<'a> PiRpcProjection<'a> {
             if let Some(session_file) = response
                 .pointer("/data/sessionFile")
                 .and_then(Value::as_str)
+                && let Some(object) = init.as_object_mut()
             {
-                init["session_file"] = json!(session_file);
+                object.insert("session_file".to_string(), json!(session_file));
             }
             self.session_id = Some(session_id.to_string());
             self.emitted_session_init = true;
