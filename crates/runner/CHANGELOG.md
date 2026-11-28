@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.254.0](https://github.com/okou-ai/okou/compare/runner-rs-v0.253.1...runner-rs-v0.254.0) (2026-11-28)
+
+
+### Features
+
+* resolve overlapping firewall sources with intent first ([#51644](https://github.com/okou-ai/okou/issues/51644)) ([6cbb106](https://github.com/okou-ai/okou/commit/6cbb10651e2feae67fd9d23a940eb34107578077))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.253.1](https://github.com/okou-ai/okou/compare/runner-rs-v0.253.0...runner-rs-v0.253.1) (2026-11-28)
 
 

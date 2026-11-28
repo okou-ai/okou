@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.71.1](https://github.com/okou-ai/okou/compare/android-v0.71.0...android-v0.71.1) (2026-11-28)
+
+
+### Bug Fixes
+
+* **android:** fit images on the first viewer frame ([#51692](https://github.com/okou-ai/okou/issues/51692)) ([9a904dc](https://github.com/okou-ai/okou/commit/9a904dc88202e2324430a338b4eddca63f57f029))
+* **android:** preserve interrupted content read fades ([#51693](https://github.com/okou-ai/okou/issues/51693)) ([26e211c](https://github.com/okou-ai/okou/commit/26e211c2f4fb852041aa4a19c1ace5380f81de1d))
+* **android:** show uploaded and named workspace avatars ([#51672](https://github.com/okou-ai/okou/issues/51672)) ([8fb98a2](https://github.com/okou-ai/okou/commit/8fb98a21022efe6afb4fc399d8ec5044468577e5))
+* **android:** unify the read failure illustration ([#51691](https://github.com/okou-ai/okou/issues/51691)) ([f4bbb36](https://github.com/okou-ai/okou/commit/f4bbb36a12f2a35e8c6f566c3dbddc628bcae824))
+
+
+### Performance Improvements
+
+* **android:** narrow workspace shell observation ([#51687](https://github.com/okou-ai/okou/issues/51687)) ([59d6aee](https://github.com/okou-ai/okou/commit/59d6aeef1d6b8fd9788949a0cf401286b047f41f))
+
 ## [0.71.0](https://github.com/okou-ai/okou/compare/android-v0.70.0...android-v0.71.0) (2026-11-28)
 
 
