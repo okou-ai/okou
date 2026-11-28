@@ -79,7 +79,6 @@
     <string name="chat_project_create_unconfirmed">Project creation hasn’t been confirmed</string>
     <!-- The formatted value is the fixed 120-character Project limit. -->
     <string name="chat_project_name_too_long" tools:ignore="PluralsCandidate">Project name must be %1$d characters or fewer</string>
-    <string name="chat_project_rename_unconfirmed">Could not confirm the Project name.</string>
     <string name="chat_project_rename_rejected">Could not rename the Project.</string>
     <string name="chat_project_rename_save">Save</string>
     <string name="chat_project_rename_pending">Renaming Project…</string>
@@ -101,8 +100,6 @@
     <string name="chat_rename_save_failed">Could not save. Your changes are still here.</string>
     <string name="chat_rename_check_result">Check result</string>
     <string name="chat_rename_required">Enter a name.</string>
-    <string name="chat_rename_checking_result">Checking the result…</string>
-    <string name="chat_rename_save_unconfirmed">The save result is still unconfirmed.</string>
     <string name="chat_title_saved">Chat title saved</string>
     <string name="chat_project_name_saved">Project name saved</string>
     <string name="inline_image_loading">Loading image…</string>
