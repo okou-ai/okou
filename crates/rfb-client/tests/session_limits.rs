@@ -38,23 +38,16 @@ async fn capture_raw(
 ) -> Result<Capture, Error> {
     let row_bytes = usize::from(width) * 4;
     assert!(!rows.is_empty() && rows.len().is_multiple_of(row_bytes));
+    let frame_bytes = row_bytes * usize::from(height);
     let server = async {
         read_request(peer, false, width, height).await;
         peer.write_all(&[0, 0, 0, 1]).await?;
         peer.write_all(&rectangle(0, 0, width, height, 0, &[]))
             .await?;
-        // Send an already-complete noise frame directly. A single solid row
-        // still repeats without allocating or copying a full wire message.
-        if rows.len() == row_bytes * usize::from(height) {
-            peer.write_all(rows).await?;
-        } else {
-            for row in rows
-                .chunks_exact(row_bytes)
-                .cycle()
-                .take(usize::from(height))
-            {
-                peer.write_all(row).await?;
-            }
+        // Repeat a solid band as needed. A complete noisy frame takes one write.
+        for offset in (0..frame_bytes).step_by(rows.len()) {
+            let write_len = rows.len().min(frame_bytes - offset);
+            peer.write_all(&rows[..write_len]).await?;
         }
         peer.flush().await?;
         Ok::<(), io::Error>(())
@@ -84,10 +77,11 @@ async fn capture_raw(
 
 #[tokio::test]
 async fn captures_the_maximum_frame_as_complete_png_within_the_shared_budget() {
+    const ROWS_PER_WRITE: usize = 8;
     let (client, mut peer) = initialized(6144, 3456).await;
     let mut session = Session::new(client);
-    let row = [17, 34, 51, 0].repeat(6144);
-    let capture = capture_raw(&mut session, &mut peer, 6144, 3456, &row)
+    let rows = [17, 34, 51, 0].repeat(6144 * ROWS_PER_WRITE);
+    let capture = capture_raw(&mut session, &mut peer, 6144, 3456, &rows)
         .await
         .unwrap();
     assert_eq!(
