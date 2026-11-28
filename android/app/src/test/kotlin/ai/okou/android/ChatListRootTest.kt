@@ -471,7 +471,7 @@ internal class ChatRenameFormRootTest : ChatListRootTestFixture() {
     }
 
     @Test
-    fun observingTheSavedNameKeepsEditsMadeWhileTheRenameWasPending() {
+    fun renameReceiptKeepsTheOldTitleWhenReenteredWhileSaving() {
         val app = compose.activity.application as ChatListApplication
         val events = app.fixture.rowEventTail()
         val releaseWrite = CountDownLatch(1)
@@ -499,13 +499,18 @@ internal class ChatRenameFormRootTest : ChatListRootTestFixture() {
             save.performClick()
             compose.waitUntil(10_000) { started.count == 0L }
             compose.onNodeWithText("Saving…").assertIsNotEnabled()
-            editor.performTextReplacement("New draft")
-            editor.assertTextContains("New draft").assertIsFocused()
+            editor.performTextReplacement("Personal chat")
+            editor.performTextInputSelection(TextRange(0, 3))
+            editor.assertTextContains("Personal chat").assertIsFocused()
         } finally {
             releaseWrite.countDown()
         }
         compose.waitUntilExactlyOneExists(hasText("Save") and isEnabled(), 10_000)
-        editor.assertTextContains("New draft").assertIsFocused()
+        editor.assertTextContains("Personal chat").assertIsFocused()
+        assertEquals(
+            TextRange(0, 3),
+            editor.fetchSemanticsNode().config[SemanticsProperties.TextSelectionRange],
+        )
         editor.performTextReplacement("Submitted title")
         save.assertIsNotEnabled()
         editor.assertIsDisplayed()
