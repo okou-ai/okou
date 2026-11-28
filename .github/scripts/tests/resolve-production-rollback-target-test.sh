@@ -404,6 +404,8 @@ case "${1:-}" in
       [ "${MOCK_OFFICIAL_RESULT_EMAIL_STORAGE_CONTRACTION_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "1638163816381638163816381638163816381638" ]; then
       [ "${MOCK_OFFICIAL_STORAGE_RETIREMENT_FLOOR_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "1658165816581658165816581658165816581658" ]; then
+      [ "${MOCK_ARTIFACT_STORAGE_RETIREMENT_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "5151515151515151515151515151515151515151" ]; then
       [ "${MOCK_SSH_NEEDS_REBIND_INDEPENDENT_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "5757575757575757575757575757575757575757" ]; then
@@ -516,6 +518,8 @@ case "${1:-}" in
       echo a149a149a149a149a149a149a149a149a149a149
     elif [[ "$*" == *1638_retire_official_workflow_installation_state.sql* ]]; then
       printf '%s\n' '1638163816381638163816381638163816381638'
+    elif [[ "$*" == *1658_drop_retired_artifact_tables_and_rename_shares.sql* ]]; then
+      printf '%s\n' "${MOCK_ARTIFACT_STORAGE_RETIREMENT_COMMIT-1658165816581658165816581658165816581658}"
     elif [[ "$*" == *1386_drop_official_result_email_storage.sql* ]]; then
       printf '%s\n' '5050505050505050505050505050505050505050'
     elif [[ "$*" == *.github/rollback-floors/project-wire-contracts* ]]; then
@@ -1671,6 +1675,22 @@ fi
 assert_failure "Rollback target predates the Official Workflow storage retirement" \
   run_resolver "${tmp_dir}/official-storage-retirement-floor.output" MOCK_OFFICIAL_STORAGE_RETIREMENT_FLOOR_VALID=0
 [ ! -s "${tmp_dir}/official-storage-retirement-floor.output" ] || fail "API that requires the retired Official tables must not publish rollback outputs"
+
+: >"${tmp_dir}/boundaries.log"
+assert_failure "Cannot resolve the merged Artifact storage retirement on main" \
+  run_resolver "${tmp_dir}/artifact-storage-retirement-history.output" "MOCK_ARTIFACT_STORAGE_RETIREMENT_COMMIT=invalid"
+[ ! -s "${tmp_dir}/artifact-storage-retirement-history.output" ] || fail "invalid Artifact retirement history must not publish rollback outputs"
+if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
+  fail "invalid Artifact retirement history must fail before artifact or host access"
+fi
+: >"${tmp_dir}/boundaries.log"
+assert_failure "Rollback target predates the Artifact storage retirement" \
+  run_resolver "${tmp_dir}/artifact-storage-retirement-floor.output" MOCK_ARTIFACT_STORAGE_RETIREMENT_FLOOR_VALID=0
+grep -Fq '1658165816581658165816581658165816581658' "${tmp_dir}/failure.err" || fail "Artifact retirement rejection must identify the canonical main commit"
+[ ! -s "${tmp_dir}/artifact-storage-retirement-floor.output" ] || fail "API that queries artifact_user_shares must not publish rollback outputs"
+if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
+  fail "Artifact retirement floor must fail before artifact or host access"
+fi
 
 : >"${tmp_dir}/boundaries.log"
 assert_failure "Cannot resolve the merged needs_rebind-independent SSH preparation" \

@@ -151,7 +151,7 @@ function fileById(db: ReadonlyDb, owner: Owner, id: string) {
     .limit(1);
 }
 
-function catalogBy(db: ReadonlyDb, owner: Owner, predicate: SQL) {
+function catalogBy(db: ReadonlyDb, owner: Owner, predicate: SQL | undefined) {
   return db
     .select({
       id: artifacts.id,

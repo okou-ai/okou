@@ -30,7 +30,7 @@ interface SiteArtifactJoinOptions {
  */
 export function hostedSiteDirectArtifactJoin(
   options?: SiteArtifactJoinOptions,
-): SQL {
+): SQL | undefined {
   return and(
     eq(hostedSiteDirectArtifact.kind, "hosted-site"),
     eq(hostedSiteDirectArtifact.entityId, hostedSites.id),
@@ -41,7 +41,7 @@ export function hostedSiteDirectArtifactJoin(
     options?.activeOnly
       ? isNull(hostedSiteDirectArtifact.deletedAt)
       : undefined,
-  )!;
+  );
 }
 
 /**
@@ -51,7 +51,7 @@ export function hostedSiteDirectArtifactJoin(
  */
 export function hostedSitePresentationArtifactJoin(
   options?: SiteArtifactJoinOptions,
-): SQL {
+): SQL | undefined {
   return and(
     eq(hostedSitePresentationArtifact.kind, "presentation"),
     eq(hostedSitePresentationArtifact.entityId, presentationArtifacts.id),
@@ -62,7 +62,7 @@ export function hostedSitePresentationArtifactJoin(
     options?.activeOnly
       ? isNull(hostedSitePresentationArtifact.deletedAt)
       : undefined,
-  )!;
+  );
 }
 
 /**
@@ -74,7 +74,7 @@ export function hostedSitePresentationArtifactJoin(
  * non-correlated InitPlan + BitmapOr of two unique index scans on
  * `artifacts_kind_entity_unique` rather than a sequential or wide index scan.
  */
-export function siteArtifactIdentityPredicate(siteId: string): SQL {
+export function siteArtifactIdentityPredicate(siteId: string): SQL | undefined {
   return or(
     and(eq(artifacts.kind, "hosted-site"), eq(artifacts.entityId, siteId)),
     and(
@@ -86,7 +86,7 @@ export function siteArtifactIdentityPredicate(siteId: string): SQL {
         LIMIT 1
       )`,
     ),
-  )!;
+  );
 }
 
 /**
@@ -98,18 +98,16 @@ export function privateDeploymentSiteArtifactPredicate(args: {
   readonly deploymentId: string;
   readonly orgId: string;
   readonly userId: string;
-}): SQL {
+}): SQL | undefined {
   return or(
     and(
       eq(artifacts.kind, "hosted-site"),
       sql`${artifacts.entityId} = (
         SELECT ${privateHostedDeployments.siteId}
         FROM ${privateHostedDeployments}
-        WHERE ${and(
-          eq(privateHostedDeployments.id, args.deploymentId),
-          eq(privateHostedDeployments.orgId, args.orgId),
-          eq(privateHostedDeployments.userId, args.userId),
-        )}
+        WHERE ${eq(privateHostedDeployments.id, args.deploymentId)}
+          AND ${eq(privateHostedDeployments.orgId, args.orgId)}
+          AND ${eq(privateHostedDeployments.userId, args.userId)}
         LIMIT 1
       )`,
     ),
@@ -123,13 +121,11 @@ export function privateDeploymentSiteArtifactPredicate(args: {
             privateHostedDeployments.siteId,
             presentationArtifacts.hostedSiteId,
           )}
-        WHERE ${and(
-          eq(privateHostedDeployments.id, args.deploymentId),
-          eq(privateHostedDeployments.orgId, args.orgId),
-          eq(privateHostedDeployments.userId, args.userId),
-        )}
+        WHERE ${eq(privateHostedDeployments.id, args.deploymentId)}
+          AND ${eq(privateHostedDeployments.orgId, args.orgId)}
+          AND ${eq(privateHostedDeployments.userId, args.userId)}
         LIMIT 1
       )`,
     ),
-  )!;
+  );
 }
