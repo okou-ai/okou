@@ -7,6 +7,8 @@ import {
   PutObjectCommand,
 } from "@aws-sdk/client-s3";
 import { artifactAccessContract } from "@okouai/api-contracts/contracts/artifact-access";
+import { artifactCatalogContract } from "@okouai/api-contracts/contracts/artifact-catalog";
+import { artifactReferencesContract } from "@okouai/api-contracts/contracts/artifact-references";
 import { uploadsContract } from "@okouai/api-contracts/contracts/uploads";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { createStore } from "ccstate";
@@ -18,6 +20,8 @@ import { nowDate } from "../../../lib/time";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { settleIncludingAbort } from "../../utils";
 import { artifactAccessRoutes } from "../artifact-access";
+import { artifactCatalogRoutes } from "../artifact-catalog";
+import { artifactReferenceRoutes } from "../artifact-references";
 import { uploadsCompleteRoutes } from "../uploads-complete";
 import { uploadsPrepareRoutes } from "../uploads-prepare";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
@@ -38,6 +42,12 @@ const SAMPLE_FILE = Buffer.from("%PDF-1.7 unified artifact access test");
 
 const accessClient = setupApp({ context, routes: artifactAccessRoutes })(
   artifactAccessContract,
+);
+const catalogClient = setupApp({ context, routes: artifactCatalogRoutes })(
+  artifactCatalogContract,
+);
+const referencesClient = setupApp({ context, routes: artifactReferenceRoutes })(
+  artifactReferencesContract,
 );
 const uploadsClient = setupApp({
   context,
@@ -790,5 +800,176 @@ describe("Unified artifact access API", () => {
     expect(foreignStatus.status).toBe(404);
     expect(ownShare.body.share.userId).toBe(peer.userId);
     await flushWaitUntilForTest();
+  });
+
+  it("pf-171 unified artifact visibility controls file artifacts and reflects immediately in catalog and reference resolution", async () => {
+    const storage = installFileStorage();
+    const owner = await seedMember();
+    const orgId = owner.orgId ?? "";
+    const peer = await seedMember(orgId);
+    const { artifactId, fileId } = await uploadPrivateFileArtifact(
+      owner,
+      storage,
+    );
+    const reference = `${fileId.replace(/-/gu, "")}.pdf`;
+
+    const ownerHeaders = signIn(owner);
+    const initialCatalog = await accept(
+      catalogClient.list({ headers: ownerHeaders, query: {} }),
+      [200],
+    );
+    expect(initialCatalog.body.artifacts[0]?.visibility).toBe("private");
+    await accept(
+      referencesClient.resolve({
+        headers: ownerHeaders,
+        params: { reference },
+        query: {},
+      }),
+      [200],
+    );
+
+    const peerHeaders = signIn(peer);
+    await accept(
+      referencesClient.resolve({
+        headers: peerHeaders,
+        params: { reference },
+        query: {},
+      }),
+      [404],
+    );
+    await accept(referencesClient.publicUrl({ params: { reference } }), [404]);
+
+    await accept(
+      accessClient.updateVisibility({
+        headers: signIn(owner),
+        params: { artifactId },
+        body: { visibility: "organization" },
+      }),
+      [200],
+    );
+    const orgCatalog = await accept(
+      catalogClient.list({ headers: signIn(owner), query: {} }),
+      [200],
+    );
+    expect(orgCatalog.body.artifacts[0]?.visibility).toBe("organization");
+    await accept(
+      referencesClient.resolve({
+        headers: signIn(peer),
+        params: { reference },
+        query: {},
+      }),
+      [200],
+    );
+    await accept(referencesClient.publicUrl({ params: { reference } }), [404]);
+
+    await accept(
+      accessClient.updateVisibility({
+        headers: signIn(owner),
+        params: { artifactId },
+        body: { visibility: "public" },
+      }),
+      [200],
+    );
+    const publicCatalog = await accept(
+      catalogClient.list({ headers: signIn(owner), query: {} }),
+      [200],
+    );
+    expect(publicCatalog.body.artifacts[0]?.visibility).toBe("public");
+    await accept(referencesClient.publicUrl({ params: { reference } }), [200]);
+
+    await accept(
+      accessClient.updateVisibility({
+        headers: signIn(owner),
+        params: { artifactId },
+        body: { visibility: "private" },
+      }),
+      [200],
+    );
+    const privateCatalog = await accept(
+      catalogClient.list({ headers: signIn(owner), query: {} }),
+      [200],
+    );
+    expect(privateCatalog.body.artifacts[0]?.visibility).toBe("private");
+    await accept(
+      referencesClient.resolve({
+        headers: signIn(peer),
+        params: { reference },
+        query: {},
+      }),
+      [404],
+    );
+    await accept(referencesClient.publicUrl({ params: { reference } }), [404]);
+  });
+
+  it("pf-176 unshared user files are owner-only, and library delete soft-deletes artifacts without breaking owner file access", async () => {
+    const storage = installFileStorage();
+    const owner = await seedMember();
+    const orgId = owner.orgId ?? "";
+    const peer = await seedMember(orgId);
+    const { fileId } = await uploadPrivateFileArtifact(owner, storage);
+    const reference = `${fileId.replace(/-/gu, "")}.pdf`;
+
+    const beforeCatalog = await accept(
+      catalogClient.list({ headers: signIn(owner), query: {} }),
+      [200],
+    );
+    const entry = beforeCatalog.body.artifacts[0];
+    expect(entry).toBeDefined();
+    if (!entry) {
+      throw new Error("Expected uploaded file in owner library catalog");
+    }
+
+    await accept(
+      referencesClient.resolve({
+        headers: signIn(peer),
+        params: { reference },
+        query: {},
+      }),
+      [404],
+    );
+
+    const deleted = await accept(
+      catalogClient.delete({
+        headers: signIn(owner),
+        params: { artifactId: entry.id },
+      }),
+      [200],
+    );
+    expect(deleted.body).toStrictEqual({ deleted: true });
+
+    const afterCatalog = await accept(
+      catalogClient.list({ headers: signIn(owner), query: {} }),
+      [200],
+    );
+    expect(afterCatalog.body.artifacts).toStrictEqual([]);
+    await accept(
+      catalogClient.get({
+        headers: signIn(owner),
+        params: { artifactId: entry.id },
+      }),
+      [404],
+    );
+
+    const ownerStillReads = await accept(
+      referencesClient.resolve({
+        headers: signIn(owner),
+        params: { reference },
+        query: {},
+      }),
+      [200],
+    );
+    expect(ownerStillReads.body.target).toStrictEqual({
+      kind: "file",
+      id: fileId,
+    });
+    expect(ownerStillReads.body.artifactId).toBeUndefined();
+    await accept(
+      referencesClient.resolve({
+        headers: signIn(peer),
+        params: { reference },
+        query: {},
+      }),
+      [404],
+    );
   });
 });
