@@ -247,6 +247,8 @@ fn scheduler_limits_wide_read_ahead_to_the_first_promoted_local_artifact() {
     for (count, local_ready, artifact_is_largest, expected) in [
         (32, true, false, Some(9)),
         (32, true, true, Some(9)),
+        // The last ungated Artifact is the only task in its wave.
+        (33, true, false, Some(9)),
         (31, true, false, None),
         (40, false, false, None),
     ] {
@@ -254,13 +256,17 @@ fn scheduler_limits_wide_read_ahead_to_the_first_promoted_local_artifact() {
             .map(|id| {
                 let path = format!("/independent-{id}");
                 let mut download = pending_at(id, &path);
-                if matches!(id, 9 | 17) {
+                if matches!(id, 9 | 17) || id == count - 1 {
                     download.task.task = DownloadTask::artifact(
                         path.clone(),
                         "file:///tmp/artifact.tar.gz".into(),
                         path,
                     );
-                    download.estimated_work = if id == 9 { 700_000 } else { 500_000 };
+                    download.estimated_work = match id {
+                        9 => 700_000,
+                        17 => 500_000,
+                        _ => 300_000,
+                    };
                 } else if id == 2 {
                     download.estimated_work = if artifact_is_largest {
                         600_000
