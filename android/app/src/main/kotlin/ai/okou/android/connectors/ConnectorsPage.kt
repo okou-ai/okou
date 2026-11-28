@@ -1,6 +1,5 @@
 package ai.okou.android.connectors
 
-import ai.okou.android.ContentReadFeedbackDelayMillis
 import ai.okou.android.DirectoryReturnFocus
 import ai.okou.android.PaneReadAnnouncements
 import ai.okou.android.R
@@ -12,7 +11,6 @@ import ai.okou.android.WorkspaceToolDirectoryRow
 import ai.okou.android.WorkspaceToolDirectoryRowSkeleton
 import ai.okou.android.chat.ChatSkeletonBlock
 import ai.okou.android.hasPendingSearchText
-import ai.okou.android.rememberContentReadFeedbackAfter
 import ai.okou.android.rememberContentReadSkeleton
 import ai.okou.android.restoreDirectoryFocus
 import ai.okou.android.retainSearchResultsWhileComposing
@@ -107,7 +105,6 @@ import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.LifecycleStartEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import java.util.Locale
-import kotlin.time.Duration.Companion.milliseconds
 
 @Composable
 internal fun ConnectorsPage(
@@ -413,18 +410,7 @@ private fun ConnectorDirectory(
                     .takeIf { it.size == 2 }
                     ?.minByOrNull { it.elapsedNow() }
         }
-    val showSkeleton =
-        key(route.connected, filter) {
-            val remaining =
-                remember(startedAt) {
-                    startedAt?.let {
-                        (ContentReadFeedbackDelayMillis.milliseconds - it.elapsedNow())
-                            .inWholeMilliseconds
-                            .coerceAtLeast(0)
-                    }
-                }
-            rememberContentReadFeedbackAfter(remaining, readScope = startedAt)
-        }
+    val showSkeleton = key(route.connected, filter) { rememberContentReadSkeleton(startedAt) }
     val notices =
         when {
             entries == null || failure == ConnectorReadFailure.Unavailable -> emptyList()

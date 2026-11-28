@@ -3,7 +3,6 @@ package ai.okou.android.workflows
 import ai.okou.android.R
 import ai.okou.android.WorkspaceToolDirectoryRowSkeleton
 import ai.okou.android.chat.ChatSkeletonBlock
-import ai.okou.android.rememberContentReadSkeleton
 import ai.okou.android.state.WorkflowTab
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -30,7 +29,6 @@ import androidx.compose.ui.unit.sp
 
 @Composable
 internal fun WorkflowDirectorySkeleton(modifier: Modifier) {
-    if (!rememberContentReadSkeleton()) return
     Column(modifier.workflowLoading()) {
         repeat(5) {
             WorkspaceToolDirectoryRowSkeleton(
@@ -50,7 +48,6 @@ internal fun WorkflowDirectorySkeleton(modifier: Modifier) {
 
 @Composable
 internal fun WorkflowDetailSkeleton(modifier: Modifier) {
-    if (!rememberContentReadSkeleton()) return
     Column(modifier.workflowLoading()) {
         val density = LocalDensity.current
         val titleLineHeight = with(density) { 32.sp.toDp() }

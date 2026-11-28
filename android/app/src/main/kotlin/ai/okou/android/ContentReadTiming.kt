@@ -6,6 +6,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import kotlin.time.Duration.Companion.milliseconds
+import kotlin.time.TimeMark
 import kotlinx.coroutines.delay
 
 internal const val ContentReadFeedbackDelayMillis = 250L
@@ -24,6 +26,19 @@ internal fun rememberContentReadSkeleton(
         ContentReadFeedbackDelayMillis.takeIf { awaitingRead && !hasContent },
         readScope,
     )
+
+@Composable
+internal fun rememberContentReadSkeleton(startedAt: TimeMark?): Boolean {
+    val remaining =
+        remember(startedAt) {
+            startedAt?.let {
+                (ContentReadFeedbackDelayMillis.milliseconds - it.elapsedNow())
+                    .inWholeMilliseconds
+                    .coerceAtLeast(0)
+            }
+        }
+    return rememberContentReadFeedbackAfter(remaining, readScope = startedAt)
+}
 
 /**
  * A null delay ends the round. Scheduled work can defer the timer while keeping visible feedback.

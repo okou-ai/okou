@@ -168,11 +168,14 @@ internal fun WorkflowScreen(
     val historySkeletonVisible =
         key(route.id) {
             rememberContentReadSkeleton(
-                hasContent = state.history != null,
-                awaitingRead =
-                    route.tab == WorkflowTab.History &&
-                        state.historyRead == WorkflowHistoryRead.Latest &&
-                        state.historyFailure == null,
+                state.historyReadStart
+                    ?.takeIf {
+                        it.workflowId == route.id &&
+                            route.tab == WorkflowTab.History &&
+                            state.history == null &&
+                            state.historyFailure == null
+                    }
+                    ?.startedAt,
             )
         }
     SideEffect {
@@ -328,7 +331,16 @@ internal fun WorkflowScreen(
                     route.id == null -> WorkflowPlaceholder(R.string.workflow_select)
                     detail == null ->
                         key(route.id) {
-                            WorkflowPendingDetail(wide, state.detailFailure, detailFeedback)
+                            WorkflowPendingDetail(
+                                wide,
+                                state.detailFailure,
+                                rememberContentReadSkeleton(
+                                    state.detailReadStart
+                                        ?.takeIf { it.workflowId == route.id }
+                                        ?.startedAt,
+                                ),
+                                detailFeedback,
+                            )
                         }
                     editing != null ->
                         WorkflowEditor(
@@ -601,10 +613,11 @@ private fun WorkflowDirectory(
             when {
                 catalog == null && state.catalogFailure != null ->
                     WorkflowReadFailureContent(Modifier.fillMaxSize().padding(horizontal = 16.dp))
-                catalog == null ->
-                    WorkflowDirectorySkeleton(
-                        modifier = Modifier.padding(horizontal = 16.dp),
-                    )
+                catalog == null -> {
+                    if (rememberContentReadSkeleton(state.catalogStartedAt)) {
+                        WorkflowDirectorySkeleton(Modifier.padding(horizontal = 16.dp))
+                    }
+                }
                 else ->
                     LazyColumn(
                         Modifier.fillMaxSize(),
@@ -1016,15 +1029,17 @@ private fun WorkflowDetailPane(
 private fun WorkflowPendingDetail(
     wide: Boolean,
     failure: WorkflowReadFailure?,
+    showSkeleton: Boolean,
     feedback: @Composable () -> Unit,
 ) {
     Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
         Box(Modifier.weight(1f).widthIn(max = WorkflowPaneMaxContentWidth).fillMaxWidth()) {
             when (failure) {
-                null ->
-                    WorkflowDetailSkeleton(
-                        modifier = Modifier.padding(workflowDetailPadding(wide)),
-                    )
+                null -> {
+                    if (showSkeleton) {
+                        WorkflowDetailSkeleton(Modifier.padding(workflowDetailPadding(wide)))
+                    }
+                }
                 WorkflowReadFailure.Unavailable ->
                     WorkflowInitialReadError(R.string.workflow_unavailable)
                 is WorkflowReadFailure.Failed ->

@@ -17,6 +17,9 @@ import ai.okou.android.nextPaneFeedbackOrder
 import ai.okou.android.state.WorkflowTab
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import kotlin.time.AbstractLongTimeSource
+import kotlin.time.DurationUnit
+import kotlin.time.TimeMark
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.currentCoroutineContext
@@ -28,11 +31,13 @@ import kotlinx.coroutines.launch
 
 internal data class WorkflowState(
     val catalog: List<WorkflowSummary>? = null,
-    val catalogRefreshing: Boolean = false,
+    val catalogStartedAt: TimeMark? = null,
     val rules: Map<String, List<WorkflowAutomation>>? = null,
     val connections: Set<String>? = null,
     val detail: WorkflowDetail? = null,
+    val detailReadStart: WorkflowReadStart? = null,
     val history: WorkflowRunHistory? = null,
+    val historyReadStart: WorkflowReadStart? = null,
     val catalogFailure: WorkflowReadFailure? = null,
     val rulesFailure: WorkflowReadFailure? = null,
     val connectionsFailure: WorkflowReadFailure? = null,
@@ -44,9 +49,14 @@ internal data class WorkflowState(
     val issue: WorkflowWriteIssue? = null,
     val editing: WorkflowEditSession? = null,
 ) {
+    val catalogRefreshing: Boolean
+        get() = catalogStartedAt != null
+
     val editor: WorkflowEdit?
         get() = editing?.draft
 }
+
+internal data class WorkflowReadStart(val workflowId: String, val startedAt: TimeMark)
 
 private fun WorkflowState.editingFor(detail: WorkflowDetail?): WorkflowEditSession? = detail?.let {
     val session = editing ?: return null
@@ -108,6 +118,10 @@ internal constructor(
 ) : ViewModel() {
     private val mutable = MutableStateFlow(WorkflowState())
     internal val state = mutable.asStateFlow()
+    private val readClock =
+        object : AbstractLongTimeSource(DurationUnit.MILLISECONDS) {
+            override fun read() = monotonicMillis()
+        }
     private var visible = false
     private var searchingCatalog = false
     private var foreground = false
@@ -169,13 +183,16 @@ internal constructor(
     private fun cancelCatalogRead() {
         catalogRead.cancel()
         if (mutable.value.catalogRefreshing) {
-            mutable.value = mutable.value.copy(catalogRefreshing = false)
+            mutable.value = mutable.value.copy(catalogStartedAt = null)
         }
     }
 
     private fun cancelDetailRead() {
         detailLoad?.cancel()
         detailLoad = null
+        if (mutable.value.detailReadStart != null) {
+            mutable.value = mutable.value.copy(detailReadStart = null)
+        }
     }
 
     private fun invalidateCachedDetail(id: String) {
@@ -194,10 +211,11 @@ internal constructor(
                 WorkflowHistoryRead.Latest,
                 null -> null
             }
-        if (read != current.historyRead) {
+        if (read != current.historyRead || current.historyReadStart != null) {
             mutable.value =
                 current.copy(
                     historyRead = read,
+                    historyReadStart = null,
                     historyFailure =
                         current.historyFailure.takeUnless {
                             current.historyRead?.earlier == true && read == null
@@ -323,7 +341,7 @@ internal constructor(
                 val current = mutable.value
                 mutable.value =
                     current.copy(
-                        catalogRefreshing = true,
+                        catalogStartedAt = readClock.markNow(),
                         catalogFailure =
                             current.catalogFailure.whileReading(current.catalog != null),
                     )
@@ -332,7 +350,7 @@ internal constructor(
             receive = ::publishCatalog,
             denied = ::clearAccess,
             failure = {
-                mutable.value = mutable.value.copy(catalogRefreshing = false, catalogFailure = it)
+                mutable.value = mutable.value.copy(catalogStartedAt = null, catalogFailure = it)
             },
         )
     }
@@ -380,8 +398,8 @@ internal constructor(
         failure: (WorkflowReadFailure) -> Unit,
     ) {
         if (range.job?.isActive == true) return
-        started()
         range.job = viewModelScope.launch {
+            started()
             retryReads(failure) {
                 val attempt = WorkflowRangeAttempt(++readSequence)
                 range.pending = attempt
@@ -446,12 +464,14 @@ internal constructor(
         mutable.value =
             current.copy(
                 catalog = rows,
-                catalogRefreshing = false,
+                catalogStartedAt = null,
                 catalogFailure = null,
                 rules = if (removed.isEmpty()) current.rules else current.rules?.minus(removed),
                 detail = detail,
+                detailReadStart = current.detailReadStart.takeUnless { lostSelected },
                 history = current.history.takeUnless { lostSelected },
                 historyRead = current.historyRead.takeUnless { lostSelected },
+                historyReadStart = current.historyReadStart.takeUnless { lostSelected },
                 historyFailure = current.historyFailure.takeUnless { lostSelected },
                 detailFailure =
                     if (lostSelected) WorkflowReadFailure.Unavailable else current.detailFailure,
@@ -493,7 +513,7 @@ internal constructor(
         mutable.value =
             mutable.value.copy(
                 catalog = null,
-                catalogRefreshing = false,
+                catalogStartedAt = null,
                 rules = null,
                 connections = null,
                 detail = null,
@@ -530,6 +550,8 @@ internal constructor(
                 )
         }
         detailLoad = viewModelScope.launch {
+            mutable.value =
+                mutable.value.copy(detailReadStart = WorkflowReadStart(id, readClock.markNow()))
             retryReads(::publishDetailFailure) {
                 val sequence = ++readSequence
                 val response = read {
@@ -572,6 +594,7 @@ internal constructor(
                     else -> error
                 }
             }
+            if (isActive) mutable.value = mutable.value.copy(detailReadStart = null)
         }
     }
 
@@ -615,6 +638,12 @@ internal constructor(
                     },
             )
         historyLoad = viewModelScope.launch {
+            if (!earlier) {
+                mutable.value =
+                    mutable.value.copy(
+                        historyReadStart = WorkflowReadStart(id, readClock.markNow()),
+                    )
+            }
             try {
                 retryReads({ mutable.value = mutable.value.copy(historyFailure = it) }) {
                     val response = read {
@@ -662,7 +691,7 @@ internal constructor(
                         WorkflowHistoryRead.EarlierPaused.takeIf {
                             earlier && current.history != null && current.historyFailure != null
                         }
-                    mutable.value = current.copy(historyRead = paused)
+                    mutable.value = current.copy(historyRead = paused, historyReadStart = null)
                 }
             }
         }
