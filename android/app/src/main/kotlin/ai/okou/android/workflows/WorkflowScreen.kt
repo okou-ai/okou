@@ -28,6 +28,7 @@ import ai.okou.android.state.WorkflowTab
 import ai.okou.android.state.WorkflowsRoute
 import ai.okou.android.state.rememberWorkflowDiscardConfirmation
 import ai.okou.android.state.rememberWorkflowEditorReturnFocus
+import ai.okou.android.state.rememberWorkflowPageState
 import ai.okou.android.updates.updateFocusOutline
 import ai.okou.android.workspaceSearchFocusOutline
 import androidx.activity.compose.BackHandler
@@ -231,6 +232,7 @@ internal fun WorkflowScreen(
     var editorReturnFocus by rememberWorkflowEditorReturnFocus(route.id, route.tab)
     var discard by rememberWorkflowDiscardConfirmation(route.id, editing != null)
     val returnFocus = remember(query, query.keyword, route.scope) { DirectoryReturnFocus() }
+    val directoryState = rememberWorkflowPageState()
     val draftFocusAction = route.draftReturn?.action
     val canNavigate = editing == null && !state.writing
     fun exitEditor() {
@@ -277,40 +279,44 @@ internal fun WorkflowScreen(
             .imePadding(),
     ) {
         if (wide || route.id == null) {
-            WorkflowDirectory(
-                state = state,
-                route = route,
-                query = query,
-                announced = readAnnouncements.directory,
-                modifier =
-                    if (listWidth != null)
-                        Modifier.widthIn(min = (listWidth - 1).dp, max = (listWidth - 1).dp)
-                            .fillMaxHeight()
-                    else Modifier.weight(1f).fillMaxHeight(),
-                onBack = onClose,
-                onCreate = onCreate,
-                restoreCreateFocus =
-                    !handoffPending && draftFocusAction == WorkflowDraftAction.Create,
-                onCreateFocusRestored = onDraftFocusRestored,
-                canNavigate = canNavigate && !handoffPending,
-                keepCreateFocus =
-                    canNavigate && handoffPending && draftFocusAction == WorkflowDraftAction.Create,
-                createError = createError,
-                onScope = {
-                    if (it != route.scope) {
-                        query.position.requestScrollToItem(0)
-                        changeRoute(route.copy(scope = it))
-                    }
-                },
-                onSelect = {
-                    returnFocus.cancel()
-                    if (!wide || inputMode.inputMode != InputMode.Keyboard) focus.clearFocus()
-                    keyboard?.hide()
-                    if (it != route.id)
-                        changeRoute(route.copy(id = it, tab = WorkflowTab.Instructions))
-                },
-                returnFocus = returnFocus,
-            )
+            directoryState.SaveableStateProvider("directory") {
+                WorkflowDirectory(
+                    state = state,
+                    route = route,
+                    query = query,
+                    announced = readAnnouncements.directory,
+                    modifier =
+                        if (listWidth != null)
+                            Modifier.widthIn(min = (listWidth - 1).dp, max = (listWidth - 1).dp)
+                                .fillMaxHeight()
+                        else Modifier.weight(1f).fillMaxHeight(),
+                    onBack = onClose,
+                    onCreate = onCreate,
+                    restoreCreateFocus =
+                        !handoffPending && draftFocusAction == WorkflowDraftAction.Create,
+                    onCreateFocusRestored = onDraftFocusRestored,
+                    canNavigate = canNavigate && !handoffPending,
+                    keepCreateFocus =
+                        canNavigate &&
+                            handoffPending &&
+                            draftFocusAction == WorkflowDraftAction.Create,
+                    createError = createError,
+                    onScope = {
+                        if (it != route.scope) {
+                            query.position.requestScrollToItem(0)
+                            changeRoute(route.copy(scope = it))
+                        }
+                    },
+                    onSelect = {
+                        returnFocus.cancel()
+                        if (!wide || inputMode.inputMode != InputMode.Keyboard) focus.clearFocus()
+                        keyboard?.hide()
+                        if (it != route.id)
+                            changeRoute(route.copy(id = it, tab = WorkflowTab.Instructions))
+                    },
+                    returnFocus = returnFocus,
+                )
+            }
         }
         if (wide) VerticalDivider(color = MaterialTheme.colorScheme.outlineVariant)
         if (wide || route.id != null) {

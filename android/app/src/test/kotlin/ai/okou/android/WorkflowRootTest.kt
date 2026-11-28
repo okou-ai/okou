@@ -246,16 +246,20 @@ internal class WorkflowRootTest : WorkflowRootTestFixture() {
                 swipeUp(startY = height * .9f, endY = height * .45f)
             }
             val row = compose.onNodeWithTag(rowTag).assertIsDisplayed()
-            val visibleHeight = row.fetchSemanticsNode().boundsInRoot.height
+            val resultBounds = row.fetchSemanticsNode().boundsInRoot
             assertTrue(
-                "Reachable result height: $visibleHeight px",
-                visibleHeight >= with(compose.density) { 48.dp.toPx() },
+                "Reachable result height: ${resultBounds.height} px",
+                resultBounds.height >= with(compose.density) { 48.dp.toPx() },
             )
             row.performTouchInput { click() }
             waitForTag("workflow_detail_title")
             compose
                 .onNodeWithTag("workflow_detail_title")
                 .assertTextContains(app.fixture.releaseTitle)
+
+            back()
+            waitForTag(rowTag)
+            assertEquals(resultBounds, row.fetchSemanticsNode().boundsInRoot)
         } finally {
             RuntimeEnvironment.setQualifiers(originalQualifiers)
             RuntimeEnvironment.setFontScale(originalScale)
