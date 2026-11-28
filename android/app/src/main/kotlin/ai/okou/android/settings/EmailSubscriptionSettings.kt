@@ -203,7 +203,7 @@ internal class EmailSubscriptionSettings(
                 if (result.subscribed == attempted) {
                     publish(confirmed.copy(subscribed = attempted), current.read.readAt)
                 } else {
-                    reconcile(attempted)
+                    reject(mutable.value)
                 }
                 return
             } catch (cancelled: CancellationException) {
@@ -216,15 +216,10 @@ internal class EmailSubscriptionSettings(
                     clearInaccessible(writeRejected = true)
                     return
                 }
-                val retryableRejection = error.canRetryRejectedSettingWrite()
-                val rejected =
-                    error is ApiFailure.Http && error.status in 400..499 && error.status != 408
-                if (!retryableRejection && !rejected) {
-                    reconcile(attempted)
-                    return
-                }
                 val wait =
-                    if (retryableRejection) boundedRetryDelayMillis(retries++, error) else null
+                    if (error.canRetryRejectedSettingWrite())
+                        boundedRetryDelayMillis(retries++, error)
+                    else null
                 if (wait != null) {
                     delay(wait)
                     continue
@@ -235,40 +230,14 @@ internal class EmailSubscriptionSettings(
         }
     }
 
-    private suspend fun reconcile(attempted: Boolean) {
-        try {
-            val settled = verifySettingWrite {
-                val snapshot = fetchOnce()
-                if (snapshot.canReceive && snapshot.subscribed != attempted) {
-                    false
-                } else {
-                    publish(snapshot, nowMillis(), rejected = !snapshot.canReceive)
-                    true
-                }
-            }
-            if (settled) return
-        } catch (cancelled: CancellationException) {
-            throw cancelled
-        } catch (error: Exception) {
-            requireOwner()
-            onSessionFailure(error)
-            requireOwner()
-            if (error is ApiFailure.Http && error.status == 403) {
-                clearInaccessible(writeRejected = true)
-                return
-            }
-        }
-        reject(mutable.value)
-    }
-
-    private fun publish(value: EmailSubscription, readAt: Long?, rejected: Boolean = false) {
+    private fun publish(value: EmailSubscription, readAt: Long?) {
         val resolved =
             mutable.value.copy(
                 read = SettingsRead(value, readAt = readAt),
                 desired = null,
                 updateFailed = false,
             )
-        if (rejected) reject(resolved) else mutable.value = resolved
+        mutable.value = resolved
         if (readAt != null) cache?.saveEmail(identity, ConfirmedSetting(value, readAt))
     }
 

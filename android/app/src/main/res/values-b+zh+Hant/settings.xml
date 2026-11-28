@@ -10,7 +10,6 @@
     <string name="settings_tools_unavailable">暫時無法載入工具。</string>
     <string name="settings_tool_save_failed">未能確認設定是否儲存。</string>
     <string name="settings_tool_image_save_failed">未能儲存圖片生成模型</string>
-    <string name="settings_save_checking">正在核對結果…</string>
     <string name="settings_preferences_save_rolled_back">未能儲存設定，已恢復原值。</string>
     <string name="settings_appearance_sync_failed">外觀未能同步，已套用到此裝置。</string>
     <string name="settings_email_updates">郵件更新</string>

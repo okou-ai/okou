@@ -10,7 +10,6 @@
     <string name="settings_tools_unavailable">टूल फ़िलहाल उपलब्ध नहीं हैं।</string>
     <string name="settings_tool_save_failed">बदलाव की पुष्टि नहीं हो पाई।</string>
     <string name="settings_tool_image_save_failed">चित्र बनाने वाला मॉडल सेव नहीं हो सका</string>
-    <string name="settings_save_checking">नतीजे की जाँच हो रही है…</string>
     <string name="settings_preferences_save_rolled_back">सेटिंग सेव नहीं हो सकीं। पिछले मान बहाल कर दिए गए हैं।</string>
     <string name="settings_appearance_sync_failed">दिखावट सिंक नहीं हो सकी। इसे इस डिवाइस पर लागू कर दिया गया है।</string>
     <string name="settings_email_updates">ईमेल अपडेट</string>

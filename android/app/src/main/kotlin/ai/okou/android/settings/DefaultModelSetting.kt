@@ -177,15 +177,9 @@ private fun DefaultModelSheet(
         dismiss = dismiss,
         snackbar = snackbar,
         footer = {
-            val checking = stringResource(R.string.settings_save_checking)
             val saving = stringResource(R.string.settings_saving)
-            val status =
-                when (state.save?.checking) {
-                    true -> checking
-                    false -> saving
-                    null -> ""
-                }
-            SettingsWriteStatus(status, listOf(checking, saving), Modifier.padding(top = 8.dp))
+            val status = if (state.save != null) saving else ""
+            SettingsWriteStatus(status, listOf(saving), Modifier.padding(top = 8.dp))
         },
     )
 }

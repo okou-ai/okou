@@ -22,7 +22,6 @@ internal data class ProactiveChoice(val enabled: Boolean, val visit: Long)
 internal data class ProactiveSettingState(
     val confirmed: ProactivePreference? = null,
     val choice: ProactiveChoice? = null,
-    val checking: Boolean = false,
     val readFailed: Boolean = false,
     val hidden: Boolean = false,
 ) {
@@ -244,7 +243,8 @@ internal class ProactiveSettingOwner(
                     if (error.code == "MORNING_BRIEF_MISSING_TIMEZONE") readRequested = true
                     return WriteOutcome.NotApplied
                 }
-                return reconcile(sent)
+                resolve(sent, mutable.value.confirmed, rejected = true)
+                return WriteOutcome.Unresolved
             }
         publish(value)
         resolve(sent, value)
@@ -265,34 +265,6 @@ internal class ProactiveSettingOwner(
                 if (superseded != null || mutable.value.choice != sent) return null
             }
         }
-    }
-
-    private suspend fun reconcile(sent: ProactiveChoice): WriteOutcome {
-        mutable.value = mutable.value.copy(checking = true)
-        try {
-            if (
-                verifySettingWrite {
-                    val value = readOnce()
-                    if (value != null && !value.matches(sent.enabled)) {
-                        false
-                    } else {
-                        publish(value)
-                        resolve(sent, value, rejected = value == null)
-                        true
-                    }
-                }
-            )
-                return WriteOutcome.Observed
-        } catch (cancelled: CancellationException) {
-            throw cancelled
-        } catch (error: Exception) {
-            requireCurrent()
-            onSessionFailure(error)
-            requireCurrent()
-            if (error is ApiFailure.Http && error.status == 403) discardConfirmation()
-        }
-        resolve(sent, mutable.value.confirmed, rejected = true)
-        return WriteOutcome.Unresolved
     }
 
     private fun publish(value: ProactivePreference?) {
@@ -316,7 +288,6 @@ internal class ProactiveSettingOwner(
             mutable.value.copy(
                 confirmed = null,
                 choice = null,
-                checking = false,
                 readFailed = !hide,
                 hidden = hide,
             )
@@ -330,7 +301,7 @@ internal class ProactiveSettingOwner(
     ) {
         val current = mutable.value.choice == sent
         val remaining = mutable.value.choice.takeUnless { current }
-        mutable.value = mutable.value.copy(choice = remaining, checking = false)
+        mutable.value = mutable.value.copy(choice = remaining)
         if (
             remaining == null &&
                 (rejected || current && value?.matches(sent.enabled) != true) &&

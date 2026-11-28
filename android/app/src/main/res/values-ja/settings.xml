@@ -10,7 +10,6 @@
     <string name="settings_tools_unavailable">ツールを一時的に利用できません。</string>
     <string name="settings_tool_save_failed">変更を確認できませんでした。</string>
     <string name="settings_tool_image_save_failed">画像生成モデルを保存できませんでした</string>
-    <string name="settings_save_checking">結果を確認しています…</string>
     <string name="settings_preferences_save_rolled_back">設定を保存できなかったため、以前の値に戻しました。</string>
     <string name="settings_appearance_sync_failed">外観を同期できなかったため、この端末に適用しました。</string>
     <string name="settings_email_updates">メール更新</string>
