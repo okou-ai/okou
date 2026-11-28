@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { Readable } from "node:stream";
+import { artifactAccessContract } from "@okouai/api-contracts/contracts/artifact-access";
 import { artifactOgContract } from "@okouai/api-contracts/contracts/artifact-og";
 import { artifactReferencesContract } from "@okouai/api-contracts/contracts/artifact-references";
 import { hostContract } from "@okouai/api-contracts/contracts/host";
@@ -8,6 +9,7 @@ import { describe, expect, it } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { env } from "../../../lib/env";
+import { artifactAccessRoutes } from "../artifact-access";
 import { artifactOgRoutes } from "../artifact-og";
 import { artifactReferenceRoutes } from "../artifact-references";
 import { hostRoutes } from "../host";
@@ -356,18 +358,14 @@ describe("sandbox hosted previews", () => {
     const ownerFirst = await accept(preview(owner), [200]);
     const ownerRepeat = await accept(preview(owner), [200]);
     const outsiderPublic = await accept(preview(outsider), [200]);
-    const policy = await accept(
-      hostApi().siteVisibility({
-        headers: signIn(owner),
-        params: { siteId: prepared.siteId },
-      }),
-      [200],
+    const accessApi = setupApp({ context, routes: artifactAccessRoutes })(
+      artifactAccessContract,
     );
     await accept(
-      hostApi().updateSiteVisibility({
+      accessApi.updateVisibility({
         headers: signIn(owner),
-        params: { siteId: prepared.siteId },
-        body: { visibility: "private", expectedRevision: policy.body.revision },
+        params: { artifactId: prepared.siteId },
+        body: { visibility: "private" },
       }),
       [200],
     );

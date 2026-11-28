@@ -2837,7 +2837,6 @@ data class ArtifactCatalogArtifactsItemVariant1(
     val `sourceUrl`: String? = null,
     val `aliasUrl`: String? = null,
     val `sharedThreadId`: String,
-    val `videoSourceUrl`: String? = null,
     val `visibility`: ArtifactCatalogArtifactsItemVariant1Visibility? = null,
     val `createdAt`: String,
     val `updatedAt`: String,
@@ -2850,7 +2849,6 @@ enum class ArtifactCatalogArtifactsItemVariant2Kind {
     @SerialName("file") FILE,
     @SerialName("hosted-site") HOSTED_SITE,
     @SerialName("image") IMAGE,
-    @SerialName("video") VIDEO,
     @SerialName("avatar") AVATAR,
     @SerialName("presentation") PRESENTATION,
 }
@@ -2894,7 +2892,6 @@ data class ArtifactCatalogArtifactsItemVariant2(
     val `sourceUrl`: String? = null,
     val `aliasUrl`: String? = null,
     val `sharedThreadId`: String? = null,
-    val `videoSourceUrl`: String? = null,
     val `visibility`: ArtifactCatalogArtifactsItemVariant2Visibility? = null,
     val `createdAt`: String,
     val `updatedAt`: String,
@@ -2923,7 +2920,7 @@ object ArtifactCatalogArtifactsItemSerializer : KSerializer<ArtifactCatalogArtif
                 (value["kind"] as? JsonPrimitive)?.let {
                     it.isString &&
                         it.content in
-                            setOf("file", "hosted-site", "image", "video", "avatar", "presentation")
+                            setOf("file", "hosted-site", "image", "avatar", "presentation")
                 } == true,
             )
         if (matches.count { it } != 1)
@@ -3262,7 +3259,6 @@ data class ArtifactDetailVariant1(
     val `sourceUrl`: String? = null,
     val `aliasUrl`: String? = null,
     val `sharedThreadId`: String? = null,
-    val `videoSourceUrl`: String? = null,
     val `visibility`: ArtifactDetailVariant1Visibility? = null,
     val `createdAt`: String,
     val `updatedAt`: String,
@@ -3565,7 +3561,6 @@ data class ArtifactDetailVariant2(
     val `sourceUrl`: String? = null,
     val `aliasUrl`: String? = null,
     val `sharedThreadId`: String? = null,
-    val `videoSourceUrl`: String? = null,
     val `visibility`: ArtifactDetailVariant2Visibility? = null,
     val `createdAt`: String,
     val `updatedAt`: String,
@@ -3579,7 +3574,7 @@ data class ArtifactDetailVariant2(
 
 @Serializable
 enum class ArtifactDetailVariant3Kind {
-    @SerialName("video") VIDEO,
+    @SerialName("avatar") AVATAR,
 }
 
 @Serializable
@@ -3870,7 +3865,6 @@ data class ArtifactDetailVariant3(
     val `sourceUrl`: String? = null,
     val `aliasUrl`: String? = null,
     val `sharedThreadId`: String? = null,
-    val `videoSourceUrl`: String? = null,
     val `visibility`: ArtifactDetailVariant3Visibility? = null,
     val `createdAt`: String,
     val `updatedAt`: String,
@@ -3884,7 +3878,7 @@ data class ArtifactDetailVariant3(
 
 @Serializable
 enum class ArtifactDetailVariant4Kind {
-    @SerialName("avatar") AVATAR,
+    @SerialName("hosted-site") HOSTED_SITE,
 }
 
 @Serializable
@@ -4157,13 +4151,14 @@ object ArtifactDetailVariant4GoogleDriveSyncSerializer :
 }
 
 @Serializable
-data class ArtifactDetailVariant4File(
+data class ArtifactDetailVariant4Site(
     val `id`: String,
-    val `filename`: String,
-    val `contentType`: String,
-    val `size`: Double,
+    val `slug`: String,
+    val `publicSlug`: String,
     val `url`: String,
-    val `previewImageUrl`: String?,
+    val `deploymentVersion`: Double?,
+    val `entrypoint`: String,
+    val `spaFallback`: Boolean,
 )
 
 @Serializable
@@ -4175,21 +4170,18 @@ data class ArtifactDetailVariant4(
     val `sourceUrl`: String? = null,
     val `aliasUrl`: String? = null,
     val `sharedThreadId`: String? = null,
-    val `videoSourceUrl`: String? = null,
     val `visibility`: ArtifactDetailVariant4Visibility? = null,
     val `createdAt`: String,
     val `updatedAt`: String,
     val `sourceChatThreadId`: String? = null,
     val `googleDriveConnectionId`: String? = null,
     val `googleDriveSync`: ArtifactDetailVariant4GoogleDriveSync? = null,
-    val `file`: ArtifactDetailVariant4File,
-    val `model`: String?,
-    val `durationSeconds`: Double?,
+    val `site`: ArtifactDetailVariant4Site,
 ) : ArtifactDetail
 
 @Serializable
 enum class ArtifactDetailVariant5Kind {
-    @SerialName("hosted-site") HOSTED_SITE,
+    @SerialName("presentation") PRESENTATION,
 }
 
 @Serializable
@@ -4481,7 +4473,6 @@ data class ArtifactDetailVariant5(
     val `sourceUrl`: String? = null,
     val `aliasUrl`: String? = null,
     val `sharedThreadId`: String? = null,
-    val `videoSourceUrl`: String? = null,
     val `visibility`: ArtifactDetailVariant5Visibility? = null,
     val `createdAt`: String,
     val `updatedAt`: String,
@@ -4493,7 +4484,7 @@ data class ArtifactDetailVariant5(
 
 @Serializable
 enum class ArtifactDetailVariant6Kind {
-    @SerialName("presentation") PRESENTATION,
+    @SerialName("shared-thread") SHARED_THREAD,
 }
 
 @Serializable
@@ -4766,14 +4757,8 @@ object ArtifactDetailVariant6GoogleDriveSyncSerializer :
 }
 
 @Serializable
-data class ArtifactDetailVariant6Site(
+data class ArtifactDetailVariant6SharedThread(
     val `id`: String,
-    val `slug`: String,
-    val `publicSlug`: String,
-    val `url`: String,
-    val `deploymentVersion`: Double?,
-    val `entrypoint`: String,
-    val `spaFallback`: Boolean,
 )
 
 @Serializable
@@ -4784,313 +4769,14 @@ data class ArtifactDetailVariant6(
     val `thumbnail`: ArtifactDetailVariant6Thumbnail?,
     val `sourceUrl`: String? = null,
     val `aliasUrl`: String? = null,
-    val `sharedThreadId`: String? = null,
-    val `videoSourceUrl`: String? = null,
+    val `sharedThreadId`: String,
     val `visibility`: ArtifactDetailVariant6Visibility? = null,
     val `createdAt`: String,
     val `updatedAt`: String,
     val `sourceChatThreadId`: String? = null,
     val `googleDriveConnectionId`: String? = null,
     val `googleDriveSync`: ArtifactDetailVariant6GoogleDriveSync? = null,
-    val `site`: ArtifactDetailVariant6Site,
-) : ArtifactDetail
-
-@Serializable
-enum class ArtifactDetailVariant7Kind {
-    @SerialName("shared-thread") SHARED_THREAD,
-}
-
-@Serializable
-data class ArtifactDetailVariant7Thumbnail(
-    val `url`: String,
-)
-
-@Serializable
-enum class ArtifactDetailVariant7Visibility {
-    @SerialName("private") PRIVATE,
-    @SerialName("organization") ORGANIZATION,
-    @SerialName("public") PUBLIC,
-}
-
-@Serializable(with = ArtifactDetailVariant7GoogleDriveSyncSerializer::class)
-sealed interface ArtifactDetailVariant7GoogleDriveSync
-
-@Serializable
-enum class ArtifactDetailVariant7GoogleDriveSyncVariant1Status {
-    @SerialName("synced") SYNCED,
-}
-
-@Serializable
-data class ArtifactDetailVariant7GoogleDriveSyncVariant1(
-    val `status`: ArtifactDetailVariant7GoogleDriveSyncVariant1Status,
-    val `id`: String,
-    val `name`: String,
-    val `webViewLink`: String?,
-    val `mimeType`: String? = null,
-    val `originalUploaded`: Boolean? = null,
-) : ArtifactDetailVariant7GoogleDriveSync
-
-@Serializable
-enum class ArtifactDetailVariant7GoogleDriveSyncVariant2Status {
-    @SerialName("not_synced") NOT_SYNCED,
-}
-
-@Serializable
-data class ArtifactDetailVariant7GoogleDriveSyncVariant2(
-    val `status`: ArtifactDetailVariant7GoogleDriveSyncVariant2Status,
-) : ArtifactDetailVariant7GoogleDriveSync
-
-@Serializable
-enum class ArtifactDetailVariant7GoogleDriveSyncVariant3Status {
-    @SerialName("disconnected") DISCONNECTED,
-}
-
-@Serializable(with = ArtifactDetailVariant7GoogleDriveSyncVariant3RecoverySerializer::class)
-sealed interface ArtifactDetailVariant7GoogleDriveSyncVariant3Recovery
-
-@Serializable
-enum class ArtifactDetailVariant7GoogleDriveSyncVariant3RecoveryVariant1Action {
-    @SerialName("connect") CONNECT,
-}
-
-@Serializable
-data class ArtifactDetailVariant7GoogleDriveSyncVariant3RecoveryVariant1(
-    val `action`: ArtifactDetailVariant7GoogleDriveSyncVariant3RecoveryVariant1Action,
-) : ArtifactDetailVariant7GoogleDriveSyncVariant3Recovery
-
-@Serializable
-enum class ArtifactDetailVariant7GoogleDriveSyncVariant3RecoveryVariant2Action {
-    @SerialName("reconnect") RECONNECT,
-}
-
-@Serializable
-data class ArtifactDetailVariant7GoogleDriveSyncVariant3RecoveryVariant2(
-    val `action`: ArtifactDetailVariant7GoogleDriveSyncVariant3RecoveryVariant2Action,
-    val `connectionId`: String,
-) : ArtifactDetailVariant7GoogleDriveSyncVariant3Recovery
-
-@Serializable
-enum class ArtifactDetailVariant7GoogleDriveSyncVariant3RecoveryVariant3Action {
-    @SerialName("unavailable") UNAVAILABLE,
-}
-
-@Serializable
-data class ArtifactDetailVariant7GoogleDriveSyncVariant3RecoveryVariant3(
-    val `action`: ArtifactDetailVariant7GoogleDriveSyncVariant3RecoveryVariant3Action,
-) : ArtifactDetailVariant7GoogleDriveSyncVariant3Recovery
-
-object ArtifactDetailVariant7GoogleDriveSyncVariant3RecoverySerializer :
-    KSerializer<ArtifactDetailVariant7GoogleDriveSyncVariant3Recovery> {
-    override val descriptor =
-        buildClassSerialDescriptor(
-            "ai.okou.android.api.generated.ArtifactDetailVariant7GoogleDriveSyncVariant3Recovery",
-        )
-
-    override fun deserialize(
-        decoder: Decoder,
-    ): ArtifactDetailVariant7GoogleDriveSyncVariant3Recovery {
-        val input =
-            decoder as? JsonDecoder
-                ?: throw SerializationException(
-                    "Expected JSON object for ArtifactDetailVariant7GoogleDriveSyncVariant3Recovery",
-                )
-        val value =
-            input.decodeJsonElement() as? JsonObject
-                ?: throw SerializationException(
-                    "Expected object for ArtifactDetailVariant7GoogleDriveSyncVariant3Recovery",
-                )
-        val matches =
-            listOf(
-                (value["action"] as? JsonPrimitive)?.let {
-                    it.isString && it.content in setOf("connect")
-                } == true,
-                (value["action"] as? JsonPrimitive)?.let {
-                    it.isString && it.content in setOf("reconnect")
-                } == true,
-                (value["action"] as? JsonPrimitive)?.let {
-                    it.isString && it.content in setOf("unavailable")
-                } == true,
-            )
-        if (matches.count { it } != 1)
-            throw SerializationException(
-                "Unknown or ambiguous ArtifactDetailVariant7GoogleDriveSyncVariant3Recovery variant",
-            )
-        return when (matches.indexOf(true)) {
-            0 ->
-                input.json.decodeFromJsonElement(
-                    ArtifactDetailVariant7GoogleDriveSyncVariant3RecoveryVariant1.serializer(),
-                    value,
-                )
-            1 ->
-                input.json.decodeFromJsonElement(
-                    ArtifactDetailVariant7GoogleDriveSyncVariant3RecoveryVariant2.serializer(),
-                    value,
-                )
-            2 ->
-                input.json.decodeFromJsonElement(
-                    ArtifactDetailVariant7GoogleDriveSyncVariant3RecoveryVariant3.serializer(),
-                    value,
-                )
-            else ->
-                throw SerializationException(
-                    "Unknown ArtifactDetailVariant7GoogleDriveSyncVariant3Recovery variant",
-                )
-        }
-    }
-
-    override fun serialize(
-        encoder: Encoder,
-        value: ArtifactDetailVariant7GoogleDriveSyncVariant3Recovery,
-    ) {
-        when (value) {
-            is ArtifactDetailVariant7GoogleDriveSyncVariant3RecoveryVariant1 ->
-                encoder.encodeSerializableValue(
-                    ArtifactDetailVariant7GoogleDriveSyncVariant3RecoveryVariant1.serializer(),
-                    value,
-                )
-            is ArtifactDetailVariant7GoogleDriveSyncVariant3RecoveryVariant2 ->
-                encoder.encodeSerializableValue(
-                    ArtifactDetailVariant7GoogleDriveSyncVariant3RecoveryVariant2.serializer(),
-                    value,
-                )
-            is ArtifactDetailVariant7GoogleDriveSyncVariant3RecoveryVariant3 ->
-                encoder.encodeSerializableValue(
-                    ArtifactDetailVariant7GoogleDriveSyncVariant3RecoveryVariant3.serializer(),
-                    value,
-                )
-        }
-    }
-}
-
-@Serializable
-data class ArtifactDetailVariant7GoogleDriveSyncVariant3(
-    val `status`: ArtifactDetailVariant7GoogleDriveSyncVariant3Status,
-    val `recovery`: ArtifactDetailVariant7GoogleDriveSyncVariant3Recovery,
-) : ArtifactDetailVariant7GoogleDriveSync
-
-@Serializable
-enum class ArtifactDetailVariant7GoogleDriveSyncVariant4Status {
-    @SerialName("unknown") UNKNOWN,
-}
-
-@Serializable
-data class ArtifactDetailVariant7GoogleDriveSyncVariant4(
-    val `status`: ArtifactDetailVariant7GoogleDriveSyncVariant4Status,
-) : ArtifactDetailVariant7GoogleDriveSync
-
-object ArtifactDetailVariant7GoogleDriveSyncSerializer :
-    KSerializer<ArtifactDetailVariant7GoogleDriveSync> {
-    override val descriptor =
-        buildClassSerialDescriptor(
-            "ai.okou.android.api.generated.ArtifactDetailVariant7GoogleDriveSync",
-        )
-
-    override fun deserialize(decoder: Decoder): ArtifactDetailVariant7GoogleDriveSync {
-        val input =
-            decoder as? JsonDecoder
-                ?: throw SerializationException(
-                    "Expected JSON object for ArtifactDetailVariant7GoogleDriveSync",
-                )
-        val value =
-            input.decodeJsonElement() as? JsonObject
-                ?: throw SerializationException(
-                    "Expected object for ArtifactDetailVariant7GoogleDriveSync",
-                )
-        val matches =
-            listOf(
-                (value["status"] as? JsonPrimitive)?.let {
-                    it.isString && it.content in setOf("synced")
-                } == true,
-                (value["status"] as? JsonPrimitive)?.let {
-                    it.isString && it.content in setOf("not_synced")
-                } == true,
-                (value["status"] as? JsonPrimitive)?.let {
-                    it.isString && it.content in setOf("disconnected")
-                } == true,
-                (value["status"] as? JsonPrimitive)?.let {
-                    it.isString && it.content in setOf("unknown")
-                } == true,
-            )
-        if (matches.count { it } != 1)
-            throw SerializationException(
-                "Unknown or ambiguous ArtifactDetailVariant7GoogleDriveSync variant",
-            )
-        return when (matches.indexOf(true)) {
-            0 ->
-                input.json.decodeFromJsonElement(
-                    ArtifactDetailVariant7GoogleDriveSyncVariant1.serializer(),
-                    value,
-                )
-            1 ->
-                input.json.decodeFromJsonElement(
-                    ArtifactDetailVariant7GoogleDriveSyncVariant2.serializer(),
-                    value,
-                )
-            2 ->
-                input.json.decodeFromJsonElement(
-                    ArtifactDetailVariant7GoogleDriveSyncVariant3.serializer(),
-                    value,
-                )
-            3 ->
-                input.json.decodeFromJsonElement(
-                    ArtifactDetailVariant7GoogleDriveSyncVariant4.serializer(),
-                    value,
-                )
-            else ->
-                throw SerializationException(
-                    "Unknown ArtifactDetailVariant7GoogleDriveSync variant",
-                )
-        }
-    }
-
-    override fun serialize(encoder: Encoder, value: ArtifactDetailVariant7GoogleDriveSync) {
-        when (value) {
-            is ArtifactDetailVariant7GoogleDriveSyncVariant1 ->
-                encoder.encodeSerializableValue(
-                    ArtifactDetailVariant7GoogleDriveSyncVariant1.serializer(),
-                    value,
-                )
-            is ArtifactDetailVariant7GoogleDriveSyncVariant2 ->
-                encoder.encodeSerializableValue(
-                    ArtifactDetailVariant7GoogleDriveSyncVariant2.serializer(),
-                    value,
-                )
-            is ArtifactDetailVariant7GoogleDriveSyncVariant3 ->
-                encoder.encodeSerializableValue(
-                    ArtifactDetailVariant7GoogleDriveSyncVariant3.serializer(),
-                    value,
-                )
-            is ArtifactDetailVariant7GoogleDriveSyncVariant4 ->
-                encoder.encodeSerializableValue(
-                    ArtifactDetailVariant7GoogleDriveSyncVariant4.serializer(),
-                    value,
-                )
-        }
-    }
-}
-
-@Serializable
-data class ArtifactDetailVariant7SharedThread(
-    val `id`: String,
-)
-
-@Serializable
-data class ArtifactDetailVariant7(
-    val `id`: String,
-    val `kind`: ArtifactDetailVariant7Kind,
-    val `title`: String,
-    val `thumbnail`: ArtifactDetailVariant7Thumbnail?,
-    val `sourceUrl`: String? = null,
-    val `aliasUrl`: String? = null,
-    val `sharedThreadId`: String,
-    val `videoSourceUrl`: String? = null,
-    val `visibility`: ArtifactDetailVariant7Visibility? = null,
-    val `createdAt`: String,
-    val `updatedAt`: String,
-    val `sourceChatThreadId`: String? = null,
-    val `googleDriveConnectionId`: String? = null,
-    val `googleDriveSync`: ArtifactDetailVariant7GoogleDriveSync? = null,
-    val `sharedThread`: ArtifactDetailVariant7SharedThread,
+    val `sharedThread`: ArtifactDetailVariant6SharedThread,
 ) : ArtifactDetail
 
 object ArtifactDetailSerializer : KSerializer<ArtifactDetail> {
@@ -5111,9 +4797,6 @@ object ArtifactDetailSerializer : KSerializer<ArtifactDetail> {
                 } == true,
                 (value["kind"] as? JsonPrimitive)?.let {
                     it.isString && it.content in setOf("image")
-                } == true,
-                (value["kind"] as? JsonPrimitive)?.let {
-                    it.isString && it.content in setOf("video")
                 } == true,
                 (value["kind"] as? JsonPrimitive)?.let {
                     it.isString && it.content in setOf("avatar")
@@ -5137,7 +4820,6 @@ object ArtifactDetailSerializer : KSerializer<ArtifactDetail> {
             3 -> input.json.decodeFromJsonElement(ArtifactDetailVariant4.serializer(), value)
             4 -> input.json.decodeFromJsonElement(ArtifactDetailVariant5.serializer(), value)
             5 -> input.json.decodeFromJsonElement(ArtifactDetailVariant6.serializer(), value)
-            6 -> input.json.decodeFromJsonElement(ArtifactDetailVariant7.serializer(), value)
             else -> throw SerializationException("Unknown ArtifactDetail variant")
         }
     }
@@ -5156,8 +4838,6 @@ object ArtifactDetailSerializer : KSerializer<ArtifactDetail> {
                 encoder.encodeSerializableValue(ArtifactDetailVariant5.serializer(), value)
             is ArtifactDetailVariant6 ->
                 encoder.encodeSerializableValue(ArtifactDetailVariant6.serializer(), value)
-            is ArtifactDetailVariant7 ->
-                encoder.encodeSerializableValue(ArtifactDetailVariant7.serializer(), value)
         }
     }
 }
@@ -5204,6 +4884,7 @@ data class ArtifactReference(
     val `filename`: String,
     val `contentType`: String,
     val `previewImageUrl`: String? = null,
+    val `artifactId`: String? = null,
     val `target`: ArtifactReferenceTarget,
 )
 
@@ -5353,6 +5034,7 @@ data class ArtifactVisibilityUpdate(
 @Serializable
 data class ArtifactSiteUrl(
     val `siteId`: String,
+    val `artifactId`: String? = null,
     val `publicSlug`: String,
     val `url`: String,
     val `isActive`: Boolean,
@@ -17671,10 +17353,10 @@ enum class ArtifactCatalogQueryKind {
     @SerialName("file") FILE,
     @SerialName("hosted-site") HOSTED_SITE,
     @SerialName("image") IMAGE,
-    @SerialName("video") VIDEO,
     @SerialName("avatar") AVATAR,
     @SerialName("presentation") PRESENTATION,
     @SerialName("shared-thread") SHARED_THREAD,
+    @SerialName("video") VIDEO,
 }
 
 @Serializable

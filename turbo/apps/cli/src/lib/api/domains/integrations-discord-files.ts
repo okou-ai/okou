@@ -3,13 +3,10 @@ import { initClient } from "@okouai/api-contracts/contracts/trpc-contract";
 import {
   MAX_DISCORD_FILE_SIZE_BYTES,
   integrationsDiscordUploadInitContract,
-  integrationsDiscordUploadMaterializeContract,
   integrationsDiscordUploadCompleteContract,
   integrationsDiscordDownloadFileContract,
   type DiscordUploadInitBody,
   type DiscordUploadInitResponse,
-  type DiscordUploadMaterializeBody,
-  type DiscordUploadMaterializeResponse,
   type DiscordUploadCompleteBody,
   type DiscordUploadCompleteResponse,
   type DiscordDownloadFileQuery,
@@ -32,18 +29,6 @@ export async function initDiscordFileUpload(
   const result = await client.init({ body: validated, headers: {} });
   if (result.status === 200) return result.body;
   handleError(result, "Failed to initialize Discord file upload");
-}
-
-export async function materializeDiscordFileUpload(
-  body: DiscordUploadMaterializeBody,
-): Promise<DiscordUploadMaterializeResponse> {
-  const client = initClient(integrationsDiscordUploadMaterializeContract, {
-    ...(await getClientConfig()),
-    validateResponse: true,
-  });
-  const result = await client.materialize({ body, headers: {} });
-  if (result.status === 200) return result.body;
-  handleError(result, "Failed to publish Discord file");
 }
 
 export async function completeDiscordFileUpload(

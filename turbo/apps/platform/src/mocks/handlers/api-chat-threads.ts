@@ -14,7 +14,6 @@ import {
   chatThreadModelSelectionContract,
   chatThreadEventsContract,
   chatThreadUsageContract,
-  chatThreadArtifactsContract,
 } from "@okouai/api-contracts/contracts/chat-threads";
 import { mockApi } from "../msw-contract.ts";
 
@@ -121,9 +120,6 @@ export const chatThreadHandlers = [
       error: { code: "NOT_FOUND", message: "Artifact not found" },
     }),
   ),
-  mockApi(chatThreadArtifactsContract.list, ({ respond }) => {
-    return respond(200, { runs: [] });
-  }),
 
   mockApi(chatRelationsContract.children, ({ respond }) => {
     return respond(200, { items: [] });

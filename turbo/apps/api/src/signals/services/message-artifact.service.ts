@@ -1,19 +1,15 @@
 import { command } from "ccstate";
-import { and, eq, inArray, isNull, sql, type SQL } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, or, type SQL } from "drizzle-orm";
 import { uuid } from "zod";
 import { parseArtifactReference } from "@okouai/api-contracts/validators/artifact-references";
 import { classifyMessageArtifact } from "@okouai/api-contracts/validators/message-artifact";
 import type { MessageArtifactDetail } from "@okouai/api-contracts/contracts/message-artifact";
 import { linkLayoutFromSegment } from "@okouai/api-contracts/contracts/link-layout";
 import { derivePlatformServiceOrigin } from "@okouai/core/platform-service-origin";
-import { artifacts } from "@okouai/db/schema/artifact";
-import { artifactShares } from "@okouai/db/schema/artifact-share";
+import { artifacts, imageArtifacts } from "@okouai/db/schema/artifact";
+import { files } from "@okouai/db/schema/file";
 import {
-  CANONICAL_ASSET_VERSION,
-  RUN_UPLOADED_FILE_SOURCES,
-  runUploadedFiles as files,
-} from "@okouai/db/schema/run-uploaded-file";
-import {
+  hostedDeployments,
   hostedSites,
   privateHostedDeployments,
 } from "@okouai/db/runtime/hosted-site";
@@ -28,6 +24,8 @@ import { hostedLinkDomain, hostedLinkOrigin } from "../../lib/link-layout";
 import { inferMimetype } from "../../lib/mimetype";
 import { db$, type ReadonlyDb } from "../external/db";
 import type { ArtifactReferenceRecord } from "./artifact-reference.service";
+import { probeLegacyArtifactSharePolicy$ } from "./artifact-share-probe.service";
+import { resolveFileUrl$ } from "./private-artifact-storage.service";
 import {
   googleDriveArtifactStatusFields,
   googleDriveArtifactStatusLookup$,
@@ -38,6 +36,9 @@ interface Owner {
   readonly userId: string;
   readonly orgId: string;
 }
+
+const IMMUTABLE_DEPLOYMENT_HOST_PATTERN =
+  /^dpl-([0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$/u;
 
 function publicationUrls(url: URL, local: boolean) {
   const legacy = local
@@ -126,36 +127,25 @@ export function messageArtifactAddress(value: string) {
   return { url, reference, fileId, urls: [...urls], siteSlug };
 }
 
-function fileBy(db: ReadonlyDb, owner: Owner, predicate: SQL, ...other: SQL[]) {
+function fileById(db: ReadonlyDb, owner: Owner, id: string) {
   return db
     .select({
       id: files.id,
-      externalId: files.externalId,
-      runId: files.runId,
+      storageKey: files.storageKey,
       filename: files.filename,
       contentType: files.contentType,
-      size: files.sizeBytes,
-      url: files.url,
-      previewImageUrl: files.previewImageUrl,
+      sizeBytes: files.sizeBytes,
+      origin: files.origin,
       createdAt: files.createdAt,
-      assetVersion: files.assetVersion,
-      classification: files.classification,
-      access: files.accessLevel,
-      metadata: files.metadata,
     })
     .from(files)
     .where(
       and(
+        eq(files.id, id),
         eq(files.orgId, owner.orgId),
-        eq(files.userId, owner.userId),
+        eq(files.ownerUserId, owner.userId),
         isNull(files.deletedAt),
-        predicate,
-        ...other,
       ),
-    )
-    .orderBy(
-      sql`${files.createdAt} DESC NULLS LAST`,
-      sql`${files.id} DESC NULLS LAST`,
     )
     .limit(1);
 }
@@ -164,8 +154,11 @@ function catalogBy(db: ReadonlyDb, owner: Owner, predicate: SQL) {
   return db
     .select({
       id: artifacts.id,
+      kind: artifacts.kind,
+      entityId: artifacts.entityId,
       title: artifacts.title,
-      fileId: artifacts.projectionFileId,
+      sourceUrl: artifacts.sourceUrl,
+      thumbnail: artifacts.thumbnail,
       deletedAt: artifacts.deletedAt,
     })
     .from(artifacts)
@@ -271,14 +264,17 @@ const referenceTarget$ = command(
     }
 
     let targetId = reference?.id ?? fileId;
-    let externalId = fileId;
     let siteId: string | undefined;
+    let deploymentId: string | undefined;
     if (record?.version === 2) {
       if (record.target.kind === "file") {
         targetId = record.target.id;
       } else {
         const [deployment] = await db
-          .select({ siteId: privateHostedDeployments.siteId })
+          .select({
+            id: privateHostedDeployments.id,
+            siteId: privateHostedDeployments.siteId,
+          })
           .from(privateHostedDeployments)
           .where(
             and(
@@ -293,176 +289,313 @@ const referenceTarget$ = command(
           return null;
         }
         siteId = deployment.siteId;
-        externalId = record.target.id;
+        deploymentId = deployment.id;
       }
     }
     const shareId = record?.version === 1 ? record.shareId : reference?.id;
-    return { targetId, externalId, siteId, shareId };
+    return { targetId, siteId, deploymentId, shareId };
   },
 );
 
-type Publication = Awaited<ReturnType<typeof fileBy>>[number];
-type CatalogEntry = Awaited<ReturnType<typeof catalogBy>>[number];
-type Site = Awaited<ReturnType<typeof siteBy>>[number];
-
-const ownedPublicationForLink$ = command(
-  async (
-    { get, set },
-    owner: Owner,
-    address: MessageAddress,
-    signal: AbortSignal,
-  ) => {
-    const target = await set(referenceTarget$, owner, address, signal);
-    if (!target) {
-      return null;
-    }
-    const db = get(db$);
-    const { targetId, externalId, shareId } = target;
-    let siteId = target.siteId;
-    let [file] =
-      targetId && uuid().safeParse(targetId).success
-        ? await fileBy(db, owner, eq(files.id, targetId))
-        : [];
-    if (!file && externalId) {
-      [file] = await fileBy(
-        db,
-        owner,
-        inArray(files.source, [...RUN_UPLOADED_FILE_SOURCES]),
-        eq(files.externalId, externalId),
-      );
-    }
-    if (!file && shareId) {
-      const [share] = await db
-        .select({
-          id: artifactShares.targetId,
-          kind: artifactShares.targetKind,
-        })
-        .from(artifactShares)
-        .where(
-          and(
-            eq(artifactShares.id, shareId),
-            eq(artifactShares.orgId, owner.orgId),
-            eq(artifactShares.userId, owner.userId),
-          ),
-        )
-        .limit(1);
-      signal.throwIfAborted();
-      if (share?.kind === "file") {
-        [file] = await fileBy(db, owner, eq(files.id, share.id));
-      } else if (share?.kind === "html") {
-        siteId = share.id;
-      }
-    }
-    // Exact publication wins over a mutable site's current projection. Hash narrows the
-    // index entry even for long URLs; equality on the stored URL confirms identity.
-    if (!file) {
-      for (const url of address.urls) {
-        [file] = await fileBy(
-          db,
-          owner,
-          sql`md5(${files.url}) = md5(${url}::text)`,
-          eq(files.url, url),
-        );
-        if (file) {
-          break;
-        }
-      }
-    }
-    signal.throwIfAborted();
-    return { file, siteId };
-  },
-);
-
-async function publicationCatalog(
+async function loadHostedSiteDeploymentForMessage(
   db: ReadonlyDb,
   owner: Owner,
-  target: {
-    file: Publication | undefined;
-    site: Site | undefined;
-    urls: readonly string[];
-  },
+  site: Awaited<ReturnType<typeof siteBy>>[number],
+  deploymentId: string | undefined,
   signal: AbortSignal,
 ) {
-  const { file, site, urls } = target;
-  let [catalog] = site
-    ? await catalogBy(db, owner, eq(artifacts.logicalKey, `site:${site.id}`))
-    : file
-      ? await catalogBy(db, owner, eq(artifacts.projectionFileId, file.id))
-      : [];
+  const publicId = deploymentId ?? site.activeDeploymentId;
+  const [publicDep] = publicId
+    ? await db
+        .select()
+        .from(hostedDeployments)
+        .where(
+          and(
+            eq(hostedDeployments.id, publicId),
+            eq(hostedDeployments.siteId, site.id),
+            eq(hostedDeployments.status, "ready"),
+          ),
+        )
+        .limit(1)
+    : [];
   signal.throwIfAborted();
-  if (!site && !catalog) {
-    const fileUrls = new Set(urls);
-    if (file?.url) {
-      fileUrls.add(file.url);
-      if (URL.canParse(file.url)) {
-        const canonical = canonicalOkouArtifactCatalogUrl(new URL(file.url));
-        if (canonical) {
-          fileUrls.add(canonical);
-        }
-      }
-    }
-    [catalog] = await catalogBy(
-      db,
-      owner,
-      inArray(
-        artifacts.logicalKey,
-        Array.from(fileUrls, (url) => {
-          return `file:${url}`;
-        }),
-      ),
-    );
+  if (publicDep) {
+    return { deployment: publicDep, isPublic: true };
   }
-  return catalog;
+  const [privateDep] = await db
+    .select()
+    .from(privateHostedDeployments)
+    .where(
+      and(
+        eq(privateHostedDeployments.siteId, site.id),
+        eq(privateHostedDeployments.orgId, owner.orgId),
+        eq(privateHostedDeployments.userId, owner.userId),
+        eq(privateHostedDeployments.status, "ready"),
+        deploymentId
+          ? eq(privateHostedDeployments.id, deploymentId)
+          : undefined,
+      ),
+    )
+    .orderBy(desc(privateHostedDeployments.createdAt))
+    .limit(1);
+  signal.throwIfAborted();
+  return privateDep ? { deployment: privateDep, isPublic: false } : null;
 }
 
-function publicationDetail(
-  file: Publication,
-  site: Site | undefined,
-  catalog: CatalogEntry | undefined,
-  address: MessageAddress,
+function formatHostedSiteMessageDetail(
+  site: Awaited<ReturnType<typeof siteBy>>[number],
+  catalog: Awaited<ReturnType<typeof catalogBy>>[number] | undefined,
+  loaded: NonNullable<
+    Awaited<ReturnType<typeof loadHostedSiteDeploymentForMessage>>
+  >,
+  fallbackHref: string,
 ): MessageArtifactDetail {
-  const filename = file.filename ?? file.externalId;
-  const contentType = file.contentType ?? inferMimetype(filename);
-  const stableUrl = file.url ?? address.url.href;
+  const { deployment, isPublic } = loaded;
+  const artifactKind =
+    deployment.manifest.artifactKind ??
+    (catalog?.kind === "presentation" ? "presentation-html" : "hosted-site");
   const aliasUrl =
-    site?.activeDeploymentId && typeof file.metadata.aliasUrl === "string"
+    isPublic && site.activeDeploymentId
       ? hostedLinkOrigin(linkLayoutFromSegment(site.layout), site.publicSlug)
       : undefined;
-  const artifactKind =
-    typeof file.metadata.artifactKind === "string"
-      ? file.metadata.artifactKind
-      : undefined;
-  // User uploads may have file metadata without being manageable catalog artifacts.
-  const artifactId =
-    catalog?.id ??
-    (file.runId && file.classification !== "input" ? file.id : undefined);
+  const stableUrl =
+    deployment.artifactUrl ?? aliasUrl ?? catalog?.sourceUrl ?? fallbackHref;
+  const filename =
+    (catalog?.title ?? deployment.manifest.title ?? site.publicSlug) + ".html";
+  const contentType = "text/html";
   return {
     url: stableUrl,
     filename,
     contentType,
-    ...(file.size !== null ? { size: file.size } : {}),
+    size: deployment.sizeBytes,
     preview: messageArtifactPreview({
       url: stableUrl,
       filename,
       contentType,
       artifactKind,
       aliasUrl,
-      previewImageUrl: file.previewImageUrl,
+      previewImageUrl: catalog?.thumbnail?.url ?? null,
     }),
     owner: {
-      publicationId: file.id,
-      fileId:
-        file.assetVersion === CANONICAL_ASSET_VERSION &&
-        file.classification === "published-output" &&
-        file.access === "published"
-          ? file.id
-          : file.externalId,
-      artifactId,
-      createdAt: file.createdAt.toISOString(),
+      publicationId: deployment.id,
+      fileId: site.id,
+      artifactId: catalog?.id,
+      createdAt: deployment.createdAt.toISOString(),
       ...(catalog?.title ? { title: catalog.title } : {}),
     },
   };
 }
+
+const hostedSiteMessageDetail$ = command(
+  async (
+    { get },
+    args: {
+      readonly owner: Owner;
+      readonly site: Awaited<ReturnType<typeof siteBy>>[number];
+      readonly deploymentId?: string;
+      readonly address: MessageAddress;
+    },
+    signal: AbortSignal,
+  ): Promise<MessageArtifactDetail | null> => {
+    const { owner, site, address } = args;
+    const db = get(db$);
+    const [catalog] = await catalogBy(
+      db,
+      owner,
+      eq(artifacts.logicalKey, `site:${site.id}`),
+    );
+    signal.throwIfAborted();
+    if (catalog?.deletedAt) {
+      return null;
+    }
+    const loaded = await loadHostedSiteDeploymentForMessage(
+      db,
+      owner,
+      site,
+      args.deploymentId,
+      signal,
+    );
+    if (!loaded) {
+      return null;
+    }
+    return formatHostedSiteMessageDetail(
+      site,
+      catalog,
+      loaded,
+      address.url.href,
+    );
+  },
+);
+
+const lookupCatalogFileByUrls$ = command(
+  async (
+    { get },
+    args: { readonly owner: Owner; readonly urls: readonly string[] },
+    signal: AbortSignal,
+  ) => {
+    if (args.urls.length === 0) {
+      return { catalog: undefined, file: undefined };
+    }
+    const db = get(db$);
+    const [catalog] = await catalogBy(
+      db,
+      args.owner,
+      inArray(
+        artifacts.logicalKey,
+        args.urls.map((url) => {
+          return `file:${url}`;
+        }),
+      ),
+    );
+    signal.throwIfAborted();
+    if (!catalog || catalog.deletedAt) {
+      return { catalog, file: undefined };
+    }
+    let resolvedFileId: string | null = null;
+    if (catalog.kind === "file") {
+      resolvedFileId = catalog.entityId;
+    } else if (catalog.kind === "image") {
+      const [img] = await db
+        .select({ fileId: imageArtifacts.fileId })
+        .from(imageArtifacts)
+        .where(eq(imageArtifacts.id, catalog.entityId))
+        .limit(1);
+      signal.throwIfAborted();
+      resolvedFileId = img?.fileId ?? null;
+    }
+    if (!resolvedFileId) {
+      return { catalog, file: undefined };
+    }
+    const [file] = await fileById(db, args.owner, resolvedFileId);
+    signal.throwIfAborted();
+    return { catalog, file };
+  },
+);
+
+const fileMessageDetail$ = command(
+  async (
+    { get, set },
+    args: {
+      readonly owner: Owner;
+      readonly file: Awaited<ReturnType<typeof fileById>>[number];
+      readonly catalog?: Awaited<ReturnType<typeof catalogBy>>[number];
+    },
+    signal: AbortSignal,
+  ): Promise<MessageArtifactDetail | null> => {
+    const { owner, file } = args;
+    const db = get(db$);
+    const [catalog] = args.catalog
+      ? [args.catalog]
+      : await catalogBy(
+          db,
+          owner,
+          or(
+            and(eq(artifacts.kind, "file"), eq(artifacts.entityId, file.id)),
+            and(
+              eq(artifacts.kind, "image"),
+              inArray(
+                artifacts.entityId,
+                db
+                  .select({ id: imageArtifacts.id })
+                  .from(imageArtifacts)
+                  .where(eq(imageArtifacts.fileId, file.id)),
+              ),
+            ),
+          )!,
+        );
+    signal.throwIfAborted();
+
+    // Principle 4: soft-deleting a file artifact in Library keeps the underlying
+    // `files` record readable in chat for `(ownerUserId, orgId)`, without an
+    // active Library `artifactId`.
+    if (!file.storageKey || !file.filename) {
+      return null;
+    }
+    const activeCatalog = catalog && !catalog.deletedAt ? catalog : undefined;
+    const stableUrl =
+      activeCatalog?.sourceUrl ??
+      (await set(
+        resolveFileUrl$,
+        { id: file.id, storageKey: file.storageKey, filename: file.filename },
+        signal,
+      ));
+    const contentType = file.contentType || inferMimetype(file.filename);
+    return {
+      url: stableUrl,
+      filename: file.filename,
+      contentType,
+      ...(file.sizeBytes !== null ? { size: file.sizeBytes } : {}),
+      preview: messageArtifactPreview({
+        url: stableUrl,
+        filename: file.filename,
+        contentType,
+        previewImageUrl: activeCatalog?.thumbnail?.url ?? null,
+      }),
+      owner: {
+        publicationId: file.id,
+        fileId: file.id,
+        artifactId: activeCatalog?.id,
+        createdAt: file.createdAt.toISOString(),
+        ...(activeCatalog?.title ? { title: activeCatalog.title } : {}),
+      },
+    };
+  },
+);
+
+const resolveImmutableDeploymentSite$ = command(
+  async (
+    { get },
+    args: { readonly owner: Owner; readonly siteSlug?: string },
+    signal: AbortSignal,
+  ) => {
+    const dplMatch = args.siteSlug
+      ? IMMUTABLE_DEPLOYMENT_HOST_PATTERN.exec(args.siteSlug)
+      : null;
+    if (!dplMatch?.[1]) {
+      return undefined;
+    }
+    const [dep] = await get(db$)
+      .select({ id: hostedDeployments.id, siteId: hostedDeployments.siteId })
+      .from(hostedDeployments)
+      .where(
+        and(
+          eq(hostedDeployments.id, dplMatch[1]),
+          eq(hostedDeployments.orgId, args.owner.orgId),
+          eq(hostedDeployments.userId, args.owner.userId),
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    return dep;
+  },
+);
+
+const resolveOwnedLegacyShareTarget$ = command(
+  async (
+    { get, set },
+    args: { readonly owner: Owner; readonly shareId: string },
+    signal: AbortSignal,
+  ) => {
+    const policy = await set(
+      probeLegacyArtifactSharePolicy$,
+      { shareId: args.shareId },
+      signal,
+    );
+    if (
+      !policy ||
+      policy.ownerId !== args.owner.userId ||
+      policy.orgId !== args.owner.orgId
+    ) {
+      return {};
+    }
+    if (policy.target.kind === "file") {
+      const [file] = await fileById(get(db$), args.owner, policy.target.id);
+      signal.throwIfAborted();
+      return { file };
+    }
+    return { siteId: policy.target.siteId, deploymentId: policy.target.id };
+  },
+);
 
 /** Follow the selected publication to its catalog and current site, each by its own identity. */
 export const ownedMessageArtifact$ = command(
@@ -472,48 +605,74 @@ export const ownedMessageArtifact$ = command(
     address: MessageAddress,
     signal: AbortSignal,
   ): Promise<MessageArtifactDetail | null> => {
-    const publication = await set(
-      ownedPublicationForLink$,
-      owner,
-      address,
-      signal,
-    );
-    if (!publication) {
+    const target = await set(referenceTarget$, owner, address, signal);
+    if (!target) {
       return null;
     }
     const db = get(db$);
-    const { siteSlug, urls } = address;
-    let { file, siteId } = publication;
-    const publishedSiteId = uuid().safeParse(file?.metadata.siteId);
-    if (publishedSiteId.success) {
-      siteId = publishedSiteId.data;
+    let { siteId, deploymentId } = target;
+    if (!siteId) {
+      const dep = await set(
+        resolveImmutableDeploymentSite$,
+        { owner, siteSlug: address.siteSlug },
+        signal,
+      );
+      if (dep) {
+        siteId = dep.siteId;
+        deploymentId = dep.id;
+      }
     }
+
+    let [file] =
+      target.targetId && uuid().safeParse(target.targetId).success
+        ? await fileById(db, owner, target.targetId)
+        : [];
+    signal.throwIfAborted();
+
+    if (!file && !siteId && target.shareId) {
+      const legacy = await set(
+        resolveOwnedLegacyShareTarget$,
+        { owner, shareId: target.shareId },
+        signal,
+      );
+      file = legacy.file;
+      siteId = legacy.siteId;
+      deploymentId = legacy.deploymentId;
+    }
+
+    // Hosted site branch (never uses file-table placeholder rows).
     const [site] = siteId
       ? await siteBy(db, owner, eq(hostedSites.id, siteId))
-      : siteSlug
-        ? await siteBy(db, owner, eq(hostedSites.publicSlug, siteSlug))
+      : !file && address.siteSlug
+        ? await siteBy(db, owner, eq(hostedSites.publicSlug, address.siteSlug))
         : [];
+    signal.throwIfAborted();
     if (site?.deletedAt || (siteId && !site)) {
       return null;
     }
-    const catalog = await publicationCatalog(
-      db,
-      owner,
-      { file, site, urls },
-      signal,
-    );
-    if (catalog?.deletedAt) {
-      return null;
-    }
-    if (!file && catalog?.fileId) {
-      [file] = await fileBy(db, owner, eq(files.id, catalog.fileId));
-    }
-    signal.throwIfAborted();
-    if (!file) {
-      return null;
+    if (site) {
+      return await set(
+        hostedSiteMessageDetail$,
+        { owner, site, deploymentId, address },
+        signal,
+      );
     }
 
-    return publicationDetail(file, site, catalog, address);
+    // URL lookup via `artifacts.logicalKey` when URL has no UUID or short ref.
+    let catalog: Awaited<ReturnType<typeof catalogBy>>[number] | undefined;
+    if (!file) {
+      const resolved = await set(
+        lookupCatalogFileByUrls$,
+        { owner, urls: address.urls },
+        signal,
+      );
+      catalog = resolved.catalog;
+      file = resolved.file;
+    }
+
+    return file
+      ? await set(fileMessageDetail$, { owner, file, catalog }, signal)
+      : null;
   },
 );
 
@@ -530,27 +689,45 @@ export const messageArtifactDriveStatus$ = command(
     if (!(await set(ownedGoogleDriveThreadContext$, context, signal))) {
       return null;
     }
-    const [file] = await get(db$)
-      .select({ fileId: files.externalId, runId: files.runId })
+    const db = get(db$);
+    const [file] = await db
+      .select({ id: files.id })
       .from(files)
       .where(
         and(
           eq(files.id, publicationId),
           eq(files.orgId, owner.orgId),
-          eq(files.userId, owner.userId),
+          eq(files.ownerUserId, owner.userId),
           isNull(files.deletedAt),
         ),
       )
       .limit(1);
     signal.throwIfAborted();
-    if (!file) {
+    let driveFileId: string | null = file?.id ?? null;
+    if (!driveFileId) {
+      const [deployment] = await db
+        .select({ id: hostedDeployments.id })
+        .from(hostedDeployments)
+        .where(
+          and(
+            eq(hostedDeployments.id, publicationId),
+            eq(hostedDeployments.orgId, owner.orgId),
+            eq(hostedDeployments.userId, owner.userId),
+          ),
+        )
+        .limit(1);
+      signal.throwIfAborted();
+      driveFileId = deployment?.id ?? null;
+    }
+    if (!driveFileId) {
       return null;
     }
+    const source = { runId: null, fileId: driveFileId };
     const lookup = await set(
       googleDriveArtifactStatusLookup$,
-      { ...context, source: file },
+      { ...context, source },
       signal,
     );
-    return googleDriveArtifactStatusFields(lookup, file);
+    return googleDriveArtifactStatusFields(lookup, source);
   },
 );

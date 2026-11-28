@@ -15,7 +15,6 @@ import {
   type PublicConnectorCatalogStatusItem,
 } from "@okouai/api-contracts/contracts/connector-catalog";
 import { builtinConnectorsMainContract } from "@okouai/api-contracts/contracts/connectors";
-import type { ChatThreadArtifactRun } from "@okouai/api-contracts/contracts/chat-threads";
 
 import type { TestContext } from "../../../signals/__tests__/test-helpers.ts";
 import { screen, within } from "@testing-library/react";
@@ -132,15 +131,32 @@ export function hostedSiteArtifactDetail(
   };
 }
 
+interface MockArtifactRunFile {
+  readonly id: string;
+  readonly artifactId?: string;
+  readonly googleDriveConnectionId?: string;
+  readonly filename: string;
+  readonly contentType: string;
+  readonly size: number;
+  readonly url: string;
+  readonly createdAt: string;
+  readonly googleDriveSync?: ArtifactDetail["googleDriveSync"];
+}
+
+interface MockArtifactRun {
+  readonly runId: string;
+  readonly files: readonly MockArtifactRunFile[];
+}
+
 export function artifactRun(options: {
   readonly artifactId?: string;
   readonly googleDriveConnectionId?: string;
   readonly contentType: string;
   readonly fileId: string;
   readonly filename: string;
-  readonly googleDriveSync?: ChatThreadArtifactRun["files"][number]["googleDriveSync"];
+  readonly googleDriveSync?: ArtifactDetail["googleDriveSync"];
   readonly url: string;
-}): ChatThreadArtifactRun {
+}): MockArtifactRun {
   return {
     runId: NAVIGATION_ARTIFACT_RUN_ID,
     files: [
@@ -164,7 +180,7 @@ export function artifactRun(options: {
 }
 
 interface MockArtifactConversationOptions {
-  readonly artifactRuns?: () => readonly ChatThreadArtifactRun[];
+  readonly artifactRuns?: () => readonly MockArtifactRun[];
   readonly browserSession?: () => BrowserSession | null;
   readonly catalog: readonly ArtifactSummary[];
   readonly chatEvents?: MockChatEventInput[];

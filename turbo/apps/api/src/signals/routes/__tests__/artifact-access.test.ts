@@ -7,9 +7,6 @@ import {
   PutObjectCommand,
 } from "@aws-sdk/client-s3";
 import { artifactAccessContract } from "@okouai/api-contracts/contracts/artifact-access";
-import { artifactSharesContract } from "@okouai/api-contracts/contracts/artifact-shares";
-import { hostContract } from "@okouai/api-contracts/contracts/host";
-import { hostedSiteSharingContract } from "@okouai/api-contracts/contracts/hosted-site-sharing";
 import { uploadsContract } from "@okouai/api-contracts/contracts/uploads";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { createStore } from "ccstate";
@@ -21,10 +18,6 @@ import { nowDate } from "../../../lib/time";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { settleIncludingAbort } from "../../utils";
 import { artifactAccessRoutes } from "../artifact-access";
-import { artifactShareRoutes } from "../artifact-shares";
-import { hostRoutes } from "../host";
-import { hostedSiteAccessRoutes } from "../hosted-site-access";
-import { hostedSiteSharingRoutes } from "../hosted-site-sharing";
 import { uploadsCompleteRoutes } from "../uploads-complete";
 import { uploadsPrepareRoutes } from "../uploads-prepare";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
@@ -46,22 +39,10 @@ const SAMPLE_FILE = Buffer.from("%PDF-1.7 unified artifact access test");
 const accessClient = setupApp({ context, routes: artifactAccessRoutes })(
   artifactAccessContract,
 );
-const legacyFileSharesClient = setupApp({
-  context,
-  routes: artifactShareRoutes,
-})(artifactSharesContract);
 const uploadsClient = setupApp({
   context,
   routes: [...uploadsPrepareRoutes, ...uploadsCompleteRoutes],
 })(uploadsContract);
-const hostVisibilityClient = setupApp({
-  context,
-  routes: [...hostRoutes, ...hostedSiteAccessRoutes],
-})(hostContract);
-const legacySiteSharingClient = setupApp({
-  context,
-  routes: hostedSiteSharingRoutes,
-})(hostedSiteSharingContract);
 
 interface StoredObject {
   readonly body: Buffer;
@@ -384,27 +365,6 @@ describe("Unified artifact access API", () => {
           [401],
         ),
         accept(
-          legacyFileSharesClient.status({
-            headers: {},
-            body: { kind: "file", id: warmupId },
-          }),
-          [401],
-        ),
-        accept(
-          hostVisibilityClient.siteVisibility({
-            headers: {},
-            params: { siteId: warmupId },
-          }),
-          [401],
-        ),
-        accept(
-          legacySiteSharingClient.list({
-            headers: {},
-            params: { siteId: warmupId },
-          }),
-          [401],
-        ),
-        accept(
           uploadsClient.prepare({
             headers: {},
             body: {
@@ -430,13 +390,10 @@ describe("Unified artifact access API", () => {
     }
   });
 
-  it("pf-158 unified artifact visibility bidirectionally syncs file artifacts", async () => {
+  it("pf-158 unified artifact visibility updates file artifacts across private, organization, and public", async () => {
     const storage = installFileStorage();
     const owner = await seedMember();
-    const { artifactId, fileId } = await uploadPrivateFileArtifact(
-      owner,
-      storage,
-    );
+    const { artifactId } = await uploadPrivateFileArtifact(owner, storage);
     const headers = signIn(owner);
 
     const initial = await accept(
@@ -462,29 +419,23 @@ describe("Unified artifact access API", () => {
     expect(orgUpdated.body.visibility).toBe("organization");
     expect(orgUpdated.body.shareUrl).toBeTruthy();
 
-    const legacyAfterUnified = await accept(
-      legacyFileSharesClient.status({
+    const publicUpdated = await accept(
+      accessClient.updateVisibility({
         headers,
-        body: { kind: "file", id: fileId },
+        params: { artifactId: catalogArtifactId },
+        body: { visibility: "public" },
       }),
       [200],
     );
-    expect(legacyAfterUnified.body.audience).toBe("organization");
+    expect(publicUpdated.body.visibility).toBe("public");
+    expect(publicUpdated.body.shareUrl).toBeTruthy();
 
-    await accept(
-      legacyFileSharesClient.update({
-        headers,
-        body: { target: { kind: "file", id: fileId }, audience: "public" },
-      }),
-      [200],
-    );
-
-    const unifiedAfterLegacy = await accept(
+    const readPublic = await accept(
       accessClient.getVisibility({ headers, params: { artifactId } }),
       [200],
     );
-    expect(unifiedAfterLegacy.body.visibility).toBe("public");
-    expect(unifiedAfterLegacy.body.shareUrl).toBeTruthy();
+    expect(readPublic.body.visibility).toBe("public");
+    expect(readPublic.body.shareUrl).toBeTruthy();
 
     const backToPrivate = await accept(
       accessClient.updateVisibility({
@@ -500,14 +451,11 @@ describe("Unified artifact access API", () => {
       shortUrl: null,
     });
 
-    const legacyFinal = await accept(
-      legacyFileSharesClient.status({
-        headers,
-        body: { kind: "file", id: fileId },
-      }),
+    const readFinal = await accept(
+      accessClient.getVisibility({ headers, params: { artifactId } }),
       [200],
     );
-    expect(legacyFinal.body.audience).toBe("private");
+    expect(readFinal.body.visibility).toBe("private");
   });
 
   it("pf-160 unified artifact shares support userId primary path, email fallback, non-member rejection, and DELETE by userId", async () => {
@@ -612,7 +560,6 @@ describe("Unified artifact access API", () => {
       { userId: owner.userId, orgId, orgRole: owner.orgRole },
       {
         [FeatureSwitchKey.ArtifactUserSharing]: false,
-        [FeatureSwitchKey.HostedSiteEmailSharing]: true,
       },
     );
     const headers = signIn(owner);
@@ -657,7 +604,6 @@ describe("Unified artifact access API", () => {
       { userId: owner.userId, orgId, orgRole: owner.orgRole },
       {
         [FeatureSwitchKey.ArtifactUserSharing]: true,
-        [FeatureSwitchKey.HostedSiteEmailSharing]: false,
       },
     );
     const listOn = await accept(
@@ -702,7 +648,7 @@ describe("Unified artifact access API", () => {
     await flushWaitUntilForTest();
   });
 
-  it("pf-162 unified artifact visibility and shares bidirectionally sync for hosted-site artifacts", async () => {
+  it("pf-162 unified artifact visibility and shares manage hosted-site artifacts end-to-end", async () => {
     acceptEmails();
     const owner = await seedMember();
     const orgId = owner.orgId ?? "";
@@ -713,12 +659,11 @@ describe("Unified artifact access API", () => {
         { userId: owner.userId, orgId, orgRole: owner.orgRole },
         {
           [FeatureSwitchKey.ArtifactUserSharing]: true,
-          [FeatureSwitchKey.HostedSiteEmailSharing]: true,
         },
       ),
     ]);
     registerClerkDirectory([owner, peer]);
-    const { artifactId, siteId } = await publishPrivateSiteArtifact(owner);
+    const { artifactId } = await publishPrivateSiteArtifact(owner);
     const headers = signIn(owner);
 
     const initial = await accept(
@@ -726,11 +671,11 @@ describe("Unified artifact access API", () => {
       [200],
     );
     expect(initial.body).toMatchObject({
-      artifactId,
       kind: "hosted-site",
       visibility: "private",
       shareUrl: null,
     });
+    expect(initial.body.artifactId).toBeTruthy();
 
     await accept(
       accessClient.updateVisibility({
@@ -741,30 +686,27 @@ describe("Unified artifact access API", () => {
       [200],
     );
 
-    const legacyVisibility = await accept(
-      hostVisibilityClient.siteVisibility({ headers, params: { siteId } }),
+    const readOrg = await accept(
+      accessClient.getVisibility({ headers, params: { artifactId } }),
       [200],
     );
-    expect(legacyVisibility.body.visibility).toBe("organization");
+    expect(readOrg.body.visibility).toBe("organization");
 
     await accept(
-      hostVisibilityClient.updateSiteVisibility({
+      accessClient.updateVisibility({
         headers,
-        params: { siteId },
-        body: {
-          visibility: "public",
-          expectedRevision: legacyVisibility.body.revision,
-        },
+        params: { artifactId },
+        body: { visibility: "public" },
       }),
       [200],
     );
 
-    const unifiedAfterLegacy = await accept(
+    const readPublic = await accept(
       accessClient.getVisibility({ headers, params: { artifactId } }),
       [200],
     );
-    expect(unifiedAfterLegacy.body.visibility).toBe("public");
-    expect(unifiedAfterLegacy.body.shareUrl).toBeTruthy();
+    expect(readPublic.body.visibility).toBe("public");
+    expect(readPublic.body.shareUrl).toBeTruthy();
 
     await accept(
       accessClient.addShare({
@@ -774,12 +716,12 @@ describe("Unified artifact access API", () => {
       }),
       [200],
     );
-    const legacySharesAfterAdd = await accept(
-      legacySiteSharingClient.list({ headers, params: { siteId } }),
+    const sharesAfterAdd = await accept(
+      accessClient.listShares({ headers, params: { artifactId } }),
       [200],
     );
     expect(
-      legacySharesAfterAdd.body.shares.map((share) => {
+      sharesAfterAdd.body.shares.map((share) => {
         return share.email;
       }),
     ).toContain(peer.email);
@@ -791,11 +733,11 @@ describe("Unified artifact access API", () => {
       }),
       [200],
     );
-    const legacySharesAfterRemove = await accept(
-      legacySiteSharingClient.list({ headers, params: { siteId } }),
+    const sharesAfterRemove = await accept(
+      accessClient.listShares({ headers, params: { artifactId } }),
       [200],
     );
-    expect(legacySharesAfterRemove.body.shares).toStrictEqual([]);
+    expect(sharesAfterRemove.body.shares).toStrictEqual([]);
     await flushWaitUntilForTest();
   });
 

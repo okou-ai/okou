@@ -1,66 +1,54 @@
-import { hostedSiteDeliveryManifest } from "./hosted-site-dependencies.service";
-import { nowDate } from "../../lib/time";
-import { randomUUID } from "node:crypto";
+import { command } from "ccstate";
+import { and, eq, isNull } from "drizzle-orm";
 import { artifactFilenameExtension } from "@okouai/api-contracts/contracts/artifact-delivery";
-import { artifactShareReferencePath } from "@okouai/api-contracts/contracts/artifact-references";
 import {
   linkLayoutFromSegment,
   linkLayoutSegment,
-  linkLayoutSegmentSchema,
   type LinkLayout,
 } from "@okouai/api-contracts/contracts/link-layout";
 import type { ArtifactDownloadResponse } from "@okouai/api-contracts/contracts/artifact-downloads";
-import { command, computed } from "ccstate";
-import { and, eq, isNull, or } from "drizzle-orm";
-import { artifactShares } from "@okouai/db/schema/artifact-share";
-import { runUploadedFiles } from "@okouai/db/schema/run-uploaded-file";
+import type {
+  ArtifactSharePolicy,
+  ArtifactShareTarget,
+} from "@okouai/api-contracts/contracts/artifact-shares";
 import {
   hostedSites,
   privateHostedDeployments,
 } from "@okouai/db/runtime/hosted-site";
 import type { HostedSiteManifest } from "@okouai/db/jsonb-contracts/hosted-site";
-import {
-  artifactSharePolicySchema,
-  type ArtifactSharePolicy,
-  type ArtifactShareTarget,
-  type ArtifactShareStatus,
-} from "@okouai/api-contracts/contracts/artifact-shares";
-import { settle } from "../utils";
+
 import { env } from "../../lib/env";
 import { hostedLinkOrigin } from "../../lib/link-layout";
-import { artifactHash } from "../../lib/file-url";
 import { legacyPrivateHostedDeploymentVersion } from "../../lib/hosted-publication";
-import { badRequestMessage } from "../../lib/error";
-import { db$, writeDb$ } from "../external/db";
+import { nowDate } from "../../lib/time";
+import { db$ } from "../external/db";
 import {
   clerk$,
   isClerkResourceNotFound,
   type ClerkOrganizationMembership,
 } from "../external/clerk";
-import {
-  copyArtifactShareObject,
-  readArtifactSharePolicyObject,
-  writeArtifactSharePolicyObject,
-} from "../external/s3";
+import { settle } from "../utils";
+import { hostedSiteDeliveryManifest } from "./hosted-site-dependencies.service";
 import { resolveArtifactPreviewUrl$ } from "./artifact-preview-url.service";
 import { resolveArtifactDownloadUrl$ } from "./artifact-download-url.service";
 import {
   privateArtifactRecord$,
-  privateArtifactUrl,
-  artifactStorageBucket,
+  resolvePrivateArtifactUrl$,
+  type PrivateArtifactRecord,
 } from "./private-artifact-storage.service";
-import { syncArtifactVisibilityByFileId$ } from "./artifact-access-dual-write.service";
-import { prepareArtifactShareAliases$ } from "./artifact-share-alias.service";
+import { findActiveArtifactForFile$ } from "./artifact-file-share-access.service";
+import { probeLegacyArtifactSharePolicy$ } from "./artifact-share-probe.service";
 import { signHostedSiteFiles$ } from "./hosted-site-files.service";
 import { checkHostedSiteAccess$ } from "./hosted-site-access.service";
 import { artifactDeliveryRecord } from "./artifact-delivery.service";
 import { resolveSharedThreadHostedDownload$ } from "./shared-thread-artifacts.service";
 import { uploadedArtifactPreviewImageUrl$ } from "./uploaded-artifact.service";
 
+export { probeLegacyArtifactSharePolicy$ };
+
 interface ShareCandidate {
   readonly targetId: string;
   readonly ownerUrl: string;
-  readonly ownerReference?: string;
   readonly layout: LinkLayout;
   readonly candidateVersion: number | null;
   readonly target:
@@ -73,56 +61,6 @@ interface ShareCandidate {
       > & {
         readonly manifest: HostedSiteManifest;
       });
-}
-
-type ShareIdentity = typeof artifactShares.$inferSelect;
-
-function policyBucket(): string {
-  const bucket = env("R2_HOSTED_SITES_BUCKET_NAME");
-  if (!bucket) {
-    throw new Error("Artifact sharing storage is not configured");
-  }
-  return bucket;
-}
-
-function policyKey(row: ShareIdentity): string {
-  return `artifact-shares/${row.linkLayoutSegment}/${row.id}.json`;
-}
-
-function policyFor(row: ShareIdentity, signal: AbortSignal) {
-  return computed(async (get) => {
-    const downloaded = await settle(
-      get(
-        readArtifactSharePolicyObject(policyBucket(), policyKey(row), signal),
-      ),
-    );
-    if (!downloaded.ok) {
-      // An allocated identity grants nothing until its policy has been written.
-      if (
-        downloaded.error instanceof Error &&
-        downloaded.error.name === "NoSuchKey"
-      ) {
-        return null;
-      }
-      throw downloaded.error;
-    }
-    const policy = artifactSharePolicySchema.parse(
-      JSON.parse(downloaded.value.buffer.toString("utf8")),
-    );
-    const targetId =
-      policy.target.kind === "html" ? policy.target.siteId : policy.target.id;
-    if (
-      policy.shareId !== row.id ||
-      policy.ownerId !== row.userId ||
-      policy.orgId !== row.orgId ||
-      policy.publicBrand !== row.linkLayoutSegment ||
-      policy.target.kind !== row.targetKind ||
-      targetId !== row.targetId
-    ) {
-      throw new Error("Artifact share policy does not match its identity");
-    }
-    return { policy, etag: downloaded.value.etag };
-  });
 }
 
 const ownedShareTarget$ = command(
@@ -143,17 +81,18 @@ const ownedShareTarget$ = command(
         !file ||
         file.userId !== userId ||
         file.orgId !== orgId ||
-        file.materializationStatus !== "ready"
+        !file.isReady
       ) {
         return null;
       }
+      const ownerUrl = await set(
+        resolvePrivateArtifactUrl$,
+        { id: file.id, filename: file.filename },
+        signal,
+      );
       return {
         targetId: file.id,
-        ownerUrl: new URL(
-          privateArtifactUrl(file.id, file.filename, file.metadata),
-          env("APP_URL"),
-        ).href,
-        ownerReference: file.artifactReference,
+        ownerUrl,
         layout: file.layout,
         candidateVersion: null,
         target: {
@@ -207,31 +146,10 @@ const ownedShareTarget$ = command(
   },
 );
 
-function shareIdentity(
-  targetKind: ArtifactShareTarget["kind"],
-  targetId: string,
-) {
-  return computed(async (get) => {
-    const [row] = await get(db$)
-      .select()
-      .from(artifactShares)
-      .where(
-        and(
-          eq(artifactShares.targetKind, targetKind),
-          eq(artifactShares.targetId, targetId),
-        ),
-      )
-      .limit(1);
-    return row ?? null;
-  });
-}
-
 function publicShareUrl(policy: ArtifactSharePolicy): string {
   if (!policy.publicToken) {
     throw new Error("Public artifact has no publication token");
   }
-  // Persisted pre-registry grants keep their working URL without a read-time
-  // write. Retain until #32492 accounts for every durable old share link.
   const layout = linkLayoutFromSegment(policy.publicBrand);
   if (!policy.delivery) {
     return `${hostedLinkOrigin(layout, `sh-${policy.shareId.replaceAll("-", "")}-${policy.publicToken}`)}/`;
@@ -248,8 +166,6 @@ function publicShareUrl(policy: ArtifactSharePolicy): string {
       origin,
     ).href;
   }
-  // Preserve requested durable token links without publishing during reads.
-  // Retire only after #32492 accounts for the remaining old share policies.
   return `${hostedLinkOrigin(layout, policy.publicSlug ?? policy.publicToken)}/`;
 }
 
@@ -266,57 +182,6 @@ function publicSharePreview(policy: ArtifactSharePolicy) {
   };
 }
 
-function shortShareUrl(policy: ArtifactSharePolicy | null): string | null {
-  if (!policy || policy.status !== "active") {
-    return null;
-  }
-  if (policy.audience === "public") {
-    return policy.publicSlug ? publicShareUrl(policy) : null;
-  }
-  if (policy.audience !== "organization" || !policy.organizationReference) {
-    return null;
-  }
-  return new URL(
-    artifactShareReferencePath(
-      policy.organizationReference,
-      policy.target.kind === "file" ? policy.target.filename : "index.html",
-    ),
-    env("APP_URL"),
-  ).href;
-}
-
-function shareStatus(args: {
-  readonly policy: ArtifactSharePolicy | null;
-  readonly organization: ArtifactShareStatus["organization"];
-  readonly ownerUrl: string;
-  readonly candidateVersion: number | null;
-}): ArtifactShareStatus {
-  const policy = args.policy;
-  const shortUrl = shortShareUrl(policy);
-  return {
-    ownerUrl: args.ownerUrl,
-    shareId: policy?.shareId ?? null,
-    audience: policy?.audience ?? "private",
-    organization: args.organization,
-    candidateVersion: args.candidateVersion,
-    selectedTarget: policy
-      ? { kind: policy.target.kind, id: policy.target.id }
-      : null,
-    selectedVersion:
-      policy?.target.kind === "html" ? policy.target.deploymentVersion : null,
-    shortUrl,
-    url:
-      !policy || policy.status === "revoked"
-        ? null
-        : policy.audience === "public"
-          ? publicShareUrl(policy)
-          : shortUrl,
-  };
-}
-
-// Reuse the embedded organization name only within this request. Every status,
-// update and resolve still reads current membership; renames follow that fresh
-// Clerk response without a separate display lookup or cross-request cache.
 const currentShareMember$ = command(
   async (
     { get },
@@ -333,7 +198,6 @@ const currentShareMember$ = command(
       signal,
     );
     if (!memberships.ok) {
-      // The durable share may outlive its original Clerk organization.
       if (isClerkResourceNotFound(memberships.error)) {
         return null;
       }
@@ -347,361 +211,13 @@ const currentShareMember$ = command(
   },
 );
 
-export const readArtifactShare$ = command(
-  async (
-    { get, set },
-    args: {
-      readonly target: ArtifactShareTarget;
-      readonly userId: string;
-      readonly orgId: string;
-    },
-    signal: AbortSignal,
-  ) => {
-    const candidate = await set(ownedShareTarget$, args, signal);
-    signal.throwIfAborted();
-    if (!candidate) {
-      return null;
-    }
-    const member = await set(
-      currentShareMember$,
-      args.orgId,
-      args.userId,
-      signal,
-    );
-    if (!member) {
-      return null;
-    }
-    const row = await get(shareIdentity(args.target.kind, candidate.targetId));
-    signal.throwIfAborted();
-    const stored = row ? await get(policyFor(row, signal)) : null;
-    signal.throwIfAborted();
-    return shareStatus({
-      policy: stored?.policy ?? null,
-      organization: { id: args.orgId, name: member.organization.name },
-      ownerUrl: candidate.ownerUrl,
-      candidateVersion: candidate.candidateVersion,
-    });
-  },
-);
-
-const snapshotFileTarget$ = command(
-  async (
-    { get },
-    target: Extract<ShareCandidate["target"], { kind: "file" }>,
-    signal: AbortSignal,
-  ) => {
-    const snapshotId = randomUUID();
-    const { bucket, ...fileTarget } = target;
-    const key = `private-artifacts/${target.id}/shares/${snapshotId}/${encodeURIComponent(target.filename)}`;
-    await get(
-      copyArtifactShareObject(
-        {
-          bucket,
-          sourceKey: target.key,
-          targetKey: key,
-          hosted: false,
-        },
-        signal,
-      ),
-    );
-    signal.throwIfAborted();
-    return { ...fileTarget, key };
-  },
-);
-
-const shareTargetStillAvailable$ = command(
+/**
+ * Authorize a historical R2 share policy without querying the retired
+ * `artifact_shares` database table.
+ */
+const authorizedLegacySharePolicy$ = command(
   async (
     { set },
-    args: {
-      readonly candidate: ShareCandidate;
-      readonly userId: string;
-      readonly orgId: string;
-    },
-    signal: AbortSignal,
-  ) => {
-    if (args.candidate.target.kind !== "file") {
-      return true;
-    }
-    return (
-      (await set(
-        ownedShareTarget$,
-        {
-          target: { kind: "file", id: args.candidate.target.id },
-          userId: args.userId,
-          orgId: args.orgId,
-        },
-        signal,
-      )) !== null
-    );
-  },
-);
-
-const publishArtifactShare$ = command(
-  async (
-    { get, set },
-    args: {
-      readonly candidate: ShareCandidate;
-      readonly row: ShareIdentity | null;
-      readonly userId: string;
-      readonly orgId: string;
-      readonly audience: ArtifactSharePolicy["audience"];
-    },
-    signal: AbortSignal,
-  ) => {
-    const { row } = args;
-    if (!row || row.userId !== args.userId || row.orgId !== args.orgId) {
-      return null;
-    }
-    const stored = await get(policyFor(row, signal));
-    signal.throwIfAborted();
-    const previous = stored?.policy;
-    // Read the policy before checking the live target. A deletion either makes
-    // this target unavailable or changes the policy ETag before our write.
-    if (!(await set(shareTargetStillAvailable$, args, signal))) {
-      return null;
-    }
-    signal.throwIfAborted();
-    // Files need a durable revocation even before their first publication.
-    // A delayed If-None-Match writer must not grant access after this succeeds.
-    // HTML no longer has a publication writer; absent grants remain inert.
-    if (
-      args.audience === "private" &&
-      !previous &&
-      args.candidate.target.kind === "html"
-    ) {
-      return null;
-    }
-    let target: ArtifactSharePolicy["target"];
-    if (
-      previous &&
-      (args.audience === "private" ||
-        previous.target.id === args.candidate.target.id)
-    ) {
-      target = previous.target;
-    } else {
-      if (args.candidate.target.kind !== "file") {
-        throw new Error("HTML snapshot creation is no longer supported");
-      }
-      target = await set(snapshotFileTarget$, args.candidate.target, signal);
-    }
-    const next = artifactSharePolicySchema.parse({
-      version: 1,
-      delivery: "artifact-registry-v1",
-      revision: randomUUID(),
-      shareId: row.id,
-      ownerId: row.userId,
-      orgId: row.orgId,
-      publicBrand: row.linkLayoutSegment,
-      audience: args.audience,
-      status: args.audience === "private" ? "revoked" : "active",
-      publicToken:
-        args.audience === "public"
-          ? (previous?.publicToken ?? artifactHash(randomUUID()))
-          : null,
-      target,
-    });
-    if (next.publicToken) {
-      publicShareUrl(next);
-    }
-    const prepared = await set(
-      prepareArtifactShareAliases$,
-      { policy: next, previous, ownerReference: args.candidate.ownerReference },
-      signal,
-    );
-    // R2 is the only mutable authority. Acknowledge only after its strongly
-    // consistent write completes. No database commit can resurrect old scope.
-    await get(
-      writeArtifactSharePolicyObject(
-        policyBucket(),
-        policyKey(row),
-        JSON.stringify(prepared),
-        stored?.etag ?? null,
-        signal,
-      ),
-    );
-    signal.throwIfAborted();
-    return prepared;
-  },
-);
-
-/** Retrying deletion must finish revocation even though the file is now hidden. */
-export const revokeDeletedFileArtifactShare$ = command(
-  async (
-    { get, set },
-    args: {
-      readonly fileId: string;
-      readonly userId: string;
-      readonly orgId: string;
-    },
-    signal: AbortSignal,
-  ) => {
-    const db = set(writeDb$);
-    const [file] = await db
-      .select()
-      .from(runUploadedFiles)
-      .where(
-        and(
-          eq(runUploadedFiles.id, args.fileId),
-          eq(runUploadedFiles.userId, args.userId),
-          eq(runUploadedFiles.orgId, args.orgId),
-        ),
-      )
-      .limit(1);
-    signal.throwIfAborted();
-    if (!file?.deletedAt || file.metadata.storage === undefined) {
-      return;
-    }
-    artifactStorageBucket(file.metadata);
-    if (!file.storageKey || !file.filename || !file.contentType) {
-      throw new Error(
-        "Deleted private artifact has incomplete storage metadata",
-      );
-    }
-    const segment = linkLayoutSegmentSchema.parse(file.metadata.publicBrand);
-    // Allocate an inert identity even if a delayed first share has not done so.
-    await db
-      .insert(artifactShares)
-      .values({
-        userId: args.userId,
-        orgId: args.orgId,
-        targetKind: "file",
-        targetId: file.id,
-        linkLayoutSegment: segment,
-      })
-      .onConflictDoNothing({
-        target: [artifactShares.targetKind, artifactShares.targetId],
-      });
-    signal.throwIfAborted();
-    const row = await get(shareIdentity("file", file.id));
-    signal.throwIfAborted();
-    if (!row || row.userId !== args.userId || row.orgId !== args.orgId) {
-      throw new Error("Deleted artifact share does not match its owner");
-    }
-    const stored = await get(policyFor(row, signal));
-    signal.throwIfAborted();
-    const previous = stored?.policy;
-    const policy = artifactSharePolicySchema.parse({
-      version: 1,
-      delivery: "artifact-registry-v1",
-      revision: randomUUID(),
-      shareId: row.id,
-      ownerId: row.userId,
-      orgId: row.orgId,
-      publicBrand: segment,
-      audience: "private",
-      status: "revoked",
-      publicToken: null,
-      target: previous?.target ?? {
-        kind: "file",
-        id: file.id,
-        key: file.storageKey,
-        filename: file.filename,
-        contentType: file.contentType,
-      },
-    });
-    const prepared = await set(
-      prepareArtifactShareAliases$,
-      { policy, previous },
-      signal,
-    );
-    await get(
-      writeArtifactSharePolicyObject(
-        policyBucket(),
-        policyKey(row),
-        JSON.stringify(prepared),
-        stored?.etag ?? null,
-        signal,
-      ),
-    );
-    signal.throwIfAborted();
-  },
-);
-
-export const updateArtifactShare$ = command(
-  async (
-    { get, set },
-    args: {
-      readonly target: ArtifactShareTarget;
-      readonly userId: string;
-      readonly orgId: string;
-      readonly audience: ArtifactSharePolicy["audience"];
-    },
-    signal: AbortSignal,
-  ) => {
-    if (args.target.kind === "html" && args.audience !== "private") {
-      return badRequestMessage(
-        "Hosted sites are public. Publish a new deployment to update the site.",
-      );
-    }
-    const candidate = await set(ownedShareTarget$, args, signal);
-    signal.throwIfAborted();
-    if (!candidate) {
-      return null;
-    }
-    const { targetId, target } = candidate;
-    const [member, existing] = await Promise.all([
-      set(currentShareMember$, args.orgId, args.userId, signal),
-      get(shareIdentity(target.kind, targetId)),
-    ]);
-    signal.throwIfAborted();
-    if (!member) {
-      return null;
-    }
-    let row = existing;
-    if (!row) {
-      // Commit the durable identity before publishing. An allocated identity
-      // grants nothing on its own.
-      const [inserted] = await set(writeDb$)
-        .insert(artifactShares)
-        .values({
-          userId: args.userId,
-          orgId: args.orgId,
-          linkLayoutSegment: linkLayoutSegment(candidate.layout),
-          targetKind: target.kind,
-          targetId,
-        })
-        .onConflictDoNothing({
-          target: [artifactShares.targetKind, artifactShares.targetId],
-        })
-        .returning();
-      signal.throwIfAborted();
-      row = inserted ?? (await get(shareIdentity(target.kind, targetId)));
-    }
-    signal.throwIfAborted();
-    const policy = await set(
-      publishArtifactShare$,
-      {
-        candidate,
-        row,
-        userId: args.userId,
-        orgId: args.orgId,
-        audience: args.audience,
-      },
-      signal,
-    );
-    signal.throwIfAborted();
-    if (!policy && args.audience !== "private") {
-      return null;
-    }
-    if (target.kind === "file") {
-      await set(
-        syncArtifactVisibilityByFileId$,
-        { fileId: targetId, visibility: args.audience },
-        signal,
-      );
-    }
-    return shareStatus({
-      policy,
-      organization: { id: args.orgId, name: member.organization.name },
-      ownerUrl: candidate.ownerUrl,
-      candidateVersion: candidate.candidateVersion,
-    });
-  },
-);
-
-const authorizedArtifactSharePolicy$ = command(
-  async (
-    { get, set },
     args: {
       readonly id: string;
       readonly userId: string;
@@ -712,19 +228,12 @@ const authorizedArtifactSharePolicy$ = command(
       readonly layout?: LinkLayout;
     },
     signal: AbortSignal,
-  ) => {
-    const [row] = await get(db$)
-      .select()
-      .from(artifactShares)
-      .where(eq(artifactShares.id, args.id))
-      .limit(1);
-    signal.throwIfAborted();
-    if (!row) {
-      return null;
-    }
-    const stored = await get(policyFor(row, signal));
-    signal.throwIfAborted();
-    const policy = stored?.policy;
+  ): Promise<ArtifactSharePolicy | null> => {
+    const policy = await set(
+      probeLegacyArtifactSharePolicy$,
+      { shareId: args.id, layout: args.layout },
+      signal,
+    );
     if (
       !policy ||
       (policy.status !== "active" &&
@@ -740,19 +249,20 @@ const authorizedArtifactSharePolicy$ = command(
     ) {
       return null;
     }
-    // No active-org assumption and no membership cache: removal is observed at
-    // the next resolve. Already issued delivery credentials expire in two days;
-    // content already downloaded into a browser cache can remain available.
     if (
       !(args.allowPublic && policy.audience === "public") &&
-      !(await set(currentShareMember$, row.orgId, args.userId, signal))
+      !(await set(currentShareMember$, policy.orgId, args.userId, signal))
     ) {
       return null;
     }
-    return { row, policy };
+    return policy;
   },
 );
 
+/**
+ * Resolve a historical `/share/artifacts/:shareId` or v1 reference via
+ * read-only R2 policy probe (0 DB reads on `artifact_shares`).
+ */
 export const resolveArtifactShare$ = command(
   async (
     { set },
@@ -764,23 +274,32 @@ export const resolveArtifactShare$ = command(
     },
     signal: AbortSignal,
   ) => {
-    const authorized = await set(authorizedArtifactSharePolicy$, args, signal);
-    if (!authorized) {
-      return null;
-    }
-    const { row, policy } = authorized;
-    // Hosted sites are public publications served from their own URL; only
-    // private files resolve to a temporary credential here.
-    if (policy.target.kind === "html") {
+    const policy = await set(authorizedLegacySharePolicy$, args, signal);
+    if (!policy || policy.target.kind === "html") {
       return null;
     }
     const file = await set(privateArtifactRecord$, policy.target.id, signal);
     signal.throwIfAborted();
     if (
       !file ||
-      file.userId !== row.userId ||
-      file.orgId !== row.orgId ||
-      file.materializationStatus !== "ready"
+      file.userId !== policy.ownerId ||
+      file.orgId !== policy.orgId ||
+      !file.isReady
+    ) {
+      return null;
+    }
+    // Honor Library deletion (Principle 4) for live file artifacts: if an
+    // active artifact row exists and has been narrowed to private, or if the
+    // owner soft-deleted the artifact, only the owner can keep reading via
+    // this historical share.
+    const artifact = await set(findActiveArtifactForFile$, file, signal);
+    if (!artifact && policy.ownerId !== args.userId) {
+      return null;
+    }
+    if (
+      artifact &&
+      artifact.visibility === "private" &&
+      policy.ownerId !== args.userId
     ) {
       return null;
     }
@@ -802,11 +321,13 @@ export const resolveArtifactShare$ = command(
       },
       signal,
     );
-    const previewImageUrl = await set(
-      uploadedArtifactPreviewImageUrl$,
-      { id: file.id, userId: row.userId, orgId: row.orgId },
-      signal,
-    );
+    const previewImageUrl =
+      artifact?.thumbnail?.url ??
+      (await set(
+        uploadedArtifactPreviewImageUrl$,
+        { id: file.id, userId: policy.ownerId, orgId: policy.orgId },
+        signal,
+      ));
     signal.throwIfAborted();
     return {
       ...preview,
@@ -819,79 +340,79 @@ export const resolveArtifactShare$ = command(
   },
 );
 
-/** Download grants use the same live policy and membership as artifact visibility. */
-export const resolveArtifactShareDownload$ = command(
+/**
+ * Authorize live file visibility (`artifacts.visibility = 'organization' | 'public'`)
+ * for an authenticated non-owner viewer.
+ */
+export const resolveArtifactTargetShare$ = command(
   async (
-    { get, set },
+    { set },
     args: {
+      readonly target: ArtifactShareTarget;
+      readonly targetId: string;
       readonly userId: string;
-      readonly selector:
-        | { readonly kind: "share"; readonly id: string }
-        | {
-            readonly kind: "target";
-            readonly target: ArtifactShareTarget;
-            readonly targetId: string;
-          }
-        | { readonly kind: "site"; readonly id: string };
-      readonly allowPrivateOwner?: boolean;
-      readonly publicToken?: string;
-      readonly layout?: LinkLayout;
-      readonly expectedKind?: "html";
     },
     signal: AbortSignal,
-  ): Promise<ArtifactDownloadResponse | null> => {
-    const selector = args.selector;
-    const shareId =
-      selector.kind === "share"
-        ? selector.id
-        : (
-            await get(
-              shareIdentity(
-                selector.kind === "site" ? "html" : selector.target.kind,
-                selector.kind === "site" ? selector.id : selector.targetId,
-              ),
-            )
-          )?.id;
-    signal.throwIfAborted();
-    if (!shareId) {
+  ) => {
+    if (args.target.kind !== "file") {
       return null;
     }
-    const authorized = await set(
-      authorizedArtifactSharePolicy$,
-      {
-        id: shareId,
-        userId: args.userId,
-        allowPublic: true,
-        allowPrivateOwner: args.allowPrivateOwner,
-        publicToken: args.publicToken,
-        layout: args.layout,
-        expectedTarget:
-          selector.kind === "target" ? selector.target : undefined,
-      },
-      signal,
-    );
+    const file = await set(privateArtifactRecord$, args.target.id, signal);
+    signal.throwIfAborted();
+    if (!file || !file.isReady) {
+      return null;
+    }
+    const artifact = await set(findActiveArtifactForFile$, file, signal);
+    if (!artifact || artifact.visibility === "private") {
+      return null;
+    }
     if (
-      !authorized ||
-      (args.expectedKind && authorized.policy.target.kind !== args.expectedKind)
+      artifact.visibility === "organization" &&
+      !(await set(currentShareMember$, file.orgId, args.userId, signal))
     ) {
       return null;
     }
-    const { row, policy } = authorized;
-    // Revocation and selected version come from the policy; deletion and
-    // readiness still follow the underlying owned resource.
-    const candidate = await set(
-      ownedShareTarget$,
-      { target: policy.target, userId: row.userId, orgId: row.orgId },
+    const preview = await set(
+      resolveArtifactPreviewUrl$,
+      { bucket: file.bucket, key: file.key, signingDate: nowDate() },
       signal,
     );
+    const downloadUrl = await set(resolveArtifactDownloadUrl$, file, signal);
     signal.throwIfAborted();
-    if (!candidate) {
-      return null;
-    }
+    const previewImageUrl = artifact.thumbnail?.url ?? null;
+    return {
+      ...preview,
+      downloadUrl,
+      filename: file.filename,
+      contentType: file.contentType,
+      ...(previewImageUrl ? { previewImageUrl } : {}),
+      target: { kind: "file" as const, id: file.id },
+    };
+  },
+);
+
+const signLegacySharePolicyDownload$ = command(
+  async (
+    { set },
+    args: {
+      readonly policy: ArtifactSharePolicy;
+      readonly candidate: ShareCandidate;
+      readonly userId: string;
+    },
+    signal: AbortSignal,
+  ): Promise<ArtifactDownloadResponse | null> => {
+    const { policy, candidate, userId } = args;
     if (policy.target.kind === "file") {
       const file = await set(privateArtifactRecord$, policy.target.id, signal);
       signal.throwIfAborted();
       if (!file) {
+        return null;
+      }
+      const artifact = await set(findActiveArtifactForFile$, file, signal);
+      if (
+        policy.ownerId !== userId &&
+        (!artifact || artifact.visibility === "private")
+      ) {
         return null;
       }
       const url = await set(
@@ -916,7 +437,7 @@ export const resolveArtifactShareDownload$ = command(
       !(
         await set(
           checkHostedSiteAccess$,
-          { siteId: target.siteId, userId: args.userId },
+          { siteId: target.siteId, userId },
           signal,
         )
       ).allowed
@@ -938,12 +459,93 @@ export const resolveArtifactShareDownload$ = command(
             : {}),
         },
         manifest: target.manifest,
-        viewerId: args.userId,
+        viewerId: userId,
         prefix: `shared-artifacts/${policy.publicBrand}/${target.snapshotId}/${target.id}`,
       },
       signal,
     );
     return { kind: "html", site };
+  },
+);
+
+/** Download grants follow live `artifacts.visibility` for files and read-only R2 probes for legacy share IDs. */
+export const resolveArtifactShareDownload$ = command(
+  async (
+    { set },
+    args: {
+      readonly userId: string;
+      readonly selector:
+        | { readonly kind: "share"; readonly id: string }
+        | {
+            readonly kind: "target";
+            readonly target: ArtifactShareTarget;
+            readonly targetId: string;
+          };
+      readonly allowPrivateOwner?: boolean;
+      readonly publicToken?: string;
+      readonly layout?: LinkLayout;
+      readonly expectedKind?: "html";
+    },
+    signal: AbortSignal,
+  ): Promise<ArtifactDownloadResponse | null> => {
+    if (args.selector.kind === "target") {
+      if (
+        args.expectedKind === "html" ||
+        args.selector.target.kind !== "file"
+      ) {
+        return null;
+      }
+      const shared = await set(
+        resolveArtifactTargetShare$,
+        {
+          target: args.selector.target,
+          targetId: args.selector.targetId,
+          userId: args.userId,
+        },
+        signal,
+      );
+      return shared
+        ? {
+            kind: "file",
+            url: shared.downloadUrl,
+            filename: shared.filename,
+            contentType: shared.contentType,
+          }
+        : null;
+    }
+
+    const policy = await set(
+      authorizedLegacySharePolicy$,
+      {
+        id: args.selector.id,
+        userId: args.userId,
+        allowPublic: true,
+        allowPrivateOwner: args.allowPrivateOwner,
+        publicToken: args.publicToken,
+        layout: args.layout,
+      },
+      signal,
+    );
+    if (
+      !policy ||
+      (args.expectedKind && policy.target.kind !== args.expectedKind)
+    ) {
+      return null;
+    }
+    const candidate = await set(
+      ownedShareTarget$,
+      { target: policy.target, userId: policy.ownerId, orgId: policy.orgId },
+      signal,
+    );
+    signal.throwIfAborted();
+    if (!candidate) {
+      return null;
+    }
+    return await set(
+      signLegacySharePolicyDownload$,
+      { policy, candidate, userId: args.userId },
+      signal,
+    );
   },
 );
 
@@ -1014,139 +616,158 @@ export const resolveHostedSitePublicationDownload$ = command(
   },
 );
 
-/** A version reference must never follow a site's share to a different version. */
-export const resolveArtifactTargetShare$ = command(
-  async (
-    { get, set },
-    args: {
-      readonly target: ArtifactShareTarget;
-      readonly targetId: string;
-      readonly userId: string;
-    },
-    signal: AbortSignal,
-  ) => {
-    const row = await get(shareIdentity(args.target.kind, args.targetId));
-    signal.throwIfAborted();
-    return row
-      ? await set(
-          resolveArtifactShare$,
-          { id: row.id, userId: args.userId, expectedTarget: args.target },
-          signal,
-        )
-      : null;
-  },
-);
-
-interface PublicArtifactLookup {
+export interface PublicArtifactLookup {
   readonly id: string;
   readonly kind?: "file" | "html" | "share";
 }
 
-/** Resolve ownership without reading publication policy or artifact contents. */
-export const publicArtifactShareIdentity$ = command(
-  async ({ get }, args: PublicArtifactLookup, signal: AbortSignal) => {
-    const [direct] =
-      args.kind === "html"
-        ? []
-        : await get(db$)
-            .select()
-            .from(artifactShares)
-            .where(
-              or(
-                args.kind === undefined || args.kind === "share"
-                  ? eq(artifactShares.id, args.id)
-                  : undefined,
-                args.kind === undefined || args.kind === "file"
-                  ? and(
-                      eq(artifactShares.targetKind, "file"),
-                      eq(artifactShares.targetId, args.id),
-                    )
-                  : undefined,
-              ),
-            )
-            .limit(1);
-    signal.throwIfAborted();
-    let row = direct;
-    if (!row && (args.kind === undefined || args.kind === "html")) {
-      const [deployment] = await get(db$)
-        .select({ siteId: privateHostedDeployments.siteId })
-        .from(privateHostedDeployments)
-        .innerJoin(
-          hostedSites,
-          eq(hostedSites.id, privateHostedDeployments.siteId),
-        )
-        .where(
-          and(
-            eq(privateHostedDeployments.id, args.id),
-            isNull(hostedSites.deletedAt),
-          ),
-        )
-        .limit(1);
-      signal.throwIfAborted();
-      row = deployment
-        ? ((await get(shareIdentity("html", deployment.siteId))) ?? undefined)
-        : undefined;
-      signal.throwIfAborted();
+export type ResolvedPublicArtifactSource =
+  | {
+      readonly kind: "live-file";
+      readonly file: PrivateArtifactRecord;
+      readonly version: string;
+      readonly preview: {
+        readonly filename: string;
+        readonly contentType: string;
+        readonly previewImageUrl?: string;
+      };
     }
-    return row ?? null;
-  },
-);
+  | {
+      readonly kind: "legacy-policy";
+      readonly policy: ArtifactSharePolicy;
+      readonly candidate: ShareCandidate;
+      readonly url: string;
+      readonly preview: {
+        readonly filename: string;
+        readonly contentType: string;
+      };
+    };
 
-/** Public references disclose only published delivery and preview metadata. */
-export const resolvePublicArtifactSource$ = command(
+const resolvePublicLegacyPolicySource$ = command(
   async (
-    { get, set },
-    args: PublicArtifactLookup,
-    row: ShareIdentity,
+    { set },
+    shareId: string,
     signal: AbortSignal,
-  ) => {
-    const stored = await get(policyFor(row, signal));
-    signal.throwIfAborted();
-    const policy = stored?.policy;
-    if (
-      !policy ||
-      policy.status !== "active" ||
-      policy.audience !== "public" ||
-      (row.id !== args.id &&
-        args.kind !== "share" &&
-        policy.target.id !== args.id)
-    ) {
+  ): Promise<Extract<
+    ResolvedPublicArtifactSource,
+    { kind: "legacy-policy" }
+  > | null> => {
+    const policy = await set(
+      probeLegacyArtifactSharePolicy$,
+      { shareId },
+      signal,
+    );
+    if (!policy || policy.status !== "active" || policy.audience !== "public") {
       return null;
     }
-    // A removed artifact must not become discoverable through an old reference.
-    if (
-      policy.target.kind === "html" &&
-      !(
-        await set(
-          checkHostedSiteAccess$,
-          { siteId: policy.target.siteId },
-          signal,
-        )
-      ).allowed
-    ) {
-      return null;
+    if (policy.target.kind === "html") {
+      const allowed = await set(
+        checkHostedSiteAccess$,
+        { siteId: policy.target.siteId },
+        signal,
+      );
+      if (!allowed.allowed) {
+        return null;
+      }
+    } else {
+      const file = await set(privateArtifactRecord$, policy.target.id, signal);
+      if (!file?.isReady) {
+        return null;
+      }
+      const artifact = await set(findActiveArtifactForFile$, file, signal);
+      if (artifact?.visibility !== "public") {
+        return null;
+      }
     }
-    const target = await set(
+    const candidate = await set(
       ownedShareTarget$,
-      { target: policy.target, userId: row.userId, orgId: row.orgId },
+      { target: policy.target, userId: policy.ownerId, orgId: policy.orgId },
       signal,
     );
     signal.throwIfAborted();
-    return target
-      ? { policy, candidate: target, ...publicSharePreview(policy) }
-      : null;
+    if (!candidate) {
+      return null;
+    }
+    return {
+      kind: "legacy-policy",
+      policy,
+      candidate,
+      ...publicSharePreview(policy),
+    };
+  },
+);
+
+/**
+ * Resolve public artifact metadata and authority:
+ * 1) Live `files` + active `artifacts.visibility = 'public'`
+ * 2) Historical `/share/artifacts/:shareId` R2 policy probe (0 DB `artifact_shares` reads)
+ */
+export const resolvePublicArtifactSource$ = command(
+  async (
+    { set },
+    args: PublicArtifactLookup,
+    signal: AbortSignal,
+  ): Promise<ResolvedPublicArtifactSource | null> => {
+    if (args.kind === undefined || args.kind === "file") {
+      const file = await set(privateArtifactRecord$, args.id, signal);
+      signal.throwIfAborted();
+      if (file?.isReady) {
+        const artifact = await set(findActiveArtifactForFile$, file, signal);
+        if (artifact?.visibility === "public") {
+          const previewImageUrl = artifact.thumbnail?.url ?? undefined;
+          return {
+            kind: "live-file",
+            file,
+            version: `${artifact.id}:${artifact.updatedAt.toISOString()}`,
+            preview: {
+              filename: file.filename,
+              contentType: file.contentType,
+              ...(previewImageUrl ? { previewImageUrl } : {}),
+            },
+          };
+        }
+        return null;
+      }
+      if (args.kind === "file") {
+        return null;
+      }
+    }
+
+    if (args.kind === "html") {
+      return null;
+    }
+
+    return await set(resolvePublicLegacyPolicySource$, args.id, signal);
   },
 );
 
 export const resolvePublicArtifactUrl$ = command(
   async ({ set }, args: PublicArtifactLookup, signal: AbortSignal) => {
-    const row = await set(publicArtifactShareIdentity$, args, signal);
-    if (!row) {
-      return null;
-    }
-    const source = await set(resolvePublicArtifactSource$, args, row, signal);
+    const source = await set(resolvePublicArtifactSource$, args, signal);
     if (!source) {
       return null;
+    }
+    if (source.kind === "live-file") {
+      const preview = await set(
+        resolveArtifactPreviewUrl$,
+        {
+          bucket: source.file.bucket,
+          key: source.file.key,
+          signingDate: nowDate(),
+        },
+        signal,
+      );
+      const downloadUrl = await set(
+        resolveArtifactDownloadUrl$,
+        source.file,
+        signal,
+      );
+      return {
+        url: preview.url,
+        expiresAt: preview.expiresAt,
+        downloadUrl,
+        preview: source.preview,
+      };
     }
     const { policy, candidate } = source;
     if (policy.target.kind === "html") {

@@ -15,13 +15,14 @@ import {
 import { r2ImageTransformUrl } from "@okouai/core/r2-image-transform";
 import { and, eq, inArray } from "drizzle-orm";
 
+import { files } from "@okouai/db/schema/file";
 import { env } from "../../lib/env";
 import { logger } from "../../lib/log";
 import { redactPresignedUrls } from "../../lib/presigned-url-redaction";
-import { db$ } from "../external/db";
+import { db$, writeDb$ } from "../external/db";
 import { checkBillableOperationCredits$ } from "./billable-operation-admission.service";
 import { storeGeneratedArtifactObject$ } from "./artifact-storage.service";
-import { recordWebUploadedFile$ } from "./run-uploaded-files.service";
+import { upsertGeneratedImageArtifact$ } from "./artifact-catalog.service";
 import { processUsageEventKeys$ } from "./credit-usage.service";
 import { builtInGenerationUsageIdempotencyKey } from "./built-in-generation-usage-idempotency";
 
@@ -1894,32 +1895,6 @@ export async function downloadFalImage(
   };
 }
 
-function generatedImageMetadata(
-  generation: ParsedImageGeneration,
-  isPrivate: boolean,
-) {
-  return {
-    generatedBy: "zero-official-image",
-    model: generation.model,
-    provider: generation.provider,
-    imageSize: generation.imageSize,
-    quality: generation.quality,
-    background: generation.background,
-    outputFormat: generation.outputFormat,
-    ...(generation.outputCompression !== undefined
-      ? { outputCompression: generation.outputCompression }
-      : {}),
-    moderation: generation.moderation,
-    safetyTolerance: generation.safetyTolerance,
-    sourceUrl: isPrivate ? undefined : generation.sourceUrl,
-    seed: generation.seed,
-    sourceImageUrls: generation.sourceImageUrls,
-    maskImageUrl: generation.maskImageUrl,
-    inputFidelity: generation.inputFidelity,
-    imagePromptStrength: generation.imagePromptStrength,
-  };
-}
-
 interface RecordGeneratedImageArgs {
   readonly orgId: string;
   readonly userId: string;
@@ -1949,27 +1924,42 @@ export const storeGeneratedImage$ = command(
         extension: extensionForFormat(params.generation.outputFormat),
         body: params.generation.imageBytes,
         contentType: contentTypeForFormat(params.generation.outputFormat),
+        runId: params.runId,
+        skipCatalogRegistration: true,
       },
       signal,
     );
     const { id: fileId, filename, key: s3Key, url } = artifact;
     const contentType = contentTypeForFormat(params.generation.outputFormat);
 
+    if (!artifact.isPrivate) {
+      await set(writeDb$)
+        .insert(files)
+        .values({
+          id: fileId,
+          orgId: params.orgId,
+          ownerUserId: params.userId,
+          storageKey: s3Key,
+          filename,
+          contentType,
+          sizeBytes: params.generation.imageBytes.byteLength,
+          origin: "agent",
+        })
+        .onConflictDoNothing({ target: files.id });
+      signal.throwIfAborted();
+    }
+
     await set(
-      recordWebUploadedFile$,
+      upsertGeneratedImageArtifact$,
       {
-        runId: params.runId,
-        externalId: fileId,
-        userId: params.userId,
+        fileId,
         orgId: params.orgId,
+        userId: params.userId,
         filename,
-        contentType,
-        sizeBytes: params.generation.imageBytes.byteLength,
-        url,
-        s3Key,
-        layout: artifact.layout,
-        metadata: generatedImageMetadata(params.generation, artifact.isPrivate),
-        skipFilesDualWrite: artifact.isPrivate,
+        sourceUrl: url,
+        model: params.generation.model,
+        provider: params.generation.provider,
+        runId: params.runId,
       },
       signal,
     );

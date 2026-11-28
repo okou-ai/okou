@@ -22,7 +22,7 @@ import { findFastControl } from "./chat-message-experience-test-helpers.ts";
 const context = testContext();
 const videoId = "66668000-0000-4000-8000-000000000015";
 async function publishableChat() {
-  const clips = [artifactSummary(videoId, "video", "Quarterly update.mp4")];
+  const clips = [artifactSummary(videoId, "file", "Quarterly update.mp4")];
   mockArtifactConversation(context, { catalog: [], chatEvents: [] });
   let published = false;
   context.mocks.api(artifactCatalogContract.list, ({ respond }) => {
@@ -162,10 +162,10 @@ test("Copying a private ZIP from chat resources keeps its canonical artifact lin
 });
 
 test("chat-resources-realtime-003 opening resources after a publication shows the latest video in this chat", async () => {
-  const old = artifactSummary(crypto.randomUUID(), "video", "First cut.mp4");
+  const old = artifactSummary(crypto.randomUUID(), "file", "First cut.mp4");
   const replacement = artifactSummary(
     crypto.randomUUID(),
-    "video",
+    "file",
     "Approved cut.mp4",
   );
   const request = context.mocks.deferred<void>();

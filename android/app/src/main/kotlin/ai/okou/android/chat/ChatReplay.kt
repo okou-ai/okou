@@ -37,6 +37,9 @@ data class ChatCheckpoint(
     val events: List<ChatEventsEventsItem>,
     val cursor: ChatCursor,
 ) {
+    internal fun containsEvent(eventId: String): Boolean =
+        snapshotCursor.eventId == eventId || events.any { it.cursor().eventId == eventId }
+
     fun validate() {
         snapshotCursor.validate()
         cursor.validate()

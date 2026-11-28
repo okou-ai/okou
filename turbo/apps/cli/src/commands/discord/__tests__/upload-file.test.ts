@@ -10,7 +10,6 @@ import { uploadFileCommand } from "../upload-file";
 
 const API = "http://localhost:3000/api/integrations/discord/upload-file";
 const UPLOAD_URL = "https://storage.example.com/canonical-file?signature=test";
-const OPERATION_ID = "2269e9e5-4984-4cf5-a5a1-88070bd42197";
 const ASSET_ID = "5c035e8d-7ea3-4e58-ad97-b3d659b19bb4";
 const CHANNEL_ID = "123456789012345678";
 const GUILD_ID = "123456789012345677";
@@ -18,13 +17,15 @@ const MESSAGE_ID = "123456789012345679";
 const ATTACHMENT_ID = "123456789012345680";
 const CANONICAL_URL = `/artifacts/${ASSET_ID.replaceAll("-", "")}.txt`;
 const PERMALINK = `https://discord.com/channels/123456789012345677/${CHANNEL_ID}/${MESSAGE_ID}`;
-const PUBLISHED = {
+const INITIALIZED = {
   assetId: ASSET_ID,
-  operationId: OPERATION_ID,
   url: CANONICAL_URL,
+  uploadUrl: UPLOAD_URL,
+  uploadHeaders: { "x-amz-meta-checksum": "checksum" },
 };
 const DELIVERED = {
-  ...PUBLISHED,
+  assetId: ASSET_ID,
+  url: CANONICAL_URL,
   delivery: {
     status: "delivered",
     channelId: CHANNEL_ID,
@@ -48,7 +49,7 @@ function envelope(
       size: 13,
       url: CANONICAL_URL,
     },
-    delivery: { ...delivery, operationId: OPERATION_ID },
+    delivery,
   };
 }
 const DELIVERED_ENVELOPE = envelope({ status: "delivered" }, [
@@ -73,11 +74,11 @@ describe("okou discord upload-file", () => {
     writeFileSync(filePath, "Weekly report");
     for (const option of [
       "file",
-      "channel",
+      "to",
       "guildId",
-      "comment",
+      "text",
       "contentType",
-      "operationId",
+      "json",
     ]) {
       uploadFileCommand.setOptionValue(option, undefined);
     }
@@ -100,8 +101,6 @@ describe("okou discord upload-file", () => {
       filePath,
       "--to",
       CHANNEL_ID,
-      "--operation-id",
-      OPERATION_ID,
       ...extra,
     ]);
   }
@@ -109,27 +108,34 @@ describe("okou discord upload-file", () => {
   it.each(["me", `user:${CHANNEL_ID}`])(
     "addresses an uploaded file to DM recipient %s",
     async (target) => {
-      let body: unknown;
+      let initBody: unknown;
+      let completeBody: unknown;
       server.use(
         http.post(`${API}/init`, async ({ request }) => {
-          body = await request.json();
-          return HttpResponse.json(PUBLISHED);
+          initBody = await request.json();
+          return HttpResponse.json(INITIALIZED);
         }),
-        http.post(`${API}/materialize`, () => {
+        http.put(UPLOAD_URL, () => {
+          return new HttpResponse(null, { status: 200 });
+        }),
+        http.post(`${API}/complete`, async ({ request }) => {
+          completeBody = await request.json();
           return HttpResponse.json(DELIVERED);
         }),
       );
       await upload(["--to", target, "--json"]);
-      expect(body).toMatchObject({
-        userId: target === "me" ? "me" : CHANNEL_ID,
+      const expectedUser = target === "me" ? "me" : CHANNEL_ID;
+      expect(initBody).toMatchObject({ userId: expectedUser });
+      expect(initBody).not.toHaveProperty("channelId");
+      expect(completeBody).toStrictEqual({
+        assetId: ASSET_ID,
+        userId: expectedUser,
       });
-      expect(body).not.toHaveProperty("channelId");
     },
   );
 
   it("publishes canonical bytes before server delivery and returns stable references", async () => {
     let storedContent: string | undefined;
-    let published = false;
     server.use(
       http.post(`${API}/init`, async ({ request }) => {
         expect(request.headers.get("authorization")).toBe(
@@ -142,16 +148,11 @@ describe("okou discord upload-file", () => {
           checksumSha256: createHash("sha256")
             .update("Weekly report")
             .digest("hex"),
-          operationId: OPERATION_ID,
           channelId: CHANNEL_ID,
           guildId: GUILD_ID,
           comment: "A weekly update",
         });
-        return HttpResponse.json({
-          ...PUBLISHED,
-          uploadUrl: UPLOAD_URL,
-          uploadHeaders: { "x-amz-meta-checksum": "checksum" },
-        });
+        return HttpResponse.json(INITIALIZED);
       }),
       http.put(UPLOAD_URL, async ({ request }) => {
         expect(request.headers.get("authorization")).toBeNull();
@@ -161,23 +162,13 @@ describe("okou discord upload-file", () => {
         storedContent = await request.text();
         return new HttpResponse(null, { status: 200 });
       }),
-      http.post(`${API}/materialize`, async ({ request }) => {
+      http.post(`${API}/complete`, async ({ request }) => {
         expect(storedContent).toBe("Weekly report");
         expect(await request.json()).toEqual({
           assetId: ASSET_ID,
-          operationId: OPERATION_ID,
-        });
-        published = true;
-        return HttpResponse.json({
-          ...PUBLISHED,
-          delivery: { status: "pending" },
-        });
-      }),
-      http.post(`${API}/complete`, async ({ request }) => {
-        expect(published).toBe(true);
-        expect(await request.json()).toEqual({
-          assetId: ASSET_ID,
-          operationId: OPERATION_ID,
+          channelId: CHANNEL_ID,
+          guildId: GUILD_ID,
+          comment: "A weekly update",
         });
         return HttpResponse.json(DELIVERED);
       }),
@@ -197,67 +188,21 @@ describe("okou discord upload-file", () => {
     expect(printedJson()).toStrictEqual(DELIVERED_ENVELOPE);
   });
 
-  it("recovers a lost delivery response with the same operation and no second upload", async () => {
-    let externallyDelivered = false;
-    server.use(
-      http.post(`${API}/init`, async ({ request }) => {
-        expect(await request.json()).toMatchObject({
-          operationId: OPERATION_ID,
-        });
-        return HttpResponse.json(PUBLISHED);
-      }),
-      http.post(`${API}/materialize`, () => {
-        return HttpResponse.json(
-          externallyDelivered
-            ? DELIVERED
-            : { ...PUBLISHED, delivery: { status: "pending" } },
-        );
-      }),
-      http.post(`${API}/complete`, () => {
-        if (externallyDelivered) throw new Error("File was delivered twice");
-        externallyDelivered = true;
-        return HttpResponse.json(
-          {
-            error: {
-              code: "INTERNAL_SERVER_ERROR",
-              message: "Delivery acknowledgement lost",
-            },
-          },
-          { status: 502 },
-        );
-      }),
-    );
-
-    await expect(upload(["--json"])).rejects.toThrow("process.exit called");
-    expect(printedJson()).toStrictEqual(envelope({ status: "pending" }));
-    expect(warnings).not.toHaveBeenCalled();
-    expect(errors.mock.calls.flat().join("\n")).toContain(
-      "Delivery acknowledgement lost",
-    );
-
-    output.mockClear();
-    await upload(["--json"]);
-    expect(printedJson()).toStrictEqual(DELIVERED_ENVELOPE);
-  });
-
   it("retains canonical publication when Discord delivery fails", async () => {
     const failed = {
-      ...PUBLISHED,
+      assetId: ASSET_ID,
+      url: CANONICAL_URL,
       delivery: {
         status: "failed",
         message: "Discord rate limited delivery",
-        retryable: false,
       },
     };
     server.use(
       http.post(`${API}/init`, () => {
-        return HttpResponse.json(PUBLISHED);
+        return HttpResponse.json(INITIALIZED);
       }),
-      http.post(`${API}/materialize`, () => {
-        return HttpResponse.json({
-          ...PUBLISHED,
-          delivery: { status: "pending" },
-        });
+      http.put(UPLOAD_URL, () => {
+        return new HttpResponse(null, { status: 200 });
       }),
       http.post(`${API}/complete`, () => {
         return HttpResponse.json(failed);
@@ -276,31 +221,9 @@ describe("okou discord upload-file", () => {
     );
   });
 
-  it("reports a pending concurrent delivery without suggesting a resend", async () => {
-    const pending = { ...PUBLISHED, delivery: { status: "pending" } };
+  it("exits when initialization fails", async () => {
     server.use(
       http.post(`${API}/init`, () => {
-        return HttpResponse.json(PUBLISHED);
-      }),
-      http.post(`${API}/materialize`, () => {
-        return HttpResponse.json(pending);
-      }),
-      http.post(`${API}/complete`, () => {
-        return HttpResponse.json(pending);
-      }),
-    );
-
-    await upload(["--json"]);
-
-    expect(printedJson()).toStrictEqual(envelope({ status: "pending" }));
-    expect(warnings).not.toHaveBeenCalled();
-  });
-
-  it("sends a generated operation ID and exits when initialization fails", async () => {
-    server.use(
-      http.post(`${API}/init`, async ({ request }) => {
-        const body: unknown = await request.json();
-        expect(body).toMatchObject({ operationId: expect.any(String) });
         return HttpResponse.json(
           {
             error: {
@@ -331,10 +254,10 @@ describe("okou discord upload-file", () => {
     expect(output).not.toHaveBeenCalled();
   });
 
-  it("stops before materialization when canonical storage rejects the bytes", async () => {
+  it("stops before completion when canonical storage rejects the bytes", async () => {
     server.use(
       http.post(`${API}/init`, () => {
-        return HttpResponse.json({ ...PUBLISHED, uploadUrl: UPLOAD_URL });
+        return HttpResponse.json(INITIALIZED);
       }),
       http.put(UPLOAD_URL, () => {
         return new HttpResponse(null, { status: 403 });

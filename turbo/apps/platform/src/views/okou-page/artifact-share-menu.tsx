@@ -1,7 +1,6 @@
 import { ShareAudienceChoices } from "./share-audience-choices.tsx";
 import { SharePeople } from "./share-people.tsx";
 import { useLoadableSet } from "ccstate-react/experimental";
-import type { ArtifactShareStatus } from "@okouai/api-contracts/contracts/artifact-shares";
 import { useGet, useLastResolved, useLoadable, useSet } from "ccstate-react";
 import type { ReactNode } from "react";
 // The shared `Radio` is the 16px circle meant to sit beside a label. Here the
@@ -33,6 +32,7 @@ import { useTranslation } from "react-i18next";
 import {
   getArtifactShareScope,
   type ArtifactShareSession,
+  type ArtifactShareStatus,
 } from "../../signals/artifact-sharing.ts";
 import { featureSwitches$ } from "../../signals/external/feature-switch.ts";
 import { detach, Reason } from "../../signals/utils.ts";

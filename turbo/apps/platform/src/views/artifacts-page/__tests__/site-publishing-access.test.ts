@@ -55,6 +55,7 @@ async function openSite(
     }
     return respond(200, {
       siteId,
+      artifactId: published.id,
       publicSlug: current,
       url: link(current),
       isActive: true,

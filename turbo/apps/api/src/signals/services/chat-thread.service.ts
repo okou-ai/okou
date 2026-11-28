@@ -11,15 +11,10 @@ import {
 import { cancelRun$ } from "./agent-run-cancellation.service";
 import { reconcileAutomationEventWatches$ } from "./automation-event-watch-lifecycle.service";
 import { array, boolean, object, string, uuid, unknown as zUnknown } from "zod";
-import { hostedSites } from "@okouai/db/runtime/hosted-site";
-import { linkLayoutFromSegment } from "@okouai/api-contracts/contracts/link-layout";
-import { hostedLinkOrigin } from "../../lib/link-layout";
 import { chatRelations } from "@okouai/db/schema/chat-relation";
-import { artifacts } from "@okouai/db/schema/artifact";
 import { command, computed, type Computed } from "ccstate";
 import {
   type ChatThreadDraft,
-  type ChatThreadArtifactRun,
   type ChatThreadDetail,
   type CodexServiceTier,
   type PersistedAttachment,
@@ -30,10 +25,6 @@ import {
 } from "@okouai/api-contracts/contracts/chat-threads";
 import type { InitialRemoteAccessOverride } from "@okouai/api-contracts/contracts/chat-remote-access";
 import type { ModelSettings } from "@okouai/api-contracts/contracts/model-reasoning-effort";
-import {
-  type HostedArtifactKind,
-  hostedArtifactKindSchema,
-} from "@okouai/api-contracts/contracts/host";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import {
   chatEventTerminalPredicate,
@@ -42,12 +33,7 @@ import {
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { chatThreadDrafts } from "@okouai/db/schema/chat-thread-draft";
 import {
-  CANONICAL_ASSET_VERSION,
-  runUploadedFiles,
-} from "@okouai/db/schema/run-uploaded-file";
-import {
   and,
-  asc,
   desc,
   eq,
   gt,
@@ -74,7 +60,6 @@ import {
 import { chatThreadInitializationCtes } from "./chat-thread-initialization-plan";
 import { now, nowDate, nowDateSql } from "../../lib/time";
 import { safeSqlStateCode } from "../../lib/pg-errors";
-import { inferMimetype } from "./chat-event-shared.service";
 import { chatThreadOrganizationPredicate } from "./chat-thread-organization.service";
 import type { CancelRunResult } from "./agent-run-terminal-transition.service";
 import { cancellationRecoveryPendingForThread } from "./chat-active-run.service";
@@ -84,154 +69,9 @@ import {
 } from "./chat-thread-create.service";
 import { initialRemoteAccessOwnershipPredicate } from "./chat-remote-access.service";
 
-type ChatThreadRow = {
-  readonly id: string;
-  readonly title: string | null;
-  readonly codexServiceTier: CodexServiceTier | null;
-  readonly computerUseHostId: string | null;
-  readonly cloudBrowserEnabled: boolean;
-  readonly orgId: string | null;
-  readonly lastReadAt: Date | null;
-  readonly lastMessageAt: Date;
-  readonly pinnedAt: Date | null;
-  readonly renamedAt: Date | null;
-  readonly createdAt: Date;
-  readonly updatedAt: Date;
-};
-
 type ChatThreadDetailRow = {
   readonly lastReadAt: Date | null;
 };
-
-function parseHostedArtifactKind(
-  value: unknown,
-): HostedArtifactKind | undefined {
-  const parsed = hostedArtifactKindSchema.safeParse(value);
-  return parsed.success ? parsed.data : undefined;
-}
-
-function parseHostedArtifactKindFromMetadata(
-  metadata: unknown,
-): HostedArtifactKind | undefined {
-  if (!isRecord(metadata)) {
-    return undefined;
-  }
-  return parseHostedArtifactKind(metadata.artifactKind);
-}
-
-const publicHostedArtifactMetadataSchema = object({
-  siteId: uuid(),
-  aliasUrl: string(),
-});
-
-function publicHostedSiteIds(rows: readonly { readonly metadata: unknown }[]) {
-  return [
-    ...new Set(
-      rows.flatMap((row) => {
-        const metadata = publicHostedArtifactMetadataSchema.safeParse(
-          row.metadata,
-        );
-        return metadata.success ? [metadata.data.siteId] : [];
-      }),
-    ),
-  ];
-}
-
-interface PublicHostedSite {
-  readonly url: string;
-  readonly title: string | null;
-}
-
-function currentHostedArtifactMetadata(
-  metadata: unknown,
-  publicSites: ReadonlyMap<string, PublicHostedSite>,
-) {
-  const parsed = publicHostedArtifactMetadataSchema.safeParse(metadata);
-  const site = parsed.success ? publicSites.get(parsed.data.siteId) : undefined;
-  return {
-    ...(site ? { aliasUrl: site.url } : {}),
-    ...(site?.title ? { title: site.title } : {}),
-  };
-}
-
-function canonicalAssetMaterialization(
-  status: "pending" | "ready" | "failed" | null,
-  error: {
-    readonly code: string;
-    readonly message: string;
-    readonly retryable: boolean;
-  } | null,
-): NonNullable<
-  ChatThreadArtifactRun["files"][number]["assetRef"]
->["materialization"] {
-  if (status === "ready") {
-    return { status: "ready" };
-  }
-  if (status === "pending") {
-    return { status: "pending" };
-  }
-  return {
-    status: "failed",
-    error: error ?? {
-      code: "materialization-failed",
-      message: "The attachment could not be imported",
-      retryable: false,
-    },
-  };
-}
-
-function ownedChatThread(
-  orgId: string,
-  threadId: string,
-  userId: string,
-): Computed<Promise<ChatThreadRow | null>> {
-  return computed(async (get): Promise<ChatThreadRow | null> => {
-    const db = get(db$);
-    const [thread] = await db
-      .select({
-        id: chatThreads.id,
-        title: chatThreads.title,
-        computerUseHostId: chatThreads.computerUseHostId,
-        cloudBrowserEnabled: chatThreads.cloudBrowserEnabled,
-        codexServiceTier: chatThreads.codexServiceTier,
-        orgId: chatThreads.orgId,
-        lastReadAt: chatThreads.lastReadAt,
-        lastMessageAt: chatThreads.lastMessageAt,
-        pinnedAt: chatThreads.pinnedAt,
-        renamedAt: chatThreads.renamedAt,
-        createdAt: chatThreads.createdAt,
-        updatedAt: chatThreads.updatedAt,
-      })
-      .from(chatThreads)
-      .where(
-        and(
-          eq(chatThreads.id, threadId),
-          eq(chatThreads.userId, userId),
-          chatThreadOrganizationPredicate(orgId),
-        ),
-      )
-      .limit(1);
-
-    if (!thread) {
-      return null;
-    }
-
-    return {
-      id: thread.id,
-      title: thread.title,
-      computerUseHostId: thread.computerUseHostId,
-      cloudBrowserEnabled: thread.cloudBrowserEnabled,
-      codexServiceTier: thread.codexServiceTier ?? null,
-      orgId: thread.orgId ?? null,
-      lastReadAt: thread.lastReadAt,
-      lastMessageAt: thread.lastMessageAt,
-      pinnedAt: thread.pinnedAt ?? null,
-      renamedAt: thread.renamedAt ?? null,
-      createdAt: thread.createdAt,
-      updatedAt: thread.updatedAt,
-    };
-  });
-}
 
 export function chatThreadDraft(args: {
   readonly legacyMemberDraft?: boolean;
@@ -279,10 +119,6 @@ export function chatThreadDraft(args: {
         .parse(draft.draftAttachments),
     };
   });
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 const ACTIVE_RUN_STATUSES = ["pending", "running"] as const;
@@ -554,223 +390,6 @@ export function chatThreadDraftIds(args: {
       return row.id;
     });
   });
-}
-function chatThreadArtifactRows(args: {
-  readonly threadId: string;
-  readonly userId: string;
-}) {
-  return computed(async (get) => {
-    const db = get(db$);
-    return await db
-      .select({
-        assetId: runUploadedFiles.id,
-        artifactId: artifacts.id,
-        assetVersion: runUploadedFiles.assetVersion,
-        runId: runUploadedFiles.runId,
-        externalId: runUploadedFiles.externalId,
-        filename: runUploadedFiles.filename,
-        contentType: runUploadedFiles.contentType,
-        sizeBytes: runUploadedFiles.sizeBytes,
-        url: runUploadedFiles.url,
-        previewImageUrl: runUploadedFiles.previewImageUrl,
-        metadata: runUploadedFiles.metadata,
-        classification: runUploadedFiles.classification,
-        accessLevel: runUploadedFiles.accessLevel,
-        materializationStatus: runUploadedFiles.materializationStatus,
-        materializationError: runUploadedFiles.materializationError,
-        provenance: runUploadedFiles.provenance,
-        createdAt: runUploadedFiles.createdAt,
-      })
-      .from(runUploadedFiles)
-      .leftJoin(
-        artifacts,
-        and(
-          or(
-            eq(artifacts.projectionFileId, runUploadedFiles.id),
-            // Every immutable publication in a chat manages the same site.
-            eq(
-              artifacts.logicalKey,
-              sql`'site:' || (${runUploadedFiles.metadata}->>'siteId')`,
-            ),
-          ),
-          eq(artifacts.orgId, runUploadedFiles.orgId),
-          eq(artifacts.authorUserId, args.userId),
-        ),
-      )
-      .leftJoin(
-        hostedSites,
-        eq(
-          sql`${runUploadedFiles.metadata}->>'siteId'`,
-          sql`${hostedSites.id}::text`,
-        ),
-      )
-      .where(
-        and(
-          eq(runUploadedFiles.userId, args.userId),
-          isNull(runUploadedFiles.deletedAt),
-          isNull(artifacts.deletedAt),
-          isNull(hostedSites.deletedAt),
-          isNotNull(runUploadedFiles.runId),
-          eq(runUploadedFiles.chatThreadId, args.threadId),
-        ),
-      )
-      .orderBy(asc(runUploadedFiles.createdAt), asc(runUploadedFiles.id));
-  });
-}
-
-function publicHostedArtifactSites(
-  userId: string,
-  thread$: ReturnType<typeof ownedChatThread>,
-  rows$: ReturnType<typeof chatThreadArtifactRows>,
-) {
-  return computed(async (get) => {
-    const thread = await get(thread$);
-    if (!thread) {
-      return new Map<string, PublicHostedSite>();
-    }
-    const rows = await get(rows$);
-    const publicSiteIds = publicHostedSiteIds(rows);
-    // Public aliases are mutable; stored upload metadata identifies the site,
-    // while its current row owns the address across every deployment version.
-    const publicSites =
-      thread.orgId && publicSiteIds.length > 0
-        ? await get(db$)
-            .select({
-              id: hostedSites.id,
-              title: artifacts.title,
-              publicSlug: hostedSites.publicSlug,
-              linkLayoutSegment: hostedSites.linkLayoutSegment,
-            })
-            .from(hostedSites)
-            .leftJoin(
-              artifacts,
-              and(
-                eq(
-                  artifacts.logicalKey,
-                  sql`'site:' || ${hostedSites.id}::text`,
-                ),
-                eq(artifacts.orgId, hostedSites.orgId),
-                eq(artifacts.authorUserId, userId),
-              ),
-            )
-            .where(
-              and(
-                inArray(hostedSites.id, publicSiteIds),
-                eq(hostedSites.orgId, thread.orgId),
-                eq(hostedSites.userId, userId),
-                isNull(hostedSites.deletedAt),
-                isNotNull(hostedSites.activeDeploymentId),
-              ),
-            )
-        : [];
-    return new Map(
-      publicSites.map((site) => {
-        return [
-          site.id,
-          {
-            url: hostedLinkOrigin(
-              linkLayoutFromSegment(site.linkLayoutSegment),
-              site.publicSlug,
-            ),
-            title: site.title,
-          },
-        ];
-      }),
-    );
-  });
-}
-
-export function chatThreadArtifacts(args: {
-  readonly orgId: string;
-  readonly threadId: string;
-  readonly userId: string;
-}): Computed<Promise<readonly ChatThreadArtifactRun[] | null>> {
-  const thread$ = ownedChatThread(args.orgId, args.threadId, args.userId);
-  const rows$ = chatThreadArtifactRows(args);
-  const publicSites$ = publicHostedArtifactSites(args.userId, thread$, rows$);
-  return computed(
-    async (get): Promise<readonly ChatThreadArtifactRun[] | null> => {
-      const thread = await get(thread$);
-      if (!thread) {
-        return null;
-      }
-
-      const rows = await get(rows$);
-      const publicSites = await get(publicSites$);
-
-      const visibleRows = rows.filter((row) => {
-        return row.runId !== null;
-      });
-
-      const rowsByUrl = new Map<string, (typeof visibleRows)[number]>();
-      for (const row of visibleRows) {
-        if (!row.url) {
-          continue;
-        }
-        rowsByUrl.delete(row.url);
-        rowsByUrl.set(row.url, row);
-      }
-
-      const byRun = new Map<string, ChatThreadArtifactRun>();
-      for (const row of rowsByUrl.values()) {
-        if (!row.url || !row.runId) {
-          continue;
-        }
-        const filename = row.filename ?? row.externalId;
-        const existing = byRun.get(row.runId) ?? {
-          runId: row.runId,
-          files: [],
-        };
-        const artifactKind = parseHostedArtifactKindFromMetadata(row.metadata);
-        const hosted = currentHostedArtifactMetadata(row.metadata, publicSites);
-        const canonical =
-          row.assetVersion === CANONICAL_ASSET_VERSION &&
-          row.classification === "published-output" &&
-          row.accessLevel === "published";
-        existing.files.push({
-          id: canonical ? row.assetId : row.externalId,
-          // Catalog groups hosted runs and repeated logical outputs. Files
-          // outside its current projection keep their own stored resource ID.
-          artifactId: row.artifactId ?? row.assetId,
-          filename,
-          ...hosted,
-          contentType: row.contentType ?? inferMimetype(filename),
-          size: row.sizeBytes ?? 0,
-          url: row.url,
-          ...(row.previewImageUrl
-            ? { previewImageUrl: row.previewImageUrl }
-            : {}),
-          ...(canonical
-            ? {
-                assetRef: {
-                  id: row.assetId,
-                  classification: "published-output" as const,
-                  access: "published" as const,
-                  materialization: canonicalAssetMaterialization(
-                    row.materializationStatus,
-                    row.materializationError,
-                  ),
-                  ...(row.provenance
-                    ? {
-                        provenance: {
-                          provider: row.provenance.provider,
-                        },
-                      }
-                    : {}),
-                },
-              }
-            : {}),
-          ...(artifactKind ? { artifactKind } : {}),
-          createdAt: row.createdAt.toISOString(),
-        });
-        byRun.set(row.runId, existing);
-      }
-
-      return Array.from(byRun.values()).filter((run) => {
-        return run.files.length > 0;
-      });
-    },
-  );
 }
 
 export interface CreatedChatThread {

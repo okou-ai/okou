@@ -32,7 +32,7 @@ private sealed interface SettingWrite<out T> {
 
     data object Rejected : SettingWrite<Nothing>
 
-    data object NeedsReadback : SettingWrite<Nothing>
+    data object Unresolved : SettingWrite<Nothing>
 }
 
 internal data class PendingToolChoice(val enabled: Boolean, val visit: Long)
@@ -207,22 +207,21 @@ internal class BuiltInToolsSettings(
 
     private suspend fun saveTool(id: String, first: Boolean) {
         var attempted = first
+        var hasUnresolvedWrite = false
         while (authorized()) {
             val write =
                 writeWithRetry(isCurrent = { it.savingTools[id]?.enabled == attempted }) {
                     service.setEnabled(id, attempted)
                 } ?: return
-            val confirmed =
-                when (write) {
-                    is SettingWrite.Acknowledged -> write.value
-                    SettingWrite.Rejected -> null
-                    SettingWrite.NeedsReadback -> verifyToolWrite(id, attempted)
-                }
+            val confirmed = (write as? SettingWrite.Acknowledged)?.value
+            hasUnresolvedWrite =
+                confirmed == null && (hasUnresolvedWrite || write == SettingWrite.Unresolved)
             currentCoroutineContext().ensureActive()
             if (!authorized()) return
             val latest = state.value.savingTools.getValue(id)
             val followUp =
-                confirmed != null && latest.enabled != attempted && latest.enabled != confirmed
+                latest.enabled != attempted &&
+                    (hasUnresolvedWrite || confirmed != null && latest.enabled != confirmed)
             toolRevision++
             mutable.update { value ->
                 value.copy(
@@ -241,9 +240,10 @@ internal class BuiltInToolsSettings(
             if (!followUp) {
                 if (latest.visit == visit) {
                     when {
-                        confirmed == null && write != SettingWrite.Rejected ->
+                        write == SettingWrite.Unresolved ->
                             notice(SettingsNotice.ToolSaveUnconfirmed)
-                        state.value.enabled(id) != latest.enabled ->
+                        write == SettingWrite.Rejected && latest.enabled == attempted ||
+                            state.value.enabled(id) != latest.enabled ->
                             notice(SettingsNotice.ToolSaveFailed)
                     }
                 }
@@ -251,14 +251,6 @@ internal class BuiltInToolsSettings(
             }
             attempted = latest.enabled
         }
-    }
-
-    private suspend fun verifyToolWrite(id: String, attempted: Boolean): Boolean? = readResource {
-        val observed = id !in service.disabledTools()
-        val latest = state.value.savingTools.getValue(id).enabled
-        val evidence = settingReadback(attempted, latest) { it == observed }
-        // A stale value cannot settle the write or release another PATCH for the same tool.
-        observed.takeUnless { evidence == SettingReadback.Unconfirmed }
     }
 
     fun chooseImage(id: String) {
@@ -280,32 +272,21 @@ internal class BuiltInToolsSettings(
 
     private suspend fun saveImage(first: String) {
         var attempted = first
+        var hasUnresolvedWrite = false
         while (authorized()) {
             val write =
                 writeWithRetry(isCurrent = { it.pendingImage?.id == attempted }) {
                     service.selectImageModel(attempted) ?: defaultImageToolModel
                 } ?: return
-            val confirmed =
-                when (write) {
-                    is SettingWrite.Acknowledged -> write.value
-                    SettingWrite.Rejected -> null
-                    SettingWrite.NeedsReadback ->
-                        readResource {
-                            // An older value may have been read before the first write landed.
-                            (service.imageModel() ?: defaultImageToolModel).takeIf {
-                                it == attempted
-                            }
-                        }
-                }
+            val confirmed = (write as? SettingWrite.Acknowledged)?.value
+            hasUnresolvedWrite =
+                confirmed == null && (hasUnresolvedWrite || write == SettingWrite.Unresolved)
             currentCoroutineContext().ensureActive()
             if (!authorized()) return
             val current = state.value
             val latest = checkNotNull(current.pendingImage)
             val saved = confirmed ?: current.confirmedImage
-            val followUp =
-                latest.id != attempted &&
-                    latest.id != saved &&
-                    (confirmed != null || write == SettingWrite.Rejected)
+            val followUp = latest.id != attempted && (hasUnresolvedWrite || latest.id != saved)
             imageRevision++
             mutable.update {
                 it.copy(
@@ -315,8 +296,8 @@ internal class BuiltInToolsSettings(
             }
             if (confirmed != null) cacheImage(confirmed)
             if (!followUp) {
-                val unresolved = confirmed == null && write == SettingWrite.NeedsReadback
-                if (latest.visit == visit && (unresolved || latest.id != saved)) {
+                val failed = confirmed == null && latest.id == attempted
+                if (latest.visit == visit && (failed || latest.id != saved)) {
                     notice(SettingsNotice.ImageModelSaveFailed)
                 }
                 return
@@ -327,17 +308,13 @@ internal class BuiltInToolsSettings(
 
     private suspend fun <T : Any> readResource(
         reportFailure: Boolean = true,
-        load: suspend () -> T?,
+        load: suspend () -> T,
     ): T? {
         var retries = 0
         while (authorized()) {
             val wait =
                 try {
-                    load()?.let {
-                        return it
-                    }
-                    // A readback can succeed without confirming the attempted value.
-                    boundedRetryDelayMillis(retries)
+                    return load()
                 } catch (error: CancellationException) {
                     throw error
                 } catch (error: Exception) {
@@ -377,7 +354,7 @@ internal class BuiltInToolsSettings(
                             error is ApiFailure.UpdateRequired
                     )
                         SettingWrite.Rejected
-                    else SettingWrite.NeedsReadback
+                    else SettingWrite.Unresolved
                 }
                 val superseded = withTimeoutOrNull(wait) { state.first { !isCurrent(it) } }
                 currentCoroutineContext().ensureActive()

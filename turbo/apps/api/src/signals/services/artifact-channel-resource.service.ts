@@ -2,8 +2,7 @@ import { command } from "ccstate";
 import { and, eq, isNull } from "drizzle-orm";
 import { uuid } from "zod";
 import { parseArtifactReference } from "@okouai/api-contracts/contracts/artifact-references";
-import { artifactFileShares } from "@okouai/db/schema/artifact-file-share";
-import { hostedSiteShares } from "@okouai/db/schema/hosted-site-share";
+import { artifactUserShares } from "@okouai/db/schema/artifact-user-share";
 import {
   hostedSites,
   hostedDeployments,
@@ -17,26 +16,123 @@ import { settle } from "../utils";
 import { artifactReferenceRecord$ } from "./artifact-reference.service";
 import {
   privateArtifactRecord$,
-  privateArtifactUrl,
+  resolvePrivateArtifactUrl$,
 } from "./private-artifact-storage.service";
+import { findActiveArtifactForFile$ } from "./artifact-file-share-access.service";
+import { probeLegacyArtifactSharePolicy$ } from "./artifact-share-probe.service";
 import {
-  readArtifactShare$,
-  publicArtifactShareIdentity$,
-} from "./artifact-shares.service";
-import { getHostedSiteVisibility$ } from "./hosted-site-access.service";
-import type { ArtifactSharingResource } from "./artifact-sharing-resource.service";
+  getHostedSiteVisibility$,
+  readHostedSitePolicy$,
+} from "./hosted-site-access.service";
 
-export interface ChannelSharingResource extends ArtifactSharingResource {
+export interface ChannelSharingResource {
+  readonly kind: "file" | "site";
+  readonly id: string;
+  readonly artifactId: string;
+  readonly userId: string;
+  readonly orgId: string;
+  readonly url: string;
   readonly title: string;
   readonly audience: "private" | "organization" | "public";
   readonly revision: string | null;
   readonly shares: readonly {
     readonly email: string;
-    readonly userId: string | null;
+    readonly userId: string;
   }[];
 }
 
+const ownerInOrg$ = command(
+  async (
+    { get },
+    args: { readonly orgId: string; readonly userId: string },
+    signal: AbortSignal,
+  ): Promise<boolean> => {
+    const membership = await settle(
+      get(clerk$).organizations.getOrganizationMembershipList({
+        organizationId: args.orgId,
+        userId: [args.userId],
+        limit: 1,
+      }),
+      signal,
+    );
+    if (!membership.ok) {
+      if (isClerkResourceNotFound(membership.error)) {
+        return false;
+      }
+      throw membership.error;
+    }
+    return membership.value.data.some((member) => {
+      return (
+        member.organization.id === args.orgId &&
+        member.publicUserData?.userId === args.userId
+      );
+    });
+  },
+);
+
 /** Read the current audience and grants, optionally requiring a matching owner. Callers authorize viewers before exposing this metadata. */
+const fileChannelSharingResource$ = command(
+  async (
+    { get, set },
+    args: { readonly id: string; readonly userId?: string },
+    signal: AbortSignal,
+  ): Promise<ChannelSharingResource | null> => {
+    const file = await set(privateArtifactRecord$, args.id, signal);
+    if (
+      !file ||
+      (args.userId !== undefined && file.userId !== args.userId) ||
+      !file.isReady
+    ) {
+      return null;
+    }
+    const artifact = await set(findActiveArtifactForFile$, file, signal);
+    if (!artifact) {
+      return null;
+    }
+    if (
+      !(await set(
+        ownerInOrg$,
+        { orgId: file.orgId, userId: file.userId },
+        signal,
+      ))
+    ) {
+      return null;
+    }
+    const [url, shares] = await Promise.all([
+      set(
+        resolvePrivateArtifactUrl$,
+        { id: file.id, filename: file.filename },
+        signal,
+      ),
+      get(db$)
+        .select({
+          email: artifactUserShares.email,
+          userId: artifactUserShares.userId,
+        })
+        .from(artifactUserShares)
+        .where(
+          and(
+            eq(artifactUserShares.artifactId, artifact.id),
+            eq(artifactUserShares.orgId, file.orgId),
+          ),
+        ),
+    ]);
+    signal.throwIfAborted();
+    return {
+      kind: "file",
+      title: file.filename,
+      id: file.id,
+      artifactId: artifact.id,
+      userId: file.userId,
+      orgId: file.orgId,
+      url,
+      audience: artifact.visibility,
+      revision: null,
+      shares,
+    };
+  },
+);
+
 export const channelSharingResource$ = command(
   async (
     { get, set },
@@ -48,49 +144,9 @@ export const channelSharingResource$ = command(
     signal: AbortSignal,
   ): Promise<ChannelSharingResource | null> => {
     if (args.kind === "file") {
-      const file = await set(privateArtifactRecord$, args.id, signal);
-      if (
-        !file ||
-        (args.userId !== undefined && file.userId !== args.userId) ||
-        file.materializationStatus !== "ready"
-      ) {
-        return null;
-      }
-      const policy = await set(
-        readArtifactShare$,
-        {
-          target: { kind: "file", id: file.id },
-          userId: file.userId,
-          orgId: file.orgId,
-        },
-        signal,
-      );
-      if (!policy) {
-        return null;
-      }
-      const shares = await get(db$)
-        .select({
-          email: artifactFileShares.email,
-          userId: artifactFileShares.userId,
-        })
-        .from(artifactFileShares)
-        .where(eq(artifactFileShares.fileId, file.id));
-      signal.throwIfAborted();
-      return {
-        kind: "file",
-        title: file.filename,
-        id: file.id,
-        userId: file.userId,
-        orgId: file.orgId,
-        url: new URL(
-          privateArtifactUrl(file.id, file.filename, file.metadata),
-          env("APP_URL"),
-        ).href,
-        audience: policy.audience,
-        revision: null,
-        shares,
-      };
+      return await set(fileChannelSharingResource$, args, signal);
     }
+
     const [site] = await get(db$)
       .select()
       .from(hostedSites)
@@ -109,50 +165,45 @@ export const channelSharingResource$ = command(
     if (!site) {
       return null;
     }
-    const membership = await settle(
-      get(clerk$).organizations.getOrganizationMembershipList({
-        organizationId: site.orgId,
-        userId: [site.userId],
-        limit: 1,
-      }),
-      signal,
-    );
-    if (!membership.ok) {
-      if (isClerkResourceNotFound(membership.error)) {
-        return null;
-      }
-      throw membership.error;
-    }
     if (
-      !membership.value.data.some((member) => {
-        return (
-          member.organization.id === site.orgId &&
-          member.publicUserData?.userId === site.userId
-        );
-      })
+      !(await set(
+        ownerInOrg$,
+        { orgId: site.orgId, userId: site.userId },
+        signal,
+      ))
     ) {
       return null;
     }
-    const policy = await set(
-      getHostedSiteVisibility$,
-      { siteId: site.id, userId: site.userId, orgId: site.orgId },
-      signal,
-    );
-    if (!policy) {
+    const [policy, livePolicy] = await Promise.all([
+      set(
+        getHostedSiteVisibility$,
+        { siteId: site.id, userId: site.userId, orgId: site.orgId },
+        signal,
+      ),
+      set(readHostedSitePolicy$, site.id, signal),
+    ]);
+    signal.throwIfAborted();
+    if (!policy || !livePolicy?.artifactId) {
       return null;
     }
     const shares = await get(db$)
       .select({
-        email: hostedSiteShares.email,
-        userId: hostedSiteShares.userId,
+        email: artifactUserShares.email,
+        userId: artifactUserShares.userId,
       })
-      .from(hostedSiteShares)
-      .where(eq(hostedSiteShares.siteId, site.id));
+      .from(artifactUserShares)
+      .where(
+        and(
+          eq(artifactUserShares.artifactId, livePolicy.artifactId),
+          eq(artifactUserShares.orgId, site.orgId),
+        ),
+      );
     signal.throwIfAborted();
     return {
       kind: "site",
       title: site.publicSlug,
       id: site.id,
+      artifactId: livePolicy.artifactId,
       userId: site.userId,
       orgId: site.orgId,
       url: `${hostedLinkOrigin("current", site.publicSlug)}/`,
@@ -163,9 +214,75 @@ export const channelSharingResource$ = command(
   },
 );
 
-const resolveAppChannelArtifact$ = command(
+const resolveLegacyShareChannelResource$ = command(
+  async (
+    { set },
+    args: { readonly shareId: string; readonly userId?: string },
+    signal: AbortSignal,
+  ): Promise<ChannelSharingResource | null> => {
+    const policy = await set(
+      probeLegacyArtifactSharePolicy$,
+      { shareId: args.shareId },
+      signal,
+    );
+    if (
+      !policy ||
+      (args.userId !== undefined && policy.ownerId !== args.userId)
+    ) {
+      return null;
+    }
+    return set(
+      channelSharingResource$,
+      {
+        kind: policy.target.kind === "file" ? "file" : "site",
+        id:
+          policy.target.kind === "file"
+            ? policy.target.id
+            : policy.target.siteId,
+        userId: policy.ownerId,
+      },
+      signal,
+    );
+  },
+);
+
+const resolveDeploymentChannelResource$ = command(
   async (
     { get, set },
+    args: { readonly deploymentId: string; readonly userId?: string },
+    signal: AbortSignal,
+  ): Promise<ChannelSharingResource | null> => {
+    const [deployment] = await get(db$)
+      .select({
+        siteId: privateHostedDeployments.siteId,
+        userId: privateHostedDeployments.userId,
+      })
+      .from(privateHostedDeployments)
+      .where(
+        and(
+          eq(privateHostedDeployments.id, args.deploymentId),
+          args.userId === undefined
+            ? undefined
+            : eq(privateHostedDeployments.userId, args.userId),
+          eq(privateHostedDeployments.status, "ready"),
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    if (!deployment) {
+      return null;
+    }
+    return set(
+      channelSharingResource$,
+      { kind: "site", id: deployment.siteId, userId: deployment.userId },
+      signal,
+    );
+  },
+);
+
+const resolveAppChannelArtifact$ = command(
+  async (
+    { set },
     args: { readonly path: string; readonly userId?: string },
     signal: AbortSignal,
   ): Promise<ChannelSharingResource | null> => {
@@ -193,50 +310,22 @@ const resolveAppChannelArtifact$ = command(
         return file;
       }
     }
-    const identity = await set(
-      publicArtifactShareIdentity$,
-      { id, kind },
-      signal,
-    );
-    if (
-      identity &&
-      (args.userId === undefined || identity.userId === args.userId)
-    ) {
-      return set(
-        channelSharingResource$,
-        {
-          kind: identity.targetKind === "file" ? "file" : "site",
-          id: identity.targetId,
-          userId: identity.userId,
-        },
+    if (kind === "share" || kind === undefined) {
+      const share = await set(
+        resolveLegacyShareChannelResource$,
+        { shareId: id, userId: args.userId },
         signal,
       );
+      if (share) {
+        return share;
+      }
     }
     if (kind === "html" || kind === undefined) {
-      const [deployment] = await get(db$)
-        .select({
-          siteId: privateHostedDeployments.siteId,
-          userId: privateHostedDeployments.userId,
-        })
-        .from(privateHostedDeployments)
-        .where(
-          and(
-            eq(privateHostedDeployments.id, id),
-            args.userId === undefined
-              ? undefined
-              : eq(privateHostedDeployments.userId, args.userId),
-            eq(privateHostedDeployments.status, "ready"),
-          ),
-        )
-        .limit(1);
-      signal.throwIfAborted();
-      if (deployment) {
-        return set(
-          channelSharingResource$,
-          { kind: "site", id: deployment.siteId, userId: deployment.userId },
-          signal,
-        );
-      }
+      return set(
+        resolveDeploymentChannelResource$,
+        { deploymentId: id, userId: args.userId },
+        signal,
+      );
     }
     return null;
   },

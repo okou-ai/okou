@@ -14,7 +14,6 @@ import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import java.net.NoRouteToHostException
-import java.net.UnknownHostException
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.CompletableDeferred
@@ -231,7 +230,8 @@ class DefaultModelSettingsTest {
                 model.select("claude-test")
                 failedWrite.await()
                 runCurrent()
-                assertEquals("claude-test", model.state.value.selectedModel)
+                assertEquals("gpt-test", model.state.value.selectedModel)
+                assertNull(model.state.value.pending)
                 owner.cancelAndJoin()
                 assertEquals("GPT 5.6 Sol", store.load(api.identity).confirmedLabel)
                 val key = stringPreferencesKey(api.identity.workspaceStorageKey())
@@ -458,7 +458,7 @@ class DefaultModelSettingsTest {
     }
 
     @Test
-    fun canonicalAutoReadbackConfirmsAnUnacknowledgedWriteWithoutReplay() = runTest {
+    fun ambiguousAutoSaveRollsBackUntilNormalSync() = runTest {
         ChatListApiFixture().use { api ->
             val fixture = DefaultModelApiFixture(api)
             val fixtureResponse = api.commandResponse
@@ -478,386 +478,29 @@ class DefaultModelSettingsTest {
 
             model.select(null)
             val confirmed = model.state.first { it.pending == null }
-            assertEquals("auto", confirmed.record?.confirmed?.selectedModel)
-            assertNull(confirmed.selected)
+            assertEquals("gpt-test", confirmed.selectedModel)
+            assertEquals(DefaultModelNotice.SaveRolledBack, confirmed.saveFeedback?.value)
+            model.showSettings(null)
+            advanceTimeBy(600_000)
+            model.state.first { it.selectedModel == "auto" }
             assertEquals(1, fixture.writes.size)
             assertEquals(JsonNull, fixture.writes.single()["selectedModel"])
         }
     }
 
     @Test
-    fun finalReadbackConfirmsAWriteThatCommittedOnTheThirdAttempt() = runTest {
-        ChatListApiFixture().use { api ->
-            DefaultModelApiFixture(api)
-            val original = api.service.defaultModelPreference()
-            val catalog = api.service.recoveryCatalog()
-            val models = api.service.recoveryModels()
-            var pref = original
-            val writes = mutableListOf<Long>()
-            val remote =
-                object : WorkspaceSession by api.service {
-                    override suspend fun recoveryCatalog() = catalog
-
-                    override suspend fun recoveryModels() = models
-
-                    override suspend fun defaultModelPreference() = pref
-
-                    override suspend fun updateDefaultModelPreference(
-                        update: UpdateDefaultModelPreference,
-                    ): DefaultModelPreference {
-                        writes += currentTime
-                        if (writes.size < 3) throw ApiFailure.Network(UnknownHostException())
-                        pref = pref.copy(selectedModel = "auto")
-                        throw ApiFailure.Http(503, null, null, null)
-                    }
-                }
-            val store = store(backgroundScope)
-            val model = model(api, store, service = remote, onFailure = {})
-            val notices = mutableListOf<DefaultModelNotice>()
-            backgroundScope.launch { model.notices.collect { notices += it } }
-            model.openAfterSync()
-            model.select(null)
-            advanceTimeBy(6_000)
-            runCurrent()
-
-            assertEquals(listOf(0L, 3_000L, 6_000L), writes)
-            assertEquals("auto", model.state.value.selectedModel)
-            assertEquals("auto", store.load(api.identity).confirmed.selectedModel)
-            assertNull(model.state.value.pending)
-            assertTrue(notices.isEmpty())
-        }
-    }
-
-    @Test
-    fun exhaustedReadbackRollsBackWithoutReplayingAndLaterSyncs() = runTest {
-        ChatListApiFixture().use { api ->
-            DefaultModelApiFixture(api)
-            val original = api.service.defaultModelPreference()
-            val catalog = api.service.recoveryCatalog()
-            val models = api.service.recoveryModels()
-            var preference = original
-            val writes = mutableListOf<Long>()
-            val reads = mutableListOf<Long>()
-            val remote =
-                object : WorkspaceSession by api.service {
-                    override suspend fun recoveryCatalog() = catalog
-
-                    override suspend fun recoveryModels() = models
-
-                    override suspend fun defaultModelPreference(): DefaultModelPreference {
-                        reads += currentTime
-                        if (reads.size == 2) throw ApiFailure.Http(429, null, null, 1L)
-                        return preference
-                    }
-
-                    override suspend fun updateDefaultModelPreference(
-                        update: UpdateDefaultModelPreference,
-                    ): DefaultModelPreference {
-                        writes += currentTime
-                        throw ApiFailure.Http(503, null, null, null)
-                    }
-                }
-            val store = store(backgroundScope)
-            val model = model(api, store, service = remote, onFailure = {})
-            val notices = mutableListOf<DefaultModelNotice>()
-            backgroundScope.launch { model.notices.collect { notices += it } }
-            model.openAfterSync()
-            model.select(null)
-            advanceTimeBy(3_000)
-            runCurrent()
-            assertEquals(listOf(0L), writes)
-            assertEquals(listOf(0L, 3_000L), reads)
-            assertTrue(notices.isEmpty())
-            assertTrue(model.state.value.pending != null)
-            assertNull(model.state.value.selected)
-
-            advanceTimeBy(999)
-            runCurrent()
-            assertEquals(listOf(0L, 3_000L), reads)
-            advanceTimeBy(1)
-            runCurrent()
-            assertEquals(listOf(0L, 3_000L, 4_000L), reads)
-            assertTrue(model.state.value.save?.checking == true)
-            assertTrue(notices.isEmpty())
-            assertEquals("gpt-test", store.load(api.identity).confirmed.selectedModel)
-
-            advanceTimeBy(3_000)
-            runCurrent()
-            assertEquals(listOf(0L, 3_000L, 4_000L, 7_000L), reads)
-            assertNull(model.state.value.pending)
-            assertEquals("gpt-test", model.state.value.selected?.id)
-            assertEquals(listOf(DefaultModelNotice.SaveRolledBack), notices)
-
-            model.foreground(false)
-            model.foreground(true)
-            runCurrent()
-            assertEquals(7_000L, reads.last())
-
-            model.showSettings(null)
-            advanceTimeBy(593_000)
-            runCurrent()
-            assertEquals(600_000L, reads.last())
-            assertNull(model.state.value.pending)
-            assertEquals("gpt-test", model.state.value.selected?.id)
-
-            preference = original.copy(selectedModel = "auto")
-            advanceTimeBy(600_000)
-            runCurrent()
-            assertEquals(1_200_000L, reads.last())
-            assertNull(model.state.value.pending)
-            assertEquals("auto", store.load(api.identity).confirmed.selectedModel)
-            assertEquals(listOf(0L), writes)
-            assertEquals(listOf(DefaultModelNotice.SaveRolledBack), notices)
-        }
-    }
-
-    @Test
-    fun scheduledRefreshLetsPendingReadbackHonorItsServerDelay() = runTest {
-        ChatListApiFixture().use { api ->
-            DefaultModelApiFixture(api)
-            val original = api.service.defaultModelPreference()
-            val catalog = api.service.recoveryCatalog()
-            val models = api.service.recoveryModels()
-            val reads = mutableListOf<Long>()
-            val writes = mutableListOf<Long>()
-            val remote =
-                object : WorkspaceSession by api.service {
-                    override suspend fun recoveryCatalog() = catalog
-
-                    override suspend fun recoveryModels() = models
-
-                    override suspend fun defaultModelPreference(): DefaultModelPreference {
-                        reads += currentTime
-                        return when (reads.size) {
-                            1 -> original
-                            2 -> throw ApiFailure.Http(429, null, null, 1L)
-                            else -> original.copy(selectedModel = "auto")
-                        }
-                    }
-
-                    override suspend fun updateDefaultModelPreference(
-                        update: UpdateDefaultModelPreference,
-                    ): DefaultModelPreference {
-                        writes += currentTime
-                        throw ApiFailure.Http(503, null, null, null)
-                    }
-                }
-            val model = model(api, service = remote, onFailure = {})
-            model.openAfterSync()
-            advanceTimeBy(596_500)
-            model.select(null)
-            runCurrent()
-            advanceTimeBy(3_000)
-            runCurrent()
-            assertEquals(listOf(0L, 599_500L), reads)
-
-            model.showSettings(null)
-            advanceTimeBy(999)
-            runCurrent()
-            assertEquals(listOf(0L, 599_500L), reads)
-            assertTrue(model.state.value.pending != null)
-
-            advanceTimeBy(1)
-            runCurrent()
-            assertEquals(listOf(0L, 599_500L, 600_500L), reads)
-            assertEquals(listOf(596_500L), writes)
-            assertNull(model.state.value.pending)
-            assertEquals("auto", model.state.value.record?.confirmed?.selectedModel)
-
-            advanceTimeBy(600_000)
-            runCurrent()
-            assertEquals(listOf(0L, 599_500L, 600_500L, 1_200_500L), reads)
-        }
-    }
-
-    @Test
-    fun aNewChoiceWaitsForTheOlderReadbackBudgetBeforeSubmitting() = runTest {
-        ChatListApiFixture().use { api ->
-            DefaultModelApiFixture(api)
-            val original = api.service.defaultModelPreference()
-            val catalog = api.service.recoveryCatalog()
-            val models = api.service.recoveryModels()
-            val reads = mutableListOf<Long>()
-            val writes = mutableListOf<Pair<Long, String?>>()
-            val remote =
-                object : WorkspaceSession by api.service {
-                    override suspend fun recoveryCatalog() = catalog
-
-                    override suspend fun recoveryModels() = models
-
-                    override suspend fun defaultModelPreference(): DefaultModelPreference {
-                        reads += currentTime
-                        if (reads.size == 2) throw ApiFailure.Http(429, null, null, 1L)
-                        return original
-                    }
-
-                    override suspend fun updateDefaultModelPreference(
-                        update: UpdateDefaultModelPreference,
-                    ): DefaultModelPreference {
-                        writes += currentTime to update.selectedModel
-                        if (writes.size == 1) throw ApiFailure.Http(503, null, null, null)
-                        return original.copy(selectedModel = update.selectedModel)
-                    }
-                }
-            val model = model(api, service = remote, onFailure = {})
-            model.openAfterSync()
-            model.select(null)
-            runCurrent()
-            advanceTimeBy(3_000)
-            runCurrent()
-            assertEquals(listOf(0L, 3_000L), reads)
-
-            advanceTimeBy(400)
-            model.select("claude-test")
-            assertEquals("claude-test", model.state.value.selected?.id)
-            advanceTimeBy(599)
-            runCurrent()
-            assertEquals(listOf(0L, 3_000L), reads)
-            assertEquals(listOf(0L to null), writes)
-
-            advanceTimeBy(1)
-            runCurrent()
-            assertEquals(listOf(0L, 3_000L, 4_000L), reads)
-            assertEquals(listOf(0L to null), writes)
-            assertEquals("claude-test", model.state.value.selected?.id)
-            advanceTimeBy(3_000)
-            runCurrent()
-            assertEquals(listOf(0L, 3_000L, 4_000L, 7_000L), reads)
-            assertEquals(listOf(0L to null, 7_000L to "claude-test"), writes)
-            assertNull(model.state.value.pending)
-        }
-    }
-
-    @Test
-    fun reopeningSettingsKeepsTheActiveReadbackWaitAfterAClockCorrection() = runTest {
-        ChatListApiFixture().use { api ->
-            DefaultModelApiFixture(api)
-            val original = api.service.defaultModelPreference()
-            val catalog = api.service.recoveryCatalog()
-            val models = api.service.recoveryModels()
-            val reads = mutableListOf<Long>()
-            val writes = mutableListOf<Pair<Long, String?>>()
-            val remote =
-                object : WorkspaceSession by api.service {
-                    override suspend fun recoveryCatalog() = catalog
-
-                    override suspend fun recoveryModels() = models
-
-                    override suspend fun defaultModelPreference(): DefaultModelPreference {
-                        reads += currentTime
-                        return when (reads.size) {
-                            2 -> throw ApiFailure.Http(429, null, null, 1L)
-                            3 -> original.copy(selectedModel = null)
-                            else -> original
-                        }
-                    }
-
-                    override suspend fun updateDefaultModelPreference(
-                        update: UpdateDefaultModelPreference,
-                    ): DefaultModelPreference {
-                        writes += currentTime to update.selectedModel
-                        if (writes.size == 1) throw ApiFailure.Http(503, null, null, null)
-                        return original.copy(selectedModel = update.selectedModel)
-                    }
-                }
-            var wallClockOffset = 0L
-            val model =
-                model(
-                    api,
-                    service = remote,
-                    nowMillis = { currentTime + wallClockOffset },
-                    onFailure = {},
-                )
-            model.openAfterSync()
-            model.select(null)
-            advanceTimeBy(3_000)
-            runCurrent()
-            val expectedReads = listOf(0L, 3_000L)
-            assertEquals(expectedReads, reads)
-
-            model.showSettings(null)
-            advanceTimeBy(400)
-            wallClockOffset = -60_000L
-            model.showSettings(SettingsDestination.Overview)
-            runCurrent()
-            assertEquals(expectedReads, reads)
-            model.select("claude-test")
-            advanceTimeBy(599)
-            runCurrent()
-            assertEquals(expectedReads, reads)
-            assertEquals(listOf(0L to null), writes)
-
-            advanceTimeBy(1)
-            runCurrent()
-            assertEquals(expectedReads + 4_000L, reads)
-            assertEquals(listOf(0L to null, 4_000L to "claude-test"), writes)
-            assertEquals("claude-test", model.state.value.record?.confirmed?.selectedModel)
-        }
-    }
-
-    @Test
-    fun unavailableReadbackRollsBackAndForegroundSyncAdoptsTheLateValue() = runTest {
-        ChatListApiFixture().use { api ->
-            val fixture = DefaultModelApiFixture(api)
-            val fixtureResponse = api.commandResponse
-            val rejectReadback = AtomicBoolean(true)
-            val blockedReads = AtomicInteger()
-            val writes = AtomicInteger()
-            api.commandResponse = { request ->
-                if (request.requestUrl?.encodedPath != "/api/user-model-preference")
-                    fixtureResponse(request)
-                else if (request.method == "PUT") {
-                    writes.incrementAndGet()
-                    jsonResponse("{}")
-                } else if (writes.get() > 0 && rejectReadback.get()) {
-                    blockedReads.incrementAndGet()
-                    jsonResponse("{}").setResponseCode(403)
-                } else fixtureResponse(request)
-            }
-            val model = model(api, onFailure = {})
-            assertFalse(model.openAfterSync().fast)
-            model.fast(true)
-            assertEquals(DefaultModelNotice.SaveRolledBack, model.notices.first())
-            val blocked = model.state.value
-            assertNull(blocked.pending)
-            assertFalse(blocked.fast)
-            advanceTimeBy(600_000)
-            runCurrent()
-            assertEquals(1, blockedReads.get())
-            assertEquals(1, writes.get())
-
-            model.foreground(false)
-            model.showSettings(null)
-            fixture.preference =
-                JsonObject(fixture.preference + ("serviceTier" to JsonPrimitive("priority")))
-            rejectReadback.set(false)
-            model.foreground(true)
-            val confirmed = model.state.first { it.fast }
-            assertTrue(confirmed.fast)
-            assertEquals(1, writes.get())
-            assertTrue(fixture.writes.isEmpty())
-        }
-    }
-
-    @Test
-    fun anExplicitNewChoiceWaitsForTheUnconfirmedSaveBeforeSubmitting() = runTest {
+    fun anExplicitNewChoiceFollowsAnAmbiguousWriteWithoutReadingBack() = runTest {
         ChatListApiFixture().use { api ->
             val fixture = DefaultModelApiFixture(api)
             val started = CompletableDeferred<Unit>()
             val fail = CompletableDeferred<Unit>()
             val writes = mutableListOf<Pair<String?, String?>>()
             val reads = mutableListOf<Long>()
-            var delayed: UpdateDefaultModelPreference? = null
             val remote =
                 object : WorkspaceSession by api.service {
                     override suspend fun defaultModelPreference(): DefaultModelPreference {
                         reads += currentTime
-                        val snapshot = api.service.defaultModelPreference()
-                        delayed?.let {
-                            delayed = null
-                            api.service.updateDefaultModelPreference(it)
-                        }
-                        return snapshot
+                        return api.service.defaultModelPreference()
                     }
 
                     override suspend fun updateDefaultModelPreference(
@@ -867,7 +510,7 @@ class DefaultModelSettingsTest {
                         if (update.serviceTier != null) {
                             started.complete(Unit)
                             fail.await()
-                            delayed = update
+                            api.service.updateDefaultModelPreference(update)
                             throw ApiFailure.Http(503, null, null, 1L)
                         }
                         return api.service.updateDefaultModelPreference(update)
@@ -881,63 +524,13 @@ class DefaultModelSettingsTest {
             assertEquals("claude-test", model.state.value.selected?.id)
             fail.complete(Unit)
 
-            advanceTimeBy(999)
-            runCurrent()
-            assertEquals(listOf(0L), reads)
-            advanceTimeBy(1)
             val confirmed = model.state.first { it.pending == null }
-            assertEquals(listOf(0L, 1_000L, 4_000L), reads)
+            assertNull(confirmed.saveFeedback)
+            assertEquals(listOf(0L), reads)
             assertEquals(listOf("gpt-test" to "PRIORITY", "claude-test" to null), writes)
             assertEquals("claude-test", confirmed.selected?.id)
             assertEquals(JsonPrimitive("claude-test"), fixture.preference["selectedModel"])
             assertEquals(2, fixture.writes.size)
-        }
-    }
-
-    @Test
-    fun switchingBackStillSavesWhenReadbackPrecedesTheEarlierWrite() = runTest {
-        ChatListApiFixture().use { api ->
-            val fixture = DefaultModelApiFixture(api)
-            val started = CompletableDeferred<Unit>()
-            val fail = CompletableDeferred<Unit>()
-            var lateWrite: UpdateDefaultModelPreference? = null
-            val remote =
-                object : WorkspaceSession by api.service {
-                    override suspend fun defaultModelPreference(): DefaultModelPreference {
-                        val snapshot = api.service.defaultModelPreference()
-                        lateWrite?.let {
-                            lateWrite = null
-                            api.service.updateDefaultModelPreference(it)
-                        }
-                        return snapshot
-                    }
-
-                    override suspend fun updateDefaultModelPreference(
-                        update: UpdateDefaultModelPreference,
-                    ): DefaultModelPreference {
-                        if (update.selectedModel == "claude-test") {
-                            started.complete(Unit)
-                            fail.await()
-                            lateWrite = update
-                            throw ApiFailure.Http(503, null, null, null)
-                        }
-                        return api.service.updateDefaultModelPreference(update)
-                    }
-                }
-            val model = model(api, service = remote, onFailure = {})
-            assertEquals("gpt-test", model.openAfterSync().selectedModel)
-            model.select("claude-test")
-            started.await()
-            model.select("gpt-test")
-            fail.complete(Unit)
-
-            val confirmed = model.state.first { it.pending == null }
-            assertEquals("gpt-test", confirmed.selectedModel)
-            assertEquals("gpt-test", api.service.defaultModelPreference().selectedModel)
-            assertEquals(
-                listOf(JsonPrimitive("claude-test"), JsonPrimitive("gpt-test")),
-                fixture.writes.map { it["selectedModel"] },
-            )
         }
     }
 

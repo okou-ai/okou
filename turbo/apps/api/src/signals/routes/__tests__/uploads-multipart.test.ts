@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { Readable } from "node:stream";
 import { uploadsContract } from "@okouai/api-contracts/contracts/uploads";
 
 import { setupApp } from "../../../__tests__/test-helpers";
@@ -128,6 +129,21 @@ function installStorage(options: {
           Metadata: stored.metadata,
         });
       }
+      case "GetObjectCommand": {
+        if (!stored) {
+          return Promise.reject(
+            Object.assign(new Error("Not found"), {
+              name: "NoSuchKey",
+              $metadata: { httpStatusCode: 404 },
+            }),
+          );
+        }
+        return Promise.resolve({
+          ContentLength: stored.size,
+          ContentType: stored.contentType,
+          Body: Readable.from([Buffer.from("multipart-header-bytes")]),
+        });
+      }
       default: {
         return Promise.resolve({});
       }
@@ -255,7 +271,10 @@ describe("multipart user artifact uploads", () => {
     expect(prepared.body.multipart.parts).toHaveLength(512);
     expect(completed.body).toStrictEqual({
       id: prepared.body.id,
-      url: prepared.body.url,
+      url: new URL(
+        `/artifacts/${prepared.body.id.replace(/-/gu, "")}.mp4`,
+        prepared.body.url,
+      ).href,
     });
   });
 

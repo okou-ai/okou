@@ -7,6 +7,7 @@ import {
   verify,
 } from "node:crypto";
 import { promisify } from "node:util";
+import { artifactAccessContract } from "@okouai/api-contracts/contracts/artifact-access";
 import { hostContract } from "@okouai/api-contracts/contracts/host";
 import { HOSTED_DOMAIN_PROBE_HEADER } from "@okouai/api-contracts/contracts/hosted-site-domains";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
@@ -19,6 +20,7 @@ import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
 import { now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
+import { artifactAccessRoutes } from "../artifact-access";
 import { hostedSiteAccessRoutes } from "../hosted-site-access";
 import { hostedSiteDomainRoutes } from "../hosted-site-domains";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
@@ -696,21 +698,15 @@ describe("hosted site custom domains", () => {
       return domainOf(selected.body, domain.id);
     };
     const makePrivate = async () => {
-      const visibility = await accept(
-        access.siteVisibility({
-          headers: signIn(owner),
-          params: { siteId: site.siteId },
-        }),
-        [200],
-      );
+      const artifactAccess = setupApp({
+        context,
+        routes: artifactAccessRoutes,
+      })(artifactAccessContract);
       await accept(
-        access.updateSiteVisibility({
+        artifactAccess.updateVisibility({
           headers: signIn(owner),
-          params: { siteId: site.siteId },
-          body: {
-            visibility: "private",
-            expectedRevision: visibility.body.revision,
-          },
+          params: { artifactId: site.siteId },
+          body: { visibility: "private" },
         }),
         [200],
       );

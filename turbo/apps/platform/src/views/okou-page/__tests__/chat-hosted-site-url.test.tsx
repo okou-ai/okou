@@ -63,6 +63,7 @@ async function publishedReport(
     const currentSlug = publication?.().slug ?? slug;
     return {
       siteId,
+      artifactId: "d8064466-f246-4524-8e90-3655890190fe",
       publicSlug: currentSlug,
       url: address(currentSlug),
       isActive: true,

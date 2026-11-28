@@ -28,9 +28,6 @@ internal class ChatListProjection {
         var confirmedMembershipChanged = false
         var renameAcknowledgement: RenameAcknowledgement? = null
 
-        val renameUnconfirmed: Boolean
-            get() = edit.action == ChatRowAction.Rename && unconfirmed
-
         val visibleEdit: ChatRowEdit?
             get() = edit.takeIf {
                 renameAcknowledgement == RenameAcknowledgement.ShowSubmittedName ||
@@ -39,13 +36,6 @@ internal class ChatListProjection {
 
         fun keepsRenameBaseline(row: ConfirmedChat?): Boolean =
             row != null && row.hidden != true && (row.title to row.renamedAt) == renameBaseline
-
-        fun matchesRenameTarget(row: ConfirmedChat?): Boolean =
-            renameUnconfirmed &&
-                row != null &&
-                row.hidden != true &&
-                row.title == edit.value &&
-                !keepsRenameBaseline(row)
 
         val canRecoverByTarget: Boolean
             get() = optimistic && edit.action.recoversInBackground
@@ -152,22 +142,6 @@ internal class ChatListProjection {
 
     fun hasUnsettledEdits(edits: List<ChatRowEdit>) = rowEdits.any { it.edit in edits }
 
-    fun unconfirmedRenames(): Map<String, RenameSubmission> =
-        if (rowEdits.isEmpty()) emptyMap()
-        else
-            buildMap {
-                for (pending in rowEdits) {
-                    if (pending.renameUnconfirmed)
-                        put(
-                            pending.edit.threadId,
-                            RenameSubmission(
-                                pending.edit.eventId,
-                                checkNotNull(pending.edit.value),
-                            ),
-                        )
-                }
-            }
-
     fun settleConfirmedTargets(edits: List<ChatRowEdit>): Boolean {
         if (edits.isEmpty() || rowEdits.isEmpty()) return false
         val matched = buildSet {
@@ -214,22 +188,13 @@ internal class ChatListProjection {
     fun retryEvents(): Set<String> =
         rowEdits
             .asSequence()
-            .filter { it.unconfirmed && !it.renameUnconfirmed && !it.canRecoverByTarget }
+            .filter { it.unconfirmed && !it.canRecoverByTarget }
             .map { it.edit.eventId }
             .toSet()
 
     fun confirmEdits(edits: List<ChatRowEdit>): Boolean {
         val unresolved = rowEdits.filter { it.edit in edits }
         unresolved.forEach { it.unconfirmed = true }
-        val rename = unresolved.singleOrNull()?.takeIf { it.renameUnconfirmed }
-        if (rename != null) {
-            val row = confirmedRows.threads.firstOrNull { it.id == rename.edit.threadId }
-            if (row == null || row.hidden == true) return discardEdits(edits)
-            if (rename.matchesRenameTarget(row)) {
-                settleRowEdits(setOf(rename.edit.eventId), emptySet())
-                return true
-            }
-        }
         return unresolved.isEmpty()
     }
 
@@ -260,12 +225,7 @@ internal class ChatListProjection {
         }
 
     fun showOutgoing(eventId: String, threadId: String): Boolean {
-        val checkpoint = confirmedCheckpoint
-        if (
-            checkpoint?.snapshotCursor?.eventId == eventId ||
-                checkpoint?.events?.any { it.cursor().eventId == eventId } == true
-        )
-            return false
+        if (confirmedCheckpoint?.containsEvent(eventId) == true) return false
         val existing = outgoingActivity[eventId]
         if (existing?.sending == true) return false
         outgoingActivity[eventId] = OutgoingAttempt(threadId)
@@ -335,22 +295,13 @@ internal class ChatListProjection {
                             add(edit.eventId)
                     }
                 }
-                if (
-                    editsBefore.any {
-                        it.unconfirmed && (it.canRecoverByTarget || it.renameUnconfirmed)
-                    }
-                ) {
+                if (editsBefore.any { it.unconfirmed && it.canRecoverByTarget }) {
                     val byId = rows.byRecency.associateBy { it.id }
                     for (pending in editsBefore) {
-                        if (!pending.unconfirmed) continue
+                        if (!pending.unconfirmed || !pending.canRecoverByTarget) continue
                         val edit = pending.edit
                         val row = byId[edit.threadId]
-                        if (
-                            pending.matchesRenameTarget(row) ||
-                                pending.canRecoverByTarget &&
-                                    row?.let(pending::matchesTarget) == true
-                        )
-                            add(edit.eventId)
+                        if (row?.let(pending::matchesTarget) == true) add(edit.eventId)
                     }
                 }
             }
@@ -380,8 +331,7 @@ internal class ChatListProjection {
     ): Set<String> {
         if (
             rowEdits.none {
-                (it.renameAcknowledgement != null || it.renameUnconfirmed) &&
-                    it.edit.eventId !in observed
+                it.renameAcknowledgement != null && it.edit.eventId !in observed
             }
         )
             return emptySet()
@@ -389,11 +339,7 @@ internal class ChatListProjection {
         return buildSet {
             for (pending in rowEdits) {
                 val (threadId, eventId) = pending.edit
-                if (
-                    (pending.renameAcknowledgement == null && !pending.renameUnconfirmed) ||
-                        eventId in observed
-                )
-                    continue
+                if (pending.renameAcknowledgement == null || eventId in observed) continue
                 val row = byId[threadId]
                 // An older incremental page can omit this event. A full read started
                 // after acknowledgement can also settle it through an advancing snapshot.

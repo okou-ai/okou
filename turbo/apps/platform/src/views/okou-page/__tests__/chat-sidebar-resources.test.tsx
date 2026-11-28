@@ -190,7 +190,7 @@ test("chat-resources-realtime-005 A catalog publication adds the video to the al
   );
   const video = artifactSummary(
     crypto.randomUUID(),
-    "video",
+    "file",
     "Launch replay.mp4",
   );
   const items = [site];

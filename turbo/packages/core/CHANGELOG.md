@@ -1,5 +1,19 @@
 # Changelog
 
+## [8.889.0](https://github.com/okou-ai/okou/compare/core-v8.888.1...core-v8.889.0) (2026-11-28)
+
+
+### Features
+
+* **artifacts:** cut over to files and unified artifact access and retire legacy routes ([#51627](https://github.com/okou-ai/okou/issues/51627)) ([d5b57bd](https://github.com/okou-ai/okou/commit/d5b57bd1003bbe1aabd0d56b27efa8dbcfa96087))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.144.0
+
 ## [8.888.1](https://github.com/okou-ai/okou/compare/core-v8.888.0...core-v8.888.1) (2026-11-27)
 
 

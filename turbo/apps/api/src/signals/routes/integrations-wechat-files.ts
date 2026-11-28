@@ -3,34 +3,29 @@ import { and, eq } from "drizzle-orm";
 import { array } from "zod";
 import {
   integrationsWechatUploadInitContract,
-  integrationsWechatUploadMaterializeContract,
   integrationsWechatUploadCompleteContract,
   integrationsWechatDownloadFileContract,
 } from "@okouai/api-contracts/contracts/integrations-wechat-files";
+import { wechatItemSchema } from "@okouai/api-contracts/contracts/wechat-protocol";
 import { wechatMessages } from "@okouai/db/schema/wechat";
-import { badRequestMessage, conflict, notFound } from "../../lib/error";
+
+import { badRequestMessage, notFound } from "../../lib/error";
 import { isAllowedUploadType } from "../../lib/uploads-constants";
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { bodyResultOf, queryOf } from "../context/request";
 import { writeDb$ } from "../external/db";
-import { wechatItemSchema } from "@okouai/api-contracts/contracts/wechat-protocol";
 import { downloadWechatMedia } from "../external/wechat-media";
+import { preparePublishedImFile$ } from "../services/canonical-asset.service";
+import { completeCanonicalWechatDelivery$ } from "../services/canonical-wechat-asset-delivery.service";
+import { decryptStoredSecretValue } from "../services/crypto.utils";
 import {
   requireWechatConnection$,
   requireWechatSendAccess$,
 } from "../services/wechat-access.service";
-import { decryptStoredSecretValue } from "../services/crypto.utils";
-import {
-  CanonicalPublicationConflictError,
-  prepareCanonicalPublishedAsset$,
-} from "../services/canonical-asset.service";
-import {
-  completeCanonicalWechatDelivery$,
-  materializeCanonicalWechatAsset$,
-} from "../services/canonical-wechat-asset-delivery.service";
 import { settle } from "../utils";
 import type { RouteEntry } from "../route-entry";
+
 const init$ = command(async ({ get, set }, signal: AbortSignal) => {
   const auth = get(organizationAuthContext$);
   const parsed = await get(
@@ -61,69 +56,24 @@ const init$ = command(async ({ get, set }, signal: AbortSignal) => {
   if (!isAllowedUploadType(contentType)) {
     return badRequestMessage("Unsupported Wechat file type");
   }
-  const prepared = await settle(
-    set(
-      prepareCanonicalPublishedAsset$,
-      {
-        provider: "wechat",
-        runId: "runId" in auth ? auth.runId : null,
-        userId: auth.userId,
-        orgId: auth.orgId,
-        operationId: body.operationId,
-        filename: body.filename,
-        contentType,
-        size: body.length,
-        checksumSha256: body.checksumSha256,
-        destination: {
-          provider: "wechat",
-          connectionId: access.connection.id,
-          generation: access.connection.generation,
-          channelId: body.channelId,
-          ...(body.comment !== undefined ? { comment: body.comment } : {}),
-        },
-      },
-      signal,
-    ),
-    signal,
-  );
-  signal.throwIfAborted();
-  if (!prepared.ok) {
-    if (prepared.error instanceof CanonicalPublicationConflictError) {
-      return conflict(prepared.error.message);
-    }
-    throw prepared.error;
-  }
-  if (!prepared.value) {
-    return notFound("Upload owner is no longer available");
-  }
-  return { status: 200 as const, body: prepared.value };
-});
-
-const materialize$ = command(async ({ get, set }, signal: AbortSignal) => {
-  const auth = get(organizationAuthContext$);
-  const parsed = await get(
-    bodyResultOf(integrationsWechatUploadMaterializeContract.materialize),
-  );
-  signal.throwIfAborted();
-  if (!parsed.ok) {
-    return parsed.response;
-  }
-  const result = await set(
-    materializeCanonicalWechatAsset$,
+  const prepared = await set(
+    preparePublishedImFile$,
     {
-      ...parsed.data,
+      runId: "runId" in auth ? auth.runId : null,
       userId: auth.userId,
       orgId: auth.orgId,
-      runId: "runId" in auth ? auth.runId : null,
+      filename: body.filename,
+      contentType,
+      size: body.length,
+      checksumSha256: body.checksumSha256,
     },
     signal,
   );
   signal.throwIfAborted();
-  if (!result.ok) {
-    return result.response;
+  if (!prepared) {
+    return notFound("Upload owner is no longer available");
   }
-  const { ok: _, ...body } = result;
-  return { status: 200 as const, body };
+  return { status: 200 as const, body: prepared };
 });
 
 const complete$ = command(async ({ get, set }, signal: AbortSignal) => {
@@ -138,7 +88,9 @@ const complete$ = command(async ({ get, set }, signal: AbortSignal) => {
   const result = await set(
     completeCanonicalWechatDelivery$,
     {
-      ...parsed.data,
+      assetId: parsed.data.assetId,
+      channelId: parsed.data.channelId,
+      comment: parsed.data.comment,
       userId: auth.userId,
       orgId: auth.orgId,
       runId: "runId" in auth ? auth.runId : null,
@@ -224,19 +176,17 @@ const download$ = command(async ({ get, set }, signal: AbortSignal) => {
     },
   });
 });
+
 const writeAuth = {
   requireOrganization: true,
   missingOrganizationStatus: 401,
   requiredCapability: "wechat:write",
 } as const;
+
 export const integrationsWechatFileRoutes: readonly RouteEntry[] = [
   {
     route: integrationsWechatUploadInitContract.init,
     handler: authRoute(writeAuth, init$),
-  },
-  {
-    route: integrationsWechatUploadMaterializeContract.materialize,
-    handler: authRoute(writeAuth, materialize$),
   },
   {
     route: integrationsWechatUploadCompleteContract.complete,

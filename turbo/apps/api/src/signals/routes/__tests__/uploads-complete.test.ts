@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { Readable } from "node:stream";
 import { uploadsContract } from "@okouai/api-contracts/contracts/uploads";
 
 import { accept, testContext } from "../../../__tests__/test-context";
@@ -34,14 +35,35 @@ describe("POST /api/uploads/complete", () => {
       "https://r2.example.com/uploads/plain.txt",
     );
     context.mocks.s3.send.mockImplementation((command: unknown) => {
-      const { constructor } = command as {
+      const { constructor, input } = command as {
         readonly constructor: { readonly name: string };
+        readonly input?: { readonly Key?: string };
       };
+      if (
+        constructor.name === "GetObjectCommand" &&
+        !input?.Key?.startsWith("private-artifacts/")
+      ) {
+        return Promise.reject(
+          Object.assign(new Error("Missing object"), {
+            name: "NoSuchKey",
+          }),
+        );
+      }
       if (constructor.name === "HeadObjectCommand") {
         return Promise.resolve({
           ContentLength: 5,
           ContentType: "text/plain",
         });
+      }
+      if (constructor.name === "GetObjectCommand") {
+        return Promise.resolve({
+          ContentLength: 5,
+          ContentType: "text/plain",
+          Body: Readable.from([Buffer.from("hello")]),
+        });
+      }
+      if (constructor.name === "PutObjectCommand") {
+        return Promise.resolve({ ETag: '"etag-1"' });
       }
       return Promise.resolve({});
     });

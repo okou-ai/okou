@@ -10,6 +10,7 @@ import {
   linkLayoutSegment,
   type LinkLayoutSegment,
 } from "@okouai/api-contracts/contracts/link-layout";
+import { artifacts } from "@okouai/db/schema/artifact";
 import { hostedSites, hostedDeployments } from "@okouai/db/runtime/hosted-site";
 import { db$, writeDb$ } from "../external/db";
 import { hostedLinkOrigin } from "../../lib/link-layout";
@@ -48,6 +49,7 @@ function ownedSiteCondition(owner: Owner) {
 function siteUrl(
   site: Site,
   isActive = true,
+  artifactId?: string,
 ): zInfer<typeof hostedSiteUrlSchema> {
   return {
     siteId: site.id,
@@ -57,8 +59,31 @@ function siteUrl(
       site.publicSlug,
     ),
     isActive,
+    ...(artifactId ? { artifactId } : {}),
   };
 }
+
+const activeSiteArtifactId$ = command(
+  async (
+    { get },
+    args: { readonly siteId: string; readonly orgId: string },
+    signal: AbortSignal,
+  ): Promise<string | undefined> => {
+    const [row] = await get(db$)
+      .select({ id: artifacts.id })
+      .from(artifacts)
+      .where(
+        and(
+          eq(artifacts.orgId, args.orgId),
+          eq(artifacts.logicalKey, `site:${args.siteId}`),
+          isNull(artifacts.deletedAt),
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    return row?.id;
+  },
+);
 
 const ownedSite$ = command(
   async (
@@ -97,7 +122,7 @@ const ownedSite$ = command(
 export const getHostedSiteUrl$ = command(
   async (
     { get, set },
-    args: Owner & { readonly publicSlug: string; readonly hostname: string },
+    args: Owner & { readonly publicSlug: string; readonly hostname?: string },
     signal: AbortSignal,
   ): Promise<HostedSiteUrlResult> => {
     const deploymentId = IMMUTABLE_DEPLOYMENT_HOST_PATTERN.exec(
@@ -127,24 +152,33 @@ export const getHostedSiteUrl$ = command(
     signal.throwIfAborted();
     if (
       !row ||
-      new URL(
-        hostedLinkOrigin(
-          linkLayoutFromSegment(row.site.linkLayoutSegment),
-          args.publicSlug,
-        ),
-      ).hostname !== args.hostname.toLowerCase()
+      (args.hostname !== undefined &&
+        new URL(
+          hostedLinkOrigin(
+            linkLayoutFromSegment(row.site.linkLayoutSegment),
+            args.publicSlug,
+          ),
+        ).hostname !== args.hostname.toLowerCase())
     ) {
       return { status: "not_found", message: "Published website not found" };
     }
-    const effectiveUrl = await set(
-      selectedHostedCustomUrl$,
-      row.site.id,
-      signal,
-    );
+    const [effectiveUrl, artifactId] = await Promise.all([
+      set(selectedHostedCustomUrl$, row.site.id, signal),
+      set(
+        activeSiteArtifactId$,
+        { siteId: row.site.id, orgId: args.orgId },
+        signal,
+      ),
+    ]);
+    signal.throwIfAborted();
     return {
       status: "ok",
       body: {
-        ...siteUrl(row.site, row.deploymentId === row.site.activeDeploymentId),
+        ...siteUrl(
+          row.site,
+          row.deploymentId === row.site.activeDeploymentId,
+          artifactId,
+        ),
         ...(effectiveUrl ? { effectiveUrl } : {}),
       },
     };
@@ -182,7 +216,12 @@ export const updateHostedSiteUrl$ = command(
       return { status: "not_found", message: "Published website not found" };
     }
     if (site.publicSlug === args.publicSlug) {
-      return { status: "ok", body: siteUrl(site) };
+      const artifactId = await set(
+        activeSiteArtifactId$,
+        { siteId: site.id, orgId: args.orgId },
+        signal,
+      );
+      return { status: "ok", body: siteUrl(site, true, artifactId) };
     }
     if (await set(artifactPaywallApplies$, args, signal)) {
       return { status: "pro_required" };
@@ -226,12 +265,18 @@ export const updateHostedSiteUrl$ = command(
       throw result.error;
     }
     const updated = result.value[0];
-    return updated
-      ? { status: "ok", body: siteUrl(updated) }
-      : {
-          status: "conflict",
-          message: "The website changed. Reload it and try again.",
-        };
+    if (!updated) {
+      return {
+        status: "conflict",
+        message: "The website changed. Reload it and try again.",
+      };
+    }
+    const artifactId = await set(
+      activeSiteArtifactId$,
+      { siteId: updated.id, orgId: args.orgId },
+      signal,
+    );
+    return { status: "ok", body: siteUrl(updated, true, artifactId) };
   },
 );
 

@@ -1,7 +1,7 @@
 import { enum as zEnum } from "zod";
 import { command } from "ccstate";
 import { and, eq, inArray, isNull } from "drizzle-orm";
-import { runUploadedFiles } from "@okouai/db/schema/run-uploaded-file";
+import { files } from "@okouai/db/schema/file";
 import {
   MAX_TOTAL_AUDIO_BYTES,
   MAX_VOICE_CLIPS,
@@ -62,7 +62,7 @@ export function resolveVoiceClipRecords(
     const size = record?.sizeBytes;
     if (
       !record ||
-      record.materializationStatus !== "ready" ||
+      !record.isReady ||
       !size ||
       size < 0 ||
       !Number.isSafeInteger(size)
@@ -96,10 +96,10 @@ export const resolveVoiceClips$ = command(
     const rows = await readPrivateAttachmentRows(
       get(db$),
       and(
-        eq(runUploadedFiles.orgId, args.orgId),
-        eq(runUploadedFiles.userId, args.userId),
-        isNull(runUploadedFiles.deletedAt),
-        inArray(runUploadedFiles.id, ids),
+        eq(files.orgId, args.orgId),
+        eq(files.ownerUserId, args.userId),
+        isNull(files.deletedAt),
+        inArray(files.id, ids),
       ),
     );
     signal.throwIfAborted();

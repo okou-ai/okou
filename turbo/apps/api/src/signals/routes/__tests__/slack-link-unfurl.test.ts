@@ -2,8 +2,8 @@ import { createHash, randomUUID } from "node:crypto";
 import { Readable } from "node:stream";
 
 import { GetObjectCommand, HeadObjectCommand } from "@aws-sdk/client-s3";
+import { artifactAccessContract } from "@okouai/api-contracts/contracts/artifact-access";
 import { artifactReferencePath } from "@okouai/api-contracts/contracts/artifact-references";
-import { artifactSharesContract } from "@okouai/api-contracts/contracts/artifact-shares";
 import { integrationsSlackContract } from "@okouai/api-contracts/contracts/integrations-slack";
 import { uploadsContract } from "@okouai/api-contracts/contracts/uploads";
 import { createStore } from "ccstate";
@@ -15,7 +15,7 @@ import { server } from "../../../mocks/server";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { artifactShareRoutes } from "../artifact-shares";
+import { artifactAccessRoutes } from "../artifact-access";
 import { integrationsSlackRoutes } from "../integrations-slack";
 import { uploadsCompleteRoutes } from "../uploads-complete";
 import { uploadsPrepareRoutes } from "../uploads-prepare";
@@ -644,7 +644,7 @@ describe("Slack link previews", () => {
       routes: [
         ...uploadsPrepareRoutes,
         ...uploadsCompleteRoutes,
-        ...artifactShareRoutes,
+        ...artifactAccessRoutes,
       ],
     });
     const prepared = await accept(
@@ -704,12 +704,10 @@ describe("Slack link previews", () => {
       "org:admin",
     );
     const orgShared = await accept(
-      artifactApp(artifactSharesContract).update({
+      artifactApp(artifactAccessContract).updateVisibility({
         headers: authHeaders,
-        body: {
-          target: { kind: "file", id: prepared.body.id },
-          audience: "organization",
-        },
+        params: { artifactId: prepared.body.id },
+        body: { visibility: "organization" },
       }),
       [200],
     );
@@ -735,12 +733,10 @@ describe("Slack link previews", () => {
       "org:admin",
     );
     const published = await accept(
-      artifactApp(artifactSharesContract).update({
+      artifactApp(artifactAccessContract).updateVisibility({
         headers: authHeaders,
-        body: {
-          target: { kind: "file", id: prepared.body.id },
-          audience: "public",
-        },
+        params: { artifactId: prepared.body.id },
+        body: { visibility: "public" },
       }),
       [200],
     );
@@ -777,12 +773,10 @@ describe("Slack link previews", () => {
       "org:admin",
     );
     await accept(
-      artifactApp(artifactSharesContract).update({
+      artifactApp(artifactAccessContract).updateVisibility({
         headers: authHeaders,
-        body: {
-          target: { kind: "file", id: prepared.body.id },
-          audience: "private",
-        },
+        params: { artifactId: prepared.body.id },
+        body: { visibility: "private" },
       }),
       [200],
     );

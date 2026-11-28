@@ -10,7 +10,6 @@
     <string name="settings_tools_unavailable">Tools sind vorübergehend nicht verfügbar.</string>
     <string name="settings_tool_save_failed">Die Änderung konnte nicht bestätigt werden.</string>
     <string name="settings_tool_image_save_failed">Das Bildgenerierungsmodell konnte nicht gespeichert werden</string>
-    <string name="settings_save_checking">Ergebnis wird überprüft…</string>
     <string name="settings_preferences_save_rolled_back">Die Einstellungen konnten nicht gespeichert werden. Die vorherigen Werte wurden wiederhergestellt.</string>
     <string name="settings_appearance_sync_failed">Das Erscheinungsbild konnte nicht synchronisiert werden. Es wurde auf diesem Gerät angewendet.</string>
     <string name="settings_email_updates">E-Mail-Updates</string>

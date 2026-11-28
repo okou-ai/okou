@@ -1,9 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { Readable } from "node:stream";
 import { GetObjectCommand, HeadObjectCommand } from "@aws-sdk/client-s3";
+import { artifactAccessContract } from "@okouai/api-contracts/contracts/artifact-access";
 import { artifactReferencesContract } from "@okouai/api-contracts/contracts/artifact-references";
-import { artifactSharesContract } from "@okouai/api-contracts/contracts/artifact-shares";
-import { artifactSharingContract } from "@okouai/api-contracts/contracts/artifact-sharing";
 import { hostContract } from "@okouai/api-contracts/contracts/host";
 import { uploadsContract } from "@okouai/api-contracts/contracts/uploads";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
@@ -18,9 +17,8 @@ import { env } from "../../../lib/env";
 import { mockNow, now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import { flushWaitUntilForTest } from "../../context/wait-until";
+import { artifactAccessRoutes } from "../artifact-access";
 import { artifactReferenceRoutes } from "../artifact-references";
-import { artifactShareRoutes } from "../artifact-shares";
-import { artifactSharingRoutes } from "../artifact-sharing";
 import { hostRoutes } from "../host";
 import { hostedSiteAccessRoutes } from "../hosted-site-access";
 import { uploadsCompleteRoutes } from "../uploads-complete";
@@ -57,8 +55,7 @@ const integrationApi = createBddIntegrationApi(context);
 const appClient = setupApp({
   context,
   routes: [
-    ...artifactSharingRoutes,
-    ...artifactShareRoutes,
+    ...artifactAccessRoutes,
     ...artifactReferenceRoutes,
     ...hostRoutes,
     ...hostedSiteAccessRoutes,
@@ -180,9 +177,10 @@ async function uploadFile(
   );
   if (audience !== "private") {
     await accept(
-      client(owner)(artifactSharesContract).update({
+      client(owner)(artifactAccessContract).updateVisibility({
         headers,
-        body: { target: { kind: "file", id: prepared.body.id }, audience },
+        params: { artifactId: prepared.body.id },
+        body: { visibility: audience },
       }),
       [200],
     );
@@ -256,7 +254,7 @@ async function workspace() {
       context.signal,
     ),
     updateFeatureSwitchesForUser(context, owner, {
-      [FeatureSwitchKey.HostedSiteEmailSharing]: true,
+      [FeatureSwitchKey.ArtifactUserSharing]: true,
     }),
   ]);
   const accounts: ApiTestUser[] = [owner];
@@ -353,6 +351,12 @@ async function workspace() {
     accounts.push(user);
     directory(accounts);
     return user;
+  }
+
+  /** A Slack member whose email matches an unbound member of the owner's workspace. */
+  async function workspaceEmailMember() {
+    const colleague = await unboundColleague();
+    return emailMember(colleague.email);
   }
 
   /** An Okou account connected to this Slack workspace. */
@@ -461,9 +465,9 @@ async function workspace() {
 
   async function shareEmails(artifact: Artifact) {
     const response = await accept(
-      client(owner)(artifactSharingContract).list({
+      client(owner)(artifactAccessContract).listShares({
         headers,
-        params: { kind: artifact.kind, id: artifact.id },
+        params: { artifactId: artifact.id },
       }),
       [200],
     );
@@ -476,13 +480,13 @@ async function workspace() {
 
   async function fileAudience(artifact: Artifact) {
     const response = await accept(
-      client(owner)(artifactSharesContract).status({
+      client(owner)(artifactAccessContract).getVisibility({
         headers,
-        body: { kind: "file", id: artifact.id },
+        params: { artifactId: artifact.id },
       }),
       [200],
     );
-    return response.body.audience;
+    return response.body.visibility;
   }
 
   function unfurledUrls(): string[] {
@@ -505,6 +509,7 @@ async function workspace() {
     callbacks,
     leave,
     emailMember,
+    workspaceEmailMember,
     profileMember,
     unboundColleague,
     connectedMember,
@@ -586,19 +591,20 @@ describe("Slack artifact channel sharing", () => {
     expect(context.mocks.slack.chat.postEphemeral).not.toHaveBeenCalled();
   });
 
-  it("slack-artifact-channel-sharing-003 omits workspace visibility for a workspace-visible file but still offers grants to external members", async () => {
+  it("slack-artifact-channel-sharing-003 omits workspace visibility for a workspace-visible file and reports external email-only members as unresolved", async () => {
     const w = await workspace();
     const file = await uploadFile(w.owner, "organization");
     await w.connectedMember(w.owner.orgId);
-    w.emailMember();
+    const external = w.emailMember();
     await w.postLink(file.url);
     expect(w.promptActions().actionIds).toStrictEqual([
       "artifact_share_channel",
       "artifact_share_public",
     ]);
     await w.click("artifact_share_channel");
-    await expect(w.shareEmails(file)).resolves.toHaveLength(1);
+    await expect(w.shareEmails(file)).resolves.toStrictEqual([]);
     await expect(w.fileAudience(file)).resolves.toBe("organization");
+    expect(w.callbacks.at(-1)).toContain(`<@${external.id}>`);
   });
 
   it("slack-artifact-channel-sharing-006 does not prompt or read members for a public site and unfurls it", async () => {
@@ -624,7 +630,7 @@ describe("Slack artifact channel sharing", () => {
     const w = await workspace();
     const file = await uploadFile(w.owner, "private");
     const anonymous = w.profileMember("no-email");
-    w.emailMember();
+    await w.workspaceEmailMember();
     await w.postLink(file.url);
     await w.click("artifact_share_channel");
     await expect(w.shareEmails(file)).resolves.toHaveLength(1);
@@ -636,7 +642,7 @@ describe("Slack artifact channel sharing", () => {
   it("slack-artifact-channel-sharing-017 does not duplicate invitations when the same button is clicked again", async () => {
     const w = await workspace();
     const file = await uploadFile(w.owner, "private");
-    w.emailMember();
+    await w.workspaceEmailMember();
     await w.postLink(file.url);
     const { token } = w.promptActions();
     await w.click("artifact_share_channel", token);
@@ -665,9 +671,9 @@ describe("Slack artifact channel sharing", () => {
     await w.postLink(site.url);
     await w.click("artifact_share_public");
     const visibility = await accept(
-      client(w.owner)(hostContract).siteVisibility({
+      client(w.owner)(artifactAccessContract).getVisibility({
         headers,
-        params: { siteId: site.id },
+        params: { artifactId: site.id },
       }),
       [200],
     );
@@ -678,22 +684,22 @@ describe("Slack artifact channel sharing", () => {
   it("slack-artifact-channel-sharing-024 shares a website through its App artifact reference", async () => {
     const w = await workspace();
     const site = await publishSite(w.owner, w.stored, "private", "artifact");
-    const member = w.emailMember();
+    const member = await w.workspaceEmailMember();
     await w.postLink(site.url);
     await w.click("artifact_share_channel");
     await expect(w.shareEmails(site)).resolves.toStrictEqual([member.email]);
   });
 
-  it("slack-artifact-channel-sharing-025 skips existing email invitations and ignores bots and deleted members", async () => {
+  it("slack-artifact-channel-sharing-025 skips already-granted workspace members and ignores bots and deleted members", async () => {
     const w = await workspace();
     const file = await uploadFile(w.owner, "private");
-    const invited = w.emailMember();
+    const invited = await w.workspaceEmailMember();
     w.profileMember("bot");
     w.profileMember("deleted");
     await accept(
-      client(w.owner)(artifactSharingContract).share({
+      client(w.owner)(artifactAccessContract).addShare({
         headers,
-        params: { kind: "file", id: file.id },
+        params: { artifactId: file.id },
         body: { email: invited.email },
       }),
       [200],
@@ -701,13 +707,7 @@ describe("Slack artifact channel sharing", () => {
     await flushWaitUntilForTest();
     context.mocks.resend.send.mockClear();
     await w.postLink(file.url);
-    // Since #50984 an unclaimed email invitation is reported as unconfirmed
-    // access, so the owner still gets a prompt; bots and deleted users count
-    // neither as missing nor as unconfirmed.
-    expect(w.promptText()).toContain(
-      "Access could not be confirmed for 1 member.",
-    );
-    expect(w.promptText()).not.toContain("need access");
+    expect(context.mocks.slack.chat.postEphemeral).not.toHaveBeenCalled();
     expect(context.mocks.resend.send).not.toHaveBeenCalled();
   });
 
@@ -759,11 +759,11 @@ describe("Slack artifact channel sharing", () => {
     const w = await workspace();
     const file = await uploadFile(w.owner, "private");
     const viewer = await w.connectedMember();
-    const departed = w.emailMember();
+    const departed = await w.workspaceEmailMember();
     await w.postLink(file.url);
 
     w.leave(departed.id);
-    const joined = w.emailMember();
+    const joined = await w.workspaceEmailMember();
     await w.click("artifact_share_channel");
 
     await expect(w.shareEmails(file)).resolves.toStrictEqual(
@@ -827,11 +827,11 @@ describe("Slack artifact channel sharing", () => {
     const w = await workspace();
     const site = await publishSite(w.owner, w.stored, "private");
     const viewer = await w.connectedMember();
-    const departed = w.emailMember();
+    const departed = await w.workspaceEmailMember();
     await w.postLink(site.url);
 
     w.leave(departed.id);
-    const joined = w.emailMember();
+    const joined = await w.workspaceEmailMember();
     await w.click("artifact_share_channel");
 
     await expect(w.shareEmails(site)).resolves.toStrictEqual(

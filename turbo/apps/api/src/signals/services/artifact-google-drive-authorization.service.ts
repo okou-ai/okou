@@ -1,13 +1,24 @@
-import { artifacts } from "@okouai/db/schema/artifact";
-import { chatThreads } from "@okouai/db/runtime/chat-thread";
-import { runUploadedFiles } from "@okouai/db/schema/run-uploaded-file";
-import { and, eq, isNull, isNotNull, or } from "drizzle-orm";
 import { command } from "ccstate";
+import { and, desc, eq, isNotNull, isNull } from "drizzle-orm";
+import {
+  artifacts,
+  imageArtifacts,
+  presentationArtifacts,
+} from "@okouai/db/schema/artifact";
+import { files } from "@okouai/db/schema/file";
+import { chatThreads } from "@okouai/db/runtime/chat-thread";
+import {
+  hostedDeployments,
+  hostedSites,
+  privateHostedDeployments,
+} from "@okouai/db/runtime/hosted-site";
+
 import { db$, writeDb$ } from "../external/db";
 import {
   chatConnectorExecutionFromRows,
   chatConnectorExecutionReadPlan,
 } from "./chat-connector-execution";
+import { resolveFileUrl$ } from "./private-artifact-storage.service";
 
 export type DriveConnectorAccountResolution =
   | { readonly type: "resolved"; readonly connectorId: string }
@@ -82,7 +93,223 @@ export const ownedGoogleDriveThreadContext$ = command(
   },
 );
 
-/** Authorize the stored resource, never the chat that happened to produce it. */
+export interface OwnedGoogleDriveArtifact {
+  readonly runId: string | null;
+  readonly threadId: string | null;
+  readonly source: string;
+  readonly externalId: string;
+  readonly filename: string | null;
+  readonly contentType: string | null;
+  readonly url: string | null;
+  readonly metadata: Record<string, unknown>;
+}
+
+const resolveHostedDriveArtifact$ = command(
+  async (
+    { set },
+    args: {
+      readonly siteId: string;
+      readonly orgId: string;
+      readonly userId: string;
+      readonly threadId: string | null;
+      readonly title: string;
+      readonly defaultArtifactKind: "hosted-site" | "presentation-html";
+    },
+    signal: AbortSignal,
+  ): Promise<OwnedGoogleDriveArtifact | null> => {
+    const db = set(writeDb$);
+    const [site] = await db
+      .select()
+      .from(hostedSites)
+      .where(
+        and(
+          eq(hostedSites.id, args.siteId),
+          eq(hostedSites.orgId, args.orgId),
+          eq(hostedSites.userId, args.userId),
+          isNull(hostedSites.deletedAt),
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    if (!site) {
+      return null;
+    }
+    const [publicDep] = site.activeDeploymentId
+      ? await db
+          .select()
+          .from(hostedDeployments)
+          .where(
+            and(
+              eq(hostedDeployments.id, site.activeDeploymentId),
+              eq(hostedDeployments.siteId, site.id),
+              eq(hostedDeployments.status, "ready"),
+            ),
+          )
+          .limit(1)
+      : [];
+    signal.throwIfAborted();
+    const [privateDep] = !publicDep
+      ? await db
+          .select()
+          .from(privateHostedDeployments)
+          .where(
+            and(
+              eq(privateHostedDeployments.siteId, site.id),
+              eq(privateHostedDeployments.orgId, args.orgId),
+              eq(privateHostedDeployments.userId, args.userId),
+              eq(privateHostedDeployments.status, "ready"),
+            ),
+          )
+          .orderBy(desc(privateHostedDeployments.createdAt))
+          .limit(1)
+      : [];
+    signal.throwIfAborted();
+    const deployment = publicDep ?? privateDep;
+    if (!deployment) {
+      return null;
+    }
+    const artifactKind =
+      deployment.manifest.artifactKind ?? args.defaultArtifactKind;
+    return {
+      runId: deployment.runId,
+      threadId: args.threadId,
+      source: "hosted",
+      externalId: deployment.id,
+      filename: `${args.title}.html`,
+      contentType: "text/html",
+      url: deployment.artifactUrl ?? deployment.url,
+      metadata: {
+        artifactKind,
+        deploymentId: deployment.id,
+        siteId: site.id,
+        ...(deployment.manifest.access
+          ? { access: deployment.manifest.access }
+          : {}),
+      },
+    };
+  },
+);
+
+const ownedDriveFileById$ = command(
+  async (
+    { set },
+    args: {
+      readonly fileId: string;
+      readonly orgId: string;
+      readonly userId: string;
+      readonly threadId: string | null;
+      readonly sourceUrl?: string | null;
+    },
+    signal: AbortSignal,
+  ): Promise<OwnedGoogleDriveArtifact | null> => {
+    const [file] = await set(writeDb$)
+      .select()
+      .from(files)
+      .where(
+        and(
+          eq(files.id, args.fileId),
+          eq(files.orgId, args.orgId),
+          eq(files.ownerUserId, args.userId),
+          isNull(files.deletedAt),
+          isNotNull(files.sizeBytes),
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    if (!file?.storageKey || !file.filename) {
+      return null;
+    }
+    const url =
+      args.sourceUrl ??
+      (await set(
+        resolveFileUrl$,
+        { id: file.id, storageKey: file.storageKey, filename: file.filename },
+        signal,
+      ));
+    return {
+      runId: null,
+      threadId: args.threadId,
+      source: "web",
+      externalId: file.id,
+      filename: file.filename,
+      contentType: file.contentType,
+      url,
+      metadata: {},
+    };
+  },
+);
+
+const ownedDriveCatalogArtifact$ = command(
+  async (
+    { set },
+    args: {
+      readonly artifact: typeof artifacts.$inferSelect;
+      readonly orgId: string;
+      readonly userId: string;
+    },
+    signal: AbortSignal,
+  ): Promise<OwnedGoogleDriveArtifact | null> => {
+    const db = set(writeDb$);
+    const { artifact } = args;
+    if (artifact.kind === "hosted-site" || artifact.kind === "presentation") {
+      let siteId = artifact.entityId;
+      if (artifact.kind === "presentation") {
+        const [presentation] = await db
+          .select({ hostedSiteId: presentationArtifacts.hostedSiteId })
+          .from(presentationArtifacts)
+          .where(eq(presentationArtifacts.id, artifact.entityId))
+          .limit(1);
+        signal.throwIfAborted();
+        if (!presentation) {
+          return null;
+        }
+        siteId = presentation.hostedSiteId;
+      }
+      return await set(
+        resolveHostedDriveArtifact$,
+        {
+          siteId,
+          orgId: args.orgId,
+          userId: args.userId,
+          threadId: artifact.chatThreadId,
+          title: artifact.title,
+          defaultArtifactKind:
+            artifact.kind === "presentation"
+              ? "presentation-html"
+              : "hosted-site",
+        },
+        signal,
+      );
+    }
+
+    let fileId: string | null = artifact.entityId;
+    if (artifact.kind === "image") {
+      const [image] = await db
+        .select({ fileId: imageArtifacts.fileId })
+        .from(imageArtifacts)
+        .where(eq(imageArtifacts.id, artifact.entityId))
+        .limit(1);
+      signal.throwIfAborted();
+      fileId = image?.fileId ?? null;
+    }
+    if (!fileId) {
+      return null;
+    }
+    return await set(
+      ownedDriveFileById$,
+      {
+        fileId,
+        orgId: args.orgId,
+        userId: args.userId,
+        threadId: artifact.chatThreadId,
+        sourceUrl: artifact.sourceUrl,
+      },
+      signal,
+    );
+  },
+);
+
+/** Authorize the stored resource via `artifacts`, `files`, and `hosted_sites` (zero legacy table reads). */
 export const ownedGoogleDriveArtifact$ = command(
   async (
     { set },
@@ -93,47 +320,78 @@ export const ownedGoogleDriveArtifact$ = command(
       readonly catalogOnly?: boolean;
     },
     signal: AbortSignal,
-  ) => {
-    const [file] = await set(writeDb$)
-      .select({
-        runId: runUploadedFiles.runId,
-        threadId: runUploadedFiles.chatThreadId,
-        source: runUploadedFiles.source,
-        externalId: runUploadedFiles.externalId,
-        filename: runUploadedFiles.filename,
-        contentType: runUploadedFiles.contentType,
-        url: runUploadedFiles.url,
-        metadata: runUploadedFiles.metadata,
-      })
-      .from(runUploadedFiles)
-      .leftJoin(artifacts, eq(runUploadedFiles.id, artifacts.projectionFileId))
+  ): Promise<OwnedGoogleDriveArtifact | null> => {
+    const db = set(writeDb$);
+    const [artifact] = await db
+      .select()
+      .from(artifacts)
       .where(
         and(
-          or(
-            and(
-              eq(artifacts.id, args.artifactId),
-              eq(artifacts.orgId, args.orgId),
-              eq(artifacts.authorUserId, args.userId),
-              isNull(artifacts.deletedAt),
-            ),
-            args.catalogOnly
-              ? undefined
-              : eq(runUploadedFiles.id, args.artifactId),
-          ),
-          eq(runUploadedFiles.orgId, args.orgId),
-          eq(runUploadedFiles.userId, args.userId),
-          isNull(runUploadedFiles.deletedAt),
-          isNotNull(runUploadedFiles.url),
-          // Noncanonical upload/host writers legitimately omit assetVersion
-          // and materializationStatus. Only canonical assets have a ready gate.
-          or(
-            isNull(runUploadedFiles.assetVersion),
-            eq(runUploadedFiles.materializationStatus, "ready"),
-          ),
+          eq(artifacts.id, args.artifactId),
+          eq(artifacts.orgId, args.orgId),
+          eq(artifacts.authorUserId, args.userId),
+          isNull(artifacts.deletedAt),
         ),
       )
       .limit(1);
     signal.throwIfAborted();
-    return file ?? null;
+
+    if (artifact) {
+      return await set(
+        ownedDriveCatalogArtifact$,
+        { artifact, orgId: args.orgId, userId: args.userId },
+        signal,
+      );
+    }
+
+    if (args.catalogOnly) {
+      return null;
+    }
+
+    const directFile = await set(
+      ownedDriveFileById$,
+      {
+        fileId: args.artifactId,
+        orgId: args.orgId,
+        userId: args.userId,
+        threadId: null,
+      },
+      signal,
+    );
+    if (directFile) {
+      return directFile;
+    }
+
+    const [deployment] = await db
+      .select({
+        siteId: hostedDeployments.siteId,
+        manifest: hostedDeployments.manifest,
+      })
+      .from(hostedDeployments)
+      .where(
+        and(
+          eq(hostedDeployments.id, args.artifactId),
+          eq(hostedDeployments.orgId, args.orgId),
+          eq(hostedDeployments.userId, args.userId),
+          eq(hostedDeployments.status, "ready"),
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    if (!deployment) {
+      return null;
+    }
+    return await set(
+      resolveHostedDriveArtifact$,
+      {
+        siteId: deployment.siteId,
+        orgId: args.orgId,
+        userId: args.userId,
+        threadId: null,
+        title: deployment.manifest.title ?? deployment.manifest.publicSlug,
+        defaultArtifactKind: deployment.manifest.artifactKind ?? "hosted-site",
+      },
+      signal,
+    );
   },
 );

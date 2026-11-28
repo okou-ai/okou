@@ -1,7 +1,6 @@
 import { hostedSiteDomainRoutes } from "./hosted-site-domains";
 import { resolveHostedCustomDomain$ } from "../services/hosted-site-domains.service";
 import { hostedSiteAccessRoutes } from "./hosted-site-access";
-import { hostedSiteSharingRoutes } from "./hosted-site-sharing";
 import { hostedSiteSessionViewer$ } from "../services/hosted-site-sessions.service";
 import { hostedSitePresentation$ } from "../services/hosted-site-banner.service";
 import {
@@ -292,7 +291,6 @@ export const hostRoutes: readonly RouteEntry[] = [
   ...hostedSiteUrlRoutes,
   ...hostedSiteDomainRoutes,
   ...hostedSiteAccessRoutes,
-  ...hostedSiteSharingRoutes,
   {
     route: hostContract.deliveryAuthorization,
     handler: deliveryAuthorization$,

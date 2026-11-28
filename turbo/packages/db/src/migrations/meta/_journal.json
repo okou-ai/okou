@@ -4040,6 +4040,20 @@
       "when": 1795807011218,
       "tag": "1655_backfill_files_and_artifact_access",
       "breakpoints": true
+    },
+    {
+      "idx": 1656,
+      "version": "7",
+      "when": 1795815266046,
+      "tag": "1656_normalize_video_and_repoint_file_references",
+      "breakpoints": true
+    },
+    {
+      "idx": 1657,
+      "version": "7",
+      "when": 1795815569624,
+      "tag": "1657_switch_image_artifacts_file_fk",
+      "breakpoints": true
     }
   ]
 }

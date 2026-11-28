@@ -1,13 +1,12 @@
 import { command } from "ccstate";
 import {
   integrationsDiscordUploadInitContract,
-  integrationsDiscordUploadMaterializeContract,
   integrationsDiscordUploadCompleteContract,
   integrationsDiscordDownloadFileContract,
 } from "@okouai/api-contracts/contracts/integrations-discord-files";
 import { createErrorResponse } from "@okouai/api-contracts/contracts/errors";
 
-import { badRequestMessage, conflict, notFound } from "../../lib/error";
+import { badRequestMessage, notFound } from "../../lib/error";
 import { isAllowedUploadType } from "../../lib/uploads-constants";
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
@@ -22,14 +21,8 @@ import {
   discordApiFailure,
   discordUnavailable,
 } from "../services/discord-api-response";
-import {
-  CanonicalPublicationConflictError,
-  prepareCanonicalPublishedAsset$,
-} from "../services/canonical-asset.service";
-import {
-  completeCanonicalDiscordDelivery$,
-  materializeCanonicalDiscordAsset$,
-} from "../services/canonical-discord-asset-delivery.service";
+import { preparePublishedImFile$ } from "../services/canonical-asset.service";
+import { completeCanonicalDiscordDelivery$ } from "../services/canonical-discord-asset-delivery.service";
 import {
   requireDiscordOutputAccess$,
   resolveDiscordOutputChannel$,
@@ -84,69 +77,24 @@ const init$ = command(async ({ get, set }, signal: AbortSignal) => {
   if (!isAllowedUploadType(contentType)) {
     return badRequestMessage("Unsupported Discord file type");
   }
-  const prepared = await settle(
-    set(
-      prepareCanonicalPublishedAsset$,
-      {
-        provider: "discord",
-        runId: "runId" in auth ? auth.runId : null,
-        userId: auth.userId,
-        orgId: auth.orgId,
-        operationId: body.operationId,
-        filename: body.filename,
-        contentType,
-        size: body.length,
-        checksumSha256: body.checksumSha256,
-        destination: {
-          provider: "discord",
-          connectionId: access.binding.connectionId,
-          guildId: access.binding.guildId,
-          channelId: destination.channelId,
-          ...(body.comment !== undefined ? { comment: body.comment } : {}),
-        },
-      },
-      signal,
-    ),
-    signal,
-  );
-  signal.throwIfAborted();
-  if (!prepared.ok) {
-    if (prepared.error instanceof CanonicalPublicationConflictError) {
-      return conflict(prepared.error.message);
-    }
-    throw prepared.error;
-  }
-  if (!prepared.value) {
-    return notFound("Upload owner is no longer available");
-  }
-  return { status: 200 as const, body: prepared.value };
-});
-
-const materialize$ = command(async ({ get, set }, signal: AbortSignal) => {
-  const auth = get(organizationAuthContext$);
-  const parsed = await get(
-    bodyResultOf(integrationsDiscordUploadMaterializeContract.materialize),
-  );
-  signal.throwIfAborted();
-  if (!parsed.ok) {
-    return parsed.response;
-  }
-  const result = await set(
-    materializeCanonicalDiscordAsset$,
+  const prepared = await set(
+    preparePublishedImFile$,
     {
-      ...parsed.data,
+      runId: "runId" in auth ? auth.runId : null,
       userId: auth.userId,
       orgId: auth.orgId,
-      runId: "runId" in auth ? auth.runId : null,
+      filename: body.filename,
+      contentType,
+      size: body.length,
+      checksumSha256: body.checksumSha256,
     },
     signal,
   );
   signal.throwIfAborted();
-  if (!result.ok) {
-    return result.response;
+  if (!prepared) {
+    return notFound("Upload owner is no longer available");
   }
-  const { ok: _, ...body } = result;
-  return { status: 200 as const, body };
+  return { status: 200 as const, body: prepared };
 });
 
 const complete$ = command(async ({ get, set }, signal: AbortSignal) => {
@@ -158,10 +106,15 @@ const complete$ = command(async ({ get, set }, signal: AbortSignal) => {
   if (!parsed.ok) {
     return parsed.response;
   }
+  const body = parsed.data;
   const result = await set(
     completeCanonicalDiscordDelivery$,
     {
-      ...parsed.data,
+      assetId: body.assetId,
+      channelId: body.channelId,
+      recipientId: body.userId,
+      guildId: body.guildId,
+      comment: body.comment,
       userId: auth.userId,
       orgId: auth.orgId,
       runId: "runId" in auth ? auth.runId : null,
@@ -172,8 +125,8 @@ const complete$ = command(async ({ get, set }, signal: AbortSignal) => {
   if (!result.ok) {
     return result.response;
   }
-  const { ok: _, ...body } = result;
-  return { status: 200 as const, body };
+  const { ok: _, ...responseBody } = result;
+  return { status: 200 as const, body: responseBody };
 });
 
 const resolveFileUrl$ = command(async ({ get, set }, signal: AbortSignal) => {
@@ -263,10 +216,6 @@ export const integrationsDiscordFileRoutes: readonly RouteEntry[] = [
   {
     route: integrationsDiscordUploadInitContract.init,
     handler: authRoute(writeAuth, init$),
-  },
-  {
-    route: integrationsDiscordUploadMaterializeContract.materialize,
-    handler: authRoute(writeAuth, materialize$),
   },
   {
     route: integrationsDiscordUploadCompleteContract.complete,

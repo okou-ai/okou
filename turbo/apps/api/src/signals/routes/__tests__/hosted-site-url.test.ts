@@ -291,6 +291,7 @@ describe("hosted site URL", () => {
     ]);
 
     expect(renamed.body).toStrictEqual({
+      artifactId: expect.any(String) as string,
       siteId: site.siteId,
       publicSlug: renamedSlug,
       url: `https://${renamedSlug}.okou.app`,

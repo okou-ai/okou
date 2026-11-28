@@ -2,6 +2,7 @@ import { initClient } from "@okouai/api-contracts/contracts/trpc-contract";
 import {
   artifactAccessContract,
   type ArtifactVisibilityResponse,
+  type ArtifactVisibilityValue,
 } from "@okouai/api-contracts/contracts/artifact-access";
 import {
   artifactReferencesContract,
@@ -9,11 +10,22 @@ import {
 } from "@okouai/api-contracts/contracts/artifact-references";
 import {
   artifactShareTargetSchema,
-  type ArtifactShareStatus,
   type ArtifactShareTarget,
 } from "@okouai/api-contracts/contracts/artifact-shares";
 import { getPlatformOrigin } from "../../platform-url";
 import { getClientConfig, handleError } from "../core/client-factory";
+
+export interface ArtifactShareStatus {
+  readonly ownerUrl: string;
+  readonly shareId: string | null;
+  readonly audience: ArtifactVisibilityValue;
+  readonly organization: { readonly id: string; readonly name: string };
+  readonly selectedTarget: ArtifactShareTarget | null;
+  readonly selectedVersion: number | null;
+  readonly candidateVersion: number | null;
+  readonly url: string | null;
+  readonly shortUrl: string | null;
+}
 
 function toShareStatus(
   target: ArtifactShareTarget,
@@ -32,13 +44,19 @@ function toShareStatus(
   };
 }
 
-async function readArtifactVisibility(target: ArtifactShareTarget): Promise<{
+export type ResolvedArtifactShareTarget = ArtifactShareTarget & {
+  readonly artifactId?: string;
+};
+
+async function readArtifactVisibility(
+  target: ResolvedArtifactShareTarget,
+): Promise<{
   readonly artifactId: string;
   readonly status: ArtifactShareStatus;
 }> {
   const client = initClient(artifactAccessContract, await getClientConfig());
   const response = await client.getVisibility({
-    params: { artifactId: target.id },
+    params: { artifactId: target.artifactId ?? target.id },
   });
   if (response.status !== 200) {
     handleError(response, "Could not read artifact sharing");
@@ -52,7 +70,7 @@ async function readArtifactVisibility(target: ArtifactShareTarget): Promise<{
 export async function resolveArtifactShareTarget(
   artifact: string,
   kind: ArtifactShareTarget["kind"] | undefined,
-): Promise<ArtifactShareTarget> {
+): Promise<ResolvedArtifactShareTarget> {
   if (kind) {
     return artifactShareTargetSchema.parse({ kind, id: artifact });
   }
@@ -73,17 +91,22 @@ export async function resolveArtifactShareTarget(
   if (response.status !== 200) {
     handleError(response, "Artifact is not available to its owner");
   }
-  return response.body.target;
+  return {
+    ...response.body.target,
+    ...(response.body.artifactId
+      ? { artifactId: response.body.artifactId }
+      : {}),
+  };
 }
 
 export async function getArtifactShareStatus(
-  target: ArtifactShareTarget,
+  target: ResolvedArtifactShareTarget,
 ): Promise<ArtifactShareStatus> {
   return (await readArtifactVisibility(target)).status;
 }
 
 export async function setArtifactAudience(
-  target: ArtifactShareTarget,
+  target: ResolvedArtifactShareTarget,
   audience: ArtifactShareStatus["audience"],
 ): Promise<ArtifactShareStatus> {
   const { artifactId, status } = await readArtifactVisibility(target);

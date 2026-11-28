@@ -608,7 +608,6 @@ const slackUploadInitBodySchema = object({
   filename: string().min(1, "Filename is required"),
   length: number().int().positive("File length must be a positive integer"),
   canonical: object({
-    operationId: uuid(),
     contentType: string().min(1).max(200),
     checksumSha256: string().regex(/^[a-f0-9]{64}$/),
     channel: string().min(1, "Channel ID is required").optional(),
@@ -636,11 +635,10 @@ const directSlackUploadInitResponseSchema = object({
 const canonicalSlackUploadInitResponseSchema = object({
   kind: literal("canonical"),
   assetId: uuid(),
-  operationId: uuid(),
   /** Resolved destination channel ID (a DM channel when `user` was sent). */
   channel: string(),
-  uploadUrl: url().optional(),
-  uploadHeaders: record(string(), string()).optional(),
+  uploadUrl: url(),
+  uploadHeaders: record(string(), string()),
   url: artifactUrlSchema,
 });
 
@@ -671,10 +669,19 @@ export const integrationsSlackUploadInitContract = c.router({
   },
 });
 
-const slackUploadMaterializeBodySchema = object({
+const slackUploadDeliverBodySchema = object({
   assetId: uuid(),
-  operationId: uuid(),
-});
+  channel: string().min(1, "Channel ID is required").optional(),
+  user: string().min(1, "User ID is required").optional(),
+  threadTs: string().optional(),
+  title: string().optional(),
+  initialComment: string().optional(),
+}).refine(
+  (data) => {
+    return Boolean(data.channel) !== Boolean(data.user);
+  },
+  { message: "Exactly one of 'channel' or 'user' must be provided" },
+);
 
 const slackDeliveredFileSchema = object({
   status: literal("delivered"),
@@ -684,7 +691,6 @@ const slackDeliveredFileSchema = object({
 const slackDeliveryFailureSchema = object({
   status: literal("failed"),
   message: string(),
-  retryable: boolean(),
 });
 
 const slackUploadDeliveryResponseSchema = object({
@@ -696,25 +702,8 @@ const slackUploadDeliveryResponseSchema = object({
   ]),
 });
 
-const slackUploadMaterializeResponseSchema = object({
-  assetId: uuid(),
-  url: artifactUrlSchema,
-  delivery: discriminatedUnion("status", [
-    object({
-      status: literal("pending"),
-      uploadUrl: string(),
-      fileId: string(),
-    }),
-    slackDeliveredFileSchema,
-    slackDeliveryFailureSchema,
-  ]),
-});
-
-export type SlackUploadMaterializeBody = zInfer<
-  typeof slackUploadMaterializeBodySchema
->;
-export type SlackUploadMaterializeResponse = zInfer<
-  typeof slackUploadMaterializeResponseSchema
+export type SlackUploadDeliverBody = zInfer<
+  typeof slackUploadDeliverBodySchema
 >;
 export type SlackUploadDeliveryResponse = zInfer<
   typeof slackUploadDeliveryResponseSchema
@@ -725,7 +714,7 @@ export const integrationsSlackUploadMaterializeContract = c.router({
     method: "POST",
     path: "/api/integrations/slack/upload-file/deliver",
     headers: authHeadersSchema,
-    body: slackUploadMaterializeBodySchema,
+    body: slackUploadDeliverBodySchema,
     responses: {
       200: slackUploadDeliveryResponseSchema,
       400: apiErrorSchema,
@@ -733,21 +722,7 @@ export const integrationsSlackUploadMaterializeContract = c.router({
       403: apiErrorSchema,
       404: apiErrorSchema,
     },
-    summary: "Deliver a canonical file to Slack entirely on the server",
-  },
-  materialize: {
-    method: "POST",
-    path: "/api/integrations/slack/upload-file/materialize",
-    headers: authHeadersSchema,
-    body: slackUploadMaterializeBodySchema,
-    responses: {
-      200: slackUploadMaterializeResponseSchema,
-      400: apiErrorSchema,
-      401: apiErrorSchema,
-      403: apiErrorSchema,
-      404: apiErrorSchema,
-    },
-    summary: "Materialize a canonical Slack publication before delivery",
+    summary: "Finalize and fire-and-forget deliver a file to Slack",
   },
 });
 
@@ -876,41 +851,37 @@ export type IntegrationsTeamsDownloadFileContract =
  * Requires `teams:write` capability (via OKOU_TOKEN).
  */
 const teamsUploadInitBodySchema = object({
-  canonical: object({
-    version: literal(2),
-    operationId: uuid(),
-    checksumSha256: string().regex(/^[a-f0-9]{64}$/u),
-    conversationId: string().min(1).optional(),
-    user: string().min(1).optional(),
-    activityId: string().min(1).optional(),
-    text: string().max(4000).optional(),
-  })
-    .refine(
-      (value) => {
-        return Boolean(value.conversationId) !== Boolean(value.user);
-      },
-      {
-        message: "Exactly one of conversationId or user is required",
-      },
-    )
-    .refine(
-      (value) => {
-        return !(value.user && value.activityId);
-      },
-      {
-        message: "activityId can only be used with conversationId",
-      },
-    ),
+  checksumSha256: string()
+    .regex(/^[a-f0-9]{64}$/u)
+    .optional(),
+  conversationId: string().min(1).optional(),
+  user: string().min(1).optional(),
+  activityId: string().min(1).optional(),
+  text: string().max(4000).optional(),
   filename: string().min(1, "Filename is required").max(255),
   contentType: string().min(1, "Content type is required").max(200),
   length: number().int().positive("File length must be a positive integer"),
-});
+})
+  .refine(
+    (value) => {
+      return Boolean(value.conversationId) !== Boolean(value.user);
+    },
+    {
+      message: "Exactly one of conversationId or user is required",
+    },
+  )
+  .refine(
+    (value) => {
+      return !(value.user && value.activityId);
+    },
+    {
+      message: "activityId can only be used with conversationId",
+    },
+  );
 
 export type TeamsUploadInitBody = zInfer<typeof teamsUploadInitBodySchema>;
 
 const teamsUploadInitResponseSchema = object({
-  operationId: uuid(),
-  uploadRequired: boolean(),
   uploadId: uuid(),
   uploadUrl: string(),
   fileUrl: string(),
@@ -1010,7 +981,6 @@ export const integrationsTelegramUploadCompleteContract = c.router({
  * Requires `teams:write` capability (via OKOU_TOKEN).
  */
 const teamsUploadCompleteBodySchema = object({
-  operationId: uuid(),
   uploadId: string().check(uuid("Upload ID must be a UUID")),
   conversationId: string().min(1, "Conversation ID is required").optional(),
   user: string().min(1, "Teams user ID is required").optional(),
@@ -1347,9 +1317,6 @@ const slackUploadCompleteBodySchema = object({
   threadTs: string().optional(),
   title: string().optional(),
   initialComment: string().optional(),
-  canonicalAssetId: uuid().optional(),
-  operationId: uuid().optional(),
-  uploadError: string().max(2000).optional(),
 }).refine(
   (data) => {
     return Boolean(data.channel) !== Boolean(data.user);
@@ -1368,8 +1335,6 @@ const slackUploadCompleteResponseSchema = object({
   channel: string(),
   assetId: uuid().optional(),
   assetUrl: url().optional(),
-  deliveryStatus: zEnum(["delivered", "failed"]).optional(),
-  deliveryError: string().optional(),
 });
 
 export type SlackUploadCompleteResponse = zInfer<

@@ -159,7 +159,7 @@ class BuiltInToolsSettingsTest {
     }
 
     @Test
-    fun lostImageWriteResponseUsesReadbackWithoutRepeatingTheWrite() = runTest {
+    fun lostImageWriteResponseRollsBackUntilNormalRefresh() = runTest {
         val service = ToolFixture().apply { loseImageResponse = true }
         val settings = model(service)
         settings.show()
@@ -168,8 +168,12 @@ class BuiltInToolsSettingsTest {
         settings.chooseImage(otherImage)
         runCurrent()
         assertEquals(listOf(otherImage), service.imageWrites)
-        assertEquals(otherImage, settings.state.value.confirmedImage)
+        assertEquals(initialImage, settings.state.value.confirmedImage)
         assertNull(settings.state.value.pendingImage)
+        settings.refresh()
+        runCurrent()
+        assertEquals(otherImage, settings.state.value.confirmedImage)
+        assertEquals(listOf(otherImage), service.imageWrites)
     }
 
     @Test
@@ -271,46 +275,6 @@ class BuiltInToolsSettingsTest {
     }
 
     @Test
-    fun refreshAppliesTheServerModelAfterUnconfirmedImageWriteRollsBack() = runTest {
-        val fixture = ToolFixture()
-        val notices = mutableListOf<SettingsNotice>()
-        var readUnavailable = false
-        val settings =
-            model(
-                object : BuiltInToolsService by fixture {
-                    override suspend fun selectImageModel(id: String): String {
-                        fixture.selectImageModel(id)
-                        readUnavailable = true
-                        throw ApiFailure.Http(503, null, null, null)
-                    }
-
-                    override suspend fun imageModel(): String? {
-                        if (readUnavailable) throw ApiFailure.Network(UnknownHostException())
-                        return fixture.imageModel()
-                    }
-                },
-                notice = { notices += it },
-            )
-        settings.show()
-        runCurrent()
-        settings.chooseImage(otherImage)
-        runCurrent()
-        advanceTimeBy(6_000)
-        runCurrent()
-        assertEquals(initialImage, settings.state.value.displayedImage)
-        assertNull(settings.state.value.pendingImage)
-        assertEquals(listOf(SettingsNotice.ImageModelSaveFailed), notices)
-
-        readUnavailable = false
-        settings.refresh()
-        runCurrent()
-        assertEquals(otherImage, settings.state.value.confirmedImage)
-        assertEquals(otherImage, settings.state.value.displayedImage)
-        assertNull(settings.state.value.pendingImage)
-        assertEquals(listOf(otherImage), fixture.imageWrites)
-    }
-
-    @Test
     fun pendingImageWriteSendsOnlyTheLatestChoiceAfterConfirmation() = runTest {
         val fixture = ToolFixture()
         val pending = CompletableDeferred<Unit>()
@@ -376,16 +340,28 @@ class BuiltInToolsSettingsTest {
     }
 
     @Test
-    fun staleReadbackDoesNotReleaseAnotherImageWriteAfterAnUnclearResult() = runTest {
+    fun aNewerImageChoiceFollowsAnAmbiguousWriteWithoutReadingBack() = runTest {
         val fixture = ToolFixture()
+        val release = CompletableDeferred<Unit>()
+        var reads = 0
         val writes = mutableListOf<String>()
         val notices = mutableListOf<SettingsNotice>()
         val settings =
             model(
                 object : BuiltInToolsService by fixture {
+                    override suspend fun imageModel(): String? {
+                        reads++
+                        return fixture.imageModel()
+                    }
+
                     override suspend fun selectImageModel(id: String): String {
                         writes += id
-                        throw ApiFailure.Http(503, null, null, null)
+                        if (id == otherImage) {
+                            fixture.selectImageModel(id)
+                            release.await()
+                            throw ApiFailure.Http(503, null, null, null)
+                        }
+                        return fixture.selectImageModel(id)
                     }
                 },
                 notice = { notices += it },
@@ -395,13 +371,14 @@ class BuiltInToolsSettingsTest {
         settings.chooseImage(otherImage)
         runCurrent()
         settings.chooseImage("gpt-image-1")
-        advanceTimeBy(6_000)
+        release.complete(Unit)
         runCurrent()
 
-        assertEquals(listOf(otherImage), writes)
-        assertEquals(initialImage, settings.state.value.displayedImage)
+        assertEquals(listOf(otherImage, "gpt-image-1"), writes)
+        assertEquals("gpt-image-1", settings.state.value.confirmedImage)
+        assertEquals(1, reads)
         assertNull(settings.state.value.pendingImage)
-        assertEquals(listOf(SettingsNotice.ImageModelSaveFailed), notices)
+        assertTrue(notices.isEmpty())
     }
 
     @Test
@@ -467,7 +444,7 @@ class BuiltInToolsSettingsTest {
     }
 
     @Test
-    fun oldReadbackKeepsTheNewerChoicePendingUntilTheEarlierWriteCommits() = runTest {
+    fun aNewerToolChoiceFollowsAnAmbiguousWriteWithoutReadingBack() = runTest {
         val fixture = ToolFixture()
         val loseResponse = CompletableDeferred<Unit>()
         val writes = mutableListOf<Boolean>()
@@ -476,6 +453,7 @@ class BuiltInToolsSettingsTest {
                 override suspend fun setEnabled(id: String, enabled: Boolean): Boolean {
                     writes += enabled
                     if (!enabled) {
+                        fixture.setEnabled(id, enabled)
                         loseResponse.await()
                         throw ApiFailure.Http(503, null, null, null)
                     }
@@ -492,14 +470,6 @@ class BuiltInToolsSettingsTest {
         loseResponse.complete(Unit)
         runCurrent()
 
-        // The first read still sees the enabled value, and the earlier disable can commit later.
-        assertEquals(listOf(false), writes)
-        assertEquals(true, settings.state.value.enabled(webSearchTool))
-        assertTrue(webSearchTool in settings.state.value.savingTools)
-        fixture.setEnabled(webSearchTool, false)
-        advanceTimeBy(3_000)
-        runCurrent()
-
         assertEquals(listOf(false, true), writes)
         assertEquals(true, settings.state.value.enabled(webSearchTool))
         assertTrue(settings.state.value.savingTools.isEmpty())
@@ -510,10 +480,12 @@ class BuiltInToolsSettingsTest {
     @Test
     fun latestChoiceInAReopenedSettingsVisitReceivesItsSaveFailure() = runTest {
         val fixture = ToolFixture()
+        val release = CompletableDeferred<Unit>()
         val service =
             object : BuiltInToolsService by fixture {
                 override suspend fun setEnabled(id: String, enabled: Boolean): Boolean {
                     if (enabled) throw ApiFailure.Http(403, null, null, null)
+                    release.await()
                     throw ApiFailure.Http(503, null, null, null)
                 }
             }
@@ -531,17 +503,16 @@ class BuiltInToolsSettingsTest {
         assertTrue(webSearchTool in settings.state.value.savingTools)
         assertTrue(notices.isEmpty())
 
-        fixture.setEnabled(webSearchTool, false)
-        advanceTimeBy(3_000)
+        release.complete(Unit)
         runCurrent()
 
-        assertEquals(false, settings.state.value.enabled(webSearchTool))
+        assertEquals(true, settings.state.value.enabled(webSearchTool))
         assertTrue(settings.state.value.savingTools.isEmpty())
         assertEquals(listOf(SettingsNotice.ToolSaveFailed), notices)
     }
 
     @Test
-    fun exhaustedInconclusiveReadbackReportsUncertaintyWithoutWritingAgain() = runTest {
+    fun ambiguousToolSaveRollsBackAndReportsUncertainty() = runTest {
         val fixture = ToolFixture()
         val writes = mutableListOf<Boolean>()
         var reads = 0
@@ -554,6 +525,7 @@ class BuiltInToolsSettingsTest {
 
                 override suspend fun setEnabled(id: String, enabled: Boolean): Boolean {
                     writes += enabled
+                    fixture.setEnabled(id, enabled)
                     throw ApiFailure.Http(503, null, null, null)
                 }
             }
@@ -563,20 +535,17 @@ class BuiltInToolsSettingsTest {
         runCurrent()
         settings.toggle(webSearchTool, false)
         runCurrent()
-        settings.toggle(webSearchTool, true)
-        advanceTimeBy(3_000)
-        runCurrent()
-
-        assertEquals(true, settings.state.value.enabled(webSearchTool))
-        assertTrue(webSearchTool in settings.state.value.savingTools)
-        assertTrue(notices.isEmpty())
-        advanceTimeBy(3_000)
-        runCurrent()
-
-        assertEquals(4, reads)
+        assertEquals(1, reads)
         assertEquals(listOf(false), writes)
         assertTrue(settings.state.value.savingTools.isEmpty())
         assertEquals(true, settings.state.value.enabled(webSearchTool))
+        assertEquals(listOf(SettingsNotice.ToolSaveUnconfirmed), notices)
+
+        settings.refresh()
+        runCurrent()
+        assertEquals(2, reads)
+        assertEquals(listOf(false), writes)
+        assertEquals(false, settings.state.value.enabled(webSearchTool))
         assertEquals(listOf(SettingsNotice.ToolSaveUnconfirmed), notices)
     }
 

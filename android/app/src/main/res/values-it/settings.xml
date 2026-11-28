@@ -10,7 +10,6 @@
     <string name="settings_tools_unavailable">Strumenti temporaneamente non disponibili.</string>
     <string name="settings_tool_save_failed">Impossibile confermare la modifica.</string>
     <string name="settings_tool_image_save_failed">Impossibile salvare il modello di generazione di immagini</string>
-    <string name="settings_save_checking">Verifica del risultato…</string>
     <string name="settings_preferences_save_rolled_back">Impossibile salvare le impostazioni. Sono stati ripristinati i valori precedenti.</string>
     <string name="settings_appearance_sync_failed">Impossibile sincronizzare l’aspetto. È stato applicato su questo dispositivo.</string>
     <string name="settings_email_updates">Aggiornamenti via email</string>

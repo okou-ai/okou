@@ -47,6 +47,7 @@ async function openOwnerMenu(
       filename: "Coast.png",
       contentType: "image/png",
       expiresAt: "2099-01-01T00:00:00Z",
+      artifactId: fileId,
       target: { kind: "file", id: fileId },
     });
   });

@@ -41,8 +41,7 @@ import {
 import { grantArtifactChannelMembers$ } from "./artifact-channel-grants.service";
 import { consumeHostedSiteSharingQuota$ } from "./hosted-site-sharing-quota.service";
 import { loadUserFeatureSwitchContext$ } from "./feature-switches.service";
-import { updateArtifactShare$ } from "./artifact-shares.service";
-import { updateHostedSiteVisibility$ } from "./hosted-site-access.service";
+import { updateArtifactVisibility$ } from "./artifact-access.service";
 import type { FeishuInstallationConfig } from "./feishu-config";
 import { settle } from "../utils";
 
@@ -90,7 +89,7 @@ const enabled$ = command(
       resource.userId,
       signal,
     );
-    return isFeatureEnabled(FeatureSwitchKey.HostedSiteEmailSharing, context);
+    return isFeatureEnabled(FeatureSwitchKey.ArtifactUserSharing, context);
   },
 );
 
@@ -527,35 +526,17 @@ export const applyFeishuArtifactSharing$ = command(
     }
     if (input.audience !== "channel") {
       const audience = input.audience;
-      const changed =
-        resource.kind === "site"
-          ? await set(
-              updateHostedSiteVisibility$,
-              {
-                siteId: resource.id,
-                userId: resource.userId,
-                orgId: resource.orgId,
-                expectedRevision: resource.revision,
-                visibility: audience,
-              },
-              signal,
-            )
-          : await set(
-              updateArtifactShare$,
-              {
-                target: { kind: "file", id: resource.id },
-                userId: resource.userId,
-                orgId: resource.orgId,
-                audience,
-              },
-              signal,
-            );
-      const success = Boolean(
-        changed &&
-        ("audience" in changed
-          ? changed.audience === audience
-          : "status" in changed && changed.status === "ok"),
+      const changed = await set(
+        updateArtifactVisibility$,
+        {
+          artifactId: resource.artifactId,
+          userId: resource.userId,
+          orgId: resource.orgId,
+          visibility: audience,
+        },
+        signal,
       );
+      const success = changed.status === "ok";
       return {
         text: success
           ? `Artifact visibility is now ${audience}.`

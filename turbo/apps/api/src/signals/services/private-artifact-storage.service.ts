@@ -4,24 +4,18 @@ import {
   artifactShareReferencePath,
   parseArtifactReference,
 } from "@okouai/api-contracts/contracts/artifact-references";
+import { CURRENT_LINK_LAYOUT } from "@okouai/api-contracts/contracts/link-layout";
 import { command } from "ccstate";
-import { and, eq, isNotNull, isNull, sql, type SQL } from "drizzle-orm";
-import { boolean, literal, number, object, string, uuid } from "zod";
-import {
-  CURRENT_LINK_LAYOUT,
-  linkLayoutFromSegment,
-  linkLayoutSegment,
-  linkLayoutSegmentSchema,
-} from "@okouai/api-contracts/contracts/link-layout";
-import { runUploadedFiles } from "@okouai/db/schema/run-uploaded-file";
-import type { FileOrigin } from "@okouai/db/schema/file";
-import { agentRuns } from "@okouai/db/runtime/agent-run";
-import type { RunUploadedFileMetadata } from "@okouai/db/jsonb-contracts/run-uploaded-file";
+import { and, eq, isNull, type SQL } from "drizzle-orm";
+import { uuid } from "zod";
+import { files, type FileOrigin } from "@okouai/db/schema/file";
 
 import { env } from "../../lib/env";
-import { sanitizeArtifactFilename } from "../../lib/file-url";
-import { nowDate } from "../../lib/time";
-import { parseRawRows } from "../../lib/db-raw-rows";
+import {
+  artifactHash,
+  buildFileUrlFromKey,
+  sanitizeArtifactFilename,
+} from "../../lib/file-url";
 import { apiBackendUrl } from "../../lib/api-backend-url";
 import { type ReadonlyDb, db$, writeDb$ } from "../external/db";
 import { safeUrlParse } from "../utils";
@@ -29,20 +23,16 @@ import {
   allocateArtifactReference$,
   artifactReferenceRecord$,
 } from "./artifact-reference.service";
-import {
-  queueChangedArtifactCatalogFileSql,
-  syncArtifactCatalogForFile$,
-} from "./artifact-catalog.service";
-import {
-  dualWriteFileRecord$,
-  dualWriteFileUpdate$,
-} from "./files-dual-write.service";
+import { upsertFileArtifact$ } from "./artifact-catalog.service";
 
-const PRIVATE_STORAGE = "private-artifact-v1";
 export type PrivateArtifactPurpose =
   "artifact" | "hosted-preview" | "browser-screenshot" | "marketing-handoff";
 
-function fileOriginForPrivateArtifact(
+export type PrivateArtifactUploadProtocol =
+  | { readonly kind: "fixed-size-put-v1"; readonly size: number }
+  | { readonly kind: "multipart-v1" };
+
+export function fileOriginForPrivateArtifact(
   purpose: PrivateArtifactPurpose | undefined,
   runId: string | undefined,
 ): FileOrigin {
@@ -55,14 +45,6 @@ function fileOriginForPrivateArtifact(
   }
   return purpose === "artifact" || runId !== undefined ? "agent" : "user";
 }
-export type PrivateArtifactUploadProtocol =
-  | { readonly kind: "fixed-size-put-v1"; readonly size: number }
-  | { readonly kind: "multipart-v1" };
-
-const uploadProtocolSchema = object({
-  kind: literal("fixed-size-put-v1"),
-  size: number().int().nonnegative().safe(),
-}).or(object({ kind: literal("multipart-v1") }));
 
 export function readPrivateAttachmentRows(
   db: ReadonlyDb,
@@ -70,18 +52,19 @@ export function readPrivateAttachmentRows(
 ) {
   return db
     .select({
-      id: runUploadedFiles.id,
-      orgId: runUploadedFiles.orgId,
-      userId: runUploadedFiles.userId,
-      deletedAt: runUploadedFiles.deletedAt,
-      metadata: runUploadedFiles.metadata,
-      storageKey: runUploadedFiles.storageKey,
-      filename: runUploadedFiles.filename,
-      contentType: runUploadedFiles.contentType,
-      sizeBytes: runUploadedFiles.sizeBytes,
-      materializationStatus: runUploadedFiles.materializationStatus,
+      id: files.id,
+      orgId: files.orgId,
+      userId: files.ownerUserId,
+      deletedAt: files.deletedAt,
+      storageKey: files.storageKey,
+      filename: files.filename,
+      contentType: files.contentType,
+      sizeBytes: files.sizeBytes,
+      checksumSha256: files.checksumSha256,
+      origin: files.origin,
+      createdAt: files.createdAt,
     })
-    .from(runUploadedFiles)
+    .from(files)
     .where(predicate);
 }
 
@@ -89,41 +72,19 @@ export type PrivateAttachmentRow = Awaited<
   ReturnType<typeof readPrivateAttachmentRows>
 >[number];
 
-/** Only ordinary upload preparation mints this metadata-stability contract. */
+/** A non-null `sizeBytes` marks a private upload whose bytes were verified. */
 export function completedPrivateAttachmentSize(
-  row: Pick<
-    PrivateAttachmentRow,
-    "metadata" | "materializationStatus" | "sizeBytes"
-  >,
+  row: Pick<PrivateAttachmentRow, "sizeBytes">,
 ): number | null {
-  const protocol = uploadProtocolSchema.safeParse(row.metadata.uploadProtocol);
   if (
-    !protocol.success ||
-    row.materializationStatus !== "ready" ||
     row.sizeBytes === null ||
     !Number.isSafeInteger(row.sizeBytes) ||
     row.sizeBytes < 0
   ) {
     return null;
   }
-  // Single-PUT retries may replace bytes, but the signed length cannot change.
-  // Multipart completion consumes the only upload ID issued for this new key.
-  // Every ready writer for these identities first verifies the stored object,
-  // including canonical registration of a pending attachment after its HEAD.
-  return protocol.data.kind === "multipart-v1" ||
-    protocol.data.size === row.sizeBytes
-    ? row.sizeBytes
-    : null;
+  return row.sizeBytes;
 }
-const privateMetadataSchema = object({
-  storage: literal(PRIVATE_STORAGE),
-  bucket: string().min(1),
-  // Link-layout marker of the file's shares; the key name is persisted.
-  publicBrand: linkLayoutSegmentSchema,
-  artifactReference: string()
-    .regex(/^[a-z0-9]{10}$/u)
-    .optional(),
-});
 
 export function artifactFileReference(
   value: string,
@@ -179,20 +140,56 @@ export function privateArtifactReferenceUrl(
   ).href;
 }
 
-export function privateArtifactUrl(
-  id: string,
-  filename: string,
-  metadata: RunUploadedFileMetadata,
-): string {
-  if (metadata.artifactReference !== undefined) {
-    return privateArtifactReferenceUrl(
-      string().parse(metadata.artifactReference),
-      filename,
-    );
-  }
-  // Persisted private files created before short references retain their ID.
-  return new URL(artifactReferencePath(id, filename), env("APP_URL")).href;
-}
+export const resolvePrivateArtifactUrl$ = command(
+  async (
+    { set },
+    args: { readonly id: string; readonly filename: string },
+    signal: AbortSignal,
+  ): Promise<string> => {
+    if (env("R2_HOSTED_SITES_BUCKET_NAME")) {
+      for (let attempt = 0; attempt < 10; attempt += 1) {
+        const hash = artifactHash(args.id, `file:${attempt}`);
+        const record = await set(artifactReferenceRecord$, hash, signal);
+        signal.throwIfAborted();
+        if (!record) {
+          break;
+        }
+        if (
+          record.version === 2 &&
+          record.target.kind === "file" &&
+          record.target.id === args.id
+        ) {
+          return privateArtifactReferenceUrl(hash, args.filename);
+        }
+      }
+    }
+    return new URL(
+      artifactReferencePath(args.id, args.filename),
+      env("APP_URL"),
+    ).href;
+  },
+);
+
+export const resolveFileUrl$ = command(
+  async (
+    { set },
+    args: {
+      readonly id: string;
+      readonly storageKey: string;
+      readonly filename: string;
+    },
+    signal: AbortSignal,
+  ): Promise<string> => {
+    if (args.storageKey.startsWith("private-artifacts/")) {
+      return await set(
+        resolvePrivateArtifactUrl$,
+        { id: args.id, filename: args.filename },
+        signal,
+      );
+    }
+    return buildFileUrlFromKey(args.storageKey, CURRENT_LINK_LAYOUT);
+  },
+);
 
 export function privateArtifactsBucket(): string {
   const bucket = env("R2_PRIVATE_ARTIFACTS_BUCKET_NAME");
@@ -202,57 +199,11 @@ export function privateArtifactsBucket(): string {
   return bucket;
 }
 
-/** Persist this location with the owning record before starting the upload. */
-export const allocatePrivateArtifactLocation$ = command(
-  async (
-    { set },
-    args: {
-      readonly id: string;
-      readonly filename: string;
-      // Declared by the uploader. Only `purpose: "artifact"` belongs in the
-      // catalog; ordinary attachments and system-process files do not.
-      readonly purpose?: PrivateArtifactPurpose;
-    },
-    signal: AbortSignal,
-  ) => {
-    const { id, filename } = args;
-    const bucket = privateArtifactsBucket();
-    const artifactReference = await set(
-      allocateArtifactReference$,
-      { kind: "file", id },
-      signal,
-    );
-    const storageMetadata = {
-      storage: PRIVATE_STORAGE,
-      bucket,
-      publicBrand: linkLayoutSegment(CURRENT_LINK_LAYOUT),
-      artifactReference,
-      ...(args.purpose ? { purpose: args.purpose } : {}),
-    };
-    return {
-      id,
-      key: `private-artifacts/${id}/${sanitizeArtifactFilename(filename)}`,
-      bucket,
-      url: privateArtifactUrl(id, filename, storageMetadata),
-      layout: CURRENT_LINK_LAYOUT,
-      metadata: { "artifact-id": id },
-      storageMetadata,
-    };
-  },
-);
-
-/** Historical accessLevel="private" records still address public objects. */
-export function artifactStorageBucket(
-  metadata: RunUploadedFileMetadata,
-): string {
-  if (metadata.storage === undefined) {
-    return env("R2_USER_ARTIFACTS_BUCKET_NAME");
+export function fileStorageBucket(storageKey: string): string {
+  if (storageKey.startsWith("private-artifacts/")) {
+    return privateArtifactsBucket();
   }
-  const storage = privateMetadataSchema.parse(metadata);
-  if (storage.bucket !== privateArtifactsBucket()) {
-    throw new Error("Artifact does not match the configured private bucket");
-  }
-  return storage.bucket;
+  return env("R2_USER_ARTIFACTS_BUCKET_NAME");
 }
 
 /** Template records persist their authorized source keys, including old public keys. */
@@ -266,6 +217,36 @@ export function templateArtifactBucket(key: string): string {
   return env("R2_USER_ARTIFACTS_BUCKET_NAME");
 }
 
+/** Persist this location with the owning record before starting the upload. */
+export const allocatePrivateArtifactLocation$ = command(
+  async (
+    { set },
+    args: {
+      readonly id: string;
+      readonly filename: string;
+      readonly purpose?: PrivateArtifactPurpose;
+    },
+    signal: AbortSignal,
+  ) => {
+    const { id, filename } = args;
+    const bucket = privateArtifactsBucket();
+    const artifactReference = await set(
+      allocateArtifactReference$,
+      { kind: "file", id },
+      signal,
+    );
+    return {
+      id,
+      key: `private-artifacts/${id}/${sanitizeArtifactFilename(filename)}`,
+      bucket,
+      url: privateArtifactReferenceUrl(artifactReference, filename),
+      artifactReference,
+      layout: CURRENT_LINK_LAYOUT,
+      metadata: { "artifact-id": id },
+    };
+  },
+);
+
 export const allocatePrivateArtifact$ = command(
   async (
     { set },
@@ -275,6 +256,7 @@ export const allocatePrivateArtifact$ = command(
       readonly filename: string;
       readonly contentType: string;
       readonly size: number;
+      readonly checksumSha256?: string;
       readonly id?: string;
       readonly purpose?: PrivateArtifactPurpose;
       readonly runId?: string;
@@ -292,127 +274,110 @@ export const allocatePrivateArtifact$ = command(
       },
       signal,
     );
-    const { bucket, key } = location;
+    const { key } = location;
+    const origin = fileOriginForPrivateArtifact(args.purpose, args.runId);
     const db = set(writeDb$);
-    // This independent ownership record also covers uploads outside a run.
-    // Historical accessLevel="private" rows still use public storage; only
-    // this versioned storage marker identifies the new private policy.
     const [created] = await db
-      .insert(runUploadedFiles)
+      .insert(files)
       .values({
-        id,
-        source: "web",
-        externalId: id,
-        userId: args.userId,
-        orgId: args.orgId,
-        filename: args.filename,
-        contentType: args.contentType,
-        sizeBytes: args.size,
-        storageKey: key,
-        accessLevel: "private",
-        materializationStatus: "pending",
-        metadata: {
-          ...location.storageMetadata,
-          ...(args.purpose === "artifact" && args.runId
-            ? { producingRunId: args.runId }
-            : {}),
-          ...(args.uploadProtocol
-            ? { uploadProtocol: args.uploadProtocol }
-            : {}),
-        },
-      })
-      .onConflictDoNothing({ target: runUploadedFiles.id })
-      .returning({ id: runUploadedFiles.id });
-    signal.throwIfAborted();
-    if (!created) {
-      const [existing] = await db
-        .select()
-        .from(runUploadedFiles)
-        .where(eq(runUploadedFiles.id, id))
-        .limit(1);
-      signal.throwIfAborted();
-      if (
-        !existing ||
-        existing.userId !== args.userId ||
-        existing.orgId !== args.orgId ||
-        existing.metadata.storage !== PRIVATE_STORAGE ||
-        existing.metadata.bucket !== bucket ||
-        existing.metadata.publicBrand !==
-          location.storageMetadata.publicBrand ||
-        existing.storageKey !== key ||
-        existing.filename !== args.filename ||
-        existing.contentType !== args.contentType
-      ) {
-        throw new Error("Private artifact identity belongs to another object");
-      }
-    }
-    await set(
-      dualWriteFileRecord$,
-      {
         id,
         orgId: args.orgId,
         ownerUserId: args.userId,
         storageKey: key,
         filename: args.filename,
         contentType: args.contentType,
-        sizeBytes: args.size,
-        origin: fileOriginForPrivateArtifact(args.purpose, args.runId),
-      },
-      signal,
-    );
+        sizeBytes: null,
+        checksumSha256: args.checksumSha256 ?? null,
+        origin,
+      })
+      .onConflictDoNothing({ target: files.id })
+      .returning({ id: files.id });
+    signal.throwIfAborted();
+    if (!created) {
+      const [existing] = await db
+        .select()
+        .from(files)
+        .where(eq(files.id, id))
+        .limit(1);
+      signal.throwIfAborted();
+      if (
+        !existing ||
+        existing.ownerUserId !== args.userId ||
+        existing.orgId !== args.orgId ||
+        existing.storageKey !== key ||
+        existing.filename !== args.filename ||
+        existing.contentType !== args.contentType ||
+        (args.checksumSha256 !== undefined &&
+          existing.checksumSha256 !== args.checksumSha256)
+      ) {
+        throw new Error("Private artifact identity belongs to another object");
+      }
+    }
     return location;
   },
 );
 
-/** Decode a fetched row without issuing another ownership-record read. */
+/** Decode a fetched `files` row when it addresses private object storage. */
 export function privateArtifactFromRow<
-  Row extends Omit<PrivateAttachmentRow, "sizeBytes" | "materializationStatus">,
+  Row extends Pick<
+    typeof files.$inferSelect,
+    | "id"
+    | "orgId"
+    | "storageKey"
+    | "filename"
+    | "contentType"
+    | "sizeBytes"
+    | "checksumSha256"
+    | "origin"
+    | "createdAt"
+    | "deletedAt"
+  > & { readonly ownerUserId?: string; readonly userId?: string },
 >(row: Row | undefined) {
-  if (!row || row.metadata.storage === undefined || row.deletedAt !== null) {
+  if (
+    !row ||
+    row.deletedAt !== null ||
+    !row.storageKey ||
+    !row.storageKey.startsWith("private-artifacts/")
+  ) {
     return null;
   }
-  const { publicBrand, ...metadata } = privateMetadataSchema.parse(
-    row.metadata,
-  );
-  if (!row.orgId || !row.storageKey || !row.filename || !row.contentType) {
-    throw new Error(
-      `Private artifact ${row.id} has incomplete storage metadata`,
-    );
+  const userId = row.userId ?? row.ownerUserId;
+  if (!userId) {
+    throw new Error(`Private artifact ${row.id} has no owner user ID`);
   }
-  if (metadata.bucket !== privateArtifactsBucket()) {
-    throw new Error(
-      `Private artifact ${row.id} does not match the configured private bucket`,
-    );
-  }
+  const bucket = privateArtifactsBucket();
   return {
-    ...row,
+    id: row.id,
     orgId: row.orgId,
+    userId,
     key: row.storageKey,
-    filename: row.filename,
-    contentType: row.contentType,
-    ...metadata,
-    layout: linkLayoutFromSegment(publicBrand),
+    storageKey: row.storageKey,
+    bucket,
+    filename: row.filename ?? "file",
+    contentType: row.contentType ?? "application/octet-stream",
+    sizeBytes: row.sizeBytes,
+    checksumSha256: row.checksumSha256,
+    origin: row.origin,
+    createdAt: row.createdAt,
+    deletedAt: row.deletedAt,
+    isReady: row.sizeBytes !== null,
+    layout: CURRENT_LINK_LAYOUT,
   };
 }
 
 export type PrivateArtifactRecord = NonNullable<
-  ReturnType<
-    typeof privateArtifactFromRow<typeof runUploadedFiles.$inferSelect>
-  >
+  ReturnType<typeof privateArtifactFromRow<typeof files.$inferSelect>>
 >;
 
 export const privateArtifactRecord$ = command(
   async ({ get }, id: string, signal: AbortSignal) => {
-    // Historical file IDs are not all UUIDs; the database key is a UUID.
     if (!uuid().safeParse(id).success) {
       return null;
     }
     const [row] = await get(db$)
       .select()
-      .from(runUploadedFiles)
-      .where(
-        and(eq(runUploadedFiles.id, id), isNull(runUploadedFiles.deletedAt)),
-      )
+      .from(files)
+      .where(and(eq(files.id, id), isNull(files.deletedAt)))
       .limit(1);
     signal.throwIfAborted();
     return privateArtifactFromRow(row);
@@ -424,77 +389,61 @@ export const completePrivateArtifact$ = command(
     { set },
     args: {
       readonly id: string;
-      // Internal previews and browser captures keep their reference on the
-      // owning record, without publishing a standalone catalog file.
+      // Internal previews and browser captures pass `null` so they never enter
+      // the catalog; agent deliverables pass their canonical `/artifacts/...` URL.
       readonly url: string | null;
       readonly contentType: string;
       readonly size: number;
+      readonly checksumSha256?: string;
       readonly runId?: string;
+      readonly registerArtifact?: boolean;
     },
     signal: AbortSignal,
   ) => {
     const db = set(writeDb$);
-    const producingThread = args.runId
-      ? sql`(${db
-          .select({ chatThreadId: agentRuns.chatThreadId })
-          .from(agentRuns)
-          .where(
-            and(
-              eq(agentRuns.id, args.runId),
-              eq(agentRuns.orgId, runUploadedFiles.orgId),
-              isNotNull(agentRuns.triggerSource),
-            ),
-          )
-          .limit(1)})`
-      : sql`NULL`;
-    // A completed file and its durable catalog handoff must commit together.
-    const [outcome] = parseRawRows(
-      object({ changed: boolean() }),
-      await db.execute(
-        queueChangedArtifactCatalogFileSql(
-          args.id,
-          db
-            .update(runUploadedFiles)
-            .set({
-              // Publish the creating thread with the first URL, before catalog
-              // registration. A retry must preserve a deleted thread's NULL.
-              chatThreadId: sql`CASE WHEN ${isNull(runUploadedFiles.url)}
-                THEN COALESCE(${runUploadedFiles.chatThreadId}, ${producingThread})
-                ELSE ${runUploadedFiles.chatThreadId} END`,
-              url: args.url,
-              contentType: args.contentType,
-              sizeBytes: args.size,
-              materializationStatus: "ready",
-              updatedAt: nowDate(),
-            })
-            .where(eq(runUploadedFiles.id, args.id))
-            .returning({
-              id: runUploadedFiles.id,
-              orgId: runUploadedFiles.orgId,
-              userId: runUploadedFiles.userId,
-              chatThreadId: runUploadedFiles.chatThreadId,
-              runId: runUploadedFiles.runId,
-              url: runUploadedFiles.url,
-            })
-            .getSQL(),
-        ),
-      ),
-    );
-    signal.throwIfAborted();
-    if (!outcome) {
-      throw new Error("Private artifact completion returned no outcome");
-    }
-    await set(
-      dualWriteFileUpdate$,
-      {
-        id: args.id,
+    const [updated] = await db
+      .update(files)
+      .set({
         contentType: args.contentType,
         sizeBytes: args.size,
-      },
-      signal,
-    );
-    if (outcome.changed) {
-      await set(syncArtifactCatalogForFile$, args.id, signal);
+        ...(args.checksumSha256 !== undefined
+          ? { checksumSha256: args.checksumSha256 }
+          : {}),
+      })
+      .where(and(eq(files.id, args.id), isNull(files.deletedAt)))
+      .returning({
+        id: files.id,
+        orgId: files.orgId,
+        ownerUserId: files.ownerUserId,
+        filename: files.filename,
+        contentType: files.contentType,
+        origin: files.origin,
+        createdAt: files.createdAt,
+      });
+    signal.throwIfAborted();
+    if (!updated) {
+      return;
+    }
+    const shouldRegister =
+      args.registerArtifact !== false &&
+      args.url !== null &&
+      updated.origin !== "system" &&
+      (updated.origin === "agent" || args.runId !== undefined);
+    if (shouldRegister) {
+      await set(
+        upsertFileArtifact$,
+        {
+          fileId: updated.id,
+          orgId: updated.orgId,
+          userId: updated.ownerUserId,
+          filename: updated.filename ?? "file",
+          contentType: updated.contentType,
+          sourceUrl: args.url,
+          runId: args.runId,
+          createdAt: updated.createdAt,
+        },
+        signal,
+      );
     }
   },
 );

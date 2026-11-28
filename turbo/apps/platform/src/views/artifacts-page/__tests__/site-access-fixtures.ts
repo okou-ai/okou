@@ -57,6 +57,7 @@ export async function openSharing(
   context.mocks.api(hostContract.siteUrl, ({ respond }) => {
     return respond(200, {
       siteId: site,
+      artifactId: entry.id,
       publicSlug: "studio-notes",
       url: stable,
       isActive: true,

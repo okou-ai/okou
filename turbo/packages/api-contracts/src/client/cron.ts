@@ -18,7 +18,6 @@ import type {
   cronProcessUsageEventsContract as OriginalCronProcessUsageEventsContract,
   cronProjectChatEventSearchContract as OriginalCronProjectChatEventSearchContract,
   cronPruneStoragePresignedUrlsContract as OriginalCronPruneStoragePresignedUrlsContract,
-  cronReconcileArtifactCatalogContract as OriginalCronReconcileArtifactCatalogContract,
   cronReconcileBillingEntitlementsContract as OriginalCronReconcileBillingEntitlementsContract,
   cronReconcileImageGenerationsContract as OriginalCronReconcileImageGenerationsContract,
   cronRenewGmailWatchesContract as OriginalCronRenewGmailWatchesContract,
@@ -237,19 +236,6 @@ export const cronPruneStoragePresignedUrlsContract: ClientDescriptor<
   prune: {
     method: "GET",
     path: "/api/cron/prune-storage-presigned-urls",
-    statuses: {
-      200: true,
-      401: true,
-    },
-  },
-};
-
-export const cronReconcileArtifactCatalogContract: ClientDescriptor<
-  typeof OriginalCronReconcileArtifactCatalogContract
-> = {
-  reconcile: {
-    method: "GET",
-    path: "/api/cron/reconcile-artifact-catalog",
     statuses: {
       200: true,
       401: true,

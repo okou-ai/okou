@@ -45,8 +45,7 @@ import {
   type ChannelSharingResource,
 } from "./artifact-channel-resource.service";
 import { consumeHostedSiteSharingQuota$ } from "./hosted-site-sharing-quota.service";
-import { updateArtifactShare$ } from "./artifact-shares.service";
-import { updateHostedSiteVisibility$ } from "./hosted-site-access.service";
+import { updateArtifactVisibility$ } from "./artifact-access.service";
 
 interface SlackActor {
   readonly workspaceId: string;
@@ -122,7 +121,7 @@ const sharingEnabled$ = command(
       resource.userId,
       signal,
     );
-    return isFeatureEnabled(FeatureSwitchKey.HostedSiteEmailSharing, context);
+    return isFeatureEnabled(FeatureSwitchKey.ArtifactUserSharing, context);
   },
 );
 
@@ -537,34 +536,17 @@ const changeSlackArtifactVisibility$ = command(
       args.action === SLACK_ARTIFACT_SHARE_ACTIONS.organization
         ? "organization"
         : "public";
-    const changed =
-      args.resource.kind === "site"
-        ? await set(
-            updateHostedSiteVisibility$,
-            {
-              siteId: args.resource.id,
-              userId: args.resource.userId,
-              orgId: args.resource.orgId,
-              expectedRevision: args.resource.revision,
-              visibility: audience,
-            },
-            signal,
-          )
-        : await set(
-            updateArtifactShare$,
-            {
-              target: { kind: "file", id: args.resource.id },
-              userId: args.resource.userId,
-              orgId: args.resource.orgId,
-              audience,
-            },
-            signal,
-          );
-    const success =
-      changed &&
-      ("audience" in changed
-        ? changed.audience === audience
-        : "status" in changed && changed.status === "ok");
+    const changed = await set(
+      updateArtifactVisibility$,
+      {
+        artifactId: args.resource.artifactId,
+        userId: args.resource.userId,
+        orgId: args.resource.orgId,
+        visibility: audience,
+      },
+      signal,
+    );
+    const success = changed.status === "ok";
     return {
       text: success
         ? audience === "public"

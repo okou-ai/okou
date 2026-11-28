@@ -2,10 +2,7 @@ import { command } from "ccstate";
 import { githubInstallations } from "@okouai/db/schema/github-installation";
 import { and, eq } from "drizzle-orm";
 import { env } from "../../lib/env";
-import {
-  integrationsGithubUploadCompleteContract,
-  type GithubUploadCompleteBody,
-} from "@okouai/api-contracts/contracts/integrations";
+import { integrationsGithubUploadCompleteContract } from "@okouai/api-contracts/contracts/integrations";
 
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
@@ -14,7 +11,6 @@ import { db$ } from "../external/db";
 import { materializeUploadedArtifact$ } from "../services/uploaded-artifact.service";
 import { postGithubIssueComment } from "../services/github-issues-api.service";
 import { getGithubIntegrationAccessToken } from "../services/github-integration-files.service";
-import { recordGithubUploadedFile$ } from "../services/run-uploaded-files.service";
 import type { RouteEntry } from "../route-entry";
 import { settle } from "../utils";
 
@@ -38,23 +34,6 @@ function buildCommentBody(args: {
   const link = `[${markdownLinkText(args.filename)}](${args.fileUrl})`;
   const caption = args.caption?.trim();
   return caption ? `${caption}\n\n${link}` : link;
-}
-
-function buildMetadata(args: {
-  readonly body: GithubUploadCompleteBody;
-  readonly s3Key: string;
-  readonly sourceUrl: string;
-  readonly commentId: string;
-}): Record<string, unknown> {
-  return {
-    repo: args.body.repo,
-    issueNumber: args.body.issueNumber,
-    uploadId: args.body.uploadId,
-    s3Key: args.s3Key,
-    sourceUrl: args.sourceUrl,
-    ...(args.body.caption ? { caption: args.body.caption } : {}),
-    githubComment: { id: args.commentId },
-  };
 }
 
 function errorMessage(error: unknown): string {
@@ -103,7 +82,7 @@ const complete$ = command(async ({ get, set }, signal: AbortSignal) => {
 
   const object = await set(
     materializeUploadedArtifact$,
-    { userId: auth.userId, orgId: auth.orgId, id: body.uploadId },
+    { userId: auth.userId, orgId: auth.orgId, id: body.uploadId, runId },
     signal,
   );
   if (!object) {
@@ -138,29 +117,6 @@ const complete$ = command(async ({ get, set }, signal: AbortSignal) => {
     );
   }
   const commentId = commentResult.value;
-
-  await set(
-    recordGithubUploadedFile$,
-    {
-      runId,
-      externalId: commentId,
-      userId: auth.userId,
-      orgId: auth.orgId,
-      filename,
-      contentType: mimetype,
-      sizeBytes: object.size,
-      url: fileUrl,
-      layout: object.layout,
-      metadata: buildMetadata({
-        body,
-        s3Key: object.key,
-        sourceUrl: fileUrl,
-        commentId,
-      }),
-    },
-    signal,
-  );
-  signal.throwIfAborted();
 
   return {
     status: 200 as const,

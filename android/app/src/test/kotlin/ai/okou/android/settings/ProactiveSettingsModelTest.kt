@@ -168,33 +168,56 @@ class ProactiveSettingsModelTest {
     }
 
     @Test
-    fun exhaustedReadbackRollsBackAndLateServerStateSyncsWithoutResending() = runTest {
+    fun ambiguousWriteRollsBackAndNormalRefreshAppliesTheServerValue() = runTest {
         ChatListApiFixture().use { api ->
             val fixture = ProactiveSettingsApiFixture(api)
             val model = model(api)
             model.visible(true)
             model.morningBrief.state.first { it.confirmed != null }
             fixture.morningWriteStatus = 503
+            fixture.commitBeforeError = true
             val failure =
                 async(start = CoroutineStart.UNDISPATCHED) {
                     model.saveFailures.first { it.isNotEmpty() }.single().value
                 }
             model.morningBrief.choose(true)
-            val checking = model.morningBrief.state.first { it.checking }
-            assertEquals(true, checking.enabled)
-            assertEquals(false, checking.confirmed?.enabled)
-            assertFalse(failure.isCompleted)
+            assertEquals(true, model.morningBrief.state.value.enabled)
             val rolledBack = model.morningBrief.state.first { it.choice == null }
-            assertFalse(rolledBack.checking)
             assertTrue(rolledBack.canChoose)
             assertEquals(false, rolledBack.enabled)
             assertEquals(ProactiveSetting.MorningBrief, failure.await())
-            assertEquals(4, fixture.reads.count { it == "morning-brief" })
+            assertEquals(1, fixture.reads.count { it == "morning-brief" })
 
-            fixture.morningEnabled = true
             model.refresh()
-            model.morningBrief.state.first { it.enabled == true && !it.checking }
+            model.morningBrief.state.first { it.enabled == true }
             assertEquals(listOf(ProactiveSetting.MorningBrief to true), fixture.writes)
+            assertEquals(2, fixture.reads.count { it == "morning-brief" })
+        }
+    }
+
+    @Test
+    fun ambiguousSuggestionsSaveRestoresBothConfirmedChannelsUntilRefresh() = runTest {
+        ChatListApiFixture().use { api ->
+            val fixture = ProactiveSettingsApiFixture(api)
+            val model = model(api)
+            model.visible(true)
+            model.suggestions.state.first { it.confirmed?.matches(false) == true }
+            fixture.suggestionsWriteStatus = 503
+            fixture.commitBeforeError = true
+            model.suggestions.choose(true)
+
+            val failure = model.saveFailures.first { it.isNotEmpty() }.single()
+            assertEquals(ProactiveSetting.Suggestions, failure.value)
+            assertTrue(model.suggestions.state.value.confirmed?.matches(false) == true)
+            assertNull(model.suggestions.state.value.choice)
+            assertEquals(1, fixture.reads.count { it == "suggestions" })
+            assertEquals(1, fixture.reads.count { it == "feed-sources" })
+
+            model.refresh()
+            model.suggestions.state.first { it.confirmed?.matches(true) == true }
+            assertEquals(listOf(ProactiveSetting.Suggestions to true), fixture.writes)
+            assertEquals(2, fixture.reads.count { it == "suggestions" })
+            assertEquals(2, fixture.reads.count { it == "feed-sources" })
         }
     }
 
@@ -209,7 +232,6 @@ class ProactiveSettingsModelTest {
             assertEquals(true, model.morningBrief.state.value.enabled)
             val rolledBack = model.morningBrief.state.first { it.choice == null }
             assertEquals(false, rolledBack.enabled)
-            assertFalse(rolledBack.checking)
             assertEquals(List(3) { ProactiveSetting.MorningBrief to true }, fixture.writes)
             assertEquals(1, fixture.reads.count { it == "morning-brief" })
             assertEquals(
@@ -220,25 +242,38 @@ class ProactiveSettingsModelTest {
     }
 
     @Test
-    fun aNewerToggleSurvivesAnExhaustedReadback() = runTest {
+    fun aNewerToggleFollowsAnAmbiguousWriteWithoutReadingBack() = runTest {
         ChatListApiFixture().use { api ->
             val fixture = ProactiveSettingsApiFixture(api).apply { morningWriteStatus = 503 }
+            val started = CountDownLatch(1)
+            val release = CountDownLatch(1)
+            fixture.beforeMorningWrite = {
+                if (fixture.writes.size == 1) {
+                    started.countDown()
+                    check(release.await(10, TimeUnit.SECONDS))
+                } else {
+                    fixture.morningWriteStatus = 200
+                }
+            }
             val model = model(api)
-            model.visible(true)
-            model.morningBrief.state.first { it.confirmed != null }
-            model.morningBrief.choose(true)
-            model.morningBrief.state.first { it.checking }
+            try {
+                model.visible(true)
+                model.morningBrief.state.first { it.confirmed != null }
+                model.morningBrief.choose(true)
+                withContext(Dispatchers.IO) { assertTrue(started.await(10, TimeUnit.SECONDS)) }
+                model.morningBrief.choose(false)
+                assertEquals(false, model.morningBrief.state.value.enabled)
+                assertEquals(listOf(true), fixture.writes.map { it.second })
 
-            fixture.morningWriteStatus = 200
-            model.morningBrief.choose(false)
-            assertEquals(false, model.morningBrief.state.value.enabled)
-            assertEquals(listOf(true), fixture.writes.map { it.second })
-
-            val confirmed = model.morningBrief.state.first { it.choice == null }
-            assertEquals(false, confirmed.confirmed?.enabled)
-            assertFalse(confirmed.checking)
-            assertEquals(listOf(true, false), fixture.writes.map { it.second })
-            assertEquals(4, fixture.reads.count { it == "morning-brief" })
+                release.countDown()
+                val confirmed = model.morningBrief.state.first { it.choice == null }
+                assertEquals(false, confirmed.confirmed?.enabled)
+                assertTrue(model.saveFailures.value.isEmpty())
+                assertEquals(listOf(true, false), fixture.writes.map { it.second })
+                assertEquals(1, fixture.reads.count { it == "morning-brief" })
+            } finally {
+                release.countDown()
+            }
         }
     }
 

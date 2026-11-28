@@ -214,6 +214,7 @@ export const resolveProviderReferenceUrls$ = command(
             id: reference.id,
             userId: args.userId,
             orgId: args.orgId,
+            resolvePrivateUrl: false,
           },
           signal,
         );

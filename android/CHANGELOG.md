@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.70.0](https://github.com/okou-ai/okou/compare/android-v0.69.2...android-v0.70.0) (2026-11-28)
+
+
+### Features
+
+* **artifacts:** cut over to files and unified artifact access and retire legacy routes ([#51627](https://github.com/okou-ai/okou/issues/51627)) ([d5b57bd](https://github.com/okou-ai/okou/commit/d5b57bd1003bbe1aabd0d56b27efa8dbcfa96087))
+
+
+### Bug Fixes
+
+* **android:** align chat and project rename failure feedback ([#51640](https://github.com/okou-ai/okou/issues/51640)) ([4d7d58a](https://github.com/okou-ai/okou/commit/4d7d58a93d0ef2270c0cfac8fbee7d0d6a868aac))
+* **android:** align chat error and stopped feedback with design ([#51573](https://github.com/okou-ai/okou/issues/51573)) ([15c0e96](https://github.com/okou-ai/okou/commit/15c0e9668a0701ffa0c71491f3d6b6b378c99803))
+* **android:** align project deletion with chat list feedback ([#51599](https://github.com/okou-ai/okou/issues/51599)) ([188ca6a](https://github.com/okou-ai/okou/commit/188ca6a7cb4736710bbc34b2cda426f37116d0e4))
+* **android:** align retry handling for throttled settings writes ([#51632](https://github.com/okou-ai/okou/issues/51632)) ([800bb4e](https://github.com/okou-ai/okou/commit/800bb4e4da893c8476331761e3692dade897ceff))
+* **android:** keep wrapped chat link decoration within text ([#51638](https://github.com/okou-ai/okou/issues/51638)) ([4b672aa](https://github.com/okou-ai/okou/commit/4b672aaad6a1ba06dc423affdb994af06619d8f2))
+* **android:** preserve workflow and connector feedback order ([#51601](https://github.com/okou-ai/okou/issues/51601)) ([a2ad16b](https://github.com/okou-ai/okou/commit/a2ad16be5c63b4d4735dbe0981ccaf5440139ffa))
+
 ## [0.69.2](https://github.com/okou-ai/okou/compare/android-v0.69.1...android-v0.69.2) (2026-11-28)
 
 

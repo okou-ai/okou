@@ -1,26 +1,16 @@
 import { command } from "ccstate";
-import { and, eq, exists, inArray, lte, or, sql } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import type { ArtifactCatalogDeleteRouteResponse } from "@okouai/api-contracts/contracts/artifact-catalog";
-import {
-  artifacts,
-  imageArtifacts,
-  presentationArtifacts,
-  videoArtifacts,
-} from "@okouai/db/schema/artifact";
-import { runUploadedFiles } from "@okouai/db/schema/run-uploaded-file";
+import { artifacts, presentationArtifacts } from "@okouai/db/schema/artifact";
 import { hostedSites } from "@okouai/db/runtime/hosted-site";
 
 import { notConfigured, notFound } from "../../lib/error";
-import { env } from "../../lib/env";
 import {
   isSharedThreadArtifactLogicalKey,
   sharedThreadArtifactAuthorUserId,
 } from "../../lib/shared-thread-artifact";
 import { nowDate } from "../../lib/time";
 import { db$, writeDb$ } from "../external/db";
-import { deleteS3Objects } from "../external/s3";
-import { resolveOwnedPublicArtifactKey$ } from "./artifact-storage.service";
-import { revokeDeletedFileArtifactShare$ } from "./artifact-shares.service";
 import { deleteSharedThread$ } from "./shared-thread-artifacts.service";
 import { deleteHostedSite$ } from "./host.service";
 
@@ -28,6 +18,7 @@ interface ArtifactOwner {
   readonly userId: string;
   readonly orgId: string;
 }
+
 interface ArtifactWithdrawalArgs extends ArtifactOwner {
   readonly artifact: typeof artifacts.$inferSelect;
 }
@@ -47,7 +38,6 @@ const withdrawHostedArtifact$ = command(
   async (
     { get, set },
     { artifact, ...owner }: ArtifactWithdrawalArgs,
-    deletedAt: Date,
     signal: AbortSignal,
   ): Promise<Exclude<
     ArtifactCatalogDeleteRouteResponse,
@@ -94,118 +84,18 @@ const withdrawHostedArtifact$ = command(
     if (result.status === "not_found") {
       return notFound("Artifact not found");
     }
-    await set(
-      tombstoneHostedArtifactFiles$,
-      { ...owner, siteId },
-      deletedAt,
-      signal,
-    );
     return null;
   },
 );
 
-const tombstoneHostedArtifactFiles$ = command(
-  async (
-    { set },
-    owner: ArtifactOwner & { readonly siteId: string },
-    deletedAt: Date,
-    signal: AbortSignal,
-  ) => {
-    const db = set(writeDb$);
-    await db
-      .update(runUploadedFiles)
-      .set({ deletedAt })
-      .where(
-        and(
-          eq(runUploadedFiles.userId, owner.userId),
-          eq(runUploadedFiles.orgId, owner.orgId),
-          eq(sql`${runUploadedFiles.metadata}->>'siteId'`, owner.siteId),
-          // A new publication can restore the catalog, but cannot restore removed
-          // publications in older chats. Never tombstone a concurrently newer run.
-          lte(runUploadedFiles.createdAt, deletedAt),
-        ),
-      );
-    signal.throwIfAborted();
-  },
-);
-
-const withdrawFileArtifact$ = command(
-  async (
-    { get, set },
-    { artifact, ...owner }: ArtifactWithdrawalArgs,
-    signal: AbortSignal,
-  ) => {
-    const db = set(writeDb$);
-    let fileId = artifact.projectionFileId;
-    if (!fileId) {
-      if (artifact.kind === "file") {
-        fileId = artifact.entityId;
-      } else {
-        const table =
-          artifact.kind === "image" ? imageArtifacts : videoArtifacts;
-        const [entity] = await db
-          .select({ fileId: table.fileId })
-          .from(table)
-          .where(eq(table.id, artifact.entityId))
-          .limit(1);
-        signal.throwIfAborted();
-        fileId = entity?.fileId ?? null;
-      }
-    }
-    if (!fileId) {
-      return;
-    }
-    const files = await db
-      .update(runUploadedFiles)
-      .set({ deletedAt: nowDate() })
-      .where(
-        and(
-          exists(
-            db
-              .select({ id: artifacts.id })
-              .from(artifacts)
-              .where(ownedArtifactFilter(artifact.id, owner)),
-          ),
-          eq(runUploadedFiles.userId, owner.userId),
-          eq(runUploadedFiles.orgId, owner.orgId),
-          or(
-            eq(runUploadedFiles.id, fileId),
-            artifact.sourceUrl
-              ? eq(runUploadedFiles.url, artifact.sourceUrl)
-              : undefined,
-          ),
-        ),
-      )
-      .returning({ id: runUploadedFiles.id });
-    signal.throwIfAborted();
-    for (const file of files) {
-      await set(
-        revokeDeletedFileArtifactShare$,
-        { ...owner, fileId: file.id },
-        signal,
-      );
-      signal.throwIfAborted();
-    }
-    // Old public files have no private policy. Withdraw only an object whose
-    // own storage metadata proves it belongs to this user.
-    if (artifact.sourceUrl) {
-      const key = await set(
-        resolveOwnedPublicArtifactKey$,
-        { userId: owner.userId, url: artifact.sourceUrl },
-        signal,
-      );
-      signal.throwIfAborted();
-      if (key) {
-        await get(
-          deleteS3Objects(env("R2_USER_ARTIFACTS_BUCKET_NAME"), [key], signal),
-        );
-        signal.throwIfAborted();
-      }
-    }
-  },
-);
-
-/** Keep the catalog identity as a tombstone so delayed projections cannot restore it. */
+/**
+ * Soft-delete an artifact from the Library catalog.
+ *
+ * Principle 4 (Library delete boundary): file-backed artifacts only mark
+ * `artifacts.deleted_at`; the underlying `files` record and object bytes stay
+ * intact so chat history remains readable by `(ownerUserId, orgId)`, while
+ * non-owner visibility and per-user shares stop applying automatically.
+ */
 export const deleteArtifact$ = command(
   async (
     { set },
@@ -228,12 +118,7 @@ export const deleteArtifact$ = command(
       artifact.kind === "hosted-site" || artifact.kind === "presentation";
     const withdrawal = { artifact, userId: args.userId, orgId: args.orgId };
     if (hosted && !artifact.deletedAt) {
-      const denied = await set(
-        withdrawHostedArtifact$,
-        withdrawal,
-        deletedAt,
-        signal,
-      );
+      const denied = await set(withdrawHostedArtifact$, withdrawal, signal);
       signal.throwIfAborted();
       if (denied) {
         return denied;
@@ -246,23 +131,11 @@ export const deleteArtifact$ = command(
         signal,
       );
       signal.throwIfAborted();
-    } else if (!hosted) {
-      await set(withdrawFileArtifact$, withdrawal, signal);
-      signal.throwIfAborted();
     }
-    // Keep the card available for retry until every withdrawal has succeeded.
-    // File tombstones already deny new owner URLs and sharing during recovery.
     await db
       .update(artifacts)
-      .set({ deletedAt })
-      .where(
-        and(
-          ownership,
-          hosted && artifact.projectionFileId
-            ? eq(artifacts.projectionFileId, artifact.projectionFileId)
-            : undefined,
-        ),
-      );
+      .set({ deletedAt, updatedAt: deletedAt })
+      .where(ownership);
     signal.throwIfAborted();
     return { status: 200, body: { deleted: true } };
   },

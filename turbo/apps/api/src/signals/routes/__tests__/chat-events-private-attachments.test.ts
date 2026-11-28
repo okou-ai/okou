@@ -1160,9 +1160,9 @@ describe("private attachments through normal chat send", () => {
     ]);
     expect(deleted.body).toStrictEqual({ deleted: true });
 
-    const rejected = await sendChatEventRaw(actor, {
+    const sent = await sendChatEventRaw(actor, {
       threadId: thread.id,
-      prompt: "Send with withdrawn artifact and pending upload",
+      prompt: "Send with soft-deleted library artifact and pending upload",
       userMessage: {
         version: 1,
         parts: [
@@ -1180,26 +1180,39 @@ describe("private attachments through normal chat send", () => {
           },
           {
             type: "text",
-            text: "Send with withdrawn artifact and pending upload",
+            text: "Send with soft-deleted library artifact and pending upload",
           },
         ],
       },
       hasTextContent: true,
     });
-    expect(rejected.status).toBe(500);
+    expect(sent.status).toBe(201);
 
-    const [threadEvents, deletedFileUrl] = await Promise.all([
-      chat.listThreadEvents(actor, thread.id),
-      accept(
-        webFilesClient.fileUrl({
-          headers: sessionHeaders(actor),
-          query: { file_id: artifactUpload.id },
-        }),
-        [404],
-      ),
-    ]);
-    expect(userMessages(threadEvents.events)).toStrictEqual([]);
-    expect(deletedFileUrl.status).toBe(404);
+    const [afterDeleteCatalog, threadEvents, retainedFileUrl] =
+      await Promise.all([
+        accept(
+          artifactCatalogClient.list({
+            headers: sessionHeaders(actor),
+            query: { limit: 50 },
+          }),
+          [200],
+        ),
+        chat.listThreadEvents(actor, thread.id),
+        accept(
+          webFilesClient.fileUrl({
+            headers: sessionHeaders(actor),
+            query: { file_id: artifactUpload.id },
+          }),
+          [200],
+        ),
+      ]);
+    expect(
+      afterDeleteCatalog.body.artifacts.some((entry) => {
+        return entry.id === artifactEntry.id;
+      }),
+    ).toBeFalsy();
+    expect(userMessages(threadEvents.events)).toHaveLength(1);
+    expect(retainedFileUrl.body.url).toContain(artifactUpload.id);
   });
 
   it(

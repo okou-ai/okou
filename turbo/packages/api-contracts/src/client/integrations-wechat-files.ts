@@ -5,7 +5,6 @@ import type {
   integrationsWechatDownloadFileContract as OriginalIntegrationsWechatDownloadFileContract,
   integrationsWechatUploadCompleteContract as OriginalIntegrationsWechatUploadCompleteContract,
   integrationsWechatUploadInitContract as OriginalIntegrationsWechatUploadInitContract,
-  integrationsWechatUploadMaterializeContract as OriginalIntegrationsWechatUploadMaterializeContract,
 } from "../contracts/integrations-wechat-files";
 import type { ClientDescriptor } from "./types";
 
@@ -57,27 +56,6 @@ export const integrationsWechatUploadInitContract: ClientDescriptor<
   init: {
     method: "POST",
     path: "/api/integrations/wechat/upload-file/init",
-    statuses: {
-      200: true,
-      400: true,
-      401: true,
-      403: true,
-      404: true,
-      409: true,
-      413: true,
-      429: true,
-      502: true,
-      503: true,
-    },
-  },
-};
-
-export const integrationsWechatUploadMaterializeContract: ClientDescriptor<
-  typeof OriginalIntegrationsWechatUploadMaterializeContract
-> = {
-  materialize: {
-    method: "POST",
-    path: "/api/integrations/wechat/upload-file/materialize",
     statuses: {
       200: true,
       400: true,

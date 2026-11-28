@@ -1,4 +1,5 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
+import { artifactAccessContract } from "@okouai/api-contracts/contracts/artifact-access";
 import { artifactOgContract } from "@okouai/api-contracts/contracts/artifact-og";
 import { hostContract } from "@okouai/api-contracts/contracts/host";
 import type { HostedSiteVisibility } from "@okouai/api-contracts/contracts/hosted-site-access";
@@ -7,6 +8,7 @@ import { describe, expect, it } from "vitest";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { mockNow } from "../../../lib/time";
+import { artifactAccessRoutes } from "../artifact-access";
 import { artifactOgRoutes } from "../artifact-og";
 import { hostRoutes } from "../host";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
@@ -241,9 +243,18 @@ async function anonymousAccess(site: Published) {
   return response.body;
 }
 
+function accessApi() {
+  return setupApp({ context, routes: artifactAccessRoutes })(
+    artifactAccessContract,
+  );
+}
+
 async function readVisibility(owner: ApiTestUser, siteId: string) {
   const response = await accept(
-    hostApi().siteVisibility({ headers: signIn(owner), params: { siteId } }),
+    accessApi().getVisibility({
+      headers: signIn(owner),
+      params: { artifactId: siteId },
+    }),
     [200],
   );
   return response.body;
@@ -253,13 +264,12 @@ async function setVisibility(
   owner: ApiTestUser,
   siteId: string,
   visibility: HostedSiteVisibility,
-  expectedRevision: string | null,
 ) {
   const response = await accept(
-    hostApi().updateSiteVisibility({
+    accessApi().updateVisibility({
       headers: signIn(owner),
-      params: { siteId },
-      body: { visibility, expectedRevision },
+      params: { artifactId: siteId },
+      body: { visibility },
     }),
     [200],
   );
@@ -267,8 +277,7 @@ async function setVisibility(
 }
 
 async function makePrivate(owner: ApiTestUser, siteId: string) {
-  const current = await readVisibility(owner, siteId);
-  return await setVisibility(owner, siteId, "private", current.revision);
+  return await setVisibility(owner, siteId, "private");
 }
 
 function pkce() {
@@ -346,9 +355,8 @@ describe("hosted site access", () => {
 
     const current = await readVisibility(member, prepared.siteId);
     expect(current.visibility).toBe("private");
-    expect(current.revision).not.toBeNull();
     await expect(
-      setVisibility(member, prepared.siteId, "public", current.revision),
+      setVisibility(member, prepared.siteId, "public"),
     ).resolves.toMatchObject({ visibility: "public" });
   });
 
@@ -378,9 +386,8 @@ describe("hosted site access", () => {
 
     const current = await readVisibility(member, prepared.siteId);
     expect(current.visibility).toBe("public");
-    expect(current.revision).not.toBeNull();
     await expect(
-      setVisibility(member, prepared.siteId, "public", current.revision),
+      setVisibility(member, prepared.siteId, "public"),
     ).resolves.toMatchObject({ visibility: "public" });
   });
 
@@ -520,33 +527,16 @@ describe("hosted site access", () => {
     const site = await publishSite(owner, { visibility: "public" });
     const outsiderSession = await siteSession(outsider, site);
     const ownerSession = await siteSession(owner, site);
-    const initial = await readVisibility(owner, site.siteId);
-
     await accept(
-      hostApi().updateSiteVisibility({
+      accessApi().updateVisibility({
         headers: signIn(outsider),
-        params: { siteId: site.siteId },
-        body: { visibility: "private", expectedRevision: initial.revision },
+        params: { artifactId: site.siteId },
+        body: { visibility: "private" },
       }),
       [404],
     );
-    const hidden = await setVisibility(
-      owner,
-      site.siteId,
-      "private",
-      initial.revision,
-    );
+    const hidden = await setVisibility(owner, site.siteId, "private");
     expect(hidden.visibility).toBe("private");
-    expect(typeof hidden.revision).toBe("string");
-    expect(hidden.revision).not.toBe(initial.revision);
-    await accept(
-      hostApi().updateSiteVisibility({
-        headers: signIn(owner),
-        params: { siteId: site.siteId },
-        body: { visibility: "public", expectedRevision: initial.revision },
-      }),
-      [409],
-    );
 
     await expect(deliveryDecision(storage, site)).resolves.toStrictEqual({
       allowed: false,
@@ -563,7 +553,7 @@ describe("hosted site access", () => {
     ).resolves.toMatchObject({ decision: "deny" });
 
     await expect(
-      setVisibility(owner, site.siteId, "public", hidden.revision),
+      setVisibility(owner, site.siteId, "public"),
     ).resolves.toMatchObject({ visibility: "public" });
     await expect(deliveryDecision(storage, site)).resolves.toMatchObject({
       decision: "allow",
@@ -692,8 +682,7 @@ describe("hosted site access", () => {
     const owner = bdd.user();
     const viewer = bdd.user();
     const site = await publishSite(owner, { visibility: "public" });
-    const current = await readVisibility(owner, site.siteId);
-    await setVisibility(owner, site.siteId, "organization", current.revision);
+    await setVisibility(owner, site.siteId, "organization");
     clerkLists(owner.orgId ?? "", [viewer.userId]);
     const session = await siteSession(viewer, site);
     const hostname = `${site.publicSlug}.okou.app`;
@@ -730,19 +719,13 @@ describe("hosted site access", () => {
     host.captureHostedSitesS3();
     const owner = await proOwner();
     const site = await publishSite(owner, { visibility: "public" });
-    const current = await readVisibility(owner, site.siteId);
-    const resaved = await setVisibility(
-      owner,
-      site.siteId,
-      "public",
-      current.revision,
-    );
+    await setVisibility(owner, site.siteId, "public");
     const downloadUrl = await indexDownloadUrl(owner, site.deploymentId);
 
     await expect(
       redeemDownload(downloadUrl, site.deploymentId),
     ).resolves.toMatchObject({ contentType: "text/html; charset=utf-8" });
-    await setVisibility(owner, site.siteId, "private", resaved.revision);
+    await setVisibility(owner, site.siteId, "private");
     await expect(
       redeemDownload(downloadUrl, site.deploymentId),
     ).resolves.toBeNull();

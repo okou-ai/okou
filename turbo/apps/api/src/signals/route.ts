@@ -1,5 +1,4 @@
 import { artifactAccessRoutes } from "./routes/artifact-access";
-import { artifactSharingRoutes } from "./routes/artifact-sharing";
 import { larkOfficialReadRoutes } from "./routes/lark-official-read";
 import { larkOfficialEventsRoutes } from "./routes/lark-official-events";
 import { larkOfficialRoutes } from "./routes/lark-official";
@@ -18,7 +17,6 @@ import { artifactCatalogRoutes } from "./routes/artifact-catalog";
 import { artifactDownloadRoutes } from "./routes/artifact-downloads";
 import { artifactReferenceRoutes } from "./routes/artifact-references";
 import { artifactOgRoutes } from "./routes/artifact-og";
-import { artifactShareRoutes } from "./routes/artifact-shares";
 import { authMeRoutes } from "./routes/auth-me";
 import { bankingRoutes } from "./routes/banking";
 import { linkApprovalWorkflowRoutes } from "./routes/link-approval-workflow";
@@ -92,7 +90,6 @@ import { cronReconcileImageGenerationsRoutes } from "./routes/cron-reconcile-ima
 import { cronProcessUsageEventsRoutes } from "./routes/cron-process-usage-events";
 import { cronProjectChatEventSearchRoutes } from "./routes/cron-project-chat-event-search";
 import { cronPruneStoragePresignedUrlsRoutes } from "./routes/cron-prune-storage-presigned-urls";
-import { cronReconcileArtifactCatalogRoutes } from "./routes/cron-reconcile-artifact-catalog";
 import { cronReconcileBillingEntitlementsRoutes } from "./routes/cron-reconcile-billing-entitlements";
 import { cronRenewGmailWatchesRoutes } from "./routes/cron-renew-gmail-watches";
 import { cronRenewGoogleCalendarWatchesRoutes } from "./routes/cron-renew-google-calendar-watches";
@@ -305,7 +302,6 @@ export const ROUTES: readonly RouteEntry[] = [
   ...linkApprovalWorkflowRoutes,
   ...builtinConnectorsSlugCallbackRoutes,
   ...cronCompactChatThreadSnapshotsRoutes,
-  ...cronReconcileArtifactCatalogRoutes,
   ...cronProjectChatEventSearchRoutes,
   ...cronSnapshotChatEventsRoutes,
   ...cronRetainChatEventsRoutes,
@@ -390,8 +386,6 @@ export const ROUTES: readonly RouteEntry[] = [
   ...featureGuidesRoutes,
   ...hostRoutes,
   ...artifactAccessRoutes,
-  ...artifactShareRoutes,
-  ...artifactSharingRoutes,
   ...artifactReferenceRoutes,
   ...artifactOgRoutes,
   ...artifactDownloadRoutes,

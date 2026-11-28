@@ -6,7 +6,6 @@ import {
   integrationsDiscordDownloadFileContract,
   integrationsDiscordUploadCompleteContract,
   integrationsDiscordUploadInitContract,
-  integrationsDiscordUploadMaterializeContract,
 } from "@okouai/api-contracts/contracts/integrations-discord-files";
 import { createStore } from "ccstate";
 import { HttpResponse, http } from "msw";
@@ -496,7 +495,6 @@ describe("Discord file authorization and input validation", () => {
           length: 10_485_761,
           contentType: "text/csv",
           checksumSha256: "a".repeat(64),
-          operationId: randomUUID(),
           channelId: uniqueDiscordSnowflake(),
         }),
       },
@@ -620,7 +618,6 @@ describe("Discord attachment downloads", () => {
           length: bytes.byteLength,
           contentType: "text/csv",
           checksumSha256: sha256Hex(bytes),
-          operationId: randomUUID(),
           channelId,
         },
       }),
@@ -690,7 +687,6 @@ describe("Discord attachment downloads", () => {
       dmChannelsByRecipient: new Map([[fixture.discordUserId, dmChannelId]]),
     });
 
-    const operationId = randomUUID();
     const initialized = await accept(
       app(integrationsDiscordUploadInitContract).init({
         headers: signIn(admin),
@@ -699,16 +695,12 @@ describe("Discord attachment downloads", () => {
           length: bytes.byteLength,
           contentType: "text/csv",
           checksumSha256: sha256Hex(bytes),
-          operationId,
           userId: fixture.discordUserId,
         },
       }),
       [200],
     );
     expect(initialized.body.assetId).toBeTruthy();
-    if (!initialized.body.uploadUrl) {
-      throw new Error("Expected a signed upload URL");
-    }
     await putUploadedBytes(
       initialized.body.uploadUrl,
       bytes,
@@ -716,18 +708,13 @@ describe("Discord attachment downloads", () => {
       initialized.body.uploadHeaders,
     );
 
-    await accept(
-      app(integrationsDiscordUploadMaterializeContract).materialize({
-        headers: signIn(admin),
-        body: { assetId: initialized.body.assetId, operationId },
-      }),
-      [200],
-    );
-
     const completed = await accept(
       app(integrationsDiscordUploadCompleteContract).complete({
         headers: signIn(admin),
-        body: { assetId: initialized.body.assetId, operationId },
+        body: {
+          assetId: initialized.body.assetId,
+          userId: fixture.discordUserId,
+        },
       }),
       [200],
     );
@@ -808,7 +795,6 @@ describe("Discord attachment downloads", () => {
       dmChannelsByRecipient: new Map([[otherDiscordUserId, dmChannelId]]),
     });
 
-    const operationId = randomUUID();
     const initialized = await accept(
       app(integrationsDiscordUploadInitContract).init({
         headers: signIn(admin),
@@ -817,16 +803,12 @@ describe("Discord attachment downloads", () => {
           length: bytes.byteLength,
           contentType: "text/csv",
           checksumSha256: sha256Hex(bytes),
-          operationId,
           userId: otherDiscordUserId,
         },
       }),
       [200],
     );
     expect(initialized.body.assetId).toBeTruthy();
-    if (!initialized.body.uploadUrl) {
-      throw new Error("Expected a signed upload URL");
-    }
     await putUploadedBytes(
       initialized.body.uploadUrl,
       bytes,
@@ -834,18 +816,13 @@ describe("Discord attachment downloads", () => {
       initialized.body.uploadHeaders,
     );
 
-    await accept(
-      app(integrationsDiscordUploadMaterializeContract).materialize({
-        headers: signIn(admin),
-        body: { assetId: initialized.body.assetId, operationId },
-      }),
-      [200],
-    );
-
     const completed = await accept(
       app(integrationsDiscordUploadCompleteContract).complete({
         headers: signIn(admin),
-        body: { assetId: initialized.body.assetId, operationId },
+        body: {
+          assetId: initialized.body.assetId,
+          userId: otherDiscordUserId,
+        },
       }),
       [200],
     );
@@ -865,7 +842,7 @@ describe("Discord attachment downloads", () => {
 });
 
 describe("Canonical Discord file publication and delivery", () => {
-  it("integrations-discord-files-016 does not expose another user's asset through materialize or complete", async () => {
+  it("integrations-discord-files-016 does not expose another user's asset through complete", async () => {
     const { admin, fixture } = await bindAdminDiscord();
     const otherMember = await seedActor("org:member", { orgId: admin.orgId });
     createStorageMock();
@@ -877,7 +854,6 @@ describe("Canonical Discord file publication and delivery", () => {
       ],
     });
 
-    const operationId = randomUUID();
     const initialized = await accept(
       app(integrationsDiscordUploadInitContract).init({
         headers: signIn(admin),
@@ -886,15 +862,11 @@ describe("Canonical Discord file publication and delivery", () => {
           length: bytes.byteLength,
           contentType: "text/csv",
           checksumSha256: sha256Hex(bytes),
-          operationId,
           channelId,
         },
       }),
       [200],
     );
-    if (!initialized.body.uploadUrl) {
-      throw new Error("Expected a signed upload URL");
-    }
     await putUploadedBytes(
       initialized.body.uploadUrl,
       bytes,
@@ -902,26 +874,18 @@ describe("Canonical Discord file publication and delivery", () => {
       initialized.body.uploadHeaders,
     );
 
-    const materialized = await accept(
-      app(integrationsDiscordUploadMaterializeContract).materialize({
-        headers: signIn(otherMember),
-        body: { assetId: initialized.body.assetId, operationId },
-      }),
-      [404],
-    );
     const completed = await accept(
       app(integrationsDiscordUploadCompleteContract).complete({
         headers: signIn(otherMember),
-        body: { assetId: initialized.body.assetId, operationId },
+        body: { assetId: initialized.body.assetId, channelId },
       }),
       [404],
     );
 
-    expect(materialized.body.error.code).toBe("NOT_FOUND");
     expect(completed.body.error.code).toBe("NOT_FOUND");
   });
 
-  it("integrations-discord-files-017 does not expose another organization's asset through materialize or complete", async () => {
+  it("integrations-discord-files-017 does not expose another organization's asset through complete", async () => {
     const { admin, fixture } = await bindAdminDiscord();
     const sameUserOtherOrg = await seedActor("org:admin", {
       userId: admin.userId,
@@ -935,7 +899,6 @@ describe("Canonical Discord file publication and delivery", () => {
       ],
     });
 
-    const operationId = randomUUID();
     const initialized = await accept(
       app(integrationsDiscordUploadInitContract).init({
         headers: signIn(admin),
@@ -944,15 +907,11 @@ describe("Canonical Discord file publication and delivery", () => {
           length: bytes.byteLength,
           contentType: "text/csv",
           checksumSha256: sha256Hex(bytes),
-          operationId,
           channelId,
         },
       }),
       [200],
     );
-    if (!initialized.body.uploadUrl) {
-      throw new Error("Expected a signed upload URL");
-    }
     await putUploadedBytes(
       initialized.body.uploadUrl,
       bytes,
@@ -960,22 +919,14 @@ describe("Canonical Discord file publication and delivery", () => {
       initialized.body.uploadHeaders,
     );
 
-    const materialized = await accept(
-      app(integrationsDiscordUploadMaterializeContract).materialize({
-        headers: signIn(sameUserOtherOrg),
-        body: { assetId: initialized.body.assetId, operationId },
-      }),
-      [404],
-    );
     const completed = await accept(
       app(integrationsDiscordUploadCompleteContract).complete({
         headers: signIn(sameUserOtherOrg),
-        body: { assetId: initialized.body.assetId, operationId },
+        body: { assetId: initialized.body.assetId, channelId },
       }),
       [404],
     );
 
-    expect(materialized.body.error.code).toBe("NOT_FOUND");
     expect(completed.body.error.code).toBe("NOT_FOUND");
   });
 
@@ -991,7 +942,6 @@ describe("Canonical Discord file publication and delivery", () => {
       ],
     });
 
-    const operationId = randomUUID();
     const initialized = await accept(
       app(integrationsDiscordUploadInitContract).init({
         headers: signIn(admin),
@@ -1000,15 +950,11 @@ describe("Canonical Discord file publication and delivery", () => {
           length: declaredBytes.byteLength,
           contentType: "text/csv",
           checksumSha256: sha256Hex(declaredBytes),
-          operationId,
           channelId,
         },
       }),
       [200],
     );
-    if (!initialized.body.uploadUrl) {
-      throw new Error("Expected a signed upload URL");
-    }
     await putUploadedBytes(
       initialized.body.uploadUrl,
       tamperedBytes,
@@ -1016,15 +962,15 @@ describe("Canonical Discord file publication and delivery", () => {
       initialized.body.uploadHeaders,
     );
 
-    const materialized = await accept(
-      app(integrationsDiscordUploadMaterializeContract).materialize({
+    const completed = await accept(
+      app(integrationsDiscordUploadCompleteContract).complete({
         headers: signIn(admin),
-        body: { assetId: initialized.body.assetId, operationId },
+        body: { assetId: initialized.body.assetId, channelId },
       }),
       [400],
     );
-    expect(materialized.body.error.code).toBe("INVALID_FILE");
-    expect(materialized.body.error.message.toLowerCase()).toContain("checksum");
+    expect(completed.body.error.code).toBe("INVALID_FILE");
+    expect(completed.body.error.message.toLowerCase()).toContain("checksum");
 
     const catalog = await accept(
       app(artifactCatalogContract).list({
@@ -1036,31 +982,27 @@ describe("Canonical Discord file publication and delivery", () => {
     expect(catalog.body.artifacts).toStrictEqual([]);
   });
 
-  it("integrations-discord-files-018 (1/2) publishes one canonical artifact on materialize and reuses init", async () => {
+  it("integrations-discord-files-018 publishes one canonical artifact and delivers it to Discord", async () => {
     const { admin, fixture } = await bindAdminDiscord();
     const storage = createStorageMock();
     const channelId = uniqueDiscordSnowflake();
     const bytes = Buffer.from("region,revenue\nus,1200\n", "utf8");
-    serveDiscordWorld(fixture, {
+    const world = serveDiscordWorld(fixture, {
       channels: [
         { id: channelId, type: 0, guild_id: fixture.guildId, name: "general" },
       ],
     });
 
-    const operationId = randomUUID();
-    const initBody = {
-      filename: "report.csv",
-      length: bytes.byteLength,
-      contentType: "text/csv",
-      checksumSha256: sha256Hex(bytes),
-      operationId,
-      channelId,
-    };
-
     const initialized = await accept(
       app(integrationsDiscordUploadInitContract).init({
         headers: signIn(admin),
-        body: initBody,
+        body: {
+          filename: "report.csv",
+          length: bytes.byteLength,
+          contentType: "text/csv",
+          checksumSha256: sha256Hex(bytes),
+          channelId,
+        },
       }),
       [200],
     );
@@ -1070,9 +1012,6 @@ describe("Canonical Discord file publication and delivery", () => {
       `private-artifacts/${assetId}/report.csv`,
     );
     expect(storage.signedPuts[0]?.checksumSha256).toBeUndefined();
-    if (!initialized.body.uploadUrl) {
-      throw new Error("Expected a signed upload URL");
-    }
     await putUploadedBytes(
       initialized.body.uploadUrl,
       bytes,
@@ -1080,127 +1019,10 @@ describe("Canonical Discord file publication and delivery", () => {
       initialized.body.uploadHeaders,
     );
 
-    const materialized = await accept(
-      app(integrationsDiscordUploadMaterializeContract).materialize({
-        headers: signIn(admin),
-        body: { assetId, operationId },
-      }),
-      [200],
-    );
-    expect(materialized.body).toStrictEqual({
-      assetId,
-      operationId,
-      url,
-      delivery: { status: "pending" },
-    });
-
-    const catalogBefore = await accept(
-      app(artifactCatalogContract).list({
-        headers: signIn(admin),
-        query: {},
-      }),
-      [200],
-    );
-    expect(catalogBefore.body.artifacts).toHaveLength(1);
-    const [listedArtifact] = catalogBefore.body.artifacts;
-    if (!listedArtifact) {
-      throw new Error("Expected one catalog artifact");
-    }
-    expect(listedArtifact.kind).toBe("file");
-
-    const detailBefore = await accept(
-      app(artifactCatalogContract).get({
-        headers: signIn(admin),
-        params: { artifactId: listedArtifact.id },
-      }),
-      [200],
-    );
-    expect(detailBefore.body.kind).toBe("file");
-    if (detailBefore.body.kind !== "file") {
-      throw new Error("Expected a file artifact detail");
-    }
-    expect(detailBefore.body.file).toMatchObject({
-      id: assetId,
-      filename: "report.csv",
-      contentType: "text/csv",
-      size: bytes.byteLength,
-      url,
-    });
-
-    const repeatedInit = await accept(
-      app(integrationsDiscordUploadInitContract).init({
-        headers: signIn(admin),
-        body: initBody,
-      }),
-      [200],
-    );
-    expect(repeatedInit.body.assetId).toBe(assetId);
-    expect(repeatedInit.body.operationId).toBe(operationId);
-    expect(repeatedInit.body.url).toBe(url);
-  });
-
-  it("integrations-discord-files-018 (2/2) delivers once and reuses the receipt without changing the catalog", async () => {
-    const { admin, fixture } = await bindAdminDiscord();
-    createStorageMock();
-    const channelId = uniqueDiscordSnowflake();
-    const bytes = Buffer.from("region,revenue\nus,1200\n", "utf8");
-    const world = serveDiscordWorld(fixture, {
-      channels: [
-        { id: channelId, type: 0, guild_id: fixture.guildId, name: "general" },
-      ],
-    });
-
-    const operationId = randomUUID();
-    const initialized = await accept(
-      app(integrationsDiscordUploadInitContract).init({
-        headers: signIn(admin),
-        body: {
-          filename: "report.csv",
-          length: bytes.byteLength,
-          contentType: "text/csv",
-          checksumSha256: sha256Hex(bytes),
-          operationId,
-          channelId,
-        },
-      }),
-      [200],
-    );
-    const { assetId } = initialized.body;
-    if (!initialized.body.uploadUrl) {
-      throw new Error("Expected a signed upload URL");
-    }
-    await putUploadedBytes(
-      initialized.body.uploadUrl,
-      bytes,
-      "text/csv",
-      initialized.body.uploadHeaders,
-    );
-    await accept(
-      app(integrationsDiscordUploadMaterializeContract).materialize({
-        headers: signIn(admin),
-        body: { assetId, operationId },
-      }),
-      [200],
-    );
-    const catalogBefore = await accept(
-      app(artifactCatalogContract).list({
-        headers: signIn(admin),
-        query: {},
-      }),
-      [200],
-    );
-
-    const firstComplete = await accept(
+    const completed = await accept(
       app(integrationsDiscordUploadCompleteContract).complete({
         headers: signIn(admin),
-        body: { assetId, operationId },
-      }),
-      [200],
-    );
-    const secondComplete = await accept(
-      app(integrationsDiscordUploadCompleteContract).complete({
-        headers: signIn(admin),
-        body: { assetId, operationId },
+        body: { assetId, channelId },
       }),
       [200],
     );
@@ -1211,26 +1033,50 @@ describe("Canonical Discord file publication and delivery", () => {
     if (!created) {
       throw new Error("Expected one delivered Discord message");
     }
-    const expectedDelivery = {
-      status: "delivered",
-      channelId,
-      messageId: created.messageId,
-      attachmentId: created.attachmentId,
-      permalink: `https://discord.com/channels/${fixture.guildId}/${channelId}/${created.messageId}`,
-    };
-    expect(firstComplete.body.delivery).toStrictEqual(expectedDelivery);
-    expect(secondComplete.body.delivery).toStrictEqual(expectedDelivery);
+    expect(completed.body).toStrictEqual({
+      assetId,
+      url: new URL(`/artifacts/${assetId.replace(/-/gu, "")}.csv`, url).href,
+      delivery: {
+        status: "delivered",
+        channelId,
+        messageId: created.messageId,
+        attachmentId: created.attachmentId,
+        permalink: `https://discord.com/channels/${fixture.guildId}/${channelId}/${created.messageId}`,
+      },
+    });
 
-    const catalogAfter = await accept(
+    const catalog = await accept(
       app(artifactCatalogContract).list({
         headers: signIn(admin),
         query: {},
       }),
       [200],
     );
-    expect(catalogAfter.body.artifacts).toStrictEqual(
-      catalogBefore.body.artifacts,
+    expect(catalog.body.artifacts).toHaveLength(1);
+    const [listedArtifact] = catalog.body.artifacts;
+    if (!listedArtifact) {
+      throw new Error("Expected one catalog artifact");
+    }
+    expect(listedArtifact.kind).toBe("file");
+
+    const detail = await accept(
+      app(artifactCatalogContract).get({
+        headers: signIn(admin),
+        params: { artifactId: listedArtifact.id },
+      }),
+      [200],
     );
+    expect(detail.body.kind).toBe("file");
+    if (detail.body.kind !== "file") {
+      throw new Error("Expected a file artifact detail");
+    }
+    expect(detail.body.file).toMatchObject({
+      id: assetId,
+      filename: "report.csv",
+      contentType: "text/csv",
+      size: bytes.byteLength,
+      url: new URL(`/artifacts/${assetId.replace(/-/gu, "")}.csv`, url).href,
+    });
   });
 
   it("integrations-discord-files-026 records the receipt when Discord normalizes the attachment filename", async () => {
@@ -1247,7 +1093,6 @@ describe("Canonical Discord file publication and delivery", () => {
       },
     });
 
-    const operationId = randomUUID();
     const initialized = await accept(
       app(integrationsDiscordUploadInitContract).init({
         headers: signIn(admin),
@@ -1256,33 +1101,22 @@ describe("Canonical Discord file publication and delivery", () => {
           length: bytes.byteLength,
           contentType: "text/csv",
           checksumSha256: sha256Hex(bytes),
-          operationId,
           channelId,
         },
       }),
       [200],
     );
-    if (!initialized.body.uploadUrl) {
-      throw new Error("Expected a signed upload URL");
-    }
     await putUploadedBytes(
       initialized.body.uploadUrl,
       bytes,
       "text/csv",
       initialized.body.uploadHeaders,
     );
-    await accept(
-      app(integrationsDiscordUploadMaterializeContract).materialize({
-        headers: signIn(admin),
-        body: { assetId: initialized.body.assetId, operationId },
-      }),
-      [200],
-    );
 
     const completed = await accept(
       app(integrationsDiscordUploadCompleteContract).complete({
         headers: signIn(admin),
-        body: { assetId: initialized.body.assetId, operationId },
+        body: { assetId: initialized.body.assetId, channelId },
       }),
       [200],
     );
@@ -1300,7 +1134,7 @@ describe("Canonical Discord file publication and delivery", () => {
     });
   });
 
-  it("integrations-discord-files-027 reports a Discord rate limit without sending again on a later completion", async () => {
+  it("integrations-discord-files-027 reports a Discord rate limit as a failed file delivery", async () => {
     const { admin, fixture } = await bindAdminDiscord();
     createStorageMock();
     const channelId = uniqueDiscordSnowflake();
@@ -1312,7 +1146,6 @@ describe("Canonical Discord file publication and delivery", () => {
       rateLimitUploads: true,
     });
 
-    const operationId = randomUUID();
     const initialized = await accept(
       app(integrationsDiscordUploadInitContract).init({
         headers: signIn(admin),
@@ -1321,55 +1154,34 @@ describe("Canonical Discord file publication and delivery", () => {
           length: bytes.byteLength,
           contentType: "text/csv",
           checksumSha256: sha256Hex(bytes),
-          operationId,
           channelId,
         },
       }),
       [200],
     );
-    if (!initialized.body.uploadUrl) {
-      throw new Error("Expected a signed upload URL");
-    }
     await putUploadedBytes(
       initialized.body.uploadUrl,
       bytes,
       "text/csv",
       initialized.body.uploadHeaders,
     );
-    await accept(
-      app(integrationsDiscordUploadMaterializeContract).materialize({
-        headers: signIn(admin),
-        body: { assetId: initialized.body.assetId, operationId },
-      }),
-      [200],
-    );
 
     const first = await accept(
       app(integrationsDiscordUploadCompleteContract).complete({
         headers: signIn(admin),
-        body: { assetId: initialized.body.assetId, operationId },
-      }),
-      [200],
-    );
-    const second = await accept(
-      app(integrationsDiscordUploadCompleteContract).complete({
-        headers: signIn(admin),
-        body: { assetId: initialized.body.assetId, operationId },
+        body: { assetId: initialized.body.assetId, channelId },
       }),
       [200],
     );
 
-    const expectedFailure = {
+    expect(first.body.delivery).toStrictEqual({
       status: "failed",
       message: "Discord rejected the file delivery",
-      retryable: false,
-    };
-    expect(first.body.delivery).toStrictEqual(expectedFailure);
-    expect(second.body.delivery).toStrictEqual(expectedFailure);
+    });
     expect(world.uploads).toHaveLength(1);
   });
 
-  it("integrations-discord-files-029 (1/2) does not replay a receipt after its verified connection is removed", async () => {
+  it("integrations-discord-files-029 denies completion after the verified connection is removed", async () => {
     const { admin, fixture } = await bindAdminDiscord();
     createStorageMock();
     const channelId = uniqueDiscordSnowflake();
@@ -1380,7 +1192,6 @@ describe("Canonical Discord file publication and delivery", () => {
       ],
     });
 
-    const operationId = randomUUID();
     const initialized = await accept(
       app(integrationsDiscordUploadInitContract).init({
         headers: signIn(admin),
@@ -1389,123 +1200,28 @@ describe("Canonical Discord file publication and delivery", () => {
           length: bytes.byteLength,
           contentType: "text/csv",
           checksumSha256: sha256Hex(bytes),
-          operationId,
           channelId,
         },
       }),
       [200],
     );
-    if (!initialized.body.uploadUrl) {
-      throw new Error("Expected a signed upload URL");
-    }
     await putUploadedBytes(
       initialized.body.uploadUrl,
       bytes,
       "text/csv",
       initialized.body.uploadHeaders,
     );
-    await accept(
-      app(integrationsDiscordUploadMaterializeContract).materialize({
-        headers: signIn(admin),
-        body: { assetId: initialized.body.assetId, operationId },
-      }),
-      [200],
-    );
-
-    const initialComplete = await accept(
-      app(integrationsDiscordUploadCompleteContract).complete({
-        headers: signIn(admin),
-        body: { assetId: initialized.body.assetId, operationId },
-      }),
-      [200],
-    );
-    expect(initialComplete.body.delivery.status).toBe("delivered");
 
     await removePublicDiscordBinding(context, admin);
 
     const afterRemoval = await accept(
       app(integrationsDiscordUploadCompleteContract).complete({
         headers: signIn(admin),
-        body: { assetId: initialized.body.assetId, operationId },
+        body: { assetId: initialized.body.assetId, channelId },
       }),
       [404],
     );
     expect(afterRemoval.body.error.code).toBe("NOT_FOUND");
-    expect(world.uploads).toHaveLength(1);
-  });
-
-  it("integrations-discord-files-029 (2/2) does not replay a receipt after its verified connection is replaced", async () => {
-    const { admin, fixture } = await bindAdminDiscord();
-    createStorageMock();
-    const channelId = uniqueDiscordSnowflake();
-    const bytes = Buffer.from("id,name\n1,alpha\n", "utf8");
-    const world = serveDiscordWorld(fixture, {
-      channels: [
-        { id: channelId, type: 0, guild_id: fixture.guildId, name: "general" },
-      ],
-    });
-
-    const operationId = randomUUID();
-    const initialized = await accept(
-      app(integrationsDiscordUploadInitContract).init({
-        headers: signIn(admin),
-        body: {
-          filename: "report.csv",
-          length: bytes.byteLength,
-          contentType: "text/csv",
-          checksumSha256: sha256Hex(bytes),
-          operationId,
-          channelId,
-        },
-      }),
-      [200],
-    );
-    if (!initialized.body.uploadUrl) {
-      throw new Error("Expected a signed upload URL");
-    }
-    await putUploadedBytes(
-      initialized.body.uploadUrl,
-      bytes,
-      "text/csv",
-      initialized.body.uploadHeaders,
-    );
-    await accept(
-      app(integrationsDiscordUploadMaterializeContract).materialize({
-        headers: signIn(admin),
-        body: { assetId: initialized.body.assetId, operationId },
-      }),
-      [200],
-    );
-
-    const initialComplete = await accept(
-      app(integrationsDiscordUploadCompleteContract).complete({
-        headers: signIn(admin),
-        body: { assetId: initialized.body.assetId, operationId },
-      }),
-      [200],
-    );
-    expect(initialComplete.body.delivery.status).toBe("delivered");
-
-    await removePublicDiscordBinding(context, admin);
-
-    const rebound = await createPublicDiscordBinding(context, {
-      userId: admin.userId,
-      orgId: admin.orgId,
-      orgRole: "org:admin",
-      flow: "connect",
-      guildId: fixture.guildId,
-      discordUserId: fixture.discordUserId,
-    });
-    expect(rebound.connectionId).not.toBe(fixture.connectionId);
-
-    const afterRebind = await accept(
-      app(integrationsDiscordUploadCompleteContract).complete({
-        headers: signIn(admin),
-        body: { assetId: initialized.body.assetId, operationId },
-      }),
-      [404],
-    );
-    expect(afterRebind.body.error.code).toBe("NOT_FOUND");
-    expect(world.uploads).toHaveLength(1);
+    expect(world.uploads).toHaveLength(0);
   });
 });

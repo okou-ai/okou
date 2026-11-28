@@ -8,6 +8,7 @@ import ai.okou.android.R
 import ai.okou.android.RenameFieldError
 import ai.okou.android.SettingsSheet
 import ai.okou.android.SettingsSheetScroll
+import ai.okou.android.isShortSettingsPanelWindow
 import ai.okou.android.normalizedRenameName
 import ai.okou.android.okouFormInputStyle
 import ai.okou.android.okouFormLabelHeight
@@ -54,8 +55,6 @@ internal enum class RenameStatus {
     Editing,
     Saving,
     Rejected,
-    Unconfirmed,
-    Checking,
 }
 
 @Composable
@@ -67,7 +66,6 @@ internal fun RenameListItemSheet(
     @StringRes labelRes: Int,
     enabled: Boolean,
     status: RenameStatus,
-    check: () -> Unit,
     dismiss: () -> Unit,
     saved: () -> Unit,
     save: (String) -> RenameSubmission?,
@@ -75,92 +73,69 @@ internal fun RenameListItemSheet(
 ) {
     val input = editor.field.input
     val submitted = editor.submitted
-    val checking = status == RenameStatus.Checking
-    val unconfirmed = checking || status == RenameStatus.Unconfirmed
-    val readOnly = unconfirmed || status == RenameStatus.Saving
-    val form = editor.form(confirmedName, enabled && !readOnly)
+    val saving = status == RenameStatus.Saving
+    val form = editor.form(confirmedName, enabled && !saving)
     val name = form.name
-    if (
-        submitted != null &&
-            submitted.eventId == confirmedEventId &&
-            normalizedRenameName(input.text) == submitted.name
-    ) {
-        LaunchedEffect(submitted) {
-            if (editor.submitted == submitted && normalizedRenameName(input.text) == submitted.name)
+    val acknowledgement = submitted?.takeIf { it.eventId == confirmedEventId }
+    LaunchedEffect(editor, confirmedName, saving, acknowledgement) {
+        if (acknowledgement == null) {
+            editor.updateConfirmedName(confirmedName, saving)
+        } else if (editor.submitted == acknowledgement) {
+            if (normalizedRenameName(input.text) == acknowledgement.name) {
                 saved()
+            } else {
+                // The newer edit can match the baseline that preceded this save.
+                editor.updateConfirmedName(confirmedName, readOnly = true)
+                editor.submitted = null
+            }
         }
-        return
     }
-
-    LaunchedEffect(editor, confirmedName, readOnly) {
-        editor.updateConfirmedName(confirmedName, readOnly)
-    }
+    if (acknowledgement != null && normalizedRenameName(input.text) == acknowledgement.name) return
 
     val validation = form.error ?: if (projectName) projectNameError(editor.field) else null
     val notice =
-        when {
-            checking && !projectName -> R.string.chat_rename_checking_result
-            unconfirmed -> R.string.chat_rename_save_unconfirmed
-            status == RenameStatus.Rejected && (submitted == null || submitted.name == name) ->
-                R.string.chat_rename_save_failed
-            else -> null
-        }
+        if (
+            status == RenameStatus.Rejected &&
+                submitted != null &&
+                submitted.name != normalizedRenameName(confirmedName)
+        )
+            R.string.chat_rename_save_failed
+        else null
     val label = stringResource(labelRes)
-    val projectBusy = projectName && (status == RenameStatus.Saving || checking)
+    val saveLabel = stringResource(R.string.chat_project_rename_save)
+    val savingLabel = stringResource(R.string.settings_saving)
     SettingsSheet(
         title = stringResource(titleRes),
         onDismiss = dismiss,
         actionSpacing = OkouFormLayout.GroupGap,
         scroll = if (projectName) SettingsSheetScroll.Panel else SettingsSheetScroll.Body,
-        fullScreenInShortWindow = projectName,
-        dismissible = !projectBusy,
+        fullScreenInShortWindow = true,
+        showBack = isShortSettingsPanelWindow(),
+        dismissible = !saving,
         actions = {
             OkouFormActions(
                 cancelLabel = stringResource(R.string.chat_rename_cancel),
-                confirmLabel =
-                    stringResource(
-                        when {
-                            projectName && checking -> R.string.chat_project_checking
-                            status == RenameStatus.Saving -> R.string.settings_saving
-                            unconfirmed -> R.string.chat_rename_check_result
-                            else -> R.string.chat_project_rename_save
-                        },
-                    ),
+                confirmLabel = if (saving) savingLabel else saveLabel,
                 cancel = dismiss,
                 confirm = {
-                    if (unconfirmed) check()
-                    else {
-                        val submittedName =
-                            if (projectName) editor.field.submitProjectName() else name
-                        submittedName?.let(save)?.let { editor.submitted = it }
-                    }
+                    val submittedName = if (projectName) editor.field.submitProjectName() else name
+                    submittedName?.let(save)?.let { editor.submitted = it }
                 },
-                confirmEnabled = if (unconfirmed) !checking else form.canSave,
-                cancelEnabled = !projectBusy,
-                confirmLayoutLabels =
-                    if (projectName)
-                        projectNameActionLabels(
-                            R.string.chat_project_rename_save,
-                            R.string.settings_saving,
-                        )
-                    else
-                        listOf(
-                            stringResource(R.string.chat_project_rename_save),
-                            stringResource(R.string.settings_saving),
-                            stringResource(R.string.chat_rename_check_result),
-                        ),
-                confirmMinWidth = if (projectName) 89.dp else 0.dp,
-                keepConfirmFocusWhilePending = projectBusy,
+                confirmEnabled = form.canSave,
+                cancelEnabled = !saving,
+                confirmLayoutLabels = listOf(saveLabel, savingLabel),
+                keepConfirmFocusWhilePending = saving,
             )
         },
     ) {
         WorkspaceNameFormBody(
-            editor.field,
-            label,
-            readOnly,
-            validation,
-            projectName,
-            notice,
+            field = editor.field,
+            label = label,
+            // Keeping the field editable retains its IME session during the write.
+            readOnly = false,
+            validation = validation,
+            projectName = projectName,
+            notice = notice,
             noticeIsError = notice == R.string.chat_rename_save_failed,
         )
     }

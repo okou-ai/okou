@@ -25,10 +25,6 @@ import { artifactOgContract as OriginalArtifactOgContract } from "../contracts/a
 import { artifactOgContract } from "./artifact-og";
 import { artifactReferencesContract as OriginalArtifactReferencesContract } from "../contracts/artifact-references";
 import { artifactReferencesContract } from "./artifact-references";
-import { artifactSharesContract as OriginalArtifactSharesContract } from "../contracts/artifact-shares";
-import { artifactSharesContract } from "./artifact-shares";
-import { artifactSharingContract as OriginalArtifactSharingContract } from "../contracts/artifact-sharing";
-import { artifactSharingContract } from "./artifact-sharing";
 import { atomSubscriptionGrantsContract as OriginalAtomSubscriptionGrantsContract } from "../contracts/atom-subscription-grants";
 import { atomSubscriptionGrantsContract } from "./atom-subscription-grants";
 import { authContract as OriginalAuthContract } from "../contracts/auth";
@@ -244,7 +240,6 @@ import {
   cronProcessUsageEventsContract as OriginalCronProcessUsageEventsContract,
   cronProjectChatEventSearchContract as OriginalCronProjectChatEventSearchContract,
   cronPruneStoragePresignedUrlsContract as OriginalCronPruneStoragePresignedUrlsContract,
-  cronReconcileArtifactCatalogContract as OriginalCronReconcileArtifactCatalogContract,
   cronReconcileBillingEntitlementsContract as OriginalCronReconcileBillingEntitlementsContract,
   cronReconcileImageGenerationsContract as OriginalCronReconcileImageGenerationsContract,
   cronRenewGmailWatchesContract as OriginalCronRenewGmailWatchesContract,
@@ -274,7 +269,6 @@ import {
   cronProcessUsageEventsContract,
   cronProjectChatEventSearchContract,
   cronPruneStoragePresignedUrlsContract,
-  cronReconcileArtifactCatalogContract,
   cronReconcileBillingEntitlementsContract,
   cronReconcileImageGenerationsContract,
   cronRenewGmailWatchesContract,
@@ -358,8 +352,6 @@ import { healthContract as OriginalHealthContract } from "../contracts/health";
 import { healthContract } from "./health";
 import { hostContract as OriginalHostContract } from "../contracts/host";
 import { hostContract } from "./host";
-import { hostedSiteSharingContract as OriginalHostedSiteSharingContract } from "../contracts/hosted-site-sharing";
-import { hostedSiteSharingContract } from "./hosted-site-sharing";
 import { imageIoGenerateContract as OriginalImageIoGenerateContract } from "../contracts/image-io-generate";
 import { imageIoGenerateContract } from "./image-io-generate";
 import { instructionsContract as OriginalInstructionsContract } from "../contracts/instructions";
@@ -370,13 +362,11 @@ import {
   integrationsDiscordDownloadFileContract as OriginalIntegrationsDiscordDownloadFileContract,
   integrationsDiscordUploadCompleteContract as OriginalIntegrationsDiscordUploadCompleteContract,
   integrationsDiscordUploadInitContract as OriginalIntegrationsDiscordUploadInitContract,
-  integrationsDiscordUploadMaterializeContract as OriginalIntegrationsDiscordUploadMaterializeContract,
 } from "../contracts/integrations-discord-files";
 import {
   integrationsDiscordDownloadFileContract,
   integrationsDiscordUploadCompleteContract,
   integrationsDiscordUploadInitContract,
-  integrationsDiscordUploadMaterializeContract,
 } from "./integrations-discord-files";
 import { integrationsDiscordMessageContract as OriginalIntegrationsDiscordMessageContract } from "../contracts/integrations-discord-message";
 import { integrationsDiscordMessageContract } from "./integrations-discord-message";
@@ -404,13 +394,11 @@ import {
   integrationsWechatDownloadFileContract as OriginalIntegrationsWechatDownloadFileContract,
   integrationsWechatUploadCompleteContract as OriginalIntegrationsWechatUploadCompleteContract,
   integrationsWechatUploadInitContract as OriginalIntegrationsWechatUploadInitContract,
-  integrationsWechatUploadMaterializeContract as OriginalIntegrationsWechatUploadMaterializeContract,
 } from "../contracts/integrations-wechat-files";
 import {
   integrationsWechatDownloadFileContract,
   integrationsWechatUploadCompleteContract,
   integrationsWechatUploadInitContract,
-  integrationsWechatUploadMaterializeContract,
 } from "./integrations-wechat-files";
 import { integrationsWechatMessagesContract as OriginalIntegrationsWechatMessagesContract } from "../contracts/integrations-wechat-messages";
 import { integrationsWechatMessagesContract } from "./integrations-wechat-messages";
@@ -825,8 +813,6 @@ export const clientDescriptorContracts: readonly (readonly [
   [artifactLibraryPreviewsContract, OriginalArtifactLibraryPreviewsContract],
   [artifactOgContract, OriginalArtifactOgContract],
   [artifactReferencesContract, OriginalArtifactReferencesContract],
-  [artifactSharesContract, OriginalArtifactSharesContract],
-  [artifactSharingContract, OriginalArtifactSharingContract],
   [atomSubscriptionGrantsContract, OriginalAtomSubscriptionGrantsContract],
   [authContract, OriginalAuthContract],
   [bankingContract, OriginalBankingContract],
@@ -1007,10 +993,6 @@ export const clientDescriptorContracts: readonly (readonly [
     OriginalCronPruneStoragePresignedUrlsContract,
   ],
   [
-    cronReconcileArtifactCatalogContract,
-    OriginalCronReconcileArtifactCatalogContract,
-  ],
-  [
     cronReconcileBillingEntitlementsContract,
     OriginalCronReconcileBillingEntitlementsContract,
   ],
@@ -1070,7 +1052,6 @@ export const clientDescriptorContracts: readonly (readonly [
   [githubOauthContract, OriginalGithubOauthContract],
   [healthContract, OriginalHealthContract],
   [hostContract, OriginalHostContract],
-  [hostedSiteSharingContract, OriginalHostedSiteSharingContract],
   [imageIoGenerateContract, OriginalImageIoGenerateContract],
   [instructionsContract, OriginalInstructionsContract],
   [integrationsAgentPhoneContract, OriginalIntegrationsAgentPhoneContract],
@@ -1085,10 +1066,6 @@ export const clientDescriptorContracts: readonly (readonly [
   [
     integrationsDiscordUploadInitContract,
     OriginalIntegrationsDiscordUploadInitContract,
-  ],
-  [
-    integrationsDiscordUploadMaterializeContract,
-    OriginalIntegrationsDiscordUploadMaterializeContract,
   ],
   [
     integrationsDiscordMessageContract,
@@ -1113,10 +1090,6 @@ export const clientDescriptorContracts: readonly (readonly [
   [
     integrationsWechatUploadInitContract,
     OriginalIntegrationsWechatUploadInitContract,
-  ],
-  [
-    integrationsWechatUploadMaterializeContract,
-    OriginalIntegrationsWechatUploadMaterializeContract,
   ],
   [
     integrationsWechatMessagesContract,

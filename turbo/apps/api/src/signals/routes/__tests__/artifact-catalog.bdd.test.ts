@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { Readable } from "node:stream";
 import { artifactCatalogContract } from "@okouai/api-contracts/contracts/artifact-catalog";
 import { artifactReferencesContract } from "@okouai/api-contracts/contracts/artifact-references";
 import { chatEventsContract } from "@okouai/api-contracts/contracts/chat-event-send";
@@ -98,14 +99,35 @@ async function uploadFile(
     `https://r2.example.com/uploads/${encodeURIComponent(file.filename)}`,
   );
   context.mocks.s3.send.mockImplementation((command: unknown) => {
-    const { constructor } = command as {
+    const { constructor, input } = command as {
       readonly constructor: { readonly name: string };
+      readonly input?: { readonly Key?: string };
     };
+    if (
+      constructor.name === "GetObjectCommand" &&
+      !input?.Key?.startsWith("private-artifacts/")
+    ) {
+      return Promise.reject(
+        Object.assign(new Error("Missing object"), {
+          name: "NoSuchKey",
+        }),
+      );
+    }
     if (constructor.name === "HeadObjectCommand") {
       return Promise.resolve({
         ContentLength: file.size,
         ContentType: file.contentType,
       });
+    }
+    if (constructor.name === "GetObjectCommand") {
+      return Promise.resolve({
+        ContentLength: file.size,
+        ContentType: file.contentType,
+        Body: Readable.from([Buffer.alloc(Math.max(1, file.size), 0x61)]),
+      });
+    }
+    if (constructor.name === "PutObjectCommand") {
+      return Promise.resolve({ ETag: '"etag-1"' });
     }
     return Promise.resolve({});
   });
@@ -382,6 +404,9 @@ describe("GET /api/artifacts/by-url", () => {
       if (fallbackS3) {
         return fallbackS3(command, ...rest);
       }
+      if (constructor.name === "PutObjectCommand") {
+        return Promise.resolve({ ETag: '"etag-1"' });
+      }
       return Promise.resolve({});
     });
     context.mocks.s3.getSignedUrl.mockResolvedValue(
@@ -500,9 +525,18 @@ describe("GET /api/artifacts/by-url", () => {
 
     expect(firstDetail.body.url).toBe(firstImmutableUrl);
     expect(secondDetail.body.url).toBe(secondImmutableUrl);
-    expect(aliasDetail.body.url).toBe(liveAliasUrl);
+    expect(aliasDetail.body.url).toBe(secondImmutableUrl);
+    expect(firstDetail.body.owner?.publicationId).toBe(
+      firstPrepared.deploymentId,
+    );
+    expect(secondDetail.body.owner?.publicationId).toBe(
+      secondPrepared.deploymentId,
+    );
+    expect(aliasDetail.body.owner?.publicationId).toBe(
+      secondPrepared.deploymentId,
+    );
     expect(firstDetail.body.filename).toBe("Release V1.html");
-    expect(secondDetail.body.filename).toBe("Release V2.html");
-    expect(aliasDetail.body.filename).toBe("Release V2.html");
+    expect(secondDetail.body.filename).toBe("Release V1.html");
+    expect(aliasDetail.body.filename).toBe("Release V1.html");
   });
 });

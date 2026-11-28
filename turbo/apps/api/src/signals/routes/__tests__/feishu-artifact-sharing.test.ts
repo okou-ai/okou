@@ -1,8 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { Readable } from "node:stream";
 import { GetObjectCommand, HeadObjectCommand } from "@aws-sdk/client-s3";
-import { artifactSharingContract } from "@okouai/api-contracts/contracts/artifact-sharing";
-import { artifactSharesContract } from "@okouai/api-contracts/contracts/artifact-shares";
+import { artifactAccessContract } from "@okouai/api-contracts/contracts/artifact-access";
 import { hostContract } from "@okouai/api-contracts/contracts/host";
 import { uploadsContract } from "@okouai/api-contracts/contracts/uploads";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
@@ -15,8 +14,7 @@ import { setupAppWithRoutes } from "../../../__tests__/test-app";
 import { env } from "../../../lib/env";
 import { server } from "../../../mocks/server";
 import { flushWaitUntilForTest } from "../../context/wait-until";
-import { artifactSharingRoutes } from "../artifact-sharing";
-import { artifactShareRoutes } from "../artifact-shares";
+import { artifactAccessRoutes } from "../artifact-access";
 import { hostRoutes } from "../host";
 import { uploadsPrepareRoutes } from "../uploads-prepare";
 import { uploadsCompleteRoutes } from "../uploads-complete";
@@ -33,8 +31,7 @@ const headers = Object.freeze({ authorization: "Bearer clerk-session" });
 const appClient = setupAppWithRoutes({
   context,
   routes: [
-    ...artifactSharingRoutes,
-    ...artifactShareRoutes,
+    ...artifactAccessRoutes,
     ...hostRoutes,
     ...uploadsPrepareRoutes,
     ...uploadsCompleteRoutes,
@@ -230,9 +227,10 @@ async function fixture(
     );
     if (audience !== "private") {
       await accept(
-        appClient(artifactSharesContract).update({
+        appClient(artifactAccessContract).updateVisibility({
           headers,
-          body: { target: { kind: "file", id: prepared.body.id }, audience },
+          params: { artifactId: prepared.body.id },
+          body: { visibility: audience },
         }),
         [200],
       );
@@ -245,7 +243,7 @@ async function fixture(
   }
   const [installation, resource] = await Promise.all([
     feishuInstaller.install(owner, platform, {
-      extraSwitches: { [FeatureSwitchKey.HostedSiteEmailSharing]: true },
+      extraSwitches: { [FeatureSwitchKey.ArtifactUserSharing]: true },
       bindOwner: options.bindOwner,
       extraMembers: viewerUser
         ? [{ user: viewerUser, openId: viewerUser.openId }]
@@ -418,9 +416,9 @@ async function click(
 async function shares(f: Fixture) {
   return (
     await accept(
-      app(f.owner)(artifactSharingContract).list({
+      app(f.owner)(artifactAccessContract).listShares({
         headers,
-        params: { kind: f.resource.kind, id: f.resource.id },
+        params: { artifactId: f.resource.id },
       }),
       [200],
     )
@@ -526,12 +524,12 @@ test("an explicit organization visibility change refreshes viewer previews", asy
   await preview(f);
   await click(f, { audience: "organization" });
   const status = await accept(
-    app(f.owner)(artifactSharesContract).status({
+    app(f.owner)(artifactAccessContract).getVisibility({
       headers,
-      body: { kind: "file", id: f.resource.id },
+      params: { artifactId: f.resource.id },
     }),
     [200],
   );
-  expect(status.body.audience).toBe("organization");
+  expect(status.body.visibility).toBe("organization");
   expect(f.refreshes).toStrictEqual([{ preview_tokens: [f.previewToken] }]);
 });

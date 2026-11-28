@@ -17,6 +17,7 @@ import type {
 } from "@okouai/api-contracts/contracts/artifact-catalog";
 import { builtInGenerationJobs } from "./built-in-generation-job";
 import { chatThreads } from "./chat-thread";
+import { files } from "./file";
 import { hostedSites } from "./hosted-site";
 import { runUploadedFiles } from "./run-uploaded-file";
 import type { ArtifactThumbnail } from "@okouai/db/jsonb-contracts/artifact";
@@ -26,24 +27,20 @@ export type { ArtifactThumbnail } from "@okouai/db/jsonb-contracts/artifact";
  * Artifact catalog kinds. One logical product maps to exactly one `artifacts`
  * row; `entity_id` points at the row that owns the kind-specific attributes.
  *
- * - `file` -> `run_uploaded_files.id`
+ * - `file` -> `files.id`
  * - `hosted-site` -> `hosted_sites.id`
  * - `image` -> `image_artifacts.id`
- * - `video` -> `video_artifacts.id`
  * - `presentation` -> `presentation_artifacts.id`
  *
  * `logical_key` is stable across repeated projections of the same product:
  * `file:<url>` for stored files and `site:<hosted_site_id>` for hosted
  * products. Shared-thread snapshots use a compatibility `file` row whose
  * logical key is `shared-thread:<shared_thread_id>`.
- * Projection metadata records which `run_uploaded_files` row most recently
- * won a file-backed logical key without changing the catalog sort position.
  */
 export const ARTIFACT_KINDS = [
   "file",
   "hosted-site",
   "image",
-  "video",
   "presentation",
 ] as const;
 export type ArtifactKind = (typeof ARTIFACT_KINDS)[number];
@@ -86,7 +83,9 @@ export const artifacts = pgTable(
     aliasUrl: text("alias_url"),
     videoSourceUrl: text("video_source_url"),
     projectionFileId: uuid("projection_file_id"),
-    projectionCreatedAt: timestamp("projection_created_at").notNull(),
+    projectionCreatedAt: timestamp("projection_created_at")
+      .defaultNow()
+      .notNull(),
     title: text("title").notNull(),
     thumbnail: jsonb("thumbnail").$type<ArtifactThumbnail>(),
     visibility: varchar("visibility", { length: 16 })
@@ -198,7 +197,7 @@ export const imageArtifacts = pgTable(
       .notNull()
       .references(
         () => {
-          return runUploadedFiles.id;
+          return files.id;
         },
         { onDelete: "cascade" },
       ),

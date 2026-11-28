@@ -1,4 +1,5 @@
-import { HeadObjectCommand } from "@aws-sdk/client-s3";
+import { GetObjectCommand, HeadObjectCommand } from "@aws-sdk/client-s3";
+import { Readable } from "node:stream";
 import {
   integrationsTeamsUploadCompleteContract,
   integrationsTeamsUploadInitContract,
@@ -115,21 +116,38 @@ async function installedTeamsMember(
 
 /** Private artifact storage accepts the bytes and reports what it stored. */
 function acceptUploadStorage(contentType: string) {
-  const stored: { size?: number } = {};
+  const stored: { bytes?: Buffer } = {};
   server.use(
     http.put("https://r2.example.com/upload", async ({ request }) => {
-      stored.size = (await request.arrayBuffer()).byteLength;
+      stored.bytes = Buffer.from(await request.arrayBuffer());
       return new HttpResponse(null, { status: 200 });
     }),
   );
   context.mocks.s3.send.mockImplementation((command: unknown) => {
-    if (command instanceof HeadObjectCommand && stored.size !== undefined) {
+    if (command instanceof HeadObjectCommand && stored.bytes !== undefined) {
       return Promise.resolve({
-        ContentLength: stored.size,
+        ContentLength: stored.bytes.byteLength,
         ContentType: contentType,
       });
     }
-    return Promise.resolve({});
+    if (
+      command instanceof GetObjectCommand &&
+      !command.input.Key?.startsWith("private-artifacts/")
+    ) {
+      return Promise.reject(
+        Object.assign(new Error("Missing object"), {
+          name: "NoSuchKey",
+        }),
+      );
+    }
+    if (command instanceof GetObjectCommand && stored.bytes !== undefined) {
+      return Promise.resolve({
+        ContentLength: stored.bytes.byteLength,
+        ContentType: contentType,
+        Body: Readable.from([stored.bytes]),
+      });
+    }
+    return Promise.resolve({ ETag: '"etag-1"' });
   });
 }
 
@@ -199,67 +217,6 @@ function personalConversationId(fixture: TeamsConnectFixture): string {
   return `a:personal-${fixture.teamsUserId}`;
 }
 
-/** Init, upload, two completions, two re-inits and a foreign completion. */
-async function replayConversationUpload(
-  outcome: "delivered" | "network-error",
-) {
-  const { fixture, deliveries } = await installedTeamsMember(outcome);
-  acceptUploadStorage("text/plain");
-  const bytes = new TextEncoder().encode("Account report\n");
-  const body: TeamsUploadInitBody = {
-    canonical: {
-      version: 2,
-      operationId: randomUUID(),
-      checksumSha256: checksum(bytes),
-      conversationId: fixture.teamsConversationId,
-      text: "Pinned account report",
-    },
-    filename: "report.txt",
-    contentType: "text/plain",
-    length: bytes.byteLength,
-  };
-  const init = await initUpload(body, [200]);
-  const uploaded = await fetch(init.body.uploadUrl, {
-    method: "PUT",
-    headers: init.body.uploadHeaders,
-    body: bytes,
-  });
-  expect(uploaded.status).toBe(200);
-  const completion = {
-    operationId: init.body.operationId,
-    uploadId: init.body.uploadId,
-    conversationId: `19:replacement-${fixture.fixtureId}@thread.tacv2`,
-    text: "Replacement text",
-  };
-  const status = outcome === "delivered" ? 200 : 409;
-  const first = await completeUpload(completion, [status]);
-  const second = await completeUpload(completion, [status]);
-  const reinit = await initUpload(body, [200]);
-  await initUpload(
-    {
-      ...body,
-      canonical: {
-        ...body.canonical,
-        checksumSha256: checksum(new TextEncoder().encode("changed")),
-      },
-    },
-    [409],
-  );
-  const sendsBeforeForeign = deliveries.length;
-  await signInAnotherMember(fixture.orgId);
-  await completeUpload(completion, [404]);
-  return {
-    fixture,
-    deliveries,
-    init,
-    first,
-    second,
-    reinit,
-    sendsBeforeForeign,
-    operationId: body.canonical.operationId,
-  };
-}
-
 describe("Microsoft Teams integration CLI routes", () => {
   it("integrations-teams-016 delivers an uploaded file to the caller's Teams DM", async () => {
     const { fixture, deliveries } = await installedTeamsMember();
@@ -267,12 +224,8 @@ describe("Microsoft Teams integration CLI routes", () => {
     const bytes = new Uint8Array(1234);
     const init = await initUploaded(
       {
-        canonical: {
-          version: 2,
-          operationId: randomUUID(),
-          checksumSha256: checksum(bytes),
-          user: "me",
-        },
+        checksumSha256: checksum(bytes),
+        user: "me",
         filename: "report.pdf",
         contentType: "application/pdf",
         length: bytes.byteLength,
@@ -282,7 +235,6 @@ describe("Microsoft Teams integration CLI routes", () => {
 
     const completed = await completeUpload(
       {
-        operationId: init.operationId,
         uploadId: init.uploadId,
         user: "me",
         contentType: "application/pdf",
@@ -333,12 +285,8 @@ describe("Microsoft Teams integration CLI routes", () => {
     };
     const init = await initUploaded(
       {
-        canonical: {
-          version: 2,
-          operationId: randomUUID(),
-          checksumSha256: checksum(bytes),
-          ...target,
-        },
+        checksumSha256: checksum(bytes),
+        ...target,
         filename: "report.pdf",
         contentType: "application/pdf",
         length: bytes.byteLength,
@@ -348,7 +296,6 @@ describe("Microsoft Teams integration CLI routes", () => {
 
     const completed = await completeUpload(
       {
-        operationId: init.operationId,
         uploadId: init.uploadId,
         contentType: "application/pdf",
         ...target,
@@ -365,7 +312,10 @@ describe("Microsoft Teams integration CLI routes", () => {
       filename: "report.pdf",
       mimetype: "application/pdf",
       size: 1234,
-      url: init.fileUrl,
+      url: new URL(
+        `/artifacts/${init.uploadId.replace(/-/gu, "")}.pdf`,
+        init.fileUrl,
+      ).href,
     });
     expect(owned.body.publicUrl).toBeNull();
     expect(deliveries).toHaveLength(1);
@@ -384,67 +334,5 @@ describe("Microsoft Teams integration CLI routes", () => {
         ],
       },
     });
-  });
-  it("integrations-teams-006 owns a delivered conversation upload against replays and other members", async () => {
-    const {
-      fixture,
-      deliveries,
-      init,
-      first,
-      second,
-      reinit,
-      sendsBeforeForeign,
-      operationId,
-    } = await replayConversationUpload("delivered");
-
-    expect(init.body).toMatchObject({ operationId, uploadRequired: true });
-    expect(second.body).toStrictEqual(first.body);
-    expect(deliveries).toHaveLength(1);
-    expect(deliveries[0]?.path).toBe(
-      `/v3/conversations/${encodeURIComponent(fixture.teamsConversationId)}/activities`,
-    );
-    expect(JSON.stringify(deliveries[0]?.body)).toContain(
-      "Pinned account report",
-    );
-    expect(JSON.stringify(deliveries[0]?.body)).not.toContain(
-      "Replacement text",
-    );
-    expect(reinit.body).toMatchObject({
-      uploadId: init.body.uploadId,
-      operationId: init.body.operationId,
-      uploadRequired: false,
-    });
-    expect(deliveries).toHaveLength(sendsBeforeForeign);
-  });
-
-  it("integrations-teams-010 owns an uncertain conversation upload against replays and other members", async () => {
-    const {
-      fixture,
-      deliveries,
-      init,
-      first,
-      second,
-      reinit,
-      sendsBeforeForeign,
-    } = await replayConversationUpload("network-error");
-
-    expect(init.body.uploadRequired).toBeTruthy();
-    expect(second.body).toStrictEqual(first.body);
-    expect(deliveries).toHaveLength(1);
-    expect(deliveries[0]?.path).toBe(
-      `/v3/conversations/${encodeURIComponent(fixture.teamsConversationId)}/activities`,
-    );
-    expect(JSON.stringify(deliveries[0]?.body)).toContain(
-      "Pinned account report",
-    );
-    expect(JSON.stringify(deliveries[0]?.body)).not.toContain(
-      "Replacement text",
-    );
-    expect(reinit.body).toMatchObject({
-      uploadId: init.body.uploadId,
-      operationId: init.body.operationId,
-      uploadRequired: false,
-    });
-    expect(deliveries).toHaveLength(sendsBeforeForeign);
   });
 });

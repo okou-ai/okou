@@ -1,4 +1,5 @@
-import { HeadObjectCommand } from "@aws-sdk/client-s3";
+import { GetObjectCommand, HeadObjectCommand } from "@aws-sdk/client-s3";
+import { Readable } from "node:stream";
 import {
   integrationsTeamsMessageContract,
   integrationsTeamsUploadCompleteContract,
@@ -217,37 +218,48 @@ describe("Teams messages through the organization installation", () => {
   it("integrations-teams-installation-owner-002 uploads bytes and delivers a personal attachment", async () => {
     const { fixture, deliveries } = await installedTeamsMember();
     const bytes = new TextEncoder().encode("Meeting notes for Teams\n");
-    const stored: { size?: number } = {};
+    const stored: { bytes?: Buffer } = {};
     server.use(
       http.put("https://r2.example.com/upload", async ({ request }) => {
-        stored.size = (await request.arrayBuffer()).byteLength;
+        stored.bytes = Buffer.from(await request.arrayBuffer());
         return new HttpResponse(null, { status: 200 });
       }),
     );
     context.mocks.s3.send.mockImplementation((command: unknown) => {
-      if (command instanceof HeadObjectCommand && stored.size !== undefined) {
+      if (command instanceof HeadObjectCommand && stored.bytes !== undefined) {
         return Promise.resolve({
-          ContentLength: stored.size,
+          ContentLength: stored.bytes.byteLength,
           ContentType: "text/plain",
         });
       }
-      return Promise.resolve({});
+      if (
+        command instanceof GetObjectCommand &&
+        !command.input.Key?.startsWith("private-artifacts/")
+      ) {
+        return Promise.reject(
+          Object.assign(new Error("Missing object"), {
+            name: "NoSuchKey",
+          }),
+        );
+      }
+      if (command instanceof GetObjectCommand && stored.bytes !== undefined) {
+        return Promise.resolve({
+          ContentLength: stored.bytes.byteLength,
+          ContentType: "text/plain",
+          Body: Readable.from([stored.bytes]),
+        });
+      }
+      return Promise.resolve({ ETag: '"etag-1"' });
     });
-    const operationId = randomUUID();
-
     const init = await accept(
       setupApp({ context, routes: integrationsTeamsUploadInitRoutes })(
         integrationsTeamsUploadInitContract,
       ).init({
         headers,
         body: {
-          canonical: {
-            version: 2,
-            operationId,
-            checksumSha256: createHash("sha256").update(bytes).digest("hex"),
-            user: "me",
-            text: "Uploaded notes",
-          },
+          checksumSha256: createHash("sha256").update(bytes).digest("hex"),
+          user: "me",
+          text: "Uploaded notes",
           filename: "notes.txt",
           contentType: "text/plain",
           length: bytes.byteLength,
@@ -273,7 +285,6 @@ describe("Teams messages through the organization installation", () => {
       ).complete({
         headers,
         body: {
-          operationId: init.body.operationId,
           uploadId: init.body.uploadId,
           user: "me",
           text: "Uploaded notes",
@@ -283,7 +294,10 @@ describe("Teams messages through the organization installation", () => {
     );
 
     const conversationId = `a:personal-${fixture.teamsUserId}`;
-    const fileUrl = init.body.fileUrl;
+    const fileUrl = new URL(
+      `/artifacts/${init.body.uploadId.replace(/-/gu, "")}.txt`,
+      init.body.fileUrl,
+    ).href;
     expect(completed.body).toStrictEqual({
       activityId: "delivered-activity",
       conversationId,

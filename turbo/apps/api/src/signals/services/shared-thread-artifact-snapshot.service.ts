@@ -6,11 +6,9 @@ import {
   linkLayoutSegment,
 } from "@okouai/api-contracts/contracts/link-layout";
 import { command } from "ccstate";
-import { and, desc, eq, inArray, isNotNull, or } from "drizzle-orm";
 import { artifactFilenameExtension } from "@okouai/api-contracts/contracts/artifact-delivery";
 import {
   artifactShareReferencePath,
-  artifactReferencePath,
   parseArtifactReference,
 } from "@okouai/api-contracts/contracts/artifact-references";
 import type { SharedMessage } from "@okouai/api-contracts/contracts/shared-threads";
@@ -18,12 +16,10 @@ import {
   sharedThreadArtifactPolicySchema,
   type SharedThreadArtifactPolicy,
 } from "@okouai/api-contracts/contracts/shared-thread-artifacts";
-import { runUploadedFiles } from "@okouai/db/schema/run-uploaded-file";
 import { apiBackendUrl } from "../../lib/api-backend-url";
 import { env } from "../../lib/env";
 import { hostedLinkOrigin } from "../../lib/link-layout";
 import { artifactHash } from "../../lib/file-url";
-import { db$ } from "../external/db";
 import {
   copyArtifactShareObject,
   downloadS3BufferWithMaxBytes$,
@@ -43,10 +39,10 @@ import {
 import {
   artifactFileReference,
   privateArtifactRecord$,
-  privateArtifactUrl,
   privateArtifactsBucket,
   type PrivateArtifactRecord,
 } from "./private-artifact-storage.service";
+import { uploadedArtifactPreviewImageUrl$ } from "./uploaded-artifact.service";
 import {
   ArtifactDeliveryAliasConflict,
   registerArtifactDelivery$,
@@ -321,7 +317,7 @@ const privateFileSnapshot$ = command(
       if (
         file.userId !== args.userId ||
         file.orgId !== args.orgId ||
-        file.materializationStatus !== "ready" ||
+        !file.isReady ||
         (reference.key !== undefined && reference.key !== file.key)
       ) {
         throw new SharedThreadArtifactUnavailable();
@@ -422,49 +418,21 @@ const legacyAttachmentSnapshot$ = command(
 
 const privateFileSnapshotPreviewImage$ = command(
   async (
-    { get },
+    { set },
     file: Pick<
-      typeof runUploadedFiles.$inferSelect,
-      "id" | "userId" | "metadata" | "previewImageUrl"
-    > & {
-      readonly orgId: string;
-      readonly filename: string;
-      readonly contentType: string;
-    },
+      PrivateArtifactRecord,
+      "id" | "userId" | "orgId" | "contentType"
+    >,
     signal: AbortSignal,
   ) => {
-    if (file.previewImageUrl || !file.contentType.startsWith("video/")) {
-      return file.previewImageUrl;
+    if (!file.contentType.startsWith("video/")) {
+      return null;
     }
-    const paths = [
-      privateArtifactUrl(file.id, file.filename, file.metadata),
-      artifactReferencePath(file.id, file.filename),
-    ];
-    // Run associations can be separate from the private storage identity.
-    // Match that exact file, never another artifact with the same filename.
-    const [row] = await get(db$)
-      .select({ previewImageUrl: runUploadedFiles.previewImageUrl })
-      .from(runUploadedFiles)
-      .where(
-        and(
-          eq(runUploadedFiles.userId, file.userId),
-          eq(runUploadedFiles.orgId, file.orgId),
-          isNotNull(runUploadedFiles.previewImageUrl),
-          or(
-            eq(runUploadedFiles.externalId, file.id),
-            inArray(
-              runUploadedFiles.url,
-              paths.flatMap((path) => {
-                return [path, new URL(path, env("APP_URL")).href];
-              }),
-            ),
-          ),
-        ),
-      )
-      .orderBy(desc(runUploadedFiles.updatedAt), desc(runUploadedFiles.id))
-      .limit(1);
-    signal.throwIfAborted();
-    return row?.previewImageUrl ?? null;
+    return await set(
+      uploadedArtifactPreviewImageUrl$,
+      { id: file.id, userId: file.userId, orgId: file.orgId },
+      signal,
+    );
   },
 );
 
@@ -619,7 +587,7 @@ export const prepareSharedThreadArtifacts$ = command(
     async function allocate(reference: ResourceReference) {
       const attachment = args.attachmentCopies.get(reference.id);
       const preparedFile =
-        attachment?.privateRecord?.materializationStatus === "ready"
+        attachment?.privateRecord?.isReady === true
           ? attachment.privateRecord
           : undefined;
       const file =

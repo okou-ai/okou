@@ -10,7 +10,6 @@
     <string name="settings_tools_unavailable">Alat tidak tersedia untuk sementara.</string>
     <string name="settings_tool_save_failed">Perubahan tidak dapat dikonfirmasi.</string>
     <string name="settings_tool_image_save_failed">Model pembuatan gambar tidak dapat disimpan</string>
-    <string name="settings_save_checking">Memeriksa hasil…</string>
     <string name="settings_preferences_save_rolled_back">Setelan tidak dapat disimpan. Nilai sebelumnya dipulihkan.</string>
     <string name="settings_appearance_sync_failed">Tampilan tidak dapat disinkronkan. Tampilan diterapkan di perangkat ini.</string>
     <string name="settings_email_updates">Pembaruan via email</string>
