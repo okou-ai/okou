@@ -24,7 +24,6 @@ const credentials = createRunExecutionCredentials(context, {
 });
 const headers = Object.freeze({ authorization: "Bearer clerk-session" });
 const ARTIFACTS_BUCKET = "test-user-artifacts";
-const PRIVATE_ARTIFACTS_BUCKET = "test-private-artifacts";
 
 interface StoredUploadObject {
   readonly bucket: string;

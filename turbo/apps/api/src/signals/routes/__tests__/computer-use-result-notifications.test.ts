@@ -1,11 +1,34 @@
 import { randomUUID } from "node:crypto";
 
-import { describe, expect, it } from "vitest";
+import {
+  remoteDevicesContract,
+  type RemoteDeviceAccess,
+} from "@okouai/api-contracts/contracts/remote-devices";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { describe, expect, it, onTestFinished } from "vitest";
 
-import { testContext } from "../../../__tests__/test-context";
+import { accept, testContext } from "../../../__tests__/test-context";
+import { setupApp } from "../../../__tests__/test-helpers";
+import { TEST_WITH_DOUBLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE } from "../../../__tests__/test-timeouts";
+import { mockOptionalEnv } from "../../../lib/env";
 import { mockNow, now } from "../../../lib/time";
-import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
+import { flushWaitUntilForTest } from "../../context/wait-until";
+import { remoteDevicesRoutes } from "../remote-devices";
+import {
+  createBddApi,
+  expectApiError,
+  type ApiTestUser,
+} from "./helpers/api-bdd";
+import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
+import { mockClerkMembership } from "./helpers/api-bdd-clerk";
 import { createComputerUseBddApi } from "./helpers/api-bdd-computer-use";
+import { createRunsApi } from "./helpers/api-bdd-runs";
+import {
+  createWebhookCallbackApi,
+  deliverOrganizationCreated,
+} from "./helpers/api-bdd-webhooks";
+import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
+import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
 
@@ -218,4 +241,190 @@ describe("Computer Use CLI result subscriptions", () => {
       `${resultChannel(admin, created.commandId)}|null`,
     ]);
   });
+
+  it(
+    "computer-use-result-notifications-008 requires the sandbox Agent's bound-host capability and live device policy before issuing a result grant",
+    { timeout: TEST_WITH_DOUBLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const api = createComputerUseBddApi(context);
+      const bdd = createBddApi(context);
+      const runs = createRunsApi(context);
+      const chat = createChatFilesBddApi(context);
+      const member = bdd.user({ orgRole: "org:member" });
+      if (!member.orgId) {
+        throw new Error("Expected an organization member");
+      }
+      const memberOrgId = member.orgId;
+
+      const host = await api.startComputerUseHost(member, {
+        hostName: "Realtime Bound Desktop",
+      });
+
+      bdd.acceptStorageWrites();
+      runs.acceptStorageDownloads();
+      runs.acceptTelemetryIngest();
+      mockOptionalEnv("OPENROUTER_API_KEY", "bdd-issued-credential-key");
+      const [, runnerGroup] = await Promise.all([
+        deliverOrganizationCreated(context, member),
+        runs.configureRunnerGroup(),
+      ]);
+
+      let activeRun:
+        { readonly runId: string; readonly sandboxToken: string } | undefined;
+      async function cancelActiveRun(): Promise<void> {
+        if (!activeRun) {
+          return;
+        }
+        const toCancel = activeRun;
+        activeRun = undefined;
+        await runs.requestCancelRun(member, toCancel.runId, [200, 400]);
+        await createWebhookCallbackApi(context).requestAgentComplete(
+          { runId: toCancel.runId, exitCode: 1, error: "Run cancelled" },
+          { authorization: `Bearer ${toCancel.sandboxToken}` },
+          [200, 400],
+        );
+        await flushWaitUntilForTest();
+      }
+      onTestFinished(async () => {
+        await cancelActiveRun();
+      });
+
+      async function launchRun(hostId?: string) {
+        await cancelActiveRun();
+        const before = runs.receivedDispatches(runnerGroup).length;
+        const sent = await chat.requestSendEvent(
+          member,
+          {
+            prompt: "Run a realtime computer-use command",
+            model: null,
+            clientEventId: randomUUID(),
+            computerUseHostId: hostId ?? null,
+          },
+          [201],
+        );
+        if (sent.status !== 201) {
+          throw new Error("Expected an accepted chat send");
+        }
+        await flushWaitUntilForTest();
+        const dispatches = runs.receivedDispatches(runnerGroup);
+        const dispatch = dispatches.at(-1);
+        const token = dispatch?.executionContext.platformEnvironment.OKOU_TOKEN;
+        if (dispatches.length <= before || !dispatch || !token) {
+          throw new Error("Expected a dispatched Run with OKOU_TOKEN");
+        }
+        activeRun = {
+          runId: dispatch.executionContext.runId,
+          sandboxToken: dispatch.executionContext.sandboxToken,
+        };
+        return { token, runId: dispatch.executionContext.runId };
+      }
+
+      const unboundRun = await launchRun();
+      const boundRun = await launchRun(host.hostId);
+
+      signTokenRequests();
+      const tokenRequestsBefore =
+        context.mocks.ably.createTokenRequest.mock.calls.length;
+
+      mockClerkMembership(context, member, "org:member");
+      const unboundDenied = await api.requestCreateComputerUseReadCommand(
+        { bearer: unboundRun.token },
+        { kind: "apps.list", realtime: true },
+        [403],
+      );
+      expectApiError(unboundDenied.body);
+
+      const boundCreated = await api.createComputerUseReadCommand(
+        { bearer: boundRun.token },
+        { kind: "apps.list", realtime: true },
+      );
+      const expectedChannel = resultChannel(member, boundCreated.commandId);
+      expect(boundCreated.realtime).toStrictEqual({
+        channelName: expectedChannel,
+        eventName: "resultChanged",
+        tokenRequest: expect.objectContaining({
+          capability: JSON.stringify({ [expectedChannel]: ["subscribe"] }),
+        }),
+      });
+      expect(
+        context.mocks.ably.createTokenRequest.mock.calls.length -
+          tokenRequestsBefore,
+      ).toBe(1);
+
+      await updateFeatureSwitchesForUser(
+        context,
+        { userId: member.userId, orgId: memberOrgId, orgRole: member.orgRole },
+        { [FeatureSwitchKey.RemoteDevices]: true },
+      );
+
+      mockClerkMembership(context, member, "org:member");
+      const deniedByDevicePolicy =
+        await api.requestCreateComputerUseReadCommand(
+          { bearer: boundRun.token },
+          { kind: "apps.list", realtime: true },
+          [404],
+        );
+      expect(deniedByDevicePolicy.body).toStrictEqual({
+        error: {
+          message: "No linked computer-use host found",
+          code: "NOT_FOUND",
+        },
+      });
+      expect(
+        context.mocks.ably.createTokenRequest.mock.calls.length -
+          tokenRequestsBefore,
+      ).toBe(1);
+
+      const remoteDevices = setupApp({
+        context,
+        routes: remoteDevicesRoutes,
+      })(remoteDevicesContract);
+      createRouteMocks(context).clerk.session(
+        member.userId,
+        memberOrgId,
+        member.orgRole,
+      );
+      const listed = await accept(
+        remoteDevices.list({
+          headers: { authorization: "Bearer clerk-session" },
+        }),
+        [200],
+      );
+      const device = listed.body.devices.find((candidate) => {
+        return candidate.channels.some((channel) => {
+          return channel.kind === "desktop" && channel.id === host.hostId;
+        });
+      });
+      if (!device) {
+        throw new Error("Expected remote device for registered desktop");
+      }
+      const allowAccess: RemoteDeviceAccess = { mode: "always" };
+      await accept(
+        remoteDevices.setAccess({
+          headers: { authorization: "Bearer clerk-session" },
+          params: { deviceId: device.id },
+          body: allowAccess,
+        }),
+        [200],
+      );
+
+      mockClerkMembership(context, member, "org:member");
+      const admittedCreated = await api.createComputerUseReadCommand(
+        { bearer: boundRun.token },
+        { kind: "apps.list", realtime: true },
+      );
+      const admittedChannel = resultChannel(member, admittedCreated.commandId);
+      expect(admittedCreated.realtime).toStrictEqual({
+        channelName: admittedChannel,
+        eventName: "resultChanged",
+        tokenRequest: expect.objectContaining({
+          capability: JSON.stringify({ [admittedChannel]: ["subscribe"] }),
+        }),
+      });
+      expect(
+        context.mocks.ably.createTokenRequest.mock.calls.length -
+          tokenRequestsBefore,
+      ).toBe(2);
+    },
+  );
 });
