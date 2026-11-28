@@ -13,7 +13,7 @@ use std::os::fd::{AsRawFd, BorrowedFd, RawFd};
 use std::os::unix::ffi::OsStrExt;
 use std::os::unix::fs::{MetadataExt, OpenOptionsExt, PermissionsExt};
 use std::path::{Component, Path, PathBuf};
-use std::time::{Duration, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 // Includes the root. Cache exhaustion releases parents before checked tar
 // extraction, so wide/deep archives do not retain an unbounded number of FDs.
@@ -27,6 +27,13 @@ enum CreationMode {
     FirstFile,
     Verified(u32),
     Unavailable,
+}
+
+pub(super) struct OpenArchiveFile {
+    file: File,
+    parent: RawFd,
+    mode: u32,
+    modified: SystemTime,
 }
 
 pub(crate) struct RootedWriter<'a> {
@@ -194,39 +201,59 @@ impl<'a> RootedWriter<'a> {
         }
     }
 
-    /// False leaves payload unread: invalidate parents before checked tar unpack.
-    /// Once a leaf is created, any payload or metadata failure is returned, never
-    /// retried. Tar's default mode/mtime behavior is reproduced only for plain files.
-    pub(super) fn try_unpack<R: Read>(
+    /// Open a plain regular member using its validated path. A missed fast path
+    /// leaves the payload unread for checked extraction after invalidation.
+    pub(super) fn open_archive_file(
         &mut self,
-        entry: &mut tar::Entry<'_, R>,
-    ) -> io::Result<bool> {
+        relative: &Path,
+        header: &tar::Header,
+    ) -> io::Result<Option<OpenArchiveFile>> {
         // tar treats slash-terminated old/GNU regular entries as directories.
         // Check raw bytes before Path normalization loses the trailing slash.
-        if entry.header().as_ustar().is_none() && entry.path_bytes().ends_with(b"/") {
-            return Ok(false);
+        if header.as_ustar().is_none() && relative.as_os_str().as_bytes().ends_with(b"/") {
+            return Ok(None);
         }
-        let (Ok(mode), Ok(mtime)) = (entry.header().mode(), entry.header().mtime()) else {
-            return Ok(false);
+        let (Ok(mode), Ok(mtime)) = (header.mode(), header.mtime()) else {
+            return Ok(None);
         };
         if mtime > i64::MAX as u64 {
-            return Ok(false);
+            return Ok(None);
         }
         // tar maps epoch-zero file times to one second for compatibility.
         let Some(modified) = UNIX_EPOCH.checked_add(Duration::from_secs(mtime.max(1))) else {
-            return Ok(false);
+            return Ok(None);
         };
-        let Some((mut file, parent)) = self.create_new_with_parent(entry.path()?.as_ref())? else {
-            return Ok(false);
+        let Some((file, parent)) = self.create_new_with_parent(relative)? else {
+            return Ok(None);
         };
+        Ok(Some(OpenArchiveFile {
+            file,
+            parent,
+            mode: mode & 0o777,
+            modified,
+        }))
+    }
+
+    /// Finish the leaf from open_archive_file on this writer before invalidating
+    /// its parents. An IO failure leaves the output written so far.
+    pub(super) fn write_archive_file<R: Read>(
+        &mut self,
+        opened: OpenArchiveFile,
+        entry: &mut tar::Entry<'_, R>,
+    ) -> io::Result<()> {
+        let OpenArchiveFile {
+            mut file,
+            parent,
+            mode,
+            modified,
+        } = opened;
         copy_payload(entry, &mut file, &mut self.copy_buffer)?;
         file.set_times(
             FileTimes::new()
                 .set_accessed(modified)
                 .set_modified(modified),
         )?;
-        self.set_file_mode(&file, parent, mode & 0o777)?;
-        Ok(true)
+        self.set_file_mode(&file, parent, mode)
     }
 
     fn set_file_mode(&mut self, file: &File, parent: RawFd, mode: u32) -> io::Result<()> {
