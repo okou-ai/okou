@@ -128,6 +128,8 @@ struct ComposerAddSheet: View {
 
   private func connectorsRow(_ store: ComposerConnectorStore) -> some View {
     OkouActionRow("Connectors", icon: "plug") {
+      // Share the refresh with the destination while Add to chat dismisses.
+      Task { await store.refresh() }
       choose(.connectors)
     } trailing: {
       if (connectorStatus ?? store.status).uncertain {

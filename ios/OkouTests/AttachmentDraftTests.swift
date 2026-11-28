@@ -588,18 +588,8 @@ final class NewChatAttachmentTests: XCTestCase {
     let message = "Chat or connector account not found"
     let fixture = AttachmentFlowFixture(connectorSettings: { request in
       switch request.url?.path {
-      case "/api/connectors/connected":
-        return ChatHTTPResponse(
-          body:
-            #"{"builtinConnectors":[{"slug":"slack","label":"Slack","hasPermissions":false}],"customConnectors":[]}"#
-        )
-      case "/api/connector-account-access/defaults":
-        return ChatHTTPResponse(
-          body: """
-            [{"connectionId":"\(accountID)","defaultEnabled":true,"isDefault":true}]
-            """)
-      case "/api/connector-accounts/\(accountID)":
-        return ChatHTTPResponse(body: ConnectorHTTPFixtures.account())
+      case "/api/chat-connector-overview":
+        return ChatHTTPResponse(body: ConnectorHTTPFixtures.composerOverview())
       case "/api/chat-threads/\(AttachmentFlowFixture.threadID)/connector-access/\(accountID)":
         let body =
           try JSONSerialization.jsonObject(with: chatRequestBody(request)) as? [String: Any]

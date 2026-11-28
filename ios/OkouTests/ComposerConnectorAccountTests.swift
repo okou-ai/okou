@@ -324,9 +324,13 @@ final class ComposerConnectorAccountTests: XCTestCase {
       target: .builtin("slack"), connectionID: FixtureData.siblingID, threadID: FixtureData.threadID
     )
     await composer.refresh()
+    let selectedPath = "/api/connector-accounts/\(FixtureData.siblingID)"
+    XCTAssertFalse(fixture.state.withLock { $0.requests.contains { $0.url?.path == selectedPath } })
     let resources = try open(composer)
     let pinned = try await resources.store.get(resources.page).value
     XCTAssertEqual(pinned.accounts.map(\.id), [FixtureData.siblingID, FixtureData.accountID])
+    XCTAssertEqual(
+      fixture.state.withLock { $0.requests.filter { $0.url?.path == selectedPath }.count }, 1)
     await resources.loadMore()
     try await composer.service.setCurrentAccount(
       target: .builtin("slack"), connectionID: FixtureData.accountID, threadID: FixtureData.threadID

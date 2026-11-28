@@ -29,6 +29,27 @@ struct ComposerConnectorSkeletonRow: View {
   }
 }
 
+/// Native list rows with a single accessible loading announcement.
+struct ComposerConnectorSkeletonRows: View {
+  let label: LocalizedStringKey
+  let count: Int
+
+  init(_ label: LocalizedStringKey, count: Int = 1) {
+    self.label = label
+    self.count = count
+  }
+
+  var body: some View {
+    ForEach(0..<count, id: \.self) { index in
+      ComposerConnectorSkeletonRow()
+        .okouShimmer()
+        .accessibilityRepresentation {
+          if index == 0 { ProgressView(label) }
+        }
+    }
+  }
+}
+
 struct ComposerConnectorDirectorySkeleton: View {
   var body: some View {
     LazyVStack(spacing: OkouSpace.sm) {

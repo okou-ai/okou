@@ -10,6 +10,30 @@ import XCTest
 final class ChatComposerAccessTests: XCTestCase {
   private typealias FixtureData = ConnectorHTTPFixtures
 
+  func testThreadConnectorListReadsBuiltinAndCustomAccessInOneScopedRequest() async throws {
+    let requests = Mutex<[URLRequest]>([])
+    let fixture = ChatHTTPFixture { request in
+      requests.withLock { $0.append(request) }
+      guard request.url?.path == "/api/chat-connector-overview" else {
+        throw URLError(.unsupportedURL)
+      }
+      return ChatHTTPResponse(body: FixtureData.managedOverview)
+    }
+    let service = ChatComposerAccess(client: fixture.client)
+    let entries = try await service.connectors(threadID: FixtureData.threadID)
+    XCTAssertEqual(entries.map(\.target), [.builtin("slack"), .custom(FixtureData.customID)])
+    let slack = try XCTUnwrap(entries.first)
+    XCTAssertEqual(slack.access.accounts.count, 2)
+    XCTAssertFalse(slack.access.available)
+    XCTAssertNil(slack.access.currentConnectionId)
+    let urls = requests.withLock { $0.compactMap(\.url) }
+    XCTAssertEqual(urls.count, 1)
+    let url = try XCTUnwrap(urls.first)
+    XCTAssertEqual(
+      URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems,
+      [URLQueryItem(name: "threadId", value: FixtureData.threadID)])
+  }
+
   func testExplicitOffAndInheritedRemoteDefaultHaveDifferentPersistedEffects() async throws {
     let override = Mutex<Bool?>(nil)
     let fixture = ChatHTTPFixture { request in

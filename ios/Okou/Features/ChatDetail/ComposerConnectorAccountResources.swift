@@ -71,6 +71,7 @@ final class ComposerConnectorAccountResources {
   private var firstTask: Task<ChatConnectorAccounts, Error>?
   private var detailsTask: Task<Controls, Error>?
   private var moreTask: Task<Void, Error>?
+  private var pinnedTask: Task<ChatConnectorAccount, Error>?
 
   init(
     composer: ComposerConnectorStore, connector: ChatComposerConnector,
@@ -220,11 +221,25 @@ final class ComposerConnectorAccountResources {
       let (result, controls) = try await (first.value, details?.value)
       try Task.checkCancellation()
       try options.signal.checkCancellation()
+      guard !isClosed else { throw CancellationError() }
       var accounts = result.connections + (tail?.accounts ?? [])
-      if !managesDefaults, search.isEmpty, let pinned = current?.currentAccount,
-        !accounts.contains(where: { $0.id == pinned.id })
+      if !managesDefaults, search.isEmpty, let id = current?.access.currentConnectionId,
+        !accounts.contains(where: { $0.id == id })
       {
-        accounts.insert(pinned, at: 0)
+        // Keep the selected account visible even when it falls outside the loaded pages.
+        let target = connector.target
+        let pinned = Task { [service = composer.authorizationService] in
+          try await service.account(id: id, target: target)
+        }
+        pinnedTask = pinned
+        options.signal.onCancel { pinned.cancel() }
+        do {
+          accounts.insert(try await pinned.value, at: 0)
+        } catch let error as APIClientError where error.statusCode == 404 {
+          // The account was removed after the overview was read.
+        }
+        try Task.checkCancellation()
+        try options.signal.checkCancellation()
       }
       let cursor: String?
       if let tail { cursor = tail.nextCursor } else { cursor = result.nextCursor }
@@ -300,12 +315,14 @@ final class ComposerConnectorAccountResources {
       firstTask?.cancel()
       moreTask?.cancel()
       moreTask = nil
+      pinnedTask?.cancel()
       try store.set(changeSearch, search)
     } catch { didFail(error) }
   }
 
   func reconcile() {
     guard !isClosed else { return }
+    pinnedTask?.cancel()
     do { try store.set(contextChanged) } catch { didFail(error) }
   }
 
@@ -314,6 +331,7 @@ final class ComposerConnectorAccountResources {
     generation = UUID()
     firstTask?.cancel()
     detailsTask?.cancel()
+    pinnedTask?.cancel()
     moreTask?.cancel()
     moreTask = nil
     do {
@@ -382,11 +400,13 @@ final class ComposerConnectorAccountResources {
     impactTask?.cancel()
     firstTask?.cancel()
     detailsTask?.cancel()
+    pinnedTask?.cancel()
     moreTask?.cancel()
     catalogTask = nil
     impactTask = nil
     firstTask = nil
     detailsTask = nil
+    pinnedTask = nil
     moreTask = nil
     do { try store.set(lifetime, false) } catch { didFail(error) }
     composer?.retireAccounts(self)
@@ -397,6 +417,7 @@ final class ComposerConnectorAccountResources {
     impactTask?.cancel()
     firstTask?.cancel()
     detailsTask?.cancel()
+    pinnedTask?.cancel()
     moreTask?.cancel()
   }
 }

@@ -32,12 +32,13 @@ struct ComposerConnectorTools: View {
   var body: some View {
     Section {
       switch remote {
-      case .loading: OkouLoadingRow("Loading remote access…")
+      case .loading where snapshot.remotes == nil:
+        ComposerConnectorSkeletonRows("Loading remote access…")
       case .hasError(let error):
         ConnectorLoadError(
           error: ComposerConnectorResources.message(for: error, in: .remote)
         ) { await store.refresh() }
-      case .hasData(let value):
+      case .loading, .hasData:
         Toggle(
           isOn: Binding(
             get: {
@@ -50,7 +51,7 @@ struct ComposerConnectorTools: View {
             })
         ) { OkouRowLabel("Cloud browser", okouSymbol: "globe") }
         .tint(OkouColor.primary400)
-        .disabled(!connectorStatus.canSend || !value.overview.cloudBrowserAvailable)
+        .disabled(!connectorStatus.canSend || snapshot.remotes?.cloudBrowserAvailable != true)
       }
       if remoteDevicesEnabled != true {
         NavigationLink {

@@ -91,14 +91,10 @@ private struct SettingsConnectedConnectors: View {
       switch overview {
       case .loading:
         Section {
-          ForEach(0..<6, id: \.self) { _ in
-            ComposerConnectorSkeletonRow()
-              .okouShimmer()
-          }
+          ComposerConnectorSkeletonRows("Loading connectors…", count: 6)
         } header: {
           Text("Connected").okouSectionHeader()
         }
-        .accessibilityRepresentation { ProgressView("Loading connectors…") }
       case .hasError: EmptyView()
       case .hasData(let entries):
         let current = snapshot ?? store.snapshot

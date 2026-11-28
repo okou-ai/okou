@@ -153,7 +153,7 @@ final class AttachmentFlowFixture: Sendable {
     _ request: URLRequest, path: String, connectorSettings: ChatHTTPFixture.Handler?
   ) async throws -> ChatHTTPResponse? {
     switch path {
-    case "/api/connectors/connected", "/api/connector-account-access/defaults",
+    case "/api/chat-connector-overview",
       _
     where path.hasPrefix("/api/connector-accounts/") || path.contains("/connector-access/")
       || path.hasSuffix("/connector-current"):

@@ -72,8 +72,8 @@ private struct ComposerConnectorSheetContent: View {
         }
         Section {
           switch connected {
-          case .loading:
-            OkouLoadingRow("Loading connectors…")
+          case .loading where snapshot.connectedServices == nil:
+            ComposerConnectorSkeletonRows("Loading connectors…", count: 3)
           case .hasError(let error):
             if connectorStatus.error == nil {
               ConnectorLoadError(
@@ -81,9 +81,8 @@ private struct ComposerConnectorSheetContent: View {
                 isLoading: status == .loading
               ) { await store.refresh() }
             }
-          case .hasData:
-            // The phase comes from the Task; rows come from the snapshot, which carries a new
-            // chat's pending account choices.
+          case .loading, .hasData:
+            // Keep the last confirmed rows visible while reopening or refreshing the sheet.
             ForEach(
               snapshot.connectors.filter {
                 search.isEmpty || $0.label.localizedCaseInsensitiveContains(search)
@@ -91,7 +90,7 @@ private struct ComposerConnectorSheetContent: View {
             ) { connector in
               connectorRow(connector)
             }
-            if snapshot.connectors.isEmpty && status != .loading {
+            if snapshot.connectedServices?.isEmpty == true {
               Text("Connect a service to use it in this chat.")
                 .foregroundStyle(OkouColor.mutedForeground)
             }
@@ -137,8 +136,6 @@ private struct ComposerConnectorSheetContent: View {
 
     }
     .connectorAuthorizationPresentation(store: store)
-    // Loading belongs to the sheet, including its pushed destinations.
-    .task { await store.refresh() }
     .onChange(of: scenePhase) { _, phase in
       if phase == .active { Task { await store.refresh() } }
     }

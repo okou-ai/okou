@@ -110,19 +110,6 @@ public final class ConnectorAccessHTTPFixture: Sendable {
     return ChatHTTPResponse(body: try json(result))
   }
 
-  private static func memberOverview(_ state: State) throws -> ChatHTTPResponse {
-    let rows = state.accountIDs.map { id in
-      """
-      {"connectionId":"\(id)","displayName":"Account","defaultEnabled":\(state.enabled[id] == true),"isDefault":\(state.defaultID == id),"overrideEnabled":null,"enabled":\(policy(id, state: state).enabled)}
-      """
-    }.joined(separator: ",")
-    let eligible = state.accountIDs.filter { policy($0, state: state).enabled }
-    let current = eligible.first { $0 == state.defaultID } ?? eligible.first
-    return ChatHTTPResponse(
-      body: """
-        {"connector":{"target":\(try json(target(state))),"accounts":[\(rows)],"currentConnectionId":\(try json(current))}}
-        """)
-  }
   private static func target(_ state: State) -> Target {
     state.custom
       ? Target(kind: "custom", connectorSlug: nil, customConnectorId: FixtureData.customID)
@@ -149,26 +136,30 @@ public final class ConnectorAccessHTTPFixture: Sendable {
       state.defaultID = state.accountIDs.first { state.enabled[$0] == true }
     }
   }
-  private static func access(_ id: String, state: inout State) throws -> String {
-    var settings = state.threads[id] ?? ThreadSettings()
-    let enabled = state.accountIDs.filter {
-      settings.overrides[$0] ?? (state.enabled[$0] == true)
+  private static func access(_ threadID: String?, state: State, overview: Bool = false) throws
+    -> String
+  {
+    let settings = threadID.flatMap { state.threads[$0] } ?? ThreadSettings()
+    let enabled = state.accountIDs.filter { id in
+      if state.memberAccess { return policy(id, state: state).enabled }
+      return settings.overrides[id] ?? (state.enabled[id] == true)
     }
-    if !enabled.contains(settings.currentID ?? "") {
-      settings.currentID =
-        state.defaultID.flatMap { enabled.contains($0) ? $0 : nil }
-        ?? enabled.first
-    }
-    state.threads[id] = settings
-    let rows = state.accountIDs.map { account in
-      let inherited = settings.overrides[account].map { $0 ? "true" : "false" } ?? "null"
+    let current =
+      enabled.first { $0 == settings.currentID }
+      ?? enabled.first { $0 == state.defaultID } ?? enabled.first
+    let rows = state.accountIDs.map { id in
+      let inherited = settings.overrides[id].map { $0 ? "true" : "false" } ?? "null"
       return """
-        {"connectionId":"\(account)","displayName":"Account","defaultEnabled":\(state.enabled[account] == true),"isDefault":\(state.defaultID == account),"overrideEnabled":\(inherited),"enabled":\(enabled.contains(account))}
+        {"connectionId":"\(id)","displayName":"Account","defaultEnabled":\(state.enabled[id] == true),"isDefault":\(state.defaultID == id),"overrideEnabled":\(inherited),"enabled":\(enabled.contains(id))}
         """
     }.joined(separator: ",")
-    let current = settings.currentID.map { "\"\($0)\"" } ?? "null"
-    return
-      "{\"target\":\(try json(target(state))),\"accounts\":[\(rows)],\"currentConnectionId\":\(current),\"available\":\(!enabled.isEmpty)}"
+    let fields =
+      overview
+      ? #""label":"\#(state.custom ? "Internal" : "Slack")","icon":null,"hasPermissions":\#(!state.custom && state.hasPermissions)"#
+      : #""available":\#(current != nil)"#
+    return """
+      {"target":\(try json(target(state))),"accounts":[\(rows)],"currentConnectionId":\(try json(current)),\(fields)}
+      """
   }
 
   private static func error(_ status: Int, _ message: String) -> ChatHTTPResponse {
@@ -266,18 +257,7 @@ public final class ConnectorAccessHTTPFixture: Sendable {
       return ChatHTTPResponse(
         body: "{\"target\":\(try json(body.target)),\"connectionId\":\"\(account)\"}")
     }
-    return ChatHTTPResponse(body: try access(id, state: &state))
-  }
-
-  private static func connectedResponse(state: State) -> ChatHTTPResponse {
-    let builtin =
-      "[{\"slug\":\"slack\",\"label\":\"Slack\",\"hasPermissions\":\(state.hasPermissions)}]"
-    let custom =
-      "[{\"id\":\"\(FixtureData.customID)\",\"displayName\":\"Internal\",\"permissionBundleRef\":null,\"integrationManaged\":false}]"
-    return ChatHTTPResponse(
-      body:
-        "{\"builtinConnectors\":\(state.custom ? "[]" : builtin),\"customConnectors\":\(state.custom ? custom : "[]")}"
-    )
+    return ChatHTTPResponse(body: try access(id, state: state))
   }
 
   private static func connectorAccessResponse(
@@ -299,7 +279,7 @@ public final class ConnectorAccessHTTPFixture: Sendable {
       settings.overrides[parts[4]] = body.enabled
       state.threads[id] = settings
     }
-    return ChatHTTPResponse(body: try access(id, state: &state))
+    return ChatHTTPResponse(body: try access(id, state: state))
   }
 
   private static func createThreadResponse(_ request: URLRequest, state: inout State) throws
@@ -362,8 +342,9 @@ public final class ConnectorAccessHTTPFixture: Sendable {
       kind: query.first { $0.name == "kind" }?.value ?? "",
       connectorSlug: query.first { $0.name == "connectorSlug" }?.value,
       customConnectorId: query.first { $0.name == "customConnectorId" }?.value)
-    if path == "/api/connectors/connected" {
-      return connectedResponse(state: state)
+    if path == "/api/chat-connector-overview" {
+      let threadID = query.first { $0.name == "threadId" }?.value
+      return ChatHTTPResponse(body: "[\(try access(threadID, state: state, overview: true))]")
     }
     if path == "/api/remotes/overview" {
       return ChatHTTPResponse(
@@ -433,7 +414,8 @@ public final class ConnectorAccessHTTPFixture: Sendable {
       guard state.memberAccess, queriedTarget == target(state) else {
         return error(403, "Policy unavailable")
       }
-      return try memberOverview(state)
+      return ChatHTTPResponse(
+        body: #"{"connector":\#(try access(nil, state: state, overview: true))}"#)
     case "/api/connector-account-access/policies":
       guard state.memberAccess, queriedTarget == target(state) else {
         return error(403, "Policy unavailable")
