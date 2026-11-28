@@ -16,6 +16,9 @@ import ai.okou.android.api.generated.ThreadDetail
 import ai.okou.android.historyEventWire
 import ai.okou.android.jsonResponse
 import android.content.ClipboardManager
+import android.graphics.drawable.AnimatedVectorDrawable
+import android.view.ViewGroup
+import android.widget.ImageView
 import androidx.activity.ComponentActivity
 import androidx.compose.foundation.layout.height
 import androidx.compose.runtime.DisposableEffect
@@ -45,6 +48,7 @@ import androidx.compose.ui.test.performScrollToIndex
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.unit.dp
+import androidx.core.view.descendants
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.ViewModelStore
@@ -1060,6 +1064,12 @@ class ConversationRouteTest {
     fun firstReplyPreservesTheMessageUnderAnActiveDrag() {
         val received = AtomicInteger(12)
         val model = openScrollHistory(received)
+        fun animatedAvatarCount() = compose.runOnIdle {
+            (compose.activity.window.decorView as ViewGroup)
+                .descendants
+                .filterIsInstance<ImageView>()
+                .count { it.drawable is AnimatedVectorDrawable }
+        }
         val readCount = fixture.readRequests.get()
         val conversation = compose.onNodeWithTag("conversation")
         val anchor = compose.onNodeWithTag("message_${scrollEventId(12)}").assertIsDisplayed()
@@ -1072,8 +1082,11 @@ class ConversationRouteTest {
             try {
                 val reading = anchor.getUnclippedBoundsInRoot()
                 assertTrue(reading.bottom > latest.bottom)
+                assertEquals(1, animatedAvatarCount())
                 receiveFirstReply(model, received)
                 assertEquals(reading, anchor.getUnclippedBoundsInRoot())
+                // The retained activity header belongs to the run before the incoming reply.
+                assertEquals(0, animatedAvatarCount())
                 conversation.performTouchInput { moveBy(Offset(x = 0f, y = 4.dp.toPx())) }
                 val moved = anchor.getUnclippedBoundsInRoot()
                 assertEquals(4f, (moved.bottom - reading.bottom).value, 1f)

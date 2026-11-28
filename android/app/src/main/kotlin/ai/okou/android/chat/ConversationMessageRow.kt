@@ -322,7 +322,7 @@ internal fun ConversationReplyHeader(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            ConversationReplyAvatar(animateAvatarIn.takeIf { copyableReply != null })
+            ConversationReplyAvatar(animateAvatarIn)
             Text(
                 stringResource(R.string.app_name),
                 Modifier.weight(1f),
