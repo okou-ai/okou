@@ -89,19 +89,15 @@ def _firewall_request_context(
     exceeding either bound makes AWS rule inspection unavailable and therefore
     fail-closed without affecting non-AWS path rules.
     """
-    if len(flow.request.data.path) > aws_sigv4_flow.MAX_AWS_SIGV4_REQUEST_TARGET_BYTES:
-        return matching.FirewallRequestContext(
-            body=flow.request.raw_content,
-            aws_inspection_available=False,
-            applied_credential_owner=applied_credential_owner,
-        )
-
     raw_fields = flow.request.headers.fields
-    if not http_header_syntax.raw_header_list_within_budget(
-        raw_fields,
-        max_fields=aws_sigv4_flow.MAX_AWS_SIGV4_REQUEST_HEADER_FIELDS,
-        max_bytes=aws_sigv4_flow.MAX_AWS_SIGV4_REQUEST_HEADER_LIST_BYTES,
-        field_overhead_bytes=aws_sigv4_flow.AWS_SIGV4_REQUEST_HEADER_FIELD_OVERHEAD_BYTES,
+    if (
+        len(flow.request.data.path) > aws_sigv4_flow.MAX_AWS_SIGV4_REQUEST_TARGET_BYTES
+        or not http_header_syntax.raw_header_list_within_budget(
+            raw_fields,
+            max_fields=aws_sigv4_flow.MAX_AWS_SIGV4_REQUEST_HEADER_FIELDS,
+            max_bytes=aws_sigv4_flow.MAX_AWS_SIGV4_REQUEST_HEADER_LIST_BYTES,
+            field_overhead_bytes=aws_sigv4_flow.AWS_SIGV4_REQUEST_HEADER_FIELD_OVERHEAD_BYTES,
+        )
     ):
         return matching.FirewallRequestContext(
             body=flow.request.raw_content,
