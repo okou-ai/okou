@@ -135,6 +135,7 @@
     <string name="composer_skip_attachments_send">Continuar con el envío</string>
     <plurals name="composer_skip_attachments_message">
         <item quantity="one">Se eliminará %1$d archivo adjunto del borrador antes de enviarlo:</item>
+        <item quantity="many">Se eliminarán %1$d archivos adjuntos del borrador antes de enviarlo:</item>
         <item quantity="other">Se eliminarán %1$d archivos adjuntos del borrador antes de enviarlo:</item>
     </plurals>
 </resources>
