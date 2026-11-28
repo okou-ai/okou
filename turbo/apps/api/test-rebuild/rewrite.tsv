@@ -50,14 +50,14 @@ non-route	src/lib/__tests__/user-export-restore.test.ts	user-export-restore-006	
 non-route	src/lib/__tests__/user-export-restore.test.ts	user-export-restore-009	rewritten	58.9		src/lib/__tests__/user-export-restore.test.ts	B07	d-other
 non-route	src/lib/__tests__/user-export-zip.test.ts	user-export-zip-001	rewritten	8.7	accepted by shuffled 3-run median (provisional cold-start rule)	src/lib/__tests__/user-export-zip.test.ts	B06	
 non-route	src/lib/__tests__/user-export-zip.test.ts	user-export-zip-002	rewritten	8.3	accepted by shuffled 3-run median (provisional cold-start rule)	src/lib/__tests__/user-export-zip.test.ts	B06	
-non-route	src/signals/auth/__tests__/tokens.test.ts	tokens-001	planned					a-run
+non-route	src/signals/auth/__tests__/tokens.test.ts	tokens-001	rewritten	156.7	timeout=400 (5-run idle non-first median 156.7ms, SINGLE_RUN; real Run firewall/sandbox isolation + mockNow expiry via public routes)	src/signals/auth/__tests__/tokens.test.ts	R34	a-run
 non-route	src/signals/auth/__tests__/tokens.test.ts	tokens-002	skipped		private-state: directly tests internal signPatJwtForTests/isPatToken/verifyCliToken helpers; forbidden by api/no-test-credential-forging and BRIEF4/BRIEF20 (no sign*ForTests or self-signed Okou credentials; PAT CLI flow is covered via real HTTP routes)			d-other
-non-route	src/signals/auth/__tests__/tokens.test.ts	tokens-004	planned					a-run
-non-route	src/signals/auth/__tests__/tokens.test.ts	tokens-006	planned					a-run
-non-route	src/signals/auth/__tests__/tokens.test.ts	tokens-009	planned					a-run
-non-route	src/signals/auth/__tests__/tokens.test.ts	tokens-012	planned					a-run
-non-route	src/signals/auth/__tests__/tokens.test.ts	tokens-029	planned					a-run
-non-route	src/signals/auth/__tests__/tokens.test.ts	tokens-030	planned					a-run
+non-route	src/signals/auth/__tests__/tokens.test.ts	tokens-004	rewritten	150.9	timeout=400 (5-run idle non-first median 150.9ms, SINGLE_RUN; real Run OKOU_TOKEN verified via GET /api/auth/me)	src/signals/auth/__tests__/tokens.test.ts	R34	a-run
+non-route	src/signals/auth/__tests__/tokens.test.ts	tokens-006	skipped		private-state: src/signals/services/thread-okou-token.signals.ts:62 is the sole production caller of generateOkouToken (src/signals/auth/tokens.ts:456) and unconditionally passes personalExecution: true; no public API endpoint or workflow path issues a token with personalExecution: false, and direct verifyOkouToken testing is forbidden by api/no-test-credential-forging without altering business code		R34	a-run
+non-route	src/signals/auth/__tests__/tokens.test.ts	tokens-009	skipped		private-state: compose-job scope (src/signals/auth/tokens.ts:137-140, 388-401) has zero production issuer and zero HTTP route calling verifyComposeJobToken; constructing a compose-job JWT requires signSandboxJwtForTests, which is forbidden by api/no-test-credential-forging		R34	a-run
+non-route	src/signals/auth/__tests__/tokens.test.ts	tokens-012	rewritten	275.6	timeout=600 (5-run idle non-first median 275.6ms, DOUBLE_RUN; 2 Runs verifying Banking switch via POST /api/banking/accounts)	src/signals/auth/__tests__/tokens.test.ts	R34	a-run
+non-route	src/signals/auth/__tests__/tokens.test.ts	tokens-029	rewritten	269.5	timeout=600 (5-run idle non-first median 269.5ms, DOUBLE_RUN; 2 Runs verifying cloudBrowserEnabled via GET /api/browser/:threadId)	src/signals/auth/__tests__/tokens.test.ts	R34	a-run
+non-route	src/signals/auth/__tests__/tokens.test.ts	tokens-030	rewritten	276.0	timeout=600 (5-run idle non-first median 276.0ms, DOUBLE_RUN; 2 Runs verifying explicit computerUseHostId via GET /api/computer-use/hosts)	src/signals/auth/__tests__/tokens.test.ts	R34	a-run
 non-route	src/signals/external/__tests__/axiom.test.ts	axiom-001	planned					a-run
 non-route	src/signals/external/__tests__/axiom.test.ts	axiom-008	planned					a-run
 non-route	src/signals/external/__tests__/axiom.test.ts	axiom-014	planned					a-run
