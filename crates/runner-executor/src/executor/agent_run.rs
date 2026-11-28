@@ -1638,7 +1638,10 @@ async fn prepare_guest_runtime_state(
         );
         Ok(instruction_check
             .zip(result?)
-            .map(|(input, result)| CompletedInstructionCheck { input, result }))
+            .map(|(input, result)| CompletedInstructionCheck {
+                input,
+                result: result.map_err(Box::new),
+            }))
     } else {
         let started = Instant::now();
         sync_guest_timezone(sandbox, context).await;

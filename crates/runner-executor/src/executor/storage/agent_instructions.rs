@@ -29,7 +29,7 @@ pub(in crate::executor) enum InstructionReuse {
 
 pub(in crate::executor) struct CompletedInstructionCheck {
     pub(in crate::executor) input: InstructionCheck,
-    pub(in crate::executor) result: RunnerResult<InstructionCheckResult>,
+    pub(in crate::executor) result: Result<InstructionCheckResult, Box<RunnerError>>,
 }
 
 pub(in crate::executor) enum InstructionReusePlan<'a> {
@@ -122,7 +122,7 @@ pub(in crate::executor) async fn check_instruction_reuse(
     };
     let checked = if let Some(completed) = completed_check.filter(|checked| checked.input == input)
     {
-        completed.result?
+        completed.result.map_err(|error| *error)?
     } else {
         let started = Instant::now();
         let checked = check_instruction_target(sandbox, context, &input).await;
