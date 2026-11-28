@@ -4,7 +4,6 @@ import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animate
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
-import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.awaitDragOrCancellation
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
@@ -34,6 +33,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.graphicsLayer
@@ -80,6 +80,7 @@ internal fun ChatRowSwipe(
     readAction: ChatRowAction?,
     archiveAction: ChatRowAction?,
     performAction: (ChatRowAction) -> Unit,
+    selected: Boolean,
     content: @Composable (Modifier) -> Unit,
 ) {
     val action by rememberUpdatedState(performAction)
@@ -178,14 +179,19 @@ internal fun ChatRowSwipe(
     ) {
         val revealed = if (reveal.fromStart) readAction else archiveAction
         if (reveal.offset != 0f && revealed != null) {
-            ChatSwipeAction(revealed, reveal, Modifier.matchParentSize())
+            ChatSwipeAction(revealed, reveal, selected, Modifier.matchParentSize())
         }
         content(Modifier.offset { IntOffset(reveal.offset.roundToInt(), 0) })
     }
 }
 
 @Composable
-private fun ChatSwipeAction(action: ChatRowAction, reveal: SwipeReveal, modifier: Modifier) {
+private fun ChatSwipeAction(
+    action: ChatRowAction,
+    reveal: SwipeReveal,
+    selected: Boolean,
+    modifier: Modifier,
+) {
     val colors = MaterialTheme.colorScheme
     val background by
         animateColorAsState(
@@ -231,9 +237,11 @@ private fun ChatSwipeAction(action: ChatRowAction, reveal: SwipeReveal, modifier
                 val width = abs(reveal.offset.roundToInt()).toFloat().coerceAtMost(size.width)
                 val fromLeft = reveal.fromStart == (layoutDirection == LayoutDirection.Ltr)
                 val left = if (fromLeft) 0f else size.width - width
+                // The opaque selected row covers the track except at its moving rounded edge.
+                if (selected) drawRect(background)
+                else drawRect(background, Offset(left, 0f), Size(width, size.height))
                 clipRect(left = left, right = left + width) { this@drawWithContent.drawContent() }
             }
-            .background(background)
             .padding(horizontal = swipeActionInset)
             .clearAndSetSemantics {},
         contentAlignment = if (reveal.fromStart) Alignment.CenterStart else Alignment.CenterEnd,
