@@ -1,8 +1,8 @@
 import { command } from "ccstate";
-import { and, eq, inArray, isNull } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, isNull } from "drizzle-orm";
 import { uuid } from "zod";
 import { artifacts } from "@okouai/db/schema/artifact";
-import { runUploadedFiles } from "@okouai/db/schema/run-uploaded-file";
+import { files as filesTable } from "@okouai/db/schema/file";
 import type { ArtifactLibraryPreview } from "@okouai/api-contracts/contracts/artifact-library-previews";
 import { sharedThreadArtifactAuthorUserId } from "../../lib/shared-thread-artifact";
 import { db$ } from "../external/db";
@@ -80,20 +80,20 @@ export const resolveArtifactLibraryPreviews$ = command(
     if (fileIds.length === 0) {
       return [];
     }
-    const files = await db
+    const fileRows = await db
       .select()
-      .from(runUploadedFiles)
+      .from(filesTable)
       .where(
         and(
-          inArray(runUploadedFiles.id, fileIds),
-          eq(runUploadedFiles.orgId, args.orgId),
-          eq(runUploadedFiles.userId, args.userId),
-          isNull(runUploadedFiles.deletedAt),
-          eq(runUploadedFiles.materializationStatus, "ready"),
+          inArray(filesTable.id, fileIds),
+          eq(filesTable.orgId, args.orgId),
+          eq(filesTable.ownerUserId, args.userId),
+          isNull(filesTable.deletedAt),
+          isNotNull(filesTable.sizeBytes),
         ),
       );
     signal.throwIfAborted();
-    const owned = files.flatMap((row) => {
+    const owned = fileRows.flatMap((row) => {
       const file = privateArtifactFromRow(row);
       return file ? [file] : [];
     });

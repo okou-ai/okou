@@ -285,6 +285,8 @@ export const storeGeneratedArtifactObject$ = command(
       readonly extension: string;
       readonly body: Buffer;
       readonly contentType: string;
+      readonly runId?: string;
+      readonly skipCatalogRegistration?: boolean;
     },
     signal: AbortSignal,
   ): Promise<StoredGeneratedArtifactObject> => {
@@ -306,6 +308,7 @@ export const storeGeneratedArtifactObject$ = command(
           // A generation is an artifact output even when no run produced it, so
           // its ownership record carries that purpose and stays in the catalog.
           purpose: "artifact",
+          runId: args.runId,
         },
         signal,
       );
@@ -326,6 +329,8 @@ export const storeGeneratedArtifactObject$ = command(
           url: artifact.url,
           contentType: args.contentType,
           size: args.body.byteLength,
+          runId: args.runId,
+          registerArtifact: !args.skipCatalogRegistration,
         },
         signal,
       );

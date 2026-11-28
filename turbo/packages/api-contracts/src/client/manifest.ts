@@ -43,14 +43,6 @@ export const clientDescriptorManifest = [
     contracts: ["artifactReferencesContract"],
   },
   {
-    module: "artifact-shares",
-    contracts: ["artifactSharesContract"],
-  },
-  {
-    module: "artifact-sharing",
-    contracts: ["artifactSharingContract"],
-  },
-  {
     module: "atom-subscription-grants",
     contracts: ["atomSubscriptionGrantsContract"],
   },
@@ -255,7 +247,6 @@ export const clientDescriptorManifest = [
       "cronProcessUsageEventsContract",
       "cronProjectChatEventSearchContract",
       "cronPruneStoragePresignedUrlsContract",
-      "cronReconcileArtifactCatalogContract",
       "cronReconcileBillingEntitlementsContract",
       "cronReconcileImageGenerationsContract",
       "cronRenewGmailWatchesContract",
@@ -376,10 +367,6 @@ export const clientDescriptorManifest = [
     contracts: ["hostContract"],
   },
   {
-    module: "hosted-site-sharing",
-    contracts: ["hostedSiteSharingContract"],
-  },
-  {
     module: "image-io-generate",
     contracts: ["imageIoGenerateContract"],
   },
@@ -397,7 +384,6 @@ export const clientDescriptorManifest = [
       "integrationsDiscordDownloadFileContract",
       "integrationsDiscordUploadCompleteContract",
       "integrationsDiscordUploadInitContract",
-      "integrationsDiscordUploadMaterializeContract",
     ],
   },
   {
@@ -438,7 +424,6 @@ export const clientDescriptorManifest = [
       "integrationsWechatDownloadFileContract",
       "integrationsWechatUploadCompleteContract",
       "integrationsWechatUploadInitContract",
-      "integrationsWechatUploadMaterializeContract",
     ],
   },
   {

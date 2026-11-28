@@ -75,10 +75,11 @@ internal class ArtifactLinkAccess(private val api: ApiClient) {
         when (source) {
             is ArtifactLinkSource.File ->
                 withPolicy("file:${source.id}") {
+                    val artifactId = checkNotNull(confirmed.artifactId)
                     api.write {
                             updateArtifactVisibility(
                                 it,
-                                confirmed.artifactId ?: source.id,
+                                artifactId,
                                 ArtifactVisibilityUpdate(
                                     ArtifactVisibilityUpdateVisibility.valueOf(audience.name),
                                 ),
@@ -88,11 +89,12 @@ internal class ArtifactLinkAccess(private val api: ApiClient) {
                 }
             is ArtifactLinkSource.Website -> {
                 val siteId = checkNotNull(confirmed.siteId)
+                val artifactId = checkNotNull(confirmed.artifactId)
                 withPolicy("site:$siteId") {
                     val status = api.write {
                         updateArtifactVisibility(
                             it,
-                            confirmed.artifactId ?: siteId,
+                            artifactId,
                             ArtifactVisibilityUpdate(
                                 ArtifactVisibilityUpdateVisibility.valueOf(audience.name),
                             ),
@@ -164,8 +166,12 @@ internal class ArtifactLinkAccess(private val api: ApiClient) {
             // The owner lookup verifies that this is a published legacy site.
             return ArtifactLink(address, ArtifactAudience.PUBLIC, version = version)
         }
+        val artifactId =
+            source.artifactId
+                ?: site.artifactId
+                ?: return ArtifactLink(address, ArtifactAudience.PUBLIC, version = version)
         return withPolicy("site:${site.siteId}") {
-            val status = api.read { artifactVisibility(it, source.artifactId ?: site.siteId) }
+            val status = api.read { artifactVisibility(it, artifactId) }
             status.siteLink(site.siteId, address, version, api.organization().name)
         }
     }

@@ -64,10 +64,14 @@ function createSiteVisibilitySignals(
     ) {
       return null;
     }
+    const artifactId = knownArtifactId ?? site.artifactId;
+    if (!artifactId) {
+      return null;
+    }
     get(reload$);
     const result = await accept(
       get(apiClient$)(artifactAccessContract).getVisibility({
-        params: { artifactId: knownArtifactId ?? site.siteId },
+        params: { artifactId },
         fetchOptions: { cache: "no-store" },
       }),
       [200, 404],

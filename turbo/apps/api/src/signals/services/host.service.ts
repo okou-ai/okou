@@ -30,7 +30,6 @@ import {
   artifactDeliveryKey,
   artifactDeliveryRecordSchema,
 } from "@okouai/api-contracts/contracts/artifact-delivery";
-import { artifactShares } from "@okouai/db/schema/artifact-share";
 import {
   hostedDeployments,
   privateHostedDeployments,
@@ -88,7 +87,7 @@ import {
   hostedSiteAliasConflict,
   storedObject,
 } from "./hosted-site-publication-migration.service";
-import { recordHostedSiteArtifact$ } from "./run-uploaded-files.service";
+import { upsertHostedSiteArtifact$ } from "./artifact-catalog.service";
 import { artifacts } from "@okouai/db/schema/artifact";
 import {
   completeHostedPreview$,
@@ -111,11 +110,7 @@ import {
   type CreateHostedSiteDeploymentContext,
 } from "./hosted-site-allocation-plan";
 import { signHostedSiteFiles$ } from "./hosted-site-files.service";
-import {
-  resolveArtifactShareDownload$,
-  resolveHostedSitePublicationDownload$,
-  updateArtifactShare$,
-} from "./artifact-shares.service";
+import { resolveHostedSitePublicationDownload$ } from "./artifact-shares.service";
 const MAX_HOSTED_SITE_TOTAL_BYTES = 512 * 1024 * 1024;
 const MAX_HOSTED_SITE_FILE_BYTES = 100 * 1024 * 1024;
 const IMMUTABLE_DEPLOYMENT_HOST_PATTERN =
@@ -768,6 +763,7 @@ export const prepareHostedSiteDeployment$ = command(
         orgId: args.orgId,
         userId: args.userId,
         siteId: siteAndDeployment.site.id,
+        deploymentId: siteAndDeployment.deployment.id,
         visibility: args.body.visibility,
         unpublished: siteAndDeployment.site.activeDeploymentId === null,
       },
@@ -1122,14 +1118,9 @@ const bindHostedSiteDeployment$ = command(
       }
       signal.throwIfAborted();
       if (publication.previous?.kind === "publication") {
-        const [share] = await db
-          .select()
-          .from(artifactShares)
-          .where(eq(artifactShares.id, publication.previous.shareId));
-        signal.throwIfAborted();
         const snapshot = await set(
           readHostedSnapshotPolicy$,
-          { site, bucket: args.bucket, record: publication.previous, share },
+          { site, bucket: args.bucket, record: publication.previous },
           signal,
         );
         const [source] = await db
@@ -1285,6 +1276,44 @@ function completedHostedSiteResponse(
   };
 }
 
+const recordCompletedHostedSiteArtifact$ = command(
+  async (
+    { set },
+    args: {
+      readonly deployment: HostedDeploymentRow;
+      readonly publicSlug: string;
+      readonly preview: { readonly url: string } | undefined;
+    },
+    signal: AbortSignal,
+  ): Promise<void> => {
+    const artifactArgs = hostedSiteArtifactArgs(
+      args.deployment,
+      args.publicSlug,
+    );
+    await set(
+      upsertHostedSiteArtifact$,
+      {
+        siteId: artifactArgs.siteId,
+        orgId: artifactArgs.orgId,
+        userId: artifactArgs.userId,
+        kind:
+          artifactArgs.artifactKind === "presentation-html"
+            ? "presentation"
+            : "hosted-site",
+        title: artifactArgs.title ?? artifactArgs.site,
+        sourceUrl: artifactArgs.url,
+        aliasUrl: artifactArgs.aliasUrl ?? null,
+        thumbnail: args.preview ? { url: args.preview.url } : null,
+        visibility: args.deployment.manifest.visibility,
+        runId: artifactArgs.runId,
+        createdAt: args.deployment.createdAt,
+      },
+      signal,
+    );
+    signal.throwIfAborted();
+  },
+);
+
 export const completeHostedSiteDeployment$ = command(
   async (
     { set },
@@ -1404,14 +1433,10 @@ export const completeHostedSiteDeployment$ = command(
     signal.throwIfAborted();
 
     await set(
-      recordHostedSiteArtifact$,
-      {
-        ...hostedSiteArtifactArgs(deployment, promotion.publicSlug),
-        ...(preview ? { previewImageUrl: preview.url } : {}),
-      },
+      recordCompletedHostedSiteArtifact$,
+      { deployment, publicSlug: promotion.publicSlug, preview },
       signal,
     );
-    signal.throwIfAborted();
 
     return completedHostedSiteResponse(deployment, promotion, preview);
   },
@@ -1643,64 +1668,6 @@ const loadPrivateHostedSiteFilesTarget$ = command(
   },
 );
 
-const sharedHostedSiteFiles$ = command(
-  async (
-    { get, set },
-    args: GetHostedSiteFilesArgs,
-    deploymentId: string | undefined,
-    signal: AbortSignal,
-  ) => {
-    const db = get(db$);
-    const [site] = deploymentId
-      ? await db
-          .select({ id: hostedSites.id })
-          .from(privateHostedDeployments)
-          .innerJoin(
-            hostedSites,
-            eq(hostedSites.id, privateHostedDeployments.siteId),
-          )
-          .where(
-            and(
-              eq(privateHostedDeployments.id, deploymentId),
-              isNull(hostedSites.deletedAt),
-            ),
-          )
-          .limit(1)
-      : await db
-          .select({ id: hostedSites.id })
-          .from(hostedSites)
-          .where(
-            and(
-              eq(hostedSites.publicSlug, args.publicSlug),
-              isNull(hostedSites.deletedAt),
-            ),
-          )
-          .limit(1);
-    signal.throwIfAborted();
-    if (!site) {
-      return null;
-    }
-    const download = await set(
-      resolveArtifactShareDownload$,
-      {
-        userId: args.userId,
-        selector: deploymentId
-          ? {
-              kind: "target",
-              target: { kind: "html", id: deploymentId },
-              targetId: site.id,
-            }
-          : { kind: "site", id: site.id },
-      },
-      signal,
-    );
-    return download?.kind === "html" &&
-      matchesHostedSiteVersion(download.site, args.version)
-      ? download.site
-      : null;
-  },
-);
-
 function matchesHostedSiteVersion(
   site: Pick<HostedSiteFilesResponse, "deploymentVersion">,
   version: number | undefined,
@@ -1722,14 +1689,6 @@ function hostedDownloadLayout(args: GetHostedSiteFilesArgs): LinkLayout | null {
     }
   }
   return null;
-}
-
-function isPublicHostedSiteUrl(
-  args: GetHostedSiteFilesArgs,
-  deploymentId: string | undefined,
-  registeredSite: boolean,
-): boolean {
-  return registeredSite || (!deploymentId && args.hostname !== undefined);
 }
 
 const signAuthorizedHostedFiles$ = command(
@@ -1826,22 +1785,6 @@ export const getHostedSiteFiles$ = command(
     }
     // A public site URL identifies its published bytes, including older sites
     // that predate the delivery registry. It cannot select a newer private draft.
-    const publicSiteUrl = isPublicHostedSiteUrl(
-      args,
-      deploymentId,
-      publication?.kind === "legacy",
-    );
-    if (!owned && !publicSiteUrl) {
-      const shared = await set(
-        sharedHostedSiteFiles$,
-        args,
-        deploymentId,
-        signal,
-      );
-      if (shared) {
-        return { status: "ok", body: shared };
-      }
-    }
     const target =
       owned ??
       (deploymentId
@@ -1994,59 +1937,6 @@ const ownedHostedSiteForDeletion$ = command(
   },
 );
 
-/**
- * Historical private publications may carry a share link served from its own
- * snapshot. Revoke it before the private versions stop being share targets.
- */
-const revokeHostedSiteShare$ = command(
-  async ({ get, set }, site: HostedSiteRow, signal: AbortSignal) => {
-    const db = get(db$);
-    const [share] = await db
-      .select({ id: artifactShares.id })
-      .from(artifactShares)
-      .where(
-        and(
-          eq(artifactShares.targetKind, "html"),
-          eq(artifactShares.targetId, site.id),
-        ),
-      )
-      .limit(1);
-    signal.throwIfAborted();
-    if (!share) {
-      return;
-    }
-    const [privateDeployment] = await db
-      .select({ id: privateHostedDeployments.id })
-      .from(privateHostedDeployments)
-      .where(
-        and(
-          eq(privateHostedDeployments.siteId, site.id),
-          eq(privateHostedDeployments.userId, site.userId),
-          eq(privateHostedDeployments.status, "ready"),
-        ),
-      )
-      .limit(1);
-    signal.throwIfAborted();
-    // Without a ready private version, an earlier deletion already revoked it.
-    if (!privateDeployment) {
-      return;
-    }
-    const revoked = await set(
-      updateArtifactShare$,
-      {
-        target: { kind: "html", id: privateDeployment.id },
-        userId: site.userId,
-        orgId: site.orgId,
-        audience: "private",
-      },
-      signal,
-    );
-    if (!revoked) {
-      throw new Error("Hosted site share could not be revoked");
-    }
-  },
-);
-
 /** Delivery records are removed only when they still route to this site. */
 const ownedDeliveryRecordKeys$ = command(
   async (
@@ -2189,8 +2079,6 @@ export const deleteHostedSite$ = command(
     if (!candidate) {
       return notFound;
     }
-    await set(revokeHostedSiteShare$, candidate, signal);
-    signal.throwIfAborted();
 
     const db = get(db$);
     const layout = rowLinkLayout(candidate);

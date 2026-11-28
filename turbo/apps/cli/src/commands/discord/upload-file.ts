@@ -1,17 +1,16 @@
-import { createHash, randomUUID } from "node:crypto";
+import { createHash } from "node:crypto";
 import { open } from "node:fs/promises";
 import { basename } from "node:path";
 import { MIMEType } from "node:util";
-import { Command, Option } from "commander";
+import { Command } from "commander";
 import {
   MAX_DISCORD_FILE_SIZE_BYTES,
+  type DiscordUploadCompleteResponse,
   type DiscordUploadInitResponse,
-  type DiscordUploadMaterializeResponse,
 } from "@okouai/api-contracts/contracts/integrations-discord-files";
 import {
   completeDiscordFileUpload,
   initDiscordFileUpload,
-  materializeDiscordFileUpload,
 } from "../../lib/api/domains/integrations-discord-files";
 import { inferWebUploadContentType } from "../../lib/api/domains/web";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
@@ -29,7 +28,6 @@ interface UploadFileOptions {
   readonly guildId?: string;
   readonly text?: string;
   readonly contentType?: string;
-  readonly operationId?: string;
   readonly json?: boolean;
 }
 
@@ -70,7 +68,6 @@ async function uploadCanonicalBody(
   contentType: string,
   content: Buffer,
 ): Promise<void> {
-  if (!initialized.uploadUrl) return;
   const headers = new Headers(initialized.uploadHeaders);
   if (headers.has("authorization") || headers.has("cookie")) {
     throw new Error("Canonical upload must not carry authentication headers");
@@ -88,7 +85,7 @@ async function uploadCanonicalBody(
 }
 
 function printDelivery(
-  result: DiscordUploadMaterializeResponse,
+  result: DiscordUploadCompleteResponse,
   upload: {
     readonly channelId: string | null;
     readonly filename: string;
@@ -116,7 +113,6 @@ function printDelivery(
       delivery: {
         status: delivery.status,
         ...(delivery.status === "failed" ? { error: delivery.message } : {}),
-        operationId: result.operationId,
       },
     },
     upload,
@@ -132,7 +128,6 @@ async function uploadFile(options: UploadFileOptions): Promise<void> {
   const contentType = new MIMEType(
     options.contentType ?? inferWebUploadContentType(options.file),
   ).essence;
-  const operationId = options.operationId ?? randomUUID();
   const filename = basename(options.file);
   const upload = {
     channelId: destination.channelId ?? null,
@@ -141,32 +136,23 @@ async function uploadFile(options: UploadFileOptions): Promise<void> {
     size: content.byteLength,
     json: options.json,
   };
-  // External IM delivery is fire-and-forget; generate a fresh operationId for
-  // Release 1 backend compatibility without exposing a retry state machine.
+  const sharedDestination = {
+    ...destination,
+    ...(options.guildId === undefined ? {} : { guildId: options.guildId }),
+    ...(options.text === undefined ? {} : { comment: options.text }),
+  };
   const initialized = await initDiscordFileUpload({
     filename,
     length: content.byteLength,
     contentType,
     checksumSha256: createHash("sha256").update(content).digest("hex"),
-    operationId,
-    ...destination,
-    ...(options.guildId === undefined ? {} : { guildId: options.guildId }),
-    ...(options.text === undefined ? {} : { comment: options.text }),
+    ...sharedDestination,
   });
   await uploadCanonicalBody(initialized, contentType, content);
-  const operation = { assetId: initialized.assetId, operationId };
-  const materialized = await materializeDiscordFileUpload(operation);
-  if (materialized.delivery.status === "delivered") {
-    printDelivery(materialized, upload);
-    return;
-  }
-  let completed: DiscordUploadMaterializeResponse;
-  try {
-    completed = await completeDiscordFileUpload(operation);
-  } catch (error) {
-    printDelivery(materialized, upload);
-    throw error;
-  }
+  const completed = await completeDiscordFileUpload({
+    assetId: initialized.assetId,
+    ...sharedDestination,
+  });
   printDelivery(completed, upload);
 }
 
@@ -189,12 +175,6 @@ export const uploadFileCommand = new Command()
   )
   .option("-t, --text <text>", "Comment to accompany the file")
   .option("--content-type <mime>", "Override inferred content type")
-  .addOption(
-    new Option(
-      "--operation-id <uuid>",
-      "Deprecated: internal upload operation ID (kept for script compatibility)",
-    ).hideHelp(),
-  )
   .option(JSON_OPTION_FLAGS, JSON_OPTION_DESCRIPTION)
   .addHelpText(
     "after",
@@ -207,8 +187,8 @@ Examples:
 Output:
   Prints "✓ File uploaded" with the Discord message ID, permalink, and Okou file URL.
   With --json, prints one JSON object:
-    {"integration":"discord","chatId":"123456789012345678","messages":[{"id":"...","url":"https://discord.com/channels/..."}],"file":{"name":"report.pdf","contentType":"application/pdf","size":12345,"url":"https://..."},"delivery":{"status":"delivered","operationId":"..."}}
-  delivery.status is delivered, pending, or failed; messages is empty until delivered.
+    {"integration":"discord","chatId":"123456789012345678","messages":[{"id":"...","url":"https://discord.com/channels/..."}],"file":{"name":"report.pdf","contentType":"application/pdf","size":12345,"url":"https://..."},"delivery":{"status":"delivered"}}
+  delivery.status is delivered or failed; messages is empty when failed.
 
 Notes:
   - Canonical publication completes before Discord delivery begins.
@@ -217,6 +197,6 @@ Notes:
   - Requires your verified Discord binding; guild targets require shared access.
   - Recipient DMs follow Discord privacy settings and grant no private read access.
   - Like okou slack upload-file, the command exits 0 whenever the server reports a
-    delivery status, even if Discord delivery failed or is pending.`,
+    delivery status, even if Discord delivery failed.`,
   )
   .action(withErrorHandler(uploadFile));

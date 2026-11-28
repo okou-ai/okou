@@ -3,11 +3,11 @@ import { command, computed, state, type Computed } from "ccstate";
 import { artifactReferencesContract } from "@okouai/api-contracts/client/artifact-references";
 import { parseArtifactReference } from "@okouai/api-contracts/validators/artifact-references";
 import { artifactAccessContract } from "@okouai/api-contracts/client/artifact-access";
-import type { ArtifactVisibilityResponse } from "@okouai/api-contracts/contracts/artifact-access";
 import type {
-  ArtifactShareStatus,
-  ArtifactShareTarget,
-} from "@okouai/api-contracts/contracts/artifact-shares";
+  ArtifactVisibilityResponse,
+  ArtifactVisibilityValue,
+} from "@okouai/api-contracts/contracts/artifact-access";
+import type { ArtifactShareTarget } from "@okouai/api-contracts/contracts/artifact-shares";
 import { toast } from "@okouai/ui/components/ui/sonner";
 import { i18n } from "../i18n/index.ts";
 import { accept } from "../lib/accept.ts";
@@ -43,6 +43,18 @@ export interface ArtifactShareSource {
     Promise<ArtifactShareIdentity | null>
   >;
 }
+export interface ArtifactShareStatus {
+  readonly ownerUrl: string;
+  readonly shareId: string | null;
+  readonly audience: ArtifactVisibilityValue;
+  readonly organization: { readonly id: string; readonly name: string };
+  readonly selectedTarget: ArtifactShareTarget | null;
+  readonly selectedVersion: number | null;
+  readonly candidateVersion: number | null;
+  readonly url: string | null;
+  readonly shortUrl: string | null;
+}
+
 type Audience = ArtifactShareStatus["audience"];
 
 function visibilityToShareStatus(
@@ -122,7 +134,18 @@ async function loadShareDetails(
   }
   // Viewing access does not imply ownership. Only this endpoint authorizes the
   // permission controls; its 404 response identifies a read-only recipient.
-  const queryArtifactId = source.artifactId ?? target.id;
+  // Files without a canonical artifactId (e.g. user uploads) are not managed
+  // artifacts and remain owner-only with link copy only.
+  const queryArtifactId = source.artifactId ?? resolved?.artifactId;
+  if (!queryArtifactId) {
+    return {
+      target,
+      artifactId: target.id,
+      status: null,
+      audience: undefined,
+      copyUrl: new URL(source.copyUrl ?? source.url, location.origin).href,
+    };
+  }
   const result = await accept(
     client(artifactAccessContract).getVisibility({
       params: { artifactId: queryArtifactId },

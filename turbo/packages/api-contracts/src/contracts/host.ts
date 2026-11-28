@@ -26,7 +26,6 @@ import { apiErrorSchema } from "./errors";
 import {
   hostedSiteAccessDecisionSchema,
   hostedSiteVisibilitySchema,
-  hostedSiteVisibilityStatusSchema,
   hostedSiteDownloadAuthorizationSchema,
   hostedSiteAuthProofSchema,
   hostedSiteAuthCodeSchema,
@@ -48,6 +47,7 @@ export const hostedSiteTitleResponseSchema = object({
 
 export const hostedSiteUrlSchema = object({
   siteId: uuid(),
+  artifactId: uuid().optional(),
   publicSlug: string(),
   url: url(),
   isActive: boolean(),
@@ -440,38 +440,6 @@ export const hostContract = c.router({
     },
     summary:
       "Resolve a website preview to an anonymous or expiring resource address",
-  },
-  siteVisibility: {
-    method: "GET",
-    path: "/api/host/sites/:siteId/visibility",
-    pathParams: object({ siteId: uuid() }),
-    headers: authHeadersSchema,
-    responses: {
-      200: hostedSiteVisibilityStatusSchema,
-      401: apiErrorSchema,
-      403: apiErrorSchema,
-      404: apiErrorSchema,
-    },
-    summary: "Read an owned published site's visibility",
-  },
-  updateSiteVisibility: {
-    method: "PATCH",
-    path: "/api/host/sites/:siteId/visibility",
-    pathParams: object({ siteId: uuid() }),
-    headers: authHeadersSchema,
-    body: object({
-      visibility: hostedSiteVisibilitySchema,
-      expectedRevision: uuid().nullable(),
-    }),
-    responses: {
-      200: hostedSiteVisibilityStatusSchema,
-      400: apiErrorSchema,
-      401: apiErrorSchema,
-      403: apiErrorSchema,
-      404: apiErrorSchema,
-      409: apiErrorSchema,
-    },
-    summary: "Change an owned published site's visibility",
   },
   siteBanner: {
     method: "GET",

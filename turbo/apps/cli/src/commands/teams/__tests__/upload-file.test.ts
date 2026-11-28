@@ -73,7 +73,6 @@ describe("okou teams upload-file command", () => {
   ])("prints upload URL $url", async (testCase) => {
     const { url, expectedUrl, appUrl, activityId } = testCase;
     vi.stubEnv("OKOU_APP_URL", appUrl);
-    let operationId: string | undefined;
     let putReceivedContentType: string | null = null;
     let completeBody: Record<string, unknown> | undefined;
 
@@ -85,16 +84,18 @@ describe("okou teams upload-file command", () => {
             "Bearer test-token",
           );
           const body = await request.json();
-          operationId = body.canonical?.operationId;
           expect(body).toMatchObject({
             filename: "report.pdf",
             contentType: "application/pdf",
             length: 17,
-            canonical: { version: 2, operationId: expect.any(String) },
+            conversationId: "19:thread@thread.tacv2",
+            activityId: "root-activity",
+            text: "Daily report",
+            checksumSha256: createHash("sha256")
+              .update("teams pdf content")
+              .digest("hex"),
           });
           return HttpResponse.json({
-            operationId,
-            uploadRequired: true,
             uploadId: "00000000-0000-4000-8000-000000000001",
             uploadUrl: R2_UPLOAD_URL,
             fileUrl: url,
@@ -145,7 +146,6 @@ describe("okou teams upload-file command", () => {
 
     expect(putReceivedContentType).toBe("application/pdf");
     expect(completeBody).toStrictEqual({
-      operationId,
       uploadId: "00000000-0000-4000-8000-000000000001",
       conversationId: "19:thread@thread.tacv2",
       activityId: "root-activity",
@@ -168,21 +168,17 @@ describe("okou teams upload-file command", () => {
   });
 
   it("uploads to the current user's personal conversation with --to me", async () => {
-    let operationId: string | undefined;
     let completeBody: Record<string, unknown> | undefined;
     server.use(
       http.post<never, TeamsUploadInitBody>(
         UPLOAD_INIT_URL,
         async ({ request }) => {
           const body = await request.json();
-          expect(body.canonical).toMatchObject({
-            version: 2,
-            operationId: expect.any(String),
+          expect(body).toMatchObject({
+            user: "me",
+            filename: "report.pdf",
           });
-          operationId = body.canonical?.operationId;
           return HttpResponse.json({
-            operationId,
-            uploadRequired: true,
             uploadHeaders: {},
             uploadId: "00000000-0000-4000-8000-000000000001",
             uploadUrl: R2_UPLOAD_URL,
@@ -220,7 +216,6 @@ describe("okou teams upload-file command", () => {
     ]);
 
     expect(completeBody).toStrictEqual({
-      operationId,
       uploadId: "00000000-0000-4000-8000-000000000001",
       user: "me",
       contentType: "application/pdf",
@@ -245,111 +240,6 @@ describe("okou teams upload-file command", () => {
 
     expect(mockConsoleError).toHaveBeenCalledWith(
       expect.stringContaining("File not found"),
-    );
-  });
-  it.each([true, false])(
-    "preserves a Teams operation identity when uploadRequired is %s",
-    async (uploadRequired) => {
-      const operationId = "a0000000-0000-4000-a000-000000000042";
-      const uploadId = "a0000000-0000-4000-a000-000000000043";
-      let uploads = 0;
-      server.use(
-        http.post(UPLOAD_INIT_URL, async ({ request }) => {
-          expect(await request.json()).toMatchObject({
-            canonical: {
-              version: 2,
-              operationId,
-              checksumSha256: createHash("sha256")
-                .update("teams pdf content")
-                .digest("hex"),
-              conversationId: "19:thread@thread.tacv2",
-              activityId: "thread-root",
-              text: "Pinned report",
-            },
-          });
-          return HttpResponse.json({
-            uploadId,
-            operationId,
-            uploadRequired,
-            uploadUrl: uploadRequired ? R2_UPLOAD_URL : "",
-            uploadHeaders: {},
-            fileUrl: "https://files.example/report.pdf",
-            filename: "report.pdf",
-            contentType: "application/pdf",
-            size: 17,
-          });
-        }),
-        http.put(R2_UPLOAD_URL, () => {
-          uploads++;
-          return new HttpResponse(null, { status: 200 });
-        }),
-        http.post(UPLOAD_COMPLETE_URL, async ({ request }) => {
-          expect(await request.json()).toMatchObject({
-            uploadId,
-            operationId,
-            conversationId: "19:thread@thread.tacv2",
-          });
-          return HttpResponse.json({
-            activityId: "saved-activity",
-            conversationId: "19:thread@thread.tacv2",
-            filename: "report.pdf",
-            mimetype: "application/pdf",
-            size: 17,
-            url: "https://files.example/report.pdf",
-          });
-        }),
-      );
-      await uploadFileCommand.parseAsync([
-        "node",
-        "cli",
-        "--file",
-        testFilePath,
-        "--to",
-        "19:thread@thread.tacv2",
-        "--reply-to",
-        "thread-root",
-        "--text",
-        "Pinned report",
-        "--operation-id",
-        operationId,
-        "--json",
-      ]);
-      expect(uploads).toBe(uploadRequired ? 1 : 0);
-      expect(
-        JSON.parse(mockConsoleLog.mock.calls.flat().join("\n")),
-      ).toMatchObject({ messages: [{ id: "saved-activity", url: null }] });
-    },
-  );
-  it("does not upload or send when the API changes the operation identity", async () => {
-    server.use(
-      http.post(UPLOAD_INIT_URL, () => {
-        return HttpResponse.json({
-          uploadId: "a0000000-0000-4000-a000-000000000043",
-          operationId: "a0000000-0000-4000-a000-000000000099",
-          uploadRequired: true,
-          uploadUrl: R2_UPLOAD_URL,
-          fileUrl: "https://files.example/report.pdf",
-          filename: "report.pdf",
-          contentType: "application/pdf",
-          size: 17,
-          uploadHeaders: {},
-        });
-      }),
-    );
-    await expect(
-      uploadFileCommand.parseAsync([
-        "node",
-        "cli",
-        "--file",
-        testFilePath,
-        "--to",
-        "me",
-        "--operation-id",
-        "a0000000-0000-4000-a000-000000000042",
-      ]),
-    ).rejects.toThrow("process.exit called");
-    expect(mockConsoleError).toHaveBeenCalledWith(
-      expect.stringContaining("did not acknowledge this operation"),
     );
   });
 });

@@ -2,8 +2,8 @@ import { randomUUID } from "node:crypto";
 import { Readable } from "node:stream";
 import { GetObjectCommand, HeadObjectCommand } from "@aws-sdk/client-s3";
 import { ARTIFACT_OG_BRAND } from "@okouai/core/artifact-og";
+import { artifactAccessContract } from "@okouai/api-contracts/contracts/artifact-access";
 import { artifactReferencePath } from "@okouai/api-contracts/contracts/artifact-references";
-import { artifactSharesContract } from "@okouai/api-contracts/contracts/artifact-shares";
 import { uploadsContract } from "@okouai/api-contracts/contracts/uploads";
 import { integrationsSlackContract } from "@okouai/api-contracts/contracts/integrations-slack";
 import { http, HttpResponse } from "msw";
@@ -16,7 +16,7 @@ import { accept, testContext } from "../../../__tests__/test-context";
 import { env } from "../../../lib/env";
 import { server } from "../../../mocks/server";
 import { flushWaitUntilForTest } from "../../context/wait-until";
-import { artifactShareRoutes } from "../artifact-shares";
+import { artifactAccessRoutes } from "../artifact-access";
 import { integrationsSlackRoutes } from "../integrations-slack";
 import { slackEventsRoutes } from "../slack-events";
 import { uploadsPrepareRoutes } from "../uploads-prepare";
@@ -189,8 +189,8 @@ function sharing(actor: { readonly userId: string; readonly orgId: string }) {
       ],
     },
   );
-  return setupAppWithRoutes({ context, routes: artifactShareRoutes })(
-    artifactSharesContract,
+  return setupAppWithRoutes({ context, routes: artifactAccessRoutes })(
+    artifactAccessContract,
   );
 }
 
@@ -874,7 +874,11 @@ describe("Slack link previews", () => {
       expect(f.pageRequests).toHaveLength(0);
 
       const organization = await accept(
-        shares.update({ headers, body: { target, audience: "organization" } }),
+        shares.updateVisibility({
+          headers,
+          params: { artifactId: target.id },
+          body: { visibility: "organization" },
+        }),
         [200],
       );
       if (!organization.body.shortUrl) {
@@ -889,10 +893,14 @@ describe("Slack link previews", () => {
       expect(f.pageRequests).toHaveLength(0);
 
       const published = await accept(
-        shares.update({ headers, body: { target, audience: "public" } }),
+        shares.updateVisibility({
+          headers,
+          params: { artifactId: target.id },
+          body: { visibility: "public" },
+        }),
         [200],
       );
-      if (!published.body.url) {
+      if (!published.body.shareUrl) {
         throw new Error("Expected a public sharing URL");
       }
       const publicUrls = [...new Set([...urls, organization.body.shortUrl])];
@@ -923,7 +931,11 @@ describe("Slack link previews", () => {
       expect(f.pageRequests).toHaveLength(0);
 
       await accept(
-        shares.update({ headers, body: { target, audience: "private" } }),
+        shares.updateVisibility({
+          headers,
+          params: { artifactId: target.id },
+          body: { visibility: "private" },
+        }),
         [200],
       );
       context.mocks.slack.chat.unfurl.mockClear();

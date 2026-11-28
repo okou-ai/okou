@@ -1,9 +1,18 @@
 import { canReadSharedThreadPolicy$ } from "./shared-thread-access.service";
 import { randomUUID } from "node:crypto";
 import { command, computed } from "ccstate";
-import { and, count, eq, exists, inArray, isNull, sql } from "drizzle-orm";
+import {
+  and,
+  count,
+  eq,
+  exists,
+  inArray,
+  isNotNull,
+  isNull,
+  sql,
+} from "drizzle-orm";
 import { artifacts } from "@okouai/db/schema/artifact";
-import { runUploadedFiles } from "@okouai/db/schema/run-uploaded-file";
+import { files } from "@okouai/db/schema/file";
 import { sharedThreads } from "@okouai/db/schema/shared-thread";
 import type { ArtifactDeliveryRecord } from "@okouai/api-contracts/contracts/artifact-delivery";
 import type { HostedSiteFilesResponse } from "@okouai/api-contracts/contracts/host";
@@ -321,14 +330,14 @@ function createSharedThreadPublication(plan: SharedThreadArtifactPlan) {
         : exists(
             db
               .select({ total: count() })
-              .from(runUploadedFiles)
+              .from(files)
               .where(
                 and(
-                  inArray(runUploadedFiles.id, attachmentIds),
-                  eq(runUploadedFiles.userId, ownerId),
-                  eq(runUploadedFiles.orgId, orgId),
-                  isNull(runUploadedFiles.deletedAt),
-                  eq(runUploadedFiles.materializationStatus, "ready"),
+                  inArray(files.id, attachmentIds),
+                  eq(files.ownerUserId, ownerId),
+                  eq(files.orgId, orgId),
+                  isNull(files.deletedAt),
+                  isNotNull(files.sizeBytes),
                 ),
               )
               .having(eq(count(), attachmentIds.length)),

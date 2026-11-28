@@ -5,6 +5,7 @@ import {
   AbortMultipartUploadCommand,
   CompleteMultipartUploadCommand,
   CreateMultipartUploadCommand,
+  GetObjectCommand,
   HeadObjectCommand,
   ListObjectsV2Command,
   ListPartsCommand,
@@ -184,7 +185,31 @@ describe("multipart user artifact uploads", () => {
     const uploadedParts = Array.from({ length: 512 }, (_, index) => {
       return { PartNumber: index + 1, ETag: `"etag-${index + 1}"` };
     });
+    const referenceObjects = new Map<string, string>();
     context.mocks.s3.send.mockImplementation((command: unknown) => {
+      if (command instanceof PutObjectCommand && command.input.Key) {
+        referenceObjects.set(
+          command.input.Key,
+          String(command.input.Body ?? ""),
+        );
+        return Promise.resolve({});
+      }
+      if (command instanceof GetObjectCommand && command.input.Key) {
+        const stored = referenceObjects.get(command.input.Key);
+        if (stored !== undefined) {
+          return Promise.resolve({
+            ETag: '"etag"',
+            Body: {
+              async *[Symbol.asyncIterator]() {
+                yield Buffer.from(stored);
+              },
+            },
+          });
+        }
+        return Promise.reject(
+          Object.assign(new Error("NoSuchKey"), { name: "NoSuchKey" }),
+        );
+      }
       if (command instanceof CreateMultipartUploadCommand) {
         return Promise.resolve({ UploadId: "five-gib-upload" });
       }

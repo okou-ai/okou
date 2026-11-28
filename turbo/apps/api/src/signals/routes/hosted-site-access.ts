@@ -6,11 +6,7 @@ import { authContext$, organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { setResHeader$ } from "../context/hono";
 import { bodyResultOf, pathParamsOf, queryOf } from "../context/request";
-import {
-  checkHostedSiteAccess$,
-  getHostedSiteVisibility$,
-  updateHostedSiteVisibility$,
-} from "../services/hosted-site-access.service";
+import { checkHostedSiteAccess$ } from "../services/hosted-site-access.service";
 import { authorizeHostedSiteDownload$ } from "../services/hosted-site-download.service";
 import {
   artifactPaywallApplies$,
@@ -26,7 +22,6 @@ import {
   hostedSiteSessionViewer$,
 } from "../services/hosted-site-sessions.service";
 import { conflict, notFound, resourceUnavailable } from "../../lib/error";
-import { recordLegacyArtifactEndpointCall$ } from "../services/legacy-artifact-deprecation-telemetry";
 import type { RouteEntry } from "../route-entry";
 
 const preview$ = command(async ({ get, set }, signal: AbortSignal) => {
@@ -51,58 +46,6 @@ const preview$ = command(async ({ get, set }, signal: AbortSignal) => {
     status: 200 as const,
     body: { ...body, ...(previewImageUrl ? { previewImageUrl } : {}) },
   };
-});
-
-const read$ = command(async ({ get, set }, signal: AbortSignal) => {
-  set(setResHeader$, "Cache-Control", "private, no-store");
-  const auth = get(organizationAuthContext$);
-  set(recordLegacyArtifactEndpointCall$, {
-    endpoint: "GET /api/host/sites/:siteId/visibility",
-    orgId: auth.orgId,
-    userId: auth.userId,
-  });
-  const body = await set(
-    getHostedSiteVisibility$,
-    {
-      ...auth,
-      ...get(pathParamsOf(hostContract.siteVisibility)),
-    },
-    signal,
-  );
-  return body
-    ? { status: 200 as const, body }
-    : notFound("Published website not found");
-});
-
-const update$ = command(async ({ get, set }, signal: AbortSignal) => {
-  set(setResHeader$, "Cache-Control", "private, no-store");
-  const auth = get(organizationAuthContext$);
-  set(recordLegacyArtifactEndpointCall$, {
-    endpoint: "PATCH /api/host/sites/:siteId/visibility",
-    orgId: auth.orgId,
-    userId: auth.userId,
-  });
-  const body = await get(bodyResultOf(hostContract.updateSiteVisibility));
-  signal.throwIfAborted();
-  if (!body.ok) {
-    return body.response;
-  }
-  const result = await set(
-    updateHostedSiteVisibility$,
-    {
-      ...auth,
-      ...get(pathParamsOf(hostContract.updateSiteVisibility)),
-      ...body.data,
-    },
-    signal,
-  );
-  if (result.status === "not_found") {
-    return notFound("Published website not found");
-  }
-  if (result.status === "conflict") {
-    return conflict("Website visibility changed; reload before editing");
-  }
-  return { status: 200 as const, body: result.body };
 });
 
 const access$ = command(async ({ get, set }, signal: AbortSignal) => {
@@ -253,11 +196,6 @@ export const hostedSiteAccessRoutes: readonly RouteEntry[] = [
   },
   { route: hostContract.authorizeSiteSession, handler: authorizeSession$ },
   { route: hostContract.exchangeSiteSession, handler: exchangeSession$ },
-  { route: hostContract.siteVisibility, handler: authRoute(ownerAuth, read$) },
-  {
-    route: hostContract.updateSiteVisibility,
-    handler: authRoute(ownerAuth, update$),
-  },
   { route: hostContract.siteAccess, handler: access$ },
   { route: hostContract.downloadAuthorization, handler: download$ },
 ];

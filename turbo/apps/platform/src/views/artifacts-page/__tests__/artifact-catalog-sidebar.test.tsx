@@ -163,6 +163,7 @@ test("Switching catalog websites cancels the previous domain read and shows the 
     return {
       item,
       siteId: item.id,
+      artifactId: item.id,
       publicSlug: slug,
       url: `https://${slug}.okou.app`,
       isActive: true,
@@ -571,6 +572,7 @@ test("Sharing follows a changed website URL from a publication notification", as
   context.mocks.api(hostContract.siteUrl, ({ respond }) => {
     return respond(200, {
       siteId,
+      artifactId: summary.id,
       publicSlug: slug,
       url: url(),
       isActive: true,

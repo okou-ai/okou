@@ -11,31 +11,20 @@ import {
   chatThreadEventsContract,
   chatThreadsContract,
 } from "@okouai/api-contracts/contracts/chat-threads";
-import {
-  CLIENT_TYPE_HEADER,
-  CLIENT_TYPE_IOS,
-} from "@okouai/api-contracts/contracts/client-headers";
 import { uuid } from "zod";
 
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
-import { request$ } from "../context/hono";
 import { bodyResultOf, pathParamsOf, queryOf } from "../context/request";
 import { generatePresignedGetUrl } from "../external/s3";
 import { notFound } from "../../lib/error";
 import { env } from "../../lib/env";
 import { PRESIGNED_URL_TTL_SECONDS } from "@okouai/api-contracts/contracts/presigned-urls";
 import {
-  applyGoogleDriveArtifactSyncStatuses,
-  googleDriveArtifactStatusLookup$,
-} from "../services/google-drive-artifact-sync.service";
-import {
   chatIndicators,
-  chatThreadArtifacts,
   chatThreadDetail,
   chatThreadDraftIds,
 } from "../services/chat-thread.service";
-import { recordLegacyArtifactEndpointCall$ } from "../services/legacy-artifact-deprecation-telemetry";
 import { chatSearch } from "../services/chat-search.service";
 import {
   catchUpChatThreadEvents,
@@ -337,50 +326,29 @@ const listChatThreadDraftsInner$ = computed(async (get) => {
   };
 });
 
+// Bounded iOS 0.73.0 App Review lock (#51517) compatibility stub: returns an
+// empty inventory after checking thread ownership without reading retired tables.
 const listChatThreadArtifactsInner$ = command(
-  async ({ get, set }, signal: AbortSignal) => {
+  async ({ get }, signal: AbortSignal) => {
     const auth = get(organizationAuthContext$);
-    set(recordLegacyArtifactEndpointCall$, {
-      endpoint: "GET /api/chat-threads/:threadId/artifacts",
-      orgId: auth.orgId,
-      userId: auth.userId,
-    });
     const params = get(pathParamsOf(chatThreadArtifactsContract.list));
-    // Native iOS previews use the file inventory independently of Drive.
-    const includeDriveStatus =
-      get(request$).header(CLIENT_TYPE_HEADER) !== CLIENT_TYPE_IOS;
-    const [runs, lookup] = await Promise.all([
-      get(
-        chatThreadArtifacts({
-          orgId: auth.orgId,
-          threadId: params.threadId,
-          userId: auth.userId,
-        }),
-      ),
-      includeDriveStatus
-        ? set(
-            googleDriveArtifactStatusLookup$,
-            {
-              threadId: params.threadId,
-              orgId: auth.orgId,
-              userId: auth.userId,
-            },
-            signal,
-          )
-        : undefined,
-    ]);
-    signal.throwIfAborted();
-    if (!runs) {
+    if (!isValidChatThreadId(params.threadId)) {
       return chatThreadNotFound();
     }
-
+    const thread = await get(
+      chatThreadDetail({
+        orgId: auth.orgId,
+        threadId: params.threadId,
+        userId: auth.userId,
+      }),
+    );
+    signal.throwIfAborted();
+    if (!thread) {
+      return chatThreadNotFound();
+    }
     return {
       status: 200 as const,
-      body: {
-        runs: lookup
-          ? applyGoogleDriveArtifactSyncStatuses(runs, lookup)
-          : runs,
-      },
+      body: { runs: [] },
     };
   },
 );

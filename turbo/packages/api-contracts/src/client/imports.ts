@@ -81,22 +81,6 @@ export const clientContractImportManifest = [
     ],
   },
   {
-    module: "artifact-shares",
-    contracts: ["artifactSharesContract"],
-    bindings: [
-      {
-        name: "artifactShareTargetSchema",
-        source: "validators/artifact-shares",
-        imported: "artifactShareTargetSchema",
-      },
-    ],
-  },
-  {
-    module: "artifact-sharing",
-    contracts: ["artifactSharingContract"],
-    bindings: [],
-  },
-  {
     module: "atom-subscription-grants",
     contracts: ["atomSubscriptionGrantsContract"],
     bindings: [],
@@ -632,7 +616,6 @@ export const clientContractImportManifest = [
       "cronProcessUsageEventsContract",
       "cronProjectChatEventSearchContract",
       "cronPruneStoragePresignedUrlsContract",
-      "cronReconcileArtifactCatalogContract",
       "cronReconcileBillingEntitlementsContract",
       "cronReconcileImageGenerationsContract",
       "cronRenewGmailWatchesContract",
@@ -987,11 +970,6 @@ export const clientContractImportManifest = [
     ],
   },
   {
-    module: "hosted-site-sharing",
-    contracts: ["hostedSiteSharingContract"],
-    bindings: [],
-  },
-  {
     module: "image-io-generate",
     contracts: ["imageIoGenerateContract"],
     bindings: [],
@@ -1051,7 +1029,6 @@ export const clientContractImportManifest = [
       "integrationsDiscordDownloadFileContract",
       "integrationsDiscordUploadCompleteContract",
       "integrationsDiscordUploadInitContract",
-      "integrationsDiscordUploadMaterializeContract",
     ],
     bindings: [],
   },
@@ -1113,7 +1090,6 @@ export const clientContractImportManifest = [
       "integrationsWechatDownloadFileContract",
       "integrationsWechatUploadCompleteContract",
       "integrationsWechatUploadInitContract",
-      "integrationsWechatUploadMaterializeContract",
     ],
     bindings: [],
   },

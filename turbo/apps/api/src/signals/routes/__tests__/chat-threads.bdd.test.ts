@@ -2,12 +2,10 @@ import { utils as compoundUtils, write as writeCompoundFile } from "cfb";
 import { HttpResponse } from "msw";
 import { getRequestListener } from "@hono/node-server";
 import { artifactGoogleDriveContract } from "@okouai/api-contracts/contracts/artifact-google-drive";
-import {
-  CLIENT_TYPE_HEADER,
-  CLIENT_TYPE_IOS,
-} from "@okouai/api-contracts/contracts/client-headers";
+import { artifactReferencesContract } from "@okouai/api-contracts/contracts/artifact-references";
 import { hostContract } from "@okouai/api-contracts/contracts/host";
 import { hostRoutes } from "../host";
+import { artifactReferenceRoutes } from "../artifact-references";
 import { webFilesContract } from "@okouai/api-contracts/contracts/web-files";
 import {
   GOOGLE_WORKSPACE_MIME_TYPES,
@@ -15,7 +13,6 @@ import {
 } from "@okouai/core/google-workspace-conversion";
 import { chatThreadsArtifactsSyncRoutes } from "../chat-threads-artifacts-sync";
 import {
-  chatThreadArtifactsContract,
   chatThreadConnectorSelectionContract,
   chatThreadsContract,
   chatThreadUsageContract,
@@ -377,18 +374,35 @@ async function allThreadEvents(actor: ApiTestUser) {
   return (await threadEventPage(actor)).events;
 }
 
-type ThreadArtifacts = Awaited<ReturnType<typeof chat.listThreadArtifacts>>;
+async function driveStatus(
+  actor: ApiTestUser,
+  publicationId: string,
+  chatThreadId: string,
+) {
+  const client = setupApp({ context, routes: artifactReferenceRoutes })(
+    artifactReferencesContract,
+  );
+  return (
+    await accept(
+      client.driveStatus({
+        headers: authHeaders(actor),
+        params: { publicationId },
+        query: { chatThreadId },
+      }),
+      [200],
+    )
+  ).body;
+}
 
-function expectDriveStatuses(
-  artifacts: ThreadArtifacts,
+async function expectDriveStatusForFiles(
+  actor: ApiTestUser,
+  threadId: string,
+  fileIds: readonly string[],
   expected: ChatThreadArtifactGoogleDriveSync,
-): void {
-  const files = artifacts.runs.flatMap((run) => {
-    return run.files;
-  });
-  expect(files.length).toBeGreaterThan(0);
-  for (const file of files) {
-    expect(file.googleDriveSync).toStrictEqual(expected);
+): Promise<void> {
+  for (const fileId of fileIds) {
+    const status = await driveStatus(actor, fileId, threadId);
+    expect(status.googleDriveSync).toStrictEqual(expected);
   }
 }
 
@@ -1683,15 +1697,11 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
         "/assets/style-5e0c7a94.css": css,
       });
       await chat.completeHostedSiteWithBearer(bearer, prepared.deploymentId);
-      const artifacts = await chat.listThreadArtifacts(actor, run.threadId);
-      const artifact = artifacts.runs
-        .flatMap((item) => {
-          return item.files;
-        })
-        .find((file) => {
-          return file.url === prepared.artifactUrl;
-        });
-      if (!artifact?.artifactId) {
+      const catalog = await chat.listArtifactCatalog(actor, {
+        chatThreadId: run.threadId,
+      });
+      const artifact = catalog.artifacts[0];
+      if (!artifact) {
         throw new Error("Expected hosted artifact with a catalog id");
       }
       mockGoogleDriveConnectorOAuth();
@@ -1710,14 +1720,14 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
       });
       const synced = await chat.requestUploadArtifactToGoogleDrive(
         actor,
-        artifact.artifactId,
+        artifact.id,
         { chatThreadId: run.threadId, mode: "original" },
         [200],
       );
       expect(synced.body).toMatchObject({ id: "private-drive-file" });
       expect(context.mocks.ably.publish).toHaveBeenCalledWith(
         "artifact:changed",
-        { artifactId: artifact.artifactId },
+        { artifactId: artifact.id },
       );
       expect(upload.contentTypeHeaders).toStrictEqual(["application/zip"]);
       expect(upload.contentRangeHeaders[0]).toMatch(/^bytes 0-\d+\/\d+$/u);
@@ -1771,21 +1781,11 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
       "/assets/deck-8c4a2f60.css": css,
     });
     await chat.completeHostedSiteWithBearer(bearer, prepared.deploymentId);
-    // A public publication lists its canonical artifact URL and keeps the
-    // brand host as `aliasUrl`; only an owner-private one lists the alias.
-    const { artifactUrl } = prepared;
-    if (!artifactUrl) {
-      throw new Error("Expected a canonical artifact URL");
-    }
-    const artifacts = await chat.listThreadArtifacts(actor, run.threadId);
-    const artifact = artifacts.runs
-      .flatMap((item) => {
-        return item.files;
-      })
-      .find((file) => {
-        return file.url === artifactUrl;
-      });
-    if (!artifact?.artifactId) {
+    const catalog = await chat.listArtifactCatalog(actor, {
+      chatThreadId: run.threadId,
+    });
+    const artifact = catalog.artifacts[0];
+    if (!artifact) {
       throw new Error("Expected a public hosted artifact with a catalog id");
     }
     mockGoogleDriveConnectorOAuth();
@@ -1804,7 +1804,7 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
     });
     await chat.requestUploadArtifactToGoogleDrive(
       actor,
-      artifact.artifactId,
+      artifact.id,
       { chatThreadId: run.threadId, mode: "original" },
       [200],
     );
@@ -1846,15 +1846,11 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
     });
     await uploadHostedTextFiles(prepared, { "/index.html": index });
     await chat.completeHostedSiteWithBearer(bearer, prepared.deploymentId);
-    const artifacts = await chat.listThreadArtifacts(actor, run.threadId);
-    const artifact = artifacts.runs
-      .flatMap((item) => {
-        return item.files;
-      })
-      .find((file) => {
-        return file.url === prepared.artifactUrl;
-      });
-    if (!artifact?.artifactId) {
+    const catalog = await chat.listArtifactCatalog(actor, {
+      chatThreadId: run.threadId,
+    });
+    const artifact = catalog.artifacts[0];
+    if (!artifact) {
       throw new Error("Expected a hosted artifact with a catalog id");
     }
     mockGoogleDriveConnectorOAuth();
@@ -1873,7 +1869,7 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
     });
     await chat.requestUploadArtifactToGoogleDrive(
       actor,
-      artifact.artifactId,
+      artifact.id,
       { chatThreadId: run.threadId, mode: "original" },
       [200],
     );
@@ -1927,29 +1923,18 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
     await chat.completeUploadWithBearer(runBearer, { id: csvId }, [200]);
     await chat.completeUploadWithBearer(runBearer, { id: pdfId }, [200]);
 
-    let artifacts = await chat.listThreadArtifacts(actor, run.threadId);
-    expect(artifacts.runs).toHaveLength(1);
-    expect(artifacts.runs[0]?.runId).toBe(run.runId);
-    expect(artifacts.runs[0]?.files).toHaveLength(2);
-    const csvFile = artifacts.runs[0]?.files.find((file) => {
-      return file.id === csvId;
+    const catalog = await chat.listArtifactCatalog(actor, {
+      chatThreadId: run.threadId,
     });
-    expect(csvFile).toMatchObject({
-      filename: "data.csv",
-      contentType: "text/csv",
-      size: 2048,
-      url: expect.stringContaining(`/${csvId}/data.csv`),
-      googleDriveSync: { status: "disconnected" },
-    });
-    const pdfFile = artifacts.runs[0]?.files.find((file) => {
-      return file.id === pdfId;
-    });
-    expect(pdfFile).toMatchObject({
-      filename: "report.pdf",
-      contentType: "application/pdf",
-      googleDriveSync: { status: "disconnected" },
-    });
-    expectDriveStatuses(artifacts, {
+    expect(catalog.artifacts).toHaveLength(2);
+    expect(
+      catalog.artifacts
+        .map((item) => {
+          return item.title;
+        })
+        .sort(),
+    ).toStrictEqual(["data.csv", "report.pdf"]);
+    await expectDriveStatusForFiles(actor, run.threadId, [csvId, pdfId], {
       status: "disconnected",
       recovery: { action: "connect" },
     });
@@ -1989,8 +1974,7 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
       connectionId: connected.id,
     } as const;
     await access.setThreadOverride(actor, run.threadId, selection, false);
-    artifacts = await chat.listThreadArtifacts(actor, run.threadId);
-    expectDriveStatuses(artifacts, {
+    await expectDriveStatusForFiles(actor, run.threadId, [csvId, pdfId], {
       status: "disconnected",
       recovery: { action: "unavailable" },
     });
@@ -2039,9 +2023,6 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
     // The session carries the metadata; the content request carries the bytes.
     expect(uploadRecorder.metadata[0]).toContain('"name":"data.csv"');
     expect(uploadRecorder.contentTypeHeaders[0]).toBe("text/csv");
-    // Fetch derives this forbidden request header from the Buffer body at the
-    // transport layer. Supplying it explicitly is rejected by instrumented
-    // Node/Undici and would be visible to MSW here.
     expect(uploadRecorder.contentLengthHeaders).toStrictEqual([null]);
 
     // Drive lists one mirrored file: csv synced, pdf not synced.
@@ -2056,61 +2037,29 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
             appProperties: {
               vm0Artifact: "true",
               vm0ThreadId: run.threadId,
-              vm0RunId: run.runId,
               vm0FileId: csvId,
             },
           },
         ],
       };
     });
-    const artifactsClient = setupApp({ context, routes: chatThreadRoutes })(
-      chatThreadArtifactsContract,
-    );
-    const native = await accept(
-      artifactsClient.list({
-        headers: authHeaders(actor),
-        extraHeaders: { [CLIENT_TYPE_HEADER]: CLIENT_TYPE_IOS },
-        params: { threadId: run.threadId },
-      }),
-      [200],
-    );
-    expect(native.body.runs).toMatchObject([
-      {
-        runId: run.runId,
-        files: expect.arrayContaining([
-          expect.objectContaining({ id: csvId, filename: "data.csv" }),
-          expect.objectContaining({ id: pdfId, filename: "report.pdf" }),
-        ]),
-      },
-    ]);
-    const nativeFiles = native.body.runs.flatMap((entry) => {
-      return entry.files;
-    });
-    for (const file of nativeFiles) {
-      expect(file).not.toHaveProperty("googleDriveSync");
-      expect(file).not.toHaveProperty("googleDriveConnectionId");
-    }
+    // Retired GET /api/chat-threads/:threadId/artifacts returns zero-DB empty stub.
+    const retiredStub = await chat.listThreadArtifacts(actor, run.threadId);
+    expect(retiredStub.runs).toStrictEqual([]);
     expect(listRecorder.queries).toHaveLength(0);
 
-    artifacts = await chat.listThreadArtifacts(actor, run.threadId);
-    expect(
-      artifacts.runs[0]?.files.find((file) => {
-        return file.id === csvId;
-      })?.googleDriveSync,
-    ).toStrictEqual({
+    const csvStatus = await driveStatus(actor, csvId, run.threadId);
+    expect(csvStatus.googleDriveSync).toStrictEqual({
       status: "synced",
       id: "drive-file-1",
       name: "data.csv",
       originalUploaded: true,
       webViewLink: "https://drive.google.com/file/d/drive-file-1/view",
     });
-    expect(
-      artifacts.runs[0]?.files.find((file) => {
-        return file.id === pdfId;
-      })?.googleDriveSync,
-    ).toStrictEqual({ status: "not_synced" });
+    const pdfStatus = await driveStatus(actor, pdfId, run.threadId);
+    expect(pdfStatus.googleDriveSync).toStrictEqual({ status: "not_synced" });
     expect(listRecorder.queries[0]).toContain("vm0Artifact");
-    expect(listRecorder.queries[0]).toContain(run.threadId);
+    expect(listRecorder.queries[0]).toContain(csvId);
 
     // A successful refresh is persisted, so the next poll uses the refreshed
     // access token without another token request.
@@ -2135,23 +2084,18 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
             appProperties: {
               vm0Artifact: "true",
               vm0ThreadId: run.threadId,
-              vm0RunId: run.runId,
               vm0FileId: csvId,
             },
           },
         ],
       };
     });
-    artifacts = await chat.listThreadArtifacts(actor, run.threadId);
-    expect(
-      artifacts.runs[0]?.files.find((file) => {
-        return file.id === csvId;
-      })?.googleDriveSync,
-    ).toMatchObject({
+    const afterRefresh = await driveStatus(actor, csvId, run.threadId);
+    expect(afterRefresh.googleDriveSync).toMatchObject({
       status: "synced",
       id: "drive-file-refreshed",
     });
-    await chat.listThreadArtifacts(actor, run.threadId);
+    await driveStatus(actor, csvId, run.threadId);
     expect(successfulRefresh.refreshBodies).toHaveLength(1);
     expect(refreshedList.authorizationHeaders).toStrictEqual([
       "Bearer drive-access-drive-ok",
@@ -2159,8 +2103,7 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
       "Bearer drive-access-refreshed",
     ]);
 
-    // Upload refresh must publish its token before retrying the provider. A
-    // later status request can use it even when Google refuses another refresh.
+    // Upload refresh must publish its token before retrying the provider.
     mockGoogleDriveConnectorOAuth({
       refreshOutcome: { type: "ok", accessToken: "drive-upload-refreshed" },
     });
@@ -2204,19 +2147,14 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
             appProperties: {
               vm0Artifact: "true",
               vm0ThreadId: run.threadId,
-              vm0RunId: run.runId,
               vm0FileId: csvId,
             },
           },
         ],
       };
     });
-    artifacts = await chat.listThreadArtifacts(actor, run.threadId);
-    expect(
-      artifacts.runs[0]?.files.find((file) => {
-        return file.id === csvId;
-      })?.googleDriveSync,
-    ).toMatchObject({
+    const afterUploadRefresh = await driveStatus(actor, csvId, run.threadId);
+    expect(afterUploadRefresh.googleDriveSync).toMatchObject({
       status: "synced",
       id: "drive-upload-after-refresh",
     });
@@ -2229,8 +2167,8 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
       return { status: 401 };
     });
     for (let attempt = 0; attempt < 2; attempt += 1) {
-      artifacts = await chat.listThreadArtifacts(actor, run.threadId);
-      expectDriveStatuses(artifacts, {
+      const transientStatus = await driveStatus(actor, csvId, run.threadId);
+      expect(transientStatus.googleDriveSync).toStrictEqual({
         status: "unknown",
       });
     }
@@ -2240,13 +2178,11 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
     ).resolves.toMatchObject({ connectionStatus: "connected" });
 
     // A terminal failure is persisted and immediately becomes disconnected.
-    // The stored state prevents both Drive and token requests on later polls.
     const terminalRefresh = mockGoogleDriveConnectorOAuth();
     const terminalList = mockGoogleDriveFilesList(() => {
       return { status: 401 };
     });
-    artifacts = await chat.listThreadArtifacts(actor, run.threadId);
-    expectDriveStatuses(artifacts, {
+    await expectDriveStatusForFiles(actor, run.threadId, [csvId], {
       status: "disconnected",
       recovery: { action: "reconnect", connectionId: connected.id },
     });
@@ -2256,16 +2192,14 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
       connectionStatus: "reconnect-required",
       reconnectReason: "authorization_expired_or_revoked",
     });
-    artifacts = await chat.listThreadArtifacts(actor, run.threadId);
-    expectDriveStatuses(artifacts, {
+    await expectDriveStatusForFiles(actor, run.threadId, [csvId], {
       status: "disconnected",
       recovery: { action: "reconnect", connectionId: connected.id },
     });
     expect(terminalRefresh.refreshBodies).toHaveLength(1);
     expect(terminalList.authorizationHeaders).toHaveLength(1);
 
-    // Reconnecting clears the terminal state and restores normal status
-    // resolution before another terminal provider failure occurs.
+    // Reconnecting clears the terminal state and restores normal status.
     const reconnectStart = await connectorsApi.startOauth(
       actor,
       "google-drive",
@@ -2298,19 +2232,14 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
             appProperties: {
               vm0Artifact: "true",
               vm0ThreadId: run.threadId,
-              vm0RunId: run.runId,
               vm0FileId: csvId,
             },
           },
         ],
       };
     });
-    artifacts = await chat.listThreadArtifacts(actor, run.threadId);
-    expect(
-      artifacts.runs[0]?.files.find((file) => {
-        return file.id === csvId;
-      })?.googleDriveSync,
-    ).toMatchObject({
+    const reconnectedStatus = await driveStatus(actor, csvId, run.threadId);
+    expect(reconnectedStatus.googleDriveSync).toMatchObject({
       status: "synced",
       id: "drive-file-reconnected",
     });
@@ -2325,8 +2254,7 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
     mockGoogleDriveFilesList(() => {
       return { status: 401 };
     });
-    artifacts = await chat.listThreadArtifacts(actor, run.threadId);
-    expectDriveStatuses(artifacts, {
+    await expectDriveStatusForFiles(actor, run.threadId, [csvId], {
       status: "disconnected",
       recovery: { action: "reconnect", connectionId: connected.id },
     });
@@ -2355,8 +2283,7 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
       code: "drive-reconnected-again",
       state: stateFromAuthorizationUrl(secondReconnectStart.authorizationUrl),
     });
-    artifacts = await chat.listThreadArtifacts(actor, run.threadId);
-    expectDriveStatuses(artifacts, {
+    await expectDriveStatusForFiles(actor, run.threadId, [csvId], {
       status: "disconnected",
       recovery: { action: "reconnect", connectionId: connected.id },
     });
@@ -2429,11 +2356,10 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
     mockGoogleDriveFilesList(() => {
       return { status: 200, files: [] };
     });
-    const artifacts = await chat.listThreadArtifacts(
-      prepared.actor,
-      prepared.run.threadId,
-    );
-    const artifactId = artifacts.runs[0]?.files[0]?.artifactId;
+    const catalog = await chat.listArtifactCatalog(prepared.actor, {
+      chatThreadId: prepared.run.threadId,
+    });
+    const artifactId = catalog.artifacts[0]?.id;
     if (!artifactId) {
       throw new Error("Expected a canonical artifact from public upload");
     }
@@ -3770,13 +3696,12 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
       expectApiError(retry.body);
       expect(retry.body.error.message).toContain("unfinished font restoration");
       expect(uploaded.bodies).toHaveLength(1);
-      const artifacts = await chat.listThreadArtifacts(
+      const status = await driveStatus(
         fixture.actor,
+        fixture.deckId,
         fixture.run.threadId,
       );
-      expect(artifacts.runs[0]?.files[0]?.googleDriveSync?.status).not.toBe(
-        "synced",
-      );
+      expect(status.googleDriveSync.status).not.toBe("synced");
       await fixture.finish();
     },
     120_000,
@@ -4726,11 +4651,12 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
           files: nativeFirst ? [native, original] : [original, native],
         };
       });
-      const artifacts = await chat.listThreadArtifacts(
+      const status = await driveStatus(
         fixture.actor,
+        fixture.deckId,
         fixture.run.threadId,
       );
-      expect(artifacts.runs[0]?.files[0]?.googleDriveSync).toMatchObject({
+      expect(status.googleDriveSync).toMatchObject({
         status: "synced",
         id: "native-file",
         originalUploaded: true,
@@ -4995,8 +4921,7 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
     const defaultStatusRecorder = mockGoogleDriveFilesList(() => {
       return { status: 401 };
     });
-    let artifacts = await chat.listThreadArtifacts(actor, run.threadId);
-    expectDriveStatuses(artifacts, {
+    await expectDriveStatusForFiles(actor, run.threadId, [prepared.id], {
       status: "disconnected",
       recovery: {
         action: "reconnect",
@@ -5024,8 +4949,7 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
     const selectedStatusRecorder = mockGoogleDriveFilesList(() => {
       return { status: 200, files: [] };
     });
-    artifacts = await chat.listThreadArtifacts(actor, run.threadId);
-    expectDriveStatuses(artifacts, {
+    await expectDriveStatusForFiles(actor, run.threadId, [prepared.id], {
       status: "not_synced",
     });
     expect(selectedStatusRecorder.authorizationHeaders).toStrictEqual([
@@ -5116,8 +5040,7 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
     const terminalStatusRecorder = mockGoogleDriveFilesList(() => {
       return { status: 401 };
     });
-    artifacts = await chat.listThreadArtifacts(actor, run.threadId);
-    expectDriveStatuses(artifacts, {
+    await expectDriveStatusForFiles(actor, run.threadId, [prepared.id], {
       status: "disconnected",
       recovery: {
         action: "reconnect",
@@ -5175,11 +5098,10 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
     await completeChatRunOk(run.runId, sandboxHeaders);
   }, 120_000);
 
-  it("dedupes artifact urls and lists hosted sites beside run files", async () => {
+  it("lists hosted sites beside run files in catalog and handles Drive connections without refresh token", async () => {
     const { actor, runnerGroup } = await entitledChatActor();
     const objectStore = chatCallbacks.acceptChatObjectStorage();
 
-    // Run 1 uploads its own file plus the shared one.
     const run1 = await sendChatRun(actor, {
       prompt: "first artifact run",
     });
@@ -5201,12 +5123,8 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
     await chat.completeUploadWithBearer(bearer1, { id: sharedId }, [200]);
     chatCallbacks.mockChatOutputEvents([]);
     await completeChatRunOk(run1.runId, execution1.sandboxHeaders);
-    // Run 1's completion drains the thread queue via waitUntil side effects;
-    // flush them so the drain cannot claim run 2's queued message first.
     await flushWaitUntilForTest();
 
-    // Run 2 in the same thread re-completes the shared upload: the later
-    // run owns the deduplicated URL.
     const run2 = await sendChatRun(actor, {
       threadId: run1.threadId,
       prompt: "second artifact run",
@@ -5215,28 +5133,6 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
     const bearer2 = `Bearer ${okouTokenFromExecution(execution2.execution)}`;
     await chat.completeUploadWithBearer(bearer2, { id: sharedId }, [200]);
 
-    let artifacts = await chat.listThreadArtifacts(actor, run1.threadId);
-    expect(artifacts.runs).toHaveLength(2);
-    const run1Group = artifacts.runs.find((group) => {
-      return group.runId === run1.runId;
-    });
-    const run2Group = artifacts.runs.find((group) => {
-      return group.runId === run2.runId;
-    });
-    expect(
-      run1Group?.files.map((file) => {
-        return file.id;
-      }),
-    ).toStrictEqual([ownId]);
-    expect(
-      run2Group?.files.map((file) => {
-        return file.id;
-      }),
-    ).toStrictEqual([sharedId]);
-
-    // A hosted-site deployment is listed next to the run's other files rather
-    // than replacing them, so run 2 keeps its copy of the shared URL and the
-    // dedupe still resolves that URL to run 2.
     const prepared = await chat.prepareHostedSiteWithBearer(bearer2, {
       site: `bdd-artifact-${randomUUID().slice(0, 8)}`,
       title: "BDD artifact",
@@ -5246,26 +5142,17 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
     });
     await chat.completeHostedSiteWithBearer(bearer2, prepared.deploymentId);
 
-    artifacts = await chat.listThreadArtifacts(actor, run1.threadId);
-    const hostedGroup = artifacts.runs.find((group) => {
-      return group.runId === run2.runId;
+    const catalog = await chat.listArtifactCatalog(actor, {
+      chatThreadId: run1.threadId,
     });
-    expect(hostedGroup?.files).toHaveLength(2);
-    expect(hostedGroup?.files[0]?.id).toBe(sharedId);
-    expect(hostedGroup?.files[1]).toMatchObject({
-      artifactKind: "hosted-site",
-      url: prepared.artifactUrl,
-      aliasUrl: prepared.url,
-      contentType: "text/html",
-    });
-    const plainGroup = artifacts.runs.find((group) => {
-      return group.runId === run1.runId;
-    });
+    expect(catalog.artifacts).toHaveLength(3);
     expect(
-      plainGroup?.files.map((file) => {
-        return file.id;
-      }),
-    ).toStrictEqual([ownId]);
+      catalog.artifacts
+        .map((item) => {
+          return item.title;
+        })
+        .sort(),
+    ).toStrictEqual(["BDD artifact", "page-a.html", "page.html"]);
 
     const nextSlug = `${prepared.publicSlug}-renamed`;
     const renamed = await accept(
@@ -5279,18 +5166,14 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
       }),
       [200],
     );
-    const reread = await chat.listThreadArtifacts(actor, run1.threadId);
-    const renamedFile = reread.runs
-      .flatMap((run) => {
-        return run.files;
-      })
-      .find((file) => {
-        return file.url === prepared.artifactUrl;
-      });
-    expect(renamedFile).toMatchObject({
-      url: prepared.artifactUrl,
-      aliasUrl: renamed.body.url,
-      artifactKind: "hosted-site",
+    const siteEntry = catalog.artifacts.find((item) => {
+      return item.kind === "hosted-site";
+    });
+    expect(siteEntry).toBeDefined();
+    const detail = await chat.getArtifactCatalogEntry(actor, siteEntry!.id);
+    expect(detail).toMatchObject({
+      kind: "hosted-site",
+      site: { url: renamed.body.url },
     });
 
     // A Drive connection without a refresh token resolves 401s to "unknown".
@@ -5307,24 +5190,18 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
     mockGoogleDriveFilesList(() => {
       return { status: 401 };
     });
-    artifacts = await chat.listThreadArtifacts(actor, run1.threadId);
-    for (const group of artifacts.runs) {
-      for (const file of group.files) {
-        expect(file.googleDriveSync).toStrictEqual({
-          status: "unknown",
-        });
-      }
-    }
+    await expectDriveStatusForFiles(actor, run1.threadId, [ownId, sharedId], {
+      status: "unknown",
+    });
 
     chatCallbacks.mockChatOutputEvents([]);
     await completeChatRunOk(run2.runId, execution2.sandboxHeaders);
   }, 120_000);
 
-  it("keeps files generated beside a hosted site visible", async () => {
+  it("keeps files generated beside a hosted site visible in catalog", async () => {
     const { actor, runnerGroup } = await entitledChatActor();
     const objectStore = chatCallbacks.acceptChatObjectStorage();
 
-    // One run generates deliverables and then publishes a site alongside them.
     const run = await sendChatRun(actor, {
       prompt: "generate media then publish a site",
     });
@@ -5345,8 +5222,6 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
         size,
       });
     }
-    // The video carries an explicit content type; the others resolve theirs
-    // from the filename.
     await chat.completeUploadWithBearer(
       bearer,
       { id: videoId, contentType: "video/mp4" },
@@ -5364,26 +5239,17 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
     });
     await chat.completeHostedSiteWithBearer(bearer, prepared.deploymentId);
 
-    const artifacts = await chat.listThreadArtifacts(actor, run.threadId);
-    const group = artifacts.runs.find((item) => {
-      return item.runId === run.runId;
+    const catalog = await chat.listArtifactCatalog(actor, {
+      chatThreadId: run.threadId,
     });
-    // Publishing a site does not withdraw the deliverables generated with it,
-    // so each stays addressable with its own metadata.
-    expect(group?.files).toHaveLength(4);
+    expect(catalog.artifacts).toHaveLength(4);
     expect(
-      group?.files.slice(0, 3).map((file) => {
-        return file.id;
-      }),
-    ).toStrictEqual([videoId, imageId, deckId]);
-    expect(group?.files[0]).toMatchObject({
-      contentType: "video/mp4",
-      filename: "kitten.mp4",
-    });
-    expect(group?.files[3]).toMatchObject({
-      artifactKind: "hosted-site",
-      url: prepared.artifactUrl,
-    });
+      catalog.artifacts
+        .map((item) => {
+          return item.title;
+        })
+        .sort(),
+    ).toStrictEqual(["BDD media", "kitten.jpg", "kitten.mp4", "kitten.pdf"]);
 
     chatCallbacks.mockChatOutputEvents([]);
     await completeChatRunOk(run.runId, execution.sandboxHeaders);

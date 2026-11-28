@@ -780,7 +780,6 @@ test.each([
         membership = true;
         installSharedThreadStorage(context);
         const bytes = Buffer.from("Canonical Teams report");
-        const operationId = randomUUID();
         const prepared = await accept(
           clients()(integrationsTeamsUploadInitContract).init({
             headers: runHeaders,
@@ -788,20 +787,13 @@ test.each([
               filename: "report.txt",
               contentType: "text/plain",
               length: bytes.length,
-              canonical: {
-                version: 2,
-                operationId,
-                checksumSha256: createHash("sha256")
-                  .update(bytes)
-                  .digest("hex"),
-                conversationId: sender.teamsConversationId,
-                text: "Pinned report",
-              },
+              checksumSha256: createHash("sha256").update(bytes).digest("hex"),
+              conversationId: sender.teamsConversationId,
+              text: "Pinned report",
             },
           }),
           [200],
         );
-        expect(prepared.body.operationId).toBe(operationId);
         const uploaded = await fetch(prepared.body.uploadUrl, {
           method: "PUT",
           headers: {
@@ -813,9 +805,8 @@ test.each([
         expect(uploaded.status).toBe(200);
         const completion = {
           uploadId: prepared.body.uploadId,
-          operationId,
-          conversationId: "19:replacement-destination",
-          text: "Replacement text",
+          conversationId: sender.teamsConversationId,
+          text: "Pinned report",
         };
         membership = false;
         await accept(
@@ -842,7 +833,6 @@ test.each([
             return message.text?.startsWith("Pinned report");
           }),
         ).toHaveLength(1);
-        const uncertainOperation = randomUUID();
         const uncertain = await accept(
           clients()(integrationsTeamsUploadInitContract).init({
             headers: runHeaders,
@@ -850,15 +840,9 @@ test.each([
               filename: "uncertain.txt",
               contentType: "text/plain",
               length: bytes.length,
-              canonical: {
-                version: 2,
-                operationId: uncertainOperation,
-                checksumSha256: createHash("sha256")
-                  .update(bytes)
-                  .digest("hex"),
-                conversationId: sender.teamsConversationId,
-                text: "Uncertain file",
-              },
+              checksumSha256: createHash("sha256").update(bytes).digest("hex"),
+              conversationId: sender.teamsConversationId,
+              text: "Uncertain file",
             },
           }),
           [200],
@@ -889,22 +873,15 @@ test.each([
         );
         const uncertainBody = {
           uploadId: uncertain.body.uploadId,
-          operationId: uncertainOperation,
           conversationId: sender.teamsConversationId,
+          text: "Uncertain file",
         };
         await accept(
           clients()(integrationsTeamsUploadCompleteContract).complete({
             headers: runHeaders,
             body: uncertainBody,
           }),
-          [409],
-        );
-        await accept(
-          clients()(integrationsTeamsUploadCompleteContract).complete({
-            headers: runHeaders,
-            body: uncertainBody,
-          }),
-          [409],
+          [502],
         );
         expect(uncertainSends).toBe(1);
         await removeTeamsForTest(context.signal, sender);
@@ -912,20 +889,18 @@ test.each([
           isConnected: true,
           isInstalled: false,
         });
-        // Revocation cannot turn an acknowledged delivery into another provider send.
         authenticate(actor);
         await accept(
           clients()(teamsConnectContract).disconnect({ headers, query: {} }),
           [200],
         );
-        const replayed = await accept(
+        await accept(
           clients()(integrationsTeamsUploadCompleteContract).complete({
             headers: runHeaders,
             body: completion,
           }),
-          [200],
+          [404],
         );
-        expect(replayed.body).toStrictEqual(delivered.body);
         expect(
           messages.filter((message) => {
             return message.text?.startsWith("Pinned report");

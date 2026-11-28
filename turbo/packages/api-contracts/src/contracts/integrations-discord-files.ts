@@ -1,5 +1,4 @@
 import {
-  boolean,
   discriminatedUnion,
   literal,
   number,
@@ -32,40 +31,41 @@ export const discordFilenameSchema = string()
     );
   }, "Filename must not contain path separators or control characters");
 
+const discordUploadDestinationFields = {
+  channelId: discordSnowflakeSchema.optional(),
+  userId: union([literal("me"), discordSnowflakeSchema]).optional(),
+  guildId: discordSnowflakeSchema.optional(),
+  comment: string().max(2000).optional(),
+};
+
 const discordUploadInitBodySchema = object({
   filename: discordFilenameSchema,
   length: number().int().positive().max(MAX_DISCORD_FILE_SIZE_BYTES),
   contentType: string().min(1).max(255),
   checksumSha256: string().regex(/^[a-f0-9]{64}$/u),
-  operationId: uuid(),
-  channelId: discordSnowflakeSchema.optional(),
-  userId: union([literal("me"), discordSnowflakeSchema]).optional(),
-  guildId: discordSnowflakeSchema.optional(),
-  comment: string().max(2000).optional(),
+  ...discordUploadDestinationFields,
 }).refine((body) => {
   return (body.channelId === undefined) !== (body.userId === undefined);
 }, "Provide exactly one of channelId or userId");
 
 const discordUploadInitResponseSchema = object({
   assetId: uuid(),
-  operationId: uuid(),
   url: artifactUrlSchema,
-  // A repeated operation whose bytes already exist does not upload again.
-  uploadUrl: url().optional(),
-  uploadHeaders: record(string(), string()).optional(),
+  uploadUrl: url(),
+  uploadHeaders: record(string(), string()),
 });
 
-const discordUploadOperationBodySchema = object({
+const discordUploadCompleteBodySchema = object({
   assetId: uuid(),
-  operationId: uuid(),
-});
+  ...discordUploadDestinationFields,
+}).refine((body) => {
+  return (body.channelId === undefined) !== (body.userId === undefined);
+}, "Provide exactly one of channelId or userId");
 
 const discordUploadResponseSchema = object({
   assetId: uuid(),
-  operationId: uuid(),
   url: artifactUrlSchema,
   delivery: discriminatedUnion("status", [
-    object({ status: literal("pending") }),
     object({
       status: literal("delivered"),
       channelId: discordSnowflakeSchema,
@@ -76,7 +76,6 @@ const discordUploadResponseSchema = object({
     object({
       status: literal("failed"),
       message: string(),
-      retryable: boolean(),
     }),
   ]),
 });
@@ -92,14 +91,12 @@ export type DiscordUploadInitBody = zInfer<typeof discordUploadInitBodySchema>;
 export type DiscordUploadInitResponse = zInfer<
   typeof discordUploadInitResponseSchema
 >;
-export type DiscordUploadMaterializeBody = zInfer<
-  typeof discordUploadOperationBodySchema
+export type DiscordUploadCompleteBody = zInfer<
+  typeof discordUploadCompleteBodySchema
 >;
-export type DiscordUploadMaterializeResponse = zInfer<
+export type DiscordUploadCompleteResponse = zInfer<
   typeof discordUploadResponseSchema
 >;
-export type DiscordUploadCompleteBody = DiscordUploadMaterializeBody;
-export type DiscordUploadCompleteResponse = DiscordUploadMaterializeResponse;
 export type DiscordDownloadFileQuery = zInfer<
   typeof discordDownloadFileQuerySchema
 >;
@@ -124,18 +121,7 @@ export const integrationsDiscordUploadInitContract = c.router({
     headers: authHeadersSchema,
     body: discordUploadInitBodySchema,
     responses: { 200: discordUploadInitResponseSchema, ...uploadErrors },
-    summary: "Initialize canonical publication for a Discord file",
-  },
-});
-
-export const integrationsDiscordUploadMaterializeContract = c.router({
-  materialize: {
-    method: "POST",
-    path: "/api/integrations/discord/upload-file/materialize",
-    headers: authHeadersSchema,
-    body: discordUploadOperationBodySchema,
-    responses: { 200: discordUploadResponseSchema, ...uploadErrors },
-    summary: "Publish a canonical file before Discord delivery",
+    summary: "Initialize publication for a Discord file",
   },
 });
 
@@ -144,9 +130,9 @@ export const integrationsDiscordUploadCompleteContract = c.router({
     method: "POST",
     path: "/api/integrations/discord/upload-file/complete",
     headers: authHeadersSchema,
-    body: discordUploadOperationBodySchema,
+    body: discordUploadCompleteBodySchema,
     responses: { 200: discordUploadResponseSchema, ...uploadErrors },
-    summary: "Deliver a canonical file to its authorized Discord destination",
+    summary: "Finalize and fire-and-forget deliver a file to Discord",
   },
 });
 

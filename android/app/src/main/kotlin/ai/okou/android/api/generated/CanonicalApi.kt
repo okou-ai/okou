@@ -1111,10 +1111,10 @@ internal fun ArtifactCatalogQuery.toQueryParameters(): Map<String, String> {
                                         "file",
                                         "hosted-site",
                                         "image",
-                                        "video",
                                         "avatar",
                                         "presentation",
                                         "shared-thread",
+                                        "video",
                                     ))
                         }) &&
                     (!value.containsKey("category") ||

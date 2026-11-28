@@ -44,6 +44,8 @@ export interface HostedSiteManifest {
   readonly createdAt: string;
   readonly artifactKind?: "hosted-site" | "presentation-html";
   readonly spaFallback: boolean;
+  /** Prepared visibility before deployment completion creates the artifacts row; stripped before R2 delivery. */
+  readonly visibility?: "private" | "organization" | "public";
   readonly files: Record<string, HostedSiteManifestFile>;
   readonly snapshotDependencies?: HostedSiteSnapshotDependencies;
   /** Optional for retained deployments and CLIs predating sandbox previews. */

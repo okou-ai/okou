@@ -1,7 +1,10 @@
 import { officialStaticTemplatePreview } from "@okouai/core/official-template-preview";
 import { inferMimetype } from "../../lib/mimetype";
 import { readableHostedSiteMetadata$ } from "../services/hosted-site-preview.service";
-import { resolveInvitedArtifactFile$ } from "../services/artifact-file-share-access.service";
+import {
+  findActiveArtifactForFile$,
+  resolveInvitedArtifactFile$,
+} from "../services/artifact-file-share-access.service";
 import { artifactDownloadsContract } from "@okouai/api-contracts/contracts/artifact-downloads";
 import { env } from "../../lib/env";
 import { nowDate } from "../../lib/time";
@@ -111,11 +114,18 @@ const resolveFileReference$ = command(
         signal,
       );
       const downloadUrl = await set(resolveArtifactDownloadUrl$, file, signal);
-      const previewImageUrl = await set(
-        uploadedArtifactPreviewImageUrl$,
-        { id: file.id, userId: file.userId, orgId: file.orgId },
+      const activeArtifact = await set(
+        findActiveArtifactForFile$,
+        file,
         signal,
       );
+      const previewImageUrl =
+        activeArtifact?.thumbnail?.url ??
+        (await set(
+          uploadedArtifactPreviewImageUrl$,
+          { id: file.id, userId: file.userId, orgId: file.orgId },
+          signal,
+        ));
       signal.throwIfAborted();
       return {
         status: 200 as const,
@@ -125,6 +135,7 @@ const resolveFileReference$ = command(
           filename: file.filename,
           contentType: file.contentType,
           ...(previewImageUrl ? { previewImageUrl } : {}),
+          ...(activeArtifact ? { artifactId: activeArtifact.id } : {}),
           target: { kind: "file" as const, id },
         },
       };

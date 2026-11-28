@@ -1,5 +1,9 @@
 import { randomUUID } from "node:crypto";
-import { HeadObjectCommand } from "@aws-sdk/client-s3";
+import {
+  GetObjectCommand,
+  HeadObjectCommand,
+  PutObjectCommand,
+} from "@aws-sdk/client-s3";
 import { uploadsContract } from "@okouai/api-contracts/contracts/uploads";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { uploadsPrepareRoutes } from "../uploads-prepare";
@@ -170,6 +174,37 @@ describe("POST /api/uploads/complete", () => {
       fixture.actor.userId,
       fixture.actor.orgId,
     );
+    const referenceObjects = new Map<string, string>();
+    context.mocks.s3.send.mockImplementation((command) => {
+      if (command instanceof PutObjectCommand && command.input.Key) {
+        referenceObjects.set(
+          command.input.Key,
+          String(command.input.Body ?? ""),
+        );
+        return Promise.resolve({});
+      }
+      if (command instanceof GetObjectCommand && command.input.Key) {
+        const stored = referenceObjects.get(command.input.Key);
+        if (stored !== undefined) {
+          return Promise.resolve({
+            ETag: '"etag"',
+            Body: {
+              async *[Symbol.asyncIterator]() {
+                yield Buffer.from(stored);
+              },
+            },
+          });
+        }
+        return Promise.reject(
+          Object.assign(new Error("NoSuchKey"), { name: "NoSuchKey" }),
+        );
+      }
+      expect(command).toBeInstanceOf(HeadObjectCommand);
+      return Promise.resolve({
+        ContentLength: 1234,
+        ContentType: "text/markdown; charset=utf-8",
+      });
+    });
     const prepared = await accept(
       setupApp({ context, routes: uploadsPrepareRoutes })(
         uploadsContract,
@@ -184,13 +219,6 @@ describe("POST /api/uploads/complete", () => {
       }),
       [200],
     );
-    context.mocks.s3.send.mockImplementation((command) => {
-      expect(command).toBeInstanceOf(HeadObjectCommand);
-      return Promise.resolve({
-        ContentLength: 1234,
-        ContentType: "text/markdown; charset=utf-8",
-      });
-    });
     const response = await chat.completeUploadWithBearer(
       fixture.bearer,
       { id: prepared.body.id },

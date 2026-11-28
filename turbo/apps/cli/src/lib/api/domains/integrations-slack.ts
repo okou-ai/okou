@@ -11,7 +11,7 @@ import {
   type SendSlackMessageResponse,
   type SlackUploadInitBody,
   type SlackUploadInitResponse,
-  type SlackUploadMaterializeBody,
+  type SlackUploadDeliverBody,
   type SlackUploadDeliveryResponse,
   type SlackUploadCompleteBody,
   type SlackUploadCompleteResponse,
@@ -116,7 +116,7 @@ export async function completeSlackFileUpload(
 }
 
 export async function deliverSlackFileUpload(
-  body: SlackUploadMaterializeBody,
+  body: SlackUploadDeliverBody,
 ): Promise<SlackUploadDeliveryResponse> {
   const config = await getClientConfig();
   const client = initClient(integrationsSlackUploadMaterializeContract, config);

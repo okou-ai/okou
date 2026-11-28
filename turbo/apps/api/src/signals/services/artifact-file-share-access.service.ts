@@ -1,105 +1,96 @@
 import { command } from "ccstate";
 import { and, eq, inArray, isNull, or } from "drizzle-orm";
-import { artifactFileShares } from "@okouai/db/schema/artifact-file-share";
-import { clerk$ } from "../external/clerk";
-import { findClerkUser } from "../external/clerk-users";
-import { db$, writeDb$ } from "../external/db";
+import { artifacts, imageArtifacts } from "@okouai/db/schema/artifact";
+import { artifactUserShares } from "@okouai/db/schema/artifact-user-share";
+import { db$ } from "../external/db";
 import type { PrivateArtifactRecord } from "./private-artifact-storage.service";
 import { resolveArtifactPreviewUrl$ } from "./artifact-preview-url.service";
 import { resolveArtifactDownloadUrl$ } from "./artifact-download-url.service";
-import { uploadedArtifactPreviewImageUrl$ } from "./uploaded-artifact.service";
-import { syncArtifactUserShareByFileId$ } from "./artifact-access-dual-write.service";
 import { nowDate } from "../../lib/time";
 
-const claimFileShareAccess$ = command(
+/**
+ * Find the active (non-deleted) `artifacts` row backing a stored file.
+ *
+ * Principle 3 & 4: a file without an active `artifacts` row (including user
+ * attachments, system captures, and Library-deleted artifacts) is strictly
+ * owner-only for `(ownerUserId, orgId)`.
+ */
+export const findActiveArtifactForFile$ = command(
   async (
-    { get, set },
-    args: { readonly fileId: string; readonly userId: string },
+    { get },
+    file: {
+      readonly id: string;
+      readonly orgId: string;
+      readonly userId: string;
+    },
     signal: AbortSignal,
   ) => {
-    const shares = await get(db$)
-      .select()
-      .from(artifactFileShares)
-      .where(eq(artifactFileShares.fileId, args.fileId));
-    signal.throwIfAborted();
-    if (
-      shares.some((share) => {
-        return share.userId === args.userId;
+    const database = get(db$);
+    const [artifact] = await database
+      .select({
+        id: artifacts.id,
+        kind: artifacts.kind,
+        title: artifacts.title,
+        visibility: artifacts.visibility,
+        thumbnail: artifacts.thumbnail,
+        updatedAt: artifacts.updatedAt,
       })
-    ) {
-      return true;
-    }
-    if (
-      !shares.some((share) => {
-        return share.userId === null;
-      })
-    ) {
-      return false;
-    }
-    const user = await findClerkUser(get(clerk$), args.userId, signal);
-    if (!user || user.banned) {
-      return false;
-    }
-    const emails = user.emailAddresses
-      .filter((address) => {
-        return address.verification?.status === "verified";
-      })
-      .map((address) => {
-        return address.emailAddress.trim().toLowerCase();
-      });
-    if (emails.length === 0) {
-      return false;
-    }
-    const claimed = await set(writeDb$)
-      .update(artifactFileShares)
-      .set({ userId: args.userId })
+      .from(artifacts)
       .where(
         and(
-          eq(artifactFileShares.fileId, args.fileId),
+          eq(artifacts.orgId, file.orgId),
+          eq(artifacts.authorUserId, file.userId),
+          isNull(artifacts.deletedAt),
           or(
-            isNull(artifactFileShares.userId),
-            eq(artifactFileShares.userId, args.userId),
+            eq(artifacts.projectionFileId, file.id),
+            and(eq(artifacts.kind, "file"), eq(artifacts.entityId, file.id)),
+            and(
+              eq(artifacts.kind, "image"),
+              inArray(
+                artifacts.entityId,
+                database
+                  .select({ id: imageArtifacts.id })
+                  .from(imageArtifacts)
+                  .where(eq(imageArtifacts.fileId, file.id)),
+              ),
+            ),
           ),
-          inArray(artifactFileShares.email, emails),
         ),
       )
-      .returning({
-        id: artifactFileShares.id,
-        email: artifactFileShares.email,
-      });
+      .limit(1);
     signal.throwIfAborted();
-    const [firstClaimed] = claimed;
-    if (firstClaimed) {
-      await set(
-        syncArtifactUserShareByFileId$,
-        {
-          fileId: args.fileId,
-          userId: args.userId,
-          email: firstClaimed.email,
-        },
-        signal,
-      );
-    }
-    return firstClaimed !== undefined;
+    return artifact ?? null;
   },
 );
 
-/** This credential follows a live named grant, independent of general audience. */
+/** Grant temporary file credentials when the viewer has an active `artifact_user_shares` row. */
 export const resolveInvitedArtifactFile$ = command(
   async (
-    { set },
+    { get, set },
     args: { readonly file: PrivateArtifactRecord; readonly userId: string },
     signal: AbortSignal,
   ) => {
     const file = args.file;
-    if (
-      file.materializationStatus !== "ready" ||
-      !(await set(
-        claimFileShareAccess$,
-        { fileId: file.id, userId: args.userId },
-        signal,
-      ))
-    ) {
+    if (!file.isReady) {
+      return null;
+    }
+    const artifact = await set(findActiveArtifactForFile$, file, signal);
+    if (!artifact) {
+      return null;
+    }
+    const [share] = await get(db$)
+      .select({ userId: artifactUserShares.userId })
+      .from(artifactUserShares)
+      .where(
+        and(
+          eq(artifactUserShares.artifactId, artifact.id),
+          eq(artifactUserShares.orgId, file.orgId),
+          eq(artifactUserShares.userId, args.userId),
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    if (!share) {
       return null;
     }
     const preview = await set(
@@ -108,12 +99,8 @@ export const resolveInvitedArtifactFile$ = command(
       signal,
     );
     const downloadUrl = await set(resolveArtifactDownloadUrl$, file, signal);
-    const previewImageUrl = await set(
-      uploadedArtifactPreviewImageUrl$,
-      { id: file.id, userId: file.userId, orgId: file.orgId },
-      signal,
-    );
     signal.throwIfAborted();
+    const previewImageUrl = artifact.thumbnail?.url ?? null;
     return {
       ...preview,
       downloadUrl,

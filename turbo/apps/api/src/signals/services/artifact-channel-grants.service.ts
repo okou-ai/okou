@@ -1,8 +1,7 @@
 import { command } from "ccstate";
 import type { ArtifactChannelRecipient } from "./artifact-channel-access.service";
 import type { ChannelSharingResource } from "./artifact-channel-resource.service";
-import { shareFileArtifact$ } from "./artifact-file-sharing.service";
-import { shareHostedSite$ } from "./hosted-site-sharing.service";
+import { addArtifactShare$ } from "./artifact-access.service";
 import { consumeHostedSiteSharingQuota$ } from "./hosted-site-sharing-quota.service";
 import { settle } from "../utils";
 
@@ -35,6 +34,10 @@ export const grantArtifactChannelMembers$ = command(
       if (limited) {
         break;
       }
+      if (!recipient.recipient) {
+        unresolved.push(recipient.memberId);
+        continue;
+      }
       const retryAfter = await set(
         consumeHostedSiteSharingQuota$,
         {
@@ -51,27 +54,16 @@ export const grantArtifactChannelMembers$ = command(
       }
       attempted++;
       const shared = await settle(
-        args.resource.kind === "site"
-          ? set(
-              shareHostedSite$,
-              {
-                siteId: args.resource.id,
-                userId: args.resource.userId,
-                orgId: args.resource.orgId,
-                email: recipient.email,
-                recipient: recipient.recipient,
-              },
-              signal,
-            )
-          : set(
-              shareFileArtifact$,
-              {
-                resource: args.resource,
-                email: recipient.email,
-                recipient: recipient.recipient,
-              },
-              signal,
-            ),
+        set(
+          addArtifactShare$,
+          {
+            artifactId: args.resource.artifactId,
+            userId: args.resource.userId,
+            orgId: args.resource.orgId,
+            recipient: recipient.recipient,
+          },
+          signal,
+        ),
         signal,
       );
       if (!shared.ok || shared.value.status !== "ok") {

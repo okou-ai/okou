@@ -1,24 +1,17 @@
 import { command, computed } from "ccstate";
-import {
-  integrationsSlackUploadInitContract,
-  type SlackUploadInitBody,
-} from "@okouai/api-contracts/contracts/integrations";
+import { integrationsSlackUploadInitContract } from "@okouai/api-contracts/contracts/integrations";
 
+import { badRequestMessage, notFound } from "../../lib/error";
+import { isAllowedUploadType } from "../../lib/uploads-constants";
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { bodyResultOf } from "../context/request";
-import { createSlackClient } from "../external/slack-message-client";
 import { MAX_SLACK_FILE_SIZE_BYTES } from "../external/slack-file-fetcher";
-import {
-  CanonicalPublicationConflictError,
-  prepareCanonicalPublishedAsset$,
-} from "../services/canonical-asset.service";
+import { createSlackClient } from "../external/slack-message-client";
+import type { RouteEntry } from "../route-entry";
+import { preparePublishedImFile$ } from "../services/canonical-asset.service";
 import { slackUserInstallation } from "../services/slack-data.service";
 import { resolveSlackWriteTarget$ } from "../services/slack-write-access.service";
-import { badRequestMessage, conflict, notFound } from "../../lib/error";
-import { isAllowedUploadType } from "../../lib/uploads-constants";
-import type { RouteEntry } from "../route-entry";
-import { settle } from "../utils";
 
 const slackInstallationInput$ = computed(
   (
@@ -42,22 +35,6 @@ const noInstallation = Object.freeze({
     }),
   }),
 });
-
-function canonicalDestination(
-  upload: NonNullable<SlackUploadInitBody["canonical"]>,
-  target: {
-    readonly channelId: string;
-    readonly workspaceId: string;
-  },
-) {
-  return {
-    channelId: target.channelId,
-    workspaceId: target.workspaceId,
-    ...(upload.threadTs ? { threadTs: upload.threadTs } : {}),
-    ...(upload.title ? { title: upload.title } : {}),
-    ...(upload.initialComment ? { initialComment: upload.initialComment } : {}),
-  };
-}
 
 const initInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   const auth = get(organizationAuthContext$);
@@ -96,32 +73,19 @@ const initInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     if ("status" in target) {
       return target;
     }
-    const result = await settle(
-      set(
-        prepareCanonicalPublishedAsset$,
-        {
-          provider: "slack",
-          runId,
-          userId: auth.userId,
-          orgId: auth.orgId,
-          operationId: body.canonical.operationId,
-          filename: body.filename,
-          contentType,
-          size: body.length,
-          checksumSha256: body.canonical.checksumSha256,
-          destination: canonicalDestination(body.canonical, target),
-        },
-        signal,
-      ),
+    const prepared = await set(
+      preparePublishedImFile$,
+      {
+        runId,
+        userId: auth.userId,
+        orgId: auth.orgId,
+        filename: body.filename,
+        contentType,
+        size: body.length,
+        checksumSha256: body.canonical.checksumSha256,
+      },
       signal,
     );
-    if (!result.ok) {
-      if (result.error instanceof CanonicalPublicationConflictError) {
-        return conflict(result.error.message);
-      }
-      throw result.error;
-    }
-    const prepared = result.value;
     if (!prepared) {
       return notFound("Agent run not found");
     }
@@ -130,12 +94,9 @@ const initInner$ = command(async ({ get, set }, signal: AbortSignal) => {
       body: {
         kind: "canonical" as const,
         assetId: prepared.assetId,
-        operationId: prepared.operationId,
         channel: target.channelId,
-        ...(prepared.uploadUrl ? { uploadUrl: prepared.uploadUrl } : {}),
-        ...(prepared.uploadHeaders
-          ? { uploadHeaders: prepared.uploadHeaders }
-          : {}),
+        uploadUrl: prepared.uploadUrl,
+        uploadHeaders: prepared.uploadHeaders,
         url: prepared.url,
       },
     };

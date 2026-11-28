@@ -88,6 +88,82 @@ const resolveTeamsMessageConnection$ = command(
   },
 );
 
+const resolvePersonalTeamsConversation$ = command(
+  async (
+    _ctx,
+    args: {
+      readonly installation: TeamsInstallation & {
+        readonly serviceUrl: string;
+      };
+      readonly connection: {
+        readonly teamsUserId: string;
+        readonly teamsUserDisplayName: string | null;
+      };
+      readonly mode?: "read" | "write";
+      readonly preflight?: boolean;
+      readonly user?: string;
+      readonly activityId?: string;
+    },
+    signal: AbortSignal,
+  ): Promise<
+    | { readonly kind: "preflight"; readonly target: TeamsMessageTarget }
+    | {
+        readonly kind: "resolved";
+        readonly conversationId: string;
+        readonly memberId: string;
+      }
+    | ReturnType<typeof routeError>
+  > => {
+    if (
+      !args.installation.botId ||
+      !args.user ||
+      (args.mode === "read" &&
+        args.user !== "me" &&
+        args.user !== args.connection.teamsUserId)
+    ) {
+      return routeError(
+        404,
+        "This Teams conversation is unavailable to your connected account and Okou.",
+        "NOT_FOUND",
+      );
+    }
+    const memberId =
+      args.user === "me" ? args.connection.teamsUserId : args.user;
+    if (args.preflight) {
+      return {
+        kind: "preflight",
+        target: {
+          conversationId: "",
+          activityId: args.activityId,
+          recipientId: memberId,
+        },
+      };
+    }
+    const conversation = await createTeamsPersonalConversation(
+      {
+        serviceUrl: args.installation.serviceUrl,
+        tenantId: args.installation.teamsTenantId,
+        botId: args.installation.botId,
+        botName: args.installation.botName,
+        teamsUserId: memberId,
+        teamsUserDisplayName:
+          memberId === args.connection.teamsUserId
+            ? args.connection.teamsUserDisplayName
+            : null,
+      },
+      signal,
+    );
+    if (conversation.kind === "teams-error") {
+      return teamsErrorResponse(conversation);
+    }
+    return {
+      kind: "resolved",
+      conversationId: conversation.conversationId,
+      memberId,
+    };
+  },
+);
+
 /** Resolve shared conversations or explicitly addressed outbound bot DMs. */
 export const resolveTeamsMessageTarget$ = command(
   async (
@@ -97,6 +173,8 @@ export const resolveTeamsMessageTarget$ = command(
       readonly userId: string;
       readonly orgId: string;
       readonly mode?: "read" | "write";
+      /** Skip creating a Bot Framework personal conversation during upload init preflight. */
+      readonly preflight?: boolean;
       /** Trusted persisted DM recipient, never taken from completion input. */
       readonly recipientId?: string;
       readonly body: {
@@ -122,39 +200,32 @@ export const resolveTeamsMessageTarget$ = command(
     let conversationId = args.body.conversationId;
     let memberId = args.recipientId ?? connection.teamsUserId;
     if (!conversationId) {
-      if (
-        !args.installation.botId ||
-        !args.body.user ||
-        (args.mode === "read" &&
-          args.body.user !== "me" &&
-          args.body.user !== connection.teamsUserId)
-      ) {
-        return routeError(
-          404,
-          "This Teams conversation is unavailable to your connected account and Okou.",
-          "NOT_FOUND",
-        );
-      }
-      memberId =
-        args.body.user === "me" ? connection.teamsUserId : args.body.user;
-      const conversation = await createTeamsPersonalConversation(
+      const personal = await set(
+        resolvePersonalTeamsConversation$,
         {
-          serviceUrl: args.installation.serviceUrl,
-          tenantId: args.installation.teamsTenantId,
-          botId: args.installation.botId,
-          botName: args.installation.botName,
-          teamsUserId: memberId,
-          teamsUserDisplayName:
-            memberId === connection.teamsUserId
-              ? connection.teamsUserDisplayName
-              : null,
+          installation: {
+            ...args.installation,
+            serviceUrl: args.installation.serviceUrl,
+          },
+          connection: {
+            teamsUserId: connection.teamsUserId,
+            teamsUserDisplayName: connection.teamsUserDisplayName,
+          },
+          mode: args.mode,
+          preflight: args.preflight,
+          user: args.body.user,
+          activityId: args.body.activityId,
         },
         signal,
       );
-      if (conversation.kind === "teams-error") {
-        return teamsErrorResponse(conversation);
+      if ("status" in personal) {
+        return personal;
       }
-      conversationId = conversation.conversationId;
+      if (personal.kind === "preflight") {
+        return personal.target;
+      }
+      conversationId = personal.conversationId;
+      memberId = personal.memberId;
     }
     const membership = await checkTeamsConversationMember(
       {

@@ -5,4 +5,5 @@ export const API_DATABASE_SEED_FILES = [
   new URL("./seeds/connector-catalog.sql", import.meta.url),
   new URL("./seeds/managed-model-key.sql", import.meta.url),
   new URL("./seeds/seed-skill-bundles.sql", import.meta.url),
+  new URL("./seeds/legacy-private-hosted-deployment.sql", import.meta.url),
 ] as const;

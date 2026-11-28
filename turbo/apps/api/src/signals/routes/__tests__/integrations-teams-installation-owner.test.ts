@@ -21,18 +21,19 @@ import type { TeamsConnectFixture } from "./helpers/teams-connect";
 const context = testContext();
 const headers = Object.freeze({ authorization: "Bearer clerk-session" });
 
-function canonicalUpload(
+function uploadInitBody(
+  filename: string,
   bytes: string,
   target: {
     user?: string;
     conversationId?: string;
     activityId?: string;
-    text?: string;
   },
 ) {
   return {
-    version: 2 as const,
-    operationId: randomUUID(),
+    filename,
+    contentType: "text/plain",
+    length: Buffer.byteLength(bytes),
     checksumSha256: createHash("sha256").update(bytes).digest("hex"),
     ...target,
   };
@@ -225,15 +226,7 @@ describe("Teams installation read ownership", () => {
           integrationsTeamsUploadInitContract,
         ).init({
           headers,
-          body: {
-            filename: "notes.txt",
-            canonical: canonicalUpload(bytes, {
-              user: "me",
-              text: "Uploaded notes",
-            }),
-            contentType: "text/plain",
-            length: Buffer.byteLength(bytes),
-          },
+          body: uploadInitBody("notes.txt", bytes, { user: "me" }),
         }),
         [200],
       );
@@ -262,7 +255,6 @@ describe("Teams installation read ownership", () => {
           headers,
           body: {
             uploadId: initialized.body.uploadId,
-            operationId: initialized.body.operationId,
             user: "me",
             text: "Uploaded notes",
           },
@@ -343,12 +335,7 @@ describe("Teams installation read ownership", () => {
           integrationsTeamsUploadInitContract,
         ).init({
           headers,
-          body: {
-            filename: "missing.txt",
-            contentType: "text/plain",
-            length: 7,
-            canonical: canonicalUpload("missing", { user: "me" }),
-          },
+          body: uploadInitBody("missing.txt", "missing", { user: "me" }),
         }),
         [404],
       );
@@ -408,12 +395,7 @@ describe("Teams target command ownership", () => {
           integrationsTeamsUploadInitContract,
         ).init({
           headers,
-          body: {
-            filename: "disconnected.txt",
-            canonical: canonicalUpload(bytes, { user: "me" }),
-            contentType: "text/plain",
-            length: Buffer.byteLength(bytes),
-          },
+          body: uploadInitBody("disconnected.txt", bytes, { user: "me" }),
         }),
         [200],
       );
@@ -440,7 +422,6 @@ describe("Teams target command ownership", () => {
           headers,
           body: {
             uploadId: initialized.body.uploadId,
-            operationId: initialized.body.operationId,
             user: "me",
           },
         }),
@@ -539,15 +520,7 @@ describe("Teams explicit target delivery", () => {
             integrationsTeamsUploadInitContract,
           ).init({
             headers,
-            body: {
-              filename: "explicit.txt",
-              canonical: canonicalUpload(bytes, {
-                user: teamsUserId,
-                text: "Explicit attachment",
-              }),
-              contentType: "text/plain",
-              length: Buffer.byteLength(bytes),
-            },
+            body: uploadInitBody("explicit.txt", bytes, { user: teamsUserId }),
           }),
           [200, 404],
         );
@@ -582,7 +555,6 @@ describe("Teams explicit target delivery", () => {
             headers,
             body: {
               uploadId: initialized.body.uploadId,
-              operationId: initialized.body.operationId,
               user: teamsUserId,
               text: "Explicit attachment",
             },
@@ -705,16 +677,10 @@ describe("Teams explicit target delivery", () => {
             integrationsTeamsUploadInitContract,
           ).init({
             headers,
-            body: {
-              filename: "reply.txt",
-              canonical: canonicalUpload(bytes, {
-                conversationId,
-                activityId,
-                text: "Reply attachment",
-              }),
-              contentType: "text/plain",
-              length: Buffer.byteLength(bytes),
-            },
+            body: uploadInitBody("reply.txt", bytes, {
+              conversationId,
+              activityId,
+            }),
           }),
           [200, 404],
         );
@@ -749,7 +715,6 @@ describe("Teams explicit target delivery", () => {
             headers,
             body: {
               uploadId: initialized.body.uploadId,
-              operationId: initialized.body.operationId,
               conversationId,
               activityId,
               text: "Reply attachment",

@@ -106,6 +106,7 @@ export const resolveTeamsWriteTarget$ = command(
       readonly tenantId?: string;
       readonly allowSource?: boolean;
       readonly sourceOnly?: boolean;
+      readonly preflight?: boolean;
       readonly recipientId?: string;
       readonly body: {
         readonly conversationId?: string;
@@ -174,6 +175,7 @@ export const resolveTeamsWriteTarget$ = command(
         orgId: args.orgId,
         userId: args.userId,
         body: args.body,
+        preflight: args.preflight,
         recipientId: args.recipientId,
       },
       signal,

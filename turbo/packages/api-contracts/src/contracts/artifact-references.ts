@@ -160,6 +160,7 @@ export const artifactReferencesContract = c.router({
         filename: string(),
         contentType: string(),
         previewImageUrl: artifactUrlSchema.optional(),
+        artifactId: uuid().optional(),
         target: object({ kind: zEnum(["file", "html"]), id: uuid() }),
       }),
       400: apiErrorSchema,

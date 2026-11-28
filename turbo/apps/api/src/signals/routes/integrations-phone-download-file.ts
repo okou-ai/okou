@@ -127,6 +127,7 @@ const download$ = command(async ({ get, set }, signal: AbortSignal) => {
           userId: auth.userId,
           orgId: auth.orgId,
           id: reference.id,
+          resolvePrivateUrl: false,
         },
         signal,
       )

@@ -1,7 +1,7 @@
-import { createHash, randomUUID } from "node:crypto";
+import { createHash } from "node:crypto";
 import { readFileSync, statSync } from "fs";
 import { basename, extname } from "path";
-import { Command, Option } from "commander";
+import { Command } from "commander";
 import {
   completeTeamsFileUpload,
   initTeamsFileUpload,
@@ -53,12 +53,6 @@ export const uploadFileCommand = new Command()
   .option("--reply-to <activity-id>", "Activity ID to reply to in thread")
   .option("-t, --text <message>", "Message text to accompany the file")
   .option("--content-type <mime>", "Override inferred content type")
-  .addOption(
-    new Option(
-      "--operation-id <uuid>",
-      "Deprecated: internal upload operation ID (kept for script compatibility)",
-    ).hideHelp(),
-  )
   .option(JSON_OPTION_FLAGS, JSON_OPTION_DESCRIPTION)
   .addHelpText(
     "after",
@@ -91,7 +85,6 @@ Notes:
         text?: string;
         contentType?: string;
         json?: boolean;
-        operationId?: string;
       }) => {
         const destination = resolveTeamsDestination(
           options.to,
@@ -120,48 +113,32 @@ Notes:
         const contentType =
           options.contentType ?? inferContentType(options.file);
         const fileContent = readFileSync(options.file);
-        const operationId = options.operationId ?? randomUUID();
         const prepared = await initTeamsFileUpload({
-          canonical: {
-            version: 2,
-            operationId,
-            checksumSha256: createHash("sha256")
-              .update(fileContent)
-              .digest("hex"),
-            ...destination,
-            ...(options.text ? { text: options.text } : {}),
-          },
+          checksumSha256: createHash("sha256")
+            .update(fileContent)
+            .digest("hex"),
+          ...destination,
+          ...(options.text ? { text: options.text } : {}),
           filename,
           contentType,
           length: fileSize,
         });
 
-        if (
-          prepared.operationId !== operationId ||
-          typeof prepared.uploadRequired !== "boolean"
-        ) {
+        const uploadResponse = await fetch(prepared.uploadUrl, {
+          method: "PUT",
+          headers: {
+            "Content-Type": prepared.contentType,
+            ...prepared.uploadHeaders,
+          },
+          body: new Uint8Array(fileContent),
+        });
+
+        if (!uploadResponse.ok) {
           throw new Error(
-            "The Teams upload API did not acknowledge this operation. Check the API deployment before retrying.",
+            `File upload failed: ${uploadResponse.status} ${uploadResponse.statusText}`,
           );
         }
-        if (prepared.uploadRequired) {
-          const uploadResponse = await fetch(prepared.uploadUrl, {
-            method: "PUT",
-            headers: {
-              "Content-Type": prepared.contentType,
-              ...prepared.uploadHeaders,
-            },
-            body: new Uint8Array(fileContent),
-          });
-
-          if (!uploadResponse.ok) {
-            throw new Error(
-              `File upload failed: ${uploadResponse.status} ${uploadResponse.statusText}`,
-            );
-          }
-        }
         const result = await completeTeamsFileUpload({
-          operationId: prepared.operationId,
           uploadId: prepared.uploadId,
           ...destination,
           contentType: prepared.contentType,

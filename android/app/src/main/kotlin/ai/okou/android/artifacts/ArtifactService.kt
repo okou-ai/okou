@@ -16,7 +16,6 @@ import ai.okou.android.api.generated.ArtifactDetailVariant3
 import ai.okou.android.api.generated.ArtifactDetailVariant4
 import ai.okou.android.api.generated.ArtifactDetailVariant5
 import ai.okou.android.api.generated.ArtifactDetailVariant6
-import ai.okou.android.api.generated.ArtifactDetailVariant7
 import ai.okou.android.api.generated.ArtifactDownloadVariant1
 import ai.okou.android.api.generated.ArtifactReferenceTargetKind
 import ai.okou.android.api.generated.RelatedCommunicatingChatsItemsItemStatus
@@ -332,8 +331,8 @@ internal constructor(
                 else ArtifactSave(reference, resolved.filename, resolved.contentType),
             previewOnly = resolved.downloadAllowed == false,
             linkSource =
-                if (resolved.sharedThreadSnapshot == null)
-                    ArtifactLinkSource.File(resolved.target.id)
+                if (resolved.sharedThreadSnapshot == null && resolved.artifactId != null)
+                    ArtifactLinkSource.File(resolved.artifactId)
                 else null,
         )
     }
@@ -741,20 +740,6 @@ private fun ArtifactDetail.toInfo(): ArtifactInfo {
             entry(
                 id,
                 title,
-                ArtifactKind.File,
-                createdAt,
-                sourceChatThreadId,
-                ArtifactResource.File(
-                    file.url,
-                    file.filename,
-                    file.contentType,
-                    file.previewImageUrl,
-                ),
-            )
-        is ArtifactDetailVariant4 ->
-            entry(
-                id,
-                title,
                 ArtifactKind.Avatar,
                 createdAt,
                 sourceChatThreadId,
@@ -765,7 +750,7 @@ private fun ArtifactDetail.toInfo(): ArtifactInfo {
                     file.previewImageUrl,
                 ),
             )
-        is ArtifactDetailVariant5 ->
+        is ArtifactDetailVariant4 ->
             site(
                 id,
                 title,
@@ -776,7 +761,7 @@ private fun ArtifactDetail.toInfo(): ArtifactInfo {
                 site.id,
                 site.deploymentVersion,
             )
-        is ArtifactDetailVariant6 ->
+        is ArtifactDetailVariant5 ->
             site(
                 id,
                 title,
@@ -787,7 +772,7 @@ private fun ArtifactDetail.toInfo(): ArtifactInfo {
                 site.id,
                 site.deploymentVersion,
             )
-        is ArtifactDetailVariant7 ->
+        is ArtifactDetailVariant6 ->
             entry(
                 id,
                 title,

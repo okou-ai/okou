@@ -5,7 +5,6 @@ import type {
   integrationsDiscordDownloadFileContract as OriginalIntegrationsDiscordDownloadFileContract,
   integrationsDiscordUploadCompleteContract as OriginalIntegrationsDiscordUploadCompleteContract,
   integrationsDiscordUploadInitContract as OriginalIntegrationsDiscordUploadInitContract,
-  integrationsDiscordUploadMaterializeContract as OriginalIntegrationsDiscordUploadMaterializeContract,
 } from "../contracts/integrations-discord-files";
 import type { ClientDescriptor } from "./types";
 
@@ -57,27 +56,6 @@ export const integrationsDiscordUploadInitContract: ClientDescriptor<
   init: {
     method: "POST",
     path: "/api/integrations/discord/upload-file/init",
-    statuses: {
-      200: true,
-      400: true,
-      401: true,
-      403: true,
-      404: true,
-      409: true,
-      413: true,
-      429: true,
-      502: true,
-      503: true,
-    },
-  },
-};
-
-export const integrationsDiscordUploadMaterializeContract: ClientDescriptor<
-  typeof OriginalIntegrationsDiscordUploadMaterializeContract
-> = {
-  materialize: {
-    method: "POST",
-    path: "/api/integrations/discord/upload-file/materialize",
     statuses: {
       200: true,
       400: true,

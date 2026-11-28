@@ -1,6 +1,6 @@
 import { command } from "ccstate";
-import type { HostedSiteShareAccount } from "@okouai/api-contracts/contracts/hosted-site-sharing";
-import { hostedSiteShareEmailSchema } from "@okouai/api-contracts/validators/hosted-site-sharing";
+import type { ArtifactShareAccount } from "@okouai/api-contracts/contracts/artifact-access";
+import { artifactShareEmailSchema } from "@okouai/api-contracts/validators/artifact-access";
 import { clerk$ } from "../external/clerk";
 import { findClerkUser } from "../external/clerk-users";
 import type { ChannelSharingResource } from "./artifact-channel-resource.service";
@@ -8,7 +8,7 @@ import type { ChannelSharingResource } from "./artifact-channel-resource.service
 export interface ArtifactChannelRecipient {
   readonly memberId: string;
   readonly email: string;
-  readonly recipient: HostedSiteShareAccount | undefined;
+  readonly recipient: ArtifactShareAccount | undefined;
 }
 
 export type ChannelMemberAccess =
@@ -25,9 +25,9 @@ interface MemberInput {
 
 function channelInvitation(
   input: MemberInput,
-  recipient?: HostedSiteShareAccount,
+  recipient?: ArtifactShareAccount,
 ): ChannelMemberAccess {
-  const email = hostedSiteShareEmailSchema.safeParse(
+  const email = artifactShareEmailSchema.safeParse(
     recipient?.email ?? input.email,
   );
   if (!email.success) {
@@ -37,10 +37,6 @@ function channelInvitation(
     return share.email === email.data;
   });
   if (existing) {
-    // A claimed invitation cannot be reassigned using a recycled email.
-    if (existing.userId === null) {
-      return { kind: "invited" };
-    }
     return existing.userId === recipient?.userId
       ? { kind: "covered" }
       : { kind: "unknown", memberId: input.memberId };
@@ -74,15 +70,15 @@ const workspaceMemberAccess$ = command(
   },
 );
 
-const workspaceEmailAccess$ = command(
+const workspaceEmailAccount$ = command(
   async (
     { get },
     args: { readonly orgId: string; readonly email: string | undefined },
     signal: AbortSignal,
-  ) => {
-    const email = hostedSiteShareEmailSchema.safeParse(args.email);
+  ): Promise<ArtifactShareAccount | null> => {
+    const email = artifactShareEmailSchema.safeParse(args.email);
     if (!email.success) {
-      return false;
+      return null;
     }
     const members = await get(
       clerk$,
@@ -96,19 +92,26 @@ const workspaceEmailAccess$ = command(
       return member.organization.id === args.orgId;
     })?.publicUserData?.userId;
     if (!memberId) {
-      return false;
+      return null;
     }
     const user = await findClerkUser(get(clerk$), memberId, signal);
-    return Boolean(
-      user &&
-      !user.banned &&
-      user.emailAddresses.some((address) => {
+    if (
+      !user ||
+      user.banned ||
+      !user.emailAddresses.some((address) => {
         return (
           address.verification?.status === "verified" &&
           address.emailAddress.trim().toLowerCase() === email.data
         );
-      }),
-    );
+      })
+    ) {
+      return null;
+    }
+    return {
+      userId: user.id,
+      email: email.data,
+      name: [user.firstName, user.lastName].filter(Boolean).join(" ") || null,
+    };
   },
 );
 
@@ -146,13 +149,6 @@ const linkedMemberAccess$ = command(
       .map((email) => {
         return email.emailAddress.trim().toLowerCase();
       });
-    if (
-      args.resource.shares.some((share) => {
-        return share.userId === null && emails.includes(share.email);
-      })
-    ) {
-      return { kind: "covered" };
-    }
     const email = emails[0];
     if (!email) {
       return { kind: "unknown", memberId: args.memberId };
@@ -177,15 +173,19 @@ export const artifactChannelMemberAccess$ = command(
     if (args.userId) {
       return set(linkedMemberAccess$, { ...args, userId: args.userId }, signal);
     }
-    if (
-      args.resource.audience === "organization" &&
-      (await set(
-        workspaceEmailAccess$,
-        { orgId: args.resource.orgId, email: args.email },
-        signal,
-      ))
-    ) {
-      return { kind: "covered" };
+    const workspaceAccount = await set(
+      workspaceEmailAccount$,
+      { orgId: args.resource.orgId, email: args.email },
+      signal,
+    );
+    if (workspaceAccount) {
+      if (workspaceAccount.userId === args.resource.userId) {
+        return { kind: "covered" };
+      }
+      if (args.resource.audience === "organization") {
+        return { kind: "covered" };
+      }
+      return channelInvitation(args, workspaceAccount);
     }
     return channelInvitation(args);
   },

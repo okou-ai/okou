@@ -1,6 +1,6 @@
-import { randomUUID } from "node:crypto";
+import { createHash } from "node:crypto";
 import { command } from "ccstate";
-import { and, eq, exists, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, exists, isNull, sql } from "drizzle-orm";
 import type { infer as zInfer } from "zod";
 import type {
   HostedSiteAccessDecision,
@@ -11,13 +11,14 @@ import {
   CURRENT_LINK_LAYOUT,
   linkLayoutSegment,
 } from "@okouai/api-contracts/contracts/link-layout";
+import { artifacts } from "@okouai/db/schema/artifact";
+import { artifactUserShares } from "@okouai/db/schema/artifact-user-share";
 import { hostedSites, hostedDeployments } from "@okouai/db/runtime/hosted-site";
-import { hostedSiteVisibility } from "@okouai/db/schema/hosted-site-visibility";
+import { pgTextDecoder } from "../../lib/db-structured-result";
+import { nowDate } from "../../lib/time";
 import { db$, writeDb$ } from "../external/db";
 import { clerk$, isClerkResourceNotFound } from "../external/clerk";
 import { settle } from "../utils";
-import { claimHostedSiteShareAccess$ } from "./hosted-site-share-access.service";
-import { syncArtifactVisibilityBySiteId$ } from "./artifact-access-dual-write.service";
 
 type Owner = {
   readonly userId: string;
@@ -27,14 +28,44 @@ type Owner = {
   readonly preparing?: boolean;
 };
 
+function deterministicRevisionUuid(seed: string): string {
+  const bytes = createHash("sha256").update(seed).digest().subarray(0, 16);
+  bytes[6] = (bytes[6]! & 0x0f) | 0x40;
+  bytes[8] = (bytes[8]! & 0x3f) | 0x80;
+  const hex = bytes.toString("hex");
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+
+function sitePolicyRevision(
+  siteId: string,
+  sourceId: string,
+  visibility: HostedSiteVisibility,
+  xmin: string,
+): string {
+  return deterministicRevisionUuid(
+    `hosted-site-visibility-v2:${siteId}:${sourceId}:${visibility}:${xmin}`,
+  );
+}
+
 export const readHostedSitePolicy$ = command(
   async ({ get }, siteId: string, signal: AbortSignal) => {
-    const [row] = await get(db$)
-      .select({ site: hostedSites, policy: hostedSiteVisibility })
+    const database = get(db$);
+    const logicalKey = `site:${siteId}`;
+    const [row] = await database
+      .select({
+        site: hostedSites,
+        artifactId: artifacts.id,
+        visibility: artifacts.visibility,
+        xmin: sql`"artifacts"."xmin"::text`.mapWith(pgTextDecoder),
+      })
       .from(hostedSites)
       .leftJoin(
-        hostedSiteVisibility,
-        eq(hostedSiteVisibility.siteId, hostedSites.id),
+        artifacts,
+        and(
+          eq(artifacts.orgId, hostedSites.orgId),
+          eq(artifacts.logicalKey, logicalKey),
+          isNull(artifacts.deletedAt),
+        ),
       )
       .where(and(eq(hostedSites.id, siteId), isNull(hostedSites.deletedAt)))
       .limit(1);
@@ -42,15 +73,58 @@ export const readHostedSitePolicy$ = command(
     if (!row) {
       return null;
     }
+    if (row.artifactId && row.visibility && row.xmin) {
+      return {
+        site: row.site,
+        artifactId: row.artifactId,
+        visibility: row.visibility,
+        revision: sitePolicyRevision(
+          row.site.id,
+          row.artifactId,
+          row.visibility,
+          row.xmin,
+        ),
+      };
+    }
+    // Unpublished sites carry prepared visibility on their latest uploading
+    // deployment manifest until completion creates the `artifacts` row.
+    if (row.site.activeDeploymentId === null) {
+      const [deployment] = await database
+        .select({
+          id: hostedDeployments.id,
+          manifest: hostedDeployments.manifest,
+          xmin: sql`"hosted_deployments"."xmin"::text`.mapWith(pgTextDecoder),
+        })
+        .from(hostedDeployments)
+        .where(eq(hostedDeployments.siteId, siteId))
+        .orderBy(desc(hostedDeployments.createdAt))
+        .limit(1);
+      signal.throwIfAborted();
+      const prepared = deployment?.manifest.visibility;
+      if (deployment && prepared) {
+        return {
+          site: row.site,
+          artifactId: null,
+          visibility: prepared,
+          revision: sitePolicyRevision(
+            row.site.id,
+            deployment.id,
+            prepared,
+            deployment.xmin,
+          ),
+        };
+      }
+    }
     return {
       site: row.site,
-      visibility: row.policy?.visibility ?? "public",
-      revision: row.policy?.revision ?? null,
+      artifactId: null,
+      visibility: "public" as const,
+      revision: null,
     };
   },
 );
 
-/** A Site override only narrows an existing publication or preview grant. */
+/** Live hosted-site access evaluated exclusively from `artifacts.visibility` + `artifact_user_shares`. */
 export const checkHostedSiteAccess$ = command(
   async (
     { get, set },
@@ -70,14 +144,22 @@ export const checkHostedSiteAccess$ = command(
     if (args.userId === policy.site.userId) {
       return { allowed: true, decision: "allow" };
     }
-    if (
-      await set(
-        claimHostedSiteShareAccess$,
-        { siteId: args.siteId, userId: args.userId },
-        signal,
-      )
-    ) {
-      return { allowed: true, decision: "allow" };
+    if (policy.artifactId) {
+      const [share] = await get(db$)
+        .select({ userId: artifactUserShares.userId })
+        .from(artifactUserShares)
+        .where(
+          and(
+            eq(artifactUserShares.artifactId, policy.artifactId),
+            eq(artifactUserShares.orgId, policy.site.orgId),
+            eq(artifactUserShares.userId, args.userId),
+          ),
+        )
+        .limit(1);
+      signal.throwIfAborted();
+      if (share) {
+        return { allowed: true, decision: "allow" };
+      }
     }
     if (policy.visibility === "private") {
       return { allowed: false, decision: "deny" };
@@ -124,14 +206,25 @@ function publishedDeployment() {
   );
 }
 
-export const getHostedSiteVisibility$ = command(
+const readManageableSitePolicy$ = command(
   async ({ get }, owner: Owner, signal: AbortSignal) => {
-    const [row] = await get(db$)
-      .select({ siteId: hostedSites.id, policy: hostedSiteVisibility })
+    const database = get(db$);
+    const logicalKey = `site:${owner.siteId}`;
+    const [row] = await database
+      .select({
+        siteId: hostedSites.id,
+        artifactId: artifacts.id,
+        visibility: artifacts.visibility,
+        xmin: sql`"artifacts"."xmin"::text`.mapWith(pgTextDecoder),
+      })
       .from(hostedSites)
       .leftJoin(
-        hostedSiteVisibility,
-        eq(hostedSiteVisibility.siteId, hostedSites.id),
+        artifacts,
+        and(
+          eq(artifacts.orgId, hostedSites.orgId),
+          eq(artifacts.logicalKey, logicalKey),
+          isNull(artifacts.deletedAt),
+        ),
       )
       .where(
         and(
@@ -139,7 +232,7 @@ export const getHostedSiteVisibility$ = command(
           owner.preparing
             ? undefined
             : exists(
-                get(db$)
+                database
                   .select({ id: hostedDeployments.id })
                   .from(hostedDeployments)
                   .where(publishedDeployment()),
@@ -148,13 +241,77 @@ export const getHostedSiteVisibility$ = command(
       )
       .limit(1);
     signal.throwIfAborted();
-    return row
-      ? {
+    if (!row) {
+      return null;
+    }
+    if (row.artifactId && row.visibility && row.xmin) {
+      return {
+        siteId: row.siteId,
+        artifactId: row.artifactId,
+        visibility: row.visibility,
+        revision: sitePolicyRevision(
+          row.siteId,
+          row.artifactId,
+          row.visibility,
+          row.xmin,
+        ),
+        rawXmin: row.xmin,
+      };
+    }
+    if (owner.preparing) {
+      const [deployment] = await database
+        .select({
+          id: hostedDeployments.id,
+          manifest: hostedDeployments.manifest,
+          xmin: sql`"hosted_deployments"."xmin"::text`.mapWith(pgTextDecoder),
+        })
+        .from(hostedDeployments)
+        .where(
+          and(
+            eq(hostedDeployments.siteId, owner.siteId),
+            sql`${hostedDeployments.manifest} ? 'visibility'`,
+          ),
+        )
+        .orderBy(desc(hostedDeployments.createdAt))
+        .limit(1);
+      signal.throwIfAborted();
+      const prepared = deployment?.manifest.visibility;
+      if (deployment && prepared) {
+        return {
           siteId: row.siteId,
-          visibility: row.policy?.visibility ?? "public",
-          revision: row.policy?.revision ?? null,
-        }
-      : null;
+          artifactId: null,
+          visibility: prepared,
+          revision: sitePolicyRevision(
+            row.siteId,
+            deployment.id,
+            prepared,
+            deployment.xmin,
+          ),
+          rawXmin: deployment.xmin,
+        };
+      }
+    }
+    return {
+      siteId: row.siteId,
+      artifactId: null,
+      visibility: "public" as const,
+      revision: null,
+      rawXmin: null,
+    };
+  },
+);
+
+export const getHostedSiteVisibility$ = command(
+  async ({ set }, owner: Owner, signal: AbortSignal) => {
+    const policy = await set(readManageableSitePolicy$, owner, signal);
+    if (!policy) {
+      return null;
+    }
+    return {
+      siteId: policy.siteId,
+      visibility: policy.visibility,
+      revision: policy.revision,
+    };
   },
 );
 
@@ -167,78 +324,54 @@ export const updateHostedSiteVisibility$ = command(
     },
     signal: AbortSignal,
   ) => {
-    const current = await set(getHostedSiteVisibility$, args, signal);
+    const current = await set(readManageableSitePolicy$, args, signal);
     if (!current) {
       return { status: "not_found" as const };
     }
     if (current.revision !== args.expectedRevision) {
       return { status: "conflict" as const };
     }
-    const revision = randomUUID();
+    if (!current.artifactId) {
+      return { status: "not_found" as const };
+    }
     const database = set(writeDb$);
     const [changed] = await database
-      .insert(hostedSiteVisibility)
-      .select(
-        database
-          .select({
-            siteId: hostedSites.id,
-            visibility: sql`${args.visibility}::text`
-              .mapWith(hostedSiteVisibility.visibility)
-              .as("visibility"),
-            revision: sql`${revision}::uuid`
-              .mapWith(hostedSiteVisibility.revision)
-              .as("revision"),
-          })
-          .from(hostedSites)
-          .where(
-            and(
-              manageableSiteCondition(args),
-              args.preparing
-                ? undefined
-                : exists(
-                    database
-                      .select({ id: hostedDeployments.id })
-                      .from(hostedDeployments)
-                      .where(publishedDeployment()),
-                  ),
-              args.expectedRevision === null
-                ? undefined
-                : exists(
-                    database
-                      .select({ siteId: hostedSiteVisibility.siteId })
-                      .from(hostedSiteVisibility)
-                      .where(
-                        and(
-                          eq(hostedSiteVisibility.siteId, args.siteId),
-                          eq(
-                            hostedSiteVisibility.revision,
-                            args.expectedRevision,
-                          ),
-                        ),
-                      ),
-                  ),
-            ),
-          ),
-      )
-      .onConflictDoUpdate({
-        target: hostedSiteVisibility.siteId,
-        set: { visibility: args.visibility, revision },
-        setWhere:
-          args.expectedRevision === null
-            ? sql`false`
-            : eq(hostedSiteVisibility.revision, args.expectedRevision),
+      .update(artifacts)
+      .set({
+        visibility: args.visibility,
+        updatedAt: nowDate(),
       })
-      .returning();
+      .where(
+        and(
+          eq(artifacts.id, current.artifactId),
+          isNull(artifacts.deletedAt),
+          current.rawXmin !== null
+            ? sql`"artifacts"."xmin"::text = ${current.rawXmin}`
+            : undefined,
+        ),
+      )
+      .returning({
+        id: artifacts.id,
+        visibility: artifacts.visibility,
+        xmin: sql`"artifacts"."xmin"::text`.mapWith(pgTextDecoder),
+      });
     signal.throwIfAborted();
     if (!changed) {
       return { status: "conflict" as const };
     }
-    await set(
-      syncArtifactVisibilityBySiteId$,
-      { siteId: changed.siteId, visibility: changed.visibility },
-      signal,
-    );
-    return { status: "ok" as const, body: changed };
+    return {
+      status: "ok" as const,
+      body: {
+        siteId: args.siteId,
+        visibility: changed.visibility,
+        revision: sitePolicyRevision(
+          args.siteId,
+          changed.id,
+          changed.visibility,
+          changed.xmin,
+        ),
+      },
+    };
   },
 );
 
@@ -246,45 +379,68 @@ export const prepareHostedSiteVisibility$ = command(
   async (
     { set },
     args: Owner & {
+      readonly deploymentId?: string;
       readonly visibility?: HostedSiteVisibility;
       readonly unpublished: boolean;
     },
     signal: AbortSignal,
   ) => {
     const owner = { ...args, preparing: true };
-    const current = await set(getHostedSiteVisibility$, owner, signal);
+    const current = await set(readManageableSitePolicy$, owner, signal);
     if (!current) {
       throw new Error("Allocated hosted site is no longer available");
     }
-    if (
-      args.visibility === undefined &&
-      (!args.unpublished || current.revision !== null)
-    ) {
-      return { status: "ok" as const, visibility: current.visibility };
-    }
-    const updated = await set(
-      updateHostedSiteVisibility$,
-      {
-        ...owner,
-        visibility: args.visibility ?? "private",
-        expectedRevision: current.revision,
-      },
-      signal,
-    );
-    if (updated.status === "conflict" && args.visibility === undefined) {
-      // An implicit default preserves the policy another preparation established.
-      const initialized = await set(getHostedSiteVisibility$, owner, signal);
-      if (initialized && initialized.revision !== null) {
-        return { status: "ok" as const, visibility: initialized.visibility };
+    // Site already has an active `artifacts` row: update it directly when
+    // explicit visibility is requested, or keep its existing visibility.
+    if (current.artifactId) {
+      if (args.visibility === undefined) {
+        return { status: "ok" as const, visibility: current.visibility };
       }
+      const updated = await set(
+        updateHostedSiteVisibility$,
+        {
+          ...owner,
+          visibility: args.visibility,
+          expectedRevision: current.revision,
+        },
+        signal,
+      );
+      if (updated.status !== "ok") {
+        return {
+          status: "conflict" as const,
+          message:
+            "Website visibility changed; retry publishing after checking its current policy",
+        };
+      }
+      return { status: "ok" as const, visibility: updated.body.visibility };
     }
-    if (updated.status !== "ok") {
-      return {
-        status: "conflict" as const,
-        message:
-          "Website visibility changed; retry publishing after checking its current policy",
-      };
+
+    // Site has no active `artifacts` row yet (new site or redeploying deleted
+    // site). Record the effective visibility on the uploading deployment
+    // manifest so completion creates the `artifacts` row with it atomically.
+    const nextVisibility: HostedSiteVisibility =
+      args.visibility ??
+      (current.revision !== null
+        ? current.visibility
+        : args.unpublished
+          ? "private"
+          : current.visibility);
+
+    if (args.deploymentId) {
+      await set(writeDb$)
+        .update(hostedDeployments)
+        .set({
+          manifest: sql`jsonb_set(${hostedDeployments.manifest}, '{visibility}', to_jsonb(${nextVisibility}::text), true)`,
+          updatedAt: nowDate(),
+        })
+        .where(
+          and(
+            eq(hostedDeployments.id, args.deploymentId),
+            eq(hostedDeployments.siteId, args.siteId),
+          ),
+        );
+      signal.throwIfAborted();
     }
-    return { status: "ok" as const, visibility: updated.body.visibility };
+    return { status: "ok" as const, visibility: nextVisibility };
   },
 );
