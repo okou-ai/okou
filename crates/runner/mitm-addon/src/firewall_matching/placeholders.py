@@ -32,7 +32,7 @@ class CredentialHints(NamedTuple):
     def matches(
         self,
         headers: frozenset[tuple[bytes, bytes]],
-        query_pairs: Callable[[], list[tuple[str, str]]],
+        query_pairs: Callable[[], frozenset[tuple[str, str]]],
         variables: Mapping[str, str] | None = None,
     ) -> bool:
         for name, hint in self.headers:
@@ -41,7 +41,7 @@ class CredentialHints(NamedTuple):
                 return True
         if not self.query:
             return False
-        pairs = set(query_pairs())
+        pairs = query_pairs()
         for name, hint in self.query:
             query_value = hint if isinstance(hint, str) else _render_template(hint, variables)
             if query_value is not None and (name, query_value) in pairs:

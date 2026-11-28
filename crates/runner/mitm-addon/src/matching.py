@@ -12,6 +12,7 @@ import json
 import re
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field
+from functools import cache
 from types import MappingProxyType
 from typing import Literal, NamedTuple
 from urllib.parse import parse_qsl, urlsplit
@@ -2360,13 +2361,18 @@ def _match_compiled_firewall_request_with_api_candidates(
             headers = frozenset(
                 (name.lower(), value) for name, value in request_context.raw_header_fields
             )
+
+            @cache
+            def get_query_pair_set() -> frozenset[tuple[str, str]]:
+                return frozenset(get_query_pairs())
+
             marked_owners = {
                 match.firewall.name
                 for match in owner_matches
                 if not match.firewall.name_malformed
                 and match.api.core.credential_hints.matches(
                     headers,
-                    get_query_pairs,
+                    get_query_pair_set,
                     request_context.credential_variables,
                 )
             }

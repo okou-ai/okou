@@ -675,6 +675,7 @@ function isCustomAvailableDiagnosticRuntime(
 }
 
 async function loadRunDiagnosticState(args: {
+  readonly mode: ConnectorCheckRequestBody["mode"];
   readonly scope: RunDiagnosticRegistration;
   readonly targets: readonly ConnectorRuntimeTargetRegistration[];
   readonly runtimes: readonly ConnectorRuntimeDiagnosticResult[];
@@ -702,7 +703,10 @@ async function loadRunDiagnosticState(args: {
       configs.push(configFromCustomRuntime(runtime));
       continue;
     }
-    if (!isBuiltinDiagnosticRuntime(runtime) || runtime.state === "absent") {
+    if (
+      !isBuiltinDiagnosticRuntime(runtime) ||
+      (args.mode === "url" && runtime.state === "absent")
+    ) {
       unavailableReasonByTargetKey.set(key, unavailableRuntimeReason(runtime));
       continue;
     }
@@ -1640,6 +1644,7 @@ export const resolveConnectorCheck$ = command(
           ? []
           : await set(resolveConnectorRuntimeDiagnosticTargets$, runtimeArgs);
       const state = await loadRunDiagnosticState({
+        mode: args.request.mode,
         scope: runRegistration,
         targets: runtimeArgs.targets,
         runtimes,

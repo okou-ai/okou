@@ -1647,6 +1647,17 @@ describe("POST /api/connectors/diagnostics/check", () => {
         target: { kind: "builtin", connectorSlug: "reap" },
         reason: "connector-unavailable",
       });
+
+      const environment = await checkWithToken(token, {
+        mode: "environment",
+        environmentName: "REAP_API_KEY",
+        permission: "write",
+      });
+      expect(environment.body).toMatchObject({
+        outcome: "resolved",
+        run: { status: "configured" },
+        permission: { outcome: "unavailable", basis: "policies-unavailable" },
+      });
     });
 
     it("redacts explicit custom diagnostics and reflects permission changes and selection precedence", async () => {
