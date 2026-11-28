@@ -76,16 +76,14 @@ internal fun RenameListItemSheet(
     val saving = status == RenameStatus.Saving
     val form = editor.form(confirmedName, enabled && !saving)
     val name = form.name
-    if (
-        submitted != null &&
-            submitted.eventId == confirmedEventId &&
-            normalizedRenameName(input.text) == submitted.name
-    ) {
+    if (submitted != null && submitted.eventId == confirmedEventId) {
         LaunchedEffect(submitted) {
-            if (editor.submitted == submitted && normalizedRenameName(input.text) == submitted.name)
-                saved()
+            if (editor.submitted == submitted) {
+                if (normalizedRenameName(input.text) == submitted.name) saved()
+                else editor.submitted = null
+            }
         }
-        return
+        if (normalizedRenameName(input.text) == submitted.name) return
     }
 
     LaunchedEffect(editor, confirmedName, saving) {
@@ -129,12 +127,13 @@ internal fun RenameListItemSheet(
         },
     ) {
         WorkspaceNameFormBody(
-            editor.field,
-            label,
-            saving,
-            validation,
-            projectName,
-            notice,
+            field = editor.field,
+            label = label,
+            // Keeping the field editable retains its IME session during the write.
+            readOnly = false,
+            validation = validation,
+            projectName = projectName,
+            notice = notice,
             noticeIsError = notice == R.string.chat_rename_save_failed,
         )
     }

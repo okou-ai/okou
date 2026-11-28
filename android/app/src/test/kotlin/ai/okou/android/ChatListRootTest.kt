@@ -471,6 +471,48 @@ internal class ChatRenameFormRootTest : ChatListRootTestFixture() {
     }
 
     @Test
+    fun observingTheSavedNameKeepsEditsMadeWhileTheRenameWasPending() {
+        val app = compose.activity.application as ChatListApplication
+        val events = app.fixture.rowEventTail()
+        val releaseWrite = CountDownLatch(1)
+        val started = CountDownLatch(1)
+        app.fixture.commandResponse = { request ->
+            if (request.requestUrl?.encodedPath == "/api/chat-threads/$CHAT_PERSONAL/rename") {
+                val id = request.jsonCommandBody().getValue("eventId").jsonPrimitive.content
+                started.countDown()
+                releaseWrite.await()
+                events.add(
+                    24L to
+                        chatEventWire(id, 24, CHAT_PERSONAL, "renamed", title = "Submitted title"),
+                )
+                MockResponse().setResponseCode(204)
+            } else null
+        }
+        app.responseGate.countDown()
+        awaitListAndNames()
+        compose.onNodeWithTag("chat_$CHAT_PERSONAL").performTouchInput { longClick() }
+        compose.onNodeWithText("Rename chat").performClick()
+        val editor = compose.onNodeWithContentDescription("New name")
+        val save = compose.onNodeWithText("Save")
+        editor.performTextReplacement("Submitted title")
+        try {
+            save.performClick()
+            compose.waitUntil(10_000) { started.count == 0L }
+            compose.onNodeWithText("Saving…").assertIsNotEnabled()
+            editor.performTextReplacement("New draft")
+            editor.assertTextContains("New draft").assertIsFocused()
+        } finally {
+            releaseWrite.countDown()
+        }
+        compose.waitUntilExactlyOneExists(hasText("Save") and isEnabled(), 10_000)
+        editor.assertTextContains("New draft").assertIsFocused()
+        editor.performTextReplacement("Submitted title")
+        save.assertIsNotEnabled()
+        editor.assertIsDisplayed()
+        compose.onNodeWithText("Chat title saved").assertDoesNotExist()
+    }
+
+    @Test
     @Config(qualifiers = "en-rUS-w760dp-h400dp")
     fun chatRenameKeepsTheEditorAndActionsReachableInAShortWindow() {
         val app = compose.activity.application as ChatListApplication
