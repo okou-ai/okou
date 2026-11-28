@@ -21,6 +21,7 @@ import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.FloatingActionButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.ListItem
+import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -33,6 +34,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.layout.SubcomposeLayout
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
@@ -214,9 +217,20 @@ internal fun ChatListSkeleton(@StringRes loadingLabel: Int = R.string.chat_loadi
     Column(Modifier.semantics { contentDescription = label }) {
         val widths = listOf(.56f, .70f, .44f)
         repeat(6) { index ->
-            ListItem(modifier = Modifier.fillMaxWidth()) {
-                ChatSkeletonBlock(Modifier.fillMaxWidth(widths[index % widths.size]).height(14.dp))
+            ListItem(modifier = Modifier.fillMaxWidth().testTag("chat_list_skeleton_row")) {
+                ListItemSkeletonLine(widths[index % widths.size])
             }
         }
+    }
+}
+
+@Composable
+internal fun ListItemSkeletonLine(widthFraction: Float) {
+    val lineHeight = LocalTextStyle.current.lineHeight
+    Box(
+        Modifier.fillMaxWidth().heightIn(min = with(LocalDensity.current) { lineHeight.toDp() }),
+        contentAlignment = Alignment.CenterStart,
+    ) {
+        ChatSkeletonBlock(Modifier.fillMaxWidth(widthFraction).height(14.dp))
     }
 }
