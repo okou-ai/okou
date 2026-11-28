@@ -740,11 +740,20 @@ internal class ChatComposerSendModelTest : ChatComposerModelTestFixture() {
                 }
             val file = unavailable.attachments(existing).single()
             assertEquals(AttachmentFailure.SourceUnavailable, file.failure)
-            assertFalse(unavailable.canSend(existing))
-            model.removeAttachment(file.key)
             model.send(existing)
+            assertTrue(service.requests.isEmpty())
+            val confirmation = checkNotNull(unavailable.attachmentSkip(existing))
+            model.send(existing, null, confirmation.copy(target = other))
+            assertTrue(service.requests.isEmpty())
+            model.edit(existing, "")
+            assertFalse(model.uiState.value.canSend(existing))
+            model.send(existing, null, confirmation)
+            assertTrue(service.requests.isEmpty())
+            model.edit(existing, "Include the selected file")
+            model.send(existing, null, confirmation)
             runCurrent()
             assertEquals("Include the selected file", service.requests.single().prompt)
+            assertTrue(model.uiState.value.attachments(existing).isEmpty())
         }
 
     @Test

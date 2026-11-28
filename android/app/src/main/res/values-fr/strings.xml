@@ -130,4 +130,11 @@
     <string name="settings_timezone">Fuseau horaire</string>
     <string name="settings_timezone_utc">Temps universel coordonné</string>
     <string name="settings_timezone_format">%1$s (UTC%2$s)</string>
+    <string name="composer_skip_attachments_title">Ignorer les pièces jointes non importées ?</string>
+    <string name="composer_skip_attachments_edit">Revenir à la modification</string>
+    <string name="composer_skip_attachments_send">Continuer l’envoi</string>
+    <plurals name="composer_skip_attachments_message">
+        <item quantity="one">%1$d pièce jointe sera retirée du brouillon avant l’envoi :</item>
+        <item quantity="other">%1$d pièces jointes seront retirées du brouillon avant l’envoi :</item>
+    </plurals>
 </resources>

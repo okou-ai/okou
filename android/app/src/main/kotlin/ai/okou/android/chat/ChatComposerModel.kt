@@ -117,8 +117,11 @@ class ChatComposerModel(
 
     fun send(target: ComposerTarget) = owner.send(connection, target)
 
-    internal fun send(target: ComposerTarget, options: DefaultModelOptions?) =
-        owner.send(connection, target, options)
+    internal fun send(
+        target: ComposerTarget,
+        options: DefaultModelOptions?,
+        skip: AttachmentSkip? = null,
+    ) = owner.send(connection, target, options, skip)
 
     internal fun editDraftModel(target: ComposerTarget, selection: DraftModelSelection) =
         owner.editDraftModel(connection, target, selection)

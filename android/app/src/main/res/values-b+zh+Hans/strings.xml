@@ -130,4 +130,10 @@
     <string name="settings_timezone">时区</string>
     <string name="settings_timezone_utc">协调世界时</string>
     <string name="settings_timezone_format">%1$s（UTC%2$s）</string>
+    <string name="composer_skip_attachments_title">跳过未上传的附件？</string>
+    <string name="composer_skip_attachments_edit">返回编辑</string>
+    <string name="composer_skip_attachments_send">继续发送</string>
+    <plurals name="composer_skip_attachments_message">
+        <item quantity="other">继续发送会从本次草稿移除以下 %1$d 个附件：</item>
+    </plurals>
 </resources>

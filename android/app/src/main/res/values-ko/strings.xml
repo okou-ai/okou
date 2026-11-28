@@ -130,4 +130,10 @@
     <string name="settings_timezone">시간대</string>
     <string name="settings_timezone_utc">협정 세계시</string>
     <string name="settings_timezone_format">%1$s(UTC%2$s)</string>
+    <string name="composer_skip_attachments_title">업로드하지 못한 첨부 파일을 건너뛸까요?</string>
+    <string name="composer_skip_attachments_edit">편집으로 돌아가기</string>
+    <string name="composer_skip_attachments_send">계속 보내기</string>
+    <plurals name="composer_skip_attachments_message">
+        <item quantity="other">보내기 전에 초안에서 첨부 파일 %1$d개가 삭제됩니다.</item>
+    </plurals>
 </resources>

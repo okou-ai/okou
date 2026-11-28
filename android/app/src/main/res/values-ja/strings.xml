@@ -130,4 +130,10 @@
     <string name="settings_timezone">タイムゾーン</string>
     <string name="settings_timezone_utc">協定世界時</string>
     <string name="settings_timezone_format">%1$s（UTC%2$s）</string>
+    <string name="composer_skip_attachments_title">アップロードできなかった添付ファイルを除外しますか？</string>
+    <string name="composer_skip_attachments_edit">編集に戻る</string>
+    <string name="composer_skip_attachments_send">送信を続ける</string>
+    <plurals name="composer_skip_attachments_message">
+        <item quantity="other">送信前に下書きから次の添付ファイル %1$d 件を削除します：</item>
+    </plurals>
 </resources>

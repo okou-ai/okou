@@ -130,4 +130,11 @@
     <string name="settings_timezone">Zeitzone</string>
     <string name="settings_timezone_utc">Koordinierte Weltzeit</string>
     <string name="settings_timezone_format">%1$s (UTC%2$s)</string>
+    <string name="composer_skip_attachments_title">Nicht hochgeladene Anhänge überspringen?</string>
+    <string name="composer_skip_attachments_edit">Weiter bearbeiten</string>
+    <string name="composer_skip_attachments_send">Trotzdem senden</string>
+    <plurals name="composer_skip_attachments_message">
+        <item quantity="one">%1$d Anhang wird vor dem Senden aus dem Entwurf entfernt:</item>
+        <item quantity="other">%1$d Anhänge werden vor dem Senden aus dem Entwurf entfernt:</item>
+    </plurals>
 </resources>
