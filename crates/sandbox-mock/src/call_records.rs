@@ -110,6 +110,8 @@ pub struct GuestStateRestoreCall {
     pub entropy_len: usize,
     /// Requested timezone behavior.
     pub timezone: GuestStateRestoreTimezoneCall,
+    /// Optional Instructions metadata passed to the fixed restore helper.
+    pub instruction_check: Option<String>,
     /// Helper timeout supplied by the caller.
     pub timeout: Duration,
 }

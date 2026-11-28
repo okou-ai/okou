@@ -13,6 +13,8 @@
 //! guest-state-restore < entropy-bytes
 //! guest-state-restore --restore-state <seconds> <nanoseconds>
 //!   <none|best-effort|required> [timezone] < entropy-bytes
+//! guest-state-restore --check-instructions <metadata> --restore-state
+//!   <seconds> <nanoseconds> <none|best-effort|required> [timezone] < entropy-bytes
 //! guest-state-restore --sync-timezone <timezone>
 //! ```
 //!
@@ -25,11 +27,35 @@
 //! update `/etc`. The command returns 0 on success and 1 for argument, input,
 //! clock, reseed, or required-timezone failures. Best-effort timezone outcomes
 //! return 0 with bounded stderr markers when unavailable or failed.
+//! With Instructions metadata, a successful restore is followed by a check
+//! under the sandbox user. That check supplies the terminal exit code defined
+//! by `guest_contracts::agent_instructions::RestoredInstructionCheck`.
+
+use guest_contracts::agent_instructions::CHECK_AFTER_RESTORE_ARG;
+
+mod instructions;
 
 fn main() {
-    std::process::exit(guest_state_restore::run_cli(
-        std::io::stdin().lock(),
-        std::io::stderr().lock(),
-        std::env::args_os().skip(1),
-    ));
+    let mut args = std::env::args_os().skip(1).peekable();
+    let check = if args.next_if(|arg| arg == CHECK_AFTER_RESTORE_ARG).is_some() {
+        match args.next().and_then(|metadata| metadata.into_string().ok()) {
+            Some(metadata) if args.peek().is_some_and(|arg| arg == "--restore-state") => {
+                Some(metadata)
+            }
+            _ => {
+                eprintln!("guest-state-restore: invalid Instructions check arguments");
+                std::process::exit(1);
+            }
+        }
+    } else {
+        None
+    };
+    let restored =
+        guest_state_restore::run_cli(std::io::stdin().lock(), std::io::stderr().lock(), args);
+    if restored == 0
+        && let Some(metadata) = check
+    {
+        std::process::exit(instructions::check(metadata.as_bytes()) as i32);
+    }
+    std::process::exit(restored);
 }

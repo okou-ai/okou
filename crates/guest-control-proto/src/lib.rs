@@ -57,7 +57,7 @@
 //! | 0x17 | G→H       | guest_dns_readiness_result | `[termination][4B duration_ms][1B flags][2B answer_len][answer][2B diagnostic_len][diagnostic]` |
 //! | 0x18 | H→G       | guest_storage_manifest | `[4B positive timeout_ms][2B run_id_len][run_id][2B runtime_dir_len][runtime_dir][4B manifest_len][manifest]` |
 //! | 0x19 | G→H       | guest_storage_manifest_result | `[2B resource_json_len][resource_json][exec_result]`; optional resources bounded to 4 KiB, both streams captured and bounded to 1 MiB each |
-//! | 0x1A | H→G       | guest_state_restore | `[4B positive timeout_ms][8B unix_seconds][4B unix_nanoseconds][1B timezone_mode][2B timezone_len][timezone][256B entropy]` |
+//! | 0x1A | H→G       | guest_state_restore | `[4B positive timeout_ms][8B unix_seconds][4B unix_nanoseconds][1B timezone_mode][2B timezone_len][timezone][256B entropy]` plus optional `[I][bounded UTF-8 Instructions metadata]` |
 //! | 0x1B | G→H       | guest_state_restore_result | same payload as `exec_result`, with empty stdout and stderr bounded to 64 KiB |
 //! | 0x1C | G→H       | exec_agent_ready | `[4B containment_create_us][4B placement_broker_setup_us][4B shell_spawn_us][4B bootstrap_ready_wait_us]` |
 //! | 0x1D | H→G       | write_private_files | same payload as `write_files`; result is `write_files_result` with the request sequence |
@@ -258,9 +258,9 @@ pub use payloads::guest_state_restore::{
     DecodedGuestStateRestoreRequest, GUEST_STATE_RESTORE_ENTROPY_BYTES,
     GUEST_STATE_RESTORE_MAX_TIMEZONE_BYTES, GUEST_STATE_RESTORE_OUTPUT_LIMIT_BYTES,
     GuestStateRestoreTimezone, decode_guest_state_restore_request,
-    decode_guest_state_restore_result, encode_guest_state_restore_request,
-    encode_guest_state_restore_request_frame_into, encode_guest_state_restore_result,
-    encode_guest_state_restore_result_frame_into,
+    decode_guest_state_restore_result, encode_guest_state_restore_frame,
+    encode_guest_state_restore_request, encode_guest_state_restore_request_frame_into,
+    encode_guest_state_restore_result, encode_guest_state_restore_result_frame_into,
 };
 pub use payloads::guest_storage_manifest::{
     DecodedGuestStorageManifestRequest, DecodedGuestStorageManifestResult,

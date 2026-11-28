@@ -1294,11 +1294,12 @@ async fn create_started_sandbox(
 
     let (mut error, unregister_warning, prepared_guest_runtime) = 'prepare: {
         let prepared_guest_runtime = if codex_model_catalog_prefetch {
-            PreparedGuestRuntime::prepare_for_codex_model_catalog_prefetch(
+            PreparedGuestRuntime::prepare_early(
                 sandbox.as_ref(),
                 context,
                 params.restore_guest_state,
                 reuse_result,
+                None,
                 PreparationCancellation::new(cancel, hard_cancel),
                 telemetry,
             )
@@ -1330,7 +1331,7 @@ async fn create_started_sandbox(
         // Keep the existing preparation retry boundary for those failures.
         let guest_operation_failed = match &prepared_guest_runtime {
             Some(PreparedGuestRuntime::Failed(RunnerError::Sandbox(_))) => true,
-            Some(PreparedGuestRuntime::Ready(prefetch)) => prefetch.start_failed(),
+            Some(PreparedGuestRuntime::Ready(prefetch, _)) => prefetch.start_failed(),
             _ => false,
         };
         if !matches!(start_result, Ok(SandboxStartOutcome::HomeMounted))

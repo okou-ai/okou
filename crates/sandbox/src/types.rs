@@ -143,6 +143,8 @@ pub struct GuestStateRestoreRequest<'a> {
     pub entropy: &'a [u8; 256],
     /// Optional guest timezone behavior.
     pub timezone: GuestStateRestoreTimezone<'a>,
+    /// Bounded metadata for an optional post-restore Instructions check.
+    pub instruction_check: Option<&'a str>,
     /// Guest-side helper timeout.
     pub timeout: Duration,
 }

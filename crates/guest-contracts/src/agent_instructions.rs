@@ -60,7 +60,7 @@ pub struct InstructionApplication {
 }
 
 /// Inspect the managed file and any startup roots needed for reuse.
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct InstructionCheck {
     /// Framework discriminator.
@@ -70,8 +70,41 @@ pub struct InstructionCheck {
     pub check_memory_root: bool,
 }
 
+/// Fixed helper option for checking Instructions after state restore.
+pub const CHECK_AFTER_RESTORE_ARG: &str = "--check-instructions";
+
+/// Exit codes produced only after a successful Guest state restore.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[repr(i32)]
+pub enum RestoredInstructionCheck {
+    /// Repair the absent Instructions file using the accepted Storage.
+    Missing = 10,
+    /// The Instructions file can be reused.
+    Current = 11,
+    /// The Instructions file and requested Memory root can be reused.
+    CurrentWithMemory = 12,
+    /// The local target is inaccessible or has the wrong file type.
+    TargetUnavailable = 13,
+    /// The check could not be completed for another reason.
+    Failed = 14,
+}
+
+impl RestoredInstructionCheck {
+    /// Interpret a fixed restore helper exit code.
+    pub const fn from_exit_code(code: i32) -> Option<Self> {
+        match code {
+            10 => Some(Self::Missing),
+            11 => Some(Self::Current),
+            12 => Some(Self::CurrentWithMemory),
+            13 => Some(Self::TargetUnavailable),
+            14 => Some(Self::Failed),
+            _ => None,
+        }
+    }
+}
+
 /// Reuse observations from the bounded Guest Instructions helper.
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct InstructionCheckResult {
     /// The local Instructions file can be preserved.
     pub instructions_current: bool,

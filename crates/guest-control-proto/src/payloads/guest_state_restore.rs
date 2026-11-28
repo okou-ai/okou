@@ -3,8 +3,8 @@ use guest_contracts::guest_timezone::is_safe_timezone_name;
 use crate::ProtocolError;
 use crate::frame::encode_into;
 use crate::read::{
-    checked_payload_len_add, ensure_payload_fits_message, ensure_u16_len, expect_consumed,
-    read_slice, read_str, read_u8, read_u16, read_u32, read_u64,
+    checked_payload_len_add, ensure_payload_fits_message, ensure_u16_len, read_slice, read_str,
+    read_u8, read_u16, read_u32, read_u64,
 };
 use crate::wire::{MSG_GUEST_STATE_RESTORE, MSG_GUEST_STATE_RESTORE_RESULT};
 use crate::{DecodedExecResult, ExecCapturedOutput, ExecTermination};
@@ -21,6 +21,7 @@ pub const GUEST_STATE_RESTORE_OUTPUT_LIMIT_BYTES: usize = 64 * 1024;
 const TIMEZONE_NONE: u8 = 0;
 const TIMEZONE_BEST_EFFORT: u8 = 1;
 const TIMEZONE_REQUIRED: u8 = 2;
+const INSTRUCTIONS_SUFFIX: u8 = b'I';
 
 /// Typed timezone behavior for the fixed guest-state restore operation.
 ///
@@ -49,6 +50,8 @@ pub struct DecodedGuestStateRestoreRequest<'a> {
     pub entropy: &'a [u8],
     /// Optional timezone behavior.
     pub timezone: GuestStateRestoreTimezone<'a>,
+    /// Optional canonical Instructions check metadata.
+    pub instruction_check: Option<&'a str>,
 }
 
 impl std::fmt::Debug for DecodedGuestStateRestoreRequest<'_> {
@@ -60,6 +63,7 @@ impl std::fmt::Debug for DecodedGuestStateRestoreRequest<'_> {
             .field("unix_nanoseconds", &self.unix_nanoseconds)
             .field("entropy_len", &self.entropy.len())
             .field("timezone", &self.timezone)
+            .field("has_instruction_check", &self.instruction_check.is_some())
             .finish()
     }
 }
@@ -103,6 +107,34 @@ pub fn encode_guest_state_restore_request_frame_into(
     entropy: &[u8],
     timezone: GuestStateRestoreTimezone<'_>,
 ) -> Result<(), ProtocolError> {
+    encode_guest_state_restore_frame(
+        frame,
+        seq,
+        DecodedGuestStateRestoreRequest {
+            timeout_ms,
+            unix_seconds,
+            unix_nanoseconds,
+            entropy,
+            timezone,
+            instruction_check: None,
+        },
+    )
+}
+
+/// Encode the fixed restore request, optionally ending with an Instructions check.
+pub fn encode_guest_state_restore_frame(
+    frame: &mut Vec<u8>,
+    seq: u32,
+    request: DecodedGuestStateRestoreRequest<'_>,
+) -> Result<(), ProtocolError> {
+    let DecodedGuestStateRestoreRequest {
+        timeout_ms,
+        unix_seconds,
+        unix_nanoseconds,
+        entropy,
+        timezone,
+        instruction_check,
+    } = request;
     let timezone_length = validate_request(
         timeout_ms,
         unix_seconds,
@@ -110,7 +142,11 @@ pub fn encode_guest_state_restore_request_frame_into(
         entropy,
         timezone,
     )?;
-    let payload_len = request_payload_len(timezone)?;
+    if let Some(check) = instruction_check {
+        validate_instruction_check(check)?;
+    }
+    let suffix_len = instruction_check.map_or(0, |check| 1 + check.len());
+    let payload_len = checked_payload_len_add(request_payload_len(timezone)?, suffix_len)?;
     encode_into(frame, MSG_GUEST_STATE_RESTORE, seq, payload_len, |frame| {
         append_request_payload(
             frame,
@@ -120,7 +156,11 @@ pub fn encode_guest_state_restore_request_frame_into(
             entropy,
             timezone,
             timezone_length,
-        )
+        );
+        if let Some(check) = instruction_check {
+            frame.push(INSTRUCTIONS_SUFFIX);
+            frame.extend_from_slice(check.as_bytes());
+        }
     })
 }
 
@@ -167,7 +207,21 @@ pub fn decode_guest_state_restore_request(
         GUEST_STATE_RESTORE_ENTROPY_BYTES,
         "guest_state_restore entropy truncated",
     )?;
-    expect_consumed(payload, offset, "guest_state_restore trailing bytes")?;
+    let instruction_check = match payload.get(offset..) {
+        Some([]) => None,
+        Some([INSTRUCTIONS_SUFFIX, metadata @ ..]) => {
+            let check = std::str::from_utf8(metadata).map_err(|_| {
+                ProtocolError::InvalidPayload("guest state Instructions check invalid UTF-8")
+            })?;
+            validate_instruction_check(check)?;
+            Some(check)
+        }
+        _ => {
+            return Err(ProtocolError::InvalidPayload(
+                "guest_state_restore trailing bytes",
+            ));
+        }
+    };
     let timezone = decode_timezone(timezone_mode, timezone_name)?;
     validate_request(
         timeout_ms,
@@ -182,7 +236,24 @@ pub fn decode_guest_state_restore_request(
         unix_nanoseconds,
         entropy,
         timezone,
+        instruction_check,
     })
+}
+
+fn validate_instruction_check(check: &str) -> Result<(), ProtocolError> {
+    use guest_contracts::agent_instructions::MAX_METADATA_BYTES;
+    if check.is_empty() || check.contains('\0') {
+        return Err(ProtocolError::InvalidPayload(
+            "invalid guest state Instructions check",
+        ));
+    }
+    if check.len() > MAX_METADATA_BYTES {
+        return Err(ProtocolError::PayloadTooLarge(
+            "Instructions check",
+            check.len(),
+        ));
+    }
+    Ok(())
 }
 
 /// Encode a fixed guest-state restore terminal result payload.

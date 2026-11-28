@@ -37,6 +37,7 @@ use super::env::{
     prepare_required_agent_files,
 };
 use super::guest_state::{restore_guest_state, sync_guest_timezone};
+use super::storage::CompletedInstructionCheck;
 use super::telemetry::{RunnerSpawnTiming, record_api_startup_boundaries};
 use super::{
     EXIT_SIGKILL, ExecutionFailure, ExecutorConfig, JOB_TIMEOUT, JOB_TIMEOUT_EXIT_CODE,
@@ -51,6 +52,7 @@ use crate::restored_session_identity::{
 use crate::storage_cache::{DeferredBackgroundFill, PendingGuestArchives};
 use crate::storage_plan::{StoragePlan, build_storage_plan};
 use crate::telemetry::JobTelemetry;
+use guest_contracts::agent_instructions::InstructionCheck;
 use guest_contracts::guest_binary::AGENT_PATH;
 use runner_provider::ActiveInputSource;
 use runner_types::ids::RunId;
@@ -868,7 +870,10 @@ impl PreparedRunInputs {
 }
 
 pub(super) enum PreparedGuestRuntime {
-    Ready(StartedCodexModelCatalogPrefetch),
+    Ready(
+        StartedCodexModelCatalogPrefetch,
+        Option<CompletedInstructionCheck>,
+    ),
     SandboxUnusable(RunnerError),
     Failed(RunnerError),
     Cancelled,
@@ -880,26 +885,30 @@ impl PreparedGuestRuntime {
         context: &ExecutionContext,
         reuse_result: SandboxReuseResult,
         cancel: &CancellationToken,
+        instructions: Option<CompletedInstructionCheck>,
         telemetry: &mut JobTelemetry,
     ) -> Self {
         match StartedCodexModelCatalogPrefetch::start(sandbox, context, reuse_result, cancel).await
         {
-            CodexModelCatalogPrefetchStart::Usable(prefetch) => Self::Ready(prefetch),
+            CodexModelCatalogPrefetchStart::Usable(prefetch) => Self::Ready(prefetch, instructions),
             CodexModelCatalogPrefetchStart::SandboxUnusable(unusable) => {
                 Self::SandboxUnusable(unusable.record_and_into_error(telemetry).into())
             }
         }
     }
 
-    pub(super) async fn prepare_for_codex_model_catalog_prefetch(
+    pub(super) async fn prepare_early(
         sandbox: &dyn Sandbox,
         context: &ExecutionContext,
         restore_guest_state: bool,
         reuse_result: SandboxReuseResult,
+        instruction_check: Option<InstructionCheck>,
         cancellation: PreparationCancellation<'_>,
         telemetry: &mut JobTelemetry,
     ) -> Option<Self> {
-        if !is_codex_model_catalog_prefetch_eligible(context, reuse_result) {
+        if instruction_check.is_none()
+            && !is_codex_model_catalog_prefetch_eligible(context, reuse_result)
+        {
             return None;
         }
 
@@ -909,6 +918,7 @@ impl PreparedGuestRuntime {
                 context,
                 restore_guest_state,
                 reuse_result,
+                instruction_check,
                 cancellation,
                 telemetry,
             )
@@ -927,13 +937,14 @@ impl PreparedGuestRuntime {
             sandbox,
             context,
             restore_guest_state,
+            None,
             cancellation,
             telemetry,
         )
         .await
         {
-            GuestRuntimeStatePreparation::Ready => {
-                Self::Ready(StartedCodexModelCatalogPrefetch::disabled())
+            GuestRuntimeStatePreparation::Ready(instructions) => {
+                Self::Ready(StartedCodexModelCatalogPrefetch::disabled(), instructions)
             }
             GuestRuntimeStatePreparation::Failed(error) => Self::Failed(error),
             GuestRuntimeStatePreparation::Cancelled => Self::Cancelled,
@@ -945,6 +956,7 @@ impl PreparedGuestRuntime {
         context: &ExecutionContext,
         restore_guest_state: bool,
         reuse_result: SandboxReuseResult,
+        instruction_check: Option<InstructionCheck>,
         cancellation: PreparationCancellation<'_>,
         telemetry: &mut JobTelemetry,
     ) -> Self {
@@ -952,17 +964,19 @@ impl PreparedGuestRuntime {
             sandbox,
             context,
             restore_guest_state,
+            instruction_check,
             cancellation,
             telemetry,
         )
         .await
         {
-            GuestRuntimeStatePreparation::Ready => {
+            GuestRuntimeStatePreparation::Ready(instructions) => {
                 Self::start_codex_model_catalog_prefetch(
                     sandbox,
                     context,
                     reuse_result,
                     cancellation.any,
+                    instructions,
                     telemetry,
                 )
                 .await
@@ -973,45 +987,61 @@ impl PreparedGuestRuntime {
     }
 
     pub(super) async fn finish(self, sandbox: &dyn Sandbox, telemetry: &mut JobTelemetry) {
-        if let Self::Ready(prefetch) = self {
+        if let Self::Ready(prefetch, _) = self {
             prefetch.finish(sandbox, telemetry).await;
         }
     }
 }
 
 impl RunControls {
-    pub(super) async fn prepare_codex_model_catalog_prefetch(
+    pub(super) async fn prepare_blank_guest_runtime(
         &mut self,
         sandbox: &dyn Sandbox,
         context: &ExecutionContext,
         start: &RunStart<'_>,
         telemetry: &mut JobTelemetry,
     ) -> Option<PreparedGuestRuntime> {
-        if !is_codex_model_catalog_prefetch_eligible(context, start.reuse_result) {
-            return None;
-        }
         if self.guest_state_prepared {
-            Some(
+            if !is_codex_model_catalog_prefetch_eligible(context, start.reuse_result) {
+                return None;
+            }
+            return Some(
                 PreparedGuestRuntime::start_codex_model_catalog_prefetch(
                     sandbox,
                     context,
                     start.reuse_result,
                     &self.cancel,
+                    None,
                     telemetry,
                 )
                 .await,
-            )
-        } else {
-            PreparedGuestRuntime::prepare_for_codex_model_catalog_prefetch(
-                sandbox,
-                context,
-                start.restore_guest_state,
-                start.reuse_result,
-                PreparationCancellation::new(&self.cancel, &self.hard_cancel),
-                telemetry,
-            )
-            .await
+            );
         }
+        // A blank VM has completed its Home replacement before this phase.
+        // Select only the check that the accepted Storage plan would run.
+        let instruction_check = if start.restore_guest_state
+            && start.sandbox_startup_path == runner_types::types::SandboxStartupPath::Home
+            && let Some(storage) = self.prepared_storage.as_ref()
+            && let Ok(super::storage::InstructionReusePlan::Check(input)) =
+                super::storage::plan_instruction_reuse(
+                    context,
+                    start.prev_storage,
+                    Some(&storage.plan),
+                ) {
+            Some(input)
+        } else {
+            None
+        };
+        PreparedGuestRuntime::prepare_early(
+            sandbox,
+            context,
+            start.restore_guest_state,
+            start.reuse_result,
+            instruction_check,
+            PreparationCancellation::new(&self.cancel, &self.hard_cancel),
+            telemetry,
+        )
+        .await
     }
 
     #[cfg(test)]
@@ -1560,7 +1590,7 @@ async fn apply_prepared_storage(
 }
 
 enum GuestRuntimeStatePreparation {
-    Ready,
+    Ready(Option<CompletedInstructionCheck>),
     Failed(RunnerError),
     Cancelled,
 }
@@ -1569,31 +1599,62 @@ async fn prepare_guest_runtime_state(
     sandbox: &dyn Sandbox,
     context: &ExecutionContext,
     restore_guest_state_required: bool,
+    instruction_check: Option<InstructionCheck>,
     telemetry: &mut JobTelemetry,
-) -> RunnerResult<()> {
+) -> RunnerResult<Option<CompletedInstructionCheck>> {
     if restore_guest_state_required {
         let started = Instant::now();
-        let result = restore_guest_state(sandbox, context).await;
-        let error = result.as_ref().err().map(ToString::to_string);
-        telemetry.record(
-            "runner_guest_state_restore",
-            started.elapsed(),
-            result.is_ok(),
+        let result = restore_guest_state(sandbox, context, instruction_check.as_ref()).await;
+        let duration = started.elapsed();
+        let (error, outcome) = match &result {
+            Ok(Some(Ok(check))) => (
+                None,
+                Some(if check.instructions_current {
+                    "current"
+                } else {
+                    "missing"
+                }),
+            ),
+            Ok(Some(Err(error @ RunnerError::StorageTargetUnavailable(_)))) => {
+                (Some(error.to_string()), Some("target_unavailable"))
+            }
+            Ok(Some(Err(error))) => (Some(error.to_string()), Some("check_failed")),
+            Ok(None) => (None, None),
+            Err(error) => (
+                Some(error.to_string()),
+                instruction_check.is_some().then_some("restore_failed"),
+            ),
+        };
+        telemetry.record_with_outcome(
+            if instruction_check.is_some() {
+                "runner_guest_state_restore_and_instructions"
+            } else {
+                "runner_guest_state_restore"
+            },
+            duration,
+            error.is_none(),
             error.as_deref(),
+            outcome,
         );
-        result?;
+        Ok(instruction_check
+            .zip(result?)
+            .map(|(input, result)| CompletedInstructionCheck {
+                check_memory_root: input.check_memory_root,
+                result: result.map_err(Box::new),
+            }))
     } else {
         let started = Instant::now();
         sync_guest_timezone(sandbox, context).await;
         telemetry.record("runner_guest_timezone_sync", started.elapsed(), true, None);
+        Ok(None)
     }
-    Ok(())
 }
 
 async fn prepare_guest_runtime_state_phase(
     sandbox: &dyn Sandbox,
     context: &ExecutionContext,
     restore_guest_state_required: bool,
+    instruction_check: Option<InstructionCheck>,
     cancellation: PreparationCancellation<'_>,
     telemetry: &mut JobTelemetry,
 ) -> GuestRuntimeStatePreparation {
@@ -1604,12 +1665,18 @@ async fn prepare_guest_runtime_state_phase(
             sandbox.id(),
             "guest_runtime_state",
         ),
-        prepare_guest_runtime_state(sandbox, context, restore_guest_state_required, telemetry),
+        prepare_guest_runtime_state(
+            sandbox,
+            context,
+            restore_guest_state_required,
+            instruction_check,
+            telemetry,
+        ),
     )
     .await
     {
-        Some(Ok(())) if cancellation.any.is_cancelled() => GuestRuntimeStatePreparation::Cancelled,
-        Some(Ok(())) => GuestRuntimeStatePreparation::Ready,
+        Some(Ok(_)) if cancellation.any.is_cancelled() => GuestRuntimeStatePreparation::Cancelled,
+        Some(Ok(instructions)) => GuestRuntimeStatePreparation::Ready(instructions),
         Some(Err(error)) => GuestRuntimeStatePreparation::Failed(error),
         None => GuestRuntimeStatePreparation::Cancelled,
     }
@@ -1628,12 +1695,14 @@ async fn prepare_guest_storage(
     start: &RunStart<'_>,
     telemetry: &mut JobTelemetry,
     prepared_storage: &mut Option<crate::storage_cache::PreparedStorage>,
+    completed_check: Option<CompletedInstructionCheck>,
 ) -> RunnerResult<GuestStoragePreparation> {
     let reuse = match super::storage::check_instruction_reuse(
         sandbox,
         context,
         start.prev_storage,
         prepared_storage.as_ref().map(|prepared| &prepared.plan),
+        completed_check,
         telemetry,
     )
     .await
@@ -1936,6 +2005,7 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
                 context,
                 start.reuse_result,
                 &controls.cancel,
+                None,
                 telemetry,
             )
             .await
@@ -1946,6 +2016,7 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
                 context,
                 start.restore_guest_state,
                 start.reuse_result,
+                None,
                 PreparationCancellation::new(&controls.cancel, &controls.hard_cancel),
                 telemetry,
             )
@@ -1954,14 +2025,14 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
     };
     // Keep phase cancellation distinct from an error while sharing exit cleanup.
     let guest_preparation = match prepared_guest_runtime {
-        PreparedGuestRuntime::Ready(prefetch) => Ok(prefetch),
+        PreparedGuestRuntime::Ready(prefetch, instructions) => Ok((prefetch, instructions)),
         PreparedGuestRuntime::SandboxUnusable(error) | PreparedGuestRuntime::Failed(error) => {
             Err(Some(error))
         }
         PreparedGuestRuntime::Cancelled => Err(None),
     };
-    let mut model_catalog_prefetch = match guest_preparation {
-        Ok(prefetch) => prefetch.supervise(sandbox),
+    let (mut model_catalog_prefetch, completed_check) = match guest_preparation {
+        Ok((prefetch, instructions)) => (prefetch.supervise(sandbox), instructions),
         Err(error) => {
             if let Some(prepared) = controls.prepared_storage.as_mut() {
                 prepared.delivery.cancel_and_drain(telemetry).await;
@@ -2005,6 +2076,7 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
                     &start,
                     telemetry,
                     &mut controls.prepared_storage,
+                    completed_check,
                 )),
             ))
             .await;

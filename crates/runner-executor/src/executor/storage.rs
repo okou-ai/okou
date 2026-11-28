@@ -27,7 +27,8 @@ const MAX_RECORDED_STORAGE_BATCHES: usize = 16;
 
 mod agent_instructions;
 pub(super) use agent_instructions::{
-    InstructionReuse, apply_agent_instructions, check_instruction_reuse,
+    CompletedInstructionCheck, InstructionReuse, InstructionReusePlan, apply_agent_instructions,
+    check_instruction_reuse, plan_instruction_reuse,
 };
 
 fn storage_helper_failure(failure: String, result: &sandbox::ExecResult) -> RunnerError {

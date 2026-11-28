@@ -3099,6 +3099,7 @@ async fn restore_guest_state_preserves_fixed_request_and_terminal_metadata() {
         unix_nanoseconds: 123_000_000,
         entropy: &entropy,
         timezone: GuestStateRestoreTimezone::Required("Asia/Shanghai"),
+        instruction_check: None,
         timeout: Duration::from_secs(5),
     };
 
