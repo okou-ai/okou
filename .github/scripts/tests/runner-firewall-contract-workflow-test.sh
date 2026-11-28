@@ -69,14 +69,18 @@ for job in jobs.values():
         assert 'prepare-qemu-gssapi-fixture.py' not in step.get('run', '')
 for name in ['native-kerberos-runtime', 'native-gssapi-independent-peer']:
     job = jobs[name]
-    assert job['strategy']['matrix']['os'] == ['ubuntu-latest', 'ubuntu-24.04-arm']
-    assert job.get('container', {}).get('image') == jobs['check']['container']['image'], \
-        'native checks must use the project Rust image'
-    assert job['container']['options'] == '--cap-add=SYS_ADMIN --security-opt apparmor=unconfined'
-    native_step = next(step for step in job['steps'] if 'check-native-' in step.get('run', ''))
-    assert native_step['shell'] == 'bash'
-    assert native_step['env']['NATIVE_TEST_OWNER'] == 'ubuntu'
-    assert not any('rustup toolchain install' in step.get('run', '') for step in job['steps'])
+    assert job['strategy']['matrix']['os'] == ['ubuntu-24.04', 'ubuntu-24.04-arm']
+    environment = next(step['run'] for step in job['steps']
+                       if step.get('name') == 'Configure native build environment')
+    assert 'github-hosted-${ImageOS:?}-${ImageVersion:?}' in environment, \
+        'native cache identity must track the hosted runner image version'
+    for native_step in [step for step in job['steps'] if 'check-native-' in step.get('run', '')]:
+        assert native_step['shell'] == 'bash'
+        assert 'sudo env' in native_step['run']
+        assert 'NATIVE_TEST_OWNER=$(id -un)' in native_step['run'], \
+            'host bootstrap must retain the capability-free compiler owner'
+        assert 'RUSTUP_HOME=$RUSTUP_HOME' in native_step['run']
+        assert 'KERBEROS_NATIVE_CACHE_DIR=$KERBEROS_NATIVE_CACHE_DIR' in native_step['run']
 
 home_job = jobs['guest-home-cleanup-test']
 assert home_job['container']['image'] == jobs['check']['container']['image']

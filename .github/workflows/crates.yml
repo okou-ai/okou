@@ -877,24 +877,24 @@ jobs:
   native-kerberos-runtime:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 15
-    container:
-      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261116
-      # Allow namespace bootstrap; retain Docker's seccomp and worker isolation.
-      options: --cap-add=SYS_ADMIN --security-opt apparmor=unconfined
-    env:
-      KERBEROS_NATIVE_BUILD_ENV: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261116
     needs: [detect]
     if: needs.detect.outputs.native-kerberos-needed == 'true'
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, ubuntu-24.04-arm]
+        os: [ubuntu-24.04, ubuntu-24.04-arm]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
-      - name: Prepare pinned Rust toolchain before dropping privileges
+      - name: Prepare pinned Rust toolchain
         run: rustup show active-toolchain
+      - name: Configure native build environment
+        shell: bash
+        run: |
+          rustup_home=$(rustup show home)
+          echo "KERBEROS_NATIVE_BUILD_ENV=github-hosted-${ImageOS:?}-${ImageVersion:?}" >> "$GITHUB_ENV"
+          echo "RUSTUP_HOME=$rustup_home" >> "$GITHUB_ENV"
       - name: Configure pinned Kerberos cache
         run: echo "KERBEROS_NATIVE_CACHE_DIR=$RUNNER_TEMP/kerberos-native-cache" >> "$GITHUB_ENV"
       - name: Restore pinned Kerberos dependencies
@@ -905,17 +905,20 @@ jobs:
           key: kerberos-native-v3-${{ runner.os }}-${{ runner.arch }}-${{ env.KERBEROS_NATIVE_BUILD_ENV }}-${{ hashFiles('crates/kerberos-worker/native/*') }}
       - name: Compile sealed package and run real native containment/lifecycle conformance
         shell: bash
-        env:
-          NATIVE_TEST_OWNER: ubuntu
-        run: bash crates/kerberos-worker/tests/check-native-kerberos.sh --privileged-synthetic
+        run: |
+          sudo env "PATH=$PATH" "RUSTUP_HOME=$RUSTUP_HOME" \
+            "NATIVE_TEST_OWNER=$(id -un)" "RUNNER_TEMP=$RUNNER_TEMP" \
+            "KERBEROS_NATIVE_CACHE_DIR=$KERBEROS_NATIVE_CACHE_DIR" \
+            bash crates/kerberos-worker/tests/check-native-kerberos.sh --privileged-synthetic
       - name: Verify VNC starts during real Kerberos contention
         shell: bash
-        env:
-          NATIVE_TEST_OWNER: ubuntu
-        run: bash crates/runner-remote/tests/check-native-vnc-kerberos.sh
-      # The host key's X64 writer remains check; this matrix owns ARM64 only.
-      - name: Save pinned ARM64 Kerberos dependencies
-        if: github.ref == 'refs/heads/main' && runner.arch == 'ARM64' && steps.kerberos-cache.outputs.cache-hit != 'true'
+        run: |
+          sudo env "PATH=$PATH" "RUSTUP_HOME=$RUSTUP_HOME" \
+            "NATIVE_TEST_OWNER=$(id -un)" "RUNNER_TEMP=$RUNNER_TEMP" \
+            "KERBEROS_NATIVE_CACHE_DIR=$KERBEROS_NATIVE_CACHE_DIR" \
+            bash crates/runner-remote/tests/check-native-vnc-kerberos.sh
+      - name: Save pinned native Kerberos dependencies
+        if: github.ref == 'refs/heads/main' && steps.kerberos-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ env.KERBEROS_NATIVE_CACHE_DIR }}
@@ -934,24 +937,24 @@ jobs:
   native-gssapi-independent-peer:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 15
-    container:
-      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261116
-      # Allow namespace bootstrap; retain Docker's seccomp and worker isolation.
-      options: --cap-add=SYS_ADMIN --security-opt apparmor=unconfined
-    env:
-      KERBEROS_NATIVE_BUILD_ENV: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261116
     needs: [detect]
     if: needs.detect.outputs.native-gssapi-peer-needed == 'true'
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, ubuntu-24.04-arm]
+        os: [ubuntu-24.04, ubuntu-24.04-arm]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
-      - name: Prepare pinned Rust toolchain before dropping privileges
+      - name: Prepare pinned Rust toolchain
         run: rustup show active-toolchain
+      - name: Configure native build environment
+        shell: bash
+        run: |
+          rustup_home=$(rustup show home)
+          echo "KERBEROS_NATIVE_BUILD_ENV=github-hosted-${ImageOS:?}-${ImageVersion:?}" >> "$GITHUB_ENV"
+          echo "RUSTUP_HOME=$rustup_home" >> "$GITHUB_ENV"
       - name: Configure pinned Kerberos cache
         run: echo "KERBEROS_NATIVE_CACHE_DIR=$RUNNER_TEMP/kerberos-native-cache" >> "$GITHUB_ENV"
       - name: Restore pinned Kerberos dependencies
@@ -962,9 +965,11 @@ jobs:
           key: kerberos-native-v3-${{ runner.os }}-${{ runner.arch }}-${{ env.KERBEROS_NATIVE_BUILD_ENV }}-${{ hashFiles('crates/kerberos-worker/native/*') }}
       - name: Verify native mutual GSS and RFB controls against signed independent MIT
         shell: bash
-        env:
-          NATIVE_TEST_OWNER: ubuntu
-        run: bash crates/rfb-client/tests/check-native-gssapi-peer.sh
+        run: |
+          sudo env "PATH=$PATH" "RUSTUP_HOME=$RUSTUP_HOME" \
+            "NATIVE_TEST_OWNER=$(id -un)" "RUNNER_TEMP=$RUNNER_TEMP" \
+            "KERBEROS_NATIVE_CACHE_DIR=$KERBEROS_NATIVE_CACHE_DIR" \
+            bash crates/rfb-client/tests/check-native-gssapi-peer.sh
       - name: Preserve exact-head independent protocol receipts
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
