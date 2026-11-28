@@ -925,7 +925,8 @@ class ConnectorModel(
     }
 
     internal fun dismissAction() {
-        val action = mutableState.value.action
+        val state = mutableState.value
+        val action = state.action
         if (action?.busy == true) return
         if (action?.reconciling == true) {
             val receipt = action.authorization as? ConnectorAuthorization.Receipt
@@ -942,6 +943,19 @@ class ConnectorModel(
         authorizationDeadline = null
         pendingExternalCode = null
         mutableState.update { it.copy(action = null) }
+        if (action?.startsAuthorization == true && open && foreground) {
+            // Complete reads deferred by authorization when the screen is still waiting for them.
+            if (state.connected.data == null && state.connected.failure == null) {
+                refreshDirectory(browse = false)
+            }
+            if (
+                state.slug == action.target.slug &&
+                    state.accounts.data == null &&
+                    state.accounts.failure == null
+            ) {
+                refreshDetail()
+            }
+        }
     }
 
     private fun authorizationExpired() = authorizationDeadline?.hasPassedNow() == true

@@ -507,6 +507,36 @@ internal class ConnectorModelTest : ConnectorModelTestFixture() {
 @OptIn(ExperimentalCoroutinesApi::class)
 internal class ConnectorAccountModelTest : ConnectorModelTestFixture() {
     @Test
+    fun cancellingAuthorizationResumesDirectoryAndReopenedDetailReads() {
+        val reply = CountDownLatch(1)
+        withModel(CONNECTOR_CALENDAR, configure = { it.overviewReplyGate = reply }) { _, model ->
+            try {
+                model.enterDirectoryTab(connected = true)
+                model.await { it.connected.startedAt != null }
+                model.startAuthorization(CONNECTOR_CALENDAR_SECONDARY, "oauth", emptyMap())
+                model.await {
+                    it.action?.busy == false &&
+                        it.action.authorization is ConnectorAuthorization.Browser
+                }
+                model.setOpen(false)
+                model.setOpen(true)
+                assertNull(model.uiState.value.accounts.data)
+                model.dismissAction()
+            } finally {
+                reply.countDown()
+            }
+            val loaded = model.await {
+                it.connected.data?.containsKey(CONNECTOR_CALENDAR) == true &&
+                    it.accounts.data?.any { account ->
+                        account.id == CONNECTOR_CALENDAR_SECONDARY
+                    } == true
+            }
+            assertNull(loaded.action)
+            assertTrue(loaded.canChangeAccounts)
+        }
+    }
+
+    @Test
     fun incompleteReceiptKeepsTheConfirmedAccountInDetailAndDirectory() =
         withModel(CONNECTOR_CALENDAR) { fixture, model ->
             val target = CONNECTOR_CALENDAR_SECONDARY
