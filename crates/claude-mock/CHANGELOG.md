@@ -1,5 +1,7 @@
 # Changelog
 
+## [0.22.148](https://github.com/okou-ai/okou/compare/claude-mock-v0.22.147...claude-mock-v0.22.148) (2026-11-28)
+
 ## [0.22.147](https://github.com/okou-ai/okou/compare/claude-mock-v0.22.146...claude-mock-v0.22.147) (2026-11-28)
 
 ## [0.22.146](https://github.com/okou-ai/okou/compare/claude-mock-v0.22.145...claude-mock-v0.22.146) (2026-11-27)

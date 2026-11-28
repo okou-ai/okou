@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.21.0](https://github.com/okou-ai/okou/compare/runner-types-v0.20.1...runner-types-v0.21.0) (2026-11-28)
+
+
+### Features
+
+* complete credential placeholders in runner firewalls ([#51596](https://github.com/okou-ai/okou/issues/51596)) ([8daaa6e](https://github.com/okou-ai/okou/commit/8daaa6e60c0bec5ebeb47fa5da709339c3ff2a2c))
+
 ## [0.20.1](https://github.com/okou-ai/okou/compare/runner-types-v0.20.0...runner-types-v0.20.1) (2026-11-28)
 
 ## [0.20.0](https://github.com/okou-ai/okou/compare/runner-types-v0.19.18...runner-types-v0.20.0) (2026-11-27)

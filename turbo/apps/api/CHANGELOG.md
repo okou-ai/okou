@@ -10,6 +10,36 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.144.0](https://github.com/okou-ai/okou/compare/api-v2.143.0...api-v2.144.0) (2026-11-28)
+
+
+### Features
+
+* **artifacts:** cut over to files and unified artifact access and retire legacy routes ([#51627](https://github.com/okou-ai/okou/issues/51627)) ([d5b57bd](https://github.com/okou-ai/okou/commit/d5b57bd1003bbe1aabd0d56b27efa8dbcfa96087))
+* complete credential placeholders in runner firewalls ([#51596](https://github.com/okou-ai/okou/issues/51596)) ([8daaa6e](https://github.com/okou-ai/okou/commit/8daaa6e60c0bec5ebeb47fa5da709339c3ff2a2c))
+* handle antigravity native audio in okou transcribe ([#51630](https://github.com/okou-ai/okou/issues/51630)) ([1ff3ad8](https://github.com/okou-ai/okou/commit/1ff3ad8b54320a9779b26a2368087fe8adb5f6ec))
+
+
+### Bug Fixes
+
+* **api:** read antigravity 5h and weekly quota from summary ([#51639](https://github.com/okou-ai/okou/issues/51639)) ([0c20fd4](https://github.com/okou-ai/okou/commit/0c20fd46e4fbd987a9672ea89091b48b6a073b49))
+
+
+### Refactoring
+
+* **app:** retire browser onboarding draft imports ([#51383](https://github.com/okou-ai/okou/issues/51383)) ([19111bf](https://github.com/okou-ai/okou/commit/19111bf448db2d3153be8c723cb659b4e78d4fd0))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.144.0
+    * @okouai/connectors bumped to 3.28.0
+    * @okouai/core bumped to 8.889.0
+    * @okouai/db bumped to 2.74.0
+    * @okouai/pi-agent-runtime bumped to 1.52.109
+
 ## [2.143.0](https://github.com/okou-ai/okou/compare/api-v2.142.1...api-v2.143.0) (2026-11-28)
 
 

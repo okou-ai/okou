@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.27.0](https://github.com/okou-ai/okou/compare/runner-executor-v0.26.0...runner-executor-v0.27.0) (2026-11-28)
+
+
+### Features
+
+* complete credential placeholders in runner firewalls ([#51596](https://github.com/okou-ai/okou/issues/51596)) ([8daaa6e](https://github.com/okou-ai/okou/commit/8daaa6e60c0bec5ebeb47fa5da709339c3ff2a2c))
+
 ## [0.26.0](https://github.com/okou-ai/okou/compare/runner-executor-v0.25.3...runner-executor-v0.26.0) (2026-11-28)
 
 
