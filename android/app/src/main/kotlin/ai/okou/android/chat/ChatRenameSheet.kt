@@ -76,19 +76,21 @@ internal fun RenameListItemSheet(
     val saving = status == RenameStatus.Saving
     val form = editor.form(confirmedName, enabled && !saving)
     val name = form.name
-    if (submitted != null && submitted.eventId == confirmedEventId) {
-        LaunchedEffect(submitted) {
-            if (editor.submitted == submitted) {
-                if (normalizedRenameName(input.text) == submitted.name) saved()
-                else editor.submitted = null
+    val acknowledgement = submitted?.takeIf { it.eventId == confirmedEventId }
+    LaunchedEffect(editor, confirmedName, saving, acknowledgement) {
+        if (acknowledgement == null) {
+            editor.updateConfirmedName(confirmedName, saving)
+        } else if (editor.submitted == acknowledgement) {
+            if (normalizedRenameName(input.text) == acknowledgement.name) {
+                saved()
+            } else {
+                // The newer edit can match the baseline that preceded this save.
+                editor.updateConfirmedName(confirmedName, readOnly = true)
+                editor.submitted = null
             }
         }
-        if (normalizedRenameName(input.text) == submitted.name) return
     }
-
-    LaunchedEffect(editor, confirmedName, saving) {
-        editor.updateConfirmedName(confirmedName, saving)
-    }
+    if (acknowledgement != null && normalizedRenameName(input.text) == acknowledgement.name) return
 
     val validation = form.error ?: if (projectName) projectNameError(editor.field) else null
     val notice =
