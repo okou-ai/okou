@@ -23,6 +23,7 @@ import androidx.test.core.app.takeScreenshot
 import androidx.test.core.graphics.writeToTestStorage
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import androidx.test.services.storage.TestStorage
 import androidx.test.uiautomator.By
 import androidx.test.uiautomator.BySelector
 import androidx.test.uiautomator.Condition
@@ -256,21 +257,17 @@ class NativeUpdateTest {
                     "Expected the focused app window to show $label"
                 }
             }
-            fun focusReadingRegion(within: Searchable = device) {
-                val reader = By.pkg(app.packageName).scrollable(true).focused(true)
-                val readerFocused = Condition<UiDevice, Boolean> { within.hasObject(reader) }
+            fun focusReadingRegion(reader: BySelector = By.pkg(app.packageName).scrollable(true)) {
+                val focused = By.copy(reader).focused(true)
                 repeat(3) {
-                    if (within.hasObject(reader)) return
+                    if (device.hasObject(focused)) return
                     assertTrue(
                         "Could not send Tab to the update window",
                         device.pressKeyCode(KeyEvent.KEYCODE_TAB),
                     )
-                    if (device.wait(readerFocused, 1_000)) return
+                    if (device.wait(Until.hasObject(focused), 1_000)) return
                 }
-                assertTrue(
-                    "Expected keyboard focus on the update reading region",
-                    device.wait(readerFocused, 10_000),
-                )
+                assertNotNull("Expected keyboard focus on $reader", find(focused))
             }
             fun withShortWindowAndLargeText(width: Int, height: Int = 850, block: () -> Unit) {
                 val originalWidth = device.displayWidth
@@ -682,10 +679,9 @@ class NativeUpdateTest {
             captureState("install-permission")
             val searchWithQuery = By.copy(searchEditor).text(searchQuery)
             withShortWindowAndLargeText(width = 1000, height = 900) {
-                val dialog =
-                    awaitFocusedWindowShowing(
-                        By.pkg(app.packageName).text(app.getString(R.string.updates_allow_install)),
-                    )
+                val permissionHeading =
+                    By.pkg(app.packageName).text(app.getString(R.string.updates_allow_install))
+                val dialog = awaitFocusedWindowShowing(permissionHeading)
                 val later = By.pkg(app.packageName).text(app.getString(R.string.updates_later))
                 val settings =
                     By.pkg(app.packageName).text(app.getString(R.string.updates_open_settings))
@@ -697,7 +693,29 @@ class NativeUpdateTest {
                         action.visibleBounds.height() >= minTouchHeight,
                     )
                 }
-                focusReadingRegion(dialog)
+                // Read keyboard focus from the active accessibility tree. The heading scopes
+                // the search to the permission dialog even if other window roots are retained.
+                val reader =
+                    By.pkg(app.packageName)
+                        .scrollable(true)
+                        .hasAncestor(By.hasDescendant(permissionHeading))
+                instrumentation.setInTouchMode(false)
+                try {
+                    assertNotNull(
+                        "Expected a keyboard-focusable permission reading region",
+                        find(By.copy(reader).focusable(true)),
+                    )
+                    focusReadingRegion(reader)
+                } catch (failure: AssertionError) {
+                    try {
+                        TestStorage()
+                            .openOutputFile("android-update-install-permission-short-hierarchy.xml")
+                            .use { device.dumpWindowHierarchy(it) }
+                    } catch (diagnostic: Throwable) {
+                        failure.addSuppressed(diagnostic)
+                    }
+                    throw failure
+                }
                 captureState("install-permission-short")
                 device.enabledUpdateControl(later, within = dialog).click()
                 awaitFocusedWindowShowing(searchWithQuery)
