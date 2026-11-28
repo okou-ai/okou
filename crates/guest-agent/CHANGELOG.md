@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.115.4](https://github.com/okou-ai/okou/compare/guest-agent-v0.115.3...guest-agent-v0.115.4) (2026-11-28)
+
+
+### Bug Fixes
+
+* **api:** resolve antigravity credentials at the firewall ([#51398](https://github.com/okou-ai/okou/issues/51398)) ([b7dac37](https://github.com/okou-ai/okou/commit/b7dac378de6ad4a40b5afe77944e86611e6af237))
+
+
+### Refactoring
+
+* **guest-agent:** share cli heartbeat reception and native failure classification ([#51719](https://github.com/okou-ai/okou/issues/51719)) ([b61fd82](https://github.com/okou-ai/okou/commit/b61fd82508302d40387799de2e4b4551a0fe1e1b))
+
 ## [0.115.3](https://github.com/okou-ai/okou/compare/guest-agent-v0.115.2...guest-agent-v0.115.3) (2026-11-28)
 
 

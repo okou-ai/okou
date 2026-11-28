@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.71.2](https://github.com/okou-ai/okou/compare/android-v0.71.1...android-v0.71.2) (2026-11-28)
+
+
+### Bug Fixes
+
+* **android:** animate reply avatars before the first response ([#51713](https://github.com/okou-ai/okou/issues/51713)) ([2ee12fa](https://github.com/okou-ai/okou/commit/2ee12fab66a60f376ac183083f3aeb3bad29dbe0))
+* **android:** remove the background from inline chat links ([#51708](https://github.com/okou-ai/okou/issues/51708)) ([13cc13c](https://github.com/okou-ai/okou/commit/13cc13cab04c4d12cdee9f16a29cd034e5efcf4c))
+* **android:** restore project creation after verification ([#51709](https://github.com/okou-ai/okou/issues/51709)) ([f7bfece](https://github.com/okou-ai/okou/commit/f7bfece58b645e00e5fa3374b2d74af544eee290))
+* **android:** time workflow skeletons from read dispatch ([#51707](https://github.com/okou-ai/okou/issues/51707)) ([e7f8977](https://github.com/okou-ai/okou/commit/e7f897712819acadd7abc5ae509e4a5b81bb1509))
+
+
+### Refactoring
+
+* **android:** use native list items in the message queue ([#51717](https://github.com/okou-ai/okou/issues/51717)) ([bc1e0b8](https://github.com/okou-ai/okou/commit/bc1e0b8b94ee67451a22f22dace21f05a68ce2f3))
+* **android:** vectorize the new-chat welcome avatar ([#51698](https://github.com/okou-ai/okou/issues/51698)) ([33d8a9c](https://github.com/okou-ai/okou/commit/33d8a9cc22134e6c158f35a0fb98f978df061a57))
+
 ## [0.71.1](https://github.com/okou-ai/okou/compare/android-v0.71.0...android-v0.71.1) (2026-11-28)
 
 

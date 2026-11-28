@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.254.1](https://github.com/okou-ai/okou/compare/runner-rs-v0.254.0...runner-rs-v0.254.1) (2026-11-28)
+
+
+### Refactoring
+
+* **runner:** share the addon event loop test checkpoint ([#51681](https://github.com/okou-ai/okou/issues/51681)) ([a55c51b](https://github.com/okou-ai/okou/commit/a55c51bdc0f632da2e5e5d8b87c504a923d13eaa))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.254.0](https://github.com/okou-ai/okou/compare/runner-rs-v0.253.1...runner-rs-v0.254.0) (2026-11-28)
 
 

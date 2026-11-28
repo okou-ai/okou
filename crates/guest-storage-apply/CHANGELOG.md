@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.32.69](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.32.68...guest-storage-apply-v0.32.69) (2026-11-28)
+
+
+### Performance Improvements
+
+* **guest-storage-apply:** reuse tar parent handles and copy buffers ([#51706](https://github.com/okou-ai/okou/issues/51706)) ([67d399a](https://github.com/okou-ai/okou/commit/67d399a4e63f5859b18da93acce3c5be80eb9130))
+
 ## [0.32.68](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.32.67...guest-storage-apply-v0.32.68) (2026-11-28)
 
 
