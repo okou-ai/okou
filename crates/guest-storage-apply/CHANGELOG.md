@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.32.68](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.32.67...guest-storage-apply-v0.32.68) (2026-11-28)
+
+
+### Performance Improvements
+
+* **guest-storage-apply:** reuse verified file creation modes ([#51678](https://github.com/okou-ai/okou/issues/51678)) ([3956802](https://github.com/okou-ai/okou/commit/3956802863977bf8812c10d6f1a6e10fe15f2c6a))
+
 ## [0.32.67](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.32.66...guest-storage-apply-v0.32.67) (2026-11-28)
 
 
