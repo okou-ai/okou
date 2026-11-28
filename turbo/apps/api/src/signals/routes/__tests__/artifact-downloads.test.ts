@@ -474,9 +474,11 @@ test.each([
     expect(publicDownload.searchParams.get("response-cache-control")).toBe(
       "private, no-store",
     );
-    expect(storageKey(publicDownload.href)).toMatch(
-      new RegExp(`^private-artifacts/${prepared.body.id}/`, "u"),
-    );
+    expect(
+      storageKey(publicDownload.href).startsWith(
+        `private-artifacts/${prepared.body.id}/`,
+      ),
+    ).toBeTruthy();
     await share(prepared.body.id, "private");
     await accept(
       api()(artifactReferencesContract).publicUrl({

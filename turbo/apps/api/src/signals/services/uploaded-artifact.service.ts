@@ -82,7 +82,10 @@ export const uploadedArtifactPreviewImageUrl$ = command(
     }
     const db = get(db$);
     const [row] = await db
-      .select({ thumbnail: artifacts.thumbnail })
+      .select({
+        thumbnail: artifacts.thumbnail,
+        sourceUrl: artifacts.sourceUrl,
+      })
       .from(artifacts)
       .where(
         and(
@@ -109,7 +112,11 @@ export const uploadedArtifactPreviewImageUrl$ = command(
       .orderBy(desc(artifacts.updatedAt))
       .limit(1);
     signal.throwIfAborted();
-    return row?.thumbnail?.url ?? null;
+    const thumbnailUrl = row?.thumbnail?.url ?? null;
+    if (!thumbnailUrl || thumbnailUrl === row?.sourceUrl) {
+      return null;
+    }
+    return thumbnailUrl;
   },
 );
 

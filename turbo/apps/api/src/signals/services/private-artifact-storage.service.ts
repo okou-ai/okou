@@ -384,41 +384,6 @@ export const privateArtifactRecord$ = command(
   },
 );
 
-export const fileRecord$ = command(
-  async ({ get }, id: string, signal: AbortSignal) => {
-    if (!uuid().safeParse(id).success) {
-      return null;
-    }
-    const [row] = await get(db$)
-      .select()
-      .from(files)
-      .where(and(eq(files.id, id), isNull(files.deletedAt)))
-      .limit(1);
-    signal.throwIfAborted();
-    if (!row?.storageKey) {
-      return null;
-    }
-    return {
-      id: row.id,
-      orgId: row.orgId,
-      userId: row.ownerUserId,
-      key: row.storageKey,
-      storageKey: row.storageKey,
-      bucket: fileStorageBucket(row.storageKey),
-      filename: row.filename ?? "file",
-      contentType: row.contentType ?? "application/octet-stream",
-      sizeBytes: row.sizeBytes,
-      checksumSha256: row.checksumSha256,
-      origin: row.origin,
-      createdAt: row.createdAt,
-      deletedAt: row.deletedAt,
-      isPrivate: row.storageKey.startsWith("private-artifacts/"),
-      isReady: row.sizeBytes !== null,
-      layout: CURRENT_LINK_LAYOUT,
-    };
-  },
-);
-
 export const completePrivateArtifact$ = command(
   async (
     { set },

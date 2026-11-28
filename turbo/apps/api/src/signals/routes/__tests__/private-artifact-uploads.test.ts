@@ -683,6 +683,12 @@ describe("private artifact uploads", () => {
       const multipartActions: string[] = [];
       context.mocks.s3.send.mockImplementation((command) => {
         if (
+          command instanceof GetObjectCommand &&
+          command.input.Key?.startsWith("artifact-references/")
+        ) {
+          return storage(command);
+        }
+        if (
           command instanceof ListPartsCommand ||
           command instanceof HeadObjectCommand ||
           command instanceof CompleteMultipartUploadCommand ||

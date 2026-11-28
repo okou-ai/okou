@@ -54,14 +54,6 @@ const EXT_MIMETYPE_MAP: Readonly<Record<string, string>> = {
   har: "application/json",
   json: "application/json",
 };
-/** Keep hosted catalog SQL aligned with the ordinary filename MIME lookup. */
-export const VIDEO_FILENAME_EXTENSIONS = Object.entries(EXT_MIMETYPE_MAP)
-  .filter(([, contentType]) => {
-    return contentType.startsWith("video/");
-  })
-  .map(([extension]) => {
-    return extension;
-  });
 
 type InsertAssistantEventItem =
   | {

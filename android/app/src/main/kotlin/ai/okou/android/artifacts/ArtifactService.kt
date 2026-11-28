@@ -219,8 +219,6 @@ internal constructor(
                                         ArtifactKind.Image
                                     ArtifactCatalogArtifactsItemVariant2Kind.PRESENTATION ->
                                         ArtifactKind.Presentation
-                                    ArtifactCatalogArtifactsItemVariant2Kind.VIDEO ->
-                                        ArtifactKind.File
                                     ArtifactCatalogArtifactsItemVariant2Kind.AVATAR ->
                                         ArtifactKind.Avatar
                                 },

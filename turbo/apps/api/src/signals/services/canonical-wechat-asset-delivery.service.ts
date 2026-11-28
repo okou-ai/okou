@@ -167,6 +167,29 @@ const deliverWechatMedia$ = command(
   },
 );
 
+function wechatFinalizeErrorResponse(finalized: {
+  readonly ok: false;
+  readonly code: "NOT_FOUND" | "STORAGE_UNAVAILABLE" | "BAD_REQUEST";
+  readonly message: string;
+}) {
+  if (finalized.code === "NOT_FOUND") {
+    return {
+      ok: false,
+      response: notFound("This WeChat file is unavailable."),
+    } as const;
+  }
+  if (finalized.code === "STORAGE_UNAVAILABLE") {
+    return {
+      ok: false,
+      response: providerUnavailable("The published file could not be read."),
+    } as const;
+  }
+  return {
+    ok: false,
+    response: badRequestMessage(finalized.message),
+  } as const;
+}
+
 /** Finalize the uploaded file and fire-and-forget deliver it to WeChat. */
 export const completeCanonicalWechatDelivery$ = command(
   async (
@@ -199,24 +222,7 @@ export const completeCanonicalWechatDelivery$ = command(
       signal,
     );
     if (!finalized.ok) {
-      if (finalized.code === "NOT_FOUND") {
-        return {
-          ok: false,
-          response: notFound("This WeChat file is unavailable."),
-        } as const;
-      }
-      if (finalized.code === "STORAGE_UNAVAILABLE") {
-        return {
-          ok: false,
-          response: providerUnavailable(
-            "The published file could not be read.",
-          ),
-        } as const;
-      }
-      return {
-        ok: false,
-        response: badRequestMessage(finalized.message),
-      } as const;
+      return wechatFinalizeErrorResponse(finalized);
     }
     const bytes = finalized.bytes;
     if (!bytes) {
