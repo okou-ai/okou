@@ -2286,18 +2286,6 @@ function winningApiMatches(
   return matches;
 }
 
-function matchedOwnerNames(
-  matches: readonly CollectedApiMatch[],
-): readonly string[] {
-  const names = new Set<string>();
-  for (const apiMatch of matches) {
-    if (!apiMatch.firewall.nameMalformed) {
-      names.add(apiMatch.firewall.name);
-    }
-  }
-  return [...names].sort();
-}
-
 function ownerNameForIntent(
   matches: readonly CollectedApiMatch[],
   intentValue: string,
@@ -2389,12 +2377,15 @@ function selectOwner(
   upperMethod: string,
   path: string,
 ): OwnerSelection {
-  const [owner, ...otherOwners] = matchedOwnerNames(matches);
-  if (owner === undefined) return { kind: "selected", name: null };
-  if (otherOwners.length === 0) {
-    return { kind: "selected", name: owner };
+  const owners = new Set<string>();
+  for (const { firewall } of matches) {
+    if (!firewall.nameMalformed) {
+      owners.add(firewall.name);
+    }
   }
-  const owners = [owner, ...otherOwners];
+  if (owners.size <= 1) {
+    return { kind: "selected", name: owners.values().next().value ?? null };
+  }
   if (intent.status === "present") {
     const selectedName = ownerNameForIntent(matches, intent.value);
     if (selectedName !== null) {
@@ -2407,7 +2398,7 @@ function selectOwner(
       kind: "ambiguous",
       method: upperMethod,
       path,
-      candidates: owners,
+      candidates: [...owners].sort(),
       reason: connectorAmbiguityReason(intent),
     },
   };
