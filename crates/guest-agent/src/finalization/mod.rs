@@ -1,19 +1,16 @@
-//! Prepare native history and published file outputs, then reconcile local history after completion acknowledgement.
+//! Prepare published file outputs and completion payload for atomic acknowledgement.
 
 mod artifact;
-mod session_history;
 
 use crate::env;
 use crate::error::AgentError;
 use crate::http::HttpClient;
 use crate::run_context::GuestRuntime;
-use crate::session_history_identity::build_final_session_history_identity;
 use crate::session_metadata::CapturedSessionMetadata;
 use api_contracts::generated::types::runners::storage::ArtifactEntryMissingRootPolicy;
 use api_contracts::generated::types::webhooks::agent::complete;
 use guest_telemetry::log_info;
 use guest_telemetry::telemetry::record_sandbox_op;
-use std::borrow::Cow;
 use std::time::{Duration, Instant};
 
 const LOG_TAG: &str = "sandbox:guest-agent";
@@ -45,7 +42,6 @@ struct FinalizationInputs<'a> {
     framework: env::Framework,
     artifact_entries: &'a [env::ArtifactEnv],
     session_metadata: &'a CapturedSessionMetadata,
-    final_session_history_identity_file: Cow<'a, str>,
 }
 
 impl<'a> FinalizationInputs<'a> {
@@ -58,21 +54,15 @@ impl<'a> FinalizationInputs<'a> {
             framework: runtime.config.framework,
             artifact_entries: &runtime.config.artifacts,
             session_metadata,
-            final_session_history_identity_file: Cow::Borrowed(
-                runtime.paths.final_session_history_identity_file(),
-            ),
         }
     }
 }
 
-/// Native history and output metadata and local state awaiting atomic completion acknowledgement.
+/// Output metadata and local state awaiting atomic completion acknowledgement.
 pub struct PreparedFinalization {
     request: complete::RequestCompletion,
     memory_published: bool,
     mode: FinalizationMode,
-    retained_history: Option<session_history::RetainedSessionHistory>,
-    framework: env::Framework,
-    final_session_history_identity_file: String,
     total_started_at: Instant,
 }
 
@@ -88,18 +78,6 @@ impl PreparedFinalization {
 
     pub(crate) fn acknowledge(self, api_elapsed: Duration) {
         record_sandbox_op("completion_api_call", api_elapsed, true, None);
-        if let Some(history) = self.retained_history {
-            session_history::write_final_session_history_identity(
-                build_final_session_history_identity(
-                    self.framework,
-                    &history.cli_agent_session_id,
-                    &history.history_hash,
-                    history.history_size,
-                    &history.history_source,
-                ),
-                &self.final_session_history_identity_file,
-            );
-        }
         log_info!(LOG_TAG, "{} persisted successfully", self.mode.log_label());
         record_sandbox_op(
             self.mode.total_op(),
@@ -166,9 +144,6 @@ async fn prepare_finalization_for_mode(
         request: prepared.request,
         memory_published: prepared.memory_published,
         mode,
-        retained_history: prepared.retained_history,
-        framework: inputs.framework,
-        final_session_history_identity_file: inputs.final_session_history_identity_file.to_string(),
         total_started_at,
     })
 }
@@ -176,7 +151,6 @@ async fn prepare_finalization_for_mode(
 struct PreparedFinalizationParts {
     request: complete::RequestCompletion,
     memory_published: bool,
-    retained_history: Option<session_history::RetainedSessionHistory>,
 }
 
 fn completion_missing_root_policy(
@@ -199,22 +173,11 @@ async fn prepare_finalization_impl(
 ) -> Result<PreparedFinalizationParts, AgentError> {
     log_info!(LOG_TAG, "Preparing {}...", mode.log_label());
 
-    // Local history evidence and artifact snapshots are independent prerequisites
-    // of the final combined completion, so run them concurrently. The history
-    // path performs bounded blocking local preparation; the
-    // artifact path performs blocking file preparation before VAS work. Wait
-    // for both results even after one fails so a started blocking operation is
-    // not detached from the finalization future.
-    let (storage_outputs, finalization_history) = tokio::join!(
-        artifact::snapshot_artifact_entries(http, inputs.run_id, inputs.artifact_entries,),
-        session_history::prepare_retained_session_history(inputs.session_metadata),
-    );
-    let finalization_history = finalization_history?;
-    let storage_outputs = storage_outputs?;
+    let storage_outputs =
+        artifact::snapshot_artifact_entries(http, inputs.run_id, inputs.artifact_entries).await?;
 
     let cli_agent_type = inputs.framework.agent_type();
     let cli_agent_session_id = inputs.session_metadata.cli_agent_session_id().to_string();
-    let retained_history = finalization_history;
     let request = complete::RequestCompletion {
         cli_agent_type: cli_agent_type.to_string(),
         cli_agent_session_id,
@@ -226,7 +189,6 @@ async fn prepare_finalization_impl(
     Ok(PreparedFinalizationParts {
         request,
         memory_published: storage_outputs.memory_published,
-        retained_history,
     })
 }
 

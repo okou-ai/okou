@@ -122,7 +122,6 @@ pub enum ExactIdleReservationMiss {
     Absent,
     ProfileMismatch,
     DeviceLimitMismatch,
-    NativeGenerationMismatch,
     SourceMismatch,
 }
 
@@ -144,7 +143,6 @@ impl ExactIdleReservationMiss {
             Self::Absent => "absent",
             Self::ProfileMismatch => "profile_mismatch",
             Self::DeviceLimitMismatch => "device_limit_mismatch",
-            Self::NativeGenerationMismatch => "history_generation_mismatch",
             Self::SourceMismatch => "source_mismatch",
         }
     }
@@ -257,40 +255,6 @@ impl IdlePool {
         device_rate_limits: &Option<DeviceRateLimits>,
         source_run_id: RunId,
     ) -> Result<ReservedIdleSandbox, ExactIdleReservationMiss> {
-        self.reserve_matching_reusable(
-            reuse_key,
-            profile_name,
-            device_rate_limits,
-            source_run_id,
-            None,
-        )
-    }
-
-    /// Native finalizing handoff requires both the producing Run and its resume generation.
-    pub fn reserve_reusable_native_source(
-        &mut self,
-        reuse_key: &str,
-        profile_name: &str,
-        device_rate_limits: &Option<DeviceRateLimits>,
-        source_run_id: RunId,
-    ) -> Result<ReservedIdleSandbox, ExactIdleReservationMiss> {
-        self.reserve_matching_reusable(
-            reuse_key,
-            profile_name,
-            device_rate_limits,
-            source_run_id,
-            Some(source_run_id),
-        )
-    }
-
-    fn reserve_matching_reusable(
-        &mut self,
-        reuse_key: &str,
-        profile_name: &str,
-        device_rate_limits: &Option<DeviceRateLimits>,
-        source_run_id: RunId,
-        native_generation_run_id: Option<RunId>,
-    ) -> Result<ReservedIdleSandbox, ExactIdleReservationMiss> {
         let entry = match self.exact_entries.entry(reuse_key.to_owned()) {
             Entry::Vacant(_) => return Err(ExactIdleReservationMiss::Absent),
             Entry::Occupied(entry) => {
@@ -302,11 +266,6 @@ impl IdlePool {
                 }
                 if entry.get().metadata.source_run_id != Some(source_run_id) {
                     return Err(ExactIdleReservationMiss::SourceMismatch);
-                }
-                if native_generation_run_id.is_some()
-                    && entry.get().metadata.native_generation_run_id != native_generation_run_id
-                {
-                    return Err(ExactIdleReservationMiss::NativeGenerationMismatch);
                 }
                 entry.remove()
             }

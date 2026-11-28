@@ -141,8 +141,6 @@ impl BlankPreparationResource {
                 device_rate_limits: self.config.device_rate_limits.clone(),
                 source_ip: self.sandbox.source_ip().to_owned(),
                 storage_fingerprints: StorageFingerprints::default(),
-                restored_session_identity: None,
-                native_generation_run_id: None,
                 guest_timezone_intent: GuestTimezoneIntent::Unknown,
                 last_completed_at: None,
             })

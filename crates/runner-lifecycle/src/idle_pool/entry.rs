@@ -18,7 +18,6 @@ use crate::home_promotion::{
     prepare_home_image_from_parked_sandbox,
 };
 use crate::resource_budget::BudgetLease;
-use crate::restored_session_identity::RestoredSessionIdentity;
 use crate::storage_fingerprints::StorageFingerprints;
 use runner_types::ids::RunId;
 use uuid::Uuid;
@@ -78,12 +77,6 @@ pub(super) struct IdleSandboxMetadata {
     /// Version fingerprints of storages downloaded in the previous turn.
     /// Used to skip re-downloading unchanged entries on reuse.
     pub(super) storage_fingerprints: StorageFingerprints,
-    /// Verified hash-backed resume state restored into this sandbox before it
-    /// was parked. Missing means reuse must fall back to materialize+restore.
-    pub(super) restored_session_identity: Option<RestoredSessionIdentity>,
-    /// Native handoff eligibility retained after successful execution. This is
-    /// never used for scheduling affinity or original resource ownership.
-    pub(super) native_generation_run_id: Option<RunId>,
     pub(super) guest_timezone_intent: GuestTimezoneIntent,
     /// Local terminal timestamp for this parked sandbox.
     ///
@@ -234,8 +227,6 @@ impl ParkedIdleCandidate {
                 device_rate_limits,
                 source_ip,
                 storage_fingerprints: StorageFingerprints::default(),
-                restored_session_identity: None,
-                native_generation_run_id: None,
                 guest_timezone_intent: GuestTimezoneIntent::Unknown,
                 last_completed_at: None,
             },
@@ -515,7 +506,6 @@ pub struct ReusableIdleSandboxParts {
     pub source_ip: String,
     pub storage_fingerprints: StorageFingerprints,
     pub rootfs_hash: String,
-    pub restored_session_identity: Option<RestoredSessionIdentity>,
     pub home_promotion: Option<HomeImagePromotionContext>,
     pub guest_state_prepared: bool,
 }
@@ -540,10 +530,6 @@ impl ReusableIdleSandbox {
         self.metadata.sandbox_id
     }
 
-    pub fn restored_session_identity(&self) -> Option<&RestoredSessionIdentity> {
-        self.metadata.restored_session_identity.as_ref()
-    }
-
     pub fn kind(&self) -> IdleSandboxKind {
         self.metadata.identity.kind()
     }
@@ -564,8 +550,6 @@ impl ReusableIdleSandbox {
             device_rate_limits: _,
             source_ip,
             storage_fingerprints,
-            restored_session_identity,
-            native_generation_run_id: _,
             guest_timezone_intent: _,
             last_completed_at: _,
         } = metadata;
@@ -576,7 +560,6 @@ impl ReusableIdleSandbox {
             rootfs_hash,
             source_ip,
             storage_fingerprints,
-            restored_session_identity,
             home_promotion,
             guest_state_prepared,
         }
@@ -1114,10 +1097,6 @@ impl ReservedIdleSandbox {
 
     pub fn guest_timezone_intent(&self) -> &GuestTimezoneIntent {
         &self.metadata().guest_timezone_intent
-    }
-
-    pub fn native_generation_run_id(&self) -> Option<RunId> {
-        self.metadata().native_generation_run_id
     }
 
     pub fn source_run_id(&self) -> Option<RunId> {

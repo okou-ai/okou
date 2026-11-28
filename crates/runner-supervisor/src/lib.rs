@@ -23,7 +23,7 @@ use runner_lifecycle::{
     guest_timezone, home_image_cache, idle_pool, lifecycle, resource_budget, status,
 };
 #[cfg(test)]
-use runner_lifecycle::{home_promotion, idle_reuse_preparation, restored_session_identity};
+use runner_lifecycle::{home_promotion, idle_reuse_preparation};
 #[cfg(test)]
 use runner_network::network_log_manager;
 use runner_network::{dns, kmsg_log, network_log_drain, network_logs, proxy};

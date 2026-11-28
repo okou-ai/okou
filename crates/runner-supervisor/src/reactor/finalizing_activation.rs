@@ -471,21 +471,17 @@ async fn prepare_finalizing_resource(
         return Err(ExecutionFailure::from_error(error).into());
     }
 
-    // Bound execution input owns native intent. Physical handoff alone grants
-    // no native-history authority.
-    handoff_context.native_generation_run_id = job
+    // Bound execution input owns continuation intent. Physical handoff alone
+    // grants no continuation authority.
+    handoff_context.expected_source_run_id = job
         .context()
-        .native_continuation
-        .as_ref()
-        .filter(|native| native.session_id.is_some())
-        .and_then(|native| native.generation_run_id.as_deref())
-        .filter(|generation| *generation == handoff_context.source_run_id.to_string())
-        .map(|_| handoff_context.source_run_id);
+        .expected_home_source_run_id()
+        .filter(|expected| *expected == handoff_context.source_run_id);
 
     info!(
         run_id = %run_id,
         predecessor_run_id = %handoff_context.source_run_id,
-        native_generation_matches_source = handoff_context.native_generation_run_id.is_some(),
+        expected_source_matches_predecessor = handoff_context.expected_source_run_id.is_some(),
         "finalizing successor accepted before sandbox publication"
     );
     let selection = FinalizingSelectionRequest {

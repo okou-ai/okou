@@ -163,6 +163,7 @@ impl AppServerState {
         let handle_initialized: fn(&mut Self, Value, &Value, &mut W) -> io::Result<ServerAction> =
             match method {
                 "initialize" => return self.handle_initialize(id, params, output),
+                "thread/list" => Self::handle_thread_list,
                 "thread/start" => Self::handle_thread_start,
                 "thread/resume" => Self::handle_thread_resume,
                 "turn/start" => Self::handle_turn_start,

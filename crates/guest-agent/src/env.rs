@@ -469,12 +469,6 @@ pub struct GuestConfig {
     /// run payload. The guest-agent passes it to the Pi child through the
     /// [`guest_contracts::env::PI_MODEL_CONFIG_ENV`] environment variable.
     pub pi_model_config: String,
-    /// Chat Thread identifier from
-    /// [`guest_contracts::env::RunPayload::pi_session_id`] in the incoming run
-    /// payload. It is passed to the Pi child through the
-    /// [`guest_contracts::env::PI_SESSION_ID_ENV`] environment variable and used
-    /// as Pi's native session identifier and for session-history lookup.
-    pub pi_session_id: String,
     /// Private debug-build fixture executable. Release builds always use the
     /// Runner-installed launcher, independently of the child's `PATH`.
     #[cfg(debug_assertions)]
@@ -605,7 +599,6 @@ impl GuestConfig {
             codex_runtime_config: payload.codex_runtime_config,
             pi_launch_config: payload.pi_launch_config,
             pi_model_config: payload.pi_model_config,
-            pi_session_id: payload.pi_session_id,
             #[cfg(debug_assertions)]
             test_pi_cli_path: raw.test_pi_cli_path,
             #[cfg(feature = "test-support")]

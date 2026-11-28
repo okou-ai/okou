@@ -15,18 +15,12 @@ use guest_agent::metrics;
 use guest_agent::paths;
 use guest_agent::reuse_preparation;
 use guest_agent::run_context::GuestRuntime;
-use guest_agent::session_history_identity;
 use guest_agent::session_metadata;
 use guest_agent::telemetry::{Telemetry, UploadMode};
 
 use guest_contracts::diagnostics::{
     AGENT_EXECUTION_TIMEOUT_EXIT_CODE, CliTerminationReason, EventDeliveryDiagnostic, FailureClass,
     FailureDiagnostic, FailureReason, WorkloadResourceLimitDiagnostic,
-};
-use guest_contracts::session_history_identity::{
-    SESSION_HISTORY_IDENTITY_VERIFY_EXIT_FAILURE,
-    SESSION_HISTORY_IDENTITY_VERIFY_EXIT_INVALID_ARGS,
-    SESSION_HISTORY_IDENTITY_VERIFY_EXIT_SUCCESS, SessionHistoryIdentityExpectation,
 };
 use guest_telemetry::telemetry::record_sandbox_op;
 use guest_telemetry::{log_error, log_info, log_warn};
@@ -37,15 +31,6 @@ use tokio_util::sync::CancellationToken;
 use tokio_util::task::AbortOnDropHandle;
 
 const LOG_TAG: &str = "sandbox:guest-agent";
-
-fn finalization_failure_reason(error: &AgentError) -> Option<FailureReason> {
-    matches!(
-        error,
-        AgentError::SessionHistoryTooLarge { .. }
-            | AgentError::SessionHistoryEncodedTooLarge { .. }
-    )
-    .then_some(FailureReason::SessionHistoryLimit)
-}
 
 fn main() {
     if let Some(exit_code) = helper_exit_code_from_args() {
@@ -127,63 +112,24 @@ fn helper_exit_code_from_args() -> Option<i32> {
                 }
             })
         }
-        "verify-session-history-identity" => {
-            let metadata_path = args
-                .next()
-                .unwrap_or_else(final_session_history_identity_path_from_process_env);
-            let remaining = args.collect::<Vec<_>>();
-            let expected = match parse_session_history_identity_expectation(&remaining) {
-                Ok(expected) => expected,
-                Err(()) => return Some(SESSION_HISTORY_IDENTITY_VERIFY_EXIT_INVALID_ARGS),
-            };
-            Some(
-                match session_history_identity::verify_final_session_history_identity_file(
-                    metadata_path,
-                    expected.as_ref(),
-                ) {
-                    Ok(()) => SESSION_HISTORY_IDENTITY_VERIFY_EXIT_SUCCESS,
-                    Err(error) => session_history_identity_helper_exit_code(&error),
-                },
-            )
-        }
-        "verify-home-cache-history" => {
-            if args.next().is_some() {
-                return Some(SESSION_HISTORY_IDENTITY_VERIFY_EXIT_INVALID_ARGS);
-            }
-            Some(match guest_agent::home_cache_history::verify_from_stdin() {
-                Ok(report) => match serde_json::to_string(&report) {
-                    Ok(json) => {
-                        println!("{json}");
-                        0
-                    }
-                    Err(_) => 1,
-                },
-                Err(_) => SESSION_HISTORY_IDENTITY_VERIFY_EXIT_INVALID_ARGS,
-            })
-        }
         "prepare-for-reuse" | "prepare-for-cache" => {
             if args.next().is_some() {
                 return Some(
                     guest_contracts::reuse_preparation::REUSE_PREPARATION_EXIT_INVALID_REQUEST,
                 );
             }
-            let result = if command == "prepare-for-cache" {
-                reuse_preparation::prepare_for_cache_from_stdin().and_then(|report| {
-                    serde_json::to_string(&report).map_err(|error| {
-                        reuse_preparation::ReusePreparationError::Inspection(std::io::Error::other(
-                            error,
-                        ))
-                    })
-                })
+            let report = if command == "prepare-for-cache" {
+                reuse_preparation::prepare_for_cache_from_stdin()
             } else {
-                reuse_preparation::prepare_from_stdin().and_then(|report| {
-                    serde_json::to_string(&report).map_err(|error| {
-                        reuse_preparation::ReusePreparationError::Inspection(std::io::Error::other(
-                            error,
-                        ))
-                    })
-                })
+                reuse_preparation::prepare_from_stdin()
             };
+            let result = report.and_then(|report| {
+                serde_json::to_string(&report).map_err(|error| {
+                    reuse_preparation::ReusePreparationError::Inspection(std::io::Error::other(
+                        error,
+                    ))
+                })
+            });
             Some(match result {
                 Ok(json) => {
                     println!("{json}");
@@ -197,68 +143,6 @@ fn helper_exit_code_from_args() -> Option<i32> {
         }
         _ => None,
     }
-}
-
-fn session_history_identity_helper_exit_code(
-    error: &session_history_identity::SessionHistoryIdentityVerifyError,
-) -> i32 {
-    let exit_code = error.helper_exit_code();
-    if exit_code == SESSION_HISTORY_IDENTITY_VERIFY_EXIT_SUCCESS {
-        SESSION_HISTORY_IDENTITY_VERIFY_EXIT_FAILURE
-    } else {
-        exit_code
-    }
-}
-
-#[allow(clippy::panic)]
-fn final_session_history_identity_path_from_process_env() -> std::ffi::OsString {
-    let run_id = std::env::var(guest_contracts::env::RUN_ID_ENV).unwrap_or_default();
-    paths::GuestPaths::from_process_env(&run_id)
-        .unwrap_or_else(|error| panic!("failed to resolve guest runtime directory: {error}"))
-        .final_session_history_identity_file()
-        .into()
-}
-
-fn parse_session_history_identity_expectation(
-    args: &[std::ffi::OsString],
-) -> Result<Option<SessionHistoryIdentityExpectation>, ()> {
-    let [
-        framework,
-        session_id_hash,
-        history_ref_kind,
-        history_hash,
-        history_size_bytes,
-    ] = match args {
-        [] => return Ok(None),
-        [
-            framework,
-            session_id_hash,
-            history_ref_kind,
-            history_hash,
-            history_size_bytes,
-        ] => [
-            framework,
-            session_id_hash,
-            history_ref_kind,
-            history_hash,
-            history_size_bytes,
-        ],
-        _ => return Err(()),
-    };
-    let framework = framework.to_str().ok_or(())?;
-    let session_id_hash = session_id_hash.to_str().ok_or(())?;
-    let history_ref_kind = history_ref_kind.to_str().ok_or(())?;
-    let history_hash = history_hash.to_str().ok_or(())?;
-    let history_size_bytes = history_size_bytes.to_str().ok_or(())?;
-    SessionHistoryIdentityExpectation::from_cli_args([
-        framework,
-        session_id_hash,
-        history_ref_kind,
-        history_hash,
-        history_size_bytes,
-    ])
-    .map(Some)
-    .map_err(|_| ())
 }
 
 /// Top-level orchestrator. Returns exit code directly (never panics/errors out).
@@ -799,15 +683,12 @@ fn record_persistence_failure(
     if failure.wrote_failure_diagnostic {
         return;
     }
-    let mut diagnostic = failure_diagnostics::base_failure_diagnostic_for_config(
+    let diagnostic = failure_diagnostics::base_failure_diagnostic_for_config(
         config,
         FailureClass::FinalizationFailed,
     )
-    .with_cli_exit_code(failure.cli_exit_code);
-    if let Some(reason) = finalization_failure_reason(failure.error) {
-        diagnostic = diagnostic.with_failure_reason(reason);
-    }
-    let diagnostic = diagnostic.with_session_history_status(
+    .with_cli_exit_code(failure.cli_exit_code)
+    .with_session_history_status(
         failure_diagnostics::diagnostic_session_history_status_for_config(config, session_metadata),
     );
     failure_diagnostics::write_guest_failure_diagnostic(

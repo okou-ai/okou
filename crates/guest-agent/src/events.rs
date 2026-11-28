@@ -15,7 +15,7 @@ use crate::failure_patterns::{
 use crate::http::{HttpAttemptObserver, HttpClient};
 use crate::masker::SecretMasker;
 use crate::paths;
-use crate::session_metadata::{self, SessionHistoryLaunchSource, SessionMetadataStore};
+use crate::session_metadata::{self, SessionMetadataStore};
 use bytes::Bytes;
 use guest_contracts::diagnostics::FailureReason;
 use serde_json::{Map, Value, json};
@@ -53,7 +53,7 @@ pub async fn send_event_for_config(
     paths: &paths::GuestPaths,
 ) -> Result<(), AgentError> {
     let capture = SessionMetadataCapture::new(
-        SessionHistoryLaunchSource::for_config(config),
+        config.framework,
         SessionMetadataStore::default(),
         paths.session_id_file(),
     );
@@ -599,7 +599,7 @@ pub(crate) fn extract_claude_tool_info(event: &Value) -> Vec<ClaudeToolEvent<'_>
 /// - Claude Code: `{type: system, subtype: init, session_id: <uuid>}`
 /// - Codex:       `{type: thread.started, thread_id: <uuid>}`
 /// - Antigravity: the projected `{type: system, subtype: init, session_id: <conversation uuid>}`
-/// - Pi:          `{type: system, subtype: init, session_id: <chat-thread-id>, session_file: <path>}`
+/// - Pi:          `{type: system, subtype: init, session_id: <session-id>, session_file: <path>}`
 ///
 pub(crate) struct SessionMetadataCapture {
     framework: Framework,
@@ -608,15 +608,14 @@ pub(crate) struct SessionMetadataCapture {
 
 impl SessionMetadataCapture {
     pub(crate) fn new(
-        launch_source: SessionHistoryLaunchSource,
+        framework: Framework,
         store: SessionMetadataStore,
         session_id_file: &str,
     ) -> Self {
-        let framework = launch_source.framework();
         Self {
             framework,
             capture: session_metadata::SessionMetadataCapture::new(
-                launch_source,
+                framework,
                 store,
                 session_id_file,
             ),
@@ -627,20 +626,13 @@ impl SessionMetadataCapture {
         let session_id = match self.framework {
             Framework::ClaudeCode => extract_claude_session_id(event),
             Framework::Codex => extract_codex_thread_id(event),
-            // Antigravity output is projected into the Claude stream-json shape.
+            // Pi and Antigravity output are projected into the Claude stream-json shape.
             Framework::Pi | Framework::Antigravity => extract_claude_session_id(event),
         };
         let Some(session_id) = session_id else {
             return;
         };
-        match self.framework {
-            Framework::Pi => self
-                .capture
-                .capture_pi_session_id(&session_id, string_field(event, "session_file")),
-            Framework::ClaudeCode | Framework::Codex | Framework::Antigravity => {
-                self.capture.capture_session_id(&session_id);
-            }
-        }
+        self.capture.capture_session_id(&session_id);
     }
 }
 

@@ -54,7 +54,6 @@ struct PublicationRequest {
     terminal_status: HomeCacheTerminalStatus,
     completed_at: String,
     storage_fingerprints: StorageFingerprints,
-    history_proof: Option<HomeCacheHistoryProofBinding>,
 }
 
 impl PublicationRequest {
@@ -71,7 +70,6 @@ impl PublicationRequest {
             terminal_status: self.terminal_status,
             completed_at: &self.completed_at,
             storage_fingerprints: &self.storage_fingerprints,
-            history_proof: self.history_proof.as_ref(),
         }
     }
 }
@@ -118,7 +116,6 @@ impl HomeImagePromotionContext {
             terminal_status: self.terminal_status,
             completed_at: self.completed_at.clone(),
             storage_fingerprints: self.storage_fingerprints.clone(),
-            history_proof: self.history_proof.clone(),
         };
         let cache = self.cache.clone();
         self.cache
@@ -207,9 +204,6 @@ impl HomeImageCache {
         let candidate = paths
             .image(&generation)
             .ok_or_else(|| LifecycleError::Internal("invalid publication generation".into()))?;
-        if let Some(binding) = input.history_proof {
-            super::super::metadata::validate_history_binding(binding, &generation)?;
-        }
         if input.rootfs_hash.is_empty()
             || input.image_size_bytes == 0
             || !input.image_size_bytes.is_multiple_of(1024 * 1024)
@@ -567,7 +561,7 @@ impl HomeImageCache {
                     working_dir: input.working_dir.to_owned(),
                     fingerprint_scope: "/home/user".to_owned(),
                     image_generation: generation.clone(),
-                    history_proof: input.history_proof.cloned(),
+                    _legacy_history_proof: None,
                     last_completed_at: input.completed_at.to_owned(),
                     last_used_at: local_timestamp(),
                     last_terminal_status: input.terminal_status,

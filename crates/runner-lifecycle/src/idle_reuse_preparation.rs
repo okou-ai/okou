@@ -84,7 +84,6 @@ impl IdleReusePreparation {
         sandbox_id: &str,
         operation_run_id: RunId,
         current_runtime_run_id: RunId,
-        retained_runtime_dir: Option<&str>,
     ) -> Result<Self, IdleReusePreparationFailure> {
         let current_runtime_dir = guest_contracts::runtime_paths::run_dir_for_home(
             CANONICAL_GUEST_HOME_DIR,
@@ -102,7 +101,6 @@ impl IdleReusePreparation {
         .into_owned();
         let request = ReusePreparationRequest {
             current_runtime_dir,
-            retained_runtime_dir: retained_runtime_dir.map(str::to_owned),
         };
         let request_bytes = serde_json::to_vec(&request).map_err(|error| {
             reject_without_exec(

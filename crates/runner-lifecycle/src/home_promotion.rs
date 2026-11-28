@@ -6,12 +6,11 @@ use std::time::Duration;
 use api_contracts::generated::constants::runners::paths::CANONICAL_GUEST_HOME_DIR;
 use futures_util::FutureExt;
 use guest_contracts::guest_binary::AGENT_PATH;
-use guest_contracts::home_cache_history::{
-    TerminalHomeCachePreparationReport, TerminalHomeCachePreparationRequest,
+use guest_contracts::reuse_preparation::{
+    REUSE_PREPARATION_HELPER_MAX_BYTES, ReusePreparationReport, ReusePreparationRequest,
 };
 use runner_host::home_observation::HomeObservationOutcome;
 use sandbox::{EXEC_OUTPUT_LIMIT_64_KIB, ExecRequest, Sandbox};
-use sha2::{Digest, Sha256};
 use tracing::{Level, warn};
 
 use crate::error::LifecycleError;
@@ -57,10 +56,10 @@ pub async fn prepare_home_image_from_active_sandbox(
     promotion: Option<HomeImagePromotionContext>,
     reason: &'static str,
 ) -> Option<PreparedHomeImagePromotion> {
-    let mut promotion = promotion?;
-    // Existing terminal callers have finished finalization/identity/log readers
-    // and own the sandbox exclusively. The helper captures a proof, cleans all
-    // managed private namespaces, and returns before freeze. No body is copied.
+    let promotion = promotion?;
+    // Existing terminal callers have finished finalization/log readers
+    // and own the sandbox exclusively. The helper cleans all managed private
+    // namespaces and returns capacity stats before freeze. No body is copied.
     let result = AssertUnwindSafe(async {
         // A privileged workload could have replaced the visible mount since
         // startup. Cleanup must cover the actual home filesystem, never
@@ -73,7 +72,7 @@ pub async fn prepare_home_image_from_active_sandbox(
             HomeObservationOutcome::Failed
         });
         mounted.map_err(|failure| failure.error)?;
-        if !prepare_terminal_cache_runtime(sandbox, &mut promotion).await? {
+        if !prepare_terminal_cache_runtime(sandbox, &promotion).await? {
             return Ok(false);
         }
         let timing = promotion.start_timing(HomePhase::TerminalFreeze);
@@ -144,7 +143,7 @@ fn log_guest_operation_failure(
 
 pub(crate) async fn prepare_terminal_cache_runtime(
     sandbox: &dyn Sandbox,
-    promotion: &mut HomeImagePromotionContext,
+    promotion: &HomeImagePromotionContext,
 ) -> crate::error::LifecycleResult<bool> {
     let timing = promotion.start_timing(HomePhase::TerminalPreparation);
     let current_runtime_dir = guest_contracts::runtime_paths::run_dir_for_home(
@@ -154,19 +153,9 @@ pub(crate) async fn prepare_terminal_cache_runtime(
     .map_err(|error| LifecycleError::Internal(format!("resolve terminal runtime scope: {error}")))?
     .to_string_lossy()
     .into_owned();
-    let retained_runtime_dir = promotion
-        .restored_session_identity()
-        .and_then(|identity| identity.final_metadata_verification())
-        .map(|verification| verification.runtime_dir.to_owned());
-    let generation = promotion.publication_generation();
-    let request = TerminalHomeCachePreparationRequest {
+    let request = ReusePreparationRequest {
         current_runtime_dir,
-        retained_runtime_dir,
-        generation: generation.clone(),
     };
-    request
-        .validate()
-        .map_err(|error| LifecycleError::Internal(error.to_string()))?;
     let request_bytes = serde_json::to_vec(&request).map_err(|error| {
         LifecycleError::Internal(format!("serialize terminal cleanup: {error}"))
     })?;
@@ -187,44 +176,24 @@ pub(crate) async fn prepare_terminal_cache_runtime(
         .await?;
     if !helper_exec_succeeded(&result)
         || result.stdout_truncated
-        || result.stdout.len()
-            > guest_contracts::home_cache_history::HOME_CACHE_HISTORY_HELPER_MAX_BYTES
+        || result.stdout.len() > REUSE_PREPARATION_HELPER_MAX_BYTES
     {
         return Err(LifecycleError::Internal(format_helper_exec_failure(
             "terminal home cache preparation",
             &result,
         )));
     }
-    let report: TerminalHomeCachePreparationReport = serde_json::from_slice(&result.stdout)
+    let report: ReusePreparationReport = serde_json::from_slice(&result.stdout)
         .map_err(|_| LifecycleError::Internal("invalid terminal home cleanup report".into()))?;
-    if let Some(reason) = report.cleanup.home.home_rejection_reason() {
+    if let Some(reason) = report.home.home_rejection_reason() {
         tracing::info!(run_id = %promotion.run_id(), sandbox_id = %promotion.sandbox_id(),
-            reason, home_available_bytes = report.cleanup.home.available_bytes,
-            home_available_inodes = report.cleanup.home.available_inodes,
+            reason, home_available_bytes = report.home.available_bytes,
+            home_available_inodes = report.home.available_inodes,
             "home image rejected below reuse reserve");
         promotion.observe_publication(HomeObservationOutcome::Skipped, reason);
         timing.finish(HomeObservationOutcome::Skipped);
         return Ok(false);
     }
-    if let Some(binding) = &report.history_proof {
-        binding
-            .validate()
-            .map_err(|error| LifecycleError::Internal(error.to_string()))?;
-        let bytes = binding
-            .proof
-            .to_json_vec()
-            .map_err(|error| LifecycleError::Internal(error.to_string()))?;
-        if binding.proof.generation != generation
-            || hex::encode(Sha256::digest(bytes)) != binding.sha256
-        {
-            return Err(LifecycleError::Internal(
-                "terminal home proof binding mismatch".into(),
-            ));
-        }
-    }
-    // Clear a previous candidate even on an ordinary history miss. This setter
-    // validates the publication generation before storing optional evidence.
-    promotion.set_home_history_proof(report.history_proof)?;
     timing.finish(HomeObservationOutcome::Completed);
     Ok(true)
 }

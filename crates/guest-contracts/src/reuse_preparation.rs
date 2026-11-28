@@ -20,15 +20,16 @@ pub const REUSE_PREPARATION_EXIT_CONTAINMENT_FAILED: i32 = 5;
 /// for a guest-helper failure.
 pub const REUSE_PREPARATION_EXIT_HOME_MOUNT_FAILED: i32 = 6;
 
-/// Runtime directories that must remain available after reuse preparation.
+/// Maximum stdout/stdin payload bytes accepted for reuse and cache preparation helpers.
+pub const REUSE_PREPARATION_HELPER_MAX_BYTES: usize = 64 * 1024;
+
+/// Runtime directory that must remain available after idle reuse preparation
+/// (or be validated before terminal cache cleanup).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ReusePreparationRequest {
     /// Runtime directory created for the completed run.
     pub current_runtime_dir: String,
-    /// Earlier runtime directory still referenced by a retained session identity.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub retained_runtime_dir: Option<String>,
 }
 
 /// User-available capacity on one guest filesystem.

@@ -3,6 +3,7 @@ import {
   runPiSubagent,
   serializePiSubagentEvent,
 } from "@okouai/pi-agent-runtime/node";
+import { randomUUID } from "node:crypto";
 import { constants } from "node:fs";
 import { open } from "node:fs/promises";
 import { join } from "node:path";
@@ -56,7 +57,7 @@ export async function runPiSubagentLoop(
       {
         cwd: process.cwd(),
         agentDir,
-        sessionId: config.sessionId,
+        sessionId: randomUUID(),
         model: config.model,
         appendSystemPrompt: config.launchPayload.appendSystemPrompt,
         prompt,

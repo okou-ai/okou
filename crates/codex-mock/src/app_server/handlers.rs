@@ -119,6 +119,101 @@ impl AppServerState {
         Ok(ServerAction::Continue)
     }
 
+    pub(super) fn handle_thread_list<W: Write>(
+        &mut self,
+        id: Value,
+        params: &Value,
+        output: &mut W,
+    ) -> io::Result<ServerAction> {
+        let source_kinds = params
+            .get("sourceKinds")
+            .and_then(Value::as_array)
+            .map(|kinds| kinds.iter().filter_map(Value::as_str).collect::<Vec<_>>());
+        if let Some(kinds) = source_kinds.as_ref()
+            && !kinds.is_empty()
+            && !kinds.iter().any(|kind| matches!(*kind, "vscode" | "appServer"))
+        {
+            write_success(output, id, json!({ "data": [], "nextCursor": Value::Null }))?;
+            return Ok(ServerAction::Continue);
+        }
+
+        let expected_cwd = string_param(params, "cwd");
+        let limit = params
+            .get("limit")
+            .and_then(Value::as_u64)
+            .map(|value| value as usize);
+        let codex_home = crate::session::codex_home();
+        let files = crate::session::session_files(&codex_home)?;
+
+        let mut candidates: Vec<(u128, String, Value)> = Vec::new();
+        for path in files {
+            let Ok(events) = crate::session::read_session_file(&path) else {
+                continue;
+            };
+            let thread_id = events
+                .iter()
+                .find_map(|event| {
+                    if event.get("type").and_then(Value::as_str) == Some("session_meta") {
+                        event
+                            .pointer("/payload/id")
+                            .and_then(Value::as_str)
+                            .map(str::to_string)
+                    } else if event.get("type").and_then(Value::as_str)
+                        == Some("mock.app_server.input")
+                    {
+                        event
+                            .get("thread_id")
+                            .and_then(Value::as_str)
+                            .map(str::to_string)
+                    } else {
+                        None
+                    }
+                })
+                .filter(|value| !value.is_empty());
+            let Some(thread_id) = thread_id else {
+                continue;
+            };
+            let recorded_cwd = events.iter().rev().find_map(|event| {
+                (event.get("type").and_then(Value::as_str) == Some("mock.app_server.input"))
+                    .then(|| event.get("turn_request_cwd").and_then(Value::as_str))
+                    .flatten()
+            });
+            if let (Some(expected), Some(actual)) = (expected_cwd, recorded_cwd)
+                && actual != expected
+            {
+                continue;
+            }
+            let modified_nanos = std::fs::metadata(&path)
+                .and_then(|meta| meta.modified())
+                .ok()
+                .and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok())
+                .map_or(0, |duration| duration.as_nanos());
+            let updated_at_secs = (modified_nanos / 1_000_000_000) as u64;
+            let cwd = recorded_cwd.or(expected_cwd).unwrap_or("");
+            candidates.push((
+                modified_nanos,
+                path.to_string_lossy().into_owned(),
+                json!({
+                    "id": thread_id,
+                    "cwd": cwd,
+                    "source": "vscode",
+                    "updatedAt": updated_at_secs,
+                }),
+            ));
+        }
+
+        candidates.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| b.1.cmp(&a.1)));
+        if let Some(limit) = limit {
+            candidates.truncate(limit);
+        }
+        let data = candidates
+            .into_iter()
+            .map(|(_, _, entry)| entry)
+            .collect::<Vec<_>>();
+        write_success(output, id, json!({ "data": data, "nextCursor": Value::Null }))?;
+        Ok(ServerAction::Continue)
+    }
+
     pub(super) fn handle_thread_start<W: Write>(
         &mut self,
         id: Value,

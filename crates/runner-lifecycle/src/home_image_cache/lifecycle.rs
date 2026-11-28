@@ -40,7 +40,6 @@ use super::{
     CACHE_FORMAT_VERSION, HOME_DRIVE_LAYOUT, HomeCacheInventory, HomeCacheLockRegistration,
     HomeImageCache, HomeImageCacheInner,
 };
-use guest_contracts::home_cache_history::HomeCacheHistoryProofBinding;
 use runner_host::home_observation::{HomeObservation, HomeObservationKind, HomeObservationOutcome};
 
 mod handoff;
@@ -68,7 +67,6 @@ pub struct HomeImageLease {
     home_drive_enabled: bool,
     result: HomeCacheCheckoutResult,
     previous_storage: Option<StorageFingerprints>,
-    history_proof: Option<HomeCacheHistoryProofBinding>,
     pub(super) source_pin: Option<super::fs::PinnedImage>,
     selected_commit_pin: Option<super::fs::PinnedImage>,
     entry_lock: Option<HomeEntryLock>,
@@ -91,8 +89,6 @@ pub struct HomeImagePromotionContext {
     terminal_status: HomeCacheTerminalStatus,
     completed_at: String,
     storage_fingerprints: StorageFingerprints,
-    restored_session_identity: Option<crate::restored_session_identity::RestoredSessionIdentity>,
-    history_proof: Option<HomeCacheHistoryProofBinding>,
     publication: Arc<tokio::sync::Mutex<publication::PublicationProgress>>,
 }
 
@@ -120,7 +116,6 @@ struct HomeImagePromotionInput<'a> {
     terminal_status: HomeCacheTerminalStatus,
     completed_at: &'a str,
     storage_fingerprints: &'a StorageFingerprints,
-    history_proof: Option<&'a HomeCacheHistoryProofBinding>,
 }
 
 struct HomeImagePromotionTarget {
@@ -154,7 +149,6 @@ struct HomeImageLeaseState {
     source_image: Option<PathBuf>,
     consumed_cache_hit: bool,
     previous_storage: Option<StorageFingerprints>,
-    history_proof: Option<HomeCacheHistoryProofBinding>,
     entry_lock: Option<HomeEntryLock>,
     home_drive_enabled: bool,
     result: HomeCacheCheckoutResult,
@@ -328,7 +322,6 @@ impl HomeImageLease {
             home_drive_enabled: state.home_drive_enabled,
             result: state.result,
             previous_storage: state.previous_storage,
-            history_proof: state.history_proof,
             source_pin: None,
             selected_commit_pin: None,
             entry_lock: state.entry_lock,
@@ -505,7 +498,6 @@ impl HomeImageCache {
                     source_image: None,
                     consumed_cache_hit: false,
                     previous_storage: None,
-                    history_proof: None,
                     entry_lock,
                     home_drive_enabled: request.home_drive_available,
                     result,
@@ -612,7 +604,6 @@ impl HomeImageCache {
                     source_image,
                     consumed_cache_hit: false,
                     previous_storage,
-                    history_proof: None,
                     entry_lock,
                     home_drive_enabled,
                     result,
@@ -790,12 +781,7 @@ impl HomeImageCache {
                     .image(&metadata.image_generation)
                     .ok_or_else(|| LifecycleError::Internal("invalid home generation".into()));
                 match source {
-                    Ok(source) => Some((
-                        source,
-                        previous,
-                        metadata.history_proof,
-                        metadata.current_image,
-                    )),
+                    Ok(source) => Some((source, previous, metadata.current_image)),
                     Err(_) => None,
                 }
             }
@@ -866,7 +852,7 @@ impl HomeImageCache {
         };
 
         match hit {
-            Some((source, previous, binding, expected_image)) => {
+            Some((source, previous, expected_image)) => {
                 let pin = super::fs::PinnedImage::open(&source, common.image_size_bytes);
                 if !pin
                     .as_ref()
@@ -900,7 +886,6 @@ impl HomeImageCache {
                     true,
                     None,
                 );
-                lease.history_proof = binding;
                 lease.source_pin = pin.ok();
                 // Pin the selecting commit too: handoff may revoke only this
                 // exact file, after all fallible executor preparation succeeds.
@@ -1341,16 +1326,11 @@ impl HomeImageLease {
         self.result == HomeCacheCheckoutResult::Hit
     }
 
-    pub fn history_proof_binding(&self) -> Option<&HomeCacheHistoryProofBinding> {
-        self.history_proof.as_ref()
-    }
-
     /// Invalidate all image-dependent candidates when preparation chooses a pristine retry.
     pub fn discard_cached_image(&mut self) {
         self.source_image = None;
         self.source_pin = None;
         self.selected_commit_pin = None;
-        self.history_proof = None;
         self.previous_storage = None;
         self.result = HomeCacheCheckoutResult::Miss;
     }
@@ -1382,7 +1362,6 @@ impl HomeImageLease {
         let Some(promotion) = self.into_promotion_context(HomeImagePromotionRequest {
             run_id,
             sandbox_id: sandbox::SandboxId::new_v4(),
-            restored_session_identity: None,
             terminal_status,
             completed_at,
             storage_fingerprints: storage_fingerprints.clone(),
@@ -1421,12 +1400,11 @@ impl HomeImageLease {
 
     pub fn into_promotion_context(
         mut self,
-        request: HomeImagePromotionRequest<'_>,
+        request: HomeImagePromotionRequest,
     ) -> Option<HomeImagePromotionContext> {
         let HomeImagePromotionRequest {
             run_id,
             sandbox_id,
-            restored_session_identity,
             terminal_status,
             completed_at,
             storage_fingerprints,
@@ -1484,8 +1462,6 @@ impl HomeImageLease {
             terminal_status,
             completed_at,
             storage_fingerprints,
-            restored_session_identity: restored_session_identity.cloned(),
-            history_proof: None,
             publication: Arc::new(tokio::sync::Mutex::new(
                 publication::PublicationProgress::default(),
             )),
@@ -1526,27 +1502,6 @@ impl HomeImagePromotionContext {
         HomePhaseTimer::new(&self.cache, self.run_id, &self.cache_key, phase)
     }
 
-    pub fn publication_generation(&self) -> String {
-        self.run_id.to_string()
-    }
-
-    pub fn set_home_history_proof(
-        &mut self,
-        binding: Option<HomeCacheHistoryProofBinding>,
-    ) -> LifecycleResult<()> {
-        if !self.can_reactivate() {
-            return Err(LifecycleError::Internal(
-                "home history proof is sealed by accepted publication".into(),
-            ));
-        }
-        self.history_proof = None;
-        if let Some(binding) = binding {
-            super::metadata::validate_history_binding(&binding, &self.publication_generation())?;
-            self.history_proof = Some(binding);
-        }
-        Ok(())
-    }
-
     pub fn rootfs_hash(&self) -> &str {
         &self.rootfs_hash
     }
@@ -1569,12 +1524,6 @@ impl HomeImagePromotionContext {
 
     pub fn reuse_key(&self) -> &str {
         &self.reuse_key
-    }
-
-    pub fn restored_session_identity(
-        &self,
-    ) -> Option<&crate::restored_session_identity::RestoredSessionIdentity> {
-        self.restored_session_identity.as_ref()
     }
 
     pub fn validate_identity(
@@ -1775,8 +1724,6 @@ impl HomeImagePromotionContext {
             terminal_status: _,
             completed_at: _,
             storage_fingerprints,
-            restored_session_identity: _,
-            history_proof: _,
             publication: _,
         } = self;
         if let Some(entry_lock) = entry_lock.as_mut() {
@@ -1798,7 +1745,6 @@ impl HomeImagePromotionContext {
                 source_image: None,
                 consumed_cache_hit,
                 previous_storage: Some(storage_fingerprints),
-                history_proof: None,
                 entry_lock,
                 home_drive_enabled: home_drive_available,
                 result: HomeCacheCheckoutResult::Miss,

@@ -142,11 +142,9 @@ impl std::fmt::Display for HomeImagePromotionIdentityMismatch {
         f.write_str(self.as_str())
     }
 }
-pub struct HomeImagePromotionRequest<'a> {
+pub struct HomeImagePromotionRequest {
     pub run_id: RunId,
     pub sandbox_id: sandbox::SandboxId,
-    pub restored_session_identity:
-        Option<&'a crate::restored_session_identity::RestoredSessionIdentity>,
     pub terminal_status: HomeCacheTerminalStatus,
     pub completed_at: String,
     pub storage_fingerprints: StorageFingerprints,

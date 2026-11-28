@@ -34,66 +34,6 @@
 //! [`RUN_ID_ENV`](guest_contracts::env::RUN_ID_ENV) (`OKOU_RUN_ID`) and `HOME`.
 //! A relative override is invalid.
 //!
-//! ## `verify-session-history-identity`
-//!
-//! ### Invocation
-//!
-//! ```text
-//! guest-agent verify-session-history-identity
-//! guest-agent verify-session-history-identity <metadata-path>
-//! guest-agent verify-session-history-identity <metadata-path> <framework> <session-id-hash> <history-ref-kind> <history-hash> <history-size-bytes>
-//! ```
-//!
-//! With no arguments, the helper reads the final identity metadata file from
-//! the runtime path resolved from the process environment. With arguments, the
-//! first argument is always the metadata path. The optional remaining group is
-//! either absent or exactly five values. The framework and history-reference
-//! kind use the stable spellings accepted by
-//! [`SessionHistoryFramework::parse_cli_arg`](guest_contracts::session_history_identity::SessionHistoryFramework::parse_cli_arg)
-//! and
-//! [`SessionHistoryRefKind::parse_cli_arg`](guest_contracts::session_history_identity::SessionHistoryRefKind::parse_cli_arg).
-//! Supplying any other argument count returns
-//! [`SESSION_HISTORY_IDENTITY_VERIFY_EXIT_INVALID_ARGS`](guest_contracts::session_history_identity::SESSION_HISTORY_IDENTITY_VERIFY_EXIT_INVALID_ARGS).
-//!
-//! The helper consumes no protocol stdin and emits no protocol payload on
-//! stdout or stderr. A zero exit status,
-//! [`SESSION_HISTORY_IDENTITY_VERIFY_EXIT_SUCCESS`](guest_contracts::session_history_identity::SESSION_HISTORY_IDENTITY_VERIFY_EXIT_SUCCESS),
-//! means that the metadata and the current framework-owned session history
-//! match. Verification failures are represented by
-//! [`crate::session_history_identity::SessionHistoryIdentityVerifyError`] and
-//! the corresponding stable exit codes:
-//!
-//! - [`SESSION_HISTORY_IDENTITY_VERIFY_EXIT_FAILURE`](guest_contracts::session_history_identity::SESSION_HISTORY_IDENTITY_VERIFY_EXIT_FAILURE)
-//!   is the uncategorized fallback.
-//! - [`SESSION_HISTORY_IDENTITY_VERIFY_EXIT_METADATA_READ`](guest_contracts::session_history_identity::SESSION_HISTORY_IDENTITY_VERIFY_EXIT_METADATA_READ)
-//!   means the metadata file could not be read.
-//! - [`SESSION_HISTORY_IDENTITY_VERIFY_EXIT_INVALID_METADATA`](guest_contracts::session_history_identity::SESSION_HISTORY_IDENTITY_VERIFY_EXIT_INVALID_METADATA)
-//!   means the metadata failed shared-contract validation.
-//! - [`SESSION_HISTORY_IDENTITY_VERIFY_EXIT_FRAMEWORK_MISMATCH`](guest_contracts::session_history_identity::SESSION_HISTORY_IDENTITY_VERIFY_EXIT_FRAMEWORK_MISMATCH)
-//!   means the declared framework and history source disagree.
-//! - [`SESSION_HISTORY_IDENTITY_VERIFY_EXIT_EXPECTED_MISMATCH`](guest_contracts::session_history_identity::SESSION_HISTORY_IDENTITY_VERIFY_EXIT_EXPECTED_MISMATCH)
-//!   means the metadata does not match the five expected identity fields.
-//! - [`SESSION_HISTORY_IDENTITY_VERIFY_EXIT_HISTORY_READ`](guest_contracts::session_history_identity::SESSION_HISTORY_IDENTITY_VERIFY_EXIT_HISTORY_READ)
-//!   means the framework-owned history could not be resolved or read.
-//! - [`SESSION_HISTORY_IDENTITY_VERIFY_EXIT_HISTORY_MISMATCH`](guest_contracts::session_history_identity::SESSION_HISTORY_IDENTITY_VERIFY_EXIT_HISTORY_MISMATCH)
-//!   means the history size or hash differs from the metadata.
-//! - [`SESSION_HISTORY_IDENTITY_VERIFY_EXIT_HISTORY_TOO_LARGE`](guest_contracts::session_history_identity::SESSION_HISTORY_IDENTITY_VERIFY_EXIT_HISTORY_TOO_LARGE)
-//!   means the history exceeds the guest verification budget.
-//!
-//! The runner caller is `verify_restored_session_identity_for_reuse` in
-//! `crates/runner-executor/src/executor/agent_run.rs`. It builds the typed fixed-helper
-//! request executed by `verify_final_identity_metadata`, and
-//! `session_history_identity_reason_from_helper_result` maps its exit status
-//! to runner reasons. Keep those source references in sync with the linked
-//! shared constants when changing this protocol.
-//!
-//! ## `verify-home-cache-history`
-//!
-//! A fixed typed helper consumes bounded JSON stdin and returns a hit/miss report.
-//! It verifies a generation/digest-bound surviving proof, the current request,
-//! current launch source, and no-follow live raw/zstd bytes. No body is exported.
-//! Missing/corrupt/stale evidence is a miss; cancellation is not a miss.
-//!
 //! ## `prepare-for-reuse`
 //!
 //! ### Invocation and stdin
@@ -106,9 +46,8 @@
 //! [`REUSE_PREPARATION_EXIT_INVALID_REQUEST`](guest_contracts::reuse_preparation::REUSE_PREPARATION_EXIT_INVALID_REQUEST).
 //! The request is a serialized
 //! [`ReusePreparationRequest`](guest_contracts::reuse_preparation::ReusePreparationRequest) read from
-//! stdin, limited to 64 KiB. Its `currentRuntimeDir` is required and its
-//! `retainedRuntimeDir` is optional; both paths identify runtime directories
-//! that must remain available after cleanup.
+//! stdin, limited to 64 KiB. Its `currentRuntimeDir` is required and identifies
+//! the runtime directory that must remain available after cleanup.
 //!
 //! On success, the helper serializes
 //! [`ReusePreparationReport`](guest_contracts::reuse_preparation::ReusePreparationReport) to stdout.
@@ -117,7 +56,7 @@
 //! `removedEntries` reports the number of unprotected direct children removed.
 //! A home below its byte or inode reserve also gets one fixed npm/pip cache
 //! reclamation attempt before the report. Healthy homes retain package caches;
-//! current/retained runtimes and ordinary user files remain protected.
+//! the current runtime and ordinary user files remain protected.
 //! Helper failures are written to stderr and use these stable exit codes:
 //!
 //! - [`REUSE_PREPARATION_EXIT_SUCCESS`](guest_contracts::reuse_preparation::REUSE_PREPARATION_EXIT_SUCCESS)
@@ -147,22 +86,21 @@
 //! guest-agent prepare-for-cache < request.json
 //! ```
 //!
-//! This terminal helper accepts a generation-owned terminal request and returns
-//! cleanup plus optional surviving proof, with the existing exit-code categories.
+//! This terminal helper consumes a [`ReusePreparationRequest`](guest_contracts::reuse_preparation::ReusePreparationRequest)
+//! and returns a [`ReusePreparationReport`](guest_contracts::reuse_preparation::ReusePreparationReport)
+//! with the existing exit-code categories.
 //! It accepts only the canonical managed runtime parent
-//! `/home/user/.vm0/guest-agent/runs`. Both requested anchors must pass the existing
-//! containment, no-follow, mount and identity checks before mutation. Once required
-//! finalization, identity and log readers finish, it removes all completed runtime
-//! children (including current/retained anchors) and managed Codex auth. It does not
-//! delete ordinary user files or framework histories/catalogs. After managed
-//! cleanup, a below-reserve home gets one fixed npm/pip cache reclamation attempt,
-//! shared with idle preparation. Healthy homes retain package caches. History
-//! facts are captured in memory before runtime deletion and their proof is
-//! persisted only when reclaimed home capacity permits publication; final
-//! capacity includes proof writes. The existing helper deadline bounds cleanup.
-//! Unlike idle preparation, Runner does not apply a rootfs-reserve gate to its
-//! report. Failure rejects optional publication; successful deletion is not a
-//! forensic block-erasure guarantee. Runner invokes it from
+//! `/home/user/.vm0/guest-agent/runs`. Any existing current runtime anchor must
+//! pass the existing containment, no-follow, mount and identity checks before
+//! mutation. Once required finalization, diagnostic and log readers finish, it
+//! removes all completed runtime children (including the current anchor) and
+//! managed Codex auth. It does not delete ordinary user files or framework
+//! histories/catalogs. After managed cleanup, a below-reserve home gets one
+//! fixed npm/pip cache reclamation attempt, shared with idle preparation.
+//! Healthy homes retain package caches. The existing helper deadline bounds
+//! cleanup. Unlike idle preparation, Runner does not apply a rootfs-reserve
+//! gate to its report. Failure rejects optional publication; successful
+//! deletion is not a forensic block-erasure guarantee. Runner invokes it from
 //! `crates/runner-lifecycle/src/home_promotion.rs` before freeze and stop.
 //!
 //! ## `recover-disk-space`
@@ -209,18 +147,14 @@ mod failure_patterns;
 mod filesystem;
 pub mod finalization;
 pub mod heartbeat;
-pub mod home_cache_history;
 pub mod http;
 pub mod masker;
 pub mod metrics;
-mod native_continuation;
 mod nofollow_fs;
 pub mod paths;
 mod provider_failure;
 pub mod reuse_preparation;
 pub mod run_context;
-pub mod session_history;
-pub mod session_history_identity;
 pub mod session_metadata;
 mod steered_inputs;
 pub mod telemetry;

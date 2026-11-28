@@ -25,7 +25,6 @@ pub struct GuestPaths {
     runtime_dir: PathBuf,
     session_id_file: String,
     finalization_error_file: String,
-    final_session_history_identity_file: String,
     failure_diagnostic_file: String,
     claude_append_system_prompt_file: String,
     pi_launch_payload_file: String,
@@ -48,9 +47,6 @@ impl GuestPaths {
             )),
             finalization_error_file: path_to_string(
                 guest_contracts::runtime_paths::finalization_error_file(&runtime_dir),
-            ),
-            final_session_history_identity_file: path_to_string(
-                guest_contracts::runtime_paths::final_session_history_identity_file(&runtime_dir),
             ),
             failure_diagnostic_file: path_to_string(
                 guest_contracts::runtime_paths::failure_diagnostic_file(&runtime_dir),
@@ -145,20 +141,6 @@ impl GuestPaths {
     /// [finalization_error_file]: guest_contracts::runtime_paths::finalization_error_file
     pub fn finalization_error_file(&self) -> &str {
         &self.finalization_error_file
-    }
-
-    /// Return the run-root `final-session-history-identity.json` path.
-    ///
-    /// The JSON file stores the metadata used to verify the final session
-    /// history identity. This accessor returns a borrowed `&str` and only
-    /// derives the path; it does not create, validate, or otherwise access the
-    /// file. See the canonical [final-session-history identity path helper][final_session_history_identity_file]
-    /// for the shared runtime layout.
-    ///
-    /// [final_session_history_identity_file]:
-    ///     guest_contracts::runtime_paths::final_session_history_identity_file
-    pub fn final_session_history_identity_file(&self) -> &str {
-        &self.final_session_history_identity_file
     }
 
     /// Return the run-root `failure-diagnostic.json` path.

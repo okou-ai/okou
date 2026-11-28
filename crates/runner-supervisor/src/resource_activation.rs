@@ -162,6 +162,7 @@ pub async fn activate_reserved_idle(
     } = request;
     let started_at = Instant::now();
     let requested_reuse_key = context.reuse_key();
+    let expected_source_run_id = context.expected_home_source_run_id();
     // Ordinary reuse preserves exact-over-blank priority. A blank carrying an
     // observed source home must not be replaced by a different VM's retained state.
     let (reservation, idle_snapshot) = match (
@@ -171,8 +172,13 @@ pub async fn activate_reserved_idle(
     ) {
         (IdleSandboxKind::Blank, Some(reuse_key), None) => {
             let mut pool = ctx.idle_pool.lock().await;
-            if let Some(exact) = pool.reserve_reusable(reuse_key, profile_name, device_rate_limits)
-            {
+            let exact = match expected_source_run_id {
+                Some(expected) => pool
+                    .reserve_reusable_source(reuse_key, profile_name, device_rate_limits, expected)
+                    .ok(),
+                None => pool.reserve_reusable(reuse_key, profile_name, device_rate_limits),
+            };
+            if let Some(exact) = exact {
                 let restore_result = pool.restore_reserved(reservation);
                 let snapshot = pool.status_snapshot();
                 drop(pool);
@@ -254,6 +260,31 @@ pub async fn activate_reserved_idle(
             reservation.into_destroy_job(),
             miss_result,
             "reserved_reuse_session_mismatch",
+            ctx,
+        )
+        .await
+        .into();
+    }
+
+    if reservation_kind == IdleSandboxKind::Exact
+        && let Some(expected_source) = expected_source_run_id
+        && reservation.source_run_id() != Some(expected_source)
+    {
+        let reuse_key_fingerprint = reserved_reuse_key
+            .as_deref()
+            .map(diagnostic_reuse_key_fingerprint);
+        warn!(
+            run_id = %run_id,
+            reuse_key_fingerprint,
+            reuse_key_kind = reserved_reuse_key.as_deref().map(reuse_key_kind),
+            expected_source_run_id = %expected_source,
+            actual_source_run_id = ?reservation.source_run_id(),
+            "reserved idle sandbox source run does not match expected continuation source, destroying before fresh fallback"
+        );
+        return cleanup_reserved_for_fresh_fallback(
+            reservation.into_destroy_job(),
+            fallback_reuse_result,
+            "reserved_reuse_source_mismatch",
             ctx,
         )
         .await
@@ -438,19 +469,27 @@ pub async fn try_reuse_from_pool(
     } = request;
 
     let reuse_key = context.reuse_key();
+    let expected_source_run_id = context.expected_home_source_run_id();
     let miss_result = if reuse_key.is_some() {
         SandboxReuseResult::PoolMiss
     } else {
         SandboxReuseResult::NoReuseKey
+    };
+    let take_matching_exact = |pool: &mut runner_lifecycle::idle_pool::IdlePool| {
+        let reuse_key = reuse_key?;
+        match expected_source_run_id {
+            Some(expected) => pool
+                .reserve_reusable_source(reuse_key, profile_name, device_rate_limits, expected)
+                .ok(),
+            None => pool.take_reserved(reuse_key),
+        }
     };
     let started_at = Instant::now();
     // Take the entry under the pool lock, then drop the lock before any awaits
     // so unpark does not block other take/park operations.
     let exact = {
         let mut pool = ctx.idle_pool.lock().await;
-        reuse_key
-            .and_then(|reuse_key| pool.take_reserved(reuse_key))
-            .map(|entry| (entry, pool.status_snapshot()))
+        take_matching_exact(&mut pool).map(|entry| (entry, pool.status_snapshot()))
     };
     pre_spawn_timing.record_phase_elapsed(RunnerPreSpawnPhase::IdleReuseLookup, started_at);
     let started_at = Instant::now();
@@ -465,9 +504,7 @@ pub async fn try_reuse_from_pool(
         Some(exact) => (Some(exact), None),
         None => {
             let mut pool = ctx.idle_pool.lock().await;
-            let exact = reuse_key
-                .and_then(|reuse_key| pool.take_reserved(reuse_key))
-                .map(|entry| (entry, pool.status_snapshot()));
+            let exact = take_matching_exact(&mut pool).map(|entry| (entry, pool.status_snapshot()));
             if exact.is_some() {
                 (exact, None)
             } else {

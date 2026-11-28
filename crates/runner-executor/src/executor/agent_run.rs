@@ -6,9 +6,6 @@ use std::time::{Duration, Instant};
 use guest_contracts::diagnostics::{
     CliTerminationReason, FailureDiagnostic, GUEST_MEMORY_OOM_KILLED_ERROR,
 };
-use guest_contracts::session_history_identity::{
-    SessionHistoryIdentity, SessionHistoryIdentityError,
-};
 use sandbox::{
     ExecTermination, GuestProcessCancelHandle, GuestProcessControlHandle, GuestProcessHandle,
     OperationCancellationContext, ProcessControlFailureKind, ProcessControlGuestStatus,
@@ -42,11 +39,8 @@ use super::{
     EXIT_SIGKILL, ExecutionFailure, ExecutorConfig, JOB_TIMEOUT, JOB_TIMEOUT_EXIT_CODE,
     ResourceFailureDiagnostics, ResourceFailureKind, RunnerError, RunnerResult,
     SandboxReuseDisposition, SandboxReuseRejection, SandboxReuseResult, SandboxReuseTerminal,
-    agent_exit_failure_message, guest_runtime_dir, guest_runtime_path, job_supervisor_timeout,
-    job_terminal_wait_timeout, normalize_failure_exit_code,
-};
-use crate::restored_session_identity::{
-    FINAL_SESSION_HISTORY_IDENTITY_READ_LIMIT, RestoredSessionIdentity,
+    agent_exit_failure_message, job_supervisor_timeout, job_terminal_wait_timeout,
+    normalize_failure_exit_code,
 };
 use crate::storage_cache::{DeferredBackgroundFill, PendingGuestArchives};
 use crate::storage_plan::{StoragePlan, build_storage_plan};
@@ -79,53 +73,6 @@ fn private_write_timeout_stage(error: &RunnerError) -> Option<&'static str> {
     })
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum FinalIdentityReason {
-    MetadataPathUnresolved,
-    RuntimeDirUnresolved,
-    MissingMetadata,
-    MetadataReadFailed,
-    InvalidMetadata,
-    UnverifiableMetadata,
-}
-
-impl FinalIdentityReason {
-    const fn action_type(self) -> &'static str {
-        match self {
-            Self::MetadataPathUnresolved => {
-                "session_history_identity_finalize_metadata_path_unresolved"
-            }
-            Self::RuntimeDirUnresolved => {
-                "session_history_identity_finalize_runtime_dir_unresolved"
-            }
-            Self::MissingMetadata => "session_history_identity_finalize_missing_metadata",
-            Self::MetadataReadFailed => "session_history_identity_finalize_metadata_read_failed",
-            Self::InvalidMetadata => "session_history_identity_finalize_invalid_metadata",
-            Self::UnverifiableMetadata => "session_history_identity_finalize_unverifiable_metadata",
-        }
-    }
-
-    const fn from_final_metadata_error(error: SessionHistoryIdentityError) -> Self {
-        match error {
-            SessionHistoryIdentityError::MetadataTooLarge => Self::UnverifiableMetadata,
-            SessionHistoryIdentityError::InvalidJson
-            | SessionHistoryIdentityError::InvalidFramework
-            | SessionHistoryIdentityError::InvalidHistoryRefKind
-            | SessionHistoryIdentityError::InvalidSessionIdHash
-            | SessionHistoryIdentityError::InvalidHistoryHash
-            | SessionHistoryIdentityError::InvalidHistorySize
-            | SessionHistoryIdentityError::InvalidHistorySource => Self::InvalidMetadata,
-        }
-    }
-}
-
-fn record_session_history_identity_reason(
-    telemetry: &mut JobTelemetry,
-    reason: FinalIdentityReason,
-) {
-    telemetry.record(reason.action_type(), Duration::ZERO, true, None);
-}
-
 fn validate_agent_bootstrap_exec_boundary(env_pairs: &[(String, String)]) -> RunnerResult<()> {
     let mut values = Vec::with_capacity(env_pairs.len() + 1);
     values.push(guest_contracts::exec_limits::ExecBoundaryValue::arg(
@@ -143,43 +90,6 @@ fn validate_agent_bootstrap_exec_boundary(env_pairs: &[(String, String)]) -> Run
     })
 }
 
-async fn read_final_session_history_identity(
-    sandbox: &dyn Sandbox,
-    context: &ExecutionContext,
-) -> Result<RestoredSessionIdentity, FinalIdentityReason> {
-    let metadata_path = match guest_runtime_path(
-        context.run_id,
-        guest_contracts::runtime_paths::final_session_history_identity_file,
-    ) {
-        Ok(path) => path,
-        Err(_) => {
-            return Err(FinalIdentityReason::MetadataPathUnresolved);
-        }
-    };
-    let runtime_dir = match guest_runtime_dir(context.run_id) {
-        Ok(path) => path,
-        Err(_) => {
-            return Err(FinalIdentityReason::RuntimeDirUnresolved);
-        }
-    };
-    let bytes = match sandbox
-        .read_file(&metadata_path, FINAL_SESSION_HISTORY_IDENTITY_READ_LIMIT)
-        .await
-    {
-        Ok(Some(bytes)) => bytes,
-        Ok(None) => return Err(FinalIdentityReason::MissingMetadata),
-        Err(_) => return Err(FinalIdentityReason::MetadataReadFailed),
-    };
-    let metadata = match SessionHistoryIdentity::from_json_slice(&bytes) {
-        Ok(metadata) => metadata,
-        Err(error) => {
-            return Err(FinalIdentityReason::from_final_metadata_error(error));
-        }
-    };
-    RestoredSessionIdentity::from_final_metadata(metadata, metadata_path, runtime_dir)
-        .ok_or(FinalIdentityReason::UnverifiableMetadata)
-}
-
 #[derive(Clone, Copy)]
 pub(super) struct ProcessCancelTimeouts {
     pub(super) write: Duration,
@@ -192,7 +102,6 @@ pub(super) struct AgentExecutionResult {
     pub(super) failure: Option<ExecutionFailure>,
     pub(super) sandbox_reuse_disposition: SandboxReuseDisposition,
     pub(super) stdout_stream_diagnostics: AgentStdoutStreamDiagnostics,
-    pub(super) reusable_session_identity: Option<RestoredSessionIdentity>,
     pub(super) memory_published: bool,
 }
 
@@ -207,7 +116,6 @@ impl AgentExecutionResult {
             failure: Some(ExecutionFailure::new(exit_code, error, diagnostic)),
             sandbox_reuse_disposition: SandboxReuseDisposition::default(),
             stdout_stream_diagnostics: AgentStdoutStreamDiagnostics::default(),
-            reusable_session_identity: None,
             memory_published: false,
         }
     }
@@ -222,7 +130,6 @@ impl AgentExecutionResult {
             failure: Some(ExecutionFailure::cancelled()),
             sandbox_reuse_disposition: SandboxReuseDisposition::default(),
             stdout_stream_diagnostics: AgentStdoutStreamDiagnostics::default(),
-            reusable_session_identity: None,
             memory_published: false,
         }
     }
@@ -844,8 +751,6 @@ pub(super) struct RunControls {
     pub(super) hard_cancel: CancellationToken,
     pub(super) active_input_source: Option<ActiveInputSource>,
     pub(super) spawn_timing: Option<RunnerSpawnTiming>,
-    pub(super) home_history_proof:
-        Option<guest_contracts::home_cache_history::HomeCacheHistoryProofBinding>,
     pub(super) prepared_storage: Option<crate::storage_cache::PreparedStorage>,
     pub(super) prepared_guest_runtime: Option<PreparedGuestRuntime>,
     pub(super) pre_spawn_admission_lease:
@@ -1037,7 +942,6 @@ impl RunControls {
             hard_cancel: cancellation.hard(),
             active_input_source,
             spawn_timing: None,
-            home_history_proof: None,
             prepared_storage: None,
             prepared_guest_runtime: None,
             pre_spawn_admission_lease: None,
@@ -1870,7 +1774,6 @@ fn pre_agent_preparation_failure(
     {
         return Err(error);
     }
-    controls.home_history_proof = None;
     controls.prepared_storage = None;
     controls.prepared_guest_runtime = None;
     controls.guest_state_prepared = false;
@@ -1897,13 +1800,12 @@ impl AgentRunLifecycle {
 ///
 /// - completes cancellation-aware guest runtime and storage preparation while
 ///   taking ownership of model-catalog prefetch supervision;
-/// - verifies retained-home evidence, finalizes and writes private
-///   guest inputs, and spawns guest-agent;
+/// - finalizes and writes private guest inputs, disabling native continuation
+///   when the sandbox does not carry a reused home, and spawns guest-agent;
 /// - starts locally owned active-input and stdout-drain work, releases deferred
-///   cache fill, and supervises normal exit or cancellation;
+///   cache fill, and supervises normal exit or cancellation; and
 /// - stops or drains locally owned background work before classifying terminal
-///   status and collecting diagnostics; and
-/// - publishes a reusable session identity only after successful execution.
+///   status and collecting diagnostics.
 ///
 /// Pre-spawn cancellation returns without creating a process and drains any
 /// prepared storage delivery that still owns asynchronous work.
@@ -2050,13 +1952,11 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
         hard_cancel,
         active_input_source,
         spawn_timing,
-        home_history_proof,
         prepared_storage: _prepared_storage,
         prepared_guest_runtime: _,
         mut pre_spawn_admission_lease,
         guest_state_prepared: _,
     } = controls;
-    let pre_spawn_cancel = cancel.clone();
     let pre_spawn_start = &start;
     let pre_spawn_telemetry = &mut *telemetry;
     let startup_report_cancel = cancel.clone();
@@ -2071,37 +1971,8 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
             cancellation,
             &pre_spawn_owner,
             async move {
-                let cancel = pre_spawn_cancel;
                 let start = pre_spawn_start;
                 let telemetry = pre_spawn_telemetry;
-
-                // Check the selected home image before crossing the process-spawn boundary.
-                let native_home_proof_failed = if let Some(binding) = home_history_proof {
-                    let started = Instant::now();
-                    let verified = super::home_history::verify_home_candidate(
-                        sandbox, context, binding, &cancel,
-                    )
-                    .await?;
-                    telemetry.record(
-                        "session_history_home_cache_verify",
-                        started.elapsed(),
-                        verified,
-                        None,
-                    );
-                    telemetry.record(
-                        if verified {
-                            "session_history_home_cache_hit"
-                        } else {
-                            "session_history_home_cache_miss"
-                        },
-                        Duration::ZERO,
-                        true,
-                        None,
-                    );
-                    !verified && context.native_continuation.is_some()
-                } else {
-                    false
-                };
 
                 // Finalize the prepared private run payload and build the environment used
                 // to bootstrap guest-agent. User-provided env is passed through a private
@@ -2120,12 +1991,16 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
                         return Err(error);
                     }
                 };
-                let original_native_continuation = if native_home_proof_failed {
-                    let mut native = context.native_continuation.clone().ok_or_else(|| {
-                        RunnerError::Internal("native home proof lost its intent".into())
-                    })?;
-                    native.session_id = None;
-                    native.generation_run_id = None;
+                // Native continuation requires the predecessor's home filesystem.
+                // When this sandbox did not reuse that home (cold VM, blank, or
+                // fallback), disable native continuation so guest-agent injects
+                // the chat-history recovery prompt instead.
+                let original_native_continuation = if !start.has_reused_home()
+                    && let Some(mut native) = context.resolved_native_continuation()
+                    && native.continue_native
+                {
+                    native.continue_native = false;
+                    native.expected_source_run_id = None;
                     let fresh_native = serde_json::to_string(&native).map_err(|error| {
                         RunnerError::Internal(format!("serialize fresh native intent: {error}"))
                     })?;
@@ -2250,7 +2125,6 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
                                 hard_cancel,
                                 active_input_source,
                                 spawn_timing,
-                                home_history_proof: None,
                                 prepared_storage: None,
                                 prepared_guest_runtime: None,
                                 pre_spawn_admission_lease,
@@ -2609,7 +2483,6 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
                         SandboxReuseRejection::UnconfirmedTimeout,
                     ),
                     stdout_stream_diagnostics: stdout_stream_diagnostics_on_wait_error,
-                    reusable_session_identity: None,
                     memory_published: false,
                 });
             }
@@ -2818,29 +2691,6 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
             .await;
     }
 
-    // Finalize reusable session identity only after successful execution. A
-    // pre-run identity proves only what was restored, so verify the current
-    // history or confirm that the restored history stayed unchanged.
-    let reusable_session_identity = if failure.is_none() {
-        match read_final_session_history_identity(sandbox, context).await {
-            Ok(final_identity) => {
-                telemetry.record(
-                    "session_history_identity_finalized",
-                    Duration::ZERO,
-                    true,
-                    None,
-                );
-                Some(final_identity)
-            }
-            Err(final_identity_reason) => {
-                record_session_history_identity_reason(telemetry, final_identity_reason);
-                None
-            }
-        }
-    } else {
-        None
-    };
-
     let sandbox_reuse_disposition =
         sandbox_reuse_disposition_for_process_exit(&exit, cancellation, failure.as_ref());
     let agent_result = match failure {
@@ -2849,7 +2699,6 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
             failure: Some(failure),
             sandbox_reuse_disposition,
             stdout_stream_diagnostics,
-            reusable_session_identity: None,
             memory_published: false,
         },
         None => AgentExecutionResult {
@@ -2857,7 +2706,6 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
             failure: None,
             sandbox_reuse_disposition,
             stdout_stream_diagnostics,
-            reusable_session_identity,
             memory_published: stdout_drain_report.memory_published && !exit.stream_overflowed,
         },
     };

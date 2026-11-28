@@ -44,8 +44,8 @@
 //! `get_state` with ID `<run-id>:pi:get-state` and waits for a response with
 //! the exact ID, command name, and `success: true`. The successful response is
 //! sent to the response channel and is also used by the projection to emit
-//! `system/init` after validating the configured session ID, returned
-//! `data.sessionId`, and required `data.sessionFile`.
+//! `system/init` after validating the returned `data.sessionId` and required
+//! `data.sessionFile`.
 //!
 //! After `get_state`, the writer waits for the stdout loop to start the event
 //! pipeline. It then sends the original initial `prompt` with ID
@@ -432,7 +432,7 @@ pub(super) fn oversized_record_is_discardable(event_type: &str) -> bool {
 
 pub(super) struct PiRpcProjection<'a> {
     run_id: String,
-    session_id: String,
+    session_id: Option<String>,
     started_at: Instant,
     emitted_session_init: bool,
     assistant_terminal: Option<PiAssistantTerminal>,
@@ -444,10 +444,10 @@ pub(super) struct PiRpcProjection<'a> {
 }
 
 impl<'a> PiRpcProjection<'a> {
-    pub(super) fn new(run_id: &str, session_id: &str) -> Self {
+    pub(super) fn new(run_id: &str) -> Self {
         Self {
             run_id: run_id.to_string(),
-            session_id: session_id.to_string(),
+            session_id: None,
             started_at: Instant::now(),
             emitted_session_init: false,
             assistant_terminal: None,
@@ -546,9 +546,9 @@ impl<'a> PiRpcProjection<'a> {
                         "Pi RPC get_state response omitted the session id".to_string(),
                     )
                 })?;
-            if session_id != self.session_id {
+            if !guest_contracts::cli_agent_session_id::is_valid_cli_agent_session_id(session_id) {
                 return Err(AgentError::Execution(
-                    "Pi RPC reported an unexpected session id".to_string(),
+                    "Pi RPC get_state response returned an invalid session id".to_string(),
                 ));
             }
             let session_file = response
@@ -559,6 +559,7 @@ impl<'a> PiRpcProjection<'a> {
                         "Pi RPC get_state response omitted the session file".to_string(),
                     )
                 })?;
+            self.session_id = Some(session_id.to_string());
             self.emitted_session_init = true;
             Some(json!({
                 "type": "system",
@@ -760,7 +761,10 @@ impl<'a> PiRpcProjection<'a> {
         ]);
         Ok(owned_object([
             ("type", Value::from("user")),
-            ("session_id", Value::String(self.session_id.clone())),
+            (
+                "session_id",
+                Value::String(self.session_id.clone().unwrap_or_default()),
+            ),
             ("message", projected_message),
         ]))
     }
@@ -780,7 +784,10 @@ impl<'a> PiRpcProjection<'a> {
             ),
             ("is_error".to_owned(), json!(assistant.failed)),
             ("result".to_owned(), json!(assistant.result)),
-            ("session_id".to_owned(), json!(self.session_id)),
+            (
+                "session_id".to_owned(),
+                json!(self.session_id.as_deref().unwrap_or_default()),
+            ),
             (
                 "duration_ms".to_owned(),
                 json!(

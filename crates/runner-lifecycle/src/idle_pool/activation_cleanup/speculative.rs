@@ -9,7 +9,6 @@ use uuid::Uuid;
 
 use crate::home_image_cache::HomeImagePromotionIdentityRequest;
 use crate::idle_reuse_preparation::IdleReusePreparation;
-use crate::restored_session_identity::RestoredSessionIdentity;
 
 use super::*;
 use crate::idle_pool::entry::IdleSandboxResources;
@@ -191,12 +190,9 @@ impl GuardedSpeculativeIdleOwner {
                     image_size_bytes: home_image_size_bytes,
                 }).map_err(|e| e.to_string())?;
             }
-            let retained = owner.metadata.restored_session_identity.as_ref()
-                .and_then(RestoredSessionIdentity::final_metadata_verification)
-                .map(|verification| verification.runtime_dir);
             let preparation = IdleReusePreparation::new(
                 owner.sandbox.as_deref().ok_or("speculative resource consumed")?.id(),
-                self.run_id.ok_or("speculative operation run missing")?, source, retained,
+                self.run_id.ok_or("speculative operation run missing")?, source,
             ).map_err(|e| e.to_string())?;
             let outcome = owner.sandbox.as_mut().ok_or("speculative resource consumed")?
                 .final_exec_and_park(&preparation.exec_request(), "idle-reuse-preparation-and-park")

@@ -1,5 +1,4 @@
 import { execFile } from "node:child_process";
-import { randomUUID } from "node:crypto";
 import { constants, closeSync, openSync } from "node:fs";
 import {
   mkdir,
@@ -149,7 +148,6 @@ export async function startSubagent(
         env: {
           ...process.env,
           [PI_SESSION_ROLE_ENV]: "child",
-          OKOU_PI_SESSION_ID: randomUUID(),
           OKOU_PI_PREPARATION_TIMING: "0",
         },
       },

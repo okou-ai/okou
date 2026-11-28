@@ -21,7 +21,6 @@ pub mod idle_pool;
 pub mod idle_reuse_preparation;
 pub mod lifecycle;
 pub mod resource_budget;
-pub mod restored_session_identity;
 pub mod status;
 
 pub use error::{LifecycleError, LifecycleResult};

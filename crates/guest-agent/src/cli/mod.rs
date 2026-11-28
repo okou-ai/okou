@@ -76,7 +76,7 @@ use crate::heartbeat::HeartbeatFailure;
 use crate::http::HttpClient;
 use crate::masker::SecretMasker;
 use crate::paths;
-use crate::session_metadata::{SessionHistoryLaunchSource, SessionMetadataStore};
+use crate::session_metadata::SessionMetadataStore;
 use crate::timing;
 use api_contracts::generated::constants::paid_tools::{
     ENABLE_FRAMEWORK_IMAGE_GENERATION_ENV_VAR, ENABLE_FRAMEWORK_WEB_SEARCH_ENV_VAR,
@@ -298,6 +298,7 @@ pub(super) struct CliRuntimeConfig<'a> {
     run_id: Cow<'a, str>,
     prompt: Cow<'a, str>,
     resume_session_id: Cow<'a, str>,
+    continue_native: bool,
     append_system_prompt: Cow<'a, str>,
     native_continuation: Option<&'a guest_contracts::env::NativeContinuation>,
     disallowed_tools: Cow<'a, str>,
@@ -323,9 +324,7 @@ pub(super) struct CliRuntimeConfig<'a> {
     post_result_cleanup_policy: PostResultCleanupPolicy,
     agent_log_file: Cow<'a, str>,
     session_id_file: Cow<'a, str>,
-    session_history_launch_source: SessionHistoryLaunchSource,
     claude_append_system_prompt_file: Cow<'a, str>,
-    pi_session_id: Cow<'a, str>,
     pi_launch_config: Cow<'a, str>,
     pi_launch_payload_file: Cow<'a, str>,
     pi_model_config: Cow<'a, str>,
@@ -388,6 +387,7 @@ impl<'a> CliRuntimeConfig<'a> {
             run_id: Cow::Borrowed(&config.run_id),
             prompt: Cow::Borrowed(&config.prompt),
             resume_session_id: Cow::Borrowed(&config.resume_session_id),
+            continue_native: false,
             append_system_prompt: Cow::Borrowed(&config.append_system_prompt),
             native_continuation: config.native_continuation.as_ref(),
             disallowed_tools,
@@ -420,11 +420,9 @@ impl<'a> CliRuntimeConfig<'a> {
             ),
             agent_log_file: Cow::Borrowed(paths.agent_log_file()),
             session_id_file: Cow::Borrowed(paths.session_id_file()),
-            session_history_launch_source: SessionHistoryLaunchSource::for_config(config),
             claude_append_system_prompt_file: Cow::Borrowed(
                 paths.claude_append_system_prompt_file(),
             ),
-            pi_session_id: Cow::Borrowed(&config.pi_session_id),
             pi_launch_config: Cow::Borrowed(&config.pi_launch_config),
             pi_launch_payload_file: Cow::Borrowed(paths.pi_launch_payload_file()),
             pi_model_config: Cow::Borrowed(&config.pi_model_config),
@@ -507,7 +505,6 @@ fn user_env_value<'a>(user_env: &'a HashMap<String, String>, key: &str) -> &'a s
 
 fn build_pi_command_for_runtime(runtime: &CliRuntimeConfig<'_>) -> Result<Vec<String>, AgentError> {
     for (name, value) in [
-        ("Pi session id", runtime.pi_session_id.as_ref()),
         ("Pi launch config", runtime.pi_launch_config.as_ref()),
         ("Pi model config", runtime.pi_model_config.as_ref()),
     ] {
@@ -538,6 +535,7 @@ fn write_pi_launch_payload_file(runtime: &CliRuntimeConfig<'_>) -> Result<(), Ag
     };
     let payload = serde_json::json!({
         "schemaVersion": 1,
+        "continueNative": runtime.continue_native,
         "appendSystemPrompt": append_system_prompt,
         "launchConfig": launch_config,
     });
@@ -560,7 +558,7 @@ fn write_claude_append_system_prompt_file(
     Ok(())
 }
 
-fn pi_child_env_values(runtime: &CliRuntimeConfig<'_>) -> [(String, String); 5] {
+fn pi_child_env_values(runtime: &CliRuntimeConfig<'_>) -> [(String, String); 4] {
     [
         (
             guest_contracts::env::RUN_ID_ENV.to_string(),
@@ -573,10 +571,6 @@ fn pi_child_env_values(runtime: &CliRuntimeConfig<'_>) -> [(String, String); 5] 
         (
             guest_contracts::env::PI_PREPARATION_TIMING_ENV.to_string(),
             guest_contracts::env::PI_PREPARATION_TIMING_ENABLED.to_string(),
-        ),
-        (
-            guest_contracts::env::PI_SESSION_ID_ENV.to_string(),
-            runtime.pi_session_id.to_string(),
         ),
         (
             guest_contracts::env::PI_LAUNCH_PAYLOAD_FILE_ENV.to_string(),
@@ -705,7 +699,7 @@ impl<'a> CliEventIngestor<'a> {
             last_read_event_at: None,
             first_event_seen: false,
             session_metadata_capture: events::SessionMetadataCapture::new(
-                runtime.session_history_launch_source.clone(),
+                runtime.framework,
                 session_metadata,
                 runtime.session_id_file.as_ref(),
             ),
@@ -976,44 +970,13 @@ pub async fn execute_cli_with_controls_for_config_started_at(
 ) -> Result<CliExecutionResult, AgentError> {
     let mut runtime = CliRuntimeConfig::from_config(config, paths, execution_started_at)?;
     if let Some(native) = runtime.native_continuation {
-        if native.session_id.is_some() != native.generation_run_id.is_some() {
+        if native.continue_native && native.expected_source_run_id.is_none() {
             return Err(AgentError::Execution(
                 "native continuation provenance is incomplete".into(),
             ));
         }
-        let requested = native.session_id.clone();
-        let framework = runtime.framework;
-        let pi_session_id = runtime.pi_session_id.to_string();
-        let claude_dir = runtime.claude_config_dir.to_string();
-        let codex_home = runtime.codex_home_dir.to_string();
-        let home_dir = runtime.home_dir.to_string();
-        let retained = tokio::task::spawn_blocking(move || {
-            let Some(id) = requested else { return Ok(None) };
-            if framework == env::Framework::Pi && id != pi_session_id {
-                return Ok(None);
-            }
-            crate::native_continuation::retained_session_is_usable(
-                framework,
-                &id,
-                &claude_dir,
-                &codex_home,
-                &home_dir,
-            )
-            .map(|usable| usable.then_some(id))
-        })
-        .await
-        .map_err(|error| {
-            AgentError::Execution(format!("native continuation preparation failed: {error}"))
-        })??;
-        let resumed = retained.is_some();
-        runtime.resume_session_id = Cow::Owned(retained.unwrap_or_default());
-        if !resumed {
-            if framework == env::Framework::Pi {
-                crate::native_continuation::prepare_fresh_pi_session(
-                    runtime.pi_session_id.as_ref(),
-                    runtime.run_id.as_ref(),
-                )?;
-            }
+        runtime.continue_native = native.continue_native;
+        if !native.continue_native {
             runtime.enable_native_recovery();
         }
     }
@@ -1213,7 +1176,7 @@ async fn execute_cli_inner(
             session_output::start(
                 http.clone(),
                 runtime.run_id.as_ref(),
-                runtime.pi_session_id.as_ref(),
+                user_env_value(runtime.user_env, "OKOU_CHAT_THREAD_ID"),
                 session_output::FirstSessionOutputTiming {
                     pi_startup_succeeded_at: pi_startup.map(PiStartupTiming::success_boundary),
                     api_start_time: runtime.api_start_time.to_string(),
@@ -1222,9 +1185,8 @@ async fn execute_cli_inner(
         })
         .flatten();
     let mut pi_rpc_projection = pi_execution.then(|| {
-        let projection =
-            pi_rpc::PiRpcProjection::new(runtime.run_id.as_ref(), runtime.pi_session_id.as_ref())
-                .with_active_input(active_input_controller.clone());
+        let projection = pi_rpc::PiRpcProjection::new(runtime.run_id.as_ref())
+            .with_active_input(active_input_controller.clone());
         match pi_session_output {
             Some(output) => projection.with_session_output(output, masker),
             None => projection,

@@ -1,9 +1,9 @@
 //! Reclaims runner-owned runtime state before idle reuse or terminal image publication.
 //!
-//! Idle preparation protects current/retained runtime readers. Terminal cache preparation instead
-//! validates existing anchors under the canonical managed runtime parent and removes all its
-//! children. A terminal Run can fail before creating its current runtime or the managed parent.
-//! The terminal caller must finish finalization, identity, diagnostic and log readers first; it must
+//! Idle preparation protects current runtime readers. Terminal cache preparation instead
+//! validates an existing current anchor under the canonical managed runtime parent and removes all
+//! its children. A terminal Run can fail before creating its current runtime or the managed parent.
+//! The terminal caller must finish finalization, diagnostic and log readers first; it must
 //! terminate the sandbox after cleanup rather than return it to idle or handoff.
 //!
 //! This module is the guest-side safety boundary for idle admission. The runner invokes the helper
@@ -12,21 +12,20 @@
 //!
 //! Preparation proceeds in this order:
 //!
-//! 1. Validate the current runtime directory and the optional retained runtime directory.
+//! 1. Validate the current runtime directory.
 //! 2. Prove that the helper is in the `workload` leaf of the sole live
 //!    supervised-exec operation. The canonical cgroup v2 base and empty
 //!    operation parent must distribute the required controllers, expose the
 //!    exact `control`/`workload` shape, contain no stale operation, and be
 //!    recursively populated only by the helper's workload leaf.
-//! 3. Open the runtime parent and every protected runtime directory, require them to share a mount,
+//! 3. Open the runtime parent and any protected runtime directory, require them to share a mount,
 //!    and record their identities before deletion.
 //! 4. Remove Okou-managed Codex authentication from the canonical Codex home without following
 //!    symlinks.
 //! 5. Measure rootfs capacity, recursively remove every unprotected direct child of the runtime
 //!    parent, revalidate each protected identity, and measure capacity again.
 //! 6. Inspect home and, only below its byte/inode reserve, reclaim the fixed disposable package
-//!    caches once. Terminal history evidence is captured in memory before runtime deletion and
-//!    persisted after reclamation; the final report includes capacity after those writes.
+//!    caches once.
 //!
 //! Codex startup reconciliation establishes the current Codex run's auth mode, but it cannot
 //! replace this final scrub: idle sandbox reuse is not scoped to a CLI framework, so a non-Codex
@@ -154,21 +153,20 @@ struct ProtectedRuntime {
 /// # Input
 ///
 /// The input is a serialized [`ReusePreparationRequest`] no larger than 64 KiB. Its current runtime
-/// directory must be absolute and have a non-root parent. The optional retained runtime directory
-/// must meet the same requirements and share that parent. Both protected paths must name
-/// directories that can be opened before cleanup and that reside on the parent's mount.
+/// directory must be absolute, have a non-root parent, be openable before cleanup, and reside on
+/// the parent's mount.
 ///
 /// # Cleanup
 ///
 /// After proving process containment, this function removes managed Codex authentication, protects
-/// the current and optional retained runtime directories, and recursively removes every other
-/// direct child of their common parent. Traversal does not follow symlinks or cross mount
-/// boundaries, and the protected directory identities are revalidated after cleanup.
+/// the current runtime directory, and recursively removes every other direct child of its parent.
+/// Traversal does not follow symlinks or cross mount boundaries, and the protected directory
+/// identity is revalidated after cleanup.
 ///
 /// # Returns
 ///
 /// On success, returns a [`ReusePreparationReport`] containing rootfs capacity observed before and
-/// after cleanup and the number of unprotected direct children removed.
+/// after cleanup, post-cleanup home capacity, and the number of unprotected direct children removed.
 ///
 /// # Errors
 ///
@@ -188,39 +186,16 @@ pub fn prepare_from_stdin() -> Result<ReusePreparationReport, ReusePreparationEr
 ///
 /// The bounded request/report and safety checks are shared with idle preparation, but no runtime
 /// child is protected. The current runtime and canonical managed parent may not have been created
-/// before an early execution failure. Any supplied retained anchor must still exist, and existing
-/// directories must pass the same path, mount and identity checks as idle preparation.
-/// Required readers must finish before invoking this helper. Any error rejects publication;
-/// partial deletion is not rolled back and unlink does not establish forensic block erasure.
+/// before an early execution failure; any existing directory must pass the same path, mount and
+/// identity checks as idle preparation. Required readers must finish before invoking this helper.
+/// Any error rejects publication; partial deletion is not rolled back and unlink does not establish
+/// forensic block erasure.
 ///
 /// # Errors
 ///
 /// Returns the same request, containment, cleanup and inspection failures as [`prepare_from_stdin`].
-pub fn prepare_for_cache_from_stdin() -> Result<
-    guest_contracts::home_cache_history::TerminalHomeCachePreparationReport,
-    ReusePreparationError,
-> {
-    let mut bytes = Vec::new();
-    io::stdin()
-        .take(MAX_REQUEST_BYTES + 1)
-        .read_to_end(&mut bytes)
-        .map_err(ReusePreparationError::InvalidRequest)?;
-    if bytes.len() as u64 > MAX_REQUEST_BYTES {
-        return Err(invalid_path("terminal request exceeds size limit"));
-    }
-    let request: guest_contracts::home_cache_history::TerminalHomeCachePreparationRequest =
-        serde_json::from_slice(&bytes).map_err(|_| invalid_path("invalid terminal request"))?;
-    request
-        .validate()
-        .map_err(|_| invalid_path("invalid publication generation"))?;
-    prepare(
-        &ReusePreparationRequest {
-            current_runtime_dir: request.current_runtime_dir,
-            retained_runtime_dir: request.retained_runtime_dir,
-        },
-        RuntimeRetention::TerminalCache,
-        Some(&request.generation),
-    )
+pub fn prepare_for_cache_from_stdin() -> Result<ReusePreparationReport, ReusePreparationError> {
+    prepare_from_stdin_with_retention(RuntimeRetention::TerminalCache)
 }
 
 fn prepare_from_stdin_with_retention(
@@ -240,17 +215,13 @@ fn prepare_from_stdin_with_retention(
     let request = serde_json::from_slice(&bytes).map_err(|error| {
         ReusePreparationError::InvalidRequest(io::Error::new(io::ErrorKind::InvalidData, error))
     })?;
-    prepare(&request, retention, None).map(|report| report.cleanup)
+    prepare(&request, retention)
 }
 
 fn prepare(
     request: &ReusePreparationRequest,
     retention: RuntimeRetention,
-    generation: Option<&str>,
-) -> Result<
-    guest_contracts::home_cache_history::TerminalHomeCachePreparationReport,
-    ReusePreparationError,
-> {
+) -> Result<ReusePreparationReport, ReusePreparationError> {
     let current_path = Path::new(&request.current_runtime_dir);
     let (runtime_parent, current_name) = split_runtime_path(current_path)?;
     if retention == RuntimeRetention::TerminalCache && runtime_parent != cache_runtime_parent() {
@@ -258,65 +229,32 @@ fn prepare(
             "terminal cleanup requires the canonical managed runtime parent",
         ));
     }
-    let retained_name = request
-        .retained_runtime_dir
-        .as_deref()
-        .map(Path::new)
-        .map(|path| split_retained_runtime_path(path, &runtime_parent))
-        .transpose()?;
     verify_process_containment().map_err(ReusePreparationError::Containment)?;
 
     let parent = open_runtime_parent(&runtime_parent, retention)?;
     let mut protected: Vec<ProtectedRuntime> = Vec::new();
     if let Some((parent, parent_identity)) = &parent {
-        let anchors = std::iter::once((current_name, retention == RuntimeRetention::IdleReaders))
-            .chain(retained_name.map(|name| (name, true)));
-        for (name, required) in anchors {
-            let directory = match parent.open_child_dir(name) {
-                Ok(directory) => directory,
-                Err(error) if !required && error.kind() == io::ErrorKind::NotFound => continue,
-                Err(error) => return Err(ReusePreparationError::Cleanup(error)),
-            };
-            let identity = directory
-                .identity()
-                .map_err(ReusePreparationError::Cleanup)?;
-            identity
-                .ensure_same_mount(*parent_identity)
-                .map_err(ReusePreparationError::Cleanup)?;
-            if !protected.iter().any(|entry| entry.identity == identity) {
-                protected.push(ProtectedRuntime {
-                    name: name.to_os_string(),
-                    identity,
-                });
+        let required = retention == RuntimeRetention::IdleReaders;
+        match parent.open_child_dir(current_name) {
+            Ok(directory) => {
+                let identity = directory
+                    .identity()
+                    .map_err(ReusePreparationError::Cleanup)?;
+                identity
+                    .ensure_same_mount(*parent_identity)
+                    .map_err(ReusePreparationError::Cleanup)?;
+                if retention == RuntimeRetention::IdleReaders {
+                    protected.push(ProtectedRuntime {
+                        name: current_name.to_os_string(),
+                        identity,
+                    });
+                }
             }
+            Err(error) if !required && error.kind() == io::ErrorKind::NotFound => {}
+            Err(error) => return Err(ReusePreparationError::Cleanup(error)),
         }
-    } else if retained_name.is_some() {
-        return Err(ReusePreparationError::Cleanup(io::Error::new(
-            io::ErrorKind::NotFound,
-            "retained runtime parent is missing",
-        )));
     }
 
-    let captured_history = if retention == RuntimeRetention::TerminalCache {
-        // Containment and existing anchors have been checked before reading
-        // final metadata or changing any surviving proof. An unstarted current
-        // Run can still use finalized history from its required retained anchor.
-        let generation =
-            generation.ok_or_else(|| invalid_path("missing publication generation"))?;
-        let current_runtime = protected
-            .iter()
-            .any(|entry| entry.name == current_name)
-            .then_some(current_path);
-        let proof = crate::home_cache_history::capture(
-            current_runtime,
-            request.retained_runtime_dir.as_deref().map(Path::new),
-            generation,
-        );
-        protected.clear();
-        Some(proof)
-    } else {
-        None
-    };
     remove_managed_codex_auth().map_err(ReusePreparationError::Cleanup)?;
 
     let before = rootfs_capacity().map_err(ReusePreparationError::Inspection)?;
@@ -360,35 +298,16 @@ fn prepare(
             )));
         }
     }
-    // Keep reclamation inside this final exec, before park or home freeze. The
-    // proof was captured in memory so even zero free bytes can reach cleanup.
+    // Keep reclamation inside this final exec, before park or home freeze.
     let mut home_reclaimed = false;
     let home = prepare_home_capacity(&mut home_reclaimed)?;
-    let history_proof = match captured_history {
-        Some(proof) if home.home_rejection_reason().is_none() => {
-            proof.persist().map_err(ReusePreparationError::Cleanup)?
-        }
-        Some(proof) => {
-            proof.discard().map_err(ReusePreparationError::Cleanup)?;
-            None
-        }
-        None => None,
-    };
-    // Proof persistence may consume the last part of the reserve. It can use
-    // the same single cleanup attempt, but must never repeat an earlier one.
-    let home = prepare_home_capacity(&mut home_reclaimed)?;
     let after = rootfs_capacity().map_err(ReusePreparationError::Inspection)?;
-    Ok(
-        guest_contracts::home_cache_history::TerminalHomeCachePreparationReport {
-            cleanup: ReusePreparationReport {
-                before,
-                after,
-                home,
-                removed_entries,
-            },
-            history_proof,
-        },
-    )
+    Ok(ReusePreparationReport {
+        before,
+        after,
+        home,
+        removed_entries,
+    })
 }
 
 fn prepare_home_capacity(
@@ -806,19 +725,6 @@ fn split_runtime_path(path: &Path) -> Result<(PathBuf, &OsStr), ReusePreparation
         .file_name()
         .ok_or_else(|| invalid_path("current runtime directory must have a basename"))?;
     Ok((parent.to_path_buf(), name))
-}
-
-fn split_retained_runtime_path<'a>(
-    path: &'a Path,
-    expected_parent: &Path,
-) -> Result<&'a OsStr, ReusePreparationError> {
-    let (parent, name) = split_runtime_path(path)?;
-    if parent != expected_parent {
-        return Err(invalid_path(
-            "retained runtime directory must share the current runtime parent",
-        ));
-    }
-    Ok(name)
 }
 
 fn open_runtime_parent(

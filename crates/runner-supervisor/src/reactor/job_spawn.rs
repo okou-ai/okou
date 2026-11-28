@@ -257,7 +257,6 @@ impl ExecutorInvocation {
                         home_reuse_result: None,
                         startup_report: None,
                         discovered_cli_agent_session_id: None,
-                        restored_session_identity: None,
                         memory_published: false,
                     },
                     exit_code,
@@ -361,7 +360,6 @@ impl FinalizationPhase {
             home_reuse_result: _,
             startup_report: _,
             discovered_cli_agent_session_id,
-            restored_session_identity,
             memory_published: _,
         } = outcome;
         #[cfg(test)]
@@ -382,7 +380,6 @@ impl FinalizationPhase {
             reuse_key,
             cli_agent_session_id,
             discovered_cli_agent_session_id,
-            restored_session_identity,
             source_ip,
             network_log_session,
             home_image,

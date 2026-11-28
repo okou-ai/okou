@@ -323,26 +323,15 @@ pub const PI_MODEL_CONFIG_ENV: &str = "OKOU_PI_MODEL_CONFIG";
 /// rather than environment keys.
 pub const PI_MODEL_CONFIG_RUN_PAYLOAD_FIELD: &str = PI_MODEL_CONFIG_ENV;
 
-/// Runner-owned bootstrap key carrying the Chat Thread-owned Pi session id
-/// into the Pi CLI child environment.
-pub const PI_SESSION_ID_ENV: &str = "OKOU_PI_SESSION_ID";
-
-/// Logical run-payload field name for the Chat Thread-owned Pi session id.
-///
-/// Same spelling as the bootstrap key [`PI_SESSION_ID_ENV`]; this alias names
-/// the [`RunPayload::fields`] role so diagnostics read as payload fields
-/// rather than environment keys.
-pub const PI_SESSION_ID_RUN_PAYLOAD_FIELD: &str = PI_SESSION_ID_ENV;
-
-/// API-owned native continuation intent. No remote history reference is carried.
+/// API-owned native continuation intent. Carries no framework session ID.
 #[derive(Clone, Debug, Eq, PartialEq, serde::Deserialize, serde::Serialize)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 pub struct NativeContinuation {
-    /// Exact native identity to look for in the intended retained home.
-    pub session_id: Option<String>,
-    /// Existing Run that produced that retained generation.
-    pub generation_run_id: Option<String>,
-    /// Mandatory recovery item for a later round, enabled only after a miss.
+    /// Whether the Guest should continue the latest native session in the reused home.
+    pub continue_native: bool,
+    /// Producing Run required for filesystem reuse; `None` on first run or non-resumable work.
+    pub expected_source_run_id: Option<String>,
+    /// Mandatory recovery item for a later round, enabled only when not continuing natively.
     pub recovery_prompt: Option<String>,
 }
 
@@ -358,7 +347,7 @@ pub struct RunPayload {
     /// Optional extra system prompt text.
     #[serde(default)]
     pub append_system_prompt: String,
-    /// Serialized native continuation intent; empty for captured legacy work.
+    /// Serialized native continuation intent; empty for standalone local work.
     #[serde(default)]
     pub native_continuation: String,
     /// Sensitive values used by the guest-agent masker.
@@ -382,9 +371,6 @@ pub struct RunPayload {
     /// JSON object describing non-secret Pi model metadata.
     #[serde(default)]
     pub pi_model_config: String,
-    /// Chat Thread id used as Pi's native session id.
-    #[serde(default)]
-    pub pi_session_id: String,
 }
 
 /// Borrowed logical string field from [`RunPayload`].
@@ -398,7 +384,7 @@ pub struct RunPayloadField<'a> {
 
 impl RunPayload {
     /// Return all logical string fields carried by this run payload.
-    pub fn fields(&self) -> [RunPayloadField<'_>; 11] {
+    pub fn fields(&self) -> [RunPayloadField<'_>; 10] {
         let Self {
             prompt,
             append_system_prompt,
@@ -410,7 +396,6 @@ impl RunPayload {
             codex_runtime_config,
             pi_launch_config,
             pi_model_config,
-            pi_session_id,
         } = self;
 
         [
@@ -453,10 +438,6 @@ impl RunPayload {
             RunPayloadField {
                 name: PI_MODEL_CONFIG_RUN_PAYLOAD_FIELD,
                 value: pi_model_config,
-            },
-            RunPayloadField {
-                name: PI_SESSION_ID_RUN_PAYLOAD_FIELD,
-                value: pi_session_id,
             },
         ]
     }
@@ -528,7 +509,6 @@ const EXPLICIT_RUNNER_OWNED_ENV_KEYS: &[&str] = &[
     CANONICAL_SANDBOX_ID_ENV,
     CANONICAL_SANDBOX_STARTUP_PATH_ENV,
     CANONICAL_API_START_TIME_ENV,
-    PI_SESSION_ID_ENV,
     PI_LAUNCH_CONFIG_ENV,
     PI_LAUNCH_PAYLOAD_FILE_ENV,
     PI_MODEL_CONFIG_ENV,

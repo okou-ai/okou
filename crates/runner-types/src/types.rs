@@ -51,6 +51,17 @@ pub fn reuse_key_kind(reuse_key: &str) -> &'static str {
 // Complete execution input
 // ---------------------------------------------------------------------------
 
+/// Legacy API continuation shape accepted only for Old API -> New Runner
+/// rollback compatibility; remove once pre-cutover API rollback targets expire
+/// (see `docs/deployment-compatibility.md`).
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct LegacyNativeContinuation {
+    pub session_id: Option<String>,
+    pub generation_run_id: Option<String>,
+    pub recovery_prompt: Option<String>,
+}
+
 /// Normalized inputs consumed by directly supplied and independent local jobs.
 ///
 /// The shared API publication normalizer constructs this type before execution.
@@ -85,9 +96,13 @@ pub struct ExecutionContext {
     pub environment: Option<HashMap<String, String>>,
     /// Trusted API-authored agent environment.
     pub platform_environment: HashMap<String, String>,
-    /// Native-only continuation from the intended Thread's retained home.
+    /// Pure filesystem-level native continuation intent supplied by the API.
     #[serde(default)]
-    pub native_continuation: Option<guest_contracts::env::NativeContinuation>,
+    pub session_continuation: Option<guest_contracts::env::NativeContinuation>,
+    /// Legacy API continuation shape retained only for Old API -> New Runner
+    /// rollback compatibility.
+    #[serde(default, rename = "nativeContinuation")]
+    pub legacy_native_continuation: Option<LegacyNativeContinuation>,
     // Plain secret values used only for redaction. These are values, not names.
     #[serde(default)]
     pub secret_values: Option<Vec<String>>,
@@ -153,9 +168,6 @@ pub struct ExecutionContext {
     /// Raw non-secret Pi model config retained for the same rollout boundary.
     #[serde(default)]
     pub pi_model_config: Option<serde_json::Value>,
-    /// Chat Thread id used as Pi's official JSONL session id.
-    #[serde(default)]
-    pub pi_session_id: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -1711,22 +1723,35 @@ impl ExecutionContext {
         self.reuse_key.as_deref()
     }
 
-    /// Extract the framework-native session id.
+    /// Resolve canonical native continuation intent, falling back to the legacy
+    /// API wire field only during Old API -> New Runner rollback overlap.
+    pub fn resolved_native_continuation(&self) -> Option<guest_contracts::env::NativeContinuation> {
+        if let Some(continuation) = &self.session_continuation {
+            return Some(continuation.clone());
+        }
+        self.legacy_native_continuation.as_ref().map(|legacy| {
+            guest_contracts::env::NativeContinuation {
+                continue_native: legacy.session_id.is_some() && legacy.generation_run_id.is_some(),
+                expected_source_run_id: legacy.generation_run_id.clone(),
+                recovery_prompt: legacy.recovery_prompt.clone(),
+            }
+        })
+    }
+
+    /// Return the exact predecessor Run ID required for filesystem reuse, if any.
+    pub fn expected_home_source_run_id(&self) -> Option<RunId> {
+        self.resolved_native_continuation()
+            .and_then(|continuation| continuation.expected_source_run_id)
+            .and_then(|raw| raw.parse::<RunId>().ok())
+            .filter(|source| *source != self.run_id)
+    }
+
+    /// Extract the pre-supplied framework-native session id for standalone local jobs.
     ///
-    /// Prefers native continuation identity, then `pi_session_id`, then the
-    /// standalone local resume id.
-    /// Pi session ids are preassigned, including on first runs without a
-    /// retained history, so `Some` does not imply a continued session.
-    ///
-    /// Returns `None` only when neither source supplies an id. In that case,
-    /// the executor reads the CLI-generated session id from the guest filesystem
-    /// post-execution (see `read_guest_cli_agent_session_id`).
+    /// Returns `None` for API-dispatched runs, which discover the CLI-generated
+    /// session id from the guest filesystem post-execution.
     pub fn cli_agent_session_id(&self) -> Option<&str> {
-        self.native_continuation
-            .as_ref()
-            .and_then(|native| native.session_id.as_deref())
-            .or(self.pi_session_id.as_deref())
-            .or(self.local_resume_session_id.as_deref())
+        self.local_resume_session_id.as_deref()
     }
 }
 

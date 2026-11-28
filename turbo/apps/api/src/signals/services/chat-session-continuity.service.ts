@@ -47,10 +47,9 @@ export function resolveChatThreadContinuation(
     thread.framework !== null &&
     thread.framework === args.cliAgentType &&
     thread.frameworkSessionRunId !== null;
-  const expectedSourceRunId =
-    args.allowNativeResume && thread.frameworkSessionRunId !== null
-      ? thread.frameworkSessionRunId
-      : null;
+  const expectedSourceRunId = continueNative
+    ? thread.frameworkSessionRunId
+    : null;
   // An executed predecessor can lack native initialization while still having
   // durable Chat messages. Runner/Guest also enable recovery on any home miss.
   const recoveryPrompt =

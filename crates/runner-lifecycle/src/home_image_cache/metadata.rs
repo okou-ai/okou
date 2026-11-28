@@ -3,10 +3,8 @@ use super::types::HomeCacheTerminalStatus;
 use super::{CACHE_FORMAT_VERSION, HOME_DRIVE_LAYOUT, HomeImageCache};
 use crate::error::{LifecycleError, LifecycleResult};
 use crate::storage_fingerprints::StorageFingerprints;
-use guest_contracts::home_cache_history::HomeCacheHistoryProofBinding;
 use runner_types::ids::RunId;
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
 use std::os::unix::fs::MetadataExt;
 use std::path::Path;
 use tokio::fs;
@@ -38,7 +36,10 @@ pub(super) struct HomeCacheMetadata {
     pub(super) working_dir: String,
     pub(super) fingerprint_scope: String,
     pub(super) image_generation: String,
-    pub(super) history_proof: Option<HomeCacheHistoryProofBinding>,
+    /// Legacy rollout bridge: tolerates pre-refactor `historyProof` fields on
+    /// runner hosts during rolling deploys without re-writing them.
+    #[serde(default, skip_serializing, rename = "historyProof")]
+    pub(super) _legacy_history_proof: Option<serde_json::Value>,
     pub(super) last_completed_at: String,
     pub(super) last_used_at: String,
     pub(super) last_terminal_status: HomeCacheTerminalStatus,
@@ -75,30 +76,6 @@ impl HomeImageFileIdentity {
             modified_nanoseconds: m.mtime_nsec(),
         }
     }
-}
-
-pub(super) fn validate_history_binding(
-    binding: &HomeCacheHistoryProofBinding,
-    generation: &str,
-) -> LifecycleResult<()> {
-    binding
-        .validate()
-        .map_err(|e| LifecycleError::Internal(format!("home history proof: {e}")))?;
-    if binding.proof.generation != generation || !super::entry::valid_generation(generation) {
-        return Err(LifecycleError::Internal(
-            "home history proof generation mismatch".into(),
-        ));
-    }
-    let canonical = binding
-        .proof
-        .to_json_vec()
-        .map_err(|e| LifecycleError::Internal(format!("home history proof encoding: {e}")))?;
-    if hex::encode(Sha256::digest(&canonical)) != binding.sha256 {
-        return Err(LifecycleError::Internal(
-            "home history proof digest mismatch".into(),
-        ));
-    }
-    Ok(())
 }
 
 impl HomeImageCache {
@@ -311,9 +288,6 @@ pub(super) fn validate_metadata_structure(metadata: &HomeCacheMetadata) -> Lifec
         return Err(LifecycleError::Internal(
             "non-success home metadata contains known state".into(),
         ));
-    }
-    if let Some(binding) = &metadata.history_proof {
-        validate_history_binding(binding, &metadata.image_generation)?;
     }
     Ok(())
 }

@@ -65,7 +65,9 @@ pub(crate) fn parse_args(args: &[String]) -> ParsedArgs {
             "--print"
             | "--verbose"
             | "--dangerously-skip-permissions"
-            | "--include-partial-messages" => {
+            | "--include-partial-messages"
+            | "--continue"
+            | "-c" => {
                 i += 1;
             }
             "--" => {

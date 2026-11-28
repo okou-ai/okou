@@ -182,12 +182,6 @@ impl Dir {
         .map_err(Into::into)
     }
 
-    pub(crate) fn rename_child(&self, from: &OsStr, to: &OsStr) -> io::Result<()> {
-        let from = child_name_c_string(from)?;
-        let to = child_name_c_string(to)?;
-        rustix::fs::renameat(&self.0, from.as_c_str(), &self.0, to.as_c_str()).map_err(Into::into)
-    }
-
     pub(crate) fn unlink_child_file(&self, name: &OsStr) -> io::Result<()> {
         unlink_child(&self.0, name, AtFlags::empty())
     }

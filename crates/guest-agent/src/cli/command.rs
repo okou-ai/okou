@@ -18,6 +18,7 @@ pub(super) fn build_claude_command_for_runtime(runtime: &CliRuntimeConfig<'_>) -
             model: runtime.anthropic_model.as_ref(),
             effort: runtime.reasoning_effort,
             resume_id: runtime.resume_session_id.as_ref(),
+            continue_native: runtime.continue_native,
             append_system_prompt_file: (!runtime.append_system_prompt.is_empty())
                 .then_some(runtime.claude_append_system_prompt_file.as_ref()),
             disallowed_tools: runtime.disallowed_tools.as_ref(),
@@ -46,6 +47,7 @@ struct ClaudeArgsConfig<'a> {
     model: &'a str,
     effort: Option<&'a str>,
     resume_id: &'a str,
+    continue_native: bool,
     append_system_prompt_file: Option<&'a str>,
     disallowed_tools: &'a str,
 }
@@ -66,6 +68,9 @@ fn build_claude_args(config: ClaudeArgsConfig<'_>) -> Vec<String> {
         log_info!(LOG_TAG, "Resuming session");
         args.push("--resume".to_string());
         args.push(config.resume_id.to_string());
+    } else if config.continue_native {
+        log_info!(LOG_TAG, "Continuing most recent native session");
+        args.push("--continue".to_string());
     } else {
         log_info!(LOG_TAG, "Starting new session");
     }

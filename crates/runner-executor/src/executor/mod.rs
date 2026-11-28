@@ -34,7 +34,6 @@ mod diagnostics;
 mod disk_cleanup;
 mod env;
 mod guest_state;
-mod home_history;
 mod reused_sandbox;
 mod sandbox_run;
 mod session_id;
@@ -42,7 +41,6 @@ mod startup;
 mod storage;
 mod telemetry;
 
-pub(crate) use crate::restored_session_identity::RestoredSessionIdentity;
 pub(crate) use cli_framework::effective_cli_framework;
 pub use guest_state::{
     GuestTimezoneSyncOutcome, is_shell_safe_guest_timezone_name, restore_guest_state_with_intent,
@@ -473,7 +471,6 @@ pub struct ExecuteOutcome {
     /// Used for late session tracking and finalization when `resume_session`
     /// is absent.
     pub discovered_cli_agent_session_id: Option<String>,
-    pub restored_session_identity: Option<RestoredSessionIdentity>,
     /// The Guest signaled a successful Memory publication. The API validates it.
     pub memory_published: bool,
 }
@@ -491,7 +488,6 @@ impl ExecuteOutcome {
             home_reuse_result: None,
             startup_report: None,
             discovered_cli_agent_session_id: None,
-            restored_session_identity: None,
             memory_published: false,
         }
     }
@@ -513,7 +509,6 @@ impl ExecuteOutcome {
             home_reuse_result: None,
             startup_report: None,
             discovered_cli_agent_session_id: None,
-            restored_session_identity: None,
             memory_published: false,
         }
     }
@@ -889,7 +884,6 @@ pub async fn execute_job_reuse_with_hooks(
         source_ip,
         storage_fingerprints: prev_storage,
         rootfs_hash,
-        restored_session_identity: _restored_session_identity,
         home_promotion,
         guest_state_prepared,
     } = idle_sandbox.into_parts();
@@ -989,10 +983,6 @@ pub async fn execute_job_reuse_with_hooks(
         .filter(|_| combined_home)
         .and_then(HomeImageLease::previous_storage)
         .cloned();
-    let home_history_proof = home_image
-        .as_ref()
-        .filter(|_| combined_home)
-        .and_then(|image| image.history_proof_binding().cloned());
     if combined_home {
         telemetry.set_home_startup_source(
             home_image
@@ -1023,11 +1013,10 @@ pub async fn execute_job_reuse_with_hooks(
             home_image,
         ),
         Ok(prepared_run_payload) => {
-            let mut controls = RunControls::from_cancellation(cancellation, active_input_source)
+            let controls = RunControls::from_cancellation(cancellation, active_input_source)
                 .with_sandbox_recovery(sandbox_recovery)
                 .with_spawn_timing(spawn_timing)
                 .with_guest_state_prepared(guest_state_prepared);
-            controls.home_history_proof = home_history_proof;
             execute_reused_sandbox(
                 ReusedSandboxRun {
                     sandbox_id,

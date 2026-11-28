@@ -3,7 +3,6 @@
   "tasks": {
     "test": {
       "passThroughEnv": [
-        "OKOU_PI_SESSION_ID",
         "OKOU_PI_MODEL_CONFIG",
         "OKOU_PI_LAUNCH_PAYLOAD_FILE",
         "OKOU_PI_SESSION_ROLE",

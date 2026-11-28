@@ -14,7 +14,6 @@ use crate::env;
 use crate::error::AgentError;
 use crate::failure_patterns;
 use crate::paths;
-use crate::session_history;
 use crate::session_metadata::CapturedSessionMetadata;
 use crate::upstream_error_text::upstream_non_api_response_status;
 use guest_contracts::diagnostics::{
@@ -147,40 +146,13 @@ pub fn cli_nonzero_failure_for_config(
 
 /// Return the conservative session-history target probe for failure diagnostics.
 ///
-/// For Claude Code, guest-owned captured metadata supplies the target. If no
-/// valid session identity was captured, this returns `Missing`; an invalid
-/// launch source or unreadable target returns `Unknown`.
-///
-/// A safely opened regular target is `Empty` only when it has zero bytes and is
-/// otherwise `Present`. Resolution errors are `Unknown`. Codex returns
-/// `NotApplicable` because this diagnostic probe does not apply to it.
+/// Guest no longer inspects framework-owned session history files on disk;
+/// native continuation relies solely on filesystem home reuse.
 pub fn diagnostic_session_history_status_for_config(
-    config: &env::GuestConfig,
-    session_metadata: Option<&CapturedSessionMetadata>,
+    _config: &env::GuestConfig,
+    _session_metadata: Option<&CapturedSessionMetadata>,
 ) -> SessionHistoryStatus {
-    match config.framework {
-        env::Framework::ClaudeCode => claude_history_target_status(session_metadata),
-        env::Framework::Codex => SessionHistoryStatus::NotApplicable,
-        env::Framework::Pi | env::Framework::Antigravity => SessionHistoryStatus::NotApplicable,
-    }
-}
-
-fn claude_history_target_status(
-    session_metadata: Option<&CapturedSessionMetadata>,
-) -> SessionHistoryStatus {
-    let Some(session_metadata) = session_metadata else {
-        return SessionHistoryStatus::Missing;
-    };
-    let Some(source) = session_metadata.history_source() else {
-        return SessionHistoryStatus::Unknown;
-    };
-    match session_history::resolve_session_history_from_source(source) {
-        Ok(history) if history.encoded_len().is_ok_and(|size| size == 0) => {
-            SessionHistoryStatus::Empty
-        }
-        Ok(_) => SessionHistoryStatus::Present,
-        Err(_) => SessionHistoryStatus::Unknown,
-    }
+    SessionHistoryStatus::NotApplicable
 }
 
 /// Persist a nonempty guest error message with private file permissions.

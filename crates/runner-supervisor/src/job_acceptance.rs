@@ -81,10 +81,8 @@ pub(crate) fn supplied_finalizing_predecessor<'a>(
     profile_name: &str,
     active_runs: &ActiveRuns,
 ) -> Option<(RunId, &'a str, ActiveRunReuseProof)> {
-    // Local handoff authority comes from complete native continuation input.
-    let native = context.native_continuation.as_ref()?;
-    native.session_id.as_ref()?;
-    let source = native.generation_run_id.as_deref()?.parse::<RunId>().ok()?;
+    // Local handoff authority comes from complete session continuation input.
+    let source = context.expected_home_source_run_id()?;
     if source == context.run_id {
         return None;
     }
@@ -109,7 +107,8 @@ pub(crate) async fn accept_supplied(
     if ctx.cancel_tokens.handle(run_id).await.is_some() {
         return SuppliedAcceptance::Unknown;
     }
-    // Native continuation can identify an exact source. A Run starting a new
+    let expected_source_run_id = context.expected_home_source_run_id();
+    // Session continuation can identify an exact predecessor. A Run starting a new
     // session can independently wait for a matching local finalizer to park.
     let finalizing =
         supplied_finalizing_predecessor(&context, request.profile_name, ctx.active_runs)
@@ -120,15 +119,11 @@ pub(crate) async fn accept_supplied(
                     reuse_key: reuse_key.to_owned(),
                     source_run_id,
                     // Revalidated against the bound execution context before waiting.
-                    native_generation_run_id: None,
+                    expected_source_run_id: None,
                 },
             )
             .or_else(|| {
-                if context
-                    .native_continuation
-                    .as_ref()
-                    .is_some_and(|native| native.session_id.is_some())
-                {
+                if expected_source_run_id.is_some() {
                     return None;
                 }
                 let reuse_key = context.reuse_key().filter(|key| !key.is_empty())?;
@@ -144,7 +139,7 @@ pub(crate) async fn accept_supplied(
                         .min(Instant::now() + FINALIZING_HANDOFF_ACCEPTANCE_GRACE),
                     reuse_key: reuse_key.to_owned(),
                     source_run_id,
-                    native_generation_run_id: None,
+                    expected_source_run_id: None,
                 })
             });
     let (resource, blank_pool_selection) = if let Some(handoff) = finalizing {
@@ -153,6 +148,7 @@ pub(crate) async fn accept_supplied(
         let Some(resource) = acquire_local_acceptance_resource(
             run_id,
             context.reuse_key().filter(|key| !key.is_empty()),
+            expected_source_run_id,
             request.profile_name,
             request.job_vcpu,
             request.job_memory,
@@ -209,6 +205,7 @@ pub async fn accept_and_claim(
     let Some((resource, blank_pool_selection)) = acquire_local_acceptance_resource(
         run_id,
         candidate.reuse_key(),
+        None,
         request.profile_name,
         request.job_vcpu,
         request.job_memory,
@@ -264,6 +261,7 @@ pub async fn accept_and_claim(
 async fn acquire_local_acceptance_resource(
     run_id: RunId,
     reuse_key: Option<&str>,
+    expected_source_run_id: Option<RunId>,
     profile_name: &str,
     job_vcpu: u32,
     job_memory: u32,
@@ -282,6 +280,7 @@ async fn acquire_local_acceptance_resource(
         IdlePressureRequest {
             run_id,
             reuse_key,
+            expected_source_run_id,
             profile_name,
             device_rate_limits,
             allow_compatible_blank: true,

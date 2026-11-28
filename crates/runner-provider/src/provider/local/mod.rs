@@ -311,7 +311,8 @@ impl super::LocalJobSource for LocalProvider {
             storage_manifest: None,
             environment: environment_merge.environment,
             platform_environment: HashMap::new(),
-            native_continuation: None,
+            session_continuation: None,
+            legacy_native_continuation: None,
             local_resume_session_id: req.session_id,
             secret_values: environment_merge.secret_values,
             local_secret_env_keys: environment_merge.local_secret_env_keys,
@@ -335,7 +336,6 @@ impl super::LocalJobSource for LocalProvider {
             codex_runtime_config: None,
             pi_launch_config: None,
             pi_model_config: None,
-            pi_session_id: None,
         };
         let active_input_source = req.active_input.unwrap_or(false).then(|| {
             crate::active_input::ActiveInputSource::local_queue(self.queue.clone(), run_id)

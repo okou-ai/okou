@@ -22,7 +22,6 @@ pub mod exec_terminal;
 pub mod file_write;
 pub mod guest_binary;
 pub mod guest_timezone;
-pub mod home_cache_history;
 pub mod home_mount;
 pub mod log_append;
 pub mod managed_command;
@@ -37,7 +36,6 @@ pub mod runtime_paths;
 pub mod sandbox_startup;
 #[cfg(target_os = "linux")]
 pub mod sealed_input;
-pub mod session_history_identity;
 pub mod stdout_framing;
 pub mod storage_files;
 pub mod storage_manifest;

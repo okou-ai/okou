@@ -255,7 +255,7 @@ async fn run_antigravity_acp(
             return handle_acp_transport_or_rpc_error(error, &mut projector, &mut sink).await;
         }
 
-        let (session_response, resumed) = match start_or_resume_session(
+        let (session_response, resumed_session_id) = match start_or_resume_session(
             &mut client,
             runtime,
             heartbeat_monitor,
@@ -269,10 +269,8 @@ async fn run_antigravity_acp(
             }
         };
 
-        let session_id = session_id_from_response(
-            &session_response,
-            resumed.then_some(runtime.resume_session_id.as_ref()),
-        )?;
+        let session_id =
+            session_id_from_response(&session_response, resumed_session_id.as_deref())?;
         active_session_id = Some(session_id.clone());
         sink.ingest(projector.begin_session(session_id.clone()))
             .await?;
@@ -863,28 +861,78 @@ async fn start_or_resume_session(
     runtime: &CliRuntimeConfig<'_>,
     heartbeat_monitor: &mut HeartbeatMonitor,
     heartbeat_done: &mut bool,
-) -> Result<Result<(Value, bool), AntigravityAcpError>, AcpRunError> {
+) -> Result<Result<(Value, Option<String>), AntigravityAcpError>, AcpRunError> {
     let resume_session_id = runtime.resume_session_id.as_ref();
-    if resume_session_id.is_empty() {
-        return Ok(race_with_heartbeat(
-            client.request_value("session/new", build_session_new_params(runtime)),
+    if !resume_session_id.is_empty() {
+        return resume_session_or_fallback(
+            client,
+            runtime,
+            resume_session_id,
             heartbeat_monitor,
             heartbeat_done,
         )
-        .await?
-        .map(|value| (value, false)));
+        .await;
     }
+
+    if runtime.continue_native {
+        let list_res = race_with_heartbeat(
+            client.request_value(
+                "session/list",
+                json!({ "cwd": paths::CANONICAL_WORKING_DIR }),
+            ),
+            heartbeat_monitor,
+            heartbeat_done,
+        )
+        .await?;
+        let list_value = match list_res {
+            Ok(value) => value,
+            Err(error) => return Ok(Err(error)),
+        };
+        if let Some(candidate_id) = latest_session_id_from_list(&list_value) {
+            return resume_session_or_fallback(
+                client,
+                runtime,
+                &candidate_id,
+                heartbeat_monitor,
+                heartbeat_done,
+            )
+            .await;
+        }
+        log_warn!(
+            LOG_TAG,
+            "Antigravity ACP session/list returned no resumable session; starting fresh session with recovery context"
+        );
+        return start_fresh_session_with_recovery(client, runtime, heartbeat_monitor, heartbeat_done)
+            .await;
+    }
+
+    Ok(race_with_heartbeat(
+        client.request_value("session/new", build_session_new_params(runtime)),
+        heartbeat_monitor,
+        heartbeat_done,
+    )
+    .await?
+    .map(|value| (value, None)))
+}
+
+async fn resume_session_or_fallback(
+    client: &mut AntigravityAcpClient,
+    runtime: &CliRuntimeConfig<'_>,
+    session_id: &str,
+    heartbeat_monitor: &mut HeartbeatMonitor,
+    heartbeat_done: &mut bool,
+) -> Result<Result<(Value, Option<String>), AntigravityAcpError>, AcpRunError> {
     let resumed = race_with_heartbeat(
         client.request_value(
             "session/resume",
-            build_session_resume_params(runtime, resume_session_id),
+            build_session_resume_params(runtime, session_id),
         ),
         heartbeat_monitor,
         heartbeat_done,
     )
     .await?;
     match resumed {
-        Ok(value) => Ok(Ok((value, true))),
+        Ok(value) => Ok(Ok((value, Some(session_id.to_owned())))),
         Err(AntigravityAcpError::Rpc { method, error })
             if has_non_empty_recovery_prompt(runtime.native_continuation)
                 && method == "session/resume"
@@ -894,18 +942,49 @@ async fn start_or_resume_session(
                 LOG_TAG,
                 "Antigravity ACP session/resume could not read retained session; starting fresh session with recovery context"
             );
-            let mut fresh = runtime.clone();
-            fresh.enable_native_recovery();
-            Ok(race_with_heartbeat(
-                client.request_value("session/new", build_session_new_params(&fresh)),
-                heartbeat_monitor,
-                heartbeat_done,
-            )
-            .await?
-            .map(|value| (value, false)))
+            start_fresh_session_with_recovery(client, runtime, heartbeat_monitor, heartbeat_done)
+                .await
         }
         Err(error) => Ok(Err(error)),
     }
+}
+
+async fn start_fresh_session_with_recovery(
+    client: &mut AntigravityAcpClient,
+    runtime: &CliRuntimeConfig<'_>,
+    heartbeat_monitor: &mut HeartbeatMonitor,
+    heartbeat_done: &mut bool,
+) -> Result<Result<(Value, Option<String>), AntigravityAcpError>, AcpRunError> {
+    let mut fresh = runtime.clone();
+    fresh.enable_native_recovery();
+    Ok(race_with_heartbeat(
+        client.request_value("session/new", build_session_new_params(&fresh)),
+        heartbeat_monitor,
+        heartbeat_done,
+    )
+    .await?
+    .map(|value| (value, None)))
+}
+
+pub(super) fn latest_session_id_from_list(response: &Value) -> Option<String> {
+    let sessions = response.get("sessions").and_then(Value::as_array)?;
+    sessions
+        .iter()
+        .enumerate()
+        .filter_map(|(index, entry)| {
+            let id = entry.get("sessionId").and_then(Value::as_str)?;
+            if uuid::Uuid::try_parse(id).is_err() {
+                return None;
+            }
+            let updated_at = entry
+                .get("updatedAt")
+                .and_then(Value::as_str)
+                .and_then(|value| chrono::DateTime::parse_from_rfc3339(value).ok())
+                .map(|timestamp| timestamp.timestamp_nanos_opt().unwrap_or_else(|| timestamp.timestamp_millis() * 1_000_000));
+            Some((updated_at, std::cmp::Reverse(index), id))
+        })
+        .max_by_key(|(updated_at, reverse_index, _)| (*updated_at, *reverse_index))
+        .map(|(_, _, id)| id.to_owned())
 }
 
 pub(super) fn session_id_from_response(

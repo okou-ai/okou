@@ -54,7 +54,7 @@ pub(super) async fn execute_reused_sandbox(
         Ok(storage) => {
             inputs.controls.prepared_storage = storage;
             // Validate all storage inputs before consuming a selected Home.
-            // The same lease retains source pins, fingerprints and history proof.
+            // The same lease retains source pins and fingerprints.
             if run.kind == IdleSandboxKind::Blank
                 && let Some(lease) = run.home_image.as_mut().filter(|lease| lease.is_cache_hit())
             {

@@ -537,6 +537,15 @@ export const sessionContinuationSchema = object({
         path: ["expectedSourceRunId"],
         message: "Native continuation requires its expected source Run",
       });
+    } else if (
+      !continuation.continueNative &&
+      continuation.expectedSourceRunId !== null
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["expectedSourceRunId"],
+        message: "Fresh continuation must not carry an expected source Run",
+      });
     }
   });
 export type SessionContinuation = zInfer<typeof sessionContinuationSchema>;
@@ -928,7 +937,10 @@ const preparedExecutionContextObjectSchema = object({
   codexRuntimeConfig: modelProviderCodexRuntimeConfigSchema
     .nullable()
     .optional(),
-  // Pi session identity and pinned route reconstructed from the accepted Run.
+  // Bounded rollout bridge: pre-cutover Runners validate `piSessionId` on Pi
+  // dispatches while new Runners ignore it and discover Pi's session ID from
+  // `get_state`. Remove after old Runner releases finish draining and are
+  // excluded from rollback (see `docs/deployment-compatibility.md`).
   piSessionId: uuid().optional(),
   piModelConfig: piModelConfigSchema.optional(),
   cliAgentType: string(),
@@ -1025,6 +1037,7 @@ const executionContextObjectSchema = object({
   codexRuntimeConfig: modelProviderCodexRuntimeConfigSchema
     .nullable()
     .optional(),
+  // Bounded rollout bridge for pre-cutover Runners; new Runners ignore it.
   piSessionId: uuid().optional(),
   piLaunchConfig: piLaunchConfigSchema.optional(),
   piModelConfig: piModelConfigSchema.optional(),

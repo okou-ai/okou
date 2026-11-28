@@ -574,10 +574,6 @@ pub(super) async fn execute_new_sandbox_with_prepared_notifier(
             return Err(error);
         }
     }
-    controls.home_history_proof = home_image
-        .as_ref()
-        .filter(|image| image.is_cache_hit())
-        .and_then(|image| image.history_proof_binding().cloned());
     let mut used_retry = preparation != FreshPreparation::Initial;
     let mut used_home_fallback = preparation == FreshPreparation::DiskReplacement;
     let mut codex_model_catalog_prefetch = preparation == FreshPreparation::Initial;
@@ -641,7 +637,6 @@ pub(super) async fn execute_new_sandbox_with_prepared_notifier(
                 ));
             }
             if failure.invalidate_consumed_home_cache && cache_hit {
-                controls.home_history_proof = None;
                 invalidate_home_cache_hit(
                     home_image.as_ref(),
                     context.run_id,
@@ -738,7 +733,6 @@ pub(super) async fn execute_new_sandbox_with_prepared_notifier(
                     ));
                 }
                 used_home_fallback = true;
-                controls.home_history_proof = None;
                 cancel_prepared_storage(&mut controls, telemetry).await;
                 invalidate_home_cache_hit(
                     home_image.as_ref(),
@@ -1025,12 +1019,11 @@ pub(super) async fn prepare_home_image(
         },
         home_drive_required: true,
     };
+    let required_source = context
+        .expected_home_source_run_id()
+        .or(params.required_home_source_run_id);
     let lease = cache
-        .prepare_with_policy(
-            request,
-            params.home_image_prepare_policy,
-            params.required_home_source_run_id,
-        )
+        .prepare_with_policy(request, params.home_image_prepare_policy, required_source)
         .await;
     let prepare_error = home_image_prepare_error(lease.result());
     telemetry.record(
@@ -1794,10 +1787,6 @@ async fn execute_prepared_sandbox_attempt_with_process_cancel_timeouts(
         |_| AgentStdoutStreamDiagnostics::default(),
         |result| result.stdout_stream_diagnostics,
     );
-    let restored_session_identity = result
-        .as_ref()
-        .ok()
-        .and_then(|result| result.reusable_session_identity.clone());
 
     let cleanup_result = post_job_cleanup(
         sandbox.as_ref(),
@@ -1891,7 +1880,6 @@ async fn execute_prepared_sandbox_attempt_with_process_cancel_timeouts(
             home_reuse_result: lifecycle.startup_report.as_ref().map(|_| home_reuse_result),
             startup_report: lifecycle.startup_report,
             discovered_cli_agent_session_id,
-            restored_session_identity,
             memory_published: agent_result.memory_published,
         },
     }

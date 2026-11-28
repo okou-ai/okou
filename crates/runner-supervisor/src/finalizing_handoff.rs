@@ -25,9 +25,8 @@ use tracing::info;
 
 use crate::idle_lifecycle::{
     IdleDestroyTracker, IdlePressureOutcome, IdlePressureRequest, IdlePressureSelection,
-    ReservedIdleActivation, SharedIdlePool, reserve_exact_idle_for_spawn,
-    reserve_source_idle_for_spawn, rollback_reserved_idle_for_spawn,
-    select_idle_entries_for_pressure, set_idle_status_snapshot,
+    ReservedIdleActivation, SharedIdlePool, reserve_source_idle_for_spawn,
+    rollback_reserved_idle_for_spawn, select_idle_entries_for_pressure, set_idle_status_snapshot,
 };
 use runner_executor::executor::{
     BlankPoolSelection, ExecutionFailure, FinalizingExactIdleLookup, FinalizingHandoffOutcome,
@@ -56,8 +55,8 @@ pub struct FinalizingHandoffContext {
     pub deadline: Instant,
     pub reuse_key: String,
     pub source_run_id: RunId,
-    /// Present only when the selected source is the actual native generation.
-    pub native_generation_run_id: Option<RunId>,
+    /// Present only when the successor requires this exact predecessor run for continuation.
+    pub expected_source_run_id: Option<RunId>,
 }
 
 impl FinalizingHandoffContext {
@@ -155,7 +154,7 @@ struct FinalizingFallback<'a> {
     run_id: RunId,
     cancellation: &'a RunCancellationRegistration,
     reuse_key: &'a str,
-    native_generation_run_id: Option<RunId>,
+    expected_source_run_id: Option<RunId>,
     profile_name: &'a str,
     vcpu: u32,
     memory_mb: u32,
@@ -271,7 +270,7 @@ async fn select_finalizing_resource_inner(
                     run_id,
                     cancellation,
                     reuse_key: &handoff_context.reuse_key,
-                    native_generation_run_id: handoff_context.native_generation_run_id,
+                    expected_source_run_id: handoff_context.expected_source_run_id,
                     profile_name,
                     vcpu,
                     memory_mb,
@@ -328,7 +327,7 @@ async fn wait_for_finalizing_resource(
     let cancel = cancellation.token();
     let wait_started_at = tokio::time::Instant::now();
     let mut handoff = handoff_context
-        .native_generation_run_id
+        .expected_source_run_id
         .and_then(|_| handoff_context.predecessor.request_handoff(run_id));
     #[cfg(any(test, feature = "test-support"))]
     if handoff.is_some() {
@@ -373,17 +372,17 @@ async fn wait_for_finalizing_resource(
             ActiveRunReuseState::Pending | ActiveRunReuseState::Finalizing { .. } => None,
         };
         if let Some(missing_exact_reason) = missing_exact_reason {
-            let Some(native_generation_run_id) = handoff_context.native_generation_run_id else {
+            let Some(expected_source_run_id) = handoff_context.expected_source_run_id else {
                 // A ready physical source is selected by the existing generic
-                // fallback, without granting exact native-history authority.
+                // fallback, without granting exact continuation authority.
                 return FinalizingWaitOutcome::no_exact(missing_exact_reason);
             };
-            let exact_lookup = reserve_exact_idle_for_spawn(
+            let exact_lookup = reserve_source_idle_for_spawn(
                 ctx.idle_pool,
                 &handoff_context.reuse_key,
                 profile_name,
                 device_rate_limits,
-                native_generation_run_id,
+                expected_source_run_id,
             )
             .await;
             let exact_lookup_miss = match exact_lookup {
@@ -424,7 +423,7 @@ async fn wait_for_finalizing_resource(
 
         let (deadline, timeout_reason, timeout_outcome) = match state {
             ActiveRunReuseState::Finalizing { started_at }
-                if handoff_context.native_generation_run_id.is_some() =>
+                if handoff_context.expected_source_run_id.is_some() =>
             {
                 (
                     tokio::time::Instant::from_std(started_at).max(wait_started_at)
@@ -497,7 +496,7 @@ async fn wait_for_finalizing_resource(
                         continue;
                     }
                     if matches!(state, ActiveRunReuseState::Finalizing { .. })
-                        && handoff_context.native_generation_run_id.is_some()
+                        && handoff_context.expected_source_run_id.is_some()
                     {
                         return FinalizingWaitOutcome::no_exact(
                             FinalizingHandoffReason::HandoffRequestUnavailable,
@@ -565,7 +564,7 @@ async fn acquire_fallback_resource(
         run_id,
         cancellation,
         reuse_key,
-        native_generation_run_id,
+        expected_source_run_id,
         profile_name,
         vcpu,
         memory_mb,
@@ -588,7 +587,7 @@ async fn acquire_fallback_resource(
             let reservation = accept_fallback_idle(cancellation, reservation, ctx).await?;
             return Ok(fallback_idle_resource(
                 reservation,
-                native_generation_run_id,
+                expected_source_run_id,
                 pre_spawn_timing,
             ));
         }
@@ -604,6 +603,7 @@ async fn acquire_fallback_resource(
             IdlePressureRequest {
                 run_id,
                 reuse_key: Some(reuse_key),
+                expected_source_run_id,
                 profile_name,
                 device_rate_limits,
                 // Exact and generic publication share the reuse-key slot. A
@@ -627,7 +627,7 @@ async fn acquire_fallback_resource(
                 let reservation = accept_fallback_idle(cancellation, reservation, ctx).await?;
                 return Ok(fallback_idle_resource(
                     reservation,
-                    native_generation_run_id,
+                    expected_source_run_id,
                     pre_spawn_timing,
                 ));
             }
@@ -658,7 +658,7 @@ async fn acquire_fallback_resource(
         reuse_key,
         profile_name,
         device_rate_limits,
-        native_generation_run_id,
+        expected_source_run_id,
         ctx,
     )
     .await?
@@ -667,7 +667,7 @@ async fn acquire_fallback_resource(
             drop(lease);
             Ok(fallback_idle_resource(
                 reservation,
-                native_generation_run_id,
+                expected_source_run_id,
                 pre_spawn_timing,
             ))
         }
@@ -683,25 +683,19 @@ async fn acquire_fallback_resource(
 
 fn fallback_idle_resource(
     reservation: ReservedIdleActivation,
-    native_generation_run_id: Option<RunId>,
+    expected_source_run_id: Option<RunId>,
     pre_spawn_timing: &mut RunnerPreSpawnTiming,
 ) -> FinalizingResource {
     if reservation.kind() == IdleSandboxKind::Blank {
         pre_spawn_timing.record_blank_pool_selection(BlankPoolSelection::Hit);
     }
-    if let Some(native_generation_run_id) = native_generation_run_id {
-        if reservation.native_generation_run_id() == Some(native_generation_run_id)
-            && reservation.source_run_id() == Some(native_generation_run_id)
-        {
+    if let Some(expected_source_run_id) = expected_source_run_id {
+        if reservation.source_run_id() == Some(expected_source_run_id) {
             pre_spawn_timing.record_finalizing_exact_idle_lookup(FinalizingExactIdleLookup::Hit);
             return FinalizingResource::Exact(reservation);
         }
         pre_spawn_timing.record_finalizing_exact_idle_lookup(FinalizingExactIdleLookup::Miss(
-            if reservation.source_run_id() == Some(native_generation_run_id) {
-                ExactIdleReservationMiss::NativeGenerationMismatch
-            } else {
-                ExactIdleReservationMiss::SourceMismatch
-            },
+            ExactIdleReservationMiss::SourceMismatch,
         ));
     }
     FinalizingResource::Reusable(reservation)
@@ -712,16 +706,16 @@ async fn reserve_fallback_idle(
     reuse_key: &str,
     profile_name: &str,
     device_rate_limits: &Option<sandbox::DeviceRateLimits>,
-    native_generation_run_id: Option<RunId>,
+    expected_source_run_id: Option<RunId>,
     ctx: FinalizingSelectionResources<'_>,
 ) -> Result<FallbackIdleLookup, Box<ExecutionFailure>> {
-    let miss = if let Some(generation) = native_generation_run_id {
-        match reserve_exact_idle_for_spawn(
+    let miss = if let Some(expected_source) = expected_source_run_id {
+        match reserve_source_idle_for_spawn(
             ctx.idle_pool,
             reuse_key,
             profile_name,
             device_rate_limits,
-            generation,
+            expected_source,
         )
         .await
         {
@@ -737,7 +731,12 @@ async fn reserve_fallback_idle(
     };
     let reservation = {
         let mut pool = ctx.idle_pool.lock().await;
-        pool.reserve_reusable(reuse_key, profile_name, device_rate_limits)
+        let exact = if expected_source_run_id.is_none() {
+            pool.reserve_reusable(reuse_key, profile_name, device_rate_limits)
+        } else {
+            None
+        };
+        exact
             .or_else(|| pool.reserve_blank(profile_name, device_rate_limits).ok())
             .map(|reservation| ReservedIdleActivation::new(reservation, pool.status_snapshot()))
     };

@@ -73,7 +73,6 @@ use crate::home_image_cache::{HomeImagePromotionContext, HomeImagePromotionIdent
 use crate::home_promotion::abandon_unpublished_home_promotion;
 use crate::idle_reuse_preparation::IdleReusePreparation;
 use crate::resource_budget::BudgetLease;
-use crate::restored_session_identity::RestoredSessionIdentity;
 use crate::storage_fingerprints::StorageFingerprints;
 use runner_types::ids::RunId;
 
@@ -115,8 +114,6 @@ pub struct IdleParkRequestParts {
     pub budget_lease: BudgetLease,
     pub source_ip: String,
     pub storage_fingerprints: StorageFingerprints,
-    pub restored_session_identity: Option<RestoredSessionIdentity>,
-    pub native_generation_run_id: Option<RunId>,
     pub guest_timezone_intent: GuestTimezoneIntent,
     pub home_image_size_bytes: u64,
     pub home_promotion: Option<HomeImagePromotionContext>,
@@ -359,8 +356,6 @@ impl IdleParkRequest {
             budget_lease,
             source_ip,
             storage_fingerprints,
-            restored_session_identity,
-            native_generation_run_id,
             guest_timezone_intent,
             home_image_size_bytes,
             home_promotion,
@@ -376,8 +371,6 @@ impl IdleParkRequest {
             device_rate_limits,
             source_ip,
             storage_fingerprints,
-            restored_session_identity,
-            native_generation_run_id,
             guest_timezone_intent,
             last_completed_at: None,
         };
@@ -435,11 +428,6 @@ async fn park_idle_transition(
         factory,
         home_promotion,
     } = resources;
-    let retained_runtime_dir = metadata
-        .restored_session_identity
-        .as_ref()
-        .and_then(RestoredSessionIdentity::final_metadata_verification)
-        .map(|verification| verification.runtime_dir.to_owned());
 
     if let Some(promotion) = home_promotion.as_ref()
         && let Err(mismatch) = metadata
@@ -482,7 +470,6 @@ async fn park_idle_transition(
         sandbox.id(),
         operation_run_id,
         current_runtime_run_id,
-        retained_runtime_dir.as_deref(),
     ) {
         Ok(preparation) => preparation,
         Err(error) => {

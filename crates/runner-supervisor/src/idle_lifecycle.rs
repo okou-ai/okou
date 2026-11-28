@@ -377,6 +377,9 @@ pub struct RetiringIdleEntry {
 pub struct IdlePressureRequest<'a> {
     pub run_id: RunId,
     pub reuse_key: Option<&'a str>,
+    /// When set, exact reuse requires this producing Run so a stale sandbox from
+    /// an earlier Run cannot be treated as matching the predecessor's home.
+    pub expected_source_run_id: Option<RunId>,
     pub profile_name: &'a str,
     pub device_rate_limits: &'a Option<DeviceRateLimits>,
     pub allow_compatible_blank: bool,
@@ -458,29 +461,6 @@ pub async fn reserve_source_idle_for_spawn(
     let reservation =
         pool.reserve_reusable_source(reuse_key, profile_name, device_rate_limits, source_run_id)?;
     let snapshot = pool.status_snapshot();
-    Ok(ReservedIdleActivation::new(reservation, snapshot))
-}
-
-/// Reserve exactly the predecessor's generation, retaining a typed miss reason
-/// from the same locked observation when no matching entry can be reserved.
-pub async fn reserve_exact_idle_for_spawn(
-    idle_pool: &SharedIdlePool,
-    reuse_key: &str,
-    profile_name: &str,
-    device_rate_limits: &Option<DeviceRateLimits>,
-    native_generation_run_id: RunId,
-) -> Result<ReservedIdleActivation, ExactIdleReservationMiss> {
-    let (reservation, snapshot) = {
-        let mut pool = idle_pool.lock().await;
-        let reservation = pool.reserve_reusable_native_source(
-            reuse_key,
-            profile_name,
-            device_rate_limits,
-            native_generation_run_id,
-        )?;
-        let snapshot = pool.status_snapshot();
-        (reservation, snapshot)
-    };
     Ok(ReservedIdleActivation::new(reservation, snapshot))
 }
 
@@ -627,11 +607,23 @@ fn reserve_pressure_reuse(
     budget: &Arc<ResourceBudget>,
     request: &IdlePressureRequest<'_>,
 ) -> (Option<ReservedIdleSandbox>, Option<BlankPoolSelection>) {
-    if let Some(reservation) = pool.reserve_reusable_for_pressure(
-        request.reuse_key,
-        request.profile_name,
-        request.device_rate_limits,
-    ) {
+    let exact = match (request.reuse_key, request.expected_source_run_id) {
+        (Some(reuse_key), Some(expected_source_run_id)) => pool
+            .reserve_reusable_source(
+                reuse_key,
+                request.profile_name,
+                request.device_rate_limits,
+                expected_source_run_id,
+            )
+            .ok(),
+        (reuse_key, None) => pool.reserve_reusable_for_pressure(
+            reuse_key,
+            request.profile_name,
+            request.device_rate_limits,
+        ),
+        (None, Some(_)) => None,
+    };
+    if let Some(reservation) = exact {
         return (Some(reservation), None);
     }
     if !request.allow_compatible_blank {

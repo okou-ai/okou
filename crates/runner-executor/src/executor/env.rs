@@ -446,13 +446,6 @@ fn validate_pi_execution_context(context: &ExecutionContext) -> Result<(), Strin
     if effective_cli_framework(&context.cli_agent_type) != EffectiveCliFramework::Pi {
         return Ok(());
     }
-    let session_id = context
-        .pi_session_id
-        .as_deref()
-        .filter(|value| !value.is_empty())
-        .ok_or_else(|| "Pi execution context is missing pi_session_id".to_string())?;
-    uuid::Uuid::parse_str(session_id)
-        .map_err(|_| "Pi execution context has invalid pi_session_id".to_string())?;
     let launch_config = context
         .pi_launch_config
         .as_ref()
@@ -463,11 +456,6 @@ fn validate_pi_execution_context(context: &ExecutionContext) -> Result<(), Strin
         .as_ref()
         .ok_or_else(|| "Pi execution context is missing pi_model_config".to_string())?;
     validate_pi_model_config(model_config)?;
-    if let Some(resume) = &context.local_resume_session_id
-        && resume != session_id
-    {
-        return Err("Pi resume session id does not match pi_session_id".into());
-    }
     Ok(())
 }
 
@@ -530,12 +518,7 @@ fn validate_bootstrap_environment_for_guest(
 }
 
 pub fn validate_resume_session_id(context: &ExecutionContext) -> Result<(), String> {
-    let Some(session_id) = context
-        .native_continuation
-        .as_ref()
-        .and_then(|native| native.session_id.as_deref())
-        .or(context.local_resume_session_id.as_deref())
-    else {
+    let Some(session_id) = context.local_resume_session_id.as_deref() else {
         return Ok(());
     };
     match effective_cli_framework(&context.cli_agent_type) {
@@ -847,7 +830,7 @@ pub(super) fn prepare_run_payload_for_run(
         prompt: context.prompt.clone(),
         append_system_prompt: context.append_system_prompt.clone().unwrap_or_default(),
         native_continuation: context
-            .native_continuation
+            .resolved_native_continuation()
             .as_ref()
             .map(serde_json::to_string)
             .transpose()
@@ -862,7 +845,6 @@ pub(super) fn prepare_run_payload_for_run(
         codex_runtime_config: serialize_codex_runtime_config_payload(context)?,
         pi_launch_config: serialize_pi_launch_config_payload(context)?,
         pi_model_config: serialize_pi_model_config_payload(context)?,
-        pi_session_id: context.pi_session_id.clone().unwrap_or_default(),
     };
 
     validate_run_payload_for_guest(&payload).map_err(RunnerError::Internal)?;

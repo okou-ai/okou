@@ -39,7 +39,7 @@ pub(super) fn persist_input_events(
                 "child_env_custom_user_env": std::env::var("CUSTOM_USER_ENV").ok(),
                 "child_env_openai_model": std::env::var("OPENAI_MODEL").ok(),
                 "child_env_openai_base_url": std::env::var("OPENAI_BASE_URL").ok(),
-                "child_env_has_pi_session_id": std::env::var_os(guest_contracts::env::PI_SESSION_ID_ENV).is_some(),
+                "child_env_has_pi_session_id": std::env::var_os("OKOU_PI_SESSION_ID").is_some(),
                 "child_env_has_pi_launch_config": std::env::var_os(guest_contracts::env::PI_LAUNCH_CONFIG_ENV).is_some(),
                 "child_env_has_pi_launch_payload_file": std::env::var_os(guest_contracts::env::PI_LAUNCH_PAYLOAD_FILE_ENV).is_some(),
                 "child_env_has_pi_model_config": std::env::var_os(guest_contracts::env::PI_MODEL_CONFIG_ENV).is_some(),

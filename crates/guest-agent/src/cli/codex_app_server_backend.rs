@@ -349,9 +349,8 @@ async fn run_codex_app_server(
     );
     let mut output_timing = CodexOutputTiming::default();
     let resume_thread_id = resume_thread_id_from_runtime(runtime)?;
-    let can_replay_historical_usage = resume_thread_id.is_some();
     let mut notification_state = CodexNotificationState {
-        allow_historical_usage: can_replay_historical_usage,
+        allow_historical_usage: resume_thread_id.is_some() || runtime.continue_native,
         ..CodexNotificationState::default()
     };
     let mut active_turn = None;
@@ -379,7 +378,7 @@ async fn run_codex_app_server(
             masker,
         )
         .await?;
-        let (thread_response, native_resumed) = race_with_heartbeat(
+        let (thread_response, resumed_thread_id) = race_with_heartbeat(
             start_or_resume_thread(&mut client, resume_thread_id.as_deref(), runtime),
             heartbeat_monitor,
             &mut heartbeat_done,
@@ -389,12 +388,9 @@ async fn run_codex_app_server(
         let thread_identity = thread_identity_from_response(&thread_response)?;
         validate_resumed_thread_id(
             &thread_identity.canonical_id,
-            if native_resumed {
-                resume_thread_id.as_deref()
-            } else {
-                None
-            },
+            resumed_thread_id.as_deref(),
         )?;
+        let native_resumed = resumed_thread_id.is_some();
         notification_state.allow_historical_usage = native_resumed;
         while let Some(notification) = client.pop_notification() {
             ingest_notification(
@@ -435,7 +431,7 @@ async fn run_codex_app_server(
         });
         let mut active_input_open = true;
         let mut turn_started_observed = false;
-        notification_state.allow_historical_usage = can_replay_historical_usage;
+        notification_state.allow_historical_usage = native_resumed;
 
         #[cfg(feature = "test-support")]
         if let Some(gate) = codex_turn_start_gate {
@@ -794,42 +790,99 @@ async fn start_or_resume_thread(
     client: &mut CodexAppServerClient,
     resume_thread_id: Option<&str>,
     runtime: &CliRuntimeConfig<'_>,
-) -> Result<(Value, bool), CodexAppServerError> {
-    match resume_thread_id {
-        Some(resume_thread_id) => {
-            let mut params = thread_param_fields(runtime);
-            params.insert(
-                "threadId".to_string(),
-                Value::String(resume_thread_id.to_string()),
-            );
-            params.insert("excludeTurns".to_string(), Value::Bool(true));
-            let resumed = client
-                .request_value("thread/resume", Value::Object(params))
-                .await;
-            match resumed {
-                Ok(thread) => Ok((thread, true)),
-                Err(CodexAppServerError::Rpc { method, error, .. })
-                    if runtime.native_continuation.is_some()
-                        && method == "thread/resume"
-                        && error.code == -32602
-                        && (error.message.starts_with("no rollout found for thread id")
-                            || error.message.starts_with("thread not found")) =>
-                {
-                    let mut fresh = runtime.clone();
-                    fresh.enable_native_recovery();
-                    client
-                        .request_value("thread/start", thread_params(&fresh))
-                        .await
-                        .map(|thread| (thread, false))
-                }
-                Err(error) => Err(error),
-            }
-        }
-        None => client
-            .request_value("thread/start", thread_params(runtime))
-            .await
-            .map(|thread| (thread, false)),
+) -> Result<(Value, Option<String>), CodexAppServerError> {
+    if let Some(resume_thread_id) = resume_thread_id {
+        return resume_thread_or_fallback(client, resume_thread_id, resume_thread_id, runtime)
+            .await;
     }
+
+    if runtime.continue_native {
+        // Real `codex app-server` records app-server threads with `source: "vscode"`,
+        // so pass both `"vscode"` and `"appServer"` in `sourceKinds`.
+        let list_response = client
+            .request_value(
+                "thread/list",
+                json!({
+                    "cwd": paths::CANONICAL_WORKING_DIR,
+                    "sourceKinds": ["vscode", "appServer"],
+                    "sortKey": "updated_at",
+                    "limit": 1,
+                }),
+            )
+            .await?;
+        if let Some((wire_id, canonical_id)) = latest_thread_from_list(&list_response) {
+            return resume_thread_or_fallback(client, &wire_id, &canonical_id, runtime).await;
+        }
+        log_warn!(
+            LOG_TAG,
+            "Codex app-server thread/list returned no resumable thread; starting fresh thread with recovery context"
+        );
+        return start_fresh_thread_with_recovery(client, runtime).await;
+    }
+
+    client
+        .request_value("thread/start", thread_params(runtime))
+        .await
+        .map(|thread| (thread, None))
+}
+
+async fn resume_thread_or_fallback(
+    client: &mut CodexAppServerClient,
+    wire_thread_id: &str,
+    canonical_thread_id: &str,
+    runtime: &CliRuntimeConfig<'_>,
+) -> Result<(Value, Option<String>), CodexAppServerError> {
+    let mut params = thread_param_fields(runtime);
+    params.insert(
+        "threadId".to_string(),
+        Value::String(wire_thread_id.to_string()),
+    );
+    params.insert("excludeTurns".to_string(), Value::Bool(true));
+    let resumed = client
+        .request_value("thread/resume", Value::Object(params))
+        .await;
+    match resumed {
+        Ok(thread) => Ok((thread, Some(canonical_thread_id.to_string()))),
+        Err(CodexAppServerError::Rpc { method, error, .. })
+            if runtime.native_continuation.is_some()
+                && method == "thread/resume"
+                && error.code == -32602
+                && (error.message.starts_with("no rollout found for thread id")
+                    || error.message.starts_with("thread not found")) =>
+        {
+            log_warn!(
+                LOG_TAG,
+                "Codex app-server thread/resume could not load retained thread; starting fresh thread with recovery context"
+            );
+            start_fresh_thread_with_recovery(client, runtime).await
+        }
+        Err(error) => Err(error),
+    }
+}
+
+async fn start_fresh_thread_with_recovery(
+    client: &mut CodexAppServerClient,
+    runtime: &CliRuntimeConfig<'_>,
+) -> Result<(Value, Option<String>), CodexAppServerError> {
+    let mut fresh = runtime.clone();
+    fresh.enable_native_recovery();
+    client
+        .request_value("thread/start", thread_params(&fresh))
+        .await
+        .map(|thread| (thread, None))
+}
+
+fn latest_thread_from_list(response: &Value) -> Option<(String, String)> {
+    response
+        .get("data")
+        .and_then(Value::as_array)?
+        .iter()
+        .find_map(|entry| {
+            let wire_id = entry.get("id").and_then(Value::as_str)?;
+            let canonical_id =
+                guest_contracts::codex_thread_id::canonical_codex_thread_id(wire_id)?;
+            Some((wire_id.to_string(), canonical_id))
+        })
 }
 
 fn thread_params(runtime: &CliRuntimeConfig<'_>) -> Value {

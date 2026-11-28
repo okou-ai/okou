@@ -41,7 +41,6 @@ use runner_lifecycle::idle_pool::{
     ParkingGate,
 };
 use runner_lifecycle::resource_budget::BudgetLease;
-use runner_lifecycle::restored_session_identity::RestoredSessionIdentity;
 use runner_lifecycle::status::StatusTracker;
 use runner_network::network_log_drain::NetworkLogDrainCoordinator;
 use runner_network::network_log_manager::NetworkLogSession;
@@ -296,7 +295,6 @@ pub struct FinalizeContext {
     pub reuse_key: Option<String>,
     pub cli_agent_session_id: Option<String>,
     pub discovered_cli_agent_session_id: Option<String>,
-    pub restored_session_identity: Option<RestoredSessionIdentity>,
     pub source_ip: String,
     pub network_log_session: Option<NetworkLogSession>,
     pub home_image: Option<HomeImageLease>,
@@ -386,7 +384,6 @@ async fn finalize_execution_run_inner(
     #[cfg(any(test, feature = "test-support"))] test_hooks: FinalizationTestHooks,
 ) -> FinalizationReady {
     let had_sandbox = sandbox.is_some();
-    let has_restored_session_identity = ctx.restored_session_identity.is_some();
     let has_reuse_key = ctx.reuse_key.is_some();
     let disposition = ctx.sandbox_reuse_disposition;
     let cleanup_state = ctx.cleanup_state.clone();
@@ -440,14 +437,6 @@ async fn finalize_execution_run_inner(
         ),
     };
     telemetry.record(action, started.elapsed(), success, error);
-    if matches!(final_disposition, RunCleanupDisposition::IdlePoolOwned) {
-        let action = if has_restored_session_identity {
-            "session_history_identity_parked"
-        } else {
-            "session_history_identity_park_missing"
-        };
-        telemetry.record(action, Duration::ZERO, true, None);
-    }
     ready
 }
 
@@ -549,7 +538,6 @@ async fn finalize_sandbox_for_completion_inner(
         reuse_key,
         cli_agent_session_id,
         discovered_cli_agent_session_id,
-        restored_session_identity,
         source_ip,
         mut network_log_session,
         home_image,
@@ -609,7 +597,6 @@ async fn finalize_sandbox_for_completion_inner(
         home_image.into_promotion_context(HomeImagePromotionRequest {
             run_id,
             sandbox_id,
-            restored_session_identity: restored_session_identity.as_ref(),
             terminal_status,
             completed_at: completed_at.clone(),
             storage_fingerprints: storage_fingerprints.clone(),
@@ -681,16 +668,10 @@ async fn finalize_sandbox_for_completion_inner(
         // Inflate the guest balloon BEFORE acquiring the pool lock —
         // the HTTP call to Firecracker can take milliseconds, and we
         // must not block other take/park operations on it.
-        let native_generation_run_id = match sandbox_reuse_disposition {
-            SandboxReuseDisposition::Eligible(SandboxReuseTerminal::Success) => Some(run_id),
-            SandboxReuseDisposition::Eligible(
-                SandboxReuseTerminal::NonzeroExit
-                | SandboxReuseTerminal::ExecutionTimeout
-                | SandboxReuseTerminal::CooperativeCancellation,
-            )
-            | SandboxReuseDisposition::Ineligible(_) => None,
-        };
-        let publishes_exact_sandbox = native_generation_run_id == Some(run_id);
+        let publishes_exact_sandbox = matches!(
+            sandbox_reuse_disposition,
+            SandboxReuseDisposition::Eligible(SandboxReuseTerminal::Success)
+        );
         let park_request = IdleParkRequest::new(IdleParkRequestParts {
             run_id,
             sandbox,
@@ -703,13 +684,10 @@ async fn finalize_sandbox_for_completion_inner(
             budget_lease: active_lease.into_idle_park_lease(),
             source_ip,
             storage_fingerprints,
-            restored_session_identity,
-            native_generation_run_id,
             guest_timezone_intent,
             home_image_size_bytes,
             home_promotion,
-            // Physical reuse eligibility was established above. Native history
-            // authority is independent: a failed run can still hand off its home.
+            // Physical reuse eligibility was established above.
             handoff: Some(active_run_reuse.handoff_signal()),
         });
         let park_outcome = match park_request
