@@ -77,7 +77,6 @@
     <string name="chat_project_create_failed">プロジェクトを作成できませんでした。入力した名前は保持されています。</string>
     <string name="chat_project_create_unconfirmed">プロジェクトの作成結果を確認できていません</string>
     <string name="chat_project_name_too_long">プロジェクト名は%1$d文字以内で入力してください</string>
-    <string name="chat_project_rename_unconfirmed">プロジェクト名を確認できませんでした。</string>
     <string name="chat_project_rename_rejected">プロジェクトの名前を変更できませんでした。</string>
     <string name="chat_project_rename_save">保存</string>
     <string name="chat_project_rename_pending">プロジェクト名を変更中…</string>
@@ -99,8 +98,6 @@
     <string name="chat_rename_save_failed">保存できませんでした。変更内容は保持されています。</string>
     <string name="chat_rename_check_result">結果を確認</string>
     <string name="chat_rename_required">名前を入力してください。</string>
-    <string name="chat_rename_checking_result">結果を確認しています…</string>
-    <string name="chat_rename_save_unconfirmed">保存結果はまだ確認できていません。</string>
     <string name="chat_title_saved">チャット名を保存しました</string>
     <string name="chat_project_name_saved">プロジェクト名を保存しました</string>
     <string name="inline_image_loading">画像を読み込み中…</string>
