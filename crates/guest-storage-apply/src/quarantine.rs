@@ -80,16 +80,7 @@ impl Quarantine {
         {
             return Ok(None);
         }
-        #[cfg(target_os = "linux")]
-        let unchecked = unchecked_after_listing(manifest, home);
-        #[cfg(not(target_os = "linux"))]
-        let unchecked: Option<Vec<&Path>> = None;
-        let eligible_targets = match unchecked {
-            Some(paths) if paths.len() < WIDE_TARGET_COUNT => check_target_slice(&paths)?,
-            Some(paths) => check_targets(&paths)?,
-            None => check_targets(&targets)?,
-        };
-        if !eligible_targets {
+        if !check_targets(manifest, home, &targets)? {
             return Ok(None);
         }
         // Existing final exec/park and terminal cache preparation own every
@@ -190,8 +181,8 @@ fn unchecked_after_listing<'a>(manifest: &'a Manifest, home: &Path) -> Option<Ve
             continue;
         };
 
-        // These retained roots have no write or repair work. A typed direct
-        // child of the checked parent proves the root is a real directory.
+        // For quarantine, a typed direct child of the checked parent proves
+        // that the retained root is a real directory.
         let mut unverified = paths().filter_map(Path::file_name).collect::<HashSet<_>>();
         for _ in 0..unverified.len().saturating_add(2) {
             let Some(entry) = listing.next() else {
@@ -220,14 +211,26 @@ fn unchecked_after_listing<'a>(manifest: &'a Manifest, home: &Path) -> Option<Ve
     (unchecked.len() < total).then_some(unchecked)
 }
 
-fn check_targets(targets: &[&Path]) -> io::Result<bool> {
+fn check_targets(manifest: &Manifest, home: &Path, targets: &[&Path]) -> io::Result<bool> {
     if targets.len() < WIDE_TARGET_COUNT {
         return check_target_group(targets, None);
     }
 
-    let (sample, targets) = targets.split_at(SAMPLE_TARGETS);
+    // A rejected listing can still warm the ancestors that the original
+    // sample would read. Include the probe in that sample's elapsed time.
     let started = Instant::now();
-    // Keep the existing sample cost for the decision to use parallel readers.
+    #[cfg(not(target_os = "linux"))]
+    let _ = (manifest, home);
+    #[cfg(target_os = "linux")]
+    let unchecked = unchecked_after_listing(manifest, home);
+    #[cfg(target_os = "linux")]
+    let (targets, started) = match unchecked.as_deref() {
+        Some(paths) if paths.len() < WIDE_TARGET_COUNT => return check_target_slice(paths),
+        Some(paths) => (paths, Instant::now()),
+        None => (targets, started),
+    };
+
+    let (sample, targets) = targets.split_at(SAMPLE_TARGETS);
     if !check_target_group(sample, None)? {
         return Ok(false);
     }
