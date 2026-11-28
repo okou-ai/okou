@@ -1,27 +1,74 @@
 import { randomUUID } from "node:crypto";
 
 import { billingUsagePackCreditsContract } from "@okouai/api-contracts/contracts/billing";
+import { chatEventsContract } from "@okouai/api-contracts/contracts/chat-event-send";
+import { cloudflareAccessContract } from "@okouai/api-contracts/contracts/cloudflare-access";
+import {
+  connectorAccountsContract,
+  type ConnectorAccountMutationIntent,
+} from "@okouai/api-contracts/contracts/connector-accounts";
 import { connectorCatalogContract } from "@okouai/api-contracts/contracts/connector-catalog";
-import type { ConnectorAccountMutationIntent } from "@okouai/api-contracts/contracts/connector-accounts";
-import type {
-  CreateCustomConnectorBody,
-  SaveCustomConnectorProposalBody,
+import {
+  customConnectorByIdContract,
+  customConnectorOAuth2Contract,
+  customConnectorValuesContract,
+  customConnectorsContract,
+  type CreateCustomConnectorBody,
+  type SaveCustomConnectorProposalBody,
 } from "@okouai/api-contracts/contracts/custom-connectors";
+import {
+  runsByIdContract,
+  runsCancelContract,
+} from "@okouai/api-contracts/contracts/run-routes";
+import {
+  runnersConnectorRuntimeSyncContract,
+  runnersHeartbeatContract,
+} from "@okouai/api-contracts/contracts/runners";
+import {
+  runWebhookContract,
+  webhookClerkContract,
+  webhookCompleteContract,
+} from "@okouai/api-contracts/contracts/webhooks";
+import type { ExecutionFirewallEntry } from "@okouai/connectors/firewall-types";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { describe, expect, it } from "vitest";
+import { getCustomConnectorSkillName } from "@okouai/core/storage-names";
+import { beforeAll, describe, expect, it, onTestFinished } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { mockEnv } from "../../../lib/env";
-import { mockNow, now } from "../../../lib/time";
+import {
+  TEST_WITH_DOUBLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE,
+  TEST_WITH_FOUR_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE,
+  TEST_WITH_SINGLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE,
+  TEST_WITH_TRIPLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE,
+} from "../../../__tests__/test-timeouts";
+import { env, mockEnv, mockOptionalEnv, optionalEnv } from "../../../lib/env";
+import { clearMockNow, mockNow, now } from "../../../lib/time";
 import { flushWaitUntilForTest } from "../../context/wait-until";
+import { settleIncludingAbort } from "../../utils";
 import { billingUsagePackCreditsRoutes } from "../billing-usage-pack-credits";
+import { chatEventsRoutes } from "../chat-events";
+import { cloudflareAccessRoutes } from "../cloudflare-access";
+import { connectorAccountRoutes } from "../connector-accounts";
 import { connectorCatalogRoutes } from "../connector-catalog";
+import { customConnectorsRoutes } from "../custom-connectors";
+import { customConnectorsDeleteRoutes } from "../custom-connectors-delete";
+import { customConnectorsGetRoutes } from "../custom-connectors-get";
+import { customConnectorOAuth2Routes } from "../custom-connectors-oauth2";
+import { customConnectorsUpdateRoutes } from "../custom-connectors-update";
+import { customConnectorsValuesSetRoutes } from "../custom-connectors-values-set";
+import { runnersRoutes } from "../runners";
+import { runsRoutes } from "../runs";
+import { runsCancelRoutes } from "../runs-cancel";
+import { webhooksAgentCompleteRoutes } from "../webhooks-agent-complete";
+import { webhooksAgentFirewallAuthRoutes } from "../webhooks-agent-firewall-auth";
+import { webhooksClerkRoutes } from "../webhooks-clerk";
 import {
   createBddApi,
   expectApiError,
   type ApiTestUser,
 } from "./helpers/api-bdd";
+import { createChatCallbacksApi } from "./helpers/api-bdd-chat-callbacks";
 import {
   createConnectorBddApi,
   manualHttpCustomConnectorCreateBody,
@@ -30,17 +77,27 @@ import {
   mockCustomConnectorOAuth2Provider,
   mockDatadogConnectorOAuth,
   mockGitHubConnectorOAuth,
+  mockSlackConnectorOAuth,
   mockSlockOAuthProvider,
   mockStripeCliDashboardAuth,
   mockTestOAuthAuthCodeProvider,
   mockTestOAuthDeviceConnectorProvider,
 } from "./helpers/api-bdd-connectors";
+import { secretTemplate } from "./helpers/api-bdd-firewall";
+import { createRunsApi } from "./helpers/api-bdd-runs";
+import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
+import {
+  okouTokenFromExecution,
+  type RunnerExecutionInput,
+} from "./helpers/chat-events-fixture";
+import { mockClerkUsers } from "./helpers/clerk-users";
 import {
   marketingRewardConsumer,
   settleMarketingRequest,
 } from "./helpers/marketing-reward-consumer";
 import { channelsPublishedTo } from "./helpers/realtime-publications";
 import { createRouteMocks } from "./helpers/route-test";
+import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
 
 const context = testContext();
 const bdd = createBddApi(context);
@@ -4014,4 +4071,2138 @@ describe("connectors BDD", () => {
       `user:${admin.userId}`,
     );
   });
+});
+
+const RUN_SESSION_HEADERS = Object.freeze({
+  authorization: "Bearer clerk-session",
+});
+
+const runApp = setupApp({
+  context,
+  routes: [
+    ...chatEventsRoutes,
+    ...cloudflareAccessRoutes,
+    ...connectorAccountRoutes,
+    ...customConnectorsRoutes,
+    ...customConnectorsGetRoutes,
+    ...customConnectorsUpdateRoutes,
+    ...customConnectorsDeleteRoutes,
+    ...customConnectorsValuesSetRoutes,
+    ...customConnectorOAuth2Routes,
+    ...runnersRoutes,
+    ...runsRoutes,
+    ...runsCancelRoutes,
+    ...webhooksAgentCompleteRoutes,
+    ...webhooksAgentFirewallAuthRoutes,
+    ...webhooksClerkRoutes,
+  ],
+});
+
+const runChatEventsApi = runApp(chatEventsContract);
+const runCloudflareAccessApi = runApp(cloudflareAccessContract);
+const runConnectorAccountsApi = runApp(connectorAccountsContract);
+const runCustomConnectorsApi = runApp(customConnectorsContract);
+const runCustomConnectorByIdApi = runApp(customConnectorByIdContract);
+const runCustomConnectorValuesApi = runApp(customConnectorValuesContract);
+const runCustomConnectorOAuth2Api = runApp(customConnectorOAuth2Contract);
+const runRunnerHeartbeatApi = runApp(runnersHeartbeatContract);
+const runRunnerSyncApi = runApp(runnersConnectorRuntimeSyncContract);
+const runByIdApi = runApp(runsByIdContract);
+const runCancelApi = runApp(runsCancelContract);
+const runAgentCompleteApi = runApp(webhookCompleteContract);
+const runFirewallAuthApi = runApp(runWebhookContract);
+const runClerkWebhookApi = runApp(webhookClerkContract);
+
+function runBearerHeaders(token: string) {
+  return { authorization: `Bearer ${token}` };
+}
+
+function runOfficialRunnerHeaders() {
+  return {
+    authorization: `Bearer vm0_official_${env("OFFICIAL_RUNNER_SECRET")}`,
+  };
+}
+
+function acceptRunAblyBatchPublish() {
+  context.mocks.ably.batchPublish.mockImplementation((spec) => {
+    const entries = Array.isArray(spec) ? spec : [spec];
+    const results = entries.flatMap((entry) => {
+      const channels: readonly unknown[] = Array.isArray(entry.channels)
+        ? entry.channels
+        : [entry.channels];
+      return channels.map((channel) => {
+        return {
+          channel: String(channel),
+          messageId: randomUUID(),
+          serials: [null],
+        };
+      });
+    });
+    return Promise.resolve({
+      successCount: results.length,
+      failureCount: 0,
+      results,
+    });
+  });
+}
+
+function findInlineCustomFirewall(
+  firewalls: readonly ExecutionFirewallEntry[] | undefined,
+  customConnectorId: string,
+) {
+  const entry = (firewalls ?? []).find((candidate) => {
+    return (
+      candidate.kind === "inline" &&
+      candidate.customConnectorId === customConnectorId
+    );
+  });
+  if (!entry || entry.kind !== "inline") {
+    throw new Error(
+      `Expected inline firewall entry for custom connector ${customConnectorId}`,
+    );
+  }
+  return entry;
+}
+
+function firstInlineCustomFirewallApi(
+  firewalls: readonly ExecutionFirewallEntry[] | undefined,
+  customConnectorId: string,
+) {
+  const entry = findInlineCustomFirewall(firewalls, customConnectorId);
+  const [api] = entry.firewall.apis;
+  if (!api) {
+    throw new Error(
+      `Expected inline firewall API for custom connector ${customConnectorId}`,
+    );
+  }
+  return {
+    firewallName: entry.firewall.name,
+    api,
+    matched(sourceId: string) {
+      return {
+        name: entry.firewall.name,
+        apiId: api.id ?? "api-0",
+        base: api.base,
+        customConnectorId,
+        sourceId,
+        routingVariables: {} as Record<string, string>,
+      };
+    },
+  };
+}
+
+function findCustomSkillBundle(
+  execution: RunnerExecutionInput,
+  connectorSlug: string,
+  connectorId: string,
+) {
+  const skillName = getCustomConnectorSkillName(connectorSlug, connectorId);
+  return execution.startupInputs?.contentBundles?.skills.find((skill) => {
+    return skill.name === skillName;
+  });
+}
+
+beforeAll(async () => {
+  context.mocks.clerk.authenticateRequest.mockResolvedValue({
+    isAuthenticated: false,
+  });
+  const missingId = randomUUID();
+  const warmed = await settleIncludingAbort(async () => {
+    await Promise.all([
+      accept(
+        runChatEventsApi.send({
+          headers: {},
+          body: {
+            prompt: "warmup",
+            clientEventId: randomUUID(),
+            userMessage: {
+              version: 1,
+              parts: [{ type: "text", text: "warmup" }],
+            },
+            hasTextContent: true,
+          },
+        }),
+        [401],
+      ),
+      accept(runCloudflareAccessApi.list({ headers: {}, query: {} }), [401]),
+      accept(
+        runConnectorAccountsApi.connections({
+          headers: {},
+          query: { kind: "custom", customConnectorId: missingId },
+        }),
+        [401],
+      ),
+      accept(runCustomConnectorsApi.list({ headers: {} }), [401]),
+      accept(
+        runCustomConnectorByIdApi.delete({
+          headers: {},
+          params: { id: missingId },
+        }),
+        [401],
+      ),
+      accept(
+        runCustomConnectorValuesApi.set({
+          headers: {},
+          params: { id: missingId },
+          body: { values: [], account: { intent: "add" } },
+        }),
+        [401],
+      ),
+      accept(
+        runCustomConnectorOAuth2Api.start({
+          headers: {},
+          params: { id: missingId },
+          body: { account: { intent: "add" } },
+        }),
+        [401],
+      ),
+      accept(
+        runRunnerHeartbeatApi.heartbeat({
+          headers: {},
+          body: {
+            runnerId: missingId,
+            group: "vm0/warmup",
+            snapshotGeneration: 1,
+            snapshotSequence: 1,
+            totalVcpu: 1,
+            totalMemoryMb: 1024,
+            maxConcurrent: 1,
+            allocatedVcpu: 0,
+            allocatedMemoryMb: 0,
+            runningCount: 0,
+            admittableProfiles: ["vm0/default"],
+            heldSandboxStates: [],
+            heldHomeStates: [],
+            activeReuseProducers: [],
+            mode: "running",
+          },
+        }),
+        [401],
+      ),
+      accept(
+        runRunnerSyncApi.sync({
+          headers: {},
+          params: { runId: missingId },
+          body: { targets: [{ kind: "builtin", connectorSlug: "slack" }] },
+        }),
+        [401],
+      ),
+      accept(
+        runByIdApi.getById({ headers: {}, params: { id: missingId } }),
+        [401],
+      ),
+      accept(
+        runCancelApi.cancel({ headers: {}, params: { id: missingId } }),
+        [401],
+      ),
+      accept(
+        runAgentCompleteApi.complete({
+          headers: {},
+          body: { runId: missingId, exitCode: 1, error: "warmup" },
+        }),
+        [401],
+      ),
+      accept(
+        runFirewallAuthApi.firewallAuth({
+          headers: {},
+          body: { authHeaders: {} },
+        }),
+        [401],
+      ),
+    ]);
+  });
+  if (!warmed.ok) {
+    throw warmed.error;
+  }
+});
+
+describe("connectors BDD Run flows", () => {
+  const runsApi = createRunsApi(context);
+  const chatCallbacks = createChatCallbacksApi(context);
+  const webhooksApi = createWebhookCallbackApi(context);
+
+  interface TrackedConnectorRun {
+    readonly runId: string;
+    readonly sandboxToken: string;
+    readonly issuedAtMs: number;
+    done: boolean;
+  }
+
+  interface StartedConnectorRun {
+    readonly runId: string;
+    readonly threadId: string;
+    readonly execution: RunnerExecutionInput;
+    readonly tracked: TrackedConnectorRun;
+  }
+
+  function signInRunActor(actor: ApiTestUser) {
+    routeMocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
+    const emailId = `email_${actor.userId}`;
+    mockClerkUsers(context, [
+      {
+        id: actor.userId,
+        emailAddresses: [{ id: emailId, emailAddress: actor.email }],
+        primaryEmailAddressId: emailId,
+        firstName: "BDD",
+        lastName: "Connector",
+      },
+    ]);
+    const memberships = actor.orgId
+      ? [
+          {
+            id: `membership-${actor.userId}-${actor.orgId}`,
+            createdAt: Date.parse("2020-01-01T00:00:00.000Z"),
+            role: actor.orgRole ?? "org:admin",
+            organization: { id: actor.orgId },
+            publicUserData: { userId: actor.userId },
+          },
+        ]
+      : [];
+    context.mocks.clerk.users.getOrganizationMembershipList.mockResolvedValue({
+      data: memberships,
+    });
+    context.mocks.clerk.organizations.getOrganizationMembershipList.mockResolvedValue(
+      { data: memberships },
+    );
+    return RUN_SESSION_HEADERS;
+  }
+
+  function prepareConnectorRunEnv(actor = bdd.user({ orgRole: "org:admin" })) {
+    if (!actor.orgId) {
+      throw new Error("Expected org-scoped actor");
+    }
+    const orgId = actor.orgId;
+    chatCallbacks.acceptChatObjectStorage();
+    runsApi.acceptStorageDownloads();
+    runsApi.acceptTelemetryIngest();
+    chatCallbacks.disableVapid();
+    acceptRunAblyBatchPublish();
+    mockOptionalEnv("OPENROUTER_API_KEY", undefined);
+
+    const trackedRuns: TrackedConnectorRun[] = [];
+    const bucket = env("R2_USER_STORAGES_BUCKET_NAME");
+    const kmsKey = env("SECRETS_KMS_KEY_ID");
+
+    const runnerIdentity = {
+      runnerId: randomUUID(),
+      heartbeatGeneration: 1,
+    };
+    const runnerHostname = `runner-${runnerIdentity.runnerId}.okou.app`;
+
+    webhooksApi.configureClerkWebhookSecret();
+    webhooksApi.verifyNextClerkWebhook({
+      type: "organization.created",
+      data: { id: orgId, created_by: actor.userId, created_at: now() },
+    });
+
+    const runnerGroupPromise = runsApi.configureRunnerGroup({
+      runnerIdentity,
+      hostname: runnerHostname,
+    });
+    const orgCreatedPromise = accept(
+      runClerkWebhookApi.post({ body: "{}", extraHeaders: {} }),
+      [200],
+    );
+    let resolvedRunnerGroup: string | undefined;
+
+    onTestFinished(async () => {
+      const previousRunnerGroup = optionalEnv("RUNNER_DEFAULT_GROUP");
+      mockEnv("R2_USER_STORAGES_BUCKET_NAME", bucket);
+      mockEnv("SECRETS_KMS_KEY_ID", kmsKey);
+      if (resolvedRunnerGroup !== undefined) {
+        mockOptionalEnv("RUNNER_DEFAULT_GROUP", resolvedRunnerGroup);
+      }
+      context.mocks.ably.publish.mockResolvedValue(undefined);
+      acceptRunAblyBatchPublish();
+      const result = await settleIncludingAbort(async () => {
+        await Promise.allSettled([runnerGroupPromise, orgCreatedPromise]);
+        await flushWaitUntilForTest();
+        const activeRuns = trackedRuns.filter((tracked) => {
+          return !tracked.done;
+        });
+        if (activeRuns.length > 0) {
+          const ownerHeaders = signInRunActor(actor);
+          const groupedByTime = new Map<number, TrackedConnectorRun[]>();
+          for (const tracked of activeRuns) {
+            const group = groupedByTime.get(tracked.issuedAtMs) ?? [];
+            group.push(tracked);
+            groupedByTime.set(tracked.issuedAtMs, group);
+          }
+          for (const [issuedAtMs, group] of groupedByTime) {
+            mockNow(issuedAtMs);
+            await Promise.all(
+              group.map(async (tracked) => {
+                const current = await accept(
+                  runByIdApi.getById({
+                    headers: ownerHeaders,
+                    params: { id: tracked.runId },
+                  }),
+                  [200],
+                );
+                if (
+                  ["queued", "pending", "running"].includes(current.body.status)
+                ) {
+                  await accept(
+                    runCancelApi.cancel({
+                      headers: ownerHeaders,
+                      params: { id: tracked.runId },
+                    }),
+                    [200],
+                  );
+                }
+                if (
+                  !["completed", "failed", "timeout"].includes(
+                    current.body.status,
+                  )
+                ) {
+                  await accept(
+                    runAgentCompleteApi.complete({
+                      headers: runBearerHeaders(tracked.sandboxToken),
+                      body: {
+                        runId: tracked.runId,
+                        exitCode: 137,
+                        error: "Run cancelled by test cleanup",
+                      },
+                    }),
+                    [200],
+                  );
+                }
+                tracked.done = true;
+              }),
+            );
+          }
+        }
+        await flushWaitUntilForTest();
+      });
+      mockOptionalEnv("RUNNER_DEFAULT_GROUP", previousRunnerGroup);
+      clearMockNow();
+      if (!result.ok) {
+        throw result.error;
+      }
+    });
+
+    async function awaitBootstrap(): Promise<string> {
+      if (resolvedRunnerGroup !== undefined) {
+        return resolvedRunnerGroup;
+      }
+      const [runnerGroup] = await Promise.all([
+        runnerGroupPromise,
+        orgCreatedPromise,
+      ]);
+      resolvedRunnerGroup = runnerGroup;
+      return runnerGroup;
+    }
+
+    async function startRun(
+      prompt = "Run connector verification",
+    ): Promise<StartedConnectorRun> {
+      const runnerGroup = await awaitBootstrap();
+      const issuedAtMs = now();
+      const sent = await accept(
+        runChatEventsApi.send({
+          headers: signInRunActor(actor),
+          body: {
+            prompt,
+            model: null,
+            clientEventId: randomUUID(),
+            userMessage: {
+              version: 1,
+              parts: [{ type: "text", text: prompt }],
+            },
+            hasTextContent: true,
+          },
+        }),
+        [201],
+      );
+      await flushWaitUntilForTest();
+      const execution = await runsApi.nextReceivedExecution(runnerGroup);
+      const tracked: TrackedConnectorRun = {
+        runId: execution.runId,
+        sandboxToken: execution.sandboxToken,
+        issuedAtMs,
+        done: false,
+      };
+      trackedRuns.push(tracked);
+      return {
+        runId: execution.runId,
+        threadId: sent.body.threadId,
+        execution,
+        tracked,
+      };
+    }
+
+    async function cancelAndAcknowledge(started: StartedConnectorRun) {
+      await accept(
+        runCancelApi.cancel({
+          headers: signInRunActor(actor),
+          params: { id: started.runId },
+        }),
+        [200],
+      );
+      await accept(
+        runAgentCompleteApi.complete({
+          headers: runBearerHeaders(started.execution.sandboxToken),
+          body: {
+            runId: started.runId,
+            exitCode: 137,
+            error: "Run cancelled",
+          },
+        }),
+        [200],
+      );
+      started.tracked.done = true;
+    }
+
+    return {
+      actor,
+      orgId,
+      awaitBootstrap,
+      startRun,
+      cancelAndAcknowledge,
+    };
+  }
+
+  it(
+    "connectors.bdd-029 requires fresh OAuth authorization after replacing manual credentials",
+    { timeout: TEST_WITH_DOUBLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const envSetup = prepareConnectorRunEnv();
+      const { actor } = envSetup;
+      const prefix = `https://oauth-manual-${randomUUID().slice(0, 8)}.example.test/v1`;
+      const provider = mockCustomConnectorOAuth2Provider(context);
+
+      const created = await connectors.createCustomConnector(
+        actor,
+        oauthHttpBody({
+          displayName: "OAuth To Manual",
+          prefix,
+          authorizationUrl: provider.authorizationUrl,
+          tokenUrl: provider.tokenUrl,
+          scopes: ["read"],
+          clientSecret: "oauth-client-secret",
+        }),
+      );
+      expect(created.storageVersion).toBe(1);
+
+      const initialStart = await connectors.startCustomConnectorOAuth2(
+        actor,
+        created.id,
+        { intent: "add" },
+      );
+      const initialCallback =
+        await connectors.completeCustomConnectorOAuth2CallbackResult({
+          code: "oauth-code-1",
+          state: oauthStateFromUrl(initialStart),
+        });
+      expect(initialCallback.body.status).toBe("success");
+      const [initialAccount] = await connectors.listCustomConnectorAccounts(
+        actor,
+        created.id,
+      );
+      if (!initialAccount) {
+        throw new Error("Expected initial custom OAuth account");
+      }
+      expect(initialAccount).toMatchObject({
+        connectionStatus: "connected",
+        authMethod: "oauth",
+      });
+      const afterInitialList = await connectors.listCustomConnectors(actor);
+      const afterInitial = afterInitialList.find((item) => {
+        return item.id === created.id;
+      });
+      expect(afterInitial).toMatchObject({
+        id: created.id,
+        storageVersion: 1,
+      });
+
+      const updatedManual = await connectors.updateCustomConnector(
+        actor,
+        created.id,
+        {
+          displayName: "OAuth To Manual",
+          prefixTemplates: [prefix],
+          authMode: "manual",
+          fields: [
+            {
+              key: "api_key",
+              label: "API key",
+              kind: "secret",
+              required: true,
+            },
+          ],
+          headerInjections: [
+            {
+              name: "Authorization",
+              valueTemplate: "Bearer {{secrets.api_key}}",
+            },
+          ],
+          queryInjections: [],
+          storageVersion: 2,
+        },
+      );
+      expect(updatedManual).toMatchObject({
+        storageVersion: 2,
+        authMode: "manual",
+      });
+      await expect(
+        connectors.listCustomConnectorAccounts(actor, created.id),
+      ).resolves.toMatchObject([
+        {
+          id: initialAccount.id,
+          connectionStatus: "reconnect-required",
+        },
+      ]);
+
+      await connectors.setCustomConnectorValues(
+        actor,
+        created.id,
+        [{ key: "api_key", kind: "secret", value: "manual-api-key" }],
+        { intent: "reconnect", connectionId: initialAccount.id },
+      );
+
+      const started = await envSetup.startRun("Resolve manual custom key");
+      const firewall = findInlineCustomFirewall(
+        started.execution.firewalls,
+        created.id,
+      );
+      const [api] = firewall.firewall.apis;
+      if (!api) {
+        throw new Error("Expected inline firewall API for custom connector");
+      }
+      const resolved = await accept(
+        runFirewallAuthApi.firewallAuth({
+          headers: runBearerHeaders(started.execution.firewallToken),
+          body: {
+            authHeaders: api.auth.headers ?? {},
+            matchedFirewall: {
+              name: firewall.firewall.name,
+              apiId: api.id ?? "api-0",
+              base: api.base,
+              customConnectorId: created.id,
+              sourceId: initialAccount.id,
+              routingVariables: {},
+            },
+          },
+        }),
+        [200],
+      );
+      expect(resolved.body.headers.Authorization).toBe("Bearer manual-api-key");
+
+      await envSetup.cancelAndAcknowledge(started);
+
+      const restoredOauth = await connectors.updateCustomConnector(
+        actor,
+        created.id,
+        {
+          ...oauthHttpBody({
+            displayName: "OAuth To Manual",
+            prefix,
+            authorizationUrl: provider.authorizationUrl,
+            tokenUrl: provider.tokenUrl,
+            scopes: ["read"],
+            clientSecret: "oauth-client-secret",
+          }),
+          storageVersion: 3,
+        },
+      );
+      expect(restoredOauth).toMatchObject({
+        storageVersion: 3,
+        authMode: "oauth",
+      });
+      const accountsAfterRestore = await connectors.listCustomConnectorAccounts(
+        actor,
+        created.id,
+      );
+      const restoredAccount = accountsAfterRestore.find((account) => {
+        return account.id === initialAccount.id;
+      });
+      expect(restoredAccount).toMatchObject({
+        id: initialAccount.id,
+        connectionStatus: "reconnect-required",
+        reconnectReason: "configuration_invalid",
+      });
+
+      const reconnectStart = await connectors.startCustomConnectorOAuth2(
+        actor,
+        created.id,
+        { intent: "reconnect", connectionId: initialAccount.id },
+      );
+      const reconnectCallback =
+        await connectors.completeCustomConnectorOAuth2CallbackResult({
+          code: "oauth-code-2",
+          state: oauthStateFromUrl(reconnectStart),
+        });
+      expect(reconnectCallback.body.status).toBe("success");
+
+      const accountsAfterReconnect =
+        await connectors.listCustomConnectorAccounts(actor, created.id);
+      const reconnectedAccount = accountsAfterReconnect.find((account) => {
+        return account.id === initialAccount.id;
+      });
+      expect(reconnectedAccount).toMatchObject({
+        id: initialAccount.id,
+        connectionStatus: "connected",
+        authMethod: "oauth",
+      });
+    },
+  );
+
+  it(
+    "connectors.bdd-065 lets an admin agent with an okou-scoped token create a manual definition that Connect can configure",
+    { timeout: TEST_WITH_SINGLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const envSetup = prepareConnectorRunEnv();
+      const { actor } = envSetup;
+      const started = await envSetup.startRun("Create manual connector");
+      const okouToken = okouTokenFromExecution(started.execution);
+      signInRunActor(actor);
+
+      const agentCreated = await accept(
+        runCustomConnectorsApi.create({
+          headers: runBearerHeaders(okouToken),
+          body: {
+            displayName: "Agent Manual Connector",
+            prefixTemplates: [
+              `https://agent-manual-${randomUUID().slice(0, 8)}.example.test/v1`,
+            ],
+            authMode: "manual",
+            fields: [
+              {
+                key: "secret",
+                label: "Secret",
+                kind: "secret",
+                required: true,
+              },
+            ],
+            headerInjections: [
+              {
+                name: "Authorization",
+                valueTemplate: "Bearer {{secrets.secret}}",
+              },
+            ],
+            queryInjections: [],
+          },
+        }),
+        [201],
+      );
+      expect(agentCreated.body).toMatchObject({
+        id: expect.any(String),
+        authMode: "manual",
+        storageVersion: 1,
+      });
+      await expect(
+        connectors.listCustomConnectorAccounts(actor, agentCreated.body.id),
+      ).resolves.toStrictEqual([]);
+
+      const secretValue = `agent-secret-${randomUUID()}`;
+      const connected = await connectors.setCustomConnectorValues(
+        actor,
+        agentCreated.body.id,
+        [{ key: "secret", kind: "secret", value: secretValue }],
+      );
+
+      const [listed, accounts] = await Promise.all([
+        connectors.listCustomConnectors(actor),
+        connectors.listCustomConnectorAccounts(actor, agentCreated.body.id),
+      ]);
+      const configured = listed.find((item) => {
+        return item.id === agentCreated.body.id;
+      });
+      expect(configured).toMatchObject({
+        id: agentCreated.body.id,
+        authMode: "manual",
+      });
+      expect(accounts).toMatchObject([
+        {
+          id: connected.connectionId,
+          connectionStatus: "connected",
+          configuredFieldKeys: ["secret"],
+          missingRequiredFields: [],
+        },
+      ]);
+      expect(JSON.stringify(listed)).not.toContain(secretValue);
+      expect(JSON.stringify(accounts)).not.toContain(secretValue);
+    },
+  );
+
+  it(
+    "connectors.bdd-066 sets all manual custom connector values through the values endpoint",
+    { timeout: TEST_WITH_DOUBLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const kms = useSecretKmsProbe();
+      const envSetup = prepareConnectorRunEnv();
+      const { actor } = envSetup;
+
+      const created = await connectors.createCustomConnector(actor, {
+        displayName: "Values Endpoint Connector",
+        prefixTemplates: ["https://{{variables.subdomain}}.example.test/v1"],
+        authMode: "manual",
+        fields: [
+          { key: "api_key", label: "API key", kind: "secret", required: true },
+          {
+            key: "subdomain",
+            label: "Subdomain",
+            kind: "variable",
+            required: true,
+          },
+        ],
+        headerInjections: [
+          {
+            name: "Authorization",
+            valueTemplate: "Bearer {{secrets.api_key}}",
+          },
+        ],
+        queryInjections: [],
+      });
+      expect(created.storageVersion).toBe(1);
+
+      const firstWrite = await connectors.setCustomConnectorValues(
+        actor,
+        created.id,
+        [
+          { key: "api_key", kind: "secret", value: "initial-secret" },
+          { key: "subdomain", kind: "variable", value: "acme" },
+        ],
+      );
+      expect(firstWrite.connectionId).toStrictEqual(expect.any(String));
+      expect(kms.generateDataKeyCalls).toBe(1);
+      expect(JSON.stringify(firstWrite)).not.toContain("initial-secret");
+
+      const [account] = await connectors.listCustomConnectorAccounts(
+        actor,
+        created.id,
+      );
+      if (!account) {
+        throw new Error("Expected connected custom account");
+      }
+      expect(account).toMatchObject({
+        id: firstWrite.connectionId,
+        connectionStatus: "connected",
+        configuredFieldKeys: ["api_key", "subdomain"],
+        missingRequiredFields: [],
+      });
+
+      const secondWrite = await connectors.setCustomConnectorValues(
+        actor,
+        created.id,
+        [{ key: "api_key", kind: "secret", value: "updated-secret" }],
+        { intent: "reconnect", connectionId: account.id },
+      );
+      expect(secondWrite.connectionId).toBe(account.id);
+      expect(kms.generateDataKeyCalls).toBe(2);
+      expect(JSON.stringify(secondWrite)).not.toContain("updated-secret");
+      await expect(
+        connectors.listCustomConnectorAccounts(actor, created.id),
+      ).resolves.toMatchObject([
+        {
+          id: account.id,
+          connectionStatus: "connected",
+          configuredFieldKeys: ["api_key", "subdomain"],
+          missingRequiredFields: [],
+        },
+      ]);
+
+      const firstRun = await envSetup.startRun("Resolve updated manual secret");
+      const firstFirewall = findInlineCustomFirewall(
+        firstRun.execution.firewalls,
+        created.id,
+      );
+      const [firstApi] = firstFirewall.firewall.apis;
+      if (!firstApi) {
+        throw new Error("Expected first inline firewall API");
+      }
+      const firstResolved = await accept(
+        runFirewallAuthApi.firewallAuth({
+          headers: runBearerHeaders(firstRun.execution.firewallToken),
+          body: {
+            authHeaders: firstApi.auth.headers ?? {},
+            matchedFirewall: {
+              name: firstFirewall.firewall.name,
+              apiId: firstApi.id ?? "api-0",
+              base: firstApi.base,
+              customConnectorId: created.id,
+              sourceId: account.id,
+              routingVariables: { subdomain: "acme" },
+            },
+          },
+        }),
+        [200],
+      );
+      expect(firstResolved.body.headers.Authorization).toBe(
+        "Bearer updated-secret",
+      );
+      expect(firstApi.base).toBe("https://acme.example.test/v1");
+
+      await accept(
+        runConnectorAccountsApi.delete({
+          headers: signInRunActor(actor),
+          params: { connectionId: account.id },
+          body: { target: { kind: "custom", customConnectorId: created.id } },
+        }),
+        [200],
+      );
+      await expect(
+        connectors.listCustomConnectorAccounts(actor, created.id),
+      ).resolves.toStrictEqual([]);
+
+      const reconnectedWrite = await connectors.setCustomConnectorValues(
+        actor,
+        created.id,
+        [
+          { key: "api_key", kind: "secret", value: "reconnected-secret" },
+          { key: "subdomain", kind: "variable", value: "reconnected" },
+        ],
+      );
+      expect(reconnectedWrite.connectionId).toStrictEqual(expect.any(String));
+      expect(JSON.stringify(reconnectedWrite)).not.toContain(
+        "reconnected-secret",
+      );
+
+      const [reconnectedAccount] = await connectors.listCustomConnectorAccounts(
+        actor,
+        created.id,
+      );
+      if (!reconnectedAccount) {
+        throw new Error("Expected reconnected custom account");
+      }
+      expect(reconnectedAccount).toMatchObject({
+        id: reconnectedWrite.connectionId,
+        connectionStatus: "connected",
+        configuredFieldKeys: ["api_key", "subdomain"],
+        missingRequiredFields: [],
+      });
+      const secondRun = await envSetup.startRun(
+        "Resolve reconnected manual secret",
+      );
+      const secondFirewall = findInlineCustomFirewall(
+        secondRun.execution.firewalls,
+        created.id,
+      );
+      const [secondApi] = secondFirewall.firewall.apis;
+      if (!secondApi) {
+        throw new Error("Expected second inline firewall API");
+      }
+      const secondResolved = await accept(
+        runFirewallAuthApi.firewallAuth({
+          headers: runBearerHeaders(secondRun.execution.firewallToken),
+          body: {
+            authHeaders: secondApi.auth.headers ?? {},
+            matchedFirewall: {
+              name: secondFirewall.firewall.name,
+              apiId: secondApi.id ?? "api-0",
+              base: secondApi.base,
+              customConnectorId: created.id,
+              sourceId: reconnectedAccount.id,
+              routingVariables: { subdomain: "reconnected" },
+            },
+          },
+        }),
+        [200],
+      );
+      expect(secondResolved.body.headers.Authorization).toBe(
+        "Bearer reconnected-secret",
+      );
+      expect(secondApi.base).toBe("https://reconnected.example.test/v1");
+    },
+  );
+
+  it(
+    "connectors.bdd-067 revokes usable custom credentials when the member disconnects",
+    { timeout: TEST_WITH_DOUBLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const envSetup = prepareConnectorRunEnv();
+      const { actor } = envSetup;
+
+      const created = await connectors.createCustomConnector(actor, {
+        displayName: "Disconnect Revoke Connector",
+        prefixTemplates: [
+          "https://{{variables.subdomain}}.revoke.example.test/v1",
+        ],
+        authMode: "manual",
+        fields: [
+          { key: "api_key", label: "API key", kind: "secret", required: true },
+          {
+            key: "subdomain",
+            label: "Subdomain",
+            kind: "variable",
+            required: true,
+          },
+        ],
+        headerInjections: [
+          {
+            name: "Authorization",
+            valueTemplate: "Bearer {{secrets.api_key}}",
+          },
+        ],
+        queryInjections: [],
+      });
+      await connectors.setCustomConnectorValues(actor, created.id, [
+        { key: "api_key", kind: "secret", value: "shared-secret" },
+        { key: "subdomain", kind: "variable", value: "tenant" },
+      ]);
+      const [account] = await connectors.listCustomConnectorAccounts(
+        actor,
+        created.id,
+      );
+      if (!account) {
+        throw new Error("Expected custom connector account");
+      }
+
+      const started = await envSetup.startRun("Claim and revoke custom creds");
+      const firewall = findInlineCustomFirewall(
+        started.execution.firewalls,
+        created.id,
+      );
+      const [api] = firewall.firewall.apis;
+      if (!api) {
+        throw new Error("Expected inline firewall API");
+      }
+      const firewallAuthBody = {
+        authHeaders: api.auth.headers ?? {},
+        matchedFirewall: {
+          name: firewall.firewall.name,
+          apiId: api.id ?? "api-0",
+          base: api.base,
+          customConnectorId: created.id,
+          sourceId: account.id,
+          routingVariables: { subdomain: "tenant" },
+        },
+      };
+
+      const firstResolved = await accept(
+        runFirewallAuthApi.firewallAuth({
+          headers: runBearerHeaders(started.execution.firewallToken),
+          body: firewallAuthBody,
+        }),
+        [200],
+      );
+      expect(firstResolved.body.headers.Authorization).toBe(
+        "Bearer shared-secret",
+      );
+
+      await accept(
+        runConnectorAccountsApi.delete({
+          headers: signInRunActor(actor),
+          params: { connectionId: account.id },
+          body: { target: { kind: "custom", customConnectorId: created.id } },
+        }),
+        [200],
+      );
+
+      await accept(
+        runFirewallAuthApi.firewallAuth({
+          headers: runBearerHeaders(started.execution.firewallToken),
+          body: firewallAuthBody,
+        }),
+        [424],
+      );
+
+      await expect(
+        connectors.listCustomConnectorAccounts(actor, created.id),
+      ).resolves.toStrictEqual([]);
+    },
+  );
+
+  it(
+    "connectors.bdd-069 isolates identical manual variable names by Custom connection",
+    { timeout: TEST_WITH_SINGLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const envSetup = prepareConnectorRunEnv();
+      const { actor } = envSetup;
+
+      const [firstConnector, secondConnector] = await Promise.all([
+        connectors.createCustomConnector(actor, {
+          displayName: "Region East Connector",
+          prefixTemplates: [
+            `https://east-${randomUUID().slice(0, 8)}.example.test/v1`,
+          ],
+          authMode: "manual",
+          fields: [
+            {
+              key: "region",
+              label: "Region",
+              kind: "variable",
+              required: true,
+            },
+          ],
+          headerInjections: [],
+          queryInjections: [
+            { name: "region", valueTemplate: "{{variables.region}}" },
+          ],
+        }),
+        connectors.createCustomConnector(actor, {
+          displayName: "Region West Connector",
+          prefixTemplates: [
+            `https://west-${randomUUID().slice(0, 8)}.example.test/v1`,
+          ],
+          authMode: "manual",
+          fields: [
+            {
+              key: "region",
+              label: "Region",
+              kind: "variable",
+              required: true,
+            },
+          ],
+          headerInjections: [],
+          queryInjections: [
+            { name: "region", valueTemplate: "{{variables.region}}" },
+          ],
+        }),
+      ]);
+
+      await Promise.all([
+        connectors.setCustomConnectorValues(actor, firstConnector.id, [
+          { key: "region", kind: "variable", value: "east" },
+        ]),
+        connectors.setCustomConnectorValues(actor, secondConnector.id, [
+          { key: "region", kind: "variable", value: "west" },
+        ]),
+      ]);
+
+      const [[firstAccount], [secondAccount], started] = await Promise.all([
+        connectors.listCustomConnectorAccounts(actor, firstConnector.id),
+        connectors.listCustomConnectorAccounts(actor, secondConnector.id),
+        envSetup.startRun("Isolate identical region variable"),
+      ]);
+      if (!firstAccount || !secondAccount) {
+        throw new Error("Expected distinct custom connector accounts");
+      }
+      expect(firstAccount.id).not.toBe(secondAccount.id);
+
+      const firstFirewall = findInlineCustomFirewall(
+        started.execution.firewalls,
+        firstConnector.id,
+      );
+      const secondFirewall = findInlineCustomFirewall(
+        started.execution.firewalls,
+        secondConnector.id,
+      );
+      const [firstApi] = firstFirewall.firewall.apis;
+      const [secondApi] = secondFirewall.firewall.apis;
+      if (!firstApi || !secondApi) {
+        throw new Error("Expected inline firewall APIs");
+      }
+
+      const [firstResolved, secondResolved] = await Promise.all([
+        accept(
+          runFirewallAuthApi.firewallAuth({
+            headers: runBearerHeaders(started.execution.firewallToken),
+            body: {
+              authHeaders: firstApi.auth.headers ?? {},
+              authQuery: firstApi.auth.query,
+              matchedFirewall: {
+                name: firstFirewall.firewall.name,
+                apiId: firstApi.id ?? "api-0",
+                base: firstApi.base,
+                customConnectorId: firstConnector.id,
+                sourceId: firstAccount.id,
+                routingVariables: {},
+              },
+            },
+          }),
+          [200],
+        ),
+        accept(
+          runFirewallAuthApi.firewallAuth({
+            headers: runBearerHeaders(started.execution.firewallToken),
+            body: {
+              authHeaders: secondApi.auth.headers ?? {},
+              authQuery: secondApi.auth.query,
+              matchedFirewall: {
+                name: secondFirewall.firewall.name,
+                apiId: secondApi.id ?? "api-0",
+                base: secondApi.base,
+                customConnectorId: secondConnector.id,
+                sourceId: secondAccount.id,
+                routingVariables: {},
+              },
+            },
+          }),
+          [200],
+        ),
+      ]);
+
+      expect(firstResolved.body.query).toStrictEqual({ region: "east" });
+      expect(secondResolved.body.query).toStrictEqual({ region: "west" });
+    },
+  );
+
+  it(
+    "connectors.bdd-087 publishes exact skill versions and removes fresh mounts after clearing and deletion",
+    { timeout: TEST_WITH_FOUR_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const envSetup = prepareConnectorRunEnv();
+      const { actor } = envSetup;
+      const prefix = `https://skill-versions-${randomUUID().slice(0, 8)}.example.test/v1`;
+      const initialMarkdown = "# Initial Connector Skill\nUse v1 endpoint.";
+      const updatedMarkdown = "# Updated Connector Skill\nUse v2 endpoint.";
+
+      const created = await connectors.createCustomConnector(actor, {
+        displayName: "Skill Version Connector",
+        prefixTemplates: [prefix],
+        authMode: "manual",
+        permissionBundleRef: "builtin:slack@1",
+        skillMarkdown: initialMarkdown,
+        fields: [
+          { key: "api_key", label: "API key", kind: "secret", required: true },
+        ],
+        headerInjections: [
+          {
+            name: "Authorization",
+            valueTemplate: "Bearer {{secrets.api_key}}",
+          },
+        ],
+        queryInjections: [],
+      });
+      expect(created).toMatchObject({
+        permissionBundleRef: "builtin:slack@1",
+        skillMarkdown: initialMarkdown,
+      });
+
+      await connectors.setCustomConnectorValues(actor, created.id, [
+        { key: "api_key", kind: "secret", value: "skill-secret" },
+      ]);
+
+      const run1 = await envSetup.startRun("Observe initial skill mount");
+      const skill1 = findCustomSkillBundle(
+        run1.execution,
+        created.slug,
+        created.id,
+      );
+      expect(skill1?.bundle.sha256).toBeTruthy();
+      await envSetup.cancelAndAcknowledge(run1);
+
+      const updated = await connectors.updateCustomConnector(
+        actor,
+        created.id,
+        {
+          displayName: "Skill Version Connector",
+          prefixTemplates: [prefix],
+          authMode: "manual",
+          permissionBundleRef: "builtin:slack@1",
+          skillMarkdown: updatedMarkdown,
+          fields: [
+            {
+              key: "api_key",
+              label: "API key",
+              kind: "secret",
+              required: true,
+            },
+          ],
+          headerInjections: [
+            {
+              name: "Authorization",
+              valueTemplate: "Bearer {{secrets.api_key}}",
+            },
+          ],
+          queryInjections: [],
+          storageVersion: created.storageVersion,
+        },
+      );
+      expect(updated).toMatchObject({
+        permissionBundleRef: "builtin:slack@1",
+        skillMarkdown: updatedMarkdown,
+      });
+
+      const run2 = await envSetup.startRun("Observe updated skill mount");
+      const skill2 = findCustomSkillBundle(
+        run2.execution,
+        created.slug,
+        created.id,
+      );
+      expect(skill2?.bundle.sha256).toBeTruthy();
+      expect(skill2?.bundle.sha256).not.toBe(skill1?.bundle.sha256);
+      await envSetup.cancelAndAcknowledge(run2);
+
+      const [clearedBundle, unknownBundleRes] = await Promise.all([
+        connectors.updateCustomConnector(actor, created.id, {
+          displayName: "Skill Version Connector",
+          prefixTemplates: [prefix],
+          authMode: "manual",
+          permissionBundleRef: null,
+          skillMarkdown: updatedMarkdown,
+          fields: [
+            {
+              key: "api_key",
+              label: "API key",
+              kind: "secret",
+              required: true,
+            },
+          ],
+          headerInjections: [
+            {
+              name: "Authorization",
+              valueTemplate: "Bearer {{secrets.api_key}}",
+            },
+          ],
+          queryInjections: [],
+          storageVersion: updated.storageVersion,
+        }),
+        accept(
+          runCustomConnectorsApi.create({
+            headers: signInRunActor(actor),
+            body: {
+              displayName: "Unknown Bundle Connector",
+              prefixTemplates: [
+                `https://unknown-bundle-${randomUUID().slice(0, 8)}.example.test/v1`,
+              ],
+              authMode: "manual",
+              permissionBundleRef: "builtin:not-a-connector@1",
+              fields: [
+                {
+                  key: "api_key",
+                  label: "API key",
+                  kind: "secret",
+                  required: true,
+                },
+              ],
+              headerInjections: [
+                {
+                  name: "Authorization",
+                  valueTemplate: "Bearer {{secrets.api_key}}",
+                },
+              ],
+              queryInjections: [],
+            },
+          }),
+          [400],
+        ),
+      ]);
+      expect(clearedBundle).toMatchObject({
+        permissionBundleRef: null,
+        skillMarkdown: updatedMarkdown,
+      });
+      expect(errorMessage(unknownBundleRes.body)).toContain(
+        "Unknown custom connector permission bundle",
+      );
+
+      const clearedSkill = await connectors.updateCustomConnector(
+        actor,
+        created.id,
+        {
+          displayName: "Skill Version Connector",
+          prefixTemplates: [prefix],
+          authMode: "manual",
+          permissionBundleRef: null,
+          skillMarkdown: null,
+          fields: [
+            {
+              key: "api_key",
+              label: "API key",
+              kind: "secret",
+              required: true,
+            },
+          ],
+          headerInjections: [
+            {
+              name: "Authorization",
+              valueTemplate: "Bearer {{secrets.api_key}}",
+            },
+          ],
+          queryInjections: [],
+          storageVersion: clearedBundle.storageVersion,
+        },
+      );
+      expect(clearedSkill.skillMarkdown).toBeNull();
+
+      const run3 = await envSetup.startRun("Observe cleared skill mount");
+      expect(
+        findCustomSkillBundle(run3.execution, created.slug, created.id),
+      ).toBeUndefined();
+      await envSetup.cancelAndAcknowledge(run3);
+
+      const restoredSkill = await connectors.updateCustomConnector(
+        actor,
+        created.id,
+        {
+          displayName: "Skill Version Connector",
+          prefixTemplates: [prefix],
+          authMode: "manual",
+          permissionBundleRef: null,
+          skillMarkdown: updatedMarkdown,
+          fields: [
+            {
+              key: "api_key",
+              label: "API key",
+              kind: "secret",
+              required: true,
+            },
+          ],
+          headerInjections: [
+            {
+              name: "Authorization",
+              valueTemplate: "Bearer {{secrets.api_key}}",
+            },
+          ],
+          queryInjections: [],
+          storageVersion: clearedSkill.storageVersion,
+        },
+      );
+      expect(restoredSkill.skillMarkdown).toBe(updatedMarkdown);
+
+      const run4 = await envSetup.startRun("Observe restored skill mount");
+      const skill4 = findCustomSkillBundle(
+        run4.execution,
+        created.slug,
+        created.id,
+      );
+      expect(skill4?.bundle.sha256).toBe(skill2?.bundle.sha256);
+      await envSetup.cancelAndAcknowledge(run4);
+
+      await accept(
+        runCustomConnectorByIdApi.delete({
+          headers: signInRunActor(actor),
+          params: { id: created.id },
+        }),
+        [204],
+      );
+
+      const [run5, listedAfterDelete] = await Promise.all([
+        envSetup.startRun("Observe deleted connector skill mount"),
+        connectors.listCustomConnectors(actor),
+      ]);
+      expect(
+        findCustomSkillBundle(run5.execution, created.slug, created.id),
+      ).toBeUndefined();
+      expect(
+        listedAfterDelete.some((item) => {
+          return item.id === created.id;
+        }),
+      ).toBeFalsy();
+    },
+  );
+
+  it(
+    "connectors.bdd-098 stores token expiry variants and surfaces provider failures",
+    { timeout: TEST_WITH_DOUBLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const fixedMs = Date.parse("2026-11-28T00:00:00.000Z");
+      mockNow(fixedMs);
+      const envSetup = prepareConnectorRunEnv();
+      const { actor } = envSetup;
+
+      mockEnv("OKOU_WEB_URL", "https://www.okou.ai");
+      await connectors.updateFeatureSwitches(actor, {
+        [FeatureSwitchKey.TestOauthConnector]: true,
+      });
+
+      mockTestOAuthAuthCodeProvider({
+        accessToken: "bdd-test-oauth-access-token",
+        expiresIn: 7200,
+      });
+      const firstStart = await connectors.startOauth(
+        actor,
+        "test-oauth",
+        "oauth",
+        { intent: "add" },
+      );
+      const firstCallback = await connectors.completeOauthCallback(
+        "test-oauth",
+        {
+          code: "to-7200-code",
+          state: oauthStateFromUrl(firstStart.authorizationUrl),
+        },
+      );
+      expect(redirectLocationUrl(firstCallback.headers).pathname).toBe(
+        "/connector/success",
+      );
+      const firstAccount = await connectors.readDefaultBuiltinAccount(
+        actor,
+        "test-oauth",
+      );
+      expect(firstAccount.tokenExpiresAt).toBe(
+        new Date(fixedMs + 7200 * 1000).toISOString(),
+      );
+
+      mockTestOAuthAuthCodeProvider({
+        accessToken: "bdd-test-oauth-access-token",
+        omitExpiresIn: true,
+      });
+      const reconnectStart = await connectors.startOauth(
+        actor,
+        "test-oauth",
+        "oauth",
+        { intent: "reconnect", connectionId: firstAccount.id },
+      );
+      const reconnectCallback = await connectors.completeOauthCallback(
+        "test-oauth",
+        {
+          code: "to-no-expiry-code",
+          state: oauthStateFromUrl(reconnectStart.authorizationUrl),
+        },
+      );
+      expect(redirectLocationUrl(reconnectCallback.headers).pathname).toBe(
+        "/connector/success",
+      );
+      const afterReconnect = await connectors.readDefaultBuiltinAccount(
+        actor,
+        "test-oauth",
+      );
+      expect(afterReconnect.id).toBe(firstAccount.id);
+      expect(afterReconnect.tokenExpiresAt).toBe(
+        new Date(fixedMs + 15 * 60 * 1000).toISOString(),
+      );
+
+      const started = await envSetup.startRun("Resolve TEST_OAUTH_TOKEN");
+      const resolveTestOAuth = () => {
+        return accept(
+          runFirewallAuthApi.firewallAuth({
+            headers: runBearerHeaders(started.execution.firewallToken),
+            body: {
+              authHeaders: {
+                Authorization: `Bearer ${secretTemplate("TEST_OAUTH_TOKEN")}`,
+              },
+              secretConnectorMap: { TEST_OAUTH_TOKEN: "test-oauth" },
+              secretConnectorMetadataMap: {
+                TEST_OAUTH_TOKEN: {
+                  sourceType: "connector",
+                  sourceId: firstAccount.id,
+                },
+              },
+            },
+          }),
+          [200],
+        );
+      };
+      const resolvedBeforeFailure = await resolveTestOAuth();
+      expect(resolvedBeforeFailure.body.headers.Authorization).toBe(
+        "Bearer bdd-test-oauth-access-token",
+      );
+
+      mockSlackConnectorOAuth();
+      const slackStart = await connectors.startOauth(actor, "slack", "oauth", {
+        intent: "add",
+      });
+      const slackCallback = await connectors.completeOauthCallback("slack", {
+        code: "slack-ok-code",
+        state: oauthStateFromUrl(slackStart.authorizationUrl),
+      });
+      expect(redirectLocationUrl(slackCallback.headers).pathname).toBe(
+        "/connector/success",
+      );
+      const slackAccount = await connectors.readDefaultBuiltinAccount(
+        actor,
+        "slack",
+      );
+      expect(slackAccount).toMatchObject({
+        externalId: "U012AB3CD",
+        externalUsername: "BDD Slack User",
+        tokenExpiresAt: null,
+      });
+      expect(JSON.stringify(slackAccount)).not.toContain("xoxp-bdd-user-token");
+
+      mockTestOAuthAuthCodeProvider({ tokenError: true });
+      const tokenFailStart = await connectors.startOauth(
+        actor,
+        "test-oauth",
+        "oauth",
+        { intent: "reconnect", connectionId: firstAccount.id },
+      );
+      const tokenFailCallback = await connectors.completeOauthCallback(
+        "test-oauth",
+        {
+          code: "to-token-fail",
+          state: oauthStateFromUrl(tokenFailStart.authorizationUrl),
+        },
+      );
+      const tokenFailUrl = redirectLocationUrl(tokenFailCallback.headers);
+      expect(tokenFailUrl.pathname).toBe("/connector/error");
+      expect(tokenFailUrl.searchParams.get("message")).toBe(
+        "OAuth authorization failed. Please try again.",
+      );
+      expectClearedOAuthCookies(tokenFailCallback.headers);
+
+      mockTestOAuthAuthCodeProvider({ userinfoError: true });
+      const userinfoFailStart = await connectors.startOauth(
+        actor,
+        "test-oauth",
+        "oauth",
+        { intent: "reconnect", connectionId: firstAccount.id },
+      );
+      const userinfoFailCallback = await connectors.completeOauthCallback(
+        "test-oauth",
+        {
+          code: "to-userinfo-fail",
+          state: oauthStateFromUrl(userinfoFailStart.authorizationUrl),
+        },
+      );
+      const userinfoFailUrl = redirectLocationUrl(userinfoFailCallback.headers);
+      expect(userinfoFailUrl.pathname).toBe("/connector/error");
+      expect(userinfoFailUrl.searchParams.get("message")).toBe(
+        "OAuth authorization failed. Please try again.",
+      );
+
+      const [accountAfterFailures, resolvedAfterFailures] = await Promise.all([
+        connectors.readDefaultBuiltinAccount(actor, "test-oauth"),
+        resolveTestOAuth(),
+      ]);
+      expect(accountAfterFailures.id).toBe(firstAccount.id);
+      expect(resolvedAfterFailures.body.headers.Authorization).toBe(
+        "Bearer bdd-test-oauth-access-token",
+      );
+
+      mockTestOAuthAuthCodeProvider({
+        accessToken: "replacement-test-oauth-token",
+        userId: "replacement-oauth-user",
+        username: "replacement-user",
+        email: "replacement-user@example.test",
+      });
+      const freshStart = await connectors.startOauth(
+        actor,
+        "test-oauth",
+        "oauth",
+        { intent: "add" },
+      );
+      const freshCallback = await connectors.completeOauthCallback(
+        "test-oauth",
+        {
+          code: "to-fresh-user-code",
+          state: oauthStateFromUrl(freshStart.authorizationUrl),
+        },
+      );
+      expect(redirectLocationUrl(freshCallback.headers).pathname).toBe(
+        "/connector/success",
+      );
+      const allAccounts = await connectors.listBuiltinConnectorAccounts(
+        actor,
+        "test-oauth",
+      );
+      const addedAccount = allAccounts.find((account) => {
+        return account.externalId === "replacement-oauth-user";
+      });
+      expect(addedAccount).toMatchObject({
+        externalId: "replacement-oauth-user",
+        externalUsername: "replacement-user",
+        externalEmail: "replacement-user@example.test",
+      });
+      expect(addedAccount?.id).not.toBe(firstAccount.id);
+    },
+  );
+
+  it(
+    "custom-connector-network-execution-001 chat account startup preserves HTTP/MCP network bindings and unbound Direct intent",
+    { timeout: TEST_WITH_TRIPLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const envSetup = prepareConnectorRunEnv();
+      const { actor } = envSetup;
+
+      await connectors.updateFeatureSwitches(actor, {
+        [FeatureSwitchKey.CustomConnectorCloudflareAccess]: true,
+      });
+
+      const accessConfigId = randomUUID();
+      const createdAccess = await accept(
+        runCloudflareAccessApi.create({
+          headers: signInRunActor(actor),
+          query: { view: "scoped" },
+          body: {
+            id: accessConfigId,
+            scope: "organization",
+            name: "Org Custom Connector Access",
+            credentials: {
+              clientId: "cf-client-id-v1",
+              clientSecret: "cf-client-secret-v1",
+            },
+          },
+        }),
+        [201],
+      );
+      expect(createdAccess.body).toMatchObject({
+        id: accessConfigId,
+        scope: "organization",
+        generation: 1,
+        revision: 1,
+      });
+
+      const boundHttpBase = `https://bound-http-${randomUUID().slice(0, 8)}.example.test/v1`;
+      const unboundHttpBase = `https://unbound-http-${randomUUID().slice(0, 8)}.example.test/v1`;
+      const boundMcpEndpoint = `https://bound-mcp-${randomUUID().slice(0, 8)}.example.test/mcp`;
+      const unboundMcpEndpoint = `https://unbound-mcp-${randomUUID().slice(0, 8)}.example.test/mcp`;
+
+      const [boundHttp, unboundHttp, boundMcp, unboundMcp] = await Promise.all([
+        connectors.createCustomConnector(actor, {
+          displayName: "Bound HTTP",
+          prefixTemplates: [boundHttpBase],
+          networkBinding: {
+            type: "cloudflare_access",
+            configId: accessConfigId,
+          },
+          authMode: "manual",
+          fields: [
+            {
+              key: "api_key",
+              label: "API key",
+              kind: "secret",
+              required: true,
+            },
+          ],
+          headerInjections: [
+            {
+              name: "Authorization",
+              valueTemplate: "Bearer {{secrets.api_key}}",
+            },
+          ],
+          queryInjections: [],
+        }),
+        connectors.createCustomConnector(actor, {
+          displayName: "Unbound HTTP",
+          prefixTemplates: [unboundHttpBase],
+          authMode: "manual",
+          fields: [
+            {
+              key: "api_key",
+              label: "API key",
+              kind: "secret",
+              required: true,
+            },
+          ],
+          headerInjections: [
+            {
+              name: "Authorization",
+              valueTemplate: "Bearer {{secrets.api_key}}",
+            },
+          ],
+          queryInjections: [],
+        }),
+        connectors.createCustomConnector(actor, {
+          kind: "mcp",
+          displayName: "Bound MCP",
+          endpoint: boundMcpEndpoint,
+          transport: "streamable-http",
+          networkBinding: {
+            type: "cloudflare_access",
+            configId: accessConfigId,
+          },
+          authMode: "manual",
+          fields: [
+            {
+              key: "api_key",
+              label: "API key",
+              kind: "secret",
+              required: true,
+            },
+          ],
+          headerInjections: [
+            {
+              name: "Authorization",
+              valueTemplate: "Bearer {{secrets.api_key}}",
+            },
+          ],
+          queryInjections: [],
+        }),
+        connectors.createCustomConnector(actor, {
+          kind: "mcp",
+          displayName: "Unbound MCP",
+          endpoint: unboundMcpEndpoint,
+          transport: "streamable-http",
+          authMode: "manual",
+          fields: [
+            {
+              key: "api_key",
+              label: "API key",
+              kind: "secret",
+              required: true,
+            },
+          ],
+          headerInjections: [
+            {
+              name: "Authorization",
+              valueTemplate: "Bearer {{secrets.api_key}}",
+            },
+          ],
+          queryInjections: [],
+        }),
+      ]);
+
+      await Promise.all([
+        connectors.setCustomConnectorValues(actor, boundHttp.id, [
+          { key: "api_key", kind: "secret", value: "bound-http-secret" },
+        ]),
+        connectors.setCustomConnectorValues(actor, unboundHttp.id, [
+          { key: "api_key", kind: "secret", value: "unbound-http-secret" },
+        ]),
+        connectors.setCustomConnectorValues(actor, boundMcp.id, [
+          { key: "api_key", kind: "secret", value: "bound-mcp-secret" },
+        ]),
+        connectors.setCustomConnectorValues(actor, unboundMcp.id, [
+          { key: "api_key", kind: "secret", value: "unbound-mcp-secret" },
+        ]),
+      ]);
+
+      const [
+        [boundHttpAcc],
+        [unboundHttpAcc],
+        [boundMcpAcc],
+        [unboundMcpAcc],
+        run1,
+      ] = await Promise.all([
+        connectors.listCustomConnectorAccounts(actor, boundHttp.id),
+        connectors.listCustomConnectorAccounts(actor, unboundHttp.id),
+        connectors.listCustomConnectorAccounts(actor, boundMcp.id),
+        connectors.listCustomConnectorAccounts(actor, unboundMcp.id),
+        envSetup.startRun("Inspect HTTP/MCP network bindings"),
+      ]);
+      if (!boundHttpAcc || !unboundHttpAcc || !boundMcpAcc || !unboundMcpAcc) {
+        throw new Error("Expected accounts for all four custom connectors");
+      }
+
+      const customTargets = (
+        run1.execution.connectorRuntimeTargets ?? []
+      ).filter((target) => {
+        return target.kind === "custom";
+      });
+      expect(
+        customTargets.map((target) => {
+          return {
+            customConnectorId: target.customConnectorId,
+            sourceId: target.sourceId,
+          };
+        }),
+      ).toStrictEqual(
+        expect.arrayContaining([
+          { customConnectorId: boundHttp.id, sourceId: boundHttpAcc.id },
+          { customConnectorId: unboundHttp.id, sourceId: unboundHttpAcc.id },
+          { customConnectorId: boundMcp.id, sourceId: boundMcpAcc.id },
+          { customConnectorId: unboundMcp.id, sourceId: unboundMcpAcc.id },
+        ]),
+      );
+
+      const boundHttpTarget = firstInlineCustomFirewallApi(
+        run1.execution.firewalls,
+        boundHttp.id,
+      );
+      const unboundHttpTarget = firstInlineCustomFirewallApi(
+        run1.execution.firewalls,
+        unboundHttp.id,
+      );
+      const boundMcpTarget = firstInlineCustomFirewallApi(
+        run1.execution.firewalls,
+        boundMcp.id,
+      );
+      const unboundMcpTarget = firstInlineCustomFirewallApi(
+        run1.execution.firewalls,
+        unboundMcp.id,
+      );
+
+      const expectedAccessIntent = {
+        kind: "cloudflare_access" as const,
+        configId: accessConfigId,
+        generation: 1,
+      };
+      expect(boundHttpTarget.api.networkIntent).toStrictEqual(
+        expectedAccessIntent,
+      );
+      expect(boundMcpTarget.api.networkIntent).toStrictEqual(
+        expectedAccessIntent,
+      );
+      expect(unboundHttpTarget.api.networkIntent).toStrictEqual({
+        kind: "direct",
+      });
+      expect(unboundMcpTarget.api.networkIntent).toStrictEqual({
+        kind: "direct",
+      });
+
+      const run1FirewallHeaders = runBearerHeaders(
+        run1.execution.firewallToken,
+      );
+      const [authBoundHttp, authUnboundHttp, authBoundMcp, authUnboundMcp] =
+        await Promise.all([
+          accept(
+            runFirewallAuthApi.firewallAuth({
+              headers: run1FirewallHeaders,
+              body: {
+                authHeaders: boundHttpTarget.api.auth.headers ?? {},
+                matchedFirewall: boundHttpTarget.matched(boundHttpAcc.id),
+                networkIntent: expectedAccessIntent,
+              },
+            }),
+            [200],
+          ),
+          accept(
+            runFirewallAuthApi.firewallAuth({
+              headers: run1FirewallHeaders,
+              body: {
+                authHeaders: unboundHttpTarget.api.auth.headers ?? {},
+                matchedFirewall: unboundHttpTarget.matched(unboundHttpAcc.id),
+                networkIntent: { kind: "direct" },
+              },
+            }),
+            [200],
+          ),
+          accept(
+            runFirewallAuthApi.firewallAuth({
+              headers: run1FirewallHeaders,
+              body: {
+                authHeaders: boundMcpTarget.api.auth.headers ?? {},
+                matchedFirewall: boundMcpTarget.matched(boundMcpAcc.id),
+                networkIntent: expectedAccessIntent,
+              },
+            }),
+            [200],
+          ),
+          accept(
+            runFirewallAuthApi.firewallAuth({
+              headers: run1FirewallHeaders,
+              body: {
+                authHeaders: unboundMcpTarget.api.auth.headers ?? {},
+                matchedFirewall: unboundMcpTarget.matched(unboundMcpAcc.id),
+                networkIntent: { kind: "direct" },
+              },
+            }),
+            [200],
+          ),
+        ]);
+      expect(authBoundHttp.body.headers.Authorization).toBe(
+        "Bearer bound-http-secret",
+      );
+      expect(authUnboundHttp.body.headers.Authorization).toBe(
+        "Bearer unbound-http-secret",
+      );
+      expect(authBoundMcp.body.headers.Authorization).toBe(
+        "Bearer bound-mcp-secret",
+      );
+      expect(authUnboundMcp.body.headers.Authorization).toBe(
+        "Bearer unbound-mcp-secret",
+      );
+
+      const wrongConfigId = randomUUID();
+      const [
+        missingIntentRes,
+        directIntentRes,
+        mismatchIntentRes,
+        sandboxAdmitRes,
+        runnerAdmitHttpRes,
+        runnerAdmitMcpRes,
+      ] = await Promise.all([
+        accept(
+          runFirewallAuthApi.firewallAuth({
+            headers: run1FirewallHeaders,
+            body: {
+              authHeaders: boundHttpTarget.api.auth.headers ?? {},
+              matchedFirewall: boundHttpTarget.matched(boundHttpAcc.id),
+            },
+          }),
+          [424],
+        ),
+        accept(
+          runFirewallAuthApi.firewallAuth({
+            headers: run1FirewallHeaders,
+            body: {
+              authHeaders: boundHttpTarget.api.auth.headers ?? {},
+              matchedFirewall: boundHttpTarget.matched(boundHttpAcc.id),
+              networkIntent: { kind: "direct" },
+            },
+          }),
+          [424],
+        ),
+        accept(
+          runFirewallAuthApi.firewallAuth({
+            headers: run1FirewallHeaders,
+            body: {
+              authHeaders: boundMcpTarget.api.auth.headers ?? {},
+              matchedFirewall: boundMcpTarget.matched(boundMcpAcc.id),
+              networkIntent: {
+                kind: "cloudflare_access",
+                configId: wrongConfigId,
+                generation: 1,
+              },
+            },
+          }),
+          [424],
+        ),
+        accept(
+          runFirewallAuthApi.firewallAuth({
+            headers: runBearerHeaders(run1.execution.sandboxToken),
+            body: {
+              authHeaders: {},
+              networkAdmission: true,
+              matchedFirewall: boundHttpTarget.matched(boundHttpAcc.id),
+              networkRequest: {
+                method: "GET",
+                url: `${boundHttpBase}/items`,
+                intent: expectedAccessIntent,
+              },
+            },
+          }),
+          [401],
+        ),
+        accept(
+          runFirewallAuthApi.firewallAuth({
+            headers: run1FirewallHeaders,
+            body: {
+              authHeaders: {},
+              networkAdmission: true,
+              matchedFirewall: boundHttpTarget.matched(boundHttpAcc.id),
+              networkRequest: {
+                method: "GET",
+                url: `${boundHttpBase}/items`,
+                intent: expectedAccessIntent,
+              },
+            },
+          }),
+          [200],
+        ),
+        accept(
+          runFirewallAuthApi.firewallAuth({
+            headers: run1FirewallHeaders,
+            body: {
+              authHeaders: {},
+              networkAdmission: true,
+              matchedFirewall: boundMcpTarget.matched(boundMcpAcc.id),
+              networkRequest: {
+                method: "POST",
+                url: boundMcpEndpoint,
+                intent: expectedAccessIntent,
+              },
+            },
+          }),
+          [200],
+        ),
+      ]);
+      expect(missingIntentRes.body.error.code).toBe("CONNECTOR_NOT_CONFIGURED");
+      expect(directIntentRes.body.error.code).toBe("CONNECTOR_NOT_CONFIGURED");
+      expect(mismatchIntentRes.body.error.code).toBe(
+        "CONNECTOR_NOT_CONFIGURED",
+      );
+      expect(sandboxAdmitRes.status).toBe(401);
+      expect(runnerAdmitHttpRes.body.networkAdmission).toStrictEqual({
+        kind: "cloudflare_access",
+        configId: accessConfigId,
+        generation: 1,
+        headers: {
+          "CF-Access-Client-Id": "cf-client-id-v1",
+          "CF-Access-Client-Secret": "cf-client-secret-v1",
+        },
+      });
+      expect(runnerAdmitMcpRes.body.networkAdmission).toStrictEqual({
+        kind: "cloudflare_access",
+        configId: accessConfigId,
+        generation: 1,
+        headers: {
+          "CF-Access-Client-Id": "cf-client-id-v1",
+          "CF-Access-Client-Secret": "cf-client-secret-v1",
+        },
+      });
+
+      const rotated = await accept(
+        runCloudflareAccessApi.update({
+          headers: signInRunActor(actor),
+          query: { view: "scoped" },
+          params: { configId: accessConfigId },
+          body: {
+            expectedRevision: 1,
+            credentials: {
+              clientId: "cf-client-id-v2",
+              clientSecret: "cf-client-secret-v2",
+            },
+          },
+        }),
+        [200],
+      );
+      expect(rotated.body.generation).toBe(2);
+
+      const rotatedIntent = {
+        kind: "cloudflare_access" as const,
+        configId: accessConfigId,
+        generation: 2,
+      };
+      const [synced, admittedAfterRotation] = await Promise.all([
+        accept(
+          runRunnerSyncApi.sync({
+            headers: runOfficialRunnerHeaders(),
+            params: { runId: run1.runId },
+            body: {
+              targets: [
+                {
+                  kind: "custom",
+                  customConnectorId: boundHttp.id,
+                  baseUrlVars: {},
+                  sourceId: boundHttpAcc.id,
+                },
+                {
+                  kind: "custom",
+                  customConnectorId: boundMcp.id,
+                  baseUrlVars: {},
+                  sourceId: boundMcpAcc.id,
+                },
+              ],
+            },
+          }),
+          [200],
+        ),
+        accept(
+          runFirewallAuthApi.firewallAuth({
+            headers: run1FirewallHeaders,
+            body: {
+              authHeaders: {},
+              networkAdmission: true,
+              matchedFirewall: boundHttpTarget.matched(boundHttpAcc.id),
+              networkRequest: {
+                method: "GET",
+                url: `${boundHttpBase}/items`,
+                intent: rotatedIntent,
+              },
+            },
+          }),
+          [200],
+        ),
+      ]);
+      const syncedIntents = synced.body.results.map((entry) => {
+        return entry.state === "available" && "firewall" in entry
+          ? entry.firewall.firewall.apis[0]?.networkIntent
+          : null;
+      });
+      expect(syncedIntents).toStrictEqual([rotatedIntent, rotatedIntent]);
+      expect(admittedAfterRotation.body.networkAdmission).toStrictEqual({
+        kind: "cloudflare_access",
+        configId: accessConfigId,
+        generation: 2,
+        headers: {
+          "CF-Access-Client-Id": "cf-client-id-v2",
+          "CF-Access-Client-Secret": "cf-client-secret-v2",
+        },
+      });
+
+      await connectors.updateFeatureSwitches(actor, {
+        [FeatureSwitchKey.CustomConnectorCloudflareAccess]: false,
+      });
+
+      const run2 = await envSetup.startRun(
+        "Verify bound connectors omitted after disabling Cloudflare Access",
+      );
+      const run2CustomIds = (run2.execution.connectorRuntimeTargets ?? [])
+        .filter((target) => {
+          return target.kind === "custom";
+        })
+        .map((target) => {
+          return target.customConnectorId;
+        });
+      expect(run2CustomIds).not.toContain(boundHttp.id);
+      expect(run2CustomIds).not.toContain(boundMcp.id);
+      expect(run2CustomIds).toContain(unboundHttp.id);
+      expect(run2CustomIds).toContain(unboundMcp.id);
+
+      const run2InlineIds = (run2.execution.firewalls ?? [])
+        .filter((entry) => {
+          return entry.kind === "inline";
+        })
+        .map((entry) => {
+          return entry.customConnectorId;
+        });
+      expect(run2InlineIds).not.toContain(boundHttp.id);
+      expect(run2InlineIds).not.toContain(boundMcp.id);
+
+      const run2UnboundHttpTarget = firstInlineCustomFirewallApi(
+        run2.execution.firewalls,
+        unboundHttp.id,
+      );
+      const run2UnboundMcpTarget = firstInlineCustomFirewallApi(
+        run2.execution.firewalls,
+        unboundMcp.id,
+      );
+      expect(run2UnboundHttpTarget.api.networkIntent).toBeUndefined();
+      expect(run2UnboundMcpTarget.api.networkIntent).toBeUndefined();
+    },
+  );
 });

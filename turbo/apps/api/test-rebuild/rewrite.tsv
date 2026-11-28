@@ -1330,7 +1330,7 @@ connectors	src/signals/routes/__tests__/connectors.bdd.test.ts	connectors.bdd-02
 connectors	src/signals/routes/__tests__/connectors.bdd.test.ts	connectors.bdd-023	rewritten	80.6	split n=2: 1/2=80.6; 2/2=53.3	src/signals/routes/__tests__/connectors.bdd.test.ts		d-other
 connectors	src/signals/routes/__tests__/connectors.bdd.test.ts	connectors.bdd-024	rewritten	69.6	split n=2: 1/2=51.4; 2/2=69.6	src/signals/routes/__tests__/connectors.bdd.test.ts		d-other
 connectors	src/signals/routes/__tests__/connectors.bdd.test.ts	connectors.bdd-025	rewritten	166.4		src/signals/routes/__tests__/connectors.bdd.test.ts		d-other
-connectors	src/signals/routes/__tests__/connectors.bdd.test.ts	connectors.bdd-029	planned					a-run
+connectors	src/signals/routes/__tests__/connectors.bdd.test.ts	connectors.bdd-029	rewritten	290.0	timeout=600 (DOUBLE_RUN)	src/signals/routes/__tests__/connectors.bdd.test.ts	R39	a-run
 connectors	src/signals/routes/__tests__/connectors.bdd.test.ts	connectors.bdd-030	rewritten	130.5		src/signals/routes/__tests__/connectors.bdd.test.ts		d-other
 connectors	src/signals/routes/__tests__/connectors.bdd.test.ts	connectors.bdd-031	rewritten	71.9		src/signals/routes/__tests__/connectors.bdd.test.ts		d-other
 connectors	src/signals/routes/__tests__/connectors.bdd.test.ts	connectors.bdd-032	rewritten	80.5		src/signals/routes/__tests__/connectors.bdd.test.ts		d-other
@@ -1341,11 +1341,11 @@ connectors	src/signals/routes/__tests__/connectors.bdd.test.ts	connectors.bdd-05
 connectors	src/signals/routes/__tests__/connectors.bdd.test.ts	connectors.bdd-060	rewritten	193.1		src/signals/routes/__tests__/connectors.bdd.test.ts		d-other
 connectors	src/signals/routes/__tests__/connectors.bdd.test.ts	connectors.bdd-061	rewritten	111.7		src/signals/routes/__tests__/connectors.bdd.test.ts		d-other
 connectors	src/signals/routes/__tests__/connectors.bdd.test.ts	connectors.bdd-064	rewritten	101.7	split n=2: 1/2=47.7; 2/2=101.7	src/signals/routes/__tests__/connectors.bdd.test.ts		d-other
-connectors	src/signals/routes/__tests__/connectors.bdd.test.ts	connectors.bdd-065	planned		reclassified to a-run in round 18: the Given needs an Okou-scoped token issued to a chat agent execution (Run execution credential), reachable only through a dispatched Run; kept planned until the a-run decision			a-run
-connectors	src/signals/routes/__tests__/connectors.bdd.test.ts	connectors.bdd-066	planned					a-run
-connectors	src/signals/routes/__tests__/connectors.bdd.test.ts	connectors.bdd-067	planned					a-run
+connectors	src/signals/routes/__tests__/connectors.bdd.test.ts	connectors.bdd-065	rewritten	177.1	timeout=400 (SINGLE_RUN)	src/signals/routes/__tests__/connectors.bdd.test.ts	R39	a-run
+connectors	src/signals/routes/__tests__/connectors.bdd.test.ts	connectors.bdd-066	rewritten	345.9	timeout=600 (DOUBLE_RUN)	src/signals/routes/__tests__/connectors.bdd.test.ts	R39	a-run
+connectors	src/signals/routes/__tests__/connectors.bdd.test.ts	connectors.bdd-067	rewritten	223.8	timeout=600 (DOUBLE_RUN)	src/signals/routes/__tests__/connectors.bdd.test.ts	R39	a-run
 connectors	src/signals/routes/__tests__/connectors.bdd.test.ts	connectors.bdd-068	rewritten	22.9		src/signals/routes/__tests__/connectors.bdd.test.ts		d-other
-connectors	src/signals/routes/__tests__/connectors.bdd.test.ts	connectors.bdd-069	planned					a-run
+connectors	src/signals/routes/__tests__/connectors.bdd.test.ts	connectors.bdd-069	rewritten	183.6	timeout=400 (SINGLE_RUN)	src/signals/routes/__tests__/connectors.bdd.test.ts	R39	a-run
 connectors	src/signals/routes/__tests__/connectors.bdd.test.ts	connectors.bdd-072	rewritten	31.9		src/signals/routes/__tests__/connectors.bdd.test.ts		d-other
 connectors	src/signals/routes/__tests__/connectors.bdd.test.ts	connectors.bdd-073	rewritten	37.2		src/signals/routes/__tests__/connectors.bdd.test.ts		d-other
 connectors	src/signals/routes/__tests__/connectors.bdd.test.ts	connectors.bdd-074	rewritten	7.3		src/signals/routes/__tests__/connectors.bdd.test.ts		d-other
@@ -1353,14 +1353,14 @@ connectors	src/signals/routes/__tests__/connectors.bdd.test.ts	connectors.bdd-07
 connectors	src/signals/routes/__tests__/connectors.bdd.test.ts	connectors.bdd-080	rewritten	72.2		src/signals/routes/__tests__/connectors.bdd.test.ts		d-other
 connectors	src/signals/routes/__tests__/connectors.bdd.test.ts	connectors.bdd-082	rewritten	71.0	split n=3: 1/3=41.6; 2/3=57.4; 3/3=71.0	src/signals/routes/__tests__/connectors.bdd.test.ts		d-other
 connectors	src/signals/routes/__tests__/connectors.bdd.test.ts	connectors.bdd-083	rewritten	32.8	split n=3: 1/3=16.1; 2/3=10.1; 3/3=32.8	src/signals/routes/__tests__/connectors.bdd.test.ts		d-other
-connectors	src/signals/routes/__tests__/connectors.bdd.test.ts	connectors.bdd-087	planned					a-run
+connectors	src/signals/routes/__tests__/connectors.bdd.test.ts	connectors.bdd-087	rewritten	608.2	timeout=1000 (FOUR_RUN)	src/signals/routes/__tests__/connectors.bdd.test.ts	R39	a-run
 connectors	src/signals/routes/__tests__/connectors.bdd.test.ts	connectors.bdd-090	rewritten	48.1		src/signals/routes/__tests__/connectors.bdd.test.ts		d-other
 connectors	src/signals/routes/__tests__/connectors.bdd.test.ts	connectors.bdd-091	rewritten	134.5	split n=2: 1/2=72.9; 2/2=134.5	src/signals/routes/__tests__/connectors.bdd.test.ts		d-other
 connectors	src/signals/routes/__tests__/connectors.bdd.test.ts	connectors.bdd-092	rewritten	85.8		src/signals/routes/__tests__/connectors.bdd.test.ts		d-other
 connectors	src/signals/routes/__tests__/connectors.bdd.test.ts	connectors.bdd-093	rewritten	107.1		src/signals/routes/__tests__/connectors.bdd.test.ts		d-other
 connectors	src/signals/routes/__tests__/connectors.bdd.test.ts	connectors.bdd-095	rewritten	103.4		src/signals/routes/__tests__/connectors.bdd.test.ts		d-other
 connectors	src/signals/routes/__tests__/connectors.bdd.test.ts	connectors.bdd-096	rewritten	118.3		src/signals/routes/__tests__/connectors.bdd.test.ts		d-other
-connectors	src/signals/routes/__tests__/connectors.bdd.test.ts	connectors.bdd-098	planned					a-run
+connectors	src/signals/routes/__tests__/connectors.bdd.test.ts	connectors.bdd-098	rewritten	388.8	timeout=600 (DOUBLE_RUN)	src/signals/routes/__tests__/connectors.bdd.test.ts	R39	a-run
 connectors	src/signals/routes/__tests__/connectors.bdd.test.ts	connectors.bdd-099	rewritten	86.2	split n=2: 1/2=48.4; 2/2=86.2	src/signals/routes/__tests__/connectors.bdd.test.ts		d-other
 connectors	src/signals/routes/__tests__/connectors.bdd.test.ts	connectors.bdd-100	rewritten	180.8		src/signals/routes/__tests__/connectors.bdd.test.ts		b-install
 chat	src/signals/routes/__tests__/conversation-history-deletion.test.ts	conversation-history-deletion-001	rewritten	260.8	timeout=600 (DOUBLE_RUN)	src/signals/routes/__tests__/chat-threads-state-and-files.test.ts	R29	a-run
@@ -1420,7 +1420,7 @@ connectors	src/signals/routes/__tests__/custom-connector-cloudflare-oauth.test.t
 connectors	src/signals/routes/__tests__/custom-connector-hostnames.test.ts	custom-connector-hostnames-001	rewritten	37.7		src/signals/routes/__tests__/custom-connector-hostnames.test.ts	B04	
 connectors	src/signals/routes/__tests__/custom-connector-hostnames.test.ts	custom-connector-hostnames-003	rewritten	35.5		src/signals/routes/__tests__/custom-connector-hostnames.test.ts	B04	
 connectors	src/signals/routes/__tests__/custom-connector-hostnames.test.ts	custom-connector-hostnames-004	rewritten	35.8		src/signals/routes/__tests__/custom-connector-hostnames.test.ts	B04	
-connectors	src/signals/routes/__tests__/custom-connector-network-execution.test.ts	custom-connector-network-execution-001	planned					a-run
+connectors	src/signals/routes/__tests__/custom-connector-network-execution.test.ts	custom-connector-network-execution-001	rewritten	464.6	timeout=800 (TRIPLE_RUN); consolidated into connectors.bdd.test.ts	src/signals/routes/__tests__/connectors.bdd.test.ts	R39	a-run
 connectors	src/signals/routes/__tests__/custom-connectors-automatic-dcr.test.ts	custom-connectors-automatic-dcr-001	rewritten	167.7	split n=3: 1/3=144.5; 2/3=93.3; 3/3=167.7	src/signals/routes/__tests__/custom-connectors-automatic-dcr.test.ts	B02	
 connectors	src/signals/routes/__tests__/custom-connectors-automatic-dcr.test.ts	custom-connectors-automatic-dcr-002	skipped		slow-setup: Given+first When/Then 251 ms and 314 ms (Given needs four automatic-MCP OAuth connections through public start+callback - admin and member on the shared connector, admin on the sibling, outsider on the foreign connector - at 43-51 ms each (~186 ms), three automatic MCP connector creates at 7-19 ms, two account lists ~16 ms; the first When, the outsider's 404 start, costs ~4 ms; per-step probe: create 7/8/19, connect 48/43/51/44, list 9/7, foreign 404 4 ms)		B02	
 connectors	src/signals/routes/__tests__/custom-connectors-automatic-preflight.test.ts	custom-connectors-automatic-preflight-001	rewritten	106.2		src/signals/routes/__tests__/custom-connectors-automatic-preflight.test.ts	B03	
