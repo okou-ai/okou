@@ -27,9 +27,11 @@ import androidx.test.uiautomator.By
 import androidx.test.uiautomator.BySelector
 import androidx.test.uiautomator.Condition
 import androidx.test.uiautomator.Direction
+import androidx.test.uiautomator.Searchable
 import androidx.test.uiautomator.StaleObjectException
 import androidx.test.uiautomator.UiDevice
 import androidx.test.uiautomator.UiObject2
+import androidx.test.uiautomator.UiWindow
 import androidx.test.uiautomator.Until
 import java.io.File
 import java.io.IOException
@@ -238,33 +240,66 @@ class NativeUpdateTest {
                 )
             }
             fun captureState(name: String) = captureUpdate(device, name)
-            fun focusReadingRegion() {
-                val reader = By.pkg(app.packageName).scrollable(true).focused(true)
-                repeat(3) {
-                    if (device.hasObject(reader)) return
-                    assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_TAB))
-                    if (device.wait(Until.hasObject(reader), 1_000)) return
+            val focusedAppWindow = By.Window.pkg(app.packageName).focused(true)
+            fun awaitFocusedWindowShowing(label: BySelector): UiWindow {
+                val windowShowingLabel =
+                    Condition<UiDevice, UiWindow?> {
+                        try {
+                            it.findWindow(focusedAppWindow)?.takeIf { window ->
+                                window.hasObject(label)
+                            }
+                        } catch (_: StaleObjectException) {
+                            null
+                        }
+                    }
+                return checkNotNull(device.wait(windowShowingLabel, 10_000)) {
+                    "Expected the focused app window to show $label"
                 }
-                assertNotNull(find(reader))
+            }
+            fun focusReadingRegion(within: Searchable = device) {
+                val reader = By.pkg(app.packageName).scrollable(true).focused(true)
+                val readerFocused = Condition<UiDevice, Boolean> { within.hasObject(reader) }
+                repeat(3) {
+                    if (within.hasObject(reader)) return
+                    assertTrue(
+                        "Could not send Tab to the update window",
+                        device.pressKeyCode(KeyEvent.KEYCODE_TAB),
+                    )
+                    if (device.wait(readerFocused, 1_000)) return
+                }
+                assertTrue(
+                    "Expected keyboard focus on the update reading region",
+                    device.wait(readerFocused, 10_000),
+                )
             }
             fun withShortWindowAndLargeText(width: Int, height: Int = 850, block: () -> Unit) {
+                val originalWidth = device.displayWidth
+                val originalHeight = device.displayHeight
+                val originalScale = app.resources.configuration.fontScale
                 val originalSize =
                     device
                         .executeShellCommand("wm size")
                         .substringAfter("Override size: ", "")
                         .trim()
                 val fontScale = device.executeShellCommand("settings get system font_scale").trim()
+                fun awaitWindowConfiguration(width: Int, height: Int, scale: Float) {
+                    val configured =
+                        Condition<UiDevice, Boolean> {
+                            it.displayWidth == width &&
+                                it.displayHeight == height &&
+                                app.resources.configuration.fontScale == scale &&
+                                it.hasWindow(focusedAppWindow)
+                        }
+                    check(device.wait(configured, 10_000)) {
+                        "Expected a focused app window at ${width}x$height with font scale $scale"
+                    }
+                }
                 try {
                     device.executeShellCommand("wm size ${width}x${height}")
+                    // Both overrides can recreate the Activity and its windows.
+                    awaitWindowConfiguration(width, height, originalScale)
                     device.executeShellCommand("settings put system font_scale 2.0")
-                    val resized =
-                        object : Condition<UiDevice, Boolean> {
-                            override fun apply(device: UiDevice) =
-                                device.displayWidth == width &&
-                                    device.displayHeight == height &&
-                                    app.resources.configuration.fontScale >= 2f
-                        }
-                    assertTrue(device.wait(resized, 10_000) == true)
+                    awaitWindowConfiguration(width, height, 2f)
                     block()
                 } finally {
                     if (fontScale.toFloatOrNull() == null)
@@ -272,6 +307,7 @@ class NativeUpdateTest {
                     else device.executeShellCommand("settings put system font_scale $fontScale")
                     device.executeShellCommand("wm size ${originalSize.ifBlank { "reset" }}")
                 }
+                awaitWindowConfiguration(originalWidth, originalHeight, originalScale)
             }
             device.awaitChatList(app)
             val searchLabel = app.getString(R.string.chat_search_workspace)
@@ -636,37 +672,37 @@ class NativeUpdateTest {
 
             button(search).click()
             val searchQuery = "fixture query"
-            val searchField =
-                requireNotNull(find(By.pkg(app.packageName).clazz("android.widget.EditText")))
+            val searchEditor = By.pkg(app.packageName).clazz("android.widget.EditText")
+            val searchField = requireNotNull(find(searchEditor))
             searchField.setText(searchQuery)
             check(file.parentFile!!.isDirectory || file.parentFile!!.mkdirs())
             file.writeText("verified package from the service fixture")
             download.get().complete(file)
             exists(R.string.updates_open_settings)
             captureState("install-permission")
+            val searchWithQuery = By.copy(searchEditor).text(searchQuery)
             withShortWindowAndLargeText(width = 1000, height = 900) {
-                exists(R.string.updates_allow_install)
+                val dialog =
+                    awaitFocusedWindowShowing(
+                        By.pkg(app.packageName).text(app.getString(R.string.updates_allow_install)),
+                    )
+                val later = By.pkg(app.packageName).text(app.getString(R.string.updates_later))
+                val settings =
+                    By.pkg(app.packageName).text(app.getString(R.string.updates_open_settings))
                 val minTouchHeight = (48 * density).roundToInt() - 1
-                for (label in listOf(R.string.updates_later, R.string.updates_open_settings)) {
-                    val action = button(By.pkg(app.packageName).text(app.getString(label)))
+                for (label in listOf(later, settings)) {
+                    val action = device.enabledUpdateControl(label, within = dialog)
                     assertTrue(
-                        "Expected a visible 48dp target for ${app.getString(label)}",
+                        "Expected a visible 48dp target for $label",
                         action.visibleBounds.height() >= minTouchHeight,
                     )
                 }
-                focusReadingRegion()
+                focusReadingRegion(dialog)
                 captureState("install-permission-short")
+                device.enabledUpdateControl(later, within = dialog).click()
+                awaitFocusedWindowShowing(searchWithQuery)
             }
-            click(R.string.updates_later)
-            assertTrue(
-                device.wait(
-                    Until.gone(
-                        By.pkg(app.packageName).text(app.getString(R.string.updates_allow_install)),
-                    ),
-                    10_000,
-                ),
-            )
-            assertNotNull(text(searchQuery))
+            awaitFocusedWindowShowing(searchWithQuery)
             button(By.pkg(app.packageName).desc(app.getString(R.string.back))).click()
             device.awaitChatList(app)
             button(By.pkg(app.packageName).desc(app.getString(R.string.updates_ready)))
@@ -809,13 +845,14 @@ private object EmptyUpdateStore : UpdateStore {
 private fun UiDevice.enabledUpdateControl(
     label: BySelector,
     expectedBounds: Rect? = null,
+    within: Searchable = this,
 ): UiObject2 =
     checkNotNull(
         wait(
             object : Condition<UiDevice, UiObject2?> {
                 override fun apply(device: UiDevice): UiObject2? =
                     try {
-                        generateSequence(device.findObject(label)) { it.parent }
+                        generateSequence(within.findObject(label)) { it.parent }
                             .firstOrNull { it.isClickable }
                             ?.takeIf {
                                 it.isEnabled &&
