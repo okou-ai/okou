@@ -74,6 +74,14 @@ class ScreenshotScenario {
                         assertEquals(412, it.resources.configuration.screenWidthDp)
                         assertEquals(160, it.resources.configuration.densityDpi)
                     }
+                    node(By.text(artifacts.sourceTitle))
+                    tap(By.desc("成果"))
+                    tap(By.text(artifacts.image.title))
+                    node(By.desc("返回成果列表"))
+                    node(By.desc(artifacts.image.title))
+                    ScreenshotCapture.capture("artifact-image-fit.png")
+                }
+                ActivityScenario.launch(MainActivity::class.java).use {
                     tap(By.text(artifacts.sourceTitle))
                     node(By.text(gallery.prompt))
                     tap(By.desc(gallery.first))
@@ -91,15 +99,6 @@ class ScreenshotScenario {
                         screenshot.recycle()
                     }
                     ScreenshotCapture.capture("chat-image-fit.png")
-
-                    assertTrue(device.pressBack())
-                    node(By.text(gallery.prompt))
-                    assertTrue(device.pressBack())
-                    tap(By.desc("成果"))
-                    tap(By.text(artifacts.image.title))
-                    node(By.desc("返回成果列表"))
-                    node(By.desc(artifacts.image.title))
-                    ScreenshotCapture.capture("artifact-image-fit.png")
                 }
             } finally {
                 restoreDisplay("size", oldSize)
