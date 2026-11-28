@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.32.67](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.32.66...guest-storage-apply-v0.32.67) (2026-11-28)
+
+
+### Performance Improvements
+
+* **guest-storage-apply:** validate retained siblings from directory entries ([#51636](https://github.com/okou-ai/okou/issues/51636)) ([c8037d0](https://github.com/okou-ai/okou/commit/c8037d07d8afe1f92ab8bd693ccef46c3ad9f851))
+
 ## [0.32.66](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.32.65...guest-storage-apply-v0.32.66) (2026-11-28)
 
 

@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.71.0](https://github.com/okou-ai/okou/compare/android-v0.70.0...android-v0.71.0) (2026-11-28)
+
+
+### Features
+
+* **android:** complete workflow commands in the chat composer ([#51650](https://github.com/okou-ai/okou/issues/51650)) ([7bd7e62](https://github.com/okou-ai/okou/commit/7bd7e6285ad4e16db7c4d6206d74d8631008c5a4))
+
+
+### Bug Fixes
+
+* **android:** align artifact preview action feedback with the pane snackbar ([#51648](https://github.com/okou-ai/okou/issues/51648)) ([070b4ad](https://github.com/okou-ai/okou/commit/070b4adcac5c84e0f4032fd372a6c94c8385ab5a))
+* **android:** publish connector authorization after exact account confirmation ([#51654](https://github.com/okou-ai/okou/issues/51654)) ([69ff8ac](https://github.com/okou-ai/okou/commit/69ff8accedd1a46057fe67a151743ccbccd188fc))
+* **android:** settle ambiguous settings saves without readback ([#51652](https://github.com/okou-ai/okou/issues/51652)) ([5270891](https://github.com/okou-ai/okou/commit/527089135ec5ee7842379789ece85c2575261451))
+
 ## [0.70.0](https://github.com/okou-ai/okou/compare/android-v0.69.2...android-v0.70.0) (2026-11-28)
 
 

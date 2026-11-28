@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.253.1](https://github.com/okou-ai/okou/compare/runner-rs-v0.253.0...runner-rs-v0.253.1) (2026-11-28)
+
+
+### Refactoring
+
+* **runner:** share bounded zlib test instrumentation ([#51660](https://github.com/okou-ai/okou/issues/51660)) ([ad5caac](https://github.com/okou-ai/okou/commit/ad5caac248ea8a5a23d7b25070cc15836252a89d))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.253.0](https://github.com/okou-ai/okou/compare/runner-rs-v0.252.3...runner-rs-v0.253.0) (2026-11-28)
 
 
