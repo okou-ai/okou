@@ -25,8 +25,8 @@ use tokio::sync::{Notify, OwnedSemaphorePermit, Semaphore};
 use tokio_util::sync::CancellationToken;
 use tokio_util::task::AbortOnDropHandle;
 
-use super::LOG_TAG;
 use super::record_labels::EventLabels;
+use super::{CliExecutionResult, LOG_TAG};
 
 const EVENT_DELIVERY_QUEUE_CAPACITY: usize = 512;
 const EVENT_DELIVERY_MAX_BYTES: usize = 32 * 1024 * 1024;
@@ -256,6 +256,28 @@ impl EventDeliveryRuntime {
 
     pub(super) fn sender(&self) -> &EventDeliverySender {
         &self.sender
+    }
+
+    /// Retire delivery after a native backend returns and attach its report.
+    pub(super) async fn finish_execution(
+        self,
+        result: Result<CliExecutionResult, AgentError>,
+    ) -> Result<CliExecutionResult, AgentError> {
+        let mut result = match result {
+            Ok(result) => result,
+            Err(error) => {
+                self.abort().await;
+                return Err(error);
+            }
+        };
+        let report = if result.control_error.is_some() {
+            self.abort().await
+        } else {
+            self.finish().await?
+        };
+        result.last_event_sequence = report.last_acknowledged_sequence;
+        result.event_delivery = report.diagnostic;
+        Ok(result)
     }
 
     pub(super) async fn finish(self) -> Result<EventDeliveryReport, AgentError> {
