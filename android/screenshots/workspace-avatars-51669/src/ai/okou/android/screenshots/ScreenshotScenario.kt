@@ -32,7 +32,6 @@ import com.clerk.api.organizations.OrganizationMembership
 import java.io.ByteArrayOutputStream
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicInteger
-import kotlin.math.roundToInt
 import kotlinx.serialization.json.JsonObject
 import okhttp3.mockwebserver.MockResponse
 import okio.Buffer
@@ -103,35 +102,35 @@ class ScreenshotScenario {
                 ActivityScenario.launch(MainActivity::class.java).use {
                     val picker = row(uploaded.name)
                     for (workspace in listOf(named, generated, symbols)) row(workspace.name)
-                    awaitUpload(picker, centerInsetDp = 34)
+                    awaitUpload(picker, inRow = true)
                     ScreenshotCapture.capture("01-picker-light.png")
 
-                    picker.click()
+                    tap(picker)
                     val homeUpload = homeAvatar(uploaded)
                     awaitUpload(homeUpload)
                     ScreenshotCapture.capture("02-home-uploaded-light.png")
-                    homeUpload.click()
-                    awaitUpload(row(uploaded.name), centerInsetDp = 26)
+                    tap(homeUpload)
+                    awaitUpload(row(uploaded.name), inRow = true)
                     val namedChoice = row(named.name)
                     ScreenshotCapture.capture("03-home-chooser-light.png")
 
-                    namedChoice.click()
+                    tap(namedChoice)
                     homeAvatar(named)
                     check(auth.state.value.session?.workspaceId == named.id)
                     ScreenshotCapture.capture("04-home-default-dark.png")
                     openSettings()
                     val namedSettings = row(named.name)
                     ScreenshotCapture.capture("05-settings-default-dark.png")
-                    namedSettings.click()
+                    tap(namedSettings)
                     val uploadedChoice = row(uploaded.name)
-                    awaitUpload(uploadedChoice, centerInsetDp = 26)
+                    awaitUpload(uploadedChoice, inRow = true)
                     ScreenshotCapture.capture("06-settings-chooser-dark.png")
 
-                    uploadedChoice.click()
+                    tap(uploadedChoice)
                     awaitUpload(homeAvatar(uploaded))
                     check(auth.state.value.session?.workspaceId == uploaded.id)
                     openSettings()
-                    awaitUpload(row(uploaded.name), centerInsetDp = 36)
+                    awaitUpload(row(uploaded.name), inRow = true)
                     ScreenshotCapture.capture("07-settings-uploaded-light.png")
                     check(generatedRequests.get() == 0) {
                         "The generated Clerk placeholder was requested"
@@ -197,24 +196,25 @@ class ScreenshotScenario {
         }
     }
 
-    private fun awaitUpload(node: UiObject2, centerInsetDp: Int? = null) {
-        val density = app.resources.displayMetrics.density
+    private fun awaitUpload(node: UiObject2, inRow: Boolean = false) {
         val condition =
             object : Condition<UiDevice, Boolean> {
                 override fun apply(device: UiDevice): Boolean {
                     val bounds = node.visibleBounds
-                    val x =
-                        if (centerInsetDp == null) bounds.centerX()
-                        else bounds.left + (centerInsetDp * density).roundToInt()
                     val screenshot = takeScreenshot()
                     return try {
-                        screenshot.getPixel(x, bounds.centerY()) == uploadColor
+                        // Android can expose the row label as a child with its own bounds.
+                        val centerX = bounds.centerX()
+                        val positions = if (inRow) 0..centerX else centerX..centerX
+                        positions.any { screenshot.getPixel(it, bounds.centerY()) == uploadColor }
                     } finally {
                         screenshot.recycle()
                     }
                 }
             }
-        check(device.wait(condition, 10_000)) { "The uploaded image was not rendered" }
+        check(device.wait(condition, 10_000)) {
+            "The uploaded image was not rendered beside ${node.text ?: node.contentDescription}"
+        }
     }
 
     private fun openSettings() {
@@ -222,11 +222,14 @@ class ScreenshotScenario {
         val title = app.getString(R.string.settings)
         val direct = device.findObject(By.copy(selector).desc(title).enabled(true))
         if (direct != null) {
-            direct.click()
+            tap(direct)
         } else {
-            await(By.copy(selector).desc(app.getString(R.string.chat_more_actions)).enabled(true))
-                .click()
-            row(title).click()
+            tap(
+                await(
+                    By.copy(selector).desc(app.getString(R.string.chat_more_actions)).enabled(true),
+                ),
+            )
+            tap(row(title))
         }
     }
 
@@ -236,8 +239,14 @@ class ScreenshotScenario {
     }
 
     private fun row(label: String): UiObject2 =
-        generateSequence(await(By.pkg(app.packageName).text(label))) { it.parent }
-            .first { it.isClickable }
+        await(By.pkg(app.packageName).text(label).enabled(true))
+
+    private fun tap(node: UiObject2) {
+        val bounds = node.visibleBounds
+        check(!bounds.isEmpty && device.click(bounds.centerX(), bounds.centerY())) {
+            "Could not tap ${node.text ?: node.contentDescription} at $bounds"
+        }
+    }
 
     private fun await(selector: BySelector): UiObject2 =
         checkNotNull(device.wait(Until.findObject(selector), 10_000)) { "Missing $selector" }
