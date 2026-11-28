@@ -1924,6 +1924,10 @@ internal fun OkouApp(
                                     listWidth = listWidth,
                                     focusOnEntry = focusSearch,
                                     onFocused = { focusSearch = false },
+                                    onInputFocusGained = {
+                                        // A late Find result must yield to focus in this pane.
+                                        findVisit?.returnFocus?.cancel()
+                                    },
                                     onClose = ::closeSearch,
                                     resolveMessageChats = chats::resolveSearchChats,
                                     onOpen = {

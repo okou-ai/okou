@@ -2664,29 +2664,59 @@ internal class ChatSearchRootTest : ChatListRootTestFixture() {
         awaitListAndNames()
         compose.onNodeWithText("Personal chat").performClick()
         compose.waitUntilExactlyOneExists(hasText("Native history reply"), 10_000)
-        compose.onNodeWithContentDescription("Chat actions").performClick()
-        compose.onNodeWithText("Find messages").performClick()
-        val query = compose.onNodeWithTag("conversation_find_query")
-        query.performTextInput("Native history")
-        compose.waitUntilExactlyOneExists(hasText("1 matching message"), 10_000)
+        fun openFind() {
+            compose.onNodeWithContentDescription("Chat actions").performClick()
+            compose.onNodeWithText("Find messages").performClick()
+        }
 
         val workspaceSearch = compose.onNodeWithTag("chat_search")
-        compose.onNodeWithContentDescription("Search workspace").performClick()
+        val workspaceEntry = compose.onNodeWithContentDescription("Search workspace")
+        val workspaceQuery = compose.onNodeWithTag("chat_search_query")
+        val query = compose.onNodeWithTag("conversation_find_query")
+        workspaceEntry.performClick()
+        openFind()
+        query.assertIsFocused()
+        compose
+            .onNode(
+                hasContentDescription("Back") and hasAnyAncestor(hasTestTag("conversation_find")),
+            )
+            .performClick()
+        query.assertDoesNotExist()
         workspaceSearch.assertIsDisplayed()
+        workspaceQuery.performTouchInput { click() }.assertIsFocused()
+
+        openFind()
+        query.performTextInput("Native history")
+        compose.waitUntilExactlyOneExists(hasText("1 matching message"), 10_000)
         compose.runOnIdle { compose.activity.onBackPressedDispatcher.onBackPressed() }
         workspaceSearch.assertDoesNotExist()
         query.assertIsDisplayed().assertTextContains("Native history")
 
         compose.onNodeWithText("Native history reply").performClick()
         compose.waitUntilExactlyOneExists(hasTestTag("conversation_find_hit"), 10_000)
-        compose.onNodeWithContentDescription("Search workspace").performClick()
+        workspaceEntry.performClick()
         val workspaceSearchAncestor = hasAnyAncestor(hasTestTag("chat_search"))
-        compose.onNode(hasContentDescription("Back") and !workspaceSearchAncestor).performClick()
+        val hitBack = compose.onNode(hasContentDescription("Back") and !workspaceSearchAncestor)
+        workspaceQuery.assertIsFocused()
+        // Deliver the tap without advancing a frame for the returned Find results.
+        compose.mainClock.autoAdvance = false
+        try {
+            hitBack.performClick()
+            workspaceQuery.assert(!isFocused())
+            workspaceQuery
+                .performTouchInput {
+                    down(center)
+                    up()
+                }
+                .assertIsFocused()
+        } finally {
+            compose.mainClock.autoAdvance = true
+        }
+        compose.waitUntilExactlyOneExists(hasText("1 matching message"), 10_000)
         workspaceSearch.assertIsDisplayed()
         query.assertIsDisplayed().assertTextContains("Native history")
 
-        val workspaceQuery = compose.onNodeWithTag("chat_search_query")
-        workspaceQuery.performTouchInput { click() }.assertIsFocused().performTextInput("project")
+        workspaceQuery.assertIsFocused().performTextInput("project")
         val rows = app.fixture.historyRows
         app.fixture.historyRows = { request ->
             if (request.requestUrl?.pathSegments?.getOrNull(2) == CHAT_PERSONAL)
@@ -2707,6 +2737,9 @@ internal class ChatSearchRootTest : ChatListRootTestFixture() {
         compose.waitUntilExactlyOneExists(hasText(app.getString(R.string.history_missing)), 10_000)
         query.assertDoesNotExist()
         workspaceQuery.assertIsFocused().assertTextContains("project")
+        compose.onNode(hasContentDescription("Back") and workspaceSearchAncestor).performClick()
+        workspaceSearch.assertDoesNotExist()
+        compose.onNodeWithText(app.getString(R.string.history_missing)).assertIsDisplayed()
     }
 
     @Test

@@ -121,6 +121,7 @@ internal fun WorkspaceSearchScreen(
     onOpenWorkflow: ((SearchWorkflowHit) -> Unit)? = null,
     onOpenArtifact: ((SearchArtifactHit) -> Unit)? = null,
     onMoreArtifacts: (String, String) -> Unit = { _, _ -> },
+    onInputFocusGained: () -> Unit = {},
 ) {
     val query = search.query
     val incomingResults =
@@ -196,7 +197,8 @@ internal fun WorkspaceSearchScreen(
                             .focusRequester(inputFocus)
                             .onFocusChanged {
                                 inputFocused = it.isFocused
-                                if (!it.isFocused) search.cancelComposition()
+                                if (it.isFocused) onInputFocusGained()
+                                else search.cancelComposition()
                             }
                             .testTag("chat_search_query"),
                 )
