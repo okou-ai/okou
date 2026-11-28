@@ -36,6 +36,7 @@ import { http, HttpResponse } from "msw";
 import { beforeAll, describe, expect, it, onTestFinished } from "vitest";
 
 import { apiTestS3PresignedUrl } from "../../../__tests__/mocks";
+import { setupRawAppRequestWithRoutes } from "../../../__tests__/test-app";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import {
@@ -62,6 +63,7 @@ import { voiceIoQuotaRoutes } from "../voice-io-quota";
 import { webhooksAgentCompleteRoutes } from "../webhooks-agent-complete";
 import { webhooksAgentEventsRoutes } from "../webhooks-agent-events";
 import { webhooksAgentHealthUsageTelemetryRoutes } from "../webhooks-agent-health-usage-telemetry";
+import { webhooksAgentSessionOutputRoutes } from "../webhooks-agent-session-output";
 import { webhooksAgentStorageRoutes } from "../webhooks-agent-storage";
 import { webhooksClerkRoutes } from "../webhooks-clerk";
 import { webhooksStripeRoutes } from "../webhooks-stripe";
@@ -306,6 +308,10 @@ describe("webhooks-callbacks.bdd", () => {
     context,
     routes: webhooksAgentStorageRoutes,
   })(webhookStoragesCommitContract);
+  const webhooksAgentSessionOutputRaw = setupRawAppRequestWithRoutes({
+    context,
+    routes: webhooksAgentSessionOutputRoutes,
+  });
 
   beforeAll(async () => {
     const previousClerkSecret = optionalEnv("CLERK_WEBHOOK_SIGNING_SECRET");
@@ -456,6 +462,14 @@ describe("webhooks-callbacks.bdd", () => {
           }),
           [401],
         ),
+        accept(
+          webhooksAgentSessionOutputRaw("/api/webhooks/run/session-output", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: "{}",
+          }),
+          [400],
+        ),
       ]);
     });
     mockOptionalEnv("CLERK_WEBHOOK_SIGNING_SECRET", previousClerkSecret);
@@ -595,47 +609,25 @@ describe("webhooks-callbacks.bdd", () => {
           return !entry.done;
         });
         if (active.length > 0) {
-          const toComplete: TrackedSandboxRun[] = [];
-          for (const entry of active) {
-            signInWithProfile(entry.actor);
-            const current = await accept(
-              runsByIdApi.getById({
-                headers: SESSION_HEADERS,
-                params: { id: entry.runId },
-              }),
-              [200],
-            );
-            if (
-              ["queued", "pending", "running"].includes(current.body.status)
-            ) {
-              await accept(
-                runsCancelApi.cancel({
-                  headers: SESSION_HEADERS,
-                  params: { id: entry.runId },
-                }),
-                [200],
-              );
-            }
-            if (
-              !["completed", "failed", "timeout"].includes(current.body.status)
-            ) {
-              toComplete.push(entry);
-            }
-            entry.done = true;
-          }
           await Promise.all(
-            toComplete.map(async (entry) => {
+            active.map(async (entry) => {
               await accept(
                 webhooksAgentCompleteApi.complete({
                   headers: sandboxHeaders(entry.sandboxToken),
                   body: {
                     runId: entry.runId,
-                    exitCode: 137,
-                    error: "Run cancelled by test cleanup",
+                    exitCode: 0,
+                    completion: {
+                      cliAgentType: "claude-code",
+                      cliAgentSessionId: `cleanup-${entry.runId}`,
+                      cliAgentSessionHistoryDisposition: "native_only",
+                      storageOutputs: [],
+                    },
                   },
                 }),
                 [200],
               );
+              entry.done = true;
             }),
           );
         }
@@ -1223,6 +1215,27 @@ describe("webhooks-callbacks.bdd", () => {
       );
     };
 
+    const postFastStripe200 = async (
+      event: Readonly<Record<string, unknown>>,
+    ) => {
+      webhooks.acceptNextStripeWebhookEvent(event);
+      await accept(
+        webhooksStripeApi.post({
+          body: JSON.stringify(event),
+          extraHeaders: { "stripe-signature": "t=1,v1=bdd" },
+        }),
+        [200],
+      );
+    };
+    const readFastBilling = async () => {
+      signInWithProfile(member);
+      const statusRes = await accept(
+        billingStatusApi.get({ headers: SESSION_HEADERS }),
+        [200],
+      );
+      return statusRes.body;
+    };
+
     const stalePeriodEnd = startSec - 60 * DAY_SECONDS;
     const staleEvent = stripeEvent(
       "invoice.paid",
@@ -1236,11 +1249,11 @@ describe("webhooks-callbacks.bdd", () => {
       }),
     );
     mockSub(stalePeriodEnd);
-    await webhooks.postStripeEvent(staleEvent, [200]);
+    await postFastStripe200(staleEvent);
 
     const renewalPeriodEnd = startSec + 60 * DAY_SECONDS;
     mockSub(renewalPeriodEnd);
-    await webhooks.postStripeEvent(
+    await postFastStripe200(
       stripeEvent(
         "invoice.paid",
         subscriptionInvoiceObject({
@@ -1251,7 +1264,6 @@ describe("webhooks-callbacks.bdd", () => {
           periodEnd: renewalPeriodEnd,
         }),
       ),
-      [200],
     );
 
     const dupEvent = stripeEvent(
@@ -1267,17 +1279,17 @@ describe("webhooks-callbacks.bdd", () => {
     );
     mockSub(startSec + 90 * DAY_SECONDS);
     await Promise.all([
-      webhooks.postStripeEvent(dupEvent, [200]),
-      webhooks.postStripeEvent(dupEvent, [200]),
+      postFastStripe200(dupEvent),
+      postFastStripe200(dupEvent),
     ]);
-    const afterConcurrent = await billing.readBillingStatus(member);
+    const afterConcurrent = await readFastBilling();
     expect(afterConcurrent.credits).toBe(60_000);
     expect(afterConcurrent.creditGrants).toHaveLength(3);
 
     mockSub(stalePeriodEnd);
-    await webhooks.postStripeEvent(staleEvent, [200]);
+    await postFastStripe200(staleEvent);
     mockSub(startSec + 90 * DAY_SECONDS);
-    await webhooks.postStripeEvent(
+    await postFastStripe200(
       stripeEvent(
         "invoice.paid",
         subscriptionInvoiceObject({
@@ -1288,9 +1300,8 @@ describe("webhooks-callbacks.bdd", () => {
           periodEnd: startSec + 90 * DAY_SECONDS,
         }),
       ),
-      [200],
     );
-    const finalStatus = await billing.readBillingStatus(member);
+    const finalStatus = await readFastBilling();
     expect(finalStatus.credits).toBe(60_000);
   });
 
@@ -2528,11 +2539,10 @@ describe("webhooks-callbacks.bdd", () => {
       wfShared1,
     );
 
-    const otherLoopBefore = await readAutomationAs(
-      org1Admin,
-      otherAutos.loopId,
-    );
-    const s1LoopBefore = await readAutomationAs(org1Admin, shared1Autos.loopId);
+    const [otherLoopBefore, s1LoopBefore] = await Promise.all([
+      readAutomationAs(org1Admin, otherAutos.loopId),
+      readAutomationAs(org1Admin, shared1Autos.loopId),
+    ]);
 
     const clerkDeletes: unknown[] = [];
     context.mocks.clerk.organizations.deleteOrganization.mockImplementation(
@@ -2561,30 +2571,29 @@ describe("webhooks-callbacks.bdd", () => {
     await flushWaitUntilForTest();
 
     expect(clerkDeletes).toStrictEqual([]);
-    await expect(
-      readAutomationAs(org1Admin, otherAutos.loopId),
-    ).resolves.toMatchObject({
+    const [otherLoopAfter, otherWebhookAfter, s1LoopAfter, s1WebhookAfter] =
+      await Promise.all([
+        readAutomationAs(org1Admin, otherAutos.loopId),
+        readAutomationAs(org1Admin, otherAutos.webhookId),
+        readAutomationAs(org1Admin, shared1Autos.loopId),
+        readAutomationAs(org1Admin, shared1Autos.webhookId),
+      ]);
+    expect(otherLoopAfter).toMatchObject({
       id: otherLoopBefore.id,
       enabled: true,
       scheduleSummary: otherLoopBefore.scheduleSummary,
     });
-    await expect(
-      readAutomationAs(org1Admin, otherAutos.webhookId),
-    ).resolves.toMatchObject({
+    expect(otherWebhookAfter).toMatchObject({
       id: otherAutos.webhookId,
       enabled: true,
       eventType: "webhook-received",
     });
-    await expect(
-      readAutomationAs(org1Admin, shared1Autos.loopId),
-    ).resolves.toMatchObject({
+    expect(s1LoopAfter).toMatchObject({
       id: s1LoopBefore.id,
       enabled: false,
       scheduleSummary: s1LoopBefore.scheduleSummary,
     });
-    await expect(
-      readAutomationAs(org1Admin, shared1Autos.webhookId),
-    ).resolves.toMatchObject({
+    expect(s1WebhookAfter).toMatchObject({
       id: shared1Autos.webhookId,
       enabled: false,
       eventType: "webhook-received",
@@ -2643,16 +2652,16 @@ describe("webhooks-callbacks.bdd", () => {
     await flushWaitUntilForTest();
 
     expect(clerkDeletes).toStrictEqual([]);
-    await expect(
+    const [s2LoopAfter, s2WebhookAfter] = await Promise.all([
       readAutomationAs(peerOrg2, shared2Autos.loopId),
-    ).resolves.toMatchObject({
+      readAutomationAs(peerOrg2, shared2Autos.webhookId),
+    ]);
+    expect(s2LoopAfter).toMatchObject({
       id: s2LoopBefore.id,
       enabled: false,
       scheduleSummary: s2LoopBefore.scheduleSummary,
     });
-    await expect(
-      readAutomationAs(peerOrg2, shared2Autos.webhookId),
-    ).resolves.toMatchObject({
+    expect(s2WebhookAfter).toMatchObject({
       id: shared2Autos.webhookId,
       enabled: false,
       eventType: "webhook-received",
@@ -4029,7 +4038,7 @@ describe("webhooks-callbacks.bdd", () => {
   );
 
   it(
-    "webhooks-callbacks.bdd-046 grants concurrency slots from Stripe subscription and picks queued chat threads until full",
+    "webhooks-callbacks.bdd-046 (1/2) grants concurrency slots from Stripe subscription and picks queued chat threads until full",
     { timeout: TEST_WITH_FOUR_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
     async () => {
       const startMs = Date.parse("2026-06-01T12:00:00.000Z");
@@ -4071,33 +4080,23 @@ describe("webhooks-callbacks.bdd", () => {
       expect(runner.acceptedOrder).toHaveLength(3);
 
       const concSubId = stripeId("sub_conc_slots");
-      const concSub = (
-        quantity: number,
-        overrides: {
-          readonly status?: string;
-          readonly cancelAtPeriodEnd?: boolean;
-          readonly emptyItems?: boolean;
-        } = {},
-      ) => {
-        const base = stripeSubscriptionObject({
-          id: concSubId,
-          customerId,
-          priceId: "price_bdd_concurrency",
-          status: overrides.status ?? "active",
-          periodStart: startSec,
-          periodEnd,
-          quantity,
-          cancelAtPeriodEnd: overrides.cancelAtPeriodEnd ?? false,
-          metadata: { purpose: "concurrency_subscription" },
-        });
-        return overrides.emptyItems ? { ...base, items: { data: [] } } : base;
-      };
+      const concSub = stripeSubscriptionObject({
+        id: concSubId,
+        customerId,
+        priceId: "price_bdd_concurrency",
+        status: "active",
+        periodStart: startSec,
+        periodEnd,
+        quantity: 2,
+        cancelAtPeriodEnd: false,
+        metadata: { purpose: "concurrency_subscription" },
+      });
 
       context.mocks.stripe.customers.retrieve.mockResolvedValue({
         id: customerId,
         metadata: { orgId },
       });
-      context.mocks.stripe.subscriptions.retrieve.mockResolvedValue(concSub(2));
+      context.mocks.stripe.subscriptions.retrieve.mockResolvedValue(concSub);
 
       const postFastStripe200 = async (
         event: Readonly<Record<string, unknown>>,
@@ -4119,17 +4118,9 @@ describe("webhooks-callbacks.bdd", () => {
         ]);
         return { billing: statusRes.body, queue: queueRes.body };
       };
-      const readFastBilling = async () => {
-        signInWithProfile(member);
-        const statusRes = await accept(
-          billingStatusApi.get({ headers: SESSION_HEADERS }),
-          [200],
-        );
-        return statusRes.body;
-      };
 
       await postFastStripe200(
-        stripeEvent("customer.subscription.created", concSub(2)),
+        stripeEvent("customer.subscription.created", concSub),
       );
       const concInvoiceEvent = stripeEvent("invoice.paid", {
         id: stripeId("in_conc_slots"),
@@ -4195,64 +4186,8 @@ describe("webhooks-callbacks.bdd", () => {
       ]);
       expect(afterReplay.queue.concurrency.limit).toBe(5);
 
-      const pastDueSub = concSub(2, { status: "past_due" });
-      context.mocks.stripe.subscriptions.retrieve.mockResolvedValue(pastDueSub);
-      await postFastStripe200(
-        stripeEvent("customer.subscription.updated", pastDueSub),
-      );
-      const afterPastDue = await readFastBillingAndQueue();
-      expect(afterPastDue.billing.concurrencySubscriptions).toMatchObject([
-        { id: concSubId, quantity: 2 },
-      ]);
-      expect(afterPastDue.queue.concurrency.limit).toBe(5);
-
-      const cancelSetSub = concSub(2, { cancelAtPeriodEnd: true });
-      context.mocks.stripe.subscriptions.retrieve.mockResolvedValue(
-        cancelSetSub,
-      );
-      await postFastStripe200(
-        stripeEvent("customer.subscription.updated", cancelSetSub),
-      );
-      expect((await readFastBilling()).concurrencySubscriptions).toMatchObject([
-        { id: concSubId, cancelAtPeriodEnd: true },
-      ]);
-
-      const cancelClearedSub = concSub(2, { cancelAtPeriodEnd: false });
-      context.mocks.stripe.subscriptions.retrieve.mockResolvedValue(
-        cancelClearedSub,
-      );
-      await postFastStripe200(
-        stripeEvent("customer.subscription.updated", cancelClearedSub),
-      );
-      expect((await readFastBilling()).concurrencySubscriptions).toMatchObject([
-        { id: concSubId, cancelAtPeriodEnd: false },
-      ]);
-
-      const emptySub = concSub(0, { emptyItems: true });
-      context.mocks.stripe.subscriptions.retrieve.mockResolvedValue(emptySub);
-      await postFastStripe200(
-        stripeEvent("customer.subscription.updated", emptySub),
-      );
-      const afterEmpty = await readFastBillingAndQueue();
-      expect(afterEmpty.billing.concurrencySubscriptions).toStrictEqual([]);
-      expect(afterEmpty.queue.concurrency.limit).toBe(3);
-
-      const deletedSub = concSub(0, { status: "canceled", emptyItems: true });
-      context.mocks.stripe.subscriptions.retrieve.mockResolvedValue(deletedSub);
-      await postFastStripe200(
-        stripeEvent("customer.subscription.deleted", deletedSub),
-      );
-      const afterDelete = await readFastBillingAndQueue();
-      expect(afterDelete.billing).toMatchObject({
-        tier: "pro",
-        hasSubscription: true,
-        concurrencySubscriptions: [],
-      });
-      expect(afterDelete.queue.concurrency.limit).toBe(3);
-
       // Drain the five active runs and any queued sixth run while the runner
       // mock is active so background queue pickup never races teardown.
-      signInWithProfile(member);
       const stopIds = [...runner.acceptedOrder];
       await Promise.all(
         stopIds.map(async (runId) => {
@@ -4261,19 +4196,17 @@ describe("webhooks-callbacks.bdd", () => {
             return;
           }
           await accept(
-            runsCancelApi.cancel({
-              headers: SESSION_HEADERS,
-              params: { id: runId },
-            }),
-            [200],
-          );
-          await accept(
             webhooksAgentCompleteApi.complete({
               headers: sandboxHeaders(exec.sandboxToken),
               body: {
                 runId,
-                exitCode: 137,
-                error: "Run cancelled by test teardown",
+                exitCode: 0,
+                completion: {
+                  cliAgentType: "claude-code",
+                  cliAgentSessionId: `drain-${runId}`,
+                  cliAgentSessionHistoryDisposition: "native_only",
+                  storageOutputs: [],
+                },
               },
             }),
             [200],
@@ -4284,7 +4217,6 @@ describe("webhooks-callbacks.bdd", () => {
       await flushWaitUntilForTest();
       const latePickedIds = runner.acceptedOrder.slice(stopIds.length);
       if (latePickedIds.length > 0) {
-        signInWithProfile(member);
         await Promise.all(
           latePickedIds.map(async (runId) => {
             const exec = runner.acceptedByRunId.get(runId);
@@ -4292,19 +4224,17 @@ describe("webhooks-callbacks.bdd", () => {
               return;
             }
             await accept(
-              runsCancelApi.cancel({
-                headers: SESSION_HEADERS,
-                params: { id: runId },
-              }),
-              [200],
-            );
-            await accept(
               webhooksAgentCompleteApi.complete({
                 headers: sandboxHeaders(exec.sandboxToken),
                 body: {
                   runId,
-                  exitCode: 137,
-                  error: "Queued run cancelled by test teardown",
+                  exitCode: 0,
+                  completion: {
+                    cliAgentType: "claude-code",
+                    cliAgentSessionId: `drain-${runId}`,
+                    cliAgentSessionHistoryDisposition: "native_only",
+                    storageOutputs: [],
+                  },
                 },
               }),
               [200],
@@ -4316,6 +4246,164 @@ describe("webhooks-callbacks.bdd", () => {
       }
     },
   );
+
+  it("webhooks-callbacks.bdd-046 (2/2) updates concurrency add-on across past_due, cancel_at_period_end, item removal, and deletion", async () => {
+    const startMs = Date.parse("2026-06-01T12:00:00.000Z");
+    mockNow(startMs);
+    const startSec = Math.floor(startMs / 1000);
+    const periodEnd = startSec + 30 * DAY_SECONDS;
+
+    const member = bdd.user({ orgRole: "org:admin" });
+    const orgId = member.orgId;
+    if (!orgId) {
+      throw new Error("Expected member orgId");
+    }
+    webhooks.configureStripeBillingEnv();
+    const { customerId } = await runs.grantProEntitlement(member, {
+      periodEndUnix: periodEnd,
+    });
+
+    const concSubId = stripeId("sub_conc_lifecycle");
+    const concSub = (
+      quantity: number,
+      overrides: {
+        readonly status?: string;
+        readonly cancelAtPeriodEnd?: boolean;
+        readonly emptyItems?: boolean;
+      } = {},
+    ) => {
+      const base = stripeSubscriptionObject({
+        id: concSubId,
+        customerId,
+        priceId: "price_bdd_concurrency",
+        status: overrides.status ?? "active",
+        periodStart: startSec,
+        periodEnd,
+        quantity,
+        cancelAtPeriodEnd: overrides.cancelAtPeriodEnd ?? false,
+        metadata: { purpose: "concurrency_subscription" },
+      });
+      return overrides.emptyItems ? { ...base, items: { data: [] } } : base;
+    };
+
+    context.mocks.stripe.customers.retrieve.mockResolvedValue({
+      id: customerId,
+      metadata: { orgId },
+    });
+    context.mocks.stripe.subscriptions.retrieve.mockResolvedValue(concSub(2));
+
+    const postFastStripe200 = async (
+      event: Readonly<Record<string, unknown>>,
+    ) => {
+      webhooks.acceptNextStripeWebhookEvent(event);
+      await accept(
+        webhooksStripeApi.post({
+          body: JSON.stringify(event),
+          extraHeaders: { "stripe-signature": "t=1,v1=bdd" },
+        }),
+        [200],
+      );
+    };
+    signInWithProfile(member);
+    const readFastBillingAndQueue = async () => {
+      const [statusRes, queueRes] = await Promise.all([
+        accept(billingStatusApi.get({ headers: SESSION_HEADERS }), [200]),
+        accept(runsQueueApi.getQueue({ headers: SESSION_HEADERS }), [200]),
+      ]);
+      return { billing: statusRes.body, queue: queueRes.body };
+    };
+    const readFastBilling = async () => {
+      const statusRes = await accept(
+        billingStatusApi.get({ headers: SESSION_HEADERS }),
+        [200],
+      );
+      return statusRes.body;
+    };
+
+    await postFastStripe200(
+      stripeEvent("customer.subscription.created", concSub(2)),
+    );
+    await postFastStripe200(
+      stripeEvent("invoice.paid", {
+        id: stripeId("in_conc_lifecycle"),
+        customer: customerId,
+        metadata: { purpose: "concurrency_subscription" },
+        subtotal: 0,
+        parent: {
+          subscription_details: {
+            subscription: concSubId,
+            metadata: { purpose: "concurrency_subscription" },
+          },
+        },
+        lines: {
+          has_more: false,
+          data: [
+            {
+              id: stripeId("il"),
+              price: { id: "price_bdd_concurrency" },
+              quantity: 2,
+              amount: 200,
+              parent: { type: "subscription_item_details" },
+              period: { start: startSec, end: periodEnd },
+            },
+          ],
+        },
+      }),
+    );
+
+    const pastDueSub = concSub(2, { status: "past_due" });
+    context.mocks.stripe.subscriptions.retrieve.mockResolvedValue(pastDueSub);
+    await postFastStripe200(
+      stripeEvent("customer.subscription.updated", pastDueSub),
+    );
+    const afterPastDue = await readFastBillingAndQueue();
+    expect(afterPastDue.billing.concurrencySubscriptions).toMatchObject([
+      { id: concSubId, quantity: 2 },
+    ]);
+    expect(afterPastDue.queue.concurrency.limit).toBe(5);
+
+    const cancelSetSub = concSub(2, { cancelAtPeriodEnd: true });
+    context.mocks.stripe.subscriptions.retrieve.mockResolvedValue(cancelSetSub);
+    await postFastStripe200(
+      stripeEvent("customer.subscription.updated", cancelSetSub),
+    );
+    expect((await readFastBilling()).concurrencySubscriptions).toMatchObject([
+      { id: concSubId, cancelAtPeriodEnd: true },
+    ]);
+
+    const cancelClearedSub = concSub(2, { cancelAtPeriodEnd: false });
+    context.mocks.stripe.subscriptions.retrieve.mockResolvedValue(
+      cancelClearedSub,
+    );
+    await postFastStripe200(
+      stripeEvent("customer.subscription.updated", cancelClearedSub),
+    );
+    expect((await readFastBilling()).concurrencySubscriptions).toMatchObject([
+      { id: concSubId, cancelAtPeriodEnd: false },
+    ]);
+
+    const emptySub = concSub(0, { emptyItems: true });
+    context.mocks.stripe.subscriptions.retrieve.mockResolvedValue(emptySub);
+    await postFastStripe200(
+      stripeEvent("customer.subscription.updated", emptySub),
+    );
+    const afterEmpty = await readFastBillingAndQueue();
+    expect(afterEmpty.billing.concurrencySubscriptions).toStrictEqual([]);
+    expect(afterEmpty.queue.concurrency.limit).toBe(3);
+
+    const deletedSub = concSub(0, { status: "canceled", emptyItems: true });
+    context.mocks.stripe.subscriptions.retrieve.mockResolvedValue(deletedSub);
+    await postFastStripe200(
+      stripeEvent("customer.subscription.deleted", deletedSub),
+    );
+    const afterDelete = await readFastBillingAndQueue();
+    expect(afterDelete.billing).toMatchObject({
+      tier: "pro",
+      hasSubscription: true,
+      concurrencySubscriptions: [],
+    });
+    expect(afterDelete.queue.concurrency.limit).toBe(3);
+  });
 
   it(
     "webhooks-callbacks.bdd-055 revokes deleted-user pending inputs without launching them when capacity returns and retains shared history",
@@ -4339,23 +4427,21 @@ describe("webhooks-callbacks.bdd", () => {
           periodEndUnix: startSec + 30 * DAY_SECONDS,
         }),
         runner.registerRunner(),
+        runner.addClaudeProvider(admin),
       ]);
-      await runner.addClaudeProvider(admin);
 
       const adminRuns = await runner.launchRunsParallel(admin, [
         "Admin running 1",
         "Admin running 2",
         "Admin running 3",
       ]);
-      await runner.sendChatInput(admin, {
-        prompt: "Admin queued input that must be revoked on user.deleted",
-        model: CLAUDE_MODEL,
-      });
-
-      const firstThreadEvents = await chatFiles.listThreadEvents(
-        admin,
-        adminRuns[0]?.threadId ?? "",
-      );
+      const [, firstThreadEvents] = await Promise.all([
+        runner.sendChatInput(admin, {
+          prompt: "Admin queued input that must be revoked on user.deleted",
+          model: CLAUDE_MODEL,
+        }),
+        chatFiles.listThreadEvents(admin, adminRuns[0]?.threadId ?? ""),
+      ]);
       const promptEventId = firstThreadEvents.events.find((event) => {
         return event.eventType === "input.prompt" && event.runId !== undefined;
       })?.id;
@@ -4371,12 +4457,13 @@ describe("webhooks-callbacks.bdd", () => {
         }),
         [201],
       );
-      const sharedBefore = await accept(
-        sharedThreadsApi.get({ params: { id: sharedCreated.body.id } }),
-        [200],
-      );
-
-      await bdd.completeOnboarding(peer);
+      const [sharedBefore] = await Promise.all([
+        accept(
+          sharedThreadsApi.get({ params: { id: sharedCreated.body.id } }),
+          [200],
+        ),
+        bdd.completeOnboarding(peer),
+      ]);
       await runner.addClaudeProvider(peer);
       await runner.sendChatInput(peer, {
         prompt: "Peer queued input waiting at org capacity",
@@ -4438,19 +4525,20 @@ describe("webhooks-callbacks.bdd", () => {
       runner.trackExecution(peer, peerPickedExec);
 
       signInWithProfile(peer);
-      const peerPickedRun = await accept(
-        runsByIdApi.getById({
-          headers: SESSION_HEADERS,
-          params: { id: peerPickedRunId },
+      const [peerPickedRun] = await Promise.all([
+        accept(
+          runsByIdApi.getById({
+            headers: SESSION_HEADERS,
+            params: { id: peerPickedRunId },
+          }),
+          [200],
+        ),
+        runner.launchRun(peer, {
+          prompt: "Peer second thread run after admin deletion",
+          model: CLAUDE_MODEL,
         }),
-        [200],
-      );
+      ]);
       expect(peerPickedRun.body.status).toBe("running");
-
-      await runner.launchRun(peer, {
-        prompt: "Peer second thread run after admin deletion",
-        model: CLAUDE_MODEL,
-      });
 
       const [queueAfter, sharedAfter] = await Promise.all([
         readRunQueue(peer),
@@ -4473,6 +4561,74 @@ describe("webhooks-callbacks.bdd", () => {
       );
       expect(deletedAdminUsage?.active ?? 0).toBe(0);
       expect(sharedAfter.body).toStrictEqual(sharedBefore.body);
+    },
+  );
+
+  it(
+    "webhooks-agent-session-output-004 rejects body-supplied channel authority",
+    { timeout: TEST_WITH_SINGLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const startMs = Date.parse("2026-06-01T12:00:00.000Z");
+      mockNow(startMs);
+      const startSec = Math.floor(startMs / 1000);
+      const runner = createDirectRunnerForRunTests();
+      const member = bdd.user({ orgRole: "org:admin" });
+      const other = bdd.user({ orgRole: "org:admin" });
+      if (!other.orgId) {
+        throw new Error("Expected other orgId");
+      }
+      webhooks.configureStripeBillingEnv();
+
+      await Promise.all([
+        runs.grantProEntitlement(member, {
+          periodEndUnix: startSec + 30 * DAY_SECONDS,
+        }),
+        runner.registerRunner(),
+      ]);
+      await runner.addClaudeProvider(member);
+
+      const launched = await runner.launchRun(member, {
+        prompt: "Session output body channel authority rejection",
+        model: CLAUDE_MODEL,
+      });
+
+      const channelGetCallsBefore =
+        context.mocks.ably.channelGet.mock.calls.length;
+      const publishCallsBefore = context.mocks.ably.publish.mock.calls.length;
+      const batchPublishCallsBefore =
+        context.mocks.ably.batchPublish.mock.calls.length;
+
+      const response = await webhooksAgentSessionOutputRaw(
+        "/api/webhooks/run/session-output",
+        {
+          method: "POST",
+          headers: {
+            ...sandboxHeaders(launched.execution.sandboxToken),
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({
+            runId: launched.runId,
+            threadId: launched.threadId,
+            runEventId: `evt-${randomUUID()}`,
+            chunkIndex: 0,
+            delta: "visible delta",
+            userId: other.userId,
+            orgId: other.orgId,
+            channel: `run-output:${other.userId}:${other.orgId}:${launched.runId}`,
+          }),
+        },
+      );
+
+      expect(response.status).toBe(400);
+      expect(context.mocks.ably.channelGet.mock.calls).toHaveLength(
+        channelGetCallsBefore,
+      );
+      expect(context.mocks.ably.publish.mock.calls).toHaveLength(
+        publishCallsBefore,
+      );
+      expect(context.mocks.ably.batchPublish.mock.calls).toHaveLength(
+        batchPublishCallsBefore,
+      );
     },
   );
 });
