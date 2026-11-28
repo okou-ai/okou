@@ -7,6 +7,7 @@ import android.content.Context
 import com.clerk.api.Clerk
 import com.clerk.api.ClerkConfigurationOptions
 import com.clerk.api.network.serialization.ClerkResult
+import com.clerk.api.organizations.OrganizationMembership
 import com.clerk.api.session.GetTokenOptions
 import com.clerk.api.session.Session
 import com.clerk.api.session.SessionTaskKey
@@ -97,19 +98,17 @@ class ClerkAuthentication(private val context: Context) : Authentication {
         }
     }
 
+    private fun matchingSession(expected: NativeSession, session: Session?): Session? =
+        session?.takeIf {
+            it.id == expected.sessionId &&
+                it.user?.id == expected.userId &&
+                it.lastActiveOrganizationId == expected.workspaceId
+        }
+
     private fun requireSession(
         expected: NativeSession,
         session: Session? = Clerk.session,
-    ): Session {
-        if (
-            session?.id != expected.sessionId ||
-                session.user?.id != expected.userId ||
-                session.lastActiveOrganizationId != expected.workspaceId
-        ) {
-            throw ApiFailure.Unauthenticated()
-        }
-        return session
-    }
+    ): Session = matchingSession(expected, session) ?: throw ApiFailure.Unauthenticated()
 
     override suspend fun refresh(expected: NativeSession): MembershipAccess? {
         requireSession(expected)
@@ -130,6 +129,13 @@ class ClerkAuthentication(private val context: Context) : Authentication {
             ?.let { MembershipAccess(it.organization.id, it.role, it.permissions?.sorted()) }
     }
 
+    override fun cachedWorkspaceMembership(expected: NativeSession): WorkspaceMembership? =
+        matchingSession(expected, Clerk.session)
+            ?.user
+            ?.organizationMemberships
+            ?.firstOrNull { it.organization.id == expected.workspaceId }
+            ?.toWorkspaceMembership()
+
     override suspend fun memberships(expected: NativeSession): List<WorkspaceMembership> {
         requireSession(expected)
         val user = checkNotNull(Clerk.user)
@@ -139,10 +145,7 @@ class ClerkAuthentication(private val context: Context) : Authentication {
             val page = user.getOrganizationMemberships(limit = 100, offset = offset).required()
             currentCoroutineContext().ensureActive()
             requireSession(expected)
-            result +=
-                page.data.map {
-                    WorkspaceMembership(it.organization.id, it.organization.name, it.role)
-                }
+            result += page.data.map(OrganizationMembership::toWorkspaceMembership)
             offset += page.data.size
             check(page.data.isNotEmpty() || offset >= page.totalCount) {
                 "Membership pagination made no progress"
@@ -193,6 +196,15 @@ class ClerkAuthentication(private val context: Context) : Authentication {
         result.required()
     }
 }
+
+internal fun OrganizationMembership.toWorkspaceMembership(): WorkspaceMembership =
+    WorkspaceMembership(
+        organization.id,
+        organization.name,
+        role,
+        // Clerk supplies a generated image URL for organizations without an upload.
+        uploadedImageUrl = organization.imageUrl.takeIf { organization.hasImage },
+    )
 
 internal fun <T : Any, E : Any> ClerkResult<T, E>.required(): T =
     when (this) {

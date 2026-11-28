@@ -28,7 +28,12 @@ data class MembershipAccess(
     val permissions: List<String>?,
 )
 
-data class WorkspaceMembership(val id: String, val name: String, val role: String)
+data class WorkspaceMembership(
+    val id: String,
+    val name: String,
+    val role: String,
+    val uploadedImageUrl: String? = null,
+)
 
 /** Credentials, authentication attempts and protocol callbacks remain owned by the SDK. */
 interface Authentication {
@@ -39,6 +44,9 @@ interface Authentication {
     fun initialize()
 
     suspend fun refresh(expected: NativeSession): MembershipAccess?
+
+    /** Already hydrated presentation metadata for the selected workspace. */
+    fun cachedWorkspaceMembership(expected: NativeSession): WorkspaceMembership? = null
 
     suspend fun memberships(expected: NativeSession): List<WorkspaceMembership>
 
