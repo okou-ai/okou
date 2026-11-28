@@ -137,7 +137,7 @@ describe("Onboarding draft", () => {
     );
   }
 
-  it("restores one member's draft and refuses stale edits or another member's reads", async () => {
+  it("restores the member's draft, rejects stale edits and isolates users and workspaces", async () => {
     const actor = orgActor("org:member");
     const client = draftClientAs(actor);
     const stored = await accept(
@@ -173,6 +173,12 @@ describe("Onboarding draft", () => {
       (await accept(draftClientAs(memberOf(actor)).get({ headers }), [200]))
         .body.draft,
     ).toBeNull();
+    const otherWorkspace = { ...actor, orgId: `org_${randomUUID()}` };
+    const otherDraft = await accept(
+      draftClientAs(otherWorkspace).get({ headers }),
+      [200],
+    );
+    expect(otherDraft.body.draft).toBeNull();
   });
 
   it("expires abandoned drafts and blocks restoration or late saves after completion", async () => {

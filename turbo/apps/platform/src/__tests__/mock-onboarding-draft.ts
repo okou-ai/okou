@@ -3,8 +3,13 @@ import type { OnboardingDraftPayload } from "@okouai/api-contracts/validators/on
 import type { TestContext } from "../signals/__tests__/test-helpers.ts";
 
 /** A single member's draft survives the replacement of their browser app. */
-export function mockOnboardingDraft(context: TestContext) {
-  let draft: (OnboardingDraftPayload & { revision: string }) | null = null;
+export function mockOnboardingDraft(
+  context: TestContext,
+  initialDraft: OnboardingDraftPayload | null = null,
+) {
+  let draft = initialDraft
+    ? { ...initialDraft, revision: crypto.randomUUID() }
+    : null;
   context.mocks.api(onboardingDraftContract.get, ({ respond }) => {
     return respond(200, { draft });
   });
