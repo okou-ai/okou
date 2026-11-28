@@ -342,6 +342,40 @@ class BuiltInToolsSettingsTest {
     }
 
     @Test
+    fun aNewImageChoiceReplacesAThrottledRetry() = runTest {
+        val fixture = ToolFixture()
+        val writes = mutableListOf<String>()
+        val notices = mutableListOf<SettingsNotice>()
+        val settings =
+            model(
+                object : BuiltInToolsService by fixture {
+                    override suspend fun selectImageModel(id: String): String {
+                        writes += id
+                        if (id == otherImage) throw ApiFailure.Http(429, null, null, 10L)
+                        return fixture.selectImageModel(id)
+                    }
+                },
+                notice = { notices += it },
+            )
+        settings.show()
+        runCurrent()
+        settings.chooseImage(otherImage)
+        runCurrent()
+        assertEquals(listOf(otherImage), writes)
+        assertEquals(otherImage, settings.state.value.displayedImage)
+
+        val latest = "gpt-image-1"
+        settings.chooseImage(latest)
+        runCurrent()
+        assertEquals(latest, settings.state.value.confirmedImage)
+        assertNull(settings.state.value.pendingImage)
+        advanceTimeBy(10_000)
+        runCurrent()
+        assertEquals(listOf(otherImage, latest), writes)
+        assertTrue(notices.isEmpty())
+    }
+
+    @Test
     fun staleReadbackDoesNotReleaseAnotherImageWriteAfterAnUnclearResult() = runTest {
         val fixture = ToolFixture()
         val writes = mutableListOf<String>()
@@ -400,6 +434,36 @@ class BuiltInToolsSettingsTest {
         assertEquals(true, settings.state.value.enabled(webSearchTool))
         assertTrue(settings.state.value.savingTools.isEmpty())
         assertTrue(webSearchTool !in fixture.disabledTools())
+    }
+
+    @Test
+    fun revertingAToolChoiceEndsTheThrottledRetry() = runTest {
+        val fixture = ToolFixture()
+        val writes = mutableListOf<Boolean>()
+        val notices = mutableListOf<SettingsNotice>()
+        val service =
+            object : BuiltInToolsService by fixture {
+                override suspend fun setEnabled(id: String, enabled: Boolean): Boolean {
+                    writes += enabled
+                    throw ApiFailure.Http(429, null, null, 10L)
+                }
+            }
+        val settings = model(service, notice = { notices += it })
+        settings.show()
+        runCurrent()
+        settings.toggle(webSearchTool, false)
+        runCurrent()
+        assertEquals(listOf(false), writes)
+        assertEquals(false, settings.state.value.enabled(webSearchTool))
+
+        settings.toggle(webSearchTool, true)
+        runCurrent()
+        assertTrue(settings.state.value.savingTools.isEmpty())
+        assertEquals(true, settings.state.value.enabled(webSearchTool))
+        advanceTimeBy(10_000)
+        runCurrent()
+        assertEquals(listOf(false), writes)
+        assertTrue(notices.isEmpty())
     }
 
     @Test

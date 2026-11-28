@@ -516,19 +516,19 @@ internal class DefaultModelSettings(
     }
 
     private fun handleSaveFailure(save: DefaultModelSave, readback: Boolean, error: Exception) {
-        val rejected = !readback && error.definitivelyRejectedWrite()
-        val undelivered = !readback && error is ApiFailure.Network && error.connectionFailed
-        if (rejected || undelivered) unconfirmedWrite = null
+        val retryableRejection = !readback && error.canRetryRejectedSettingWrite()
+        val rejected = !readback && (retryableRejection || error.definitivelyRejectedWrite())
+        if (rejected) unconfirmedWrite = null
         val current = mutable.value
         val latest = current.save ?: return
-        if ((rejected || undelivered) && latest !== save) {
+        if (rejected && latest !== save) {
             mutable.value = current.copy(save = DefaultModelSave(latest.request))
             return
         }
         when {
-            rejected || (undelivered && !latest.canRetry) -> {
-                rollBackSave()
-            }
+            retryableRejection && latest.canRetry ->
+                deferSave(latest, boundedRetryDelayMillis(latest.failedAttempts, error))
+            rejected -> rollBackSave()
             readback -> {
                 val wait =
                     if (error.retryable() || error is ApiFailure.IncompatibleResponse)

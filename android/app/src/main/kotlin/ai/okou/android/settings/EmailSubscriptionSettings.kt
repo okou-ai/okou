@@ -216,17 +216,15 @@ internal class EmailSubscriptionSettings(
                     clearInaccessible(writeRejected = true)
                     return
                 }
-                val undelivered = error is ApiFailure.Network && error.connectionFailed
-                val throttled = error is ApiFailure.Http && error.status == 429
+                val retryableRejection = error.canRetryRejectedSettingWrite()
                 val rejected =
                     error is ApiFailure.Http && error.status in 400..499 && error.status != 408
-                if (!undelivered && !rejected) {
+                if (!retryableRejection && !rejected) {
                     reconcile(attempted)
                     return
                 }
                 val wait =
-                    if (undelivered || throttled) boundedRetryDelayMillis(retries++, error)
-                    else null
+                    if (retryableRejection) boundedRetryDelayMillis(retries++, error) else null
                 if (wait != null) {
                     delay(wait)
                     continue

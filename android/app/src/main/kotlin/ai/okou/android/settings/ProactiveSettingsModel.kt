@@ -13,7 +13,9 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 
 internal data class ProactiveChoice(val enabled: Boolean, val visit: Long)
 
@@ -228,14 +230,14 @@ internal class ProactiveSettingOwner(
                 requireCurrent()
                 onSessionFailure(error)
                 requireCurrent()
-                if (error is ApiFailure.Network && error.connectionFailed) {
+                if (error.canRetryRejectedSettingWrite()) {
                     resolve(sent, mutable.value.confirmed, rejected = true)
                     return WriteOutcome.NotApplied
                 }
                 if (
                     error is ApiFailure.Http &&
                         error.status in 400..499 &&
-                        error.status !in setOf(408, 409, 429)
+                        error.status !in setOf(408, 409)
                 ) {
                     if (error.status == 403) discardConfirmation()
                     resolve(sent, mutable.value.confirmed, rejected = true)
@@ -254,12 +256,13 @@ internal class ProactiveSettingOwner(
         while (true) {
             try {
                 return service.update(setting, sent.enabled).also { requireCurrent() }
-            } catch (error: ApiFailure.Network) {
-                if (!error.connectionFailed) throw error
-                val wait = boundedRetryDelayMillis(retries++, error) ?: throw error
-                delay(wait)
+            } catch (error: ApiFailure) {
+                if (!error.canRetryRejectedSettingWrite()) throw error
                 requireCurrent()
-                if (mutable.value.choice != sent) return null
+                val wait = boundedRetryDelayMillis(retries++, error) ?: throw error
+                val superseded = withTimeoutOrNull(wait) { state.first { it.choice != sent } }
+                requireCurrent()
+                if (superseded != null || mutable.value.choice != sent) return null
             }
         }
     }

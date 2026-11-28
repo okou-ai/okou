@@ -1130,6 +1130,67 @@ class DefaultModelQueuedSaveTest {
     @get:Rule val temporary = TemporaryFolder()
 
     @Test
+    fun throttledDefaultModelSaveHonorsRetryAfterAndRollsBackOnce() = runTest {
+        ChatListApiFixture().use { api ->
+            DefaultModelApiFixture(api)
+            val confirmed = api.service.defaultModelPreference()
+            val times = mutableListOf<Long>()
+            var reads = 0
+            val service =
+                object : WorkspaceSession by api.service {
+                    override suspend fun defaultModelPreference(): DefaultModelPreference {
+                        reads++
+                        return confirmed
+                    }
+
+                    override suspend fun updateDefaultModelPreference(
+                        update: UpdateDefaultModelPreference,
+                    ): DefaultModelPreference {
+                        times += currentTime
+                        throw ApiFailure.Http(429, null, null, 2)
+                    }
+                }
+            val file = temporary.newFolder().resolve("default-model.preferences_pb")
+            val store =
+                DefaultModelStore(
+                    PreferenceDataStoreFactory.create(scope = backgroundScope) { file },
+                    backgroundScope,
+                )
+            val model =
+                DefaultModelSettings(
+                    backgroundScope,
+                    service,
+                    api.identity,
+                    store,
+                    { true },
+                    nowMillis = { currentTime },
+                    monotonicMillis = { currentTime },
+                    onFailure = {},
+                )
+            model.showSettings(null)
+            model.foreground(true)
+            model.state.first { it.record?.lastRefreshMillis != null }
+            model.showSettings(SettingsDestination.Overview)
+            model.state.first { it.selected?.fastMultiplier != null }
+            val start = currentTime
+            model.fast(true)
+            runCurrent()
+            advanceTimeBy(1_999)
+            runCurrent()
+            assertEquals(listOf(start), times)
+            assertTrue(model.state.value.fast)
+            assertNull(model.state.value.saveFeedback)
+            advanceTimeBy(2_001)
+            runCurrent()
+            assertEquals(listOf(start, start + 2_000, start + 4_000), times)
+            assertEquals(1, reads)
+            assertFalse(model.state.value.fast)
+            assertNull(model.state.value.pending)
+            assertEquals(DefaultModelNotice.SaveRolledBack, model.state.value.saveFeedback?.value)
+        }
+    }
+
+    @Test
     fun queuedSaveClearsFastWhenTheSubscriptionRouteLosesIt() = runTest {
         ChatListApiFixture().use { api ->
             val fixture = DefaultModelApiFixture(api)
