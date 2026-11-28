@@ -2,7 +2,7 @@ import { command } from "ccstate";
 import { and, eq, isNull } from "drizzle-orm";
 import { uuid } from "zod";
 import { parseArtifactReference } from "@okouai/api-contracts/contracts/artifact-references";
-import { artifactUserShares } from "@okouai/db/schema/artifact-user-share";
+import { artifactShares } from "@okouai/db/schema/artifact-share";
 import {
   hostedSites,
   hostedDeployments,
@@ -106,14 +106,14 @@ const fileChannelSharingResource$ = command(
       ),
       get(db$)
         .select({
-          email: artifactUserShares.email,
-          userId: artifactUserShares.userId,
+          email: artifactShares.email,
+          userId: artifactShares.userId,
         })
-        .from(artifactUserShares)
+        .from(artifactShares)
         .where(
           and(
-            eq(artifactUserShares.artifactId, artifact.id),
-            eq(artifactUserShares.orgId, file.orgId),
+            eq(artifactShares.artifactId, artifact.id),
+            eq(artifactShares.orgId, file.orgId),
           ),
         ),
     ]);
@@ -188,14 +188,14 @@ export const channelSharingResource$ = command(
     }
     const shares = await get(db$)
       .select({
-        email: artifactUserShares.email,
-        userId: artifactUserShares.userId,
+        email: artifactShares.email,
+        userId: artifactShares.userId,
       })
-      .from(artifactUserShares)
+      .from(artifactShares)
       .where(
         and(
-          eq(artifactUserShares.artifactId, livePolicy.artifactId),
-          eq(artifactUserShares.orgId, site.orgId),
+          eq(artifactShares.artifactId, livePolicy.artifactId),
+          eq(artifactShares.orgId, site.orgId),
         ),
       );
     signal.throwIfAborted();

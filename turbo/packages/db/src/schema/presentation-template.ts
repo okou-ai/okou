@@ -40,8 +40,8 @@ export type PresentationTemplateVisibility =
  * decision. Array position is the page number and element 0 is the cover, so
  * the page count is `array_length(page_keys, 1)` and never a stored column.
  * The template commit resolves those uploads directly instead of registering
- * the page images as `run_uploaded_files`, which would project every slide
- * crop into the user's artifact catalog.
+ * the page images in the user's artifact catalog, which would expose every slide
+ * crop as a separate artifact.
  */
 export const presentationTemplates = pgTable(
   "presentation_templates",

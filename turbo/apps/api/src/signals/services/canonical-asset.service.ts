@@ -1,6 +1,5 @@
 import { createHash } from "node:crypto";
 import { command } from "ccstate";
-import type { CanonicalAssetProvenance } from "@okouai/db/jsonb-contracts/run-uploaded-file";
 import { files } from "@okouai/db/schema/file";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { and, eq, isNotNull, isNull } from "drizzle-orm";
@@ -55,6 +54,38 @@ export class InputFileImportError extends Error {
     this.name = "InputFileImportError";
   }
 }
+
+export type CanonicalAssetProvenance =
+  | {
+      readonly provider:
+        | "email"
+        | "feishu"
+        | "lark"
+        | "teams"
+        | "telegram"
+        | "agentphone"
+        | "wechat";
+      readonly installationId: string;
+      readonly messageId: string;
+      readonly externalFileId: string;
+    }
+  | {
+      readonly provider: "slack";
+      readonly workspaceId: string;
+      readonly channelId: string;
+      readonly messageTs?: string;
+      readonly externalFileId: string;
+    }
+  | {
+      readonly provider: "discord";
+      readonly guildId: string | null;
+      readonly channelId: string;
+      readonly messageId: string;
+      readonly externalFileId: string;
+    }
+  | {
+      readonly provider: "agent";
+    };
 
 export type CanonicalInputAssetStatus = "pending" | "ready" | "failed";
 

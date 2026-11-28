@@ -11,14 +11,23 @@ import {
   CURRENT_LINK_LAYOUT,
   linkLayoutSegment,
 } from "@okouai/api-contracts/contracts/link-layout";
-import { artifacts } from "@okouai/db/schema/artifact";
-import { artifactUserShares } from "@okouai/db/schema/artifact-user-share";
+import { artifacts, presentationArtifacts } from "@okouai/db/schema/artifact";
+import { artifactShares } from "@okouai/db/schema/artifact-share";
 import { hostedSites, hostedDeployments } from "@okouai/db/runtime/hosted-site";
-import { pgTextDecoder } from "../../lib/db-structured-result";
+import {
+  nullableDriverValueDecoder,
+  pgTextDecoder,
+} from "../../lib/db-structured-result";
 import { nowDate } from "../../lib/time";
 import { db$, writeDb$ } from "../external/db";
 import { clerk$, isClerkResourceNotFound } from "../external/clerk";
 import { settle } from "../utils";
+import {
+  hostedSiteDirectArtifact,
+  hostedSiteDirectArtifactJoin,
+  hostedSitePresentationArtifact,
+  hostedSitePresentationArtifactJoin,
+} from "./hosted-site-artifact.service";
 
 type Owner = {
   readonly userId: string;
@@ -50,22 +59,33 @@ function sitePolicyRevision(
 export const readHostedSitePolicy$ = command(
   async ({ get }, siteId: string, signal: AbortSignal) => {
     const database = get(db$);
-    const logicalKey = `site:${siteId}`;
     const [row] = await database
       .select({
         site: hostedSites,
-        artifactId: artifacts.id,
-        visibility: artifacts.visibility,
-        xmin: sql`"artifacts"."xmin"::text`.mapWith(pgTextDecoder),
+        directArtifactId: hostedSiteDirectArtifact.id,
+        directVisibility: hostedSiteDirectArtifact.visibility,
+        directXmin: sql`"hosted_site_direct_artifact"."xmin"::text`.mapWith(
+          nullableDriverValueDecoder(pgTextDecoder),
+        ),
+        presentationArtifactId: hostedSitePresentationArtifact.id,
+        presentationVisibility: hostedSitePresentationArtifact.visibility,
+        presentationXmin:
+          sql`"hosted_site_presentation_artifact"."xmin"::text`.mapWith(
+            nullableDriverValueDecoder(pgTextDecoder),
+          ),
       })
       .from(hostedSites)
       .leftJoin(
-        artifacts,
-        and(
-          eq(artifacts.orgId, hostedSites.orgId),
-          eq(artifacts.logicalKey, logicalKey),
-          isNull(artifacts.deletedAt),
-        ),
+        presentationArtifacts,
+        eq(presentationArtifacts.hostedSiteId, hostedSites.id),
+      )
+      .leftJoin(
+        hostedSiteDirectArtifact,
+        hostedSiteDirectArtifactJoin({ activeOnly: true }),
+      )
+      .leftJoin(
+        hostedSitePresentationArtifact,
+        hostedSitePresentationArtifactJoin({ activeOnly: true }),
       )
       .where(and(eq(hostedSites.id, siteId), isNull(hostedSites.deletedAt)))
       .limit(1);
@@ -73,17 +93,17 @@ export const readHostedSitePolicy$ = command(
     if (!row) {
       return null;
     }
-    if (row.artifactId && row.visibility && row.xmin) {
+    const artifactId = row.directArtifactId ?? row.presentationArtifactId;
+    const visibility = row.directArtifactId
+      ? row.directVisibility
+      : row.presentationVisibility;
+    const xmin = row.directArtifactId ? row.directXmin : row.presentationXmin;
+    if (artifactId && visibility && xmin) {
       return {
         site: row.site,
-        artifactId: row.artifactId,
-        visibility: row.visibility,
-        revision: sitePolicyRevision(
-          row.site.id,
-          row.artifactId,
-          row.visibility,
-          row.xmin,
-        ),
+        artifactId,
+        visibility,
+        revision: sitePolicyRevision(row.site.id, artifactId, visibility, xmin),
       };
     }
     // Unpublished sites carry prepared visibility on their latest uploading
@@ -124,7 +144,7 @@ export const readHostedSitePolicy$ = command(
   },
 );
 
-/** Live hosted-site access evaluated exclusively from `artifacts.visibility` + `artifact_user_shares`. */
+/** Live hosted-site access evaluated exclusively from `artifacts.visibility` + `artifact_shares`. */
 export const checkHostedSiteAccess$ = command(
   async (
     { get, set },
@@ -146,13 +166,13 @@ export const checkHostedSiteAccess$ = command(
     }
     if (policy.artifactId) {
       const [share] = await get(db$)
-        .select({ userId: artifactUserShares.userId })
-        .from(artifactUserShares)
+        .select({ userId: artifactShares.userId })
+        .from(artifactShares)
         .where(
           and(
-            eq(artifactUserShares.artifactId, policy.artifactId),
-            eq(artifactUserShares.orgId, policy.site.orgId),
-            eq(artifactUserShares.userId, args.userId),
+            eq(artifactShares.artifactId, policy.artifactId),
+            eq(artifactShares.orgId, policy.site.orgId),
+            eq(artifactShares.userId, args.userId),
           ),
         )
         .limit(1);
@@ -209,22 +229,33 @@ function publishedDeployment() {
 const readManageableSitePolicy$ = command(
   async ({ get }, owner: Owner, signal: AbortSignal) => {
     const database = get(db$);
-    const logicalKey = `site:${owner.siteId}`;
     const [row] = await database
       .select({
         siteId: hostedSites.id,
-        artifactId: artifacts.id,
-        visibility: artifacts.visibility,
-        xmin: sql`"artifacts"."xmin"::text`.mapWith(pgTextDecoder),
+        directArtifactId: hostedSiteDirectArtifact.id,
+        directVisibility: hostedSiteDirectArtifact.visibility,
+        directXmin: sql`"hosted_site_direct_artifact"."xmin"::text`.mapWith(
+          nullableDriverValueDecoder(pgTextDecoder),
+        ),
+        presentationArtifactId: hostedSitePresentationArtifact.id,
+        presentationVisibility: hostedSitePresentationArtifact.visibility,
+        presentationXmin:
+          sql`"hosted_site_presentation_artifact"."xmin"::text`.mapWith(
+            nullableDriverValueDecoder(pgTextDecoder),
+          ),
       })
       .from(hostedSites)
       .leftJoin(
-        artifacts,
-        and(
-          eq(artifacts.orgId, hostedSites.orgId),
-          eq(artifacts.logicalKey, logicalKey),
-          isNull(artifacts.deletedAt),
-        ),
+        presentationArtifacts,
+        eq(presentationArtifacts.hostedSiteId, hostedSites.id),
+      )
+      .leftJoin(
+        hostedSiteDirectArtifact,
+        hostedSiteDirectArtifactJoin({ activeOnly: true }),
+      )
+      .leftJoin(
+        hostedSitePresentationArtifact,
+        hostedSitePresentationArtifactJoin({ activeOnly: true }),
       )
       .where(
         and(
@@ -244,18 +275,18 @@ const readManageableSitePolicy$ = command(
     if (!row) {
       return null;
     }
-    if (row.artifactId && row.visibility && row.xmin) {
+    const artifactId = row.directArtifactId ?? row.presentationArtifactId;
+    const visibility = row.directArtifactId
+      ? row.directVisibility
+      : row.presentationVisibility;
+    const xmin = row.directArtifactId ? row.directXmin : row.presentationXmin;
+    if (artifactId && visibility && xmin) {
       return {
         siteId: row.siteId,
-        artifactId: row.artifactId,
-        visibility: row.visibility,
-        revision: sitePolicyRevision(
-          row.siteId,
-          row.artifactId,
-          row.visibility,
-          row.xmin,
-        ),
-        rawXmin: row.xmin,
+        artifactId,
+        visibility,
+        revision: sitePolicyRevision(row.siteId, artifactId, visibility, xmin),
+        rawXmin: xmin,
       };
     }
     if (owner.preparing) {

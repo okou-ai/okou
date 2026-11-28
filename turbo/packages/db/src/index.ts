@@ -1,8 +1,5 @@
-import * as artifactFileShareSchema from "./schema/artifact-file-share";
-import * as artifactUserShareSchema from "./schema/artifact-user-share";
 import * as fileSchema from "./schema/file";
 import * as voiceTranscriptionSchema from "./schema/voice-transcription";
-import * as hostedSiteShareSchema from "./schema/hosted-site-share";
 import * as hostedSiteShareRateLimitSchema from "./schema/hosted-site-share-rate-limit";
 import * as larkOfficialAppTicketSchema from "./schema/lark-official-app-ticket";
 import * as remoteDeviceSchema from "./schema/remote-device";
@@ -123,7 +120,6 @@ import * as builtInSkillSchema from "./schema/built-in-skill";
 import * as usagePricingSchema from "./runtime/usage-pricing";
 import * as composerDraftSchema from "./schema/composer-draft";
 import * as chatThreadDraftSchema from "./schema/chat-thread-draft";
-import * as runUploadedFileSchema from "./schema/run-uploaded-file";
 import * as builtInModelKeySchema from "./schema/built-in-model-key";
 import * as workflowSchema from "./schema/workflow";
 import * as claimedWorkflowAttachmentSchema from "./schema/claimed-workflow-attachment";
@@ -305,7 +301,6 @@ export const schema = {
   ...usagePricingSchema,
   ...composerDraftSchema,
   ...chatThreadDraftSchema,
-  ...runUploadedFileSchema,
   ...builtInModelKeySchema,
   ...workflowSchema,
   ...claimedWorkflowAttachmentSchema,
@@ -337,10 +332,7 @@ export const schema = {
   ...builtinConnectorAccountOauthBindingSchema,
   ...hostedSiteSchema,
   ...hostedSiteDomainSchema,
-  ...artifactFileShareSchema,
-  ...artifactUserShareSchema,
   ...fileSchema,
-  ...hostedSiteShareSchema,
   ...hostedSiteShareRateLimitSchema,
   ...hostedSiteBrowserSessionSchema,
   ...artifactSchema,
