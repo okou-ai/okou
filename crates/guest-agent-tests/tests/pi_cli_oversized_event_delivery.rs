@@ -100,28 +100,19 @@ fn owned_pi_message_fixtures_preserve_canonical_bytes() {
     }
 }
 
-#[derive(serde::Serialize)]
-struct PiImage<'a> {
-    #[serde(rename = "type")]
-    kind: &'static str,
-    #[serde(rename = "mimeType")]
-    mime_type: &'static str,
-    data: &'a str,
-}
-
-fn image(data: &str) -> PiImage<'_> {
-    PiImage {
-        kind: "image",
-        mime_type: "image/png",
-        data,
-    }
+fn image(data: impl Into<String>) -> Value {
+    Value::Object(serde_json::Map::from_iter([
+        ("type".into(), "image".into()),
+        ("mimeType".into(), "image/png".into()),
+        ("data".into(), Value::String(data.into())),
+    ]))
 }
 
 #[test]
 fn borrowed_pi_image_fixture_preserves_canonical_bytes() {
     for data in ["", "AA==", "你好\"\\\n\0"] {
         assert_eq!(
-            json!([image(data), image(data)]).to_string(),
+            Value::Array(vec![image(data), image(data.to_owned())]).to_string(),
             json!([
                 {"type":"image", "mimeType":"image/png", "data":data},
                 {"type":"image", "mimeType":"image/png", "data":data}
@@ -220,11 +211,19 @@ async fn pi_rpc_bounds_delivery_and_preserves_truth_and_originals()
             false,
         ),
         tool_result("tool-input-id", text_content(text), true),
-        tool_result("small-image", json!([image(&small_image)]), false),
-        tool_result("large-image", json!([image(&large_image)]), true),
+        tool_result(
+            "small-image",
+            Value::Array(vec![image(small_image.as_str())]),
+            false,
+        ),
+        tool_result("large-image", Value::Array(vec![image(large_image)]), true),
         tool_result(
             "aggregate-images",
-            json!([image(&half_image), image(&half_image), image(&small_image)]),
+            Value::Array(vec![
+                image(half_image.as_str()),
+                image(half_image.as_str()),
+                image(small_image.as_str()),
+            ]),
             false,
         ),
         assistant("terminal", json!([{"type":"text","text":input}]), false),
