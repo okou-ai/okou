@@ -7,6 +7,8 @@ import ai.okou.android.ConnectorApiFixture
 import ai.okou.android.api.ApiFailure
 import ai.okou.android.api.generated.ConnectorAccountPolicyRequestPolicy
 import ai.okou.android.chat.ComposerTarget
+import java.net.ConnectException
+import java.net.SocketTimeoutException
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import kotlin.time.Duration.Companion.minutes
@@ -326,6 +328,26 @@ class ConnectorReadTest {
         assertEquals(ConnectorRead(emptyList<String>(), ConnectorReadFailure.Sustained), state)
         advanceTimeBy(60_000)
         assertEquals(3, attempts)
+    }
+
+    @Test
+    fun connectionFailureAndResponseTimeoutShowDifferentFeedback() = runTest {
+        val cases =
+            listOf(
+                ConnectException() to ConnectorReadFailure.Network,
+                SocketTimeoutException() to ConnectorReadFailure.Sustained,
+            )
+        for ((cause, expected) in cases) {
+            val failure = ApiFailure.Network(cause)
+            val published = mutableListOf<ConnectorRead<String>>()
+            retryConnectorRead<String>(
+                read = { throw failure },
+                canRead = { true },
+                onError = {},
+                publish = { published += it },
+            )
+            assertEquals(listOf(ConnectorRead<String>(failure = expected)), published)
+        }
     }
 
     @Test

@@ -3,9 +3,6 @@ package ai.okou.android.connectors
 import ai.okou.android.api.ApiFailure
 import ai.okou.android.api.retryBoundedRead
 import ai.okou.android.isFreshMemorySnapshot
-import java.net.ConnectException
-import java.net.NoRouteToHostException
-import java.net.UnknownHostException
 import kotlin.time.TimeMark
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.currentCoroutineContext
@@ -78,13 +75,8 @@ internal suspend fun <T : Any> retryConnectorRead(
     publish(ConnectorRead(failure = failure))
 }
 
-// Canonical calls do not retry connections or follow redirects. These failures happen
-// before sending the request. A read timeout or a lost response does not prove that.
 internal fun Exception.connectionFailed(): Boolean =
-    this is ApiFailure.Network &&
-        (cause is UnknownHostException ||
-            cause is ConnectException ||
-            cause is NoRouteToHostException)
+    this is ApiFailure.Network && this.connectionFailed
 
 internal fun Exception.hasUncertainResponse() =
     this is ApiFailure.Network ||
