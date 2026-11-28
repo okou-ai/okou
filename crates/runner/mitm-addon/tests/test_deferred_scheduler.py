@@ -1,6 +1,5 @@
 """Tests for real deferred callback scheduling in mitm-addon hooks."""
 
-import asyncio
 import time
 from pathlib import Path
 
@@ -8,18 +7,13 @@ from mitmproxy import tcp
 
 import flow_metadata_keys as metadata_keys
 import mitm_addon
+from tests.deferred_callback_helpers import await_ready_callbacks
 from tests.jsonl_log_helpers import read_jsonl_entries_after_flush
 from tests.model_provider_flow_helpers import make_openai_responses_websocket_flow
 from tests.model_provider_websocket_helpers import (
     append_websocket_message,
     openai_websocket_usage_frame,
 )
-
-
-async def _run_ready_tasks() -> None:
-    ready = asyncio.Event()
-    asyncio.get_running_loop().call_soon(ready.set)
-    await ready.wait()
 
 
 async def test_registered_non_model_websocket_trim_uses_real_event_loop_scheduler(
@@ -42,7 +36,7 @@ async def test_registered_non_model_websocket_trim_uses_real_event_loop_schedule
 
     assert messages == [old_client, old_server, latest_server]
 
-    await _run_ready_tasks()
+    await await_ready_callbacks()
 
     assert flow.websocket.messages is messages
     assert flow.websocket.messages == [latest_server]
@@ -75,7 +69,7 @@ async def test_model_websocket_trim_coalesces_with_real_event_loop_scheduler(
     assert flow.websocket is not None
     assert flow.websocket.messages == [first_server, latest_server]
 
-    await _run_ready_tasks()
+    await await_ready_callbacks()
 
     assert flow.websocket.messages == [latest_server]
 
@@ -99,7 +93,7 @@ async def test_tcp_message_drain_uses_real_event_loop_scheduler(
 
     assert flow.messages == messages
 
-    await _run_ready_tasks()
+    await await_ready_callbacks()
 
     assert flow.messages == []
 
