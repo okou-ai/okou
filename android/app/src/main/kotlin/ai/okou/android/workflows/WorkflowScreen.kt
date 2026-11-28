@@ -126,6 +126,9 @@ private const val SECTION_EDITOR_FOCUS = "section"
 
 // Keep the stroke within a 40 dp surface centered in the 48 dp touch target.
 internal val WorkflowFilledActionFocusInset = 6.dp
+internal val WorkflowPaneMaxContentWidth = 730.dp
+
+internal fun workflowPaneHorizontalInset(wide: Boolean) = if (wide) 32.dp else 20.dp
 
 @Composable
 internal fun WorkflowScreen(
@@ -537,13 +540,13 @@ private fun WorkflowDirectory(
             }
         }
         if (state.catalogFailure == WorkflowReadFailure.Unavailable) {
-            Box(Modifier.widthIn(max = 730.dp).fillMaxWidth()) {
+            Box(Modifier.widthIn(max = WorkflowPaneMaxContentWidth).fillMaxWidth()) {
                 WorkflowInitialReadError(R.string.workflow_unavailable)
             }
             return@Column
         }
         Column(
-            Modifier.widthIn(max = 730.dp)
+            Modifier.widthIn(max = WorkflowPaneMaxContentWidth)
                 .fillMaxWidth()
                 .padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 8.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -573,7 +576,7 @@ private fun WorkflowDirectory(
                 onSelect = onScope,
             )
         }
-        Box(Modifier.weight(1f).widthIn(max = 730.dp).fillMaxWidth()) {
+        Box(Modifier.weight(1f).widthIn(max = WorkflowPaneMaxContentWidth).fillMaxWidth()) {
             when {
                 catalog == null && state.catalogFailure != null ->
                     WorkflowReadFailureContent(Modifier.fillMaxSize().padding(horizontal = 16.dp))
@@ -754,7 +757,7 @@ private fun WorkflowRow(
 }
 
 private fun workflowDetailPadding(wide: Boolean): PaddingValues {
-    val horizontal = if (wide) 32.dp else 20.dp
+    val horizontal = workflowPaneHorizontalInset(wide)
     return PaddingValues(
         start = horizontal,
         end = horizontal,
@@ -792,7 +795,7 @@ private fun WorkflowDetailPane(
     onEarlierRuns: () -> Unit,
     historySkeletonVisible: Boolean,
 ) {
-    val contentWidth = Modifier.widthIn(max = 730.dp).fillMaxWidth()
+    val contentWidth = Modifier.widthIn(max = WorkflowPaneMaxContentWidth).fillMaxWidth()
     val listPadding = workflowDetailPadding(wide)
     // An empty loading layout must not clamp the saved position of a long history.
     val pendingHistory = tab == WorkflowTab.History && state.history == null
@@ -995,7 +998,7 @@ private fun WorkflowPendingDetail(
     feedback: @Composable () -> Unit,
 ) {
     Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
-        Box(Modifier.weight(1f).widthIn(max = 730.dp).fillMaxWidth()) {
+        Box(Modifier.weight(1f).widthIn(max = WorkflowPaneMaxContentWidth).fillMaxWidth()) {
             when (failure) {
                 null ->
                     WorkflowDetailSkeleton(
@@ -1005,7 +1008,8 @@ private fun WorkflowPendingDetail(
                     WorkflowInitialReadError(R.string.workflow_unavailable)
                 is WorkflowReadFailure.Failed ->
                     WorkflowReadFailureContent(
-                        Modifier.fillMaxSize().padding(horizontal = if (wide) 32.dp else 20.dp),
+                        Modifier.fillMaxSize()
+                            .padding(horizontal = workflowPaneHorizontalInset(wide)),
                     )
             }
             Box(Modifier.align(Alignment.BottomCenter)) { feedback() }
@@ -1027,9 +1031,9 @@ private fun WorkflowUseBar(
     WorkflowDivider()
     val colors = MaterialTheme.colorScheme
     Column(
-        Modifier.widthIn(max = 730.dp)
+        Modifier.widthIn(max = WorkflowPaneMaxContentWidth)
             .fillMaxWidth()
-            .padding(horizontal = if (wide) 32.dp else 20.dp)
+            .padding(horizontal = workflowPaneHorizontalInset(wide))
             .padding(top = 8.dp, bottom = 10.dp),
         horizontalAlignment = if (wide) Alignment.End else Alignment.CenterHorizontally,
     ) {
@@ -1298,7 +1302,7 @@ internal fun WorkflowAction(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun WorkflowActionRipple(pending: Boolean, content: @Composable () -> Unit) {
+internal fun WorkflowActionRipple(pending: Boolean, content: @Composable () -> Unit) {
     // Pending actions retain the Material button's focus target and draw their own focus outline.
     CompositionLocalProvider(
         LocalRippleConfiguration provides if (pending) null else LocalRippleConfiguration.current,
