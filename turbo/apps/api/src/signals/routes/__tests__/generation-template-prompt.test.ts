@@ -108,7 +108,7 @@ describe("buildGenerationTemplatePrompt", () => {
       "when supported, add `--title` with a concise human-readable presentation name",
     );
     expect(result.prompt).toContain(
-      "Deliver HTML by default; convert to PPTX only when the user explicitly requests PowerPoint/PPTX",
+      "the current message's explicit format (including its selected template format) wins, then this input's frozen presentation default, then HTML",
     );
     const imageWorkflowLines = result.prompt.split("\n").filter((line) => {
       return line.startsWith("- Image workflow:");
@@ -173,7 +173,7 @@ describe("buildGenerationTemplatePrompt", () => {
       "when supported, add `--title` with a concise human-readable presentation name",
     );
     expect(result.prompt).toContain(
-      "Deliver HTML by default; convert to PPTX only when the user explicitly requests PowerPoint/PPTX",
+      "An existing HTML deck requires an explicit conversion request; a default alone does not request its conversion",
     );
     // A private package has no registry resource to pull.
     expect(result.prompt).not.toContain("okou resource pull");

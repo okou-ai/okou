@@ -1,9 +1,15 @@
 import type { SendMode } from "@okouai/api-contracts/contracts/user-preferences";
 import { ToggleButton } from "@okouai/ui";
 import { Switch } from "@okouai/ui/components/ui/switch";
-import { useGet, useLastResolved, useLastLoadable } from "ccstate-react";
+import {
+  useGet,
+  useLastResolved,
+  useLastLoadable,
+  useLoadable,
+} from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
-import { Cpu, Globe, Keyboard } from "lucide-react";
+import { Cpu, Globe, Keyboard, Presentation } from "lucide-react";
+import type { PresentationOutputFormat } from "@okouai/core/presentation-output-format";
 import { useTranslation } from "react-i18next";
 
 import { cloudBrowserEnabledByDefault$ } from "../../../../../signals/cloud-browser-preference.ts";
@@ -14,6 +20,11 @@ import { resolveModelFirstStoredUserSelection } from "../../../../../signals/oko
 import { updateCloudBrowserEnabledByDefault$ } from "../../../../../signals/okou-page/settings/cloud-browser-preference.ts";
 import { updateDefaultModelPreference$ } from "../../../../../signals/okou-page/settings/default-model-preference.ts";
 import { updateSendMode$ } from "../../../../../signals/okou-page/settings/send-mode-preference.ts";
+import {
+  presentationFormatPreference$,
+  presentationOutputFormatEnabled$,
+} from "../../../../../signals/okou-page/presentation-output-format.ts";
+import { updatePresentationFormat$ } from "../../../../../signals/okou-page/settings/presentation-format-preference.ts";
 import { pageSignal$ } from "../../../../../signals/page-signal.ts";
 import { sendMode$ } from "../../../../../signals/send-mode.ts";
 import { detach, Reason } from "../../../../../signals/utils.ts";
@@ -163,11 +174,102 @@ function SendModePreference() {
   );
 }
 
+function PresentationFormatPreference() {
+  const { t } = useTranslation();
+  const preferenceLoadable = useLoadable(presentationFormatPreference$);
+  const current =
+    preferenceLoadable.state === "hasData"
+      ? preferenceLoadable.data
+      : undefined;
+  const [saveLoadable, saveFormat] = useLoadableSet(updatePresentationFormat$);
+  const pageSignal = useGet(pageSignal$);
+  const saving = saveLoadable.state === "loading";
+  const title = t(($) => {
+    return $.settings.preferences.chat.presentationFormat.title;
+  });
+  const description =
+    current === "html"
+      ? t(($) => {
+          return $.settings.preferences.chat.presentationFormat.htmlDescription;
+        })
+      : current === "pptx"
+        ? t(($) => {
+            return $.settings.preferences.chat.presentationFormat
+              .pptxDescription;
+          })
+        : current === null
+          ? t(($) => {
+              return $.settings.preferences.chat.presentationFormat
+                .unsetDescription;
+            })
+          : t(($) => {
+              return $.settings.preferences.chat.presentationFormat.unavailable;
+            });
+
+  const handleChange = (format: PresentationOutputFormat) => {
+    detach(saveFormat(format, pageSignal), Reason.DomCallback);
+  };
+
+  return (
+    <PreferenceCardRow
+      icon={Presentation}
+      title={title}
+      description={description}
+      descriptionId="presentation-format-description"
+      status={
+        saveLoadable.state === "hasError" ? (
+          <p role="alert" className="text-sm text-destructive">
+            {t(($) => {
+              return $.settings.preferences.chat.presentationFormat.saveFailed;
+            })}
+          </p>
+        ) : undefined
+      }
+    >
+      <div
+        role="group"
+        aria-label={title}
+        aria-describedby="presentation-format-description"
+        className="flex flex-wrap gap-2 shrink-0"
+      >
+        <ToggleButton
+          type="button"
+          selected={current === "html"}
+          disabled={saving || current === undefined}
+          onClick={() => {
+            handleChange("html");
+          }}
+        >
+          {t(($) => {
+            return $.settings.preferences.chat.presentationFormat.html;
+          })}
+        </ToggleButton>
+        <ToggleButton
+          type="button"
+          selected={current === "pptx"}
+          disabled={saving || current === undefined}
+          onClick={() => {
+            handleChange("pptx");
+          }}
+        >
+          {t(($) => {
+            return $.settings.preferences.chat.presentationFormat.pptx;
+          })}
+        </ToggleButton>
+      </div>
+    </PreferenceCardRow>
+  );
+}
+
 export function ChatSection() {
+  const formatEnabled = useLoadable(presentationOutputFormatEnabled$);
   return (
     <section className="flex flex-col gap-3">
       <DefaultModelPreference />
       <CloudBrowserDefaultPreference />
+      {formatEnabled.state === "hasData" && formatEnabled.data && (
+        <PresentationFormatPreference />
+      )}
       <SendModePreference />
     </section>
   );

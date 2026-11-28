@@ -4,17 +4,25 @@ import {
   vertexTextRequest,
 } from "./helpers/google-text";
 import { randomUUID } from "node:crypto";
+import { cronCleanupSandboxesContract } from "@okouai/api-contracts/contracts/cron";
 import {
   resolveChatEventRecommendedFollowups,
   type ChatEvent,
 } from "@okouai/api-contracts/contracts/chat-threads";
 import { http, HttpResponse } from "msw";
 import { describe, expect, it } from "vitest";
-import { testContext } from "../../../__tests__/test-context";
+import { accept, testContext } from "../../../__tests__/test-context";
+import { setupApp } from "../../../__tests__/test-helpers";
+import { env } from "../../../lib/env";
+import { now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import type { ApiTestUser } from "./helpers/api-bdd";
+import { createRunsApi } from "./helpers/api-bdd-runs";
 import { readCompletedRunSessionId } from "./helpers/public-run-session";
+import { publicChatActor } from "./helpers/public-chat-actor";
+import { chatEventsRoutes } from "../chat-events";
+import { cronCleanupSandboxesRoutes } from "../cron-cleanup-sandboxes";
 import {
   createChatEventsFixture,
   userMessages,
@@ -29,6 +37,7 @@ const {
   entitledNativeChatActor,
   sendChatRun,
   runExecution,
+  webhooks,
   waitForThreadMessages,
   completeChatRunOk,
   failChatRun,
@@ -93,6 +102,154 @@ function recommendedFollowupEvents(
 }
 
 describe("CHAT-02: incomplete-round context", () => {
+  it.each(["failed", "cancelled", "timeout"] as const)(
+    "recovers each accepted input document after a %s Run with steering",
+    async (status) => {
+      if (status === "timeout") {
+        // Heartbeat expiry is an operator boundary; isolate its global sweep.
+        await setupApp({ context, routes: chatEventsRoutes, isolatePg: true });
+      }
+      let clock = now();
+      const owned = await publicChatActor(context, {
+        clockTime: () => {
+          return clock;
+        },
+      });
+      const { actor } = owned;
+      const initialText = "Initial request A";
+      const initialContext = "Initial-only execution context A";
+      const active = await owned.sendChatRun(actor, {
+        prompt: initialText,
+        userMessage: {
+          version: 1,
+          parts: [
+            { type: "text", text: initialText },
+            { type: "additional_info", text: initialContext },
+          ],
+        },
+      });
+      const execution = await owned.runExecution(active.runId);
+      const steeringText = "Steering request B";
+      const steeringContext = "Steering-only execution context B";
+      const eventId = randomUUID();
+      await owned.requestSendEvent(
+        actor,
+        {
+          threadId: active.threadId,
+          clientEventId: eventId,
+          prompt: steeringText,
+          userMessage: {
+            version: 1,
+            parts: [
+              { type: "text", text: steeringText },
+              { type: "additional_info", text: steeringContext },
+            ],
+          },
+        },
+        [201],
+      );
+      const steering = await owned.run(() => {
+        return api.nextSteerableInput(
+          execution.execution.sandboxToken,
+          active.runId,
+        );
+      });
+      expect(steering).toStrictEqual({
+        input: {
+          eventId,
+          prompt: `${steeringContext}\n\n${steeringText}`,
+        },
+      });
+      await owned.run(() => {
+        return api.declareSteeredInput(
+          execution.execution.sandboxToken,
+          active.runId,
+          eventId,
+        );
+      });
+      await owned.run(() => {
+        return webhooks.requestAgentEvents(
+          {
+            runId: active.runId,
+            events: [
+              {
+                type: "assistant",
+                sequenceNumber: 0,
+                message: {
+                  content: [
+                    { type: "text", text: "Partial answer after steering B" },
+                  ],
+                },
+              },
+            ],
+          },
+          execution.sandboxHeaders,
+          [200],
+        );
+      });
+      await owned.run(flushWaitUntilForTest);
+      if (status === "failed") {
+        await owned.run(() => {
+          return failChatRun(
+            active.runId,
+            execution.sandboxHeaders,
+            "Runner failed after steering",
+          );
+        });
+      } else if (status === "cancelled") {
+        await owned.run(() => {
+          return cancelChatRun(actor, active.runId, execution.sandboxHeaders);
+        });
+      } else {
+        clock = now() + 121_000;
+        await owned.run(async () => {
+          await accept(
+            setupApp({ context, routes: cronCleanupSandboxesRoutes })(
+              cronCleanupSandboxesContract,
+            ).cleanup({
+              headers: { authorization: `Bearer ${env("CRON_SECRET")}` },
+            }),
+            [200],
+          );
+        });
+        await owned.run(() => {
+          return createRunsApi(context).registerDirectRunner(owned.runnerGroup);
+        });
+      }
+      await owned.run(flushWaitUntilForTest);
+      await expect(
+        owned.run(() => {
+          return api.readRun(actor, active.runId);
+        }),
+      ).resolves.toMatchObject({ status });
+
+      const next = await owned.sendChatRun(actor, {
+        threadId: active.threadId,
+        prompt: "Continue after the interrupted Run",
+      });
+      const recovered = await owned.runExecution(next.runId);
+      const appended = recovered.execution.appendSystemPrompt ?? "";
+      expect(appended).toContain("# Incomplete Rounds Context");
+      expect(appended).toContain(`RUN_STATUS: ${status}`);
+      expect(
+        appended.split("\n").filter((line) => {
+          return line.startsWith("User: ");
+        }),
+      ).toStrictEqual([`User: ${initialContext}`, `User: ${steeringContext}`]);
+      expect(appended).toContain(`User: ${initialContext}\n\n${initialText}`);
+      expect(appended).toContain(`User: ${steeringContext}\n\n${steeringText}`);
+      expect(appended).toContain(
+        "Assistant (partial): Partial answer after steering B",
+      );
+      expect(recovered.execution.prompt).toBe(
+        "Continue after the interrupted Run",
+      );
+      await owned.run(() => {
+        return completeChatRunOk(next.runId, recovered.sandboxHeaders);
+      });
+    },
+  );
+
   it("injects incomplete rounds and truncates old content chronologically", async () => {
     const { actor } = await entitledNativeChatActor();
 

@@ -1,10 +1,8 @@
-import { command, computed } from "ccstate";
+import { computed } from "ccstate";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { featureSwitches$ } from "../external/feature-switch.ts";
-import { localStorageSignals } from "../external/local-storage.ts";
 import type { PresentationOutputFormat } from "@okouai/core/presentation-output-format";
-
-const storage = localStorageSignals("presentation-output-format");
+import { featureSwitches$ } from "../external/feature-switch.ts";
+import { userPreferences$ } from "./settings/user-preferences.ts";
 
 export const presentationOutputFormatEnabled$ = computed(async (get) => {
   return (await get(featureSwitches$))[
@@ -12,14 +10,11 @@ export const presentationOutputFormatEnabled$ = computed(async (get) => {
   ];
 });
 
-export const presentationOutputFormat$ = computed(
-  (get): PresentationOutputFormat => {
-    return get(storage.get$) === "pptx" ? "pptx" : "html";
-  },
-);
-
-export const setPresentationOutputFormat$ = command(
-  ({ set }, format: PresentationOutputFormat) => {
-    set(storage.set$, format);
+export const presentationFormatPreference$ = computed(
+  async (get): Promise<PresentationOutputFormat | null | undefined> => {
+    if (!(await get(presentationOutputFormatEnabled$))) {
+      return undefined;
+    }
+    return (await get(userPreferences$)).presentationFormat;
   },
 );

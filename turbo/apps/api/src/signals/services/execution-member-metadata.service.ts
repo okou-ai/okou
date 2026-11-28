@@ -1,4 +1,5 @@
 import type { ModelSettings } from "@okouai/api-contracts/contracts/model-reasoning-effort";
+import type { PresentationOutputFormat } from "@okouai/api-contracts/validators/presentation-output-format";
 
 export interface ExecutionMemberIdentity {
   readonly orgId: string;
@@ -17,6 +18,7 @@ export interface ExecutionMemberPreferences {
   readonly serviceTier: string | null;
   readonly modelSettings: ModelSettings;
   readonly cloudBrowserEnabledByDefault: boolean;
+  readonly presentationFormat: PresentationOutputFormat | null;
 }
 
 export interface ExecutionMemberMetadata {

@@ -1995,6 +1995,18 @@
       "message": "Mensagem",
       "modelForThisChat": "Modelo para este chat",
       "placeholder": "Peça para automatizar fluxos de trabalho, gerenciar tarefas...",
+      "presentationFormatSetup": {
+        "htmlDescription": "Salvar como padrão e enviar",
+        "htmlLabel": "Slides web",
+        "openSettings": "Abrir configurações",
+        "pptxDescription": "Salvar como padrão e enviar",
+        "pptxLabel": "PowerPoint",
+        "savedDefault": "Formato padrão de apresentação salvo.",
+        "saveFailed": "Não foi possível salvar o formato padrão. Tente novamente.",
+        "saving": "Salvando…",
+        "settingsHint": "Salvo para você neste espaço de trabalho. Altere em Configurações → Chat.",
+        "title": "Escolha seu formato padrão de apresentação"
+      },
       "selectedModelUnavailable": "O modelo selecionado não está disponível. Configure-o antes de enviar.",
       "selectedModelUnavailableToast": "O modelo selecionado não está disponível",
       "selectModel": "Selecionar modelo",
@@ -2694,11 +2706,6 @@
       "unsupported": "A redefinição manual não é compatível; o uso se recupera automaticamente."
     },
     "taskChips": {
-      "presentationFormat": "Formato da apresentação",
-      "presentationFormats": {
-        "html": "HTML",
-        "pptx": "PPTX"
-      },
       "presentationTemplates": "Modelos de apresentação",
       "removeTask": "Remover {{task}}",
       "shelf": {
@@ -6166,6 +6173,16 @@
           "title": "Modelo padrão"
         },
         "description": "Escolha os padrões para novos chats e como as mensagens são enviadas.",
+        "presentationFormat": {
+          "html": "Slides web",
+          "htmlDescription": "Usar slides web, a menos que você solicite outro formato.",
+          "pptx": "PowerPoint",
+          "pptxDescription": "Usar PowerPoint, a menos que você solicite outro formato.",
+          "saveFailed": "Não foi possível salvar o formato padrão. Tente novamente.",
+          "title": "Formato padrão de apresentação",
+          "unavailable": "Sua preferência de formato de apresentação está indisponível.",
+          "unsetDescription": "Escolha um formato padrão para suas apresentações neste espaço de trabalho."
+        },
         "sectionTitle": "Chat"
       },
       "debug": {

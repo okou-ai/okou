@@ -1959,6 +1959,18 @@
       "message": "メッセージ",
       "modelForThisChat": "このチャットのモデル",
       "placeholder": "ワークフローの自動化、タスクの管理を依頼してください...",
+      "presentationFormatSetup": {
+        "htmlDescription": "既定として保存して送信",
+        "htmlLabel": "Webスライド",
+        "openSettings": "設定を開く",
+        "pptxDescription": "既定として保存して送信",
+        "pptxLabel": "PowerPoint",
+        "savedDefault": "プレゼンテーションの既定の形式を保存しました。",
+        "saveFailed": "既定の形式を保存できませんでした。もう一度お試しください。",
+        "saving": "保存中…",
+        "settingsHint": "このワークスペースであなたの既定として保存されます。「設定 → チャット」で変更できます。",
+        "title": "プレゼンテーションの既定の形式を選択"
+      },
       "selectedModelUnavailable": "選択されたモデルは使用できません。送信する前に設定してください。",
       "selectedModelUnavailableToast": "選択したモデルは利用できません",
       "selectModel": "モデルを選択してください",
@@ -2629,11 +2641,6 @@
       "unsupported": "手動リセットには対応していません。使用量は自動的に回復します。"
     },
     "taskChips": {
-      "presentationFormat": "プレゼンテーション形式",
-      "presentationFormats": {
-        "html": "HTML",
-        "pptx": "PPTX"
-      },
       "presentationTemplates": "プレゼンテンプレート",
       "removeTask": "{{task}}を削除",
       "shelf": {
@@ -6072,6 +6079,16 @@
           "title": "デフォルトモデル"
         },
         "description": "新しいチャットの初期設定とメッセージの送信方法を選択します。",
+        "presentationFormat": {
+          "html": "Webスライド",
+          "htmlDescription": "別の形式を指定しない限り、Webスライドを使用します。",
+          "pptx": "PowerPoint",
+          "pptxDescription": "別の形式を指定しない限り、PowerPointを使用します。",
+          "saveFailed": "既定の形式を保存できませんでした。もう一度お試しください。",
+          "title": "プレゼンテーションの既定の形式",
+          "unavailable": "プレゼンテーション形式の設定を取得できません。",
+          "unsetDescription": "このワークスペースであなたが使うプレゼンテーションの既定の形式を選択します。"
+        },
         "sectionTitle": "チャット"
       },
       "debug": {

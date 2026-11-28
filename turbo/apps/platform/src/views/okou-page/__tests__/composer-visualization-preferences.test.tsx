@@ -1,5 +1,6 @@
 import { screen, waitFor } from "@testing-library/react";
 import { test, expect } from "vitest";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { click, setupPage, fill } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { createDeferredPromise } from "../../../signals/utils.ts";
@@ -86,37 +87,51 @@ test("composer-visualization-preferences-001 a read-only chart summary tracks ea
   expect(summary(draft)).toStrictEqual([]);
   await expect(findFastControl("button", "Send")).resolves.toBeDisabled();
 });
-async function pending(path: string) {
+async function pending(
+  path: string,
+  output: "Spreadsheet" | "Presentation" = "Spreadsheet",
+) {
+  context.mocks.data.userPreferences({ presentationFormat: "pptx" });
   const gate = createDeferredPromise<void>(context.signal);
   const fixture = createTemplateGalleryHelpers(context).mockTemplateChat({
     sendGate: gate.promise,
   });
-  await setupPage({ context, path });
+  await setupPage({
+    context,
+    path,
+    featureSwitches: { [FeatureSwitchKey.PresentationOutputFormat]: true },
+  });
   await press("Chart");
-  await option("Spreadsheet");
+  await option(output);
   await option("Bar chart");
   await fill(await findComposerEditor(), first);
   await press("Send");
   const sent = await message(first);
-  expect(summary(sent)).toStrictEqual(["Spreadsheet · Bar"]);
+  expect(summary(sent)).toStrictEqual([`${output} · Bar`]);
   return { gate, fixture, sent };
 }
-test("composer-visualization-preferences-003 accepting the first send consumes only its draft chart choices", async () => {
-  const { gate, fixture, sent } = await pending("/chats/" + THREAD_ID);
-  const draft = await board();
-  expect(summary(draft)).toStrictEqual(["Spreadsheet · Bar"]);
-  gate.resolve();
-  await waitFor(() => {
-    expect(summary(draft)).toStrictEqual([]);
-  });
-  fixture.lifecycle.completeRun("Quarterly chart received");
-  createChatEvent(THREAD_ID);
-  await screen.findByText("Quarterly chart received");
-  await fill(await findComposerEditor(), second);
-  await press("Send");
-  expect(summary(await message(second))).toStrictEqual([]);
-  expect(summary(sent)).toStrictEqual(["Spreadsheet · Bar"]);
-});
+test.each(["Spreadsheet", "Presentation"] as const)(
+  "composer-visualization-preferences-003 accepting the first %s send consumes only its draft chart choices",
+  async (output) => {
+    const { gate, fixture, sent } = await pending(
+      "/chats/" + THREAD_ID,
+      output,
+    );
+    const draft = await board();
+    expect(summary(draft)).toStrictEqual([`${output} · Bar`]);
+    gate.resolve();
+    await waitFor(() => {
+      expect(summary(draft)).toStrictEqual([]);
+    });
+    fixture.lifecycle.completeRun("Quarterly chart received");
+    createChatEvent(THREAD_ID);
+    await screen.findByText("Quarterly chart received");
+    await fill(await findComposerEditor(), second);
+    await press("Send");
+    expect(summary(await message(second))).toStrictEqual([]);
+    expect(summary(sent)).toStrictEqual([`${output} · Bar`]);
+  },
+);
 
 test.each([
   { id: "004", path: "/" },

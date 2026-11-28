@@ -1,4 +1,3 @@
-import type { PresentationOutputFormat } from "@okouai/core/presentation-output-format";
 import type {
   ComposerCreateMode,
   PresentationSlideCount,
@@ -56,17 +55,10 @@ export function parseComposerVisualizationPreferences(
   return output || charts.length > 0 ? { output, charts } : undefined;
 }
 
-function presentationTemplateFormatInstruction(
-  format: PresentationOutputFormat,
-): string {
-  return `- When no presentation template is selected, use \`okou generate presentation --format ${format} --prompt "<user request>"\` to choose a matching built-in package. If the message requests a different format, use that format instead.`;
-}
-
 export function buildComposerAdditionalInfo(
   mode: ComposerCreateMode | null,
   presentationSlideCount: PresentationSlideCount,
   visualization: VisualizationPreferences | undefined,
-  presentationFormat?: PresentationOutputFormat,
 ): string | undefined {
   const text = [
     mode ? `Create ${mode === "image" ? "an" : "a"} ${mode}.` : "",
@@ -74,34 +66,19 @@ export function buildComposerAdditionalInfo(
       ? [
           "# Presentation Generation Defaults",
           "The user set these for presentations generated in this run:",
-          ...(presentationFormat
-            ? [
-                `- Output format: ${presentationFormat.toUpperCase()} format`,
-                presentationTemplateFormatInstruction(presentationFormat),
-              ]
-            : []),
           `- Slide count: ${
             presentationSlideCount === "auto"
               ? "Auto (choose the number of slides based on the content)"
               : presentationSlideCount
           }`,
-          presentationFormat
-            ? "The output format is a preference. Where this run's message asks for a different output format or slide count, the message wins."
-            : "Where this run's message asks for a different slide count, the message wins.",
+          "Where this run's message asks for a different slide count, the message wins.",
         ].join("\n")
       : "",
     visualization
       ? [
           "# Visualization",
           "The user wants a visualized result for this run.",
-          `- Preferred output format: ${visualization.output ?? "report"}${
-            visualization.output === "presentation" && presentationFormat
-              ? ` (${presentationFormat.toUpperCase()} format)`
-              : ""
-          }`,
-          ...(visualization.output === "presentation" && presentationFormat
-            ? [presentationTemplateFormatInstruction(presentationFormat)]
-            : []),
+          `- Preferred output format: ${visualization.output ?? "report"}`,
           visualization.charts.length > 0
             ? `- Preferred chart types: ${visualization.charts.join(", ")}`
             : "",

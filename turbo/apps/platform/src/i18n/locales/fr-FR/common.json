@@ -1995,6 +1995,18 @@
       "message": "Message",
       "modelForThisChat": "Modèle pour cette discussion",
       "placeholder": "Demandez-moi d’automatiser des workflows, de gérer des tâches...",
+      "presentationFormatSetup": {
+        "htmlDescription": "Enregistrer par défaut et envoyer",
+        "htmlLabel": "Diapositives web",
+        "openSettings": "Ouvrir les paramètres",
+        "pptxDescription": "Enregistrer par défaut et envoyer",
+        "pptxLabel": "PowerPoint",
+        "savedDefault": "Format de présentation par défaut enregistré.",
+        "saveFailed": "Impossible d’enregistrer le format par défaut. Réessayez.",
+        "saving": "Enregistrement…",
+        "settingsHint": "Enregistré pour vous dans cet espace de travail. Modifiable dans Paramètres → Chat.",
+        "title": "Choisissez votre format de présentation par défaut"
+      },
       "selectedModelUnavailable": "Le modèle sélectionné n'est pas disponible. Configurez-le avant d'envoyer.",
       "selectedModelUnavailableToast": "Le modèle sélectionné n'est pas disponible",
       "selectModel": "Sélectionner le modèle",
@@ -2694,11 +2706,6 @@
       "unsupported": "La réinitialisation manuelle n’est pas prise en charge ; l’utilisation se rétablit naturellement."
     },
     "taskChips": {
-      "presentationFormat": "Format de présentation",
-      "presentationFormats": {
-        "html": "HTML",
-        "pptx": "PPTX"
-      },
       "presentationTemplates": "Modèles de présentation",
       "removeTask": "Retirer {{task}}",
       "shelf": {
@@ -6166,6 +6173,16 @@
           "title": "Modèle par défaut"
         },
         "description": "Choisissez les paramètres par défaut des nouvelles discussions et le mode d’envoi des messages.",
+        "presentationFormat": {
+          "html": "Diapositives web",
+          "htmlDescription": "Utiliser les diapositives web sauf si vous demandez un autre format.",
+          "pptx": "PowerPoint",
+          "pptxDescription": "Utiliser PowerPoint sauf si vous demandez un autre format.",
+          "saveFailed": "Impossible d’enregistrer le format par défaut. Réessayez.",
+          "title": "Format de présentation par défaut",
+          "unavailable": "Votre préférence de format de présentation est indisponible.",
+          "unsetDescription": "Choisissez un format par défaut pour vos présentations dans cet espace de travail."
+        },
         "sectionTitle": "Chat"
       },
       "debug": {

@@ -1965,6 +1965,18 @@
       "message": "Nachricht",
       "modelForThisChat": "Modell für diesen Chat",
       "placeholder": "Bitten Sie mich, Workflows zu automatisieren und Aufgaben zu verwalten...",
+      "presentationFormatSetup": {
+        "htmlDescription": "Als Standard speichern und senden",
+        "htmlLabel": "Web-Folien",
+        "openSettings": "Einstellungen öffnen",
+        "pptxDescription": "Als Standard speichern und senden",
+        "pptxLabel": "PowerPoint",
+        "savedDefault": "Standardformat für Präsentationen gespeichert.",
+        "saveFailed": "Das Standardformat konnte nicht gespeichert werden. Versuche es erneut.",
+        "saving": "Wird gespeichert…",
+        "settingsHint": "Wird für dich in diesem Arbeitsbereich gespeichert. Änderbar unter Einstellungen → Chat.",
+        "title": "Wähle dein Standardformat für Präsentationen"
+      },
       "selectedModelUnavailable": "Das ausgewählte Modell ist nicht verfügbar. Konfigurieren Sie es vor dem Senden.",
       "selectedModelUnavailableToast": "Das ausgewählte Modell ist nicht verfügbar",
       "selectModel": "Modell auswählen",
@@ -2644,11 +2656,6 @@
       "unsupported": "Manuelles Zurücksetzen wird nicht unterstützt; die Nutzung erholt sich automatisch."
     },
     "taskChips": {
-      "presentationFormat": "Präsentationsformat",
-      "presentationFormats": {
-        "html": "HTML",
-        "pptx": "PPTX"
-      },
       "presentationTemplates": "Präsentationsvorlagen",
       "removeTask": "{{task}} entfernen",
       "shelf": {
@@ -6096,6 +6103,16 @@
           "title": "Standardmodell"
         },
         "description": "Lege Standardeinstellungen für neue Chats und die Art des Nachrichtenversands fest.",
+        "presentationFormat": {
+          "html": "Web-Folien",
+          "htmlDescription": "Web-Folien verwenden, sofern du kein anderes Format anforderst.",
+          "pptx": "PowerPoint",
+          "pptxDescription": "PowerPoint verwenden, sofern du kein anderes Format anforderst.",
+          "saveFailed": "Das Standardformat konnte nicht gespeichert werden. Versuche es erneut.",
+          "title": "Standardformat für Präsentationen",
+          "unavailable": "Deine Einstellung für das Präsentationsformat ist nicht verfügbar.",
+          "unsetDescription": "Wähle ein Standardformat für deine Präsentationen in diesem Arbeitsbereich."
+        },
         "sectionTitle": "Chat"
       },
       "debug": {

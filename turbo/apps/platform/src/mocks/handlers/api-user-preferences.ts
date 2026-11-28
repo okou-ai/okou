@@ -27,6 +27,7 @@ let mockPreferences: UserPreferencesResponse = {
   forYouCoverId: null,
   theme: "system",
   colorTheme: null,
+  presentationFormat: null,
   captureNetworkBodiesRemaining: 0,
   memoryInitialized: true,
 };
@@ -55,6 +56,7 @@ export function resetMockUserPreferences(): void {
     forYouCoverId: null,
     theme: "system",
     colorTheme: null,
+    presentationFormat: null,
     captureNetworkBodiesRemaining: 0,
     memoryInitialized: true,
   };

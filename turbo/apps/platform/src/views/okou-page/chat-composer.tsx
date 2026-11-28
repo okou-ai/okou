@@ -185,6 +185,7 @@ import type { ConnectorConnectHandlers } from "./components/settings/launch-conn
 import type { ComposerPasteEvent } from "./composer-input-types.ts";
 import { ComposerNoticeTray } from "./composer-notice-tray.tsx";
 import { ComposerRail } from "./composer-rail.tsx";
+import { ComposerPresentationFormatSetup } from "./composer-presentation-format-setup.tsx";
 import {
   TEMPLATE_CARD,
   TemplateCard,
@@ -3196,9 +3197,11 @@ function ComposerInputSlot({
 function ComposerSendButton({
   action,
   onActivate,
+  sendRef,
 }: {
   action: ComposerPrimaryAction;
   onActivate: () => void;
+  sendRef: RefCallback<HTMLButtonElement>;
 }) {
   const { t } = useTranslation();
   const sendModeLoadable = useLastLoadable(sendMode$);
@@ -3225,6 +3228,7 @@ function ComposerSendButton({
   });
   const button = (
     <Button
+      ref={sendRef}
       size="icon-sm"
       className="shrink-0"
       onClick={onActivate}
@@ -3238,13 +3242,7 @@ function ComposerSendButton({
     <TooltipProvider delay={200}>
       <Tooltip>
         <TooltipTrigger
-          render={
-            action === "disabled" ? (
-              <span className="inline-flex">{button}</span>
-            ) : (
-              button
-            )
-          }
+          render={<span className="inline-flex">{button}</span>}
         />
         <TooltipContent
           role="tooltip"
@@ -3269,6 +3267,9 @@ function ComposerSendControl({
   actions: ComposerActions;
 }) {
   const action = useComposerPrimaryAction(signals, actions);
+  const setSendAnchor = useSet(
+    signals.submission.presentationFormatSetup.setAnchor$,
+  );
   const activatePrimaryAction = actions.submit;
   const ensurePushSubscription = useSet(ensurePushSubscription$);
   const rootSignal = useGet(rootSignal$);
@@ -3288,7 +3289,18 @@ function ComposerSendControl({
       rootSignal,
     );
   };
-  return <ComposerSendButton action={action} onActivate={activate} />;
+  return (
+    <>
+      <ComposerSendButton
+        action={action}
+        onActivate={activate}
+        sendRef={setSendAnchor}
+      />
+      <ComposerPresentationFormatSetup
+        signals={signals.submission.presentationFormatSetup}
+      />
+    </>
+  );
 }
 
 function ModelConfigurationWarning({

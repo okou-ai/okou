@@ -51,6 +51,10 @@ describe("okou generate presentation command", () => {
     );
     expect(stdout).toContain("API migration plan");
     expect(stdout).toContain("Requested output format: html");
+    expect(stdout).toContain(
+      "The CLI output format is a package-selection parameter, not proof of an explicit user choice",
+    );
+    expect(stdout).toContain("Do not query or update saved preferences");
     expect(stdout).toContain("Slide count: 10");
     expect(stdout).toContain(
       "Before choosing a template, planning slides, or launching workers, read the user's request and supplied source text and inspect important charts and images",
@@ -157,16 +161,16 @@ describe("okou generate presentation command", () => {
       '- For HTML delivery, host the finished deck: okou host <output-dir> --site team-plan --title "<presentation title>" --artifact-kind presentation-html --visibility org --preview ./generated/previews/cover.png --json',
     ]);
     expect(stdout).toContain(
-      "Deliver HTML by default; convert to PPTX only when the user explicitly requests PowerPoint/PPTX",
+      "the current message's explicit format (including its selected template format) wins, then this input's frozen presentation default, then HTML",
     );
     expect(stdout).toContain(
-      "Do not infer a conversion request from remembered preferences or intended use",
+      "An existing HTML deck requires an explicit conversion request; a default alone does not request its conversion",
     );
     expect(stdout).toContain(
       "Deliver one format unless the user requests multiple formats",
     );
     expect(stdout).toContain(
-      "For an explicit PowerPoint/PPTX request, follow the platform's conversion instructions. Otherwise, follow the HTML preview and hosting steps below",
+      "If the resolved new-presentation output is PPTX but the selected template is HTML-only, follow the platform's available conversion instructions",
     );
     expect(stdout).toContain("okou web upload-file -f <file> --visibility org");
     expect(stdout).toContain(

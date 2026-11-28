@@ -58,10 +58,7 @@ import {
   type ComposerUiSignalGroups,
 } from "./chat-composer.ts";
 import { buildComposerAdditionalInfo } from "./composer-additional-info.ts";
-import {
-  presentationOutputFormat$,
-  presentationOutputFormatEnabled$,
-} from "./presentation-output-format.ts";
+import { createPresentationFormatSetupSignals } from "./composer-presentation-format-setup.ts";
 import type { ComposerTaskSelection } from "./composer-task-handoff.ts";
 import type { ComposerProjectSignals } from "../projects/composer-project.ts";
 import {
@@ -220,6 +217,9 @@ interface ComposerSubmissionSignals extends ReturnType<
 > {
   readonly sending$: Computed<Promise<boolean>>;
   readonly hasCurrentInvocation$: Computed<boolean>;
+  readonly presentationFormatSetup: ReturnType<
+    typeof createPresentationFormatSetupSignals
+  >;
   /**
    * Sends what the composer currently holds. The second argument is agent-only
    * context for this one send: it reaches the run's prompt through the
@@ -609,6 +609,7 @@ export function createComposerSignals(
     /** Starts the composer's owner-scoped work under its owner's signal. */
     setup$: command(({ set }, signal: AbortSignal) => {
       set(voice.setup$, signal);
+      set(submission.presentationFormatSetup.setup$, signal);
       set(connectorCompletion.registerConnectHost$, signal);
     }),
     ...composerRemoteAccessSignals(options, connector),
@@ -1063,16 +1064,10 @@ function createSubmitCurrentInput({
         taskSelection.task === "visualization"
           ? taskSelection.visualization
           : undefined;
-      const presentationFormat =
-        (await get(presentationOutputFormatEnabled$)) &&
-        (mode === "presentation" || visualization?.output === "presentation")
-          ? get(presentationOutputFormat$)
-          : undefined;
       const composerAdditionalInfo = buildComposerAdditionalInfo(
         mode,
         get(create.presentationSlideCount$),
         visualization,
-        presentationFormat,
       );
       const additionalInfo = joinAdditionalInfo(
         callerAdditionalInfo,
@@ -1084,7 +1079,6 @@ function createSubmitCurrentInput({
               submission.editorDocument.toEditorDocument(),
             ),
             additionalInfo,
-            presentationFormat,
           )
         : submission.editorDocument;
       const nextSubmission: ComposerSubmission = {
@@ -1156,13 +1150,27 @@ function createComposerSubmissionSignals(
     workflowComposer,
     voiceState$,
   });
-  const submitCurrentInput$ = createSubmitCurrentInput({
+  const submitInput$ = createSubmitCurrentInput({
     options,
     workflowComposer,
     voice,
     create,
     taskChips,
   });
+  const knownPresentation$ = computed((get) => {
+    const task = get(taskChips.task$);
+    return (
+      task === "presentation" ||
+      (task === "visualization" &&
+        get(taskChips.visualization.preferences$).output === "presentation")
+    );
+  });
+  const presentationFormatSetup = createPresentationFormatSetupSignals({
+    knownPresentation$,
+    primaryAction$: primaryAction.primaryAction$,
+    submitCurrentInput$: submitInput$,
+  });
+  const submitCurrentInput$ = presentationFormatSetup.submit$;
   const activatePrimaryAction$ = command(
     async (
       { get, set },
@@ -1187,6 +1195,7 @@ function createComposerSubmissionSignals(
   return {
     hasCurrentInvocation$,
     ...primaryAction,
+    presentationFormatSetup,
     submitCurrentInput$,
     activatePrimaryAction$,
   };

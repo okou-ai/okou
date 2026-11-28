@@ -1,4 +1,5 @@
 import type { SuggestionPreset } from "@okouai/api-contracts/validators/chat-threads";
+import { withoutPresentationPreferenceContext } from "@okouai/api-contracts/contracts/presentation-preference-context";
 import {
   captureSuggestionCard,
   type SuggestionDirection,
@@ -300,10 +301,11 @@ const sendAgentSuggestionOption$ = command(
     direction: SuggestionDirection,
     signal: AbortSignal,
   ): Promise<void> => {
-    const userMessage = option.draft.draftUserMessage;
-    if (!userMessage) {
+    const preparedMessage = option.draft.draftUserMessage;
+    if (!preparedMessage) {
       throw new Error("Missing suggestion composer document");
     }
+    const userMessage = withoutPresentationPreferenceContext(preparedMessage);
     const prompt = messageDocumentToPrompt(userMessage);
     if (prompt === null) {
       throw new Error("Invalid suggestion composer document");

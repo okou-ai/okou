@@ -1995,6 +1995,18 @@
       "message": "Messaggio",
       "modelForThisChat": "Modello per questa chat",
       "placeholder": "Chiedimi di automatizzare i flussi di lavoro, gestire le attività...",
+      "presentationFormatSetup": {
+        "htmlDescription": "Salva come predefinito e invia",
+        "htmlLabel": "Diapositive web",
+        "openSettings": "Apri impostazioni",
+        "pptxDescription": "Salva come predefinito e invia",
+        "pptxLabel": "PowerPoint",
+        "savedDefault": "Formato di presentazione predefinito salvato.",
+        "saveFailed": "Impossibile salvare il formato predefinito. Riprova.",
+        "saving": "Salvataggio…",
+        "settingsHint": "Salvato per te in questo spazio di lavoro. Modificalo in Impostazioni → Chat.",
+        "title": "Scegli il formato predefinito delle tue presentazioni"
+      },
       "selectedModelUnavailable": "Il modello selezionato non è disponibile. Configuralo prima dell'invio.",
       "selectedModelUnavailableToast": "Il modello selezionato non è disponibile",
       "selectModel": "Seleziona modello",
@@ -2694,11 +2706,6 @@
       "unsupported": "Il ripristino manuale non è supportato; l’utilizzo si ripristina automaticamente."
     },
     "taskChips": {
-      "presentationFormat": "Formato della presentazione",
-      "presentationFormats": {
-        "html": "HTML",
-        "pptx": "PPTX"
-      },
       "presentationTemplates": "Modelli di presentazione",
       "removeTask": "Rimuovi {{task}}",
       "shelf": {
@@ -6166,6 +6173,16 @@
           "title": "Modello predefinito"
         },
         "description": "Scegli le impostazioni predefinite per le nuove chat e come inviare i messaggi.",
+        "presentationFormat": {
+          "html": "Diapositive web",
+          "htmlDescription": "Usa le diapositive web a meno che tu non richieda un altro formato.",
+          "pptx": "PowerPoint",
+          "pptxDescription": "Usa PowerPoint a meno che tu non richieda un altro formato.",
+          "saveFailed": "Impossibile salvare il formato predefinito. Riprova.",
+          "title": "Formato di presentazione predefinito",
+          "unavailable": "La tua preferenza per il formato delle presentazioni non è disponibile.",
+          "unsetDescription": "Scegli un formato predefinito per le tue presentazioni in questo spazio di lavoro."
+        },
         "sectionTitle": "Chat"
       },
       "debug": {

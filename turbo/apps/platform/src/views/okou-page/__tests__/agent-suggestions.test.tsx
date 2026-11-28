@@ -1,6 +1,8 @@
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { runModelsMainContract } from "@okouai/api-contracts/contracts/run-models";
 import { userPreferencesContract } from "@okouai/api-contracts/contracts/user-preferences";
+import { presentationPreferenceContextPart } from "@okouai/api-contracts/contracts/presentation-preference-context";
+import { suggestionContextPart } from "@okouai/api-contracts/contracts/suggestion-context";
 import {
   feedContract,
   type SuggestionCard,
@@ -35,6 +37,7 @@ import {
   findFastControl,
   queryFastControl,
 } from "./chat-message-experience-test-helpers.ts";
+import { presentationPart } from "./template-submission-fixtures.ts";
 import {
   acme,
   design,
@@ -176,6 +179,147 @@ test("agent-suggestions-001 a removed feed item sends the choice with its origin
   });
   await expect(sent.promise).resolves.toBe("Draft Vendor renewals");
   await screen.findByText("All caught up");
+  expect(location.pathname).toBe("/for-you");
+});
+
+test("A prepared suggestion sends its task context, explicit formats, source and files as a new input", async () => {
+  context.mocks.data.userPreferences({ presentationFormat: "html" });
+  const item = proposal("Coastal review");
+  const option = item.content.options[0]!;
+  const files = ["coastal-notes.txt", "forecast.txt"].map((filename) => {
+    return {
+      id: crypto.randomUUID(),
+      filename,
+      url: `https://files.example.test/${filename}`,
+      contentType: "text/plain",
+      size: 24,
+    };
+  });
+  const source = { type: "source" as const, kind: "slack" as const };
+  const text = {
+    type: "text" as const,
+    text: "# Presentation Output Preference\nUse this heading in the coastal review.",
+  };
+  const template = presentationPart();
+  const explicit = {
+    ...template,
+    template: {
+      ...template.template,
+      selection: {
+        ...template.template.selection,
+        outputFormat: "html" as const,
+      },
+    },
+  };
+  const contextPart = suggestionContextPart({
+    draftId: item.id,
+    suggestionId: item.id,
+    optionId: "custom",
+    titleSnapshot: item.content.title,
+    rationaleSnapshot: item.content.rationale,
+    contextVersion: "coastal-review-v1",
+    attachmentIds: files.map((file) => {
+      return file.id;
+    }),
+  });
+  const feedback = {
+    type: "feedback" as const,
+    quote: "Keep the coastal forecast.",
+    note: [
+      { type: "text" as const, text: "Compare it using " },
+      {
+        ...template,
+        template: {
+          ...template.template,
+          selection: {
+            ...template.template.selection,
+            outputFormat: "pptx" as const,
+          },
+        },
+      },
+    ],
+  };
+  const retainedInfo = {
+    type: "additional_info" as const,
+    text: [
+      "# Research Context",
+      "Keep the source notes.",
+      "",
+      "# Presentation Generation Defaults",
+      "- Output format: HTML format",
+      "- Slide count: 12",
+    ].join("\n"),
+  };
+  const fileParts = files.map((file) => {
+    return {
+      type: "file" as const,
+      fileId: file.id,
+      filenameSnapshot: file.filename,
+      contentType: file.contentType,
+    };
+  });
+  option.draft.draftAttachments = files;
+  option.draft.draftUserMessage = {
+    version: 1,
+    parts: [
+      source,
+      {
+        type: "additional_info",
+        text: [
+          "# Research Context",
+          "Keep the source notes.",
+          "",
+          "# Presentation Output Preference",
+          "Default PPTX from a previous input.",
+          "",
+          "# Presentation Generation Defaults",
+          "- Output format: HTML format",
+          "- Slide count: 12",
+        ].join("\n"),
+      },
+      text,
+      explicit,
+      presentationPreferenceContextPart({ format: "pptx" }),
+      contextPart,
+      feedback,
+      ...fileParts,
+    ],
+  };
+  feed([item]);
+  const sent = context.mocks.deferred<{
+    prompt: string;
+    userMessage?: UserMessageDocument;
+  }>();
+  createChatRunFixtures(context).installRunChat({
+    onSendRequest: ({ prompt, userMessage }) => {
+      sent.resolve({ prompt, userMessage });
+    },
+  });
+  context.mocks.api(feedContract.consume, ({ respond }) => {
+    return respond(200, item);
+  });
+  await setupPage({
+    context,
+    path: "/for-you",
+    featureSwitches: { [FeatureSwitchKey.PresentationOutputFormat]: true },
+  });
+  click(await findFastControl("button", option.label, await activeCard(item)));
+  const body = await sent.promise;
+  expect(body.userMessage).toStrictEqual({
+    version: 1,
+    parts: [
+      source,
+      retainedInfo,
+      text,
+      explicit,
+      contextPart,
+      feedback,
+      ...fileParts,
+    ],
+  });
+  expect(body.prompt).toContain(text.text);
+  expect(body.prompt).toContain(feedback.quote);
+  await screen.findByText("Sent to a new chat");
   expect(location.pathname).toBe("/for-you");
 });
 

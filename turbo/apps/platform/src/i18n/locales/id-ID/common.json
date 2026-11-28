@@ -1959,6 +1959,18 @@
       "message": "Pesan",
       "modelForThisChat": "Model untuk chat ini",
       "placeholder": "Minta saya mengotomatiskan alur kerja, mengelola tugas...",
+      "presentationFormatSetup": {
+        "htmlDescription": "Simpan sebagai default dan kirim",
+        "htmlLabel": "Slide web",
+        "openSettings": "Buka Pengaturan",
+        "pptxDescription": "Simpan sebagai default dan kirim",
+        "pptxLabel": "PowerPoint",
+        "savedDefault": "Format presentasi default disimpan.",
+        "saveFailed": "Format default tidak dapat disimpan. Coba lagi.",
+        "saving": "Menyimpan…",
+        "settingsHint": "Disimpan untuk Anda di ruang kerja ini. Ubah di Pengaturan → Chat.",
+        "title": "Pilih format presentasi default Anda"
+      },
       "selectedModelUnavailable": "Model yang dipilih tidak tersedia. Konfigurasikan sebelum mengirim.",
       "selectedModelUnavailableToast": "Model yang dipilih tidak tersedia",
       "selectModel": "Pilih model",
@@ -2629,11 +2641,6 @@
       "unsupported": "Reset manual tidak didukung; penggunaan akan pulih secara otomatis."
     },
     "taskChips": {
-      "presentationFormat": "Format presentasi",
-      "presentationFormats": {
-        "html": "HTML",
-        "pptx": "PPTX"
-      },
       "presentationTemplates": "Template presentasi",
       "removeTask": "Hapus {{task}}",
       "shelf": {
@@ -6072,6 +6079,16 @@
           "title": "Model default"
         },
         "description": "Pilih default untuk chat baru dan cara pesan dikirim.",
+        "presentationFormat": {
+          "html": "Slide web",
+          "htmlDescription": "Gunakan slide web kecuali Anda meminta format lain.",
+          "pptx": "PowerPoint",
+          "pptxDescription": "Gunakan PowerPoint kecuali Anda meminta format lain.",
+          "saveFailed": "Format default tidak dapat disimpan. Coba lagi.",
+          "title": "Format presentasi default",
+          "unavailable": "Preferensi format presentasi Anda tidak tersedia.",
+          "unsetDescription": "Pilih format default untuk presentasi Anda di ruang kerja ini."
+        },
         "sectionTitle": "Chat"
       },
       "debug": {

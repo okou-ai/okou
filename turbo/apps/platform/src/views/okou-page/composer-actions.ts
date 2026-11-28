@@ -26,10 +26,15 @@ export function useComposerActions(signals: ComposerSignals) {
     signals.submission.activatePrimaryAction$,
   );
   const hasCurrentSubmission = useGet(signals.submission.hasCurrentInvocation$);
+  const setupOperation = useLoadable(
+    signals.submission.presentationFormatSetup.confirmation$,
+  );
   return {
     bind: bindVoiceShortcut,
     submit,
-    submitting: hasCurrentSubmission && submissionLoadable.state === "loading",
+    submitting:
+      (hasCurrentSubmission && submissionLoadable.state === "loading") ||
+      setupOperation.state === "loading",
   };
 }
 
