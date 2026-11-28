@@ -32,7 +32,8 @@ import {
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp, setupRawAppRequest } from "../../../__tests__/test-helpers";
-import { mockEnv } from "../../../lib/env";
+import { TEST_WITH_SINGLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE } from "../../../__tests__/test-timeouts";
+import { mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import { billingStatusRoutes } from "../billing-status";
@@ -43,8 +44,10 @@ import { projectRoutes } from "../projects";
 import { runModelsRoutes } from "../run-models";
 import { runsCancelRoutes } from "../runs-cancel";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
+import { createChatEventsFixture } from "./helpers/chat-events-fixture";
 import { MCP_WEB_SCOPES } from "./helpers/mcp-web-api";
 import { seedOrgMembership$ } from "./helpers/org-membership";
+import { publicRunOwner } from "./helpers/public-run-owner";
 import { createRouteMocks } from "./helpers/route-test";
 
 function createFrozenRsaMaterial(): {
@@ -1011,4 +1014,192 @@ describe("thin MCP Web adapters", () => {
       }),
     ).toHaveLength(1);
   });
+
+  it(
+    "mcp-server-reads-008 reflects committed Run transitions without marking indicator or history reads as read",
+    { timeout: TEST_WITH_SINGLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const harness = createHarness();
+      const { member, token } = await harness.memberWithToken();
+      const fixture = createChatEventsFixture(context);
+      const owner = publicRunOwner(context, member);
+      fixture.chatCallbacks.acceptChatObjectStorage();
+      fixture.api.acceptStorageDownloads();
+      fixture.api.acceptTelemetryIngest();
+      mockOptionalEnv("OPENROUTER_API_KEY", undefined);
+      fixture.chatCallbacks.disableVapid();
+
+      await Promise.all([
+        fixture.api.configureRunnerGroup(),
+        owner.run(() => {
+          return bdd.bootstrapLimitedFreeOnboarding(member);
+        }),
+      ]);
+
+      const launched = await owner.run(() => {
+        return fixture.sendChatRun(member, {
+          prompt: "Track indicator transitions via MCP",
+          model: null,
+        });
+      });
+
+      const indicatorsSchema = object({
+        threads: record(string(), string()),
+        unreadAt: record(string(), string()),
+      });
+      const firstIndicators = indicatorsSchema.parse(
+        (await mcpCall(token, "get_chat_indicators")).structuredContent,
+      );
+      expect(firstIndicators.threads[launched.threadId]).toBe("active");
+      expect(firstIndicators.unreadAt).toStrictEqual({});
+
+      await owner.executionInput(launched.runId);
+
+      const secondIndicators = indicatorsSchema.parse(
+        (await mcpCall(token, "get_chat_indicators")).structuredContent,
+      );
+      expect(secondIndicators.threads[launched.threadId]).toBe("active");
+      expect(secondIndicators.unreadAt).toStrictEqual({});
+
+      const cancelled = await mcpCall(token, "cancel_run", {
+        runId: launched.runId,
+      });
+      expect(cancelled.isError).not.toBeTruthy();
+      expect(cancelled.structuredContent).toMatchObject({
+        runId: launched.runId,
+        status: "cancelled",
+      });
+
+      const history = object({
+        snapshot: zUnknown().nullable(),
+        hasMore: boolean(),
+        rows: array(
+          object({
+            eventType: string(),
+            runId: string().nullable().optional(),
+            createdAt: string(),
+          }),
+        ),
+      }).parse(
+        (
+          await mcpCall(token, "get_chat_messages", {
+            threadId: launched.threadId,
+          })
+        ).structuredContent,
+      );
+      expect(history.snapshot).toBeNull();
+      expect(history.hasMore).toBeFalsy();
+      const cancelRow = history.rows.find((row) => {
+        return (
+          row.eventType === "run.cancelled" && row.runId === launched.runId
+        );
+      });
+      expect(cancelRow).toBeDefined();
+
+      const finalIndicators = indicatorsSchema.parse(
+        (await mcpCall(token, "get_chat_indicators")).structuredContent,
+      );
+      expect(finalIndicators.threads[launched.threadId]).toBe("unread");
+      expect(finalIndicators.unreadAt[launched.threadId]).toBe(
+        cancelRow?.createdAt,
+      );
+
+      const threadRead = await owner.run(() => {
+        return fixture.chat.readThread(member, launched.threadId);
+      });
+      expect(threadRead.lastReadAt).toBeNull();
+    },
+  );
+
+  it(
+    "mcp-server-reads-019 authorizes OAuth cancellation through the same Web entry, preserving peer denial and cancellation side effects",
+    { timeout: TEST_WITH_SINGLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const harness = createHarness();
+      const { member, token } = await harness.memberWithToken();
+      const readOnlyToken = harness.signToken(member, { scope: READ_SCOPES });
+      const peer = await harness.seededUser(member.orgId);
+      const peerToken = harness.signToken(peer);
+
+      const fixture = createChatEventsFixture(context);
+      const owner = publicRunOwner(context, member);
+      fixture.chatCallbacks.acceptChatObjectStorage();
+      fixture.api.acceptStorageDownloads();
+      fixture.api.acceptTelemetryIngest();
+      mockOptionalEnv("OPENROUTER_API_KEY", undefined);
+      fixture.chatCallbacks.disableVapid();
+
+      await Promise.all([
+        fixture.api.configureRunnerGroup(),
+        owner.run(() => {
+          return bdd.bootstrapLimitedFreeOnboarding(member);
+        }),
+      ]);
+
+      const launched = await owner.run(() => {
+        return fixture.sendChatRun(member, {
+          prompt: "Authorize OAuth activity summary and cancellation",
+          model: null,
+        });
+      });
+      await owner.executionInput(launched.runId);
+
+      const [mcpSummary, webSummary] = await Promise.all([
+        mcpCall(token, "get_chat_activity_summary", {
+          threadId: launched.threadId,
+          runId: launched.runId,
+        }),
+        mcpWeb(
+          token,
+          `/api/chat-threads/${launched.threadId}/activity-summary`,
+          "POST",
+          { runId: launched.runId },
+        ),
+      ]);
+      expect(mcpSummary.isError).not.toBeTruthy();
+      expect(mcpSummary.structuredContent).toMatchObject({
+        runId: launched.runId,
+      });
+      expect(webSummary.status).toBe(200);
+      expect(webSummary.body).toMatchObject({
+        runId: launched.runId,
+      });
+
+      const [readOnlyCancel, peerWebCancel, peerMcpCancel] = await Promise.all([
+        mcpWeb(readOnlyToken, `/api/runs/${launched.runId}/cancel`, "POST", {}),
+        mcpWeb(peerToken, `/api/runs/${launched.runId}/cancel`, "POST", {}),
+        mcpCall(peerToken, "cancel_run", { runId: launched.runId }),
+      ]);
+      expect(readOnlyCancel.status).toBe(403);
+      expect(readOnlyCancel.body).toMatchObject({
+        error: { code: "FORBIDDEN" },
+      });
+      expect(peerMcpCancel.isError).toBeTruthy();
+      expect(peerMcpCancel.structuredContent).toStrictEqual(peerWebCancel.body);
+
+      const memberCancel = await mcpCall(token, "cancel_run", {
+        runId: launched.runId.toUpperCase(),
+      });
+      expect(memberCancel.isError).not.toBeTruthy();
+      expect(memberCancel.structuredContent).toMatchObject({
+        runId: launched.runId,
+        status: "cancelled",
+        message: "Run cancelled successfully",
+      });
+
+      const [readBack, repeatWebCancel] = await Promise.all([
+        owner.run(() => {
+          return fixture.api.readRun(member, launched.runId);
+        }),
+        mcpWeb(token, `/api/runs/${launched.runId}/cancel`, "POST", {}),
+      ]);
+      expect(readBack.status).toBe("cancelled");
+      expect(repeatWebCancel.status).toBe(200);
+      expect(repeatWebCancel.body).toMatchObject({
+        id: launched.runId,
+        status: "cancelled",
+        message: "Run cancelled successfully",
+      });
+    },
+  );
 });
