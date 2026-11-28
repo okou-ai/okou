@@ -18,9 +18,25 @@ struct ChatSidebarHeader: View {
   let needsUpgrade: Bool
   let close: () -> Void
   let newProject: () -> Void
+  let openSettings: () -> Void
 
   private var workspaceName: String {
     authentication.workspacePresentation(workspaceID)?.name ?? "Workspace"
+  }
+
+  private var settingsSubtitle: String? {
+    let name = authentication.profile?.name?.trimmingCharacters(in: .whitespacesAndNewlines)
+    let email = authentication.profile?.email?.trimmingCharacters(in: .whitespacesAndNewlines)
+    switch (name?.isEmpty == false ? name : nil, email?.isEmpty == false ? email : nil) {
+    case (let name?, let email?) where name != email:
+      return "\(name) · \(email)"
+    case (let name?, _):
+      return name
+    case (nil, let email?):
+      return email
+    case (nil, nil):
+      return nil
+    }
   }
 
   /// As Slack's: the workspace's logo as a glass button that opens the switcher, its name
@@ -49,20 +65,38 @@ struct ChatSidebarHeader: View {
     Menu {
       // A picker draws the system's check beside the current workspace, and every row
       // carries its logo, as the web's switcher does.
-      Picker("Workspace", selection: workspaceSelection) {
-        ForEach(authentication.workspaces) { workspace in
-          Label {
-            Text(workspace.name)
-          } icon: {
-            OkouWorkspaceMenuLogos.image(
-              workspaceID: workspace.id, hasImage: workspace.hasImage,
-              cachedImage: authentication.presentation?.image("workspace:" + workspace.id))
+      if !authentication.workspaces.isEmpty {
+        Section {
+          Picker("Workspace", selection: workspaceSelection) {
+            ForEach(authentication.workspaces) { workspace in
+              Label {
+                Text(workspace.name)
+              } icon: {
+                OkouWorkspaceMenuLogos.image(
+                  workspaceID: workspace.id, hasImage: workspace.hasImage,
+                  cachedImage: authentication.presentation?.image("workspace:" + workspace.id))
+              }
+              .tag(workspace.id)
+            }
           }
-          .tag(workspace.id)
+          .pickerStyle(.inline)
+          .labelsHidden()
+          .disabled(authentication.isSwitchingWorkspace)
         }
       }
-      .pickerStyle(.inline)
-      .labelsHidden()
+      Section {
+        Button(action: openSettings) {
+          Label {
+            Text("Settings")
+            if let subtitle = settingsSubtitle {
+              Text(subtitle)
+            }
+          } icon: {
+            OkouIcon("settings", size: OkouIconSize.menu)
+          }
+        }
+        .accessibilityIdentifier("settings")
+      }
     } label: {
       let workspace = authentication.workspacePresentation(workspaceID)
       OkouWorkspaceGlassLogo(
@@ -74,7 +108,6 @@ struct ChatSidebarHeader: View {
       .accessibilityHidden(true)
     }
     .buttonStyle(.plain)
-    .disabled(authentication.isSwitchingWorkspace || authentication.workspaces.isEmpty)
     .accessibilityLabel("Workspace: \(workspaceName)")
   }
 
