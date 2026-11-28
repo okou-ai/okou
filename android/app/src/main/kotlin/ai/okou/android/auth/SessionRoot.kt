@@ -1,7 +1,6 @@
 package ai.okou.android.auth
 
 import ai.okou.android.EntryBrand
-import ai.okou.android.EntryCompactHeight
 import ai.okou.android.EntryContentGutter
 import ai.okou.android.EntryContentWidth
 import ai.okou.android.OkouApp
@@ -21,6 +20,7 @@ import ai.okou.android.entryBrandNameStyle
 import ai.okou.android.entrySpacing
 import ai.okou.android.entryTopPadding
 import ai.okou.android.instructions.PersonalInstructionsSettings
+import ai.okou.android.isShortWindowHeight
 import ai.okou.android.preferences.MemberPreferencesSettings
 import ai.okou.android.settings.BuiltInToolsPage
 import ai.okou.android.settings.DefaultModelSetting
@@ -39,7 +39,6 @@ import ai.okou.android.updates.UpdateToolbarAction
 import ai.okou.android.updates.updateFocusOutline
 import ai.okou.android.workspaceSearchControlHeight
 import androidx.annotation.StringRes
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -73,11 +72,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.contentDescription
@@ -113,10 +110,7 @@ internal fun SessionRoot(
         val opened = state.opening as? OpeningWorkspace.Authorized
         val cached = state.opening as? OpeningWorkspace.Cached
         val identity = ready?.identity ?: state.opening?.identity
-        val organization = ready?.organization ?: opened?.organization
-        val workspaceName =
-            organization?.name
-                ?: state.memberships.firstOrNull { it.id == identity?.workspaceId }?.name
+        val workspace = state.memberships.firstOrNull { it.id == identity?.workspaceId }
         val switchWorkspace: (String) -> Unit = { id ->
             switchTarget = id
             chooseWorkspace(id)
@@ -171,7 +165,7 @@ internal fun SessionRoot(
                                 destination,
                                 state,
                                 identity.workspaceId,
-                                workspaceName,
+                                workspace,
                                 open,
                                 close,
                                 switchWorkspace,
@@ -195,7 +189,7 @@ internal fun SessionRoot(
                         workspaceAvatar = {
                             WorkspaceAvatar(
                                 identity.workspaceId,
-                                workspaceName,
+                                workspace,
                                 state,
                                 switchWorkspace,
                                 restoreFocus = switchTarget == identity.workspaceId,
@@ -229,7 +223,7 @@ internal fun SessionRoot(
 @Composable
 private fun NativeAuthentication() {
     val windowHeight = currentWindowSizeDp().height
-    val compact = windowHeight < EntryCompactHeight
+    val compact = isShortWindowHeight(windowHeight)
     // Clerk 1.5 supplies 8dp above and below the logo and 18dp on each side of the form.
     val clerkAppBarPadding = 8.dp
     val hostTop = entryTopPadding(windowHeight) - clerkAppBarPadding
@@ -300,7 +294,7 @@ private fun WorkspaceSettingsContent(
     destination: SettingsDestination,
     state: SessionUiState,
     workspaceId: String,
-    workspaceName: String?,
+    workspace: WorkspaceMembership?,
     open: (SettingsDestination) -> Unit,
     close: () -> Unit,
     switchWorkspace: (String) -> Unit,
@@ -372,7 +366,7 @@ private fun WorkspaceSettingsContent(
                     }
                 },
                 workspace = {
-                    WorkspaceSettings(workspaceId, workspaceName, state, switchWorkspace) {
+                    WorkspaceSettings(workspaceId, workspace, state, switchWorkspace) {
                         SettingsRow(
                             stringResource(R.string.settings_credit_balance),
                             leading = { SettingsIcon(R.drawable.ic_paid) },
@@ -515,7 +509,7 @@ private fun WorkspaceStartupRecovery(
 @Composable
 private fun WorkspaceSettings(
     workspaceId: String,
-    workspaceName: String?,
+    workspace: WorkspaceMembership?,
     state: SessionUiState,
     chooseWorkspace: (String) -> Unit,
     creditRow: @Composable () -> Unit,
@@ -524,7 +518,7 @@ private fun WorkspaceSettings(
     val label = stringResource(R.string.auth_workspace)
     val message = workspacePreparationMessage(state)
     val subtitle =
-        if (message == null) label.takeIf { workspaceName != null } else stringResource(message)
+        if (message == null) label.takeIf { workspace != null } else stringResource(message)
     SettingsGroup {
         SettingsTrigger(
             enabled = enabled,
@@ -539,8 +533,10 @@ private fun WorkspaceSettings(
             },
         ) { modifier, open ->
             SettingsRow(
-                workspaceName ?: label,
-                leading = { WorkspaceLogo(workspaceId, Modifier.size(40.dp)) },
+                workspace?.name ?: label,
+                leading = {
+                    WorkspaceLogo(workspaceId, workspace?.name, workspace?.uploadedImageUrl, 40.dp)
+                },
                 modifier =
                     if (message == null) modifier
                     else modifier.semantics { liveRegion = LiveRegionMode.Polite },
@@ -630,7 +626,7 @@ private fun SignOutFailure(modifier: Modifier) {
 @Composable
 private fun WorkspaceAvatar(
     workspaceId: String,
-    workspaceName: String?,
+    workspace: WorkspaceMembership?,
     state: SessionUiState,
     chooseWorkspace: (String) -> Unit,
     restoreFocus: Boolean,
@@ -661,10 +657,10 @@ private fun WorkspaceAvatar(
                     .size(size)
                     .updateFocusOutline(CircleShape, MaterialTheme.colorScheme.onSurface)
                     .semantics {
-                        contentDescription = workspaceName?.let { "$label, $it" } ?: label
+                        contentDescription = workspace?.name?.let { "$label, $it" } ?: label
                     },
         ) {
-            WorkspaceLogo(workspaceId, Modifier.size(size))
+            WorkspaceLogo(workspaceId, workspace?.name, workspace?.uploadedImageUrl, size)
         }
     }
     LaunchedEffect(restoreFocus, enabled) {
@@ -674,30 +670,6 @@ private fun WorkspaceAvatar(
         }
     }
 }
-
-@Composable
-internal fun WorkspaceLogo(id: String, modifier: Modifier) {
-    val logo = remember(id) { workspaceLogo(id) }
-    Image(painterResource(logo), contentDescription = null, modifier = modifier.clip(CircleShape))
-}
-
-// The Web and iOS clients use FNV-1a over UTF-16 to select the same bundled brand tile.
-private fun workspaceLogo(id: String): Int {
-    val hash = id.fold(2_166_136_261u) { hash, char -> (hash xor char.code.toUInt()) * 16_777_619u }
-    return workspaceLogos[(hash % workspaceLogos.size.toUInt()).toInt()]
-}
-
-private val workspaceLogos =
-    intArrayOf(
-        R.drawable.workspace_default_0,
-        R.drawable.workspace_default_1,
-        R.drawable.workspace_default_2,
-        R.drawable.workspace_default_3,
-        R.drawable.workspace_default_4,
-        R.drawable.workspace_default_5,
-        R.drawable.workspace_default_6,
-        R.drawable.workspace_default_7,
-    )
 
 @Composable
 private fun WorkspaceChooser(
@@ -744,7 +716,14 @@ private fun WorkspaceChooser(
                         }
                     },
                     modifier = if (current) Modifier.bringIntoViewRequester(selected) else Modifier,
-                    leading = { WorkspaceLogo(workspace.id, Modifier.size(28.dp)) },
+                    leading = {
+                        WorkspaceLogo(
+                            workspace.id,
+                            workspace.name,
+                            workspace.uploadedImageUrl,
+                            28.dp,
+                        )
+                    },
                     trailing = { foreground ->
                         if (pending && workspaceSwitch.target == workspace.id) {
                             CircularProgressIndicator(

@@ -11,7 +11,7 @@ use std::fs::{self, File, FileTimes, OpenOptions, Permissions};
 use std::io::{self, Read, Write};
 use std::os::fd::{AsRawFd, BorrowedFd, RawFd};
 use std::os::unix::ffi::OsStrExt;
-use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+use std::os::unix::fs::{MetadataExt, OpenOptionsExt, PermissionsExt};
 use std::path::{Component, Path, PathBuf};
 use std::time::{Duration, UNIX_EPOCH};
 
@@ -22,6 +22,13 @@ const COPY_BUFFER_BYTES: usize = 64 * 1024;
 const DIRECTORY_FLAGS: libc::c_int =
     libc::O_PATH | libc::O_DIRECTORY | libc::O_NOFOLLOW | libc::O_CLOEXEC;
 
+#[derive(Clone, Copy)]
+enum CreationMode {
+    FirstFile,
+    Verified(u32),
+    Unavailable,
+}
+
 pub(crate) struct RootedWriter<'a> {
     target: &'a Path,
     cache_directories: bool,
@@ -29,6 +36,7 @@ pub(crate) struct RootedWriter<'a> {
     root_path_bytes: usize,
     parents: HashMap<PathBuf, File>,
     copy_buffer: Vec<u8>,
+    creation_mode: Option<(RawFd, CreationMode)>,
 }
 
 impl<'a> RootedWriter<'a> {
@@ -40,11 +48,13 @@ impl<'a> RootedWriter<'a> {
             root_path_bytes: target.as_os_str().as_bytes().len(),
             parents: HashMap::new(),
             copy_buffer: Vec::new(),
+            creation_mode: None,
         }
     }
 
     pub(crate) fn invalidate(&mut self) {
         self.parents.clear();
+        self.creation_mode = None;
         // Release even the root before checked tar extraction: under FD pressure
         // it can occupy the last slot needed to create the output file.
         self.root = None;
@@ -122,6 +132,11 @@ impl<'a> RootedWriter<'a> {
     /// Only creates fresh leaves. Before a caller uses its checked replacement
     /// or link path, it must release these handles with invalidate().
     pub(crate) fn create_new(&mut self, relative: &Path) -> io::Result<Option<File>> {
+        self.create_new_with_parent(relative)
+            .map(|created| created.map(|(file, _)| file))
+    }
+
+    fn create_new_with_parent(&mut self, relative: &Path) -> io::Result<Option<(File, RawFd)>> {
         // Descriptor-relative syscalls can exceed the full-path limit. Retain
         // the existing path-based behavior rather than accepting new spellings.
         let path_bytes = relative.as_os_str().as_bytes();
@@ -150,7 +165,7 @@ impl<'a> RootedWriter<'a> {
         let flags =
             libc::O_WRONLY | libc::O_CREAT | libc::O_EXCL | libc::O_NOFOLLOW | libc::O_CLOEXEC;
         match open_at(parent, &name, flags, 0o666) {
-            Ok(file) => Ok(Some(file)),
+            Ok(file) => Ok(Some((file, parent.as_raw_fd()))),
             // Never truncate an existing inode: tar unlinks/recreates it, which
             // also preserves other hardlinks to that inode.
             Err(error)
@@ -185,7 +200,7 @@ impl<'a> RootedWriter<'a> {
         let Some(modified) = UNIX_EPOCH.checked_add(Duration::from_secs(mtime.max(1))) else {
             return Ok(false);
         };
-        let Some(mut file) = self.create_new(relative)? else {
+        let Some((mut file, parent)) = self.create_new_with_parent(relative)? else {
             return Ok(false);
         };
         let expected = entry.size();
@@ -205,9 +220,42 @@ impl<'a> RootedWriter<'a> {
                 .set_accessed(modified)
                 .set_modified(modified),
         )?;
-        file.set_permissions(Permissions::from_mode(mode & 0o777))?;
+        self.set_file_mode(&file, parent, mode & 0o777)?;
         Ok(true)
     }
+
+    fn set_file_mode(&mut self, file: &File, parent: RawFd, mode: u32) -> io::Result<()> {
+        // Adjacent fresh files use the same creation request, parent, and
+        // process umask. Sample on the second file to avoid probing directories
+        // that supply only one leaf. General tar operations invalidate the proof.
+        let creation_mode = match self.creation_mode {
+            Some((previous, observed)) if previous == parent => match observed {
+                CreationMode::FirstFile => observe_creation_mode(file),
+                observed => observed,
+            },
+            _ => CreationMode::FirstFile,
+        };
+        self.creation_mode = Some((parent, creation_mode));
+        if matches!(creation_mode, CreationMode::Verified(bits) if bits == mode) {
+            return Ok(());
+        }
+        file.set_permissions(Permissions::from_mode(mode))
+    }
+}
+
+fn observe_creation_mode(file: &File) -> CreationMode {
+    use rustix::fs::{fgetxattr_query, fstatfs};
+    use rustix::io::Errno;
+
+    // Even identical mode bits can represent a permission write to an ACL.
+    // Only an ext inode without an inherited access ACL proves reuse.
+    if fstatfs(file).is_ok_and(|stat| stat.f_type == libc::EXT4_SUPER_MAGIC)
+        && fgetxattr_query(file, c"system.posix_acl_access") == Err(Errno::NODATA)
+        && let Ok(metadata) = file.metadata()
+    {
+        return CreationMode::Verified(metadata.mode() & 0o7777);
+    }
+    CreationMode::Unavailable
 }
 
 // Reuse the allocation across files in this archive. Keep the large reads

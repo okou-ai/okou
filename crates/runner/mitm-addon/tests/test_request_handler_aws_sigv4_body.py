@@ -881,7 +881,7 @@ def test_aws_firewall_context_marks_oversized_target_uninspectable(
     flow = _header_auth_flow(real_flow, headers)
     flow.request.path = "/" + "x" * aws_sigv4_flow.MAX_AWS_SIGV4_REQUEST_TARGET_BYTES
 
-    context = request_classification._aws_firewall_request_context(flow)
+    context = request_classification._firewall_request_context(flow)
 
     assert context.aws_inspection_available is False
 

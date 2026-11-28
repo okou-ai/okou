@@ -2,12 +2,10 @@
 
 use std::future::Future;
 use std::path::PathBuf;
-use std::pin::Pin;
 use std::time::Duration;
 
 use serde_json::{Map, Value, json};
 use tokio::sync::oneshot;
-use tokio_util::sync::CancellationToken;
 
 use crate::env::Framework;
 use crate::error::AgentError;
@@ -24,12 +22,13 @@ use super::codex_app_server_events::{
     notification_to_codex_event,
 };
 use super::event_delivery::{EventDeliveryRuntime, EventDeliverySender};
+use super::native_execution::{NativeRunOutcome, run_with_execution_deadline};
 use super::{
-    AgentExecutionDeadline, BestEffortAgentLog, CliEventIngestor, CliExecutionControls,
-    CliExecutionResult, CliFailureDiagnostic, CliRuntimeConfig, CliStartupTiming, HeartbeatMonitor,
-    HeartbeatStatus, LOG_TAG, ParsedEventAction, codex_runtime_config,
+    BestEffortAgentLog, CliEventIngestor, CliExecutionControls, CliExecutionResult,
+    CliFailureDiagnostic, CliRuntimeConfig, CliStartupTiming, HeartbeatMonitor, HeartbeatStatus,
+    LOG_TAG, ParsedEventAction, codex_runtime_config,
 };
-use crate::active_input::{ActiveInputController, ActiveInputFrame, ActiveInputWriter};
+use crate::active_input::{ActiveInputFrame, ActiveInputWriter};
 use guest_contracts::diagnostics::{
     AGENT_EXECUTION_TIMEOUT_EXIT_CODE, CliTerminationDiagnostic, CliTerminationReason,
     HeartbeatFailureDiagnostic,
@@ -127,12 +126,6 @@ enum CodexSteerOutcome {
     RejectedInactiveTurn(AgentError),
 }
 
-enum AppServerRunOutcome {
-    Completed(Box<Result<CliExecutionResult, CodexRunError>>),
-    ExecutionTimedOut { timeout_secs: u64 },
-    UserCancelled,
-}
-
 enum CodexRunError {
     Execution(AgentError),
     Heartbeat(CodexHeartbeatFailure),
@@ -157,78 +150,6 @@ impl std::fmt::Display for CodexRunError {
             Self::Heartbeat(failure) => failure.error.fmt(formatter),
         }
     }
-}
-
-impl AppServerRunOutcome {
-    fn is_heartbeat_failure(&self) -> bool {
-        matches!(
-            self,
-            Self::Completed(result)
-                if matches!(result.as_ref(), Err(CodexRunError::Heartbeat(_)))
-        )
-    }
-}
-
-async fn settle_active_input_before_stop<Run>(
-    mut run: Pin<&mut Run>,
-    active_input: &ActiveInputController,
-    stopped: AppServerRunOutcome,
-) -> AppServerRunOutcome
-where
-    Run: Future<Output = Result<CliExecutionResult, CodexRunError>>,
-{
-    active_input.close_terminal();
-    if !active_input.sink_in_flight() {
-        return stopped;
-    }
-
-    let settle = async {
-        tokio::select! {
-            biased;
-            _ = run.as_mut() => {}
-            _ = active_input.wait_for_sink_idle() => {}
-        }
-    };
-    let _ = tokio::time::timeout(
-        Duration::from_secs(crate::constants::ACTIVE_INPUT_SINK_QUIESCENCE_TIMEOUT_SECS),
-        settle,
-    )
-    .await;
-    stopped
-}
-
-async fn run_with_execution_deadline(
-    run: impl Future<Output = Result<CliExecutionResult, CodexRunError>>,
-    deadline: Option<AgentExecutionDeadline>,
-    user_cancellation: &CancellationToken,
-    active_input: &ActiveInputController,
-) -> AppServerRunOutcome {
-    tokio::pin!(run);
-
-    let deadline = deadline.map(|deadline| {
-        let at = tokio::time::Instant::from_std(deadline.at);
-        (tokio::time::sleep_until(at), deadline.timeout_secs)
-    });
-    let deadline_elapsed = async move {
-        match deadline {
-            Some((sleep, timeout_secs)) => {
-                sleep.await;
-                timeout_secs
-            }
-            None => std::future::pending().await,
-        }
-    };
-    tokio::pin!(deadline_elapsed);
-
-    let stopped = tokio::select! {
-        biased;
-        result = &mut run => return AppServerRunOutcome::Completed(Box::new(result)),
-        () = user_cancellation.cancelled() => AppServerRunOutcome::UserCancelled,
-        timeout_secs = &mut deadline_elapsed => AppServerRunOutcome::ExecutionTimedOut {
-            timeout_secs,
-        },
-    };
-    settle_active_input_before_stop(run.as_mut(), active_input, stopped).await
 }
 
 async fn interrupt_active_turn(
@@ -538,7 +459,7 @@ async fn run_codex_app_server(
 
     let interrupted_terminal = if matches!(
         &run_outcome,
-        AppServerRunOutcome::ExecutionTimedOut { .. } | AppServerRunOutcome::UserCancelled
+        NativeRunOutcome::ExecutionTimedOut { .. } | NativeRunOutcome::UserCancelled
     ) && let Some(active_turn) = active_turn.as_ref()
     {
         match tokio::time::timeout(
@@ -575,8 +496,8 @@ async fn run_codex_app_server(
     };
 
     let shutdown_result = match &run_outcome {
-        AppServerRunOutcome::Completed(result) if result.is_ok() => client.shutdown().await,
-        AppServerRunOutcome::ExecutionTimedOut { .. } | AppServerRunOutcome::UserCancelled
+        NativeRunOutcome::Completed(result) if result.is_ok() => client.shutdown().await,
+        NativeRunOutcome::ExecutionTimedOut { .. } | NativeRunOutcome::UserCancelled
             if interrupted_terminal =>
         {
             match client.shutdown().await {
@@ -591,14 +512,14 @@ async fn run_codex_app_server(
                 }
             }
         }
-        AppServerRunOutcome::Completed(_)
-        | AppServerRunOutcome::ExecutionTimedOut { .. }
-        | AppServerRunOutcome::UserCancelled => client.terminate().await,
+        NativeRunOutcome::Completed(_)
+        | NativeRunOutcome::ExecutionTimedOut { .. }
+        | NativeRunOutcome::UserCancelled => client.terminate().await,
     };
     if shutdown_result.is_ok()
         && matches!(
             &run_outcome,
-            AppServerRunOutcome::ExecutionTimedOut { .. } | AppServerRunOutcome::UserCancelled
+            NativeRunOutcome::ExecutionTimedOut { .. } | NativeRunOutcome::UserCancelled
         )
         && active_input_controller.sink_in_flight()
     {
@@ -613,7 +534,8 @@ async fn run_codex_app_server(
     agent_log.flush().await;
     match active_input_finalized {
         Ok(()) => {}
-        Err(active_input_error) if run_outcome.is_heartbeat_failure() => {
+        Err(active_input_error) if matches!(&run_outcome, NativeRunOutcome::Completed(result) if matches!(result.as_ref(), Err(CodexRunError::Heartbeat(_)))) =>
+        {
             log_warn!(
                 LOG_TAG,
                 "Codex active-input cleanup failed after heartbeat failure: {}",
@@ -632,7 +554,7 @@ async fn run_codex_app_server(
     }
 
     match run_outcome {
-        AppServerRunOutcome::Completed(run_result) => match (*run_result, shutdown_result) {
+        NativeRunOutcome::Completed(run_result) => match (*run_result, shutdown_result) {
             (Ok(mut result), Ok(())) => {
                 result.stderr_lines = stderr_lines;
                 Ok(result)
@@ -671,7 +593,7 @@ async fn run_codex_app_server(
                 })
             }
         },
-        AppServerRunOutcome::ExecutionTimedOut { timeout_secs } => {
+        NativeRunOutcome::ExecutionTimedOut { timeout_secs } => {
             if let Err(shutdown_error) = shutdown_result {
                 let shutdown_error = masker.mask_string(&shutdown_error.to_string());
                 log_warn!(
@@ -693,7 +615,7 @@ async fn run_codex_app_server(
                 )
             })
         }
-        AppServerRunOutcome::UserCancelled => {
+        NativeRunOutcome::UserCancelled => {
             if let Err(shutdown_error) = shutdown_result {
                 let shutdown_error = masker.mask_string(&shutdown_error.to_string());
                 log_warn!(

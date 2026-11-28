@@ -88,7 +88,6 @@ internal fun ComposerWorkflowPopup(
     candidates: WorkflowCandidates,
     position: LazyListState,
     highlighted: String?,
-    dismiss: () -> Unit,
     onHeight: (Int) -> Unit,
     select: (ComposerWorkflowsItem) -> Unit,
 ) {
@@ -111,8 +110,13 @@ internal fun ComposerWorkflowPopup(
                         )
                 }
             },
-        onDismissRequest = dismiss,
-        properties = PopupProperties(focusable = false, dismissOnBackPress = false),
+        // The chat pane handles outside presses. IME windows can also send ACTION_OUTSIDE.
+        properties =
+            PopupProperties(
+                focusable = false,
+                dismissOnBackPress = false,
+                dismissOnClickOutside = false,
+            ),
     ) {
         Surface(
             Modifier.width(with(density) { anchor.width.toDp() })

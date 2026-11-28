@@ -68,7 +68,7 @@ internal fun ConversationReplyAvatar(animateIn: LayoutBoundsHolder?) {
             ),
     ) {
         Image(
-            painterResource(R.drawable.okou_avatar_texture),
+            painterResource(R.drawable.avatar_texture_drop_lightblue_blue),
             null,
             Modifier.matchParentSize(),
             contentScale = ContentScale.FillBounds,

@@ -10,6 +10,46 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.145.0](https://github.com/okou-ai/okou/compare/api-v2.144.1...api-v2.145.0) (2026-11-28)
+
+
+### Features
+
+* resolve overlapping firewall sources with intent first ([#51644](https://github.com/okou-ai/okou/issues/51644)) ([6cbb106](https://github.com/okou-ai/okou/commit/6cbb10651e2feae67fd9d23a940eb34107578077))
+
+
+### Performance Improvements
+
+* **api:** attribute run admission preparation waits ([#51677](https://github.com/okou-ai/okou/issues/51677)) ([cc2443c](https://github.com/okou-ai/okou/commit/cc2443c697054f480bce561cdec7c215eece979b))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.145.1
+    * @okouai/connectors bumped to 3.29.0
+    * @okouai/core bumped to 8.889.2
+    * @okouai/db bumped to 2.74.2
+    * @okouai/pi-agent-runtime bumped to 1.52.111
+
+## [2.144.1](https://github.com/okou-ai/okou/compare/api-v2.144.0...api-v2.144.1) (2026-11-28)
+
+
+### Refactoring
+
+* **db,api:** drop retired artifact tables, rename shares, and index site artifact lookups ([#51679](https://github.com/okou-ai/okou/issues/51679)) ([5a5b8cd](https://github.com/okou-ai/okou/commit/5a5b8cd705737f51533d124bf13cc877bf1509b1))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.145.0
+    * @okouai/core bumped to 8.889.1
+    * @okouai/db bumped to 2.74.1
+    * @okouai/pi-agent-runtime bumped to 1.52.110
+
 ## [2.144.0](https://github.com/okou-ai/okou/compare/api-v2.143.0...api-v2.144.0) (2026-11-28)
 
 

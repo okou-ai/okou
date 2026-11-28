@@ -404,7 +404,7 @@ internal fun SettingsModal(
     content: @Composable (centered: Boolean) -> Unit,
 ) {
     val window = currentWindowSizeDp()
-    if (fullScreen || workspaceListPaneWidth(window.width, window.height) != null) {
+    if (fullScreen || supportsWorkspacePanes(window.width, window.height)) {
         Dialog(
             onDismissRequest = { if (confirmDismiss?.invoke() != false) (onBack ?: onDismiss)() },
             properties =
@@ -543,8 +543,6 @@ private class SettingsModalSnackbarPosition(private val above: Boolean) : PopupP
 internal fun settingsPanelContentPadding(compactHeight: Boolean) =
     PaddingValues(start = 16.dp, end = 16.dp, bottom = if (compactHeight) 12.dp else 22.dp)
 
-@Composable internal fun isShortSettingsPanelWindow() = currentWindowSizeDp().height < 480
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun CompactPanelTopAppBar(
@@ -608,7 +606,7 @@ internal fun SettingsSheet(
     manageSnackbarTimeout: Boolean = true,
     content: @Composable ColumnScope.() -> Unit,
 ) {
-    val compactHeight = isShortSettingsPanelWindow()
+    val compactHeight = isShortWindowHeight()
     val fullScreen = compactHeight && fullScreenInShortWindow
     val scrollWholePanel = scroll == SettingsSheetScroll.Panel && !fullScreen
     val scrollModifier =

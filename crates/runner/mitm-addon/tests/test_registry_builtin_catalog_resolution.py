@@ -7,6 +7,7 @@ import pytest
 import auth
 import builtin_firewall_cache
 import builtin_host_policy
+import connector_intent
 import connector_runtime_metadata
 import matching
 import registry
@@ -177,9 +178,7 @@ class TestRegistryBuiltinCatalogResolution:
         assert sandbox_info["firewalls"][0]["sourceId"] == source_id
         assert sandbox_info["firewalls"][0]["apis"][0]["sourceId"] == source_id
 
-    def test_registered_custom_candidate_shadows_only_matching_builtin_api(
-        self, tmp_path, mitm_ctx
-    ):
+    def test_custom_intent_selects_only_matching_custom_api(self, tmp_path, mitm_ctx):
         custom_connector_id = "550e8400-e29b-41d4-a716-446655440000"
         builtin_name = "multi-api-service"
         custom_name = "custom_connector_550e8400e29b41d4a716446655440000"
@@ -262,12 +261,14 @@ class TestRegistryBuiltinCatalogResolution:
             "GET",
             compiled_firewalls,
             compiled_policies,
+            intent=connector_intent.ConnectorIntent("present", custom_connector_id),
         )
         unrelated = matching.match_compiled_firewall_request(
             "https://audit.example.test/events/456",
             "GET",
             compiled_firewalls,
             compiled_policies,
+            intent=connector_intent.ConnectorIntent("present", custom_connector_id),
         )
 
         assert isinstance(overlapping, matching.FirewallAllow)
@@ -408,6 +409,7 @@ class TestRegistryBuiltinCatalogResolution:
                 "GET",
                 compiled_firewalls,
                 compiled_policies,
+                intent=connector_intent.ConnectorIntent("present", custom_connector_id),
             )
             assert isinstance(result, matching.FirewallAllow)
             return result.name, auth.is_billable_firewall(result.name, sandbox_info)

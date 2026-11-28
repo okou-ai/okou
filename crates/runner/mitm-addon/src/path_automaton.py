@@ -1,6 +1,6 @@
 """Immutable source NFAs and exact bounded request-local subset products."""
 
-from collections.abc import Mapping
+from collections.abc import Hashable, Mapping
 from dataclasses import dataclass, field
 from itertools import groupby
 from typing import NamedTuple
@@ -617,26 +617,24 @@ class SelectionCandidate(NamedTuple):
     raw_priority: PathPriority | None = None
 
 
-def certifies_selection(
-    candidates: Mapping[str, SelectionCandidate],
+def certifies_selection[Identity: Hashable](
+    candidates: Mapping[Identity, SelectionCandidate],
     *,
-    original_owner_sources: frozenset[str],
-    selected: str,
-    explicit_owner_intent: bool,
+    original_owner_sources: frozenset[Identity],
+    selected: Identity,
     budget: WorkBudget,
 ) -> bool:
     """Certify a raw winner using matching-conditioned priority envelopes.
 
     Priorities contain the existing base tier and relative-rule coordinates;
-    the caller supplies its unchanged policy/order tie rank. Other owners may
-    change below the winner, but an equal tier needs the existing usable intent.
-    This function supplies no route, captures, owner or credentials.
+    the caller supplies its policy/order tie rank. A tie with another owner
+    cannot certify the selected route.
     """
     winner = candidates.get(selected)
     if winner is None or not winner.proof.certain or winner.proof.minimum is None:
         return False
-    possible: set[str] = set()
-    certain: set[str] = set()
+    possible: set[Identity] = set()
+    certain: set[Identity] = set()
     for identity, candidate in candidates.items():
         budget.charge()
         proof = candidate.proof
@@ -650,21 +648,17 @@ def certifies_selection(
         if proof.maximum is None:
             return False
         comparison = (winner.proof.minimum > proof.maximum) - (winner.proof.minimum < proof.maximum)
-        if comparison < 0:
+        if comparison < 0 or (comparison == 0 and candidate.owner != winner.owner):
             return False
         if comparison == 0:
-            if candidate.owner != winner.owner:
-                if not explicit_owner_intent:
-                    return False
-            else:
-                if (
-                    winner.raw_priority is not None
-                    and candidate.raw_priority is not None
-                    and winner.raw_priority != candidate.raw_priority
-                ):
-                    # A newly tied API can introduce conflicting auth bindings,
-                    # even if declaration order would retain the raw route.
-                    return False
-                if candidate.tie_rank > winner.tie_rank:
-                    return False
+            if (
+                winner.raw_priority is not None
+                and candidate.raw_priority is not None
+                and winner.raw_priority != candidate.raw_priority
+            ):
+                # A newly tied API can introduce conflicting auth bindings,
+                # even if declaration order would retain the raw route.
+                return False
+            if candidate.tie_rank > winner.tie_rank:
+                return False
     return possible == certain == original_owner_sources

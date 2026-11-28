@@ -16,9 +16,11 @@ from tests.connector_diagnostic_helpers import (
 from tests.jsonl_log_helpers import read_jsonl_entries_after_flush
 from tests.request_handler_helpers import (
     _sandbox_without_firewalls,
+    _shared_route_sandbox,
     _single_firewall_sandbox,
     _write_registry,
 )
+from tests.requestheaders_helpers import await_requestheaders_result
 
 
 def _write_shared_base_active_firewall_registry(
@@ -214,6 +216,64 @@ async def test_shared_base_active_connector_intent_keeps_active_auth_path(
     assert flow.metadata[metadata_keys.FIREWALL_NAME] == "active-shared"
     assert metadata_keys.FIREWALL_ERROR not in flow.metadata
     assert metadata_keys.CONNECTOR_DIAGNOSTIC_SLUG not in flow.metadata
+
+
+@pytest.mark.parametrize(
+    "routing_header",
+    [
+        ("X-Okou-Connector-Intent", "active-shared"),
+        ("Authorization", "Bearer fixture-PRIMARY_TOKEN"),
+    ],
+    ids=["intent", "placeholder"],
+)
+@pytest.mark.parametrize("requestheaders_first", [False, True], ids=["request", "requestheaders"])
+async def test_selected_active_owner_keeps_its_unknown_endpoint_policy(
+    tmp_path,
+    real_flow,
+    mitm_ctx,
+    fake_firewall_headers,
+    headers,
+    routing_header,
+    requestheaders_first,
+):
+    write_shared_base_diagnostic_catalog(
+        tmp_path,
+        active_permissions=[{"name": "active-read", "rules": ["GET /active"]}],
+        inactive_permissions=[{"name": "inactive-write", "rules": ["POST /inactive"]}],
+    )
+    sandbox_info = _shared_route_sandbox(tmp_path, primary_name="active-shared")
+    policies = sandbox_info["networkPolicies"]
+    assert isinstance(policies, dict)
+    policies["active-shared"]["unknownPolicy"] = "allow"
+    reg_path = _write_registry(tmp_path, sandbox_info=sandbox_info)
+    flow = real_flow(
+        with_response=False,
+        client_ip="10.200.0.5",
+        host="shared.example.com",
+        method="POST",
+        path="/inactive",
+        request_headers=headers(
+            ("Host", "shared.example.com"),
+            ("Content-Length", str(mitm_addon.STREAM_BUFFER_LIMIT + 1)),
+            routing_header,
+        ),
+    )
+
+    with (
+        mitm_ctx(registry_path=str(reg_path), api_url="https://api.okou.ai"),
+        fake_firewall_headers(headers={"Authorization": "Bearer resolved-active"}) as auth_fetch,
+    ):
+        if requestheaders_first:
+            await await_requestheaders_result(mitm_addon.requestheaders(flow))
+        await mitm_addon.request(flow)
+
+    assert flow.response is None
+    assert flow.request.headers["Authorization"] == "Bearer resolved-active"
+    assert "X-Okou-Connector-Intent" not in flow.request.headers
+    assert auth_fetch.await_count == 1
+    assert auth_fetch.await_args.args[1].auth_headers == {
+        "Authorization": "Bearer ${{ secrets.PRIMARY_TOKEN }}"
+    }
 
 
 @pytest.mark.parametrize(

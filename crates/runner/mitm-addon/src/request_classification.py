@@ -56,6 +56,8 @@ REQUEST_HEADERS_PROBE_METADATA_KEYS = (
     metadata_keys.NETWORK_LOG_TARGET,
     metadata_keys.HTTP_REQUEST_START_MONOTONIC,
     metadata_keys.AWS_SIGV4_REQUEST_INSPECTION,
+    metadata_keys.CONNECTOR_ROUTE_REASON,
+    metadata_keys.CONNECTOR_ROUTE_CANDIDATES,
 )
 
 _BROWSER_USER_AGENT_MARKERS = (
@@ -74,30 +76,33 @@ _BROWSER_USER_AGENT_MARKERS = (
 _MAX_BROWSER_USER_AGENT_BYTES = 4096
 
 
-def _aws_firewall_request_context(flow: http.HTTPFlow) -> matching.FirewallRequestContext:
-    """Build bounded request input for AWS permission selectors.
+def _firewall_request_context(
+    flow: http.HTTPFlow,
+    *,
+    applied_credential_owner: str | None = None,
+    credential_variables: object = None,
+) -> matching.FirewallRequestContext:
+    """Build bounded input for credential hints and AWS permission selectors.
 
     Ordinary firewall classification must not decode unrelated header values or
     parse oversized request targets. AWS signing already bounds both inputs;
     exceeding either bound makes AWS rule inspection unavailable and therefore
     fail-closed without affecting non-AWS path rules.
     """
-    if len(flow.request.data.path) > aws_sigv4_flow.MAX_AWS_SIGV4_REQUEST_TARGET_BYTES:
-        return matching.FirewallRequestContext(
-            body=flow.request.raw_content,
-            aws_inspection_available=False,
-        )
-
     raw_fields = flow.request.headers.fields
-    if not http_header_syntax.raw_header_list_within_budget(
-        raw_fields,
-        max_fields=aws_sigv4_flow.MAX_AWS_SIGV4_REQUEST_HEADER_FIELDS,
-        max_bytes=aws_sigv4_flow.MAX_AWS_SIGV4_REQUEST_HEADER_LIST_BYTES,
-        field_overhead_bytes=aws_sigv4_flow.AWS_SIGV4_REQUEST_HEADER_FIELD_OVERHEAD_BYTES,
+    if (
+        len(flow.request.data.path) > aws_sigv4_flow.MAX_AWS_SIGV4_REQUEST_TARGET_BYTES
+        or not http_header_syntax.raw_header_list_within_budget(
+            raw_fields,
+            max_fields=aws_sigv4_flow.MAX_AWS_SIGV4_REQUEST_HEADER_FIELDS,
+            max_bytes=aws_sigv4_flow.MAX_AWS_SIGV4_REQUEST_HEADER_LIST_BYTES,
+            field_overhead_bytes=aws_sigv4_flow.AWS_SIGV4_REQUEST_HEADER_FIELD_OVERHEAD_BYTES,
+        )
     ):
         return matching.FirewallRequestContext(
             body=flow.request.raw_content,
             aws_inspection_available=False,
+            applied_credential_owner=applied_credential_owner,
         )
 
     selected: list[tuple[str, str]] = []
@@ -114,6 +119,11 @@ def _aws_firewall_request_context(flow: http.HTTPFlow) -> matching.FirewallReque
     return matching.FirewallRequestContext(
         headers=tuple(selected),
         body=flow.request.raw_content,
+        raw_header_fields=raw_fields,
+        applied_credential_owner=applied_credential_owner,
+        credential_variables=(
+            credential_variables if isinstance(credential_variables, dict) else None
+        ),
     )
 
 
@@ -228,14 +238,6 @@ class OutlookSendBlocked:
 
 
 @dataclass(frozen=True)
-class FirewallAmbiguous:
-    sandbox_info: dict
-    firewall_ambiguous: matching.FirewallAmbiguous
-    builtin_firewall_catalog_snapshot: registry_firewalls.BuiltinFirewallCatalogSnapshot | None
-    kind: Literal["firewall_ambiguous"] = field(init=False, default="firewall_ambiguous")
-
-
-@dataclass(frozen=True)
 class FirewallInvalidInput:
     sandbox_info: dict
     firewall_invalid_input: matching.FirewallInvalidInput
@@ -297,7 +299,6 @@ BlockingRequestClassification = (
     | PlatformPathDenied
     | GmailSendBlocked
     | OutlookSendBlocked
-    | FirewallAmbiguous
     | FirewallBlock
     | FirewallInvalidInput
     | PublicDestinationDenied
@@ -396,6 +397,7 @@ def classify_request(
     api_url: str,
     tls_admission: TlsAdmissionView | None,
     defer_unresolved_public_destination: bool = False,
+    applied_credential_owner: str | None = None,
 ) -> RequestClassification:
     """Classify a flow and write metadata needed by downstream hook handling.
 
@@ -424,6 +426,7 @@ def classify_request(
         tls_admission=tls_admission,
         trusted_authority=None,
         defer_unresolved_public_destination=defer_unresolved_public_destination,
+        applied_credential_owner=applied_credential_owner,
     )
 
 
@@ -491,6 +494,7 @@ def _classify_request(
     tls_admission: TlsAdmissionView | None,
     trusted_authority: TrustedAuthority | None,
     defer_unresolved_public_destination: bool,
+    applied_credential_owner: str | None = None,
 ) -> RequestClassification:
     client_peername = connection_endpoints.client_peername(flow.client_conn)
     client_ip = client_peername[0] if client_peername is not None else None
@@ -619,19 +623,18 @@ def _classify_request(
             compiled_firewalls,
             compiled_network_policies,
             intent,
-            _aws_firewall_request_context(flow),
+            _firewall_request_context(
+                flow,
+                applied_credential_owner=applied_credential_owner,
+                credential_variables=sandbox_info.get("vars"),
+            ),
             is_asterisk_form=is_asterisk_form,
         )
         if isinstance(result, matching.FirewallInvalidInput):
             return FirewallInvalidInput(sandbox_info=sandbox_info, firewall_invalid_input=result)
         if isinstance(result, matching.FirewallAmbiguous):
-            if platform_connector_api_fallback is not None:
-                return platform_connector_api_fallback
-            return FirewallAmbiguous(
-                sandbox_info=sandbox_info,
-                firewall_ambiguous=result,
-                builtin_firewall_catalog_snapshot=registry_state.builtin_firewall_catalog_snapshot,
-            )
+            flow.metadata[metadata_keys.CONNECTOR_ROUTE_REASON] = result.reason
+            flow.metadata[metadata_keys.CONNECTOR_ROUTE_CANDIDATES] = list(result.candidates)
         if isinstance(result, matching.FirewallBlock):
             if platform_connector_api_fallback is not None and (
                 not _firewall_base_is_exact_platform_connector_resource(
@@ -717,7 +720,6 @@ def classification_needs_request_timing(classification: RequestClassification) -
         "browser_allow",
         "gmail_send_blocked",
         "outlook_send_blocked",
-        "firewall_ambiguous",
         "firewall_block",
         "firewall_invalid_input",
         "firewall_allow",

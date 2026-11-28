@@ -26,6 +26,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.MotionDurationScale
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.Offset
@@ -85,6 +86,8 @@ import java.io.File
 import kotlin.math.roundToInt
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+
+private val ImageViewerFitInset = 16.dp
 
 @Composable
 internal fun ArtifactImageViewer(
@@ -300,15 +303,15 @@ internal fun ImageViewerPage(
                     viewer,
                 )
             } else if (image != null) {
-                Image(
-                    image,
-                    null,
-                    Modifier.fillMaxSize().padding(16.dp),
-                    contentScale = ContentScale.Fit,
-                )
+                FittedViewerImage(image, Modifier.fillMaxSize())
             }
         }
     }
+}
+
+@Composable
+private fun FittedViewerImage(image: Painter, modifier: Modifier) {
+    Image(image, null, modifier.padding(ImageViewerFitInset), contentScale = ContentScale.Fit)
 }
 
 internal val ArtifactProblem?.isImageUnavailable: Boolean
@@ -622,7 +625,7 @@ private fun ImageViewport(
 }
 
 @Composable
-private fun ZoomableArtifactImage(
+private fun BoxScope.ZoomableArtifactImage(
     image: Painter,
     description: String?,
     zoom: ZoomState,
@@ -637,7 +640,7 @@ private fun ZoomableArtifactImage(
     val zoomable = zoom.zoomable
     val reducedMotion = scope.coroutineContext[MotionDurationScale]?.scaleFactor == 0f
     val zoomed = zoomable.isZoomed
-    val inset = with(LocalDensity.current) { 16.dp.roundToPx() }
+    val inset = with(LocalDensity.current) { ImageViewerFitInset.roundToPx() }
     val fitScales = remember(inset) { InsetFitImageScales(inset) }
     val imageDimensions =
         with(image.intrinsicSize) {
@@ -647,6 +650,8 @@ private fun ZoomableArtifactImage(
         remember(zoomable, viewport, imageDimensions, fitScales) {
             viewer.pendingViewpoint ?: zoomable.viewpoint()
         }
+    var fitApplied by
+        remember(zoomable, viewport, imageDimensions, fitScales) { mutableStateOf(false) }
     LaunchedEffect(zoomable, viewport, imageDimensions, fitScales) {
         snapshotFlow {
             zoomable.containerSize == viewport && zoomable.contentSize == imageDimensions
@@ -654,7 +659,7 @@ private fun ZoomableArtifactImage(
             .first { it }
         // Limit the fit scale while letting ZoomImage clip and pan within the full viewport.
         zoomable.setScalesCalculator(fitScales)
-        if (previousPoint == null) zoomable.scale(zoomable.minScale)
+        if (previousPoint == null) fitApplied = zoomable.scale(zoomable.minScale)
         else zoomable.restoreViewpoint(previousPoint)
         viewer.pendingViewpoint = null
     }
@@ -672,11 +677,15 @@ private fun ZoomableArtifactImage(
             else zoomable.minScale,
         )
     LaunchedEffect(focus) { focus.requestFocus() }
+    // Keep the zoom surface laid out while showing the fitted image until its transform is ready.
+    val showFittedImage = previousPoint == null && !fitApplied
+    if (showFittedImage) FittedViewerImage(image, Modifier.matchParentSize())
     ZoomImage(
         painter = image,
         contentDescription = null,
         modifier =
             Modifier.fillMaxSize()
+                .then(if (showFittedImage) Modifier.drawWithContent {} else Modifier)
                 .focusRequester(focus)
                 .testTag("artifact_image_transform")
                 .onPreviewKeyEvent { event ->

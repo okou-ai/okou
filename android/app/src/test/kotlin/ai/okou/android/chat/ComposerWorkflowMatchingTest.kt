@@ -28,7 +28,10 @@ class ComposerWorkflowMatchingTest {
             assertNull(TextFieldValue(text, TextRange(text.length)).activeWorkflowToken())
         }
         assertNull(TextFieldValue("/draft", TextRange(1, 4)).activeWorkflowToken())
-        assertNull(TextFieldValue("/draft", TextRange(6), TextRange(1, 6)).activeWorkflowToken())
+        assertEquals(
+            WorkflowToken(TextRange(0, 6), "draft"),
+            TextFieldValue("/draft", TextRange(6), TextRange(1, 6)).activeWorkflowToken(),
+        )
         assertNull(TextFieldValue("/usr/bin", TextRange(2)).activeWorkflowToken())
     }
 

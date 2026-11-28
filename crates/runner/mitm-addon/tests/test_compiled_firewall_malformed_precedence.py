@@ -181,6 +181,7 @@ def test_valid_later_permission_can_still_allow_after_malformed_base():
         "https://api.us.example.com/items/123",
         fws,
         policies,
+        intent=connector_intent.ConnectorIntent("present", "specific"),
     )
 
     assert isinstance(result, matching.FirewallAllow)
@@ -245,6 +246,7 @@ def test_later_malformed_policy_wins_after_earlier_unknown_allow():
         "GET",
         compile_firewalls_or_fail(fws),
         matching.compile_network_policies(policies),
+        intent=connector_intent.ConnectorIntent("present", "specific"),
     )
 
     assert isinstance(result, matching.FirewallBlock)

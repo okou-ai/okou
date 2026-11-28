@@ -1,7 +1,6 @@
 package ai.okou.android.updates
 
 import ai.okou.android.EntryBrand
-import ai.okou.android.EntryCompactHeight
 import ai.okou.android.EntryContentGutter
 import ai.okou.android.EntryContentWidth
 import ai.okou.android.R
@@ -13,6 +12,7 @@ import ai.okou.android.currentWindowSizeDp
 import ai.okou.android.entrySpacing
 import ai.okou.android.entryTitleStyle
 import ai.okou.android.entryTopPadding
+import ai.okou.android.isShortWindowHeight
 import ai.okou.android.keyboardReadingScroll
 import ai.okou.android.measureEntryBrandHeight
 import ai.okou.android.state.rememberUpdateWorkspaceState
@@ -485,7 +485,7 @@ private fun RequiredUpdateScreen(
     @StringRes installProgress: Int?,
 ) {
     val windowHeight = currentWindowSizeDp().height
-    val compact = windowHeight < EntryCompactHeight
+    val compact = isShortWindowHeight(windowHeight)
     val groupSpacing = entrySpacing(compact)
     val base = with(LocalDensity.current) { 16.sp.toDp() }
     val requiresNewerAndroid = state.requiresNewerAndroid

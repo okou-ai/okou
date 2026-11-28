@@ -14,6 +14,7 @@ import ai.okou.android.api.generated.publicImageToolOptions
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -72,7 +73,7 @@ internal fun BuiltInToolsPage(
             if (state.catalog.initialFailure) SettingsReadError()
             else SettingsPlaceholder(stringResource(R.string.settings_data_tools))
         } else {
-            Box {
+            Box(Modifier.fillMaxWidth()) {
                 if (families.isNotEmpty())
                     SettingsGroup {
                         families.forEachIndexed { index, family ->
@@ -88,9 +89,13 @@ internal fun BuiltInToolsPage(
                             }
                         }
                     }
+                // An empty confirmed catalog has no rows to give this overlay height.
                 ContentReadProgress(
                     R.string.settings_data_tools,
                     visible = state.catalog.refreshing,
+                    modifier =
+                        Modifier.matchParentSize()
+                            .wrapContentHeight(Alignment.Top, unbounded = true),
                 )
             }
         }

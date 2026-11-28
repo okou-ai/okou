@@ -85,7 +85,7 @@ def _runtime_firewall(
         ("https://api.example.com/", "https://api.example.com/v1/"),
     ],
 )
-def test_registered_custom_candidate_wins_equal_broader_and_narrower_bases(
+def test_overlapping_sources_need_a_hint_at_any_base_specificity(
     builtin_base: str,
     custom_base: str,
 ) -> None:
@@ -114,9 +114,8 @@ def test_registered_custom_candidate_wins_equal_broader_and_narrower_bases(
         policies,
     )
 
-    assert isinstance(result, matching.FirewallAllow)
-    assert result.name == "custom-service"
-    assert result.api_entry["auth"]["headers"]["Authorization"] == "Bearer custom"
+    assert isinstance(result, matching.FirewallAmbiguous)
+    assert result.candidates == ("builtin-service", "custom-service")
 
 
 def test_denied_registered_custom_candidate_does_not_fall_back_to_builtin() -> None:
@@ -143,6 +142,7 @@ def test_denied_registered_custom_candidate_does_not_fall_back_to_builtin() -> N
             "builtin-service": network_policy(unknown_policy="allow"),
             "custom-service": network_policy(deny=[ITEMS_READ_PERMISSION]),
         },
+        intent=connector_intent.ConnectorIntent("present", "custom-service"),
     )
 
     assert isinstance(result, matching.FirewallBlock)
@@ -221,6 +221,7 @@ def test_malformed_registered_custom_candidate_does_not_fall_back_to_builtin() -
             "builtin-service": network_policy(unknown_policy="allow"),
             "custom-service": network_policy(unknown_policy="allow"),
         },
+        intent=connector_intent.ConnectorIntent("present", "custom-service"),
     )
 
     assert isinstance(result, matching.FirewallBlock)
@@ -300,22 +301,18 @@ def test_compiled_matches_ask_permission_block():
     assert compiled.reason == "permission_denied"
 
 
-@pytest.mark.parametrize("broad_unknown_policy", ["deny", "allow", "broken"])
-def test_later_allowed_firewall_wins_after_earlier_unknown_match(
-    broad_unknown_policy,
-):
+def test_allowed_rule_does_not_resolve_cross_owner_overlap():
     fws = [
         _broad_firewall(),
         _specific_firewall(),
     ]
     policies = {
-        "broad": network_policy(unknown_policy=broad_unknown_policy),
+        "broad": network_policy(unknown_policy="allow"),
         "specific": network_policy(allow=[ITEMS_READ_PERMISSION]),
     }
     compiled = match_compiled_firewalls(ITEMS_URL, fws, policies)
-    assert isinstance(compiled, matching.FirewallAllow)
-    assert compiled.name == "specific"
-    assert compiled.permission == "items-read"
+    assert isinstance(compiled, matching.FirewallAmbiguous)
+    assert compiled.candidates == ("broad", "specific")
 
 
 def test_specific_permission_api_wins_after_earlier_unknown_same_firewall():
@@ -354,7 +351,7 @@ def test_specific_permission_api_wins_after_earlier_unknown_same_firewall():
     assert result.api_entry["auth"] == {}
 
 
-def test_later_denied_firewall_wins_after_earlier_unknown_allow():
+def test_intent_selected_denial_overrides_another_owners_unknown_allow():
     fws = [
         _broad_firewall(),
         _specific_firewall(),
@@ -364,7 +361,9 @@ def test_later_denied_firewall_wins_after_earlier_unknown_allow():
         "specific": network_policy(deny=[ITEMS_READ_PERMISSION]),
     }
 
-    result = match_compiled_firewalls(ITEMS_URL, fws, policies)
+    result = match_compiled_firewalls(
+        ITEMS_URL, fws, policies, intent=connector_intent.ConnectorIntent("present", "specific")
+    )
 
     assert isinstance(result, matching.FirewallBlock)
     assert result.name == "specific"

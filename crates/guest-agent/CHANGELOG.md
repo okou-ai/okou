@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.115.3](https://github.com/okou-ai/okou/compare/guest-agent-v0.115.2...guest-agent-v0.115.3) (2026-11-28)
+
+
+### Refactoring
+
+* **guest-agent:** share native execution deadline and cancellation policy ([#51683](https://github.com/okou-ai/okou/issues/51683)) ([00b93d8](https://github.com/okou-ai/okou/commit/00b93d8a02d315fa8ca1325d97cb3506ee54f5ae))
+
+## [0.115.2](https://github.com/okou-ai/okou/compare/guest-agent-v0.115.1...guest-agent-v0.115.2) (2026-11-28)
+
+
+### Refactoring
+
+* **guest-agent:** share native cli event delivery finalization ([#51665](https://github.com/okou-ai/okou/issues/51665)) ([3a4727d](https://github.com/okou-ai/okou/commit/3a4727d63304437c8e245ed7969bcf34b150c605))
+
 ## [0.115.1](https://github.com/okou-ai/okou/compare/guest-agent-v0.115.0...guest-agent-v0.115.1) (2026-11-28)
 
 ## [0.115.0](https://github.com/okou-ai/okou/compare/guest-agent-v0.114.0...guest-agent-v0.115.0) (2026-11-28)

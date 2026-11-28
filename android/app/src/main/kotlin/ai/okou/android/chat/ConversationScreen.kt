@@ -5,6 +5,8 @@ import ai.okou.android.ControlFailureSnackbar
 import ai.okou.android.R
 import ai.okou.android.WorkspaceFeedbackHost
 import ai.okou.android.currentWindowSizeDp
+import ai.okou.android.isAtLeastMediumWindowWidth
+import ai.okou.android.isShortWindowHeight
 import ai.okou.android.rememberContentReadFeedbackAfter
 import ai.okou.android.rememberContentReadSkeleton
 import ai.okou.android.updates.updateFocusOutline
@@ -254,7 +256,7 @@ internal fun ConversationRoute(
                     queue.isEmpty() &&
                     content.none { it.preview?.pendingDelivery != null })
     val window = currentWindowSizeDp()
-    val messageInset = if (window.width >= 600) 32.dp else 24.dp
+    val messageInset = if (isAtLeastMediumWindowWidth(window.width)) 32.dp else 24.dp
     val linkTarget = linkPosition?.destination
     val searchMessage =
         remember(transcript, searchMessageAnchor) {
@@ -836,7 +838,7 @@ internal fun ConversationRoute(
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
                     if (jump != null) {
-                        val compactJump = window.height < 480
+                        val compactJump = isShortWindowHeight(window.height)
                         val reportJumpPosition =
                             stopPlacement?.let { placement ->
                                 DisposableEffect(placement) {

@@ -72,6 +72,7 @@ def run_turn(slug, home, endpoint, *extra_args, workspace=None, settings=None):
         "HTTPS_PROXY": endpoint,
         "NO_PROXY": "127.0.0.1",
     }
+    # Each process submits one turn, even when it continues a conversation.
     completed = subprocess.run(
         [
             "agy",
@@ -80,16 +81,15 @@ def run_turn(slug, home, endpoint, *extra_args, workspace=None, settings=None):
             json.dumps({"modelProvider": "gemini", **(settings or {})}),
             "--model",
             slug,
-            "--input-format",
-            "stream-json",
+            "--print",
+            "Reply briefly.",
             "--output-format",
             "stream-json",
         ],
         check=False,
         env=env,
         cwd=workspace or home,
-        input=json.dumps({"event": "user", "message": {"content": "Reply briefly."}})
-        + "\n",
+        stdin=subprocess.DEVNULL,
         capture_output=True,
         text=True,
         timeout=15,
@@ -128,7 +128,16 @@ with ThreadingHTTPServer(("127.0.0.1", 0), InferenceHandler) as server:
                 and result["conversation_id"] == events[0]["conversation_id"]
             ), slug
             # A headless turn can deliver its answer only in the terminal result.
-            assert result["response"].strip() == "fixture answer", slug
+            response = result.get("response")
+            assert isinstance(response, str) and response.strip() == "fixture answer", {
+                "model": slug,
+                "expected_response": "fixture answer",
+                "result": result,
+                "events": [
+                    event.get("step_update", event["event"]) for event in events
+                ],
+                "fixture_requests": server.requests,
+            }
             assert result["usage"]["total_tokens"] == 16, slug
             assert server.requests == [
                 (f"/v1beta/models/{model}:streamGenerateContent", effort.upper())

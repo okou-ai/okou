@@ -94,6 +94,41 @@ class BuiltInToolsPageTest {
     }
 
     @Test
+    fun refreshingAnEmptyCatalogKeepsTheFollowingSectionInPlaceThroughFinalFailure() {
+        val fixture = ToolFixture()
+        val finishRefresh = CompletableDeferred<Unit>()
+        var now = 0L
+        val service =
+            object : BuiltInToolsService by fixture {
+                override suspend fun catalog(): List<DataToolFamily> {
+                    if (now == 0L) return emptyList()
+                    finishRefresh.await()
+                    throw ApiFailure.Http(400, null, null, null)
+                }
+            }
+        val model = render(service, nowMillis = { now })
+        val imageSection = compose.onNodeWithText("Image generation model").assertIsEnabled()
+        val position = imageSection.getUnclippedBoundsInRoot()
+        val progress =
+            compose.onNodeWithContentDescription(
+                compose.activity.getString(R.string.settings_data_tools),
+            )
+        try {
+            compose.runOnIdle {
+                now = 600_001L
+                model.refresh()
+            }
+            progress.assertIsDisplayed()
+            assertEquals(position, imageSection.getUnclippedBoundsInRoot())
+        } finally {
+            finishRefresh.complete(Unit)
+        }
+        compose.onNodeWithText("Tools are temporarily unavailable.").assertIsDisplayed()
+        progress.assertDoesNotExist()
+        assertEquals(position, imageSection.getUnclippedBoundsInRoot())
+    }
+
+    @Test
     fun reenablingImageGenerationLeavesTheDismissedPickerClosed() {
         val service = ToolFixture()
         val model = render(service)
