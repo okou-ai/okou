@@ -12,7 +12,6 @@ import {
   prepareCodexResetCreditExpiryRead,
 } from "./codex-reset-credit-expiry.service";
 import { logger } from "../../lib/log";
-import { nowDate } from "../../lib/time";
 import { db$ } from "../external/db";
 import { publishPersonalModelProvidersChangedSafely } from "../external/realtime";
 import { notFound } from "../../lib/error";
@@ -301,7 +300,7 @@ const refreshAntigravityProvider$ = command(
     );
     signal.throwIfAborted();
     const metadata = await fetchAntigravitySubscriptionMetadata(
-      { accessToken: grant.accessToken, now: nowDate() },
+      { accessToken: grant.accessToken },
       signal,
     );
     return withSubscriptionMetadata(args.provider, metadata);

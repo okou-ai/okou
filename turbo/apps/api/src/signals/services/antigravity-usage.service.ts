@@ -1,8 +1,9 @@
 import { accept } from "@okouai/connectors/accept";
 import {
+  array,
+  boolean,
   number,
   object,
-  record,
   string,
   union,
   type infer as zInfer,
@@ -16,18 +17,22 @@ import type {
 
 const L = logger("antigravity-usage.service");
 
-// The official agy CLI reads the member's plan and Gemini quota from the same
-// Cloud Code service that serves its model requests. These request bodies
-// match what agy 1.5.15 sends.
+// The official agy CLI reads the member's plan and grouped quota windows from
+// the Cloud Code service that serves its model requests.
 const ANTIGRAVITY_API_BASE_URL = "https://daily-cloudcode-pa.googleapis.com";
 const ANTIGRAVITY_USER_AGENT =
   "antigravity/hub/2.24.0 (aidev_client; os_type=darwin; arch=arm64)";
 const FIVE_HOUR_SECONDS = 5 * 60 * 60;
 const WEEK_SECONDS = 7 * 24 * 60 * 60;
-// Google AI Pro and Ultra quotas refresh every five hours; a later reset
-// belongs to the weekly allowance.
-const FIVE_HOUR_WINDOW_TOLERANCE_SECONDS = 10 * 60;
-const GEMINI_4_MODEL_PREFIX = "gemini-4-";
+
+const FIVE_HOUR_WINDOW_PATTERN =
+  /^(?:5\s*h(?:ours?|rs?)?|five[\s_-]*hour|session|18000s)$/;
+const WEEKLY_WINDOW_PATTERN =
+  /^(?:7\s*d(?:ays?)?|1\s*w|week(?:ly)?|seven[\s_-]*day|604800s)$/;
+const FIVE_HOUR_TEXT_PATTERN =
+  /(?:^|[-_\s])(?:5\s*h(?:ours?|rs?)?|five[\s_-]*hour)(?:$|[-_\s])/;
+const WEEKLY_TEXT_PATTERN =
+  /(?:^|[-_\s])(?:7\s*d(?:ays?)?|week(?:ly)?|seven[\s_-]*day)(?:$|[-_\s])/;
 
 const tierSchema = object({
   id: string().optional(),
@@ -43,33 +48,53 @@ const loadCodeAssistSchema = object({
   paidTier: tierSchema,
 });
 
-const availableModelsSchema = object({
-  models: record(
-    string(),
-    object({
-      quotaInfo: object({
-        remainingFraction: number().optional(),
-        resetTime: string().optional(),
-      }).nullish(),
-    }),
-  ).nullish(),
+// Matches google/internal/cloud/code/v1internal/quota_summary.proto.
+const quotaSummaryBucketSchema = object({
+  bucketId: string().nullish(),
+  displayName: string().nullish(),
+  description: string().nullish(),
+  window: string().nullish(),
+  remainingFraction: number().nullish(),
+  disabled: boolean().nullish(),
+  resetTime: string().nullish(),
+});
+
+const quotaSummaryGroupSchema = object({
+  displayName: string().nullish(),
+  description: string().nullish(),
+  buckets: array(quotaSummaryBucketSchema).nullish(),
+});
+
+const quotaSummarySchema = object({
+  groups: array(quotaSummaryGroupSchema).nullish(),
 });
 
 type LoadCodeAssistResponse = zInfer<typeof loadCodeAssistSchema>;
-type AvailableModelsResponse = zInfer<typeof availableModelsSchema>;
+type QuotaSummaryBucket = zInfer<typeof quotaSummaryBucketSchema>;
+type QuotaSummaryGroup = zInfer<typeof quotaSummaryGroupSchema>;
+type QuotaSummaryResponse = zInfer<typeof quotaSummarySchema>;
+
+type QuotaWindowKind = "fiveHour" | "weekly";
+
+interface CandidateBucket {
+  readonly fraction: number;
+  readonly resetAt: Date | null;
+}
 
 interface AntigravitySubscriptionMetadata {
   readonly planType?: string | null;
+  readonly subscriptionResetPeriod?: string | null;
+  readonly subscriptionNextResetAt?: Date | null;
   readonly subscriptionUsage?: SubscriptionUsageMetadata | null;
 }
 
 async function postCloudCode(
   args: {
     readonly accessToken: string;
-    readonly method: "loadCodeAssist" | "fetchAvailableModels";
+    readonly method: "loadCodeAssist" | "retrieveUserQuotaSummary";
     readonly body: unknown;
   },
-  _signal: AbortSignal,
+  signal: AbortSignal,
 ): Promise<unknown> {
   const response = await accept(
     fetch(`${ANTIGRAVITY_API_BASE_URL}/v1internal:${args.method}`, {
@@ -80,6 +105,7 @@ async function postCloudCode(
         "user-agent": ANTIGRAVITY_USER_AGENT,
       },
       body: JSON.stringify(args.body),
+      signal,
     }),
     [200],
   );
@@ -129,62 +155,167 @@ function usageWindow(
   };
 }
 
-/**
- * Gemini 4 quota as one window: the most constrained Gemini 4 model, placed
- * in the five-hour or weekly slot by how far away its reset is.
- */
-function usageFromModels(
-  response: AvailableModelsResponse,
-  now: Date,
-): SubscriptionUsageMetadata | null {
-  let tightest: { fraction: number; resetAt: Date | null } | null = null;
-  for (const [model, entry] of Object.entries(response.models ?? {})) {
-    const fraction = entry.quotaInfo?.remainingFraction;
-    if (!model.startsWith(GEMINI_4_MODEL_PREFIX) || fraction === undefined) {
-      continue;
-    }
-    const reset = entry.quotaInfo?.resetTime
-      ? new Date(entry.quotaInfo.resetTime)
-      : null;
-    const resetAt = reset && !Number.isNaN(reset.getTime()) ? reset : null;
-    if (!tightest || fraction < tightest.fraction) {
-      tightest = { fraction, resetAt };
-    }
-  }
-  if (!tightest) {
-    // Model identifiers are not secret; record them to adjust the filter.
-    L.warn("antigravity quota has no gemini 4 model", {
-      models: Object.keys(response.models ?? {}).slice(0, 20),
-    });
+function parseResetTime(value: string | null | undefined): Date | null {
+  if (!value) {
     return null;
   }
-  const secondsToReset = tightest.resetAt
-    ? (tightest.resetAt.getTime() - now.getTime()) / 1000
-    : 0;
-  if (secondsToReset > FIVE_HOUR_SECONDS + FIVE_HOUR_WINDOW_TOLERANCE_SECONDS) {
-    return {
-      fiveHour: null,
-      weekly: usageWindow(tightest.fraction, tightest.resetAt, WEEK_SECONDS),
-    };
-  }
-  return {
-    fiveHour: usageWindow(
-      tightest.fraction,
-      tightest.resetAt,
-      FIVE_HOUR_SECONDS,
-    ),
-    weekly: null,
-  };
+  const reset = new Date(value);
+  return Number.isNaN(reset.getTime()) ? null : reset;
 }
 
 /**
- * Read the member's Google AI plan and Gemini 4 quota. The quota request
- * needs the Cloud Code project that loadCodeAssist returns.
+ * Select the general Gemini quota group used by Okou's Gemini 4 models,
+ * excluding third-party (Claude/GPT) pools and dedicated Argon preview pools.
+ */
+function isGeminiQuotaGroup(group: QuotaSummaryGroup): boolean {
+  const groupName = (group.displayName ?? "").toLowerCase();
+  const bucketTexts = (group.buckets ?? []).map((bucket) => {
+    return `${bucket.bucketId ?? ""} ${bucket.displayName ?? ""}`.toLowerCase();
+  });
+  const allText = [groupName, ...bucketTexts].join(" ");
+  if (/\b(?:claude|gpt|3p|argon)\b/.test(allText)) {
+    return false;
+  }
+  return allText.includes("gemini");
+}
+
+function classifyBucketWindow(
+  bucket: QuotaSummaryBucket,
+): QuotaWindowKind | null {
+  const explicit = bucket.window?.trim().toLowerCase() ?? "";
+  if (explicit.length > 0) {
+    if (FIVE_HOUR_WINDOW_PATTERN.test(explicit)) {
+      return "fiveHour";
+    }
+    if (WEEKLY_WINDOW_PATTERN.test(explicit)) {
+      return "weekly";
+    }
+    return null;
+  }
+  const text = `${bucket.bucketId ?? ""} ${bucket.displayName ?? ""}`
+    .trim()
+    .toLowerCase();
+  if (FIVE_HOUR_TEXT_PATTERN.test(text)) {
+    return "fiveHour";
+  }
+  if (WEEKLY_TEXT_PATTERN.test(text)) {
+    return "weekly";
+  }
+  return null;
+}
+
+function isTighterCandidate(
+  candidate: CandidateBucket,
+  current: CandidateBucket | null,
+): boolean {
+  if (!current) {
+    return true;
+  }
+  if (candidate.fraction !== current.fraction) {
+    return candidate.fraction < current.fraction;
+  }
+  return (
+    (candidate.resetAt?.getTime() ?? Number.MAX_SAFE_INTEGER) <
+    (current.resetAt?.getTime() ?? Number.MAX_SAFE_INTEGER)
+  );
+}
+
+/**
+ * Gemini 5-hour and weekly quota windows from retrieveUserQuotaSummary.
+ */
+function usageFromQuotaSummary(
+  response: QuotaSummaryResponse,
+): SubscriptionUsageMetadata | null {
+  let fiveHour: CandidateBucket | null = null;
+  let weekly: CandidateBucket | null = null;
+
+  for (const group of response.groups ?? []) {
+    if (!isGeminiQuotaGroup(group)) {
+      continue;
+    }
+    for (const bucket of group.buckets ?? []) {
+      if (bucket.disabled === true) {
+        continue;
+      }
+      const fraction = bucket.remainingFraction;
+      if (typeof fraction !== "number" || !Number.isFinite(fraction)) {
+        continue;
+      }
+      const kind = classifyBucketWindow(bucket);
+      if (!kind) {
+        continue;
+      }
+      const candidate: CandidateBucket = {
+        fraction,
+        resetAt: parseResetTime(bucket.resetTime),
+      };
+      if (kind === "fiveHour" && isTighterCandidate(candidate, fiveHour)) {
+        fiveHour = candidate;
+      } else if (kind === "weekly" && isTighterCandidate(candidate, weekly)) {
+        weekly = candidate;
+      }
+    }
+  }
+
+  if (!fiveHour && !weekly) {
+    // Group and bucket identifiers are not secret; record them to adjust matching.
+    L.warn("antigravity quota summary has no gemini window", {
+      groups: (response.groups ?? []).slice(0, 10).map((group) => {
+        return {
+          displayName: group.displayName ?? null,
+          buckets: (group.buckets ?? []).slice(0, 10).map((bucket) => {
+            return {
+              bucketId: bucket.bucketId ?? null,
+              window: bucket.window ?? null,
+            };
+          }),
+        };
+      }),
+    });
+    return null;
+  }
+
+  return {
+    fiveHour: fiveHour
+      ? usageWindow(fiveHour.fraction, fiveHour.resetAt, FIVE_HOUR_SECONDS)
+      : null,
+    weekly: weekly
+      ? usageWindow(weekly.fraction, weekly.resetAt, WEEK_SECONDS)
+      : null,
+  };
+}
+
+function resetMetadataFromUsage(
+  usage: SubscriptionUsageMetadata | null,
+): Pick<
+  AntigravitySubscriptionMetadata,
+  "subscriptionResetPeriod" | "subscriptionNextResetAt"
+> {
+  const weeklyResetAt = usage?.weekly?.resetAt;
+  if (weeklyResetAt) {
+    return {
+      subscriptionResetPeriod: "weekly",
+      subscriptionNextResetAt: weeklyResetAt,
+    };
+  }
+  const fiveHourResetAt = usage?.fiveHour?.resetAt;
+  if (fiveHourResetAt) {
+    return {
+      subscriptionResetPeriod: "5-hour window",
+      subscriptionNextResetAt: fiveHourResetAt,
+    };
+  }
+  return {};
+}
+
+/**
+ * Read the member's Google AI plan and Gemini 5-hour/weekly quota windows.
+ * The quota summary request needs the Cloud Code project returned by
+ * loadCodeAssist.
  */
 export async function fetchAntigravitySubscriptionMetadata(
   args: {
     readonly accessToken: string;
-    readonly now: Date;
   },
   signal: AbortSignal,
 ): Promise<AntigravitySubscriptionMetadata | undefined> {
@@ -203,29 +334,30 @@ export async function fetchAntigravitySubscriptionMetadata(
     throw new Error("Google AI loadCodeAssist response shape unrecognized");
   }
   const project = projectId(loaded.data);
-  const models = availableModelsSchema.safeParse(
+  const summary = quotaSummarySchema.safeParse(
     await postCloudCode(
       {
         accessToken: args.accessToken,
-        method: "fetchAvailableModels",
+        method: "retrieveUserQuotaSummary",
         body: project ? { project } : {},
       },
       signal,
     ),
   );
   signal.throwIfAborted();
-  if (!models.success) {
+  if (!summary.success) {
     throw new Error(
-      "Google AI fetchAvailableModels response shape unrecognized",
+      "Google AI retrieveUserQuotaSummary response shape unrecognized",
     );
   }
   const planType = planTypeFromTiers(loaded.data);
-  const subscriptionUsage = usageFromModels(models.data, args.now);
+  const subscriptionUsage = usageFromQuotaSummary(summary.data);
   if (!planType && !subscriptionUsage) {
     return undefined;
   }
   return {
     ...(planType ? { planType } : {}),
+    ...resetMetadataFromUsage(subscriptionUsage),
     ...(subscriptionUsage ? { subscriptionUsage } : {}),
   };
 }
