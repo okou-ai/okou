@@ -1,7 +1,6 @@
 import type { BootstrapFeatureSwitchContext } from "../agent-run-context.signals";
 import type { LaunchFramework } from "../launch-framework";
 import { computed, type Computed } from "ccstate";
-import { voiceModeForFramework } from "../../../lib/conversation-guidance";
 import {
   chatRunSourceAnnotation,
   projectUserMessage,
@@ -42,12 +41,11 @@ export function createWebThreadPrompt(
     const [framework, featureSwitchContext, projectContext] = await Promise.all(
       [get(framework$), get(featureSwitches$), get(projectContext$)],
     );
-    const voiceMode = voiceModeForFramework(framework);
     const triggerSource =
       pickedEvent.contextType === "agent_run" ? "agent" : "web";
     return {
       userPromptVariables: {
-        message: projectUserMessage(message, { voiceMode }).agentPrompt,
+        message: projectUserMessage(message).agentPrompt,
       },
       systemPromptVariables: {
         ...(framework === "codex" && pickedEvent.chatThreadId
@@ -68,7 +66,6 @@ export function createWebThreadPrompt(
               triggerSource,
               featureSwitchContext,
             }),
-            voiceMode,
           },
         }),
       },

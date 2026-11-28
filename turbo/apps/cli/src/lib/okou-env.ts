@@ -25,3 +25,7 @@ export function getOkouAppUrl(): string | undefined {
 export function getOkouConnectorAccountContextFile(): string | undefined {
   return okouEnvironmentValue("CONNECTOR_ACCOUNT_CONTEXT_FILE");
 }
+
+export function getOkouAntigravityModel(): string | undefined {
+  return okouEnvironmentValue("ANTIGRAVITY_MODEL");
+}

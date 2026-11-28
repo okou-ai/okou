@@ -143,7 +143,7 @@ describe("Antigravity execution", () => {
     });
   });
 
-  it("instructs antigravity runs to download and read voice clips natively across initial and steered inputs", async () => {
+  it("prompts antigravity runs to run okou transcribe silently across initial and steered voice inputs", async () => {
     mockOptionalEnv("ANTIGRAVITY_OAUTH_CLIENT_ID", "agy-client.example");
     mockOptionalEnv("ANTIGRAVITY_OAUTH_CLIENT_SECRET", "agy-client-secret");
     mockGoogle();
@@ -221,26 +221,19 @@ describe("Antigravity execution", () => {
       const { execution } = await runExecution(run.runId);
 
       expect(execution.cliAgentType).toBe("antigravity");
+      expect(executionEnvironment(execution)).toMatchObject({
+        OKOU_ANTIGRAVITY_MODEL: "gemini-4-neon",
+      });
       expect(execution.prompt).toContain(
-        `Clip 1: okou web download-file ${clip1}`,
+        `okou transcribe ${VOICE_TRANSCRIPTION_MODEL} --file-id ${clip1} --file-id ${clip2}`,
       );
       expect(execution.prompt).toContain(
-        `Clip 2: okou web download-file ${clip2}`,
+        "before sending any visible reply or progress update",
       );
-      expect(execution.prompt).toContain("read_file");
-      expect(execution.prompt).not.toContain(
-        `okou transcribe ${VOICE_TRANSCRIPTION_MODEL}`,
-      );
-      expect(execution.appendSystemPrompt).toContain(
-        "okou web download-file <file-id>",
-      );
-      expect(execution.appendSystemPrompt).toContain("read_file");
-      expect(execution.appendSystemPrompt).not.toContain(
-        "use `okou transcribe` on those clips",
-      );
+      expect(execution.appendSystemPrompt).toContain("# Conversation Guidance");
 
       // Queue a voice message while the Antigravity run is active and verify
-      // mid-turn steering also projects native-audio download instructions.
+      // mid-turn steering uses the same voice command and silent-first guidance.
       await requestSendEvent(
         actor,
         {
@@ -261,11 +254,10 @@ describe("Antigravity execution", () => {
         throw new Error("Expected steered voice input");
       }
       expect(steered.input.prompt).toContain(
-        `Clip 1: okou web download-file ${steerClip}`,
+        `okou transcribe ${VOICE_TRANSCRIPTION_MODEL} --file-id ${steerClip}`,
       );
-      expect(steered.input.prompt).toContain("read_file");
-      expect(steered.input.prompt).not.toContain(
-        `okou transcribe ${VOICE_TRANSCRIPTION_MODEL}`,
+      expect(steered.input.prompt).toContain(
+        "before sending any visible reply or progress update",
       );
       await expect(
         fixture.api.declareSteeredInput(
