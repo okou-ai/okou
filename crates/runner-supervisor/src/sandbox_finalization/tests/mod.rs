@@ -327,6 +327,10 @@ fn test_verified_restored_session_identity(
             ),
             session_id: session_id.to_string(),
         },
+        SessionHistoryFramework::Antigravity => SessionHistorySourceRef::Antigravity {
+            conversations_dir: "/home/user/.gemini/antigravity-cli/conversations".to_string(),
+            session_id: session_id.to_string(),
+        },
     };
     let metadata = SessionHistoryIdentity::new(
         framework,

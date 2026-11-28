@@ -77,8 +77,13 @@ fn retained_history_admission_bounds_json_allocation() {
     std::fs::write(project.join(format!("{id}.jsonl")), &history).unwrap();
 
     let measurement = Measurement::start();
-    let usable =
-        retained_session_is_usable(Framework::ClaudeCode, id, claude_dir.to_str().unwrap(), "");
+    let usable = retained_session_is_usable(
+        Framework::ClaudeCode,
+        id,
+        claude_dir.to_str().unwrap(),
+        "",
+        "",
+    );
     let allocated = measurement.finish().unwrap();
 
     assert!(usable.unwrap());
@@ -106,8 +111,14 @@ fn retained_codex_history_becomes_unavailable_when_encoded_work_exceeds_budget()
         .write_all(&zstd::encode_all(history.as_bytes(), 0).unwrap())
         .unwrap();
     assert!(
-        retained_session_is_usable(Framework::Codex, thread, "", home.path().to_str().unwrap(),)
-            .unwrap()
+        retained_session_is_usable(
+            Framework::Codex,
+            thread,
+            "",
+            home.path().to_str().unwrap(),
+            "",
+        )
+        .unwrap()
     );
 
     let padding = 256 * 1024 * 1024u32;
@@ -117,8 +128,14 @@ fn retained_codex_history_becomes_unavailable_when_encoded_work_exceeds_budget()
     writer.set_len(end).unwrap();
 
     assert!(
-        !retained_session_is_usable(Framework::Codex, thread, "", home.path().to_str().unwrap(),)
-            .unwrap()
+        !retained_session_is_usable(
+            Framework::Codex,
+            thread,
+            "",
+            home.path().to_str().unwrap(),
+            "",
+        )
+        .unwrap()
     );
 }
 
@@ -292,6 +309,7 @@ fn retained_history_validates_ignored_values_and_later_identities() {
                 Framework::ClaudeCode,
                 "retained",
                 home.path().to_str().unwrap(),
+                "",
                 ""
             )
             .unwrap(),
@@ -299,4 +317,54 @@ fn retained_history_validates_ignored_values_and_later_identities() {
             "{tail}"
         );
     }
+}
+
+#[test]
+fn retained_antigravity_history_validates_sqlite_database_file() {
+    let home = tempfile::tempdir().unwrap();
+    let conversations = home.path().join(".gemini/antigravity-cli/conversations");
+    std::fs::create_dir_all(&conversations).unwrap();
+    let session_id = "ec30d0a7-1690-4e41-9da9-34dbca47bb8a";
+    let home_str = home.path().to_str().unwrap();
+
+    // Missing file
+    assert!(
+        !retained_session_is_usable(Framework::Antigravity, session_id, "", "", home_str).unwrap()
+    );
+
+    // Non-UUID session ID
+    assert!(
+        !retained_session_is_usable(Framework::Antigravity, "not-a-uuid", "", "", home_str)
+            .unwrap()
+    );
+
+    // Truncated header (< 100 bytes)
+    let db_path = conversations.join(format!("{session_id}.db"));
+    std::fs::write(&db_path, b"SQLite format 3\0").unwrap();
+    assert!(
+        !retained_session_is_usable(Framework::Antigravity, session_id, "", "", home_str).unwrap()
+    );
+
+    // Non-SQLite content (>= 100 bytes)
+    std::fs::write(&db_path, vec![b'x'; 256]).unwrap();
+    assert!(
+        !retained_session_is_usable(Framework::Antigravity, session_id, "", "", home_str).unwrap()
+    );
+
+    // Valid SQLite 3 database header (>= 100 bytes)
+    let mut valid_db = b"SQLite format 3\0".to_vec();
+    valid_db.resize(512, 0);
+    std::fs::write(&db_path, &valid_db).unwrap();
+    assert!(
+        retained_session_is_usable(Framework::Antigravity, session_id, "", "", home_str).unwrap()
+    );
+
+    // Symlink must not be accepted
+    let target = home.path().join("elsewhere.db");
+    std::fs::write(&target, &valid_db).unwrap();
+    std::fs::remove_file(&db_path).unwrap();
+    std::os::unix::fs::symlink(&target, &db_path).unwrap();
+    assert!(
+        !retained_session_is_usable(Framework::Antigravity, session_id, "", "", home_str).unwrap()
+    );
 }

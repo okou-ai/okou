@@ -1,4 +1,6 @@
 import { antigravityDeviceAuthContract } from "@okouai/api-contracts/contracts/antigravity-device-auth";
+import { uploadsContract } from "@okouai/api-contracts/contracts/uploads";
+import { VOICE_TRANSCRIPTION_MODEL } from "@okouai/api-contracts/contracts/voice-clips";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { HttpResponse, http } from "msw";
 import { beforeEach, describe, expect, it } from "vitest";
@@ -9,6 +11,8 @@ import { mockOptionalEnv } from "../../../lib/env";
 import { server } from "../../../mocks/server";
 import { createUniqueStaffOrgIdFixture } from "../../../test-fixtures/staff-org";
 import { antigravityDeviceAuthRoutes } from "../antigravity-device-auth";
+import { uploadsCompleteRoutes } from "../uploads-complete";
+import { uploadsPrepareRoutes } from "../uploads-prepare";
 import {
   createChatEventsFixture,
   executionEnvironment,
@@ -18,6 +22,7 @@ import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { publicChatActor } from "./helpers/public-chat-actor";
 import { createRouteMocks } from "./helpers/route-test";
 import { mockSecretKmsHttp } from "./helpers/secret-kms-http";
+import { installSharedThreadStorage } from "./helpers/shared-thread-storage";
 
 const context = testContext();
 const fixture = createChatEventsFixture(context);
@@ -82,6 +87,10 @@ describe("Antigravity execution", () => {
     const refreshes = mockGoogle();
     const owned = await publicChatActor(context, {
       actor: fixture.bdd.user({ orgId: createUniqueStaffOrgIdFixture() }),
+      optionalEnvironmentNames: [
+        "ANTIGRAVITY_OAUTH_CLIENT_ID",
+        "ANTIGRAVITY_OAUTH_CLIENT_SECRET",
+      ],
     });
     owned.ownsFeatureSwitches();
     await owned.run(async () => {
@@ -131,6 +140,140 @@ describe("Antigravity execution", () => {
         client_id: "agy-client.example",
         client_secret: "agy-client-secret",
       });
+    });
+  });
+
+  it("instructs antigravity runs to download and read voice clips natively across initial and steered inputs", async () => {
+    mockOptionalEnv("ANTIGRAVITY_OAUTH_CLIENT_ID", "agy-client.example");
+    mockOptionalEnv("ANTIGRAVITY_OAUTH_CLIENT_SECRET", "agy-client-secret");
+    mockGoogle();
+    const owned = await publicChatActor(context, {
+      actor: fixture.bdd.user({ orgId: createUniqueStaffOrgIdFixture() }),
+      optionalEnvironmentNames: [
+        "ANTIGRAVITY_OAUTH_CLIENT_ID",
+        "ANTIGRAVITY_OAUTH_CLIENT_SECRET",
+      ],
+    });
+    owned.ownsFeatureSwitches();
+    await owned.run(async () => {
+      const { actor, sendChatRun, requestSendEvent, runExecution } = owned;
+      const orgId = requireOrgId(actor);
+      await updateFeatureSwitchesForUser(
+        context,
+        { ...actor, orgId },
+        { [FeatureSwitchKey.GeminiAntigravity]: true },
+      );
+      await connectGoogleAccount(orgId, actor.userId);
+      installSharedThreadStorage(context);
+
+      createRouteMocks(context).clerk.session(actor.userId, orgId);
+      const uploads = setupApp({
+        context,
+        routes: [...uploadsPrepareRoutes, ...uploadsCompleteRoutes],
+      })(uploadsContract);
+      const uploadVoiceClip = async (label: string) => {
+        const audio = `${label}-audio-bytes`.repeat(4);
+        const headers = { authorization: "Bearer clerk-session" };
+        const { body } = await accept(
+          uploads.preparePrivate({
+            headers,
+            body: {
+              filename: `${label}.wav`,
+              contentType: "audio/wav",
+              size: audio.length,
+            },
+          }),
+          [200],
+        );
+        if (!("uploadUrl" in body)) {
+          throw new Error("Expected direct upload");
+        }
+        expect(
+          (
+            await fetch(body.uploadUrl, {
+              method: "PUT",
+              headers: body.uploadHeaders,
+              body: audio,
+            })
+          ).status,
+        ).toBe(200);
+        await accept(
+          uploads.complete({ headers, body: { id: body.id } }),
+          [200],
+        );
+        return body.id;
+      };
+
+      const clip1 = await uploadVoiceClip("clip1");
+      const clip2 = await uploadVoiceClip("clip2");
+      const steerClip = await uploadVoiceClip("steer");
+
+      const run = await sendChatRun(actor, {
+        model: "gemini-4-neon",
+        prompt: "[Voice message]",
+        userMessage: {
+          version: 1,
+          parts: [
+            { type: "voice", clips: [{ fileId: clip1 }, { fileId: clip2 }] },
+          ],
+        },
+      });
+      const { execution } = await runExecution(run.runId);
+
+      expect(execution.cliAgentType).toBe("antigravity");
+      expect(execution.prompt).toContain(
+        `Clip 1: okou web download-file ${clip1}`,
+      );
+      expect(execution.prompt).toContain(
+        `Clip 2: okou web download-file ${clip2}`,
+      );
+      expect(execution.prompt).toContain("read_file");
+      expect(execution.prompt).not.toContain(
+        `okou transcribe ${VOICE_TRANSCRIPTION_MODEL}`,
+      );
+      expect(execution.appendSystemPrompt).toContain(
+        "okou web download-file <file-id>",
+      );
+      expect(execution.appendSystemPrompt).toContain("read_file");
+      expect(execution.appendSystemPrompt).not.toContain(
+        "use `okou transcribe` on those clips",
+      );
+
+      // Queue a voice message while the Antigravity run is active and verify
+      // mid-turn steering also projects native-audio download instructions.
+      await requestSendEvent(
+        actor,
+        {
+          threadId: run.threadId,
+          prompt: "[Voice message]",
+          userMessage: {
+            version: 1,
+            parts: [{ type: "voice", clips: [{ fileId: steerClip }] }],
+          },
+        },
+        [201],
+      );
+      const steered = await fixture.api.nextSteerableInput(
+        execution.sandboxToken,
+        run.runId,
+      );
+      if (!steered.input) {
+        throw new Error("Expected steered voice input");
+      }
+      expect(steered.input.prompt).toContain(
+        `Clip 1: okou web download-file ${steerClip}`,
+      );
+      expect(steered.input.prompt).toContain("read_file");
+      expect(steered.input.prompt).not.toContain(
+        `okou transcribe ${VOICE_TRANSCRIPTION_MODEL}`,
+      );
+      await expect(
+        fixture.api.declareSteeredInput(
+          execution.sandboxToken,
+          run.runId,
+          steered.input.eventId,
+        ),
+      ).resolves.toStrictEqual({ outcome: "steered" });
     });
   });
 });

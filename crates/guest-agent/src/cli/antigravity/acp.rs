@@ -29,6 +29,7 @@ use crate::cli::{
 use crate::error::AgentError;
 
 const METHOD_NOT_FOUND: i64 = -32601;
+const SHUTDOWN_EOF_GRACE: Duration = Duration::from_secs(2);
 const SHUTDOWN_SIGKILL_GRACE: Duration = Duration::from_secs(2);
 const EOF_EXIT_OBSERVATION_GRACE: Duration = Duration::from_secs(1);
 const MAX_METHOD_CHARS: usize = 120;
@@ -410,8 +411,10 @@ impl AntigravityAcpClient {
         }
         let had_stdin = self.stdin.is_some();
         self.close_io_handles();
-        if had_stdin {
-            tokio::task::yield_now().await;
+        if had_stdin && self.child.is_some() {
+            // Allow `agy acp` to observe stdin EOF, cleanly checkpoint its
+            // SQLite conversation database, and exit before forcing teardown.
+            let _ = self.wait_for_child(SHUTDOWN_EOF_GRACE).await?;
         }
         self.finish_close().await
     }

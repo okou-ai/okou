@@ -704,28 +704,34 @@ fn build_env_json_codex_keeps_shared_runner_env() {
 }
 
 #[test]
-fn antigravity_only_accepts_chat_history_for_continuation() {
+fn antigravity_validates_resume_session_id() {
     use super::super::env::validate_resume_session_id;
     use guest_contracts::env::NativeContinuation;
 
     let mut context = minimal_context();
     context.cli_agent_type = "antigravity".into();
     assert!(validate_resume_session_id(&context).is_ok());
-    context.local_resume_session_id = Some("previous-conversation".into());
+
+    context.local_resume_session_id = Some("ec30d0a7-1690-4e41-9da9-34dbca47bb8a".into());
+    assert!(validate_resume_session_id(&context).is_ok());
+
+    context.local_resume_session_id = Some("../escape".into());
     assert!(validate_resume_session_id(&context).is_err());
+
     context.local_resume_session_id = None;
     context.native_continuation = Some(NativeContinuation {
-        session_id: Some("previous-conversation".into()),
+        session_id: Some("ec30d0a7-1690-4e41-9da9-34dbca47bb8a".into()),
         generation_run_id: Some("old-run".into()),
         recovery_prompt: None,
     });
-    assert!(validate_resume_session_id(&context).is_err());
-    context
-        .native_continuation
-        .as_mut()
-        .unwrap()
-        .recovery_prompt = Some("previous chat context".into());
     assert!(validate_resume_session_id(&context).is_ok());
+
+    context.native_continuation = Some(NativeContinuation {
+        session_id: Some("../escape".into()),
+        generation_run_id: Some("old-run".into()),
+        recovery_prompt: Some("previous chat context".into()),
+    });
+    assert!(validate_resume_session_id(&context).is_err());
 }
 
 #[test]

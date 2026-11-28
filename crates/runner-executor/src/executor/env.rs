@@ -550,17 +550,10 @@ pub fn validate_resume_session_id(context: &ExecutionContext) -> Result<(), Stri
             }
         }
         EffectiveCliFramework::Antigravity => {
-            if context.local_resume_session_id.is_some() {
-                Err("Antigravity does not accept an unbound local conversation ID".into())
-            } else if context
-                .native_continuation
-                .as_ref()
-                .and_then(|n| n.recovery_prompt.as_deref())
-                .is_some_and(|p| !p.is_empty())
-            {
+            if is_valid_cli_agent_session_id(session_id) {
                 Ok(())
             } else {
-                Err("Antigravity continuation requires chat recovery context".into())
+                Err("invalid antigravity session_id".to_string())
             }
         }
         EffectiveCliFramework::Pi => {

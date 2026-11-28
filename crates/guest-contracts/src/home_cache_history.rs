@@ -236,6 +236,14 @@ pub fn validate_home_source(source: &SessionHistorySourceRef) -> Result<(), Home
                             .strip_suffix(session_id)
                             .is_some_and(|prefix| prefix.ends_with('-') || prefix.ends_with('_'))
                 }),
+        SessionHistorySourceRef::Antigravity {
+            conversations_dir,
+            session_id,
+        } => {
+            conversations_dir == "/home/user/.gemini/antigravity-cli/conversations"
+                && crate::cli_agent_session_id::is_valid_cli_agent_session_id(session_id)
+                && uuid::Uuid::try_parse(session_id).is_ok()
+        }
     };
     if supported {
         Ok(())
