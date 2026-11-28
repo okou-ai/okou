@@ -98,6 +98,17 @@ describe("Data Router accounting when a run ends", () => {
   it("resolves the service token only at auth and totals reported request credits once", async () => {
     const run = await createRun();
     expect(run.execution.platformEnvironment.OKOU_DATA_ROUTER_URL).toBe(ROUTER);
+    expect(run.execution.firewalls).toContainEqual(
+      expect.objectContaining({
+        kind: "inline",
+        firewall: expect.objectContaining({
+          name: "data-router",
+          placeholders: {
+            OKOU_DATA_TOKEN: "OkouConnectore6d27185288fb0be86fa",
+          },
+        }),
+      }),
+    );
     expect(
       JSON.stringify([
         run.execution.environment,
