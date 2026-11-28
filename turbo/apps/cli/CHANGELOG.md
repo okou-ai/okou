@@ -1,5 +1,23 @@
 # Changelog
 
+## [10.46.0](https://github.com/okou-ai/okou/compare/cli-v10.45.1...cli-v10.46.0) (2026-11-28)
+
+
+### Features
+
+* **artifacts:** cut over to files and unified artifact access and retire legacy routes ([#51627](https://github.com/okou-ai/okou/issues/51627)) ([d5b57bd](https://github.com/okou-ai/okou/commit/d5b57bd1003bbe1aabd0d56b27efa8dbcfa96087))
+* handle antigravity native audio in okou transcribe ([#51630](https://github.com/okou-ai/okou/issues/51630)) ([1ff3ad8](https://github.com/okou-ai/okou/commit/1ff3ad8b54320a9779b26a2368087fe8adb5f6ec))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.144.0
+    * @okouai/connectors bumped to 3.28.0
+    * @okouai/core bumped to 8.889.0
+    * @okouai/pi-agent-runtime bumped to 1.52.109
+
 ## [10.45.1](https://github.com/okou-ai/okou/compare/cli-v10.45.0...cli-v10.45.1) (2026-11-27)
 
 

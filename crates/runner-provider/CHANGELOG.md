@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.23.0](https://github.com/okou-ai/okou/compare/runner-provider-v0.22.1...runner-provider-v0.23.0) (2026-11-28)
+
+
+### Features
+
+* complete credential placeholders in runner firewalls ([#51596](https://github.com/okou-ai/okou/issues/51596)) ([8daaa6e](https://github.com/okou-ai/okou/commit/8daaa6e60c0bec5ebeb47fa5da709339c3ff2a2c))
+
 ## [0.22.1](https://github.com/okou-ai/okou/compare/runner-provider-v0.22.0...runner-provider-v0.22.1) (2026-11-28)
 
 ## [0.22.0](https://github.com/okou-ai/okou/compare/runner-provider-v0.21.29...runner-provider-v0.22.0) (2026-11-27)

@@ -13,6 +13,28 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1199.0](https://github.com/okou-ai/okou/compare/app-v0.1198.1...app-v0.1199.0) (2026-11-28)
+
+
+### Features
+
+* **artifacts:** cut over to files and unified artifact access and retire legacy routes ([#51627](https://github.com/okou-ai/okou/issues/51627)) ([d5b57bd](https://github.com/okou-ai/okou/commit/d5b57bd1003bbe1aabd0d56b27efa8dbcfa96087))
+
+
+### Refactoring
+
+* **app:** retire browser onboarding draft imports ([#51383](https://github.com/okou-ai/okou/issues/51383)) ([19111bf](https://github.com/okou-ai/okou/commit/19111bf448db2d3153be8c723cb659b4e78d4fd0))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.144.0
+    * @okouai/connectors bumped to 3.28.0
+    * @okouai/core bumped to 8.889.0
+    * @okouai/ui bumped to 1.22.53
+
 ## [0.1198.1](https://github.com/okou-ai/okou/compare/app-v0.1198.0...app-v0.1198.1) (2026-11-27)
 
 

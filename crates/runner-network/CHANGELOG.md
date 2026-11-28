@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.0](https://github.com/okou-ai/okou/compare/runner-network-v0.6.58...runner-network-v0.7.0) (2026-11-28)
+
+
+### Features
+
+* complete credential placeholders in runner firewalls ([#51596](https://github.com/okou-ai/okou/issues/51596)) ([8daaa6e](https://github.com/okou-ai/okou/commit/8daaa6e60c0bec5ebeb47fa5da709339c3ff2a2c))
+
 ## [0.6.58](https://github.com/okou-ai/okou/compare/runner-network-v0.6.57...runner-network-v0.6.58) (2026-11-28)
 
 ## [0.6.57](https://github.com/okou-ai/okou/compare/runner-network-v0.6.56...runner-network-v0.6.57) (2026-11-27)

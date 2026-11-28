@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.32.66](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.32.65...guest-storage-apply-v0.32.66) (2026-11-28)
+
+
+### Performance Improvements
+
+* **guest-storage:** read ahead when late memory is the last task ([#51610](https://github.com/okou-ai/okou/issues/51610)) ([1f68ced](https://github.com/okou-ai/okou/commit/1f68cedb4fd38d96caf919b93781c5461e849dce))
+
 ## [0.32.65](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.32.64...guest-storage-apply-v0.32.65) (2026-11-28)
 
 ## [0.32.64](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.32.63...guest-storage-apply-v0.32.64) (2026-11-27)

@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.253.0](https://github.com/okou-ai/okou/compare/runner-rs-v0.252.3...runner-rs-v0.253.0) (2026-11-28)
+
+
+### Features
+
+* complete credential placeholders in runner firewalls ([#51596](https://github.com/okou-ai/okou/issues/51596)) ([8daaa6e](https://github.com/okou-ai/okou/commit/8daaa6e60c0bec5ebeb47fa5da709339c3ff2a2c))
+
+
+### Refactoring
+
+* **runner:** share strict contract fixture loading ([#51621](https://github.com/okou-ai/okou/issues/51621)) ([34b87f1](https://github.com/okou-ai/okou/commit/34b87f1235b02188425a01f264947e1b55226419))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.252.3](https://github.com/okou-ai/okou/compare/runner-rs-v0.252.2...runner-rs-v0.252.3) (2026-11-28)
 
 ## [0.252.2](https://github.com/okou-ai/okou/compare/runner-rs-v0.252.1...runner-rs-v0.252.2) (2026-11-27)
