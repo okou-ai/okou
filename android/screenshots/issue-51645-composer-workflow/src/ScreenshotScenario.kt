@@ -112,12 +112,12 @@ class ScreenshotScenario {
                             12_000,
                         ) == true,
                     )
-                    await(
-                        By.pkg(app.packageName)
-                            .clazz("android.widget.TextView")
-                            .textContains("/release-check"),
-                    )
+                    // The fixture confirms queued delivery; the command is visible in that queue.
+                    await(By.pkg(app.packageName).desc("Queue (1)")).click()
+                    await(By.pkg(app.packageName).textContains("/release-check"))
                     ScreenshotCapture.capture("workflow-sent.png")
+                    check(device.pressBack())
+                    check(device.wait(Until.gone(By.textContains("/release-check")), 5_000) == true)
                     await(By.pkg(app.packageName).desc("Chat options")).click()
                     await(By.pkg(app.packageName).text("Workflows")).click()
                     await(By.textContains("/daily-digest"))
