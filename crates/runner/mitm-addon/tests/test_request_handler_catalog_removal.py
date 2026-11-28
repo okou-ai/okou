@@ -689,8 +689,7 @@ async def test_shared_builtin_custom_endpoint_injects_only_explicit_owner(
     assert "X-Okou-Connector-Intent" not in flow.request.headers
     if selected_kind == "unknown":
         auth_fetch.assert_not_awaited()
-        assert flow.response is not None
-        assert flow.response.status_code == 409
+        assert flow.response is None
         assert "Authorization" not in flow.request.headers
     else:
         auth_fetch.assert_awaited_once()

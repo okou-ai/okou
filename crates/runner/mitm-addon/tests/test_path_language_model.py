@@ -256,17 +256,16 @@ def test_stable_applicability_cannot_freeze_raw_specificity():
         candidates,
         original_owner_sources=frozenset(candidates),
         selected="grant",
-        explicit_owner_intent=False,
         budget=WorkBudget(),
     )
 
 
 @pytest.mark.parametrize(
-    ("other_priority", "intent", "expected"),
-    [(10, False, True), (20, False, False), (20, True, True), (21, True, False)],
+    ("other_priority", "expected"),
+    [(10, True), (20, False), (21, False)],
 )
 def test_owner_certificate_covers_lower_equal_and_higher_competitors(
-    other_priority: int, intent: bool, expected: bool
+    other_priority: int, expected: bool
 ):
     candidates = {
         "winner": SelectionCandidate("chosen", Applicability(True, True, (20,), (20,)), 0),
@@ -279,7 +278,6 @@ def test_owner_certificate_covers_lower_equal_and_higher_competitors(
             candidates,
             original_owner_sources=frozenset({"winner"}),
             selected="winner",
-            explicit_owner_intent=intent,
             budget=WorkBudget(),
         )
         == expected
@@ -321,7 +319,6 @@ def test_new_api_tie_cannot_hide_a_binding_conflict_behind_source_order():
         candidates,
         original_owner_sources=frozenset(candidates),
         selected="winner",
-        explicit_owner_intent=False,
         budget=WorkBudget(),
     )
 

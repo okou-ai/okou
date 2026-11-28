@@ -12,6 +12,7 @@ import json
 import re
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field
+from functools import cache
 from types import MappingProxyType
 from typing import Literal, NamedTuple
 from urllib.parse import parse_qsl, urlsplit
@@ -42,6 +43,7 @@ from firewall_matching.patterns import (
     _match_compiled_path_segments,
     _split_path_segments,
 )
+from firewall_matching.placeholders import CredentialHints, compile_credential_hints
 from path_automaton import (
     Applicability,
     CompiledForm,
@@ -261,6 +263,7 @@ class _CompiledApiCore(NamedTuple):
     injects_ordinary_upstream_credentials: bool
     permissionless: bool
     routing_identity: str | None
+    credential_hints: CredentialHints
     # True when API compilation encountered malformed permissions/rules config.
     has_malformed_rules: bool
     paths: _CompiledApiPaths | None = None
@@ -444,6 +447,9 @@ class FirewallRequestContext(NamedTuple):
     headers: tuple[tuple[str, str], ...] = ()
     body: bytes | None = None
     aws_inspection_available: bool = True
+    raw_header_fields: tuple[tuple[bytes, bytes], ...] = ()
+    applied_credential_owner: str | None = None
+    credential_variables: Mapping[str, str] | None = None
 
 
 def _api_auth_uses_aws_sigv4(api_entry: dict) -> bool:
@@ -1184,6 +1190,7 @@ def compile_firewall_core(fw_entry: object) -> CompiledFirewallCore | None:
                 injects_ordinary_upstream_credentials,
                 permissionless,
                 routing_identity,
+                compile_credential_hints(api_entry.get("auth"), fw_entry.get("placeholders")),
                 has_malformed_rules,
                 paths,
             )
@@ -1209,7 +1216,8 @@ def bind_compiled_firewall_core(
     """Bind compatible raw API shell entries to reusable compiled firewall data.
 
     ``fw_entry`` must describe the same matcher definition that produced ``core``. Its firewall
-    name and raw ``apis`` positional structure must be unchanged, including which entries compile.
+    name, placeholders and raw ``apis`` structure must be unchanged, including which entries
+    compile.
     At every retained position, ``base``, ``auth``, optional ``hostPolicy``, permissions, permission
     names, rules, and their ordering must have the same values. Each API core is paired with the raw
     dictionary at its original ``raw_api_index``; reordering or replacing entries is incompatible
@@ -1347,6 +1355,7 @@ class FirewallAllow(NamedTuple):
     ``permission`` and ``rule`` are present for a matched permission. They are
     ``None`` for unknown-endpoint allow, where the firewall base matched but no
     permission rule did and ``unknownPolicy`` allowed the request.
+    ``selection_hint`` records what selected this owner from an overlap.
     """
 
     api_entry: dict
@@ -1355,6 +1364,7 @@ class FirewallAllow(NamedTuple):
     params: dict[str, str]
     rule: str | None
     rel_path: str
+    selection_hint: Literal["intent", "placeholder"] | None = None
 
 
 class FirewallPolicyAllow(NamedTuple):
@@ -1412,14 +1422,13 @@ ConnectorRouteAmbiguityReason = Literal[
     "connector_intent_required",
     "malformed_connector_intent",
     "connector_intent_not_candidate",
+    "conflicting_credential_placeholders",
 ]
 
 
 class FirewallAmbiguous(NamedTuple):
-    """Multiple connector owners matched and no usable intent selected one."""
+    """Multiple connector owners matched without a uniquely usable hint."""
 
-    method: str
-    path: str
     candidates: tuple[str, ...]
     reason: ConnectorRouteAmbiguityReason
 
@@ -1918,7 +1927,7 @@ def _rule_request_params(
 def _collect_rule_routes(
     *,
     collection: _FirewallMatchCollection,
-    api_match: _MatchedApi,
+    api_order: int,
     rel_path_segs: list[str],
     upper_method: str,
     rule_entries: tuple[_CompiledRuleEntry, ...],
@@ -1927,7 +1936,7 @@ def _collect_rule_routes(
     get_form_action_result: Callable[[], _AwsFormActionResult],
     request_context: FirewallRequestContext | None,
     record_winning: bool,
-    applicable_routes: dict[str, set[_AuthorizationRoute]] | None,
+    authorization_routes: set[_AuthorizationRoute] | None,
 ) -> None:
     for entry in rule_entries:
         rule = entry.rule
@@ -1936,7 +1945,7 @@ def _collect_rule_routes(
         # URI checks retain applicable rules even when they cannot win precedence.
         if (
             not (record_winning and collection.can_rule_affect_collection(rule.specificity))
-            and applicable_routes is None
+            and authorization_routes is None
         ):
             continue
 
@@ -1956,12 +1965,10 @@ def _collect_rule_routes(
             is None
         ):
             continue
-        if applicable_routes is not None:
-            applicable_routes.setdefault(api_match.firewall.name, set()).add(
-                ("rule", api_match.order, entry.order)
-            )
+        if authorization_routes is not None:
+            authorization_routes.add(("rule", api_order, entry.order))
         if record_winning:
-            collection.record_rule_route(api_match.order, rule.specificity)
+            collection.record_rule_route(api_order, rule.specificity)
 
 
 def _winning_api_matches(
@@ -1976,19 +1983,13 @@ def _winning_api_matches(
     )
 
 
-def _winning_owner_names(collection: _FirewallMatchCollection) -> tuple[str, ...]:
-    matches = _winning_api_matches(collection)
-    names = {match.firewall.name for match in matches if not match.firewall.name_malformed}
-    return tuple(sorted(names))
-
-
 def _owner_name_for_intent(
-    collection: _FirewallMatchCollection,
+    matches: list[_MatchedApi],
     intent_value: str,
 ) -> str | None:
     matching_names = {
         match.firewall.name
-        for match in _winning_api_matches(collection)
+        for match in matches
         if not match.firewall.name_malformed and match.firewall.intent_identity == intent_value
     }
     if len(matching_names) != 1:
@@ -2004,30 +2005,6 @@ def _ambiguity_reason(
     if intent.status == "malformed":
         return "malformed_connector_intent"
     return "connector_intent_not_candidate"
-
-
-def _selected_owner_name(
-    collection: _FirewallMatchCollection,
-    intent: connector_intent.ConnectorIntent,
-    *,
-    upper_method: str,
-    path: str,
-) -> str | FirewallAmbiguous | None:
-    owners = _winning_owner_names(collection)
-    if len(owners) == 0:
-        return None
-    if len(owners) == 1:
-        return owners[0]
-    if intent.status == "present" and intent.value is not None:
-        selected_name = _owner_name_for_intent(collection, intent.value)
-        if selected_name is not None:
-            return selected_name
-    return FirewallAmbiguous(
-        upper_method,
-        path,
-        owners,
-        _ambiguity_reason(intent),
-    )
 
 
 def _selected_source_api_matches(
@@ -2299,19 +2276,14 @@ def _match_compiled_firewall_request_with_api_candidates(
     intent: connector_intent.ConnectorIntent,
     is_asterisk_form: bool,
     request_context: FirewallRequestContext | None,
-    track_authorization_routes: bool,
+    diagnostic_base_tier: bool,
     get_query_pairs: Callable[[], list[tuple[str, str]]],
     get_sigv4_service: Callable[[], str | None],
     get_form_action_result: Callable[[], _AwsFormActionResult],
 ) -> _FirewallInterpretation:
-    collection = _FirewallMatchCollection()
-    applicable_routes: dict[str, set[_AuthorizationRoute]] | None = (
-        {} if track_authorization_routes else None
-    )
     base_matches: list[_MatchedApi] = []
 
     unsafe_path: bool | None = False if is_asterisk_form else (True if url_has_backslash else None)
-    decision_path = "*" if is_asterisk_form else (url_parts.path or "/")
 
     for candidate in api_candidates:
         fw_entry = candidate.firewall
@@ -2355,28 +2327,88 @@ def _match_compiled_firewall_request_with_api_candidates(
         )
         base_matches.append(api_match)
 
-    custom_connector_matches = any(
-        match.firewall.connector_runtime_kind == "custom" for match in base_matches
+    owner_matches = base_matches
+    if diagnostic_base_tier and owner_matches:
+        best = max(match.api.base.specificity for match in owner_matches)
+        owner_matches = [match for match in owner_matches if match.api.base.specificity == best]
+
+    selected_name: str | None = (
+        request_context.applied_credential_owner if request_context is not None else None
     )
-    explicit_builtin_owner_matches = intent.status == "present" and any(
-        match.firewall.connector_runtime_kind == "builtin"
-        and not match.firewall.name_malformed
-        and match.firewall.intent_identity == intent.value
-        for match in base_matches
+    selection_hint: Literal["intent", "placeholder"] | None = (
+        "placeholder" if selected_name is not None else None
+    )
+    owners = (
+        {match.firewall.name for match in owner_matches if not match.firewall.name_malformed}
+        if selected_name is None
+        else set()
+    )
+    if len(owners) > 1:
+        if intent.status == "present" and intent.value is not None:
+            selected_name = _owner_name_for_intent(owner_matches, intent.value)
+            if selected_name is not None:
+                selection_hint = "intent"
+        marked_owners: set[str] = set()
+        if (
+            selected_name is None
+            and not is_asterisk_form
+            and request_context is not None
+            and request_context.aws_inspection_available
+        ):
+            headers = frozenset(
+                (name.lower(), value) for name, value in request_context.raw_header_fields
+            )
+
+            @cache
+            def get_query_pair_set() -> frozenset[tuple[str, str]]:
+                return frozenset(get_query_pairs())
+
+            marked_owners = {
+                match.firewall.name
+                for match in owner_matches
+                if not match.firewall.name_malformed
+                and match.api.core.credential_hints.matches(
+                    headers,
+                    get_query_pair_set,
+                    request_context.credential_variables,
+                )
+            }
+            if len(marked_owners) == 1:
+                selected_name = next(iter(marked_owners))
+                selection_hint = "placeholder"
+        if selected_name is None:
+            return _FirewallInterpretation(
+                FirewallAmbiguous(
+                    tuple(sorted(owners)),
+                    (
+                        "conflicting_credential_placeholders"
+                        if marked_owners
+                        else _ambiguity_reason(intent)
+                    ),
+                ),
+                frozenset(),
+            )
+    elif owners:
+        selected_name = next(iter(owners))
+
+    collection = _FirewallMatchCollection()
+    explicit_owner = selection_hint is not None
+    authorization_routes: set[_AuthorizationRoute] | None = (
+        set() if selected_name is not None and not is_asterisk_form else None
     )
     for api_match in base_matches:
+        is_selected_owner = api_match.firewall.name == selected_name
         if (
-            not explicit_builtin_owner_matches
-            and custom_connector_matches
-            and api_match.firewall.connector_runtime_kind == "builtin"
+            selected_name is not None
+            and not is_selected_owner
+            and (explicit_owner or not api_match.firewall.name_malformed)
         ):
             continue
-        if applicable_routes is not None:
-            applicable_routes.setdefault(api_match.firewall.name, set()).add(
-                ("api", api_match.order)
-            )
+        routes = authorization_routes if is_selected_owner else None
+        if routes is not None:
+            routes.add(("api", api_match.order))
         record_winning = collection.accept_api(api_match)
-        if not record_winning and applicable_routes is None:
+        if not record_winning and routes is None:
             continue
 
         if is_asterisk_form or not api_match.api.permissions:
@@ -2390,7 +2422,7 @@ def _match_compiled_firewall_request_with_api_candidates(
         )
         _collect_rule_routes(
             collection=collection,
-            api_match=api_match,
+            api_order=api_match.order,
             rel_path_segs=rel_path_segs,
             upper_method=upper_method,
             rule_entries=rule_entries,
@@ -2399,17 +2431,9 @@ def _match_compiled_firewall_request_with_api_candidates(
             get_form_action_result=get_form_action_result,
             request_context=request_context,
             record_winning=record_winning,
-            applicable_routes=applicable_routes,
+            authorization_routes=routes,
         )
 
-    selected_name = _selected_owner_name(
-        collection,
-        intent,
-        upper_method=upper_method,
-        path=decision_path,
-    )
-    if isinstance(selected_name, FirewallAmbiguous):
-        return _FirewallInterpretation(selected_name, frozenset())
     result = _reduce_selected_owner(
         collection,
         selected_name=selected_name,
@@ -2437,14 +2461,12 @@ def _match_compiled_firewall_request_with_api_candidates(
         )
     ):
         result = result._replace(aws_sigv4_body_pending=True)
-    if is_asterisk_form and isinstance(result, FirewallAllow):
-        return _FirewallInterpretation(FirewallPolicyAllow(result), frozenset())
-    return _FirewallInterpretation(
-        result,
-        frozenset(applicable_routes.get(selected_name, ()))
-        if applicable_routes is not None and selected_name is not None
-        else frozenset(),
-    )
+    if isinstance(result, FirewallAllow):
+        if is_asterisk_form:
+            return _FirewallInterpretation(FirewallPolicyAllow(result), frozenset())
+        if selection_hint is not None:
+            result = result._replace(selection_hint=selection_hint)
+    return _FirewallInterpretation(result, frozenset(authorization_routes or ()))
 
 
 def _prepare_compiled_request_match(
@@ -2511,6 +2533,7 @@ def match_compiled_firewall_request(
     request_context: FirewallRequestContext | None = None,
     *,
     is_asterisk_form: bool = False,
+    diagnostic_base_tier: bool = False,
 ) -> (
     FirewallAllow
     | FirewallPolicyAllow
@@ -2538,7 +2561,7 @@ def match_compiled_firewall_request(
       FirewallPolicyAllow — asterisk-form unknown endpoint allowed without auth
       FirewallBlock — permission denied, unknown endpoint blocked, or matched
         malformed firewall/network policy config or unsafe path failed closed
-      FirewallAmbiguous — multiple connector owners require a usable intent
+      FirewallAmbiguous — unresolved overlapping owners, eligible for ordinary egress
       FirewallInvalidInput — configured authority with invalid/incomplete path analysis
       None — no base URL match (not a firewall request)
 
@@ -2548,6 +2571,8 @@ def match_compiled_firewall_request(
     authority with an empty path. The matcher selects the applicable base and
     owner but skips endpoint permissions, then reports ``*`` as the decision
     path while resolving the request through unknown-policy semantics.
+    Catalog-only diagnostics may request the most specific base tier to
+    identify an inactive connector. Request authorization uses the full set.
     """
     return _match_request_interpretations(
         url,
@@ -2558,6 +2583,7 @@ def match_compiled_firewall_request(
         request_context,
         indexed_rules=True,
         is_asterisk_form=is_asterisk_form,
+        diagnostic_base_tier=diagnostic_base_tier,
     )
 
 
@@ -2581,58 +2607,16 @@ def _certify_raw_firewall_allow(
     analysis: PathAnalysis,
     upper_method: str,
     policies: CompiledNetworkPolicies,
-    intent: connector_intent.ConnectorIntent,
+    explicit_owner: bool,
+    diagnostic_base_tier: bool,
     request_context: FirewallRequestContext | None,
     get_query_pairs: Callable[[], list[tuple[str, str]]],
     get_sigv4_service: Callable[[], str | None],
     get_form_action_result: Callable[[], _AwsFormActionResult],
 ) -> bool:
-    facts: dict[str, SelectionCandidate] = {}
-    api_proofs: dict[int, Applicability] = {}
-    selected: str | None = None
+    facts: dict[_AuthorizationRoute, SelectionCandidate] = {}
+    selected: _AuthorizationRoute | None = None
     source_order = 0
-
-    for candidate in authority_candidates:
-        analysis.graph.budget.charge()
-        paths = candidate.api.core.paths
-        if paths is not None:
-            api_proofs[candidate.order] = analysis.applicability(paths.base)
-
-    # Custom ownership shadows builtins before priority. A possible intent
-    # builtin can disable that shadow, so retain all builtins in that case.
-    builtin_intent_possible = intent.status == "present" and any(
-        c.firewall.connector_runtime_kind == "builtin"
-        and c.firewall.intent_identity == intent.value
-        and c.order in api_proofs
-        and api_proofs[c.order].possible
-        for c in authority_candidates
-    )
-    builtin_intent_certain = intent.status == "present" and any(
-        c.firewall.connector_runtime_kind == "builtin"
-        and c.firewall.intent_identity == intent.value
-        and c.order in api_proofs
-        and api_proofs[c.order].certain
-        for c in authority_candidates
-    )
-    selected_is_custom = any(
-        c.api.raw_api_entry is original.api_entry and c.firewall.connector_runtime_kind == "custom"
-        for c in authority_candidates
-    )
-    selected_is_builtin = any(
-        c.api.raw_api_entry is original.api_entry and c.firewall.connector_runtime_kind == "builtin"
-        for c in authority_candidates
-    )
-    if (
-        selected_is_builtin
-        and not builtin_intent_certain
-        and any(
-            c.firewall.connector_runtime_kind == "custom"
-            and c.order in api_proofs
-            and api_proofs[c.order].possible
-            for c in authority_candidates
-        )
-    ):
-        return False
 
     for candidate in authority_candidates:
         api = candidate.api
@@ -2640,16 +2624,23 @@ def _certify_raw_firewall_allow(
         paths = api.core.paths
         if paths is None:
             continue
+        analysis.graph.budget.charge()
+        if firewall.name != original.name and explicit_owner:
+            continue
+        proof = analysis.applicability(paths.base)
         if (
-            selected_is_custom
-            and not builtin_intent_possible
-            and firewall.connector_runtime_kind == "builtin"
+            firewall.name != original.name
+            and not firewall.name_malformed
+            and not diagnostic_base_tier
         ):
+            # A different interpretation must not introduce a competing owner
+            # into a request that proceeded without an explicit hint.
+            if proof.possible:
+                return False
             continue
         source_order += 1
-        analysis.graph.budget.charge()
-        api_id = repr(("api", candidate.order))
-        base_proof = _path_priority_proof(api_proofs[candidate.order], api, rule=False)
+        api_id: _AuthorizationRoute = ("api", candidate.order)
+        base_proof = _path_priority_proof(proof, api, rule=False)
         facts[api_id] = SelectionCandidate(
             firewall.name,
             base_proof,
@@ -2686,7 +2677,7 @@ def _certify_raw_firewall_allow(
                     get_form_action_result=get_form_action_result,
                 ):
                     continue
-            identity = repr(("rule", candidate.order, entry.order))
+            identity: _AuthorizationRoute = ("rule", candidate.order, entry.order)
             proof = _path_priority_proof(
                 analysis.applicability(paths.rules[entry.order]), api, rule=True
             )
@@ -2704,21 +2695,14 @@ def _certify_raw_firewall_allow(
                 and selected is None
                 and entry.permission == original.permission
                 and rule.raw == original.rule
-                and identity in {repr(route) for route in original_routes}
+                and identity in original_routes
             ):
                 selected = identity
 
     return selected is not None and certifies_selection(
         facts,
-        original_owner_sources=frozenset(repr(route) for route in original_routes),
+        original_owner_sources=original_routes,
         selected=selected,
-        explicit_owner_intent=(
-            intent.status == "present"
-            and any(
-                c.firewall.name == original.name and c.firewall.intent_identity == intent.value
-                for c in authority_candidates
-            )
-        ),
         budget=analysis.graph.budget,
     )
 
@@ -2733,6 +2717,7 @@ def _match_request_interpretations(
     *,
     indexed_rules: bool,
     is_asterisk_form: bool,
+    diagnostic_base_tier: bool = False,
 ) -> (
     FirewallAllow
     | FirewallPolicyAllow
@@ -2813,7 +2798,7 @@ def _match_request_interpretations(
             intent=resolved_intent,
             is_asterisk_form=is_asterisk_form,
             request_context=request_context,
-            track_authorization_routes=not is_asterisk_form,
+            diagnostic_base_tier=diagnostic_base_tier,
             get_query_pairs=get_query_pairs,
             get_sigv4_service=get_sigv4_service,
             get_form_action_result=get_form_action_result,
@@ -2838,7 +2823,8 @@ def _match_request_interpretations(
             analysis=analysis,
             upper_method=upper_method,
             policies=policies,
-            intent=resolved_intent,
+            explicit_owner=original.selection_hint is not None,
+            diagnostic_base_tier=diagnostic_base_tier,
             request_context=request_context,
             get_query_pairs=get_query_pairs,
             get_sigv4_service=get_sigv4_service,

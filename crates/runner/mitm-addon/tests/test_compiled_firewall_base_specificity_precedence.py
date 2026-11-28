@@ -2,6 +2,7 @@
 
 import pytest
 
+import connector_intent
 import matching
 from tests.firewall_helpers import (
     compile_firewalls_or_fail,
@@ -243,8 +244,13 @@ def test_more_specific_base_deny_blocks_earlier_broad_allow():
         ),
     ],
 )
-def test_more_specific_base_block_precedence_matrix(fws, network_policies, expected):
-    result = match_compiled_firewalls(ADMIN_DELETE_URL, fws, network_policies)
+def test_selected_admin_firewall_block_matrix(fws, network_policies, expected):
+    result = match_compiled_firewalls(
+        ADMIN_DELETE_URL,
+        fws,
+        network_policies,
+        intent=connector_intent.ConnectorIntent("present", "admin"),
+    )
 
     assert isinstance(result, matching.FirewallBlock)
     assert result.base == expected["base"]
@@ -309,12 +315,15 @@ def test_more_specific_base_block_precedence_matrix(fws, network_policies, expec
     [False, True],
     ids=["broad-first", "specific-first"],
 )
-def test_more_specific_base_allow_precedence_matrix(
-    fws, network_policies, expected, specific_first
-):
+def test_selected_admin_firewall_allow_matrix(fws, network_policies, expected, specific_first):
     ordered_fws = list(reversed(fws)) if specific_first else fws
 
-    result = match_compiled_firewalls(ADMIN_DELETE_URL, ordered_fws, network_policies)
+    result = match_compiled_firewalls(
+        ADMIN_DELETE_URL,
+        ordered_fws,
+        network_policies,
+        intent=connector_intent.ConnectorIntent("present", "admin"),
+    )
 
     assert isinstance(result, matching.FirewallAllow)
     assert result.api_entry["base"] == expected["base"]
@@ -325,18 +334,12 @@ def test_more_specific_base_allow_precedence_matrix(
     assert result.rel_path == expected["rel_path"]
 
 
-@pytest.mark.parametrize("specific_first", [False, True], ids=["broad-first", "specific-first"])
-@pytest.mark.parametrize("reverse_fallbacks", [False, True], ids=["original", "reversed"])
-def test_more_specific_parameterized_base_unknown_allow_preserves_first_selected_fallback(
-    specific_first, reverse_fallbacks
-):
+def test_selected_parameterized_owner_preserves_first_unknown_allow_fallback():
     tenant_base = "https://{workspace}.example.com/api/{tenant}"
     fallback_apis = [
         firewall_api(tenant_base, [], auth_label="tenant"),
         firewall_api(tenant_base, [], auth_label="tenant"),
     ]
-    if reverse_fallbacks:
-        fallback_apis.reverse()
     fws = [
         broad_firewall(base="https://{workspace}.example.com"),
         firewall_entry(
@@ -349,8 +352,6 @@ def test_more_specific_parameterized_base_unknown_allow_preserves_first_selected
             *fallback_apis,
         ),
     ]
-    if specific_first:
-        fws.reverse()
     policies = {
         "broad": network_policy(deny=["broad"]),
         "tenant": network_policy(unknown_policy="allow"),
@@ -361,6 +362,7 @@ def test_more_specific_parameterized_base_unknown_allow_preserves_first_selected
         "GET",
         compile_firewalls_or_fail(fws),
         policies,
+        intent=connector_intent.ConnectorIntent("present", "tenant"),
     )
 
     assert isinstance(result, matching.FirewallAllow)
@@ -373,7 +375,7 @@ def test_more_specific_parameterized_base_unknown_allow_preserves_first_selected
     assert result.params == {"workspace": "acme", "tenant": "customer-1"}
 
 
-def test_more_specific_parameterized_base_allow_preserves_params_after_broad_deny():
+def test_selected_parameterized_owner_preserves_base_and_rule_params():
     fws = [
         {
             "name": "broad",
@@ -418,6 +420,7 @@ def test_more_specific_parameterized_base_allow_preserves_params_after_broad_den
         "GET",
         compile_firewalls_or_fail(fws),
         policies,
+        intent=connector_intent.ConnectorIntent("present", "tenant"),
     )
 
     assert isinstance(result, matching.FirewallAllow)

@@ -20,7 +20,6 @@ from request_authority import AuthorityValidationError
 from runtime_url_parsing import split_runtime_url, strip_url_query_and_fragment
 
 _BUILTIN_HOST_POLICY_DENIED_ERROR: Final = "builtin_host_policy_denied"
-_AMBIGUOUS_CONNECTOR_ROUTE_ERROR: Final = "ambiguous_connector_route"
 _FIREWALL_AUTHORIZATION_CHANGED_ERROR: Final = "firewall_authorization_changed"
 _CONNECTOR_AUTH_OWNER_CONFLICT_ERROR: Final = "connector_auth_owner_conflict"
 _STALE_TLS_ADMISSION_ERROR: Final = "stale_tls_admission"
@@ -99,9 +98,6 @@ def block_request_classification(
         return
     if classification.kind == "gmail_send_blocked":
         block_gmail_send(flow)
-        return
-    if classification.kind == "firewall_ambiguous":
-        set_firewall_ambiguous_response(flow, classification.firewall_ambiguous)
         return
     if classification.kind == "firewall_invalid_input":
         set_firewall_invalid_input_response(flow, classification.firewall_invalid_input)
@@ -526,45 +522,6 @@ def set_firewall_block_response(flow: http.HTTPFlow, result: matching.FirewallBl
             "permissions": list(result.permissions),
             "reason": result.reason,
             "base": result.base,
-        },
-    )
-
-
-def set_firewall_ambiguous_response(
-    flow: http.HTTPFlow,
-    result: matching.FirewallAmbiguous,
-) -> None:
-    """Return a local conflict before any connector credential is selected."""
-    proxy_log_path = flow_metadata.proxy_log_path(flow.metadata)
-    candidates = list(result.candidates)
-    log_proxy_entry(
-        proxy_log_path,
-        "warn",
-        f"Ambiguous connector route for {result.method} {result.path}",
-        type="firewall_ambiguous",
-        reason=result.reason,
-        candidates=candidates,
-    )
-    flow_metadata.set_firewall_decision(
-        flow.metadata,
-        "DENY",
-        error=_AMBIGUOUS_CONNECTOR_ROUTE_ERROR,
-    )
-    flow.metadata[metadata_keys.CONNECTOR_ROUTE_REASON] = result.reason
-    flow.metadata[metadata_keys.CONNECTOR_ROUTE_CANDIDATES] = candidates
-    original_url = flow.metadata[metadata_keys.ORIGINAL_URL]
-    diagnostic_url = _diagnostic_url_without_query_or_fragment(original_url)
-    flow.response = make_local_json_response(
-        flow,
-        _HTTP_STATUS_CONFLICT,
-        {
-            "error": _AMBIGUOUS_CONNECTOR_ROUTE_ERROR,
-            "message": "Request blocked: connector route requires explicit intent",
-            "reason": result.reason,
-            "method": result.method,
-            "path": result.path,
-            "url": diagnostic_url,
-            "candidates": candidates,
         },
     )
 

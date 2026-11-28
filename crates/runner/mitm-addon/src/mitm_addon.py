@@ -299,6 +299,7 @@ def _classify_request_for_flow(
     flow: http.HTTPFlow,
     *,
     defer_unresolved_public_destination: bool = False,
+    applied_credential_owner: str | None = None,
 ) -> request_classification.RequestClassification:
     return request_classification.classify_request(
         flow,
@@ -306,6 +307,7 @@ def _classify_request_for_flow(
         api_url=get_api_url(),
         tls_admission=upstream_admission.tls_admission_for_client(flow.client_conn),
         defer_unresolved_public_destination=defer_unresolved_public_destination,
+        applied_credential_owner=applied_credential_owner,
     )
 
 
@@ -1438,6 +1440,7 @@ async def _try_firewall_request_stream_from_headers(
                     expected_run_id=expected_run_id,
                     expected_request=expected_request,
                     expected_managed_policy=managed_policy,
+                    credentials_applied=True,
                 )
                 upload.on_reject = lambda reason: _reject_managed_openrouter_request(
                     flow, classification, managed_openrouter.RequestRejectedError(reason)
@@ -1459,9 +1462,13 @@ def _revalidate_current_firewall_authorization_for_request(
     expected_run_id: str,
     expected_request: request_authority.FirewallRequestIdentity,
     expected_managed_policy: managed_openrouter.PresetPolicy | None = None,
+    credentials_applied: bool = False,
 ) -> bool:
     current_classification = _current_firewall_authorization_classification(
-        flow, original_authority=expected_request.authority
+        flow,
+        allow,
+        original_authority=expected_request.authority,
+        credentials_applied=credentials_applied,
     )
     current_allow = _equivalent_current_firewall_allow(
         current_classification,
@@ -1503,8 +1510,10 @@ def _revalidate_current_firewall_authorization_for_request(
 
 def _current_firewall_authorization_classification(
     flow: http.HTTPFlow,
+    allow: matching.FirewallAllow,
     *,
     original_authority: request_authority.TrustedAuthority,
+    credentials_applied: bool,
 ) -> request_classification.RequestClassification:
     preserved_probe_metadata = {
         key: flow.metadata[key]
@@ -1520,7 +1529,12 @@ def _current_firewall_authorization_classification(
         flow,
         preserved_probe_metadata,
     )
-    classification = _classify_request_for_flow(flow)
+    applied_credential_owner = (
+        allow.name if credentials_applied and allow.selection_hint == "placeholder" else None
+    )
+    classification = _classify_request_for_flow(
+        flow, applied_credential_owner=applied_credential_owner
+    )
     # Reclassify the actual request, but retain the pre-injection log target.
     flow.metadata[metadata_keys.ORIGINAL_URL] = original_authority.url
     http_network_log.set_target(
@@ -1543,7 +1557,13 @@ def _equivalent_current_firewall_allow(
     current_run_id = classification.sandbox_info.get("runId")
     if current_run_id != expected_run_id:
         return None
-    if classification.firewall_allow != expected_allow:
+    current_allow = classification.firewall_allow
+    # Intent and a sole owner can authorize the same route. The placeholder
+    # binding must remain stable because injection replaces its input.
+    if current_allow != expected_allow and (
+        "placeholder" in (current_allow.selection_hint, expected_allow.selection_hint)
+        or current_allow._replace(selection_hint=expected_allow.selection_hint) != expected_allow
+    ):
         return None
     return classification
 
@@ -1555,9 +1575,13 @@ def _firewall_authorization_is_current_for_requestheaders(
     expected_run_id: str,
     expected_request: request_authority.FirewallRequestIdentity,
     expected_managed_policy: managed_openrouter.PresetPolicy | None = None,
+    credentials_applied: bool = False,
 ) -> bool:
     current_classification = _current_firewall_authorization_classification(
-        flow, original_authority=expected_request.authority
+        flow,
+        allow,
+        original_authority=expected_request.authority,
+        credentials_applied=credentials_applied,
     )
     current_allow = _equivalent_current_firewall_allow(
         current_classification,
@@ -1636,6 +1660,7 @@ async def _prepare_codex_catalog_request_with_upstream_revalidation(
             allow,
             expected_run_id=expected_run_id,
             expected_request=expected_request,
+            credentials_applied=True,
         )
 
 

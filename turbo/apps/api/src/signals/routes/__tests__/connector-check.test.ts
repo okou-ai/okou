@@ -1459,18 +1459,19 @@ describe("POST /api/connectors/diagnostics/check", () => {
       });
     });
 
-    it("requires an explicit identity for shared custom prefixes and retains deletion isolation", async () => {
+    it("uses the explicit identity for overlapping custom prefixes and retains deletion isolation", async () => {
       const actor = bdd.user();
       bdd.acceptStorageWrites();
       await bdd.provisionWorkspace(actor);
-      const prefix = `https://${randomUUID()}.shared-custom.test/v1/`;
+      const authority = `https://${randomUUID()}.shared-custom.test`;
+      const prefix = `${authority}/v1/`;
       const definitions = [];
       for (const label of ["First", "Second"]) {
         const definition = await connectorsApi.createCustomConnector(
           actor,
           manualHttpCustomConnectorCreateBody({
             displayName: `Shared ${label}`,
-            prefixTemplates: [prefix],
+            prefixTemplates: [label === "First" ? `${authority}/` : prefix],
           }),
         );
         await trackCustomFixture(
@@ -1619,6 +1620,46 @@ describe("POST /api/connectors/diagnostics/check", () => {
       expect(JSON.stringify(legacy.body)).not.toContain(custom.id);
     });
 
+    it("drops an absent builtin from Run URL ownership after account disconnect", async () => {
+      const { actor, token, url, custom } = await prepareScenario();
+      const request = {
+        mode: "url" as const,
+        method: "POST",
+        url,
+        includeCustomConnectors: true,
+      };
+      const before = await checkWithToken(token, request);
+      expect(before.body).toMatchObject({ outcome: "ambiguous" });
+
+      await connectorsApi.deleteDefaultBuiltinConnectorAccount(actor, "reap");
+
+      const after = await checkWithToken(token, request);
+      expect(after.body).toMatchObject({
+        outcome: "resolved",
+        connector: { target: { kind: "custom", customConnectorId: custom.id } },
+      });
+      const removed = await checkWithToken(token, {
+        ...request,
+        target: { kind: "builtin", connectorSlug: "reap" },
+      });
+      expect(removed.body).toStrictEqual({
+        outcome: "target-unavailable",
+        target: { kind: "builtin", connectorSlug: "reap" },
+        reason: "connector-unavailable",
+      });
+
+      const environment = await checkWithToken(token, {
+        mode: "environment",
+        environmentName: "REAP_API_KEY",
+        permission: "write",
+      });
+      expect(environment.body).toMatchObject({
+        outcome: "resolved",
+        run: { status: "configured" },
+        permission: { outcome: "unavailable", basis: "policies-unavailable" },
+      });
+    });
+
     it("redacts explicit custom diagnostics and reflects permission changes and selection precedence", async () => {
       const {
         actor,
@@ -1691,7 +1732,9 @@ describe("POST /api/connectors/diagnostics/check", () => {
         url,
         includeCustomConnectors: true,
       });
-      expect(includedCustom.body).toMatchObject({
+      expect(includedCustom.body).toMatchObject({ outcome: "ambiguous" });
+      const chosenCustom = await checkWithToken(token, customRequest);
+      expect(chosenCustom.body).toMatchObject({
         outcome: "resolved",
         connector: {
           target: { kind: "custom", customConnectorId: custom.id },

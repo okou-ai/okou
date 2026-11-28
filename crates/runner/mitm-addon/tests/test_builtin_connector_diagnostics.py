@@ -551,6 +551,23 @@ def test_find_candidate_distinguishes_repeated_slash_bases():
     )
 
 
+def test_find_candidate_keeps_broader_apis_in_selected_connector_path_proof():
+    firewall = _firewall("example", "ROOT_TOKEN", base="https://api.example.com")
+    specific = _firewall("example", "ITEMS_TOKEN", base="https://api.example.com/v1")
+    firewall["apis"].extend(specific["apis"])
+
+    candidate = builtin_connector_diagnostics.find_candidate(
+        _diagnostic_snapshot([firewall]),
+        "https://api.example.com/v1/items",
+        "GET",
+        active_firewall_names=set(),
+    )
+
+    assert candidate is not None
+    assert candidate.base == "https://api.example.com/v1"
+    assert candidate.env_names == ("ITEMS_TOKEN",)
+
+
 def test_shared_base_ownership_selects_route_specific_inactive_sibling():
     snapshot = _diagnostic_snapshot(
         [

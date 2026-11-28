@@ -1,6 +1,5 @@
 """Diagnostic-only matching for unavailable built-in connector URLs."""
 
-import re
 from dataclasses import dataclass
 from typing import Final, Literal
 
@@ -14,36 +13,6 @@ _DIAGNOSTIC_ANY_PERMISSION: Final = "__connector_diagnostic_any__"
 _DIAGNOSTIC_ANY_RULES: Final = ("ANY /", "ANY /{path+}")
 _DIAGNOSTIC_CANDIDATE_KEY: Final = "_diagnostic_candidate"
 _DIAGNOSTIC_BASE_KEY: Final = "_diagnostic_base_key"
-# Keep this regular grammar aligned with parseBasicAuthTemplates() in the
-# TypeScript connector contract.
-# basic() uses explicit ASCII whitespace.
-_BASIC_TEMPLATE_WHITESPACE: Final = r"[\u0009-\u000d\u0020]"
-_TEMPLATE_IDENTIFIER: Final = r"[a-zA-Z_][a-zA-Z0-9_]*"
-_BASIC_LITERAL: Final = r'"[^"\\]*"'
-_BASIC_FIRST_REFERENCE: Final = rf"(?:secrets|vars)\.(?P<basic_first_name>{_TEMPLATE_IDENTIFIER})"
-_BASIC_SECOND_REFERENCE: Final = rf"(?:secrets|vars)\.(?P<basic_second_name>{_TEMPLATE_IDENTIFIER})"
-_BASIC_FIRST_ARGUMENT: Final = (
-    rf"{_BASIC_TEMPLATE_WHITESPACE}*"
-    rf"(?:(?:{_BASIC_LITERAL}|{_BASIC_FIRST_REFERENCE})"
-    rf"{_BASIC_TEMPLATE_WHITESPACE}*)?"
-)
-_BASIC_SECOND_ARGUMENT: Final = (
-    rf"{_BASIC_TEMPLATE_WHITESPACE}*"
-    rf"(?:(?:{_BASIC_LITERAL}|{_BASIC_SECOND_REFERENCE})"
-    rf"{_BASIC_TEMPLATE_WHITESPACE}*)?"
-)
-_BASIC_AUTH_TEMPLATE_PATTERN: Final = re.compile(
-    r"\$\{\{"
-    rf"{_BASIC_TEMPLATE_WHITESPACE}*basic\("
-    rf"{_BASIC_FIRST_ARGUMENT},"
-    rf"{_BASIC_SECOND_ARGUMENT}\)"
-    rf"{_BASIC_TEMPLATE_WHITESPACE}*"
-    r"\}\}"
-)
-_BASIC_REFERENCE_NAME_GROUPS: Final = (
-    "basic_first_name",
-    "basic_second_name",
-)
 _SHARED_BASE_MIN_CANDIDATES: Final = 2
 
 
@@ -155,7 +124,7 @@ def find_candidate(
     Model-provider routes are retained only as exclusions and are checked
     before connector ownership.
 
-    Select the most-specific matching base tier before resolving ownership.
+    Select the most-specific matching base tier before resolving diagnostic ownership.
     Broader bases cannot introduce owners or ambiguity into that tier.
     Selection is intentionally asymmetric. A base owned by one eligible
     connector matches broadly without enforcing its catalog permission method
@@ -189,6 +158,7 @@ def find_candidate(
         method,
         catalog.compiled_connector_firewalls,
         catalog.compiled_network_policies,
+        diagnostic_base_tier=True,
     )
     if isinstance(match, matching.FirewallAmbiguous):
         return _find_shared_base_candidate(
@@ -268,6 +238,7 @@ def resolve_shared_base_ownership(
         method,
         catalog.compiled_connector_firewalls,
         catalog.compiled_network_policies,
+        diagnostic_base_tier=True,
     )
     if not isinstance(base_match, matching.FirewallAmbiguous):
         return None
@@ -470,23 +441,22 @@ def _diagnostic_reference_names(value: object) -> tuple[str, ...]:
             seen.add(name)
             names.append(name)
 
-    def add_basic_names(match: re.Match[str]) -> None:
-        for group_name in _BASIC_REFERENCE_NAME_GROUPS:
-            name = match.group(group_name)
-            if name is not None:
-                add_name(name)
+    def add_basic_names(template: connector_template_syntax.BasicAuthTemplate) -> None:
+        for argument in (template.username, template.password):
+            if argument.namespace is not None:
+                add_name(argument.value)
 
     def visit(nested: object) -> None:
         if isinstance(nested, str):
-            basic_matches = iter(_BASIC_AUTH_TEMPLATE_PATTERN.finditer(nested))
+            basic_matches = connector_template_syntax.iter_basic_auth_templates(nested)
             basic_match = next(basic_matches, None)
             for reference in connector_template_syntax.iter_simple_references(nested):
-                while basic_match is not None and basic_match.end() <= reference.start:
+                while basic_match is not None and basic_match.end <= reference.start:
                     add_basic_names(basic_match)
                     basic_match = next(basic_matches, None)
                 if (
                     basic_match is not None
-                    and basic_match.start() <= reference.start < basic_match.end()
+                    and basic_match.start <= reference.start < basic_match.end
                 ):
                     continue
                 add_name(reference.name)

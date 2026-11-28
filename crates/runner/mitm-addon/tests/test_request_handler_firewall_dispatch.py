@@ -1,5 +1,6 @@
 """Core firewall dispatch and network policy tests for the request hook."""
 
+import base64
 import json
 import urllib.parse
 from collections.abc import Iterator
@@ -282,6 +283,155 @@ async def test_connector_intent_selects_auth_template_in_both_firewall_orders(
 
 
 @pytest.mark.parametrize(
+    ("routing_headers", "chosen", "provider_wait"),
+    [
+        ((("Authorization", "Bearer fixture-PRIMARY_TOKEN"),), "primary", True),
+        (
+            (
+                ("Authorization", "Bearer fixture-AUDITOR_TOKEN"),
+                ("X-Okou-Connector-Intent", "primary"),
+            ),
+            "primary",
+            False,
+        ),
+        (
+            (
+                ("Authorization", "Bearer fixture-PRIMARY_TOKEN"),
+                ("Authorization", "Bearer fixture-AUDITOR_TOKEN"),
+            ),
+            None,
+            False,
+        ),
+    ],
+)
+async def test_intent_and_credential_placeholders_select_dispatch_owner(
+    tmp_path,
+    real_flow,
+    mitm_ctx,
+    fake_firewall_headers,
+    headers,
+    routing_headers,
+    chosen,
+    provider_wait,
+):
+    reg_path = _write_registry(tmp_path, sandbox_info=_shared_route_sandbox(tmp_path))
+    flow = real_flow(
+        with_response=False,
+        client_ip="10.200.0.5",
+        host="shared.example.com",
+        path="/items/123",
+        request_headers=headers(("Host", "shared.example.com"), *routing_headers),
+    )
+    with (
+        mitm_ctx(registry_path=str(reg_path), api_url="https://api.okou.ai"),
+        fake_firewall_headers(headers={"Authorization": "Bearer resolved-primary"}) as auth_fetch,
+        patch.object(
+            mitm_addon.codex_model_catalog_cache, "prepare_request", return_value=provider_wait
+        ),
+    ):
+        await mitm_addon.request(flow)
+
+    assert flow.response is None
+    assert "X-Okou-Connector-Intent" not in flow.request.headers
+    if chosen is None:
+        auth_fetch.assert_not_awaited()
+        assert flow.request.headers.get_all("Authorization") == [
+            value for name, value in routing_headers if name == "Authorization"
+        ]
+    else:
+        auth_fetch.assert_awaited_once()
+        assert flow.metadata[metadata_keys.FIREWALL_NAME] == chosen
+        assert flow.request.headers["Authorization"] == "Bearer resolved-primary"
+
+
+@pytest.mark.parametrize(
+    ("template", "user_password", "selected"),
+    [
+        ("${{ basic(secrets.USER, secrets.PASS) }}", "fixture-user:fixture-pass", True),
+        ("${{ basic(vars.USER, secrets.PASS) }}", "configured-user:fixture-pass", True),
+        ('${{ basic(secrets.PASS, "") }}', "fixture-pass:", True),
+        ("${{ basic(vars.USER, secrets.PASS) }}", "different-user:fixture-pass", False),
+    ],
+    ids=["two-placeholders", "variable-user", "empty-password", "different-user"],
+)
+async def test_basic_auth_placeholder_selects_overlapping_firewall(
+    tmp_path,
+    real_flow,
+    mitm_ctx,
+    fake_firewall_headers,
+    headers,
+    template,
+    user_password,
+    selected,
+):
+    sandbox_info = _shared_route_sandbox(tmp_path)
+    sandbox_info["vars"] = {"USER": "configured-user"}
+    firewalls = sandbox_info["firewalls"]
+    assert isinstance(firewalls, list)
+    primary = firewalls[0]["firewall"]
+    primary["placeholders"] = {"USER": "fixture-user", "PASS": "fixture-pass"}
+    primary["apis"][0]["auth"] = {"headers": {"Authorization": template}}
+    reg_path = _write_registry(tmp_path, sandbox_info=sandbox_info)
+    auth_value = "Basic " + base64.b64encode(user_password.encode()).decode("ascii")
+    resolved_value = "Basic " + base64.b64encode(b"test-user:test-password").decode("ascii")
+    flow = real_flow(
+        with_response=False,
+        client_ip="10.200.0.5",
+        host="shared.example.com",
+        path="/items/123",
+        request_headers=headers(("Host", "shared.example.com"), ("Authorization", auth_value)),
+    )
+
+    with (
+        mitm_ctx(registry_path=str(reg_path), api_url="https://api.okou.ai"),
+        fake_firewall_headers(headers={"Authorization": resolved_value}) as auth_fetch,
+    ):
+        await mitm_addon.request(flow)
+
+    assert flow.response is None
+    assert flow.request.headers["Authorization"] == (resolved_value if selected else auth_value)
+    if selected:
+        assert auth_fetch.await_count == 1
+        assert auth_fetch.await_args.args[1].auth_headers == {"Authorization": template}
+    else:
+        auth_fetch.assert_not_awaited()
+
+
+async def test_intent_authorization_survives_when_same_owner_becomes_sole_match(
+    tmp_path, real_flow, mitm_ctx, fake_firewall_headers, headers
+):
+    sandbox_info = _shared_route_sandbox(tmp_path)
+    reg_path = _write_registry(tmp_path, sandbox_info=sandbox_info)
+    flow = real_flow(
+        with_response=False,
+        client_ip="10.200.0.5",
+        host="shared.example.com",
+        path="/items/123",
+        request_headers=headers(
+            ("Host", "shared.example.com"), ("X-Okou-Connector-Intent", "primary")
+        ),
+    )
+
+    async def prepare_provider(*_args, **_kwargs):
+        firewalls = sandbox_info["firewalls"]
+        assert isinstance(firewalls, list)
+        sandbox_info["firewalls"] = firewalls[:1]
+        _write_registry(tmp_path, sandbox_info=sandbox_info)
+        return True
+
+    with (
+        mitm_ctx(registry_path=str(reg_path), api_url="https://api.okou.ai"),
+        fake_firewall_headers(headers={"Authorization": "Bearer resolved-primary"}) as auth_fetch,
+        patch.object(mitm_addon.codex_model_catalog_cache, "prepare_request", prepare_provider),
+    ):
+        await mitm_addon.request(flow)
+
+    assert flow.response is None
+    assert flow.request.headers["Authorization"] == "Bearer resolved-primary"
+    auth_fetch.assert_awaited_once()
+
+
+@pytest.mark.parametrize(
     ("intent_headers", "reason"),
     [
         ((), "connector_intent_required"),
@@ -310,7 +460,7 @@ async def test_connector_intent_selects_auth_template_in_both_firewall_orders(
         ),
     ],
 )
-async def test_ambiguous_connector_route_fails_before_auth_and_logs_candidates(
+async def test_ambiguous_connector_route_passes_without_auth_and_logs_candidates(
     tmp_path,
     real_flow,
     mitm_ctx,
@@ -333,34 +483,19 @@ async def test_ambiguous_connector_route_fails_before_auth_and_logs_candidates(
         fake_firewall_headers() as auth_fetch,
     ):
         await mitm_addon.request(flow)
+        assert flow.response is None
+        flow.response = mitm_addon.http.Response.make(200, b"upstream")
         mitm_addon.response(flow)
 
     auth_fetch.assert_not_awaited()
-    assert flow.response is not None
-    assert flow.response.status_code == 409
+    assert flow.response.content == b"upstream"
     assert "X-Okou-Connector-Intent" not in flow.request.headers
     assert metadata_keys.FIREWALL_BASE not in flow.metadata
     assert metadata_keys.FIREWALL_NAME not in flow.metadata
     assert metadata_keys.FIREWALL_PERMISSION not in flow.metadata
-    body = json.loads(flow.response.content)
-    assert body == {
-        "error": "ambiguous_connector_route",
-        "message": "Request blocked: connector route requires explicit intent",
-        "reason": reason,
-        "method": "GET",
-        "path": "/items/123",
-        "url": "https://shared.example.com/items/123",
-        "candidates": ["auditor", "primary"],
-    }
-    proxy_log_entry = read_jsonl_entries_after_flush(tmp_path / "proxy.jsonl")[0]
-    assert proxy_log_entry["type"] == "firewall_ambiguous"
-    assert proxy_log_entry["reason"] == reason
-    assert proxy_log_entry["candidates"] == ["auditor", "primary"]
-    assert "intent" not in proxy_log_entry
     network_log_entry = read_jsonl_entries_after_flush(tmp_path / "net.jsonl")[0]
-    assert network_log_entry["action"] == "DENY"
-    assert network_log_entry["status"] == 409
-    assert network_log_entry["firewall_error"] == "ambiguous_connector_route"
+    assert network_log_entry["action"] == "ALLOW"
+    assert network_log_entry["status"] == 200
     assert network_log_entry["connector_route_reason"] == reason
     assert network_log_entry["connector_route_candidates"] == ["auditor", "primary"]
     assert "firewall_name" not in network_log_entry
@@ -393,54 +528,14 @@ async def test_oversized_connector_intent_is_malformed_without_decoding_or_auth(
         fake_firewall_headers() as auth_fetch,
     ):
         await mitm_addon.request(flow)
-        mitm_addon.response(flow)
 
     auth_fetch.assert_not_awaited()
-    assert flow.response is not None
-    assert flow.response.status_code == 409
+    assert flow.response is None
     assert all(
         name.lower() != b"x-okou-connector-intent" for name, _ in flow.request.headers.fields
     )
     assert connector_intent.from_flow(flow) == connector_intent.MALFORMED
-    body = json.loads(flow.response.content)
-    assert body["reason"] == "malformed_connector_intent"
-    proxy_log_entry = read_jsonl_entries_after_flush(tmp_path / "proxy.jsonl")[0]
-    assert "intent" not in proxy_log_entry
-    network_log_entry = read_jsonl_entries_after_flush(tmp_path / "net.jsonl")[0]
-    assert network_log_entry["connector_route_reason"] == "malformed_connector_intent"
-    assert "firewall_name" not in network_log_entry
-
-
-async def test_ambiguous_response_discards_large_fragment_before_url_parsing(
-    tmp_path,
-    real_flow,
-    mitm_ctx,
-    fake_firewall_headers,
-):
-    reg_path = _write_registry(tmp_path, sandbox_info=_shared_route_sandbox(tmp_path))
-    retained_url = "https://shared.example.com/items/123"
-    discarded_suffix = f"#fragment={'x' * 200_000}?sensitive=query"
-    flow = real_flow(
-        with_response=False,
-        client_ip="10.200.0.5",
-        host="shared.example.com",
-        path=f"/items/123{discarded_suffix}",
-    )
-
-    with (
-        mitm_ctx(registry_path=str(reg_path), api_url="https://api.okou.ai"),
-        fake_firewall_headers() as auth_fetch,
-        _observe_local_response_parser_inputs() as parsed_urls,
-    ):
-        await mitm_addon.request(flow)
-
-    auth_fetch.assert_not_awaited()
-    assert parsed_urls == [retained_url]
-    assert flow.response is not None
-    assert flow.response.status_code == 409
-    body = json.loads(flow.response.content)
-    assert body["path"] == "/items/123"
-    assert body["url"] == retained_url
+    assert flow.metadata[metadata_keys.CONNECTOR_ROUTE_REASON] == "malformed_connector_intent"
 
 
 async def test_firewall_permission_blocks_unmatched(tmp_path, real_flow, mitm_ctx):

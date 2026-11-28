@@ -70,6 +70,7 @@ def _shared_route_sandbox(
             "kind": "inline",
             "firewall": {
                 "name": name,
+                "placeholders": {token: f"fixture-{token}"},
                 "apis": [
                     {
                         "base": "https://shared.example.com",

@@ -30,7 +30,7 @@ _CONNECTOR_INTENT_HEADER = "X-Okou-Connector-Intent"
     ],
     ids=["builtin-only", "custom-only", "both"],
 )
-def test_omitted_connector_intent_does_not_bypass_multiple_active_owners(
+def test_omitted_connector_intent_leaves_multiple_active_owners_unselected(
     tmp_path,
     real_flow,
     mitm_ctx,
@@ -63,8 +63,8 @@ def test_omitted_connector_intent_does_not_bypass_multiple_active_owners(
             tls_admission=None,
         )
 
-    assert isinstance(classification, request_classification.FirewallAmbiguous)
-    assert classification.firewall_ambiguous.reason == "connector_intent_not_candidate"
+    assert isinstance(classification, request_classification.Allow)
+    assert flow.metadata[metadata_keys.CONNECTOR_ROUTE_REASON] == "connector_intent_not_candidate"
     assert _CONNECTOR_INTENT_HEADER not in flow.request.headers
 
 
@@ -207,8 +207,8 @@ def test_non_omitted_intent_continues_to_firewall_classification(
             tls_admission=None,
         )
 
-    assert isinstance(classification, request_classification.FirewallAmbiguous)
-    assert classification.firewall_ambiguous.reason == reason
+    assert isinstance(classification, request_classification.Allow)
+    assert flow.metadata[metadata_keys.CONNECTOR_ROUTE_REASON] == reason
 
 
 def test_omitted_connector_lookup_allocation_does_not_scale_with_target_count(
