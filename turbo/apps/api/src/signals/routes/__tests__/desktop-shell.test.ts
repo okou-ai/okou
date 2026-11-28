@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { flushWaitUntilForTest } from "../../context/wait-until";
 import {
   afterEach,
   beforeAll,
@@ -1142,6 +1143,7 @@ describe("Desktop Shell command pipeline", () => {
 
       const observedBlockedReasons: (string | null)[] = [];
       const pendingObservations: Promise<void>[] = [];
+      await flushWaitUntilForTest();
       context.mocks.ably.channelGet.mockClear();
       context.mocks.ably.publish.mockClear();
       context.mocks.ably.publish.mockImplementation((topic: unknown) => {
@@ -1235,6 +1237,7 @@ describe("Desktop Shell command pipeline", () => {
         member,
         shellHostOptions(permissionId2, { hostName: "Chat Two Desktop" }),
       );
+      await flushWaitUntilForTest();
 
       context.mocks.ably.channelGet.mockClear();
       context.mocks.ably.publish.mockClear();
