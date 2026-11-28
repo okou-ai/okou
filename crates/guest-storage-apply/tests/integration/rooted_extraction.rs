@@ -39,6 +39,7 @@ fn ordinary_files_preserve_metadata_and_extended_names() {
     let dir = tempfile::tempdir().unwrap();
     let mount = dir.path().join("mount");
     let long = format!("nested/{}/file", "long".repeat(40));
+    let ustar_path = format!("nested/{}/file", "prefix".repeat(17));
     let binary = Path::new(std::ffi::OsStr::from_bytes(b"nested/non-utf8-\xff"));
     let mut builder = tar::Builder::new(GzEncoder::new(Vec::new(), Compression::fast()));
     append_file(
@@ -52,6 +53,13 @@ fn ordinary_files_preserve_metadata_and_extended_names() {
     append_file(&mut builder, "nested/empty", b"", 0o600, 0).unwrap();
     append_file(&mut builder, &long, b"long name", 0o640, 1234567891).unwrap();
     append_file(&mut builder, binary, b"binary name", 0o644, 1234567892).unwrap();
+    let mut ustar = tar::Header::new_ustar();
+    ustar.set_path(&ustar_path).unwrap();
+    ustar.set_size(b"ustar prefix".len() as u64);
+    ustar.set_mode(0o640);
+    ustar.set_mtime(1234567895);
+    ustar.set_cksum();
+    builder.append(&ustar, b"ustar prefix".as_slice()).unwrap();
     let large = (0..192 * 1024 + 37)
         .map(|index| (index % 251) as u8)
         .collect::<Vec<_>>();
@@ -78,6 +86,12 @@ fn ordinary_files_preserve_metadata_and_extended_names() {
         (Path::new("nested/empty"), b"".as_slice(), 0o600, 1),
         (Path::new(&long), b"long name".as_slice(), 0o640, 1234567891),
         (binary, b"binary name".as_slice(), 0o644, 1234567892),
+        (
+            Path::new(&ustar_path),
+            b"ustar prefix".as_slice(),
+            0o640,
+            1234567895,
+        ),
         (
             Path::new("nested/large"),
             large.as_slice(),

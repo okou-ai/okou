@@ -6,14 +6,14 @@
 //! links and existing leaves retain the checked tar extractor's semantics.
 
 use std::collections::HashMap;
-use std::ffi::{CStr, CString};
+use std::ffi::CString;
 use std::fs::{self, File, FileTimes, OpenOptions, Permissions};
 use std::io::{self, Read, Write};
 use std::os::fd::{AsRawFd, BorrowedFd, RawFd};
 use std::os::unix::ffi::OsStrExt;
 use std::os::unix::fs::{MetadataExt, OpenOptionsExt, PermissionsExt};
 use std::path::{Component, Path, PathBuf};
-use std::time::{Duration, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 // Includes the root. Cache exhaustion releases parents before checked tar
 // extraction, so wide/deep archives do not retain an unbounded number of FDs.
@@ -29,6 +29,13 @@ enum CreationMode {
     Unavailable,
 }
 
+pub(super) struct OpenArchiveFile {
+    file: File,
+    parent: RawFd,
+    mode: u32,
+    modified: SystemTime,
+}
+
 pub(crate) struct RootedWriter<'a> {
     target: &'a Path,
     cache_directories: bool,
@@ -37,6 +44,8 @@ pub(crate) struct RootedWriter<'a> {
     parents: HashMap<PathBuf, File>,
     copy_buffer: Vec<u8>,
     creation_mode: Option<(RawFd, CreationMode)>,
+    previous_parent_path: PathBuf,
+    previous_parent_fd: Option<RawFd>,
 }
 
 impl<'a> RootedWriter<'a> {
@@ -49,12 +58,15 @@ impl<'a> RootedWriter<'a> {
             parents: HashMap::new(),
             copy_buffer: Vec::new(),
             creation_mode: None,
+            previous_parent_path: PathBuf::new(),
+            previous_parent_fd: None,
         }
     }
 
     pub(crate) fn invalidate(&mut self) {
         self.parents.clear();
         self.creation_mode = None;
+        self.previous_parent_fd = None;
         // Release even the root before checked tar extraction: under FD pressure
         // it can occupy the last slot needed to create the output file.
         self.root = None;
@@ -98,7 +110,7 @@ impl<'a> RootedWriter<'a> {
             // SAFETY: previous is held by the root or parent cache until the
             // open/create sequence completes, before the cache is mutated.
             let parent = unsafe { BorrowedFd::borrow_raw(previous) };
-            let directory = match open_at(parent, &name, DIRECTORY_FLAGS, 0) {
+            let directory = match open_at(parent, name.as_c_str(), DIRECTORY_FLAGS, 0) {
                 Err(error) if error.kind() == io::ErrorKind::NotFound => {
                     match nix::sys::stat::mkdirat(
                         parent,
@@ -108,7 +120,7 @@ impl<'a> RootedWriter<'a> {
                         Ok(()) | Err(nix::errno::Errno::EEXIST) => {}
                         Err(error) => return Err(error.into()),
                     }
-                    open_at(parent, &name, DIRECTORY_FLAGS, 0)
+                    open_at(parent, name.as_c_str(), DIRECTORY_FLAGS, 0)
                 }
                 result => result,
             };
@@ -142,29 +154,41 @@ impl<'a> RootedWriter<'a> {
         let path_bytes = relative.as_os_str().as_bytes();
         if path_bytes.contains(&0)
             || self.root_path_bytes + 1 + path_bytes.len() >= libc::PATH_MAX as usize
-            || !relative
-                .components()
-                .all(|part| matches!(part, Component::Normal(_)))
         {
             return Ok(None);
         }
         let Some(name) = relative.file_name() else {
             return Ok(None);
         };
-        let Ok(name) = CString::new(name.as_bytes()) else {
-            return Ok(None);
-        };
         let Some(parent) = relative.parent() else {
             return Ok(None);
         };
-        let Some(parent) = self.parent_fd(parent)? else {
-            return Ok(None);
+        let parent = if let Some(fd) = self.previous_parent_fd
+            && self.previous_parent_path.as_os_str() == parent.as_os_str()
+        {
+            // The parent was validated and its handle is still held. The
+            // file_name call above already required a normal leaf component.
+            fd
+        } else {
+            if !relative
+                .components()
+                .all(|part| matches!(part, Component::Normal(_)))
+            {
+                return Ok(None);
+            }
+            let Some(fd) = self.parent_fd(parent)? else {
+                return Ok(None);
+            };
+            self.previous_parent_path.clear();
+            self.previous_parent_path.push(parent);
+            self.previous_parent_fd = Some(fd);
+            fd
         };
         // SAFETY: the root or cached parent stays open through this leaf open.
         let parent = unsafe { BorrowedFd::borrow_raw(parent) };
         let flags =
             libc::O_WRONLY | libc::O_CREAT | libc::O_EXCL | libc::O_NOFOLLOW | libc::O_CLOEXEC;
-        match open_at(parent, &name, flags, 0o666) {
+        match open_at(parent, name, flags, 0o666) {
             Ok(file) => Ok(Some((file, parent.as_raw_fd()))),
             // Never truncate an existing inode: tar unlinks/recreates it, which
             // also preserves other hardlinks to that inode.
@@ -177,51 +201,59 @@ impl<'a> RootedWriter<'a> {
         }
     }
 
-    /// False leaves payload unread: invalidate parents before checked tar unpack.
-    /// Once a leaf is created, any payload or metadata failure is returned, never
-    /// retried. Tar's default mode/mtime behavior is reproduced only for plain files.
-    pub(super) fn try_unpack<R: Read>(
+    /// Open a plain regular member using its validated path. A missed fast path
+    /// leaves the payload unread for checked extraction after invalidation.
+    pub(super) fn open_archive_file(
         &mut self,
         relative: &Path,
-        entry: &mut tar::Entry<'_, R>,
-    ) -> io::Result<bool> {
+        header: &tar::Header,
+    ) -> io::Result<Option<OpenArchiveFile>> {
         // tar treats slash-terminated old/GNU regular entries as directories.
         // Check raw bytes before Path normalization loses the trailing slash.
-        if entry.header().as_ustar().is_none() && entry.path_bytes().ends_with(b"/") {
-            return Ok(false);
+        if header.as_ustar().is_none() && relative.as_os_str().as_bytes().ends_with(b"/") {
+            return Ok(None);
         }
-        let (Ok(mode), Ok(mtime)) = (entry.header().mode(), entry.header().mtime()) else {
-            return Ok(false);
+        let (Ok(mode), Ok(mtime)) = (header.mode(), header.mtime()) else {
+            return Ok(None);
         };
         if mtime > i64::MAX as u64 {
-            return Ok(false);
+            return Ok(None);
         }
         // tar maps epoch-zero file times to one second for compatibility.
         let Some(modified) = UNIX_EPOCH.checked_add(Duration::from_secs(mtime.max(1))) else {
-            return Ok(false);
+            return Ok(None);
         };
-        let Some((mut file, parent)) = self.create_new_with_parent(relative)? else {
-            return Ok(false);
+        let Some((file, parent)) = self.create_new_with_parent(relative)? else {
+            return Ok(None);
         };
-        let expected = entry.size();
-        let copied = if expected > 8 * 1024 {
-            copy_buffered(entry, &mut file, &mut self.copy_buffer)?
-        } else {
-            io::copy(entry, &mut file)?
-        };
-        if copied != expected {
-            return Err(io::Error::new(
-                io::ErrorKind::UnexpectedEof,
-                "failed to write entire tar file",
-            ));
-        }
+        Ok(Some(OpenArchiveFile {
+            file,
+            parent,
+            mode: mode & 0o777,
+            modified,
+        }))
+    }
+
+    /// Finish the leaf from open_archive_file on this writer before invalidating
+    /// its parents. An IO failure leaves the output written so far.
+    pub(super) fn write_archive_file<R: Read>(
+        &mut self,
+        opened: OpenArchiveFile,
+        entry: &mut tar::Entry<'_, R>,
+    ) -> io::Result<()> {
+        let OpenArchiveFile {
+            mut file,
+            parent,
+            mode,
+            modified,
+        } = opened;
+        copy_payload(entry, &mut file, &mut self.copy_buffer)?;
         file.set_times(
             FileTimes::new()
                 .set_accessed(modified)
                 .set_modified(modified),
         )?;
-        self.set_file_mode(&file, parent, mode & 0o777)?;
-        Ok(true)
+        self.set_file_mode(&file, parent, mode)
     }
 
     fn set_file_mode(&mut self, file: &File, parent: RawFd, mode: u32) -> io::Result<()> {
@@ -258,27 +290,39 @@ fn observe_creation_mode(file: &File) -> CreationMode {
     CreationMode::Unavailable
 }
 
-// Reuse the allocation across files in this archive. Keep the large reads
-// and their buffer management out of the small-file path.
-#[inline(never)]
-fn copy_buffered<R: Read>(
+// Reuse space for the next member while retaining the bounded streaming copy.
+fn copy_payload<R: Read>(
     entry: &mut tar::Entry<'_, R>,
     file: &mut File,
     buffer: &mut Vec<u8>,
-) -> io::Result<u64> {
-    buffer.resize(COPY_BUFFER_BYTES, 0);
-    let mut copied = 0;
-    loop {
-        match entry.read(buffer) {
-            Ok(0) => return Ok(copied),
+) -> io::Result<()> {
+    let mut remaining = entry.size();
+    let needed = remaining.min(COPY_BUFFER_BYTES as u64) as usize;
+    if buffer.len() < needed {
+        // Vec's default growth can exceed the copy limit near the upper bound.
+        let capacity = needed.next_power_of_two().min(COPY_BUFFER_BYTES);
+        buffer.reserve_exact(capacity - buffer.len());
+        buffer.resize(needed, 0);
+    }
+    while remaining > 0 {
+        let chunk = remaining.min(buffer.len() as u64) as usize;
+        let output = buffer.split_at_mut(chunk).0;
+        match entry.read(output) {
+            Ok(0) => {
+                return Err(io::Error::new(
+                    io::ErrorKind::UnexpectedEof,
+                    "failed to write entire tar file",
+                ));
+            }
             Ok(read) => {
-                file.write_all(buffer.split_at(read).0)?;
-                copied += read as u64;
+                file.write_all(output.split_at(read).0)?;
+                remaining -= read as u64;
             }
             Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
             Err(error) => return Err(error),
         }
     }
+    Ok(())
 }
 
 fn has_descriptor_budget(concurrency: usize) -> bool {
@@ -310,7 +354,7 @@ fn descriptor_limit(error: &io::Error) -> bool {
 
 fn open_at(
     parent: BorrowedFd<'_>,
-    name: &CStr,
+    name: &(impl nix::NixPath + ?Sized),
     flags: libc::c_int,
     mode: libc::mode_t,
 ) -> io::Result<File> {

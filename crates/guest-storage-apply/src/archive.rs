@@ -127,31 +127,34 @@ fn extract_tar(
             .allow_payload(&mut entry)
             .map_err(|e| archive_error("Failed to read archive entry", e))?;
 
+        let entry_type = entry.header().entry_type();
+        // The rooted writer only implements plain regular files. PAX
+        // inspection takes a mutable entry borrow, before borrowing its path.
+        #[cfg(target_os = "linux")]
+        let plain_file = entry_type.is_file()
+            && entry
+                .pax_extensions()
+                .map_err(|e| archive_error("Failed to read entry metadata", e))?
+                .is_none();
         let entry_path = entry
             .path()
-            .map_err(|e| archive_error("Failed to read entry path", e))?
-            .into_owned();
-
-        let entry_type = entry.header().entry_type();
+            .map_err(|e| archive_error("Failed to read entry path", e))?;
         validate_entry(&entry_path, entry_type, entry.size(), entry.header())?;
 
         #[cfg(target_os = "linux")]
         {
-            // Only plain, new regular files have the metadata and replacement
-            // semantics implemented by the rooted writer. Tar owns all others.
-            if entry_type.is_file()
-                && entry
-                    .pax_extensions()
-                    .map_err(|e| archive_error("Failed to read entry metadata", e))?
-                    .is_none()
-                && rooted.try_unpack(&entry_path, &mut entry).map_err(|e| {
+            if plain_file
+                && let Some(file) = rooted
+                    .open_archive_file(&entry_path, entry.header())
+                    .map_err(|e| unpack_error(entry_path.display(), e, &http_body_read_failure))?
+            {
+                rooted.write_archive_file(file, &mut entry).map_err(|e| {
                     unpack_error(
-                        format!("Failed to extract entry {}", entry_path.display()),
+                        String::from_utf8_lossy(&entry.path_bytes()),
                         e,
                         &http_body_read_failure,
                     )
-                })?
-            {
+                })?;
                 continue;
             }
             // General tar operations can replace links or change directory
@@ -239,13 +242,10 @@ fn extract_tar(
         // replace a checked directory or symlink between the ancestor check and the extraction
         // below. Safety relies on the caller's lifecycle/exclusivity assumptions documented on
         // `extract_tar_gz`.
-        entry.unpack_in(target).map_err(|e| {
-            unpack_error(
-                format!("Failed to extract entry {}", entry_path.display()),
-                e,
-                &http_body_read_failure,
-            )
-        })?;
+        let entry_path = entry_path.into_owned();
+        entry
+            .unpack_in(target)
+            .map_err(|e| unpack_error(entry_path.display(), e, &http_body_read_failure))?;
     }
 
     // Tar iteration stops at its end marker before gzip necessarily reaches its
@@ -337,10 +337,11 @@ fn archive_error(message: impl Into<String>, error: io::Error) -> DownloadError 
 }
 
 fn unpack_error(
-    message: String,
+    path: impl std::fmt::Display,
     error: io::Error,
     http_body_read_failure: &crate::source::HttpBodyReadFailure,
 ) -> DownloadError {
+    let message = format!("Failed to extract entry {path}");
     if http_body_read_failure.failed() {
         archive_error(message, error)
     } else {
