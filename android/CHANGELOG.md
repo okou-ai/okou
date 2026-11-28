@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.69.2](https://github.com/okou-ai/okou/compare/android-v0.69.1...android-v0.69.2) (2026-11-28)
+
+
+### Bug Fixes
+
+* **android:** preserve workspace search focus after find back ([#51612](https://github.com/okou-ai/okou/issues/51612)) ([73bb45d](https://github.com/okou-ai/okou/commit/73bb45dc23f222b9f9a8eb6ad3d106cb36af86e8))
+
 ## [0.69.1](https://github.com/okou-ai/okou/compare/android-v0.69.0...android-v0.69.1) (2026-11-27)
 
 

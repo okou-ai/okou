@@ -383,12 +383,9 @@ private fun ModelAccounts(
                         style = MaterialTheme.typography.bodyLarge,
                     )
                     SettingsDetailStatus(stringResource(R.string.settings_accounts_empty_help))
-                    SettingsWebAction(
-                        stringResource(R.string.settings_accounts_web_connect),
-                        "model",
-                    )
                 }
             }
+            SettingsWebAction(stringResource(R.string.settings_accounts_web_connect), "model")
         }
         else -> {
             for (provider in ModelAccountProvider.entries) {
@@ -410,7 +407,7 @@ private fun ModelAccounts(
                                     account,
                                     provider,
                                     index + 1,
-                                    switch?.takeIf { it.accountId == account.id }?.phase,
+                                    switch?.accountId == account.id,
                                     switch != null,
                                     activateAccount,
                                 )
@@ -429,7 +426,7 @@ private fun ModelAccountRow(
     account: RecoverySubscriptionsSubscriptionsItem,
     provider: ModelAccountProvider,
     index: Int,
-    switchPhase: AccountSwitchPhase?,
+    switching: Boolean,
     groupSwitching: Boolean,
     activateAccount: (String) -> Unit,
 ) {
@@ -441,9 +438,7 @@ private fun ModelAccountRow(
         when {
             account.isActive == true -> stringResource(R.string.settings_account_current)
             account.needsReconnect -> stringResource(R.string.settings_account_reconnect)
-            switchPhase == AccountSwitchPhase.Unconfirmed ->
-                stringResource(R.string.settings_account_switch_unconfirmed)
-            switchPhase != null -> stringResource(R.string.settings_account_switching)
+            switching -> stringResource(R.string.settings_account_switching)
             else -> stringResource(R.string.settings_account_select)
         }
     val isActive = account.isActive == true

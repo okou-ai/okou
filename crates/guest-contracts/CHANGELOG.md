@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.34.0](https://github.com/okou-ai/okou/compare/guest-contracts-v0.33.13...guest-contracts-v0.34.0) (2026-11-28)
+
+
+### Features
+
+* **antigravity:** enable native acp session resume and native audio voice prompts ([#51626](https://github.com/okou-ai/okou/issues/51626)) ([2d8e12a](https://github.com/okou-ai/okou/commit/2d8e12a11218b0de9be7f18d2b8ed97aa5fcb483))
+
 ## [0.33.13](https://github.com/okou-ai/okou/compare/guest-contracts-v0.33.12...guest-contracts-v0.33.13) (2026-11-27)
 
 

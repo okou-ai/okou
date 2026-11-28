@@ -10,6 +10,13 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.143.0](https://github.com/okou-ai/okou/compare/api-v2.142.1...api-v2.143.0) (2026-11-28)
+
+
+### Features
+
+* **antigravity:** enable native acp session resume and native audio voice prompts ([#51626](https://github.com/okou-ai/okou/issues/51626)) ([2d8e12a](https://github.com/okou-ai/okou/commit/2d8e12a11218b0de9be7f18d2b8ed97aa5fcb483))
+
 ## [2.142.1](https://github.com/okou-ai/okou/compare/api-v2.142.0...api-v2.142.1) (2026-11-27)
 
 

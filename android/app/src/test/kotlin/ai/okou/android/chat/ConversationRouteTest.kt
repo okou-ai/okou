@@ -76,6 +76,7 @@ import org.junit.rules.TemporaryFolder
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import org.robolectric.annotation.GraphicsMode
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35], qualifiers = "en-rUS", application = TestOkouApplication::class)
@@ -88,29 +89,55 @@ class ConversationRouteTest {
     private var ownerJob: Job? = null
 
     @Test
-    fun historicalFailureShowsReasonAndGuidanceWithoutRecoveryNetworkReads() {
-        fun message(reason: String): HistoryMessage {
-            val row = HistoryEvent.decode(RecoveryApiFixture.failure(reason))
-            return projectHistory(
-                    HistoryCheckpoint(CHAT_PERSONAL, listOf(row), HistoryCursor(row.id, row.seqId)),
-                )
-                .messages
-                .single()
-        }
-        val displayed = mutableStateOf(message("provider_request_timeout"))
+    @Config(qualifiers = "en-rUS-w412dp-h892dp")
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    fun failureUpgradeKeepsItsGapBelowAnExistingReply() {
+        val reply = scrollEventId(2)
+        val rows =
+            listOf(
+                RecoveryApiFixture.input(),
+                historyEventWire(reply, 2, payload = """{"content":"Part of the report"}"""),
+                historyEventWire(
+                    scrollEventId(3),
+                    3,
+                    type = "output.error",
+                    payload = """{"error":"Agent execution timed out after 120 seconds"}""",
+                ),
+            )
+        fixture.setHistoryEvents(CHAT_PERSONAL, rows)
+        val model = createListModel()
         compose.setContent {
-            OkouTheme {
-                ConversationMessageRow(ConversationMessage(displayed.value))
-            }
+            val list by model.uiState.collectAsStateWithLifecycle()
+            OkouTheme { ConversationRoute(model.history, CHAT_PERSONAL, list) }
         }
-        compose.onNodeWithText("The model response timed out").assertExists()
-        compose
-            .onNodeWithText("Try again in a moment, or choose another model to keep working.")
-            .assertExists()
+        compose.waitUntil(5_000) {
+            compose.runOnIdle { model.uiState.value.listPhase == ChatReadPhase.Ready }
+        }
+        compose.runOnIdle {
+            model.history.open(model.uiState.value.threads.single { it.id == CHAT_PERSONAL })
+        }
+        compose.waitUntilExactlyOneExists(hasTestTag("conversation_failure_card"), 5_000)
+        val card = compose.onNodeWithTag("conversation_failure_card")
+        val body = compose.onNodeWithTag("message_$reply")
+        val processing = compose.activity.getString(R.string.conversation_replying)
+        val activity = compose.onNodeWithText(processing).assertIsDisplayed()
+        val legacyBounds = card.getUnclippedBoundsInRoot()
+        assertEquals(8.dp, legacyBounds.top - body.getUnclippedBoundsInRoot().bottom)
+        assertTrue(activity.getUnclippedBoundsInRoot().top >= legacyBounds.bottom)
+        compose.onNodeWithText("Time limit reached").assertIsDisplayed()
 
-        compose.runOnIdle { displayed.value = message("future_reason") }
-        compose.onNodeWithText("This run couldn't finish").assertExists()
-        compose.onNodeWithText("Open the chat on the Okou website for details.").assertExists()
+        fixture.setHistoryEvents(
+            CHAT_PERSONAL,
+            rows + RecoveryApiFixture.failure("provider_request_timeout", seq = 4),
+        )
+        compose.runOnIdle { model.history.refresh() }
+        compose.waitUntilExactlyOneExists(hasText("The model response timed out"), 5_000)
+        compose.onNodeWithText("Time limit reached").assertDoesNotExist()
+        activity.assertDoesNotExist()
+        val confirmedBounds = card.getUnclippedBoundsInRoot()
+        assertEquals(8.dp, confirmedBounds.top - body.getUnclippedBoundsInRoot().bottom)
+        assertEquals(legacyBounds.top, confirmedBounds.top)
+        compose.onNodeWithTag("conversation_reply_header").assertIsDisplayed()
     }
 
     @Test
@@ -244,9 +271,12 @@ class ConversationRouteTest {
                 listOf(HistoryBlock(HistoryBlockKind.Text, text)),
             )
         val displayed = mutableStateOf(reply("First chunk"))
+        val nextReply = mutableStateOf<HistoryMessage?>(null)
         compose.setContent {
             OkouTheme {
-                ConversationMessageRow(ConversationMessage(displayed.value))
+                val rows =
+                    conversationTurns(listOfNotNull(displayed.value, nextReply.value), emptySet())
+                ConversationMessageRow(rows.messages.single())
             }
         }
         val header = compose.onNodeWithText(compose.activity.getString(R.string.app_name))
@@ -280,7 +310,7 @@ class ConversationRouteTest {
             compose.onNodeWithText(compose.activity.getString(R.string.conversation_copy_reply))
         copy.assertIsDisplayed()
         // A following reply can receive whitespace before its usable body arrives.
-        compose.runOnIdle { displayed.value = reply(" ", id = "next-output") }
+        compose.runOnIdle { nextReply.value = reply(" ", id = "next-output") }
         copy.assertIsDisplayed().performClick()
         val clipboard =
             checkNotNull(compose.activity.getSystemService(ClipboardManager::class.java))

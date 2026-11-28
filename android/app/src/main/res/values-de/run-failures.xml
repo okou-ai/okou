@@ -5,7 +5,7 @@
     <string name="run_failure_guest_root_filesystem_full_title">Für diesen Lauf ist kein Speicherplatz mehr frei</string>
     <string name="run_failure_guest_root_filesystem_full_description">Dieser Lauf konnte keine weiteren Dateien speichern. Versuchen Sie es erneut.</string>
     <string name="run_failure_execution_timeout_title">Zeitlimit erreicht</string>
-    <string name="run_failure_execution_timeout_description">Sie können dort weitermachen, wo dieser Lauf aufgehört hat.</string>
+    <string name="run_failure_execution_timeout_description">Die bisher erstellten Inhalte bleiben verfügbar.</string>
     <string name="run_failure_provider_insufficient_credits_title">Dein Abonnementkonto benötigt mehr Guthaben</string>
     <string name="run_failure_provider_insufficient_credits_description">Prüfe die Nutzung oder das Guthaben deines Abonnementkontos und versuche es dann erneut.</string>
     <string name="run_failure_invalid_api_key_title">Die Anmeldung deines Abonnements muss aktualisiert werden</string>
@@ -33,9 +33,9 @@
     <string name="run_failure_provider_server_error_title">Beim Modellanbieter ist ein vorübergehender Fehler aufgetreten</string>
     <string name="run_failure_provider_server_error_description">Versuchen Sie es gleich noch einmal oder arbeiten Sie mit einem anderen Modell weiter.</string>
     <string name="run_failure_response_connection_lost_title">Die Antwort wurde unterbrochen</string>
-    <string name="run_failure_response_connection_lost_description">Versuchen Sie es gleich noch einmal oder arbeiten Sie mit einem anderen Modell weiter.</string>
+    <string name="run_failure_response_connection_lost_description">Die bisher erstellten Inhalte bleiben verfügbar.</string>
     <string name="run_failure_safety_policy_refusal_title">Das Modell konnte bei dieser Anfrage nicht helfen</string>
-    <string name="run_failure_safety_policy_refusal_description">Die Anfrage entsprach nicht den Sicherheitsregeln des Modells. Formulieren Sie sie anders oder wählen Sie ein anderes Modell.</string>
+    <string name="run_failure_safety_policy_refusal_description">Überarbeiten Sie Ihre Anfrage, bevor Sie sie erneut senden.</string>
     <string name="run_failure_reconnect_required_title">Modellkonto erneut verbinden</string>
     <string name="run_failure_reconnect_required_description">Verbinden oder aktualisieren Sie Ihr Konto unter „Einstellungen &gt; Modelle“ und versuchen Sie es erneut.</string>
     <string name="run_failure_unsupported_model_title">Ausgewähltes Modell ist nicht verfügbar</string>
@@ -44,9 +44,11 @@
     <string name="run_failure_usage_limit_description">Sie können fortfahren, wenn Ihr Nutzungslimit zurückgesetzt wird, oder jetzt das Modell wechseln.</string>
     <string name="run_failure_unknown_title">Dieser Lauf konnte nicht abgeschlossen werden</string>
     <string name="run_failure_unknown_description">Öffne den Chat auf der Okou-Website, um Details zu sehen.</string>
-    <string name="run_failure_guest_memory_oom_killed_title">Dieser Lauf konnte nicht abgeschlossen werden</string>
-    <string name="run_failure_guest_memory_oom_killed_description">Ein Fehler ist aufgetreten.</string>
-    <string name="run_failure_insufficient_credits_title">Keine Credits mehr</string>
+    <string name="run_failure_guest_memory_oom_killed_title">Dieser Lauf hatte nicht genügend Arbeitsspeicher</string>
+    <string name="run_failure_guest_memory_oom_killed_description">Die bisher erstellten Inhalte bleiben verfügbar.</string>
+    <string name="run_failure_provider_image_too_large_title">Das Bild ist zu groß</string>
+    <string name="run_failure_provider_image_too_large_description">Entferne das Bild oder ersetze es durch ein kleineres.</string>
+    <string name="run_failure_insufficient_credits_title">Keine Okou-Credits mehr</string>
     <string name="run_failure_insufficient_credits_description">Prüfe den Tarif oder das Credit-Guthaben deines Workspace.</string>
     <string name="run_failure_account_verification_required_title">Claude-Kontoverifizierung erforderlich</string>
     <string name="run_failure_account_verification_required_description">Ihr Claude-Konto kann derzeit keine Antworten empfangen. Den nächsten Schritt finden Sie im Anthropic Verification Portal.</string>

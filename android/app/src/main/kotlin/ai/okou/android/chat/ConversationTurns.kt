@@ -84,14 +84,14 @@ internal data class ConversationTurns(
     val completion: ConversationCompletion?,
 )
 
-internal fun HistoryMessage.isOutputReply() =
-    role == HistoryRole.Assistant && status == null && blocks.isNotEmpty()
+internal fun HistoryMessage.isOutputReply() = status == null && hasReplyBody()
 
 internal fun HistoryMessage.isTerminalStatus() =
     status == "run.completed" || status == "run.failed" || status == "run.cancelled"
 
-private fun HistoryMessage.isDeliveredInput() =
-    role == HistoryRole.User && runId != null && !rejected
+private fun HistoryMessage.isFailureFeedback() = status == "run.failed" || status == "output.error"
+
+internal fun HistoryMessage.isTurnFeedback() = isFailureFeedback() || status == "run.cancelled"
 
 /** A steer splits the display turn even though its input and replies use the same Run ID. */
 internal fun conversationTurns(
@@ -101,12 +101,7 @@ internal fun conversationTurns(
     val turns = mutableListOf<MutableList<HistoryMessage>>()
     for (message in messages) {
         val last = turns.lastOrNull()
-        if (
-            last != null &&
-                message.runId != null &&
-                message.runId == last.first().runId &&
-                !message.isDeliveredInput()
-        ) {
+        if (last != null && message.continuesDisplayTurn(last.first().runId)) {
             last.add(message)
         } else {
             turns.add(mutableListOf(message))
@@ -121,8 +116,14 @@ internal fun conversationTurns(
             val runId = turn.first().runId
             val input = turn.first().takeIf { it.isDeliveredInput() }
             val terminal = turn.lastOrNull { it.isTerminalStatus() }
+            val failure = terminal?.takeIf { it.status == "run.failed" }
+            val failureEvents = failure?.let { turn.filter { it.isFailureFeedback() } }.orEmpty()
             val replies = turn.filter { it.isOutputReply() }
             val latestReply = replies.lastOrNull()
+            val feedbackHeader =
+                if (latestReply == null && turn.none { it.hasReplyBody() }) {
+                    turn.firstOrNull { it.isTurnFeedback() }
+                } else null
             val phase =
                 when (terminal?.status) {
                     "run.completed" -> ReplyPhase.Completed
@@ -150,7 +151,10 @@ internal fun conversationTurns(
                     },
                 )
             val firstRowOfTurn = size
-            for (message in turn.asReversed()) {
+            val displayOrder =
+                if (terminal == null || failure != null) turn.withFailuresAfterReply(latestReply)
+                else turn
+            for (message in displayOrder.asReversed()) {
                 if (!message.visibleInConversation()) continue
                 if (message === latestReply) {
                     add(
@@ -161,7 +165,21 @@ internal fun conversationTurns(
                         ),
                     )
                 } else if (!message.isOutputReply()) {
-                    add(ConversationMessage(message))
+                    val display =
+                        if (failure != null && message.isFailureFeedback()) {
+                            if (message !== failureEvents.first()) continue
+                            failure
+                        } else message
+                    add(
+                        ConversationMessage(
+                            display,
+                            showFeedbackHeader = message === feedbackHeader,
+                            failureEventIds =
+                                if (display === failure && failureEvents.size > 1)
+                                    failureEvents.map { it.id }
+                                else emptyList(),
+                        ),
+                    )
                 }
             }
             if (latestTurn && (input != null || terminal != null || latestReply != null)) {
@@ -180,6 +198,27 @@ internal fun conversationTurns(
         }
     }
     return ConversationTurns(reversedMessages.asReversed(), completion)
+}
+
+/** Retained or late reply text can follow a compatibility error in the event order. */
+private fun List<HistoryMessage>.withFailuresAfterReply(
+    reply: HistoryMessage?,
+): List<HistoryMessage> {
+    if (reply == null) return this
+    val firstFailure = indexOfFirst { it.isFailureFeedback() }
+    if (firstFailure < 0) return this
+    val replyIndex = indexOf(reply)
+    if (firstFailure >= replyIndex) return this
+    val beforeFailure = subList(0, firstFailure)
+    val beforeReply = subList(firstFailure, replyIndex)
+    val afterReply = subList(replyIndex + 1, size)
+    return buildList(size) {
+        addAll(beforeFailure)
+        addAll(beforeReply.filterNot { it.isFailureFeedback() })
+        add(reply)
+        addAll(beforeReply.filter { it.isFailureFeedback() })
+        addAll(afterReply)
+    }
 }
 
 internal data class WorkDuration(val hours: Long, val minutes: Long, val seconds: Long)

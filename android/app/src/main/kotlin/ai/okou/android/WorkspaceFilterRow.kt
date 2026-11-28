@@ -18,6 +18,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -58,6 +59,7 @@ internal fun <T : Any> WorkspaceFilterRow(
     onSelect: (T) -> Unit,
 ) {
     val colors = MaterialTheme.colorScheme
+    val disabledColors = if (enabled) null else FilterChipDefaults.filterChipColors()
     val keyboardFocus = LocalInputModeManager.current.inputMode == InputMode.Keyboard
     val shape = RoundedCornerShape(12.dp)
     val scroll = rememberScrollState()
@@ -118,13 +120,20 @@ internal fun <T : Any> WorkspaceFilterRow(
         ) {
             for (option in options) {
                 val checked = option == selected
+                val container =
+                    if (checked)
+                        disabledColors?.disabledSelectedContainerColor ?: colors.secondaryContainer
+                    else colors.background
+                val content =
+                    disabledColors?.disabledLabelColor
+                        ?: if (checked) colors.onSecondaryContainer else colors.onSurface
                 Box(
                     Modifier.widthIn(min = 48.dp)
                         .heightIn(min = 48.dp)
                         .clip(shape)
                         .then(optionModifier(option))
                         .focusProperties { canFocus = enabled }
-                        .background(if (checked) colors.secondaryContainer else colors.background)
+                        .background(container)
                         .then(
                             if (keyboardFocus && focused == option)
                                 Modifier.border(2.dp, colors.onBackground, shape)
@@ -147,7 +156,7 @@ internal fun <T : Any> WorkspaceFilterRow(
                                 lineHeight = 20.sp,
                                 letterSpacing = 0.sp,
                             ),
-                        color = if (checked) colors.onSecondaryContainer else colors.onSurface,
+                        color = content,
                     )
                 }
             }

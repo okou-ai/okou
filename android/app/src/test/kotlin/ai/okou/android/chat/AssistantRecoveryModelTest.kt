@@ -876,9 +876,39 @@ class AssistantRecoveryModelTest {
         }
         val input = RecoveryApiFixture.input()
         val failure = RecoveryApiFixture.failure()
+        val lateLegacy =
+            historyEventWire(
+                "late-legacy",
+                3,
+                type = "output.error",
+                payload = """{"error":"Ordinary output error"}""",
+            )
         assertEquals(
             AssistantFailure.Run(RecoveryApiFixture.FAILURE, "usage_limit"),
             latest(input, failure),
+        )
+        assertEquals(latest(input, failure), latest(input, failure, lateLegacy))
+        assertEquals(
+            latest(input, failure),
+            latest(
+                input,
+                failure,
+                historyEventWire("blank", 3, payload = """{"content":" \n"}"""),
+            ),
+        )
+        assertEquals(
+            AssistantFailure.Output("late-legacy", "Ordinary output error"),
+            latest(
+                input,
+                failure,
+                RecoveryApiFixture.input(3),
+                historyEventWire(
+                    "late-legacy",
+                    4,
+                    type = "output.error",
+                    payload = """{"error":"Ordinary output error"}""",
+                ),
+            ),
         )
         assertEquals(
             AssistantFailure.Output("output", "Ordinary output error"),
@@ -919,7 +949,7 @@ class AssistantRecoveryModelTest {
     }
 
     @Test
-    fun structuredReasonsExcludeSettingsBillingAndUnknownDespitePersonalRoute() {
+    fun structuredReasonsWithoutContinueStayIneligibleOnPersonalRoutes() {
         for (reason in
             listOf(
                 "invalid_credentials",
@@ -927,6 +957,8 @@ class AssistantRecoveryModelTest {
                 "context_window_exceeded",
                 "terms_acceptance_required",
                 "input_too_large",
+                "provider_image_too_large",
+                "safety_policy_refusal",
                 "future_reason",
             )) {
             assertFalse(
@@ -937,6 +969,16 @@ class AssistantRecoveryModelTest {
         assertTrue(
             classifyFailure(AssistantFailure.Run("id", "provider_server_error"), null).canContinue,
         )
+        val legacySafety =
+            classifyFailure(
+                AssistantFailure.Output(
+                    "id",
+                    """Bad request: {"error":{"code":"content_policy_violation"}}""",
+                ),
+                RecoveryFramework.Codex,
+            )
+        assertEquals(FailureKind.Safety, legacySafety.kind)
+        assertFalse(legacySafety.canContinue)
         val model =
             classifyFailure(
                 AssistantFailure.Output("id", "You've hit your usage limit for gpt-5"),

@@ -5,7 +5,7 @@
     <string name="run_failure_guest_root_filesystem_full_title">이 실행의 저장 공간이 부족합니다</string>
     <string name="run_failure_guest_root_filesystem_full_description">이 실행에서 더 이상 파일을 저장할 수 없습니다. 다시 시도해 계속하세요.</string>
     <string name="run_failure_execution_timeout_title">시간 제한에 도달했습니다</string>
-    <string name="run_failure_execution_timeout_description">중단된 지점부터 계속할 수 있습니다.</string>
+    <string name="run_failure_execution_timeout_description">지금까지 생성된 내용은 계속 확인할 수 있습니다.</string>
     <string name="run_failure_provider_insufficient_credits_title">구독 계정에 크레딧이 더 필요합니다</string>
     <string name="run_failure_provider_insufficient_credits_description">구독 계정의 사용량 또는 크레딧 잔액을 확인한 후 다시 시도하세요.</string>
     <string name="run_failure_invalid_api_key_title">구독 로그인을 업데이트해야 합니다</string>
@@ -33,9 +33,9 @@
     <string name="run_failure_provider_server_error_title">모델 제공자에 일시적인 오류가 발생했습니다</string>
     <string name="run_failure_provider_server_error_description">잠시 후 다시 시도하거나 다른 모델로 작업을 계속하세요.</string>
     <string name="run_failure_response_connection_lost_title">응답이 중간에 끊겼습니다</string>
-    <string name="run_failure_response_connection_lost_description">잠시 후 다시 시도하거나 다른 모델로 작업을 계속하세요.</string>
+    <string name="run_failure_response_connection_lost_description">지금까지 생성된 내용은 계속 확인할 수 있습니다.</string>
     <string name="run_failure_safety_policy_refusal_title">모델이 이 요청을 처리할 수 없습니다</string>
-    <string name="run_failure_safety_policy_refusal_description">이 요청은 모델의 안전 기준을 통과하지 못했습니다. 표현을 바꾸거나 다른 모델을 선택해 보세요.</string>
+    <string name="run_failure_safety_policy_refusal_description">요청을 수정한 뒤 다시 보내세요.</string>
     <string name="run_failure_reconnect_required_title">모델 계정을 다시 연결하세요</string>
     <string name="run_failure_reconnect_required_description">\'설정 &gt; 모델\'에서 계정을 다시 연결하거나 업데이트한 다음 다시 시도하세요.</string>
     <string name="run_failure_unsupported_model_title">선택한 모델을 사용할 수 없습니다</string>
@@ -44,9 +44,11 @@
     <string name="run_failure_usage_limit_description">사용량 한도가 재설정되면 계속하거나 지금 다른 모델로 전환할 수 있습니다.</string>
     <string name="run_failure_unknown_title">이 실행을 완료하지 못했습니다</string>
     <string name="run_failure_unknown_description">자세한 내용은 Okou 웹사이트에서 이 채팅을 여세요.</string>
-    <string name="run_failure_guest_memory_oom_killed_title">이 실행을 완료하지 못했습니다</string>
-    <string name="run_failure_guest_memory_oom_killed_description">오류가 발생했습니다.</string>
-    <string name="run_failure_insufficient_credits_title">크레딧이 부족합니다</string>
+    <string name="run_failure_guest_memory_oom_killed_title">메모리 부족으로 실행이 중단되었습니다</string>
+    <string name="run_failure_guest_memory_oom_killed_description">지금까지 생성된 내용은 계속 확인할 수 있습니다.</string>
+    <string name="run_failure_provider_image_too_large_title">이미지가 너무 큽니다</string>
+    <string name="run_failure_provider_image_too_large_description">이미지를 삭제하거나 더 작은 이미지로 바꿔 주세요.</string>
+    <string name="run_failure_insufficient_credits_title">Okou 크레딧이 부족합니다</string>
     <string name="run_failure_insufficient_credits_description">워크스페이스 요금제 또는 크레딧 잔액을 확인하세요.</string>
     <string name="run_failure_account_verification_required_title">Claude 계정 인증이 필요합니다</string>
     <string name="run_failure_account_verification_required_description">현재 Claude 계정에서 응답을 받을 수 없습니다. Anthropic Verification Portal에서 다음 단계를 확인하세요.</string>

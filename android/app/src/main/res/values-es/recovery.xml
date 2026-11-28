@@ -9,13 +9,12 @@
     <string name="recovery_reset_retry">Comprobar el restablecimiento original</string>
     <string name="recovery_checking_reset">Comprobando la solicitud original…</string>
     <string name="recovery_working">Preparando la continuación…</string>
-    <string name="recovery_needs_changes">Cambia el modelo, la configuración de la cuenta o la conversación antes de continuar.</string>
-    <string name="recovery_billing">Créditos del espacio: %1$s. Revisa la facturación.</string>
+    <string name="recovery_billing">Créditos de Okou</string>
     <string name="recovery_no_credit">No había créditos disponibles en el restablecimiento anterior.</string>
     <string name="recovery_submitted">Continuación aceptada. Esperando el historial.</string>
     <string name="recovery_failed">La recuperación no terminó. Verifica la operación original antes de reintentar.</string>
-    <string name="recovery_credits">Créditos de restablecimiento: %1$d</string>
-    <string name="recovery_account">Cuenta del modelo: %1$s</string>
-    <string name="recovery_reset_time">Restablecimiento del uso: %1$s</string>
+    <string name="recovery_credits">Restablecimientos disponibles</string>
+    <string name="recovery_account">Cuenta del modelo</string>
+    <string name="recovery_reset_time">Restablecimiento del uso</string>
     <string name="recovery_reset_title">Restablecer el uso</string>
 </resources>

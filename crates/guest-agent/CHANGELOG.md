@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.115.0](https://github.com/okou-ai/okou/compare/guest-agent-v0.114.0...guest-agent-v0.115.0) (2026-11-28)
+
+
+### Features
+
+* **antigravity:** enable native acp session resume and native audio voice prompts ([#51626](https://github.com/okou-ai/okou/issues/51626)) ([2d8e12a](https://github.com/okou-ai/okou/commit/2d8e12a11218b0de9be7f18d2b8ed97aa5fcb483))
+
 ## [0.114.0](https://github.com/okou-ai/okou/compare/guest-agent-v0.113.16...guest-agent-v0.114.0) (2026-11-27)
 
 

@@ -10,6 +10,7 @@ import {
   runnersHeartbeatContract,
   runnersSteerContract,
 } from "@okouai/api-contracts/contracts/runners";
+import { VOICE_TRANSCRIPTION_MODEL } from "@okouai/api-contracts/contracts/voice-clips";
 import {
   webhookClerkContract,
   webhookCompleteContract,
@@ -366,7 +367,7 @@ describe("Antigravity execution", () => {
   );
 
   it(
-    "pf-169 instructs antigravity runs to download and read voice clips natively across initial and steered inputs",
+    "pf-169 projects unified okou transcribe voice prompts across initial and steered antigravity inputs",
     { timeout: TEST_WITH_TRIPLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
     async () => {
       const privateBucket = env("R2_PRIVATE_ARTIFACTS_BUCKET_NAME");
@@ -412,21 +413,23 @@ describe("Antigravity execution", () => {
 
         expect(execution.cliAgentType).toBe("antigravity");
         const systemPrompt = execution.appendSystemPrompt ?? "";
-        expect(systemPrompt).toContain(
-          "download each clip with `okou web download-file <file-id>` and read each downloaded audio file in recording order with `read_file` to listen directly",
-        );
-        expect(systemPrompt).toContain("Do not call `okou transcribe`.");
         expect(systemPrompt).not.toContain(
-          "use `okou transcribe` on those clips",
+          "download each clip with `okou web download-file <file-id>`",
+        );
+        expect(systemPrompt).not.toContain("Do not call `okou transcribe`.");
+        expect(systemPrompt).not.toContain(
+          "When Okou supplies voice clip file IDs",
         );
 
         expect(execution.prompt).toContain(
-          `Clip 1: okou web download-file ${initialClipId}`,
+          "[Voice message] The user spoke this part of their message to you. Run the command below before sending any visible reply or progress update to get their message in recording order.",
         );
         expect(execution.prompt).toContain(
-          "read each returned local file path with `read_file` to listen directly to the audio. Do not use `okou transcribe`.",
+          `okou transcribe ${VOICE_TRANSCRIPTION_MODEL} --file-id ${initialClipId}`,
         );
-        expect(execution.prompt).not.toContain("okou transcribe --file-id");
+        expect(execution.prompt).not.toContain(
+          `okou web download-file ${initialClipId}`,
+        );
 
         const steeredSend = await fixture.chat.requestSendEvent(
           actor,
@@ -455,12 +458,14 @@ describe("Antigravity execution", () => {
         expect(steeredInput).toBeDefined();
         const steeredPrompt = steeredInput?.prompt ?? "";
         expect(steeredPrompt).toContain(
-          `Clip 1: okou web download-file ${steerClipId}`,
+          "[Voice message] The user spoke this part of their message to you. Run the command below before sending any visible reply or progress update to get their message in recording order.",
         );
         expect(steeredPrompt).toContain(
-          "read each returned local file path with `read_file` to listen directly to the audio. Do not use `okou transcribe`.",
+          `okou transcribe ${VOICE_TRANSCRIPTION_MODEL} --file-id ${steerClipId}`,
         );
-        expect(steeredPrompt).not.toContain("okou transcribe --file-id");
+        expect(steeredPrompt).not.toContain(
+          `okou web download-file ${steerClipId}`,
+        );
         if (steeredInput) {
           await accept(
             runnersSteerApi.steered({

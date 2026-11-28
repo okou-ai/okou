@@ -1,5 +1,6 @@
 package ai.okou.android.connectors
 
+import ai.okou.android.ContentReadFeedbackDelayMillis
 import ai.okou.android.DirectoryReturnFocus
 import ai.okou.android.R
 import ai.okou.android.WorkspaceMenu
@@ -10,6 +11,7 @@ import ai.okou.android.WorkspaceToolDirectoryRow
 import ai.okou.android.WorkspaceToolDirectoryRowSkeleton
 import ai.okou.android.chat.ChatSkeletonBlock
 import ai.okou.android.hasPendingSearchText
+import ai.okou.android.rememberContentReadFeedbackAfter
 import ai.okou.android.rememberContentReadSkeleton
 import ai.okou.android.restoreDirectoryFocus
 import ai.okou.android.retainSearchResultsWhileComposing
@@ -103,6 +105,7 @@ import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.LifecycleStartEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import java.util.Locale
+import kotlin.time.Duration.Companion.milliseconds
 
 @Composable
 internal fun ConnectorsPage(
@@ -381,6 +384,29 @@ private fun ConnectorDirectory(
             }
         }
 
+    val startedAt =
+        when {
+            entries != null || failure != null -> null
+            !route.connected || connected != null -> catalogRead.startedAt
+            filtered == null || serviceEntries != null -> directory.connected.startedAt
+            // Connected with a cold category needs both of these results.
+            else ->
+                listOfNotNull(directory.connected.startedAt, filtered.startedAt)
+                    .takeIf { it.size == 2 }
+                    ?.minByOrNull { it.elapsedNow() }
+        }
+    val showSkeleton =
+        key(route.connected, filter) {
+            val remaining =
+                remember(startedAt) {
+                    startedAt?.let {
+                        (ContentReadFeedbackDelayMillis.milliseconds - it.elapsedNow())
+                            .inWholeMilliseconds
+                            .coerceAtLeast(0)
+                    }
+                }
+            rememberContentReadFeedbackAfter(remaining, readScope = startedAt)
+        }
     val notice =
         when {
             entries == null || failure == ConnectorReadFailure.Unavailable -> null
@@ -437,9 +463,7 @@ private fun ConnectorDirectory(
                         item {
                             when {
                                 entries == null ->
-                                    key(route.connected, filter) {
-                                        ConnectorDirectorySkeleton(recommended)
-                                    }
+                                    if (showSkeleton) ConnectorDirectorySkeleton(recommended)
                                 query.isNotEmpty() ->
                                     ConnectorEmpty(
                                         R.string.connector_no_match,
@@ -750,7 +774,6 @@ internal fun ConnectorNavigationRow(
 
 @Composable
 private fun ConnectorDirectorySkeleton(recommended: Boolean) {
-    if (!rememberContentReadSkeleton()) return
     val label = stringResource(R.string.connector_loading)
     val (titleSlot, supportingSlot) =
         with(LocalDensity.current) {

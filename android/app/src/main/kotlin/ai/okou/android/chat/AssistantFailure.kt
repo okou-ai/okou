@@ -58,6 +58,7 @@ data class FailureClassification(
                     FailureKind.Settings,
                     FailureKind.NewChat,
                     FailureKind.InputTooLarge,
+                    FailureKind.Safety,
                     FailureKind.Terms,
                     FailureKind.Billing,
                 )
@@ -69,27 +70,37 @@ fun latestAssistantFailure(
     transcript: HistoryTranscript = projectHistory(checkpoint),
 ): AssistantFailure? {
     val byId = checkpoint.rows.associateBy { it.id }
-    val last =
-        transcript.messages.lastOrNull { message ->
-            if (message.queued) false
-            else {
-                val row = byId[message.id]
-                row != null &&
-                    when (row.type) {
-                        "input.prompt",
-                        "input.automation",
-                        "input.rejected",
-                        "output.error",
-                        "run.failed",
-                        "run.cancelled",
-                        "control.interrupt" -> true
-                        "output.message",
-                        "run.completed" -> row.content?.isNotEmpty() == true
-                        else -> false
-                    }
-            }
-        } ?: return null
-    val row = byId.getValue(last.id)
+    val messages = transcript.messages
+    val lastIndex = messages.indexOfLast { message ->
+        if (message.queued) false
+        else {
+            val row = byId[message.id]
+            row != null &&
+                when (row.type) {
+                    "input.prompt",
+                    "input.automation",
+                    "input.rejected",
+                    "output.error",
+                    "run.failed",
+                    "run.cancelled",
+                    "control.interrupt" -> true
+                    "output.message",
+                    "run.completed" -> row.content?.isNotBlank() == true
+                    else -> false
+                }
+        }
+    }
+    val last = messages.getOrNull(lastIndex) ?: return null
+    // A late compatibility error cannot take recovery actions away from its structured failure.
+    val structured =
+        if (last.status == "output.error" && last.runId != null) {
+            (lastIndex - 1 downTo 0)
+                .asSequence()
+                .map { messages[it] }
+                .takeWhile { it.continuesDisplayTurn(last.runId) }
+                .firstOrNull { it.status == "run.failed" }
+        } else null
+    val row = byId.getValue(structured?.id ?: last.id)
     return when (row.type) {
         "run.failed" -> AssistantFailure.Run(row.id, row.failureReason)
         "output.error" ->
@@ -107,9 +118,9 @@ fun classifyFailure(
         is AssistantFailure.Output -> classifyOutputFailure(failure.error, personal)
     }
 
-private fun classifyRunFailure(
+internal fun classifyRunFailure(
     reason: String?,
-    personal: RecoveryFramework?,
+    personal: RecoveryFramework? = null,
 ): FailureClassification =
     when (KnownRunFailureReason.fromWireValue(reason) ?: KnownRunFailureReason.UNKNOWN) {
         KnownRunFailureReason.SESSION_HISTORY_LIMIT,
@@ -154,17 +165,26 @@ private fun classifyOutputFailure(
 ): FailureClassification {
     // Match ECMAScript whitespace used by Web, including Unicode separators and BOM.
     val text = error.replace(Regex("[\\s\\p{Z}\\uFEFF]+"), " ").trim(' ')
+    val normalized = text.lowercase()
+    val providerReason = legacyProviderFailureReason(error)
     fun matches(pattern: String) = Regex(pattern, RegexOption.IGNORE_CASE).containsMatchIn(text)
     return when {
-        text.lowercase() in setOf("insufficient_credits", "pro_required") ->
+        normalized == "insufficient_credits" || normalized == "pro_required" ->
             FailureClassification(FailureKind.Billing)
         text == "This run reached its execution time limit." ||
             Regex("^Agent execution timed out after [1-9]\\d* seconds$").matches(text) ->
             FailureClassification(FailureKind.Timeout)
         text.uppercase() == "AUTONOMY_BUDGET_EXHAUSTED" ->
             FailureClassification(FailureKind.Autonomy)
-        unsupportedCodexModel(error) ->
+        providerReason == KnownRunFailureReason.UNSUPPORTED_MODEL ->
             FailureClassification(FailureKind.Unavailable, RecoveryFramework.Codex)
+        providerReason == KnownRunFailureReason.SAFETY_POLICY_REFUSAL ||
+            normalized == "safety_policy_refusal" ||
+            normalized == "content_policy_violation" ||
+            normalized == "provider finish_reason: content_filter" ->
+            FailureClassification(FailureKind.Safety)
+        normalized == "downloaded image content cannot exceed 30mb" ->
+            FailureClassification(FailureKind.InputTooLarge)
         matches("selected model is at capacity\\.? please try a different model") ->
             FailureClassification(FailureKind.Capacity, RecoveryFramework.Codex)
         matches(
@@ -201,7 +221,22 @@ private fun classifyOutputFailure(
     }
 }
 
-private fun unsupportedCodexModel(text: String): Boolean {
+internal fun legacyFailureReason(error: String): KnownRunFailureReason? =
+    when (classifyOutputFailure(error, null).kind) {
+        FailureKind.Timeout -> KnownRunFailureReason.EXECUTION_TIMEOUT
+        FailureKind.Usage -> KnownRunFailureReason.USAGE_LIMIT
+        FailureKind.Capacity -> KnownRunFailureReason.PROVIDER_OVERLOADED
+        FailureKind.Unavailable -> KnownRunFailureReason.UNSUPPORTED_MODEL
+        FailureKind.InputTooLarge -> KnownRunFailureReason.PROVIDER_IMAGE_TOO_LARGE
+        FailureKind.Safety -> KnownRunFailureReason.SAFETY_POLICY_REFUSAL
+        FailureKind.Billing ->
+            KnownRunFailureReason.INSUFFICIENT_CREDITS.takeIf {
+                error.trim().equals("insufficient_credits", ignoreCase = true)
+            }
+        else -> null
+    }
+
+private fun legacyProviderFailureReason(text: String): KnownRunFailureReason? {
     var start = -1
     var depth = 0
     var quoted = false
@@ -233,18 +268,23 @@ private fun unsupportedCodexModel(text: String): Boolean {
                             }
                         val error = objectValue?.get("error") as? JsonObject
                         if (
+                            (error?.text("code") ?: error?.text("type")) ==
+                                "content_policy_violation"
+                        )
+                            return KnownRunFailureReason.SAFETY_POLICY_REFUSAL
+                        if (
                             error?.text("type") == "invalid_request_error" &&
                                 Regex(
                                         "^The '[^']+' model is not supported when using Codex with a ChatGPT account\\.$",
                                     )
                                     .matches(error.text("message").orEmpty())
                         )
-                            return true
+                            return KnownRunFailureReason.UNSUPPORTED_MODEL
                     }
                 }
             }
     }
-    return false
+    return null
 }
 
 @OptIn(ExperimentalSerializationApi::class)

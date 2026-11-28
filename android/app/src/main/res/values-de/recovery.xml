@@ -9,13 +9,12 @@
     <string name="recovery_reset_retry">Ursprüngliche Zurücksetzung prüfen</string>
     <string name="recovery_checking_reset">Ursprüngliche Anfrage wird geprüft…</string>
     <string name="recovery_working">Fortsetzung wird vorbereitet…</string>
-    <string name="recovery_needs_changes">Vor dem Fortsetzen Modell, Kontoeinstellungen oder Unterhaltung ändern.</string>
-    <string name="recovery_billing">Workspace-Guthaben: %1$s. Abrechnung prüfen.</string>
+    <string name="recovery_billing">Okou-Guthaben</string>
     <string name="recovery_no_credit">Beim letzten Zurücksetzen war kein Guthaben verfügbar.</string>
     <string name="recovery_submitted">Fortsetzung angenommen. Warte auf den Verlauf.</string>
     <string name="recovery_failed">Wiederherstellung unvollständig. Ursprünglichen Vorgang vor Wiederholung prüfen.</string>
-    <string name="recovery_credits">Guthaben zum Zurücksetzen: %1$d</string>
-    <string name="recovery_account">Modellkonto: %1$s</string>
-    <string name="recovery_reset_time">Nutzung wird zurückgesetzt: %1$s</string>
+    <string name="recovery_credits">Verfügbare Zurücksetzungen</string>
+    <string name="recovery_account">Modellkonto</string>
+    <string name="recovery_reset_time">Nutzung wird zurückgesetzt</string>
     <string name="recovery_reset_title">Nutzung zurücksetzen</string>
 </resources>

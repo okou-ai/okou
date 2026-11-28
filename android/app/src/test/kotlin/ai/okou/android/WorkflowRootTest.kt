@@ -58,6 +58,7 @@ import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import androidx.test.platform.app.InstrumentationRegistry
@@ -796,7 +797,7 @@ internal class WorkflowRootTest : WorkflowRootTestFixture() {
         instruction.performTextReplacement("Check the launch owner.")
         instruction.performTextInputSelection(TextRange(4, 8))
 
-        val error = "Could not save your changes."
+        val error = "Could not save. Your changes are still here."
         val save = compose.onNodeWithTag("workflow_save").assertIsEnabled()
         val saveBounds = save.getUnclippedBoundsInRoot()
         val fields = compose.onNodeWithTag("workflow_editor_fields")
@@ -816,7 +817,9 @@ internal class WorkflowRootTest : WorkflowRootTestFixture() {
             save.performClick()
             save
                 .assertIsNotEnabled()
+                .assertIsFocused()
                 .assertContentDescriptionEquals("Save")
+                .assert(SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Button))
                 .assert(
                     SemanticsMatcher.expectValue(
                         SemanticsProperties.StateDescription,
@@ -833,6 +836,7 @@ internal class WorkflowRootTest : WorkflowRootTestFixture() {
             assertEquals(cancelBounds, cancel.assertIsNotEnabled().getUnclippedBoundsInRoot())
             compose.onNodeWithContentDescription("Back").assertIsNotEnabled()
             assertEquals(fieldsBounds, fields.getUnclippedBoundsInRoot())
+            save.performKeyInput { pressKey(Key.Enter) }
         } finally {
             releaseSave.countDown()
         }
@@ -1045,7 +1049,7 @@ internal class WorkflowRuleRootTest : WorkflowRootTestFixture() {
                     ),
                 )
 
-            compose.onNodeWithText("Cancel").performClick()
+            compose.onNodeWithText("Cancel").performScrollTo().assertIsDisplayed().performClick()
             compose.onNodeWithText("Discard").performScrollTo().assertIsDisplayed().performClick()
             waitForTag("workflow_detail_title")
             compose
@@ -1310,6 +1314,8 @@ internal class WorkflowRuleRootTest : WorkflowRootTestFixture() {
 
         val save = compose.onNodeWithTag("workflow_save").assertIsEnabled()
         val saveBounds = save.getUnclippedBoundsInRoot()
+        val mode = compose.onNodeWithText("Schedule").assertIsSelected().assertIsEnabled()
+        val modeBounds = mode.getUnclippedBoundsInRoot()
         assertTrue(saveBounds.bottom - saveBounds.top >= 48.dp)
         assertEquals(useBounds.right, saveBounds.right)
         val time = compose.onNodeWithContentDescription("Time")
@@ -1336,8 +1342,12 @@ internal class WorkflowRuleRootTest : WorkflowRootTestFixture() {
                     it.method == "POST" && it.requestUrl?.encodedPath == createPath
                 }
             }
-            save.assertIsNotEnabled()
-            time.assertTextContains("09:30")
+            save.assertIsNotEnabled().assertIsFocused()
+            assertEquals(
+                modeBounds,
+                mode.assertIsSelected().assertIsNotEnabled().getUnclippedBoundsInRoot(),
+            )
+            time.assertIsNotEnabled().assertTextContains("09:30")
         } finally {
             releaseCreate.countDown()
         }
@@ -1525,6 +1535,62 @@ internal class WorkflowRuleRootTest : WorkflowRootTestFixture() {
         waitFor("View connections")
         calendar.assertTextContains("test-calendar")
         compose.onNodeWithTag("workflow_save").assertIsNotEnabled()
+    }
+
+    @Test
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    fun shortAutomationEditorKeepsTheDraftActionsAndRefreshFeedbackReachable() {
+        val originalQualifiers = RuntimeEnvironment.getQualifiers()
+        val originalScale = RuntimeEnvironment.getFontScale()
+        try {
+            openWorkflowDetail(WORKFLOW_SHARED)
+            compose.onNodeWithTag("workflow_tab_automations").performClick()
+            compose.onNodeWithText("Add automation").performClick()
+            selectGmailTrigger()
+            val subject = compose.onNodeWithContentDescription("Subject contains")
+            subject.performScrollTo().performTextReplacement("Release summary")
+            waitFor("View connections")
+
+            RuntimeEnvironment.setQualifiers("en-rUS-w360dp-h230dp")
+            RuntimeEnvironment.setFontScale(2f)
+            compose.activityRule.scenario.recreate()
+            waitForTag("workflow_editor_fields")
+            val fields = compose.onNodeWithTag("workflow_editor_fields").getUnclippedBoundsInRoot()
+            assertTrue(
+                "Editor viewport: ${fields.bottom - fields.top}",
+                fields.bottom - fields.top >= 48.dp,
+            )
+            subject.performScrollTo().assertIsDisplayed().assertTextContains("Release summary")
+            compose
+                .onNodeWithText("View connections")
+                .performScrollTo()
+                .assertIsDisplayed()
+                .assertIsEnabled()
+            val save = compose.onNodeWithTag("workflow_save")
+            val saveBounds =
+                save
+                    .performScrollTo()
+                    .assertIsDisplayed()
+                    .assertIsNotEnabled()
+                    .getUnclippedBoundsInRoot()
+
+            val fixture = app.fixture
+            val respond = fixture.chats.commandResponse
+            fixture.chats.commandResponse = { request ->
+                if (request.requestUrl?.encodedPath == "/api/connectors/connected")
+                    MockResponse().setResponseCode(400)
+                else respond(request)
+            }
+            compose.activityRule.scenario.moveToState(Lifecycle.State.STARTED)
+            compose.activityRule.scenario.moveToState(Lifecycle.State.RESUMED)
+            val feedback = "Could not refresh. Showing last loaded data."
+            waitFor(feedback)
+            compose.onNodeWithText(feedback).assertIsDisplayed()
+            assertEquals(saveBounds, save.getUnclippedBoundsInRoot())
+        } finally {
+            RuntimeEnvironment.setQualifiers(originalQualifiers)
+            RuntimeEnvironment.setFontScale(originalScale)
+        }
     }
 }
 

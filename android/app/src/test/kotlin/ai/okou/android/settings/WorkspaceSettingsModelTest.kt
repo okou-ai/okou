@@ -90,7 +90,7 @@ class WorkspaceSettingsModelTest {
     }
 
     @Test
-    fun preservesAccountOrderAndReconcilesAnUnconfirmedSwitchWithoutResending() = runTest {
+    fun preservesAccountOrderAndAppliesLateSwitchSuccessWithoutResending() = runTest {
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
         val store = ViewModelStore()
         val reopenedStore = ViewModelStore()
@@ -161,24 +161,21 @@ class WorkspaceSettingsModelTest {
                     pending.switching[ModelAccountProvider.ChatGPT]?.accountId,
                 )
                 assertTrue(pending.accounts.value!!.first().isActive == true)
-                val unconfirmed =
-                    model.uiState.first {
-                        it.switching[ModelAccountProvider.ChatGPT]?.phase ==
-                            AccountSwitchPhase.Unconfirmed
-                    }
-                assertTrue(unconfirmed.accounts.value!!.first().isActive == true)
-                assertNull(unconfirmed.accounts.refreshFailure)
+                val failed = model.uiState.first { it.actionFailures.isNotEmpty() }
+                assertTrue(failed.switching.isEmpty())
+                assertTrue(failed.accounts.value!!.first().isActive == true)
+                assertNull(failed.accounts.refreshFailure)
                 assertEquals(
                     SettingsNotice.ModelAccountSwitchFailed,
-                    model.uiState.value.actionFailures.single().value,
+                    failed.actionFailures.single().value,
                 )
-                model.activate(SettingsApiFixture.alternateAccount)
                 model.visible(null)
                 accountReadsAvailable = true
                 model.visible(SettingsDestination.ModelAccounts)
-                val confirmed = model.uiState.first { it.switching.isEmpty() }
+                val confirmed = model.uiState.first { !it.accounts.unavailable }
                 assertEquals(accounts.map { it.id }, confirmed.accounts.value!!.map { it.id })
                 assertTrue(confirmed.accounts.value[1].isActive == true)
+                assertTrue(confirmed.actionFailures.isEmpty())
                 assertEquals(listOf(SettingsApiFixture.alternateAccount), fixture.activations)
 
                 store.clear()
@@ -215,13 +212,14 @@ class WorkspaceSettingsModelTest {
                 val failed = model.uiState.first { it.actionFailures.isNotEmpty() }
                 val notice = failed.actionFailures.single()
                 assertEquals(SettingsNotice.ModelAccountSwitchFailed, notice.value)
+                assertTrue(failed.switching.isEmpty())
                 assertEquals(confirmed, failed.accounts.value)
                 assertNull(failed.accounts.refreshFailure)
 
                 model.visible(SettingsDestination.Overview)
                 accountReadsAvailable = true
                 model.visible(SettingsDestination.ModelAccounts)
-                val reconciled = model.uiState.first { it.switching.isEmpty() }
+                val reconciled = model.uiState.first { !it.accounts.unavailable }
                 assertEquals(confirmed, reconciled.accounts.value)
                 assertEquals(listOf(notice), model.uiState.value.actionFailures)
                 assertEquals(listOf(SettingsApiFixture.alternateAccount), fixture.activations)

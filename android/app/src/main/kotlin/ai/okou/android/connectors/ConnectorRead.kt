@@ -22,6 +22,8 @@ internal data class ConnectorRead<T>(
     val failure: ConnectorReadFailure? = null,
     val confirmedAt: TimeMark? = null,
     val failureRound: Long? = null,
+    // The first attempt of an active directory read, including its retry windows.
+    val startedAt: TimeMark? = null,
 ) {
     val isConfirmed: Boolean
         get() = data != null || failure == ConnectorReadFailure.Unavailable
@@ -31,11 +33,13 @@ internal data class ConnectorRead<T>(
         else copy(failure = null, failureRound = null)
 
     fun forEntry(): ConnectorRead<T> =
-        if (confirmedAt.isFreshMemorySnapshot()) confirmed() else ConnectorRead()
+        if (confirmedAt.isFreshMemorySnapshot()) confirmed()
+        else ConnectorRead(startedAt = startedAt)
 
     fun retaining(previous: ConnectorRead<T>?): ConnectorRead<T> =
         if (data != null || previous == null || failure == ConnectorReadFailure.Unavailable) this
-        else if (previous.failure == ConnectorReadFailure.Unavailable) previous
+        else if (previous.failure == ConnectorReadFailure.Unavailable)
+            previous.copy(startedAt = startedAt)
         else
             copy(
                 data = previous.data,

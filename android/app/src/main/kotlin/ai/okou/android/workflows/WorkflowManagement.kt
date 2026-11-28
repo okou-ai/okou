@@ -72,6 +72,7 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -83,6 +84,7 @@ import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.disabled
 import androidx.compose.ui.semantics.error
+import androidx.compose.ui.semantics.focused
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.role
@@ -368,7 +370,8 @@ internal fun WorkflowEditor(
     onConnectionFocusRestored: () -> Unit,
 ) {
     val editor = editing.draft
-    val horizontalPadding = if (wide) 32.dp else 20.dp
+    val horizontalPadding = workflowPaneHorizontalInset(wide)
+    val colors = MaterialTheme.colorScheme
     val activeRule = editor as? WorkflowEdit.Rule
     val available = !state.writing && detail.canEdit(editor)
     val connectionRequired = activeRule?.blockingConnection(detail, state.connections)
@@ -384,13 +387,11 @@ internal fun WorkflowEditor(
             connectionRequired == null &&
             state.issue?.failure != WorkflowWriteFailure.UncertainCreate
     val saveFocus = remember { FocusRequester() }
+    val saveFocused = remember { mutableStateOf(false) }
     val recoveryFocus = remember { FocusRequester() }
     val cancelFocus = remember { FocusRequester() }
     var connectionFocused by remember { mutableStateOf(false) }
-    var saveFocused by remember { mutableStateOf(false) }
-    var restoreSaveFocusAfterWrite by remember { mutableStateOf(false) }
-    val restoreSaveFocus =
-        !showConnectionAction && saveEnabled && (connectionFocused || restoreSaveFocusAfterWrite)
+    val restoreSaveFocus = !showConnectionAction && saveEnabled && connectionFocused
     val inputGuard =
         remember(model, editing) {
             InputTransformation { if (!model.canEdit(editing)) revertAllChanges() }
@@ -416,18 +417,17 @@ internal fun WorkflowEditor(
                 }
             if (target.requestFocus()) onConnectionFocusRestored()
         } else if (restoreSaveFocus) {
-            restoreSaveFocusAfterWrite = false
             saveFocus.requestFocus()
         }
     }
-    Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
-        Box(Modifier.widthIn(max = 730.dp).fillMaxWidth().weight(1f)) {
+    WorkflowEditorLayout(
+        fields = {
             Column(
                 Modifier.fillMaxSize()
                     .testTag("workflow_editor_fields")
                     .verticalScroll(rememberScrollState())
-                    .padding(horizontal = horizontalPadding, vertical = 16.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp),
+                    .padding(horizontal = horizontalPadding, vertical = OkouFormLayout.GroupGap),
+                verticalArrangement = Arrangement.spacedBy(OkouFormLayout.GroupGap),
             ) {
                 val heading =
                     when (editor) {
@@ -480,32 +480,35 @@ internal fun WorkflowEditor(
                             fieldFocus,
                             singleLine = false,
                             validation =
-                                workflowValidation(value.instruction, WORKFLOW_INSTRUCTION_LIMIT),
+                                workflowValidation(
+                                    value.instruction,
+                                    WORKFLOW_INSTRUCTION_LIMIT,
+                                ),
                         )
                     }
                     is WorkflowEditSession.Rule ->
                         WorkflowRuleFields(editing, available, model, inputGuard, fieldFocus)
                 }
             }
-            Box(Modifier.align(Alignment.BottomCenter)) { feedback() }
-        }
-        WorkflowDivider()
+        },
+        feedback = feedback,
+    ) {
         Column(
-            Modifier.widthIn(max = 730.dp)
-                .fillMaxWidth()
-                .padding(horizontal = horizontalPadding, vertical = 8.dp),
+            Modifier.fillMaxWidth().padding(horizontal = horizontalPadding, vertical = 8.dp),
             horizontalAlignment = Alignment.End,
             verticalArrangement = Arrangement.spacedBy(OkouFormLayout.ActionGap),
         ) {
             if (connectionFeedback != null) WorkflowNotice(connectionFeedback)
             if (connectionRequired != null && state.connections != null) {
-                WorkflowStatus(
-                    stringResource(
-                        R.string.workflow_connect_to_save,
-                        stringResource(connectionRequired.label),
-                    ),
-                    MaterialTheme.colorScheme.error,
-                )
+                Box(Modifier.semantics { liveRegion = LiveRegionMode.Polite }) {
+                    WorkflowStatus(
+                        stringResource(
+                            R.string.workflow_connect_to_save,
+                            stringResource(connectionRequired.label),
+                        ),
+                        colors.error,
+                    )
+                }
             }
             WorkflowEditorWriteFeedback(editor, issue?.failure)
             FlowRow(
@@ -516,21 +519,24 @@ internal fun WorkflowEditor(
                 OkouActionButton(
                     stringResource(R.string.workflow_cancel),
                     onCancel,
-                    Modifier.focusRequester(cancelFocus),
+                    Modifier.focusRequester(cancelFocus)
+                        .updateFocusOutline(
+                            ButtonDefaults.textShape,
+                            colors.onBackground,
+                            keyboardOnly = true,
+                        ),
                     enabled = !state.writing,
                     treatment = OkouActionTreatment.Text,
                     useMaterialButtonDefaults = true,
                 )
                 if (showConnectionAction) {
-                    OkouActionButton(
+                    WorkflowAction(
                         stringResource(R.string.workflow_view_connection),
                         { onViewConnection?.invoke(connector) },
                         Modifier.focusRequester(recoveryFocus).onFocusChanged {
                             connectionFocused = it.isFocused
                         },
                         enabled = !state.writing && onViewConnection != null,
-                        treatment = OkouActionTreatment.Outline,
-                        useMaterialButtonDefaults = true,
                     )
                 }
                 val saveLabel = stringResource(R.string.workflow_save)
@@ -538,35 +544,101 @@ internal fun WorkflowEditor(
                 val pendingSemantics =
                     if (state.writing)
                         Modifier.clearAndSetSemantics {
+                            // Keep the name and state on the same Android accessibility node.
                             contentDescription = saveLabel
                             stateDescription = savingLabel
                             role = Role.Button
+                            focused = saveFocused.value
                             liveRegion = LiveRegionMode.Polite
                             disabled()
                         }
                     else Modifier
-                OkouActionButton(
-                    if (state.writing) savingLabel else saveLabel,
-                    onClick = {
-                        if (model.canEdit(editing)) {
-                            restoreSaveFocusAfterWrite = saveFocused
-                            model.save(editing.draft)
-                        }
-                    },
-                    enabled = saveEnabled,
-                    layoutLabels = listOf(saveLabel, savingLabel),
-                    useMaterialButtonDefaults = true,
-                    modifier =
-                        Modifier.focusRequester(saveFocus)
-                            .onFocusChanged { saveFocused = it.isFocused }
-                            .updateFocusOutline(
-                                ButtonDefaults.shape,
-                                MaterialTheme.colorScheme.onPrimary,
-                                outlineInset = WorkflowFilledActionFocusInset,
-                            )
-                            .testTag("workflow_save")
-                            .then(pendingSemantics),
+                WorkflowActionRipple(state.writing) {
+                    OkouActionButton(
+                        if (state.writing) savingLabel else saveLabel,
+                        onClick = { if (model.canEdit(editing)) model.save(editing.draft) },
+                        enabled = saveEnabled,
+                        layoutLabels = listOf(saveLabel, savingLabel),
+                        retainDisabledFocus = state.writing,
+                        useMaterialButtonDefaults = true,
+                        modifier =
+                            Modifier.focusRequester(saveFocus)
+                                .onFocusChanged { saveFocused.value = it.isFocused }
+                                .updateFocusOutline(
+                                    ButtonDefaults.shape,
+                                    if (state.writing) colors.onBackground else colors.onPrimary,
+                                    keyboardOnly = true,
+                                    outlineInset = WorkflowFilledActionFocusInset,
+                                )
+                                .testTag("workflow_save")
+                                .then(pendingSemantics),
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun WorkflowEditorLayout(
+    fields: @Composable () -> Unit,
+    feedback: @Composable () -> Unit,
+    actions: @Composable () -> Unit,
+) {
+    val typography = MaterialTheme.typography
+    val fieldPadding = OutlinedTextFieldDefaults.contentPaddingWithoutLabel()
+    val minimumFieldHeight =
+        with(LocalDensity.current) {
+            val outlineHeight =
+                maxOf(
+                    OutlinedTextFieldDefaults.MinHeight,
+                    typography.bodyLarge.lineHeight.toDp() +
+                        fieldPadding.calculateTopPadding() +
+                        fieldPadding.calculateBottomPadding(),
                 )
+            (outlineHeight + typography.bodySmall.lineHeight.toDp() + NativeAboveLabelPadding)
+                .roundToPx()
+        }
+    val scroll = rememberScrollState()
+    BoxWithConstraints(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
+        val viewportHeight = constraints.maxHeight
+        Layout(
+            content = {
+                fields()
+                Column {
+                    WorkflowDivider()
+                    actions()
+                }
+                Box { feedback() }
+            },
+            modifier =
+                Modifier.widthIn(max = WorkflowPaneMaxContentWidth)
+                    .fillMaxWidth()
+                    .verticalScroll(scroll),
+        ) { children, constraints ->
+            val loose = constraints.copy(minHeight = 0)
+            val footer = children[1].measure(loose)
+            // Keep a labeled field usable before letting the action group scroll into view.
+            val fieldsHeight =
+                maxOf(
+                    viewportHeight - footer.height,
+                    minimumFieldHeight.coerceAtMost(viewportHeight),
+                )
+            val body =
+                children[0].measure(loose.copy(minHeight = fieldsHeight, maxHeight = fieldsHeight))
+            val notice = children[2].measure(loose.copy(maxHeight = viewportHeight))
+            layout(constraints.maxWidth, body.height + footer.height) {
+                body.placeRelative(0, 0)
+                footer.placeRelative(0, body.height)
+                if (notice.height > 0) {
+                    // The overlay stays in view as the footer scrolls past the form.
+                    val viewportTop = scroll.value
+                    val visibleFormBottom = minOf(body.height, viewportTop + viewportHeight)
+                    notice.placeRelative(
+                        (constraints.maxWidth - notice.width) / 2,
+                        (visibleFormBottom - notice.height).coerceAtLeast(viewportTop),
+                    )
+                }
             }
         }
     }
@@ -594,7 +666,7 @@ private fun WorkflowEditorWriteFeedback(editor: WorkflowEdit, failure: WorkflowW
             null -> null
         }
     val colors = MaterialTheme.colorScheme
-    val style = workflowBodyStyle().copy(fontSize = 14.sp, lineHeight = 20.sp)
+    val style = MaterialTheme.typography.bodyMedium
     val hidden = Modifier.clearAndSetSemantics {}.alpha(0f)
     Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.BottomEnd) {
         Text(stringResource(R.string.workflow_write_failed), hidden, style = style)
@@ -604,12 +676,8 @@ private fun WorkflowEditorWriteFeedback(editor: WorkflowEdit, failure: WorkflowW
                 stringResource(message),
                 Modifier.semantics { liveRegion = LiveRegionMode.Polite },
                 color =
-                    if (
-                        failure == WorkflowWriteFailure.Conflict ||
-                            failure == WorkflowWriteFailure.Failed
-                    )
-                        colors.error
-                    else colors.onSurfaceVariant,
+                    if (failure == WorkflowWriteFailure.UncertainCreate) colors.onSurfaceVariant
+                    else colors.error,
                 style = style,
             )
         }

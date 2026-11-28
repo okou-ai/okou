@@ -1,5 +1,6 @@
 package ai.okou.android.chat
 
+import ai.okou.android.api.generated.KnownRunFailureReason
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
@@ -59,10 +60,23 @@ data class HistoryMessage(
 
 data class QueuedWorkflow(val name: String?, val triggerBrief: String?)
 
+internal fun HistoryMessage.isDeliveredInput() =
+    role == HistoryRole.User && runId != null && !rejected
+
+internal fun HistoryMessage.continuesDisplayTurn(previousRunId: String?) =
+    runId != null && runId == previousRunId && !isDeliveredInput()
+
+internal fun HistoryMessage.hasReplyBody() =
+    role == HistoryRole.Assistant &&
+        blocks.any { it.kind != HistoryBlockKind.Text || it.text.isNotBlank() }
+
 internal fun HistoryMessage.visibleInConversation() =
     when (status) {
         null,
-        "run.completed" -> blocks.isNotEmpty() || queued || rejected
+        "run.completed" ->
+            queued ||
+                rejected ||
+                if (role == HistoryRole.Assistant) hasReplyBody() else blocks.isNotEmpty()
         else -> true
     }
 
@@ -162,6 +176,8 @@ fun projectHistory(checkpoint: HistoryCheckpoint): HistoryTranscript {
             visible.filter { it.id in queued }
     val messages = ordered.mapNotNull { row ->
         val blocks = mutableListOf<HistoryBlock>()
+        val legacyReason =
+            if (row.type == "output.error") row.outputError?.let(::legacyFailureReason) else null
         val role =
             when (row.type) {
                 "input.prompt",
@@ -188,10 +204,17 @@ fun projectHistory(checkpoint: HistoryCheckpoint): HistoryTranscript {
                 }
                 "run.failed" -> HistoryRole.System
                 "output.error" -> {
-                    row.content?.let { blocks.add(HistoryBlock(HistoryBlockKind.Text, it)) }
-                    row.outputError?.let {
-                        blocks.add(HistoryBlock(HistoryBlockKind.Error, it))
+                    if (legacyReason != KnownRunFailureReason.SAFETY_POLICY_REFUSAL) {
+                        row.content
+                            ?.takeIf { it.isNotBlank() }
+                            ?.let {
+                                blocks.add(HistoryBlock(HistoryBlockKind.Text, it))
+                            }
                     }
+                    if (legacyReason == null)
+                        row.outputError?.let {
+                            blocks.add(HistoryBlock(HistoryBlockKind.Error, it))
+                        }
                     HistoryRole.System
                 }
                 "run.cancelled",
@@ -218,7 +241,7 @@ fun projectHistory(checkpoint: HistoryCheckpoint): HistoryTranscript {
             row.type == "input.rejected",
             if (row.type == "control.interrupt") "run.cancelled"
             else row.type.takeIf { row.terminal || it == "output.error" },
-            if (row.type == "run.failed") row.failureReason else null,
+            if (row.type == "run.failed") row.failureReason else legacyReason?.wireValue,
             queueSequence = row.seqId.takeIf { row.id in pending },
             queuedWorkflow =
                 if (row.id in queued) {

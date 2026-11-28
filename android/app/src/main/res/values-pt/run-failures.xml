@@ -5,7 +5,7 @@
     <string name="run_failure_guest_root_filesystem_full_title">Esta execução ficou sem espaço</string>
     <string name="run_failure_guest_root_filesystem_full_description">Esta execução não conseguiu salvar mais arquivos. Tente novamente para continuar.</string>
     <string name="run_failure_execution_timeout_title">Limite de tempo atingido</string>
-    <string name="run_failure_execution_timeout_description">Você pode continuar de onde esta execução parou.</string>
+    <string name="run_failure_execution_timeout_description">O conteúdo gerado até agora continua disponível.</string>
     <string name="run_failure_provider_insufficient_credits_title">Sua conta de assinatura precisa de mais crédito</string>
     <string name="run_failure_provider_insufficient_credits_description">Verifique o uso ou o saldo de créditos da sua conta de assinatura e tente novamente.</string>
     <string name="run_failure_invalid_api_key_title">O login da sua assinatura precisa ser atualizado</string>
@@ -33,9 +33,9 @@
     <string name="run_failure_provider_server_error_title">O provedor de modelos teve um erro temporário</string>
     <string name="run_failure_provider_server_error_description">Tente novamente em instantes ou escolha outro modelo para continuar.</string>
     <string name="run_failure_response_connection_lost_title">A resposta foi interrompida</string>
-    <string name="run_failure_response_connection_lost_description">Tente novamente em instantes ou escolha outro modelo para continuar.</string>
+    <string name="run_failure_response_connection_lost_description">O conteúdo gerado até agora continua disponível.</string>
     <string name="run_failure_safety_policy_refusal_title">O modelo não pôde ajudar com esta solicitação</string>
-    <string name="run_failure_safety_policy_refusal_description">Esta solicitação não passou pelas verificações de segurança do modelo. Tente reformulá-la ou escolher outro modelo.</string>
+    <string name="run_failure_safety_policy_refusal_description">Revise a solicitação antes de enviá-la novamente.</string>
     <string name="run_failure_reconnect_required_title">Reconecte sua conta de modelo</string>
     <string name="run_failure_reconnect_required_description">Abra Configurações &gt; Modelos para reconectar ou atualizar sua conta e tente novamente.</string>
     <string name="run_failure_unsupported_model_title">O modelo selecionado não está disponível</string>
@@ -44,9 +44,11 @@
     <string name="run_failure_usage_limit_description">Você pode continuar quando o limite de uso for redefinido ou trocar de modelo agora.</string>
     <string name="run_failure_unknown_title">Não foi possível concluir esta execução</string>
     <string name="run_failure_unknown_description">Abra o chat no site do Okou para ver os detalhes.</string>
-    <string name="run_failure_guest_memory_oom_killed_title">Não foi possível concluir esta execução</string>
-    <string name="run_failure_guest_memory_oom_killed_description">Ocorreu um erro.</string>
-    <string name="run_failure_insufficient_credits_title">Sem créditos</string>
+    <string name="run_failure_guest_memory_oom_killed_title">A execução ficou sem memória</string>
+    <string name="run_failure_guest_memory_oom_killed_description">O conteúdo gerado até agora continua disponível.</string>
+    <string name="run_failure_provider_image_too_large_title">A imagem é demasiado grande</string>
+    <string name="run_failure_provider_image_too_large_description">Remova a imagem ou substitua-a por uma menor.</string>
+    <string name="run_failure_insufficient_credits_title">Sem créditos Okou</string>
     <string name="run_failure_insufficient_credits_description">Verifique o plano ou o saldo de créditos do seu espaço de trabalho.</string>
     <string name="run_failure_account_verification_required_title">É necessário verificar a conta do Claude</string>
     <string name="run_failure_account_verification_required_description">Sua conta do Claude não pode receber respostas no momento. Consulte o portal de verificação da Anthropic para saber o próximo passo.</string>

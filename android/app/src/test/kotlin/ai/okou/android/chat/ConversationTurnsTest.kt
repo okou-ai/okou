@@ -12,6 +12,82 @@ import org.junit.Test
 
 class ConversationTurnsTest {
     @Test
+    fun feedbackWithoutReplyOwnsOneHeaderInItsDisplayTurn() {
+        val input = row(1, "input.prompt")
+        val reply = row(2)
+        val blank = row(2, payload = """{"content":" \n"}""")
+        val steer = row(3, "input.prompt")
+        val legacy = row(4, "output.error", payload = """{"error":"Could not continue"}""")
+        val failed = row(5, "run.failed")
+        val stopped = row(6, "run.cancelled")
+        fun headers(vararg rows: HistoryEvent) =
+            content(*rows).messages.filter { it.showFeedbackHeader }.map { it.message.id }
+
+        assertEquals(listOf(failed.id), headers(input, failed))
+        assertEquals(listOf(failed.id), headers(input, blank, failed))
+        assertEquals(
+            listOf(input.id, stopped.id),
+            content(input, blank, stopped).messages.map { it.message.id },
+        )
+        assertEquals(listOf(stopped.id), headers(input, reply, steer, stopped))
+        assertEquals(listOf(failed.id), headers(input, legacy, failed))
+        assertEquals(emptyList<String>(), headers(input, reply, legacy, failed))
+        assertEquals(emptyList<String>(), headers(input, reply, stopped))
+    }
+
+    @Test
+    fun retainedStreamingTextStaysAboveTheSameFailureCard() {
+        val input = row(1, "input.prompt")
+        val legacy = row(2, "output.error", payload = """{"error":"Could not continue"}""")
+        val failure = row(3, "run.failed")
+        val preview =
+            HistoryMessage(
+                "streaming-reply",
+                HISTORY_RUN,
+                HistoryRole.Assistant,
+                listOf(HistoryBlock(HistoryBlockKind.Text, "Draft kept after the failure")),
+            )
+        val stream = RunOutputState(CHAT_PERSONAL, listOf(preview), RunOutputPhase.Live)
+        val before = content(input, legacy, output = stream).messages
+        val after = content(input, legacy, failure, output = stream).messages
+        assertEquals(listOf(input.id, preview.id, legacy.id), before.map { it.message.id })
+        assertEquals(listOf(input.id, preview.id, failure.id), after.map { it.message.id })
+        assertEquals(legacy.id, after.last().key)
+        assertTrue(after.none { it.showFeedbackHeader })
+    }
+
+    @Test
+    fun structuredFailureReplacesLegacyFeedbackInPlaceWithinItsTurn() {
+        val input = row(1, "input.prompt")
+        val legacy = row(2, "output.error", payload = """{"error":"Could not continue"}""")
+        val failure = row(3, "run.failed")
+        val laterLegacy = row(4, "output.error", payload = """{"error":"Could not continue"}""")
+        val firstCard = content(input, legacy).messages.last()
+        val upgraded = content(input, legacy, failure).messages.last()
+        assertEquals(legacy.id, firstCard.key)
+        assertEquals(firstCard.key, upgraded.key)
+        assertEquals(failure.id, upgraded.message.id)
+        assertTrue(upgraded.includes(legacy.id))
+        assertTrue(upgraded.includes(failure.id))
+        assertEquals(
+            listOf(input.id, failure.id),
+            content(input, legacy, failure).messages.map { it.message.id },
+        )
+
+        val structuredFirst = content(input, failure, laterLegacy).messages.last()
+        assertEquals(failure.id, structuredFirst.key)
+        assertEquals(failure.id, structuredFirst.message.id)
+        assertTrue(structuredFirst.includes(laterLegacy.id))
+
+        val steer = row(5, "input.prompt")
+        val nextError = row(6, "output.error", payload = """{"error":"New failure"}""")
+        assertEquals(
+            listOf(input.id, failure.id, steer.id, nextError.id),
+            content(input, failure, laterLegacy, steer, nextError).messages.map { it.message.id },
+        )
+    }
+
+    @Test
     fun aDeliveredSteerEndsThePreviousSummaryAndStartsItsOwnTurn() {
         val queued = row(1, "input.prompt", run = null, time = "10:00:00")
         val delivered = row(2, "input.prompt", time = "10:01:00", revoke = queued.id)

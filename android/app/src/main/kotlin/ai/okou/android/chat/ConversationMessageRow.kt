@@ -89,14 +89,15 @@ internal data class ConversationMessage(
     val earlier: List<HistoryMessage> = emptyList(),
     val preview: ComposerMessagePreview? = null,
     val summary: ReplySummary? = null,
+    val showFeedbackHeader: Boolean = false,
+    val failureEventIds: List<String> = emptyList(),
 ) : ConversationTimelineRow {
     override val key: String
-        get() = earlier.firstOrNull()?.id ?: message.id
+        get() = failureEventIds.firstOrNull() ?: earlier.firstOrNull()?.id ?: message.id
 
-    fun includes(id: String?) = message.id == id || earlier.any { it.id == id }
+    fun includes(id: String?) =
+        message.id == id || id in failureEventIds || earlier.any { it.id == id }
 }
-
-private fun HistoryMessage.isReply() = role == HistoryRole.Assistant && blocks.isNotEmpty()
 
 @Composable
 internal fun ConversationMessageRow(
@@ -108,7 +109,7 @@ internal fun ConversationMessageRow(
     animateAvatarIn: LayoutBoundsHolder? = null,
     beforeEarlierRepliesResize: () -> Unit = {},
     failureContent: @Composable (HistoryMessage) -> Unit = {
-        AssistantFailureText(it.failureReason)
+        AssistantFailureCard(it.failureReason)
     },
 ) {
     val message = entry.message
@@ -176,7 +177,7 @@ internal fun ConversationMessageRow(
                     }
                 }
             }
-        message.isReply() ->
+        message.hasReplyBody() ->
             Column(Modifier.fillMaxWidth().testTag("message_${message.id}")) {
                 ConversationReplyHeader(message, artifactActions, animateAvatarIn)
                 if (entry.summary != null) {
@@ -238,12 +239,17 @@ internal fun ConversationMessageRow(
             }
         else ->
             Column(Modifier.fillMaxWidth().testTag("message_${message.id}")) {
-                if (message.status == "run.failed") {
-                    MessageBody(message, compact = true)
-                    failureContent(message)
-                } else {
-                    MessageStatus(message)
-                    MessageBody(message, compact = true)
+                if (entry.showFeedbackHeader) {
+                    ConversationReplyHeader()
+                    Spacer(Modifier.height(4.dp))
+                }
+                when (message.status) {
+                    "run.failed" -> failureContent(message)
+                    "output.error" -> LegacyFailureCard(message)
+                    else -> {
+                        MessageStatus(message)
+                        if (message.blocks.isNotEmpty()) MessageBody(message, compact = true)
+                    }
                 }
             }
     }
@@ -564,8 +570,11 @@ private fun MessageBody(
         }
     }
     val foreground =
-        if (bodyHighlight?.target?.highlighted == true) colors.onSecondaryContainer
-        else colors.onSurface
+        when {
+            bodyHighlight?.target?.highlighted == true -> colors.onSecondaryContainer
+            compact -> colors.onSurfaceVariant
+            else -> colors.onSurface
+        }
     val style =
         when {
             earlierReply ->
@@ -691,34 +700,24 @@ internal fun Modifier.conversationFindHighlight(
 private fun MessageStatus(message: HistoryMessage) {
     if (message.rejected) ConversationMeta(stringResource(R.string.history_rejected))
     when (message.status) {
-        "run.failed" -> AssistantFailureText(message.failureReason)
         "run.cancelled" ->
             ConversationActivity(
                 stringResource(R.string.history_cancelled),
+                modifier = Modifier.testTag("conversation_stopped"),
                 stopped = true,
             )
-        "output.error" -> ConversationMeta(stringResource(R.string.history_run_failed))
     }
 }
 
 @Composable
-internal fun AssistantFailureText(reason: String?) {
-    val copy = assistantRunFailureCopy(reason)
-    Text(
-        stringResource(copy.title),
-        style =
-            MaterialTheme.typography.bodyLarge.copy(
-                fontSize = 16.sp,
-                lineHeight = 24.sp,
-                fontWeight = FontWeight.Medium,
-            ),
-    )
-    Text(
-        stringResource(copy.description),
-        modifier = Modifier.padding(top = 4.dp),
-        style = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.sp, lineHeight = 20.sp),
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-    )
+private fun LegacyFailureCard(message: HistoryMessage) {
+    val copy = message.failureReason?.let(::assistantRunFailureCopy)
+    val description = copy?.description?.takeIf { message.blocks.isEmpty() }
+    FailureFeedbackCard(copy?.title ?: R.string.history_run_failed, description) {
+        if (message.blocks.isNotEmpty()) {
+            Column(Modifier.padding(top = 4.dp)) { MessageBody(message, compact = true) }
+        }
+    }
 }
 
 private fun PendingDelivery.label() =

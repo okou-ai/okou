@@ -98,7 +98,7 @@
     <string name="workflow_webhook">वेबहुक मिला</string>
     <string name="workflow_weekday_schedule">कामकाजी दिनों में %1$s बजे</string>
     <string name="workflow_weekdays">कामकाजी दिन</string>
-    <string name="workflow_write_failed">आपके बदलाव सहेजे नहीं जा सके।</string>
+    <string name="workflow_write_failed">सेव नहीं हो सका। आपके बदलाव सुरक्षित हैं।</string>
     <plurals name="workflow_enabled_count">
         <item quantity="one">%d ऑटोमेशन चालू</item>
         <item quantity="other">%d ऑटोमेशन चालू</item>

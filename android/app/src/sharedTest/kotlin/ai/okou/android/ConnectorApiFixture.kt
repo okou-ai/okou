@@ -73,6 +73,7 @@ internal class ConnectorApiFixture(
     @Volatile var unavailableCatalogSlugs: Set<String> = emptySet()
     @Volatile var failDiscovery = false
     @Volatile var discoveryRetryAfterSeconds: Long? = null
+    @Volatile var failDiscoveryForKeyword: ((String?) -> Boolean)? = null
     @Volatile var denyDefaultDiscovery = false
     @Volatile var denyCatalogDetail = false
     @Volatile var offerLiveDeviceEnvironment = true
@@ -233,16 +234,16 @@ internal class ConnectorApiFixture(
                     if (url.encodedPath == "/api/chat-connector-overview")
                         overviewReplyGate?.await()
                     if (url.encodedPath == "/api/connector-catalog/discovery") {
+                        val keyword = url.queryParameter("keyword")
                         discoveryRequested.countDown()
                         discoveryGate?.await()
-                        if (failDiscovery) {
+                        if (failDiscovery || failDiscoveryForKeyword?.invoke(keyword) == true) {
                             val response = rejected(503)
                             discoveryRetryAfterSeconds?.let {
                                 response.setHeader("Retry-After", it)
                             }
                             return response
                         }
-                        val keyword = url.queryParameter("keyword")
                         val category = url.queryParameter("category")
                         if (denyDefaultDiscovery && keyword == null && category == null)
                             return rejected(403)

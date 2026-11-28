@@ -9,13 +9,12 @@
     <string name="recovery_reset_retry">Periksa reset awal</string>
     <string name="recovery_checking_reset">Memeriksa permintaan awal…</string>
     <string name="recovery_working">Bersiap untuk melanjutkan…</string>
-    <string name="recovery_needs_changes">Ubah model, pengaturan akun, atau percakapan sebelum melanjutkan.</string>
-    <string name="recovery_billing">Kredit ruang kerja: %1$s. Periksa penagihan.</string>
+    <string name="recovery_billing">Kredit Okou</string>
     <string name="recovery_no_credit">Tidak ada kredit tersedia saat reset sebelumnya.</string>
     <string name="recovery_submitted">Kelanjutan diterima. Menunggu riwayat percakapan.</string>
     <string name="recovery_failed">Pemulihan belum selesai. Periksa operasi semula sebelum mengulang.</string>
-    <string name="recovery_credits">Kredit reset: %1$d</string>
-    <string name="recovery_account">Akun model: %1$s</string>
-    <string name="recovery_reset_time">Waktu reset penggunaan: %1$s</string>
+    <string name="recovery_credits">Reset tersedia</string>
+    <string name="recovery_account">Akun model</string>
+    <string name="recovery_reset_time">Waktu reset penggunaan</string>
     <string name="recovery_reset_title">Reset penggunaan</string>
 </resources>

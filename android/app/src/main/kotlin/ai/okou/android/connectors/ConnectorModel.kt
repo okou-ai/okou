@@ -252,10 +252,10 @@ class ConnectorModel(
 
     private fun refreshDirectory(browse: Boolean = true, accounts: Boolean = true) {
         if (browse && browseJob?.isActive != true) {
-            clearColdReadFailure(mutableState.value.browse) {
-                it.copy(browse = it.browse.confirmed())
-            }
             browseJob = viewModelScope.launch {
+                if (!canLoad()) return@launch
+                val startedAt = snapshotClock.markNow()
+                mutableState.update { it.copy(browse = it.browse.starting(startedAt)) }
                 load({ service.discover(null, null) }) { read ->
                     val unavailable = read.failure == ConnectorReadFailure.Unavailable
                     if (unavailable) {
@@ -275,10 +275,10 @@ class ConnectorModel(
             }
         }
         if (accounts && connectedJob?.isActive != true) {
-            clearColdReadFailure(mutableState.value.connected) {
-                it.copy(connected = it.connected.confirmed())
-            }
             connectedJob = viewModelScope.launch {
+                if (!canLoad()) return@launch
+                val startedAt = snapshotClock.markNow()
+                mutableState.update { it.copy(connected = it.connected.starting(startedAt)) }
                 load(service::connected) { read ->
                     val value = read.data
                     mutableState.update { state ->
@@ -322,13 +322,11 @@ class ConnectorModel(
         filter = next
         matchesJob?.cancel()
         matchesJob = null
-        if (next != null) {
-            val cached = recentMatches[next]?.forEntry()
-            mutableState.update {
-                it.copy(matches = ConnectorMatches(next, cached ?: ConnectorRead()))
-            }
-            if (open && foreground) refreshMatches()
+        val matches = next?.let {
+            ConnectorMatches(it, recentMatches[it]?.forEntry() ?: ConnectorRead())
         }
+        mutableState.update { it.copy(matches = matches) }
+        if (open && foreground) refreshMatches()
     }
 
     private fun refreshMatches() {
@@ -336,11 +334,11 @@ class ConnectorModel(
         if (matchesJob?.isActive == true) return
         matchesJob = viewModelScope.launch {
             if (selected.keyword != null) delay(250)
-            val previous = mutableState.value.matches?.takeIf { it.filter == selected }
-            if (previous != null) {
-                clearColdReadFailure(previous.entries) {
-                    it.copy(matches = previous.copy(entries = previous.entries.confirmed()))
-                }
+            if (!canLoad()) return@launch
+            val startedAt = snapshotClock.markNow()
+            mutableState.update { state ->
+                val matches = state.matches?.takeIf { it.filter == selected } ?: return@update state
+                state.copy(matches = matches.copy(entries = matches.entries.starting(startedAt)))
             }
             load({ service.discover(selected.keyword, selected.category) }) { read ->
                 if (filter != selected) return@load
@@ -955,12 +953,26 @@ class ConnectorModel(
         connectedJob?.cancel()
         inspectionJob?.cancel()
         cancelDetailReads()
+        mutableState.update {
+            if (it.browse.startedAt == null && it.connected.startedAt == null) it
+            else
+                it.copy(
+                    browse = it.browse.copy(startedAt = null),
+                    connected = it.connected.copy(startedAt = null),
+                )
+        }
     }
 
     private fun cancelReads() {
         invalidateConnectionReads()
         matchesJob?.cancel()
         permissionJob?.cancel()
+        mutableState.update { state ->
+            val matches = state.matches ?: return@update state
+            if (matches.entries.startedAt == null) state
+            else
+                state.copy(matches = matches.copy(entries = matches.entries.copy(startedAt = null)))
+        }
     }
 
     private fun cancelDetailReads() {
@@ -1186,10 +1198,12 @@ class ConnectorModel(
         if (read.data == null && read.failureRound != null) mutableState.update(update)
     }
 
+    private fun canLoad(): Boolean = authorized() && open && foreground
+
     private suspend fun <T : Any> load(read: suspend () -> T, publish: (ConnectorRead<T>) -> Unit) =
         retryConnectorRead(
             read,
-            canRead = { authorized() && open && foreground },
+            canRead = ::canLoad,
             onError = ::reportSessionFailure,
             publish = {
                 publish(
@@ -1199,6 +1213,9 @@ class ConnectorModel(
             },
         )
 }
+
+private fun <T> ConnectorRead<T>.starting(startedAt: TimeMark): ConnectorRead<T> =
+    (if (data == null) confirmed() else this).copy(startedAt = startedAt)
 
 private fun <K, V> LinkedHashMap<K, V>.rememberRead(key: K, value: V) {
     this[key] = value
