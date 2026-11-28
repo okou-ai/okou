@@ -155,6 +155,7 @@ internal constructor(
     internal val conversationId: String? = null,
     internal val deleteFromWorkflow: Boolean = false,
     internal val renameThreadId: String? = null,
+    internal val renameEventId: String? = null,
     internal val fromUndo: Boolean = false,
 ) {
     internal val feedbackOrder = nextPaneFeedbackOrder()
@@ -1313,6 +1314,7 @@ class ChatListModel(
                                     deleteFromWorkflow = deleteFromWorkflow,
                                     renameThreadId =
                                         threadId.takeIf { action == ChatRowAction.Rename },
+                                    renameEventId = renameEventId,
                                 ),
                             ),
                     )
@@ -2202,6 +2204,17 @@ class ChatListModel(
                 renamesAcknowledgedBeforeRead,
             )
         val previousState = mutable.value
+        val failures = previousState.rowActionFailures
+        // A late event can retire the notice without completing an editor submission.
+        val remainingFailures =
+            if (failures.none { it.renameEventId != null }) failures
+            else
+                failures.filterNot { failure ->
+                    val eventId = failure.renameEventId ?: return@filterNot false
+                    eventId in result.eventIdsBeforeRebase ||
+                        checkpoint.containsEvent(eventId) ||
+                        (saved.checkpoint !== checkpoint && saved.checkpoint.containsEvent(eventId))
+                }
         val state =
             previousState.copy(
                 confirmedAt = saved.confirmedAt,
@@ -2211,6 +2224,7 @@ class ChatListModel(
                 listReadStartedAt = null,
                 listRetryProgressVisible = false,
                 listRefreshFailureOrder = null,
+                rowActionFailures = remainingFailures,
             )
         resetListReadFailures()
         if (projectionChanged) publishRows(state) else mutable.value = state

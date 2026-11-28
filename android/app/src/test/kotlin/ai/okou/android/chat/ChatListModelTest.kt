@@ -2592,7 +2592,7 @@ internal class ChatListRowActionsModelTest : ChatListModelTestFixture() {
             val settled = model.uiState.value
             assertEquals(ChatReadPhase.Ready, settled.listPhase)
             assertEquals("Newer title", settled.threads.single().title)
-            assertSame(failure, settled.failedRowAction)
+            assertNull(settled.failedRowAction)
             assertNull(settled.confirmedRenameIds[CHAT_PERSONAL])
             assertEquals(2, attempts)
         }
