@@ -5,6 +5,7 @@ import { expect, test } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
+import { TEST_WITH_SINGLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE } from "../../../__tests__/test-timeouts";
 import { mockNow, now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import { meModelProvidersUpsertRoutes } from "../me-model-providers-upsert";
@@ -14,10 +15,12 @@ import { createAuthDeviceApiActions } from "./helpers/api-bdd-auth-device";
 import { createUserConfigBddApi } from "./helpers/api-bdd-user-config";
 import { credentials } from "./helpers/codex-reset-credit-expiry";
 import { publicPlanLifecycle } from "./helpers/public-plan-lifecycle";
+import { createRunExecutionCredentials } from "./helpers/run-execution-credentials";
 
 const context = testContext();
 const device = createAuthDeviceApiActions(context);
 const userConfig = createUserConfigBddApi(context);
+const runCredentials = createRunExecutionCredentials(context);
 
 const SESSION_COOKIE = "__session=browser-session";
 
@@ -311,3 +314,60 @@ test("user-config.bdd-001 defaults to canonical Auto and accepts a null selectio
   expect(updated.body).toStrictEqual(autoPreference);
   expect(reread.body).toStrictEqual(updated.body);
 });
+
+test(
+  "user-config.bdd-009 reads identity with actual Runner-issued sandbox and agent credentials",
+  { timeout: TEST_WITH_SINGLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+  async () => {
+    const bdd = createBddApi(context);
+    const member = bdd.user({ orgRole: "org:member" });
+    const issued = await runCredentials.forActor(member);
+
+    userConfig.mockSession(null);
+    userConfig.mockClerkUsers([member]);
+    userConfig.mockMembership(member, "org:member");
+
+    const fromSandbox = await userConfig.requestMe(
+      { authorization: `Bearer ${issued.sandboxToken}` },
+      [200],
+    );
+    const fromAgent = await userConfig.requestMe(
+      { authorization: `Bearer ${issued.token}` },
+      [200],
+    );
+    const fromFake = await userConfig.requestMe(
+      { authorization: "Bearer vm0_sandbox_not-a-real-token" },
+      [401],
+    );
+
+    expect(fromSandbox.body).toStrictEqual(identity(member));
+    expect(fromAgent.body).toStrictEqual(identity(member));
+    expect(fromFake.body).toMatchObject({ error: { code: "UNAUTHORIZED" } });
+  },
+);
+
+test(
+  "user-config.bdd-011 drops the organization from execution agent identity after public member removal",
+  { timeout: TEST_WITH_SINGLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+  async () => {
+    const bdd = createBddApi(context);
+    const admin = bdd.user({ orgRole: "org:admin" });
+    const member = bdd.user({ orgId: admin.orgId, orgRole: "org:member" });
+    const token = await runCredentials.okouToken(member);
+
+    await runCredentials.removeMember(member, admin);
+    userConfig.mockSession(null);
+    userConfig.mockClerkUsers([member]);
+
+    const me = await userConfig.requestMe(
+      { authorization: `Bearer ${token}` },
+      [200],
+    );
+
+    expect(me.body).toStrictEqual({
+      userId: member.userId,
+      email: member.email,
+      orgId: null,
+    });
+  },
+);

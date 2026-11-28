@@ -18,6 +18,7 @@ import { http, HttpResponse } from "msw";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
+import { TEST_WITH_SINGLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE } from "../../../__tests__/test-timeouts";
 import { createAppWithRoutes } from "../../../app-factory-core";
 import { mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { mockNow, now } from "../../../lib/time";
@@ -31,6 +32,7 @@ import { userModelPreferenceRoutes } from "../user-model-preference";
 import { webhooksBuiltInGenerationRoutes } from "../webhooks-built-in-generations";
 import { webhooksStripeRoutes } from "../webhooks-stripe";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
+import { createImageRun } from "./helpers/public-image-run";
 import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
@@ -428,6 +430,29 @@ describe("POST /api/image-io/generate", () => {
       },
     });
   });
+
+  it(
+    "image-io-generate-006 uses the catalog default in a real Run with an unset member preference",
+    { timeout: TEST_WITH_SINGLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const imageRun = await createImageRun(context, null, 0);
+
+      const preference = await imageRun.run(async () => {
+        signIn(imageRun.actor);
+        return await accept(
+          setupApp({ context, routes: userModelPreferenceRoutes })(
+            userModelPreferenceContract,
+          ).get({ headers }),
+          [200],
+        );
+      });
+
+      expect(preference.body.selectedImageModel).toBeNull();
+      expect(imageRun.execution.appendSystemPrompt).toContain(
+        "Built-in image generation uses `gpt-image-2.5-flare`",
+      );
+    },
+  );
 
   it("image-io-generate-007 returns 402 when the org has no spendable credits", async () => {
     const admin = await setupAdmin({ credits: 0, model: "gpt-image-1" });
