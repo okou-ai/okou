@@ -1,6 +1,7 @@
 package ai.okou.android.chat
 
 import ai.okou.android.OkouTheme
+import ai.okou.android.R
 import androidx.activity.ComponentActivity
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.runtime.CompositionLocalProvider
@@ -10,9 +11,12 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.platform.WindowInfo
 import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.test.assertHasNoClickAction
 import androidx.compose.ui.test.assertHeightIsEqualTo
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsFocused
+import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.assertWidthIsEqualTo
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
@@ -38,6 +42,39 @@ class ConversationQueueTest {
     @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
     private val position = LazyListState()
     private val size = mutableStateOf(IntSize(400, 800))
+
+    @Test
+    fun queueRowGrowsWithItsTextAndKeepsTheSeparateWithdrawButton() {
+        val multiline = "First line\nSecond line\nThird line"
+        val rows =
+            entries(3).mapIndexed { index, entry ->
+                val blocks =
+                    when (index) {
+                        0 -> emptyList()
+                        2 -> listOf(HistoryBlock(HistoryBlockKind.Text, multiline))
+                        else -> entry.message.blocks
+                    }
+                entry.copy(message = entry.message.copy(blocks = blocks))
+            }
+        show(mutableStateOf(rows))
+
+        item(2).assertHasNoClickAction()
+        val (single, supporting, wrapped) =
+            (0..2).map { index ->
+                val bounds = item(index).assertIsDisplayed().getUnclippedBoundsInRoot()
+                bounds.bottom - bounds.top
+            }
+        assertTrue(single < supporting)
+        assertTrue(supporting < wrapped)
+
+        val withdraw = compose.activity.getString(R.string.conversation_revoke)
+        compose
+            .onNodeWithContentDescription("$withdraw, $multiline")
+            .assertIsDisplayed()
+            .assertIsNotEnabled()
+            .assertHeightIsEqualTo(48.dp)
+            .assertWidthIsEqualTo(48.dp)
+    }
 
     @Test
     fun keepsTheFirstVisibleRowWhenTheOpenPanelChangesLayout() {
