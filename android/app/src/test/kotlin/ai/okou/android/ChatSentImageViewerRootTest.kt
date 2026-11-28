@@ -142,29 +142,38 @@ internal class ChatSentImageViewerRootTest : ArtifactCatalogRootTestFixture() {
     @Test
     fun shareThatLosesAccessToAZoomedImageLeavesTheGroupNavigable() {
         val fixture = openConversation()
-        compose.onNodeWithContentDescription(fixture.first).performClick()
-        awaitImage(fixture.first)
-        val image = compose.onNodeWithTag("artifact_image_transform")
-        val zoom =
-            image.fetchSemanticsNode().config[SemanticsActions.CustomActions].single {
-                it.label == "Zoom in"
-            }
-        compose.runOnIdle { assertTrue(zoom.action()) }
-        compose.waitUntil(5_000) {
-            image.fetchSemanticsNode().config[SemanticsActions.CustomActions].any {
-                it.label == "Fit image"
-            }
+        val releaseOriginal = CountDownLatch(1)
+        fixture.beforeOriginal = { filename ->
+            if (filename == fixture.first) releaseOriginal.await()
         }
-        compose.waitUntilExactlyOneExists(hasContentDescription("Image actions"), 10_000)
-        compose.onNodeWithContentDescription("Image actions").performClick()
+        try {
+            // A decoded original can replace the thumbnail and reset zoom during setup.
+            compose.onNodeWithContentDescription(fixture.first).performClick()
+            val image =
+                hasTestTag("artifact_image_transform") and hasContentDescription(fixture.first)
+            val canZoom = image and hasImageAction("Zoom in")
+            compose.waitUntilExactlyOneExists(canZoom, 5_000)
+            val zoom =
+                compose
+                    .onNode(canZoom)
+                    .fetchSemanticsNode()
+                    .config[SemanticsActions.CustomActions]
+                    .single { it.label == "Zoom in" }
+            compose.runOnIdle { assertTrue(zoom.action()) }
+            compose.waitUntilExactlyOneExists(image and hasImageAction("Fit image"), 5_000)
+            compose.waitUntilExactlyOneExists(hasContentDescription("Image actions"), 10_000)
+            compose.onNodeWithContentDescription("Image actions").performClick()
 
-        fixture.denied = fixture.first
-        compose.onNodeWithText("Share image").performClick()
-        awaitText("Unable to share this file")
-        awaitText("Image unavailable")
-        compose.onNodeWithTag("artifact_image_transform").assertDoesNotExist()
-        compose.onNodeWithContentDescription("Image actions").assertDoesNotExist()
-        assertNull(shadowOf(compose.activity).nextStartedActivity)
+            fixture.denied = fixture.first
+            compose.onNodeWithText("Share image").performClick()
+            awaitText("Unable to share this file")
+            awaitText("Image unavailable")
+            compose.onNodeWithTag("artifact_image_transform").assertDoesNotExist()
+            compose.onNodeWithContentDescription("Image actions").assertDoesNotExist()
+            assertNull(shadowOf(compose.activity).nextStartedActivity)
+        } finally {
+            releaseOriginal.countDown()
+        }
 
         compose.onNodeWithTag("image_viewer_pager").performKeyInput { pressKey(Key.DirectionRight) }
         awaitPage(2)
