@@ -53,7 +53,8 @@ class ScreenshotScenario {
             tap(By.desc("成果"))
             tap(By.text(fixture.checklist.title))
             tap(By.text("分享文件"))
-            node(By.text("无权分享此文件"))
+            val fileMessage = node(By.text("无权分享此文件")).visibleBounds
+            check(fileMessage.top > height / 2) { "The file Snackbar must be at the bottom" }
             ScreenshotCapture.capture("artifact-file-feedback-$layout.png")
 
             if (layout == "phone") tap(By.desc("返回成果列表"))
@@ -62,6 +63,7 @@ class ScreenshotScenario {
             tap(By.text("分享图片"))
             val message = node(By.text("无权分享此文件")).visibleBounds
             val status = node(By.text("仅供预览")).visibleBounds
+            check(message.top > height / 2) { "The image Snackbar must be at the bottom" }
             check(status.bottom < message.top) { "The image status overlaps the Snackbar" }
             ScreenshotCapture.capture("artifact-image-feedback-$layout.png")
         }
