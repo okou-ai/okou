@@ -11,9 +11,18 @@ import { describe, expect, it } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
+import { TEST_WITH_DOUBLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE } from "../../../__tests__/test-timeouts";
+import { mockOptionalEnv } from "../../../lib/env";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { connectorAccountRoutes } from "../connector-accounts";
 import { builtinConnectorsRoutes } from "../connectors";
+import { createBddApi } from "./helpers/api-bdd";
+import { createFirewallApi, secretTemplate } from "./helpers/api-bdd-firewall";
+import {
+  createChatEventsFixture,
+  executionEnvironment,
+} from "./helpers/chat-events-fixture";
+import { publicRunOwner } from "./helpers/public-run-owner";
 import { channelsPublishedTo } from "./helpers/realtime-publications";
 import { createRouteMocks } from "./helpers/route-test";
 
@@ -391,4 +400,79 @@ describe("POST /api/connectors/:connectorSlug/manual-grant", () => {
       { connectorSlug: "openai" },
     );
   });
+
+  it(
+    "connectors-manual-grant-connect-008 connects Test Subdomain manual grant fields through the API",
+    { timeout: TEST_WITH_DOUBLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const fixture = createChatEventsFixture(context);
+      const bdd = createBddApi(context);
+      const actor = bdd.user();
+      if (!actor.orgId) {
+        throw new Error("Expected organization actor");
+      }
+      const member: Member = { userId: actor.userId, orgId: actor.orgId };
+      const owner = publicRunOwner(context, actor);
+      fixture.chatCallbacks.acceptChatObjectStorage();
+      fixture.api.acceptStorageDownloads();
+      fixture.api.acceptTelemetryIngest();
+      mockOptionalEnv("OPENROUTER_API_KEY", undefined);
+      fixture.chatCallbacks.disableVapid();
+
+      const [granted] = await Promise.all([
+        accept(
+          manualGrant(member, "test-subdomain", {
+            authMethod: "api-token",
+            account: { intent: "add" },
+            values: {
+              apiToken: "  test-subdomain-token\n  ",
+              email: "  support@example.com \n",
+              subdomain: "  example \n",
+            },
+          }),
+          [200],
+        ),
+        fixture.api.configureRunnerGroup(),
+        owner.run(() => {
+          return bdd.bootstrapLimitedFreeOnboarding(actor);
+        }),
+      ]);
+      expect(Object.keys(granted.body)).toStrictEqual(["connectionId"]);
+
+      const listed = await listAccounts(member, "test-subdomain");
+      expect(listed.defaultConnection).toMatchObject({
+        id: granted.body.connectionId,
+        authMethod: "api-token",
+        connectionStatus: "connected",
+      });
+      expect(JSON.stringify(listed)).not.toContain("test-subdomain-token");
+
+      const launched = await owner.run(() => {
+        return fixture.sendChatRun(actor, {
+          prompt: "Use test-subdomain connector credentials",
+          model: null,
+        });
+      });
+      const execution = await owner.executionInput(launched.runId);
+      const envMap = executionEnvironment(execution);
+      expect(envMap.SUBDOMAIN_TEST_EMAIL).toBe("support@example.com");
+      expect(envMap.SUBDOMAIN_TEST_SUBDOMAIN).toBe("example");
+
+      const resolved = await createFirewallApi(context).requestFirewallAuth(
+        { authorization: `Bearer ${execution.firewallToken}` },
+        {
+          authHeaders: {
+            Authorization: `Bearer ${secretTemplate("SUBDOMAIN_TEST_API_TOKEN")}`,
+          },
+          secretConnectorMap: execution.secretConnectorMap ?? undefined,
+          secretConnectorMetadataMap:
+            execution.secretConnectorMetadataMap ?? undefined,
+        },
+        [200],
+      );
+      expect(resolved.body.headers).toStrictEqual({
+        Authorization: "Bearer test-subdomain-token",
+      });
+    },
+  );
 });
