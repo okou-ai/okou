@@ -383,6 +383,7 @@ async function publishHostedSite(args: {
   readonly threadId?: string;
 }): Promise<{
   readonly url: string;
+  readonly artifactUrl: string;
   readonly siteId: string;
   readonly publicSlug: string;
   readonly deploymentId: string;
@@ -413,6 +414,8 @@ async function publishHostedSite(args: {
   await completeChatRunOk(run.runId, execution.sandboxHeaders);
   return {
     url: prepared.url,
+    artifactUrl:
+      prepared.artifactUrl ?? `https://dpl-${prepared.deploymentId}.okou.app/`,
     siteId: prepared.siteId,
     publicSlug: prepared.publicSlug,
     deploymentId: prepared.deploymentId,
@@ -502,30 +505,29 @@ describe("GET /api/artifacts/by-url", () => {
       site,
       artifactKind: "presentation-html",
     });
+    const catalog = await chat.listArtifactCatalog(owner.actor);
+    const catalogEntry = catalog.artifacts.find((item) => {
+      return item.kind === "presentation";
+    });
+    if (!catalogEntry) {
+      throw new Error("Expected presentation entry in catalog");
+    }
     const headers = authenticateSharedThread(owner.actor);
     const client = setupApp({ context, routes: artifactReferenceRoutes })(
       artifactReferencesContract,
     );
-    const firstFiles = await chat.listThreadArtifacts(
-      owner.actor,
-      first.threadId,
-    );
-    const old = firstFiles.runs[0]!.files[0]!;
-    const latest = (
-      await chat.listThreadArtifacts(owner.actor, second.threadId)
-    ).runs[0]!.files[0]!;
-    for (const [url, version] of [
-      [old.url, old],
-      [latest.url, latest],
-      [latest.aliasUrl!, latest],
+    for (const [url, expectedPageUrl] of [
+      [first.artifactUrl, first.artifactUrl],
+      [second.artifactUrl, second.artifactUrl],
+      [second.url, second.artifactUrl],
     ] as const) {
       const result = await accept(
         client.byUrl({ headers, query: { url } }),
         [200],
       );
       expect(result.body).toMatchObject({
-        preview: { kind: "presentation-html", pageUrl: version.url },
-        owner: { artifactId: version.artifactId, fileId: version.id },
+        preview: { kind: "presentation-html", pageUrl: expectedPageUrl },
+        owner: { artifactId: catalogEntry.id },
       });
     }
   });
@@ -594,7 +596,7 @@ describe("GET /api/artifacts/catalog", () => {
         payload: null,
         catalog: {
           artifacts: [
-            { title: "private-video.mp4", videoSourceUrl: prepared.body.url },
+            { title: "private-video.mp4", sourceUrl: prepared.body.url },
           ],
         },
       });
@@ -839,7 +841,7 @@ describe("GET /api/artifacts/catalog", () => {
     expect(disabled.body).toMatchObject({ enabled: false, status: "paused" });
   });
 
-  it("withdraws the owned object for a historical public file", async () => {
+  it("soft-deletes a file artifact from Library without removing underlying file bytes (Principle 4)", async () => {
     const owner = await catalogActor("Historical artifact deletion");
     const uploaded = await uploadFile({
       owner,
@@ -864,14 +866,11 @@ describe("GET /api/artifacts/catalog", () => {
       }),
       [200],
     );
-    expect(owner.storage.deletedKeys).toContain(
+    expect(owner.storage.deletedKeys).not.toContain(
       `artifacts/${owner.actor.userId}/${uploaded.fileId}/legacy-report.txt`,
     );
     const after = await chat.listArtifactCatalog(owner.actor);
     expect(after.artifacts).toStrictEqual([]);
-    await expect(
-      chat.listThreadArtifacts(owner.actor, uploaded.threadId),
-    ).resolves.toStrictEqual({ runs: [] });
   });
 
   it.each(["hosted-site", "presentation-html"] as const)(
@@ -879,18 +878,13 @@ describe("GET /api/artifacts/catalog", () => {
     async (artifactKind) => {
       const owner = await catalogActor("Hosted artifact deletion");
       const site = `artifact-delete-${randomUUID().slice(0, 8)}`;
-      const first = await publishHostedSite({ owner, site, artifactKind });
+      await publishHostedSite({ owner, site, artifactKind });
       const published = await publishHostedSite({ owner, site, artifactKind });
       const before = await chat.listArtifactCatalog(owner.actor);
       const entry = before.artifacts[0];
       if (!entry) {
         throw new Error("Expected a published catalog artifact");
       }
-      const firstThreadArtifacts = await chat.listThreadArtifacts(
-        owner.actor,
-        first.threadId,
-      );
-      expect(firstThreadArtifacts.runs[0]?.files[0]?.artifactId).toBe(entry.id);
       const headers = authenticateSharedThread(owner.actor);
       const client = setupApp({
         context,
@@ -905,12 +899,6 @@ describe("GET /api/artifacts/catalog", () => {
       );
       const after = await chat.listArtifactCatalog(owner.actor);
       expect(after.artifacts).toStrictEqual([]);
-      await expect(
-        chat.listThreadArtifacts(owner.actor, published.threadId),
-      ).resolves.toStrictEqual({ runs: [] });
-      await expect(
-        chat.listThreadArtifacts(owner.actor, first.threadId),
-      ).resolves.toStrictEqual({ runs: [] });
       await accept(
         client(artifactCatalogContract).get({
           headers,
@@ -938,12 +926,6 @@ describe("GET /api/artifacts/catalog", () => {
       expect(restored.artifacts).toStrictEqual([
         expect.objectContaining({ id: entry.id }),
       ]);
-      await expect(
-        chat.listThreadArtifacts(owner.actor, first.threadId),
-      ).resolves.toStrictEqual({ runs: [] });
-      await expect(
-        chat.listThreadArtifacts(owner.actor, published.threadId),
-      ).resolves.toStrictEqual({ runs: [] });
       const detail = await chat.getArtifactCatalogEntry(owner.actor, entry.id);
       expect(detail).toMatchObject({ site: { deploymentVersion: 3 } });
       authenticateSharedThread(owner.actor);
@@ -997,16 +979,14 @@ describe("GET /api/artifacts/catalog", () => {
       site: { url: published.url, publicSlug: published.publicSlug },
     });
     await enableArtifactLibrary(owner.actor);
-    // The title no longer contains the site name, but its actual projection
-    // filename does. Legacy searches remain title-only.
     await expect(
       chat.listArtifactCatalog(owner.actor, { keyword: site }),
     ).resolves.toStrictEqual({ artifacts: [], nextCursor: null });
-    const filenameMatch = await chat.listArtifactCatalog(owner.actor, {
-      keyword: site,
+    const titleMatch = await chat.listArtifactCatalog(owner.actor, {
+      keyword: "季度销售",
       direction: "asc",
     });
-    expect(filenameMatch.artifacts).toStrictEqual([
+    expect(titleMatch.artifacts).toStrictEqual([
       expect.objectContaining({
         id: entry!.id,
         title: "季度销售报告",
@@ -1025,26 +1005,6 @@ describe("GET /api/artifacts/catalog", () => {
       expect.objectContaining({ id: entry!.id, title: "季度销售报告" }),
     ]);
     expect(afterRedeploy.artifacts[0]!.createdAt).toBe(entry!.createdAt);
-    const threadArtifacts = await chat.listThreadArtifacts(
-      owner.actor,
-      published.threadId,
-    );
-    const files = threadArtifacts.runs.flatMap((run) => {
-      return run.files;
-    });
-    expect(files).toHaveLength(2);
-    expect(files).toStrictEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          title: "季度销售报告",
-          aliasUrl: published.url,
-        }),
-        expect.objectContaining({
-          title: "季度销售报告",
-          aliasUrl: redeployed.url,
-        }),
-      ]),
-    );
   });
 
   it("retains a renamed catalog identity when a hosted site becomes a presentation", async () => {
@@ -1260,14 +1220,6 @@ describe("GET /api/artifacts/catalog", () => {
       contentType: "text/plain",
     });
 
-    const files = await chat.listThreadArtifacts(owner.actor, first.threadId);
-    expect(
-      files.runs.flatMap((run) => {
-        return run.files.map((file) => {
-          return file.filename;
-        });
-      }),
-    ).toStrictEqual(["first-thread-report.txt"]);
     const firstCatalog = await chat.listArtifactCatalog(owner.actor, {
       chatThreadId: first.threadId,
     });
@@ -1377,7 +1329,6 @@ describe("GET /api/artifacts/catalog", () => {
         expect.objectContaining({
           title: filename,
           sourceUrl: prepared.body.url,
-          videoSourceUrl: prepared.body.url,
         }),
       ]);
       await expect(
@@ -1554,7 +1505,7 @@ describe("GET /api/artifacts/catalog", () => {
       expect(catalog.artifacts).toStrictEqual([
         expect.objectContaining({
           kind: "file",
-          videoSourceUrl: completed.body.url,
+          sourceUrl: completed.body.url,
           thumbnail: null,
           title: `source-fallback.${container}`,
         }),
@@ -2178,16 +2129,6 @@ describe("GET /api/artifacts/catalog", () => {
         interruptsRunId: run.runId,
       }),
     );
-    const threadArtifacts = await chat.listThreadArtifacts(
-      owner.actor,
-      run.threadId,
-    );
-    expect(threadArtifacts.runs).toStrictEqual([
-      {
-        runId: run.runId,
-        files: [expect.objectContaining({ filename: "workflow-output.txt" })],
-      },
-    ]);
     const catalog = await chat.listArtifactCatalog(owner.actor, {
       chatThreadId: run.threadId,
     });

@@ -2,8 +2,6 @@ import { command } from "ccstate";
 import { and, eq } from "drizzle-orm";
 import { telegramOfficialUserLinks } from "@okouai/db/schema/telegram-official-user-link";
 import { telegramMessages } from "@okouai/db/schema/telegram-message";
-import { runUploadedFiles } from "@okouai/db/schema/run-uploaded-file";
-import { object, string } from "zod";
 import { db$ } from "../external/db";
 import { getOfficialTelegramBotConfig } from "../external/telegram-official";
 import {
@@ -108,42 +106,22 @@ export const requireTelegramFileAccess$ = command(
     args: { orgId: string; userId: string; fileId: string },
     signal: AbortSignal,
   ) => {
-    const [messages, uploads] = await Promise.all([
-      get(db$)
-        .selectDistinct({ chatId: telegramMessages.chatId })
-        .from(telegramMessages)
-        .where(
-          and(
-            eq(telegramMessages.officialOrgId, args.orgId),
-            eq(telegramMessages.fileId, args.fileId),
-          ),
-        )
-        .limit(100),
-      get(db$)
-        .select({ metadata: runUploadedFiles.metadata })
-        .from(runUploadedFiles)
-        .where(
-          and(
-            eq(runUploadedFiles.orgId, args.orgId),
-            eq(runUploadedFiles.userId, args.userId),
-            eq(runUploadedFiles.externalId, args.fileId),
-            eq(runUploadedFiles.source, "telegram"),
-          ),
-        )
-        .limit(100),
-    ]);
+    const messages = await get(db$)
+      .selectDistinct({ chatId: telegramMessages.chatId })
+      .from(telegramMessages)
+      .where(
+        and(
+          eq(telegramMessages.officialOrgId, args.orgId),
+          eq(telegramMessages.fileId, args.fileId),
+        ),
+      )
+      .limit(100);
     signal.throwIfAborted();
     const chats = new Set(
       messages.map((message) => {
         return message.chatId;
       }),
     );
-    for (const upload of uploads) {
-      const metadata = object({ chatId: string() }).safeParse(upload.metadata);
-      if (metadata.success) {
-        chats.add(metadata.data.chatId);
-      }
-    }
     for (const chatId of chats) {
       const access = await set(
         requireTelegramConversationAccess$,

@@ -1410,12 +1410,6 @@ export {
 } from "./integrations-email";
 
 export {
-  artifactSharingContract,
-  artifactSharingResourceSchema,
-  type ArtifactSharingTarget,
-} from "./artifact-sharing";
-
-export {
   ARTIFACT_ACCESS_KINDS,
   ARTIFACT_VISIBILITY_VALUES,
   addArtifactShareBodySchema,

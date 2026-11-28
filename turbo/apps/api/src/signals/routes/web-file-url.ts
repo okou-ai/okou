@@ -26,6 +26,7 @@ const fileUrlInner$ = command(async ({ get, set }, signal: AbortSignal) => {
         userId: auth.userId,
         orgId: auth.orgId,
         id: params.file_id,
+        resolvePrivateUrl: false,
       },
       signal,
     ),

@@ -148,7 +148,7 @@ export const resolveHostedSitePreview$ = command(
     if (preview) {
       for (const id of hostedPreviewArtifactIds(row.deployment.id, preview)) {
         const cover = await set(privateArtifactRecord$, id, signal);
-        if (!cover || cover.materializationStatus !== "ready") {
+        if (!cover || !cover.isReady) {
           continue;
         }
         if (

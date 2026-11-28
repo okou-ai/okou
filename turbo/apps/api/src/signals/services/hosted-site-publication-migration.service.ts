@@ -16,7 +16,6 @@ import {
   artifactSharePolicySchema,
   type ArtifactSharePolicy,
 } from "@okouai/api-contracts/contracts/artifact-shares";
-import type { artifactShares } from "@okouai/db/schema/artifact-share";
 import {
   hostedDeployments,
   privateHostedDeployments,
@@ -38,7 +37,6 @@ import { ArtifactDeliveryAliasConflict } from "./artifact-delivery.service";
 type HostedSite = typeof hostedSites.$inferSelect;
 
 type HostedDeployment = typeof hostedDeployments.$inferSelect;
-type HostedShare = typeof artifactShares.$inferSelect;
 interface StoredHostedObject {
   readonly buffer: Buffer;
   readonly etag: string;
@@ -119,7 +117,7 @@ function validateSnapshotPolicy(
   }
 }
 
-/** Check the share identity before reading its current storage-owned policy. */
+/** Read and validate the storage-owned historical snapshot policy directly from R2. */
 export const readHostedSnapshotPolicy$ = command(
   async (
     { get },
@@ -127,25 +125,18 @@ export const readHostedSnapshotPolicy$ = command(
       readonly site: HostedSite;
       readonly bucket: string;
       readonly record: Extract<ArtifactDeliveryRecord, { kind: "publication" }>;
-      readonly share: HostedShare | undefined;
     },
     signal: AbortSignal,
   ): Promise<SnapshotPolicyContext> => {
-    const { site, record, share } = args;
+    const { site, record } = args;
     if (
-      !share ||
-      share.targetKind !== "html" ||
-      share.targetId !== site.id ||
-      share.orgId !== site.orgId ||
-      share.userId !== site.userId ||
-      share.linkLayoutSegment !== site.linkLayoutSegment ||
       record.targetKind !== "html" ||
       record.publicBrand !== site.linkLayoutSegment ||
       record.publicToken === site.publicSlug
     ) {
       hostedSiteAliasConflict();
     }
-    const key = `artifact-shares/${site.linkLayoutSegment}/${share.id}.json`;
+    const key = `artifact-shares/${site.linkLayoutSegment}/${record.shareId}.json`;
     const stored = await get(storedObject(args.bucket, key, signal));
     signal.throwIfAborted();
     if (!stored) {

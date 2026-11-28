@@ -272,7 +272,7 @@ test("sends private attachments and shares independent private snapshots", async
   await expect(attachmentBytes(url)).resolves.toBe("private bytes");
 });
 
-test("rejects publication when a private attachment is withdrawn during its snapshot copy", async () => {
+test("keeps private attachment snapshot publication succeeding after Library deletion (Principle 4)", async () => {
   const f = await fixture();
   const filename = "withdrawn-attachment.pdf";
   const file = await f.upload(
@@ -329,14 +329,13 @@ test("rejects publication when a private attachment is withdrawn during its snap
   await withdrawal.finally(() => {
     release.resolve();
   });
-  const rejected = await accept(sharing, [400]);
-  expect(rejected.body).toMatchObject({
-    error: {
-      message:
-        "A selected artifact or hosted dependency is unavailable for sharing",
-    },
+  const shared = await accept(sharing, [201]);
+  expect(shared.body.id).toBeTruthy();
+  const remaining = await chat.listArtifactCatalog(f.actor, {
+    kind: "file",
+    keyword: filename,
   });
-  await f.expectNoShare(message.threadId);
+  expect(remaining.artifacts).toStrictEqual([]);
 });
 
 test("shares attachment-only prompts and reuses a copy for repeated references", async () => {

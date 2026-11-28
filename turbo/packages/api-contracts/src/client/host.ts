@@ -178,28 +178,6 @@ export const hostContract: ClientDescriptor<typeof OriginalHostContract> = {
       500: true,
     },
   },
-  siteVisibility: {
-    method: "GET",
-    path: "/api/host/sites/:siteId/visibility",
-    statuses: {
-      200: true,
-      401: true,
-      403: true,
-      404: true,
-    },
-  },
-  updateSiteVisibility: {
-    method: "PATCH",
-    path: "/api/host/sites/:siteId/visibility",
-    statuses: {
-      200: true,
-      400: true,
-      401: true,
-      403: true,
-      404: true,
-      409: true,
-    },
-  },
   siteBanner: {
     method: "GET",
     path: "/api/host/sites/:siteId/branding",

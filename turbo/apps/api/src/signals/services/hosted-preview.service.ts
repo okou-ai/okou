@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { command } from "ccstate";
 import { and, eq } from "drizzle-orm";
-import { runUploadedFiles } from "@okouai/db/schema/run-uploaded-file";
+import { files } from "@okouai/db/schema/file";
 import { v5 as uuidv5 } from "uuid";
 import {
   MAX_HOSTED_PREVIEW_BYTES,
@@ -16,16 +16,14 @@ import {
   s3ObjectExists,
   S3ObjectSizeLimitError,
 } from "../external/s3";
-import { nowDate } from "../../lib/time";
 import { writeDb$ } from "../external/db";
 import { settle } from "../utils";
 import {
   allocatePrivateArtifact$,
   privateArtifactRecord$,
-  privateArtifactUrl,
+  resolvePrivateArtifactUrl$,
   privateArtifactsBucket,
 } from "./private-artifact-storage.service";
-import { dualWriteFileUpdate$ } from "./files-dual-write.service";
 
 /** Original-byte identity; never shares an allocation with normalized covers. */
 export function hostedPreviewArtifactId(
@@ -110,37 +108,24 @@ const markHostedPreviewReady$ = command(
     signal: AbortSignal,
   ) => {
     const [completed] = await set(writeDb$)
-      .update(runUploadedFiles)
+      .update(files)
       .set({
-        url: null,
         contentType: args.contentType,
         sizeBytes: args.size,
-        materializationStatus: "ready",
-        updatedAt: nowDate(),
       })
       .where(
         and(
-          eq(runUploadedFiles.id, args.id),
-          eq(runUploadedFiles.userId, args.userId),
-          eq(runUploadedFiles.orgId, args.orgId),
-          eq(runUploadedFiles.storageKey, args.storageKey),
+          eq(files.id, args.id),
+          eq(files.ownerUserId, args.userId),
+          eq(files.orgId, args.orgId),
+          eq(files.storageKey, args.storageKey),
         ),
       )
-      .returning({ id: runUploadedFiles.id });
+      .returning({ id: files.id });
     signal.throwIfAborted();
     if (!completed) {
       throw new Error("Hosted preview ownership record is unavailable");
     }
-    await set(
-      dualWriteFileUpdate$,
-      {
-        id: completed.id,
-        contentType: args.contentType,
-        sizeBytes: args.size,
-        origin: "system",
-      },
-      signal,
-    );
     return completed.id;
   },
 );
@@ -166,7 +151,7 @@ export const completeHostedPreview$ = command(
     )) {
       const existing = await set(privateArtifactRecord$, candidateId, signal);
       signal.throwIfAborted();
-      if (existing?.materializationStatus !== "ready") {
+      if (!existing?.isReady) {
         continue;
       }
       if (existing.userId !== args.userId || existing.orgId !== args.orgId) {
@@ -180,14 +165,12 @@ export const completeHostedPreview$ = command(
         ),
       );
       signal.throwIfAborted();
-      return {
-        status: "ok",
-        url: privateArtifactUrl(
-          candidateId,
-          existing.filename,
-          existing.metadata,
-        ),
-      };
+      const url = await set(
+        resolvePrivateArtifactUrl$,
+        { id: candidateId, filename: existing.filename },
+        signal,
+      );
+      return { status: "ok", url };
     }
 
     const bucket = privateArtifactsBucket();

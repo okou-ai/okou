@@ -1,10 +1,11 @@
 import { command } from "ccstate";
 import { integrationsTeamsUploadCompleteContract } from "@okouai/api-contracts/contracts/integrations";
+
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { bodyResultOf } from "../context/request";
-import { completeCanonicalTeamsUpload$ } from "../services/canonical-teams-asset-delivery.service";
 import type { RouteEntry } from "../route-entry";
+import { completeCanonicalTeamsUpload$ } from "../services/canonical-teams-asset-delivery.service";
 
 const complete$ = command(async ({ get, set }, signal: AbortSignal) => {
   const auth = get(organizationAuthContext$);
@@ -19,7 +20,11 @@ const complete$ = command(async ({ get, set }, signal: AbortSignal) => {
     completeCanonicalTeamsUpload$,
     {
       assetId: body.data.uploadId,
-      operationId: body.data.operationId,
+      conversationId: body.data.conversationId,
+      user: body.data.user,
+      activityId: body.data.activityId,
+      contentType: body.data.contentType,
+      text: body.data.text,
       runId: "runId" in auth ? (auth.runId ?? null) : null,
       userId: auth.userId,
       orgId: auth.orgId,

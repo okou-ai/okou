@@ -5,11 +5,9 @@ import { array, literal, object, string, unknown as zUnknown } from "zod";
 import { http, HttpResponse } from "msw";
 import { expect, test } from "vitest";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { artifactSharingContract } from "@okouai/api-contracts/contracts/artifact-sharing";
-import { artifactSharesContract } from "@okouai/api-contracts/contracts/artifact-shares";
+import { artifactAccessContract } from "@okouai/api-contracts/contracts/artifact-access";
 import { artifactReferencesContract } from "@okouai/api-contracts/contracts/artifact-references";
 import { artifactOgContract } from "@okouai/api-contracts/contracts/artifact-og";
-import { hostContract } from "@okouai/api-contracts/contracts/host";
 import { uploadsContract } from "@okouai/api-contracts/contracts/uploads";
 import { accept, testContext } from "../../../__tests__/test-context";
 import {
@@ -20,8 +18,7 @@ import { env } from "../../../lib/env";
 import { mockNow, now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import { flushWaitUntilForTest } from "../../context/wait-until";
-import { artifactSharingRoutes } from "../artifact-sharing";
-import { artifactShareRoutes } from "../artifact-shares";
+import { artifactAccessRoutes } from "../artifact-access";
 import { artifactReferenceRoutes } from "../artifact-references";
 import { artifactOgRoutes } from "../artifact-og";
 import { uploadsPrepareRoutes } from "../uploads-prepare";
@@ -51,8 +48,7 @@ function app(user: ApiTestUser) {
   return setupAppWithRoutes({
     context,
     routes: [
-      ...artifactSharingRoutes,
-      ...artifactShareRoutes,
+      ...artifactAccessRoutes,
       ...artifactReferenceRoutes,
       ...artifactOgRoutes,
       ...uploadsPrepareRoutes,
@@ -81,6 +77,23 @@ function profile(user: ApiTestUser) {
 
 function directory(users: readonly ApiTestUser[]) {
   mockClerkUsers(context, users.map(profile));
+  context.mocks.clerk.organizations.getOrganization.mockImplementation(
+    (input) => {
+      const params = object({ organizationId: string() }).parse(input);
+      return Promise.resolve({
+        id: params.organizationId,
+        name: "Artifact workspace",
+      });
+    },
+  );
+  context.mocks.clerk.users.getUserList.mockImplementation((input) => {
+    const params = object({ userId: array(string()) }).parse(input);
+    return Promise.resolve({
+      data: users.map(profile).filter((user) => {
+        return params.userId.includes(user.id);
+      }),
+    });
+  });
   context.mocks.clerk.organizations.getOrganizationMembershipList.mockImplementation(
     (input) => {
       const params = object({
@@ -134,10 +147,11 @@ async function fixture(
     context,
     { ...owner, orgId: owner.orgId },
     {
-      [FeatureSwitchKey.HostedSiteEmailSharing]: true,
+      [FeatureSwitchKey.ArtifactUserSharing]: true,
     },
   );
-  directory([owner]);
+  const directoryUsers: ApiTestUser[] = [owner];
+  directory(directoryUsers);
   const capture = host.captureHostedSitesS3();
   const storage = context.mocks.s3.send.getMockImplementation()!;
   context.mocks.s3.send.mockImplementation((operation, ...rest) => {
@@ -231,12 +245,10 @@ async function fixture(
     };
     if (options.audience && options.audience !== "private") {
       await accept(
-        app(owner)(artifactSharesContract).update({
+        app(owner)(artifactAccessContract).updateVisibility({
           headers,
-          body: {
-            target: { kind: "file", id: resource.id },
-            audience: options.audience,
-          },
+          params: { artifactId: resource.id },
+          body: { visibility: options.audience },
         }),
         [200],
       );
@@ -274,6 +286,7 @@ async function fixture(
     teamId,
     channel,
     members,
+    directoryUsers,
     resource,
     callbacks,
     responseUrl,
@@ -294,6 +307,16 @@ function addMember(f: Fixture, email?: string) {
   return id;
 }
 
+function addWorkspaceMember(f: Fixture) {
+  const user = createBddApi(context).user({
+    orgId: f.owner.orgId ?? undefined,
+  });
+  f.directoryUsers.push(user);
+  directory(f.directoryUsers);
+  const slackUserId = addMember(f, user.email);
+  return { user, slackUserId };
+}
+
 async function connectedMember(f: Fixture, sameWorkspace = false) {
   const user = createBddApi(context).user(
     sameWorkspace ? { orgId: f.owner.orgId ?? undefined } : {},
@@ -306,7 +329,8 @@ async function connectedMember(f: Fixture, sameWorkspace = false) {
     threadTs: "1795586400.000001",
   });
   await flushWaitUntilForTest();
-  directory([f.owner, user]);
+  f.directoryUsers.push(user);
+  directory(f.directoryUsers);
   context.mocks.slack.chat.postEphemeral.mockClear();
   return { user, slackUserId };
 }
@@ -405,13 +429,25 @@ async function click(
 async function shares(f: Fixture) {
   return (
     await accept(
-      app(f.owner)(artifactSharingContract).list({
+      app(f.owner)(artifactAccessContract).listShares({
         headers,
-        params: { kind: f.resource.kind, id: f.resource.id },
+        params: { artifactId: f.resource.id },
       }),
       [200],
     )
   ).body.shares;
+}
+
+async function visibility(f: Fixture) {
+  return (
+    await accept(
+      app(f.owner)(artifactAccessContract).getVisibility({
+        headers,
+        params: { artifactId: f.resource.id },
+      }),
+      [200],
+    )
+  ).body.visibility;
 }
 
 test.each(["file", "site"] as const)(
@@ -419,8 +455,7 @@ test.each(["file", "site"] as const)(
   async (kind) => {
     const f = await fixture({ kind });
     const viewer = await connectedMember(f);
-    const departedEmail = `departed-${randomUUID()}@example.com`;
-    const departed = addMember(f, departedEmail);
+    const departed = addWorkspaceMember(f);
     await postLink(f);
     const prompt = promptActions();
     expect(prompt.user).toBe(f.sender);
@@ -435,9 +470,8 @@ test.each(["file", "site"] as const)(
       "artifact_share_public",
     ]);
     await expect(shares(f)).resolves.toStrictEqual([]);
-    f.members.splice(f.members.indexOf(departed), 1);
-    const invitedEmail = `new-${randomUUID()}@example.com`;
-    addMember(f, invitedEmail);
+    f.members.splice(f.members.indexOf(departed.slackUserId), 1);
+    const joined = addWorkspaceMember(f);
     await click(f);
     expect(
       (await shares(f))
@@ -445,7 +479,7 @@ test.each(["file", "site"] as const)(
           return share.email;
         })
         .sort(),
-    ).toStrictEqual([viewer.user.email, invitedEmail].sort());
+    ).toStrictEqual([viewer.user.email, joined.user.email].sort());
     if (kind === "file") {
       const preview = await accept(
         app(viewer.user)(artifactReferencesContract).resolve({
@@ -465,19 +499,14 @@ test.each(["file", "site"] as const)(
     }
     expect(context.mocks.resend.send).toHaveBeenCalledTimes(2);
     expect(f.callbacks.at(-1)?.text).toContain("2 current channel members");
-    expect(f.callbacks.at(-1)?.text).not.toContain(departedEmail);
-    context.mocks.slack.chat.unfurl.mockClear();
-    context.mocks.slack.chat.postEphemeral.mockClear();
-    await postLink(f);
-    expect(context.mocks.slack.chat.unfurl).not.toHaveBeenCalled();
-    expect(context.mocks.slack.chat.postEphemeral).toHaveBeenCalledTimes(1);
+    expect(f.callbacks.at(-1)?.text).not.toContain(departed.user.email);
   },
 );
 
-test("omits workspace visibility when already workspace-visible but still offers individual grants for external channel members", async () => {
+test("omits workspace visibility when already workspace-visible and reports external email-only members as unresolved", async () => {
   const f = await fixture({ audience: "organization" });
   await connectedMember(f, true);
-  addMember(f, `external-${randomUUID()}@example.com`);
+  const externalId = addMember(f, `external-${randomUUID()}@example.com`);
   await postLink(f);
   expect(
     promptActions().actions.map((action) => {
@@ -485,15 +514,9 @@ test("omits workspace visibility when already workspace-visible but still offers
     }),
   ).toStrictEqual(["artifact_share_channel", "artifact_share_public"]);
   await click(f);
-  await expect(shares(f)).resolves.toHaveLength(1);
-  const status = await accept(
-    app(f.owner)(artifactSharesContract).status({
-      headers,
-      body: { kind: "file", id: f.resource.id },
-    }),
-    [200],
-  );
-  expect(status.body.audience).toBe("organization");
+  await expect(shares(f)).resolves.toStrictEqual([]);
+  expect(f.callbacks.at(-1)?.text).toContain(`<@${externalId}>`);
+  await expect(visibility(f)).resolves.toBe("organization");
 });
 
 test("does not prompt when all channel members already have workspace access", async () => {
@@ -514,11 +537,7 @@ test("does not prompt when all channel members already have workspace access", a
 
 test("recognizes existing workspace access by verified email without requiring a Slack account binding", async () => {
   const f = await fixture({ audience: "organization" });
-  const member = createBddApi(context).user({
-    orgId: f.owner.orgId ?? undefined,
-  });
-  directory([f.owner, member]);
-  addMember(f, member.email);
+  addWorkspaceMember(f);
   await postLink(f);
   expect(context.mocks.slack.chat.postEphemeral).not.toHaveBeenCalled();
   await expect(shares(f)).resolves.toStrictEqual([]);
@@ -546,15 +565,14 @@ test("does not let a connected non-owner manage another person's artifact", asyn
 
 test("paginates channel membership, including an empty page with a continuation", async () => {
   const f = await fixture();
-  const email = `last-page-${randomUUID()}@example.com`;
-  const member = addMember(f, email);
+  const member = addWorkspaceMember(f);
   context.mocks.slack.conversations.members.mockImplementation((input) => {
     const page = object({ cursor: string().optional() }).parse(input);
     return Promise.resolve(
       page.cursor
         ? {
             ok: true,
-            members: [f.sender, member],
+            members: [f.sender, member.slackUserId],
             response_metadata: { next_cursor: "" },
           }
         : {
@@ -570,13 +588,13 @@ test("paginates channel membership, including an empty page with a continuation"
     (await shares(f)).map((share) => {
       return share.email;
     }),
-  ).toStrictEqual([email]);
+  ).toStrictEqual([member.user.email]);
 });
 
 test("reports missing email separately while sharing with identifiable members", async () => {
   const f = await fixture();
   const unresolved = addMember(f);
-  addMember(f, `invited-${randomUUID()}@example.com`);
+  addWorkspaceMember(f);
   await postLink(f);
   await click(f);
   await expect(shares(f)).resolves.toHaveLength(1);
@@ -586,7 +604,7 @@ test("reports missing email separately while sharing with identifiable members",
 
 test("does not equate an unavailable member list with an empty channel", async () => {
   const f = await fixture();
-  addMember(f, `invited-${randomUUID()}@example.com`);
+  addWorkspaceMember(f);
   await postLink(f);
   context.mocks.slack.conversations.members.mockRejectedValue(
     new Error("Channel is unavailable"),
@@ -600,7 +618,7 @@ test.each(["user", "team", "channel", "token", "expired"])(
   "rejects a stale or mismatched %s action",
   async (changed) => {
     const f = await fixture();
-    addMember(f, `invited-${randomUUID()}@example.com`);
+    addWorkspaceMember(f);
     await postLink(f);
     const overrides: Record<string, unknown> =
       changed === "token"
@@ -623,7 +641,7 @@ test.each(["user", "team", "channel", "token", "expired"])(
 
 test("does not duplicate invitations when the same button is clicked again", async () => {
   const f = await fixture();
-  addMember(f, `invited-${randomUUID()}@example.com`);
+  addWorkspaceMember(f);
   await postLink(f);
   await click(f);
   await click(f);
@@ -637,7 +655,7 @@ test("does not duplicate invitations when the same button is clicked again", asy
 test("shares with more than ten channel members in one action", async () => {
   const f = await fixture();
   for (let index = 0; index < 12; index++) {
-    addMember(f, `member-${index}-${randomUUID()}@example.com`);
+    addWorkspaceMember(f);
   }
   await postLink(f);
   await click(f);
@@ -648,7 +666,7 @@ test("shares with more than ten channel members in one action", async () => {
 test("keeps confirmed invitations when the existing hourly recipient limit is reached", async () => {
   const f = await fixture();
   for (let index = 0; index < 61; index++) {
-    addMember(f, `member-${index}-${randomUUID()}@example.com`);
+    addWorkspaceMember(f);
   }
   await postLink(f);
   await click(f);
@@ -669,25 +687,7 @@ test.each(["file", "site"] as const)(
     addMember(f, `invited-${randomUUID()}@example.com`);
     await postLink(f);
     await click(f, "artifact_share_organization");
-    if (kind === "file") {
-      const status = await accept(
-        app(f.owner)(artifactSharesContract).status({
-          headers,
-          body: { kind: "file", id: f.resource.id },
-        }),
-        [200],
-      );
-      expect(status.body.audience).toBe("organization");
-    } else {
-      const status = await accept(
-        app(f.owner)(hostContract).siteVisibility({
-          headers,
-          params: { siteId: f.resource.id },
-        }),
-        [200],
-      );
-      expect(status.body.visibility).toBe("organization");
-    }
+    await expect(visibility(f)).resolves.toBe("organization");
     expect(context.mocks.slack.chat.unfurl).not.toHaveBeenCalled();
   },
 );
@@ -697,14 +697,7 @@ test("can make a hosted site public and refresh the original Slack preview", asy
   addMember(f, `invited-${randomUUID()}@example.com`);
   await postLink(f);
   await click(f, "artifact_share_public");
-  const status = await accept(
-    app(f.owner)(hostContract).siteVisibility({
-      headers,
-      params: { siteId: f.resource.id },
-    }),
-    [200],
-  );
-  expect(status.body.visibility).toBe("public");
+  await expect(visibility(f)).resolves.toBe("public");
   expect(context.mocks.slack.chat.unfurl).toHaveBeenCalledWith(
     expect.objectContaining({
       channel: f.channel,
@@ -718,7 +711,7 @@ test("can make a hosted site public and refresh the original Slack preview", asy
 
 test("does not repeat private prompts for retries, refreshes, or composer events", async () => {
   const f = await fixture();
-  addMember(f, `invited-${randomUUID()}@example.com`);
+  addWorkspaceMember(f);
   await postLink(f, {}, true);
   await postLink(f, { is_unfurl_refresh: true });
   await postLink(f, { source: "composer" });
@@ -727,26 +720,24 @@ test("does not repeat private prompts for retries, refreshes, or composer events
 
 test("shares a website through its App artifact reference", async () => {
   const f = await fixture({ kind: "site", siteReference: true });
-  const email = `reference-${randomUUID()}@example.com`;
-  addMember(f, email);
+  const member = addWorkspaceMember(f);
   await postLink(f);
   await click(f);
   expect(
     (await shares(f)).map((share) => {
       return share.email;
     }),
-  ).toStrictEqual([email]);
+  ).toStrictEqual([member.user.email]);
 });
 
-test("keeps invitations pending without duplicate email and ignores bots and deleted members", async () => {
+test("ignores already-granted members, bots, and deleted members", async () => {
   const f = await fixture();
-  const email = `already-invited-${randomUUID()}@example.com`;
-  addMember(f, email);
+  const member = addWorkspaceMember(f);
   await accept(
-    app(f.owner)(artifactSharingContract).share({
+    app(f.owner)(artifactAccessContract).addShare({
       headers,
-      params: { kind: f.resource.kind, id: f.resource.id },
-      body: { email },
+      params: { artifactId: f.resource.id },
+      body: { userId: member.user.userId },
     }),
     [200],
   );
@@ -770,17 +761,15 @@ test("keeps invitations pending without duplicate email and ignores bots and del
   context.mocks.slack.chat.postEphemeral.mockClear();
   const before = context.mocks.resend.send.mock.calls.length;
   await postLink(f);
-  expect(context.mocks.slack.chat.postEphemeral).toHaveBeenCalledTimes(1);
-  await click(f);
+  expect(context.mocks.slack.chat.postEphemeral).not.toHaveBeenCalled();
   expect(context.mocks.resend.send).toHaveBeenCalledTimes(before);
-  expect(context.mocks.slack.chat.unfurl).not.toHaveBeenCalled();
 });
 
 test.each(["membership", "banned", "left-channel"])(
   "rechecks %s before applying an old sharing button",
   async (change) => {
     const f = await fixture();
-    addMember(f, `member-${randomUUID()}@example.com`);
+    addWorkspaceMember(f);
     await postLink(f);
     if (change === "membership") {
       context.mocks.clerk.organizations.getOrganizationMembershipList.mockResolvedValue(
@@ -795,14 +784,14 @@ test.each(["membership", "banned", "left-channel"])(
     expect(f.callbacks.at(-1)?.text).toMatch(
       /no longer available|could not be verified/u,
     );
-    directory([f.owner]);
+    directory(f.directoryUsers);
     await expect(shares(f)).resolves.toStrictEqual([]);
   },
 );
 
 test("rejects a forged callback destination", async () => {
   const f = await fixture();
-  addMember(f, `member-${randomUUID()}@example.com`);
+  addWorkspaceMember(f);
   await postLink(f);
   const response = await click(f, "artifact_share_channel", {
     response_url: "https://example.com/actions/steal",
@@ -813,17 +802,10 @@ test("rejects a forged callback destination", async () => {
 
 test("can make a file public and refresh its original preview", async () => {
   const f = await fixture();
-  addMember(f, `member-${randomUUID()}@example.com`);
+  addWorkspaceMember(f);
   await postLink(f);
   await click(f, "artifact_share_public");
-  const status = await accept(
-    app(f.owner)(artifactSharesContract).status({
-      headers,
-      body: { kind: "file", id: f.resource.id },
-    }),
-    [200],
-  );
-  expect(status.body.audience).toBe("public");
+  await expect(visibility(f)).resolves.toBe("public");
   expect(context.mocks.slack.chat.unfurl).toHaveBeenCalledWith(
     expect.objectContaining({
       channel: f.channel,
@@ -836,20 +818,13 @@ test("can make a file public and refresh its original preview", async () => {
 
 test("an owner can change general visibility when channel membership cannot be read", async () => {
   const f = await fixture();
-  addMember(f, `member-${randomUUID()}@example.com`);
+  addWorkspaceMember(f);
   await postLink(f);
   context.mocks.slack.conversations.members.mockRejectedValue(
     new Error("Channel membership is unavailable"),
   );
   await click(f, "artifact_share_public");
-  const status = await accept(
-    app(f.owner)(artifactSharesContract).status({
-      headers,
-      body: { kind: "file", id: f.resource.id },
-    }),
-    [200],
-  );
-  expect(status.body.audience).toBe("public");
+  await expect(visibility(f)).resolves.toBe("public");
 });
 
 test.each(["file", "site"] as const)(
@@ -882,24 +857,8 @@ test.each(["file", "site"] as const)(
         [200],
       );
       expect(anonymous.body.available).toBeFalsy();
-      const status = await accept(
-        app(f.owner)(artifactSharesContract).status({
-          headers,
-          body: { kind: "file", id: f.resource.id },
-        }),
-        [200],
-      );
-      expect(status.body.audience).toBe("private");
-    } else {
-      const status = await accept(
-        app(f.owner)(hostContract).siteVisibility({
-          headers,
-          params: { siteId: f.resource.id },
-        }),
-        [200],
-      );
-      expect(status.body.visibility).toBe("private");
     }
+    await expect(visibility(f)).resolves.toBe("private");
     expect(
       (await shares(f)).map((share) => {
         return share.email;
@@ -922,12 +881,12 @@ test("refreshes the preview after making a file workspace-visible when every mem
   await expect(shares(f)).resolves.toStrictEqual([]);
 });
 
-test("retains a private file without a preview while an email-only member has an invitation", async () => {
+test("retains a private file without a preview while an external email-only member remains unresolved", async () => {
   const f = await fixture({ image: true });
   addMember(f, `pending-${randomUUID()}@example.com`);
   await postLink(f);
   await click(f);
-  await expect(shares(f)).resolves.toHaveLength(1);
+  await expect(shares(f)).resolves.toStrictEqual([]);
   expect(context.mocks.slack.chat.unfurl).not.toHaveBeenCalled();
   context.mocks.slack.chat.postEphemeral.mockClear();
   await postLink(f);

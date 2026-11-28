@@ -1,209 +1,13 @@
-import { appendIntegrationMessageFooter } from "../../lib/integration-message-footer";
-import { resolveSlackMessageSendFooter$ } from "../services/slack-message-context.service";
 import { command } from "ccstate";
-import {
-  integrationsSlackUploadCompleteContract,
-  type SlackUploadCompleteBody,
-} from "@okouai/api-contracts/contracts/integrations";
-import { CURRENT_LINK_LAYOUT } from "@okouai/api-contracts/contracts/link-layout";
+import { integrationsSlackUploadCompleteContract } from "@okouai/api-contracts/contracts/integrations";
 
+import { appendIntegrationMessageFooter } from "../../lib/integration-message-footer";
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { bodyResultOf } from "../context/request";
-import type { SlackFileInfo } from "../external/slack-message-client";
-import { completeCanonicalSlackDelivery$ } from "../services/canonical-slack-asset-delivery.service";
-import { recordSlackUploadedFile$ } from "../services/run-uploaded-files.service";
-import { resolveSlackWriteTarget$ } from "../services/slack-write-access.service";
 import type { RouteEntry } from "../route-entry";
-
-function buildSlackUploadMetadata(
-  body: SlackUploadCompleteBody,
-  channel: string,
-  file: SlackFileInfo | undefined,
-): Record<string, unknown> {
-  return {
-    channel,
-    ...(body.threadTs ? { threadTs: body.threadTs } : {}),
-    ...(body.title ? { title: body.title } : {}),
-    ...(body.initialComment ? { initialComment: body.initialComment } : {}),
-    slackFile: {
-      id: file?.id ?? body.fileId,
-      name: file?.name ?? null,
-      title: file?.title ?? null,
-      mimetype: file?.mimetype ?? null,
-      filetype: file?.filetype ?? null,
-    },
-  };
-}
-
-interface CanonicalCompletionArgs {
-  readonly body: SlackUploadCompleteBody;
-  readonly runId: string | undefined;
-  readonly userId: string;
-  readonly orgId: string;
-}
-
-const completeCanonicalUpload$ = command(
-  async ({ set }, args: CanonicalCompletionArgs, signal: AbortSignal) => {
-    const { body, runId } = args;
-    if (!body.canonicalAssetId || !body.operationId || !runId) {
-      return {
-        status: 400 as const,
-        body: {
-          error: {
-            message:
-              "Canonical Slack completion requires asset, operation, and run identities",
-            code: "BAD_REQUEST",
-          },
-        },
-      };
-    }
-    const delivery = await set(
-      completeCanonicalSlackDelivery$,
-      {
-        assetId: body.canonicalAssetId,
-        operationId: body.operationId,
-        runId,
-        userId: args.userId,
-        orgId: args.orgId,
-        fileId: body.fileId,
-        ...(body.uploadError ? { uploadError: body.uploadError } : {}),
-      },
-      signal,
-    );
-    if (!delivery) {
-      return {
-        status: 404 as const,
-        body: {
-          error: {
-            message: "Canonical Slack delivery was not found",
-            code: "NOT_FOUND",
-          },
-        },
-      };
-    }
-    if (delivery.status === "failed") {
-      return {
-        status: 200 as const,
-        body: {
-          fileId: body.fileId,
-          permalink: "",
-          channel: delivery.channelId,
-          assetId: body.canonicalAssetId,
-          deliveryStatus: "failed" as const,
-          deliveryError: delivery.message,
-        },
-      };
-    }
-    return {
-      status: 200 as const,
-      body: {
-        fileId: delivery.fileId,
-        permalink: delivery.permalink,
-        channel: delivery.channelId,
-        assetId: body.canonicalAssetId,
-        deliveryStatus: "delivered" as const,
-      },
-    };
-  },
-);
-
-interface DirectCompletionArgs {
-  readonly body: SlackUploadCompleteBody;
-  readonly runId: string | undefined;
-  readonly userId: string;
-  readonly orgId: string;
-}
-
-const completeDirectUpload$ = command(
-  async ({ set }, args: DirectCompletionArgs, signal: AbortSignal) => {
-    const { body } = args;
-    const target = await set(
-      resolveSlackWriteTarget$,
-      {
-        runId: args.runId,
-        allowSource: false,
-        userId: args.userId,
-        orgId: args.orgId,
-        channel: body.channel,
-        threadTs: body.threadTs,
-        user: body.user,
-      },
-      signal,
-    );
-    if ("status" in target) {
-      return target;
-    }
-    const channel = target.channelId;
-    const footerText = await set(
-      resolveSlackMessageSendFooter$,
-      target.workspaceId,
-      signal,
-    );
-    const completeResult = await target.client.completeUploadExternal({
-      fileId: body.fileId,
-      channel,
-      threadTs: body.threadTs,
-      title: body.title,
-      initialComment:
-        appendIntegrationMessageFooter(body.initialComment, footerText) ||
-        undefined,
-    });
-    signal.throwIfAborted();
-    if (completeResult.kind === "slack_error") {
-      return {
-        status: 400 as const,
-        body: {
-          error: {
-            message: `Slack API error: ${completeResult.error}`,
-            code: "SLACK_ERROR",
-          },
-        },
-      };
-    }
-
-    const infoResult = await target.client.getFileInfo(body.fileId);
-    signal.throwIfAborted();
-    if (infoResult.kind === "slack_error") {
-      return {
-        status: 400 as const,
-        body: {
-          error: {
-            message: `Slack API error: ${infoResult.error}`,
-            code: "SLACK_ERROR",
-          },
-        },
-      };
-    }
-    const file = infoResult.file;
-    const permalink = file?.permalink ?? "";
-    await set(
-      recordSlackUploadedFile$,
-      {
-        runId: args.runId,
-        externalId: body.fileId,
-        userId: args.userId,
-        orgId: args.orgId,
-        filename: body.title ?? file?.title ?? file?.name ?? null,
-        contentType: file?.mimetype ?? null,
-        sizeBytes: file?.size ?? null,
-        url: permalink || null,
-        layout: CURRENT_LINK_LAYOUT,
-        metadata: buildSlackUploadMetadata(body, channel, file),
-      },
-      signal,
-    );
-    signal.throwIfAborted();
-    return {
-      status: 200 as const,
-      body: {
-        fileId: body.fileId,
-        permalink,
-        channel,
-      },
-    };
-  },
-);
+import { resolveSlackMessageSendFooter$ } from "../services/slack-message-context.service";
+import { resolveSlackWriteTarget$ } from "../services/slack-write-access.service";
 
 const completeInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   const auth = get(organizationAuthContext$);
@@ -219,31 +23,72 @@ const completeInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   }
   const body = bodyResult.data;
 
-  const hasCanonicalIdentity =
-    body.canonicalAssetId !== undefined || body.operationId !== undefined;
-  if (hasCanonicalIdentity) {
-    return set(
-      completeCanonicalUpload$,
-      {
-        body,
-        runId,
-        userId: auth.userId,
-        orgId: auth.orgId,
-      },
-      signal,
-    );
-  }
-
-  return set(
-    completeDirectUpload$,
+  const target = await set(
+    resolveSlackWriteTarget$,
     {
-      body,
       runId,
+      allowSource: false,
       userId: auth.userId,
       orgId: auth.orgId,
+      channel: body.channel,
+      threadTs: body.threadTs,
+      user: body.user,
     },
     signal,
   );
+  if ("status" in target) {
+    return target;
+  }
+  const channel = target.channelId;
+  const footerText = await set(
+    resolveSlackMessageSendFooter$,
+    target.workspaceId,
+    signal,
+  );
+  const completeResult = await target.client.completeUploadExternal({
+    fileId: body.fileId,
+    channel,
+    threadTs: body.threadTs,
+    title: body.title,
+    initialComment:
+      appendIntegrationMessageFooter(body.initialComment, footerText) ||
+      undefined,
+  });
+  signal.throwIfAborted();
+  if (completeResult.kind === "slack_error") {
+    return {
+      status: 400 as const,
+      body: {
+        error: {
+          message: `Slack API error: ${completeResult.error}`,
+          code: "SLACK_ERROR",
+        },
+      },
+    };
+  }
+
+  const infoResult = await target.client.getFileInfo(body.fileId);
+  signal.throwIfAborted();
+  if (infoResult.kind === "slack_error") {
+    return {
+      status: 400 as const,
+      body: {
+        error: {
+          message: `Slack API error: ${infoResult.error}`,
+          code: "SLACK_ERROR",
+        },
+      },
+    };
+  }
+  const permalink = infoResult.file?.permalink ?? "";
+  return {
+    status: 200 as const,
+    body: {
+      fileId: body.fileId,
+      permalink,
+      channel,
+    },
+  };
 });
 
 const slackWriteAuth = {

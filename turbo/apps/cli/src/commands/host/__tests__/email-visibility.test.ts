@@ -12,6 +12,7 @@ import { createHostCommand } from "../index";
 
 const siteId = "00000000-0000-4000-8000-000000000001";
 const deploymentId = "00000000-0000-4000-8000-000000000002";
+const artifactId = "00000000-0000-4000-8000-000000000003";
 const base = "http://localhost:3000/api";
 const siteUrl = "https://demo-site.okou.app";
 
@@ -103,7 +104,7 @@ describe("hosted website email visibility", () => {
     failEmail?: string;
   } = {}) {
     let status = {
-      artifactId: siteId,
+      artifactId,
       kind: "hosted-site" as const,
       visibility: initial,
       ownerUrl: siteUrl,
@@ -113,28 +114,23 @@ describe("hosted website email visibility", () => {
     };
     const shares: { userId: string; email: string }[] = [];
     server.use(
-      http.get(`${base}/host/aliases/demo-site`, () => {
+      http.get(`${base}/host/sites/demo-site/url`, ({ request }) => {
         events.push("resolve");
+        expect(request.headers.get("authorization")).toBe("Bearer test-token");
         return HttpResponse.json({
-          pointer: {
-            version: 1,
-            publicBrand: "okou",
-            publicSlug: "demo-site",
-            siteId,
-            deploymentId,
-            prefix: `sites/brands/okou/publications/${deploymentId}`,
-            manifestKey: `sites/brands/okou/publications/${deploymentId}/manifest.json`,
-            spaFallback: false,
-            updatedAt: "2026-11-23T00:00:00Z",
-          },
+          siteId,
+          artifactId,
+          publicSlug: "demo-site",
+          url: siteUrl,
+          isActive: true,
         });
       }),
-      http.get(`${base}/artifacts/${siteId}/visibility`, () => {
+      http.get(`${base}/artifacts/${artifactId}/visibility`, () => {
         events.push("read-visibility");
         return HttpResponse.json(status);
       }),
       http.patch(
-        `${base}/artifacts/${siteId}/visibility`,
+        `${base}/artifacts/${artifactId}/visibility`,
         async ({ request }) => {
           const body = artifactAccessContract.updateVisibility.body.parse(
             await request.json(),
@@ -158,27 +154,32 @@ describe("hosted website email visibility", () => {
           return HttpResponse.json(status);
         },
       ),
-      http.post(`${base}/artifacts/${siteId}/shares`, async ({ request }) => {
-        const body = artifactAccessContract.addShare.body.parse(
-          await request.json(),
-        );
-        if (!("email" in body)) {
-          throw new Error("Expected CLI to send email payload");
-        }
-        const { email } = body;
-        events.push(`share:${email}`);
-        expect(status.visibility).toBe("private");
-        expect(request.headers.get("authorization")).toBe("Bearer test-token");
-        if (email === failEmail) {
-          return HttpResponse.json(
-            { error: { code: "RATE_LIMITED", message: "Try again later" } },
-            { status: 429 },
+      http.post(
+        `${base}/artifacts/${artifactId}/shares`,
+        async ({ request }) => {
+          const body = artifactAccessContract.addShare.body.parse(
+            await request.json(),
           );
-        }
-        const share = { userId: `user_${randomUUID().slice(0, 8)}`, email };
-        shares.push(share);
-        return HttpResponse.json({ share });
-      }),
+          if (!("email" in body)) {
+            throw new Error("Expected CLI to send email payload");
+          }
+          const { email } = body;
+          events.push(`share:${email}`);
+          expect(status.visibility).toBe("private");
+          expect(request.headers.get("authorization")).toBe(
+            "Bearer test-token",
+          );
+          if (email === failEmail) {
+            return HttpResponse.json(
+              { error: { code: "RATE_LIMITED", message: "Try again later" } },
+              { status: 429 },
+            );
+          }
+          const share = { userId: `user_${randomUUID().slice(0, 8)}`, email };
+          shares.push(share);
+          return HttpResponse.json({ share });
+        },
+      ),
     );
     return shares;
   }

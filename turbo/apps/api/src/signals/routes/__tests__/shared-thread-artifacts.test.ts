@@ -15,7 +15,7 @@ import { number, string, object as zObject } from "zod";
 import { server } from "../../../mocks/server";
 import { createDeferredPromise } from "../../utils";
 import { ARTIFACT_OG_BRAND } from "@okouai/core/artifact-og";
-import { artifactSharesContract } from "@okouai/api-contracts/contracts/artifact-shares";
+import { artifactAccessContract } from "@okouai/api-contracts/contracts/artifact-access";
 import { artifactCatalogContract } from "@okouai/api-contracts/contracts/artifact-catalog";
 import { artifactOgContract } from "@okouai/api-contracts/contracts/artifact-og";
 import { artifactDownloadsContract } from "@okouai/api-contracts/contracts/artifact-downloads";
@@ -29,7 +29,7 @@ import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { flushWaitUntilForTest } from "../../context/wait-until";
-import { artifactShareRoutes } from "../artifact-shares";
+import { artifactAccessRoutes } from "../artifact-access";
 import { artifactOgRoutes } from "../artifact-og";
 import { artifactReferenceRoutes } from "../artifact-references";
 import { artifactDownloadRoutes } from "../artifact-downloads";
@@ -66,7 +66,7 @@ function api(rethrowErrors = false, signal = context.signal) {
     routes: [
       ...sharedThreadRoutes,
       ...artifactCatalogRoutes,
-      ...artifactShareRoutes,
+      ...artifactAccessRoutes,
       ...artifactOgRoutes,
       ...artifactReferenceRoutes,
       ...artifactDownloadRoutes,
@@ -424,13 +424,13 @@ test("copies only selected artifacts, rewrites the snapshot, and preserves sourc
     },
   );
   const status = await accept(
-    api()(artifactSharesContract).status({
+    api()(artifactAccessContract).getVisibility({
       headers: headers(f.actor),
-      body: { kind: "file", id: file.id },
+      params: { artifactId: file.id },
     }),
     [200],
   );
-  expect(status.body.audience).toBe("private");
+  expect(status.body.visibility).toBe("private");
   const meta = await accept(
     api()(sharedThreadsContract).meta({ params: { id: created.body.id } }),
     [200],
@@ -644,18 +644,14 @@ test("copies an uploaded video with independent bytes and the parent revocation"
     contentType: "video/mp4",
     bearerToken,
   });
-  const sourceArtifacts = await chat.listThreadArtifacts(
-    f.actor,
-    sourceRun.threadId,
-  );
-  expect(
-    sourceArtifacts.runs.flatMap((run) => {
-      return run.files;
+  const catalog = await chat.listArtifactCatalog(f.actor, {
+    chatThreadId: sourceRun.threadId,
+  });
+  expect(catalog.artifacts).toContainEqual(
+    expect.objectContaining({
+      kind: "file",
+      title: "video.mp4",
     }),
-  ).toStrictEqual(
-    expect.arrayContaining([
-      expect.objectContaining({ url: source.url, contentType: "video/mp4" }),
-    ]),
   );
   const selection = await f.selection(source.url);
   const created = await accept(share(f.actor, selection), [201]);
@@ -814,19 +810,17 @@ test.each(["short", "legacy"] as const)(
       },
     );
     const shared = await accept(
-      api()(artifactSharesContract).update({
+      api()(artifactAccessContract).updateVisibility({
         headers: headers(owner),
-        body: {
-          target: { kind: "file", id: file.id },
-          audience: "organization",
-        },
+        params: { artifactId: file.id },
+        body: { visibility: "organization" },
       }),
       [200],
     );
     const url =
       format === "short"
         ? shared.body.shortUrl
-        : `https://app.okou.ai${artifactReferencePath(shared.body.shareId!, "report.pdf")}`;
+        : `https://app.okou.ai${artifactReferencePath(file.id, "report.pdf")}`;
     const selection = await f.selection(`[Organization report](${url})`);
     await accept(share(f.actor, selection), [400]);
     const catalog = await chat.listArtifactCatalog(f.actor, {

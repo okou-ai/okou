@@ -1,8 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { Readable } from "node:stream";
 import { GetObjectCommand, HeadObjectCommand } from "@aws-sdk/client-s3";
-import { artifactSharingContract } from "@okouai/api-contracts/contracts/artifact-sharing";
-import { artifactSharesContract } from "@okouai/api-contracts/contracts/artifact-shares";
+import { artifactAccessContract } from "@okouai/api-contracts/contracts/artifact-access";
 import { uploadsContract } from "@okouai/api-contracts/contracts/uploads";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import type { FeishuPlatform } from "@okouai/core/feishu-platform";
@@ -16,8 +15,7 @@ import { mockNow, now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createDeferredPromise } from "../../utils";
-import { artifactSharingRoutes } from "../artifact-sharing";
-import { artifactShareRoutes } from "../artifact-shares";
+import { artifactAccessRoutes } from "../artifact-access";
 import { uploadsPrepareRoutes } from "../uploads-prepare";
 import { uploadsCompleteRoutes } from "../uploads-complete";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
@@ -40,8 +38,7 @@ function app(actor: ApiTestUser) {
   return setupAppWithRoutes({
     context,
     routes: [
-      ...artifactSharingRoutes,
-      ...artifactShareRoutes,
+      ...artifactAccessRoutes,
       ...uploadsPrepareRoutes,
       ...uploadsCompleteRoutes,
     ],
@@ -113,7 +110,7 @@ async function fixture(
     platform,
   );
   await updateFeatureSwitchesForUser(context, owner, {
-    [FeatureSwitchKey.HostedSiteEmailSharing]: true,
+    [FeatureSwitchKey.ArtifactUserSharing]: true,
   });
   directory([owner]);
   const stored = createHostBddApi(context).captureHostedSitesS3();
@@ -221,9 +218,10 @@ async function fixture(
     };
     if (audience !== "private") {
       await accept(
-        app(owner)(artifactSharesContract).update({
+        app(owner)(artifactAccessContract).updateVisibility({
           headers,
-          body: { target: { kind: "file", id: resource.id }, audience },
+          params: { artifactId: resource.id },
+          body: { visibility: audience },
         }),
         [200],
       );
@@ -397,9 +395,9 @@ async function click(
 async function shares(f: Fixture) {
   return (
     await accept(
-      app(f.owner)(artifactSharingContract).list({
+      app(f.owner)(artifactAccessContract).listShares({
         headers,
-        params: { kind: f.resource.kind, id: f.resource.id },
+        params: { artifactId: f.resource.id },
       }),
       [200],
     )
@@ -440,13 +438,13 @@ test.each(["feishu", "lark"] as const)(
     });
     expect(f.prompts).toHaveLength(1);
     const status = await accept(
-      app(f.owner)(artifactSharesContract).status({
+      app(f.owner)(artifactAccessContract).getVisibility({
         headers,
-        body: { kind: "file", id: f.resource.id },
+        params: { artifactId: f.resource.id },
       }),
       [200],
     );
-    expect(status.body.audience).toBe("private");
+    expect(status.body.visibility).toBe("private");
     expect(context.mocks.resend.send).toHaveBeenCalledTimes(1);
     await click(f);
     expect(context.mocks.resend.send).toHaveBeenCalledTimes(1);
@@ -559,13 +557,13 @@ test.each(["organization", "public"])(
     await preview(f);
     await click(f, { audience });
     const status = await accept(
-      app(f.owner)(artifactSharesContract).status({
+      app(f.owner)(artifactAccessContract).getVisibility({
         headers,
-        body: { kind: "file", id: f.resource.id },
+        params: { artifactId: f.resource.id },
       }),
       [200],
     );
-    expect(status.body.audience).toBe(audience);
+    expect(status.body.visibility).toBe(audience);
     expect(f.refreshes).toStrictEqual([{ preview_tokens: [f.previewToken] }]);
   },
 );

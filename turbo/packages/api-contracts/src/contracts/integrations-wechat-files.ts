@@ -1,5 +1,4 @@
 import {
-  boolean,
   discriminatedUnion,
   literal,
   number,
@@ -38,31 +37,27 @@ const wechatUploadInitBodySchema = object({
   length: number().int().positive().max(MAX_WECHAT_FILE_SIZE_BYTES),
   contentType: string().min(1).max(255),
   checksumSha256: string().regex(/^[a-f0-9]{64}$/u),
-  operationId: uuid(),
   channelId: wechatIdSchema,
   comment: string().max(2000).optional(),
 });
 
 const wechatUploadInitResponseSchema = object({
   assetId: uuid(),
-  operationId: uuid(),
   url: artifactUrlSchema,
-  // A repeated operation whose bytes already exist does not upload again.
-  uploadUrl: url().optional(),
-  uploadHeaders: record(string(), string()).optional(),
+  uploadUrl: url(),
+  uploadHeaders: record(string(), string()),
 });
 
-const wechatUploadOperationBodySchema = object({
+const wechatUploadCompleteBodySchema = object({
   assetId: uuid(),
-  operationId: uuid(),
+  channelId: wechatIdSchema,
+  comment: string().max(2000).optional(),
 });
 
 const wechatUploadResponseSchema = object({
   assetId: uuid(),
-  operationId: uuid(),
   url: artifactUrlSchema,
   delivery: discriminatedUnion("status", [
-    object({ status: literal("pending") }),
     object({
       status: literal("delivered"),
       channelId: wechatIdSchema,
@@ -72,7 +67,6 @@ const wechatUploadResponseSchema = object({
     object({
       status: literal("failed"),
       message: string(),
-      retryable: boolean(),
     }),
   ]),
 });
@@ -87,14 +81,12 @@ export type WechatUploadInitBody = zInfer<typeof wechatUploadInitBodySchema>;
 export type WechatUploadInitResponse = zInfer<
   typeof wechatUploadInitResponseSchema
 >;
-export type WechatUploadMaterializeBody = zInfer<
-  typeof wechatUploadOperationBodySchema
+export type WechatUploadCompleteBody = zInfer<
+  typeof wechatUploadCompleteBodySchema
 >;
-export type WechatUploadMaterializeResponse = zInfer<
+export type WechatUploadCompleteResponse = zInfer<
   typeof wechatUploadResponseSchema
 >;
-export type WechatUploadCompleteBody = WechatUploadMaterializeBody;
-export type WechatUploadCompleteResponse = WechatUploadMaterializeResponse;
 export type WechatDownloadFileQuery = zInfer<
   typeof wechatDownloadFileQuerySchema
 >;
@@ -119,18 +111,7 @@ export const integrationsWechatUploadInitContract = c.router({
     headers: authHeadersSchema,
     body: wechatUploadInitBodySchema,
     responses: { 200: wechatUploadInitResponseSchema, ...uploadErrors },
-    summary: "Initialize canonical publication for a Wechat file",
-  },
-});
-
-export const integrationsWechatUploadMaterializeContract = c.router({
-  materialize: {
-    method: "POST",
-    path: "/api/integrations/wechat/upload-file/materialize",
-    headers: authHeadersSchema,
-    body: wechatUploadOperationBodySchema,
-    responses: { 200: wechatUploadResponseSchema, ...uploadErrors },
-    summary: "Publish a canonical file before Wechat delivery",
+    summary: "Initialize publication for a Wechat file",
   },
 });
 
@@ -139,9 +120,9 @@ export const integrationsWechatUploadCompleteContract = c.router({
     method: "POST",
     path: "/api/integrations/wechat/upload-file/complete",
     headers: authHeadersSchema,
-    body: wechatUploadOperationBodySchema,
+    body: wechatUploadCompleteBodySchema,
     responses: { 200: wechatUploadResponseSchema, ...uploadErrors },
-    summary: "Deliver a canonical file to its verified WeChat destination",
+    summary: "Finalize and fire-and-forget deliver a file to WeChat",
   },
 });
 

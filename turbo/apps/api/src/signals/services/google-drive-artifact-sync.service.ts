@@ -14,7 +14,6 @@ import { applyGoogleSlidesTextStyles } from "./google-slides-text-style.service"
 import type {
   ChatThreadArtifactGoogleDriveRecovery,
   ChatThreadArtifactGoogleDriveSync,
-  ChatThreadArtifactRun,
 } from "@okouai/api-contracts/contracts/chat-threads";
 import {
   isFeatureEnabled,
@@ -455,25 +454,16 @@ function buildStatusMap(
     if (!fileId) {
       continue;
     }
-    const key = artifactKey(runId ?? "", fileId);
-    const existing = map.get(key);
-    const originalUploaded =
-      existing?.originalUploaded === true ||
-      !Object.values(GOOGLE_WORKSPACE_MIME_TYPES).some((mime) => {
+    const keys = runId
+      ? [artifactKey(runId, fileId), artifactKey("", fileId)]
+      : [artifactKey("", fileId)];
+    const isNativeWorkspace = Object.values(GOOGLE_WORKSPACE_MIME_TYPES).some(
+      (mime) => {
         return mime === file.mimeType;
-      });
-    // Retain both actions' completion while preferring the native editor link.
-    if (
-      existing?.mimeType &&
-      Object.values(GOOGLE_WORKSPACE_MIME_TYPES).some((mime) => {
-        return mime === existing.mimeType;
-      })
-    ) {
-      map.set(key, { ...existing, originalUploaded });
-      continue;
-    }
-    map.set(key, {
-      originalUploaded,
+      },
+    );
+    const entry: DriveSyncStatusResult = {
+      originalUploaded: !isNativeWorkspace,
       id: file.id,
       name: file.name,
       webViewLink:
@@ -486,7 +476,23 @@ function buildStatusMap(
               ? `https://docs.google.com/presentation/d/${encodeURIComponent(file.id)}/edit`
               : null),
       ...(file.mimeType ? { mimeType: file.mimeType } : {}),
-    });
+    };
+    for (const key of keys) {
+      const existing = map.get(key);
+      const originalUploaded =
+        existing?.originalUploaded === true || !isNativeWorkspace;
+      // Retain both actions' completion while preferring the native editor link.
+      if (
+        existing?.mimeType &&
+        Object.values(GOOGLE_WORKSPACE_MIME_TYPES).some((mime) => {
+          return mime === existing.mimeType;
+        })
+      ) {
+        map.set(key, { ...existing, originalUploaded });
+        continue;
+      }
+      map.set(key, { ...entry, originalUploaded });
+    }
   }
   return map;
 }
@@ -558,26 +564,6 @@ export const googleDriveArtifactDetailStatus$ = command(
     return googleDriveArtifactStatusFields(lookup, source);
   },
 );
-
-export function applyGoogleDriveArtifactSyncStatuses(
-  runs: readonly ChatThreadArtifactRun[],
-  lookup: DriveStatusLookup,
-): ChatThreadArtifactRun[] {
-  return runs.map((run) => {
-    return {
-      ...run,
-      files: run.files.map((file) => {
-        return {
-          ...file,
-          ...googleDriveArtifactStatusFields(lookup, {
-            runId: run.runId,
-            fileId: file.id,
-          }),
-        };
-      }),
-    };
-  });
-}
 
 /**
  * Compute the Drive sync status lookup for a chat thread's artifacts.
@@ -897,7 +883,7 @@ const resolveArtifactS3Object$ = command(
     if (reference) {
       const object = await set(
         uploadedArtifactObject$,
-        { id: reference.id, userId, orgId },
+        { id: reference.id, userId, orgId, resolvePrivateUrl: false },
         signal,
       );
       signal.throwIfAborted();

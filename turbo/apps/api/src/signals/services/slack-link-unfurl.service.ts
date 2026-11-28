@@ -29,10 +29,7 @@ import {
 import { fetchSlackPageMetadata } from "../external/slack-page-metadata";
 import { artifactDeliveryRecord } from "./artifact-delivery.service";
 import { artifactOgMetadata$ } from "./artifact-og.service";
-import {
-  publicArtifactShareIdentity$,
-  resolvePublicArtifactSource$,
-} from "./artifact-shares.service";
+import { resolvePublicArtifactSource$ } from "./artifact-shares.service";
 import { decryptPersistentSecretValue } from "./crypto.utils";
 import { slackPreviewImageUrl } from "./slack-preview-image.service";
 
@@ -121,20 +118,10 @@ const slackPublicationTarget$ = command(
     signal: AbortSignal,
   ): Promise<ArtifactOgTarget | null> => {
     const lookup = { kind: "share" as const, id: record.shareId };
-    const owner = await set(publicArtifactShareIdentity$, lookup, signal);
-    signal.throwIfAborted();
-    if (!owner) {
-      return null;
-    }
-    const published = await set(
-      resolvePublicArtifactSource$,
-      lookup,
-      owner,
-      signal,
-    );
+    const published = await set(resolvePublicArtifactSource$, lookup, signal);
     signal.throwIfAborted();
     // The live policy must still publish this exact alias, not just its owner.
-    return published &&
+    return published?.kind === "legacy-policy" &&
       published.policy.publicToken === record.publicToken &&
       published.policy.publicBrand === record.publicBrand &&
       published.policy.target.kind === "html" &&

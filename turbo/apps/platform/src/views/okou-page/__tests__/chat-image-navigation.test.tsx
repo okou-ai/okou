@@ -1,5 +1,4 @@
 import { artifactCatalogContract } from "@okouai/api-contracts/contracts/artifact-catalog";
-import { chatThreadArtifactsContract } from "@okouai/api-contracts/contracts/chat-threads";
 import { webFilesContract } from "@okouai/api-contracts/contracts/web-files";
 import userEvent from "@testing-library/user-event";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
@@ -121,10 +120,6 @@ test("the same photo opens in its clicked message group without reading either t
     ],
   });
   const listRequests: string[] = [];
-  context.mocks.api(chatThreadArtifactsContract.list, ({ respond }) => {
-    listRequests.push("run files");
-    return respond(200, { runs: [] });
-  });
   context.mocks.api(artifactCatalogContract.list, ({ respond }) => {
     listRequests.push("catalog");
     return respond(200, { artifacts: [], nextCursor: null });

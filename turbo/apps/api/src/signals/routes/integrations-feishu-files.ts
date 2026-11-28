@@ -60,7 +60,6 @@ import {
   feishuInstallationAvailabilityReadPlan,
   feishuInstallationEnabledFromRows,
 } from "../services/feishu-config";
-import { recordFeishuUploadedFile$ } from "../services/run-uploaded-files.service";
 import { loadUserFeatureSwitchContext$ } from "../services/feature-switches.service";
 import type { RouteEntry } from "../route-entry";
 import { safeUriComponentDecode, settle } from "../utils";
@@ -256,34 +255,6 @@ function filenameFromContentDisposition(value: string | null): string | null {
 
 function sanitizeDownloadFilename(filename: string): string {
   return filename.trim().replace(/[/\\]/gu, "_").slice(0, 255) || "feishu-file";
-}
-
-function uploadMetadata(args: {
-  readonly body: FeishuUploadCompleteBody;
-  readonly installationId: string;
-  readonly s3Key: string;
-  readonly sourceUrl: string;
-  readonly messageId: string;
-  readonly chatId: string | null;
-  readonly fileKey: string;
-}): Record<string, unknown> {
-  return {
-    installationId: args.installationId,
-    uploadId: args.body.uploadId,
-    s3Key: args.s3Key,
-    sourceUrl: args.sourceUrl,
-    ...(args.body.chat ? { chat: args.body.chat } : {}),
-    ...(args.body.user ? { user: args.body.user } : {}),
-    ...(args.body.replyToMessageId
-      ? { replyToMessageId: args.body.replyToMessageId }
-      : {}),
-    ...(args.body.replyInThread ? { replyInThread: true } : {}),
-    feishuMessage: {
-      messageId: args.messageId,
-      chatId: args.chatId,
-      fileKey: args.fileKey,
-    },
-  };
 }
 
 const authorizeFileDelivery$ = command(
@@ -640,7 +611,7 @@ const completeUpload$ = command(async ({ get, set }, signal: AbortSignal) => {
 
   const object = await set(
     materializeUploadedArtifact$,
-    { userId: auth.userId, orgId: auth.orgId, id: body.uploadId },
+    { userId: auth.userId, orgId: auth.orgId, id: body.uploadId, runId },
     signal,
   );
   if (!object) {
@@ -694,28 +665,6 @@ const completeUpload$ = command(async ({ get, set }, signal: AbortSignal) => {
   if (!sent.ok) {
     return feishuApiError(sent.error, get(feishuRequestPlatform$));
   }
-  const recordInput = {
-    runId,
-    externalId: sent.value.messageId,
-    userId: auth.userId,
-    orgId: auth.orgId,
-    filename,
-    contentType,
-    sizeBytes: object.size,
-    url: fileUrl,
-    layout: object.layout,
-    metadata: uploadMetadata({
-      body,
-      installationId: installation.id,
-      s3Key: object.key,
-      sourceUrl: fileUrl,
-      messageId: sent.value.messageId,
-      chatId: sent.value.chatId,
-      fileKey: uploaded.value,
-    }),
-  };
-  await set(recordFeishuUploadedFile$, recordInput, signal);
-  signal.throwIfAborted();
   return {
     status: 200 as const,
     body: {

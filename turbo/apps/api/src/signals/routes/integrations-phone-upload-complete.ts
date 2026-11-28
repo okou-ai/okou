@@ -1,6 +1,5 @@
 import { appendIntegrationMessageFooter } from "../../lib/integration-message-footer";
 import { integrationMessageSendFooterText$ } from "../services/integration-message-context.service";
-import type { LinkLayout } from "@okouai/api-contracts/contracts/link-layout";
 import { agentphoneMessages } from "@okouai/db/schema/agentphone-message";
 import { agentPhoneMessageVisibleTo } from "../services/agentphone-message-access";
 import { agentphoneUserLinks } from "@okouai/db/schema/agentphone-user-link";
@@ -25,7 +24,6 @@ import {
   materializeUploadedArtifact$,
   uploadedArtifactFetchUrl$,
 } from "../services/uploaded-artifact.service";
-import { recordAgentPhoneUploadedFile$ } from "../services/run-uploaded-files.service";
 import {
   agentPhoneChannelForLinkedHandle,
   normalizeAgentPhoneHandle,
@@ -68,38 +66,12 @@ function agentPhoneRouteError(error: unknown) {
   );
 }
 
-function buildMetadata(params: {
-  readonly body: PhoneUploadCompleteBody;
-  readonly toNumber: string;
-  readonly uploadId: string;
-  readonly s3Key: string;
-  readonly sourceUrl: string;
-  readonly agentphoneMessageId: string;
-}): Record<string, unknown> {
-  return {
-    toNumber: params.toNumber,
-    uploadId: params.uploadId,
-    s3Key: params.s3Key,
-    sourceUrl: params.sourceUrl,
-    ...(params.body.caption ? { caption: params.body.caption } : {}),
-    agentphoneMessage: { id: params.agentphoneMessageId },
-  };
-}
-
 interface PhoneFileDelivery {
-  readonly runId: string | undefined;
-  readonly auth: {
-    readonly userId: string;
-    readonly orgId: string;
-  };
   readonly userLinkId: string;
-  readonly mimetype: string;
   readonly body: PhoneUploadCompleteBody;
   readonly uploadedFile: UploadedFileInfo;
-  readonly layout: LinkLayout;
   readonly sent: Awaited<ReturnType<typeof sendAgentPhoneMessage>>;
   readonly phoneHandle: string;
-  readonly toNumber: string;
   readonly userChannel: ReturnType<typeof agentPhoneChannelForLinkedHandle>;
   readonly agentphoneAgentId: string;
   readonly group: PhoneFileGroup | undefined;
@@ -215,28 +187,6 @@ const resolvePhoneFileGroup$ = command(
     };
   },
 );
-
-function uploadedFileRecordValues(args: PhoneFileDelivery) {
-  return {
-    runId: args.runId,
-    externalId: args.sent.id,
-    userId: args.auth.userId,
-    orgId: args.auth.orgId,
-    filename: args.uploadedFile.filename,
-    contentType: args.mimetype,
-    sizeBytes: args.uploadedFile.size,
-    url: args.uploadedFile.fileUrl,
-    layout: args.layout,
-    metadata: buildMetadata({
-      body: args.body,
-      toNumber: args.toNumber,
-      uploadId: args.body.uploadId,
-      s3Key: args.uploadedFile.key,
-      sourceUrl: args.uploadedFile.fileUrl,
-      agentphoneMessageId: args.sent.id,
-    }),
-  };
-}
 
 function outboundPhoneFileValues(args: PhoneFileDelivery) {
   return {
@@ -372,7 +322,7 @@ const complete$ = command(
 
     const object = await set(
       materializeUploadedArtifact$,
-      { userId: auth.userId, orgId: auth.orgId, id: body.uploadId },
+      { userId: auth.userId, orgId: auth.orgId, id: body.uploadId, runId },
       signal,
     );
     if (!object) {
@@ -429,21 +379,11 @@ const complete$ = command(
     const sent = sendResult.value;
 
     const delivery: PhoneFileDelivery = {
-      runId,
-      auth,
       ...destination,
-      mimetype,
       body: { ...body, caption },
       uploadedFile,
-      layout: object.layout,
       sent,
     };
-    await set(
-      recordAgentPhoneUploadedFile$,
-      uploadedFileRecordValues(delivery),
-      signal,
-    );
-    signal.throwIfAborted();
 
     await set(
       storeOutboundAgentPhoneMessage$,

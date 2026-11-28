@@ -1,11 +1,11 @@
 import { computed, type Computed } from "ccstate";
-import type { HostedSiteShareAccount } from "@okouai/api-contracts/contracts/hosted-site-sharing";
+import type { ArtifactShareAccount } from "@okouai/api-contracts/contracts/artifact-access";
 import { clerk$, type ClerkUser } from "../external/clerk";
 
 function account(
   user: ClerkUser,
   requestedEmail?: string,
-): HostedSiteShareAccount | null {
+): ArtifactShareAccount | null {
   if (user.banned) {
     return null;
   }

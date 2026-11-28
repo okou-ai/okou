@@ -29,6 +29,7 @@ function imageReference(reference = path.slice("/artifacts/".length)) {
         return respond(404, missingReference());
       }
       return respond(200, {
+        artifactId: fileId,
         target: { kind: "file", id: fileId },
         filename,
         contentType: "image/png",

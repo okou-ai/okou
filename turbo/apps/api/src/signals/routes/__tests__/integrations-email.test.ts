@@ -108,6 +108,58 @@ async function startEmailFileExecution(additionalEmail?: string) {
   return { actor, execution, token, message, group, runId };
 }
 
+function mockEmailS3(contentLength: number, etag = "email-file") {
+  const objects = new Map<string, Buffer>();
+  context.mocks.s3.send.mockImplementation((command: unknown) => {
+    const name =
+      typeof command === "object" && command !== null
+        ? command.constructor.name
+        : "";
+    const input =
+      typeof command === "object" &&
+      command !== null &&
+      "input" in command &&
+      typeof command.input === "object" &&
+      command.input !== null
+        ? (command.input as { Key?: unknown; Body?: unknown })
+        : undefined;
+    const key = typeof input?.Key === "string" ? input.Key : undefined;
+    if (name === "PutObjectCommand" && key) {
+      const body = input?.Body;
+      objects.set(
+        key,
+        typeof body === "string"
+          ? Buffer.from(body)
+          : body instanceof Uint8Array
+            ? Buffer.from(body)
+            : Buffer.alloc(0),
+      );
+    }
+    if (name === "GetObjectCommand" && key) {
+      const stored = objects.get(key);
+      if (stored !== undefined) {
+        return Promise.resolve({
+          ContentLength: stored.length,
+          ETag: `"${etag}"`,
+          Body: {
+            async *[Symbol.asyncIterator]() {
+              yield stored;
+            },
+          },
+        });
+      }
+      return Promise.reject(
+        Object.assign(new Error(`NoSuchKey: ${key}`), { name: "NoSuchKey" }),
+      );
+    }
+    return Promise.resolve({
+      ContentLength: contentLength,
+      UploadId: randomUUID(),
+      ETag: etag,
+    });
+  });
+}
+
 async function prepareEmailFile(token: string) {
   const client = setupApp({
     context,
@@ -1739,11 +1791,7 @@ describe("Email integration", () => {
       }),
     );
 
-    context.mocks.s3.send.mockResolvedValue({
-      ContentLength: 20 * 1024 * 1024,
-      UploadId: randomUUID(),
-      ETag: "email-file",
-    });
+    mockEmailS3(20 * 1024 * 1024, "email-file");
     const file = await prepareEmailFile(token);
     await accept(
       emailUploadClient().complete({
@@ -1954,11 +2002,7 @@ describe("Email integration", () => {
 
   it("checks the stored object's actual size before attaching it", async () => {
     const { token } = await startEmailFileExecution();
-    context.mocks.s3.send.mockResolvedValue({
-      ContentLength: MAX_EMAIL_ATTACHMENT_SIZE_BYTES + 1,
-      UploadId: randomUUID(),
-      ETag: "email-file",
-    });
+    mockEmailS3(MAX_EMAIL_ATTACHMENT_SIZE_BYTES + 1, "email-file");
     const file = await prepareEmailFile(token);
     await accept(
       emailUploadClient().complete({
@@ -2990,11 +3034,7 @@ describe("Email multi-account connections", () => {
     expect(receivedExecution.appendSystemPrompt).toContain(
       `Verified sender: ${JSON.stringify(sender)}`,
     );
-    context.mocks.s3.send.mockResolvedValue({
-      ContentLength: 1024,
-      UploadId: randomUUID(),
-      ETag: "email-code-file",
-    });
+    mockEmailS3(1024, "email-code-file");
     const file = await prepareEmailFile(token);
     const result = await accept(
       emailUploadClient().complete({

@@ -20,12 +20,13 @@ import {
   readHostedSiteSnapshotSource,
 } from "../external/s3";
 
-/** Dependency URLs are private server metadata, never part of a delivery manifest. */
+/** Dependency URLs and prepared visibility are private server metadata, never part of a delivery manifest. */
 export function hostedSiteDeliveryManifest(
   manifest: HostedSiteManifest,
 ): HostedSiteManifest {
   const delivery = { ...manifest };
   delete delivery.snapshotDependencies;
+  delete delivery.visibility;
   return delivery;
 }
 

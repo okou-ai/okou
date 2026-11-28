@@ -6,11 +6,10 @@ import {
   captureIntegrationInputUploads,
   expectIntegrationInputPreview,
 } from "./helpers/integration-input-assets";
-import { createHmac, randomInt, randomUUID } from "node:crypto";
+import { createHash, createHmac, randomInt, randomUUID } from "node:crypto";
 import {
   integrationsSlackUploadInitContract,
   integrationsSlackUploadMaterializeContract,
-  integrationsSlackUploadCompleteContract,
 } from "@okouai/api-contracts/contracts/integrations";
 import { integrationsSlackReadContract } from "@okouai/api-contracts/contracts/integrations-slack-read";
 import { integrationsSlackReadRoutes } from "../integrations-slack-read";
@@ -1916,7 +1915,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
       ],
     });
     const objectStore = chatCallbacks.acceptChatObjectStorage();
-    const operationId = randomUUID();
+    const bytes = Buffer.alloc(42, "a");
     const initialized = await accept(
       clients(integrationsSlackUploadInitContract).init({
         headers,
@@ -1924,9 +1923,8 @@ describe("INT-01: Slack app deep webhook flows", () => {
           filename: "report.csv",
           length: 42,
           canonical: {
-            operationId,
             contentType: "text/csv",
-            checksumSha256: "a".repeat(64),
+            checksumSha256: createHash("sha256").update(bytes).digest("hex"),
             channel: scenario.channel,
           },
         },
@@ -1941,7 +1939,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
       bucket: "test-private-artifacts",
       key: `private-artifacts/${assetId}/report.csv`,
       size: 42,
-      body: Buffer.alloc(42, "a"),
+      body: bytes,
       metadata: { "artifact-id": assetId },
     });
     context.mocks.slack.files.getUploadURLExternal.mockResolvedValue({
@@ -1949,17 +1947,10 @@ describe("INT-01: Slack app deep webhook flows", () => {
       file_id: "F_EXTERNAL_OUTPUT",
       upload_url: "https://files.slack.com/upload/v1/external-output",
     });
-    const materialize = { headers, body: { assetId, operationId } };
-    const prepared = await accept(
-      clients(integrationsSlackUploadMaterializeContract).materialize(
-        materialize,
-      ),
-      [200],
-    );
-    expect(prepared.body.delivery.status).toBe("pending");
-    expect(context.mocks.slack.createClient).toHaveBeenLastCalledWith(
-      `xoxb-bdd-${scenario.entry.teamId}`,
-      expect.anything(),
+    server.use(
+      http.post("https://files.slack.com/upload/v1/external-output", () => {
+        return new HttpResponse("OK", { status: 200 });
+      }),
     );
     context.mocks.slack.files.completeUploadExternal.mockResolvedValue({
       ok: true,
@@ -1968,16 +1959,16 @@ describe("INT-01: Slack app deep webhook flows", () => {
       ok: true,
       file: {
         id: "F_EXTERNAL_OUTPUT",
+        size: 42,
+        channels: [scenario.channel],
         permalink: "https://slack.example/files/F_EXTERNAL_OUTPUT",
       },
     });
-    const completion = {
+    const deliver = {
       headers,
       body: {
-        canonicalAssetId: assetId,
-        operationId,
-        fileId: "F_EXTERNAL_OUTPUT",
-        channel: "COTHERENTRY",
+        assetId,
+        channel: scenario.channel,
       },
     };
     server.use(
@@ -1989,43 +1980,31 @@ describe("INT-01: Slack app deep webhook flows", () => {
       }),
     );
     const denied = await accept(
-      clients(integrationsSlackUploadCompleteContract).complete(completion),
+      clients(integrationsSlackUploadMaterializeContract).deliver(deliver),
       [200],
     );
-    expect(denied.body).toMatchObject({
-      channel: scenario.channel,
-      deliveryStatus: "failed",
-    });
+    expect(denied.body.delivery.status).toBe("failed");
     expect(
       context.mocks.slack.files.completeUploadExternal,
     ).not.toHaveBeenCalled();
     allowExternalSlackChannels(scenario);
     const delivered = await accept(
-      clients(integrationsSlackUploadCompleteContract).complete(completion),
+      clients(integrationsSlackUploadMaterializeContract).deliver(deliver),
       [200],
     );
-    expect(delivered.body).toMatchObject({
-      channel: scenario.channel,
-      deliveryStatus: "delivered",
+    expect(delivered.body.delivery).toMatchObject({
+      status: "delivered",
+      fileId: "F_EXTERNAL_OUTPUT",
     });
+    expect(context.mocks.slack.createClient).toHaveBeenLastCalledWith(
+      `xoxb-bdd-${scenario.entry.teamId}`,
+      expect.anything(),
+    );
     expect(
       context.mocks.slack.files.completeUploadExternal,
     ).toHaveBeenCalledExactlyOnceWith(
       expect.objectContaining({ channel_id: scenario.channel }),
     );
-    await integrations.requestSlackDisconnect(
-      scenario.actor,
-      "disconnect",
-      [200],
-    );
-    const receipt = await accept(
-      clients(integrationsSlackUploadCompleteContract).complete(completion),
-      [200],
-    );
-    expect(receipt.body).toStrictEqual(delivered.body);
-    expect(
-      context.mocks.slack.files.completeUploadExternal,
-    ).toHaveBeenCalledTimes(1);
   });
 
   it.each(["different workspace", "deleted member", "missing identity"])(

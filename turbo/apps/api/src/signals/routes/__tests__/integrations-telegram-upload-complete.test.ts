@@ -15,7 +15,7 @@ import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
 import { server } from "../../../mocks/server";
 import { integrationsTelegramUploadCompleteRoutes } from "../integrations-telegram-upload-complete";
-import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
+import { createBddApi } from "./helpers/api-bdd";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { okouTokenFromExecution } from "./helpers/chat-events-fixture";
@@ -27,35 +27,6 @@ const credentials = createRunExecutionCredentials(context);
 const bdd = createBddApi(context);
 const chatApi = createChatFilesBddApi(context);
 const runsApi = createRunsApi(context);
-
-function actorFor(args: {
-  readonly orgId: string;
-  readonly userId: string;
-}): ApiTestUser {
-  return {
-    orgId: args.orgId,
-    userId: args.userId,
-    orgRole: "org:admin",
-    email: `${args.userId}@example.test`,
-  };
-}
-
-async function visibleUploadedFiles(args: {
-  readonly orgId: string;
-  readonly userId: string;
-  readonly threadId: string;
-  readonly runId: string;
-}) {
-  const artifacts = await chatApi.listThreadArtifacts(
-    actorFor(args),
-    args.threadId,
-  );
-  return (
-    artifacts.runs.find((run) => {
-      return run.runId === args.runId;
-    })?.files ?? []
-  );
-}
 
 async function seedSendableContext() {
   const runnerGroup = await runsApi.configureRunnerGroup();
@@ -261,16 +232,6 @@ describe("POST /api/integrations/telegram/upload-file/complete", () => {
           size: 1234,
           url: fileUrl,
         });
-
-        const files = await visibleUploadedFiles(fixture);
-        expect(files).toHaveLength(1);
-        expect(files[0]).toMatchObject({
-          id: telegramFileId,
-          filename: "report.pdf",
-          contentType: "application/pdf",
-          size: 1234,
-          url: fileUrl,
-        });
       });
     },
   );
@@ -375,7 +336,6 @@ describe("POST /api/integrations/telegram/upload-file/complete", () => {
       );
       expect(response.body.error.message).toContain("chat not found");
       expect(response.body.error.code).toBe("TELEGRAM_ERROR");
-      await expect(visibleUploadedFiles(fixture)).resolves.toStrictEqual([]);
     });
   });
 });

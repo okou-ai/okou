@@ -139,7 +139,7 @@ describe("GET/PATCH /api/chat-drafts/composer", () => {
     for (const client of [CLIENT_TYPE_IOS, CLIENT_TYPE_ANDROID]) {
       const native = await accept(
         draftsClient().get({
-          headers: authHeaders("0.60.0"),
+          headers: authHeaders("0.69.0"),
           extraHeaders: { [CLIENT_TYPE_HEADER]: client },
         }),
         [200],

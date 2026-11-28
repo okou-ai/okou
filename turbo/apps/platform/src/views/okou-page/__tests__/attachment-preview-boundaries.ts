@@ -85,6 +85,7 @@ export function serveReference(
         });
       }
       return respond(200, {
+        artifactId: file.id,
         url: file.url,
         downloadUrl: file.url,
         filename: file.filename,

@@ -25,7 +25,6 @@ import {
   cronRenewGoogleWorkspaceEventSubscriptionsContract,
   cronReconcileBillingEntitlementsContract,
   cronReconcileImageGenerationsContract,
-  cronReconcileArtifactCatalogContract,
   cronSteerRunTimeBudgetContract,
   cronSyncSkillsContract,
   cronTelegramCleanupContract,
@@ -108,10 +107,6 @@ const expectedVercelCrons = [
   {
     path: cronCompactChatThreadSnapshotsContract.compact.path,
     schedule: "*/10 * * * *",
-  },
-  {
-    path: cronReconcileArtifactCatalogContract.reconcile.path,
-    schedule: "* * * * *",
   },
   {
     path: cronCompactUsageEventsContract.compact.path,

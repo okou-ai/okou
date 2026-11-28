@@ -396,17 +396,6 @@ export const integrationsSlackUploadMaterializeContract: ClientDescriptor<
       404: true,
     },
   },
-  materialize: {
-    method: "POST",
-    path: "/api/integrations/slack/upload-file/materialize",
-    statuses: {
-      200: true,
-      400: true,
-      401: true,
-      403: true,
-      404: true,
-    },
-  },
 };
 
 export const integrationsTeamsDownloadFileContract: ClientDescriptor<

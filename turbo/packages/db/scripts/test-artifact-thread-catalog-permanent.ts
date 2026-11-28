@@ -31,7 +31,7 @@ export async function validatePermanentArtifactThreadCatalog(
     const values = {
       orgId: `artifact-org-${threadId}`,
       authorUserId: userId,
-      kind: "video" as const,
+      kind: "file" as const,
       entityId: randomUUID(),
       logicalKey: `file:${threadId}`,
       projectionCreatedAt: new Date("2026-10-19T00:00:00Z"),

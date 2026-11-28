@@ -9,6 +9,7 @@ import {
 import { cronProcessBackgroundJobsContract } from "@okouai/api-contracts/contracts/cron";
 import { cronProcessBackgroundJobsRoutes } from "../cron-process-background-jobs";
 import { flushWaitUntilForTest } from "../../context/wait-until";
+import { artifactAccessContract } from "@okouai/api-contracts/contracts/artifact-access";
 import { hostContract } from "@okouai/api-contracts/contracts/host";
 import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
@@ -20,6 +21,7 @@ import { setupAppWithRoutes } from "../../../__tests__/test-app";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
 import { server } from "../../../mocks/server";
+import { artifactAccessRoutes } from "../artifact-access";
 import { hostRoutes } from "../host";
 import { featureSwitchesRoutes } from "../feature-switches";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
@@ -915,14 +917,15 @@ test("private website sessions trust only the exact custom origin and do not sur
   });
   const params = { siteId: fixture.prepared.siteId };
   const origin = `https://${domain.hostname}`;
-  const visibility = (
-    await accept(fixture.api.siteVisibility({ headers, params }), [200])
-  ).body;
   await accept(
-    fixture.api.updateSiteVisibility({
+    setupAppWithRoutes({
+      context,
+      routes: artifactAccessRoutes,
+      baseUrl: "https://api.okou.ai",
+    })(artifactAccessContract).updateVisibility({
       headers,
-      params,
-      body: { visibility: "private", expectedRevision: visibility.revision },
+      params: { artifactId: fixture.prepared.siteId },
+      body: { visibility: "private" },
     }),
     [200],
   );

@@ -6,7 +6,6 @@ import {
   object,
   record,
   string,
-  url,
   uuid,
   enum as zEnum,
   type infer as zInfer,
@@ -14,16 +13,14 @@ import {
 
 import { artifactShareTargetSchema } from "../validators/artifact-shares";
 import { linkLayoutSegmentSchema } from "./link-layout";
-import { authHeadersSchema, initContract } from "./base";
-import { apiErrorSchema } from "./errors";
 
-const c = initContract();
 const audienceSchema = zEnum(["private", "organization", "public"]);
 export { artifactShareTargetSchema };
 export type ArtifactShareTarget = zInfer<typeof artifactShareTargetSchema>;
 
-// This versioned object is authoritative, not a cache of a database boolean.
-// Keep its schema usable by both the API and the isolated delivery Worker.
+// Versioned R2 policy schema for read-only historical `/share/artifacts/:id`
+// link resolution and the isolated delivery Worker. The legacy HTTP routes were
+// retired in Release 2.
 export const artifactSharePolicySchema = object({
   version: literal(1),
   revision: uuid(),
@@ -111,66 +108,3 @@ export const artifactSharePolicySchema = object({
   }
 });
 export type ArtifactSharePolicy = zInfer<typeof artifactSharePolicySchema>;
-
-const statusSchema = object({
-  // Stable owner reference for the requested version, independent of sharing.
-  ownerUrl: url(),
-  shareId: uuid().nullable(),
-  audience: audienceSchema,
-  organization: object({ id: string(), name: string() }),
-  selectedTarget: artifactShareTargetSchema.nullable(),
-  selectedVersion: number().nullable(),
-  candidateVersion: number().nullable(),
-  // Organization shares return the same short reference in both URL fields.
-  url: url().nullable(),
-  shortUrl: url().nullable(),
-});
-export type ArtifactShareStatus = zInfer<typeof statusSchema>;
-
-const errors = {
-  500: apiErrorSchema,
-  400: apiErrorSchema,
-  401: apiErrorSchema,
-  403: apiErrorSchema,
-  404: apiErrorSchema,
-};
-export const artifactSharesContract = c.router({
-  availability: {
-    method: "GET",
-    path: "/api/artifact-shares/availability",
-    headers: authHeadersSchema,
-    responses: { 200: object({ enabled: boolean() }), ...errors },
-    summary: "Read whether private artifact creation is currently available",
-  },
-  status: {
-    method: "POST",
-    path: "/api/artifact-shares/status",
-    headers: authHeadersSchema,
-    body: artifactShareTargetSchema,
-    responses: { 200: statusSchema, ...errors },
-    summary: "Read sharing state without creating a grant",
-  },
-  update: {
-    method: "PUT",
-    path: "/api/artifact-shares",
-    headers: authHeadersSchema,
-    body: object({
-      target: artifactShareTargetSchema,
-      audience: audienceSchema,
-    }),
-    responses: { 200: statusSchema, ...errors },
-    summary: "Explicitly share a selected artifact version or stop sharing",
-  },
-  resolve: {
-    method: "GET",
-    path: "/api/artifact-shares/:id/resolve",
-    headers: authHeadersSchema,
-    pathParams: object({ id: uuid() }),
-    responses: {
-      200: object({ url: url(), expiresAt: string() }),
-      ...errors,
-    },
-    summary:
-      "Authorize a share recipient and return temporary direct content delivery",
-  },
-});

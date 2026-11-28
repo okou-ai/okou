@@ -7,10 +7,12 @@ import { authContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { bodyResultOf } from "../context/request";
 import { normalizeWebUploadContentType } from "../../lib/uploads-constants";
+import { files } from "@okouai/db/schema/file";
+import { writeDb$ } from "../external/db";
 import { uploadedArtifactObject$ } from "../services/uploaded-artifact.service";
 import { registerLegacyArtifactFile$ } from "../services/artifact-delivery.service";
 import { completePrivateArtifact$ } from "../services/private-artifact-storage.service";
-import { recordWebUploadedFile$ } from "../services/run-uploaded-files.service";
+import { upsertFileArtifact$ } from "../services/artifact-catalog.service";
 import { rejectSuspendedOrg$ } from "../services/org-suspension.service";
 import type { RouteEntry } from "../route-entry";
 
@@ -70,7 +72,6 @@ const completeInner$ = command(async ({ get, set }, signal: AbortSignal) => {
       : s3Object.contentType;
   const size = s3Object.size;
   const url = s3Object.url;
-  const lastModified = s3Object.lastModified?.toISOString();
   const runId = "runId" in auth ? auth.runId : undefined;
 
   if (s3Object.isPrivate) {
@@ -90,26 +91,44 @@ const completeInner$ = command(async ({ get, set }, signal: AbortSignal) => {
       },
       signal,
     );
+    if (auth.orgId) {
+      await set(writeDb$)
+        .insert(files)
+        .values({
+          id,
+          orgId: auth.orgId,
+          ownerUserId: auth.userId,
+          storageKey: s3Object.key,
+          filename,
+          contentType,
+          sizeBytes: size,
+          origin: runId ? "agent" : "user",
+        })
+        .onConflictDoUpdate({
+          target: files.id,
+          set: {
+            contentType,
+            sizeBytes: size,
+          },
+        });
+      signal.throwIfAborted();
+      if (runId) {
+        await set(
+          upsertFileArtifact$,
+          {
+            fileId: id,
+            orgId: auth.orgId,
+            userId: auth.userId,
+            filename,
+            contentType,
+            sourceUrl: url,
+            runId,
+          },
+          signal,
+        );
+      }
+    }
   }
-  await set(
-    recordWebUploadedFile$,
-    {
-      runId,
-      externalId: id,
-      userId: auth.userId,
-      orgId: "orgId" in auth ? auth.orgId : null,
-      filename,
-      contentType,
-      sizeBytes: size,
-      url,
-      s3Key: s3Object.key,
-      layout: s3Object.layout,
-      metadata: lastModified ? { lastModified } : {},
-      origin: runId ? "agent" : "user",
-      skipFilesDualWrite: s3Object.isPrivate,
-    },
-    signal,
-  );
   signal.throwIfAborted();
 
   return {

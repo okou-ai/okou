@@ -1,17 +1,16 @@
-import { createHash, randomUUID } from "node:crypto";
+import { createHash } from "node:crypto";
 import { open } from "node:fs/promises";
 import { basename } from "node:path";
 import { MIMEType } from "node:util";
-import { Command, Option } from "commander";
+import { Command } from "commander";
 import {
   MAX_WECHAT_FILE_SIZE_BYTES,
+  type WechatUploadCompleteResponse,
   type WechatUploadInitResponse,
-  type WechatUploadMaterializeResponse,
 } from "@okouai/api-contracts/contracts/integrations-wechat-files";
 import {
   completeWechatFileUpload,
   initWechatFileUpload,
-  materializeWechatFileUpload,
 } from "../../lib/api/domains/integrations-wechat-files";
 import { inferWebUploadContentType } from "../../lib/api/domains/web";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
@@ -28,7 +27,6 @@ interface UploadFileOptions {
   readonly to: string;
   readonly text?: string;
   readonly contentType?: string;
-  readonly operationId?: string;
   readonly json?: boolean;
 }
 
@@ -69,7 +67,6 @@ async function uploadCanonicalBody(
   contentType: string,
   content: Buffer,
 ): Promise<void> {
-  if (!initialized.uploadUrl) return;
   const headers = new Headers(initialized.uploadHeaders);
   if (headers.has("authorization") || headers.has("cookie")) {
     throw new Error("Canonical upload must not carry authentication headers");
@@ -87,7 +84,7 @@ async function uploadCanonicalBody(
 }
 
 function printDelivery(
-  result: WechatUploadMaterializeResponse,
+  result: WechatUploadCompleteResponse,
   upload: {
     readonly channelId: string;
     readonly filename: string;
@@ -115,7 +112,6 @@ function printDelivery(
       delivery: {
         status: delivery.status,
         ...(delivery.status === "failed" ? { error: delivery.message } : {}),
-        operationId: result.operationId,
       },
     },
     upload,
@@ -131,7 +127,6 @@ async function uploadFile(options: UploadFileOptions): Promise<void> {
   const contentType = new MIMEType(
     options.contentType ?? inferWebUploadContentType(options.file),
   ).essence;
-  const operationId = options.operationId ?? randomUUID();
   const filename = basename(options.file);
   const upload = {
     channelId,
@@ -140,31 +135,21 @@ async function uploadFile(options: UploadFileOptions): Promise<void> {
     size: content.byteLength,
     json: options.json,
   };
-  // External IM delivery is fire-and-forget; generate a fresh operationId for
-  // Release 1 backend compatibility without exposing a retry state machine.
+  const comment = options.text === undefined ? {} : { comment: options.text };
   const initialized = await initWechatFileUpload({
     filename,
     length: content.byteLength,
     contentType,
     checksumSha256: createHash("sha256").update(content).digest("hex"),
-    operationId,
     channelId,
-    ...(options.text === undefined ? {} : { comment: options.text }),
+    ...comment,
   });
   await uploadCanonicalBody(initialized, contentType, content);
-  const operation = { assetId: initialized.assetId, operationId };
-  const materialized = await materializeWechatFileUpload(operation);
-  if (materialized.delivery.status === "delivered") {
-    printDelivery(materialized, upload);
-    return;
-  }
-  let completed: WechatUploadMaterializeResponse;
-  try {
-    completed = await completeWechatFileUpload(operation);
-  } catch (error) {
-    printDelivery(materialized, upload);
-    throw error;
-  }
+  const completed = await completeWechatFileUpload({
+    assetId: initialized.assetId,
+    channelId,
+    ...comment,
+  });
   printDelivery(completed, upload);
 }
 
@@ -181,12 +166,6 @@ export const uploadFileCommand = new Command()
   )
   .option("-t, --text <text>", "Comment to accompany the file")
   .option("--content-type <mime>", "Override inferred content type")
-  .addOption(
-    new Option(
-      "--operation-id <uuid>",
-      "Deprecated: internal upload operation ID (kept for script compatibility)",
-    ).hideHelp(),
-  )
   .option(JSON_OPTION_FLAGS, JSON_OPTION_DESCRIPTION)
   .addHelpText(
     "after",
@@ -198,14 +177,14 @@ Examples:
 Output:
   Prints "✓ File uploaded" with the stored message ID and Okou file URL. Wechat has no message permalink.
   With --json, prints one JSON object:
-    {"integration":"wechat","chatId":"<conversation-id>","messages":[{"id":"...","url":null}],"file":{"name":"report.pdf","contentType":"application/pdf","size":12345,"url":"https://..."},"delivery":{"status":"delivered","operationId":"..."}}
-  delivery.status is delivered, pending, or failed; messages is empty until delivered.
+    {"integration":"wechat","chatId":"<conversation-id>","messages":[{"id":"...","url":null}],"file":{"name":"report.pdf","contentType":"application/pdf","size":12345,"url":"https://..."},"delivery":{"status":"delivered"}}
+  delivery.status is delivered or failed; messages is empty when failed.
 
 Notes:
   - Canonical publication completes before Wechat delivery begins.
   - External delivery is fire-and-forget; check delivery.status in --json output.
   - Uses server-side bot credentials; no Wechat token is needed locally.
   - Like okou slack upload-file, the command exits 0 whenever the server reports a
-    delivery status, even if Wechat delivery failed or is pending.`,
+    delivery status, even if Wechat delivery failed.`,
   )
   .action(withErrorHandler(uploadFile));

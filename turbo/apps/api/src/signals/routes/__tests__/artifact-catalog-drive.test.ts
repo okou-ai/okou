@@ -249,7 +249,6 @@ describe("artifact catalog lazy Drive detail metadata", () => {
     expect(provider.queries[0]).toContain(
       `key='vm0FileId' and value='${fileId}'`,
     );
-    expect(provider.queries[0]).toContain(run.runId);
     expect(provider.queries[0]).not.toContain(view.id);
     expect(provider.queries[0]).not.toContain(artifactId);
     expect(provider.authorizationHeaders).toStrictEqual([

@@ -165,8 +165,58 @@ export async function validatePermanentFilesAndArtifactAccess(
     );
     assert.equal(afterSoftDelete.rows[0]?.deleted_at, null);
 
+    // 5. Verify image_artifacts.file_id FK targets files(id) ON DELETE CASCADE (not run_uploaded_files)
+    const imageArtifactFks = await client.query<{
+      conname: string;
+      validated: boolean;
+      confdeltype: string;
+      target_table: string;
+    }>(
+      `SELECT c.conname, c.convalidated AS validated, c.confdeltype,
+              c.confrelid::regclass::text AS target_table
+       FROM pg_constraint c
+       WHERE c.conrelid = 'public.image_artifacts'::regclass
+         AND c.contype = 'f'
+         AND c.conname LIKE 'image_artifacts_file_id_%'
+       ORDER BY c.conname`,
+    );
+    assert.deepEqual(imageArtifactFks.rows, [
+      {
+        conname: "image_artifacts_file_id_files_id_fk",
+        validated: true,
+        confdeltype: "c",
+        target_table: "files",
+      },
+    ]);
+
+    await assert.rejects(
+      client.query(
+        `INSERT INTO image_artifacts (id, file_id) VALUES ($1, $2)`,
+        [randomUUID(), randomUUID()],
+      ),
+      { code: "23503", constraint: "image_artifacts_file_id_files_id_fk" },
+    );
+
+    const cascadeFileId = randomUUID();
+    const cascadeImageId = randomUUID();
+    await client.query(
+      `INSERT INTO files (id, org_id, owner_user_id, storage_key, filename, content_type, size_bytes, origin)
+       VALUES ($1::uuid, $2, $3, 'private-artifacts/' || ($1::uuid)::text || '/img.png', 'img.png', 'image/png', 42, 'agent')`,
+      [cascadeFileId, orgId, ownerUserId],
+    );
+    await client.query(
+      `INSERT INTO image_artifacts (id, file_id) VALUES ($1, $2)`,
+      [cascadeImageId, cascadeFileId],
+    );
+    await client.query(`DELETE FROM files WHERE id = $1`, [cascadeFileId]);
+    const remainingImage = await client.query(
+      `SELECT 1 FROM image_artifacts WHERE id = $1`,
+      [cascadeImageId],
+    );
+    assert.equal(remainingImage.rowCount, 0);
+
     console.log(
-      "Permanent files, artifact visibility, and artifact_user_shares schema invariants verified",
+      "Permanent files, image_artifacts FK, artifact visibility, and artifact_user_shares schema invariants verified",
     );
   } finally {
     try {

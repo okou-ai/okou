@@ -3,10 +3,7 @@ import {
   telegramMessageSendCaption,
 } from "../services/telegram-footer.service";
 import { command } from "ccstate";
-import {
-  integrationsTelegramUploadCompleteContract,
-  type TelegramUploadCompleteBody,
-} from "@okouai/api-contracts/contracts/integrations";
+import { integrationsTelegramUploadCompleteContract } from "@okouai/api-contracts/contracts/integrations";
 
 import { authContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
@@ -23,7 +20,6 @@ import {
   materializeUploadedArtifact$,
   uploadedArtifactFetchUrl$,
 } from "../services/uploaded-artifact.service";
-import { recordTelegramUploadedFile$ } from "../services/run-uploaded-files.service";
 import { requireTelegramConversationAccess$ } from "../services/telegram-access.service";
 import type { RouteEntry } from "../route-entry";
 
@@ -56,31 +52,6 @@ const organizationContextRequired = Object.freeze({
     }),
   }),
 });
-
-function buildMetadata(args: {
-  readonly body: TelegramUploadCompleteBody;
-  readonly chatId: string;
-  readonly s3Key: string;
-  readonly sourceUrl: string;
-  readonly telegramMessageId: number;
-  readonly telegramFileId: string | undefined;
-}): Record<string, unknown> {
-  const { body, chatId, s3Key, sourceUrl, telegramMessageId, telegramFileId } =
-    args;
-  return {
-    botId: body.botId,
-    chatId,
-    uploadId: body.uploadId,
-    s3Key,
-    sourceUrl,
-    ...(body.caption ? { caption: body.caption } : {}),
-    ...(body.messageThreadId ? { messageThreadId: body.messageThreadId } : {}),
-    telegramMessage: {
-      id: telegramMessageId,
-      ...(telegramFileId ? { fileId: telegramFileId } : {}),
-    },
-  };
-}
 
 function telegramErrorResponse(
   result: Extract<SendTelegramDocumentResult, { kind: "telegram-error" }>,
@@ -132,7 +103,7 @@ const completeInner$ = command(async ({ get, set }, signal: AbortSignal) => {
 
   const s3Object = await set(
     materializeUploadedArtifact$,
-    { userId, orgId, id: body.uploadId },
+    { userId, orgId, id: body.uploadId, runId },
     signal,
   );
   if (!s3Object) {
@@ -169,32 +140,6 @@ const completeInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   const size = document?.file_size ?? s3Object.size;
   const fileId = document?.file_id;
   const responseFilename = document?.file_name ?? filename;
-  const externalId = fileId ?? `${chatId}:${result.messageId}`;
-
-  await set(
-    recordTelegramUploadedFile$,
-    {
-      runId,
-      externalId,
-      userId,
-      orgId,
-      filename: responseFilename,
-      contentType: mimetype,
-      sizeBytes: size,
-      url: fileUrl,
-      layout: s3Object.layout,
-      metadata: buildMetadata({
-        body,
-        chatId,
-        s3Key: s3Object.key,
-        sourceUrl: fileUrl,
-        telegramMessageId: result.messageId,
-        telegramFileId: fileId,
-      }),
-    },
-    signal,
-  );
-  signal.throwIfAborted();
 
   return {
     status: 200 as const,

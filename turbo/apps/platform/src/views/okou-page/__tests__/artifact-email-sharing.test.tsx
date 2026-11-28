@@ -100,6 +100,7 @@ async function previewArtifact(
       expiresAt: "2099-01-01T00:00:00Z",
       filename: summary.title,
       contentType: "video/mp4",
+      artifactId: summary.id,
       target: { kind: "file", id: fileId },
     });
   });
@@ -333,6 +334,7 @@ test("A catalog publication replacing its file shares the current resource", asy
         expiresAt: "2099-01-01T00:00:00Z",
         filename: title,
         contentType: "video/mp4",
+        artifactId: summary.id,
         target: { kind: "file", id: currentFileId },
       });
     });

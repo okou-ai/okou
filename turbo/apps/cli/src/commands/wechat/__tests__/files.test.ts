@@ -10,6 +10,7 @@ import { server } from "../../../mocks/server";
 import { registerRequestedCommand } from "../../../okou";
 import { uploadFileCommand } from "../upload-file";
 import { downloadFileCommand } from "../download-file";
+
 const origin = "http://localhost:3000/api/integrations/wechat";
 const channelId = randomUUID();
 const binding = {
@@ -18,14 +19,15 @@ const binding = {
 };
 const messageId = randomUUID();
 const assetId = randomUUID();
-const operationId = randomUUID();
 const url = `https://app.okou.ai/artifacts/${assetId}`;
+
 async function run(args: string[]) {
   const argv = ["node", "okou", "wechat", ...args];
   const program = new Command();
   await registerRequestedCommand(program, argv);
   await program.parseAsync(argv);
 }
+
 describe("okou wechat files", () => {
   const output = vi.spyOn(console, "log").mockImplementation(() => {});
   vi.spyOn(console, "warn").mockImplementation(() => {});
@@ -44,7 +46,6 @@ describe("okou wechat files", () => {
         "to",
         "text",
         "contentType",
-        "operationId",
         "json",
         "channel",
         "message",
@@ -77,13 +78,12 @@ describe("okou wechat files", () => {
             length: 8,
             contentType: "text/csv",
             channelId,
-            operationId,
           });
           return HttpResponse.json({
             assetId,
-            operationId,
             url,
             uploadUrl: "https://storage.example/upload",
+            uploadHeaders: {},
           });
         }),
         http.put("https://storage.example/upload", async ({ request }) => {
@@ -92,20 +92,14 @@ describe("okou wechat files", () => {
           expect(await request.text()).toBe("a,b\n1,2\n");
           return new HttpResponse(null);
         }),
-        http.post(`${origin}/upload-file/materialize`, () => {
-          calls.push("materialize");
-          return HttpResponse.json({
-            assetId,
-            operationId,
-            url,
-            delivery: { status: "pending" },
-          });
-        }),
-        http.post(`${origin}/upload-file/complete`, () => {
+        http.post(`${origin}/upload-file/complete`, async ({ request }) => {
           calls.push("complete");
+          expect(await request.json()).toStrictEqual({
+            assetId,
+            channelId,
+          });
           return HttpResponse.json({
             assetId,
-            operationId,
             url,
             delivery: {
               status: "delivered",
@@ -116,22 +110,13 @@ describe("okou wechat files", () => {
           });
         }),
       );
-      await run([
-        "upload-file",
-        "--file",
-        path,
-        "--to",
-        target,
-        "--operation-id",
-        operationId,
-        "--json",
-      ]);
-      expect(calls).toStrictEqual(["init", "put", "materialize", "complete"]);
+      await run(["upload-file", "--file", path, "--to", target, "--json"]);
+      expect(calls).toStrictEqual(["init", "put", "complete"]);
       expect(JSON.parse(String(output.mock.calls[0]?.[0]))).toMatchObject({
         integration: "wechat",
         messages: [{ id: messageId, url: null }],
         file: { url },
-        delivery: { status: "delivered", operationId },
+        delivery: { status: "delivered" },
       });
     },
   );
@@ -140,43 +125,32 @@ describe("okou wechat files", () => {
     await writeFile(path, "hello");
     server.use(
       http.post(`${origin}/upload-file/init`, () => {
-        return HttpResponse.json({ assetId, operationId, url });
-      }),
-      http.post(`${origin}/upload-file/materialize`, () => {
         return HttpResponse.json({
           assetId,
-          operationId,
           url,
-          delivery: { status: "pending" },
+          uploadUrl: "https://storage.example/upload",
+          uploadHeaders: {},
         });
+      }),
+      http.put("https://storage.example/upload", () => {
+        return new HttpResponse(null);
       }),
       http.post(`${origin}/upload-file/complete`, () => {
         return HttpResponse.json({
           assetId,
-          operationId,
           url,
           delivery: {
             status: "failed",
             message: "Delivery unknown",
-            retryable: false,
           },
         });
       }),
     );
-    await run([
-      "upload-file",
-      "--file",
-      path,
-      "--to",
-      channelId,
-      "--operation-id",
-      operationId,
-      "--json",
-    ]);
+    await run(["upload-file", "--file", path, "--to", channelId, "--json"]);
     expect(JSON.parse(String(output.mock.calls[0]?.[0]))).toMatchObject({
       messages: [],
       file: { url },
-      delivery: { status: "failed", error: "Delivery unknown", operationId },
+      delivery: { status: "failed", error: "Delivery unknown" },
     });
   });
   it.each([

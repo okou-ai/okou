@@ -3,10 +3,7 @@ import { command } from "ccstate";
 import { and, desc, eq, inArray, isNotNull, isNull, or } from "drizzle-orm";
 import { uuid } from "zod";
 import { linkLayoutSegment } from "@okouai/api-contracts/contracts/link-layout";
-import {
-  RUN_UPLOADED_FILE_SOURCES,
-  runUploadedFiles,
-} from "@okouai/db/schema/run-uploaded-file";
+import { artifacts, imageArtifacts } from "@okouai/db/schema/artifact";
 
 import { env } from "../../lib/env";
 import { logger } from "../../lib/log";
@@ -22,7 +19,7 @@ import {
   allocatePrivateArtifact$,
   completePrivateArtifact$,
   privateArtifactRecord$,
-  privateArtifactUrl,
+  resolvePrivateArtifactUrl$,
   type PrivateArtifactUploadProtocol,
 } from "./private-artifact-storage.service";
 import { resolveArtifactPreviewUrl$ } from "./artifact-preview-url.service";
@@ -69,41 +66,56 @@ interface UploadedArtifactIdentity {
   readonly orgId: string | undefined;
   readonly filenameHint?: string;
   readonly variant?: string;
+  readonly runId?: string;
+  readonly resolvePrivateUrl?: boolean;
 }
 
-/** Resolve poster metadata without consulting a chat-thread artifact list. */
+/** Resolve persisted thumbnail metadata from the canonical `artifacts` table. */
 export const uploadedArtifactPreviewImageUrl$ = command(
   async (
     { get },
     args: Pick<UploadedArtifactIdentity, "id" | "userId" | "orgId">,
     signal: AbortSignal,
   ): Promise<string | null> => {
-    // Keep the external-ID lookup on the existing (source, external_id)
-    // index; source is a closed writer-owned set.
-    const externalIdMatches = and(
-      inArray(runUploadedFiles.source, [...RUN_UPLOADED_FILE_SOURCES]),
-      eq(runUploadedFiles.externalId, args.id),
-    );
-    const identityMatches = uuid().safeParse(args.id).success
-      ? or(eq(runUploadedFiles.id, args.id), externalIdMatches)
-      : externalIdMatches;
-    const [row] = await get(db$)
-      .select({ previewImageUrl: runUploadedFiles.previewImageUrl })
-      .from(runUploadedFiles)
+    if (!args.orgId || !uuid().safeParse(args.id).success) {
+      return null;
+    }
+    const db = get(db$);
+    const [row] = await db
+      .select({
+        thumbnail: artifacts.thumbnail,
+        sourceUrl: artifacts.sourceUrl,
+      })
+      .from(artifacts)
       .where(
         and(
-          eq(runUploadedFiles.userId, args.userId),
-          args.orgId
-            ? eq(runUploadedFiles.orgId, args.orgId)
-            : isNull(runUploadedFiles.orgId),
-          identityMatches,
-          isNotNull(runUploadedFiles.previewImageUrl),
+          eq(artifacts.authorUserId, args.userId),
+          eq(artifacts.orgId, args.orgId),
+          isNull(artifacts.deletedAt),
+          isNotNull(artifacts.thumbnail),
+          or(
+            and(eq(artifacts.kind, "file"), eq(artifacts.entityId, args.id)),
+            and(
+              eq(artifacts.kind, "image"),
+              inArray(
+                artifacts.entityId,
+                db
+                  .select({ id: imageArtifacts.id })
+                  .from(imageArtifacts)
+                  .where(eq(imageArtifacts.fileId, args.id)),
+              ),
+            ),
+          ),
         ),
       )
-      .orderBy(desc(runUploadedFiles.updatedAt))
+      .orderBy(desc(artifacts.updatedAt))
       .limit(1);
     signal.throwIfAborted();
-    return row?.previewImageUrl ?? null;
+    const thumbnailUrl = row?.thumbnail?.url ?? null;
+    if (!thumbnailUrl || thumbnailUrl === row?.sourceUrl) {
+      return null;
+    }
+    return thumbnailUrl;
   },
 );
 
@@ -123,19 +135,25 @@ export const resolveUploadedArtifact$ = command(
       if (head.contentLength === undefined) {
         throw new Error(`Private artifact ${args.id} has no content length`);
       }
+      const url =
+        args.resolvePrivateUrl === false
+          ? ""
+          : await set(
+              resolvePrivateArtifactUrl$,
+              { id: record.id, filename: record.filename },
+              signal,
+            );
       return {
         privateRecord: record,
         object: {
           key: record.key,
           bucket: record.bucket,
-          url: privateArtifactUrl(record.id, record.filename, record.metadata),
+          url,
           layout: record.layout,
           filename: record.filename,
           contentType: record.contentType,
           size: head.contentLength,
           lastModified: head.lastModified,
-          purpose: record.metadata.purpose,
-          producingRunId: record.metadata.producingRunId,
           isPrivate: true,
         },
       };
@@ -149,8 +167,6 @@ export const resolveUploadedArtifact$ = command(
             ...object,
             bucket: env("R2_USER_ARTIFACTS_BUCKET_NAME"),
             isPrivate: false,
-            purpose: undefined,
-            producingRunId: undefined,
           },
         }
       : null;
@@ -171,7 +187,17 @@ export const materializeUploadedArtifact$ = command(
     const object = await set(uploadedArtifactObject$, args, signal);
     signal.throwIfAborted();
     if (object?.isPrivate) {
-      await set(completePrivateArtifact$, { id: args.id, ...object }, signal);
+      await set(
+        completePrivateArtifact$,
+        {
+          id: args.id,
+          url: object.url,
+          contentType: object.contentType ?? "application/octet-stream",
+          size: object.size,
+          runId: args.runId,
+        },
+        signal,
+      );
     }
     return object;
   },

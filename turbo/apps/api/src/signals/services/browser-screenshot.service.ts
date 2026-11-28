@@ -1,6 +1,6 @@
 import { rootSignal$ } from "../context/root";
 import type { BrowserWindowContext } from "@okouai/api-contracts/contracts/browser";
-import { runUploadedFiles } from "@okouai/db/schema/run-uploaded-file";
+import { files } from "@okouai/db/schema/file";
 import { browserSessionScreenshotDeletions } from "@okouai/db/schema/browser-screenshot-deletion";
 import { browserOwnerProfiles } from "@okouai/db/schema/browser-owner";
 import { browserChatSessions } from "@okouai/db/schema/browser-chat-session";
@@ -66,7 +66,7 @@ export const resolveBrowserScreenshotUrl$ = command(
       file.userId !== screenshot.userId ||
       file.orgId !== screenshot.orgId ||
       file.key !== screenshot.objectKey ||
-      file.materializationStatus !== "ready"
+      !file.isReady
     ) {
       return null;
     }
@@ -91,6 +91,7 @@ interface BrowserScreenshotPublication {
   readonly capturedAt: Date;
   readonly objectKey: string;
   readonly url: string;
+  readonly sizeBytes: number;
 }
 
 function browserScreenshotFailureKind(error: unknown): string {
@@ -195,22 +196,21 @@ const publishBrowserScreenshot$ = command(
     // retire pending bytes after a lost DB reply, so publication must compete
     // with that tombstone on the same existing business file row.
     const completion = db
-      .update(runUploadedFiles)
+      .update(files)
       .set({
-        materializationStatus: "ready",
-        updatedAt: nowDate(),
+        sizeBytes: args.sizeBytes,
       })
       .where(
         and(
-          eq(runUploadedFiles.id, args.fileId),
-          eq(runUploadedFiles.storageKey, artifact.key),
-          eq(runUploadedFiles.userId, browser.userId),
-          eq(runUploadedFiles.orgId, browser.orgId),
-          eq(runUploadedFiles.materializationStatus, "pending"),
-          isNull(runUploadedFiles.deletedAt),
+          eq(files.id, args.fileId),
+          eq(files.storageKey, artifact.key),
+          eq(files.ownerUserId, browser.userId),
+          eq(files.orgId, browser.orgId),
+          isNull(files.sizeBytes),
+          isNull(files.deletedAt),
         ),
       )
-      .returning({ id: runUploadedFiles.id });
+      .returning({ id: files.id });
     const completed = db.$with("completed_browser_screenshot").as(completion);
     const publication = browserScreenshotPublication(
       args,
@@ -361,6 +361,7 @@ export const captureAndStoreBrowserScreenshot$ = command(
           capturedAt,
           objectKey: artifact.key,
           url: artifact.url,
+          sizeBytes: image.byteLength,
         });
         if (!saved) {
           return;

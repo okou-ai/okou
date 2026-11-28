@@ -1,32 +1,27 @@
 import { createHash } from "node:crypto";
 import { command } from "ccstate";
-import { parseArtifactReference } from "@okouai/api-contracts/contracts/artifact-references";
-import { artifactShares } from "@okouai/db/schema/artifact-share";
-import { artifactReferenceRecord$ } from "./artifact-reference.service";
+import {
+  artifactReferencePath,
+  parseArtifactReference,
+} from "@okouai/api-contracts/contracts/artifact-references";
 import { linkLayoutFromSegment } from "@okouai/api-contracts/contracts/link-layout";
-import { hostedLinkOrigin } from "../../lib/link-layout";
 import {
   and,
   asc,
-  count,
   desc,
   eq,
-  exists,
   gt,
-  gte,
   ilike,
   inArray,
-  isNull,
   isNotNull,
-  ne,
-  notExists,
+  isNull,
+  lt,
   notLike,
   or,
-  lt,
-  lte,
   sql,
   type SQL,
 } from "drizzle-orm";
+import { QueryBuilder } from "drizzle-orm/pg-core";
 import {
   ARTIFACT_CATALOG_CATEGORIES,
   ARTIFACT_CATALOG_KINDS,
@@ -34,30 +29,26 @@ import {
   type ArtifactCatalogCategory,
   type ArtifactCatalogDirection,
   type ArtifactCatalogKind,
+  type ArtifactCatalogListQueryKind,
   type ArtifactDetail,
   type ArtifactSummary,
 } from "@okouai/api-contracts/contracts/artifact-catalog";
 import {
-  artifactCatalogPendingFiles,
   artifacts,
   imageArtifacts,
   presentationArtifacts,
-  videoArtifacts,
   type ArtifactKind,
   type ArtifactThumbnail,
   type ArtifactVisibility,
 } from "@okouai/db/schema/artifact";
+import { files } from "@okouai/db/schema/file";
+import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import {
   hostedDeployments,
   hostedSites,
   privateHostedDeployments,
 } from "@okouai/db/runtime/hosted-site";
-import { hostedSiteVisibility } from "@okouai/db/schema/hosted-site-visibility";
-import {
-  runUploadedFiles,
-  type CanonicalAssetClassification,
-} from "@okouai/db/schema/run-uploaded-file";
 import {
   iso,
   object,
@@ -67,18 +58,19 @@ import {
   type infer as zInfer,
 } from "zod";
 
-import { QueryBuilder } from "drizzle-orm/pg-core";
-
-import { canonicalOkouArtifactCatalogUrl } from "../../lib/file-url";
+import { env } from "../../lib/env";
+import {
+  buildFileUrlFromKey,
+  canonicalOkouArtifactCatalogUrl,
+} from "../../lib/file-url";
+import { hostedLinkOrigin } from "../../lib/link-layout";
 import {
   nullableDriverValueDecoder,
   pgIntegerDecoder,
-  pgBooleanDecoder,
   pgTextDecoder,
   zodEnumDriverValueDecoder,
 } from "../../lib/db-structured-result";
-import { monotonicNow, nowDate } from "../../lib/time";
-import { logger } from "../../lib/log";
+import { nowDate } from "../../lib/time";
 import {
   isSharedThreadArtifactLogicalKey,
   sharedThreadArtifactAuthorUserId,
@@ -86,25 +78,12 @@ import {
 } from "../../lib/shared-thread-artifact";
 import { db$, writeDb$, type ReadonlyDb } from "../external/db";
 import { publishUserSignal } from "../external/realtime";
-import { safeJsonParse, safeUrlParse, settle } from "../utils";
-import {
-  inferMimetype,
-  VIDEO_FILENAME_EXTENSIONS,
-} from "./chat-event-shared.service";
+import { safeJsonParse, safeUrlParse } from "../utils";
+import { inferMimetype } from "./chat-event-shared.service";
+import { artifactReferenceRecord$ } from "./artifact-reference.service";
+import { probeLegacyArtifactSharePolicy$ } from "./artifact-share-probe.service";
 
 const ARTIFACT_CATALOG_DEFAULT_LIMIT = 60;
-const ARTIFACT_CATALOG_WORKER_BATCH_SIZE = 100;
-const ARTIFACT_CATALOG_WORKER_BUDGET_MS = 20_000;
-const L = logger("ArtifactCatalog");
-
-/**
- * `generatedBy` markers written by the built-in generation pipelines. They are
- * the only signal that separates an officially generated image or video from an
- * ordinary upload that happens to share a content type.
- */
-const OFFICIAL_IMAGE_MARKER = "zero-official-image";
-const OFFICIAL_VIDEO_MARKER = "zero-official-video";
-const AVATAR_VIDEO_MARKER = "zero-joggai-avatar-video";
 
 const artifactCursorSchema = object({
   createdAt: iso.datetime(),
@@ -134,177 +113,6 @@ function decodeArtifactCursor(
   return result.success ? result.data : null;
 }
 
-interface CatalogFileRow {
-  readonly id: string;
-  readonly runId: string | null;
-  readonly chatThreadId: string | null;
-  readonly userId: string;
-  readonly orgId: string | null;
-  readonly filename: string | null;
-  readonly externalId: string;
-  readonly contentType: string | null;
-  readonly url: string | null;
-  readonly previewImageUrl: string | null;
-  readonly metadata: Record<string, unknown>;
-  readonly classification: CanonicalAssetClassification | null;
-  readonly deletedAt: Date | null;
-  readonly createdAt: Date;
-}
-
-function metadataString(
-  metadata: Record<string, unknown>,
-  key: string,
-): string | null {
-  const value = metadata[key];
-  return typeof value === "string" && value.length > 0 ? value : null;
-}
-
-/**
- * Whether a stored file belongs in the catalog at all. File writers queue
- * rows that gain a URL, including attachments the user handed to the agent;
- * this is where attachments are separated from the agent's own outputs.
- *
- * An upload declaring `purpose: "artifact"` is one, and every producer of an
- * artifact output declares it — including the generation and download paths
- * that can run without a run. A chat or integration attachment is not, and
- * neither is a private upload's ownership record that no run produced and no
- * uploader claimed: a composer attachment still sitting in a draft.
- *
- * Only versioned private storage identifies that ownership record, so a row
- * without the storage marker keeps the catalog behavior it had before private
- * artifacts existed. Surface: DB versus API, for rows written by earlier API
- * versions (`docs/fallback.md` §7). Remove this clause once the historical
- * public artifact objects and their references are migrated or retired, which
- * is tracked with the matching public-object readers under #32492.
- */
-function isCatalogArtifactFile(row: CatalogFileRow): boolean {
-  if (metadataString(row.metadata, "purpose") === "artifact") {
-    return true;
-  }
-  if (row.classification === "input") {
-    return false;
-  }
-  return metadataString(row.metadata, "storage") === null || row.runId !== null;
-}
-
-/**
- * The catalog kind a stored file maps to. Ordinary uploads of every media type
- * stay `file`; only the official generation pipelines produce `image`/`video`.
- */
-function fileArtifactKind(row: CatalogFileRow): "file" | "image" | "video" {
-  const generatedBy = metadataString(row.metadata, "generatedBy");
-  if (generatedBy === OFFICIAL_IMAGE_MARKER) {
-    return "image";
-  }
-  if (
-    generatedBy === OFFICIAL_VIDEO_MARKER ||
-    generatedBy === AVATAR_VIDEO_MARKER
-  ) {
-    return "video";
-  }
-  return "file";
-}
-
-/**
- * Avatar is a catalog projection over the existing video storage kind. Keeping
- * the persisted kind readable as `video` lets the previous API version keep
- * serving during rollout, while generated JoggAI videos appear in the
- * dedicated category on the new API.
- */
-function catalogArtifactKind(
-  kind: ArtifactKind,
-  metadata: Record<string, unknown> | null,
-  logicalKey: string,
-): ArtifactCatalogKind {
-  if (kind === "file" && isSharedThreadArtifactLogicalKey(logicalKey)) {
-    return "shared-thread";
-  }
-  return metadata &&
-    metadataString(metadata, "generatedBy") === AVATAR_VIDEO_MARKER
-    ? "avatar"
-    : kind;
-}
-
-function artifactCatalogEffectiveKind() {
-  // Native PPTX files belong to Presentations without changing their file-backed
-  // storage or detail contract. Derive this on reads so existing files move too.
-  // Other summaries retain their display projection or base-kind fallback.
-  return sql`case
-    when ${artifacts.kind} = 'file'
-      and ${artifacts.logicalKey} not like 'shared-thread:%'
-      and lower(${artifacts.title}) like '%.pptx'
-    then 'presentation'
-    else coalesce(${artifacts.displayKind}, case
-      when ${artifacts.kind} = 'file'
-        and ${artifacts.logicalKey} like 'shared-thread:%'
-      then 'shared-thread'
-      else ${artifacts.kind}
-    end)
-  end`.mapWith(zodEnumDriverValueDecoder(zEnum(ARTIFACT_CATALOG_KINDS)));
-}
-
-function artifactCatalogKindFilter(kind: ArtifactCatalogKind): SQL {
-  return eq(artifactCatalogEffectiveKind(), kind);
-}
-
-/** One read-time category projection, also used before Library pagination. */
-function artifactCatalogCategory() {
-  const kind = artifactCatalogEffectiveKind();
-  const contentType = sql`lower(trim(split_part(coalesce(${runUploadedFiles.contentType}, ''), ';', 1)))`;
-  const filename = sql`lower(coalesce(${runUploadedFiles.filename}, ${runUploadedFiles.externalId}, ''))`;
-  return sql`case
-    when ${kind} in ('avatar', 'shared-thread') then 'other'
-    when ${kind} = 'presentation' then 'presentation'
-    when ${kind} = 'hosted-site' then 'website'
-    when ${kind} = 'image' then 'image'
-    when ${kind} = 'video' then 'video'
-    when ${contentType} like 'image/%'
-      or ${filename} ~ '[.](avif|bmp|gif|heic|heif|ico|jpe?g|png|svg|tiff?|webp)$'
-      then 'image'
-    when ${contentType} like 'video/%'
-      or ${filename} ~ '[.](avi|m4v|mkv|mov|mp4|mpeg|mpg|ogv|webm)$'
-      then 'video'
-    when ${contentType} like 'audio/%'
-      or ${filename} ~ '[.](aac|aiff?|flac|m4a|mp3|mpga|oga|ogg|opus|wav|wma)$'
-      then 'audio'
-    when ${contentType} like 'application/vnd.ms-powerpoint%'
-      or ${contentType} like 'application/vnd.openxmlformats-officedocument.presentationml.%'
-      or ${contentType} like 'application/vnd.oasis.opendocument.presentation%'
-      or ${filename} ~ '[.](odp|pot|potm|potx|pps|ppsm|ppsx|ppt|pptm|pptx)$'
-      then 'presentation'
-    when ${contentType} in ('text/csv', 'text/tab-separated-values')
-      or ${contentType} like 'application/vnd.ms-excel%'
-      or ${contentType} like 'application/vnd.openxmlformats-officedocument.spreadsheetml.%'
-      or ${contentType} like 'application/vnd.oasis.opendocument.spreadsheet%'
-      or ${filename} ~ '[.](csv|numbers|ods|tsv|xls|xlsb|xlsm|xlsx|xlt|xltm|xltx)$'
-      then 'spreadsheet'
-    when ${contentType} in ('text/html', 'application/xhtml+xml')
-      or ${filename} ~ '[.](html?|xhtml)$'
-      then 'website'
-    when ${contentType} like 'text/%'
-      or ${contentType} in ('application/pdf', 'application/msword', 'application/rtf', 'application/json', 'application/xml', 'application/yaml', 'application/x-yaml')
-      or ${contentType} like 'application/vnd.ms-word%'
-      or ${contentType} like 'application/vnd.openxmlformats-officedocument.wordprocessingml.%'
-      or ${contentType} like 'application/vnd.oasis.opendocument.text%'
-      or ${filename} ~ '[.](doc|docm|docx|dot|dotm|dotx|json|markdown|md|odt|pdf|rtf|txt|xml|ya?ml)$'
-      then 'document'
-    else 'other'
-  end`.mapWith(zodEnumDriverValueDecoder(zEnum(ARTIFACT_CATALOG_CATEGORIES)));
-}
-
-function hostedArtifactKind(
-  row: CatalogFileRow,
-): "hosted-site" | "presentation" | null {
-  const artifactKind = metadataString(row.metadata, "artifactKind");
-  if (artifactKind === "hosted-site") {
-    return "hosted-site";
-  }
-  if (artifactKind === "presentation-html") {
-    return "presentation";
-  }
-  return null;
-}
-
 const DIRECT_KIND_CATEGORIES: Readonly<
   Partial<Record<ArtifactCatalogKind, ArtifactCatalogCategory>>
 > = {
@@ -313,7 +121,6 @@ const DIRECT_KIND_CATEGORIES: Readonly<
   presentation: "presentation",
   "hosted-site": "website",
   image: "image",
-  video: "video",
 };
 
 const FILE_CATEGORY_RULES: readonly {
@@ -383,7 +190,7 @@ const FILE_CATEGORY_RULES: readonly {
   },
 ];
 
-function inferFileArtifactCategory(
+export function inferFileArtifactCategory(
   kind: ArtifactCatalogKind,
   contentType: string | null,
   filename: string,
@@ -408,1021 +215,479 @@ function inferFileArtifactCategory(
   return "other";
 }
 
-function videoSourceUrl(row: CatalogFileRow, title: string): string | null {
-  const contentType = row.contentType ?? inferMimetype(title);
-  return row.url && contentType.startsWith("video/") ? row.url : null;
+function fileArtifactLogicalKey(url: string): string {
+  const parsed = safeUrlParse(url);
+  const canonical = parsed
+    ? (canonicalOkouArtifactCatalogUrl(parsed) ?? url)
+    : url;
+  return `file:${canonical}`;
 }
 
-function fileThumbnail(row: CatalogFileRow): ArtifactThumbnail | null {
-  if (row.previewImageUrl) {
-    return { url: row.previewImageUrl };
+function catalogArtifactKind(
+  kind: ArtifactKind,
+  logicalKey: string,
+): ArtifactCatalogKind {
+  if (kind === "file" && isSharedThreadArtifactLogicalKey(logicalKey)) {
+    return "shared-thread";
   }
-  const filename = row.filename ?? row.externalId;
-  const contentType = row.contentType ?? inferMimetype(filename);
-  if (row.url && contentType.startsWith("image/")) {
-    return { url: row.url };
-  }
-  return null;
+  return kind;
 }
 
-/**
- * Resolve the artifact author from the file's persisted thread, so integration
- * files are filed under the thread's Okou account rather than the external
- * sender.
- */
-const resolveArtifactOwnership$ = command(
+function artifactCatalogEffectiveKind() {
+  // Native PPTX files belong to Presentations without changing their file-backed
+  // storage or detail contract. Other summaries retain their display kind.
+  return sql`case
+    when ${artifacts.kind} = 'file'
+      and ${artifacts.logicalKey} not like 'shared-thread:%'
+      and lower(${artifacts.title}) like '%.pptx'
+    then 'presentation'
+    else coalesce(${artifacts.displayKind}, case
+      when ${artifacts.kind} = 'file'
+        and ${artifacts.logicalKey} like 'shared-thread:%'
+      then 'shared-thread'
+      else ${artifacts.kind}
+    end)
+  end`.mapWith(zodEnumDriverValueDecoder(zEnum(ARTIFACT_CATALOG_KINDS)));
+}
+
+function artifactCatalogKindFilter(kind: ArtifactCatalogListQueryKind): SQL {
+  if (kind === "video") {
+    // Bounded iOS 0.73.0 App Review compatibility: video artifacts are stored as
+    // `kind = 'file'` with `category = 'video'`.
+    return and(eq(artifacts.kind, "file"), eq(artifacts.category, "video"))!;
+  }
+  return eq(artifactCatalogEffectiveKind(), kind);
+}
+
+const resolveAuthorAndThread$ = command(
   async (
     { get },
-    row: CatalogFileRow,
+    args: {
+      readonly orgId: string;
+      readonly userId: string;
+      readonly runId?: string | null;
+      readonly chatThreadId?: string | null;
+    },
     signal: AbortSignal,
-  ): Promise<{ authorUserId: string; chatThreadId: string | null }> => {
+  ): Promise<{
+    readonly authorUserId: string;
+    readonly chatThreadId: string | null;
+  }> => {
     const db = get(db$);
-
-    // A source thread can disappear while its integration file survives. Its
-    // external sender must not replace the catalog's already-established owner
-    // on a delayed preview/sync and cause deletion/reinsertion under a new key.
-    if (row.orgId) {
-      const [existing] = await db
-        .select({
-          authorUserId: artifacts.authorUserId,
-          chatThreadId: artifacts.chatThreadId,
-        })
-        .from(artifacts)
+    let chatThreadId = args.chatThreadId ?? null;
+    if (!chatThreadId && args.runId) {
+      const [run] = await db
+        .select({ chatThreadId: agentRuns.chatThreadId })
+        .from(agentRuns)
         .where(
           and(
-            eq(artifacts.orgId, row.orgId),
-            eq(artifacts.projectionFileId, row.id),
+            eq(agentRuns.id, args.runId),
+            eq(agentRuns.orgId, args.orgId),
+            isNotNull(agentRuns.triggerSource),
           ),
         )
         .limit(1);
       signal.throwIfAborted();
-      if (existing) {
-        return existing;
-      }
+      chatThreadId = run?.chatThreadId ?? null;
     }
-
-    if (!row.chatThreadId) {
-      return { authorUserId: row.userId, chatThreadId: null };
+    if (!chatThreadId) {
+      return { authorUserId: args.userId, chatThreadId: null };
     }
-
     const [thread] = await db
       .select({ userId: chatThreads.userId })
       .from(chatThreads)
-      .where(eq(chatThreads.id, row.chatThreadId))
+      .where(
+        and(
+          eq(chatThreads.id, chatThreadId),
+          eq(chatThreads.orgId, args.orgId),
+        ),
+      )
       .limit(1);
     signal.throwIfAborted();
     return {
-      authorUserId: thread?.userId ?? row.userId,
-      chatThreadId: thread ? row.chatThreadId : null,
+      authorUserId: thread?.userId ?? args.userId,
+      chatThreadId: thread ? chatThreadId : null,
     };
   },
 );
 
-const readCatalogFileRow$ = command(
+export const notifyArtifactCatalogChanged$ = command(
   async (
-    { get },
-    fileId: string,
-    signal: AbortSignal,
-  ): Promise<CatalogFileRow | null> => {
-    const db = get(db$);
-    const [row] = await db
-      .select({
-        id: runUploadedFiles.id,
-        runId: runUploadedFiles.runId,
-        chatThreadId: runUploadedFiles.chatThreadId,
-        userId: runUploadedFiles.userId,
-        orgId: runUploadedFiles.orgId,
-        filename: runUploadedFiles.filename,
-        externalId: runUploadedFiles.externalId,
-        contentType: runUploadedFiles.contentType,
-        url: runUploadedFiles.url,
-        previewImageUrl: runUploadedFiles.previewImageUrl,
-        metadata: runUploadedFiles.metadata,
-        classification: runUploadedFiles.classification,
-        deletedAt: runUploadedFiles.deletedAt,
-        createdAt: runUploadedFiles.createdAt,
-      })
-      .from(runUploadedFiles)
-      .where(eq(runUploadedFiles.id, fileId))
-      .limit(1);
-    signal.throwIfAborted();
-    return row ?? null;
+    _ctx,
+    args: {
+      readonly authorUserId: string;
+      readonly chatThreadId: string | null;
+    },
+  ): Promise<void> => {
+    if (args.chatThreadId) {
+      await publishUserSignal(
+        [args.authorUserId],
+        chatArtifactCatalogChangedEvent(args.chatThreadId),
+      );
+    }
   },
 );
 
-/**
- * SQL-only handoff, executed by the command that owns the file mutation.
- * An optional mutation must return id, org_id, user_id, chat_thread_id and url.
- * Its RETURNING rows supply the handoff's current file values because a sibling
- * CTE cannot see the mutation by rereading the base table.
- * `if-mutated` also gates ineligible cleanup on a returned row; the default
- * retains cleanup for a missing file, including an empty mutation result.
- */
-export function queueArtifactCatalogFileSql(
-  fileId: string,
-  fileMutation?: SQL,
-): SQL;
-export function queueArtifactCatalogFileSql(
-  fileId: string,
-  fileMutation: SQL,
-  handoff: "if-mutated",
-): SQL;
-export function queueArtifactCatalogFileSql(
-  fileId: string,
-  fileMutation?: SQL,
-  handoff?: "if-mutated",
-): SQL {
-  const { ctes, queue } = artifactCatalogFileHandoffSql(
-    sql`${sql.param(fileId, runUploadedFiles.id)}`,
-    fileMutation
-      ? eq(sql`mutated_file.id`, fileId)
-      : eq(runUploadedFiles.id, fileId),
-    fileMutation,
-    handoff,
-  );
-  return sql`${ctes}${queue}`;
-}
-
-/** Skip all handoff work for an unchanged file and return the mutation outcome. */
-export function queueChangedArtifactCatalogFileSql(
-  fileId: string,
-  fileMutation: SQL,
-): SQL {
-  const { ctes, queue } = artifactCatalogFileHandoffSql(
-    sql`${sql.param(fileId, runUploadedFiles.id)}`,
-    eq(sql`mutated_file.id`, fileId),
-    fileMutation,
-    "if-mutated",
-  );
-  return sql`${ctes}, queued_file AS (${queue})
-    SELECT EXISTS(SELECT 1 FROM mutated_file) AS changed
-  `;
-}
-
-/** Return an upsert's identity and preview after admitting its durable handoff. */
-export function queueRecordedArtifactCatalogFileSql(fileMutation: SQL): SQL {
-  const fileId = sql`(SELECT id FROM mutated_file)`;
-  const { ctes, queue } = artifactCatalogFileHandoffSql(
-    fileId,
-    eq(sql`mutated_file.id`, fileId),
-    fileMutation,
-    "if-mutated",
-  );
-  return sql`${ctes}, queued_file AS (${queue})
-    SELECT id, preview_image_url AS "previewImageUrl" FROM mutated_file
-  `;
-}
-
-function artifactCatalogFileHandoffSql(
-  fileId: SQL,
-  identityCondition: SQL,
-  fileMutation?: SQL,
-  handoff?: "if-mutated",
-) {
-  const file = fileMutation
-    ? {
-        id: sql`mutated_file.id`,
-        orgId: sql`mutated_file.org_id`,
-        userId: sql`mutated_file.user_id`,
-        chatThreadId: sql`mutated_file.chat_thread_id`,
-        url: sql`mutated_file.url`,
-      }
-    : runUploadedFiles;
-  const source = fileMutation ? sql`mutated_file` : sql`${runUploadedFiles}`;
-  const mutationCte = fileMutation
-    ? sql`mutated_file AS (${fileMutation}),`
-    : sql.empty();
-  const nonEmptyUrl = fileMutation
-    ? ne(sql`mutated_file.url`, "")
-    : ne(runUploadedFiles.url, "");
-  const nonEmptyOrg = fileMutation
-    ? ne(sql`mutated_file.org_id`, "")
-    : ne(runUploadedFiles.orgId, "");
-  const cleanupCondition =
-    handoff === "if-mutated"
-      ? sql`${exists(sql`(SELECT 1 FROM mutated_file)`)} AND ${notExists(sql`(SELECT 1 FROM eligible_file)`)}`
-      : notExists(sql`(SELECT 1 FROM eligible_file)`);
-  const ctes = sql`
-    WITH ${mutationCte}eligible_file AS (
-      SELECT ${file.id} AS file_id,
-             ${file.orgId} AS org_id,
-             COALESCE((
-               SELECT ${chatThreads.userId}
-               FROM ${chatThreads}
-               WHERE ${eq(chatThreads.id, file.chatThreadId)}
-               LIMIT 1
-             ), ${file.userId}) AS author_user_id
-      FROM ${source}
-      WHERE ${identityCondition}
-        AND ${isNotNull(file.url)} AND ${nonEmptyUrl}
-        AND ${isNotNull(file.orgId)} AND ${nonEmptyOrg}
-    ), removed_artifacts AS (
-      DELETE FROM ${artifacts}
-      WHERE ${eq(artifacts.projectionFileId, fileId)}
-        AND ${cleanupCondition}
-    ), removed_pending AS (
-      DELETE FROM ${artifactCatalogPendingFiles}
-      WHERE ${eq(artifactCatalogPendingFiles.fileId, fileId)}
-        AND ${cleanupCondition}
-    )`;
-  const queue = sql`
-    INSERT INTO ${artifactCatalogPendingFiles} (file_id, org_id, author_user_id, queued_at)
-    SELECT file_id, org_id, author_user_id, clock_timestamp() FROM eligible_file
-    ON CONFLICT (file_id) DO UPDATE SET
-      org_id = excluded.org_id,
-      author_user_id = excluded.author_user_id,
-      queued_at = clock_timestamp()
-  `;
-  return { ctes, queue };
-}
-
-interface UpsertArtifactArgs {
-  readonly kind: ArtifactKind;
-  readonly displayKind: ArtifactCatalogKind;
-  readonly category: ArtifactCatalogCategory;
-  readonly sourceUrl: string | null;
-  readonly aliasUrl: string | null;
-  readonly videoSourceUrl: string | null;
-  readonly chatThreadId: string | null;
-  readonly entityId: string;
-  readonly logicalKey: string;
-  readonly projectionFileId: string;
-  readonly projectionCreatedAt: Date;
-  readonly orgId: string;
-  readonly authorUserId: string;
-  readonly title: string;
-  readonly thumbnail: ArtifactThumbnail | null;
-  readonly createdAt: Date;
-}
-
-/**
- * Idempotent registry write. `created_at` is never updated, so re-running the
- * sync (redeploy, preview render, backfill replay) keeps the artifact in its
- * original list position. A private upload's unscoped ownership record can gain
- * its first producing thread. Subsequent projections cannot move the artifact,
- * including after thread deletion clears its FK.
- */
-function artifactUpsertPlan(args: UpsertArtifactArgs) {
-  const qb = new QueryBuilder();
-  const unscopedPrivateUpload = exists(
-    qb
-      .select({ id: runUploadedFiles.id })
-      .from(runUploadedFiles)
-      .where(
-        and(
-          eq(runUploadedFiles.id, artifacts.projectionFileId),
-          isNull(runUploadedFiles.runId),
-          eq(
-            sql`${runUploadedFiles.metadata}->>'storage'`,
-            "private-artifact-v1",
-          ),
-        ),
-      ),
-  );
-  return {
-    values: {
-      kind: args.kind,
-      displayKind: args.displayKind,
-      sourceUrl: args.sourceUrl,
-      aliasUrl: args.aliasUrl,
-      videoSourceUrl: args.videoSourceUrl,
-      chatThreadId: args.chatThreadId,
-      entityId: args.entityId,
-      logicalKey: args.logicalKey,
-      projectionFileId: args.projectionFileId,
-      projectionCreatedAt: args.projectionCreatedAt,
-      orgId: args.orgId,
-      authorUserId: args.authorUserId,
-      title: args.title,
-      thumbnail: args.thumbnail,
-      category: args.category,
-      createdAt: args.createdAt,
-    },
-    conflict: {
-      target: [artifacts.orgId, artifacts.authorUserId, artifacts.logicalKey],
-      set: {
-        chatThreadId: sql`case
-          when ${isNull(artifacts.chatThreadId)} and ${unscopedPrivateUpload}
-          then excluded.chat_thread_id
-          else ${artifacts.chatThreadId}
-        end`,
-        kind: args.kind,
-        displayKind: args.displayKind,
-        sourceUrl: args.sourceUrl,
-        aliasUrl: args.aliasUrl,
-        videoSourceUrl: args.videoSourceUrl,
-        entityId: args.entityId,
-        projectionFileId: args.projectionFileId,
-        projectionCreatedAt: args.projectionCreatedAt,
-        orgId: args.orgId,
-        authorUserId: args.authorUserId,
-        title: args.title,
-        thumbnail: args.thumbnail,
-        category: args.category,
-        updatedAt: nowDate(),
-      },
-      setWhere: lte(
-        sql`(${artifacts.projectionCreatedAt}, ${artifacts.projectionFileId})`,
-        sql`(excluded.projection_created_at, excluded.projection_file_id)`,
-      ),
-    },
-  };
-}
-
-/** Keep the insert's column encoders when its source is a guarded SELECT. */
-function fileArtifactInsertSelection(
-  values: ReturnType<typeof artifactUpsertPlan>["values"],
-) {
-  return {
-    id: sql`gen_random_uuid()`.mapWith(artifacts.id).as("id"),
-    orgId: sql`${values.orgId}`.mapWith(artifacts.orgId).as("org_id"),
-    authorUserId: sql`${values.authorUserId}`
-      .mapWith(artifacts.authorUserId)
-      .as("author_user_id"),
-    kind: sql`${values.kind}`.mapWith(artifacts.kind).as("kind"),
-    entityId: sql`${values.entityId}::uuid`
-      .mapWith(artifacts.entityId)
-      .as("entity_id"),
-    logicalKey: sql`${values.logicalKey}`
-      .mapWith(artifacts.logicalKey)
-      .as("logical_key"),
-    chatThreadId: sql`${values.chatThreadId}::uuid`
-      .mapWith(nullableDriverValueDecoder(artifacts.chatThreadId))
-      .as("chat_thread_id"),
-    displayKind: sql`${values.displayKind}`
-      .mapWith(nullableDriverValueDecoder(artifacts.displayKind))
-      .as("display_kind"),
-    sourceUrl: sql`${values.sourceUrl}`
-      .mapWith(nullableDriverValueDecoder(artifacts.sourceUrl))
-      .as("source_url"),
-    aliasUrl: sql`${values.aliasUrl}`
-      .mapWith(nullableDriverValueDecoder(artifacts.aliasUrl))
-      .as("alias_url"),
-    videoSourceUrl: sql`${values.videoSourceUrl}`
-      .mapWith(nullableDriverValueDecoder(artifacts.videoSourceUrl))
-      .as("video_source_url"),
-    projectionFileId: sql`${values.projectionFileId}::uuid`
-      .mapWith(nullableDriverValueDecoder(artifacts.projectionFileId))
-      .as("projection_file_id"),
-    projectionCreatedAt:
-      sql`${sql.param(values.projectionCreatedAt, artifacts.projectionCreatedAt)}::timestamp`
-        .mapWith(artifacts.projectionCreatedAt)
-        .as("projection_created_at"),
-    title: sql`${values.title}`.mapWith(artifacts.title).as("title"),
-    thumbnail: sql`${sql.param(values.thumbnail, artifacts.thumbnail)}::jsonb`
-      .mapWith(nullableDriverValueDecoder(artifacts.thumbnail))
-      .as("thumbnail"),
-    visibility: sql`'private'`.mapWith(artifacts.visibility).as("visibility"),
-    category: sql`${values.category ?? null}::varchar`
-      .mapWith(nullableDriverValueDecoder(artifacts.category))
-      .as("category"),
-    deletedAt: sql`NULL::timestamp`
-      .mapWith(nullableDriverValueDecoder(artifacts.deletedAt))
-      .as("deleted_at"),
-    createdAt:
-      sql`${sql.param(values.createdAt, artifacts.createdAt)}::timestamp`
-        .mapWith(artifacts.createdAt)
-        .as("created_at"),
-    updatedAt: sql`now()`.mapWith(artifacts.updatedAt).as("updated_at"),
-  };
-}
-
-const upsertGeneratedMediaEntity$ = command(
+/** Synchronously register or update a file deliverable in `artifacts`. */
+export const upsertFileArtifact$ = command(
   async (
     { set },
     args: {
-      readonly kind: "image" | "video";
-      readonly row: CatalogFileRow;
+      readonly fileId: string;
+      readonly orgId: string;
+      readonly userId: string;
+      readonly filename: string;
+      readonly contentType: string | null;
+      readonly sourceUrl: string;
+      readonly aliasUrl?: string | null;
+      readonly thumbnail?: ArtifactThumbnail | null;
+      readonly displayKind?: ArtifactCatalogKind;
+      readonly runId?: string | null;
+      readonly chatThreadId?: string | null;
+      readonly createdAt?: Date;
     },
     signal: AbortSignal,
-  ): Promise<string | null> => {
+  ): Promise<{
+    readonly id: string;
+    readonly authorUserId: string;
+    readonly chatThreadId: string | null;
+  }> => {
+    const ownership = await set(
+      resolveAuthorAndThread$,
+      {
+        orgId: args.orgId,
+        userId: args.userId,
+        runId: args.runId,
+        chatThreadId: args.chatThreadId,
+      },
+      signal,
+    );
+    const logicalKey = fileArtifactLogicalKey(args.sourceUrl);
+    const displayKind: ArtifactCatalogKind =
+      args.displayKind ??
+      (args.filename.toLowerCase().endsWith(".pptx") ? "presentation" : "file");
+    const effectiveContentType =
+      args.contentType ?? inferMimetype(args.filename);
+    const category = inferFileArtifactCategory(
+      displayKind,
+      effectiveContentType,
+      args.filename,
+    );
+    const thumbnail =
+      args.thumbnail !== undefined
+        ? args.thumbnail
+        : effectiveContentType.startsWith("image/")
+          ? { url: args.sourceUrl }
+          : null;
+    const createdAt = args.createdAt ?? nowDate();
+    const updatedAt = nowDate();
     const db = set(writeDb$);
-
-    const model = metadataString(args.row.metadata, "model");
-    if (args.kind === "image") {
-      const [entity] = await db
-        .insert(imageArtifacts)
-        .values({
-          fileId: args.row.id,
-          model,
-          provider: metadataString(args.row.metadata, "provider"),
-        })
-        .onConflictDoUpdate({
-          target: [imageArtifacts.fileId],
-          set: {
-            model,
-            provider: metadataString(args.row.metadata, "provider"),
-            updatedAt: nowDate(),
-          },
-        })
-        .returning({ id: imageArtifacts.id });
-      signal.throwIfAborted();
-      return entity?.id ?? null;
-    }
-
-    const durationSeconds = args.row.metadata.durationSeconds;
-    const [entity] = await db
-      .insert(videoArtifacts)
+    const [row] = await db
+      .insert(artifacts)
       .values({
-        fileId: args.row.id,
-        model,
-        durationSeconds:
-          typeof durationSeconds === "number"
-            ? Math.round(durationSeconds)
-            : null,
+        orgId: args.orgId,
+        authorUserId: ownership.authorUserId,
+        kind: "file",
+        displayKind,
+        entityId: args.fileId,
+        logicalKey,
+        chatThreadId: ownership.chatThreadId,
+        sourceUrl: args.sourceUrl,
+        aliasUrl: args.aliasUrl ?? null,
+        title: args.filename,
+        thumbnail,
+        visibility: "private",
+        category,
+        createdAt,
+        updatedAt,
       })
       .onConflictDoUpdate({
-        target: [videoArtifacts.fileId],
+        target: [artifacts.orgId, artifacts.authorUserId, artifacts.logicalKey],
         set: {
-          model,
-          durationSeconds:
-            typeof durationSeconds === "number"
-              ? Math.round(durationSeconds)
-              : null,
-          updatedAt: nowDate(),
+          displayKind,
+          entityId: args.fileId,
+          sourceUrl: args.sourceUrl,
+          aliasUrl: args.aliasUrl ?? null,
+          title: args.filename,
+          thumbnail,
+          category,
+          updatedAt,
         },
       })
-      .returning({ id: videoArtifacts.id });
+      .returning({
+        id: artifacts.id,
+        authorUserId: artifacts.authorUserId,
+        chatThreadId: artifacts.chatThreadId,
+      });
     signal.throwIfAborted();
-    return entity?.id ?? null;
+    if (!row) {
+      throw new Error("File artifact upsert returned no row");
+    }
+    await set(notifyArtifactCatalogChanged$, row);
+    signal.throwIfAborted();
+    return row;
   },
 );
 
-/** Match the same extension lookup as inferMimetype for the locked site name. */
-function hostedVideoSource(row: CatalogFileRow, title: SQL): SQL {
-  if (row.contentType !== null) {
-    return sql`${row.url && row.contentType.startsWith("video/") ? row.url : null}`;
-  }
-  return sql`CASE WHEN ${inArray(sql`lower(reverse(split_part(reverse(${title}), '.', 1)))`, VIDEO_FILENAME_EXTENSIONS)} THEN ${row.url} ELSE NULL END`;
-}
-
-interface HostedArtifactSyncArgs {
-  readonly kind: "hosted-site" | "presentation";
-  readonly chatThreadId: string | null;
-  readonly row: CatalogFileRow;
-  readonly orgId: string;
-  readonly authorUserId: string;
-}
-
-function hostedArtifactAdmission(args: HostedArtifactSyncArgs, siteId: string) {
-  const qb = new QueryBuilder();
-  const privateSnapshot = args.row.metadata.access === "owner-private-v1";
-  const site = qb.$with("catalog_hosted_site").as(
-    qb
-      .select({
-        id: hostedSites.id,
-        slug: hostedSites.slug,
-        requestedSlug: hostedSites.requestedSlug,
-        createdAt: hostedSites.createdAt,
-        activeDeploymentId: hostedSites.activeDeploymentId,
+/** Synchronously register a generated image in `image_artifacts` + `artifacts`. */
+export const upsertGeneratedImageArtifact$ = command(
+  async (
+    { set },
+    args: {
+      readonly fileId: string;
+      readonly orgId: string;
+      readonly userId: string;
+      readonly filename: string;
+      readonly sourceUrl: string;
+      readonly model: string | null;
+      readonly provider: string | null;
+      readonly runId?: string | null;
+      readonly chatThreadId?: string | null;
+      readonly createdAt?: Date;
+    },
+    signal: AbortSignal,
+  ): Promise<{ readonly id: string }> => {
+    const db = set(writeDb$);
+    const updatedAt = nowDate();
+    const [image] = await db
+      .insert(imageArtifacts)
+      .values({
+        fileId: args.fileId,
+        model: args.model,
+        provider: args.provider,
       })
-      .from(hostedSites)
-      .where(and(eq(hostedSites.id, siteId), eq(hostedSites.orgId, args.orgId)))
-      .for("update")
-      .limit(1),
-  );
-  const deploymentId = metadataString(args.row.metadata, "deploymentId");
-  const eligible = qb.$with("catalog_eligible_site").as(
-    qb
-      .select()
-      .from(site)
-      .where(
-        privateSnapshot
-          ? undefined
-          : deploymentId === null
-            ? isNull(site.activeDeploymentId)
-            : eq(sql`${site.activeDeploymentId}::text`, deploymentId),
-      ),
-  );
-  const logicalKey = sql`'site:' || ${eligible.id}::text`;
-  const existing = qb.$with("catalog_hosted_existing").as(
-    qb
-      .select({ id: artifacts.id, title: artifacts.title })
+      .onConflictDoUpdate({
+        target: [imageArtifacts.fileId],
+        set: {
+          model: args.model,
+          provider: args.provider,
+          updatedAt,
+        },
+      })
+      .returning({ id: imageArtifacts.id });
+    signal.throwIfAborted();
+    if (!image) {
+      throw new Error("Generated image entity upsert returned no row");
+    }
+    const ownership = await set(
+      resolveAuthorAndThread$,
+      {
+        orgId: args.orgId,
+        userId: args.userId,
+        runId: args.runId,
+        chatThreadId: args.chatThreadId,
+      },
+      signal,
+    );
+    const logicalKey = fileArtifactLogicalKey(args.sourceUrl);
+    const createdAt = args.createdAt ?? updatedAt;
+    const [row] = await db
+      .insert(artifacts)
+      .values({
+        orgId: args.orgId,
+        authorUserId: ownership.authorUserId,
+        kind: "image",
+        displayKind: "image",
+        entityId: image.id,
+        logicalKey,
+        chatThreadId: ownership.chatThreadId,
+        sourceUrl: args.sourceUrl,
+        title: args.filename,
+        thumbnail: { url: args.sourceUrl },
+        visibility: "private",
+        category: "image",
+        createdAt,
+        updatedAt,
+      })
+      .onConflictDoUpdate({
+        target: [artifacts.orgId, artifacts.authorUserId, artifacts.logicalKey],
+        set: {
+          kind: "image",
+          displayKind: "image",
+          entityId: image.id,
+          chatThreadId: sql`COALESCE(${artifacts.chatThreadId}, ${ownership.chatThreadId})`,
+          sourceUrl: args.sourceUrl,
+          title: args.filename,
+          thumbnail: { url: args.sourceUrl },
+          category: "image",
+          updatedAt,
+        },
+      })
+      .returning({
+        id: artifacts.id,
+        authorUserId: artifacts.authorUserId,
+        chatThreadId: artifacts.chatThreadId,
+      });
+    signal.throwIfAborted();
+    if (!row) {
+      throw new Error("Generated image artifact upsert returned no row");
+    }
+    await set(notifyArtifactCatalogChanged$, row);
+    signal.throwIfAborted();
+    return { id: row.id };
+  },
+);
+
+const ensurePresentationEntityId$ = command(
+  async (
+    { set },
+    args: {
+      readonly siteId: string;
+      readonly kind: "hosted-site" | "presentation";
+      readonly updatedAt: Date;
+    },
+    signal: AbortSignal,
+  ): Promise<string> => {
+    if (args.kind !== "presentation") {
+      return args.siteId;
+    }
+    const [presentation] = await set(writeDb$)
+      .insert(presentationArtifacts)
+      .values({ hostedSiteId: args.siteId })
+      .onConflictDoUpdate({
+        target: [presentationArtifacts.hostedSiteId],
+        set: { updatedAt: args.updatedAt },
+      })
+      .returning({ id: presentationArtifacts.id });
+    signal.throwIfAborted();
+    if (!presentation) {
+      throw new Error("Presentation artifact entity upsert returned no row");
+    }
+    return presentation.id;
+  },
+);
+
+/** Synchronously register or update a hosted site / presentation in `artifacts`. */
+export const upsertHostedSiteArtifact$ = command(
+  async (
+    { get, set },
+    args: {
+      readonly siteId: string;
+      readonly orgId: string;
+      readonly userId: string;
+      readonly kind: "hosted-site" | "presentation";
+      readonly title: string;
+      readonly sourceUrl: string;
+      readonly aliasUrl?: string | null;
+      readonly thumbnail?: ArtifactThumbnail | null;
+      readonly visibility?: ArtifactVisibility;
+      readonly runId?: string | null;
+      readonly chatThreadId?: string | null;
+      readonly createdAt?: Date;
+    },
+    signal: AbortSignal,
+  ): Promise<{ readonly id: string }> => {
+    const db = set(writeDb$);
+    const updatedAt = nowDate();
+    const entityId = await set(
+      ensurePresentationEntityId$,
+      { siteId: args.siteId, kind: args.kind, updatedAt },
+      signal,
+    );
+
+    const logicalKey = `site:${args.siteId}`;
+    const [existing] = await get(db$)
+      .select({
+        id: artifacts.id,
+        authorUserId: artifacts.authorUserId,
+        chatThreadId: artifacts.chatThreadId,
+        title: artifacts.title,
+        visibility: artifacts.visibility,
+        deletedAt: artifacts.deletedAt,
+      })
       .from(artifacts)
-      .innerJoin(eligible, eq(artifacts.logicalKey, logicalKey))
       .where(
         and(
           eq(artifacts.orgId, args.orgId),
           eq(artifacts.logicalKey, logicalKey),
-          exists(qb.select({ id: eligible.id }).from(eligible)),
         ),
       )
-      .orderBy(
-        desc(artifacts.projectionCreatedAt),
-        desc(artifacts.projectionFileId),
-      )
-      .for("update", { of: artifacts })
-      .limit(1),
-  );
-  return { privateSnapshot, site, eligible, existing, logicalKey };
-}
+      .limit(1);
+    signal.throwIfAborted();
 
-function hostedArtifactProjection(
-  args: HostedArtifactSyncArgs,
-  admission: ReturnType<typeof hostedArtifactAdmission>,
-  entityId: SQL,
-  updatedAt: Date,
-) {
-  const qb = new QueryBuilder();
-  const { privateSnapshot, eligible, existing, logicalKey } = admission;
-  const title = sql`coalesce((${qb.select({ title: existing.title }).from(existing)}),
-      ${metadataString(args.row.metadata, "title")}, ${eligible.requestedSlug}, ${eligible.slug})`;
-  const siteVisibility = sql`coalesce((${qb
-    .select({ visibility: hostedSiteVisibility.visibility })
-    .from(hostedSiteVisibility)
-    .where(eq(hostedSiteVisibility.siteId, eligible.id))
-    .limit(1)}), 'public')`;
-  const thumbnail = args.row.previewImageUrl
-    ? { url: args.row.previewImageUrl }
-    : null;
-  const video = hostedVideoSource(
-    args.row,
-    sql`coalesce(${eligible.requestedSlug}, ${eligible.slug})`,
-  );
-  const values = {
-    kind: args.kind,
-    displayKind: args.kind,
-    sourceUrl: args.row.url,
-    aliasUrl: metadataString(args.row.metadata, "aliasUrl"),
-    videoSourceUrl: video,
-    entityId,
-    projectionFileId: args.row.id,
-    projectionCreatedAt: args.row.createdAt,
-    orgId: args.orgId,
-    title,
-    thumbnail,
-    ...(privateSnapshot ? {} : { visibility: siteVisibility }),
-    category: (args.kind === "presentation"
-      ? "presentation"
-      : "website") as ArtifactCatalogCategory,
-    updatedAt,
-    // Only a new publication may restore a deleted site. Replaying an old
-    // file or preview update must preserve the catalog tombstone.
-    deletedAt: sql`CASE WHEN ${sql.param(args.row.createdAt, artifacts.projectionCreatedAt)}::timestamp > ${artifacts.deletedAt} THEN NULL ELSE ${artifacts.deletedAt} END`,
-  };
-  const insertSelection = {
-    id: sql`gen_random_uuid()`.mapWith(artifacts.id).as("id"),
-    orgId: sql`${sql.param(args.orgId, artifacts.orgId)}`
-      .mapWith(artifacts.orgId)
-      .as("org_id"),
-    authorUserId: sql`${sql.param(args.authorUserId, artifacts.authorUserId)}`
-      .mapWith(artifacts.authorUserId)
-      .as("author_user_id"),
-    kind: sql`${sql.param(args.kind, artifacts.kind)}`
-      .mapWith(artifacts.kind)
-      .as("kind"),
-    entityId: sql`${entityId}`.mapWith(artifacts.entityId).as("entity_id"),
-    logicalKey: logicalKey.mapWith(artifacts.logicalKey).as("logical_key"),
-    chatThreadId:
-      sql`${sql.param(args.chatThreadId, artifacts.chatThreadId)}::uuid`
-        .mapWith(nullableDriverValueDecoder(artifacts.chatThreadId))
-        .as("chat_thread_id"),
-    displayKind: sql`${sql.param(args.kind, artifacts.displayKind)}`
-      .mapWith(nullableDriverValueDecoder(artifacts.displayKind))
-      .as("display_kind"),
-    sourceUrl: sql`${sql.param(args.row.url, artifacts.sourceUrl)}`
-      .mapWith(nullableDriverValueDecoder(artifacts.sourceUrl))
-      .as("source_url"),
-    aliasUrl: sql`${sql.param(values.aliasUrl, artifacts.aliasUrl)}`
-      .mapWith(nullableDriverValueDecoder(artifacts.aliasUrl))
-      .as("alias_url"),
-    videoSourceUrl: video
-      .mapWith(nullableDriverValueDecoder(artifacts.videoSourceUrl))
-      .as("video_source_url"),
-    projectionFileId:
-      sql`${sql.param(args.row.id, artifacts.projectionFileId)}::uuid`
-        .mapWith(nullableDriverValueDecoder(artifacts.projectionFileId))
-        .as("projection_file_id"),
-    projectionCreatedAt:
-      sql`${sql.param(args.row.createdAt, artifacts.projectionCreatedAt)}::timestamp`
-        .mapWith(artifacts.projectionCreatedAt)
-        .as("projection_created_at"),
-    title: title.mapWith(artifacts.title).as("title"),
-    thumbnail: sql`${sql.param(thumbnail, artifacts.thumbnail)}::jsonb`
-      .mapWith(nullableDriverValueDecoder(artifacts.thumbnail))
-      .as("thumbnail"),
-    visibility: (privateSnapshot ? sql`'private'` : siteVisibility)
-      .mapWith(artifacts.visibility)
-      .as("visibility"),
-    category: sql`${sql.param(values.category, artifacts.category)}::varchar`
-      .mapWith(nullableDriverValueDecoder(artifacts.category))
-      .as("category"),
-    deletedAt: sql`NULL::timestamp`
-      .mapWith(nullableDriverValueDecoder(artifacts.deletedAt))
-      .as("deleted_at"),
-    createdAt: eligible.createdAt,
-    updatedAt: sql`now()`.mapWith(artifacts.updatedAt).as("updated_at"),
-  };
-  return { values, insertSelection };
-}
-
-function hostedPresentationSelection(
-  eligible: ReturnType<typeof hostedArtifactAdmission>["eligible"],
-) {
-  return {
-    id: sql`gen_random_uuid()`.mapWith(presentationArtifacts.id).as("id"),
-    hostedSiteId: eligible.id,
-    generationJobId: sql`NULL::uuid`
-      .mapWith(
-        nullableDriverValueDecoder(presentationArtifacts.generationJobId),
-      )
-      .as("generation_job_id"),
-    createdAt: sql`now()`
-      .mapWith(presentationArtifacts.createdAt)
-      .as("created_at"),
-    updatedAt: sql`now()`
-      .mapWith(presentationArtifacts.updatedAt)
-      .as("updated_at"),
-  };
-}
-
-const syncHostedArtifact$ = command(
-  async (
-    { set },
-    args: HostedArtifactSyncArgs,
-    signal: AbortSignal,
-  ): Promise<boolean> => {
-    const db = set(writeDb$);
-    const siteId = metadataString(args.row.metadata, "siteId");
-    if (!siteId) {
-      return true;
-    }
-    const admission = hostedArtifactAdmission(args, siteId);
-    const { privateSnapshot, site, eligible, existing } = admission;
-    const updatedAt = nowDate();
-    const presentation = db.$with("catalog_hosted_presentation").as(
-      db
-        .insert(presentationArtifacts)
-        .select(
-          db
-            .select(hostedPresentationSelection(eligible))
-            .from(eligible)
-            .where(
-              and(
-                eq(sql.param(args.kind, artifacts.kind), "presentation"),
-                gte(db.select({ total: count() }).from(existing), 0),
-              ),
-            ),
-        )
-        .onConflictDoUpdate({
-          target: [presentationArtifacts.hostedSiteId],
-          set: { updatedAt },
-        })
-        .returning({ id: presentationArtifacts.id }),
-    );
-    const entityId =
-      args.kind === "presentation"
-        ? sql`(${db.select({ id: presentation.id }).from(presentation)})`
-        : sql`${eligible.id}`;
-    const projection = hostedArtifactProjection(
-      args,
-      admission,
-      entityId,
-      updatedAt,
-    );
-    const { values } = projection;
-    const entityReady =
-      args.kind === "presentation"
-        ? exists(db.select({ id: presentation.id }).from(presentation))
-        : gte(db.select({ total: count() }).from(existing), 0);
-    const updated = db.$with("catalog_hosted_updated").as(
-      db
-        .update(artifacts)
-        .set(values)
-        .from(eligible)
-        .where(
-          and(
-            eq(
-              artifacts.id,
-              sql`(${db.select({ id: existing.id }).from(existing)})`,
-            ),
-            entityReady,
-            privateSnapshot
-              ? lte(
-                  sql`(${artifacts.projectionCreatedAt}, ${artifacts.projectionFileId})`,
-                  sql`(${sql.param(args.row.createdAt, artifacts.projectionCreatedAt)}::timestamp, ${sql.param(args.row.id, artifacts.projectionFileId)}::uuid)`,
-                )
-              : undefined,
-          ),
-        )
-        .returning({ id: artifacts.id }),
-    );
-    const inserted = db.$with("catalog_hosted_inserted").as(
-      db
-        .insert(artifacts)
-        .select(
-          db
-            .select(projection.insertSelection)
-            .from(eligible)
-            .where(
-              and(
-                entityReady,
-                notExists(db.select({ id: existing.id }).from(existing)),
-                gte(db.select({ total: count() }).from(updated), 0),
-              ),
-            ),
-        )
-        .onConflictDoUpdate({
-          target: [
-            artifacts.orgId,
-            artifacts.authorUserId,
-            artifacts.logicalKey,
-          ],
-          set: {
-            ...values,
-            videoSourceUrl: sql`excluded.video_source_url`,
-            entityId: sql`excluded.entity_id`,
-            title: artifacts.title,
-            ...(privateSnapshot
-              ? {}
-              : { visibility: sql`excluded.visibility` }),
+    const ownership = existing
+      ? {
+          authorUserId: existing.authorUserId,
+          chatThreadId: existing.chatThreadId,
+        }
+      : await set(
+          resolveAuthorAndThread$,
+          {
+            orgId: args.orgId,
+            userId: args.userId,
+            runId: args.runId,
+            chatThreadId: args.chatThreadId,
           },
-          setWhere: lte(
-            sql`(${artifacts.projectionCreatedAt}, ${artifacts.projectionFileId})`,
-            sql`(excluded.projection_created_at, excluded.projection_file_id)`,
-          ),
-        })
-        .returning({ id: artifacts.id }),
-    );
-    signal.throwIfAborted();
-    const [result] = await db
-      .with(site, eligible, existing, presentation, updated, inserted)
-      .select({
-        complete: exists(db.select({ id: site.id }).from(site)).mapWith(
-          pgBooleanDecoder,
-        ),
-      })
-      .from(site);
-    signal.throwIfAborted();
-    return result?.complete ?? false;
-  },
-);
-
-const finishPendingArtifactFile$ = command(
-  async (
-    { set },
-    fileId: string,
-    pendingRevision: string | null,
-    signal: AbortSignal,
-  ): Promise<void> => {
-    const db = set(writeDb$);
-
-    if (pendingRevision === null) {
-      return;
-    }
-    await db
-      .delete(artifactCatalogPendingFiles)
-      .where(
-        and(
-          eq(artifactCatalogPendingFiles.fileId, fileId),
-          sql`xmin::text = ${pendingRevision}`,
-        ),
-      );
-    signal.throwIfAborted();
-  },
-);
-
-const notifyArtifactCatalogChanged$ = command(
-  async ({ get }, fileId: string, signal: AbortSignal): Promise<void> => {
-    // A redeploy can retain an earlier thread and author. Notify the committed
-    // catalog owner, not the replacement file's producing thread.
-    const [artifact] = await get(db$)
-      .select({
-        authorUserId: artifacts.authorUserId,
-        chatThreadId: artifacts.chatThreadId,
-      })
-      .from(artifacts)
-      .where(eq(artifacts.projectionFileId, fileId))
-      .limit(1);
-    signal.throwIfAborted();
-    if (artifact?.chatThreadId) {
-      await publishUserSignal(
-        [artifact.authorUserId],
-        chatArtifactCatalogChangedEvent(artifact.chatThreadId),
-      );
-    }
-  },
-);
-
-const syncFileArtifact$ = command(
-  async (
-    { set },
-    args: {
-      readonly row: CatalogFileRow;
-      readonly orgId: string;
-      readonly authorUserId: string;
-      readonly logicalKey: string;
-      readonly chatThreadId: string | null;
-      readonly kind: "file" | "image" | "video";
-      readonly entityId: string;
-    },
-    signal: AbortSignal,
-  ): Promise<boolean> => {
-    const db = set(writeDb$);
-    const { row, orgId, authorUserId, logicalKey, kind, entityId } = args;
-    // Retain the file lock, and make both projection mutations depend on it.
-    const lockedFile = db
-      .$with("catalog_locked_file")
-      .as(
-        db
-          .select({ id: runUploadedFiles.id })
-          .from(runUploadedFiles)
-          .where(eq(runUploadedFiles.id, row.id))
-          .for("update")
-          .limit(1),
-      );
-    const deleted = db.$with("catalog_deleted_projection").as(
-      db
-        .delete(artifacts)
-        .where(
-          and(
-            exists(db.select({ id: lockedFile.id }).from(lockedFile)),
-            eq(artifacts.projectionFileId, row.id),
-            sql`(${artifacts.orgId}, ${artifacts.authorUserId}, ${artifacts.logicalKey}) IS DISTINCT FROM (${orgId}, ${authorUserId}, ${logicalKey})`,
-          ),
-        )
-        .returning({ id: artifacts.id }),
-    );
-
-    const displayKind = catalogArtifactKind(kind, row.metadata, logicalKey);
-    const plan = artifactUpsertPlan({
-      kind,
-      displayKind,
-      sourceUrl: row.url,
-      aliasUrl: metadataString(row.metadata, "aliasUrl"),
-      videoSourceUrl: videoSourceUrl(row, row.filename ?? row.externalId),
-      chatThreadId: args.chatThreadId,
+          signal,
+        );
+    const category: ArtifactCatalogCategory =
+      args.kind === "presentation" ? "presentation" : "website";
+    const createdAt = args.createdAt ?? updatedAt;
+    const effectiveVisibility: ArtifactVisibility =
+      args.visibility ?? existing?.visibility ?? "private";
+    const commonFields = {
+      kind: args.kind,
+      displayKind: args.kind,
       entityId,
-      logicalKey,
-      projectionFileId: row.id,
-      projectionCreatedAt: row.createdAt,
-      orgId,
-      authorUserId,
-      title: row.filename ?? row.externalId,
-      category: inferFileArtifactCategory(
-        displayKind,
-        row.contentType,
-        row.filename ?? row.externalId,
-      ),
-      thumbnail: fileThumbnail(row),
-      createdAt: row.createdAt,
-    });
-    const written = db.$with("catalog_written_projection").as(
-      db
-        .insert(artifacts)
-        .select(
-          db
-            .select(fileArtifactInsertSelection(plan.values))
-            .from(lockedFile)
-            // Consume DELETE's RETURNING relation even when no old row existed.
-            .where(gte(db.select({ total: count() }).from(deleted), 0)),
-        )
-        .onConflictDoUpdate(plan.conflict)
-        .returning({ id: artifacts.id }),
-    );
-    signal.throwIfAborted();
-    const [locked] = await db
-      .with(lockedFile, deleted, written)
-      .select({ id: lockedFile.id })
-      .from(lockedFile)
-      // A losing projection-order predicate is still a completed sync.
-      .where(gte(db.select({ total: count() }).from(written), 0));
-    signal.throwIfAborted();
-    return locked !== undefined;
-  },
-);
+      sourceUrl: args.sourceUrl,
+      aliasUrl: args.aliasUrl ?? null,
+      thumbnail: args.thumbnail ?? null,
+      category,
+      deletedAt: null,
+      updatedAt,
+    };
 
-/**
- * Maintain the catalog entry for one stored file. Safe to call repeatedly: the
- * upload path, the deploy path, and the deferred preview render all funnel
- * through here, and each call recomputes the artifact from the file row.
- *
- * Hosted-site and presentation projections collapse onto their `hosted_sites`
- * row, so redeploying a site updates one artifact instead of adding another.
- */
-export const syncArtifactCatalogForFile$ = command(
-  async (
-    { set },
-    fileId: string | null | undefined,
-    signal: AbortSignal,
-  ): Promise<void> => {
-    if (!fileId) {
-      return;
-    }
-    const db = set(writeDb$);
-
-    const [pending] = await db
-      .select({
-        revision: sql`xmin::text`.mapWith(pgTextDecoder),
-      })
-      .from(artifactCatalogPendingFiles)
-      .where(eq(artifactCatalogPendingFiles.fileId, fileId))
-      .limit(1);
-    signal.throwIfAborted();
-    const pendingRevision = pending?.revision ?? null;
-    const row = await set(readCatalogFileRow$, fileId, signal);
-    signal.throwIfAborted();
-
-    if (row?.deletedAt) {
-      await set(finishPendingArtifactFile$, fileId, pendingRevision, signal);
-      return;
-    }
-
-    if (!row?.url || !row.orgId) {
-      await db.delete(artifacts).where(eq(artifacts.projectionFileId, fileId));
-      signal.throwIfAborted();
-      await set(finishPendingArtifactFile$, fileId, pendingRevision, signal);
-      signal.throwIfAborted();
-      return;
-    }
-
-    /**
-     * A file can already carry a projection that the current rules refuse: every
-     * attachment registered before this admission existed. Removing it here keeps
-     * the catalog converging on the current classification instead of retaining
-     * whatever an earlier sync observed. No current producer writes such a
-     * projection, so after the accompanying cleanup migration this only repairs a
-     * row an older API registered while it was still draining.
-     */
-    if (!isCatalogArtifactFile(row)) {
-      await db.delete(artifacts).where(eq(artifacts.projectionFileId, fileId));
-      signal.throwIfAborted();
-      await set(finishPendingArtifactFile$, fileId, pendingRevision, signal);
-      signal.throwIfAborted();
-      return;
-    }
-
-    const parsedFileUrl = safeUrlParse(row.url);
-    const logicalFileUrl = parsedFileUrl
-      ? (canonicalOkouArtifactCatalogUrl(parsedFileUrl) ?? row.url)
-      : row.url;
-    const logicalKey = `file:${logicalFileUrl}`;
-
-    const { authorUserId, chatThreadId } = await set(
-      resolveArtifactOwnership$,
-      row,
-      signal,
-    );
-    const hostedKind = hostedArtifactKind(row);
-    if (hostedKind) {
-      const complete = await set(
-        syncHostedArtifact$,
-        {
-          kind: hostedKind,
-          chatThreadId,
-          row,
-          orgId: row.orgId,
-          authorUserId,
-        },
-        signal,
-      );
-      if (!complete) {
-        signal.throwIfAborted();
-        return;
-      }
-      await set(finishPendingArtifactFile$, fileId, pendingRevision, signal);
-      signal.throwIfAborted();
-      await set(notifyArtifactCatalogChanged$, fileId, signal);
-      return;
-    }
-
-    const kind = fileArtifactKind(row);
-    const entityId =
-      kind === "file"
-        ? row.id
-        : await set(
-            upsertGeneratedMediaEntity$,
-            {
-              kind,
-              row,
+    const [saved] = existing
+      ? await db
+          .update(artifacts)
+          .set({
+            ...commonFields,
+            title: existing.deletedAt ? args.title : existing.title,
+            visibility: effectiveVisibility,
+          })
+          .where(eq(artifacts.id, existing.id))
+          .returning({
+            id: artifacts.id,
+            authorUserId: artifacts.authorUserId,
+            chatThreadId: artifacts.chatThreadId,
+          })
+      : await db
+          .insert(artifacts)
+          .values({
+            ...commonFields,
+            orgId: args.orgId,
+            authorUserId: ownership.authorUserId,
+            logicalKey,
+            chatThreadId: ownership.chatThreadId,
+            title: args.title,
+            visibility: effectiveVisibility,
+            createdAt,
+          })
+          .onConflictDoUpdate({
+            target: [
+              artifacts.orgId,
+              artifacts.authorUserId,
+              artifacts.logicalKey,
+            ],
+            set: {
+              ...commonFields,
+              ...(args.visibility !== undefined
+                ? { visibility: args.visibility }
+                : {}),
             },
-            signal,
-          );
-    if (!entityId) {
-      signal.throwIfAborted();
-      return;
-    }
-
-    const synced = await set(
-      syncFileArtifact$,
-      {
-        row,
-        orgId: row.orgId,
-        authorUserId,
-        chatThreadId,
-        logicalKey,
-        kind,
-        entityId,
-      },
-      signal,
-    );
+          })
+          .returning({
+            id: artifacts.id,
+            authorUserId: artifacts.authorUserId,
+            chatThreadId: artifacts.chatThreadId,
+          });
     signal.throwIfAborted();
-    if (!synced) {
-      return;
+    if (!saved) {
+      throw new Error("Hosted site artifact upsert returned no row");
     }
-    await set(finishPendingArtifactFile$, fileId, pendingRevision, signal);
+    await set(notifyArtifactCatalogChanged$, saved);
     signal.throwIfAborted();
-    await set(notifyArtifactCatalogChanged$, fileId, signal);
+    return { id: saved.id };
   },
 );
 
@@ -1431,7 +696,7 @@ interface ListArtifactCatalogArgs {
   readonly userId: string;
   readonly limit?: number;
   readonly cursor?: string;
-  readonly kind?: ArtifactCatalogKind;
+  readonly kind?: ArtifactCatalogListQueryKind;
   readonly category?: ArtifactCatalogCategory;
   readonly chatThreadId?: string;
   readonly keyword?: string;
@@ -1443,65 +708,6 @@ interface ListArtifactCatalogResult {
   readonly nextCursor: string | null;
 }
 
-/** Bounded, explicit recovery for pending files, independent of catalog reads. */
-export const reconcileArtifactCatalogFiles$ = command(
-  async (
-    { set },
-    signal: AbortSignal,
-  ): Promise<{ processed: number; failed: number }> => {
-    const db = set(writeDb$);
-
-    const pendingRows = await db
-      .select({
-        fileId: artifactCatalogPendingFiles.fileId,
-        revision: sql`xmin::text`.mapWith(pgTextDecoder),
-      })
-      .from(artifactCatalogPendingFiles)
-      .orderBy(
-        asc(artifactCatalogPendingFiles.queuedAt),
-        asc(artifactCatalogPendingFiles.fileId),
-      )
-      .limit(ARTIFACT_CATALOG_WORKER_BATCH_SIZE);
-    signal.throwIfAborted();
-    const deadline = monotonicNow() + ARTIFACT_CATALOG_WORKER_BUDGET_MS;
-    let processed = 0;
-    let failed = 0;
-    for (const pending of pendingRows) {
-      if (monotonicNow() >= deadline) {
-        break;
-      }
-      signal.throwIfAborted();
-      const result = await settle(
-        set(syncArtifactCatalogForFile$, pending.fileId, signal),
-        signal,
-      );
-      signal.throwIfAborted();
-      if (result.ok) {
-        processed += 1;
-      } else {
-        failed += 1;
-        L.warn("Artifact catalog reconciliation failed", {
-          fileId: pending.fileId,
-          error: result.error,
-        });
-      }
-      // A missing hosted-site dependency keeps the task durable. Move that
-      // task behind the rest of the queue so it cannot starve valid files.
-      await db
-        .update(artifactCatalogPendingFiles)
-        .set({ queuedAt: sql`clock_timestamp()` })
-        .where(
-          and(
-            eq(artifactCatalogPendingFiles.fileId, pending.fileId),
-            sql`xmin::text = ${pending.revision}`,
-          ),
-        );
-      signal.throwIfAborted();
-    }
-    return { processed, failed };
-  },
-);
-
 function toArtifactSummary(row: {
   readonly id: string;
   readonly entityId: string;
@@ -1510,22 +716,19 @@ function toArtifactSummary(row: {
   readonly displayKind: ArtifactCatalogKind | null;
   readonly sourceUrl: string | null;
   readonly aliasUrl: string | null;
-  readonly videoSourceUrl: string | null;
   readonly title: string;
   readonly thumbnail: ArtifactThumbnail | null;
   readonly visibility?: ArtifactVisibility;
   readonly createdAt: Date;
   readonly updatedAt: Date;
 }): ArtifactSummary {
-  const kind =
-    row.displayKind ?? catalogArtifactKind(row.kind, null, row.logicalKey);
+  const kind = row.displayKind ?? catalogArtifactKind(row.kind, row.logicalKey);
   const summary = {
     id: row.id,
     title: row.title,
     thumbnail: row.thumbnail,
     ...(row.sourceUrl ? { sourceUrl: row.sourceUrl } : {}),
     ...(row.aliasUrl ? { aliasUrl: row.aliasUrl } : {}),
-    ...(row.videoSourceUrl ? { videoSourceUrl: row.videoSourceUrl } : {}),
     ...(row.visibility ? { visibility: row.visibility } : {}),
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
@@ -1610,7 +813,6 @@ function artifactCatalogCursorFilter(
 
 function artifactCatalogKeywordFilter(
   keyword: string | undefined,
-  libraryQuery: boolean,
 ): SQL | undefined {
   if (!keyword) {
     return undefined;
@@ -1619,10 +821,7 @@ function artifactCatalogKeywordFilter(
     .replaceAll("\\", String.raw`\\`)
     .replaceAll("%", String.raw`\%`)
     .replaceAll("_", String.raw`\_`)}%`;
-  return or(
-    ilike(artifacts.title, pattern),
-    libraryQuery ? ilike(runUploadedFiles.filename, pattern) : undefined,
-  );
+  return ilike(artifacts.title, pattern);
 }
 
 function artifactCatalogOrderBy(direction: ArtifactCatalogDirection): SQL[] {
@@ -1652,7 +851,6 @@ function artifactCatalogSelection() {
     displayKind: artifactCatalogEffectiveKind(),
     aliasUrl: artifacts.aliasUrl,
     sourceUrl: artifacts.sourceUrl,
-    videoSourceUrl: artifacts.videoSourceUrl,
     title: artifacts.title,
     thumbnail: artifacts.thumbnail,
     visibility: artifacts.visibility,
@@ -1665,6 +863,12 @@ function artifactCatalogSelection() {
         pgTextDecoder,
       ),
   };
+}
+
+function persistedArtifactCategory() {
+  return sql`coalesce(${artifacts.category}, 'other')`.mapWith(
+    zodEnumDriverValueDecoder(zEnum(ARTIFACT_CATALOG_CATEGORIES)),
+  );
 }
 
 export const listArtifactCatalog$ = command(
@@ -1688,17 +892,19 @@ export const listArtifactCatalog$ = command(
       return null;
     }
     const cursorFilter = artifactCatalogCursorFilter(cursor, direction);
-    const keywordFilter = artifactCatalogKeywordFilter(
-      args.keyword,
-      libraryQuery,
-    );
+    const keywordFilter = artifactCatalogKeywordFilter(args.keyword);
     const selection = artifactCatalogSelection();
-    const category = artifactCatalogCategory();
+    const categoryFilter =
+      args.category === undefined
+        ? undefined
+        : args.category === "other"
+          ? or(eq(artifacts.category, "other"), isNull(artifacts.category))
+          : eq(artifacts.category, args.category);
     const filters = and(
       eq(artifacts.orgId, args.orgId),
       isNull(artifacts.deletedAt),
       args.kind ? artifactCatalogKindFilter(args.kind) : undefined,
-      args.category ? eq(category, args.category) : undefined,
+      categoryFilter,
       args.chatThreadId
         ? eq(artifacts.chatThreadId, args.chatThreadId)
         : undefined,
@@ -1712,20 +918,13 @@ export const listArtifactCatalog$ = command(
           // UNION ordering uses output names; distinguish this from the joined
           // source thread's id without changing the response field.
           id: sql`${artifacts.id}`.mapWith(artifacts.id).as("artifact_id"),
-          category,
+          category: persistedArtifactCategory(),
           sourceChatThread: {
             id: chatThreads.id,
             title: chatThreads.title,
           },
         })
         .from(artifacts)
-        .leftJoin(
-          runUploadedFiles,
-          and(
-            eq(runUploadedFiles.id, artifacts.projectionFileId),
-            eq(runUploadedFiles.orgId, args.orgId),
-          ),
-        )
         .leftJoin(
           chatThreads,
           and(
@@ -1809,7 +1008,6 @@ function artifactCatalogIdentityFilter(args: GetArtifactCatalogEntryArgs) {
     case "file": {
       const qb = new QueryBuilder();
       return or(
-        eq(artifacts.projectionFileId, args.artifactId),
         and(
           eq(artifacts.kind, "file"),
           notLike(artifacts.logicalKey, "shared-thread:%"),
@@ -1823,16 +1021,6 @@ function artifactCatalogIdentityFilter(args: GetArtifactCatalogEntryArgs) {
               .select({ id: imageArtifacts.id })
               .from(imageArtifacts)
               .where(eq(imageArtifacts.fileId, args.artifactId)),
-          ),
-        ),
-        and(
-          eq(artifacts.kind, "video"),
-          inArray(
-            artifacts.entityId,
-            qb
-              .select({ id: videoArtifacts.id })
-              .from(videoArtifacts)
-              .where(eq(videoArtifacts.fileId, args.artifactId)),
           ),
         ),
       );
@@ -1872,7 +1060,7 @@ function artifactCatalogIdentityFilter(args: GetArtifactCatalogEntryArgs) {
 
 export const getOwnedArtifactCatalogFromReference$ = command(
   async (
-    { get, set },
+    { set },
     args: {
       readonly reference: string;
       readonly userId: string;
@@ -1923,39 +1111,42 @@ export const getOwnedArtifactCatalogFromReference$ = command(
     if (!shareId) {
       return null;
     }
-    const [share] = await get(db$)
-      .select({
-        kind: artifactShares.targetKind,
-        id: artifactShares.targetId,
-      })
-      .from(artifactShares)
-      .where(
-        and(
-          eq(artifactShares.id, shareId),
-          eq(artifactShares.userId, args.userId),
-          eq(artifactShares.orgId, args.orgId),
-        ),
-      )
-      .limit(1);
+    const policy = await set(
+      probeLegacyArtifactSharePolicy$,
+      { shareId },
+      signal,
+    );
     signal.throwIfAborted();
-    return share
-      ? await set(
-          getArtifactCatalogEntry$,
-          {
-            ...args,
-            artifactId: share.id,
-            sourceKind: share.kind === "file" ? "file" : "site",
-          },
-          signal,
-        )
-      : null;
+    if (
+      !policy ||
+      policy.ownerId !== args.userId ||
+      policy.orgId !== args.orgId
+    ) {
+      return null;
+    }
+    return await set(
+      getArtifactCatalogEntry$,
+      {
+        ...args,
+        artifactId:
+          policy.target.kind === "file"
+            ? policy.target.id
+            : policy.target.siteId,
+        sourceKind: policy.target.kind === "file" ? "file" : "site",
+      },
+      signal,
+    );
   },
 );
 
 const fileDetail$ = command(
   async (
     { get },
-    fileId: string,
+    args: {
+      readonly fileId: string;
+      readonly sourceUrl: string | null;
+      readonly thumbnail: ArtifactThumbnail | null;
+    },
     signal: AbortSignal,
   ): Promise<{
     readonly id: string;
@@ -1966,35 +1157,34 @@ const fileDetail$ = command(
     readonly previewImageUrl: string | null;
   } | null> => {
     const db = get(db$);
-
     const [row] = await db
       .select({
-        id: runUploadedFiles.id,
-        externalId: runUploadedFiles.externalId,
-        filename: runUploadedFiles.filename,
-        contentType: runUploadedFiles.contentType,
-        sizeBytes: runUploadedFiles.sizeBytes,
-        url: runUploadedFiles.url,
-        previewImageUrl: runUploadedFiles.previewImageUrl,
+        id: files.id,
+        storageKey: files.storageKey,
+        filename: files.filename,
+        contentType: files.contentType,
+        sizeBytes: files.sizeBytes,
       })
-      .from(runUploadedFiles)
-      // An unfinished withdrawal must remain manageable after a failed delete.
-      // The owning catalog read hides completed deletions. Fresh owner access
-      // and new share requests independently honor the file tombstone.
-      .where(eq(runUploadedFiles.id, fileId))
+      .from(files)
+      .where(eq(files.id, args.fileId))
       .limit(1);
     signal.throwIfAborted();
-    if (!row?.url) {
+    if (!row?.storageKey || !row.filename) {
       return null;
     }
-    const filename = row.filename ?? row.externalId;
+    const url =
+      args.sourceUrl ??
+      (row.storageKey.startsWith("private-artifacts/")
+        ? new URL(artifactReferencePath(row.id, row.filename), env("APP_URL"))
+            .href
+        : buildFileUrlFromKey(row.storageKey, "current"));
     return {
       id: row.id,
-      filename,
-      contentType: row.contentType ?? inferMimetype(filename),
+      filename: row.filename,
+      contentType: row.contentType || inferMimetype(row.filename),
       size: row.sizeBytes ?? 0,
-      url: row.url,
-      previewImageUrl: row.previewImageUrl,
+      url,
+      previewImageUrl: args.thumbnail?.url ?? null,
     };
   },
 );
@@ -2004,7 +1194,6 @@ const hostedSiteDetail$ = command(
     { get },
     hostedSiteId: string,
     owner: { readonly userId: string; readonly orgId: string },
-    projectionMetadata: Record<string, unknown> | null,
     signal: AbortSignal,
   ): Promise<{
     readonly id: string;
@@ -2016,47 +1205,6 @@ const hostedSiteDetail$ = command(
     readonly spaFallback: boolean;
   } | null> => {
     const db = get(db$);
-
-    if (projectionMetadata?.access === "owner-private-v1") {
-      const deploymentId = metadataString(projectionMetadata, "deploymentId");
-      if (!deploymentId) {
-        return null;
-      }
-      const [privateRow] = await db
-        .select({
-          id: hostedSites.id,
-          slug: hostedSites.slug,
-          requestedSlug: hostedSites.requestedSlug,
-          publicSlug: hostedSites.publicSlug,
-          url: privateHostedDeployments.url,
-          deploymentVersion:
-            sql`(${privateHostedDeployments.manifest}->>'deploymentVersion')::integer`.mapWith(
-              pgIntegerDecoder,
-            ),
-          entrypoint: privateHostedDeployments.entrypoint,
-          spaFallback: privateHostedDeployments.spaFallback,
-        })
-        .from(hostedSites)
-        .innerJoin(
-          privateHostedDeployments,
-          eq(privateHostedDeployments.siteId, hostedSites.id),
-        )
-        .where(
-          and(
-            eq(hostedSites.id, hostedSiteId),
-            eq(privateHostedDeployments.id, deploymentId),
-            eq(privateHostedDeployments.userId, owner.userId),
-            eq(privateHostedDeployments.orgId, owner.orgId),
-            eq(privateHostedDeployments.status, "ready"),
-            isNull(hostedSites.deletedAt),
-          ),
-        )
-        .limit(1);
-      signal.throwIfAborted();
-      return privateRow
-        ? { ...privateRow, slug: privateRow.requestedSlug ?? privateRow.slug }
-        : null;
-    }
     const [row] = await db
       .select({
         id: hostedSites.id,
@@ -2076,24 +1224,60 @@ const hostedSiteDetail$ = command(
         hostedDeployments,
         eq(hostedDeployments.id, hostedSites.activeDeploymentId),
       )
-      .where(eq(hostedSites.id, hostedSiteId))
+      .where(
+        and(eq(hostedSites.id, hostedSiteId), isNull(hostedSites.deletedAt)),
+      )
       .limit(1);
     signal.throwIfAborted();
-    if (!row) {
-      return null;
+    if (row) {
+      return {
+        id: row.id,
+        slug: row.requestedSlug ?? row.slug,
+        publicSlug: row.publicSlug,
+        url: hostedLinkOrigin(
+          linkLayoutFromSegment(row.linkLayoutSegment),
+          row.publicSlug,
+        ),
+        deploymentVersion: row.deploymentVersion,
+        entrypoint: row.entrypoint,
+        spaFallback: row.spaFallback,
+      };
     }
-    return {
-      id: row.id,
-      slug: row.requestedSlug ?? row.slug,
-      publicSlug: row.publicSlug,
-      url: hostedLinkOrigin(
-        linkLayoutFromSegment(row.linkLayoutSegment),
-        row.publicSlug,
-      ),
-      deploymentVersion: row.deploymentVersion,
-      entrypoint: row.entrypoint,
-      spaFallback: row.spaFallback,
-    };
+
+    const [privateRow] = await db
+      .select({
+        id: hostedSites.id,
+        slug: hostedSites.slug,
+        requestedSlug: hostedSites.requestedSlug,
+        publicSlug: hostedSites.publicSlug,
+        url: privateHostedDeployments.url,
+        deploymentVersion:
+          sql`(${privateHostedDeployments.manifest}->>'deploymentVersion')::integer`.mapWith(
+            nullableDriverValueDecoder(pgIntegerDecoder),
+          ),
+        entrypoint: privateHostedDeployments.entrypoint,
+        spaFallback: privateHostedDeployments.spaFallback,
+      })
+      .from(hostedSites)
+      .innerJoin(
+        privateHostedDeployments,
+        eq(privateHostedDeployments.siteId, hostedSites.id),
+      )
+      .where(
+        and(
+          eq(hostedSites.id, hostedSiteId),
+          eq(privateHostedDeployments.userId, owner.userId),
+          eq(privateHostedDeployments.orgId, owner.orgId),
+          eq(privateHostedDeployments.status, "ready"),
+          isNull(hostedSites.deletedAt),
+        ),
+      )
+      .orderBy(desc(privateHostedDeployments.createdAt))
+      .limit(1);
+    signal.throwIfAborted();
+    return privateRow
+      ? { ...privateRow, slug: privateRow.requestedSlug ?? privateRow.slug }
+      : null;
   },
 );
 
@@ -2101,19 +1285,15 @@ const presentationDetail$ = command(
   async (
     { get, set },
     summary: ArtifactSummary,
-    row: {
-      readonly entityId: string;
-      readonly projectionMetadata: Record<string, unknown> | null;
-    },
+    entityId: string,
     owner: { readonly userId: string; readonly orgId: string },
     signal: AbortSignal,
   ): Promise<ArtifactDetail | null> => {
     const db = get(db$);
-
     const [entity] = await db
       .select({ hostedSiteId: presentationArtifacts.hostedSiteId })
       .from(presentationArtifacts)
-      .where(eq(presentationArtifacts.id, row.entityId))
+      .where(eq(presentationArtifacts.id, entityId))
       .limit(1);
     signal.throwIfAborted();
     if (!entity) {
@@ -2123,32 +1303,11 @@ const presentationDetail$ = command(
       hostedSiteDetail$,
       entity.hostedSiteId,
       owner,
-      row.projectionMetadata,
       signal,
     );
     return site ? { ...summary, kind: "presentation", site } : null;
   },
 );
-
-function avatarDetail(
-  summary: ArtifactSummary,
-  file: Extract<ArtifactDetail, { kind: "file" }>["file"] | null,
-  metadata: Record<string, unknown> | null,
-): ArtifactDetail | null {
-  const durationSeconds = metadata?.durationSeconds;
-  return file
-    ? {
-        ...summary,
-        kind: "avatar",
-        file,
-        model: metadataString(metadata ?? {}, "model"),
-        durationSeconds:
-          typeof durationSeconds === "number"
-            ? Math.round(durationSeconds)
-            : null,
-      }
-    : null;
-}
 
 function selectArtifactCatalogEntry(
   db: ReadonlyDb,
@@ -2160,13 +1319,10 @@ function selectArtifactCatalogEntry(
       kind: artifacts.kind,
       logicalKey: artifacts.logicalKey,
       entityId: artifacts.entityId,
-      projectionFileId: artifacts.projectionFileId,
-      projectionMetadata: runUploadedFiles.metadata,
       sourceChatThreadId: chatThreads.id,
       displayKind: artifacts.displayKind,
       aliasUrl: artifacts.aliasUrl,
       sourceUrl: artifacts.sourceUrl,
-      videoSourceUrl: artifacts.videoSourceUrl,
       title: artifacts.title,
       thumbnail: artifacts.thumbnail,
       visibility: artifacts.visibility,
@@ -2174,10 +1330,6 @@ function selectArtifactCatalogEntry(
       updatedAt: artifacts.updatedAt,
     })
     .from(artifacts)
-    .leftJoin(
-      runUploadedFiles,
-      eq(runUploadedFiles.id, artifacts.projectionFileId),
-    )
     .leftJoin(
       chatThreads,
       and(
@@ -2233,15 +1385,36 @@ export const getArtifactCatalogEntry$ = command(
       };
     }
     if (summary.kind === "avatar") {
-      if (row.projectionFileId === null) {
-        return null;
-      }
-      const file = await set(fileDetail$, row.projectionFileId, signal);
-      return avatarDetail(summary, file, row.projectionMetadata);
+      const file = await set(
+        fileDetail$,
+        {
+          fileId: row.entityId,
+          sourceUrl: row.sourceUrl,
+          thumbnail: row.thumbnail,
+        },
+        signal,
+      );
+      return file
+        ? {
+            ...summary,
+            kind: "avatar",
+            file,
+            model: null,
+            durationSeconds: null,
+          }
+        : null;
     }
 
     if (row.kind === "file") {
-      const file = await set(fileDetail$, row.entityId, signal);
+      const file = await set(
+        fileDetail$,
+        {
+          fileId: row.entityId,
+          sourceUrl: row.sourceUrl,
+          thumbnail: row.thumbnail,
+        },
+        signal,
+      );
       return file ? { ...summary, kind: "file", file } : null;
     }
 
@@ -2259,7 +1432,15 @@ export const getArtifactCatalogEntry$ = command(
       if (!entity) {
         return null;
       }
-      const file = await set(fileDetail$, entity.fileId, signal);
+      const file = await set(
+        fileDetail$,
+        {
+          fileId: entity.fileId,
+          sourceUrl: row.sourceUrl,
+          thumbnail: row.thumbnail,
+        },
+        signal,
+      );
       return file
         ? {
             ...summary,
@@ -2271,43 +1452,11 @@ export const getArtifactCatalogEntry$ = command(
         : null;
     }
 
-    if (row.kind === "video") {
-      const [entity] = await db
-        .select({
-          fileId: videoArtifacts.fileId,
-          model: videoArtifacts.model,
-          durationSeconds: videoArtifacts.durationSeconds,
-        })
-        .from(videoArtifacts)
-        .where(eq(videoArtifacts.id, row.entityId))
-        .limit(1);
-      signal.throwIfAborted();
-      if (!entity) {
-        return null;
-      }
-      const file = await set(fileDetail$, entity.fileId, signal);
-      return file
-        ? {
-            ...summary,
-            kind: "video",
-            file,
-            model: entity.model,
-            durationSeconds: entity.durationSeconds,
-          }
-        : null;
-    }
-
     if (row.kind === "hosted-site") {
-      const site = await set(
-        hostedSiteDetail$,
-        row.entityId,
-        args,
-        row.projectionMetadata,
-        signal,
-      );
+      const site = await set(hostedSiteDetail$, row.entityId, args, signal);
       return site ? { ...summary, kind: "hosted-site", site } : null;
     }
 
-    return await set(presentationDetail$, summary, row, args, signal);
+    return await set(presentationDetail$, summary, row.entityId, args, signal);
   },
 );

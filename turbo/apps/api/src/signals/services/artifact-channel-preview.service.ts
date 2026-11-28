@@ -14,14 +14,7 @@ import {
   signPresignedGetUrl$,
 } from "../external/s3";
 import type { ChannelSharingResource } from "./artifact-channel-resource.service";
-import {
-  privateArtifactRecord$,
-  privateArtifactsBucket,
-} from "./private-artifact-storage.service";
-import {
-  publicArtifactShareIdentity$,
-  resolvePublicArtifactSource$,
-} from "./artifact-shares.service";
+import { privateArtifactRecord$ } from "./private-artifact-storage.service";
 import { hostedPreviewArtifactIds } from "./hosted-preview.service";
 
 export interface ArtifactChannelPreview extends ArtifactLinkPreview {
@@ -62,36 +55,12 @@ const fileChannelPreview$ = command(
     resource: ChannelSharingResource,
     signal: AbortSignal,
   ): Promise<ArtifactChannelPreview | null> => {
-    if (resource.audience === "public") {
-      const lookup = { kind: "file" as const, id: resource.id };
-      const identity = await set(publicArtifactShareIdentity$, lookup, signal);
-      const published = identity
-        ? await set(resolvePublicArtifactSource$, lookup, identity, signal)
-        : null;
-      const target = published?.policy.target;
-      if (target?.kind !== "file") {
-        return null;
-      }
-      const image = target.contentType.startsWith("image/")
-        ? {
-            bucket: privateArtifactsBucket(),
-            key: target.key,
-            contentType: target.contentType,
-          }
-        : null;
-      return {
-        title: target.filename,
-        image,
-        description: GENERIC_ARTIFACT_DESCRIPTION,
-        imageUrl: await set(channelPreviewImage$, image, signal),
-      };
-    }
     const file = await set(privateArtifactRecord$, resource.id, signal);
     if (
       !file ||
       file.userId !== resource.userId ||
       file.orgId !== resource.orgId ||
-      file.materializationStatus !== "ready"
+      !file.isReady
     ) {
       return null;
     }
@@ -164,7 +133,7 @@ const siteChannelPreview$ = command(
         deployment.manifest.preview,
       )) {
         const file = await set(privateArtifactRecord$, id, signal);
-        if (!file || file.materializationStatus !== "ready") {
+        if (!file || !file.isReady) {
           continue;
         }
         if (file.userId !== resource.userId || file.orgId !== resource.orgId) {

@@ -33,13 +33,19 @@ export const ARTIFACT_CATALOG_KINDS = [
   "file",
   "hosted-site",
   "image",
-  "video",
   "avatar",
   "presentation",
   "shared-thread",
 ] as const;
 
 export type ArtifactCatalogKind = (typeof ARTIFACT_CATALOG_KINDS)[number];
+/**
+ * Retains `"video"` solely on `GET /api/artifacts/catalog` request query input
+ * while the pinned iOS 0.73.0 App Review snapshot (#51517) enforces request
+ * enum compatibility. All response kinds and stored artifacts are normalized
+ * to `"file"` (with `category: "video"`).
+ */
+export type ArtifactCatalogListQueryKind = ArtifactCatalogKind | "video";
 
 export const ARTIFACT_CATALOG_CATEGORIES = [
   "document",
@@ -69,8 +75,6 @@ interface ArtifactSummaryBase {
   aliasUrl?: string;
   /** Shared-conversation identity for direct navigation from the catalog. */
   sharedThreadId?: string;
-  /** Original video used when the catalog card cannot show a static poster. */
-  videoSourceUrl?: string;
   /** Unified artifact visibility (`private | organization | public`). */
   visibility?: "private" | "organization" | "public";
   createdAt: string;
@@ -124,13 +128,6 @@ interface ImageArtifactDetail extends ArtifactDetailCommon {
   provider: string | null;
 }
 
-interface VideoArtifactDetail extends ArtifactDetailCommon {
-  kind: "video";
-  file: ArtifactFile;
-  model: string | null;
-  durationSeconds: number | null;
-}
-
 interface AvatarArtifactDetail extends ArtifactDetailCommon {
   kind: "avatar";
   file: ArtifactFile;
@@ -157,7 +154,6 @@ interface SharedThreadArtifactDetail extends ArtifactDetailCommon {
 export type ArtifactDetail =
   | FileArtifactDetail
   | ImageArtifactDetail
-  | VideoArtifactDetail
   | AvatarArtifactDetail
   | HostedSiteArtifactDetail
   | PresentationArtifactDetail
@@ -172,7 +168,7 @@ export type ArtifactCatalogDirection = "asc" | "desc";
 export interface ArtifactCatalogListQuery {
   readonly limit?: number;
   readonly cursor?: string;
-  readonly kind?: ArtifactCatalogKind;
+  readonly kind?: ArtifactCatalogListQueryKind;
   readonly category?: ArtifactCatalogCategory;
   readonly chatThreadId?: string;
   readonly keyword?: string;
@@ -182,7 +178,7 @@ export interface ArtifactCatalogListQuery {
 export interface ArtifactCatalogListClientQuery {
   readonly limit?: unknown;
   readonly cursor?: string;
-  readonly kind?: ArtifactCatalogKind;
+  readonly kind?: ArtifactCatalogListQueryKind;
   readonly category?: ArtifactCatalogCategory;
   readonly chatThreadId?: string;
   readonly keyword?: string;
@@ -292,6 +288,7 @@ export interface ArtifactCatalogDeleteRouteTypes extends AnyRouteTypeSlots {
 }
 
 const artifactKindSchema = zEnum(ARTIFACT_CATALOG_KINDS);
+const artifactListQueryKindSchema = zEnum([...ARTIFACT_CATALOG_KINDS, "video"]);
 const artifactCategorySchema = zEnum(ARTIFACT_CATALOG_CATEGORIES);
 
 /**
@@ -316,7 +313,6 @@ const artifactSummaryBaseSchema = object({
   sourceUrl: string().optional(),
   aliasUrl: string().optional(),
   sharedThreadId: uuid().optional(),
-  videoSourceUrl: string().optional(),
   visibility: zEnum(["private", "organization", "public"]).optional(),
   createdAt: string(),
   updatedAt: string(),
@@ -340,7 +336,7 @@ const artifactSummarySchema = discriminatedUnion("kind", [
 const artifactCatalogListQuerySchema = object({
   limit: coerce.number().int().positive().max(200).optional(),
   cursor: string().optional(),
-  kind: artifactKindSchema.optional(),
+  kind: artifactListQueryKindSchema.optional(),
   category: artifactCategorySchema.optional(),
   chatThreadId: uuid().optional(),
   keyword: string().trim().min(1).max(256).optional(),
@@ -400,12 +396,6 @@ const artifactDetailSchema = discriminatedUnion("kind", [
     file: artifactFileSchema,
     model: string().nullable(),
     provider: string().nullable(),
-  }),
-  artifactDetailBaseSchema.extend({
-    kind: literal("video"),
-    file: artifactFileSchema,
-    model: string().nullable(),
-    durationSeconds: number().nullable(),
   }),
   artifactDetailBaseSchema.extend({
     kind: literal("avatar"),

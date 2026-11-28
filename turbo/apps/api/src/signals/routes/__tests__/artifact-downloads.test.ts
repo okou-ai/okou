@@ -5,12 +5,9 @@ import {
   ListObjectsV2Command,
   PutObjectCommand,
 } from "@aws-sdk/client-s3";
+import { artifactAccessContract } from "@okouai/api-contracts/contracts/artifact-access";
 import { artifactDownloadsContract } from "@okouai/api-contracts/contracts/artifact-downloads";
 import { artifactReferencesContract } from "@okouai/api-contracts/contracts/artifact-references";
-import {
-  artifactSharesContract,
-  type ArtifactShareTarget,
-} from "@okouai/api-contracts/contracts/artifact-shares";
 import type { HostedSiteFilesResponse } from "@okouai/api-contracts/contracts/host";
 import { uploadsContract } from "@okouai/api-contracts/contracts/uploads";
 import { createHash, randomUUID } from "node:crypto";
@@ -23,9 +20,9 @@ import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
 import { now } from "../../../lib/time";
 import { signSandboxJwtForTests } from "../../auth/tokens";
+import { artifactAccessRoutes } from "../artifact-access";
 import { artifactDownloadRoutes } from "../artifact-downloads";
 import { artifactReferenceRoutes } from "../artifact-references";
-import { artifactShareRoutes } from "../artifact-shares";
 import { hostRoutes } from "../host";
 import { uploadsCompleteRoutes } from "../uploads-complete";
 import { uploadsPrepareRoutes } from "../uploads-prepare";
@@ -43,9 +40,9 @@ function api() {
   return setupApp({
     context,
     routes: [
+      ...artifactAccessRoutes,
       ...artifactDownloadRoutes,
       ...artifactReferenceRoutes,
-      ...artifactShareRoutes,
       ...hostRoutes,
       ...uploadsPrepareRoutes,
       ...uploadsCompleteRoutes,
@@ -246,21 +243,22 @@ async function fixture(plan: "free" | "pro" = "pro") {
     return { ...prepared, site };
   }
   async function share(
-    target: ArtifactShareTarget,
-    audience: "private" | "organization" | "public",
+    artifactId: string,
+    visibility: "private" | "organization" | "public",
   ) {
     session(actor);
     return (
       await accept(
-        api()(artifactSharesContract).update({
+        api()(artifactAccessContract).updateVisibility({
           headers,
-          body: { target, audience },
+          params: { artifactId },
+          body: { visibility },
         }),
         [200],
       )
     ).body;
   }
-  return { actor, bdd, host, members, deploy, share };
+  return { actor, bdd, host, members, objects, deploy, share };
 }
 
 function expectCompleteSite(
@@ -317,8 +315,7 @@ test.each([
     expect(own.body).toStrictEqual({ kind: "file", ...legacyRead.body });
     await accept(cloneReference(actor, completed.body.url), [404]);
 
-    const target = { kind: "file" as const, id: prepared.body.id };
-    await share(target, "public");
+    await share(prepared.body.id, "public");
     const outsider = bdd.user({ orgId: null });
     const publicDownload = await download(outsider, completed.body.url);
     expect(publicDownload.body).toMatchObject({
@@ -330,14 +327,8 @@ test.each([
       throw new Error("Expected a single-file download");
     }
     const key = storageKey(publicDownload.body.url);
-    expect(key).toMatch(
-      /^private-artifacts\/[a-f0-9-]{36}\/shares\/[a-f0-9-]{36}\//u,
-    );
-    expect(
-      key.startsWith(`private-artifacts/${target.id}/shares/`),
-    ).toBeTruthy();
-    expect(key.endsWith(`/${filename}`)).toBeTruthy();
-    await share(target, "private");
+    expect(key).toBe(`private-artifacts/${prepared.body.id}/${filename}`);
+    await share(prepared.body.id, "private");
     await rejectDownload(outsider, completed.body.url);
   },
 );
@@ -423,17 +414,14 @@ test.each([
       ),
     ).toBeFalsy();
 
-    const shared = await share(
-      { kind: "file", id: prepared.body.id },
-      "organization",
-    );
-    if (!shared.url) {
+    const shared = await share(prepared.body.id, "organization");
+    if (!shared.shareUrl) {
       throw new Error("Expected a shared file URL");
     }
     const recipient = bdd.user({ orgId: actor.orgId });
     members.add(recipient.userId);
     // Download first, then confirm that preview resolution remains inline.
-    const downloaded = await download(recipient, shared.url);
+    const downloaded = await download(recipient, shared.shareUrl);
     if (downloaded.body.kind !== "file") {
       throw new Error("Expected a single-file download");
     }
@@ -451,7 +439,7 @@ test.each([
       const preview = await accept(
         api()(artifactReferencesContract).resolve({
           headers,
-          params: { reference: reference(shared.url) },
+          params: { reference: reference(shared.shareUrl) },
         }),
         [200],
       );
@@ -472,7 +460,7 @@ test.each([
         );
       }
     }
-    await share({ kind: "file", id: prepared.body.id }, "public");
+    await share(prepared.body.id, "public");
     const published = await accept(
       api()(artifactReferencesContract).publicUrl({
         params: { reference: reference(completed.body.url) },
@@ -486,8 +474,12 @@ test.each([
     expect(publicDownload.searchParams.get("response-cache-control")).toBe(
       "private, no-store",
     );
-    expect(storageKey(publicDownload.href)).toContain("/shares/");
-    await share({ kind: "file", id: prepared.body.id }, "private");
+    expect(
+      storageKey(publicDownload.href).startsWith(
+        `private-artifacts/${prepared.body.id}/`,
+      ),
+    ).toBeTruthy();
+    await share(prepared.body.id, "private");
     await accept(
       api()(artifactReferencesContract).publicUrl({
         params: { reference: reference(completed.body.url) },
@@ -571,7 +563,7 @@ test.each(["free", "pro"] as const)(
     );
     expect(agentInput.body.downloadUrl).toStrictEqual(expect.any(String));
 
-    await share({ kind: "file", id: prepared.body.id }, "public");
+    await share(prepared.body.id, "public");
     const publicPreview = await accept(
       api()(artifactReferencesContract).publicUrl({ params }),
       [200],
@@ -579,3 +571,93 @@ test.each(["free", "pro"] as const)(
     expect(publicPreview.body.downloadUrl).toStrictEqual(expect.any(String));
   },
 );
+
+test("historical /share/artifacts/:shareId links resolve via read-only R2 policy probe without DB artifact_shares rows", async () => {
+  const { actor, bdd, objects, share } = await fixture();
+  session(actor);
+  const prepared = await accept(
+    api()(uploadsContract).prepare({
+      headers,
+      body: {
+        filename: "historical.pdf",
+        contentType: "application/pdf",
+        size: 13,
+        purpose: "artifact",
+      },
+    }),
+    [200],
+  );
+  await accept(
+    api()(uploadsContract).complete({
+      headers,
+      body: { id: prepared.body.id },
+    }),
+    [200],
+  );
+  await share(prepared.body.id, "public");
+
+  const shareId = randomUUID();
+  const fileId = prepared.body.id;
+  const storageKeyPath = `private-artifacts/${fileId}/shares/${shareId}/historical.pdf`;
+  objects.set(
+    `artifact-shares/okou/${shareId}.json`,
+    JSON.stringify({
+      version: 1,
+      revision: randomUUID(),
+      shareId,
+      ownerId: actor.userId,
+      orgId: actor.orgId,
+      publicBrand: "okou",
+      audience: "public",
+      status: "active",
+      publicToken: "legacy1234",
+      target: {
+        kind: "file",
+        id: fileId,
+        key: storageKeyPath,
+        filename: "historical.pdf",
+        contentType: "application/pdf",
+      },
+    }),
+  );
+
+  const shareReference = `${shareId.replaceAll("-", "")}.pdf`;
+  const publicResolved = await accept(
+    api()(artifactReferencesContract).publicUrl({
+      params: { reference: shareReference },
+    }),
+    [200],
+  );
+  expect(publicResolved.body.preview).toMatchObject({
+    filename: "historical.pdf",
+    contentType: "application/pdf",
+  });
+  expect(publicResolved.body.url).toBe(
+    `https://sh-${shareId.replaceAll("-", "")}-legacy1234.okou.app/`,
+  );
+  expect(storageKey(publicResolved.body.downloadUrl!)).toBe(storageKeyPath);
+
+  const outsider = bdd.user({ orgId: null });
+  const downloaded = await download(
+    outsider,
+    `https://app.okou.ai/artifacts/${shareReference}`,
+  );
+  expect(downloaded.body).toMatchObject({
+    kind: "file",
+    filename: "historical.pdf",
+    contentType: "application/pdf",
+  });
+  if (downloaded.body.kind !== "file") {
+    throw new Error("Expected single-file download for historical share");
+  }
+  expect(storageKey(downloaded.body.url)).toBe(storageKeyPath);
+
+  // Revoking visibility via unified PATCH immediately revokes the historical share link too.
+  await share(fileId, "private");
+  await accept(
+    api()(artifactReferencesContract).publicUrl({
+      params: { reference: shareReference },
+    }),
+    [404],
+  );
+});

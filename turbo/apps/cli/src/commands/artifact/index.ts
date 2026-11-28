@@ -1,12 +1,10 @@
 import { Command, Option } from "commander";
-import type {
-  ArtifactShareStatus,
-  ArtifactShareTarget,
-} from "@okouai/api-contracts/contracts/artifact-shares";
+import type { ArtifactShareTarget } from "@okouai/api-contracts/contracts/artifact-shares";
 import {
   getArtifactShareStatus,
   resolveArtifactShareTarget,
   setArtifactAudience,
+  type ArtifactShareStatus,
 } from "../../lib/api/domains/artifact-shares";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
 import { createDownloadFileCommand } from "../web/download-file";

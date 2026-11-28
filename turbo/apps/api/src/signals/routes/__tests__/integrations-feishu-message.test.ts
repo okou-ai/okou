@@ -1091,19 +1091,6 @@ describe("POST /api/integrations/feishu/message", () => {
           replyInThread: false,
         },
       ]);
-      const artifacts = await chatApi.listThreadArtifacts(actor, sent.threadId);
-      const files =
-        artifacts.runs.find((run) => {
-          return run.runId === sent.runId;
-        })?.files ?? [];
-      expect(files).toHaveLength(1);
-      expect(files[0]).toMatchObject({
-        id: "om_1",
-        filename: "report.pdf",
-        contentType: "application/pdf",
-        size: content.length,
-        url: completed.body.url,
-      });
     },
   );
 });

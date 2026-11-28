@@ -89,15 +89,6 @@ test("keeps one file identity and captured owner across concurrent replay and me
   };
   const [first, replay] = await Promise.all([complete(), complete()]);
   expect(replay.body).toStrictEqual(first.body);
-  const before = await chat.listThreadArtifacts(
-    upload.actor,
-    upload.run.threadId,
-  );
-  const original = before.runs.flatMap((run) => {
-    return run.files;
-  });
-  expect(original).toMatchObject([{ filename: "report.txt", size: 7 }]);
-  expect(original).toHaveLength(1);
   const originalCatalog = await chat.listArtifactCatalog(upload.actor, {
     chatThreadId: upload.run.threadId,
   });
@@ -112,6 +103,11 @@ test("keeps one file identity and captured owner across concurrent replay and me
   if (originalDetail.kind !== "file") {
     throw new Error("Expected an uploaded file artifact");
   }
+  expect(originalDetail.file).toMatchObject({
+    filename: "report.txt",
+    size: 7,
+    contentType: "text/plain",
+  });
 
   upload.stage(19);
   // The public alias fixes the content type. A rejected alias change must not
@@ -121,29 +117,16 @@ test("keeps one file identity and captured owner across concurrent replay and me
     { id: upload.prepared.id, contentType: "text/markdown" },
     [500],
   );
-  expect(
-    (await chat.listThreadArtifacts(upload.actor, upload.run.threadId)).runs,
-  ).toMatchObject([{ files: [{ size: 7, contentType: "text/plain" }] }]);
+  await expect(
+    chat.getArtifactCatalogEntry(upload.actor, artifactId),
+  ).resolves.toMatchObject({
+    file: { size: 7, contentType: "text/plain" },
+  });
   const updated = await complete();
   expect(updated.body).toMatchObject({
     size: 19,
     contentType: "text/plain",
   });
-  const after = await chat.listThreadArtifacts(
-    upload.actor,
-    upload.run.threadId,
-  );
-  expect(
-    after.runs.flatMap((run) => {
-      return run.files;
-    }),
-  ).toMatchObject([
-    {
-      id: original[0]?.id,
-      size: 19,
-      contentType: "text/plain",
-    },
-  ]);
   const catalog = await chat.listArtifactCatalog(upload.actor, {
     chatThreadId: upload.run.threadId,
   });
@@ -165,7 +148,6 @@ test("keeps one file identity and captured owner across concurrent replay and me
     bdd.user(),
     bdd.user({ orgId: upload.actor.orgId }),
   ]) {
-    await chat.requestListThreadArtifacts(outsider, upload.run.threadId, [404]);
     await chat.requestArtifactCatalogEntry(outsider, artifactId, [404]);
     expect((await chat.listArtifactCatalog(outsider)).artifacts).toStrictEqual(
       [],
@@ -195,7 +177,7 @@ test("leaves an unavailable upload absent and permits completion after the objec
     [404],
   );
   expect(
-    (await chat.listThreadArtifacts(upload.actor, upload.run.threadId)).runs,
+    (await chat.listArtifactCatalog(upload.actor)).artifacts,
   ).toStrictEqual([]);
   upload.stage(7);
   await chat.completeUploadWithBearer(
@@ -204,6 +186,6 @@ test("leaves an unavailable upload absent and permits completion after the objec
     [200],
   );
   expect(
-    (await chat.listThreadArtifacts(upload.actor, upload.run.threadId)).runs,
-  ).toMatchObject([{ files: [{ filename: "report.txt" }] }]);
+    (await chat.listArtifactCatalog(upload.actor)).artifacts,
+  ).toMatchObject([{ title: "report.txt", kind: "file" }]);
 });

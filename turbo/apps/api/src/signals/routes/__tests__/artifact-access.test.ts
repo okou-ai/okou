@@ -15,18 +15,14 @@ import {
   type ArtifactVisibilityValue,
 } from "@okouai/api-contracts/contracts/artifact-access";
 import { artifactCatalogContract } from "@okouai/api-contracts/contracts/artifact-catalog";
-import { artifactSharesContract } from "@okouai/api-contracts/contracts/artifact-shares";
-import { artifactSharingContract } from "@okouai/api-contracts/contracts/artifact-sharing";
-import { hostContract } from "@okouai/api-contracts/contracts/host";
-import { hostedSiteSharingContract } from "@okouai/api-contracts/contracts/hosted-site-sharing";
+import { artifactReferencesContract } from "@okouai/api-contracts/contracts/artifact-references";
 import { uploadsContract } from "@okouai/api-contracts/contracts/uploads";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupAppWithRoutes } from "../../../__tests__/test-app";
 import { now } from "../../../lib/time";
 import { artifactAccessRoutes } from "../artifact-access";
 import { artifactCatalogRoutes } from "../artifact-catalog";
-import { artifactShareRoutes } from "../artifact-shares";
-import { artifactSharingRoutes } from "../artifact-sharing";
+import { artifactReferenceRoutes } from "../artifact-references";
 import { hostRoutes } from "../host";
 import { uploadsCompleteRoutes } from "../uploads-complete";
 import { uploadsPrepareRoutes } from "../uploads-prepare";
@@ -80,8 +76,7 @@ function app(user: ApiTestUser) {
     routes: [
       ...artifactAccessRoutes,
       ...artifactCatalogRoutes,
-      ...artifactSharingRoutes,
-      ...artifactShareRoutes,
+      ...artifactReferenceRoutes,
       ...hostRoutes,
       ...uploadsPrepareRoutes,
       ...uploadsCompleteRoutes,
@@ -223,7 +218,7 @@ async function createFileArtifact(
     }),
     [200],
   );
-  await accept(
+  const completed = await accept(
     app(owner)(uploadsContract).complete({
       headers,
       body: { id: prepared.body.id },
@@ -241,7 +236,14 @@ async function createFileArtifact(
   if (!entry) {
     throw new Error("Expected catalog entry after artifact upload");
   }
-  return { fileId: prepared.body.id, artifactId: entry.id, objects };
+  return {
+    fileId: prepared.body.id,
+    artifactId: entry.id,
+    reference: new URL(completed.body.url, "https://app.okou.ai").pathname
+      .split("/")
+      .at(-1)!,
+    objects,
+  };
 }
 
 async function createHostedArtifact(
@@ -299,6 +301,7 @@ async function createHostedArtifact(
   return {
     siteId: prepared.siteId,
     siteSlug,
+    publicSlug: prepared.publicSlug,
     deploymentId: prepared.deploymentId,
     artifactId: entry.id,
     kind: entry.kind,
@@ -308,17 +311,47 @@ async function createHostedArtifact(
   };
 }
 
-test("unified artifact visibility bidirectionally syncs file artifacts", async () => {
+test("unified artifact visibility controls file artifacts and reflects immediately in catalog and reference resolution", async () => {
   const owner = createBddApi(context).user();
-  directory([profile(owner)], [owner]);
+  const colleague = { ...createBddApi(context).user(), orgId: owner.orgId };
+  const outsider = createBddApi(context).user({ orgId: null });
+  directory(
+    [profile(owner), profile(colleague, "Alice", "Member")],
+    [owner, colleague],
+  );
 
-  const { fileId, artifactId } = await createFileArtifact(
+  const { fileId, artifactId, reference } = await createFileArtifact(
     owner,
     "report.pdf",
     "application/pdf",
   );
 
-  // 1. Update via new unified PATCH /api/artifacts/:artifactId/visibility
+  // Resolve returns canonical artifactId for the owner.
+  const ownerResolve = await accept(
+    app(owner)(artifactReferencesContract).resolve({
+      headers,
+      params: { reference },
+    }),
+    [200],
+  );
+  expect(ownerResolve.body.artifactId).toBe(artifactId);
+
+  // Private by default: colleague and outsider cannot read.
+  await accept(
+    app(colleague)(artifactReferencesContract).resolve({
+      headers,
+      params: { reference },
+    }),
+    [404],
+  );
+  await accept(
+    app(outsider)(artifactReferencesContract).publicUrl({
+      params: { reference },
+    }),
+    [404],
+  );
+
+  // 1. Update via PATCH /api/artifacts/:artifactId/visibility -> organization
   const patched = await accept(
     app(owner)(artifactAccessContract).updateVisibility({
       headers,
@@ -329,33 +362,65 @@ test("unified artifact visibility bidirectionally syncs file artifacts", async (
   );
   expect(patched.body.artifactId).toBe(artifactId);
   expect(patched.body.visibility).toBe("organization");
+  expect(patched.body.shareUrl).not.toBeNull();
 
-  // Legacy POST /api/artifact-shares/status observes the update
-  const legacyStatus = await accept(
-    app(owner)(artifactSharesContract).status({
+  // Organization colleague can now resolve; anonymous publicUrl remains 404.
+  await accept(
+    app(colleague)(artifactReferencesContract).resolve({
       headers,
-      body: { kind: "file", id: fileId },
+      params: { reference },
     }),
     [200],
   );
-  expect(legacyStatus.body.audience).toBe("organization");
+  await accept(
+    app(outsider)(artifactReferencesContract).publicUrl({
+      params: { reference },
+    }),
+    [404],
+  );
 
-  // Catalog reflects the synced visibility
+  // Catalog reflects updated visibility directly from artifacts.visibility.
   const catalog = await accept(
     app(owner)(artifactCatalogContract).list({ headers, query: {} }),
     [200],
   );
   expect(catalog.body.artifacts[0]?.visibility).toBe("organization");
 
-  // 2. Update via legacy PUT /api/artifact-shares -> unified GET & catalog reflect it
+  // 2. Make public -> anonymous publicUrl resolves; then revert to private.
   await accept(
-    app(owner)(artifactSharesContract).update({
+    app(owner)(artifactAccessContract).updateVisibility({
       headers,
-      body: { target: { kind: "file", id: fileId }, audience: "private" },
+      params: { artifactId },
+      body: { visibility: "public" },
+    }),
+    [200],
+  );
+  await accept(
+    app(outsider)(artifactReferencesContract).publicUrl({
+      params: { reference },
     }),
     [200],
   );
 
+  // Bounded R1 client entity-ID lookup by fileId still resolves canonical artifactId.
+  const byFileId = await accept(
+    app(owner)(artifactAccessContract).getVisibility({
+      headers,
+      params: { artifactId: fileId },
+    }),
+    [200],
+  );
+  expect(byFileId.body.artifactId).toBe(artifactId);
+  expect(byFileId.body.visibility).toBe("public");
+
+  await accept(
+    app(owner)(artifactAccessContract).updateVisibility({
+      headers,
+      params: { artifactId },
+      body: { visibility: "private" },
+    }),
+    [200],
+  );
   const unifiedRead = await accept(
     app(owner)(artifactAccessContract).getVisibility({
       headers,
@@ -365,63 +430,13 @@ test("unified artifact visibility bidirectionally syncs file artifacts", async (
   );
   expect(unifiedRead.body.visibility).toBe("private");
   expect(unifiedRead.body.shareUrl).toBeNull();
-});
-
-test("unified file visibility read-repairs drifted artifacts.visibility from legacy R2 policy", async () => {
-  const owner = createBddApi(context).user();
-  directory([profile(owner)], [owner]);
-
-  const { fileId, artifactId, objects } = await createFileArtifact(
-    owner,
-    "legacy-shared.pdf",
-    "application/pdf",
-  );
-
   await accept(
-    app(owner)(artifactSharesContract).update({
+    app(colleague)(artifactReferencesContract).resolve({
       headers,
-      body: { target: { kind: "file", id: fileId }, audience: "organization" },
+      params: { reference },
     }),
-    [200],
+    [404],
   );
-  const policyEntry = [...objects.entries()].find(([key]) => {
-    return key.startsWith("artifact-shares/") && key.endsWith(".json");
-  });
-  if (!policyEntry) {
-    throw new Error("Expected R2 policy object for shared file");
-  }
-  const [policyKey, orgPolicyBuffer] = policyEntry;
-
-  await accept(
-    app(owner)(artifactSharesContract).update({
-      headers,
-      body: { target: { kind: "file", id: fileId }, audience: "private" },
-    }),
-    [200],
-  );
-  const beforeRepairCatalog = await accept(
-    app(owner)(artifactCatalogContract).list({ headers, query: {} }),
-    [200],
-  );
-  expect(beforeRepairCatalog.body.artifacts[0]?.visibility).toBe("private");
-
-  // Simulate pre-R1 drift: R2 policy says "organization" while artifacts.visibility is "private".
-  objects.set(policyKey, orgPolicyBuffer);
-
-  const repaired = await accept(
-    app(owner)(artifactAccessContract).getVisibility({
-      headers,
-      params: { artifactId },
-    }),
-    [200],
-  );
-  expect(repaired.body.visibility).toBe("organization");
-
-  const afterRepairCatalog = await accept(
-    app(owner)(artifactCatalogContract).list({ headers, query: {} }),
-    [200],
-  );
-  expect(afterRepairCatalog.body.artifacts[0]?.visibility).toBe("organization");
 });
 
 test.each([
@@ -442,7 +457,7 @@ test.each([
     );
     expect(created.visibility).toBe(initialVisibility);
 
-    // Re-publish without specifying --visibility must preserve non-private visibility
+    // Re-publish without specifying --visibility must preserve non-private visibility.
     const republished = await created.host.prepareHostedSite(
       { bearerToken: created.bearerToken },
       {
@@ -483,10 +498,7 @@ test("unified artifact shares support userId primary path, email fallback, non-m
   await updateFeatureSwitchesForUser(
     context,
     { ...owner, orgId: owner.orgId },
-    {
-      [FeatureSwitchKey.ArtifactUserSharing]: true,
-      [FeatureSwitchKey.HostedSiteEmailSharing]: true,
-    },
+    { [FeatureSwitchKey.ArtifactUserSharing]: true },
   );
   directory(
     [
@@ -497,7 +509,7 @@ test("unified artifact shares support userId primary path, email fallback, non-m
     [owner, colleague, secondColleague],
   );
 
-  const { fileId, artifactId } = await createFileArtifact(
+  const { artifactId, reference } = await createFileArtifact(
     owner,
     "deck.pdf",
     "application/pdf",
@@ -517,6 +529,15 @@ test("unified artifact shares support userId primary path, email fallback, non-m
     email: colleague.email,
     name: "Alice Member",
   });
+
+  // Granted colleague can read the private file artifact.
+  await accept(
+    app(colleague)(artifactReferencesContract).resolve({
+      headers,
+      params: { reference },
+    }),
+    [200],
+  );
 
   // 2. Fallback path: add by email (resolved in current org directory)
   const addByEmail = await accept(
@@ -561,22 +582,6 @@ test("unified artifact shares support userId primary path, email fallback, non-m
     [400],
   );
 
-  // Legacy GET /api/artifact-sharing/file/:fileId/shares observes both grants
-  const legacyList = await accept(
-    app(owner)(artifactSharingContract).list({
-      headers,
-      params: { kind: "file", id: fileId },
-    }),
-    [200],
-  );
-  expect(
-    legacyList.body.shares
-      .map((s) => {
-        return s.email;
-      })
-      .sort(),
-  ).toStrictEqual([colleague.email, secondColleague.email].sort());
-
   // 5. Remove via unified DELETE /api/artifacts/:artifactId/shares/:userId
   const removedFirst = await accept(
     app(owner)(artifactAccessContract).removeShare({
@@ -586,6 +591,15 @@ test("unified artifact shares support userId primary path, email fallback, non-m
     [200],
   );
   expect(removedFirst.body).toStrictEqual({ removed: colleague.userId });
+
+  // Revoked colleague loses read access immediately.
+  await accept(
+    app(colleague)(artifactReferencesContract).resolve({
+      headers,
+      params: { reference },
+    }),
+    [404],
+  );
 
   const afterRemoveUnified = await accept(
     app(owner)(artifactAccessContract).listShares({
@@ -612,7 +626,7 @@ test("unified artifact shares support userId primary path, email fallback, non-m
   );
 });
 
-test("unified /shares routes are gated by ArtifactUserSharing independently from HostedSiteEmailSharing", async () => {
+test("unified /shares routes are gated by ArtifactUserSharing", async () => {
   const owner = createBddApi(context).user();
   if (!owner.orgId) {
     throw new Error("Fixture requires orgId");
@@ -620,29 +634,16 @@ test("unified /shares routes are gated by ArtifactUserSharing independently from
   await updateFeatureSwitchesForUser(
     context,
     { ...owner, orgId: owner.orgId },
-    {
-      [FeatureSwitchKey.HostedSiteEmailSharing]: true,
-      [FeatureSwitchKey.ArtifactUserSharing]: false,
-    },
+    { [FeatureSwitchKey.ArtifactUserSharing]: false },
   );
   directory([profile(owner)], [owner]);
 
-  const { fileId, artifactId } = await createFileArtifact(
+  const { artifactId } = await createFileArtifact(
     owner,
     "gated.pdf",
     "application/pdf",
   );
 
-  // Legacy route stays available under HostedSiteEmailSharing
-  await accept(
-    app(owner)(artifactSharingContract).list({
-      headers,
-      params: { kind: "file", id: fileId },
-    }),
-    [200],
-  );
-
-  // Unified route stays hidden while ArtifactUserSharing is off
   await accept(
     app(owner)(artifactAccessContract).listShares({
       headers,
@@ -667,7 +668,7 @@ test("unified /shares routes are gated by ArtifactUserSharing independently from
   expect(allowed.body.shares).toStrictEqual([]);
 });
 
-async function assertHostedArtifactBidirectionalSync(
+async function assertHostedArtifactUnifiedAccess(
   artifactKind: "hosted-site" | "presentation-html",
 ) {
   const owner = createBddApi(context).user();
@@ -682,10 +683,7 @@ async function assertHostedArtifactBidirectionalSync(
   await updateFeatureSwitchesForUser(
     context,
     { ...owner, orgId: owner.orgId },
-    {
-      [FeatureSwitchKey.ArtifactUserSharing]: true,
-      [FeatureSwitchKey.HostedSiteEmailSharing]: true,
-    },
+    { [FeatureSwitchKey.ArtifactUserSharing]: true },
   );
   const created = await createHostedArtifact(owner, artifactKind);
   expect(created.kind).toBe(
@@ -700,7 +698,7 @@ async function assertHostedArtifactBidirectionalSync(
     [owner, colleague, secondColleague],
   );
 
-  // 1. Unified PATCH by canonical artifactId (without revision) -> legacy GET + catalog observe it
+  // 1. Unified PATCH by canonical artifactId -> GET (by artifactId and siteId) + catalog observe it
   const patched = await accept(
     app(owner)(artifactAccessContract).updateVisibility({
       headers,
@@ -712,38 +710,6 @@ async function assertHostedArtifactBidirectionalSync(
   expect(patched.body.artifactId).toBe(created.artifactId);
   expect(patched.body.visibility).toBe("organization");
 
-  const legacyRead = await accept(
-    app(owner)(hostContract).siteVisibility({
-      headers,
-      params: { siteId: created.siteId },
-    }),
-    [200],
-  );
-  expect(legacyRead.body.visibility).toBe("organization");
-
-  // 2. Legacy PATCH -> unified GET (both by canonical artifactId and siteId fallback) + catalog observe it
-  await accept(
-    app(owner)(hostContract).updateSiteVisibility({
-      headers,
-      params: { siteId: created.siteId },
-      body: {
-        visibility: "public",
-        expectedRevision: legacyRead.body.revision,
-      },
-    }),
-    [200],
-  );
-
-  const byArtifactId = await accept(
-    app(owner)(artifactAccessContract).getVisibility({
-      headers,
-      params: { artifactId: created.artifactId },
-    }),
-    [200],
-  );
-  expect(byArtifactId.body.visibility).toBe("public");
-  expect(byArtifactId.body.artifactId).toBe(created.artifactId);
-
   const bySiteId = await accept(
     app(owner)(artifactAccessContract).getVisibility({
       headers,
@@ -751,7 +717,7 @@ async function assertHostedArtifactBidirectionalSync(
     }),
     [200],
   );
-  expect(bySiteId.body.visibility).toBe("public");
+  expect(bySiteId.body.visibility).toBe("organization");
   expect(bySiteId.body.artifactId).toBe(created.artifactId);
 
   const catalog = await accept(
@@ -762,10 +728,10 @@ async function assertHostedArtifactBidirectionalSync(
     catalog.body.artifacts.find((item) => {
       return item.id === created.artifactId;
     })?.visibility,
-  ).toBe("public");
+  ).toBe("organization");
 
-  // 3. Bidirectional per-user shares sync between unified /shares and hosted_site_shares
-  const addedUnified = await accept(
+  // 2. Per-user shares stored directly in artifact_user_shares
+  const addedFirst = await accept(
     app(owner)(artifactAccessContract).addShare({
       headers,
       params: { artifactId: created.artifactId },
@@ -773,35 +739,21 @@ async function assertHostedArtifactBidirectionalSync(
     }),
     [200],
   );
-  expect(addedUnified.body.share).toStrictEqual({
+  expect(addedFirst.body.share).toStrictEqual({
     userId: colleague.userId,
     email: colleague.email,
     name: "Alice Member",
   });
-
-  const legacySharesAfterAdd = await accept(
-    app(owner)(hostedSiteSharingContract).list({
+  await accept(
+    app(owner)(artifactAccessContract).addShare({
       headers,
-      params: { siteId: created.siteId },
-    }),
-    [200],
-  );
-  expect(
-    legacySharesAfterAdd.body.shares.map((s) => {
-      return s.email;
-    }),
-  ).toStrictEqual([colleague.email]);
-
-  const addedLegacy = await accept(
-    app(owner)(hostedSiteSharingContract).share({
-      headers,
-      params: { siteId: created.siteId },
+      params: { artifactId: created.artifactId },
       body: { email: secondColleague.email },
     }),
     [200],
   );
 
-  const unifiedSharesAfterLegacyAdd = await accept(
+  const listed = await accept(
     app(owner)(artifactAccessContract).listShares({
       headers,
       params: { artifactId: created.artifactId },
@@ -809,35 +761,32 @@ async function assertHostedArtifactBidirectionalSync(
     [200],
   );
   expect(
-    unifiedSharesAfterLegacyAdd.body.shares
+    listed.body.shares
       .map((s) => {
         return s.userId;
       })
       .sort(),
   ).toStrictEqual([colleague.userId, secondColleague.userId].sort());
 
-  // Remove unified share by userId -> disappears from legacy
+  await accept(
+    app(owner)(artifactAccessContract).removeShare({
+      headers,
+      params: { artifactId: created.artifactId, userId: colleague.userId },
+    }),
+    [200],
+  );
   await accept(
     app(owner)(artifactAccessContract).removeShare({
       headers,
       params: {
         artifactId: created.artifactId,
-        userId: colleague.userId,
+        userId: secondColleague.userId,
       },
     }),
     [200],
   );
 
-  // Remove legacy share -> disappears from unified
-  await accept(
-    app(owner)(hostedSiteSharingContract).remove({
-      headers,
-      params: { siteId: created.siteId, shareId: addedLegacy.body.share.id },
-    }),
-    [200],
-  );
-
-  const finalUnifiedShares = await accept(
+  const finalShares = await accept(
     app(owner)(artifactAccessContract).listShares({
       headers,
       params: { artifactId: created.artifactId },
@@ -846,22 +795,21 @@ async function assertHostedArtifactBidirectionalSync(
   );
   return {
     kind: created.kind,
-    remainingShares: finalUnifiedShares.body.shares.length,
+    remainingShares: finalShares.body.shares.length,
   };
 }
 
-test("unified artifact visibility and shares bidirectionally sync for hosted-site artifacts", async () => {
-  const result = await assertHostedArtifactBidirectionalSync("hosted-site");
+test("unified artifact visibility and shares work for hosted-site artifacts", async () => {
+  const result = await assertHostedArtifactUnifiedAccess("hosted-site");
   expect(result).toStrictEqual({ kind: "hosted-site", remainingShares: 0 });
 });
 
-test("unified artifact visibility and shares bidirectionally sync for presentation artifacts", async () => {
-  const result =
-    await assertHostedArtifactBidirectionalSync("presentation-html");
+test("unified artifact visibility and shares work for presentation artifacts", async () => {
+  const result = await assertHostedArtifactUnifiedAccess("presentation-html");
   expect(result).toStrictEqual({ kind: "presentation", remainingShares: 0 });
 });
 
-test("unified artifact visibility works for standalone hosted sites without an artifacts catalog row", async () => {
+test("standalone hosted sites create a synchronous artifacts row and expose unified visibility", async () => {
   const owner = createBddApi(context).user();
   directory([profile(owner)], [owner]);
 
@@ -885,17 +833,188 @@ test("unified artifact visibility works for standalone hosted sites without an a
     }),
     [200],
   );
-  expect(patched.body.artifactId).toBe(prepared.siteId);
   expect(patched.body.visibility).toBe("organization");
 
-  const legacyRead = await accept(
-    app(owner)(hostContract).siteVisibility({
+  const read = await accept(
+    app(owner)(artifactAccessContract).getVisibility({
       headers,
-      params: { siteId: prepared.siteId },
+      params: { artifactId: patched.body.artifactId },
     }),
     [200],
   );
-  expect(legacyRead.body.visibility).toBe("organization");
+  expect(read.body.visibility).toBe("organization");
+});
+
+test("unshared user files are owner-only, and library delete soft-deletes artifacts without breaking owner file access", async () => {
+  const owner = createBddApi(context).user();
+  const colleague = { ...createBddApi(context).user(), orgId: owner.orgId };
+  if (!owner.orgId) {
+    throw new Error("Fixture requires orgId");
+  }
+  await updateFeatureSwitchesForUser(
+    context,
+    { ...owner, orgId: owner.orgId },
+    { [FeatureSwitchKey.ArtifactUserSharing]: true },
+  );
+  directory(
+    [profile(owner, "Owner", "User"), profile(colleague, "Alice", "Member")],
+    [owner, colleague],
+  );
+
+  // Principle 3: Composer user upload writes files only (no artifacts row) and is accessible only to (owner, orgId).
+  installFileStorageMock("text/plain");
+  const userUpload = await accept(
+    app(owner)(uploadsContract).prepare({
+      headers,
+      body: { filename: "notes.txt", contentType: "text/plain", size: 13 },
+    }),
+    [200],
+  );
+  const completedUserUpload = await accept(
+    app(owner)(uploadsContract).complete({
+      headers,
+      body: { id: userUpload.body.id },
+    }),
+    [200],
+  );
+  const userFileRef = new URL(
+    completedUserUpload.body.url,
+    "https://app.okou.ai",
+  ).pathname
+    .split("/")
+    .at(-1)!;
+  await accept(
+    app(owner)(artifactReferencesContract).resolve({
+      headers,
+      params: { reference: userFileRef },
+    }),
+    [200],
+  );
+  await accept(
+    app(colleague)(artifactReferencesContract).resolve({
+      headers,
+      params: { reference: userFileRef },
+    }),
+    [404],
+  );
+
+  // Principle 4: Library delete soft-deletes artifacts.deleted_at ONLY; owner still reads the file in chat while shared non-owners lose access.
+  const { artifactId, reference } = await createFileArtifact(
+    owner,
+    "deliverable.pdf",
+    "application/pdf",
+  );
+  await accept(
+    app(owner)(artifactAccessContract).updateVisibility({
+      headers,
+      params: { artifactId },
+      body: { visibility: "organization" },
+    }),
+    [200],
+  );
+  await accept(
+    app(owner)(artifactAccessContract).addShare({
+      headers,
+      params: { artifactId },
+      body: { userId: colleague.userId },
+    }),
+    [200],
+  );
+  await accept(
+    app(colleague)(artifactReferencesContract).resolve({
+      headers,
+      params: { reference },
+    }),
+    [200],
+  );
+
+  await accept(
+    app(owner)(artifactCatalogContract).delete({
+      headers,
+      params: { artifactId },
+    }),
+    [200],
+  );
+
+  const catalogAfterDelete = await accept(
+    app(owner)(artifactCatalogContract).list({ headers, query: {} }),
+    [200],
+  );
+  expect(
+    catalogAfterDelete.body.artifacts.some((item) => {
+      return item.id === artifactId;
+    }),
+  ).toBeFalsy();
+
+  // Owner can still resolve the underlying file from chat history; colleague is blocked.
+  const ownerAfterDelete = await accept(
+    app(owner)(artifactReferencesContract).resolve({
+      headers,
+      params: { reference },
+    }),
+    [200],
+  );
+  expect(ownerAfterDelete.body.filename).toBe("deliverable.pdf");
+  expect(ownerAfterDelete.body.artifactId).toBeUndefined();
+
+  await accept(
+    app(colleague)(artifactReferencesContract).resolve({
+      headers,
+      params: { reference },
+    }),
+    [404],
+  );
+});
+
+test("historical private_hosted_deployments stay read-only and never mutate live site visibility", async () => {
+  const owner: ApiTestUser = {
+    userId: "user_legacy_private_hosted_seed",
+    orgId: "org_legacy_private_hosted_seed",
+    orgRole: "org:admin",
+    email: "legacy-seed-owner@example.test",
+  };
+  directory([profile(owner)], [owner]);
+
+  const legacyDeploymentId = "00000000-0000-4000-8000-000000009003";
+  const liveArtifactId = "00000000-0000-4000-8000-000000009004";
+
+  const legacyRead = await accept(
+    app(owner)(artifactAccessContract).getVisibility({
+      headers,
+      params: { artifactId: legacyDeploymentId },
+    }),
+    [200],
+  );
+  expect(legacyRead.body.artifactId).toBe(legacyDeploymentId);
+  expect(legacyRead.body.visibility).toBe("private");
+
+  // Attempting to broaden visibility on a legacy deployment returns 400 and leaves live site untouched.
+  await accept(
+    app(owner)(artifactAccessContract).updateVisibility({
+      headers,
+      params: { artifactId: legacyDeploymentId },
+      body: { visibility: "public" },
+    }),
+    [400],
+  );
+  // Setting private on a legacy deployment succeeds as a no-op without mutating the live public site.
+  await accept(
+    app(owner)(artifactAccessContract).updateVisibility({
+      headers,
+      params: { artifactId: legacyDeploymentId },
+      body: { visibility: "private" },
+    }),
+    [200],
+  );
+
+  const liveVisibility = await accept(
+    app(owner)(artifactAccessContract).getVisibility({
+      headers,
+      params: { artifactId: liveArtifactId },
+    }),
+    [200],
+  );
+  expect(liveVisibility.body.visibility).toBe("public");
 });
 
 test("addShare returns 404 for unowned or missing artifacts before membership lookup or quota", async () => {
@@ -931,7 +1050,6 @@ test("addShare returns 404 for unowned or missing artifacts before membership lo
   );
   const missingArtifactId = randomUUID();
 
-  // Fail Clerk membership lookup to prove ownership check short-circuits first
   context.mocks.clerk.organizations.getOrganizationMembershipList.mockRejectedValue(
     new Error("Clerk directory should not be queried for unowned artifacts"),
   );
@@ -963,7 +1081,6 @@ test("addShare returns 404 for unowned or missing artifacts before membership lo
     );
   }
 
-  // Restore directory and confirm owner can still share their own artifact
   directory(
     [
       profile(owner, "Owner", "User"),
@@ -1000,50 +1117,6 @@ test("hosted-site visibility read propagates unexpected Clerk lookup errors inst
     [500],
   );
   expect(failed.status).toBe(500);
-});
-
-test("composer user uploads and library artifact deletion succeed cleanly with files dual-write active", async () => {
-  const owner = createBddApi(context).user();
-  directory([profile(owner)], [owner]);
-
-  installFileStorageMock("text/plain");
-  const userUpload = await accept(
-    app(owner)(uploadsContract).prepare({
-      headers,
-      body: { filename: "notes.txt", contentType: "text/plain", size: 13 },
-    }),
-    [200],
-  );
-  await accept(
-    app(owner)(uploadsContract).complete({
-      headers,
-      body: { id: userUpload.body.id },
-    }),
-    [200],
-  );
-
-  const { artifactId } = await createFileArtifact(
-    owner,
-    "deliverable.pdf",
-    "application/pdf",
-  );
-  await accept(
-    app(owner)(artifactCatalogContract).delete({
-      headers,
-      params: { artifactId },
-    }),
-    [200],
-  );
-
-  const catalogAfterDelete = await accept(
-    app(owner)(artifactCatalogContract).list({ headers, query: {} }),
-    [200],
-  );
-  expect(
-    catalogAfterDelete.body.artifacts.some((item) => {
-      return item.id === artifactId;
-    }),
-  ).toBeFalsy();
 });
 
 test("run-scoped private artifact upload completes cleanly and exposes unified visibility without duplicate catalog entries", async () => {
@@ -1110,9 +1183,7 @@ test("run-scoped private artifact upload completes cleanly and exposes unified v
   expect(visibility.body.artifactId).toBe(artifactId);
   expect(visibility.body.visibility).toBe("private");
 
-  // Addressing the run-scoped private file by its canonical fileId (e.g. from a
-  // chat link) must resolve to the same artifact even after the shadow row updated
-  // projection_file_id.
+  // Bounded R1 client entity-ID resolution by canonical fileId returns the same artifactId.
   const byFileId = await accept(
     app(owner)(artifactAccessContract).getVisibility({
       headers,
@@ -1123,15 +1194,11 @@ test("run-scoped private artifact upload completes cleanly and exposes unified v
   expect(byFileId.body.artifactId).toBe(artifactId);
   expect(byFileId.body.visibility).toBe("private");
 
-  // Legacy PUT /api/artifact-shares must still dual-write artifacts.visibility for
-  // run-scoped private files whose projection_file_id points at the shadow row.
   await accept(
-    app(owner)(artifactSharesContract).update({
+    app(owner)(artifactAccessContract).updateVisibility({
       headers,
-      body: {
-        target: { kind: "file", id: prepared.body.id },
-        audience: "public",
-      },
+      params: { artifactId },
+      body: { visibility: "public" },
     }),
     [200],
   );

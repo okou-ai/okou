@@ -55,6 +55,7 @@ export const resolveTemplateUploads$ = command(
           userId: args.ownerUserId,
           orgId: args.orgId,
           id,
+          resolvePrivateUrl: false,
         },
         signal,
       );

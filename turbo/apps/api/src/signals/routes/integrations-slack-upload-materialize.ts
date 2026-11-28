@@ -4,115 +4,69 @@ import { integrationsSlackUploadMaterializeContract } from "@okouai/api-contract
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { bodyResultOf } from "../context/request";
-import { materializeCanonicalPublishedAsset$ } from "../services/canonical-asset.service";
-import {
-  prepareCanonicalSlackDelivery$,
-  deliverCanonicalSlackAsset$,
-} from "../services/canonical-slack-asset-delivery.service";
 import type { RouteEntry } from "../route-entry";
+import { deliverCanonicalSlackAsset$ } from "../services/canonical-slack-asset-delivery.service";
 
-const materializeInner$ = command(
-  async ({ get, set }, transfer: "client" | "server", signal: AbortSignal) => {
-    const auth = get(organizationAuthContext$);
-    const runId =
-      "runId" in auth && typeof auth.runId === "string"
-        ? auth.runId
-        : undefined;
-    if (!runId) {
-      return {
-        status: 400 as const,
-        body: {
-          error: {
-            message: "Canonical Slack publication requires a run-scoped token",
-            code: "BAD_REQUEST",
-          },
-        },
-      };
-    }
-
-    const bodyResult = await get(
-      bodyResultOf(integrationsSlackUploadMaterializeContract.materialize),
-    );
-    signal.throwIfAborted();
-    if (!bodyResult.ok) {
-      return bodyResult.response;
-    }
-
-    const materialized = await set(
-      materializeCanonicalPublishedAsset$,
-      {
-        assetId: bodyResult.data.assetId,
-        operationId: bodyResult.data.operationId,
-        runId,
-        userId: auth.userId,
-        orgId: auth.orgId,
-      },
-      signal,
-    );
-    if (!materialized.ok) {
-      return {
-        status:
-          materialized.code === "NOT_FOUND" ? (404 as const) : (400 as const),
-        body: {
-          error: {
-            message: materialized.message,
-            code: materialized.code,
-          },
-        },
-      };
-    }
-
-    const delivery = await set(
-      transfer === "server"
-        ? deliverCanonicalSlackAsset$
-        : prepareCanonicalSlackDelivery$,
-      {
-        assetId: materialized.assetId,
-        operationId: bodyResult.data.operationId,
-        runId,
-        userId: auth.userId,
-        orgId: auth.orgId,
-      },
-      signal,
-    );
-    if (!delivery) {
-      return {
-        status: 404 as const,
-        body: {
-          error: {
-            message: "Canonical Slack delivery was not found",
-            code: "NOT_FOUND",
-          },
-        },
-      };
-    }
-
+const serverDeliver$ = command(async ({ get, set }, signal: AbortSignal) => {
+  const auth = get(organizationAuthContext$);
+  const runId =
+    "runId" in auth && typeof auth.runId === "string" ? auth.runId : undefined;
+  if (!runId) {
     return {
-      status: 200 as const,
+      status: 400 as const,
       body: {
-        assetId: materialized.assetId,
-        url: materialized.url,
-        delivery,
+        error: {
+          message: "Canonical Slack publication requires a run-scoped token",
+          code: "BAD_REQUEST",
+        },
       },
     };
-  },
-);
+  }
 
-const clientMaterialize$ = command(({ set }, signal: AbortSignal) => {
-  return set(materializeInner$, "client", signal);
-});
-const serverDeliver$ = command(async ({ set }, signal: AbortSignal) => {
-  const response = await set(materializeInner$, "server", signal);
-  if (response.status !== 200) {
-    return response;
+  const bodyResult = await get(
+    bodyResultOf(integrationsSlackUploadMaterializeContract.deliver),
+  );
+  signal.throwIfAborted();
+  if (!bodyResult.ok) {
+    return bodyResult.response;
   }
-  const delivery = response.body.delivery;
-  if (delivery.status === "pending") {
-    throw new Error(
-      "Server Slack delivery returned a client upload capability",
-    );
+
+  const result = await set(
+    deliverCanonicalSlackAsset$,
+    {
+      assetId: bodyResult.data.assetId,
+      channel: bodyResult.data.channel,
+      user: bodyResult.data.user,
+      threadTs: bodyResult.data.threadTs,
+      title: bodyResult.data.title,
+      initialComment: bodyResult.data.initialComment,
+      runId,
+      userId: auth.userId,
+      orgId: auth.orgId,
+    },
+    signal,
+  );
+  signal.throwIfAborted();
+  if (!result.ok) {
+    return {
+      status: result.status,
+      body: {
+        error: {
+          message: result.message,
+          code: result.code,
+        },
+      },
+    };
   }
-  return { ...response, body: { ...response.body, delivery } };
+
+  return {
+    status: 200 as const,
+    body: {
+      assetId: result.assetId,
+      url: result.url,
+      delivery: result.delivery,
+    },
+  };
 });
 
 const slackWriteAuth = {
@@ -125,9 +79,5 @@ export const integrationsSlackUploadMaterializeRoutes: readonly RouteEntry[] = [
   {
     route: integrationsSlackUploadMaterializeContract.deliver,
     handler: authRoute(slackWriteAuth, serverDeliver$),
-  },
-  {
-    route: integrationsSlackUploadMaterializeContract.materialize,
-    handler: authRoute(slackWriteAuth, clientMaterialize$),
   },
 ];

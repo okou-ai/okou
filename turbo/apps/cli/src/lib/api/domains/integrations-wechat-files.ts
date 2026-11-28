@@ -5,13 +5,10 @@ import { initClient } from "@okouai/api-contracts/contracts/trpc-contract";
 import {
   MAX_WECHAT_FILE_SIZE_BYTES,
   integrationsWechatUploadInitContract,
-  integrationsWechatUploadMaterializeContract,
   integrationsWechatUploadCompleteContract,
   integrationsWechatDownloadFileContract,
   type WechatUploadInitBody,
   type WechatUploadInitResponse,
-  type WechatUploadMaterializeBody,
-  type WechatUploadMaterializeResponse,
   type WechatUploadCompleteBody,
   type WechatUploadCompleteResponse,
   type WechatDownloadFileQuery,
@@ -37,18 +34,6 @@ export async function initWechatFileUpload(
   const result = await client.init({ body: validated, headers: {} });
   if (result.status === 200) return result.body;
   handleError(result, "Failed to initialize Wechat file upload");
-}
-
-export async function materializeWechatFileUpload(
-  body: WechatUploadMaterializeBody,
-): Promise<WechatUploadMaterializeResponse> {
-  const client = initClient(integrationsWechatUploadMaterializeContract, {
-    ...(await getClientConfig()),
-    validateResponse: true,
-  });
-  const result = await client.materialize({ body, headers: {} });
-  if (result.status === 200) return result.body;
-  handleError(result, "Failed to publish Wechat file");
 }
 
 export async function completeWechatFileUpload(

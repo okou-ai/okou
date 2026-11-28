@@ -28,6 +28,7 @@ import {
 } from "./hosted-site-url-changes.ts";
 
 export interface ArtifactShareIdentity {
+  readonly artifactId?: string;
   readonly target: ArtifactShareTarget;
   readonly sharedThreadSnapshot?: true;
 }
@@ -79,6 +80,9 @@ function createArtifactReferencePresignedToken$(
       contentType: response.body.contentType,
       previewImageUrl: response.body.previewImageUrl,
       artifactShareIdentity: {
+        ...(response.body.artifactId
+          ? { artifactId: response.body.artifactId }
+          : {}),
         target: response.body.target,
         ...(response.body.sharedThreadSnapshot
           ? { sharedThreadSnapshot: true as const }

@@ -259,7 +259,6 @@ describe("POST /api/integrations/slack/upload-file/init", () => {
           filename: "legacy-archive.zip",
           length: LARGE_DIRECT_UPLOAD_BYTES,
           canonical: {
-            operationId: randomUUID(),
             contentType: "application/zip",
             checksumSha256: "a".repeat(64),
             channel: "C_LEGACY_DIRECT",

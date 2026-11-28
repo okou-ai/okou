@@ -1,12 +1,14 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { mockNow, now } from "../../../lib/time";
 import { expect, test } from "vitest";
+import { artifactAccessContract } from "@okouai/api-contracts/contracts/artifact-access";
 import { authContract } from "@okouai/api-contracts/contracts/auth";
 import { authMeRoutes } from "../auth-me";
 import { hostContract } from "@okouai/api-contracts/contracts/host";
 import { artifactOgContract } from "@okouai/api-contracts/contracts/artifact-og";
 import { setupAppWithRoutes } from "../../../__tests__/test-app";
 import { accept, testContext } from "../../../__tests__/test-context";
+import { artifactAccessRoutes } from "../artifact-access";
 import { hostRoutes } from "../host";
 import { artifactOgRoutes } from "../artifact-og";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
@@ -18,7 +20,7 @@ import { createRunsApi } from "./helpers/api-bdd-runs";
 const context = testContext();
 const headers = { authorization: "Bearer clerk-session" } as const;
 
-function client(user?: ApiTestUser) {
+function setupActor(user?: ApiTestUser) {
   if (user) {
     createRouteMocks(context).clerk.session(
       user.userId,
@@ -49,11 +51,24 @@ function client(user?: ApiTestUser) {
       });
     });
   }
+}
+
+function client(user?: ApiTestUser) {
+  setupActor(user);
   return setupAppWithRoutes({
     context,
-    routes: hostRoutes,
+    routes: [...hostRoutes, ...artifactAccessRoutes],
     baseUrl: "https://api.okou.ai",
   })(hostContract);
+}
+
+function accessClient(user: ApiTestUser) {
+  setupActor(user);
+  return setupAppWithRoutes({
+    context,
+    routes: [...hostRoutes, ...artifactAccessRoutes],
+    baseUrl: "https://api.okou.ai",
+  })(artifactAccessContract);
 }
 
 test.each([
@@ -85,16 +100,18 @@ test.each([
     ).toBe(expected === "public" ? "allow" : "authenticate");
     await api.completeHostedSite(owner, prepared.deploymentId);
     const policy = await accept(
-      client(owner).siteVisibility({ headers, params: request.params }),
+      accessClient(owner).getVisibility({
+        headers,
+        params: { artifactId: prepared.siteId },
+      }),
       [200],
     );
     expect(policy.body.visibility).toBe(expected);
-    expect(policy.body.revision).not.toBeNull();
     const changed = await accept(
-      client(owner).updateSiteVisibility({
+      accessClient(owner).updateVisibility({
         headers,
-        params: request.params,
-        body: { visibility: "public", expectedRevision: policy.body.revision },
+        params: { artifactId: prepared.siteId },
+        body: { visibility: "public" },
       }),
       [200],
     );
@@ -144,6 +161,9 @@ test("an explicitly private redeployment restricts the site before new bytes are
 
 async function publish() {
   const owner = createBddApi(context).user();
+  if (!owner.orgId) {
+    throw new Error("Expected an organization for hosted site owner");
+  }
   const api = createHostBddApi(context);
   api.captureHostedSitesS3();
   const site = `access-${randomUUID().slice(0, 8)}`;
@@ -160,19 +180,19 @@ async function publish() {
   });
   await api.completeHostedSite(owner, prepared.deploymentId);
   const policy = await accept(
-    client(owner).siteVisibility({
+    accessClient(owner).getVisibility({
       headers,
-      params: { siteId: prepared.siteId },
+      params: { artifactId: prepared.siteId },
     }),
     [200],
   );
   const prefix = `sites/brands/okou/publications/${prepared.deploymentId}`;
   return {
-    owner,
+    owner: { ...owner, orgId: owner.orgId },
     api,
     input,
     prepared,
-    revision: policy.body.revision,
+    artifactId: policy.body.artifactId,
     request: {
       params: { siteId: prepared.siteId, deploymentId: prepared.deploymentId },
       query: {
@@ -187,7 +207,7 @@ async function publish() {
 }
 
 test("site banners default on and persist independently of visibility and redeployment", async () => {
-  const { owner, api, input, prepared, request, revision } = await publish();
+  const { owner, api, input, prepared, artifactId, request } = await publish();
   await createRunsApi(context).grantProEntitlement(owner);
   const delivery = {
     ...request,
@@ -230,13 +250,13 @@ test("site banners default on and persist independently of visibility and redepl
     [409],
   );
   const policy = await accept(
-    client(owner).siteVisibility({
+    accessClient(owner).getVisibility({
       headers,
-      params: { siteId: prepared.siteId },
+      params: { artifactId },
     }),
     [200],
   );
-  expect(policy.body).toMatchObject({ visibility: "public", revision });
+  expect(policy.body.visibility).toBe("public");
   for (const alias of [prepared.publicSlug, `dpl-${prepared.deploymentId}`]) {
     const result = (
       await accept(
@@ -268,7 +288,7 @@ test("site banners default on and persist independently of visibility and redepl
 });
 
 test("banner management requires ownership without revealing restricted metadata", async () => {
-  const { owner, prepared, request, revision } = await publish();
+  const { owner, prepared, request } = await publish();
   const params = { siteId: prepared.siteId };
   const other = createBddApi(context).user({ orgId: owner.orgId });
   await accept(client(other).siteBanner({ headers, params }), [404]);
@@ -281,10 +301,10 @@ test("banner management requires ownership without revealing restricted metadata
     [404],
   );
   await accept(
-    client(owner).updateSiteVisibility({
+    accessClient(owner).updateVisibility({
       headers,
-      params,
-      body: { visibility: "private", expectedRevision: revision },
+      params: { artifactId: prepared.siteId },
+      body: { visibility: "private" },
     }),
     [200],
   );
@@ -351,25 +371,28 @@ async function browserHeaders(
 }
 
 test("explicitly public creation ignores stale credentials before Clerk is called", async () => {
-  const { owner, prepared, request, revision } = await publish();
+  const { owner, prepared } = await publish();
   const status = await accept(
-    client(owner).siteVisibility({
+    accessClient(owner).getVisibility({
       headers,
-      params: { siteId: prepared.siteId },
+      params: { artifactId: prepared.siteId },
     }),
     [200],
   );
-  expect(status.body).toStrictEqual({
-    siteId: prepared.siteId,
-    visibility: "public",
-    revision,
-  });
+  expect(status.body.visibility).toBe("public");
   context.mocks.clerk.authenticateRequest.mockRejectedValue(
     new Error("Clerk unavailable"),
   );
   const response = await accept(
     client().deliveryAuthorization({
-      ...request,
+      params: { siteId: prepared.siteId, deploymentId: prepared.deploymentId },
+      query: {
+        alias: prepared.publicSlug,
+        publicSlug: prepared.publicSlug,
+        publicBrand: "okou",
+        prefix: `sites/brands/okou/publications/${prepared.deploymentId}`,
+        manifestKey: `sites/brands/okou/publications/${prepared.deploymentId}/manifest.json`,
+      },
       headers: { authorization: "Bearer expired" },
     }),
     [200],
@@ -377,39 +400,29 @@ test("explicitly public creation ignores stale credentials before Clerk is calle
   expect(response.body).toStrictEqual({ allowed: true, decision: "allow" });
 });
 
-test("only the owner changes visibility and stale edits cannot overwrite it", async () => {
-  const { owner, prepared, request, revision } = await publish();
+test("only the owner changes visibility and updates apply consistently", async () => {
+  const { owner, prepared, artifactId, request } = await publish();
   const other = createBddApi(context).user();
-  const params = { siteId: prepared.siteId };
   const origin = `https://${prepared.publicSlug}.okou.app`;
   const otherSession = await browserHeaders(other, prepared.siteId, origin);
   const ownerSession = await browserHeaders(owner, prepared.siteId, origin);
   await accept(
-    client(other).updateSiteVisibility({
+    accessClient(other).updateVisibility({
       headers,
-      params,
-      body: { visibility: "private", expectedRevision: revision },
+      params: { artifactId },
+      body: { visibility: "private" },
     }),
     [404],
   );
   const changed = await accept(
-    client(owner).updateSiteVisibility({
+    accessClient(owner).updateVisibility({
       headers,
-      params,
-      body: { visibility: "private", expectedRevision: revision },
+      params: { artifactId },
+      body: { visibility: "private" },
     }),
     [200],
   );
   expect(changed.body.visibility).toBe("private");
-  expect(changed.body.revision).toStrictEqual(expect.any(String));
-  await accept(
-    client(owner).updateSiteVisibility({
-      headers,
-      params,
-      body: { visibility: "public", expectedRevision: revision },
-    }),
-    [409],
-  );
   expect(
     (await accept(client().deliveryAuthorization(request), [200])).body
       .decision,
@@ -448,10 +461,10 @@ test("only the owner changes visibility and stale edits cannot overwrite it", as
     (await accept(client().deliveryAuthorization(request), [200])).body.allowed,
   ).toBeFalsy();
   const restored = await accept(
-    client(owner).updateSiteVisibility({
+    accessClient(owner).updateVisibility({
       headers,
-      params,
-      body: { visibility: "public", expectedRevision: changed.body.revision },
+      params: { artifactId: prepared.siteId },
+      body: { visibility: "public" },
     }),
     [200],
   );
@@ -467,13 +480,13 @@ test("only the owner changes visibility and stale edits cannot overwrite it", as
 });
 
 test("organization access follows current membership in the site's organization", async () => {
-  const { owner, prepared, request, revision } = await publish();
+  const { owner, prepared, request } = await publish();
   const viewer = createBddApi(context).user();
   await accept(
-    client(owner).updateSiteVisibility({
+    accessClient(owner).updateVisibility({
       headers,
-      params: { siteId: prepared.siteId },
-      body: { visibility: "organization", expectedRevision: revision },
+      params: { artifactId: prepared.siteId },
+      body: { visibility: "organization" },
     }),
     [200],
   );
@@ -550,12 +563,12 @@ test("organization access follows current membership in the site's organization"
 });
 
 test("redeployment preserves an explicit policy for both aliases and immutable addresses", async () => {
-  const { owner, api, input, prepared, request, revision } = await publish();
+  const { owner, api, input, prepared, request } = await publish();
   await accept(
-    client(owner).updateSiteVisibility({
+    accessClient(owner).updateVisibility({
       headers,
-      params: { siteId: prepared.siteId },
-      body: { visibility: "private", expectedRevision: revision },
+      params: { artifactId: prepared.siteId },
+      body: { visibility: "private" },
     }),
     [200],
   );
@@ -573,20 +586,23 @@ test("redeployment preserves an explicit policy for both aliases and immutable a
   );
   expect(old.body.decision).toBe("authenticate");
   const policy = await accept(
-    client(owner).siteVisibility({ headers, params: { siteId: next.siteId } }),
+    accessClient(owner).getVisibility({
+      headers,
+      params: { artifactId: next.siteId },
+    }),
     [200],
   );
   expect(policy.body.visibility).toBe("private");
 });
 
 test("issued download grants stop working after a policy revision changes", async () => {
-  const { owner, api, prepared, revision } = await publish();
+  const { owner, api, prepared } = await publish();
   await createRunsApi(context).grantProEntitlement(owner);
-  const policy = await accept(
-    client(owner).updateSiteVisibility({
+  await accept(
+    accessClient(owner).updateVisibility({
       headers,
-      params: { siteId: prepared.siteId },
-      body: { visibility: "public", expectedRevision: revision },
+      params: { artifactId: prepared.siteId },
+      body: { visibility: "public" },
     }),
     [200],
   );
@@ -607,10 +623,10 @@ test("issued download grants stop working after a policy revision changes", asyn
   const first = await accept(client().downloadAuthorization(download), [200]);
   expect(first.body.file?.contentType).toBe("text/html; charset=utf-8");
   await accept(
-    client(owner).updateSiteVisibility({
+    accessClient(owner).updateVisibility({
       headers,
-      params: { siteId: prepared.siteId },
-      body: { visibility: "private", expectedRevision: policy.body.revision },
+      params: { artifactId: prepared.siteId },
+      body: { visibility: "private" },
     }),
     [200],
   );
@@ -620,12 +636,12 @@ test("issued download grants stop working after a policy revision changes", asyn
 });
 
 test("a caller-supplied identity or foreign origin cannot authorize a private preview", async () => {
-  const { owner, prepared, revision } = await publish();
+  const { owner, prepared } = await publish();
   await accept(
-    client(owner).updateSiteVisibility({
+    accessClient(owner).updateVisibility({
       headers,
-      params: { siteId: prepared.siteId },
-      body: { visibility: "private", expectedRevision: revision },
+      params: { artifactId: prepared.siteId },
+      body: { visibility: "private" },
     }),
     [200],
   );
@@ -640,33 +656,46 @@ test("a caller-supplied identity or foreign origin cannot authorize a private pr
   expect(result.body.decision).toBe("authenticate");
 });
 
-test("concurrent edits cannot both replace the same policy revision", async () => {
-  const { owner, prepared, revision } = await publish();
-  const api = client(owner);
-  const params = { siteId: prepared.siteId };
+test("concurrent visibility updates settle to a single consistent visibility", async () => {
+  const { owner, artifactId } = await publish();
   const results = await Promise.all([
-    api.updateSiteVisibility({
-      headers,
-      params,
-      body: { visibility: "private", expectedRevision: revision },
-    }),
-    api.updateSiteVisibility({
-      headers,
-      params,
-      body: { visibility: "organization", expectedRevision: revision },
-    }),
+    accept(
+      accessClient(owner).updateVisibility({
+        headers,
+        params: { artifactId },
+        body: { visibility: "private" },
+      }),
+      [200, 409],
+    ),
+    accept(
+      accessClient(owner).updateVisibility({
+        headers,
+        params: { artifactId },
+        body: { visibility: "organization" },
+      }),
+      [200, 409],
+    ),
   ]);
+  const succeeded = results.filter((result) => {
+    return result.status === 200;
+  });
+  expect(succeeded.length).toBeGreaterThanOrEqual(1);
+  const finalPolicy = await accept(
+    accessClient(owner).getVisibility({
+      headers,
+      params: { artifactId },
+    }),
+    [200],
+  );
   expect(
-    results
-      .map((result) => {
-        return result.status;
-      })
-      .sort(),
-  ).toStrictEqual([200, 409]);
+    succeeded.map((result) => {
+      return result.body.visibility;
+    }),
+  ).toContain(finalPolicy.body.visibility);
 });
 
 test("anonymous OG metadata stops exposing a Site after it becomes private", async () => {
-  const { owner, prepared, revision } = await publish();
+  const { owner, prepared } = await publish();
   const og = setupAppWithRoutes({ context, routes: artifactOgRoutes })(
     artifactOgContract,
   );
@@ -675,10 +704,10 @@ test("anonymous OG metadata stops exposing a Site after it becomes private", asy
     (await accept(og.metadata({ query }), [200])).body.available,
   ).toBeTruthy();
   await accept(
-    client(owner).updateSiteVisibility({
+    accessClient(owner).updateVisibility({
       headers,
-      params: { siteId: prepared.siteId },
-      body: { visibility: "private", expectedRevision: revision },
+      params: { artifactId: prepared.siteId },
+      body: { visibility: "private" },
     }),
     [200],
   );
@@ -688,13 +717,13 @@ test("anonymous OG metadata stops exposing a Site after it becomes private", asy
 });
 
 test("private downloads remain controlled and stop after deletion", async () => {
-  const { owner, api, input, prepared, revision } = await publish();
+  const { owner, api, input, prepared } = await publish();
   await createRunsApi(context).grantProEntitlement(owner);
   await accept(
-    client(owner).updateSiteVisibility({
+    accessClient(owner).updateVisibility({
       headers,
-      params: { siteId: prepared.siteId },
-      body: { visibility: "private", expectedRevision: revision },
+      params: { artifactId: prepared.siteId },
+      body: { visibility: "private" },
     }),
     [200],
   );
@@ -794,15 +823,15 @@ test("expired authorization codes cannot be exchanged", async () => {
 });
 
 test("site sessions survive 60 seconds without a Clerk JWT and stop after primary revocation", async () => {
-  const { owner, prepared, revision } = await publish();
+  const { owner, prepared } = await publish();
   const params = { siteId: prepared.siteId };
   const origin = `https://${prepared.publicSlug}.okou.app`;
   const siteHeaders = await browserHeaders(owner, prepared.siteId, origin);
   await accept(
-    client(owner).updateSiteVisibility({
+    accessClient(owner).updateVisibility({
       headers,
-      params,
-      body: { visibility: "private", expectedRevision: revision },
+      params: { artifactId: prepared.siteId },
+      body: { visibility: "private" },
     }),
     [200],
   );
@@ -895,7 +924,7 @@ test("pending sessions and untrusted return origins cannot mint site authorizati
 });
 
 test("one publisher cannot redirect another Site's authorization to its own origin", async () => {
-  const { owner, api, input, prepared, revision } = await publish();
+  const { owner, api, input, prepared } = await publish();
   const other = await api.prepareHostedSite(owner, {
     ...input,
     site: `other-${randomUUID().slice(0, 8)}`,
@@ -917,10 +946,10 @@ test("one publisher cannot redirect another Site's authorization to its own orig
   const origin = `https://dpl-${prepared.deploymentId}.okou.app`;
   const session = await browserHeaders(owner, prepared.siteId, origin);
   await accept(
-    client(owner).updateSiteVisibility({
+    accessClient(owner).updateVisibility({
       headers,
-      params: { siteId: prepared.siteId },
-      body: { visibility: "private", expectedRevision: revision },
+      params: { artifactId: prepared.siteId },
+      body: { visibility: "private" },
     }),
     [200],
   );
@@ -1009,12 +1038,12 @@ test.each([
 
 test("restricted previews reuse private-artifact credentials only after current access checks", async () => {
   mockNow(Date.parse("2026-10-22T00:00:00Z"));
-  const { owner, prepared, revision } = await publish();
+  const { owner, prepared } = await publish();
   await accept(
-    client(owner).updateSiteVisibility({
+    accessClient(owner).updateVisibility({
       headers,
-      params: { siteId: prepared.siteId },
-      body: { visibility: "private", expectedRevision: revision },
+      params: { artifactId: prepared.siteId },
+      body: { visibility: "private" },
     }),
     [200],
   );

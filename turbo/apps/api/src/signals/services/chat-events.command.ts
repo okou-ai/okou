@@ -1,3 +1,4 @@
+import { createHash, randomUUID } from "node:crypto";
 import {
   resolveVoiceClipRecords,
   voiceClipRequestError,
@@ -68,7 +69,6 @@ import {
   SQL,
   sql,
 } from "drizzle-orm";
-import { randomUUID } from "node:crypto";
 import { literal, object, uuid, type infer as zInfer } from "zod";
 import { alias, PgDialect } from "drizzle-orm/pg-core";
 import {
@@ -119,11 +119,7 @@ import {
 } from "./chat-enqueue-timing.service";
 
 import type { CancelRunResult } from "./agent-run-terminal-transition.service";
-import {
-  canonicalPrivateWebInputPlan,
-  canonicalWebInputPlan,
-} from "./canonical-asset.service";
-import { runUploadedFiles } from "@okouai/db/schema/run-uploaded-file";
+import { files as filesTable } from "@okouai/db/schema/file";
 import {
   canonicalChatEventContent,
   canonicalChatEventError,
@@ -602,7 +598,7 @@ function isNormalSendBody(
 }
 const ATTACHMENT_METADATA_CONCURRENCY = 4;
 type AttachmentRecord = PrivateAttachmentRow;
-type PrivateAttachmentRecord = Pick<AttachmentRecord, "id" | "metadata">;
+type PrivateAttachmentRecord = Pick<AttachmentRecord, "id" | "storageKey">;
 interface ResolvedChatAttachment {
   readonly file: ChatEventAttachFileMetadata;
   readonly owned: PrivateAttachmentRecord | null;
@@ -696,14 +692,14 @@ const startIncomingAttachmentRecords$ = command(
         get(db$),
         or(
           fileIds.length
-            ? sql`${runUploadedFiles.id} = ANY(${sql.param(fileIds)}::uuid[])`
+            ? sql`${filesTable.id} = ANY(${sql.param(fileIds)}::uuid[])`
             : undefined,
           clipIds.length
             ? and(
-                sql`${runUploadedFiles.id} = ANY(${sql.param(clipIds)}::uuid[])`,
-                eq(runUploadedFiles.orgId, owner.orgId),
-                eq(runUploadedFiles.userId, owner.userId),
-                isNull(runUploadedFiles.deletedAt),
+                sql`${filesTable.id} = ANY(${sql.param(clipIds)}::uuid[])`,
+                eq(filesTable.orgId, owner.orgId),
+                eq(filesTable.ownerUserId, owner.userId),
+                isNull(filesTable.deletedAt),
               )
             : undefined,
         ),
@@ -756,7 +752,7 @@ const resolveIncomingAttachmentObject$ = command(
   ): Promise<AttachmentObject> => {
     signal.throwIfAborted();
     const { row, file, counts } = args;
-    if (row?.metadata.storage !== undefined) {
+    if (row?.storageKey?.startsWith("private-artifacts/")) {
       const owned = privateArtifactFromRow(row);
       if (
         !owned ||
@@ -765,7 +761,7 @@ const resolveIncomingAttachmentObject$ = command(
       ) {
         throw new Error(`User-message attachment not found: ${file.fileId}`);
       }
-      const record = { id: row.id, metadata: row.metadata };
+      const record = { id: row.id, storageKey: row.storageKey };
       const completedSize = completedPrivateAttachmentSize(row);
       if (completedSize !== null) {
         counts.completedPrivate += 1;
@@ -850,15 +846,14 @@ const resolveIncomingAttachFileMetadata$ = command(
         // storage configuration and sends no variant; content type is a per-
         // reference snapshot, not a lookup argument. Reuse never crosses sends.
         const owned = rows.get(file.fileId.toLowerCase());
-        const key =
-          owned?.metadata.storage !== undefined
-            ? `private:${owned.id}`
-            : JSON.stringify([
-                args.userId,
-                args.orgId,
-                file.fileId,
-                file.filenameSnapshot,
-              ]);
+        const key = owned?.storageKey?.startsWith("private-artifacts/")
+          ? `private:${owned.id}`
+          : JSON.stringify([
+              args.userId,
+              args.orgId,
+              file.fileId,
+              file.filenameSnapshot,
+            ]);
         let lookup = lookups.get(key);
         if (!lookup) {
           lookup = { file };
@@ -1784,16 +1779,43 @@ function normalSendCreatedListEvent(
 }
 
 function normalSendPublicAssetWrite(
-  asset: NonNullable<ReturnType<typeof canonicalWebInputPlan>>,
+  args: {
+    readonly orgId: string;
+    readonly userId: string;
+    readonly file: {
+      readonly id: string;
+      readonly objectKey: string;
+      readonly filename: string;
+      readonly contentType: string;
+      readonly size: number;
+    };
+  },
   gate: SQL,
 ) {
+  const id = uuid().safeParse(args.file.id).success
+    ? args.file.id
+    : createHash("sha256")
+        .update(
+          JSON.stringify(["web-input-v2", args.userId, args.file.objectKey]),
+        )
+        .digest()
+        .subarray(0, 16)
+        .toString("hex")
+        .replace(/^(.{8})(.{4})(.{4})(.{4})(.{12})$/u, "$1-$2-$3-$4-$5");
   return normalChatInputInsertSql(
-    runUploadedFiles,
-    asset.values,
+    filesTable,
+    {
+      id,
+      orgId: args.orgId,
+      ownerUserId: args.userId,
+      storageKey: args.file.objectKey,
+      filename: args.file.filename,
+      contentType: args.file.contentType,
+      sizeBytes: args.file.size,
+      origin: "user",
+    },
     gate,
-    sql`(user_id, idempotency_scope, idempotency_key) WHERE asset_version = 1
-      DO UPDATE SET id = ${runUploadedFiles.id} WHERE ${asset.identity}`,
-    sql`${runUploadedFiles.id}`,
+    sql`(id) DO NOTHING`,
   );
 }
 
@@ -1950,45 +1972,31 @@ function normalSendAssetWrites(
     const name = "normal_send_asset_" + index;
     const gate = normalChatInputWriteGate(after);
     if (!owned) {
-      const token = normalSendFailureToken("ASSET_" + index);
       writes.push({
         name,
-        statement: normalSendPublicAssetWrite(
-          canonicalWebInputPlan(owner),
-          gate,
-        ),
-      });
-      failures.push({
-        token,
-        error: new Error("Canonical web input asset conflict is missing"),
-      });
-      guards.push({
-        condition: sql`${normalChatInputWritten} AND NOT EXISTS (SELECT 1 FROM ${sql.identifier(name)})`,
-        token,
+        statement: normalSendPublicAssetWrite(owner, gate),
       });
     } else {
-      const plan = canonicalPrivateWebInputPlan({
-        chatThreadId: owner.chatThreadId,
-        file,
-        metadata: owned.metadata,
-      });
-      // Only the registration needs a live, still-unbound row. A withdrawn
-      // or already registered file does not invalidate the accepted input.
+      // Only a pending private attachment needs size/content-type completion.
       writes.push({
         name,
         statement: new PgDialect().buildUpdateQuery({
-          table: runUploadedFiles,
-          set: normalChatInputUpdateSet(runUploadedFiles, plan.values),
+          table: filesTable,
+          set: normalChatInputUpdateSet(filesTable, {
+            contentType: file.contentType,
+            sizeBytes: file.size,
+          }),
           joins: [],
           where: and(
-            plan.where,
-            eq(runUploadedFiles.userId, owner.userId),
-            eq(runUploadedFiles.orgId, owner.orgId),
-            isNull(runUploadedFiles.deletedAt),
-            eq(runUploadedFiles.storageKey, file.objectKey),
+            eq(filesTable.id, owned.id),
+            eq(filesTable.ownerUserId, owner.userId),
+            eq(filesTable.orgId, owner.orgId),
+            isNull(filesTable.deletedAt),
+            isNull(filesTable.sizeBytes),
+            eq(filesTable.storageKey, file.objectKey),
             gate,
           ),
-          returning: [{ path: ["id"], field: runUploadedFiles.id }],
+          returning: [{ path: ["id"], field: filesTable.id }],
         }),
       });
     }

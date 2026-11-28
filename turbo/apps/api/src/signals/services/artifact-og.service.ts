@@ -27,10 +27,7 @@ import {
   artifactReferenceRecord$,
   type SharedThreadArtifactReference,
 } from "./artifact-reference.service";
-import {
-  publicArtifactShareIdentity$,
-  resolvePublicArtifactSource$,
-} from "./artifact-shares.service";
+import { resolvePublicArtifactSource$ } from "./artifact-shares.service";
 import { sharedThreadArtifactSnapshot$ } from "./shared-thread-artifact-reference.service";
 import {
   privateArtifactRecord$,
@@ -85,7 +82,7 @@ const hostedCover$ = command(
       manifest.preview,
     )) {
       const file = await set(privateArtifactRecord$, id, signal);
-      if (!file || file.materializationStatus !== "ready") {
+      if (!file || !file.isReady) {
         continue;
       }
       if (file.userId !== ownerId || file.orgId !== orgId) {
@@ -243,18 +240,17 @@ const referenceOgSource$ = command(
     if (!target) {
       return null;
     }
-    const owner = await set(publicArtifactShareIdentity$, target, signal);
-    if (!owner) {
-      return null;
-    }
-    const published = await set(
-      resolvePublicArtifactSource$,
-      target,
-      owner,
-      signal,
-    );
+    const published = await set(resolvePublicArtifactSource$, target, signal);
     if (!published) {
       return null;
+    }
+    if (published.kind === "live-file") {
+      return {
+        version: published.version,
+        title: published.file.filename,
+        url,
+        image: imageSource(published.file.key, published.file.contentType),
+      };
     }
     const { policy, candidate } = published;
     const shared = policy.target;

@@ -14,7 +14,7 @@ import {
   shareHostedSitePrivately,
 } from "./visibility";
 import {
-  assertHostedSiteEmailSharing,
+  assertArtifactUserSharing,
   type HostedSiteShare,
 } from "../api/domains/hosted-site-sharing";
 
@@ -92,7 +92,7 @@ export async function publishStaticSite(
 ): Promise<PublishStaticSiteResult> {
   const emails = hostedSiteEmailRecipients(options.visibility, options.emails);
   if (options.visibility === "email") {
-    await assertHostedSiteEmailSharing();
+    await assertArtifactUserSharing();
   }
   const artifactKind = options.artifactKind ?? "hosted-site";
   const scan = await scanStaticSite(

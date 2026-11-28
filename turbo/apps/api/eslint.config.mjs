@@ -221,7 +221,6 @@ const credentialForgingLegacyConsumers = exactTestPaths(
   [
     "src/signals/auth/__tests__/tokens.test.ts",
     "src/signals/routes/__tests__/artifact-downloads.test.ts",
-    "src/signals/routes/__tests__/artifact-shares.test.ts",
     "src/signals/routes/__tests__/cli-auth.bdd.test.ts",
     "src/signals/routes/__tests__/connector-check.test.ts",
     "src/signals/routes/__tests__/helpers/api-bdd-firewall.ts",

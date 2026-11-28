@@ -199,8 +199,46 @@ function commandName(command: unknown): string {
 }
 
 function mockObjectStorageObjectsExist(context: TestContext): void {
+  const objects = new Map<string, Buffer>();
   context.mocks.s3.send.mockImplementation((command: unknown) => {
     const name = commandName(command);
+    const input =
+      typeof command === "object" &&
+      command !== null &&
+      "input" in command &&
+      typeof command.input === "object" &&
+      command.input !== null
+        ? (command.input as { Key?: unknown; Body?: unknown })
+        : undefined;
+    const key = typeof input?.Key === "string" ? input.Key : undefined;
+    if (name === "PutObjectCommand" && key) {
+      const body = input?.Body;
+      objects.set(
+        key,
+        typeof body === "string"
+          ? Buffer.from(body)
+          : body instanceof Uint8Array
+            ? Buffer.from(body)
+            : Buffer.alloc(0),
+      );
+      return Promise.resolve({ ETag: '"etag"' });
+    }
+    if (name === "GetObjectCommand" && key) {
+      const stored = objects.get(key);
+      if (stored !== undefined) {
+        return Promise.resolve({
+          ETag: '"etag"',
+          Body: {
+            async *[Symbol.asyncIterator]() {
+              yield stored;
+            },
+          },
+        });
+      }
+      return Promise.reject(
+        Object.assign(new Error(`NoSuchKey: ${key}`), { name: "NoSuchKey" }),
+      );
+    }
     if (name === "HeadObjectCommand") {
       return Promise.resolve({ ContentLength: 1024 });
     }

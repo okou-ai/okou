@@ -113,8 +113,8 @@ async function findCatalogArtifact(
   });
 }
 
-describe("GET /api/chat-threads/:threadId/artifacts", () => {
-  it("keeps each hosted-site publication as a separate immutable artifact", async () => {
+describe("hosted-site publication versions and catalog integration", () => {
+  it("keeps each hosted-site publication as a separate immutable deployment while updating the site catalog entry", async () => {
     const actor = bdd.user();
     const owner = await artifactActor(
       "Artifacts API hosted publications agent",
@@ -148,8 +148,6 @@ describe("GET /api/chat-threads/:threadId/artifacts", () => {
       deploymentVersion: 1,
       aliasUrl: first.url,
     });
-    // Redeploying keeps one site and one alias; each publication still owns an
-    // immutable artifact URL and its own thread-artifact row.
     expect(second).toMatchObject({
       publicSlug: site,
       deploymentVersion: 2,
@@ -160,25 +158,19 @@ describe("GET /api/chat-threads/:threadId/artifacts", () => {
     expect(second.deploymentId).not.toBe(first.deploymentId);
     expect(second.artifactUrl).not.toBe(first.artifactUrl);
 
+    const catalogArtifact = await findCatalogArtifact(actor, site);
+    expect(catalogArtifact).toMatchObject({
+      kind: "hosted-site",
+      title: site,
+    });
+    // Retired thread-artifacts route returns empty runs stub for iOS 0.73.0 compatibility.
     const threadArtifacts = await chat.listThreadArtifacts(actor, run.threadId);
-    expect(threadArtifacts.runs).toHaveLength(1);
-    expect(threadArtifacts.runs[0]?.files).toStrictEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          url: first.artifactUrl,
-          aliasUrl: first.url,
-        }),
-        expect.objectContaining({
-          url: second.artifactUrl,
-          aliasUrl: second.url,
-        }),
-      ]),
-    );
+    expect(threadArtifacts.runs).toStrictEqual([]);
   }, 120_000);
 });
 
 describe("hosted artifacts without a supplied cover", () => {
-  it("publishes an artifact in the catalog and its chat thread", async () => {
+  it("publishes an artifact in the catalog", async () => {
     const owner = await artifactActor("Hosted publication without a cover");
     const run = await sendChatRun(owner.actor, {
       prompt: "Publish a site without a supplied cover",
@@ -204,15 +196,6 @@ describe("hosted artifacts without a supplied cover", () => {
     expect(completed).toMatchObject({ status: "ready", isActive: true });
     const artifact = await findCatalogArtifact(owner.actor, site);
     expect(artifact).toMatchObject({ kind: "hosted-site", thumbnail: null });
-    const thread = await chat.listThreadArtifacts(owner.actor, run.threadId);
-    expect(thread.runs[0]?.files).toStrictEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          url: prepared.artifactUrl,
-          aliasUrl: prepared.url,
-        }),
-      ]),
-    );
     await completeChatRunOk(run.runId, sandboxHeaders);
   });
 });

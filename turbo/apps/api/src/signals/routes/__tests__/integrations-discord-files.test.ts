@@ -1,20 +1,19 @@
 import { createHash, randomUUID } from "node:crypto";
-import { GetObjectCommand, PutObjectCommand } from "@aws-sdk/client-s3";
+import { PutObjectCommand } from "@aws-sdk/client-s3";
 
 import { artifactCatalogContract } from "@okouai/api-contracts/contracts/artifact-catalog";
-import { integrationsSlackUploadInitContract } from "@okouai/api-contracts/contracts/integrations";
 import { revokedChatEventIds } from "@okouai/api-contracts/contracts/chat-events";
 import {
   integrationsDiscordDownloadFileContract,
   integrationsDiscordUploadCompleteContract,
   integrationsDiscordUploadInitContract,
-  integrationsDiscordUploadMaterializeContract,
   MAX_DISCORD_FILE_SIZE_BYTES,
+  type DiscordUploadCompleteBody,
   type DiscordUploadInitBody,
 } from "@okouai/api-contracts/contracts/integrations-discord-files";
 import { HttpResponse, http } from "msw";
-import { afterEach, describe, expect, it, onTestFinished } from "vitest";
-import { array, literal, object, string, uuid } from "zod";
+import { describe, expect, it, onTestFinished } from "vitest";
+import { array, literal, object, string } from "zod";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
@@ -22,17 +21,10 @@ import { mockEnv } from "../../../lib/env";
 import { sanitizeArtifactFilename } from "../../../lib/file-url";
 import { server } from "../../../mocks/server";
 import { flushWaitUntilForTest } from "../../context/wait-until";
-import {
-  clearAllDetached,
-  createDeferredPromise,
-  settleIncludingAbort,
-} from "../../utils";
+import { clearAllDetached, settleIncludingAbort } from "../../utils";
 import { createBddApi } from "./helpers/api-bdd";
 import { createChatCallbacksApi } from "./helpers/api-bdd-chat-callbacks";
-import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createRunsApi } from "./helpers/api-bdd-runs";
-import { createPublicSlackOrgApi } from "./helpers/slack-public-install";
-import { mockSharedSlackConversations } from "./helpers/slack-conversation-access";
 import { readProjectedChatEvents } from "./helpers/chat-event-test-reader";
 import {
   discordChatThreads,
@@ -58,12 +50,10 @@ import { launchPublicDiscordTestRun } from "./helpers/discord-run";
 import { createFixtureLifecycle } from "./helpers/fixture-lifecycle";
 import { artifactCatalogRoutes } from "../artifact-catalog";
 import { integrationsDiscordFileRoutes } from "../integrations-discord-files";
-import { integrationsSlackUploadInitRoutes } from "../integrations-slack-upload-init";
 
 const context = testContext();
 const bdd = createBddApi(context);
 const storage = createChatCallbacksApi(context);
-const chatFiles = createChatFilesBddApi(context);
 const runs = createRunsApi(context);
 const channelId = "123456789012345678";
 const messageId = "223456789012345678";
@@ -73,7 +63,6 @@ function fileClients() {
   const app = setupApp({ context, routes: integrationsDiscordFileRoutes });
   return {
     init: app(integrationsDiscordUploadInitContract).init,
-    materialize: app(integrationsDiscordUploadMaterializeContract).materialize,
     complete: app(integrationsDiscordUploadCompleteContract).complete,
     fileUrl: app(integrationsDiscordDownloadFileContract).fileUrl,
   };
@@ -87,7 +76,6 @@ function uploadBody(
     length: 8,
     contentType: "text/csv",
     checksumSha256: "a".repeat(64),
-    operationId: randomUUID(),
     channelId,
     ...overrides,
   };
@@ -245,14 +233,18 @@ async function canonicalUpload(
     contentType: body.contentType,
     metadata: { "artifact-id": initialized.body.assetId },
   });
+  const completeBody: DiscordUploadCompleteBody = {
+    assetId: initialized.body.assetId,
+    ...(body.channelId !== undefined ? { channelId: body.channelId } : {}),
+    ...(body.userId !== undefined ? { userId: body.userId } : {}),
+    ...(body.guildId !== undefined ? { guildId: body.guildId } : {}),
+    ...(body.comment !== undefined ? { comment: body.comment } : {}),
+  };
   return {
     initialized: initialized.body,
     body,
     bytes,
-    operation: {
-      assetId: initialized.body.assetId,
-      operationId: body.operationId,
-    },
+    completeBody,
   };
 }
 
@@ -330,243 +322,18 @@ function incomingAttachment(fixture: DiscordFileProviderIdentity) {
   };
 }
 
-type PreClaimWork = ReturnType<typeof createPreClaimWork>;
-type PreClaimBarrier = ReturnType<PreClaimWork["barrier"]>;
-type CanonicalUpload = Awaited<ReturnType<typeof canonicalUpload>>;
-type PreClaimResponse = Extract<
-  Awaited<ReturnType<ReturnType<typeof fileClients>["complete"]>>,
-  { status: 200 }
->;
-type PreClaimObservation =
-  | { readonly stage: "pending"; readonly overlapping: PreClaimResponse }
-  | {
-      readonly stage: "delivered";
-      readonly overlapping: PreClaimResponse;
-      readonly completed: PreClaimResponse;
-      readonly operation: CanonicalUpload["operation"];
-      readonly messageId: string;
-      readonly sends: number;
-    };
-
-function createPreClaimWork(
-  lifecycle: ReturnType<typeof createFixtureLifecycle>,
-  registerRelease: (release: () => void) => void,
-) {
-  const operations: ReturnType<typeof settleIncludingAbort>[] = [];
-  const releases: (() => void)[] = [];
-  let closing = false;
-  const releaseAll = () => {
-    closing = true;
-    for (const release of releases) {
-      release();
-    }
-  };
-  registerRelease(releaseAll);
-  return {
-    run<T>(operation: () => Promise<T>): Promise<T> {
-      const pending = lifecycle.run(operation);
-      operations.push(
-        settleIncludingAbort(() => {
-          return pending;
-        }),
-      );
-      return pending;
-    },
-    barrier(phase: string) {
-      const entered = createDeferredPromise<void>(context.signal);
-      const released = createDeferredPromise<void>(context.signal);
-      const release = () => {
-        if (!released.settled()) {
-          released.resolve(undefined);
-        }
-      };
-      const finish = () => {
-        if (!entered.settled()) {
-          entered.resolve(undefined);
-        }
-        release();
-      };
-      releases.push(finish);
-      if (closing) {
-        finish();
-      }
-      return {
-        async wait() {
-          if (!entered.settled()) {
-            entered.resolve(undefined);
-          }
-          await released.promise;
-        },
-        async observe(response: Promise<{ status: number }>) {
-          await Promise.race([
-            entered.promise,
-            response.then((result) => {
-              throw new Error(
-                `Completion returned ${result.status} before ${phase}`,
-              );
-            }),
-          ]);
-        },
-        release,
-      };
-    },
-    async finish(result: Awaited<ReturnType<typeof settleIncludingAbort>>) {
-      releaseAll();
-      const outcomes = [result];
-      let drained = 0;
-      while (drained < operations.length) {
-        const accepted = operations.slice(drained);
-        drained = operations.length;
-        outcomes.push(...(await Promise.all(accepted)));
-      }
-      const errors = outcomes.flatMap((outcome) => {
-        return outcome.ok ? [] : [outcome.error];
-      });
-      if (errors.length === 1) {
-        throw errors[0];
-      }
-      if (errors.length > 1) {
-        throw new AggregateError(errors, "Pre-claim completion work failed");
-      }
-    },
-  };
-}
-
-function gatePreClaimStorage(
-  upload: CanonicalUpload,
-  work: PreClaimWork,
-  gates: readonly PreClaimBarrier[],
-) {
-  const previous = context.mocks.s3.send.getMockImplementation();
-  if (!previous) {
-    throw new Error("Canonical upload storage fixture is not installed");
-  }
-  const key = `private-artifacts/${upload.initialized.assetId}/${sanitizeArtifactFilename(upload.body.filename)}`;
-  let reads = 0;
-  context.mocks.s3.send.mockImplementation((...args: unknown[]) => {
-    const command = args[0];
-    if (
-      !(command instanceof GetObjectCommand) ||
-      command.input.Bucket !== "test-private-artifacts" ||
-      command.input.Key !== key
-    ) {
-      return previous(...args);
-    }
-    const gate = gates[reads++];
-    if (!gate) {
-      return Promise.reject(new Error("Unexpected canonical storage read"));
-    }
-    return work.run(async () => {
-      await gate.wait();
-      return await previous(...args);
-    });
-  });
-}
-
-function holdPreClaimDiscord(
-  fixture: BoundFixture,
-  upload: CanonicalUpload,
-  work: PreClaimWork,
-  gate: PreClaimBarrier,
-) {
-  const messageId = discordSnowflake();
-  const attachmentId = discordSnowflake();
-  let sends = 0;
-  server.use(
-    http.post(
-      `${discordApiOrigin}/channels/${fixture.channelId}/messages`,
-      ({ request }) => {
-        return work.run(async () => {
-          sends += 1;
-          await expectUploadedDiscordFile(request, upload.bytes);
-          await gate.wait();
-          return HttpResponse.json(
-            discordFileMessage({
-              channelId: fixture.channelId,
-              messageId,
-              authorId: fixture.botUserId,
-              bot: true,
-              attachment: {
-                id: attachmentId,
-                filename: upload.body.filename,
-                size: upload.bytes.byteLength,
-                url: `https://cdn.discordapp.com/attachments/${fixture.channelId}/${attachmentId}/report.csv`,
-                content_type: "text/csv",
-              },
-            }),
-          );
-        });
-      },
-    ),
-  );
-  return {
-    messageId,
-    sends: () => {
-      return sends;
-    },
-  };
-}
-
-async function runPreClaimOverlap(
-  fixture: BoundFixture,
-  lifecycle: ReturnType<typeof createFixtureLifecycle>,
-  registerRelease: (release: () => void) => void,
-  observe: (result: PreClaimObservation) => void,
-) {
-  const upload = await canonicalUpload(fixture);
-  const client = fileClients();
-  await accept(
-    client.materialize({ headers: fixture.headers, body: upload.operation }),
-    [200],
-  );
-  const work = createPreClaimWork(lifecycle, registerRelease);
-  const result = await settleIncludingAbort(async () => {
-    const firstRead = work.barrier("the first storage read");
-    const secondRead = work.barrier("the second storage read");
-    const sending = work.barrier("the Discord send");
-    gatePreClaimStorage(upload, work, [firstRead, secondRead]);
-    const provider = holdPreClaimDiscord(fixture, upload, work, sending);
-    const first = work.run(() => {
-      return client.complete({
-        headers: fixture.headers,
-        body: upload.operation,
-      });
-    });
-    await firstRead.observe(first);
-    const second = work.run(() => {
-      return client.complete({
-        headers: fixture.headers,
-        body: upload.operation,
-      });
-    });
-    await secondRead.observe(second);
-    firstRead.release();
-    await sending.observe(first);
-    secondRead.release();
-    const overlapping = await accept(second, [200]);
-    observe({ stage: "pending", overlapping });
-    sending.release();
-    const completed = await accept(first, [200]);
-    observe({
-      stage: "delivered",
-      overlapping,
-      completed,
-      operation: upload.operation,
-      messageId: provider.messageId,
-      sends: provider.sends(),
-    });
-  });
-  await work.finish(result);
-}
-
 describe("Discord file authorization and input validation", () => {
   it("requires authentication for every file endpoint", async () => {
     const client = fileClients();
-    const operation = { assetId: randomUUID(), operationId: randomUUID() };
     const responses = [
       await accept(client.init({ headers: {}, body: uploadBody() }), [401]),
-      await accept(client.materialize({ headers: {}, body: operation }), [401]),
-      await accept(client.complete({ headers: {}, body: operation }), [401]),
+      await accept(
+        client.complete({
+          headers: {},
+          body: { assetId: randomUUID(), channelId },
+        }),
+        [401],
+      ),
       await accept(
         client.fileUrl({
           headers: {},
@@ -755,7 +522,6 @@ describe("Discord attachment downloads", () => {
       const source = incomingAttachment(fixture);
       const recipientId =
         recipient === "own" ? fixture.discordUserId : discordSnowflake();
-      // Discord keeps one bot DM per user, shared by every connected org.
       server.use(
         http.get(`${discordApiOrigin}/channels/${fixture.channelId}`, () => {
           return HttpResponse.json({
@@ -810,17 +576,10 @@ describe("Discord attachment downloads", () => {
           },
         ),
       );
-      await accept(
-        fileClients().materialize({
-          headers: fixture.headers,
-          body: upload.operation,
-        }),
-        [200],
-      );
       const delivered = await accept(
         fileClients().complete({
           headers: fixture.headers,
-          body: upload.operation,
+          body: upload.completeBody,
         }),
         [200],
       );
@@ -829,9 +588,9 @@ describe("Discord attachment downloads", () => {
   );
 });
 
-describe("Canonical Discord file publication and delivery", () => {
+describe("Fire-and-forget Discord file publication and delivery", () => {
   it.each(["user", "organization"])(
-    "does not expose another %s's asset through materialize or complete",
+    "does not expose another %s's asset through complete",
     async (foreignOwner) => {
       const fixture = await boundFixture();
       const upload = await canonicalUpload(fixture);
@@ -841,29 +600,19 @@ describe("Canonical Discord file publication and delivery", () => {
           : { userId: fixture.actor.userId },
       );
       mockDiscordMemberships(context, [fixture.actor, actor]);
-      const client = fileClients();
-      const materialize = await accept(
-        client.materialize({
-          headers: { authorization: "Bearer clerk-session" },
-          body: upload.operation,
-        }),
-        [404],
-      );
       const complete = await accept(
-        client.complete({
+        fileClients().complete({
           headers: { authorization: "Bearer clerk-session" },
-          body: upload.operation,
+          body: upload.completeBody,
         }),
         [404],
       );
-
-      expect(materialize.body.error.code).toBe("NOT_FOUND");
       expect(complete.body.error.code).toBe("NOT_FOUND");
     },
   );
 
   it(
-    "publishes one canonical artifact before delivery and reuses its receipt",
+    "publishes one file artifact in catalog and delivers fire-and-forget to Discord",
     withPublishedDiscordFixture(async (fixture, lifecycle) => {
       const headers = fixture.headers;
       const upload = await canonicalUpload(fixture);
@@ -871,7 +620,7 @@ describe("Canonical Discord file publication and delivery", () => {
         expect.anything(),
         expect.objectContaining({
           input: expect.objectContaining({
-            Key: `private-artifacts/${upload.operation.assetId}/${upload.body.filename}`,
+            Key: `private-artifacts/${upload.initialized.assetId}/${upload.body.filename}`,
           }),
         }),
         expect.anything(),
@@ -887,63 +636,14 @@ describe("Canonical Discord file publication and delivery", () => {
         throw new Error("Expected a signed Discord PUT");
       }
       expect(signedPut[1].input.ChecksumSHA256).toBeUndefined();
-      const client = fileClients();
-      const materialized = await accept(
-        client.materialize({
-          headers,
-          body: upload.operation,
-        }),
-        [200],
-      );
 
-      expect(materialized.body).toStrictEqual({
-        ...upload.operation,
-        url: upload.initialized.url,
-        delivery: { status: "pending" },
-      });
-      const catalog = await accept(catalogClient().list({ headers }), [200]);
-      expect(catalog.body.artifacts).toHaveLength(1);
-      const artifact = catalog.body.artifacts[0];
-      if (!artifact) {
-        throw new Error(
-          "Expected the materialized canonical output in the catalog",
-        );
-      }
-      const detail = await accept(
-        catalogClient().get({
-          headers,
-          params: { artifactId: artifact.id },
-        }),
-        [200],
-      );
-      expect(detail.body).toMatchObject({
-        kind: "file",
-        file: {
-          id: upload.operation.assetId,
-          filename: upload.body.filename,
-          contentType: "text/csv",
-          size: upload.bytes.byteLength,
-          url: upload.initialized.url,
-        },
-      });
-
-      const duplicateInit = await accept(
-        client.init({ headers, body: upload.body }),
-        [200],
-      );
-      expect(duplicateInit.body).toStrictEqual({
-        ...upload.operation,
-        url: upload.initialized.url,
-      });
       const deliveredMessageId = discordSnowflake();
       const deliveredAttachmentId = discordSnowflake();
-      let sends = 0;
       server.use(
         http.post(
           `${discordApiOrigin}/channels/${fixture.channelId}/messages`,
           ({ request }) => {
             return lifecycle.run(async () => {
-              sends += 1;
               await expectUploadedDiscordFile(request, upload.bytes);
               return HttpResponse.json(
                 discordFileMessage({
@@ -965,16 +665,12 @@ describe("Canonical Discord file publication and delivery", () => {
         ),
       );
       const completed = await accept(
-        client.complete({ headers, body: upload.operation }),
-        [200],
-      );
-      const repeated = await accept(
-        client.complete({ headers, body: upload.operation }),
+        fileClients().complete({ headers, body: upload.completeBody }),
         [200],
       );
 
       expect(completed.body).toStrictEqual({
-        ...upload.operation,
+        assetId: upload.initialized.assetId,
         url: upload.initialized.url,
         delivery: {
           status: "delivered",
@@ -984,198 +680,32 @@ describe("Canonical Discord file publication and delivery", () => {
           permalink: `https://discord.com/channels/${fixture.guildId}/${fixture.channelId}/${deliveredMessageId}`,
         },
       });
-      expect(repeated.body).toStrictEqual(completed.body);
-      expect(sends).toBe(1);
-      const repeatedCatalog = await accept(
-        catalogClient().list({ headers }),
+
+      const catalog = await accept(catalogClient().list({ headers }), [200]);
+      expect(catalog.body.artifacts).toHaveLength(1);
+      const artifact = catalog.body.artifacts[0];
+      if (!artifact) {
+        throw new Error("Expected the published Discord file in the catalog");
+      }
+      const detail = await accept(
+        catalogClient().get({
+          headers,
+          params: { artifactId: artifact.id },
+        }),
         [200],
       );
-      expect(repeatedCatalog.body.artifacts).toStrictEqual(
-        catalog.body.artifacts,
-      );
+      expect(detail.body).toMatchObject({
+        kind: "file",
+        file: {
+          id: upload.initialized.assetId,
+          filename: upload.body.filename,
+          contentType: "text/csv",
+          size: upload.bytes.byteLength,
+          url: upload.initialized.url,
+        },
+      });
     }),
   );
-
-  it("reuses concurrent upload initialization for one operation", async () => {
-    const fixture = await boundFixture();
-    const client = fileClients();
-    const body = uploadBody({ channelId: fixture.channelId });
-    const [first, second] = await Promise.all([
-      accept(client.init({ headers: fixture.headers, body }), [200]),
-      accept(client.init({ headers: fixture.headers, body }), [200]),
-    ]);
-    expect(second.body.assetId).toBe(first.body.assetId);
-    expect(second.body.url).toBe(first.body.url);
-    const repeated = await accept(
-      client.init({ headers: fixture.headers, body }),
-      [200],
-    );
-    expect(repeated.body.assetId).toBe(first.body.assetId);
-  });
-
-  it("keeps exactly one destination when an upload operation races", async () => {
-    const fixture = await boundFixture();
-    const client = fileClients();
-    const body = uploadBody({ channelId: fixture.channelId });
-    const candidates = [
-      { ...body, comment: "First destination caption" },
-      { ...body, comment: "Second destination caption" },
-    ];
-    const outcomes = await Promise.all(
-      candidates.map(async (candidate) => {
-        const response = await accept(
-          client.init({ headers: fixture.headers, body: candidate }),
-          [200, 409],
-        );
-        return { candidate, response };
-      }),
-    );
-    expect(
-      outcomes
-        .map(({ response }) => {
-          return response.status;
-        })
-        .sort(),
-    ).toStrictEqual([200, 409]);
-    for (const { candidate, response } of outcomes) {
-      const repeated = await accept(
-        client.init({ headers: fixture.headers, body: candidate }),
-        [200, 409],
-      );
-      expect(repeated.status).toBe(response.status);
-      if (repeated.status === 200 && response.status === 200) {
-        expect(repeated.body.assetId).toBe(response.body.assetId);
-      }
-    }
-  });
-
-  it.each(["discord", "slack"] as const)(
-    "preserves the provider across concurrent initialization and replay (%s first)",
-    async (firstProvider) => {
-      mockSharedSlackConversations(["C_FILE_IDENTITY"]);
-      const fixture = await boundFixture();
-      const slackOrgs = createPublicSlackOrgApi(context);
-      const slack = await slackOrgs.installOrg({
-        actor: fixture.actor,
-        withConnection: true,
-      });
-      onTestFinished(async () => {
-        await slackOrgs.uninstallWorkspace(slack.slackWorkspaceId);
-      });
-      runs.acceptStorageDownloads();
-      runs.acceptTelemetryIngest();
-      await runs.grantProEntitlement(fixture.actor);
-      await runs.ensurePersonalSubscriptionModel(fixture.actor);
-      const runnerGroup = await runs.configureRunnerGroup();
-      await runs.heartbeatRunner(runnerGroup);
-      const sent = await chatFiles.sendAndLaunch(fixture.actor, {
-        prompt: "Create a report",
-      });
-      const execution = await runs.executionInput(sent.runId);
-      const token = execution.platformEnvironment.OKOU_TOKEN;
-      if (!token) {
-        throw new Error(
-          "Expected the Runner execution to issue an Okou run token",
-        );
-      }
-      const headers = { authorization: `Bearer ${token}` };
-      const body = uploadBody({ channelId: fixture.channelId });
-      const slackClient = setupApp({
-        context,
-        routes: integrationsSlackUploadInitRoutes,
-      })(integrationsSlackUploadInitContract);
-      const requests = {
-        discord: () => {
-          return accept(fileClients().init({ headers, body }), [200, 409]);
-        },
-        slack: () => {
-          return accept(
-            slackClient.init({
-              headers,
-              body: {
-                filename: body.filename,
-                length: body.length,
-                canonical: {
-                  operationId: body.operationId,
-                  contentType: body.contentType,
-                  checksumSha256: body.checksumSha256,
-                  channel: "C_FILE_IDENTITY",
-                },
-              },
-            }),
-            [200, 409],
-          );
-        },
-      };
-      expect((await requests[firstProvider]()).status).toBe(200);
-      const outcomes = await Promise.all(
-        Object.values(requests).map(async (request) => {
-          const response = await request();
-          return { request, response };
-        }),
-      );
-      expect(
-        outcomes
-          .map(({ response }) => {
-            return response.status;
-          })
-          .sort(),
-      ).toStrictEqual([200, 409]);
-      for (const { request, response } of outcomes) {
-        const repeated = await request();
-        expect(repeated.status).toBe(response.status);
-        if (repeated.status === 200 && response.status === 200) {
-          const identity = object({
-            assetId: uuid(),
-            operationId: uuid(),
-            url: string(),
-          }).parse(response.body);
-          expect(identity.operationId).toBe(body.operationId);
-          expect(repeated.body).toMatchObject(identity);
-        }
-      }
-    },
-  );
-
-  it("rejects reuse of an operation for a different destination or file", async () => {
-    const fixture = await boundFixture();
-    const upload = await canonicalUpload(fixture);
-    const otherChannelId = discordSnowflake();
-    server.use(
-      http.get(`${discordApiOrigin}/channels/${otherChannelId}`, () => {
-        return HttpResponse.json({
-          id: otherChannelId,
-          type: 0,
-          guild_id: fixture.guildId,
-          permission_overwrites: [],
-        });
-      }),
-    );
-    const client = fileClients();
-    const differentDestination = await accept(
-      client.init({
-        headers: fixture.headers,
-        body: { ...upload.body, channelId: otherChannelId },
-      }),
-      [409],
-    );
-    const differentFile = await accept(
-      client.init({
-        headers: fixture.headers,
-        body: { ...upload.body, filename: "different.csv" },
-      }),
-      [409],
-    );
-    const original = await accept(
-      client.init({ headers: fixture.headers, body: upload.body }),
-      [200],
-    );
-
-    expect(differentDestination.body.error.code).toBe("CONFLICT");
-    expect(differentFile.body.error.code).toBe("CONFLICT");
-    expect(original.body.assetId).toBe(upload.operation.assetId);
-    expect(original.body.url).toBe(upload.initialized.url);
-  });
 
   it("refuses publication when the stored bytes have a different checksum", async () => {
     const fixture = await boundFixture();
@@ -1183,16 +713,16 @@ describe("Canonical Discord file publication and delivery", () => {
     const objectStore = storage.acceptChatObjectStorage();
     objectStore.addObject({
       bucket: "test-private-artifacts",
-      key: `private-artifacts/${upload.operation.assetId}/${upload.body.filename}`,
+      key: `private-artifacts/${upload.initialized.assetId}/${upload.body.filename}`,
       size: upload.bytes.byteLength,
       body: Buffer.from("a,b\n9,9\n"),
       contentType: "text/csv",
-      metadata: { "artifact-id": upload.operation.assetId },
+      metadata: { "artifact-id": upload.initialized.assetId },
     });
     const rejected = await accept(
-      fileClients().materialize({
+      fileClients().complete({
         headers: fixture.headers,
-        body: upload.operation,
+        body: upload.completeBody,
       }),
       [400],
     );
@@ -1209,44 +739,31 @@ describe("Canonical Discord file publication and delivery", () => {
   });
 
   it(
-    "does not send a file again after Discord's response is lost",
+    "reports delivery failure while keeping the published artifact in catalog when Discord errors",
     withPublishedDiscordFixture(async (fixture) => {
       const upload = await canonicalUpload(fixture);
-      const client = fileClients();
-      await accept(
-        client.materialize({
-          headers: fixture.headers,
-          body: upload.operation,
-        }),
-        [200],
-      );
-      let sends = 0;
       server.use(
         http.post(
           `${discordApiOrigin}/channels/${fixture.channelId}/messages`,
           async ({ request }) => {
-            sends += 1;
             await expectUploadedDiscordFile(request, upload.bytes);
             return HttpResponse.error();
           },
         ),
       );
       const unconfirmed = await accept(
-        client.complete({ headers: fixture.headers, body: upload.operation }),
+        fileClients().complete({
+          headers: fixture.headers,
+          body: upload.completeBody,
+        }),
         [200],
       );
 
       expect(unconfirmed.body).toMatchObject({
-        ...upload.operation,
+        assetId: upload.initialized.assetId,
         url: upload.initialized.url,
-        delivery: { status: "failed", retryable: false },
+        delivery: { status: "failed" },
       });
-      const repeated = await accept(
-        client.complete({ headers: fixture.headers, body: upload.operation }),
-        [200],
-      );
-      expect(repeated.body.delivery).toStrictEqual(unconfirmed.body.delivery);
-      expect(sends).toBe(1);
       const catalog = await accept(
         catalogClient().list({ headers: fixture.headers }),
         [200],
@@ -1260,11 +777,6 @@ describe("Canonical Discord file publication and delivery", () => {
     const upload = await canonicalUpload(fixture, {
       filename: "quarterly report.csv",
     });
-    const client = fileClients();
-    await accept(
-      client.materialize({ headers: fixture.headers, body: upload.operation }),
-      [200],
-    );
     const deliveredMessageId = discordSnowflake();
     const deliveredAttachmentId = discordSnowflake();
     server.use(
@@ -1291,7 +803,10 @@ describe("Canonical Discord file publication and delivery", () => {
       ),
     );
     const completed = await accept(
-      client.complete({ headers: fixture.headers, body: upload.operation }),
+      fileClients().complete({
+        headers: fixture.headers,
+        body: upload.completeBody,
+      }),
       [200],
     );
 
@@ -1304,222 +819,18 @@ describe("Canonical Discord file publication and delivery", () => {
     });
   });
 
-  it(
-    "reports a Discord rate limit without sending again on a later completion",
-    withPublishedDiscordFixture(async (fixture) => {
-      const upload = await canonicalUpload(fixture);
-      const client = fileClients();
-      await accept(
-        client.materialize({
-          headers: fixture.headers,
-          body: upload.operation,
-        }),
-        [200],
-      );
-      let sends = 0;
-      server.use(
-        http.post(
-          `${discordApiOrigin}/channels/${fixture.channelId}/messages`,
-          async ({ request }) => {
-            sends += 1;
-            await expectUploadedDiscordFile(request, upload.bytes);
-            return HttpResponse.json(
-              { retry_after: 0, global: false },
-              { status: 429 },
-            );
-          },
-        ),
-      );
-      const limited = await accept(
-        client.complete({ headers: fixture.headers, body: upload.operation }),
-        [200],
-      );
-
-      expect(limited.body.delivery).toStrictEqual({
-        status: "failed",
-        message: "Discord rejected the file delivery",
-        retryable: false,
-      });
-      const repeated = await accept(
-        client.complete({ headers: fixture.headers, body: upload.operation }),
-        [200],
-      );
-      expect(repeated.body.delivery).toStrictEqual(limited.body.delivery);
-      expect(sends).toBe(1);
-    }),
-  );
-
-  describe("pre-claim completion ownership", () => {
-    let finish = () => {
-      return Promise.resolve();
-    };
-    afterEach(async () => {
-      const result = await settleIncludingAbort(finish);
-      if (!result.ok) {
-        onTestFinished(() => {
-          throw result.error;
-        });
-      }
-    });
-
-    it("allows only one external message when completion requests overlap", () => {
-      const observe = (result: PreClaimObservation) => {
-        if (result.stage === "pending") {
-          expect(result.overlapping.body.delivery).toStrictEqual({
-            status: "pending",
-          });
-          return;
-        }
-        const { completed, overlapping, operation, messageId, sends } = result;
-        expect(completed.body.delivery).toMatchObject({
-          status: "delivered",
-          messageId,
-        });
-        expect(sends).toBe(1);
-        expect(overlapping.body.assetId).toBe(operation.assetId);
-        expect(overlapping.body.operationId).toBe(operation.operationId);
-        expect(completed.body.assetId).toBe(overlapping.body.assetId);
-        expect(completed.body.operationId).toBe(overlapping.body.operationId);
-        expect(completed.body.url).toBe(overlapping.body.url);
-      };
-      let release = () => {};
-      let closing = false;
-      let pending = Promise.resolve();
-      finish = async () => {
-        closing = true;
-        release();
-        await pending;
-      };
-      const registerRelease = (next: () => void) => {
-        release = next;
-        if (closing) {
-          release();
-        }
-      };
-      pending = Promise.resolve().then(
-        withPublishedDiscordFixture(async (fixture, lifecycle) => {
-          await runPreClaimOverlap(
-            fixture,
-            lifecycle,
-            registerRelease,
-            observe,
-          );
-        }),
-      );
-      return pending;
-    });
-  });
-
-  it("does not replay a receipt after its verified connection is removed or replaced", async () => {
+  it("denies delivery after the verified Discord connection is removed", async () => {
     const fixture = await boundFixture();
     const upload = await canonicalUpload(fixture);
-    const client = fileClients();
-    await accept(
-      client.materialize({ headers: fixture.headers, body: upload.operation }),
-      [200],
-    );
-    const deliveredAttachmentId = discordSnowflake();
-    let sends = 0;
-    server.use(
-      http.post(
-        `${discordApiOrigin}/channels/${fixture.channelId}/messages`,
-        async ({ request }) => {
-          sends += 1;
-          await expectUploadedDiscordFile(request, upload.bytes);
-          return HttpResponse.json(
-            discordFileMessage({
-              channelId: fixture.channelId,
-              messageId: discordSnowflake(),
-              authorId: fixture.botUserId,
-              bot: true,
-              attachment: {
-                id: deliveredAttachmentId,
-                filename: upload.body.filename,
-                size: upload.bytes.byteLength,
-                url: `https://cdn.discordapp.com/attachments/${fixture.channelId}/${deliveredAttachmentId}/report.csv`,
-                content_type: "text/csv",
-              },
-            }),
-          );
-        },
-      ),
-    );
-    const initial = await accept(
-      client.complete({ headers: fixture.headers, body: upload.operation }),
-      [200],
-    );
-    expect(initial.body.delivery.status).toBe("delivered");
-
     await removePublicDiscordBinding(context, fixture.binding);
     const revoked = await accept(
-      client.complete({ headers: fixture.headers, body: upload.operation }),
+      fileClients().complete({
+        headers: fixture.headers,
+        body: upload.completeBody,
+      }),
       [404],
     );
     expect(revoked.body.error.code).toBe("NOT_FOUND");
-    const replacement = await createPublicDiscordBinding(context, {
-      flow: "install",
-      userId: fixture.actor.userId,
-      orgId: fixture.actor.orgId,
-      orgRole: "org:admin",
-      guildId: fixture.guildId,
-      guildName: "Discord file tests",
-      botUserId: fixture.botUserId,
-      discordUserId: fixture.discordUserId,
-    });
-    expect(replacement.connectionId).not.toBe(fixture.connectionId);
-    const rebound = await accept(
-      client.complete({ headers: fixture.headers, body: upload.operation }),
-      [404],
-    );
-
-    expect(rebound.body.error.code).toBe("NOT_FOUND");
-    expect(sends).toBe(1);
-  });
-
-  it("keeps a Run-owned Discord upload visible in its originating chat thread", async () => {
-    const fixture = await boundFixture();
-    runs.acceptStorageDownloads();
-    runs.acceptTelemetryIngest();
-    await runs.grantProEntitlement(fixture.actor);
-    await runs.ensurePersonalSubscriptionModel(fixture.actor);
-    const runnerGroup = await runs.configureRunnerGroup();
-    await runs.heartbeatRunner(runnerGroup);
-    const sent = await chatFiles.sendAndLaunch(fixture.actor, {
-      prompt: "Create a report for Discord",
-    });
-    const execution = await runs.executionInput(sent.runId);
-    const token = execution.platformEnvironment.OKOU_TOKEN;
-    if (!token) {
-      throw new Error(
-        "Expected the Runner execution to issue an Okou run token",
-      );
-    }
-    const headers = { authorization: `Bearer ${token}` };
-    const upload = await canonicalUpload({ ...fixture, headers });
-    await accept(
-      fileClients().materialize({ headers, body: upload.operation }),
-      [200],
-    );
-    const artifacts = await chatFiles.listThreadArtifacts(
-      fixture.actor,
-      sent.threadId,
-    );
-
-    expect(artifacts.runs).toContainEqual({
-      runId: sent.runId,
-      files: [
-        expect.objectContaining({
-          id: upload.operation.assetId,
-          filename: upload.body.filename,
-          url: upload.initialized.url,
-          assetRef: expect.objectContaining({
-            id: upload.operation.assetId,
-            classification: "published-output",
-            materialization: { status: "ready" },
-          }),
-        }),
-      ],
-    });
   });
 
   it("creates the Discord output thread only when the prepared file is sent", async () => {
@@ -1583,16 +894,6 @@ describe("Canonical Discord file publication and delivery", () => {
     const upload = await canonicalUpload(fixture);
     expect(provider.channels.has(source.id)).toBeFalsy();
     const client = fileClients();
-    const materialized = await accept(
-      client.materialize({ headers, body: upload.operation }),
-      [200],
-    );
-    expect(materialized.body).toStrictEqual({
-      ...upload.operation,
-      url: upload.initialized.url,
-      delivery: { status: "pending" },
-    });
-    expect(provider.channels.has(source.id)).toBeFalsy();
     const deliveredMessageId = discordSnowflake();
     const deliveredAttachmentId = discordSnowflake();
     server.use(
@@ -1633,14 +934,17 @@ describe("Canonical Discord file publication and delivery", () => {
         { once: true },
       ),
     );
-    await accept(client.complete({ headers, body: upload.operation }), [429]);
+    await accept(
+      client.complete({ headers, body: upload.completeBody }),
+      [429],
+    );
     expect(provider.channels.has(source.id)).toBeFalsy();
     const completed = await accept(
-      client.complete({ headers, body: upload.operation }),
+      client.complete({ headers, body: upload.completeBody }),
       [200],
     );
     expect(completed.body).toStrictEqual({
-      ...upload.operation,
+      assetId: upload.initialized.assetId,
       url: upload.initialized.url,
       delivery: {
         status: "delivered",
@@ -1649,25 +953,6 @@ describe("Canonical Discord file publication and delivery", () => {
         attachmentId: deliveredAttachmentId,
         permalink: `https://discord.com/channels/${connected.guildId}/${source.id}/${deliveredMessageId}`,
       },
-    });
-    const artifacts = await chatFiles.listThreadArtifacts(
-      connected.actor,
-      thread.id,
-    );
-    expect(artifacts.runs).toContainEqual({
-      runId: input.runId,
-      files: [
-        expect.objectContaining({
-          id: upload.operation.assetId,
-          filename: upload.body.filename,
-          url: upload.initialized.url,
-          assetRef: expect.objectContaining({
-            id: upload.operation.assetId,
-            classification: "published-output",
-            materialization: { status: "ready" },
-          }),
-        }),
-      ],
     });
   });
 });

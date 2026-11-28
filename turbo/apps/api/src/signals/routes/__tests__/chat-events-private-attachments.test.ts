@@ -347,7 +347,7 @@ describe("private attachments through normal chat send", () => {
     await cancelChatRun(actor, sent.runId);
   });
 
-  it("keeps verifying completed private uploads without the bounded-size protocol", async () => {
+  it("verifies pending private uploads via storage head and reuses completed file size metadata", async () => {
     const { actor } = await entitledChatActor();
     const storage = installS3Fixture(context);
     createRouteMocks(context).clerk.session(actor.userId, actor.orgId);
@@ -365,16 +365,12 @@ describe("private attachments through normal chat send", () => {
       [200],
     );
     storage.put(prepared.body.uploadUrl, Buffer.from("first"), "text/plain");
-    await chat.completeUpload(actor, { id: prepared.body.uploadId });
-    storage.put(
-      prepared.body.uploadUrl,
-      Buffer.from("changed size"),
-      "text/plain",
-    );
     const key = `private-artifacts/${prepared.body.uploadId}/unbounded.txt`;
-    const beforeSend = context.mocks.s3.send.mock.calls.length;
-    const sent = await sendChatRun(actor, {
-      prompt: "read a mutable integration upload",
+
+    // Pending (not-yet-completed) upload still verifies bytes via HeadObjectCommand.
+    const beforePendingSend = context.mocks.s3.send.mock.calls.length;
+    const pendingSent = await sendChatRun(actor, {
+      prompt: "read a pending integration upload",
       userMessage: {
         version: 1,
         parts: [
@@ -388,16 +384,49 @@ describe("private attachments through normal chat send", () => {
       },
     });
     expect(
-      context.mocks.s3.send.mock.calls.slice(beforeSend).filter(([command]) => {
-        return (
-          command instanceof HeadObjectCommand && command.input.Key === key
-        );
-      }),
+      context.mocks.s3.send.mock.calls
+        .slice(beforePendingSend)
+        .filter(([command]) => {
+          return (
+            command instanceof HeadObjectCommand && command.input.Key === key
+          );
+        }),
     ).toHaveLength(1);
-    expect((await api.readRun(actor, sent.runId)).prompt).toContain(
+    expect((await api.readRun(actor, pendingSent.runId)).prompt).toContain(
       `[ID] ${prepared.body.uploadId}`,
     );
-    await cancelChatRun(actor, sent.runId);
+    await cancelChatRun(actor, pendingSent.runId);
+
+    // Once completed in `files`, sizeBytes is persisted and reused without re-heading R2.
+    await chat.completeUpload(actor, { id: prepared.body.uploadId });
+    const beforeCompletedSend = context.mocks.s3.send.mock.calls.length;
+    const completedSent = await sendChatRun(actor, {
+      prompt: "read a completed integration upload",
+      userMessage: {
+        version: 1,
+        parts: [
+          {
+            type: "file",
+            fileId: prepared.body.uploadId,
+            filenameSnapshot: "unbounded.txt",
+            contentType: "text/plain",
+          },
+        ],
+      },
+    });
+    expect(
+      context.mocks.s3.send.mock.calls
+        .slice(beforeCompletedSend)
+        .filter(([command]) => {
+          return (
+            command instanceof HeadObjectCommand && command.input.Key === key
+          );
+        }),
+    ).toHaveLength(0);
+    expect((await api.readRun(actor, completedSent.runId)).prompt).toContain(
+      `[ID] ${prepared.body.uploadId}`,
+    );
+    await cancelChatRun(actor, completedSent.runId);
   });
 
   it("accepts an uppercase private UUID without changing its reference", async () => {
@@ -433,7 +462,7 @@ describe("private attachments through normal chat send", () => {
   });
 
   it.each(["before selection", "after selection"] as const)(
-    "handles private attachment withdrawal %s",
+    "keeps Library-deleted files usable in chat attachments %s (Principle 4)",
     async (when) => {
       const { actor } = await entitledChatActor();
       await api.updateUserModelPreference(actor, "claude-fable-5-1");
@@ -491,6 +520,8 @@ describe("private attachments through normal chat send", () => {
           return await original(command);
         });
       } else {
+        // Principle 4: deleting from Library soft-deletes `artifacts.deleted_at`
+        // only and keeps the underlying `files` row readable by the owner.
         await accept(
           catalog.delete({ headers, params: { artifactId } }),
           [200],
@@ -527,35 +558,30 @@ describe("private attachments through normal chat send", () => {
       });
       if (held) {
         await held.started.promise;
-        createRouteMocks(context).clerk.session(actor.userId, actor.orgId);
         await accept(
           catalog.delete({ headers, params: { artifactId } }),
           [200],
         );
         held.release.resolve(undefined);
       }
-      expect((await sending).status).toBe(held ? 201 : 500);
+      expect((await sending).status).toBe(201);
       await flushWaitUntilForTest();
       const messages = userMessages(
         (await chat.listThreadEvents(actor, thread.id)).events,
       );
-      if (held) {
-        const runId = messages.find((message) => {
-          return message.runId;
-        })?.runId;
-        if (!runId) {
-          throw new Error("Expected a Run for the accepted attachments");
-        }
-        const run = await api.readRun(actor, runId);
-        expect(run.prompt).toContain(`[ID] ${prepared.id}`);
-        expect(run.prompt).toContain(`[ID] ${pending.id}`);
-        await cancelChatRun(actor, runId);
-      } else {
-        expect(messages).toStrictEqual([]);
+      const runId = messages.find((message) => {
+        return message.runId;
+      })?.runId;
+      if (!runId) {
+        throw new Error("Expected a Run for the accepted attachments");
       }
+      const run = await api.readRun(actor, runId);
+      expect(run.prompt).toContain(`[ID] ${prepared.id}`);
+      expect(run.prompt).toContain(`[ID] ${pending.id}`);
+      await cancelChatRun(actor, runId);
       expect(
-        (await chat.requestWebFileUrl(actor, prepared.id, [404])).status,
-      ).toBe(404);
+        (await chat.requestWebFileUrl(actor, prepared.id, [200])).status,
+      ).toBe(200);
     },
   );
 

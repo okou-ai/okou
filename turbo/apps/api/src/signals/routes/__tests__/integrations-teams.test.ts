@@ -142,7 +142,6 @@ async function uploadTeamsFixtureFile(target: {
   conversationId?: string;
   user?: string;
   activityId?: string;
-  text?: string;
 }) {
   installSharedThreadStorage(context);
   const bytes = Buffer.alloc(1234, "x");
@@ -155,12 +154,8 @@ async function uploadTeamsFixtureFile(target: {
         filename: "report.pdf",
         contentType: "application/pdf",
         length: bytes.length,
-        canonical: {
-          version: 2,
-          operationId: randomUUID(),
-          checksumSha256: createHash("sha256").update(bytes).digest("hex"),
-          ...target,
-        },
+        checksumSha256: createHash("sha256").update(bytes).digest("hex"),
+        ...target,
       },
     }),
     [200],
@@ -379,7 +374,7 @@ describe("Microsoft Teams integration CLI routes", () => {
   );
 
   it.each(
-    ["delivered", "uncertain"].flatMap((outcome) => {
+    ["delivered", "failed"].flatMap((outcome) => {
       return ["conversation", "direct DM", "me", "29:other-recipient"].map(
         (target) => {
           return {
@@ -390,7 +385,7 @@ describe("Microsoft Teams integration CLI routes", () => {
       );
     }),
   )(
-    "owns a non-Run v2 $target upload and preserves its $outcome delivery outcome",
+    "delivers a fire-and-forget Teams $target upload ($outcome) and enforces ownership",
     async ({ outcome, target }) => {
       const fixture = teamsFixture();
       fixtures.push(fixture);
@@ -410,7 +405,7 @@ describe("Microsoft Teams integration CLI routes", () => {
             sends++;
             captured.conversationId = String(params.conversationId);
             captured.body = (await request.json()) as Record<string, unknown>;
-            return outcome === "uncertain"
+            return outcome === "failed"
               ? HttpResponse.error()
               : HttpResponse.json({ id: outgoing.activityId });
           },
@@ -425,35 +420,29 @@ describe("Microsoft Teams integration CLI routes", () => {
       });
       const headers = { authorization: "Bearer clerk-session" };
       const bytes = Buffer.from("Account-owned Teams report");
-      const operationId = randomUUID();
-      const body = {
-        filename: "report.txt",
-        contentType: "text/plain",
-        length: bytes.length,
-        canonical: {
-          version: 2 as const,
-          operationId,
-          checksumSha256: createHash("sha256").update(bytes).digest("hex"),
-          ...(target === "conversation"
-            ? { conversationId: fixture.teamsConversationId }
-            : target === "direct DM"
-              ? { conversationId: outgoing.dmConversationId }
-              : { user: target }),
-          text: "Pinned account report",
-        },
-      };
+      const destination =
+        target === "conversation"
+          ? { conversationId: fixture.teamsConversationId }
+          : target === "direct DM"
+            ? { conversationId: outgoing.dmConversationId }
+            : { user: target };
       const prepared = await accept(
-        client(integrationsTeamsUploadInitContract).init({ headers, body }),
+        client(integrationsTeamsUploadInitContract).init({
+          headers,
+          body: {
+            filename: "report.txt",
+            contentType: "text/plain",
+            length: bytes.length,
+            checksumSha256: createHash("sha256").update(bytes).digest("hex"),
+            ...destination,
+          },
+        }),
         [200],
       );
-      expect(prepared.body).toMatchObject({
-        operationId,
-        uploadRequired: true,
-      });
       const uploaded = await fetch(prepared.body.uploadUrl, {
         method: "PUT",
         headers: {
-          "Content-Type": body.contentType,
+          "Content-Type": "text/plain",
           ...prepared.body.uploadHeaders,
         },
         body: bytes,
@@ -461,66 +450,36 @@ describe("Microsoft Teams integration CLI routes", () => {
       expect(uploaded.status).toBe(200);
       const completion = {
         uploadId: prepared.body.uploadId,
-        operationId,
-        conversationId: "19:replacement-destination",
-        text: "Replacement text",
+        ...destination,
+        text: "Account report",
       };
-      const complete = () => {
-        return client(integrationsTeamsUploadCompleteContract).complete({
-          headers,
-          body: completion,
-        });
-      };
-      const response = await complete();
-      expect(response.status).toBe(outcome === "delivered" ? 200 : 409);
-      const replayed = await complete();
-      expect(replayed.status).toBe(response.status);
-      expect(replayed.body).toStrictEqual(response.body);
+      const response = await client(
+        integrationsTeamsUploadCompleteContract,
+      ).complete({
+        headers,
+        body: completion,
+      });
+      expect(response.status).toBe(outcome === "delivered" ? 200 : 502);
       expect(sends).toBe(1);
       expect(captured.conversationId).toBe(
         target === "conversation"
           ? fixture.teamsConversationId
           : outgoing.dmConversationId,
       );
-      expect(captured.body?.text).toContain("Pinned account report");
-      expect(captured.body?.text).not.toContain("Replacement text");
-      const reused = await accept(
-        client(integrationsTeamsUploadInitContract).init({
-          headers,
-          body:
-            target === "direct DM"
-              ? {
-                  ...body,
-                  canonical: {
-                    ...body.canonical,
-                    conversationId: undefined,
-                    user: "me",
-                  },
-                }
-              : body,
-        }),
-        [200],
-      );
-      expect(reused.body).toMatchObject({
-        uploadId: prepared.body.uploadId,
-        operationId,
-        uploadRequired: false,
-      });
-      const changed = await client(integrationsTeamsUploadInitContract).init({
-        headers,
-        body: {
-          ...body,
-          canonical: { ...body.canonical, checksumSha256: "0".repeat(64) },
-        },
-      });
-      expect(changed.status).toBe(409);
+      expect(captured.body?.text).toContain("Account report");
       mocks.clerk.session(`user_other_${randomUUID()}`, fixture.orgId);
-      expect((await complete()).status).toBe(404);
+      const foreignResponse = await client(
+        integrationsTeamsUploadCompleteContract,
+      ).complete({
+        headers,
+        body: completion,
+      });
+      expect(foreignResponse.status).toBe(404);
       expect(sends).toBe(1);
     },
   );
 
-  it("requires an organization for a non-Run v2 upload", async () => {
+  it("requires an organization for a Teams upload", async () => {
     mocks.clerk.session(`user_${randomUUID()}`, null);
     const response = await setupApp({
       context,
@@ -531,12 +490,8 @@ describe("Microsoft Teams integration CLI routes", () => {
         filename: "report.txt",
         contentType: "text/plain",
         length: 12,
-        canonical: {
-          version: 2,
-          operationId: randomUUID(),
-          checksumSha256: "a".repeat(64),
-          conversationId: "19:example",
-        },
+        checksumSha256: "a".repeat(64),
+        conversationId: "19:example",
       },
     });
     expect(response.status).toBe(403);
@@ -552,7 +507,6 @@ describe("Microsoft Teams integration CLI routes", () => {
     const prepared = await uploadTeamsFixtureFile({
       conversationId: fixture.teamsConversationId,
       activityId: fixture.teamsThreadId,
-      text: "Daily report",
     });
     const client = setupApp({
       context,
@@ -562,7 +516,6 @@ describe("Microsoft Teams integration CLI routes", () => {
       client.complete({
         body: {
           uploadId: prepared.uploadId,
-          operationId: prepared.operationId,
           conversationId: fixture.teamsConversationId,
           activityId: fixture.teamsThreadId,
           contentType: "application/pdf",
@@ -638,7 +591,6 @@ describe("Microsoft Teams integration CLI routes", () => {
         client.complete({
           body: {
             uploadId: prepared.uploadId,
-            operationId: prepared.operationId,
             user: target,
             contentType: "application/pdf",
           },

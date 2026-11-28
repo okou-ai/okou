@@ -6,6 +6,7 @@ import {
   HeadObjectCommand,
   PutObjectCommand,
 } from "@aws-sdk/client-s3";
+import { artifactAccessContract } from "@okouai/api-contracts/contracts/artifact-access";
 import { artifactReferencesContract } from "@okouai/api-contracts/contracts/artifact-references";
 import { artifactOgContract } from "@okouai/api-contracts/contracts/artifact-og";
 import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
@@ -23,6 +24,7 @@ import { setupAppWithRoutes } from "../../../__tests__/test-app";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { env } from "../../../lib/env";
 import { server } from "../../../mocks/server";
+import { artifactAccessRoutes } from "../artifact-access";
 import { featureSwitchesRoutes } from "../feature-switches";
 import { artifactReferenceRoutes } from "../artifact-references";
 import { artifactOgRoutes } from "../artifact-og";
@@ -308,15 +310,15 @@ describe("sandbox hosted previews", () => {
     expect(publicPreview.body.expiresAt).toBeNull();
     expect(publicPreview.body.previewImageUrl).toBe(first.body.previewImageUrl);
     mocks.clerk.session(actor.userId, actor.orgId);
-    const policy = await accept(
-      api.siteVisibility({ headers, params: { siteId: prepared.siteId } }),
-      [200],
-    );
+    const accessApi = setupAppWithRoutes({
+      context,
+      routes: artifactAccessRoutes,
+    })(artifactAccessContract);
     await accept(
-      api.updateSiteVisibility({
+      accessApi.updateVisibility({
         headers,
-        params: { siteId: prepared.siteId },
-        body: { visibility: "private", expectedRevision: policy.body.revision },
+        params: { artifactId: prepared.siteId },
+        body: { visibility: "private" },
       }),
       [200],
     );
