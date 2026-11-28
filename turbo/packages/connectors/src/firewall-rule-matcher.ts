@@ -2517,16 +2517,12 @@ function matchRequestApiBases(
     for (const api of firewall.apis) {
       const order = apiOrder;
       apiOrder += 1;
-      const matchedBase = matchFirewallBaseUrlForDecision(
+      const baseMatch = matchFirewallBaseUrlForDecision(
         url,
         api.rawBase,
         requestPath,
       );
-      if (matchedBase === null) continue;
-      const baseMatch = {
-        ...matchedBase,
-        displayBase: stripTrailingSlash(api.rawBase),
-      };
+      if (baseMatch === null) continue;
       if (unsafePath)
         return {
           decision: unsafePathBlockDecision(firewall, baseMatch),
@@ -2563,7 +2559,6 @@ function matchFirewallRequestInterpretation(
 ): FirewallRequestInterpretation {
   const matchedApis = matchRequestApiBases(decisionFirewalls, url, requestPath);
   if (!Array.isArray(matchedApis)) return matchedApis;
-  const awsContext = validAwsDiagnosticContext(options);
   const upperMethod = method.toUpperCase();
   const earlySelection =
     options.ownerSelection === "intent-before-specificity"
@@ -2574,6 +2569,7 @@ function matchFirewallRequestInterpretation(
       decision: earlySelection.decision,
       authorizationRoutes: new Set(),
     };
+  const awsContext = validAwsDiagnosticContext(options);
   const { collection, applicableRoutes } = collectInterpretationMatches(
     matchedApis,
     upperMethod,
