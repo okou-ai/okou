@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.115.2](https://github.com/okou-ai/okou/compare/guest-agent-v0.115.1...guest-agent-v0.115.2) (2026-11-28)
+
+
+### Refactoring
+
+* **guest-agent:** share native cli event delivery finalization ([#51665](https://github.com/okou-ai/okou/issues/51665)) ([3a4727d](https://github.com/okou-ai/okou/commit/3a4727d63304437c8e245ed7969bcf34b150c605))
+
 ## [0.115.1](https://github.com/okou-ai/okou/compare/guest-agent-v0.115.0...guest-agent-v0.115.1) (2026-11-28)
 
 ## [0.115.0](https://github.com/okou-ai/okou/compare/guest-agent-v0.114.0...guest-agent-v0.115.0) (2026-11-28)

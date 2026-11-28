@@ -10,6 +10,23 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.144.1](https://github.com/okou-ai/okou/compare/api-v2.144.0...api-v2.144.1) (2026-11-28)
+
+
+### Refactoring
+
+* **db,api:** drop retired artifact tables, rename shares, and index site artifact lookups ([#51679](https://github.com/okou-ai/okou/issues/51679)) ([5a5b8cd](https://github.com/okou-ai/okou/commit/5a5b8cd705737f51533d124bf13cc877bf1509b1))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.145.0
+    * @okouai/core bumped to 8.889.1
+    * @okouai/db bumped to 2.74.1
+    * @okouai/pi-agent-runtime bumped to 1.52.110
+
 ## [2.144.0](https://github.com/okou-ai/okou/compare/api-v2.143.0...api-v2.144.0) (2026-11-28)
 
 
