@@ -96,8 +96,8 @@ internal fun RenameListItemSheet(
     val notice =
         if (
             status == RenameStatus.Rejected &&
-                submitted?.name == name &&
-                name != normalizedRenameName(confirmedName)
+                submitted != null &&
+                submitted.name != normalizedRenameName(confirmedName)
         )
             R.string.chat_rename_save_failed
         else null

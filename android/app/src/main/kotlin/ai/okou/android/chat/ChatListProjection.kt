@@ -225,12 +225,7 @@ internal class ChatListProjection {
         }
 
     fun showOutgoing(eventId: String, threadId: String): Boolean {
-        val checkpoint = confirmedCheckpoint
-        if (
-            checkpoint?.snapshotCursor?.eventId == eventId ||
-                checkpoint?.events?.any { it.cursor().eventId == eventId } == true
-        )
-            return false
+        if (confirmedCheckpoint?.containsEvent(eventId) == true) return false
         val existing = outgoingActivity[eventId]
         if (existing?.sending == true) return false
         outgoingActivity[eventId] = OutgoingAttempt(threadId)

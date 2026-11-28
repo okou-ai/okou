@@ -384,10 +384,11 @@ internal class ChatRenameFormRootTest : ChatListRootTestFixture() {
 
     @Test
     @Config(qualifiers = "en-rUS-w760dp-h892dp")
-    fun ambiguousChatRenameKeepsTheDraftAndRestoresSave() {
+    fun ambiguousChatRenameReportsFailureForANewerDraftAndRestoresSave() {
         val app = compose.activity.application as ChatListApplication
         val events = app.fixture.rowEventTail()
         val firstEvent = AtomicReference<String>()
+        val releaseFirstWrite = CountDownLatch(1)
         val requests = AtomicInteger()
         val reads = AtomicInteger()
         val readEvents = app.fixture.events
@@ -403,11 +404,12 @@ internal class ChatRenameFormRootTest : ChatListRootTestFixture() {
                 if (requests.incrementAndGet() == 1) {
                     check(name == "Design notes")
                     firstEvent.set(id)
+                    releaseFirstWrite.await()
                     MockResponse().setResponseCode(503)
                 } else {
                     check(name == "New draft")
                     check(id != firstEvent.get())
-                    events.add(25L to chatEventWire(id, 25, CHAT_PERSONAL, "renamed", title = name))
+                    events.add(26L to chatEventWire(id, 26, CHAT_PERSONAL, "renamed", title = name))
                     MockResponse().setResponseCode(204)
                 }
             } else null
@@ -426,10 +428,19 @@ internal class ChatRenameFormRootTest : ChatListRootTestFixture() {
         val save = compose.onNodeWithText("Save")
         val saveBounds = save.getUnclippedBoundsInRoot()
         val beforeSave = reads.get()
-        save.performClick()
+        try {
+            save.performClick()
+            compose.waitUntil(10_000) { firstEvent.get() != null }
+            compose.onNodeWithText("Saving…").assertIsNotEnabled()
+            editor.performTextReplacement("New draft")
+            editor.performTextInputSelection(selection)
+        } finally {
+            releaseFirstWrite.countDown()
+        }
         val failure = "Could not save. Your changes are still here."
         compose.waitUntilExactlyOneExists(hasText(failure, substring = false), 10_000)
-        editor.assertTextContains("   Design notes  ")
+        editor.assertTextContains("New draft")
+        editor.assert(SemanticsMatcher.expectValue(SemanticsProperties.Error, failure))
         assertEquals(
             selection,
             editor.fetchSemanticsNode().config[SemanticsProperties.TextSelectionRange],
@@ -443,25 +454,29 @@ internal class ChatRenameFormRootTest : ChatListRootTestFixture() {
 
         compose.activityRule.scenario.recreate()
         compose.waitUntilExactlyOneExists(hasText(failure, substring = false), 10_000)
-        editor.assertTextContains("   Design notes  ").assertIsFocused()
-        editor.performTextReplacement("New draft")
-        events.add(
-            24L to
-                chatEventWire(
-                    checkNotNull(firstEvent.get()),
-                    24,
-                    CHAT_PERSONAL,
-                    "renamed",
-                    title = "Design notes",
-                ),
+        editor.assertTextContains("New draft").assertIsFocused()
+        events.addAll(
+            listOf(
+                24L to
+                    chatEventWire(
+                        checkNotNull(firstEvent.get()),
+                        24,
+                        CHAT_PERSONAL,
+                        "renamed",
+                        title = "Design notes",
+                    ),
+                25L to
+                    chatEventWire(HISTORY_LAST_EVENT, 25, kind = "renamed", title = "Remote title"),
+            ),
         )
         refreshWorkspaceChats()
         compose.waitUntil(10_000) {
             currentList()?.confirmedThreads?.any {
-                it.id == CHAT_PERSONAL && it.title == "Design notes"
+                it.id == CHAT_PERSONAL && it.title == "Remote title"
             } == true
         }
         editor.assertTextContains("New draft")
+        compose.onNodeWithText(failure).assertDoesNotExist()
         compose.onNodeWithText("Chat title saved").assertDoesNotExist()
         save.assertIsEnabled().performClick()
         compose.waitUntilExactlyOneExists(hasText("Chat title saved"), 10_000)
@@ -4346,7 +4361,7 @@ internal class ChatListProjectsRootTest : ChatListRootTestFixture() {
     @Test
     @Config(qualifiers = "en-rUS-w450dp-h850dp")
     @GraphicsMode(GraphicsMode.Mode.NATIVE)
-    fun ambiguousProjectRenameKeepsTheFormAndIgnoresALateSuccessForPresentation() {
+    fun ambiguousProjectRenameReportsFailureForANewerDraftAndAppliesTheLateEventSilently() {
         val app = compose.activity.application as ChatListApplication
         val pending = CountDownLatch(1)
         val writes = CopyOnWriteArrayList<String>()
@@ -4414,13 +4429,19 @@ internal class ChatListProjectsRootTest : ChatListRootTestFixture() {
             assertEquals(saveBounds, saving.assertIsNotEnabled().getUnclippedBoundsInRoot())
             compose.onNodeWithText("Cancel").assertIsNotEnabled()
             assertEquals("Research", currentList()?.projects?.single()?.name)
+            editor.performTextReplacement("New project draft")
+            editor.performTextInputSelection(TextRange(2, 6))
         } finally {
             pending.countDown()
         }
         val failure = "Could not save. Your changes are still here."
         compose.waitUntilExactlyOneExists(hasText(failure), 10_000)
-        editor.assertTextContains("  Field notes  ")
+        editor.assertTextContains("New project draft").assertIsFocused()
         editor.assert(SemanticsMatcher.expectValue(SemanticsProperties.Error, failure))
+        assertEquals(
+            TextRange(2, 6),
+            editor.fetchSemanticsNode().config[SemanticsProperties.TextSelectionRange],
+        )
         save.assertIsEnabled()
         assertEquals(beforeSaveReads, reads.get())
         assertEquals("Research", currentList()?.projects?.single()?.name)
@@ -4429,10 +4450,12 @@ internal class ChatListProjectsRootTest : ChatListRootTestFixture() {
         compose.waitUntil(10_000) {
             currentList()?.projects?.singleOrNull()?.name == "Field notes"
         }
-        editor.assertTextContains("  Field notes  ")
-        save.assertIsNotEnabled()
+        editor.assertTextContains("New project draft")
+        save.assertIsEnabled()
         compose.onNodeWithText(failure).assertDoesNotExist()
         compose.onNodeWithText("Project name saved").assertDoesNotExist()
+        editor.performTextReplacement("  Field notes  ")
+        save.assertIsNotEnabled()
         assertEquals(1, writes.size)
         compose.onNodeWithText("Cancel").performClick()
         editor.assertDoesNotExist()
