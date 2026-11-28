@@ -22,6 +22,8 @@ import {
   webhookCompleteContract,
   webhookEventsContract,
 } from "@okouai/api-contracts/contracts/webhooks";
+import { AUTOMATIC_MCP_RUNTIME_ACCESS_TOKEN_SECRET_NAME } from "@okouai/connectors/connector-catalog/artifacts/mcp-auth";
+import { connectorCredentialPlaceholder } from "@okouai/connectors/firewall-metadata/credential-placeholder";
 import {
   createRunnerRuntimeFirewallCatalog,
   projectRunnerConnectorFirewall,
@@ -502,6 +504,54 @@ describe("Runner execution and builtin firewalls", () => {
         },
         permissions: [],
       });
+    });
+
+    it("pf-170 publishes source-specific placeholders for authenticated MCP firewalls and omits them for public MCP", async () => {
+      const resolved = await accept(
+        builtinFirewallsApi.resolve({
+          headers: officialRunnerAuthHeaders(),
+          body: {
+            names: [
+              "automatic-mcp-oauth",
+              "automatic-mcp-query",
+              "manual-mcp",
+              "public-mcp",
+            ],
+          },
+        }),
+        [200],
+      );
+
+      const oauthPlaceholder = connectorCredentialPlaceholder(
+        "automatic-mcp-oauth",
+        AUTOMATIC_MCP_RUNTIME_ACCESS_TOKEN_SECRET_NAME,
+      );
+      const queryPlaceholder = connectorCredentialPlaceholder(
+        "automatic-mcp-query",
+        AUTOMATIC_MCP_RUNTIME_ACCESS_TOKEN_SECRET_NAME,
+      );
+      expect(oauthPlaceholder).not.toBe(queryPlaceholder);
+      expect(
+        resolved.body.firewalls["automatic-mcp-oauth"]?.placeholders,
+      ).toStrictEqual({
+        [AUTOMATIC_MCP_RUNTIME_ACCESS_TOKEN_SECRET_NAME]: oauthPlaceholder,
+      });
+      expect(
+        resolved.body.firewalls["automatic-mcp-query"]?.placeholders,
+      ).toStrictEqual({
+        [AUTOMATIC_MCP_RUNTIME_ACCESS_TOKEN_SECRET_NAME]: queryPlaceholder,
+      });
+      expect(resolved.body.firewalls["manual-mcp"]?.placeholders).toStrictEqual(
+        {
+          MCP_API_KEY: connectorCredentialPlaceholder(
+            "manual-mcp",
+            "MCP_API_KEY",
+          ),
+        },
+      );
+      expect(
+        resolved.body.firewalls["public-mcp"]?.placeholders,
+      ).toBeUndefined();
     });
   });
 

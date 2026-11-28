@@ -73,6 +73,7 @@ interface TrackedRun {
   readonly actor: ApiTestUser;
   readonly runId: string;
   readonly sandboxToken: string;
+  readonly issuedAtMs: number;
   done: boolean;
 }
 
@@ -278,7 +279,6 @@ function createRunTracker() {
   const tracked: TrackedRun[] = [];
 
   onTestFinished(async () => {
-    clearMockNow();
     initRuntimeMocks();
     context.mocks.s3.getSignedUrl.mockImplementation(
       (_client: unknown, command: unknown) => {
@@ -287,65 +287,79 @@ function createRunTracker() {
     );
     context.mocks.ably.publish.mockResolvedValue(undefined);
     const errors: unknown[] = [];
-    const initialFlush = await settleIncludingAbort(flushWaitUntilForTest);
-    if (!initialFlush.ok) {
-      errors.push(initialFlush.error);
-    }
-    const pendingCompletions: Promise<unknown>[] = [];
-    for (const entry of tracked) {
-      if (entry.done) {
-        continue;
+    const cleanedAll = await settleIncludingAbort(async () => {
+      const initialFlush = await settleIncludingAbort(flushWaitUntilForTest);
+      if (!initialFlush.ok) {
+        errors.push(initialFlush.error);
       }
-      const cleaned = await settleIncludingAbort(async () => {
-        signIn(entry.actor);
-        const current = await accept(
-          runsByIdApi.getById({
-            headers: SESSION_HEADERS,
-            params: { id: entry.runId },
-          }),
-          [200],
-        );
-        if (["queued", "pending", "running"].includes(current.body.status)) {
-          await accept(
-            runsCancelApi.cancel({
+      const toCompleteByIssuedAt = new Map<number, TrackedRun[]>();
+      for (const entry of tracked) {
+        if (entry.done) {
+          continue;
+        }
+        const cleaned = await settleIncludingAbort(async () => {
+          mockNow(entry.issuedAtMs);
+          signIn(entry.actor);
+          const current = await accept(
+            runsByIdApi.getById({
               headers: SESSION_HEADERS,
               params: { id: entry.runId },
             }),
             [200],
           );
-        }
-        if (!["completed", "failed", "timeout"].includes(current.body.status)) {
-          pendingCompletions.push(
-            accept(
-              webhooksAgentCompleteApi.complete({
-                headers: bearerHeaders(entry.sandboxToken),
-                body: {
-                  runId: entry.runId,
-                  exitCode: 137,
-                  error: "Run cancelled by test cleanup",
-                },
+          if (["queued", "pending", "running"].includes(current.body.status)) {
+            await accept(
+              runsCancelApi.cancel({
+                headers: SESSION_HEADERS,
+                params: { id: entry.runId },
               }),
               [200],
-            ),
-          );
+            );
+          }
+          if (
+            !["completed", "failed", "timeout"].includes(current.body.status)
+          ) {
+            const bucket = toCompleteByIssuedAt.get(entry.issuedAtMs) ?? [];
+            bucket.push(entry);
+            toCompleteByIssuedAt.set(entry.issuedAtMs, bucket);
+          }
+          entry.done = true;
+        });
+        if (!cleaned.ok) {
+          errors.push(cleaned.error);
         }
-        entry.done = true;
-      });
-      if (!cleaned.ok) {
-        errors.push(cleaned.error);
       }
-    }
-    if (pendingCompletions.length > 0) {
-      const completed = await settleIncludingAbort(() => {
-        return Promise.all(pendingCompletions);
-      });
-      if (!completed.ok) {
-        errors.push(completed.error);
+      for (const [issuedAtMs, entries] of toCompleteByIssuedAt) {
+        mockNow(issuedAtMs);
+        const completed = await settleIncludingAbort(() => {
+          return Promise.all(
+            entries.map((entry) => {
+              return accept(
+                webhooksAgentCompleteApi.complete({
+                  headers: bearerHeaders(entry.sandboxToken),
+                  body: {
+                    runId: entry.runId,
+                    exitCode: 137,
+                    error: "Run cancelled by test cleanup",
+                  },
+                }),
+                [200],
+              );
+            }),
+          );
+        });
+        if (!completed.ok) {
+          errors.push(completed.error);
+        }
       }
-    }
-    const finalFlush = await settleIncludingAbort(flushWaitUntilForTest);
-    if (!finalFlush.ok) {
-      errors.push(finalFlush.error);
+      const finalFlush = await settleIncludingAbort(flushWaitUntilForTest);
+      if (!finalFlush.ok) {
+        errors.push(finalFlush.error);
+      }
+    });
+    clearMockNow();
+    if (!cleanedAll.ok) {
+      errors.push(cleanedAll.error);
     }
     if (errors.length === 1) {
       throw errors[0];
@@ -357,7 +371,13 @@ function createRunTracker() {
 
   return {
     track(actor: ApiTestUser, runId: string, sandboxToken: string): TrackedRun {
-      const entry: TrackedRun = { actor, runId, sandboxToken, done: false };
+      const entry: TrackedRun = {
+        actor,
+        runId,
+        sandboxToken,
+        issuedAtMs: now(),
+        done: false,
+      };
       tracked.push(entry);
       return entry;
     },
