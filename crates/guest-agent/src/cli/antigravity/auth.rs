@@ -1,22 +1,9 @@
 //! Install a member's personal Google (Antigravity) OAuth credential into the
 //! `agy` sandbox before launch, and reconcile stale credentials on reuse.
 //!
-//! Codex keeps real OAuth tokens outside the sandbox and lets the mitm firewall
-//! swap them in on egress (`codex_auth`). The official `agy` CLI cannot work
-//! that way: it validates a signed-in Google account from its local credential
-//! store *before* issuing any model request, so a placeholder yields
-//! `Authentication required` with zero upstream calls. Internal personal
-//! subscription runs therefore place one real, short-lived native credential
-//! inside the member's own `agy` environment. The API service owns the OAuth
-//! lifecycle (connect, refresh, disconnect) and passes exactly one run-scoped
-//! credential per launch. Like Claude Code, agy runs its commands directly in
-//! the Okou sandbox without its own terminal sandbox, so those commands can
-//! read this credential; the staff pilot accepts that until firewall-side
-//! replacement keeps the real credential out of the sandbox.
-//!
-//! Scope: internal staff opt-in behind the `_geminiAntigravity` switch. This
-//! path intentionally relies on the official Antigravity OAuth client identity
-//! for Okou-internal testing; it is not an externally offered capability.
+//! The native CLI checks its local login document before sending HTTP. The API
+//! supplies the native shape with synthetic values, while the trusted firewall
+//! supplies a fresh Google access token on admitted upstream requests.
 //!
 //! Format ownership: the API emits the exact native-credential JSON that `agy`
 //! expects and this module writes it **verbatim**. Keeping the field layout in
@@ -33,9 +20,7 @@ use serde_json::Value;
 
 use crate::error::AgentError;
 
-/// Run-scoped env var carrying the native OAuth credential as a JSON object.
-/// Set by the runner from the API's selected personal subscription. Never a
-/// placeholder: a run without a real credential must not reach this harness.
+/// Platform environment entry carrying the native local login document as JSON.
 pub(super) const CREDENTIAL_ENV: &str = "OKOU_ANTIGRAVITY_OAUTH_TOKEN";
 
 /// `agy` config directory, relative to the member's home directory. Confirmed

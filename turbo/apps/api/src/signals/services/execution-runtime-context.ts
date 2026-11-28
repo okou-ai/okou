@@ -1,3 +1,4 @@
+import { ANTIGRAVITY_FIREWALL_PLACEHOLDER } from "@okouai/api-contracts/contracts/model-provider-firewalls";
 import {
   preparedExecutionContextSchema,
   type PreparedExecutionContext,
@@ -83,21 +84,34 @@ function executionPlatform({ run, facts }: ExecutionInput) {
   };
 }
 
-/** `agy` reads its model and native credential from trusted platform entries. */
 function antigravityEnvironment(
   facts: ExecutionInput["facts"],
 ): ReturnType<typeof emptyEnvironment> {
   if (facts.modelProvider.type !== "antigravity") {
     return emptyEnvironment();
   }
-  if (!facts.antigravityCredential) {
-    throw new Error("An Antigravity run requires its minted credential");
+  if (!facts.modelProvider.id) {
+    throw new Error("An Antigravity run requires its member account");
   }
+  // The native CLI reads this local marker before it makes any request.
+  // The firewall owns the real token lifetime. The synthetic refresh value also
+  // satisfies the existing Guest validator during a mixed-version rollout.
+  const antigravityPlaceholderToken = {
+    access_token: ANTIGRAVITY_FIREWALL_PLACEHOLDER,
+    refresh_token: "okou-antigravity-local-refresh-placeholder",
+    token_type: "Bearer",
+    expiry: "2099-01-01T00:00:00Z",
+  };
+  const antigravityPlaceholder = JSON.stringify({
+    ...antigravityPlaceholderToken,
+    token: antigravityPlaceholderToken,
+    auth_method: "consumer",
+  });
   return {
     ...emptyEnvironment(),
     platformEnvironment: {
       OKOU_ANTIGRAVITY_MODEL: facts.modelProvider.upstreamModel,
-      OKOU_ANTIGRAVITY_OAUTH_TOKEN: facts.antigravityCredential,
+      OKOU_ANTIGRAVITY_OAUTH_TOKEN: antigravityPlaceholder,
     },
     reservedSecretAliases: ["OKOU_ANTIGRAVITY_OAUTH_TOKEN"],
   };

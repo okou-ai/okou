@@ -14,6 +14,8 @@ import {
   personalSubscriptionCredentialValues,
 } from "./model-provider-account.service";
 
+export class AntigravityAccountUnavailable extends Error {}
+
 const REFRESH_TOKEN_SECRET = "ANTIGRAVITY_REFRESH_TOKEN";
 
 const refreshResponseSchema = object({
@@ -69,7 +71,6 @@ export const refreshAntigravityAccessToken$ = command(
     signal: AbortSignal,
   ): Promise<{
     readonly accessToken: string;
-    readonly refreshToken: string;
     readonly expiry: Date;
   }> => {
     const plan = personalSubscriptionAccountCiphertextsReadPlan({
@@ -88,8 +89,8 @@ export const refreshAntigravityAccessToken$ = command(
     const secret = ciphertexts?.secrets.filter((row) => {
       return row.name === REFRESH_TOKEN_SECRET;
     });
-    if (!secret?.length) {
-      throw new Error(
+    if (!secret?.length || ciphertexts?.account.needsReconnect) {
+      throw new AntigravityAccountUnavailable(
         "The Google AI account is unavailable. Connect it again.",
       );
     }
@@ -100,7 +101,7 @@ export const refreshAntigravityAccessToken$ = command(
     signal.throwIfAborted();
     const refreshToken = values.get(REFRESH_TOKEN_SECRET);
     if (!refreshToken) {
-      throw new Error(
+      throw new AntigravityAccountUnavailable(
         "The Google AI account is unavailable. Connect it again.",
       );
     }
@@ -109,48 +110,7 @@ export const refreshAntigravityAccessToken$ = command(
     signal.throwIfAborted();
     return {
       accessToken: refreshed.access_token,
-      refreshToken,
       expiry: new Date(startedAt + refreshed.expires_in * 1000),
     };
-  },
-);
-
-/**
- * The official `agy` CLI validates a local Google login before any request, so
- * a run receives its native stored-token JSON instead of a firewall
- * placeholder. Lancy approved this staff-pilot deviation from the credential
- * trust boundary; firewall-side replacement is the follow-up. The value lives
- * only in process-local admission facts and the dispatched platform
- * environment, where it is a reserved secret alias.
- */
-export const mintAntigravityRunCredential$ = command(
-  async (
-    { set },
-    args: {
-      readonly orgId: string;
-      readonly userId: string;
-      readonly accountId: string;
-      readonly featureSwitchContext: FeatureSwitchContext;
-    },
-    signal: AbortSignal,
-  ): Promise<string> => {
-    const grant = await set(refreshAntigravityAccessToken$, args, signal);
-    signal.throwIfAborted();
-    const token = {
-      access_token: grant.accessToken,
-      token_type: "Bearer",
-      refresh_token: grant.refreshToken,
-      expiry: grant.expiry.toISOString(),
-    };
-    // agy 1.5.15 file token storage reads `{ token, auth_method }`; without
-    // `auth_method` it reports "You are not logged into Antigravity".
-    // `consumer` selects its personal Google account sign-in, whose OAuth
-    // client issued this refresh token. The guest validates and writes the
-    // payload verbatim, and currently requires the top-level token fields.
-    return JSON.stringify({
-      ...token,
-      token,
-      auth_method: "consumer",
-    });
   },
 );

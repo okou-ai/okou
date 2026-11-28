@@ -18,15 +18,10 @@ export interface ModelProviderPiEndpoint {
   readonly inferenceUrl: string;
 }
 
-// Antigravity is excluded: the official `agy` CLI validates its local Google
-// login before any request, so a firewall placeholder cannot satisfy it.
-type FirewallSupportedProvider = Exclude<
-  ModelProviderType,
-  "built-in" | "antigravity"
->;
+type FirewallSupportedProvider = Exclude<ModelProviderType, "built-in">;
 type SingleSecretFirewallProvider = Exclude<
   FirewallSupportedProvider,
-  "codex-oauth-token"
+  "codex-oauth-token" | "antigravity"
 >;
 
 interface SingleSecretFirewallProviderConfig {
@@ -44,6 +39,15 @@ interface SingleSecretFirewallProviderConfig {
     "openai-codex-responses"
   >[];
 }
+
+export const ANTIGRAVITY_FIREWALL_SECRET = "ANTIGRAVITY_ACCESS_TOKEN";
+export const ANTIGRAVITY_FIREWALL_PLACEHOLDER =
+  "okou-antigravity-local-access-placeholder";
+const antigravityAuth = {
+  headers: {
+    Authorization: `Bearer \${{ secrets.${ANTIGRAVITY_FIREWALL_SECRET} }}`,
+  },
+};
 
 export const MODEL_PROVIDER_ENV_PLACEHOLDERS = {
   // Claude's setup-token format uses 93 characters followed by AA.
@@ -136,6 +140,52 @@ export const MODEL_PROVIDER_FIREWALL_CONFIGS = {
     { name: "Authorization", valuePrefix: "Bearer" },
     MODEL_PROVIDER_ENV_PLACEHOLDERS.OPENAI_API_KEY,
   ),
+  antigravity: {
+    name: "model-provider:antigravity",
+    apis: [
+      {
+        base: "https://daily-cloudcode-pa.googleapis.com",
+        auth: antigravityAuth,
+        permissions: [
+          {
+            name: "antigravity:cloud-code",
+            description: "Use the Antigravity bootstrap and model API.",
+            rules: [
+              "POST /v1internal:loadCodeAssist",
+              "POST /v1internal:fetchAvailableModels",
+              "POST /v1internal:fetchAdminControls",
+              "POST /v1internal:fetchUserInfo",
+              "POST /v1internal:listExperiments",
+              "POST /v1internal:retrieveUserQuotaSummary",
+              "POST /v1internal:writeTrajectoryAcls",
+              "POST /v1internal:streamGenerateContent",
+              "POST /v1internal:streamGenerateChat",
+            ],
+          },
+        ],
+      },
+      {
+        base: "https://www.googleapis.com/oauth2/v2/userinfo",
+        auth: antigravityAuth,
+        permissions: [
+          {
+            name: "antigravity:userinfo",
+            description: "Read the current Google account identity.",
+            rules: ["GET /"],
+          },
+        ],
+      },
+      {
+        base: "https://oauth2.googleapis.com/token",
+        auth: { headers: {} },
+        permissions: [],
+      },
+    ],
+    defaultPolicies: { unknownPolicy: "deny" },
+    placeholders: {
+      [ANTIGRAVITY_FIREWALL_SECRET]: ANTIGRAVITY_FIREWALL_PLACEHOLDER,
+    },
+  },
   // Personal ChatGPT subscription: backend API GET/POST injection and auth.openai.com deny.
   "codex-oauth-token": {
     name: "model-provider:codex-oauth-token",

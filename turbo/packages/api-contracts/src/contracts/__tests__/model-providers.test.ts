@@ -199,7 +199,7 @@ describe("firewall base URL scoped to /v1/messages (#9560)", () => {
     for (const type of Object.keys(MODEL_PROVIDER_FIREWALL_CONFIGS) as Array<
       keyof typeof MODEL_PROVIDER_FIREWALL_CONFIGS
     >) {
-      if (getSecretNameForType(type) === undefined) {
+      if (type === "antigravity" || getSecretNameForType(type) === undefined) {
         continue;
       }
 
@@ -246,7 +246,7 @@ describe("model provider firewall placeholders", () => {
       keyof typeof MODEL_PROVIDER_FIREWALL_CONFIGS
     >) {
       const secretName = getSecretNameForType(type);
-      if (secretName === undefined) {
+      if (type === "antigravity" || secretName === undefined) {
         continue;
       }
       expect(MODEL_PROVIDER_FIREWALL_CONFIGS[type].placeholders).toHaveProperty(

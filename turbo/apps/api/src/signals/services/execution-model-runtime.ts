@@ -108,9 +108,8 @@ function compileClaudeSubscriptionRuntime(
 }
 
 /**
- * `agy` needs its native credential on disk, so the run carries no firewall
- * secret reference. Dispatch adds the model and a freshly minted credential to
- * the platform environment.
+ * Dispatch installs synthetic native login state for `agy`. Firewall auth
+ * resolves the real credential from the persisted Run's account binding.
  */
 function compileAntigravitySubscriptionRuntime(
   input: ModelRuntimeInput,

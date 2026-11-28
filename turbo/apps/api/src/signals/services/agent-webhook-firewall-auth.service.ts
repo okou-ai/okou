@@ -1,3 +1,8 @@
+import { ANTIGRAVITY_FIREWALL_SECRET } from "@okouai/api-contracts/contracts/model-provider-firewalls";
+import {
+  AntigravityAccountUnavailable,
+  refreshAntigravityAccessToken$,
+} from "./antigravity-run-credential.service";
 import { rootSignal$ } from "../context/root";
 import { platformPaidRunCreditAccess$ } from "./platform-paid-run.service";
 import {
@@ -343,6 +348,12 @@ interface PreparedCustomFirewallAuth {
   readonly routingVariables: Record<string, string>;
 }
 
+interface PreparedAntigravityFirewallAuth {
+  readonly kind: "antigravity";
+  readonly accountId: string;
+  readonly featureSwitchContext: FeatureSwitchContext;
+}
+
 interface PreparedNonCustomFirewallAuth {
   readonly kind: "non-custom";
   readonly builtinMcpExpiresAt: number | null;
@@ -362,6 +373,7 @@ interface PreparedBuiltinConnectorAutomaticFirewallAuth {
 }
 
 type PreparedFirewallAuth =
+  | PreparedAntigravityFirewallAuth
   | PreparedCustomFirewallAuth
   | PreparedBuiltinConnectorAutomaticFirewallAuth
   | PreparedNonCustomFirewallAuth;
@@ -5798,6 +5810,50 @@ const resolveNonCustomFirewallAuthMaterial$ = command(
   },
 );
 
+const resolveAntigravityFirewallAuthMaterial$ = command(
+  async (
+    { set },
+    auth: FirewallAuth,
+    prepared: PreparedAntigravityFirewallAuth,
+    signal: AbortSignal,
+  ): Promise<FirewallAuthMaterialResolution> => {
+    const grant = await settle(
+      set(
+        refreshAntigravityAccessToken$,
+        {
+          orgId: auth.orgId,
+          userId: auth.userId,
+          accountId: prepared.accountId,
+          featureSwitchContext: prepared.featureSwitchContext,
+        },
+        signal,
+      ),
+    );
+    signal.throwIfAborted();
+    if (!grant.ok) {
+      return {
+        ok: false,
+        response:
+          grant.error instanceof AntigravityAccountUnavailable
+            ? connectorNotConfigured()
+            : tokenRefreshFailed(["antigravity"], "upstream_provider"),
+      };
+    }
+    return {
+      ok: true,
+      material: {
+        secrets: { [ANTIGRAVITY_FIREWALL_SECRET]: grant.value.accessToken },
+        vars: {},
+        expiresAt:
+          Math.floor(grant.value.expiry.getTime() / 1000) - REFRESH_BUFFER_SECS,
+        refreshedConnectors: [],
+        refreshedSecrets: [],
+        missingSecretFailure: { kind: "connector-not-configured" },
+      },
+    };
+  },
+);
+
 const resolveFirewallAuthMaterial$ = command(
   async (
     { get, set },
@@ -5891,6 +5947,14 @@ const resolveFirewallAuthMaterial$ = command(
           missingSecretFailure: { kind: "connector-not-configured" },
         },
       };
+    }
+    if (args.prepared.kind === "antigravity") {
+      return await set(
+        resolveAntigravityFirewallAuthMaterial$,
+        args.auth,
+        args.prepared,
+        signal,
+      );
     }
     if (args.prepared.kind === "custom") {
       const resolution = await set(resolveCustomFirewallAuthMaterial$, {
@@ -5993,9 +6057,14 @@ const prepareFirewallAuthRequest$ = command(
     const db = get(db$);
     const matchedFirewall = body.matchedFirewall;
     const customConnectorId = matchedFirewall?.customConnectorId;
-    const run = await (async (): Promise<FirewallAuthRun | undefined> => {
+    const run = await (async () => {
       const [run] = await db
-        .select({ orgId: agentRuns.orgId, status: agentRuns.status })
+        .select({
+          orgId: agentRuns.orgId,
+          status: agentRuns.status,
+          modelProvider: agentRuns.modelProvider,
+          modelProviderId: agentRuns.modelProviderId,
+        })
         .from(agentRuns)
         .where(
           and(
@@ -6035,7 +6104,40 @@ const prepareFirewallAuthRequest$ = command(
       };
     }
     let preparation: FirewallAuthPreparation<PreparedFirewallAuth>;
-    if (customConnectorId) {
+    if (referenced.secrets.has(ANTIGRAVITY_FIREWALL_SECRET)) {
+      // Model firewall rules are installed by the trusted Runner. The request
+      // identifies an alias only; account authority comes from the Run row.
+      const authHeader = `Bearer \${{ secrets.${ANTIGRAVITY_FIREWALL_SECRET} }}`;
+      if (
+        run.modelProvider !== "antigravity" ||
+        !run.modelProviderId ||
+        body.matchedFirewall !== undefined ||
+        body.authHeaders.Authorization !== authHeader ||
+        Object.keys(body.authHeaders).length !== 1 ||
+        body.authBase !== undefined ||
+        body.authQuery !== undefined ||
+        body.authAwsSigv4 !== undefined
+      ) {
+        return { ok: false, response: connectorNotConfigured() };
+      }
+      const result = await set(prepareNonCustomFirewallSecrets$, {
+        auth,
+        body,
+        orgId,
+        referenced,
+      });
+      if (!result.ok) {
+        return result;
+      }
+      preparation = {
+        ok: true,
+        prepared: {
+          kind: "antigravity",
+          accountId: run.modelProviderId,
+          featureSwitchContext: result.prepared.featureSwitchContext,
+        },
+      };
+    } else if (customConnectorId) {
       const sourceId = matchedFirewall.sourceId;
       if (sourceId === undefined) {
         return { ok: false, response: connectorNotConfigured() };
