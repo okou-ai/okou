@@ -44,6 +44,7 @@ private const val DEVICE_POLL_PATH =
 private const val EXTERNAL_START_PATH =
     "/api/connectors/$CONNECTOR_EXTERNAL_EXAMPLE/external-code/sessions"
 private const val EXTERNAL_COMPLETE_PATH = "$EXTERNAL_START_PATH/$CONNECTOR_OAUTH_ATTEMPT/complete"
+private const val MANUAL_GRANT_PATH = "/api/connectors/$CONNECTOR_MANUAL_EXAMPLE/manual-grant"
 
 internal data class FixtureConnectorIcon(
     val asset: String,
@@ -124,6 +125,8 @@ internal class ConnectorApiFixture(
     @Volatile var oauthCompletion: String? = null
     @Volatile var rejectConnection = false
     @Volatile var loseManualReply = false
+    val manualReplyStarted = CountDownLatch(1)
+    @Volatile var manualReplyGate: CountDownLatch? = null
     val renameRequests = AtomicInteger()
     val disconnectRequests = AtomicInteger()
     val manualRequests = AtomicInteger()
@@ -296,6 +299,10 @@ internal class ConnectorApiFixture(
                     }
                     if (request.method == "POST" && url.encodedPath == EXTERNAL_COMPLETE_PATH)
                         externalCodeReplyGate?.await()
+                    if (request.method == "POST" && url.encodedPath == MANUAL_GRANT_PATH) {
+                        manualReplyStarted.countDown()
+                        manualReplyGate?.await()
+                    }
                     if (
                         request.method == "PATCH" &&
                             url.pathSegments.getOrNull(1) == "connector-accounts"
@@ -723,8 +730,7 @@ internal class ConnectorApiFixture(
                         """{"status":"complete","connectionId":"$CONNECTOR_EXTERNAL_ACCOUNT"}""",
                     )
             }
-            path == "/api/connectors/$CONNECTOR_MANUAL_EXAMPLE/manual-grant" &&
-                request.method == "POST" -> {
+            path == MANUAL_GRANT_PATH && request.method == "POST" -> {
                 val requestBody = body(request)
                 if (
                     requestBody["authMethod"]?.jsonPrimitive?.content != "manual" ||
@@ -855,6 +861,7 @@ internal class ConnectorApiFixture(
         devicePollReplyGate?.countDown()
         externalCodeReplyGate?.countDown()
         externalAccountReplyGate?.countDown()
+        manualReplyGate?.countDown()
         renameReplyGate?.countDown()
         defaultReplyGate?.countDown()
         chatOverrideReplyGate?.countDown()

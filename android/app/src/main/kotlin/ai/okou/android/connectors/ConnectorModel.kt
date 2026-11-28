@@ -73,6 +73,7 @@ internal data class ConnectorAction(
     val browserOpened: Boolean = false,
     val problem: ConnectorProblem? = null,
     val result: ConnectorResult? = null,
+    val startsAuthorization: Boolean = false,
 ) {
     val reconciling: Boolean
         get() = authorization is ConnectorAuthorization.Receipt
@@ -638,7 +639,16 @@ class ConnectorModel(
             method.grantKind == ConnectorDetailConnectorAuthMethodsItemGrantKind.MANUAL ||
                 method.grantKind == ConnectorDetailConnectorAuthMethodsItemGrantKind.NONE ||
                 method.grantKind == ConnectorDetailConnectorAuthMethodsItemGrantKind.AUTOMATIC
-        runAction(ConnectorAction(target), mayAuthorize = mayAuthorize) {
+        runAction(
+            ConnectorAction(target, startsAuthorization = true),
+            mayAuthorize = mayAuthorize,
+        ) {
+            // A directory read can observe the grant before its receipt reaches this action.
+            cancelAccountReads()
+            mutableState.update { state ->
+                if (state.connected.startedAt == null) state
+                else state.copy(connected = state.connected.copy(startedAt = null))
+            }
             when (val step = service.start(target, method, values)) {
                 is ConnectorAuthorization.Receipt -> finishAuthorization(target, step.connectionId)
                 else -> {
@@ -937,7 +947,12 @@ class ConnectorModel(
     private fun authorizationExpired() = authorizationDeadline?.hasPassedNow() == true
 
     private fun pendingAuthorizationTarget(): ConnectorAccountTarget? =
-        mutableState.value.action?.takeIf { it.authorization != null }?.target
+        mutableState.value.action
+            ?.takeIf { action ->
+                val starting = action.startsAuthorization && action.busy && action.problem == null
+                starting || action.authorization != null
+            }
+            ?.target
 
     private fun currentAccount(id: String): ConnectorAccountTarget? {
         val state = mutableState.value
@@ -956,9 +971,8 @@ class ConnectorModel(
 
     private fun invalidateConnectionReads() {
         browseJob?.cancel()
-        connectedJob?.cancel()
-        inspectionJob?.cancel()
-        cancelDetailReads()
+        detailJob?.cancel()
+        cancelAccountReads()
         mutableState.update {
             if (it.browse.startedAt == null && it.connected.startedAt == null) it
             else
@@ -967,6 +981,12 @@ class ConnectorModel(
                     connected = it.connected.copy(startedAt = null),
                 )
         }
+    }
+
+    private fun cancelAccountReads() {
+        connectedJob?.cancel()
+        inspectionJob?.cancel()
+        accountsJob?.cancel()
     }
 
     private fun cancelReads() {

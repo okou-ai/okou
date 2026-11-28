@@ -877,6 +877,49 @@ internal class ConnectorAccountModelTest : ConnectorModelTestFixture() {
     }
 
     @Test
+    fun directAuthorizationKeepsThePreviousAccountsUntilItsReceiptIsConfirmed() {
+        val clock = TestTimeSource()
+        val overviewReply = CountDownLatch(1)
+        val manualReply = CountDownLatch(1)
+        withModel(CONNECTOR_MANUAL_EXAMPLE, includeGrantExamples = true, clock = clock) {
+            fixture,
+            model ->
+            model.await { it.connected.isConfirmed }
+            fixture.overviewReplyGate = overviewReply
+            fixture.manualReplyGate = manualReply
+            try {
+                model.resume()
+                model.await { it.connected.startedAt != null }
+                model.startAuthorization(null, "manual", mapOf("workspace" to "example"))
+                withContext(Dispatchers.IO) {
+                    assertTrue(fixture.manualReplyStarted.await(10, TimeUnit.SECONDS))
+                }
+
+                overviewReply.countDown()
+                val pending = model.await { it.connected.startedAt == null }
+                assertNull(pending.connected.data?.get(CONNECTOR_MANUAL_EXAMPLE))
+                assertTrue(pending.accountsFor(CONNECTOR_MANUAL_EXAMPLE).isEmpty())
+                assertNull(pending.action?.result)
+
+                model.pause()
+                clock += 1.seconds
+                model.resume()
+                val foreground = model.await { it.detail.confirmedAt != pending.detail.confirmedAt }
+                assertEquals(pending.connected, foreground.connected)
+                assertEquals(pending.accounts, foreground.accounts)
+            } finally {
+                overviewReply.countDown()
+                manualReply.countDown()
+            }
+
+            val confirmed = model.await { it.action?.result == ConnectorResult.Authorized }
+            val account = confirmed.accountsFor(CONNECTOR_MANUAL_EXAMPLE).single()
+            assertEquals(account.id, confirmed.action?.target?.connectionId)
+            assertEquals(ConnectorAccountStatus.Connected, account.status)
+        }
+    }
+
+    @Test
     fun aDirectAuthorizationWithoutAReceiptRequiresAFreshAccountReadBeforeAnotherAttempt() {
         withModel(CONNECTOR_MANUAL_EXAMPLE, includeGrantExamples = true) { fixture, model ->
             fixture.failAccountReads = true
