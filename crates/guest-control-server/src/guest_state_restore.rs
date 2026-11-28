@@ -88,6 +88,7 @@ struct GuestStateRestoreRequest {
     unix_nanoseconds: u32,
     entropy: Vec<u8>,
     timezone: OwnedTimezone,
+    instruction_check: Option<String>,
     operation_guard: OperationGuard,
     admission: SingleActivePermit,
 }
@@ -142,6 +143,7 @@ impl GuestStateRestoreWorker {
                 unix_nanoseconds: submission.unix_nanoseconds,
                 entropy: submission.entropy.to_vec(),
                 timezone: OwnedTimezone::from_borrowed(submission.timezone),
+                instruction_check: submission.instruction_check.map(str::to_owned),
                 operation_guard,
                 admission,
             })
@@ -155,6 +157,7 @@ pub(crate) struct GuestStateRestoreSubmission<'a> {
     pub(crate) unix_nanoseconds: u32,
     pub(crate) entropy: &'a [u8],
     pub(crate) timezone: GuestStateRestoreTimezone<'a>,
+    pub(crate) instruction_check: Option<&'a str>,
 }
 
 struct GuestStateRestoreOutput {
@@ -193,6 +196,7 @@ fn handle_request(
         unix_nanoseconds,
         entropy,
         timezone,
+        instruction_check,
         operation_guard,
         admission,
     } = request;
@@ -203,6 +207,7 @@ fn handle_request(
         unix_nanoseconds,
         entropy,
         timezone,
+        instruction_check,
         connection_cancel,
         drain_deadline,
     });
@@ -232,6 +237,7 @@ struct RunRestoreInput<'a> {
     unix_nanoseconds: u32,
     entropy: Vec<u8>,
     timezone: OwnedTimezone,
+    instruction_check: Option<String>,
     connection_cancel: &'a AtomicBool,
     drain_deadline: Duration,
 }
@@ -244,6 +250,7 @@ fn run_restore(input: RunRestoreInput<'_>) -> GuestStateRestoreOutput {
         unix_nanoseconds,
         entropy,
         timezone,
+        instruction_check,
         connection_cancel,
         drain_deadline,
     } = input;
@@ -263,6 +270,11 @@ fn run_restore(input: RunRestoreInput<'_>) -> GuestStateRestoreOutput {
     // workload. A dedicated process group preserves timeout, disconnect, and
     // descendant cleanup without paying generic workload-cgroup setup on every
     // sandbox restore.
+    if let Some(check) = instruction_check {
+        command
+            .arg(guest_contracts::agent_instructions::CHECK_AFTER_RESTORE_ARG)
+            .arg(check);
+    }
     command
         .arg("--restore-state")
         .arg(unix_seconds.to_string())

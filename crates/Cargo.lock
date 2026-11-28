@@ -2218,7 +2218,9 @@ name = "guest-state-restore"
 version = "0.4.56"
 dependencies = [
  "guest-contracts",
+ "guest-storage-apply",
  "libc",
+ "nix 0.32.0",
  "tempfile",
 ]
 

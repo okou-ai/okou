@@ -1133,6 +1133,7 @@ impl Sandbox for MockSandbox {
             unix_nanoseconds: request.unix_nanoseconds,
             entropy_len: request.entropy.len(),
             timezone,
+            instruction_check: request.instruction_check.map(str::to_owned),
             timeout: request.timeout,
         };
         self.guest_state_restore_calls

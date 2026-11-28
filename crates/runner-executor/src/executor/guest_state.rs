@@ -1,8 +1,11 @@
 //! Guest state repair helpers used before agent execution.
 
+use guest_contracts::agent_instructions::{
+    InstructionCheck, InstructionCheckResult, RestoredInstructionCheck,
+};
 use sandbox::{
-    EXEC_OUTPUT_LIMIT_64_KIB, ExecRequest, GuestStateRestoreRequest, GuestStateRestoreTimezone,
-    Sandbox,
+    EXEC_OUTPUT_LIMIT_64_KIB, ExecRequest, ExecTermination, GuestStateRestoreRequest,
+    GuestStateRestoreTimezone, Sandbox,
 };
 
 use super::diagnostics::process_exit_code;
@@ -136,7 +139,8 @@ fn log_timezone_sync_failure(
 pub(crate) async fn restore_guest_state(
     sandbox: &dyn Sandbox,
     context: &ExecutionContext,
-) -> RunnerResult<()> {
+    instruction_check: Option<&InstructionCheck>,
+) -> RunnerResult<Option<RunnerResult<InstructionCheckResult>>> {
     let intent = GuestTimezoneIntent::from_context(context);
     if matches!(intent, GuestTimezoneIntent::Unknown) {
         tracing::warn!(run_id = %context.run_id, "rejected unsafe timezone name");
@@ -145,7 +149,7 @@ pub(crate) async fn restore_guest_state(
         name,
         run_id: context.run_id,
     });
-    restore_guest_state_inner(sandbox, timezone).await
+    restore_guest_state_inner(sandbox, timezone, instruction_check).await
 }
 
 pub async fn restore_guest_state_with_intent(
@@ -156,7 +160,9 @@ pub async fn restore_guest_state_with_intent(
     let timezone = intent
         .guest_name()
         .map(|name| GuestTimezone::BestEffort { name, run_id });
-    restore_guest_state_inner(sandbox, timezone).await
+    restore_guest_state_inner(sandbox, timezone, None)
+        .await
+        .map(|_| ())
 }
 
 pub async fn restore_guest_state_with_timezone(
@@ -168,13 +174,20 @@ pub async fn restore_guest_state_with_timezone(
             "invalid timezone {timezone:?}: expected a non-empty guest zoneinfo name containing only ASCII letters, digits, '/', '_', '-', or '+'"
         )));
     }
-    restore_guest_state_inner(sandbox, Some(GuestTimezone::Required { name: timezone })).await
+    restore_guest_state_inner(
+        sandbox,
+        Some(GuestTimezone::Required { name: timezone }),
+        None,
+    )
+    .await
+    .map(|_| ())
 }
 
 async fn restore_guest_state_inner(
     sandbox: &dyn Sandbox,
     timezone: Option<GuestTimezone<'_>>,
-) -> RunnerResult<()> {
+    instruction_check: Option<&InstructionCheck>,
+) -> RunnerResult<Option<RunnerResult<InstructionCheckResult>>> {
     let timestamp = host_unix_timestamp();
     let entropy = read_host_entropy()?;
     let request_timezone = match timezone {
@@ -182,15 +195,45 @@ async fn restore_guest_state_inner(
         Some(GuestTimezone::BestEffort { name, .. }) => GuestStateRestoreTimezone::BestEffort(name),
         Some(GuestTimezone::Required { name }) => GuestStateRestoreTimezone::Required(name),
     };
-    let result = sandbox
+    let metadata = instruction_check
+        .map(serde_json::to_string)
+        .transpose()
+        .map_err(|_| RunnerError::Internal("Instruction metadata encoding failed".into()))?;
+    let mut result = sandbox
         .restore_guest_state(&GuestStateRestoreRequest {
             unix_seconds: timestamp.as_secs(),
             unix_nanoseconds: timestamp.subsec_nanos(),
             entropy: &entropy,
             timezone: request_timezone,
+            instruction_check: metadata.as_deref(),
             timeout: DEFAULT_EXEC_TIMEOUT,
         })
         .await?;
+    let checked = if metadata.is_some()
+        && let ExecTermination::Exited { exit_code } = result.termination
+        && let Some(status) = RestoredInstructionCheck::from_exit_code(exit_code)
+    {
+        let checked = match status {
+            RestoredInstructionCheck::Missing
+            | RestoredInstructionCheck::Current
+            | RestoredInstructionCheck::CurrentWithMemory => Ok(InstructionCheckResult {
+                instructions_current: status != RestoredInstructionCheck::Missing,
+                memory_root_present: status == RestoredInstructionCheck::CurrentWithMemory,
+            }),
+            RestoredInstructionCheck::TargetUnavailable => {
+                Err(RunnerError::StorageTargetUnavailable(
+                    format_helper_exec_failure("instruction file check", &result),
+                ))
+            }
+            RestoredInstructionCheck::Failed => Err(RunnerError::Internal(
+                format_helper_exec_failure("instruction file check", &result),
+            )),
+        };
+        result.termination = ExecTermination::Exited { exit_code: 0 };
+        Some(checked)
+    } else {
+        None
+    };
 
     if let Some(GuestTimezone::Required { name }) = timezone
         && stderr_contains_marker(&result, TIMEZONE_UNAVAILABLE_MARKER)
@@ -205,12 +248,17 @@ async fn restore_guest_state_inner(
             &result,
         )));
     }
+    if metadata.is_some() && checked.is_none() {
+        return Err(RunnerError::Internal(
+            "Missing Instructions check result from Guest restore".into(),
+        ));
+    }
     if let Some(GuestTimezone::BestEffort { name, run_id }) = timezone {
         let outcome = classify_timezone_sync_result(&result);
         log_timezone_sync_failure(run_id, name, &result, outcome);
     }
 
-    Ok(())
+    Ok(checked)
 }
 
 /// Set system timezone inside the guest to match the user's preference.

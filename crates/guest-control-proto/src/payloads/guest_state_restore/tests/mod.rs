@@ -45,6 +45,28 @@ fn request_debug_redacts_entropy_contents() {
 }
 
 #[test]
+fn instructions_check_suffix_preserves_the_restore_payload() {
+    let entropy = entropy();
+    let timezone = GuestStateRestoreTimezone::BestEffort("Etc/UTC");
+    let before = encode_guest_state_restore_request(5_000, 12, 34, &entropy, timezone).unwrap();
+    let request = DecodedGuestStateRestoreRequest {
+        instruction_check: Some(r#"{"framework":"codex","check_memory_root":true}"#),
+        ..decode_guest_state_restore_request(&before).unwrap()
+    };
+    let mut frame = Vec::new();
+    encode_guest_state_restore_frame(&mut frame, 3, request).unwrap();
+    let mut decoder = crate::frame::Decoder::new();
+    let messages = decoder.decode(&frame).unwrap();
+    let payload = &messages[0].payload;
+    assert_eq!(&payload[..before.len()], &before);
+    assert_eq!(
+        decode_guest_state_restore_request(payload).unwrap(),
+        request
+    );
+    assert!(decode_guest_state_restore_request(&payload[..before.len() + 1]).is_err());
+}
+
+#[test]
 fn request_rejects_invalid_fixed_inputs() {
     let entropy = entropy();
     assert!(

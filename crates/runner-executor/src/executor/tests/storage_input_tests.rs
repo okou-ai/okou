@@ -6,7 +6,8 @@ use std::{
 
 use guest_contracts::{
     agent_instructions::{
-        InstructionCheck, InstructionOperation, SOURCE_FILENAME, instruction_paths,
+        InstructionCheck, InstructionOperation, RestoredInstructionCheck, SOURCE_FILENAME,
+        instruction_paths,
     },
     storage_files,
     storage_manifest::Manifest,
@@ -962,12 +963,17 @@ async fn large_workflow_archive_downloads_through_ordinary_guest_passthrough() {
 #[tokio::test]
 async fn home_restored_memory_reuses_a_present_root_and_repairs_a_missing_root() {
     use crate::home_image_cache::HomeImageCache;
+    use crate::idle_pool::{
+        IdlePool, IdlePoolConfig, IdleUnparkResult, ParkResult, ParkedIdleCandidate,
+    };
     use api_contracts::generated::types::runners::storage::ArtifactEntryMissingRootPolicy;
     use runner_host::paths::RunnerPaths;
-    use runner_types::storage_manifest::ArtifactEntry;
+    use runner_types::{storage_manifest::ArtifactEntry, types::HomeReuseResult};
+    use sandbox::SandboxFactory;
+    use sandbox_mock::MockSandbox;
 
     let memory_mount = "/home/user/.codex/memories";
-    for present in [true, false] {
+    for (present, fused) in [(true, false), (false, false), (true, true), (false, true)] {
         let directory = tempfile::tempdir().unwrap();
         let mut config = super::support::test_executor_config(directory.path()).await;
         let paths = RunnerPaths::new(directory.path().join("runner"));
@@ -1019,22 +1025,58 @@ async fn home_restored_memory_reuses_a_present_root_and_repairs_a_missing_root()
         )
         .unwrap();
         let overrides = Arc::new(MockSandboxOverrides::new());
-        overrides.add_exec_result_matcher(
-            " --instructions-check-stdin",
-            sandbox::ExecResult::new(0, serde_json::to_vec(&checked).unwrap(), Vec::new()),
+        if fused {
+            let result = if checked.memory_root_present {
+                RestoredInstructionCheck::CurrentWithMemory
+            } else {
+                RestoredInstructionCheck::Current
+            };
+            overrides.push_guest_state_restore_result(Ok(sandbox::ExecResult::new(
+                result as i32,
+                Vec::new(),
+                Vec::new(),
+            )));
+        } else {
+            overrides.add_exec_result_matcher(
+                " --instructions-check-stdin",
+                sandbox::ExecResult::new(0, serde_json::to_vec(&checked).unwrap(), Vec::new()),
+            );
+        }
+        let factory = Arc::new(
+            Box::new(MockSandboxFactory::with_overrides(Arc::clone(&overrides)))
+                as Box<dyn SandboxFactory>,
         );
-        let factory = MockSandboxFactory::with_overrides(Arc::clone(&overrides));
+        let sandbox_id = SandboxId::new_v4();
+        let candidate = ParkedIdleCandidate::blank(
+            Box::new(MockSandbox::with_overrides(
+                sandbox_id.to_string(),
+                Arc::clone(&overrides),
+            )),
+            factory,
+            super::support::test_budget_lease(),
+            sandbox_id,
+            "vm0/default".into(),
+            "test-rootfs".into(),
+            None,
+        );
+        let mut pool = IdlePool::new(IdlePoolConfig { max_idle: 0 });
+        assert!(matches!(pool.park(candidate), ParkResult::Parked));
+        let blank = pool.reserve_blank("vm0/default", &None).unwrap();
+        let IdleUnparkResult::Reused {
+            sandbox,
+            budget_lease: _lease,
+        } = blank.try_unpark_for_run(current.run_id).await
+        else {
+            panic!("blank must unpark");
+        };
         let params = super::super::JobParams {
             home_disk_mb: 16,
+            restore_guest_state: fused,
             ..default_params()
         };
-        let (outcome, _) = execute_job(
-            &factory,
+        let (outcome, _) = execute_job_reuse(
+            *sandbox,
             current,
-            NewSandboxDispatch {
-                id: SandboxId::new_v4(),
-                reuse_result: SandboxReuseResult::PoolMiss,
-            },
             &config,
             &params,
             CancellationToken::new(),
@@ -1042,12 +1084,23 @@ async fn home_restored_memory_reuses_a_present_root_and_repairs_a_missing_root()
         .await;
 
         assert_eq!(outcome.exit_code(), 0, "{:?}", outcome.error());
+        assert_eq!(outcome.home_reuse_result, Some(HomeReuseResult::Reused));
+        assert_eq!(overrides.home_drive_replacements().len(), 1);
         assert_eq!(outcome.storage_fingerprints, fingerprints);
         let checks = overrides.agent_instructions_calls();
-        assert_eq!(checks.len(), 1);
-        assert_eq!(checks[0].operation, InstructionOperation::Check);
-        let input: InstructionCheck = serde_json::from_slice(&checks[0].metadata).unwrap();
-        assert!(input.check_memory_root);
+        if fused {
+            assert!(checks.is_empty());
+            let calls = overrides.guest_state_restore_calls();
+            assert_eq!(calls.len(), 1);
+            let requested: InstructionCheck =
+                serde_json::from_str(calls[0].instruction_check.as_deref().unwrap()).unwrap();
+            assert_eq!(requested, input);
+        } else {
+            assert_eq!(checks.len(), 1);
+            assert_eq!(checks[0].operation, InstructionOperation::Check);
+            let requested: InstructionCheck = serde_json::from_slice(&checks[0].metadata).unwrap();
+            assert_eq!(requested, input);
+        }
         assert_eq!(
             overrides.storage_manifest_calls().len(),
             usize::from(!present)

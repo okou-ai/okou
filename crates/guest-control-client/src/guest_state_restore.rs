@@ -2,8 +2,9 @@ use std::io;
 use std::time::Duration;
 
 use guest_control_proto::{
-    ExecTermination, GuestStateRestoreTimezone, MSG_ERROR, MSG_GUEST_STATE_RESTORE_RESULT,
-    decode_guest_state_restore_result, encode_guest_state_restore_request_frame_into,
+    DecodedGuestStateRestoreRequest, ExecTermination, GuestStateRestoreTimezone, MSG_ERROR,
+    MSG_GUEST_STATE_RESTORE_RESULT, decode_guest_state_restore_result,
+    encode_guest_state_restore_frame,
 };
 
 use crate::helper_output::owned_capture;
@@ -47,22 +48,34 @@ impl GuestControlClient {
         process_timeout_ms: u32,
         request_timeout: Duration,
     ) -> io::Result<GuestStateRestoreResult> {
+        self.guest_state_restore_request(
+            DecodedGuestStateRestoreRequest {
+                timeout_ms: process_timeout_ms,
+                unix_seconds,
+                unix_nanoseconds,
+                entropy,
+                timezone,
+                instruction_check: None,
+            },
+            request_timeout,
+        )
+        .await
+    }
+
+    /// Restore state and optionally check the prepared Home's Instructions.
+    pub async fn guest_state_restore_request(
+        &self,
+        request: DecodedGuestStateRestoreRequest<'_>,
+        request_timeout: Duration,
+    ) -> io::Result<GuestStateRestoreResult> {
         let response = normal_request_on_shared_with_write_observer_frame_builder(
             &self.shared,
             TERMINAL_MSG_TYPES,
             request_timeout,
             FrameWriteObserver::noop(),
             |seq, frame| {
-                encode_guest_state_restore_request_frame_into(
-                    frame,
-                    seq,
-                    process_timeout_ms,
-                    unix_seconds,
-                    unix_nanoseconds,
-                    entropy,
-                    timezone,
-                )
-                .map_err(protocol_error::invalid_input)
+                encode_guest_state_restore_frame(frame, seq, request)
+                    .map_err(protocol_error::invalid_input)
             },
         )
         .await?;

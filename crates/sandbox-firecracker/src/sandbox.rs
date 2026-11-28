@@ -3208,12 +3208,15 @@ impl Sandbox for FirecrackerSandbox {
             .run_bounded_guest_operation(operation, |guest| async move {
                 validate_exec_capture_timeout(timeout_ms)?;
                 guest
-                    .guest_state_restore(
-                        request.unix_seconds,
-                        request.unix_nanoseconds,
-                        request.entropy,
-                        timezone,
-                        timeout_ms,
+                    .guest_state_restore_request(
+                        guest_control_proto::DecodedGuestStateRestoreRequest {
+                            unix_seconds: request.unix_seconds,
+                            unix_nanoseconds: request.unix_nanoseconds,
+                            entropy: request.entropy,
+                            timezone,
+                            timeout_ms,
+                            instruction_check: request.instruction_check,
+                        },
                         Duration::from_millis(u64::from(timeout_ms) + 5_000),
                     )
                     .await
@@ -3221,9 +3224,12 @@ impl Sandbox for FirecrackerSandbox {
             })
             .await;
         #[cfg(feature = "test-support")]
-        if result
-            .as_ref()
-            .is_ok_and(sandbox::helper_exec::helper_exec_succeeded)
+        if result.as_ref().is_ok_and(|result| {
+            sandbox::helper_exec::helper_exec_succeeded(result)
+                || request.instruction_check.is_some()
+                    && matches!(result.termination, sandbox::ExecTermination::Exited { exit_code }
+                        if guest_contracts::agent_instructions::RestoredInstructionCheck::from_exit_code(exit_code).is_some())
+        })
         {
             self.run_preparation_checkpoint(crate::GuestPreparationStage::Restore)
                 .await?;

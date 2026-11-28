@@ -1,3 +1,6 @@
+use guest_contracts::agent_instructions::{
+    InstructionCheck, InstructionCheckResult, RestoredInstructionCheck,
+};
 use sandbox::{ExecResult, ExecTermination, Sandbox};
 use sandbox_mock::{GuestStateRestoreTimezoneCall, MockSandbox};
 use tracing::Level;
@@ -18,7 +21,7 @@ async fn restore_guest_state_uses_fixed_restore_operation() {
     let sandbox = MockSandbox::new("test");
     let ctx = minimal_context();
 
-    restore_guest_state(&sandbox, &ctx).await.unwrap();
+    restore_guest_state(&sandbox, &ctx, None).await.unwrap();
 
     let calls = sandbox.guest_state_restore_calls();
     assert_eq!(calls.len(), 1);
@@ -34,12 +37,74 @@ async fn restore_guest_state_uses_fixed_restore_operation() {
 }
 
 #[tokio::test]
+async fn combined_restore_keeps_instructions_failures_separate() {
+    let ctx = minimal_context();
+    let input = InstructionCheck {
+        framework: "codex".into(),
+        check_memory_root: true,
+    };
+    for status in [
+        RestoredInstructionCheck::CurrentWithMemory,
+        RestoredInstructionCheck::Missing,
+        RestoredInstructionCheck::TargetUnavailable,
+        RestoredInstructionCheck::Failed,
+    ] {
+        let sandbox = MockSandbox::new("test");
+        sandbox.push_exec_result(Ok(ExecResult::new(status as i32, Vec::new(), Vec::new())));
+        let checked = restore_guest_state(&sandbox, &ctx, Some(&input))
+            .await
+            .unwrap()
+            .unwrap();
+        match status {
+            RestoredInstructionCheck::TargetUnavailable => {
+                assert!(matches!(
+                    checked,
+                    Err(RunnerError::StorageTargetUnavailable(_))
+                ));
+            }
+            RestoredInstructionCheck::Failed => {
+                assert!(matches!(checked, Err(RunnerError::Internal(_))));
+            }
+            _ => {
+                let present = status == RestoredInstructionCheck::CurrentWithMemory;
+                assert_eq!(
+                    checked.unwrap(),
+                    InstructionCheckResult {
+                        instructions_current: present,
+                        memory_root_present: present,
+                    }
+                );
+            }
+        }
+        let calls = sandbox.guest_state_restore_calls();
+        assert_eq!(calls.len(), 1);
+        assert_eq!(
+            calls[0].instruction_check,
+            Some(serde_json::to_string(&input).unwrap())
+        );
+        assert!(sandbox.agent_instructions_calls().is_empty());
+    }
+
+    let sandbox = MockSandbox::new("test");
+    sandbox.push_exec_result(Ok(ExecResult::new(
+        1,
+        Vec::new(),
+        b"reseed failed".to_vec(),
+    )));
+    assert!(
+        restore_guest_state(&sandbox, &ctx, Some(&input))
+            .await
+            .is_err()
+    );
+}
+
+#[tokio::test]
 async fn restore_guest_state_passes_best_effort_timezone_to_fixed_operation() {
     let sandbox = MockSandbox::new("test");
     let mut ctx = minimal_context();
     ctx.user_timezone = Some("Asia/Shanghai".into());
 
-    restore_guest_state(&sandbox, &ctx).await.unwrap();
+    restore_guest_state(&sandbox, &ctx, None).await.unwrap();
 
     let calls = sandbox.guest_state_restore_calls();
     assert_eq!(calls.len(), 1);
@@ -128,7 +193,7 @@ async fn restore_guest_state_rejects_invalid_timezone_without_extra_exec() {
     let mut ctx = minimal_context();
     ctx.user_timezone = Some("UTC;id".into());
 
-    restore_guest_state(&sandbox, &ctx).await.unwrap();
+    restore_guest_state(&sandbox, &ctx, None).await.unwrap();
 
     let calls = sandbox.guest_state_restore_calls();
     assert_eq!(calls.len(), 1);
@@ -150,7 +215,7 @@ async fn restore_guest_state_logs_embedded_timezone_failure_without_failing_rest
     let _guard = tracing::subscriber::set_default(subscriber);
     tracing::callsite::rebuild_interest_cache();
 
-    restore_guest_state(&sandbox, &ctx).await.unwrap();
+    restore_guest_state(&sandbox, &ctx, None).await.unwrap();
 
     let events = captured.entries();
     let event = events
@@ -198,7 +263,7 @@ async fn restore_guest_state_logs_unavailable_best_effort_timezone_without_faili
     let _guard = tracing::subscriber::set_default(subscriber);
     tracing::callsite::rebuild_interest_cache();
 
-    restore_guest_state(&sandbox, &ctx).await.unwrap();
+    restore_guest_state(&sandbox, &ctx, None).await.unwrap();
 
     let events = captured.entries();
     let event = events
@@ -237,7 +302,7 @@ async fn restore_guest_state_propagates_exec_error() {
     sandbox.push_exec_result(Err(sandbox_exec_error("restore failed")));
     let ctx = minimal_context();
 
-    let result = restore_guest_state(&sandbox, &ctx);
+    let result = restore_guest_state(&sandbox, &ctx, None);
 
     assert!(result.await.is_err());
 }
@@ -256,7 +321,7 @@ async fn restore_guest_state_fails_on_non_exited_result() {
     }));
     let ctx = minimal_context();
 
-    let result = restore_guest_state(&sandbox, &ctx).await;
+    let result = restore_guest_state(&sandbox, &ctx, None).await;
 
     let message = result.unwrap_err().to_string();
     assert!(
@@ -283,7 +348,7 @@ async fn restore_guest_state_reports_clock_failure_marker() {
     )));
     let ctx = minimal_context();
 
-    let result = restore_guest_state(&sandbox, &ctx).await;
+    let result = restore_guest_state(&sandbox, &ctx, None).await;
 
     let message = result.unwrap_err().to_string();
     assert!(
@@ -306,7 +371,7 @@ async fn restore_guest_state_reports_reseed_failure_marker() {
     )));
     let ctx = minimal_context();
 
-    let result = restore_guest_state(&sandbox, &ctx).await;
+    let result = restore_guest_state(&sandbox, &ctx, None).await;
 
     let message = result.unwrap_err().to_string();
     assert!(

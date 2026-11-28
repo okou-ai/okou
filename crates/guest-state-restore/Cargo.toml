@@ -6,7 +6,9 @@ description = "Repair snapshot-sensitive guest state and apply guest timezones"
 
 [dependencies]
 guest-contracts.workspace = true
+guest-storage-apply.workspace = true
 libc = { workspace = true, features = ["std"] }
+nix = { workspace = true, features = ["user"] }
 
 [dev-dependencies]
 tempfile = { workspace = true, features = ["getrandom"] }

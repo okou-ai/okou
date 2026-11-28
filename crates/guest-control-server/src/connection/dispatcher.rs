@@ -713,6 +713,7 @@ impl ConnectionDispatcher {
                 unix_nanoseconds: decoded.unix_nanoseconds,
                 entropy: decoded.entropy,
                 timezone: decoded.timezone,
+                instruction_check: decoded.instruction_check,
             },
             operation_guard,
             admission,

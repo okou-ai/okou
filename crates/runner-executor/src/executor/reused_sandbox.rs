@@ -164,12 +164,12 @@ pub(super) async fn execute_reused_sandbox(
         None,
     );
 
-    // Exact reuse does not prefetch. For blanks, inspect the existing preparation
-    // result while inputs and sandbox ownership are still available for recovery.
+    // A blank with a replacement Home can combine its outstanding restore and
+    // Instructions check. Inspect early preparation while recovery owns the VM.
     let prepared_guest_runtime = if run.kind == IdleSandboxKind::Blank {
         inputs
             .controls
-            .prepare_codex_model_catalog_prefetch(run.sandbox.as_ref(), context, &start, telemetry)
+            .prepare_blank_guest_runtime(run.sandbox.as_ref(), context, &start, telemetry)
             .await
     } else {
         None

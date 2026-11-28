@@ -27,15 +27,27 @@ pub(in crate::executor) enum InstructionReuse {
     Repair(StorageFingerprints),
 }
 
-pub(in crate::executor) async fn check_instruction_reuse(
-    sandbox: &dyn Sandbox,
-    context: &ExecutionContext,
-    previous: Option<&StorageFingerprints>,
+pub(in crate::executor) struct CompletedInstructionCheck {
+    pub(in crate::executor) input: InstructionCheck,
+    pub(in crate::executor) result: RunnerResult<InstructionCheckResult>,
+}
+
+pub(in crate::executor) enum InstructionReusePlan<'a> {
+    Decided(InstructionReuse),
+    Check {
+        input: InstructionCheck,
+        previous: &'a StorageFingerprints,
+        mount: &'a str,
+    },
+}
+
+pub(in crate::executor) fn plan_instruction_reuse<'a>(
+    context: &'a ExecutionContext,
+    previous: Option<&'a StorageFingerprints>,
     prepared_plan: Option<&StoragePlan>,
-    telemetry: &mut JobTelemetry,
-) -> RunnerResult<InstructionReuse> {
+) -> RunnerResult<InstructionReusePlan<'a>> {
     let Some(instruction) = &context.instruction_file else {
-        return Ok(InstructionReuse::Apply);
+        return Ok(InstructionReusePlan::Decided(InstructionReuse::Apply));
     };
     let entry = context
         .storage_manifest
@@ -48,7 +60,7 @@ pub(in crate::executor) async fn check_instruction_reuse(
         })
         .ok_or_else(|| RunnerError::Internal("Missing instruction Storage input".into()))?;
     let Some(previous) = previous else {
-        return Ok(InstructionReuse::Apply);
+        return Ok(InstructionReusePlan::Decided(InstructionReuse::Apply));
     };
     if !previous
         .storages
@@ -57,7 +69,7 @@ pub(in crate::executor) async fn check_instruction_reuse(
             fingerprint.matches(&entry.vas_storage_name, &entry.vas_version_id)
         })
     {
-        return Ok(InstructionReuse::Apply);
+        return Ok(InstructionReusePlan::Decided(InstructionReuse::Apply));
     }
     let selection = CliAgentTypeSelection::parse(&context.cli_agent_type);
     let framework = selection.normalized_cli_agent_type();
@@ -76,41 +88,68 @@ pub(in crate::executor) async fn check_instruction_reuse(
         &owned_plan
     };
     if plan.replaces_existing_file(&target, Path::new(HOME_DIR)) {
-        let mut repaired = previous.clone();
-        repaired.storages.remove(&instruction.storage_mount);
-        return Ok(InstructionReuse::Repair(repaired));
+        return Ok(InstructionReusePlan::Decided(repair(
+            previous,
+            &instruction.storage_mount,
+        )));
     }
     let memory_mount = member_memory_mount(selection.framework());
-    let check_memory_root = plan.needs_only_memory_root_check(memory_mount);
-    let started = Instant::now();
-    let checked = check_instruction_target(
-        sandbox,
-        context,
-        &InstructionCheck {
+    Ok(InstructionReusePlan::Check {
+        input: InstructionCheck {
             framework: framework.into(),
-            check_memory_root,
+            check_memory_root: plan.needs_only_memory_root_check(memory_mount),
         },
-    )
-    .await;
-    telemetry.record(
-        "runner_agent_instructions_check",
-        started.elapsed(),
-        checked.is_ok(),
-        checked
-            .as_ref()
-            .err()
-            .map(|_| "instruction_file_check_failed"),
-    );
-    let checked = checked?;
+        previous,
+        mount: &instruction.storage_mount,
+    })
+}
+
+pub(in crate::executor) async fn check_instruction_reuse(
+    sandbox: &dyn Sandbox,
+    context: &ExecutionContext,
+    previous: Option<&StorageFingerprints>,
+    prepared_plan: Option<&StoragePlan>,
+    completed_check: Option<CompletedInstructionCheck>,
+    telemetry: &mut JobTelemetry,
+) -> RunnerResult<InstructionReuse> {
+    let (input, previous, mount) = match plan_instruction_reuse(context, previous, prepared_plan)? {
+        InstructionReusePlan::Decided(reuse) => return Ok(reuse),
+        InstructionReusePlan::Check {
+            input,
+            previous,
+            mount,
+        } => (input, previous, mount),
+    };
+    let checked = if let Some(completed) = completed_check.filter(|checked| checked.input == input)
+    {
+        completed.result?
+    } else {
+        let started = Instant::now();
+        let checked = check_instruction_target(sandbox, context, &input).await;
+        telemetry.record(
+            "runner_agent_instructions_check",
+            started.elapsed(),
+            checked.is_ok(),
+            checked
+                .as_ref()
+                .err()
+                .map(|_| "instruction_file_check_failed"),
+        );
+        checked?
+    };
     if checked.instructions_current {
         Ok(InstructionReuse::Reused {
-            memory_root_present: check_memory_root && checked.memory_root_present,
+            memory_root_present: input.check_memory_root && checked.memory_root_present,
         })
     } else {
-        let mut repaired = previous.clone();
-        repaired.storages.remove(&instruction.storage_mount);
-        Ok(InstructionReuse::Repair(repaired))
+        Ok(repair(previous, mount))
     }
+}
+
+fn repair(previous: &StorageFingerprints, mount: &str) -> InstructionReuse {
+    let mut repaired = previous.clone();
+    repaired.storages.remove(mount);
+    InstructionReuse::Repair(repaired)
 }
 
 async fn check_instruction_target(
