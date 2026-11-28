@@ -235,21 +235,15 @@ interface DecisionAllowedRuleMatch {
   readonly rule: string;
 }
 
-interface DecisionBlockMatch {
-  readonly firewallName: string;
-  readonly base: string;
-  readonly relativePath: string;
-}
-
 interface FirewallDecisionState {
   bestBaseScore: number | null;
   bestRuleSpecificity: PathSpecificity | null;
   baseMatch: DecisionBaseMatch | null;
   allowedMatch: DecisionAllowedRuleMatch | null;
-  deniedMatch: DecisionBlockMatch | null;
+  deniedMatch: DecisionBaseMatch | null;
   deniedPermissionNames: string[];
-  malformedConfigMatch: DecisionBlockMatch | null;
-  malformedPolicyMatch: DecisionBlockMatch | null;
+  malformedConfigMatch: DecisionBaseMatch | null;
+  malformedPolicyMatch: DecisionBaseMatch | null;
 }
 
 interface CollectedApiMatch {
@@ -257,7 +251,6 @@ interface CollectedApiMatch {
   readonly firewall: DecisionFirewall;
   readonly api: DecisionApi;
   readonly baseMatch: DecisionBaseMatch;
-  readonly blockMatch: DecisionBlockMatch;
   readonly score: number;
 }
 
@@ -2042,7 +2035,7 @@ function acceptRuleSpecificity(
 
 function recordDeniedRule(
   state: FirewallDecisionState,
-  match: DecisionBlockMatch,
+  match: DecisionBaseMatch,
   permission: string,
 ): void {
   if (!state.deniedPermissionNames.includes(permission)) {
@@ -2159,7 +2152,7 @@ function unsafePathBlockDecision(
 function recordMalformedDecisionState(
   state: FirewallDecisionState,
   api: DecisionApi,
-  blockMatch: DecisionBlockMatch,
+  baseMatch: DecisionBaseMatch,
 ): void {
   if (
     api.baseMalformed ||
@@ -2167,7 +2160,7 @@ function recordMalformedDecisionState(
     api.hasMalformedRules ||
     api.routingIdentity === null
   ) {
-    state.malformedConfigMatch ??= blockMatch;
+    state.malformedConfigMatch ??= baseMatch;
   }
 }
 
@@ -2430,8 +2423,8 @@ function conflictingSelectedApiDecision(
   return {
     kind: "block",
     firewallName: selectedName,
-    base: first.blockMatch.base,
-    relativePath: first.blockMatch.relativePath,
+    base: first.baseMatch.base,
+    relativePath: first.baseMatch.relativePath,
     reason: "malformed_firewall_config",
     permissions: [],
   };
@@ -2456,12 +2449,12 @@ function reduceSelectedOwner(
   }
 
   for (const apiMatch of relevantApiMatches) {
-    const { firewall, api, blockMatch } = apiMatch;
+    const { firewall, api, baseMatch } = apiMatch;
     const policy = networkPolicies.policies.get(firewall.name);
-    recordMalformedDecisionState(state, api, blockMatch);
+    recordMalformedDecisionState(state, api, baseMatch);
     if (apiCannotEvaluateRules(firewall, api)) continue;
     if (policyCannotEvaluateRules(networkPolicies, policy)) {
-      state.malformedPolicyMatch ??= blockMatch;
+      state.malformedPolicyMatch ??= baseMatch;
       continue;
     }
     evaluableApiOrders.add(apiMatch.order);
@@ -2476,7 +2469,7 @@ function reduceSelectedOwner(
       policy !== undefined &&
       policy.blockedPermissions.has(rule.permission)
     ) {
-      recordDeniedRule(state, apiMatch.blockMatch, rule.permission);
+      recordDeniedRule(state, apiMatch.baseMatch, rule.permission);
       continue;
     }
     state.allowedMatch ??= {
@@ -2611,11 +2604,6 @@ function matchRequestApiBases(
         firewall,
         api,
         baseMatch: decisionBaseMatch,
-        blockMatch: {
-          firewallName: decisionBaseMatch.firewallName,
-          base: decisionBaseMatch.base,
-          relativePath: decisionBaseMatch.relativePath,
-        },
         score: baseMatch.score,
       };
       matchedApis.push(apiMatch);
