@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="composer_workflow_references">Referensi</string>
+    <string name="composer_workflow_title">Alur kerja</string>
+    <string name="composer_workflow_search">Cari alur kerja</string>
+    <string name="composer_workflow_recent">Baru digunakan</string>
+    <string name="composer_workflow_all">Semua alur kerja</string>
+    <string name="composer_workflow_loading">Memuat alur kerja</string>
+    <string name="composer_workflow_empty">Tidak ada alur kerja yang tersedia</string>
+    <string name="composer_workflow_no_match">Tidak ada alur kerja yang cocok</string>
+    <string name="composer_workflow_read_failed">Alur kerja sementara tidak tersedia</string>
+</resources>

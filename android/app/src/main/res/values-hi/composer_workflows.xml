@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="composer_workflow_references">संदर्भ</string>
+    <string name="composer_workflow_title">वर्कफ़्लो</string>
+    <string name="composer_workflow_search">वर्कफ़्लो खोजें</string>
+    <string name="composer_workflow_recent">हाल में इस्तेमाल किए गए</string>
+    <string name="composer_workflow_all">सभी वर्कफ़्लो</string>
+    <string name="composer_workflow_loading">वर्कफ़्लो लोड हो रहे हैं</string>
+    <string name="composer_workflow_empty">कोई वर्कफ़्लो उपलब्ध नहीं है</string>
+    <string name="composer_workflow_no_match">कोई मेल खाता वर्कफ़्लो नहीं मिला</string>
+    <string name="composer_workflow_read_failed">वर्कफ़्लो कुछ समय के लिए उपलब्ध नहीं हैं</string>
+</resources>

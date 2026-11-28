@@ -1,6 +1,7 @@
 package ai.okou.android.chat
 
 import ai.okou.android.R
+import ai.okou.android.api.generated.ComposerWorkflowsItem
 import ai.okou.android.artifacts.InlineArtifactImages
 import ai.okou.android.connectors.ChatConnectorOptions
 import ai.okou.android.connectors.ConnectorAccountTarget
@@ -9,6 +10,7 @@ import ai.okou.android.currentWindowSizeDp
 import ai.okou.android.settings.DefaultModelSettings
 import ai.okou.android.state.rememberJournalEditor
 import ai.okou.android.workspaceListPaneWidth
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -28,6 +30,7 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -59,7 +62,16 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
@@ -79,6 +91,8 @@ import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.input.TransformedText
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntRect
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -86,6 +100,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlin.math.roundToInt
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -119,6 +134,8 @@ internal fun ChatComposerField(
     attachmentPicker: ChatAttachmentPicker? = null,
     openUploadedAttachment: ((ChatAttachmentReference) -> Unit)? = null,
     attachmentImages: InlineArtifactImages? = null,
+    stopPlacement: ConversationStopPlacement? = null,
+    appBarHeight: Dp = 64.dp,
 ) {
     val state by model.uiState.collectAsStateWithLifecycle()
     val connectorSave = connectorOptions?.let { options ->
@@ -172,6 +189,75 @@ internal fun ChatComposerField(
     val hasDraft = state.journal != null
     val keyboard = LocalSoftwareKeyboardController.current
     val imeVisible = WindowInsets.isImeVisible
+    val workflowCatalog = model.workflowCatalog
+    val workflowState =
+        workflowCatalog?.state?.collectAsStateWithLifecycle()?.value ?: ComposerWorkflowState()
+    // Composition hides the popup without ending the active slash session.
+    val workflowContext =
+        if (workflowCatalog != null && inputFocused) {
+            val field = input.value
+            if (field.composition == null) field.activeWorkflowToken()
+            else field.copy(composition = null).activeWorkflowToken()
+        } else null
+    val workflowToken = workflowContext.takeIf { input.value.composition == null }
+    var dismissedWorkflowInput by remember(target.key) { mutableStateOf<TextFieldValue?>(null) }
+    var workflowAnchor by remember(target.key) { mutableStateOf(IntRect.Zero) }
+    var composerBounds by remember(target.key) { mutableStateOf(Rect.Zero) }
+    val workflowQuery = workflowToken?.query.orEmpty()
+    val workflowCandidates =
+        remember(workflowState.snapshot, workflowQuery, workflowToken != null) {
+            if (workflowToken == null) WorkflowCandidates()
+            else workflowState.snapshot?.candidates(workflowQuery) ?: WorkflowCandidates()
+        }
+    val workflowPosition = rememberLazyListState()
+    var highlightedWorkflow by remember(target.key, workflowToken) { mutableStateOf<String?>(null) }
+    val workflowHeight =
+        workflowPanelHeight(
+            workflowAnchor,
+            appBarHeight,
+            workflowCandidates.recent.isNotEmpty(),
+        )
+    val workflowOpen =
+        workflowToken != null &&
+            input.value != dismissedWorkflowInput &&
+            workflowHeight != null &&
+            conversationSnackbar?.currentSnackbarData == null
+    var popupHeight by remember(workflowOpen) { mutableStateOf(0) }
+    val popupGap = with(LocalDensity.current) { 8.dp.toPx() }
+    LaunchedEffect(workflowOpen, composerBounds, popupHeight, popupGap, stopPlacement) {
+        if (workflowOpen && popupHeight > 0) {
+            val bottom = composerBounds.top - popupGap
+            stopPlacement?.reportWorkflowBounds(
+                Rect(composerBounds.left, bottom - popupHeight, composerBounds.right, bottom),
+            )
+        } else stopPlacement?.reportWorkflowBounds(null)
+    }
+    DisposableEffect(stopPlacement) {
+        onDispose { stopPlacement?.reportWorkflowBounds(null) }
+    }
+    fun dismissWorkflow() {
+        dismissedWorkflowInput = latestInput.value
+    }
+    fun chooseWorkflow(item: ComposerWorkflowsItem, token: WorkflowToken?) {
+        val editor = latestInput
+        if (token != null && editor.value.activeWorkflowToken() != token) return
+        val updated = editor.value.insertWorkflow(item.name, token)
+        dismissedWorkflowInput = updated
+        if (editor.edit(updated)) model.edit(target, updated.text)
+    }
+    val workflowStart = workflowContext?.range?.start
+    LaunchedEffect(target.key, workflowStart, workflowCatalog) {
+        if (workflowStart != null) workflowCatalog?.refresh()
+    }
+    LaunchedEffect(workflowOpen, workflowQuery) {
+        if (workflowOpen) workflowPosition.requestScrollToItem(0)
+    }
+    var keyboardWasVisible by remember(target.key) { mutableStateOf(false) }
+    LaunchedEffect(imeVisible) {
+        if (keyboardWasVisible && !imeVisible && workflowOpen) dismissWorkflow()
+        keyboardWasVisible = imeVisible
+    }
+    BackHandler(enabled = workflowOpen && !imeVisible, onBack = ::dismissWorkflow)
     val latestAttachments by rememberUpdatedState(attachments)
     var requestedImage by remember(target, draftKey) { mutableStateOf<DraftImageRequest?>(null) }
     var returnImage by remember(target, draftKey) { mutableStateOf<String?>(null) }
@@ -261,8 +347,15 @@ internal fun ChatComposerField(
             ComposerFeedback(model, target, state, entry)
             Column(
                 Modifier.fillMaxWidth()
+                    .onGloballyPositioned {
+                        val position = it.positionInWindow()
+                        val x = position.x.roundToInt()
+                        val y = position.y.roundToInt()
+                        workflowAnchor = IntRect(x, y, x + it.size.width, y + it.size.height)
+                        composerBounds = it.boundsInRoot()
+                    }
                     .testTag("chat_input_card")
-                    .background(colors.surface, cardShape)
+                    .background(colors.surfaceContainerLow, cardShape)
                     .border(
                         width = if (inputFocused) 2.dp else cardOutline,
                         color = if (inputFocused) colors.primary else colors.outline,
@@ -313,7 +406,10 @@ internal fun ChatComposerField(
                     verticalAlignment = Alignment.Bottom,
                 ) {
                     if (
-                        connectorOptions != null || defaultModel != null || attachmentPicker != null
+                        connectorOptions != null ||
+                            defaultModel != null ||
+                            attachmentPicker != null ||
+                            workflowCatalog != null
                     )
                         ChatConnectorOptionsButton(
                             connectorOptions,
@@ -329,9 +425,13 @@ internal fun ChatComposerField(
                             onOptionsFeedbackInOverlay = onOptionsFeedbackInOverlay,
                             buttonFocus = attachmentOptionsFocus,
                             attachmentPickerActive = attachmentPicker?.active == true,
+                            selectWorkflow =
+                                workflowCatalog?.let { { item -> chooseWorkflow(item, null) } },
                             pickAttachment =
                                 attachmentPicker?.let { picker ->
-                                    { photos -> picker.pick(photos, draftKey, target.key, null) }
+                                    { photos ->
+                                        picker.pick(photos, draftKey, target.key, null)
+                                    }
                                 },
                         )
                     if (shortWindow && attachments.isNotEmpty())
@@ -344,14 +444,69 @@ internal fun ChatComposerField(
                                 // A retiring field can clear its selection while focus moves.
                                 if (shortWindow == currentShortWindow) {
                                     input.edit(it)
+                                    if (it != dismissedWorkflowInput) dismissedWorkflowInput = null
                                     model.edit(target, it.text)
                                 }
                             },
                             modifier =
                                 Modifier.weight(1f)
-                                    .heightIn(min = minimumTextHeight, max = availableTextHeight)
+                                    .heightIn(
+                                        min = minimumTextHeight,
+                                        max = availableTextHeight,
+                                    )
                                     .focusRequester(editorFocus)
-                                    .onFocusChanged { inputFocused = it.isFocused }
+                                    .onFocusChanged {
+                                        if (inputFocused && !it.isFocused)
+                                            dismissedWorkflowInput = null
+                                        inputFocused = it.isFocused
+                                    }
+                                    .onPreviewKeyEvent { event ->
+                                        if (!workflowOpen || event.type != KeyEventType.KeyDown)
+                                            return@onPreviewKeyEvent false
+                                        val rows = workflowCandidates.rows
+                                        val index = rows.indexOfFirst {
+                                            it.workflow.id == highlightedWorkflow
+                                        }
+                                        when (event.key) {
+                                            Key.Escape -> dismissWorkflow()
+                                            Key.Enter,
+                                            Key.NumPadEnter -> {
+                                                val item =
+                                                    rows.getOrNull(index)
+                                                        ?: return@onPreviewKeyEvent false
+                                                chooseWorkflow(item.workflow, workflowToken)
+                                            }
+                                            Key.DirectionDown,
+                                            Key.DirectionUp -> {
+                                                if (rows.isEmpty()) return@onPreviewKeyEvent false
+                                                val next =
+                                                    if (event.key == Key.DirectionDown)
+                                                        (index + 1) % rows.size
+                                                    else if (index <= 0) rows.lastIndex
+                                                    else index - 1
+                                                highlightedWorkflow = rows[next].workflow.id
+                                                val headings =
+                                                    if (workflowCandidates.recent.isEmpty()) 0
+                                                    else if (next < workflowCandidates.recent.size)
+                                                        1
+                                                    else 2
+                                                val row = next + headings
+                                                val viewport = workflowPosition.layoutInfo
+                                                if (
+                                                    viewport.visibleItemsInfo.none {
+                                                        it.index == row &&
+                                                            it.offset >=
+                                                                viewport.viewportStartOffset &&
+                                                            it.offset + it.size <=
+                                                                viewport.viewportEndOffset
+                                                    }
+                                                )
+                                                    workflowPosition.requestScrollToItem(row)
+                                            }
+                                            else -> return@onPreviewKeyEvent false
+                                        }
+                                        true
+                                    }
                                     .testTag("message_input")
                                     .semantics { contentDescription = label },
                             enabled = state.journal != null,
@@ -417,6 +572,20 @@ internal fun ChatComposerField(
                             contentDescription = null,
                             modifier = Modifier.size(20.dp),
                         )
+                    }
+                }
+                if (workflowOpen) {
+                    ComposerWorkflowPopup(
+                        workflowAnchor,
+                        workflowHeight,
+                        workflowState,
+                        workflowCandidates,
+                        workflowPosition,
+                        highlightedWorkflow,
+                        ::dismissWorkflow,
+                        onHeight = { popupHeight = it },
+                    ) {
+                        chooseWorkflow(it, workflowToken)
                     }
                 }
             }

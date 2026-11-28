@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="composer_workflow_references">Références</string>
+    <string name="composer_workflow_title">Workflows</string>
+    <string name="composer_workflow_search">Rechercher des workflows</string>
+    <string name="composer_workflow_recent">Utilisés récemment</string>
+    <string name="composer_workflow_all">Tous les workflows</string>
+    <string name="composer_workflow_loading">Chargement des workflows</string>
+    <string name="composer_workflow_empty">Aucun workflow disponible</string>
+    <string name="composer_workflow_no_match">Aucun workflow correspondant</string>
+    <string name="composer_workflow_read_failed">Les workflows sont temporairement indisponibles</string>
+</resources>

@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { command } from "ccstate";
-import { and, asc, eq, isNull, or } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull, or } from "drizzle-orm";
 import type {
   ArtifactAccessKind,
   ArtifactShareAccount,
@@ -10,11 +10,12 @@ import type {
 } from "@okouai/api-contracts/contracts/artifact-access";
 import type { ArtifactCatalogKind } from "@okouai/api-contracts/contracts/artifact-catalog";
 import {
+  ARTIFACT_KINDS,
   artifacts,
   imageArtifacts,
   presentationArtifacts,
 } from "@okouai/db/schema/artifact";
-import { artifactUserShares } from "@okouai/db/schema/artifact-user-share";
+import { artifactShares } from "@okouai/db/schema/artifact-share";
 import { emailOutbox } from "@okouai/db/runtime/email-outbox";
 import {
   hostedDeployments,
@@ -36,6 +37,7 @@ import {
   getHostedSiteVisibility$,
   updateHostedSiteVisibility$,
 } from "./hosted-site-access.service";
+import { siteArtifactIdentityPredicate } from "./hosted-site-artifact.service";
 import {
   privateArtifactRecord$,
   resolvePrivateArtifactUrl$,
@@ -248,34 +250,12 @@ const findOwnedArtifactBySiteId$ = command(
     },
     signal: AbortSignal,
   ): Promise<OwnedArtifactRow | null> => {
-    const database = get(db$);
-    const [presentation] = await database
-      .select({ id: presentationArtifacts.id })
-      .from(presentationArtifacts)
-      .where(eq(presentationArtifacts.hostedSiteId, args.siteId))
-      .limit(1);
-    signal.throwIfAborted();
-    const matchers = [
-      and(
-        eq(artifacts.kind, "hosted-site"),
-        eq(artifacts.entityId, args.siteId),
-      ),
-      eq(artifacts.logicalKey, `site:${args.siteId}`),
-    ];
-    if (presentation) {
-      matchers.push(
-        and(
-          eq(artifacts.kind, "presentation"),
-          eq(artifacts.entityId, presentation.id),
-        ),
-      );
-    }
-    const [row] = await database
+    const [row] = await get(db$)
       .select(OWNED_ARTIFACT_SELECTION)
       .from(artifacts)
       .where(
         and(
-          or(...matchers),
+          siteArtifactIdentityPredicate(args.siteId),
           eq(artifacts.orgId, args.orgId),
           eq(artifacts.authorUserId, args.userId),
           isNull(artifacts.deletedAt),
@@ -430,8 +410,10 @@ export const resolveOwnedArtifactAccessTarget$ = command(
         and(
           or(
             eq(artifacts.id, args.artifactId),
-            eq(artifacts.entityId, args.artifactId),
-            eq(artifacts.logicalKey, `site:${args.artifactId}`),
+            and(
+              inArray(artifacts.kind, ARTIFACT_KINDS),
+              eq(artifacts.entityId, args.artifactId),
+            ),
           ),
           eq(artifacts.orgId, args.orgId),
           eq(artifacts.authorUserId, args.userId),
@@ -509,7 +491,7 @@ const resolveUserDisplayNames$ = command(
   },
 );
 
-const upsertArtifactUserShare$ = command(
+const upsertArtifactShare$ = command(
   async (
     { set },
     args: {
@@ -521,7 +503,7 @@ const upsertArtifactUserShare$ = command(
     signal: AbortSignal,
   ) => {
     await set(writeDb$)
-      .insert(artifactUserShares)
+      .insert(artifactShares)
       .values({
         userId: args.userId,
         orgId: args.orgId,
@@ -530,9 +512,9 @@ const upsertArtifactUserShare$ = command(
       })
       .onConflictDoUpdate({
         target: [
-          artifactUserShares.userId,
-          artifactUserShares.orgId,
-          artifactUserShares.artifactId,
+          artifactShares.userId,
+          artifactShares.orgId,
+          artifactShares.artifactId,
         ],
         set: { email: args.email },
       });
@@ -804,20 +786,17 @@ export const listArtifactShares$ = command(
     }
     const userShares = await get(db$)
       .select({
-        userId: artifactUserShares.userId,
-        email: artifactUserShares.email,
+        userId: artifactShares.userId,
+        email: artifactShares.email,
       })
-      .from(artifactUserShares)
+      .from(artifactShares)
       .where(
         and(
-          eq(artifactUserShares.artifactId, resolved.artifactId),
-          eq(artifactUserShares.orgId, resolved.orgId),
+          eq(artifactShares.artifactId, resolved.artifactId),
+          eq(artifactShares.orgId, resolved.orgId),
         ),
       )
-      .orderBy(
-        asc(artifactUserShares.createdAt),
-        asc(artifactUserShares.userId),
-      );
+      .orderBy(asc(artifactShares.createdAt), asc(artifactShares.userId));
     signal.throwIfAborted();
 
     const names = await set(
@@ -888,7 +867,7 @@ export const addArtifactShare$ = command(
       "An Okou user";
 
     await set(
-      upsertArtifactUserShare$,
+      upsertArtifactShare$,
       {
         artifactId: resolved.artifactId,
         orgId: resolved.orgId,
@@ -964,15 +943,15 @@ export const removeArtifactShare$ = command(
       return null;
     }
     const removed = await set(writeDb$)
-      .delete(artifactUserShares)
+      .delete(artifactShares)
       .where(
         and(
-          eq(artifactUserShares.artifactId, resolved.artifactId),
-          eq(artifactUserShares.orgId, resolved.orgId),
-          eq(artifactUserShares.userId, args.targetUserId),
+          eq(artifactShares.artifactId, resolved.artifactId),
+          eq(artifactShares.orgId, resolved.orgId),
+          eq(artifactShares.userId, args.targetUserId),
         ),
       )
-      .returning({ userId: artifactUserShares.userId });
+      .returning({ userId: artifactShares.userId });
     signal.throwIfAborted();
 
     return removed.length > 0 ? { removed: args.targetUserId } : null;

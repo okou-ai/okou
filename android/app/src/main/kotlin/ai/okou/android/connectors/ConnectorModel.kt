@@ -73,6 +73,7 @@ internal data class ConnectorAction(
     val browserOpened: Boolean = false,
     val problem: ConnectorProblem? = null,
     val result: ConnectorResult? = null,
+    val startsAuthorization: Boolean = false,
 ) {
     val reconciling: Boolean
         get() = authorization is ConnectorAuthorization.Receipt
@@ -274,7 +275,7 @@ class ConnectorModel(
                 }
             }
         }
-        if (accounts && connectedJob?.isActive != true) {
+        if (accounts && pendingAuthorizationTarget() == null && connectedJob?.isActive != true) {
             connectedJob = viewModelScope.launch {
                 if (!canLoad()) return@launch
                 val startedAt = snapshotClock.markNow()
@@ -434,7 +435,7 @@ class ConnectorModel(
                 }
             }
         }
-        if (accountsJob?.isActive != true) {
+        if (pendingAuthorizationTarget()?.slug != slug && accountsJob?.isActive != true) {
             val state = mutableState.value
             if (state.selectedAccountContent == null) {
                 clearColdReadFailure(state.accounts) { it.copy(accounts = it.accounts.confirmed()) }
@@ -638,7 +639,16 @@ class ConnectorModel(
             method.grantKind == ConnectorDetailConnectorAuthMethodsItemGrantKind.MANUAL ||
                 method.grantKind == ConnectorDetailConnectorAuthMethodsItemGrantKind.NONE ||
                 method.grantKind == ConnectorDetailConnectorAuthMethodsItemGrantKind.AUTOMATIC
-        runAction(ConnectorAction(target), mayAuthorize = mayAuthorize) {
+        runAction(
+            ConnectorAction(target, startsAuthorization = true),
+            mayAuthorize = mayAuthorize,
+        ) {
+            // A directory read can observe the grant before its receipt reaches this action.
+            cancelAccountReads()
+            mutableState.update { state ->
+                if (state.connected.startedAt == null) state
+                else state.copy(connected = state.connected.copy(startedAt = null))
+            }
             when (val step = service.start(target, method, values)) {
                 is ConnectorAuthorization.Receipt -> finishAuthorization(target, step.connectionId)
                 else -> {
@@ -890,21 +900,24 @@ class ConnectorModel(
         }
         val connected = service.accountIsConnected(target.slug, receipt)
         val accounts = service.accounts(target.slug)
-        invalidateConnectionReads()
-        publishAccounts(target.slug, accounts)
+        if (!authorized()) return
         if (
-            connected &&
-                accounts.any { it.id == receipt && it.status == ConnectorAccountStatus.Connected }
+            !connected ||
+                accounts.none {
+                    it.id == receipt && it.status == ConnectorAccountStatus.Connected
+                }
         ) {
-            complete(ConnectorAccountTarget(target.slug, receipt), ConnectorResult.Authorized)
-        } else {
             updateAction {
                 it.copy(
                     authorization = null,
                     problem = ConnectorProblem.AuthorizationIncomplete,
                 )
             }
+            return
         }
+        invalidateConnectionReads()
+        publishAccounts(target.slug, accounts)
+        complete(ConnectorAccountTarget(target.slug, receipt), ConnectorResult.Authorized)
         if (open) {
             refreshDirectory()
             refreshDetail()
@@ -912,7 +925,8 @@ class ConnectorModel(
     }
 
     internal fun dismissAction() {
-        val action = mutableState.value.action
+        val state = mutableState.value
+        val action = state.action
         if (action?.busy == true) return
         if (action?.reconciling == true) {
             val receipt = action.authorization as? ConnectorAuthorization.Receipt
@@ -929,9 +943,30 @@ class ConnectorModel(
         authorizationDeadline = null
         pendingExternalCode = null
         mutableState.update { it.copy(action = null) }
+        if (action?.startsAuthorization == true && open && foreground) {
+            // Complete reads deferred by authorization when the screen is still waiting for them.
+            if (state.connected.data == null && state.connected.failure == null) {
+                refreshDirectory(browse = false)
+            }
+            if (
+                state.slug == action.target.slug &&
+                    state.accounts.data == null &&
+                    state.accounts.failure == null
+            ) {
+                refreshDetail()
+            }
+        }
     }
 
     private fun authorizationExpired() = authorizationDeadline?.hasPassedNow() == true
+
+    private fun pendingAuthorizationTarget(): ConnectorAccountTarget? =
+        mutableState.value.action
+            ?.takeIf { action ->
+                val starting = action.startsAuthorization && action.busy && action.problem == null
+                starting || action.authorization != null
+            }
+            ?.target
 
     private fun currentAccount(id: String): ConnectorAccountTarget? {
         val state = mutableState.value
@@ -950,9 +985,8 @@ class ConnectorModel(
 
     private fun invalidateConnectionReads() {
         browseJob?.cancel()
-        connectedJob?.cancel()
-        inspectionJob?.cancel()
-        cancelDetailReads()
+        detailJob?.cancel()
+        cancelAccountReads()
         mutableState.update {
             if (it.browse.startedAt == null && it.connected.startedAt == null) it
             else
@@ -961,6 +995,12 @@ class ConnectorModel(
                     connected = it.connected.copy(startedAt = null),
                 )
         }
+    }
+
+    private fun cancelAccountReads() {
+        connectedJob?.cancel()
+        inspectionJob?.cancel()
+        accountsJob?.cancel()
     }
 
     private fun cancelReads() {

@@ -1,35 +1,39 @@
-import type { LinkLayoutSegment } from "@okouai/api-contracts/contracts/link-layout";
 import {
+  index,
   pgTable,
+  primaryKey,
   text,
   timestamp,
-  uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
+import { artifacts } from "./artifact";
 
-// Durable ownership/index only. The R2 policy object is the single authority
-// for audience and selected version, shared by the API and edge delivery.
+/**
+ * Unified per-user Artifact sharing grants (`PK (user_id, org_id, artifact_id)`).
+ */
 export const artifactShares = pgTable(
   "artifact_shares",
   {
-    id: uuid("id").defaultRandom().primaryKey(),
     userId: text("user_id").notNull(),
     orgId: text("org_id").notNull(),
-    // Link-layout segment inherited from the shared content.
-    linkLayoutSegment: text("link_layout_segment")
-      .$type<LinkLayoutSegment>()
+    artifactId: uuid("artifact_id")
       .notNull()
-      .default("okou"),
-    targetKind: text("target_kind").$type<"file" | "html">().notNull(),
-    targetId: uuid("target_id").notNull(),
+      .references(
+        () => {
+          return artifacts.id;
+        },
+        { onDelete: "cascade" },
+      ),
+    email: text("email").notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => {
     return [
-      uniqueIndex("idx_artifact_shares_target").on(
-        table.targetKind,
-        table.targetId,
-      ),
+      primaryKey({
+        name: "artifact_shares_pk",
+        columns: [table.userId, table.orgId, table.artifactId],
+      }),
+      index("artifact_shares_artifact_idx").on(table.artifactId),
     ];
   },
 );

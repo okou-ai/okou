@@ -183,6 +183,7 @@ internal enum class ComposerOptionsPage {
     Connectors,
     ConnectorAccounts,
     Model,
+    Workflow,
 }
 
 internal data class ComposerOptionsPresentation(

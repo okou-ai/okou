@@ -17,6 +17,9 @@ interface ChatComposerService {
     val attachmentService: ChatAttachmentService?
         get() = null
 
+    val composerWorkflowService: ComposerWorkflowService?
+        get() = null
+
     suspend fun newChatReady(): Boolean
 
     suspend fun composerDraft(target: ServerDraftTarget): ComposerDraft

@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="composer_workflow_references">引用</string>
+    <string name="composer_workflow_title">工作流</string>
+    <string name="composer_workflow_search">搜索工作流</string>
+    <string name="composer_workflow_recent">最近使用</string>
+    <string name="composer_workflow_all">全部工作流</string>
+    <string name="composer_workflow_loading">正在加载工作流</string>
+    <string name="composer_workflow_empty">暂无可用工作流</string>
+    <string name="composer_workflow_no_match">没有匹配的工作流</string>
+    <string name="composer_workflow_read_failed">暂时无法加载工作流</string>
+</resources>

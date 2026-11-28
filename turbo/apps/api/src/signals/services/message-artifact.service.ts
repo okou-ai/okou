@@ -25,6 +25,7 @@ import { inferMimetype } from "../../lib/mimetype";
 import { db$, type ReadonlyDb } from "../external/db";
 import type { ArtifactReferenceRecord } from "./artifact-reference.service";
 import { probeLegacyArtifactSharePolicy$ } from "./artifact-share-probe.service";
+import { siteArtifactIdentityPredicate } from "./hosted-site-artifact.service";
 import { resolveFileUrl$ } from "./private-artifact-storage.service";
 import {
   googleDriveArtifactStatusFields,
@@ -150,7 +151,7 @@ function fileById(db: ReadonlyDb, owner: Owner, id: string) {
     .limit(1);
 }
 
-function catalogBy(db: ReadonlyDb, owner: Owner, predicate: SQL) {
+function catalogBy(db: ReadonlyDb, owner: Owner, predicate: SQL | undefined) {
   return db
     .select({
       id: artifacts.id,
@@ -402,7 +403,7 @@ const hostedSiteMessageDetail$ = command(
     const [catalog] = await catalogBy(
       db,
       owner,
-      eq(artifacts.logicalKey, `site:${site.id}`),
+      siteArtifactIdentityPredicate(site.id),
     );
     signal.throwIfAborted();
     if (catalog?.deletedAt) {

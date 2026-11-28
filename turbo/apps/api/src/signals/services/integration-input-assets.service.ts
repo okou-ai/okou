@@ -1,7 +1,6 @@
 import { fetchResendAttachment } from "../external/resend-attachment";
 import { accept, HttpStatusError } from "@okouai/connectors/accept";
 import { command } from "ccstate";
-import type { CanonicalAssetProvenance } from "@okouai/db/jsonb-contracts/run-uploaded-file";
 import {
   canonicalInputContentType,
   canonicalInputMessageFiles,
@@ -10,6 +9,7 @@ import {
   completeCanonicalInputFile$,
   canonicalInputImportSignals,
   canonicalInputImportOutcome,
+  type CanonicalAssetProvenance,
   type CanonicalInputImportPlan,
   type CanonicalInputImportReady,
   type CanonicalInputAsset,

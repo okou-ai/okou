@@ -5,12 +5,14 @@ import android.net.Uri
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performSemanticsAction
+import androidx.compose.ui.unit.dp
 import androidx.core.content.IntentCompat
 import java.io.File
 import java.util.concurrent.CountDownLatch
@@ -105,6 +107,11 @@ internal class ArtifactSharingRootTest : ArtifactCatalogRootTestFixture() {
         awaitText("Share file")
         compose.onNodeWithText("Share file").performClick()
         awaitText("Unable to share this file")
+        val pane = compose.onNodeWithTag("artifact_preview").getUnclippedBoundsInRoot()
+        val feedback = compose.onNodeWithTag("artifact_action_feedback").getUnclippedBoundsInRoot()
+        assertEquals(12.dp, feedback.left - pane.left)
+        assertEquals(12.dp, pane.right - feedback.right)
+        assertEquals(8.dp, pane.bottom - feedback.bottom)
         compose.onNodeWithText("Share file").assertDoesNotExist()
         compose.onNodeWithText("Save file").assertDoesNotExist()
         awaitText(fixture.checklist.title)

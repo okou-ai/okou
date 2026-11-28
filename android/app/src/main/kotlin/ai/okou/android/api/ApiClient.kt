@@ -194,6 +194,22 @@ class ApiClient(
 
     suspend fun workflows() = read { workflows(it, WorkflowsQuery()) }
 
+    internal suspend fun composerWorkflows() = read { composerWorkflows(it) }
+
+    internal suspend fun recentComposerWorkflows() = read {
+        recentComposerWorkflows(it)
+    }
+        .workflowIds
+        .orEmpty()
+
+    internal suspend fun recordComposerWorkflowUse(ids: List<String>) = write {
+        recordComposerWorkflowUse(
+            it,
+            ai.okou.android.api.generated.RecordComposerWorkflowUseRequest(ids),
+        )
+    }
+        .workflowIds
+
     suspend fun workflow(id: String) = read { workflow(it, id) }
 
     internal suspend fun workflowRunHistory(id: String, cursor: String?) = read {

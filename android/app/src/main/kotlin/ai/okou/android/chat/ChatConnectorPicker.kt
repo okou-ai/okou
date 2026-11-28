@@ -3,6 +3,7 @@ package ai.okou.android.chat
 import ai.okou.android.ContentReadFailureLayout
 import ai.okou.android.PaneReadAnnouncements
 import ai.okou.android.R
+import ai.okou.android.api.generated.ComposerWorkflowsItem
 import ai.okou.android.api.generated.ConnectorAccountPolicyRequestPolicy
 import ai.okou.android.connectors.ChatConnectorOptions
 import ai.okou.android.connectors.ChatConnectorOverride
@@ -118,11 +119,13 @@ internal fun ChatConnectorOptionsButton(
     onOptionsFeedbackInOverlay: (Boolean) -> Unit = {},
     attachmentPickerActive: Boolean = false,
     pickAttachment: ((photos: Boolean) -> Unit)? = null,
+    selectWorkflow: ((ComposerWorkflowsItem) -> Unit)? = null,
     buttonFocus: FocusRequester = remember { FocusRequester() },
 ) {
     var presentation by rememberComposerOptions(target.key)
     val entryFocus = remember { FocusRequester() }
     val modelFocus = remember { FocusRequester() }
+    val workflowFocus = remember { FocusRequester() }
     val accountFocus = remember { FocusRequester() }
     val focus = LocalFocusManager.current
     val keyboard = LocalSoftwareKeyboardController.current
@@ -287,6 +290,7 @@ internal fun ChatConnectorOptionsButton(
         when (page) {
             ComposerOptionsPage.ConnectorAccounts -> returnToConnectorOverview()
             ComposerOptionsPage.Connectors,
+            ComposerOptionsPage.Workflow,
             ComposerOptionsPage.Model -> {
                 restoreEntry = page
                 presentation =
@@ -301,6 +305,20 @@ internal fun ChatConnectorOptionsButton(
                 restoreTrigger = true
             }
         }
+    }
+
+    if (page == ComposerOptionsPage.Workflow) {
+        val catalog = composer.workflowCatalog
+        if (catalog != null && selectWorkflow != null)
+            ComposerWorkflowPicker(catalog, ::back) { workflow ->
+                selectWorkflow(workflow)
+                presentation =
+                    presentation.copy(
+                        page = ComposerOptionsPage.Closed,
+                        restoreEditor = true,
+                    )
+            }
+        return
     }
 
     if (page == ComposerOptionsPage.Model && selection != null) {
@@ -468,6 +486,10 @@ internal fun ChatConnectorOptionsButton(
                     if (restoreEntry != null && positioned) {
                         if (restoreEntry == ComposerOptionsPage.Model && modelEnabled)
                             modelFocus.requestFocus()
+                        else if (
+                            restoreEntry == ComposerOptionsPage.Workflow && selectWorkflow != null
+                        )
+                            workflowFocus.requestFocus()
                         else if (options != null) entryFocus.requestFocus()
                         restoreEntry = null
                     }
@@ -499,6 +521,23 @@ internal fun ChatConnectorOptionsButton(
                             enabled = composerState.journal != null,
                             icon = R.drawable.ic_folder,
                             chevron = false,
+                        )
+                        if (showModel || options != null || selectWorkflow != null)
+                            HorizontalDivider(Modifier.padding(vertical = 4.dp))
+                    }
+                    if (selectWorkflow != null) {
+                        ChatOptionsHeading(R.string.composer_workflow_references)
+                        ConnectorOptionRow(
+                            stringResource(R.string.composer_workflow_title),
+                            onClick = {
+                                presentation =
+                                    presentation.copy(page = ComposerOptionsPage.Workflow)
+                            },
+                            modifier =
+                                Modifier.focusRequester(workflowFocus)
+                                    .testTag("chat-options-workflows"),
+                            enabled = composerState.journal != null,
+                            icon = R.drawable.ic_account_tree,
                         )
                         if (showModel || options != null)
                             HorizontalDivider(Modifier.padding(vertical = 4.dp))

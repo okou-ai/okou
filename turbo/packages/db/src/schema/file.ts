@@ -15,7 +15,7 @@ export type FileOrigin = (typeof FILE_ORIGINS)[number];
 
 /**
  * Pure binary file metadata (File Storage domain).
- * Replaces `run_uploaded_files` without `run_id`, permission fields,
+ * Stores binary file records without `run_id`, permission fields,
  * or hosted-site placeholder rows. Unshared files are accessible only
  * to their `(ownerUserId, orgId)`.
  */

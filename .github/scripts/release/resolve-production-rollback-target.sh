@@ -202,6 +202,7 @@ readonly SSH_CANONICAL_TRANSPORT_PATH=turbo/packages/db/src/migrations/1365_tail
 readonly OFFICIAL_RESULT_EMAIL_RUNTIME_RETIREMENT_PATH=turbo/packages/db/src/migrations/1382_retire_official_result_email_runtime.sql
 readonly OFFICIAL_RESULT_EMAIL_STORAGE_CONTRACTION_PATH=turbo/packages/db/src/migrations/1386_drop_official_result_email_storage.sql
 readonly OFFICIAL_WORKFLOW_STORAGE_RETIREMENT_PATH=turbo/packages/db/src/migrations/1638_retire_official_workflow_installation_state.sql
+readonly ARTIFACT_STORAGE_RETIREMENT_PATH=turbo/packages/db/src/migrations/1658_drop_retired_artifact_tables_and_rename_shares.sql
 readonly SSH_NEEDS_REBIND_INDEPENDENT_PATH=turbo/packages/db/src/runtime/ssh-connection.ts
 
 fail() {
@@ -788,6 +789,19 @@ if [[ ! "$official_storage_retirement_commit" =~ ^[0-9a-f]{40}$ ]]; then
 fi
 if ! git merge-base --is-ancestor "$official_storage_retirement_commit" "$TARGET_COMMIT"; then
   fail "Rollback target predates the Official Workflow storage retirement: ${official_storage_retirement_commit}."
+fi
+
+# Migration 1658 drops 9 retired artifact/sharing tables, renames
+# artifact_user_shares to artifact_shares, and drops 3 redundant columns on
+# artifacts. Earlier APIs still query artifact_user_shares (and pre-Release-2
+# builds reference the dropped tables), so no earlier API can serve after 1658.
+artifact_storage_retirement_commit=$(git log --reverse --first-parent --diff-filter=A --format=%H \
+  origin/main -- "$ARTIFACT_STORAGE_RETIREMENT_PATH" | sed -n '1p')
+if [[ ! "$artifact_storage_retirement_commit" =~ ^[0-9a-f]{40}$ ]]; then
+  fail "Cannot resolve the merged Artifact storage retirement on main."
+fi
+if ! git merge-base --is-ancestor "$artifact_storage_retirement_commit" "$TARGET_COMMIT"; then
+  fail "Rollback target predates the Artifact storage retirement: ${artifact_storage_retirement_commit}."
 fi
 
 # The first API release with archive readers only prepares storage. Physical

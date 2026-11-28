@@ -4054,6 +4054,13 @@
       "when": 1795815569624,
       "tag": "1657_switch_image_artifacts_file_fk",
       "breakpoints": true
+    },
+    {
+      "idx": 1658,
+      "version": "7",
+      "when": 1795847428692,
+      "tag": "1658_drop_retired_artifact_tables_and_rename_shares",
+      "breakpoints": true
     }
   ]
 }
