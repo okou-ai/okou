@@ -77,7 +77,6 @@
     <string name="chat_project_create_failed">未能创建项目，名称已保留</string>
     <string name="chat_project_create_unconfirmed">创建结果尚未确认</string>
     <string name="chat_project_name_too_long">项目名称不能超过 %1$d 个字符</string>
-    <string name="chat_project_rename_unconfirmed">无法确认项目名称。</string>
     <string name="chat_project_rename_rejected">无法重命名项目。</string>
     <string name="chat_project_rename_save">保存</string>
     <string name="chat_project_rename_pending">正在重命名项目…</string>
@@ -99,8 +98,6 @@
     <string name="chat_rename_save_failed">未能保存，修改已保留。</string>
     <string name="chat_rename_check_result">核对结果</string>
     <string name="chat_rename_required">请输入名称。</string>
-    <string name="chat_rename_checking_result">正在核对结果…</string>
-    <string name="chat_rename_save_unconfirmed">提交结果尚未确认。</string>
     <string name="chat_title_saved">聊天名称已保存</string>
     <string name="chat_project_name_saved">项目名称已保存</string>
     <string name="inline_image_loading">正在加载图片</string>

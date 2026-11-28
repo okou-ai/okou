@@ -595,9 +595,6 @@ private fun WorkspaceRenameForm(
             val status =
                 when {
                     list.pendingRowActions[id] == ChatRowAction.Rename -> RenameStatus.Saving
-                    id in list.unconfirmedRenames ->
-                        if (list.listPhase == ChatReadPhase.Loading) RenameStatus.Checking
-                        else RenameStatus.Unconfirmed
                     failure?.rejected == true -> RenameStatus.Rejected
                     else -> RenameStatus.Editing
                 }
@@ -612,7 +609,6 @@ private fun WorkspaceRenameForm(
                     ChatRowAction.Rename in list.rowActions(thread) &&
                         id !in list.pendingRowActions,
                 status = status,
-                check = { chats.checkChatRename(id) },
                 dismiss = {
                     if (failure?.rejected == true) chats.dismissRowActionFailure(failure)
                     dismiss()
@@ -628,14 +624,10 @@ private fun WorkspaceRenameForm(
                 return
             }
             val rejection = list.projectRenameRejection?.takeIf { it.projectId == id }
-            val connectionFailed = id in list.projectList.connectionFailedRenames
             val status =
                 when {
                     list.renamingProjectId == id -> RenameStatus.Saving
-                    rejection != null || connectionFailed -> RenameStatus.Rejected
-                    id in list.unconfirmedProjectRenames ->
-                        if (list.projectsPhase == ChatReadPhase.Loading) RenameStatus.Checking
-                        else RenameStatus.Unconfirmed
+                    rejection != null -> RenameStatus.Rejected
                     else -> RenameStatus.Editing
                 }
             RenameListItemSheet(
@@ -647,7 +639,6 @@ private fun WorkspaceRenameForm(
                 projectName = true,
                 enabled = list.canRenameProject,
                 status = status,
-                check = { chats.checkProjectRename(id) },
                 dismiss = {
                     rejection?.let(chats::dismissProjectRenameRejection)
                     dismiss()
