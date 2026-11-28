@@ -296,11 +296,13 @@ internal fun ArtifactPreview(
 
 @Composable
 internal fun ArtifactActionFeedback(state: SnackbarHostState, modifier: Modifier = Modifier) {
-    WorkspaceFeedbackHost(
-        state,
-        modifier.padding(bottom = 8.dp),
-        surfaceModifier = Modifier.testTag("artifact_action_feedback"),
-    )
+    Box(modifier) {
+        WorkspaceFeedbackHost(
+            state,
+            Modifier.padding(bottom = 8.dp),
+            surfaceModifier = Modifier.testTag("artifact_action_feedback"),
+        )
+    }
 }
 
 @Composable
