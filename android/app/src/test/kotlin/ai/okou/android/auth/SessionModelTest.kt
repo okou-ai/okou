@@ -818,24 +818,45 @@ class SessionModelTest : SessionModelTestFixture() {
     }
 
     @Test
-    fun selectedWorkspaceBecomesReadyWhileFullMembershipListIsPending() {
+    fun selectedWorkspaceKeepsItsCachedLogoUntilTheMembershipListIsConfirmed() {
+        val cachedA =
+            WorkspaceMembership("org-a", "Workspace A", "org:member", "https://images.test/old.png")
+        val cachedB =
+            WorkspaceMembership("org-b", "Workspace B", "org:member", "https://images.test/b.png")
         val auth =
             TestAuthentication(
                 testAuthenticationState()
                     .copy(
                         membershipAccess =
-                            listOf(MembershipAccess("org-a", "org:member", emptyList())),
+                            listOf(cachedA, cachedB).map {
+                                MembershipAccess(it.id, it.role, emptyList())
+                            },
                     ),
             )
-        val memberships = CompletableDeferred<List<WorkspaceMembership>>()
+        auth.cachedMembership = { session ->
+            listOf(cachedA, cachedB).firstOrNull { it.id == session.workspaceId }
+        }
+        val confirmed = listOf(cachedA.copy(uploadedImageUrl = null), cachedB)
+        var memberships = CompletableDeferred<List<WorkspaceMembership>>()
         auth.membershipsAction = { memberships.await() }
         check(auth) { model, _ ->
             runCurrent()
-            assertEquals(SessionStage.Ready, model.uiState.value.stage)
-            assertEquals(listOf("org-a"), model.uiState.value.memberships.map { it.id })
-            memberships.complete(auth.available)
+            val first = requireNotNull(model.uiState.value.ready)
+            assertEquals(cachedA.id, first.identity.workspaceId)
+            assertEquals(listOf(cachedA), model.uiState.value.memberships)
+            memberships.complete(confirmed)
             runCurrent()
-            assertEquals(listOf("org-a", "org-b"), model.uiState.value.memberships.map { it.id })
+            assertSame(first, model.uiState.value.ready)
+            assertEquals(confirmed, model.uiState.value.memberships)
+
+            memberships = CompletableDeferred()
+            model.chooseWorkspace(cachedB.id, model.uiState.value.generation)
+            runCurrent()
+            assertEquals(cachedB.id, model.uiState.value.ready?.identity?.workspaceId)
+            assertEquals(listOf(cachedB), model.uiState.value.memberships)
+            memberships.complete(confirmed)
+            runCurrent()
+            assertEquals(confirmed, model.uiState.value.memberships)
         }
     }
 

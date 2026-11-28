@@ -328,11 +328,15 @@ class SessionModel(
             session.workspaceId
                 ?.takeIf { snapshot.complete && session.active }
                 ?.let { WorkspaceIdentity(apiOrigin, session.userId, session.sessionId, it) }
+        val cachedMembership = initialIdentity?.let {
+            authentication.cachedWorkspaceMembership(session)
+        }
         publishSessionState(
             checkingFrom?.copy(checkingWorkspace = true)
                 ?: SessionUiState(
                     ticket,
                     SessionStage.LoadingWorkspace,
+                    memberships = listOfNotNull(cachedMembership),
                     working = true,
                     opening =
                         initialIdentity
@@ -439,7 +443,7 @@ class SessionModel(
                     when {
                         initialEntry -> readEntryMemberships(ticket, snapshot, session)
                         fastAccess == null -> authentication.memberships(session)
-                        else -> emptyList()
+                        else -> listOfNotNull(cachedMembership)
                     }
                 requireCurrent(ticket, snapshot)
                 membershipsComplete = fastAccess == null
@@ -801,8 +805,9 @@ class SessionModel(
                     requireCurrent(ticket, snapshot)
                     val state = mutable.value
                     val memberships =
-                        if (membershipsComplete) state.memberships
-                        else listOf(WorkspaceMembership(resolved.id, resolved.name, opened.role))
+                        state.memberships.ifEmpty {
+                            listOf(WorkspaceMembership(resolved.id, resolved.name, opened.role))
+                        }
                     organization = resolved
                     mutable.value =
                         state.copy(

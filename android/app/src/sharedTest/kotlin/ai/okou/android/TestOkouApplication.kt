@@ -242,6 +242,7 @@ class TestAuthentication(initial: AuthenticationState = testAuthenticationState(
     var refreshedMembership: (NativeSession) -> MembershipAccess? = { expected ->
         state.value.membershipAccess?.firstOrNull { it.workspaceId == expected.workspaceId }
     }
+    var cachedMembership: (NativeSession) -> WorkspaceMembership? = { null }
     var membershipsAction: suspend () -> List<WorkspaceMembership> = { available }
     var tokenAction: suspend (NativeSession) -> String? = { "test-token" }
     var renewTokenAction: suspend (NativeSession) -> String? = { tokenAction(it) }
@@ -262,6 +263,8 @@ class TestAuthentication(initial: AuthenticationState = testAuthenticationState(
         refreshAction(expected)
         return refreshedMembership(expected)
     }
+
+    override fun cachedWorkspaceMembership(expected: NativeSession) = cachedMembership(expected)
 
     override suspend fun memberships(expected: NativeSession) = membershipsAction()
 

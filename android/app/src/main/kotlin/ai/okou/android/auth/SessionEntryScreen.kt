@@ -299,7 +299,7 @@ private fun SessionWorkspaceRow(
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        WorkspaceLogo(workspace.id, Modifier.size(36.dp))
+        WorkspaceLogo(workspace.id, workspace.name, workspace.uploadedImageUrl, 36.dp)
         Text(
             workspace.name,
             modifier = Modifier.weight(1f),
