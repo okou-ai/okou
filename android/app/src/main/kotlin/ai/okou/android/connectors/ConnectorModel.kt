@@ -274,7 +274,7 @@ class ConnectorModel(
                 }
             }
         }
-        if (accounts && connectedJob?.isActive != true) {
+        if (accounts && pendingAuthorizationTarget() == null && connectedJob?.isActive != true) {
             connectedJob = viewModelScope.launch {
                 if (!canLoad()) return@launch
                 val startedAt = snapshotClock.markNow()
@@ -434,7 +434,7 @@ class ConnectorModel(
                 }
             }
         }
-        if (accountsJob?.isActive != true) {
+        if (pendingAuthorizationTarget()?.slug != slug && accountsJob?.isActive != true) {
             val state = mutableState.value
             if (state.selectedAccountContent == null) {
                 clearColdReadFailure(state.accounts) { it.copy(accounts = it.accounts.confirmed()) }
@@ -890,21 +890,24 @@ class ConnectorModel(
         }
         val connected = service.accountIsConnected(target.slug, receipt)
         val accounts = service.accounts(target.slug)
-        invalidateConnectionReads()
-        publishAccounts(target.slug, accounts)
+        if (!authorized()) return
         if (
-            connected &&
-                accounts.any { it.id == receipt && it.status == ConnectorAccountStatus.Connected }
+            !connected ||
+                accounts.none {
+                    it.id == receipt && it.status == ConnectorAccountStatus.Connected
+                }
         ) {
-            complete(ConnectorAccountTarget(target.slug, receipt), ConnectorResult.Authorized)
-        } else {
             updateAction {
                 it.copy(
                     authorization = null,
                     problem = ConnectorProblem.AuthorizationIncomplete,
                 )
             }
+            return
         }
+        invalidateConnectionReads()
+        publishAccounts(target.slug, accounts)
+        complete(ConnectorAccountTarget(target.slug, receipt), ConnectorResult.Authorized)
         if (open) {
             refreshDirectory()
             refreshDetail()
@@ -932,6 +935,9 @@ class ConnectorModel(
     }
 
     private fun authorizationExpired() = authorizationDeadline?.hasPassedNow() == true
+
+    private fun pendingAuthorizationTarget(): ConnectorAccountTarget? =
+        mutableState.value.action?.takeIf { it.authorization != null }?.target
 
     private fun currentAccount(id: String): ConnectorAccountTarget? {
         val state = mutableState.value

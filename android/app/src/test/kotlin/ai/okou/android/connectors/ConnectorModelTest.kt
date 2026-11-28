@@ -507,6 +507,50 @@ internal class ConnectorModelTest : ConnectorModelTestFixture() {
 @OptIn(ExperimentalCoroutinesApi::class)
 internal class ConnectorAccountModelTest : ConnectorModelTestFixture() {
     @Test
+    fun incompleteReceiptKeepsTheConfirmedAccountInDetailAndDirectory() =
+        withModel(CONNECTOR_CALENDAR) { fixture, model ->
+            val target = CONNECTOR_CALENDAR_SECONDARY
+            val before = model.await { state ->
+                state.connected.data?.get(CONNECTOR_CALENDAR)?.accounts?.any {
+                    it.id == target && it.status == ConnectorAccountStatus.UpdatePermissions
+                } == true
+            }
+            suspend fun openAttempt() {
+                model.startAuthorization(target, "oauth", emptyMap())
+                model.await {
+                    it.action?.busy == false &&
+                        it.action.authorization is ConnectorAuthorization.Browser
+                }
+                model.openBrowser { true }
+            }
+
+            openAttempt()
+            fixture.expiredExactAccountId = target
+            fixture.reauthorizeCalendar()
+            model.pause()
+            model.resume()
+            val incomplete = model.await {
+                it.action?.busy == false &&
+                    it.action.problem == ConnectorProblem.AuthorizationIncomplete
+            }
+            assertNull(incomplete.action?.result)
+            assertEquals(before.accounts.data, incomplete.accounts.data)
+            assertEquals(before.connected.data, incomplete.connected.data)
+
+            fixture.expiredExactAccountId = null
+            openAttempt()
+            model.checkAuthorization()
+            val confirmed = model.await { it.action?.result == ConnectorResult.Authorized }
+            assertEquals(target, confirmed.action?.target?.connectionId)
+            val accounts = confirmed.accountsFor(CONNECTOR_CALENDAR)
+            assertEquals(before.accounts.data?.map { it.id }, accounts.map { it.id })
+            assertEquals(
+                ConnectorAccountStatus.Connected,
+                accounts.single { it.id == target }.status,
+            )
+        }
+
+    @Test
     fun browserReturnPublishesOnlyTheConfirmedAccount() =
         withModel("gmail") { fixture, model ->
             model.startAuthorization(null, "oauth", emptyMap())
@@ -696,7 +740,7 @@ internal class ConnectorAccountModelTest : ConnectorModelTestFixture() {
         }
 
     @Test
-    fun reopeningAtTheDeadlineDoesNotDiscardAnInFlightDeviceCompletion() {
+    fun foregroundReturnKeepsAnInFlightDeviceCompletionScopedAtTheDeadline() {
         val clock = TestTimeSource()
         val reply = CountDownLatch(1)
         withModel(
@@ -711,17 +755,24 @@ internal class ConnectorAccountModelTest : ConnectorModelTestFixture() {
             clock = clock,
         ) { fixture, model ->
             try {
+                model.await { it.connected.isConfirmed }
                 model.startAuthorization(null, "device-auth", emptyMap())
                 model.await {
                     it.action?.busy == false &&
                         it.action.authorization is ConnectorAuthorization.Device
                 }
                 model.openBrowser { true }
+                model.pause()
                 withContext(Dispatchers.IO) {
                     assertTrue(fixture.devicePollReplyStarted.await(10, TimeUnit.SECONDS))
                 }
 
+                val before = model.uiState.value
                 clock += 30.seconds
+                model.resume()
+                val waiting = model.await { it.detail.confirmedAt != before.detail.confirmedAt }
+                assertEquals(before.connected, waiting.connected)
+                assertEquals(before.accounts, waiting.accounts)
                 model.openBrowser { error("An expired device code must not reopen the provider") }
                 assertNull(model.uiState.value.action?.problem)
             } finally {

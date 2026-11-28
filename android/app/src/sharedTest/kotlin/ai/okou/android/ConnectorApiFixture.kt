@@ -76,6 +76,7 @@ internal class ConnectorApiFixture(
     @Volatile var failDiscoveryForKeyword: ((String?) -> Boolean)? = null
     @Volatile var denyDefaultDiscovery = false
     @Volatile var denyCatalogDetail = false
+    @Volatile var expiredExactAccountId: String? = null
     @Volatile var offerLiveDeviceEnvironment = true
     @Volatile var failAccountReads = false
     @Volatile var accountRetryAfterSeconds: Long? = null
@@ -756,7 +757,12 @@ internal class ConnectorApiFixture(
                             jsonResponse(
                                 """{"connectionId":"$id","explicitSelectionCount":2,"hasSibling":true}""",
                             )
-                        } else json(account.row(id))
+                        } else {
+                            val exact =
+                                if (id == expiredExactAccountId) account.copy(expired = true)
+                                else account
+                            json(exact.row(id))
+                        }
                     }
                     "PATCH" -> {
                         val requestBody = body(request)
