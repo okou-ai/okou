@@ -158,24 +158,7 @@ pub(in crate::cli) async fn execute_antigravity_acp_for_runtime(
     )
     .await;
 
-    match run_result {
-        Ok(mut result) if result.control_error.is_some() => {
-            let delivery_report = event_delivery.abort().await;
-            result.last_event_sequence = delivery_report.last_acknowledged_sequence;
-            result.event_delivery = delivery_report.diagnostic;
-            Ok(result)
-        }
-        Ok(mut result) => {
-            let delivery_report = event_delivery.finish().await?;
-            result.last_event_sequence = delivery_report.last_acknowledged_sequence;
-            result.event_delivery = delivery_report.diagnostic;
-            Ok(result)
-        }
-        Err(error) => {
-            event_delivery.abort().await;
-            Err(error)
-        }
-    }
+    event_delivery.finish_execution(run_result).await
 }
 
 async fn run_antigravity_acp(
