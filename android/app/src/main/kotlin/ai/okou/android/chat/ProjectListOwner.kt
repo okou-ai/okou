@@ -592,6 +592,10 @@ internal class ProjectListOwner(
     private suspend fun refreshAfterWrite(): Boolean {
         // Wait out a read that could have started before the write.
         while (projectsJob?.isCompleted == false) {
+            val snapshot = state
+            // Keep the regular read that is still reconciling an acknowledged deletion.
+            if (projectsRetry != null && snapshot.rows.any { snapshot.isDeleting(it.id) })
+                return false
             projectsRetry?.stopRetrying()
             projectsJob?.join()
         }

@@ -355,6 +355,12 @@ internal abstract class ChatListModelTestFixture {
             deleteResponse(eventId)
         }
 
+        override suspend fun renameProject(
+            projectId: String,
+            name: String,
+            eventId: String,
+        ): ConfirmedProject = throw ApiFailure.Http(503, null, null, null)
+
         fun publishMembership(thread: String, project: String?, event: String) {
             val sequence = events.last().first + 1
             val target = project?.let { "\"$it\"" } ?: "null"
@@ -3811,6 +3817,38 @@ internal class ChatListProjectMembershipModelTest : ChatListModelTestFixture() {
                 ProjectDeleteStatus.Confirmed,
                 synced.projectDeleteFeedback.single().status,
             )
+        }
+    }
+
+    @Test
+    fun anUnconfirmedRenameLetsAnAcknowledgedDeletionFinishSyncing() = runTest {
+        val otherProject = "bcf53013-dfc9-4136-9de3-d3d070d8c488"
+        val source = ProjectOrganizationService(additionalProjectId = otherProject)
+        source.deleteResponse = source::publishDeletion
+        withCatchUpModel(source) { model ->
+            model.refresh()
+            runCurrent()
+            source.projectReadUnavailable = true
+            model.deleteProject(CHAT_PROJECT)
+            runCurrent()
+            assertTrue(model.uiState.value.projectList.isDeleting(CHAT_PROJECT))
+
+            checkNotNull(model.renameProject(otherProject, "Planning"))
+            runCurrent()
+            assertNull(model.uiState.value.renamingProjectId)
+            assertTrue(otherProject in model.uiState.value.unconfirmedProjectRenames)
+
+            source.projectReadUnavailable = false
+            advanceTimeBy(3_000)
+            runCurrent()
+            val synced = model.uiState.value
+            assertEquals(listOf(otherProject), synced.projects.map { it.id })
+            assertEquals(
+                ProjectDeleteStatus.Confirmed,
+                synced.projectDeleteFeedback.single().status,
+            )
+            assertEquals(1, source.deleteIds.size)
+            assertTrue(otherProject in synced.unconfirmedProjectRenames)
         }
     }
 
