@@ -1,0 +1,156 @@
+name: R2 Artifact Visibility Backfill
+
+env:
+  npm_config_audit: "false"
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "Backfill mode: dry-run (read-only audit) or migrate (dry-run -> migrate -> verify)"
+        required: true
+        type: choice
+        default: dry-run
+        options:
+          - dry-run
+          - migrate
+      concurrency:
+        description: "Bounded R2/DB concurrency (positive integer)"
+        required: false
+        type: string
+        default: "32"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: r2-artifact-visibility-backfill-production
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  backfill:
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: production
+    steps:
+      - name: Check out main
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+        with:
+          version: 10.33.4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22.23.4
+
+      - name: Install @okouai/db dependencies
+        run: |
+          set -euo pipefail
+          pnpm --dir turbo install --frozen-lockfile --filter @okouai/db... \
+            --config.os=current --config.cpu=current
+
+      - name: Run 001 R2 -> PG artifacts.visibility backfill
+        env:
+          BACKFILL_MODE: ${{ inputs.mode }}
+          BACKFILL_CONCURRENCY: ${{ inputs.concurrency }}
+          NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
+          NEON_PROJECT_ID: ${{ vars.NEON_PROJECT_ID }}
+          R2_ACCOUNT_ID: ${{ vars.R2_ACCOUNT_ID }}
+          R2_HOSTED_SITES_BUCKET_NAME: ${{ vars.R2_HOSTED_SITES_BUCKET_NAME }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_HOSTED_SITES_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_HOSTED_SITES_SECRET_ACCESS_KEY }}
+        run: |
+          set -euo pipefail
+
+          if [[ -z "$BACKFILL_CONCURRENCY" ]]; then
+            BACKFILL_CONCURRENCY="32"
+          fi
+
+          case "$BACKFILL_MODE" in
+            dry-run | migrate) ;;
+            *)
+              echo "::error::Unsupported backfill mode: $BACKFILL_MODE"
+              exit 1
+              ;;
+          esac
+
+          if [[ ! "$BACKFILL_CONCURRENCY" =~ ^[1-9][0-9]*$ ]]; then
+            echo "::error::concurrency must be a positive integer"
+            exit 1
+          fi
+
+          : "${NEON_API_KEY:?NEON_API_KEY is required}"
+          : "${NEON_PROJECT_ID:?NEON_PROJECT_ID is required}"
+          : "${R2_ACCOUNT_ID:?R2_ACCOUNT_ID is required}"
+          : "${R2_HOSTED_SITES_BUCKET_NAME:?R2_HOSTED_SITES_BUCKET_NAME is required}"
+          : "${R2_ACCESS_KEY_ID:?R2_HOSTED_SITES_ACCESS_KEY_ID is required}"
+          : "${R2_SECRET_ACCESS_KEY:?R2_HOSTED_SITES_SECRET_ACCESS_KEY is required}"
+
+          if [[ "$R2_HOSTED_SITES_BUCKET_NAME" != "vm0-hosted-sites" ]]; then
+            echo "::error::Expected production bucket vm0-hosted-sites, got $R2_HOSTED_SITES_BUCKET_NAME"
+            exit 1
+          fi
+
+          branches=$(curl -fsS \
+            "https://console.neon.tech/api/v2/projects/${NEON_PROJECT_ID}/branches" \
+            -H "Authorization: Bearer ${NEON_API_KEY}")
+          branch_id=$(jq -r 'first(.branches[] | select(.name == "production") | .id) // empty' <<< "$branches")
+          if [[ -z "$branch_id" ]]; then
+            echo "::error::Neon production branch not found"
+            exit 1
+          fi
+
+          connection=$(curl -fsS \
+            "https://console.neon.tech/api/v2/projects/${NEON_PROJECT_ID}/connection_uri?branch_id=${branch_id}&database_name=neondb&role_name=neondb_owner" \
+            -H "Authorization: Bearer ${NEON_API_KEY}")
+          database_url=$(jq -r '.uri // empty' <<< "$connection")
+          if [[ -z "$database_url" ]]; then
+            echo "::error::Failed to retrieve Neon production connection URI"
+            exit 1
+          fi
+
+          masked_url="${database_url//%/%25}"
+          masked_url="${masked_url//$'\r'/%0D}"
+          masked_url="${masked_url//$'\n'/%0A}"
+          printf '::add-mask::%s\n' "$masked_url"
+
+          export DATABASE_URL="$database_url"
+          export R2_ENDPOINT="https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
+
+          run_backfill() {
+            local label="$1"
+            shift
+            local output
+            output=$(pnpm --dir turbo -F @okouai/db exec tsx \
+              scripts/migrations/001-r2-artifact-visibility-backfill/backfill.ts \
+              --concurrency "$BACKFILL_CONCURRENCY" "$@")
+            printf '### %s\n\n```json\n%s\n```\n\n' "$label" "$output" >> "$GITHUB_STEP_SUMMARY"
+            printf '=== %s ===\n%s\n' "$label" "$output"
+            printf '%s' "$output" > "${RUNNER_TEMP}/last-backfill.json"
+          }
+
+          if [[ "$BACKFILL_MODE" == "dry-run" ]]; then
+            run_backfill "001 R2 -> PG Backfill (dry-run)" --dry-run
+          else
+            run_backfill "001 R2 -> PG Backfill (pre-migrate dry-run)" --dry-run
+            run_backfill "001 R2 -> PG Backfill (migrate)" --migrate
+            run_backfill "001 R2 -> PG Backfill (post-migrate verify)" --dry-run
+            jq -e '.plannedUpdates == 0' "${RUNNER_TEMP}/last-backfill.json" >/dev/null
+          fi
+
+          reconcile_output=$(pnpm --dir turbo -F @okouai/db exec tsx \
+            scripts/migrations/002-r2-files-reconciliation-and-invite-cleanup/reconcile.ts \
+            --strict)
+          printf '### 002 Files Reconciliation (--strict)\n\n```json\n%s\n```\n\n' "$reconcile_output" >> "$GITHUB_STEP_SUMMARY"
+          printf '=== 002 Files Reconciliation (--strict) ===\n%s\n' "$reconcile_output"
