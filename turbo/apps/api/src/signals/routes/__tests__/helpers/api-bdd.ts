@@ -156,10 +156,54 @@ export function createBddApi(context: TestContext) {
   }
 
   function acceptStorageWrites(): void {
-    context.mocks.s3.send.mockResolvedValue({
-      ContentLength: 1024,
-      UploadId: randomUUID(),
-      ETag: "fixture-etag",
+    const objects = new Map<string, Buffer>();
+    context.mocks.s3.send.mockImplementation((command: unknown) => {
+      const name =
+        typeof command === "object" && command !== null
+          ? command.constructor.name
+          : "";
+      const input =
+        typeof command === "object" &&
+        command !== null &&
+        "input" in command &&
+        typeof command.input === "object" &&
+        command.input !== null
+          ? (command.input as { Key?: unknown; Body?: unknown })
+          : undefined;
+      const key = typeof input?.Key === "string" ? input.Key : undefined;
+      if (name === "PutObjectCommand" && key) {
+        const body = input?.Body;
+        objects.set(
+          key,
+          typeof body === "string"
+            ? Buffer.from(body)
+            : body instanceof Uint8Array
+              ? Buffer.from(body)
+              : Buffer.alloc(0),
+        );
+      }
+      if (name === "GetObjectCommand" && key) {
+        const stored = objects.get(key);
+        if (stored !== undefined) {
+          return Promise.resolve({
+            ContentLength: stored.length,
+            ETag: '"fixture-etag"',
+            Body: {
+              async *[Symbol.asyncIterator]() {
+                yield stored;
+              },
+            },
+          });
+        }
+        return Promise.reject(
+          Object.assign(new Error(`NoSuchKey: ${key}`), { name: "NoSuchKey" }),
+        );
+      }
+      return Promise.resolve({
+        ContentLength: 1024,
+        UploadId: randomUUID(),
+        ETag: "fixture-etag",
+      });
     });
     context.mocks.s3.getSignedUrl.mockImplementation(
       (_client: unknown, command: unknown) => {

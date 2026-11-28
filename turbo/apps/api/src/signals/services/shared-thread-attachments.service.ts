@@ -42,7 +42,6 @@ const prepareSharedThreadAttachment$ = command(
         id: fileId,
         userId: args.userId,
         orgId: args.orgId,
-        resolvePrivateUrl: false,
       },
       signal,
     );
