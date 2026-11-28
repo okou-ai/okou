@@ -1,7 +1,7 @@
 use super::*;
 use guest_contracts::storage_files::StorageFile;
 use sha2::{Digest, Sha256};
-use std::io::{Seek, SeekFrom, Write};
+use std::io::{BufWriter, Seek, SeekFrom, Write};
 
 fn later_files(count: usize, bytes: usize) -> Vec<StorageFile> {
     (0..count)
@@ -30,7 +30,7 @@ fn seed_packed_files(
         .join(short_digest(name))
         .join(format!("decoded-v2-{}", short_digest("v1")));
     std::fs::create_dir_all(&entry).unwrap();
-    let mut payload = std::fs::File::create(entry.join("data.bin")).unwrap();
+    let mut payload = BufWriter::new(std::fs::File::create(entry.join("data.bin")).unwrap());
     let encoder = flate2::write::GzEncoder::new(Vec::new(), compression);
     let mut tar = tar::Builder::new(encoder);
     for file in files {
@@ -43,6 +43,8 @@ fn seed_packed_files(
             .unwrap();
         payload.write_all(&file.content).unwrap();
     }
+    payload.flush().unwrap();
+    drop(payload);
     let archive = tar.into_inner().unwrap().finish().unwrap();
     assert!(archive.len() <= 4 * 1024 * 1024);
     let index = serde_json::to_vec(&serde_json::json!({
