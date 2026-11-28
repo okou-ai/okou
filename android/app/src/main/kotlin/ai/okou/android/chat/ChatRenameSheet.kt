@@ -146,26 +146,18 @@ internal fun CreateProjectSheet(
     editor: ProjectCreationEditor,
     phase: ProjectCreatePhase?,
     create: (String) -> Unit,
-    check: () -> Unit,
     dismiss: () -> Unit,
 ) {
     val busy = phase?.inProgress == true || phase == ProjectCreatePhase.Confirmed
-    val unconfirmed =
-        phase == ProjectCreatePhase.Unconfirmed || phase == ProjectCreatePhase.Checking
     val field = editor.field
-    val confirmEnabled = !busy && (unconfirmed || field.input.text.isNotBlank())
-    val notice =
-        when (phase) {
-            ProjectCreatePhase.Unconfirmed,
-            ProjectCreatePhase.Checking -> R.string.chat_project_create_unconfirmed
-            ProjectCreatePhase.Rejected -> R.string.chat_project_create_failed
-            ProjectCreatePhase.Creating,
-            ProjectCreatePhase.Confirmed,
-            null -> null
-        }
+    val confirmEnabled = !busy && field.input.text.isNotBlank()
+    val failed = phase == ProjectCreatePhase.Rejected || phase == ProjectCreatePhase.Unconfirmed
+    val idleLabel = stringResource(R.string.chat_project_create_confirm)
+    val creatingLabel = stringResource(R.string.chat_project_creating)
+    val checkingLabel = stringResource(R.string.chat_project_checking)
     fun submit() {
         if (!confirmEnabled) return
-        if (unconfirmed) check() else field.submitProjectName()?.let(create)
+        field.submitProjectName()?.let(create)
     }
     SettingsSheet(
         title = stringResource(R.string.chat_project_create),
@@ -177,31 +169,19 @@ internal fun CreateProjectSheet(
         fullScreenInShortWindow = true,
         actions = {
             OkouFormActions(
-                cancelLabel =
-                    stringResource(
-                        if (unconfirmed) R.string.chat_project_create_close
-                        else R.string.chat_rename_cancel,
-                    ),
+                cancelLabel = stringResource(R.string.chat_rename_cancel),
                 confirmLabel =
-                    stringResource(
-                        when (phase) {
-                            ProjectCreatePhase.Creating,
-                            ProjectCreatePhase.Confirmed -> R.string.chat_project_creating
-                            ProjectCreatePhase.Checking -> R.string.chat_project_checking
-                            ProjectCreatePhase.Unconfirmed -> R.string.chat_rename_check_result
-                            ProjectCreatePhase.Rejected,
-                            null -> R.string.chat_project_create_confirm
-                        },
-                    ),
+                    when (phase) {
+                        ProjectCreatePhase.Creating,
+                        ProjectCreatePhase.Confirmed -> creatingLabel
+                        ProjectCreatePhase.Checking -> checkingLabel
+                        else -> idleLabel
+                    },
                 cancel = dismiss,
                 confirm = ::submit,
                 cancelEnabled = !busy,
                 confirmEnabled = confirmEnabled,
-                confirmLayoutLabels =
-                    projectNameActionLabels(
-                        R.string.chat_project_create_confirm,
-                        R.string.chat_project_creating,
-                    ),
+                confirmLayoutLabels = listOf(idleLabel, creatingLabel, checkingLabel),
                 confirmMinWidth = 89.dp,
                 keepConfirmFocusWhilePending = busy,
             )
@@ -210,24 +190,15 @@ internal fun CreateProjectSheet(
         WorkspaceNameFormBody(
             field,
             stringResource(R.string.chat_project_name),
-            readOnly = busy || unconfirmed,
+            readOnly = busy,
             validation = projectNameError(field),
             projectName = true,
-            notice = notice,
-            noticeIsError = phase == ProjectCreatePhase.Rejected,
+            notice = R.string.chat_project_create_failed.takeIf { failed },
+            noticeIsError = failed,
             submit = ::submit,
         )
     }
 }
-
-@Composable
-private fun projectNameActionLabels(@StringRes idle: Int, @StringRes pending: Int) =
-    listOf(
-        stringResource(idle),
-        stringResource(pending),
-        stringResource(R.string.chat_rename_check_result),
-        stringResource(R.string.chat_project_checking),
-    )
 
 private fun projectNameError(field: WorkspaceNameField): RenameFieldError? =
     if (

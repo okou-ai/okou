@@ -2944,7 +2944,7 @@ internal class ChatListProjectCreationModelTest : ChatListModelTestFixture() {
             model.createProject(" Research ")
             runCurrent()
             val creation = checkNotNull(model.uiState.value.projectList.creation)
-            assertEquals(ProjectCreatePhase.Creating, creation.phase)
+            assertEquals(ProjectCreatePhase.Checking, creation.phase)
             assertTrue(model.uiState.value.projects.isEmpty())
             model.createProject("Another project")
             runCurrent()
@@ -2955,10 +2955,44 @@ internal class ChatListProjectCreationModelTest : ChatListModelTestFixture() {
                 calls,
             )
             assertEquals(
-                ProjectCreation(creation.id, ProjectCreatePhase.Confirmed),
+                creation.copy(phase = ProjectCreatePhase.Confirmed),
                 model.uiState.value.projectList.creation,
             )
             assertEquals(creation.id, model.uiState.value.projects.single().id)
+        }
+    }
+
+    @Test
+    fun editingAnUnconfirmedCreationStartsAnotherOperation() = runTest {
+        val writes = mutableListOf<Pair<String, String>>()
+        val lookups = mutableListOf<String>()
+        val service =
+            object : TestChatService() {
+                override suspend fun createProject(
+                    projectId: String,
+                    name: String,
+                ): ConfirmedProject {
+                    writes += projectId to name
+                    if (writes.size == 1) throw ApiFailure.IncompatibleResponse()
+                    return ConfirmedProject(projectId, name, CHAT_DATE, CHAT_DATE, "a0")
+                }
+
+                override suspend fun projectDetail(projectId: String): ConfirmedProject {
+                    lookups += projectId
+                    throw ApiFailure.Http(404, null, null, null)
+                }
+            }
+        withCatchUpModel(service) { model ->
+            model.createProject("First name")
+            advanceUntilIdle()
+            val first = checkNotNull(model.uiState.value.projectList.creation)
+            assertEquals(ProjectCreatePhase.Unconfirmed, first.phase)
+            model.createProject("New name")
+            advanceUntilIdle()
+            val created = model.uiState.value.projects.single()
+            assertNotEquals(first.id, created.id)
+            assertEquals(listOf(first.id to "First name", created.id to "New name"), writes)
+            assertEquals(listOf(first.id), lookups)
         }
     }
 
