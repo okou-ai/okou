@@ -72,10 +72,8 @@
     <string name="chat_project_create">Proyek baru</string>
     <string name="chat_project_create_confirm">Buat</string>
     <string name="chat_project_creating">Sedang membuat…</string>
-    <string name="chat_project_create_close">Tutup</string>
     <string name="chat_project_checking">Sedang memeriksa…</string>
     <string name="chat_project_create_failed">Proyek tidak dapat dibuat. Nama tetap tersimpan.</string>
-    <string name="chat_project_create_unconfirmed">Pembuatan proyek belum dikonfirmasi</string>
     <string name="chat_project_name_too_long">Nama proyek tidak boleh lebih dari %1$d karakter</string>
     <string name="chat_project_rename_rejected">Nama proyek tidak dapat diubah.</string>
     <string name="chat_project_rename_save">Simpan</string>

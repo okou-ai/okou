@@ -72,10 +72,8 @@
     <string name="chat_project_create">새 프로젝트</string>
     <string name="chat_project_create_confirm">만들기</string>
     <string name="chat_project_creating">만드는 중…</string>
-    <string name="chat_project_create_close">닫기</string>
     <string name="chat_project_checking">확인 중…</string>
     <string name="chat_project_create_failed">프로젝트를 만들지 못했습니다. 입력한 이름은 유지됩니다.</string>
-    <string name="chat_project_create_unconfirmed">프로젝트 생성 결과가 아직 확인되지 않았습니다</string>
     <string name="chat_project_name_too_long">프로젝트 이름은 %1$d자 이하여야 합니다</string>
     <string name="chat_project_rename_rejected">프로젝트 이름을 변경할 수 없습니다.</string>
     <string name="chat_project_rename_save">저장</string>

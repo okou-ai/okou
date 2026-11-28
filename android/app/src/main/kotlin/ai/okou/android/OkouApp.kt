@@ -1276,6 +1276,14 @@ internal fun OkouApp(
         if (creation?.phase == ProjectCreatePhase.Confirmed) {
             val filter = listState.value.filter
             LaunchedEffect(creation, filter, projectCreationEditor) {
+                if (
+                    projectCreationEditor != null &&
+                        normalizedRenameName(projectCreationEditor.field.input.text) !=
+                            creation.name
+                ) {
+                    chats.dismissProjectCreation()
+                    return@LaunchedEffect
+                }
                 val projectId =
                     creation.id.takeIf { id ->
                         projectCreationEditor != null &&
@@ -1298,7 +1306,6 @@ internal fun OkouApp(
                 projectCreationEditor,
                 creation?.phase,
                 create = chats::createProject,
-                check = chats::checkProjectCreation,
                 dismiss = {
                     val phase = chats.uiState.value.projectList.creation?.phase
                     if (phase?.inProgress != true && phase != ProjectCreatePhase.Confirmed) {
