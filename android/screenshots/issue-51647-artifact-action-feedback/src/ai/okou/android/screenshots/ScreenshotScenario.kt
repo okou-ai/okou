@@ -56,7 +56,7 @@ class ScreenshotScenario {
             node(By.text("无权分享此文件"))
             ScreenshotCapture.capture("artifact-file-feedback-$layout.png")
 
-            assertTrue(device.pressBack())
+            if (layout == "phone") tap(By.desc("返回成果列表"))
             tap(By.text(fixture.image.title))
             tap(By.desc("图片操作"))
             tap(By.text("分享图片"))
