@@ -74,6 +74,7 @@
     <string name="chat_project_create_confirm">Create</string>
     <string name="chat_project_creating">Creating…</string>
     <string name="chat_project_checking">Checking…</string>
+    <string name="chat_project_create_checking_status">Checking whether the project was created</string>
     <string name="chat_project_create_failed">Couldn’t create the project. The name has been kept.</string>
     <!-- The formatted value is the fixed 120-character Project limit. -->
     <string name="chat_project_name_too_long" tools:ignore="PluralsCandidate">Project name must be %1$d characters or fewer</string>
