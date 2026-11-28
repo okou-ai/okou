@@ -2686,6 +2686,9 @@ describe("okou workflow automations execution", () => {
         {},
         [200],
       );
+      if (lifecycleBefore.status !== 200) {
+        throw new Error("Expected 200 for lifecycleBefore");
+      }
       const prevEvents = lifecycleBefore.body.events;
       const prevLastSeqId = prevEvents.at(-1)?.seqId ?? 0;
 
@@ -2753,6 +2756,9 @@ describe("okou workflow automations execution", () => {
         {},
         [200],
       );
+      if (lifecycleAfter.status !== 200) {
+        throw new Error("Expected 200 for lifecycleAfter");
+      }
       expect(
         lifecycleAfter.body.events.slice(0, prevEvents.length),
       ).toStrictEqual(prevEvents);

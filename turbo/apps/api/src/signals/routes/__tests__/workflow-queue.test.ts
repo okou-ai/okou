@@ -173,10 +173,11 @@ async function setupWebhookAutomation(
   ) {
     throw new Error("Expected a thread-bound webhook automation");
   }
-  const token = new URL(automation.webhookUrl).pathname.split("/").at(-1);
-  if (!token) {
+  const rawToken = new URL(automation.webhookUrl).pathname.split("/").at(-1);
+  if (!rawToken) {
     throw new Error("Expected webhook URL token");
   }
+  const token: string = rawToken;
   const webhookSecret = automation.webhookSecret;
   const threadId = automation.chatThreadId;
 
