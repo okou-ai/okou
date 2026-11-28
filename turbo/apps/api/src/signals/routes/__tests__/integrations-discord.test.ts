@@ -1,14 +1,19 @@
 import { randomUUID } from "node:crypto";
 import { createStore } from "ccstate";
 import { http, HttpResponse } from "msw";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, onTestFinished } from "vitest";
 import { integrationsDiscordContract } from "@okouai/api-contracts/contracts/integrations-discord";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
+import { TEST_WITH_SINGLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE } from "../../../__tests__/test-timeouts";
 import { mockEnv } from "../../../lib/env";
 import { server } from "../../../mocks/server";
+import { flushWaitUntilForTest } from "../../context/wait-until";
 import { integrationsDiscordRoutes } from "../integrations-discord";
+import { createBddApi } from "./helpers/api-bdd";
+import { createRunsApi } from "./helpers/api-bdd-runs";
+import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import {
   configureDiscordApp,
   createPublicDiscordBinding,
@@ -16,6 +21,7 @@ import {
   uniqueDiscordSnowflake,
   type DiscordFixture,
 } from "./helpers/discord";
+import { launchPublicDiscordTestRun } from "./helpers/discord-run";
 import {
   deleteOrgMembership$,
   seedOrgMembership$,
@@ -648,4 +654,49 @@ describe("verified Discord integration settings", () => {
     expect(published(admin.userId)).toBe(adminBefore + 1);
     expect(publishedTotal()).toBe(before + 1);
   });
+});
+
+describe("Discord installation link run access", () => {
+  it(
+    "integrations-discord-017 grants a run Discord installation link access without requiring a server binding",
+    { timeout: TEST_WITH_SINGLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const admin = await workspace().member("admin");
+      const actor = createBddApi(context).user({
+        userId: admin.userId,
+        orgId: admin.orgId,
+        orgRole: "org:admin",
+      });
+      configureInstallLinks();
+      mockInviteLookup(guildInvite);
+
+      const run = await launchPublicDiscordTestRun(context, actor);
+      onTestFinished(async () => {
+        await createRunsApi(context).requestCancelRun(
+          actor,
+          run.runId,
+          [200, 400],
+        );
+        await createWebhookCallbackApi(context).requestAgentComplete(
+          { runId: run.runId, exitCode: 1, error: "Run cancelled" },
+          { authorization: `Bearer ${run.execution.sandboxToken}` },
+          [200],
+        );
+        await flushWaitUntilForTest();
+      });
+
+      expect(run.execution.appendSystemPrompt ?? "").not.toContain(
+        "okou discord install-link",
+      );
+
+      const response = await accept(
+        discordApi().installLink({
+          headers: run.headers,
+          body: { invite: "https://discord.gg/example" },
+        }),
+        [200],
+      );
+      expect(response.status).toBe(200);
+    },
+  );
 });
