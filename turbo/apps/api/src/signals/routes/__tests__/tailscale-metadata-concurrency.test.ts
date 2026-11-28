@@ -1,4 +1,6 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
+import { chatRemoteAccessContract } from "@okouai/api-contracts/contracts/chat-remote-access";
+import { runnerSshContract } from "@okouai/api-contracts/contracts/runner-ssh";
 import {
   sshConnectionsContract,
   type SshConnectionResponse,
@@ -10,14 +12,24 @@ import {
   type UpdateTailscaleRequest,
 } from "@okouai/api-contracts/contracts/tailscale";
 import { createStore } from "ccstate";
-import { describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
+import { TEST_WITH_DOUBLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE } from "../../../__tests__/test-timeouts";
+import { env, mockOptionalEnv } from "../../../lib/env";
+import { nowDate } from "../../../lib/time";
+import { chatRemoteAccessRoutes } from "../chat-remote-access";
+import { runnerSshRoutes } from "../runner-ssh";
 import { sshConnectionsRoutes } from "../ssh-connections";
 import { tailscaleRoutes } from "../tailscale";
+import { createBddApi } from "./helpers/api-bdd";
+import { createRunsApi } from "./helpers/api-bdd-runs";
+import { createChatEventsFixture } from "./helpers/chat-events-fixture";
 import { seedOrgMembership$ } from "./helpers/org-membership";
+import { publicRunOwner } from "./helpers/public-run-owner";
 import { createRouteMocks } from "./helpers/route-test";
+import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
 
 const context = testContext();
 const headers = Object.freeze({ authorization: "Bearer clerk-session" });
@@ -277,6 +289,18 @@ async function memberView(member: Actor, config: TailscaleConfig) {
 }
 
 describe("Tailscale metadata concurrency", () => {
+  beforeAll(() => {
+    setupApp({
+      context,
+      routes: [
+        ...tailscaleRoutes,
+        ...sshConnectionsRoutes,
+        ...chatRemoteAccessRoutes,
+        ...runnerSshRoutes,
+      ],
+    });
+  });
+
   it("tailscale-metadata-concurrency-004 commits one concurrent rename for the same revision", async () => {
     const admin = await person("admin");
     const config = await createSharedConfig(admin);
@@ -522,4 +546,145 @@ describe("Tailscale metadata concurrency", () => {
       },
     ]);
   });
+
+  it(
+    "tailscale-metadata-concurrency-008 preserves winning-Runner pin and observation authority during a concurrent name update",
+    { timeout: TEST_WITH_DOUBLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      useSecretKmsProbe();
+      const fixture = createChatEventsFixture(context);
+      const bdd = createBddApi(context);
+      const runs = createRunsApi(context);
+      const adminActor = bdd.user({ orgRole: "org:admin" });
+      if (!adminActor.orgId) {
+        throw new Error("Expected organization admin actor");
+      }
+      const admin: Actor = {
+        userId: adminActor.userId,
+        orgId: adminActor.orgId,
+        role: "admin",
+      };
+      const owner = publicRunOwner(context, adminActor);
+      fixture.chatCallbacks.acceptChatObjectStorage();
+      runs.acceptStorageDownloads();
+      runs.acceptTelemetryIngest();
+      mockOptionalEnv("OPENROUTER_API_KEY", undefined);
+      fixture.chatCallbacks.disableVapid();
+
+      await Promise.all([
+        runs.configureRunnerGroup(),
+        clerkDirectory.set(seedOrgMembership$, admin, context.signal),
+        owner.run(() => {
+          return bdd.bootstrapLimitedFreeOnboarding(adminActor);
+        }),
+      ]);
+
+      const config = await createSharedConfig(admin);
+      const loginId = await createLogin(admin);
+      const host = await createHost(admin, config.id, loginId, "Pinned box");
+      const remoteAccessApi = setupApp({
+        context,
+        routes: chatRemoteAccessRoutes,
+      })(chatRemoteAccessContract);
+      signIn(admin);
+      await accept(
+        remoteAccessApi.updateHostDefault({
+          headers,
+          params: { protocol: "ssh", connectionId: host.id },
+          body: { enabled: true },
+        }),
+        [200],
+      );
+
+      const launched = await owner.run(() => {
+        return fixture.sendChatRun(adminActor, {
+          prompt: "Connect to Pinned box over Tailscale",
+          model: null,
+        });
+      });
+      await owner.executionInput(launched.runId);
+      const selected = runs.dispatchedRun(launched.runId);
+      const runnerIdentity = {
+        runnerId: selected.runnerId,
+        heartbeatGeneration: selected.heartbeatGeneration,
+      };
+      const runnerHeaders = {
+        authorization: `Bearer vm0_official_${env("OFFICIAL_RUNNER_SECRET")}`,
+      };
+      const runnerSshApi = setupApp({ context, routes: runnerSshRoutes })(
+        runnerSshContract,
+      );
+      const observedHostKey = {
+        algorithm: "ssh-ed25519" as const,
+        fingerprint: `SHA256:${createHash("sha256")
+          .update(`host-key-${host.id}`)
+          .digest("base64")
+          .replace(/=+$/u, "")}`,
+      };
+
+      signIn(admin);
+      const [renamed, pinned] = await Promise.all([
+        accept(
+          tailscale().update({
+            headers,
+            params: { configId: config.id },
+            body: {
+              expectedRevision: config.revision,
+              name: "Renamed private network",
+            },
+          }),
+          [200],
+        ),
+        accept(
+          runnerSshApi.pin({
+            headers: runnerHeaders,
+            params: { runId: launched.runId },
+            body: {
+              connectionId: host.id,
+              runnerIdentity,
+              expectedGeneration: host.generation,
+              observedHostKey,
+            },
+          }),
+          [200],
+        ),
+      ]);
+
+      expect(renamed.body).toMatchObject({
+        id: config.id,
+        name: "Renamed private network",
+        revision: config.revision + 1,
+        generation: config.generation,
+      });
+      expect(pinned.body).toStrictEqual({
+        outcome: "pinned",
+        generation: host.generation + 1,
+      });
+
+      const [stored] = await listHosts(admin);
+      expect(stored).toStrictEqual({
+        ...host,
+        generation: host.generation + 1,
+        learnedHostKey: observedHostKey,
+        updatedAt: stored?.updatedAt,
+      });
+
+      const observed = await accept(
+        runnerSshApi.observe({
+          headers: runnerHeaders,
+          params: { runId: launched.runId },
+          body: {
+            connectionId: host.id,
+            runnerIdentity,
+            expectedGeneration: host.generation + 1,
+            expectedCreatedAt: host.createdAt,
+            observedAt: nowDate().toISOString(),
+            failureReason: null,
+          },
+        }),
+        [200],
+      );
+      expect(observed.body).toStrictEqual({ outcome: "recorded" });
+    },
+  );
 });
