@@ -197,17 +197,20 @@ class ConversationTurnFeedbackTest {
         }
         val label = compose.onNodeWithText("Model account")
         val value = compose.onNodeWithText(account)
+        val nextLabel = compose.onNodeWithText("Resets available")
         val regularLabel = label.getUnclippedBoundsInRoot()
         val regularValue = value.getUnclippedBoundsInRoot()
         assertEquals(8.dp, regularValue.left - regularLabel.right)
         assertEquals(regularLabel.top, regularValue.top)
-        compose.onNodeWithText("Resets available").assertExists()
+        val regularBottom = maxOf(regularLabel.bottom, regularValue.bottom)
+        assertEquals(4.dp, nextLabel.getUnclippedBoundsInRoot().top - regularBottom)
 
         compose.runOnIdle { fontScale.value = 2f }
         val stackedLabel = label.getUnclippedBoundsInRoot()
         val stackedValue = value.getUnclippedBoundsInRoot()
         assertEquals(4.dp, stackedValue.top - stackedLabel.bottom)
         assertEquals(stackedLabel.left, stackedValue.left)
+        assertEquals(8.dp, nextLabel.getUnclippedBoundsInRoot().top - stackedValue.bottom)
     }
 
     @Test

@@ -89,7 +89,7 @@ fun AssistantRecoveryPanel(
         if (read.phase == ChatReadPhase.Loading)
             RecoveryNote(stringResource(R.string.recovery_loading), announced = true)
         if (read.phase == ChatReadPhase.Failed)
-            RecoveryNote(stringResource(R.string.recovery_read_failed), error = true)
+            RecoveryNote(stringResource(R.string.recovery_read_failed), announced = true)
         val data = read.data
         if (data != null) {
             val confirmedReset =
@@ -204,7 +204,7 @@ internal fun RecoveryInformation(data: FailureRecoveryData) {
         with(LocalDensity.current) { MaterialTheme.typography.bodyLarge.fontSize.toDp() * 16 }
     BoxWithConstraints(Modifier.fillMaxWidth().padding(top = 8.dp)) {
         val stacked = maxWidth < stackedWidth
-        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Column(verticalArrangement = Arrangement.spacedBy(if (stacked) 8.dp else 4.dp)) {
             for (fact in facts) {
                 FlowRow(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
