@@ -236,9 +236,7 @@ interface DecisionAllowedRuleMatch {
 }
 
 interface FirewallDecisionState {
-  bestBaseScore: number | null;
-  bestRuleSpecificity: PathSpecificity | null;
-  baseMatch: DecisionBaseMatch | null;
+  readonly baseMatch: DecisionBaseMatch | null;
   allowedMatch: DecisionAllowedRuleMatch | null;
   deniedMatch: DecisionBaseMatch | null;
   deniedPermissionNames: string[];
@@ -1975,62 +1973,17 @@ function matchFirewallBaseUrlForDecision(
   }
 }
 
-function createDecisionState(): FirewallDecisionState {
+function createDecisionState(
+  baseMatch: DecisionBaseMatch | null,
+): FirewallDecisionState {
   return {
-    bestBaseScore: null,
-    bestRuleSpecificity: null,
-    baseMatch: null,
+    baseMatch,
     allowedMatch: null,
     deniedMatch: null,
     deniedPermissionNames: [],
     malformedConfigMatch: null,
     malformedPolicyMatch: null,
   };
-}
-
-function acceptDecisionBaseMatch(
-  state: FirewallDecisionState,
-  match: DecisionBaseMatch,
-  score: number,
-): boolean {
-  if (state.bestBaseScore === null || score > state.bestBaseScore) {
-    state.bestBaseScore = score;
-    state.bestRuleSpecificity = null;
-    state.baseMatch = null;
-    state.allowedMatch = null;
-    state.deniedMatch = null;
-    state.deniedPermissionNames = [];
-    state.malformedConfigMatch = null;
-    state.malformedPolicyMatch = null;
-  } else if (score < state.bestBaseScore) {
-    return false;
-  }
-
-  state.baseMatch ??= match;
-  return true;
-}
-
-function acceptRuleSpecificity(
-  state: FirewallDecisionState,
-  specificity: PathSpecificity,
-): boolean {
-  if (state.bestRuleSpecificity === null) {
-    state.bestRuleSpecificity = specificity;
-    return true;
-  }
-
-  const comparison = comparePathSpecificity(
-    specificity,
-    state.bestRuleSpecificity,
-  );
-  if (comparison > 0) {
-    state.bestRuleSpecificity = specificity;
-    state.allowedMatch = null;
-    state.deniedMatch = null;
-    state.deniedPermissionNames = [];
-    return true;
-  }
-  return comparison === 0;
 }
 
 function recordDeniedRule(
@@ -2327,19 +2280,10 @@ function selectedBaseApiMatches(
   collection: FirewallMatchCollection,
   selectedName: string | null,
 ): readonly CollectedApiMatch[] {
-  const relevantMatches = relevantOwnerApiMatches(collection, selectedName);
   if (selectedName === null || collection.ruleMatches.length > 0) {
-    return relevantMatches;
+    return relevantOwnerApiMatches(collection, selectedName);
   }
-
-  const selectedOrders = new Set(
-    selectedOwnerApiMatches(collection, selectedName).map((match) => {
-      return match.order;
-    }),
-  );
-  return relevantMatches.filter((match) => {
-    return selectedOrders.has(match.order);
-  });
+  return selectedOwnerApiMatches(collection, selectedName);
 }
 
 function connectorAmbiguityReason(
@@ -2440,13 +2384,10 @@ function reduceSelectedOwner(
     if (conflict !== null) return conflict;
   }
 
-  const state = createDecisionState();
+  const [baseFallback] = selectedBaseApiMatches(collection, selectedName);
+  const state = createDecisionState(baseFallback?.baseMatch ?? null);
   const evaluableApiOrders = new Set<number>();
   const relevantApiMatches = relevantOwnerApiMatches(collection, selectedName);
-
-  for (const apiMatch of selectedBaseApiMatches(collection, selectedName)) {
-    acceptDecisionBaseMatch(state, apiMatch.baseMatch, apiMatch.score);
-  }
 
   for (const apiMatch of relevantApiMatches) {
     const { firewall, api, baseMatch } = apiMatch;
@@ -2464,7 +2405,6 @@ function reduceSelectedOwner(
     const { apiMatch, rule } = ruleMatch;
     if (!evaluableApiOrders.has(apiMatch.order)) continue;
     const policy = networkPolicies.policies.get(apiMatch.firewall.name);
-    if (!acceptRuleSpecificity(state, rule.specificity)) continue;
     if (
       policy !== undefined &&
       policy.blockedPermissions.has(rule.permission)
