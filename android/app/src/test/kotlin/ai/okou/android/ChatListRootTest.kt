@@ -4094,6 +4094,7 @@ internal class ChatListRowActionsRootTest : ChatListRootTestFixture() {
         val readback = CountDownLatch(1)
         val release = CountDownLatch(1)
         val pinResponse = CountDownLatch(1)
+        val renameEvent = AtomicReference<String>()
         val fixture = app.fixture
         val events = fixture.rowEventTail {
             readback.countDown()
@@ -4107,14 +4108,13 @@ internal class ChatListRowActionsRootTest : ChatListRootTestFixture() {
                     "/api/chat-threads/$CHAT_PERSONAL/rename" -> {
                         commands.add(request)
                         val body = request.jsonCommandBody()
-                        events.add(
-                            24L to
-                                chatEventWire(
-                                    id = body.getValue("eventId").jsonPrimitive.content,
-                                    seq = 24,
-                                    kind = "renamed",
-                                    title = body.getValue("title").jsonPrimitive.content,
-                                ),
+                        renameEvent.set(
+                            chatEventWire(
+                                id = body.getValue("eventId").jsonPrimitive.content,
+                                seq = 24,
+                                kind = "renamed",
+                                title = body.getValue("title").jsonPrimitive.content,
+                            ),
                         )
                         MockResponse().setResponseCode(503)
                     }
@@ -4169,15 +4169,17 @@ internal class ChatListRowActionsRootTest : ChatListRootTestFixture() {
                     model.uiState.value.pendingRowActions[CHAT_PERSONAL],
                 )
             }
-            compose.waitUntil(10_000) { compose.runOnIdle { readback.count == 0L } }
+            awaitRowActionSettled(CHAT_PERSONAL)
             row.assert(hasText("Personal chat"))
             assertEquals(1, commands.size)
+            events.add(24L to checkNotNull(renameEvent.get()))
+            refreshWorkspaceChats()
+            compose.waitUntil(10_000) { readback.count == 0L }
+            row.assert(hasText("Personal chat"))
             release.countDown()
-            awaitRowActionSettled(CHAT_PERSONAL)
             compose.waitUntil(10_000) {
                 compose.onAllNodesWithText("Weekly brief").fetchSemanticsNodes().isNotEmpty()
             }
-            compose.onNodeWithText("Could not confirm the chat change.").assertDoesNotExist()
 
             val pinned =
                 SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "Active, Pinned")
