@@ -154,7 +154,7 @@ internal constructor(
     internal val edits: List<ChatRowEdit> = emptyList(),
     internal val connectionFailed: Boolean = false,
     internal val conversationId: String? = null,
-    internal val deleteFromWorkflow: Boolean = false,
+    internal val feedbackWorkflowId: String? = null,
     internal val renameThreadId: String? = null,
     internal val fromUndo: Boolean = false,
 ) {
@@ -267,7 +267,7 @@ private fun ChatListUiState.withRowFailure(failure: ChatRowActionFailure): ChatL
             rowActionFailures.filterNot {
                 !it.rejected &&
                     it.feedbackConversationId == failure.feedbackConversationId &&
-                    it.deleteFromWorkflow == failure.deleteFromWorkflow
+                    it.feedbackWorkflowId == failure.feedbackWorkflowId
             } + failure,
     )
 
@@ -1085,7 +1085,7 @@ class ChatListModel(
         threadId: String,
         action: ChatRowAction,
         fromConversation: Boolean = false,
-        deleteFromWorkflow: Boolean = false,
+        feedbackWorkflowId: String? = null,
     ): Boolean =
         action != ChatRowAction.MoveProject &&
             performRowAction(
@@ -1093,7 +1093,7 @@ class ChatListModel(
                 action,
                 value = null,
                 fromConversation = fromConversation,
-                deleteFromWorkflow = deleteFromWorkflow,
+                feedbackWorkflowId = feedbackWorkflowId,
             )
 
     internal fun renameThread(
@@ -1131,7 +1131,7 @@ class ChatListModel(
         value: String?,
         undoRequest: ChatRowUndo? = null,
         fromConversation: Boolean = false,
-        deleteFromWorkflow: Boolean = false,
+        feedbackWorkflowId: String? = null,
         renameEventId: String? = null,
     ): Boolean {
         if (!current()) return false
@@ -1226,7 +1226,7 @@ class ChatListModel(
                                     action,
                                     rejected = true,
                                     conversationId = conversationId,
-                                    deleteFromWorkflow = deleteFromWorkflow,
+                                    feedbackWorkflowId = feedbackWorkflowId,
                                     renameThreadId =
                                         threadId.takeIf { action == ChatRowAction.Rename },
                                 ),
@@ -1317,7 +1317,7 @@ class ChatListModel(
                                     connectionFailed =
                                         rollback == ChatRowMutationOwner.Rollback.ConnectionFailed,
                                     conversationId = conversationId,
-                                    deleteFromWorkflow = deleteFromWorkflow,
+                                    feedbackWorkflowId = feedbackWorkflowId,
                                     renameThreadId =
                                         threadId.takeIf { action == ChatRowAction.Rename },
                                 ),
@@ -1362,7 +1362,7 @@ class ChatListModel(
                             submission,
                             rollback,
                             conversationId,
-                            deleteFromWorkflow,
+                            feedbackWorkflowId,
                         )
                     val failure = confirmation.failure
                     if (undoRequest == null) {

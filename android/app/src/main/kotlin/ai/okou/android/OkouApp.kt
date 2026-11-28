@@ -1315,7 +1315,7 @@ internal fun OkouApp(
             codeFeedback =
                 codeReading.previewFeedback.takeIf { visibleConversationId != null }.orEmpty(),
             dismissCodeFeedback = codeReading::dismissFeedback,
-            showWorkflowFeedback = showWorkflows && workflowRoute.id != null,
+            visibleWorkflowId = workflowRoute.id.takeIf { showWorkflows },
             confirmingProjectDelete = confirmingProjectDelete,
             dismissProjectDelete = { confirmingProjectDelete = null },
             renameEditor = renameEditor,
@@ -1344,7 +1344,15 @@ internal fun OkouApp(
                 useError =
                     workflowDraftError?.takeIf { it.workflowId == workflowRoute.id }?.message,
                 readAnnouncements = readAnnouncements,
-                actionSnackbar = snackbar,
+                detailPaneFeedback = { readErrors, detailSnackbar ->
+                    WorkspaceWorkflowFeedback(
+                        chats,
+                        listState,
+                        workflowRoute.id,
+                        readErrors,
+                        detailSnackbar,
+                    )
+                },
                 onClose = ::closeWorkflows,
                 directEntry =
                     workflowOrigin.search.isOpen || workflowRoute.resourceReturnRow != null,
@@ -1538,8 +1546,10 @@ internal fun OkouApp(
                 id,
                 action,
                 fromConversation,
-                deleteFromWorkflow =
-                    action == ChatRowAction.Delete && fromConversation && chatFromWorkflows,
+                feedbackWorkflowId =
+                    workflowRoute.id.takeIf {
+                        action == ChatRowAction.Delete && fromConversation && chatFromWorkflows
+                    },
             ) == true
         if (
             started && action == ChatRowAction.Delete && (target as? WorkspaceTarget.Chat)?.id == id

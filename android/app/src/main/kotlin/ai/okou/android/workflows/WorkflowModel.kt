@@ -13,6 +13,7 @@ import ai.okou.android.api.generated.WorkflowSummaryShadowedBy
 import ai.okou.android.api.generated.WorkflowSummaryVisibility
 import ai.okou.android.api.retryBoundedRead
 import ai.okou.android.isFreshMemorySnapshot
+import ai.okou.android.nextPaneFeedbackOrder
 import ai.okou.android.state.WorkflowTab
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -74,7 +75,9 @@ internal sealed interface WorkflowReadFailure {
     data object Unavailable : WorkflowReadFailure
 
     // The result identifies one completed read round, even when the next round fails the same way.
-    data class Failed(val sequence: Long) : WorkflowReadFailure
+    data class Failed(val sequence: Long) : WorkflowReadFailure {
+        val feedbackOrder = nextPaneFeedbackOrder()
+    }
 }
 
 private fun WorkflowReadFailure?.whileReading(hasContent: Boolean): WorkflowReadFailure? =

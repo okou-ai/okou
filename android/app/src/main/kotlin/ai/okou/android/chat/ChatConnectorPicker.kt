@@ -1,6 +1,7 @@
 package ai.okou.android.chat
 
 import ai.okou.android.ContentReadFailureLayout
+import ai.okou.android.PaneReadAnnouncements
 import ai.okou.android.R
 import ai.okou.android.api.generated.ConnectorAccountPolicyRequestPolicy
 import ai.okou.android.connectors.ChatConnectorOptions
@@ -15,7 +16,6 @@ import ai.okou.android.connectors.ConnectorButtonTreatment
 import ai.okou.android.connectors.ConnectorChevron
 import ai.okou.android.connectors.ConnectorMark
 import ai.okou.android.connectors.ConnectorNavigationRow
-import ai.okou.android.connectors.ConnectorReadAnnouncements
 import ai.okou.android.connectors.ConnectorReadFailure
 import ai.okou.android.connectors.ConnectorReadFailureContent
 import ai.okou.android.connectors.ConnectorSavedAccount
@@ -67,6 +67,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
@@ -131,7 +132,7 @@ internal fun ChatConnectorOptionsButton(
     var restoredAccount by remember { mutableStateOf<String?>(null) }
     var sheetGeneration by remember { mutableIntStateOf(0) }
     val overviewScroll = rememberScrollState()
-    val readAnnouncements = remember(options, target.key) { ConnectorReadAnnouncements() }
+    val readAnnouncements = remember(options, target.key) { PaneReadAnnouncements() }
     val page = presentation.page
     val open = page != ComposerOptionsPage.Closed
     val feedbackInOptions =
@@ -211,6 +212,12 @@ internal fun ChatConnectorOptionsButton(
     val showingConnectors = showingOverview || showingAccounts
     val state =
         options?.state?.collectAsStateWithLifecycle()?.value?.takeIf { it.target == target.key }
+    SideEffect {
+        readAnnouncements.retain(
+            listOfNotNull(state?.overview?.failureRound) +
+                state?.details.orEmpty().values.mapNotNull { it.accounts.failureRound },
+        )
+    }
     val overview = state?.overview
     val overviewData = overview?.data
     val overviewConfirmed = overview?.confirmedAt != null
@@ -235,7 +242,10 @@ internal fun ChatConnectorOptionsButton(
             showingAccounts && summary != null && rows != null -> reading.notice()
             else -> null
         }
-    val readFeedback = rememberConnectorReadFeedback(readNotice, readAnnouncements)
+    val readFeedback =
+        key(page, slug.takeIf { showingAccounts }) {
+            rememberConnectorReadFeedback(readNotice, readAnnouncements)
+        }
     val save = state?.save
     val saving = save?.saving == true
     var openingOverview by remember(options, target) { mutableStateOf(false) }

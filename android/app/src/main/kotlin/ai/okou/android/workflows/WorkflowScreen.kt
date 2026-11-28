@@ -4,6 +4,8 @@ import ai.okou.android.ContentReadFailure
 import ai.okou.android.DirectoryReturnFocus
 import ai.okou.android.OkouActionButton
 import ai.okou.android.OkouConfirmationDialog
+import ai.okou.android.PaneFeedbackError
+import ai.okou.android.PaneReadAnnouncements
 import ai.okou.android.R
 import ai.okou.android.WorkspaceFeedbackTimeout
 import ai.okou.android.WorkspaceFilterRow
@@ -144,7 +146,7 @@ internal fun WorkflowScreen(
     createError: Int?,
     useError: Int?,
     readAnnouncements: WorkflowReadAnnouncements,
-    actionSnackbar: SnackbarHostState,
+    detailPaneFeedback: @Composable (List<PaneFeedbackError>, SnackbarHostState) -> Unit,
     onClose: () -> Unit,
     onCreate: (Boolean) -> Unit,
     onUse: (WorkflowDetail, Boolean) -> Unit,
@@ -174,39 +176,59 @@ internal fun WorkflowScreen(
             )
         }
     SideEffect {
-        readAnnouncements.directory.retainAll(
-            listOfNotNull(state.catalogFailure, state.rulesFailure, state.connectionsFailure),
+        readAnnouncements.directory.retainWorkflowReads(
+            state.catalogFailure,
+            state.rulesFailure,
+            state.connectionsFailure,
         )
-        readAnnouncements.detail.retainAll(
-            listOfNotNull(state.detailFailure, state.connectionsFailure, state.historyFailure),
+        readAnnouncements.detail.retainWorkflowReads(
+            state.detailFailure,
+            state.connectionsFailure,
+            state.historyFailure,
         )
     }
     val connectionReadApplies =
-        if (editing != null)
-            (editing.draft as? WorkflowEdit.Rule)?.value?.trigger?.source?.connector != null
-        else
-            route.tab == WorkflowTab.Automations &&
-                detail?.automations?.any { it.source.connector != null } == true
-    val detailNotice =
-        if (detail == null) null
+        when {
+            detail == null -> false
+            editing != null ->
+                (editing.draft as? WorkflowEdit.Rule)?.value?.trigger?.source?.connector != null
+            else ->
+                route.tab == WorkflowTab.Automations &&
+                    detail.automations.any { it.source.connector != null }
+        }
+    val connectionNotice = if (connectionReadApplies) state.connectionReadNotice() else null
+    val detailNotices =
+        if (detail == null) emptyList()
         else
             listOfNotNull(
-                    state.detailFailure.notice(),
-                    state.connectionReadNotice().takeIf { connectionReadApplies },
-                    state.historyFailure.notice().takeIf {
-                        editing == null &&
-                            route.tab == WorkflowTab.History &&
-                            state.history != null &&
-                            state.historyRead?.earlier != true
-                    },
+                state.detailFailure.notice(),
+                state.historyFailure.notice().takeIf {
+                    editing == null &&
+                        route.tab == WorkflowTab.History &&
+                        state.history != null &&
+                        state.historyRead?.earlier != true
+                },
+            )
+    val detailSnackbar = remember(route.id) { SnackbarHostState() }
+    if (route.id != null) {
+        key(route.id) {
+            readAnnouncements.detail.RetireOnExit(detailNotices.map { it.failure.feedbackOrder })
+            if (connectionNotice != null) {
+                readAnnouncements.detail.RetireOnExit(
+                    listOf(connectionNotice.failure.feedbackOrder),
                 )
-                .maxByOrNull { it.failure.sequence }
-    // Keep the action timeout with the detail pane across tab and editor changes.
-    if (route.id != null) WorkspaceFeedbackTimeout(actionSnackbar)
-    val detailFeedback: @Composable () -> Unit = {
-        key(route.id, route.tab, editing != null) {
-            WorkflowReadFeedbackHost(detailNotice, readAnnouncements.detail, actionSnackbar)
+            }
         }
+        val notices =
+            if (connectionNotice == null) detailNotices else detailNotices + connectionNotice
+        detailPaneFeedback(
+            workflowReadErrors(notices, readAnnouncements.detail, detailSnackbar),
+            detailSnackbar,
+        )
+        WorkspaceFeedbackTimeout(detailSnackbar)
+    }
+    val detailFeedback: @Composable () -> Unit = {
+        WorkflowSnackbarHost(detailSnackbar, manageTimeout = false)
     }
     var editorReturnFocus by rememberWorkflowEditorReturnFocus(route.id, route.tab)
     var discard by rememberWorkflowDiscardConfirmation(route.id, editing != null)
@@ -412,7 +434,7 @@ private fun WorkflowDirectory(
     state: WorkflowState,
     route: WorkflowsRoute,
     query: ChatSearchState,
-    announced: MutableSet<WorkflowReadFailure.Failed>,
+    announced: PaneReadAnnouncements,
     modifier: Modifier,
     canNavigate: Boolean,
     keepCreateFocus: Boolean,
@@ -459,18 +481,17 @@ private fun WorkflowDirectory(
         else if (state.rulesFailure == WorkflowReadFailure.Unavailable)
             R.string.workflow_rules_load_failed
         else state.connectionAccessFeedback()
-    val readNotice =
-        if (catalog == null) null
+    val readNotices =
+        if (catalog == null) emptyList()
         else
             listOfNotNull(
-                    state.catalogFailure.notice(R.string.workflow_catalog_refresh_failed),
-                    state.rulesFailure.notice(
-                        if (state.rules == null) R.string.workflow_rules_load_failed
-                        else R.string.workflow_refresh_failed,
-                    ),
-                    state.connectionReadNotice(),
-                )
-                .maxByOrNull { it.failure.sequence }
+                state.catalogFailure.notice(R.string.workflow_catalog_refresh_failed),
+                state.rulesFailure.notice(
+                    if (state.rules == null) R.string.workflow_rules_load_failed
+                    else R.string.workflow_refresh_failed,
+                ),
+                state.connectionReadNotice(),
+            )
     KeepWorkflowReadStart(query.position, accessFeedback != null)
     val anchor = query.pendingAnchor
     LaunchedEffect(rows, anchor, catalog, accessFeedback != null) {
@@ -622,7 +643,7 @@ private fun WorkflowDirectory(
                     }
             }
             Box(Modifier.align(Alignment.BottomCenter)) {
-                key(route.scope, text) { WorkflowReadFeedbackHost(readNotice, announced) }
+                key(route.scope, text) { WorkflowReadFeedbackHost(readNotices, announced) }
             }
         }
     }

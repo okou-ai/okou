@@ -719,6 +719,33 @@ class ConnectorSheetLayoutTest {
 
     @Test
     @OptIn(ExperimentalTestApi::class)
+    @Config(qualifiers = "en-rUS-w412dp-h892dp")
+    fun cancellingDisconnectDoesNotReplayAccountRefreshFeedback() {
+        ConnectorApiFixture().use { fixture ->
+            withConnectors(fixture) { model ->
+                openCalendarAccount()
+                val disconnect = hasText("Disconnect account") and isEnabled()
+                compose.waitUntilAtLeastOneExists(disconnect, 10_000)
+
+                fixture.accountRetryAfterSeconds = 0
+                fixture.failAccountReads = true
+                compose.runOnIdle { model.resume() }
+                val feedback = hasText("Could not refresh connectors.")
+                compose.waitUntilAtLeastOneExists(feedback, 10_000)
+                compose.onNode(feedback).assertIsDisplayed()
+
+                compose.onNode(disconnect).performClick()
+                compose.onNodeWithText("Disconnect this account?").assertIsDisplayed()
+                compose.onNode(feedback).assertDoesNotExist()
+                compose.onNodeWithText("Cancel").performClick()
+                compose.onNode(disconnect).assertIsDisplayed()
+                compose.onNode(feedback).assertDoesNotExist()
+            }
+        }
+    }
+
+    @Test
+    @OptIn(ExperimentalTestApi::class)
     @Config(qualifiers = "en-rUS-w820dp-h440dp")
     fun shortAccountRenameKeepsTheFieldAndFooterReachable() {
         ConnectorApiFixture().use { fixture ->
@@ -768,15 +795,20 @@ class ConnectorSheetLayoutTest {
 
     @OptIn(ExperimentalTestApi::class)
     private fun openCalendarRename() {
+        openCalendarAccount()
+        val rename = hasText("Rename") and isEnabled()
+        compose.waitUntilAtLeastOneExists(rename, 10_000)
+        compose.onNode(rename).performClick()
+    }
+
+    @OptIn(ExperimentalTestApi::class)
+    private fun openCalendarAccount() {
         val calendar = hasText("Google Calendar")
         compose.waitUntilAtLeastOneExists(calendar, 10_000)
         compose.onNode(calendar).performClick()
         val account = hasTestTag("connector-account-$CONNECTOR_CALENDAR_PRIMARY")
         compose.waitUntilAtLeastOneExists(account, 10_000)
         compose.onNode(account).performClick()
-        val rename = hasText("Rename") and isEnabled()
-        compose.waitUntilAtLeastOneExists(rename, 10_000)
-        compose.onNode(rename).performClick()
     }
 
     @OptIn(ExperimentalTestApi::class)
