@@ -5,7 +5,7 @@ import ai.okou.android.R
 import ai.okou.android.SettingsModal
 import ai.okou.android.WorkspaceFeedbackHost
 import ai.okou.android.currentWindowSizeDp
-import ai.okou.android.isShortSettingsPanelWindow
+import ai.okou.android.isShortWindowHeight
 import ai.okou.android.settingsPanelContentPadding
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
@@ -208,7 +208,7 @@ internal fun ConversationQueueModal(
     onDismiss: () -> Unit,
 ) {
     val window = currentWindowSizeDp()
-    val fullScreen = isShortSettingsPanelWindow()
+    val fullScreen = isShortWindowHeight(window.height)
     val density = LocalDensity.current
     val titleFocus = remember { FocusRequester() }
     // Restoration can show an empty queue before history loads. Hold the first populated height.

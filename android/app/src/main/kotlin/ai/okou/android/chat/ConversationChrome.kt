@@ -4,6 +4,8 @@ import ai.okou.android.R
 import ai.okou.android.WorkspaceMenu
 import ai.okou.android.WorkspaceMenuItem
 import ai.okou.android.currentWindowSizeDp
+import ai.okou.android.isAtLeastMediumWindowWidth
+import ai.okou.android.isShortWindowHeight
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -158,8 +160,8 @@ internal fun ConversationToolbarActions(
 @Composable
 internal fun NewConversationWelcome(modifier: Modifier = Modifier) {
     val window = currentWindowSizeDp()
-    val wide = window.width >= 600
-    val short = window.height < 480
+    val wide = isAtLeastMediumWindowWidth(window.width)
+    val short = isShortWindowHeight(window.height)
     val textAlignment = if (short) TextAlign.Start else TextAlign.Center
     Box(modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         Column(

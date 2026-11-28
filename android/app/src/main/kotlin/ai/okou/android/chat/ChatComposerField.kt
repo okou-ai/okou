@@ -7,6 +7,8 @@ import ai.okou.android.connectors.ChatConnectorOptions
 import ai.okou.android.connectors.ConnectorAccountTarget
 import ai.okou.android.connectors.connectorFeedbackType
 import ai.okou.android.currentWindowSizeDp
+import ai.okou.android.isAtLeastMediumWindowWidth
+import ai.okou.android.isShortWindowHeight
 import ai.okou.android.settings.DefaultModelSettings
 import ai.okou.android.state.rememberJournalEditor
 import ai.okou.android.workspaceListPaneWidth
@@ -153,7 +155,7 @@ internal fun ChatComposerField(
     val draftKey = state.draftKey(target)
     val input = rememberJournalEditor(state.journal?.let { entry.text }, target.key)
     val window = currentWindowSizeDp()
-    val shortWindow = window.height < 480
+    val shortWindow = isShortWindowHeight(window.height)
     val listPaneWidth = workspaceListPaneWidth(window.width, window.height)
     val wide = listPaneWidth != null
     val horizontalInset = composerHorizontalInset(window)
@@ -626,8 +628,8 @@ internal val ChatComposerTopInset = 4.dp
 
 internal fun composerHorizontalInset(window: IntSize) =
     when {
-        window.height < 480 -> 12.dp
-        window.width >= 600 -> 24.dp
+        isShortWindowHeight(window.height) -> 12.dp
+        isAtLeastMediumWindowWidth(window.width) -> 24.dp
         else -> 20.dp
     }
 

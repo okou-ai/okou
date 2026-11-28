@@ -43,8 +43,7 @@ internal fun ContentReadFailure(
     failureLayout: ContentReadFailureLayout = ContentReadFailureLayout.Viewport,
 ) {
     val fillViewport = failureLayout == ContentReadFailureLayout.Viewport
-    val compact =
-        failureLayout == ContentReadFailureLayout.Panel || currentWindowSizeDp().height < 480
+    val compact = failureLayout == ContentReadFailureLayout.Panel || isShortWindowHeight()
     val maxArtWidth = if (compact) 112.dp else 160.dp
     val gap = if (compact) 12.dp else 16.dp
     val color = MaterialTheme.colorScheme.onSurface

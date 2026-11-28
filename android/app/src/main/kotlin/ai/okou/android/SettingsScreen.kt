@@ -24,7 +24,7 @@ internal fun SettingsPage(
     content: @Composable () -> Unit,
 ) {
     val window = currentWindowSizeDp()
-    val wide = workspaceListPaneWidth(window.width, window.height) != null
+    val wide = supportsWorkspacePanes(window.width, window.height)
     Column(Modifier.fillMaxSize().imePadding()) {
         if (wide) HorizontalDivider()
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {

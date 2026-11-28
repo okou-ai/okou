@@ -8,7 +8,7 @@ import ai.okou.android.R
 import ai.okou.android.RenameFieldError
 import ai.okou.android.SettingsSheet
 import ai.okou.android.SettingsSheetScroll
-import ai.okou.android.isShortSettingsPanelWindow
+import ai.okou.android.isShortWindowHeight
 import ai.okou.android.normalizedRenameName
 import ai.okou.android.okouFormInputStyle
 import ai.okou.android.okouFormLabelHeight
@@ -110,7 +110,7 @@ internal fun RenameListItemSheet(
         actionSpacing = OkouFormLayout.GroupGap,
         scroll = if (projectName) SettingsSheetScroll.Panel else SettingsSheetScroll.Body,
         fullScreenInShortWindow = true,
-        showBack = isShortSettingsPanelWindow(),
+        showBack = isShortWindowHeight(),
         dismissible = !saving,
         actions = {
             OkouFormActions(

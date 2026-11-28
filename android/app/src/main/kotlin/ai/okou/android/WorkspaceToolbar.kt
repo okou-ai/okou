@@ -122,7 +122,7 @@ internal fun WorkspaceSearchToolbar(
     val inset =
         when {
             listWidth == 320 -> 10.dp
-            listWidth == null && widthDp >= 600 -> 16.dp
+            listWidth == null && isAtLeastMediumWindowWidth(widthDp) -> 16.dp
             widthDp < 360 -> 8.dp
             else -> 12.dp
         }

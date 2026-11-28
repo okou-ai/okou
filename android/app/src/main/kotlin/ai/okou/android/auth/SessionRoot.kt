@@ -1,7 +1,6 @@
 package ai.okou.android.auth
 
 import ai.okou.android.EntryBrand
-import ai.okou.android.EntryCompactHeight
 import ai.okou.android.EntryContentGutter
 import ai.okou.android.EntryContentWidth
 import ai.okou.android.OkouApp
@@ -21,6 +20,7 @@ import ai.okou.android.entryBrandNameStyle
 import ai.okou.android.entrySpacing
 import ai.okou.android.entryTopPadding
 import ai.okou.android.instructions.PersonalInstructionsSettings
+import ai.okou.android.isShortWindowHeight
 import ai.okou.android.preferences.MemberPreferencesSettings
 import ai.okou.android.settings.BuiltInToolsPage
 import ai.okou.android.settings.DefaultModelSetting
@@ -229,7 +229,7 @@ internal fun SessionRoot(
 @Composable
 private fun NativeAuthentication() {
     val windowHeight = currentWindowSizeDp().height
-    val compact = windowHeight < EntryCompactHeight
+    val compact = isShortWindowHeight(windowHeight)
     // Clerk 1.5 supplies 8dp above and below the logo and 18dp on each side of the form.
     val clerkAppBarPadding = 8.dp
     val hostTop = entryTopPadding(windowHeight) - clerkAppBarPadding

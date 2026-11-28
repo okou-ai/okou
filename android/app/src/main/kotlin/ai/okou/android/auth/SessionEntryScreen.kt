@@ -1,7 +1,6 @@
 package ai.okou.android.auth
 
 import ai.okou.android.EntryBrand
-import ai.okou.android.EntryCompactHeight
 import ai.okou.android.EntryContentGutter
 import ai.okou.android.EntryContentWidth
 import ai.okou.android.OkouConfirmationDialog
@@ -12,6 +11,7 @@ import ai.okou.android.currentWindowSizeDp
 import ai.okou.android.entrySpacing
 import ai.okou.android.entryTitleStyle
 import ai.okou.android.entryTopPadding
+import ai.okou.android.isShortWindowHeight
 import ai.okou.android.updates.updateFocusOutline
 import androidx.annotation.StringRes
 import androidx.compose.foundation.clickable
@@ -80,7 +80,7 @@ internal fun SessionEntryScreen(
     openWorkspaceSetup: () -> Unit,
 ) {
     val windowHeight = currentWindowSizeDp().height
-    val compact = windowHeight < EntryCompactHeight
+    val compact = isShortWindowHeight(windowHeight)
     val groupSpacing = entrySpacing(compact)
     if (state.stage == SessionStage.Restoring && !state.signingOut) {
         Box(Modifier.fillMaxSize().safeDrawingPadding(), contentAlignment = Alignment.Center) {

@@ -13,7 +13,7 @@ import ai.okou.android.SettingsModal
 import ai.okou.android.WorkspaceFeedbackHost
 import ai.okou.android.chat.ChatSkeletonBlock
 import ai.okou.android.chat.ContentReadFeedback
-import ai.okou.android.isShortSettingsPanelWindow
+import ai.okou.android.isShortWindowHeight
 import ai.okou.android.rememberContentReadSkeleton
 import ai.okou.android.settingsPanelContentPadding
 import ai.okou.android.updates.updateFocusOutline
@@ -316,7 +316,7 @@ internal fun ConnectorDetails(
                                 Modifier.fillMaxWidth(),
                             )
                         else -> {
-                            val bodyHeight = if (isShortSettingsPanelWindow()) 160.dp else 208.dp
+                            val bodyHeight = if (isShortWindowHeight()) 160.dp else 208.dp
                             Box(
                                 Modifier.fillMaxWidth().heightIn(min = bodyHeight),
                                 propagateMinConstraints = true,
@@ -582,7 +582,7 @@ internal fun ConnectorSheet(
     retainedScroll: androidx.compose.foundation.ScrollState? = null,
     content: @Composable ColumnScope.() -> Unit,
 ) {
-    val shortWindow = isShortSettingsPanelWindow()
+    val shortWindow = isShortWindowHeight()
     val fullScreen = (expandInShortWindow || compactForm) && shortWindow
     val overlayFeedback =
         actionFeedback ?: feedback.takeIf { fullScreen || inContentFeedbackMessage != null }
@@ -701,7 +701,7 @@ private fun ConnectorPermissionSheet(
     announcements: PaneReadAnnouncements,
     close: () -> Unit,
 ) {
-    val pendingHeight = if (isShortSettingsPanelWindow()) 160.dp else 208.dp
+    val pendingHeight = if (isShortWindowHeight()) 160.dp else 208.dp
     val pendingBody = Modifier.fillMaxWidth().heightIn(min = pendingHeight)
     ConnectorSheet(
         stringResource(R.string.connector_permissions_title, service),
