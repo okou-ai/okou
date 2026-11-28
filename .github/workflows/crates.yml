@@ -1504,7 +1504,7 @@ jobs:
   host-cpu-fairness-test:
     runs-on: ubuntu-latest
     container:
-      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20261116
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261116
     needs:
       - detect
       - runner-test-prepare
@@ -1533,12 +1533,6 @@ jobs:
       DEFAULT_ROOTFS_HASH: ${{ needs.runner-test-prepare.outputs.default-rootfs-hash }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-
-      - name: Install native test transport dependencies
-        run: |
-          set -euo pipefail
-          apt-get update
-          apt-get install -y --no-install-recommends python3 openssh-client zstd
 
       - name: Install AWS CLI
         uses: ./.github/actions/setup-aws-cli
