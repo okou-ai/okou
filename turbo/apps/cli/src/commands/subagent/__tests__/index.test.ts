@@ -472,23 +472,25 @@ describe("okou subagent", () => {
     const item = inspectionSchema.parse(
       JSON.parse((await run("start", "unresponsive task"))[0] ?? ""),
     );
-    await waitForFile(item.stdout, (text) => {
-      return text.includes("toolPid");
+    const ready = await waitForFile(item.stdout, (text) => {
+      return text.includes("toolPid") && text.endsWith("\n");
     });
     const toolPid = object({ toolPid: number() }).parse(
-      JSON.parse((await readFile(item.stdout, "utf8")).trim()),
+      JSON.parse(ready),
     ).toolPid;
     await run("kill", item.id);
-    await expect(access(dirname(item.stdout))).rejects.toThrow();
-    const stat = await readFile(`/proc/${toolPid}/stat`, "utf8").catch(() => {
-      return undefined;
+    await expect(access(dirname(item.stdout))).rejects.toMatchObject({
+      code: "ENOENT",
     });
-    if (stat)
-      expect(stat.slice(stat.lastIndexOf(")") + 2).startsWith("Z ")).toBe(true);
     const admitted = (await readdir(helper.root)).filter((name) => {
       return !name.endsWith(".stopped");
     });
-    expect(await readdir(helper.root)).toContain(`${admitted[0]}.stopped`);
+    expect(admitted).toHaveLength(1);
+    const stopped = await readFile(
+      join(helper.root, `${admitted[0]}.stopped`),
+      "utf8",
+    );
+    expect(stopped).toBe(`${toolPid}\n`);
   }); // Kernel escalation and reaping are exercised by the native Guest lane.
 
   it("keeps IDs unique within a Run after completed directories are removed", async () => {

@@ -7,6 +7,21 @@ import select
 import signal
 import sys
 import uuid
+from contextlib import contextmanager, suppress
+
+
+@contextmanager
+def open_pidfd(pid):
+    fd = None
+    if pid is not None:
+        with suppress(ProcessLookupError):
+            fd = os.pidfd_open(pid)
+    try:
+        yield fd
+    finally:
+        if fd is not None:
+            os.close(fd)
+
 
 mode, root_arg, *args = sys.argv[1:]
 root = pathlib.Path(root_arg)
@@ -27,23 +42,23 @@ if args[0] == "stop":
         except json.JSONDecodeError:
             # Real Pi stdout is an event stream, not this fixture's optional tool record.
             pass
-    try:
-        pidfd = os.pidfd_open(task["pid"])
-    except ProcessLookupError:
-        pidfd = None
-    if pidfd is not None:
-        signal.pidfd_send_signal(pidfd, signal.SIGTERM)
-        if not select.select([pidfd], [], [], 0.1)[0]:
-            signal.pidfd_send_signal(pidfd, signal.SIGKILL)
-        assert select.select([pidfd], [], [], 10)[0], "fixture runtime did not exit"
-        os.close(pidfd)
-    if tool_pid:
-        try:
-            os.killpg(tool_pid, signal.SIGKILL)
-        except ProcessLookupError:
-            # Runtime cancellation may already have collected the published fixture tool.
-            pass
-    (root / (args[1] + ".stopped")).touch()
+    with open_pidfd(tool_pid) as tool_fd, open_pidfd(task["pid"]) as runtime_fd:
+        if runtime_fd is not None:
+            signal.pidfd_send_signal(runtime_fd, signal.SIGTERM)
+            if not select.select([runtime_fd], [], [], 0.1)[0]:
+                signal.pidfd_send_signal(runtime_fd, signal.SIGKILL)
+            assert select.select([runtime_fd], [], [], 10)[0], "fixture runtime did not exit"
+        if tool_fd is not None:
+            with suppress(ProcessLookupError):
+                signal.pidfd_send_signal(tool_fd, signal.SIGKILL)
+            # The stop reply certifies exit. Sending SIGKILL alone only starts it.
+            assert select.select([tool_fd], [], [], 10)[0], "fixture tool did not exit"
+    stopped = root / (args[1] + ".stopped")
+    if tool_pid is None:
+        stopped.touch()
+    else:
+        assert output.is_file(), "fixture registry was removed before the tool stopped"
+        stopped.write_text(f"{tool_pid}\n")
 else:
     assert args[:3] == ["--report-fd", "3", "--"]
     program, *target = args[3:]
