@@ -13,6 +13,23 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1198.1](https://github.com/okou-ai/okou/compare/app-v0.1198.0...app-v0.1198.1) (2026-11-27)
+
+
+### Refactoring
+
+* drop the pre-retirement official workflow list filters ([#51624](https://github.com/okou-ai/okou/issues/51624)) ([890ee9b](https://github.com/okou-ai/okou/commit/890ee9bc4aa296ab682131772bb972da561811e9))
+* **platform:** remove shared worker and move chat database to main thread ([#51617](https://github.com/okou-ai/okou/issues/51617)) ([28b4617](https://github.com/okou-ai/okou/commit/28b46179ab594879c6500dce635118be837fd576))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.143.1
+    * @okouai/core bumped to 8.888.1
+    * @okouai/ui bumped to 1.22.52
+
 ## [0.1198.0](https://github.com/okou-ai/okou/compare/app-v0.1197.1...app-v0.1198.0) (2026-11-27)
 
 

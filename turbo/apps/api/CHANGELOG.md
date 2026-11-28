@@ -10,6 +10,23 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.142.1](https://github.com/okou-ai/okou/compare/api-v2.142.0...api-v2.142.1) (2026-11-27)
+
+
+### Refactoring
+
+* **platform:** remove shared worker and move chat database to main thread ([#51617](https://github.com/okou-ai/okou/issues/51617)) ([28b4617](https://github.com/okou-ai/okou/commit/28b46179ab594879c6500dce635118be837fd576))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.143.1
+    * @okouai/core bumped to 8.888.1
+    * @okouai/db bumped to 2.73.1
+    * @okouai/pi-agent-runtime bumped to 1.52.108
+
 ## [2.142.0](https://github.com/okou-ai/okou/compare/api-v2.141.0...api-v2.142.0) (2026-11-27)
 
 
