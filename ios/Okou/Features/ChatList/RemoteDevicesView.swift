@@ -78,7 +78,7 @@ struct RemoteDeviceRows: View {
   var body: some View {
     Section {
       switch directory {
-      case .loading: OkouLoadingRow("Loading remote devices…")
+      case .loading: ComposerConnectorSkeletonRows("Loading remote devices…")
       case .hasError:
         Button("Retry loading remote devices") { resources.refresh() }
       case .hasData(let devices):

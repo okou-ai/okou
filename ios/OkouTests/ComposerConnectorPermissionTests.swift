@@ -419,8 +419,6 @@ final class PermissionEditorFixture: Sendable {
           return ChatHTTPResponse(body: try Self.grants(value))
         case "/api/chat-connector-overview":
           return ChatHTTPResponse(body: "[]")
-        case "/api/connectors/connected":
-          return ChatHTTPResponse(body: #"{"builtinConnectors":[],"customConnectors":[]}"#)
         case "/api/remotes/overview":
           return ChatHTTPResponse(
             body:

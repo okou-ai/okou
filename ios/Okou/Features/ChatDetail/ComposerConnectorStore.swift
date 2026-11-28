@@ -18,7 +18,8 @@ final class ComposerConnectorStore {
   /// chat's pending account choices applied. The payloads are not Equatable, so each
   /// publication is a new revision.
   struct Snapshot: Equatable {
-    fileprivate(set) var connectors: [ChatComposerConnector] = []
+    fileprivate(set) var connectedServices: [ChatComposerConnector]?
+    var connectors: [ChatComposerConnector] { connectedServices ?? [] }
     fileprivate var reconnectIDs: Set<String> = []
     fileprivate(set) var remotes: ChatRemotesOverview?
     fileprivate(set) var threadAccess: ChatThreadRemoteAccess?
@@ -55,7 +56,7 @@ final class ComposerConnectorStore {
   /// The status of a composer without connector choices: idle, with nothing presented.
   static let noStatus = Computed { _ in Status() }
   private let readRetrySleep: @Sendable (Duration) async throws -> Void
-  private let authorizationService: ChatConnectorService
+  let authorizationService: ChatConnectorService
   private let memberAccessEnabled: @MainActor () -> Bool
   private let didFail: @MainActor (Error) -> Void
   private var generation = UUID()
@@ -211,7 +212,7 @@ final class ComposerConnectorStore {
         guard let self, !closed, request == generation else { return }
         // Drafts and account actions act on these confirmed values; views resolve the snapshot.
         publish { snapshot in
-          snapshot.connectors = entries
+          snapshot.connectedServices = entries
           guard threadID == nil && !usesMemberAccess else { return }
           let touched = Set(
             pendingOptions.connectorSelections.map { $0.target.key }
@@ -372,10 +373,7 @@ final class ComposerConnectorStore {
       pendingOptions.connectorSelections.append(
         ChatConnectorSelection(target: target, connectionId: id))
     }
-    snapshot.connectors[index].access = next
-    if snapshot.connectors[index].currentAccount?.id != next.currentConnectionId {
-      snapshot.connectors[index].currentAccount = nil
-    }
+    snapshot.connectedServices?[index].access = next
   }
   func connect(_ connector: ChatCatalogConnector) {
     if connector.authMethods.contains(where: { $0.grantKind != "managed" }) {

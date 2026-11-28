@@ -57,7 +57,7 @@ final class ChatConnectorAccessStoreTests: XCTestCase {
     let reopened = makeStore(fixture, thread: thread)
     defer { reopened.close() }
     await reopened.refresh()
-    XCTAssertEqual(reopened.connectors.first?.currentAccount?.id, FixtureData.accountID)
+    XCTAssertEqual(reopened.connectors.first?.access.currentConnectionId, FixtureData.accountID)
   }
 
   func testSupportedPermissionEntryRemainsAvailableWithAllAccountsOff() async throws {

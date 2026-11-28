@@ -16,25 +16,7 @@ extension ChatComposerAccess {
 
   /// Fetch the visible rows and their saved account identities together.
   public func managedConnectorOverview(memberAccess: Bool) async throws -> [ChatComposerConnector] {
-    struct Entry: Decodable, Sendable {
-      let target: ChatConnectorTarget
-      let label: String
-      let icon: ChatConnectorIcon?
-      let hasPermissions: Bool
-      let accounts: [ChatConnectorAccess.Account]
-      let currentConnectionId: String?
-    }
-    let entries: [Entry] = try await client.request("/api/chat-connector-overview")
-    return entries.filter { $0.target.kind == "builtin" }.map { entry in
-      let access = ChatConnectorAccess(
-        target: entry.target, accounts: entry.accounts,
-        currentConnectionId: entry.currentConnectionId,
-        available: entry.currentConnectionId != nil)
-      return ChatComposerConnector(
-        target: entry.target, label: entry.label, hasPermissions: entry.hasPermissions,
-        icon: entry.icon,
-        access: memberAccess ? access : access.pending(overrides: [], selections: []))
-    }
+    try await connectors(memberAccess: memberAccess).filter { $0.target.kind == "builtin" }
   }
 
   /// Inspect every saved account, including accounts disabled by default.

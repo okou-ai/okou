@@ -75,8 +75,6 @@ final class ComposerConnectorResources {
         let memberAccess = memberAccessEnabled()
         do {
           let value = try await read {
-            try await service.validate(threadID: threadID)
-            try Task.checkCancellation()
             if !includesRemote {
               return try await service.managedConnectorOverview(memberAccess: memberAccess)
             }

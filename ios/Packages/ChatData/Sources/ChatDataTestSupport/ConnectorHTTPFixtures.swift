@@ -80,6 +80,14 @@ public enum ConnectorHTTPFixtures {
     return nil
   }
 
+  public static func composerOverview(label: String = "Slack") -> String {
+    """
+    [{"target":{"kind":"builtin","connectorSlug":"slack"},"label":"\(label)","hasPermissions":false,
+      "accounts":[{"connectionId":"\(accountID)","defaultEnabled":true,"isDefault":true,"enabled":true}],
+      "currentConnectionId":"\(accountID)"}]
+    """
+  }
+
   public static let managedOverview = """
     [{"target":{"kind":"builtin","connectorSlug":"slack"},"label":"Slack","hasPermissions":true,
       "icon":{"url":"https://example.invalid/slack.svg","invertInDarkMode":true},

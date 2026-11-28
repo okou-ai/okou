@@ -11,19 +11,13 @@ import XCTest
 final class ComposerConnectorStoreTests: XCTestCase {
 
   func testTransportCancellationRecoversConnectorAndRemoteReadsWithoutManualRefresh() async throws {
-    let cancelledPaths = Mutex(Set(["/api/connectors/connected", "/api/vnc/connections"]))
+    let cancelledPaths = Mutex(Set(["/api/chat-connector-overview", "/api/vnc/connections"]))
     let fixture = ChatHTTPFixture { request in
       if cancelledPaths.withLock({ $0.remove(request.url!.path) != nil }) {
         throw URLError(.cancelled)
       }
-      if request.url!.path == "/api/connectors/connected" {
-        return ChatHTTPResponse(
-          body: """
-            {"builtinConnectors":[{"slug":"slack","label":"Slack","hasPermissions":false}],"customConnectors":[]}
-            """)
-      }
-      if request.url!.path.hasSuffix("/connector-access") {
-        return ChatHTTPResponse(body: FixtureData.access())
+      if request.url!.path == "/api/chat-connector-overview" {
+        return ChatHTTPResponse(body: FixtureData.composerOverview())
       }
       if request.url!.path == "/api/remotes/overview" {
         return ChatHTTPResponse(
@@ -186,7 +180,7 @@ final class ComposerConnectorStoreTests: XCTestCase {
     }
     let server = Mutex(Server())
     let fixture = ChatHTTPFixture { request in
-      if request.url!.path == "/api/connectors/connected" {
+      if request.url!.path == "/api/chat-connector-overview" {
         server.withLock { $0.connectedReads += 1 }
       }
       if request.url!.path == "/api/remotes/overview" {
@@ -231,7 +225,7 @@ final class ComposerConnectorStoreTests: XCTestCase {
     let connectedResponse = ConnectorResponseGate()
     let remoteResponse = ConnectorResponseGate()
     let fixture = ChatHTTPFixture { request in
-      if request.url!.path == "/api/connectors/connected" {
+      if request.url!.path == "/api/chat-connector-overview" {
         connectedStarted.fulfill()
         await connectedResponse.wait()
       }
@@ -272,12 +266,12 @@ final class ComposerConnectorStoreTests: XCTestCase {
     let remoteResponse = ConnectorResponseGate()
     let fixture = ChatHTTPFixture { request in
       let path = request.url!.path
-      let isOverview = ["/api/connectors/connected", "/api/remotes/overview"].contains(path)
+      let isOverview = ["/api/chat-connector-overview", "/api/remotes/overview"].contains(path)
       let isOld = old.withLock { $0 }
       if isOverview, isOld {
         await withTaskCancellationHandler {
           started.fulfill()
-          if path == "/api/connectors/connected" {
+          if path == "/api/chat-connector-overview" {
             await connectedResponse.wait()
           } else {
             await remoteResponse.wait()
@@ -286,11 +280,9 @@ final class ComposerConnectorStoreTests: XCTestCase {
           cancelled.fulfill()
         }
       }
-      if path == "/api/connectors/connected" {
+      if path == "/api/chat-connector-overview" {
         return ChatHTTPResponse(
-          body:
-            "{\"builtinConnectors\":[{\"slug\":\"slack\",\"label\":\"\(isOld ? "Old service" : "New service")\",\"hasPermissions\":false}],\"customConnectors\":[]}"
-        )
+          body: FixtureData.composerOverview(label: isOld ? "Old service" : "New service"))
       }
       return try composerResponse(request)
     }
@@ -715,15 +707,8 @@ extension XCTestCase {
 private func composerResponse(_ request: URLRequest) throws -> ChatHTTPResponse {
   typealias FixtureData = ConnectorHTTPFixtures
   switch request.url!.path {
-  case "/api/connectors/connected":
-    return ChatHTTPResponse(body: "{\"builtinConnectors\":[],\"customConnectors\":[]}")
-  case "/api/connector-account-access/defaults":
-    return ChatHTTPResponse(
-      body: """
-        [{"connectionId":"\(FixtureData.accountID)","displayName":"Work account","defaultEnabled":true,"isDefault":true}]
-        """)
-  case "/api/connector-accounts/\(FixtureData.accountID)":
-    return ChatHTTPResponse(body: FixtureData.account())
+  case "/api/chat-connector-overview":
+    return ChatHTTPResponse(body: "[]")
   case "/api/remotes/overview":
     return ChatHTTPResponse(
       body: """

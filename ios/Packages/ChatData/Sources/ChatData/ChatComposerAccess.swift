@@ -50,7 +50,6 @@ public struct ChatComposerConnector: Identifiable, Sendable {
   /// The partner's own logo; custom connectors have none.
   public var icon: ChatConnectorIcon?
   public var access: ChatConnectorAccess
-  public var currentAccount: ChatConnectorAccount?
   public var id: String { target.key }
 }
 
@@ -139,63 +138,29 @@ public struct ChatComposerAccess: Sendable {
   public func connectors(
     threadID: String? = nil, options: ChatComposerOptions = .init(), memberAccess: Bool = false
   ) async throws -> [ChatComposerConnector] {
-    struct Builtin: Decodable, Sendable {
-      let slug: String
-      let label: String
-      let hasPermissions: Bool
-      let icon: ChatConnectorIcon?
-    }
-    struct Custom: Decodable, Sendable {
-      let id: String
-      let displayName: String
-    }
-    struct Connected: Decodable, Sendable {
-      let builtinConnectors: [Builtin]
-      let customConnectors: [Custom]
-    }
-    struct Candidate: Sendable {
+    struct Entry: Decodable, Sendable {
       let target: ChatConnectorTarget
       let label: String
-      let hasPermissions: Bool
       let icon: ChatConnectorIcon?
+      let hasPermissions: Bool
+      let accounts: [ChatConnectorAccess.Account]
+      let currentConnectionId: String?
     }
-    let list: Connected = try await client.request("/api/connectors/connected")
-    let candidates =
-      list.builtinConnectors.map {
-        Candidate(
-          target: .builtin($0.slug), label: $0.label, hasPermissions: $0.hasPermissions,
-          icon: $0.icon)
-      }
-      + list.customConnectors.map {
-        Candidate(target: .custom($0.id), label: $0.displayName, hasPermissions: false, icon: nil)
-      }
-    return try await withThrowingTaskGroup(of: (Int, ChatComposerConnector).self) { group in
-      for (index, candidate) in candidates.enumerated() {
-        group.addTask {
-          let access = try await self.connectorAccess(
-            target: candidate.target, threadID: threadID, options: options,
-            memberAccess: memberAccess)
-          var currentAccount: ChatConnectorAccount?
-          if let id = access.currentConnectionId {
-            do {
-              currentAccount = try await ChatConnectorService(client: self.client).account(
-                id: id, target: candidate.target)
-            } catch let error as APIClientError where error.statusCode == 404 {
-              currentAccount = nil
-            }
-          }
-          return (
-            index,
-            ChatComposerConnector(
-              target: candidate.target, label: candidate.label,
-              hasPermissions: candidate.hasPermissions, icon: candidate.icon, access: access,
-              currentAccount: currentAccount)
-          )
-        }
-      }
-      var result: [(Int, ChatComposerConnector)] = []
-      for try await value in group { result.append(value) }
-      return result.sorted { $0.0 < $1.0 }.map { $0.1 }
+    let query = threadID.map { [URLQueryItem(name: "threadId", value: $0)] } ?? []
+    let entries: [Entry] = try await client.request("/api/chat-connector-overview", query: query)
+    return entries.map { entry in
+      let access = ChatConnectorAccess(
+        target: entry.target, accounts: entry.accounts,
+        currentConnectionId: entry.currentConnectionId,
+        available: entry.currentConnectionId != nil)
+      return ChatComposerConnector(
+        target: entry.target, label: entry.label, hasPermissions: entry.hasPermissions,
+        icon: entry.icon,
+        access: threadID == nil && !memberAccess
+          ? access.pending(
+            overrides: options.initialConnectorAccessOverrides,
+            selections: options.connectorSelections)
+          : access)
     }
   }
 

@@ -324,9 +324,13 @@ final class ComposerConnectorAccountTests: XCTestCase {
       target: .builtin("slack"), connectionID: FixtureData.siblingID, threadID: FixtureData.threadID
     )
     await composer.refresh()
+    let selectedPath = "/api/connector-accounts/\(FixtureData.siblingID)"
+    XCTAssertFalse(fixture.state.withLock { $0.requests.contains { $0.url?.path == selectedPath } })
     let resources = try open(composer)
     let pinned = try await resources.store.get(resources.page).value
     XCTAssertEqual(pinned.accounts.map(\.id), [FixtureData.siblingID, FixtureData.accountID])
+    XCTAssertEqual(
+      fixture.state.withLock { $0.requests.filter { $0.url?.path == selectedPath }.count }, 1)
     await resources.loadMore()
     try await composer.service.setCurrentAccount(
       target: .builtin("slack"), connectionID: FixtureData.accountID, threadID: FixtureData.threadID
@@ -335,6 +339,37 @@ final class ComposerConnectorAccountTests: XCTestCase {
     let loaded = try await resources.store.get(resources.page).value
     XCTAssertEqual(loaded.accounts.map(\.id), [FixtureData.accountID, FixtureData.siblingID])
     XCTAssertNil(loaded.nextCursor)
+  }
+
+  func testClosingTheAccountPageCancelsItsOffPageSelectionRead() async throws {
+    let started = expectation(description: "Off-page account read started")
+    let cancelled = expectation(description: "Off-page account read cancelled")
+    let gate = ModelResponseGate()
+    let fixture = AccountPageFixture { request in
+      guard request.url?.path == "/api/connector-accounts/\(FixtureData.siblingID)" else { return }
+      await withTaskCancellationHandler {
+        started.fulfill()
+        await gate.wait()
+      } onCancel: {
+        cancelled.fulfill()
+      }
+    }
+    let composer = await makeComposer(fixture, thread: true)
+    defer {
+      composer.close()
+      gate.open()
+    }
+    try await composer.service.setCurrentAccount(
+      target: .builtin("slack"), connectionID: FixtureData.siblingID, threadID: FixtureData.threadID
+    )
+    await composer.refresh()
+    let resources = try open(composer)
+    let page = try resources.store.get(resources.page)
+    await fulfillment(of: [started], timeout: 3)
+    resources.close()
+    await fulfillment(of: [cancelled], timeout: 3)
+    gate.open()
+    if case .success = await page.result { XCTFail("The closed page returned account details") }
   }
 
   func testRapidSearchRoundTripDoesNotReuseACancelledRead() async throws {
