@@ -47,9 +47,8 @@ internal fun ContentReadFailure(
     val maxArtWidth = if (compact) 112.dp else 160.dp
     val gap = if (compact) 12.dp else 16.dp
     val color = MaterialTheme.colorScheme.onSurface
-    val illustration = ImageBitmap.imageResource(R.drawable.okou_load_failure)
+    val illustration = readFailureIllustrationBitmap()
     val aspectRatio = illustration.width.toFloat() / illustration.height
-    val dark = LocalOkouDarkMode.current
     Layout(
         modifier = modifier.padding(vertical = 16.dp),
         content = {
@@ -60,14 +59,9 @@ internal fun ContentReadFailure(
                 style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium),
                 textAlign = TextAlign.Center,
             )
-            Image(
-                illustration,
-                contentDescription = null,
-                modifier =
-                    Modifier.testTag("content-read-failure-illustration")
-                        .then(
-                            if (dark) Modifier.illustrationEdge(illustration, color) else Modifier,
-                        ),
+            ReadFailureIllustration(
+                Modifier.testTag("content-read-failure-illustration"),
+                bitmap = illustration,
             )
         },
     ) { (text, image), constraints ->
@@ -96,9 +90,31 @@ internal fun ContentReadFailure(
     }
 }
 
+@Composable
+internal fun ReadFailureIllustration(
+    modifier: Modifier = Modifier,
+    bitmap: ImageBitmap = readFailureIllustrationBitmap(),
+) {
+    val edge =
+        if (LocalOkouDarkMode.current) {
+            Modifier.illustrationEdge(bitmap, MaterialTheme.colorScheme.onSurface)
+        } else {
+            Modifier
+        }
+    Image(bitmap, contentDescription = null, modifier = modifier.then(edge))
+}
+
+@Composable
+private fun readFailureIllustrationBitmap(): ImageBitmap =
+    ImageBitmap.imageResource(R.drawable.okou_load_failed)
+
 private fun Modifier.illustrationEdge(bitmap: ImageBitmap, color: Color): Modifier = drawWithCache {
+    val width = size.width.roundToInt()
+    val height = size.height.roundToInt()
+    if (width == 0 || height == 0) return@drawWithCache onDrawWithContent { drawContent() }
+
     // Blur the transparent silhouette at its displayed size to keep the edge one dp wide.
-    val scaled = bitmap.asAndroidBitmap().scale(size.width.roundToInt(), size.height.roundToInt())
+    val scaled = bitmap.asAndroidBitmap().scale(width, height)
     val offset = IntArray(2)
     val paint =
         Paint().apply { maskFilter = BlurMaskFilter(1.dp.toPx(), BlurMaskFilter.Blur.NORMAL) }
