@@ -38,8 +38,9 @@ class ConversationLinkLayoutTest {
     @get:Rule val compose = createComposeRule()
 
     @Test
-    fun wrappedConversationLinkPaintsOnlyItsFragments() {
-        val chipColor = Color.Magenta
+    fun wrappedConversationLinkShowsOnSurfaceInkOverTheReplyBackground() {
+        val onSurface = Color.Blue
+        val secondaryContainer = Color.Magenta
         val text = buildAnnotatedString {
             append("0123456789 ")
             pushStringAnnotation(ConversationLinkAnnotation, "/chats/$CHAT_IN_PROJECT")
@@ -48,7 +49,13 @@ class ConversationLinkLayoutTest {
             append(" · END")
         }
         compose.setContent {
-            MaterialTheme(colorScheme = lightColorScheme(secondaryContainer = chipColor)) {
+            MaterialTheme(
+                colorScheme =
+                    lightColorScheme(
+                        onSurface = onSurface,
+                        secondaryContainer = secondaryContainer,
+                    ),
+            ) {
                 ConversationLinkText(
                     text,
                     TextStyle(
@@ -72,30 +79,39 @@ class ConversationLinkLayoutTest {
         val layout = layouts.single()
         val rendered = layout.layoutInput.text
         val link = rendered.getLinkAnnotations(0, rendered.length).single()
-        val icon = checkNotNull(layout.placeholderRects.first())
+        val icon = checkNotNull(layout.placeholderRects.single())
+        assertEquals(20f, icon.width, 0f)
+        assertEquals(16f, icon.height, 0f)
         assertEquals(0, layout.getLineForOffset(link.start + 1))
         assertEquals(1, layout.getLineForOffset(link.end - 1))
 
         val pixels = node.captureToImage().toPixelMap()
-        fun containsChip(xs: IntRange, ys: IntRange) = ys.any { y ->
-            xs.any { x -> pixels[x, y] == chipColor }
+        fun containsColor(color: Color, xs: IntRange, ys: IntRange) = ys.any { y ->
+            xs.any { x -> pixels[x, y] == color }
         }
 
         val firstLine = layout.getLineTop(0).toInt() until layout.getLineBottom(0).toInt()
         val secondLine = layout.getLineTop(1).toInt() until layout.getLineBottom(1).toInt()
-        assertFalse(
-            "Chip paint under preceding text",
-            containsChip(0 until icon.left.toInt() - 1, firstLine),
+        assertTrue(
+            "Inline icon uses OnSurface",
+            containsColor(onSurface, icon.left.toInt() until icon.right.toInt(), firstLine),
+        )
+        assertEquals(
+            "Spacing after the icon shows the reply background",
+            Color.White,
+            pixels[icon.right.toInt() - 2, icon.center.y.toInt()],
         )
         assertTrue(
-            "Chip paint behind the inline icon",
-            containsChip(icon.left.toInt() until icon.right.toInt(), firstLine),
+            "First line of the label uses OnSurface",
+            containsColor(onSurface, icon.right.toInt() until pixels.width, firstLine),
         )
-        assertTrue("Chip paint on the continuation", containsChip(0 until pixels.width, secondLine))
-        val suffix = layout.getBoundingBox(link.end + 1)
+        assertTrue(
+            "Wrapped label uses OnSurface",
+            containsColor(onSurface, 0 until pixels.width, secondLine),
+        )
         assertFalse(
-            "Chip paint under following text",
-            containsChip(suffix.left.toInt() + 1 until pixels.width, secondLine),
+            "Resting link has no selected container fill",
+            containsColor(secondaryContainer, 0 until pixels.width, 0 until pixels.height),
         )
     }
 }

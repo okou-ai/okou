@@ -122,7 +122,6 @@ internal data class ConversationLinkActions(
 )
 
 private const val ChatLinkIcon = "chat-link-icon"
-private const val ChatLinkEndInset = "chat-link-end-inset"
 
 @Composable
 internal fun ConversationLinkText(
@@ -142,9 +141,8 @@ internal fun ConversationLinkText(
         Text(text, modifier, style = style, textAlign = alignment)
         return
     }
-    val colors = MaterialTheme.colorScheme
-    val focusColor = colors.onSurface
-    val focusFill = focusColor.copy(alpha = 0.16f)
+    val onSurface = MaterialTheme.colorScheme.onSurface
+    val focusFill = onSurface.copy(alpha = 0.16f)
     val focus = remember { FocusRequester() }
     val latestActions = rememberUpdatedState(actions)
     val links =
@@ -152,7 +150,7 @@ internal fun ConversationLinkText(
             annotations.mapNotNull { range -> conversationLink(range.item)?.let { range to it } }
         }
     val rendered =
-        remember(text, links, colors, focusColor, key) {
+        remember(text, links, onSurface, key) {
             buildAnnotatedString {
                 var start = 0
                 for ((range, link) in links) {
@@ -164,9 +162,7 @@ internal fun ConversationLinkText(
                             TextLinkStyles(
                                 style =
                                     SpanStyle(
-                                        color =
-                                            if (chat) colors.onSecondaryContainer
-                                            else Color.Unspecified,
+                                        color = if (chat) onSurface else Color.Unspecified,
                                         fontWeight = FontWeight.SemiBold,
                                         textDecoration = TextDecoration.Underline,
                                     ),
@@ -179,29 +175,22 @@ internal fun ConversationLinkText(
                     ) {
                         if (chat) appendInlineContent(ChatLinkIcon, "\u2060")
                         append(text.subSequence(range.start, range.end))
-                        if (chat) appendInlineContent(ChatLinkEndInset, "\u2060")
                     }
                     start = range.end
                 }
                 append(text.subSequence(start, text.length))
             }
         }
-    val chatRanges =
-        remember(rendered) {
-            rendered.getLinkAnnotations(0, rendered.length).filter {
-                (it.item as? LinkAnnotation.Clickable)?.tag == "chat"
-            }
-        }
     var layout by remember(rendered) { mutableStateOf<TextLayoutResult?>(null) }
     val density = LocalDensity.current
     val icons =
-        remember(density, colors.onSecondaryContainer) {
+        remember(density, onSurface) {
             mapOf(
                 ChatLinkIcon to
                     InlineTextContent(
                         with(density) {
                             Placeholder(
-                                24.dp.toSp(),
+                                20.dp.toSp(),
                                 16.dp.toSp(),
                                 PlaceholderVerticalAlign.TextCenter,
                             )
@@ -210,20 +199,10 @@ internal fun ConversationLinkText(
                         Icon(
                             painterResource(R.drawable.ic_chat),
                             contentDescription = null,
-                            modifier = Modifier.padding(horizontal = 4.dp),
-                            tint = colors.onSecondaryContainer,
+                            modifier = Modifier.padding(end = 4.dp),
+                            tint = onSurface,
                         )
                     },
-                ChatLinkEndInset to
-                    InlineTextContent(
-                        with(density) {
-                            Placeholder(
-                                4.dp.toSp(),
-                                16.dp.toSp(),
-                                PlaceholderVerticalAlign.TextCenter,
-                            )
-                        },
-                    ) {},
             )
         }
     LaunchedEffect(actions.restoreKey, key) {
@@ -237,33 +216,23 @@ internal fun ConversationLinkText(
         modifier.focusRequester(focus).focusGroup().drawWithCache {
             val measured = layout ?: return@drawWithCache onDrawWithContent { drawContent() }
             val corner = CornerRadius(4.dp.toPx())
-            val chipHeight = style.fontSize.toPx() + 4.dp.toPx()
+            val focusContentHeight = style.fontSize.toPx() + 4.dp.toPx()
             val focusInset = 2.dp.toPx()
             val focusStroke = Stroke(focusInset)
-            val chips = buildList {
-                for (range in chatRanges) {
-                    measured.forEachLinkFragment(range.start, range.end) { bounds ->
-                        add(bounds.limitHeight(chipHeight))
-                    }
-                }
-            }
             // Compose reports the active link style on the measured text.
             val outlines = buildList {
                 for (span in measured.layoutInput.text.spanStyles) {
                     if (span.item.background != focusFill) continue
                     measured.forEachLinkFragment(span.start, span.end) { bounds ->
-                        add(bounds.limitHeight(chipHeight).inflate(focusInset))
+                        add(bounds.limitHeight(focusContentHeight).inflate(focusInset))
                     }
                 }
             }
             onDrawWithContent {
-                for (chip in chips) {
-                    drawRoundRect(colors.secondaryContainer, chip.topLeft, chip.size, corner)
-                }
                 drawContent()
                 for (outline in outlines) {
                     drawRoundRect(
-                        focusColor,
+                        onSurface,
                         outline.topLeft,
                         outline.size,
                         corner,
