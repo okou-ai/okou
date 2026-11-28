@@ -14,10 +14,19 @@ import { describe, expect, it } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
+import { TEST_WITH_SINGLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE } from "../../../__tests__/test-timeouts";
+import { mockOptionalEnv } from "../../../lib/env";
 import { connectorAccountRoutes } from "../connector-accounts";
 import { connectorCheckRoutes } from "../connector-check";
 import { builtinConnectorsRoutes } from "../connectors";
+import { createBddApi } from "./helpers/api-bdd";
 import { createAuthDeviceApiActions } from "./helpers/api-bdd-auth-device";
+import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
+import {
+  createChatEventsFixture,
+  okouTokenFromExecution,
+} from "./helpers/chat-events-fixture";
+import { publicRunOwner } from "./helpers/public-run-owner";
 import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
@@ -614,4 +623,82 @@ describe("POST /api/connectors/diagnostics/check", () => {
     expect(aliceList).toStrictEqual([]);
     expect(bobList).toStrictEqual([]);
   });
+
+  it(
+    "connector-check-026 reads a real registration and rejects diagnostics after normal Run cancellation",
+    { timeout: TEST_WITH_SINGLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const fixture = createChatEventsFixture(context);
+      const bdd = createBddApi(context);
+      const actor = bdd.user();
+      const owner = publicRunOwner(context, actor);
+      fixture.chatCallbacks.acceptChatObjectStorage();
+      fixture.api.acceptStorageDownloads();
+      fixture.api.acceptTelemetryIngest();
+      mockOptionalEnv("OPENROUTER_API_KEY", undefined);
+      fixture.chatCallbacks.disableVapid();
+
+      await Promise.all([
+        fixture.api.configureRunnerGroup(),
+        owner.run(() => {
+          return bdd.bootstrapLimitedFreeOnboarding(actor);
+        }),
+      ]);
+
+      const launched = await owner.run(() => {
+        return fixture.sendChatRun(actor, {
+          prompt: "Inspect GH_TOKEN connector diagnostics",
+          model: null,
+        });
+      });
+      const execution = await owner.executionInput(launched.runId);
+      const okouToken = okouTokenFromExecution(execution);
+      const client = setupApp({ context, routes: connectorCheckRoutes })(
+        connectorCheckContract,
+      );
+      const runHeaders = { authorization: `Bearer ${okouToken}` };
+
+      const live = await accept(
+        client.check({
+          headers: runHeaders,
+          body: { mode: "environment", environmentName: "GH_TOKEN" },
+        }),
+        [200],
+      );
+      expect(live.body).toMatchObject({
+        outcome: "resolved",
+        mode: "environment",
+        connector: {
+          target: { kind: "builtin", connectorSlug: "github" },
+          visibility: "available",
+          credentialResolution: "network-boundary",
+        },
+        run: { status: "not-configured" },
+        permission: null,
+      });
+
+      await owner.run(() => {
+        return fixture.api.requestCancelRun(actor, launched.runId, [200]);
+      });
+      await createWebhookCallbackApi(context).requestAgentComplete(
+        { runId: launched.runId, exitCode: 1, error: "Cancelled by owner" },
+        { authorization: `Bearer ${execution.sandboxToken}` },
+        [200],
+      );
+
+      const afterCancel = await accept(
+        client.check({
+          headers: runHeaders,
+          body: { mode: "environment", environmentName: "GH_TOKEN" },
+        }),
+        [404],
+      );
+      expect(afterCancel.body).toMatchObject({
+        error: {
+          code: "NOT_FOUND",
+          message: "Agent run not found",
+        },
+      });
+    },
+  );
 });
