@@ -16,6 +16,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.painter.ColorPainter
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.ScaleFactor
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.clearAndSetSemantics
@@ -54,6 +55,7 @@ internal fun WorkspaceLogo(
             painterResource(colorway.texture),
             contentDescription = null,
             modifier = Modifier.matchParentSize(),
+            contentScale = workspaceTextureCrop,
         )
         if (initial != null) {
             val ratio = if (wideScript.containsMatchIn(initial)) 0.44f else 0.5f
@@ -90,17 +92,23 @@ internal fun workspaceInitial(name: String): String? {
 
 private data class WorkspaceColorway(@DrawableRes val texture: Int, val letter: Color)
 
+// Web displays the shared texture at 160%, centered inside the workspace tile.
+private val workspaceTextureCrop = ContentScale { source, destination ->
+    val crop = ContentScale.Crop.computeScaleFactor(source, destination)
+    ScaleFactor(crop.scaleX * 1.6f, crop.scaleY * 1.6f)
+}
+
 // Match the Web colorway order and letter colors in core/src/workspace-logo.ts.
 private val workspaceColorways =
     listOf(
-        WorkspaceColorway(R.drawable.workspace_default_0, Color(0xFF6E485B)),
-        WorkspaceColorway(R.drawable.workspace_default_1, Color(0xFF480000)),
-        WorkspaceColorway(R.drawable.workspace_default_2, Color(0xFF395766)),
-        WorkspaceColorway(R.drawable.workspace_default_3, Color(0xFFD9ECFF)),
-        WorkspaceColorway(R.drawable.workspace_default_4, Color(0xFF675900)),
-        WorkspaceColorway(R.drawable.workspace_default_5, Color(0xFF6E2F00)),
-        WorkspaceColorway(R.drawable.workspace_default_6, Color(0xFF465900)),
-        WorkspaceColorway(R.drawable.workspace_default_7, Color(0xFFEAFFFE)),
+        WorkspaceColorway(R.drawable.avatar_texture_dash_pink_pink, Color(0xFF6E485B)),
+        WorkspaceColorway(R.drawable.avatar_texture_dash_coral_red, Color(0xFF480000)),
+        WorkspaceColorway(R.drawable.avatar_texture_drop_lightblue_blue, Color(0xFF395766)),
+        WorkspaceColorway(R.drawable.avatar_texture_drop_blue_navy, Color(0xFFD9ECFF)),
+        WorkspaceColorway(R.drawable.avatar_texture_loop_yellow_orange, Color(0xFF675900)),
+        WorkspaceColorway(R.drawable.avatar_texture_loop_orange_amber, Color(0xFF6E2F00)),
+        WorkspaceColorway(R.drawable.avatar_texture_stripe_lime_green, Color(0xFF465900)),
+        WorkspaceColorway(R.drawable.avatar_texture_stripe_teal_pine, Color(0xFFEAFFFE)),
     )
 
 private fun workspaceColorway(id: String): WorkspaceColorway {
