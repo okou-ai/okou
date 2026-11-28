@@ -1,5 +1,6 @@
 import { randomInt, randomUUID } from "node:crypto";
 
+import { integrationsTelegramDownloadFileContract } from "@okouai/api-contracts/contracts/integrations";
 import { integrationsTelegramContract } from "@okouai/api-contracts/contracts/integrations-telegram";
 import { createStore } from "ccstate";
 import { HttpResponse, http } from "msw";
@@ -13,8 +14,13 @@ import { server } from "../../../mocks/server";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { integrationsTelegramRoutes } from "../integrations-telegram";
 import { integrationsTelegramLinkRoutes } from "../integrations-telegram-link";
+import type { ApiTestUser } from "./helpers/api-bdd";
 import { telegramLoginAuth } from "./helpers/api-bdd-integrations";
-import { seedOrgMembership$ } from "./helpers/org-membership";
+import { createRunsApi } from "./helpers/api-bdd-runs";
+import {
+  deleteOrgMembership$,
+  seedOrgMembership$,
+} from "./helpers/org-membership";
 import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
@@ -112,6 +118,88 @@ function linkClient() {
 function telegramClient() {
   return setupApp({ context, routes: integrationsTelegramRoutes })(
     integrationsTelegramContract,
+  );
+}
+
+function downloadClient() {
+  return setupApp({ context, routes: integrationsTelegramRoutes })(
+    integrationsTelegramDownloadFileContract,
+  );
+}
+
+function toApiUser(member: Member): ApiTestUser {
+  return {
+    userId: member.userId,
+    orgId: member.orgId,
+    orgRole: "org:member",
+    email: `${member.userId}@example.test`,
+  };
+}
+
+async function okouTokenHeaders(member: Member): Promise<{
+  readonly authorization: string;
+}> {
+  const { token } = await createRunsApi(context).createCliToken(
+    toApiUser(member),
+  );
+  return { authorization: `Bearer ${token}` };
+}
+
+async function deliverWebhookMessage(message: Record<string, unknown>) {
+  await accept(
+    telegramClient().webhook({
+      params: { telegramBotId: "official" },
+      body: {
+        update_id: randomInt(1, 1_000_000_000),
+        message,
+      },
+      extraHeaders: {
+        "x-telegram-bot-api-secret-token": configured(
+          "TELEGRAM_OFFICIAL_WEBHOOK_SECRET",
+        ),
+      },
+    }),
+    [200],
+  );
+  await flushWaitUntilForTest();
+}
+
+function mockSupergroupMembership(args: {
+  readonly chatId: number;
+  readonly userId: number;
+  readonly userStatus: "member" | "left";
+}): void {
+  const token = configured("TELEGRAM_OFFICIAL_BOT_TOKEN");
+  server.use(
+    http.get(`https://api.telegram.org/bot${token}/getChat`, ({ request }) => {
+      const chatId = new URL(request.url).searchParams.get("chat_id");
+      if (chatId !== String(args.chatId)) {
+        return HttpResponse.json(
+          { ok: false, error_code: 404, description: "Chat not found" },
+          { status: 404 },
+        );
+      }
+      return HttpResponse.json({
+        ok: true,
+        result: { id: args.chatId, type: "supergroup" },
+      });
+    }),
+    http.get(
+      `https://api.telegram.org/bot${token}/getChatMember`,
+      ({ request }) => {
+        const params = new URL(request.url).searchParams;
+        const userId = Number(params.get("user_id"));
+        const status =
+          userId === args.userId ? args.userStatus : ("member" as const);
+        return HttpResponse.json({
+          ok: true,
+          result: {
+            user: { id: userId },
+            status,
+          },
+        });
+      },
+    ),
   );
 }
 
@@ -498,5 +586,347 @@ describe("GET /api/integrations/telegram/:botId/avatar", () => {
     expect(
       context.mocks.telegram.getUserProfilePhotos.mock.calls,
     ).toStrictEqual([[token, Number(OFFICIAL_BOT_ID), 1]]);
+  });
+
+  it("integrations-telegram-017 returns the avatar placeholder when the official bot has no avatar", async () => {
+    officialBot();
+    context.mocks.telegram.getUserProfilePhotos.mockResolvedValue([]);
+    const member = await onboardedMember();
+    const headers = await okouTokenHeaders(member);
+
+    const response = await accept(
+      telegramClient().avatar({
+        headers,
+        params: { botId: "official" },
+        query: {},
+      }),
+      [200],
+    );
+
+    expect(response.headers.get("content-type")).toContain("image/svg+xml");
+    expect(response.headers.get("cache-control")).toBe("private, max-age=300");
+    if (!(response.body instanceof Blob)) {
+      throw new Error("Expected the fallback avatar SVG");
+    }
+    await expect(response.body.text()).resolves.toContain(
+      "Telegram bot avatar fallback",
+    );
+  });
+});
+
+describe("GET /api/integrations/telegram", () => {
+  it("integrations-telegram-001 returns the configured official bot for the active organization", async () => {
+    officialBot();
+    const member = await onboardedMember();
+    const headers = await okouTokenHeaders(member);
+
+    const response = await accept(telegramClient().list({ headers }), [200]);
+
+    expect(response.body.bots).toHaveLength(1);
+    const official = response.body.bots[0];
+    if (!official) {
+      throw new Error("Expected the official Telegram bot");
+    }
+    const avatarUrl = new URL(official.avatarUrl ?? "", "https://app.okou.ai");
+    expect(avatarUrl.pathname).toBe(
+      "/api/integrations/telegram/official/avatar",
+    );
+    expect(avatarUrl.searchParams.get("exp")).toMatch(/^\d+$/u);
+    expect(avatarUrl.searchParams.get("sig")).toBeTruthy();
+    expect(official).toMatchObject({
+      id: "official",
+      kind: "official",
+      username: "official_okou_bot",
+      isOwner: false,
+      isConnected: false,
+      connectedUser: null,
+      tokenStatus: "valid",
+      official: {
+        configured: true,
+        linkedTelegramUserId: null,
+      },
+    });
+  });
+});
+
+describe("GET /api/integrations/telegram/download-file", () => {
+  it("integrations-telegram-019 returns 401 when the token has no active organization membership", async () => {
+    officialBot();
+    const member = await onboardedMember();
+    const headers = await okouTokenHeaders(member);
+    await memberships.set(deleteOrgMembership$, member, context.signal);
+    context.mocks.clerk.organizations.getOrganizationMembershipList.mockResolvedValue(
+      { data: [] },
+    );
+    context.mocks.clerk.users.getOrganizationMembershipList.mockResolvedValue({
+      data: [],
+    });
+
+    const response = await accept(
+      downloadClient().download({
+        headers,
+        query: { file_id: "tg-file-1", bot_id: "tg-bot" },
+      }),
+      [401],
+    );
+
+    expect(response.headers.get("content-type")).toContain("application/json");
+    expect(response.body).toStrictEqual({
+      error: { message: "Not authenticated", code: "UNAUTHORIZED" },
+    });
+  });
+
+  it("integrations-telegram-021 streams files for the official Telegram bot", async () => {
+    officialBot();
+    serveTelegramMessages();
+    const token = configured("TELEGRAM_OFFICIAL_BOT_TOKEN");
+    const member = await onboardedMember();
+    const tgUserId = telegramUserId();
+    const chatId = -1_001_000_000_000 - randomInt(1, 999_999);
+    const imageBytes = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 5, 6, 7, 8]);
+
+    await accept(linkWithLoginWidget(member, tgUserId), [200]);
+    await flushWaitUntilForTest();
+    await deliverWebhookMessage({
+      message_id: 101,
+      date: Math.floor(now() / 1000),
+      chat: { id: chatId, type: "supergroup" },
+      from: { id: tgUserId, is_bot: false, first_name: "Reader" },
+      document: {
+        file_id: "tg-official",
+        file_unique_id: `unique-${randomUUID()}`,
+        file_name: "official.jpg",
+        mime_type: "image/jpeg",
+        file_size: imageBytes.byteLength,
+      },
+    });
+
+    mockSupergroupMembership({
+      chatId,
+      userId: tgUserId,
+      userStatus: "member",
+    });
+    context.mocks.telegram.getFile.mockResolvedValue({
+      file_id: "tg-official",
+      file_path: "photos/official.jpg",
+      file_size: imageBytes.byteLength,
+    });
+    server.use(
+      http.get(
+        `https://api.telegram.org/file/bot${token}/photos/official.jpg`,
+        () => {
+          return new HttpResponse(imageBytes, {
+            headers: { "content-type": "image/jpeg" },
+          });
+        },
+      ),
+    );
+    const headers = await okouTokenHeaders(member);
+
+    const response = await accept(
+      downloadClient().download({
+        headers,
+        query: { file_id: "tg-official", bot_id: "official" },
+      }),
+      [200],
+    );
+
+    expect(response.headers.get("content-type")).toBe("image/jpeg");
+    expect(response.headers.get("x-file-name")).toBe("official.jpg");
+    if (!(response.body instanceof Blob)) {
+      throw new Error("Expected the Telegram file bytes");
+    }
+    expect(new Uint8Array(await response.body.arrayBuffer())).toStrictEqual(
+      imageBytes,
+    );
+    expect(context.mocks.telegram.getFile.mock.calls).toStrictEqual([
+      [token, "tg-official"],
+    ]);
+  });
+
+  it("integrations-telegram-022 does not read an old account's recorded private files through the new account's binding", async () => {
+    officialBot();
+    serveTelegramMessages();
+    const token = configured("TELEGRAM_OFFICIAL_BOT_TOKEN");
+    const member = await onboardedMember();
+    const firstId = telegramUserId();
+    const secondId = telegramUserId();
+    const getChatCalls: string[] = [];
+
+    server.use(
+      http.post(`https://api.telegram.org/bot${token}/sendChatAction`, () => {
+        return HttpResponse.json({ ok: true, result: true });
+      }),
+      http.get(
+        `https://api.telegram.org/file/bot${token}/docs/private.txt`,
+        () => {
+          return new HttpResponse("data", {
+            headers: { "content-type": "text/plain" },
+          });
+        },
+      ),
+    );
+    context.mocks.s3.send.mockResolvedValue({ ETag: '"fixture-etag"' });
+    context.mocks.telegram.getFile.mockResolvedValue({
+      file_id: "previous-private-attachment",
+      file_path: "docs/private.txt",
+      file_size: 4,
+    });
+
+    await accept(linkWithLoginWidget(member, firstId), [200]);
+    await flushWaitUntilForTest();
+    await deliverWebhookMessage({
+      message_id: 201,
+      date: Math.floor(now() / 1000),
+      chat: { id: firstId, type: "private" },
+      from: { id: firstId, is_bot: false, first_name: "First" },
+      document: {
+        file_id: "previous-private-attachment",
+        file_unique_id: `unique-${randomUUID()}`,
+        file_name: "private.txt",
+        mime_type: "text/plain",
+        file_size: 4,
+      },
+    });
+
+    signIn(member);
+    await accept(
+      telegramClient().unlink({
+        headers: SESSION,
+        query: { botId: "official" },
+        body: undefined,
+      }),
+      [204],
+    );
+    await accept(linkWithLoginWidget(member, secondId), [200]);
+    await flushWaitUntilForTest();
+
+    context.mocks.telegram.getFile.mockClear();
+    server.use(
+      http.get(
+        `https://api.telegram.org/bot${token}/getChat`,
+        ({ request }) => {
+          const requested =
+            new URL(request.url).searchParams.get("chat_id") ?? "";
+          getChatCalls.push(requested);
+          return HttpResponse.json({
+            ok: true,
+            result: { id: Number(requested), type: "private" },
+          });
+        },
+      ),
+    );
+    const headers = await okouTokenHeaders(member);
+
+    const response = await accept(
+      downloadClient().download({
+        headers,
+        query: {
+          file_id: "previous-private-attachment",
+          bot_id: "official",
+        },
+      }),
+      [404],
+    );
+
+    expect(response.body.error.code).toBe("NOT_FOUND");
+    expect(getChatCalls).toStrictEqual([String(firstId)]);
+    expect(context.mocks.telegram.getFile).not.toHaveBeenCalled();
+  });
+
+  it("integrations-telegram-023 denies unrecorded bot-global files and files from a chat the caller left", async () => {
+    officialBot();
+    serveTelegramMessages();
+    const member = await onboardedMember();
+    const tgUserId = telegramUserId();
+    const chatId = -1_001_000_000_000 - randomInt(1, 999_999);
+
+    await accept(linkWithLoginWidget(member, tgUserId), [200]);
+    await flushWaitUntilForTest();
+    await deliverWebhookMessage({
+      message_id: 301,
+      date: Math.floor(now() / 1000),
+      chat: { id: chatId, type: "supergroup" },
+      from: { id: tgUserId, is_bot: false, first_name: "Reader" },
+      document: {
+        file_id: "owned-attachment",
+        file_unique_id: `unique-${randomUUID()}`,
+        file_name: "notes.txt",
+        mime_type: "text/plain",
+        file_size: 10,
+      },
+    });
+    mockSupergroupMembership({ chatId, userId: tgUserId, userStatus: "left" });
+    const headers = await okouTokenHeaders(member);
+
+    const unrecorded = await accept(
+      downloadClient().download({
+        headers,
+        query: { file_id: "another-users-attachment", bot_id: "official" },
+      }),
+      [404],
+    );
+    const leftChat = await accept(
+      downloadClient().download({
+        headers,
+        query: { file_id: "owned-attachment", bot_id: "official" },
+      }),
+      [404],
+    );
+
+    expect(unrecorded.body.error.code).toBe("NOT_FOUND");
+    expect(leftChat.body.error.code).toBe("NOT_FOUND");
+    expect(context.mocks.telegram.getFile).not.toHaveBeenCalled();
+  });
+
+  it("integrations-telegram-025 returns 413 when Telegram reports a file over the proxy limit", async () => {
+    officialBot();
+    serveTelegramMessages();
+    const member = await onboardedMember();
+    const tgUserId = telegramUserId();
+    const chatId = -1_001_000_000_000 - randomInt(1, 999_999);
+
+    await accept(linkWithLoginWidget(member, tgUserId), [200]);
+    await flushWaitUntilForTest();
+    await deliverWebhookMessage({
+      message_id: 401,
+      date: Math.floor(now() / 1000),
+      chat: { id: chatId, type: "supergroup" },
+      from: { id: tgUserId, is_bot: false, first_name: "Reader" },
+      document: {
+        file_id: "tg-file-big",
+        file_unique_id: `unique-${randomUUID()}`,
+        file_name: "archive.bin",
+        mime_type: "application/octet-stream",
+        file_size: 200 * 1024 * 1024,
+      },
+    });
+    mockSupergroupMembership({
+      chatId,
+      userId: tgUserId,
+      userStatus: "member",
+    });
+    context.mocks.telegram.getFile.mockResolvedValue({
+      file_id: "tg-file-big",
+      file_path: "docs/archive.bin",
+      file_size: 200 * 1024 * 1024,
+    });
+    const headers = await okouTokenHeaders(member);
+
+    const response = await accept(
+      downloadClient().download({
+        headers,
+        query: { file_id: "tg-file-big", bot_id: "official" },
+      }),
+      [413],
+    );
+
+    expect(response.headers.get("content-type")).toContain("application/json");
+    expect(response.body).toStrictEqual({
+      error: {
+        message: "File exceeds maximum size of 104857600 bytes",
+        code: "PAYLOAD_TOO_LARGE",
+      },
+    });
   });
 });

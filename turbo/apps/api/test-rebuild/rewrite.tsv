@@ -1577,24 +1577,24 @@ messaging	src/signals/routes/__tests__/feishu-branding-connection.test.ts	feishu
 messaging	src/signals/routes/__tests__/feishu-branding-connection.test.ts	feishu-branding-connection-023	rewritten	98.1		src/signals/routes/__tests__/feishu-branding-connection.test.ts	B14	b-install
 messaging	src/signals/routes/__tests__/feishu-branding-connection.test.ts	feishu-branding-connection-026	rewritten	173.6	split n=4: 1/4=120.4; 2/4=173.6; 3/4=145.6; 4/4=169.5	src/signals/routes/__tests__/feishu-branding-connection.test.ts	B14	b-install
 messaging	src/signals/routes/__tests__/feishu-browser-connect.test.ts	feishu-browser-connect-001	rewritten	20.8	accepted by shuffled 3-run median (provisional cold-start rule)	src/signals/routes/__tests__/feishu-browser-connect.test.ts	B06	
-messaging	src/signals/routes/__tests__/feishu-conversation.test.ts	feishu-conversation-001	planned				pilot	a-run
-messaging	src/signals/routes/__tests__/feishu-conversation.test.ts	feishu-conversation-002	planned				pilot	a-run
-messaging	src/signals/routes/__tests__/feishu-conversation.test.ts	feishu-conversation-003	planned				pilot	a-run
+messaging	src/signals/routes/__tests__/feishu-conversation.test.ts	feishu-conversation-001	revisit		pass2-hard: Feishu billing recovery timed out at 400ms and needs deeper Feishu callback/cleanup fixture alignment		R45-pass1	a-run
+messaging	src/signals/routes/__tests__/feishu-conversation.test.ts	feishu-conversation-002	revisit		pass2-hard: Feishu model change history timed out at 600ms on first pass		R45-pass1	a-run
+messaging	src/signals/routes/__tests__/feishu-conversation.test.ts	feishu-conversation-003	revisit		pass2-hard: Feishu DM context timed out at 400ms on first pass		R45-pass1	a-run
 messaging	src/signals/routes/__tests__/feishu-conversation.test.ts	feishu-conversation-004	rewritten	199.6	split n=2: 1/2=98.3; 2/2=199.6	src/signals/routes/__tests__/feishu-conversation.test.ts	pilot	d-other
-messaging	src/signals/routes/__tests__/feishu-conversation.test.ts	feishu-conversation-005	planned				pilot	a-run
+messaging	src/signals/routes/__tests__/feishu-conversation.test.ts	feishu-conversation-005	revisit		pass2-hard: Feishu queued group task resumption timed out at 600ms on first pass		R45-pass1	a-run
 messaging	src/signals/routes/__tests__/feishu-conversation.test.ts	feishu-conversation-006	rewritten	164.5		src/signals/routes/__tests__/feishu-conversation.test.ts	pilot	d-other
-messaging	src/signals/routes/__tests__/feishu-conversation.test.ts	feishu-conversation-007	planned				pilot	a-run
-messaging	src/signals/routes/__tests__/feishu-conversation.test.ts	feishu-conversation-010	planned				pilot	a-run
-messaging	src/signals/routes/__tests__/feishu-conversation.test.ts	feishu-conversation-013	planned				pilot	a-run
-messaging	src/signals/routes/__tests__/feishu-conversation.test.ts	feishu-conversation-017	planned				pilot	a-run
-messaging	src/signals/routes/__tests__/feishu-conversation.test.ts	feishu-conversation-018	planned				pilot	a-run
-messaging	src/signals/routes/__tests__/feishu-files-history.test.ts	feishu-files-history-001	planned				pilot	a-run
-messaging	src/signals/routes/__tests__/feishu-files-history.test.ts	feishu-files-history-002	planned				pilot	a-run
-messaging	src/signals/routes/__tests__/feishu-files-history.test.ts	feishu-files-history-003	planned				pilot	a-run
-messaging	src/signals/routes/__tests__/feishu-files-history.test.ts	feishu-files-history-004	planned				pilot	a-run
-messaging	src/signals/routes/__tests__/feishu-files-history.test.ts	feishu-files-history-005	planned				pilot	a-run
-messaging	src/signals/routes/__tests__/feishu-files-history.test.ts	feishu-files-history-007	planned				pilot	a-run
-messaging	src/signals/routes/__tests__/feishu-files-history.test.ts	feishu-files-history-008	planned				pilot	a-run
+messaging	src/signals/routes/__tests__/feishu-conversation.test.ts	feishu-conversation-007	revisit		pass2-hard: Feishu mention-only group dedupe timed out at 400ms on first pass		R45-pass1	a-run
+messaging	src/signals/routes/__tests__/feishu-conversation.test.ts	feishu-conversation-010	revisit		pass2-hard: Feishu mentioned group reply attribution timed out at 600ms on first pass		R45-pass1	a-run
+messaging	src/signals/routes/__tests__/feishu-conversation.test.ts	feishu-conversation-013	revisit		pass2-hard: Lark DM context failed assertion and cleanup warnings on first pass		R45-pass1	a-run
+messaging	src/signals/routes/__tests__/feishu-conversation.test.ts	feishu-conversation-017	revisit		pass2-hard: Lark mention-only group dedupe timed out at 400ms on first pass		R45-pass1	a-run
+messaging	src/signals/routes/__tests__/feishu-conversation.test.ts	feishu-conversation-018	revisit		pass2-hard: deferred alongside sibling feishu-conversation Run cases to keep existing non-Run file untouched until full Feishu fixture alignment		R45-pass1	a-run
+messaging	src/signals/routes/__tests__/feishu-files-history.test.ts	feishu-files-history-001	revisit		pass2-hard: Feishu DM file context exceeded 600ms and emitted unmatched Graph/Feishu cleanup logs on first pass		R45-pass1	a-run
+messaging	src/signals/routes/__tests__/feishu-files-history.test.ts	feishu-files-history-002	revisit		pass2-hard: Feishu rich post p2p image import exceeded 400ms and emitted Feishu cleanup warnings on first pass		R45-pass1	a-run
+messaging	src/signals/routes/__tests__/feishu-files-history.test.ts	feishu-files-history-003	revisit		pass2-hard: Feishu rich post group image import exceeded 400ms and emitted Feishu cleanup warnings on first pass		R45-pass1	a-run
+messaging	src/signals/routes/__tests__/feishu-files-history.test.ts	feishu-files-history-004	revisit		pass2-hard: Feishu card/artifact history test timed out at 400ms on re-run (420ms)		R45-pass1	a-run
+messaging	src/signals/routes/__tests__/feishu-files-history.test.ts	feishu-files-history-005	revisit		pass2-hard: Feishu system message history emitted unmatched DELETE reaction MSW request and timed out at 400ms on re-run		R45-pass1	a-run
+messaging	src/signals/routes/__tests__/feishu-files-history.test.ts	feishu-files-history-007	revisit		pass2-hard: Feishu exact source test failed assertion and emitted unmatched reaction/cleanup warnings on first pass		R45-pass1	a-run
+messaging	src/signals/routes/__tests__/feishu-files-history.test.ts	feishu-files-history-008	revisit		pass2-hard: Lark DM file context failed assertion and emitted Feishu cleanup warnings on first pass		R45-pass1	a-run
 messaging	src/signals/routes/__tests__/feishu-installation.test.ts	feishu-installation-001	rewritten	41.8		src/signals/routes/__tests__/feishu-installation.test.ts	pilot	
 messaging	src/signals/routes/__tests__/feishu-installation.test.ts	feishu-installation-002	rewritten	150.0		src/signals/routes/__tests__/feishu-installation.test.ts	pilot	
 messaging	src/signals/routes/__tests__/feishu-installation.test.ts	feishu-installation-003	rewritten	126.6		src/signals/routes/__tests__/feishu-installation.test.ts	pilot	
@@ -1930,16 +1930,16 @@ messaging	src/signals/routes/__tests__/integrations-slack-status.test.ts	integra
 messaging	src/signals/routes/__tests__/integrations-slack-status.test.ts	integrations-slack-status-008	rewritten	80.7		src/signals/routes/__tests__/integrations-slack-status.test.ts	pilot	
 messaging	src/signals/routes/__tests__/integrations-slack-status.test.ts	integrations-slack-status-011	rewritten	118.4		src/signals/routes/__tests__/integrations-slack-status.test.ts	pilot	
 messaging	src/signals/routes/__tests__/integrations-slack-upload-complete.test.ts	integrations-slack-upload-complete-001	skipped		slow-setup: Given is a strict superset of the measured Given of rows 032-045 (the Slack install + Run Given shared with rows 032-045 already measured 240-375 ms with a single completion request (Slack OAuth install 50-88 ms, Run dispatch 93-130 ms, Run teardown about 40 ms; warm Run-only rows 168-177 ms)) and adds canonical upload init and byte storage before the first deliver call; not written		B08	a-run
-messaging	src/signals/routes/__tests__/integrations-slack-upload-complete.test.ts	integrations-slack-upload-complete-003	planned				B08	a-run
-messaging	src/signals/routes/__tests__/integrations-slack-upload-complete.test.ts	integrations-slack-upload-complete-008	planned				B08	a-run
-messaging	src/signals/routes/__tests__/integrations-slack-upload-complete.test.ts	integrations-slack-upload-complete-014	planned				B08	a-run
-messaging	src/signals/routes/__tests__/integrations-slack-upload-complete.test.ts	integrations-slack-upload-complete-016	planned				B08	a-run
-messaging	src/signals/routes/__tests__/integrations-slack-upload-complete.test.ts	integrations-slack-upload-complete-019	planned				B08	a-run
-messaging	src/signals/routes/__tests__/integrations-slack-upload-complete.test.ts	integrations-slack-upload-complete-020	revisit		revisit: reclassify to a-run: Canonical Slack upload completion requires run-scoped agent tokens (auth.runId) from two dispatched Runs.		B08	d-other
-messaging	src/signals/routes/__tests__/integrations-slack-upload-complete.test.ts	integrations-slack-upload-complete-021	planned				B08	a-run
+messaging	src/signals/routes/__tests__/integrations-slack-upload-complete.test.ts	integrations-slack-upload-complete-003	revisit		pass2-hard: canonical Slack upload delivery retry timed out at 400ms on first pass		R45-pass1	a-run
+messaging	src/signals/routes/__tests__/integrations-slack-upload-complete.test.ts	integrations-slack-upload-complete-008	revisit		pass2-hard: canonical Slack upload corrupted bytes delivery returned 500 on first pass (needs deeper canonical delivery storage fixture)		R45-pass1	a-run
+messaging	src/signals/routes/__tests__/integrations-slack-upload-complete.test.ts	integrations-slack-upload-complete-014	revisit		pass2-hard: canonical Slack delivery membership recheck returned 500 on first pass		R45-pass1	a-run
+messaging	src/signals/routes/__tests__/integrations-slack-upload-complete.test.ts	integrations-slack-upload-complete-016	revisit		pass2-hard: canonical Slack delivery bot uninstall revocation returned 500 on first pass		R45-pass1	a-run
+messaging	src/signals/routes/__tests__/integrations-slack-upload-complete.test.ts	integrations-slack-upload-complete-019	revisit		pass2-hard: deferred alongside sibling canonical Slack upload Run cases to avoid adding a single Run case to a non-Run file		R45-pass1	a-run
+messaging	src/signals/routes/__tests__/integrations-slack-upload-complete.test.ts	integrations-slack-upload-complete-020	revisit		pass2-hard: cross-run canonical Slack delivery isolation returned 500 on first pass		R45-pass1	d-other
+messaging	src/signals/routes/__tests__/integrations-slack-upload-complete.test.ts	integrations-slack-upload-complete-021	skipped		retired in production: POST /api/integrations/slack/upload-file/complete (turbo/packages/api-contracts/src/contracts/integrations.ts:1313-1338) no longer accepts uploadError or returns failed/deliveryError fields		R45-pass1	a-run
 messaging	src/signals/routes/__tests__/integrations-slack-upload-complete.test.ts	integrations-slack-upload-complete-022	skipped		slow-setup: Given needs three newly launched Runs (two members of one organization); Run dispatch alone measured 93-130 ms per Run (Run-only rows 168-177 ms warm) plus Slack OAuth install 50-88 ms, so Given + the first init/materialize/complete exceeds 200 ms; a BRIEF7 split does not help because the third row must still launch all three Runs; not written		B08	a-run
 messaging	src/signals/routes/__tests__/integrations-slack-upload-complete.test.ts	integrations-slack-upload-complete-023	skipped		slow-setup: Given needs three newly launched Runs (two organizations, each with its own Slack install); Run dispatch alone measured 93-130 ms per Run (Run-only rows 168-177 ms warm) plus Slack OAuth install 50-88 ms, so Given + the first init/materialize/complete exceeds 200 ms; a BRIEF7 split does not help because the third row must still launch all three Runs; not written		B08	a-run
-messaging	src/signals/routes/__tests__/integrations-slack-upload-complete.test.ts	integrations-slack-upload-complete-025	planned				B08	a-run
+messaging	src/signals/routes/__tests__/integrations-slack-upload-complete.test.ts	integrations-slack-upload-complete-025	revisit		pass2-hard: canonical Slack missing storage verification replay returned 500 on first pass		R45-pass1	a-run
 messaging	src/signals/routes/__tests__/integrations-slack-upload-complete.test.ts	integrations-slack-upload-complete-029	rewritten	12.7		src/signals/routes/__tests__/integrations-slack-upload-complete.test.ts	B08	d-other
 messaging	src/signals/routes/__tests__/integrations-slack-upload-complete.test.ts	integrations-slack-upload-complete-030	skipped		slow-setup: written with the limited-free Run fixture and passing, but the row exceeds 200 ms in every shuffled order (runs 208/204/203 ms, median 204.3 ms), so Given plus the first When/Then exceeds 200 ms; draft /home/user/pilot-env/wip/r15/integrations-slack-upload-complete.test.ts		B08	a-run
 messaging	src/signals/routes/__tests__/integrations-slack-upload-complete.test.ts	integrations-slack-upload-complete-031	skipped		slow-setup: written with the limited-free Run fixture and passing, but the row exceeds 200 ms in every shuffled order (runs 409/398/412 ms, median 409.4 ms), so Given plus the first When/Then exceeds 200 ms; draft /home/user/pilot-env/wip/r15/integrations-slack-upload-complete.test.ts		B08	a-run
@@ -2030,7 +2030,7 @@ messaging	src/signals/routes/__tests__/integrations-telegram-readiness.test.ts	i
 messaging	src/signals/routes/__tests__/integrations-telegram-readiness.test.ts	integrations-telegram-readiness-010	rewritten	16.6	accepted by shuffled 3-run median (provisional cold-start rule)	src/signals/routes/__tests__/integrations-telegram-readiness.test.ts	B07	d-other
 messaging	src/signals/routes/__tests__/integrations-telegram-upload-complete.test.ts	integrations-telegram-upload-complete-001	skipped		slow-setup: the Given alone (onboarding, official-bot Telegram link, running chat Run with its Okou token, upload init), before the byte upload and the complete call, measured 493.8 ms and 475.4 ms in two runs; dominant step is the running chat Run with its Okou token via helpers/run-execution-credentials forActor (366.7 ms and 355.2 ms); onboarding 77.2/75.5 ms, Telegram link 39.3/33.3 ms, upload init 10.6/11.4 ms		B06	
 messaging	src/signals/routes/__tests__/integrations-telegram-upload-complete.test.ts	integrations-telegram-upload-complete-004	skipped		slow-setup: the Given alone (onboarding, official-bot Telegram link, running chat Run with its Okou token, upload init), before the byte upload and the complete call, measured 494.0 ms and 486.3 ms in two runs; dominant step is the running chat Run with its Okou token via helpers/run-execution-credentials forActor (368.8 ms and 359.7 ms); onboarding 78.1/81.1 ms, Telegram link 36.4/35.5 ms, upload init 10.7/10.0 ms		B06	
-messaging	src/signals/routes/__tests__/integrations-telegram.test.ts	integrations-telegram-001	planned					a-run
+messaging	src/signals/routes/__tests__/integrations-telegram.test.ts	integrations-telegram-001	rewritten	31.6		src/signals/routes/__tests__/integrations-telegram.test.ts	R45-pass1	a-run
 messaging	src/signals/routes/__tests__/integrations-telegram.test.ts	integrations-telegram-006	rewritten	21.6		src/signals/routes/__tests__/integrations-telegram.test.ts	B14	d-other
 messaging	src/signals/routes/__tests__/integrations-telegram.test.ts	integrations-telegram-007	rewritten	15.8		src/signals/routes/__tests__/integrations-telegram.test.ts	B14	d-other
 messaging	src/signals/routes/__tests__/integrations-telegram.test.ts	integrations-telegram-008	rewritten	17.8		src/signals/routes/__tests__/integrations-telegram.test.ts	B14	d-other
@@ -2039,12 +2039,12 @@ messaging	src/signals/routes/__tests__/integrations-telegram.test.ts	integration
 messaging	src/signals/routes/__tests__/integrations-telegram.test.ts	integrations-telegram-012	rewritten	13.2		src/signals/routes/__tests__/integrations-telegram.test.ts	B14	d-other
 messaging	src/signals/routes/__tests__/integrations-telegram.test.ts	integrations-telegram-015	rewritten	47.8		src/signals/routes/__tests__/integrations-telegram.test.ts	B14	d-other
 messaging	src/signals/routes/__tests__/integrations-telegram.test.ts	integrations-telegram-016	rewritten	11.6		src/signals/routes/__tests__/integrations-telegram.test.ts	B14	d-other
-messaging	src/signals/routes/__tests__/integrations-telegram.test.ts	integrations-telegram-017	planned					a-run
-messaging	src/signals/routes/__tests__/integrations-telegram.test.ts	integrations-telegram-019	planned					a-run
-messaging	src/signals/routes/__tests__/integrations-telegram.test.ts	integrations-telegram-021	planned					a-run
-messaging	src/signals/routes/__tests__/integrations-telegram.test.ts	integrations-telegram-022	planned					a-run
-messaging	src/signals/routes/__tests__/integrations-telegram.test.ts	integrations-telegram-023	planned					a-run
-messaging	src/signals/routes/__tests__/integrations-telegram.test.ts	integrations-telegram-025	planned					a-run
+messaging	src/signals/routes/__tests__/integrations-telegram.test.ts	integrations-telegram-017	rewritten	53.0		src/signals/routes/__tests__/integrations-telegram.test.ts	R45-pass1	a-run
+messaging	src/signals/routes/__tests__/integrations-telegram.test.ts	integrations-telegram-019	rewritten	52.2		src/signals/routes/__tests__/integrations-telegram.test.ts	R45-pass1	a-run
+messaging	src/signals/routes/__tests__/integrations-telegram.test.ts	integrations-telegram-021	rewritten	62.4		src/signals/routes/__tests__/integrations-telegram.test.ts	R45-pass1	a-run
+messaging	src/signals/routes/__tests__/integrations-telegram.test.ts	integrations-telegram-022	rewritten	305.9		src/signals/routes/__tests__/integrations-telegram.test.ts	R45-pass1	a-run
+messaging	src/signals/routes/__tests__/integrations-telegram.test.ts	integrations-telegram-023	rewritten	51.4		src/signals/routes/__tests__/integrations-telegram.test.ts	R45-pass1	a-run
+messaging	src/signals/routes/__tests__/integrations-telegram.test.ts	integrations-telegram-025	rewritten	36.6		src/signals/routes/__tests__/integrations-telegram.test.ts	R45-pass1	a-run
 messaging	src/signals/routes/__tests__/integrations-wechat.test.ts	integrations-wechat-001	planned					a-run
 messaging	src/signals/routes/__tests__/integrations-wechat.test.ts	integrations-wechat-002	planned					a-run
 messaging	src/signals/routes/__tests__/integrations-wechat.test.ts	integrations-wechat-003	planned					a-run
@@ -2134,15 +2134,15 @@ messaging	src/signals/routes/__tests__/internal-callbacks-discord.test.ts	intern
 messaging	src/signals/routes/__tests__/internal-callbacks-discord.test.ts	internal-callbacks-discord-042	planned					a-run
 messaging	src/signals/routes/__tests__/internal-callbacks-discord.test.ts	internal-callbacks-discord-047	planned					a-run
 messaging	src/signals/routes/__tests__/internal-callbacks-discord.test.ts	internal-callbacks-discord-048	planned					a-run
-messaging	src/signals/routes/__tests__/internal-callbacks-teams.test.ts	internal-callbacks-teams-001	planned					a-run
-messaging	src/signals/routes/__tests__/internal-callbacks-teams.test.ts	internal-callbacks-teams-006	planned					a-run
-messaging	src/signals/routes/__tests__/internal-callbacks-teams.test.ts	internal-callbacks-teams-008	planned					a-run
+messaging	src/signals/routes/__tests__/internal-callbacks-teams.test.ts	internal-callbacks-teams-001	revisit		pass2-hard: Teams personal queued steering needs Graph/Teams thread context MSW stubs and timed out at 400ms		R45-pass1	a-run
+messaging	src/signals/routes/__tests__/internal-callbacks-teams.test.ts	internal-callbacks-teams-006	revisit		pass2-hard: Teams callback scenario deferred for deeper Graph/Teams fixture work		R45-pass1	a-run
+messaging	src/signals/routes/__tests__/internal-callbacks-teams.test.ts	internal-callbacks-teams-008	revisit		pass2-hard: Teams forked thread resumption emitted unmatched Graph API requests and TeamsDispatch/delivery warnings		R45-pass1	a-run
 messaging	src/signals/routes/__tests__/internal-callbacks-teams.test.ts	internal-callbacks-teams-010	rewritten	197.1	split n=2: 1/2=197.1; 2/2=186.4; consolidated into test-teams-state.test.ts to avoid single-row cold start	src/signals/routes/__tests__/test-teams-state.test.ts		d-other
-messaging	src/signals/routes/__tests__/internal-callbacks-teams.test.ts	internal-callbacks-teams-011	planned					a-run
-messaging	src/signals/routes/__tests__/internal-callbacks-teams.test.ts	internal-callbacks-teams-012	planned					a-run
-messaging	src/signals/routes/__tests__/internal-callbacks-teams.test.ts	internal-callbacks-teams-013	planned					a-run
-messaging	src/signals/routes/__tests__/internal-callbacks-teams.test.ts	internal-callbacks-teams-015	planned					a-run
-messaging	src/signals/routes/__tests__/internal-callbacks-teams.test.ts	internal-callbacks-teams-016	planned					a-run
+messaging	src/signals/routes/__tests__/internal-callbacks-teams.test.ts	internal-callbacks-teams-011	revisit		pass2-hard: Teams completed delivery emitted unmatched Graph API requests and TeamsDispatch warnings		R45-pass1	a-run
+messaging	src/signals/routes/__tests__/internal-callbacks-teams.test.ts	internal-callbacks-teams-012	revisit		pass2-hard: Teams new participant summary timed out at 600ms and emitted TeamsDispatch warnings		R45-pass1	a-run
+messaging	src/signals/routes/__tests__/internal-callbacks-teams.test.ts	internal-callbacks-teams-013	revisit		pass2-hard: Teams fresh native context emitted unmatched Graph API requests and delivery warnings		R45-pass1	a-run
+messaging	src/signals/routes/__tests__/internal-callbacks-teams.test.ts	internal-callbacks-teams-015	revisit		pass2-hard: Teams failed run reply emitted unmatched Graph API requests and TeamsDispatch warnings		R45-pass1	a-run
+messaging	src/signals/routes/__tests__/internal-callbacks-teams.test.ts	internal-callbacks-teams-016	revisit		pass2-hard: Teams insufficient_credits reply emitted unmatched Graph API requests and TeamsDispatch warnings		R45-pass1	a-run
 account-org	src/signals/routes/__tests__/ios-notifications.test.ts	ios-notifications-001	skipped		slow-setup: Given alone 565 ms and 561 ms for a single chat whose Run ended, so Given+first When/Then exceeds 200 ms (funded Pro member with personal subscription 233/234 ms + dispatched thread Run 189/198 ms + Sandbox events and completion 143/129 ms); the case needs at least one ended chat Run, most need two or more		B04	
 account-org	src/signals/routes/__tests__/ios-notifications.test.ts	ios-notifications-002	skipped		slow-setup: Given alone 565 ms and 561 ms for a single chat whose Run ended, so Given+first When/Then exceeds 200 ms (funded Pro member with personal subscription 233/234 ms + dispatched thread Run 189/198 ms + Sandbox events and completion 143/129 ms); the case needs at least one ended chat Run, most need two or more		B04	
 account-org	src/signals/routes/__tests__/ios-notifications.test.ts	ios-notifications-003	skipped		slow-setup: Given alone 565 ms and 561 ms for a single chat whose Run ended, so Given+first When/Then exceeds 200 ms (funded Pro member with personal subscription 233/234 ms + dispatched thread Run 189/198 ms + Sandbox events and completion 143/129 ms); the case needs at least one ended chat Run, most need two or more		B04	
