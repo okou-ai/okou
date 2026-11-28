@@ -5,7 +5,7 @@
     <string name="run_failure_guest_root_filesystem_full_title">इस रन में जगह खत्म हो गई है</string>
     <string name="run_failure_guest_root_filesystem_full_description">यह रन और फ़ाइलें सेव नहीं कर सका। जारी रखने के लिए फिर कोशिश करें।</string>
     <string name="run_failure_execution_timeout_title">समय सीमा पूरी हो गई</string>
-    <string name="run_failure_execution_timeout_description">यह रन जहाँ रुका था, वहाँ से आप आगे बढ़ सकते हैं।</string>
+    <string name="run_failure_execution_timeout_description">अब तक बनी सामग्री उपलब्ध है।</string>
     <string name="run_failure_provider_insufficient_credits_title">आपके सब्सक्रिप्शन खाते में और क्रेडिट चाहिए</string>
     <string name="run_failure_provider_insufficient_credits_description">अपने सब्सक्रिप्शन खाते का उपयोग या क्रेडिट बैलेंस जाँचें, फिर से कोशिश करें।</string>
     <string name="run_failure_invalid_api_key_title">आपके सब्सक्रिप्शन साइन-इन को अपडेट करना होगा</string>
@@ -33,9 +33,9 @@
     <string name="run_failure_provider_server_error_title">मॉडल प्रदाता में अस्थायी त्रुटि हुई</string>
     <string name="run_failure_provider_server_error_description">कुछ देर बाद फिर कोशिश करें, या काम जारी रखने के लिए दूसरा मॉडल चुनें।</string>
     <string name="run_failure_response_connection_lost_title">जवाब बीच में रुक गया</string>
-    <string name="run_failure_response_connection_lost_description">कुछ देर बाद फिर कोशिश करें, या काम जारी रखने के लिए दूसरा मॉडल चुनें।</string>
+    <string name="run_failure_response_connection_lost_description">अब तक बनी सामग्री उपलब्ध है।</string>
     <string name="run_failure_safety_policy_refusal_title">मॉडल इस अनुरोध में मदद नहीं कर सका</string>
-    <string name="run_failure_safety_policy_refusal_description">यह अनुरोध मॉडल की सुरक्षा जाँच में पास नहीं हुआ। इसे अलग तरह से लिखें या दूसरा मॉडल चुनें।</string>
+    <string name="run_failure_safety_policy_refusal_description">दोबारा भेजने से पहले अपने अनुरोध में बदलाव करें।</string>
     <string name="run_failure_reconnect_required_title">अपने मॉडल खाते को फिर से कनेक्ट करें</string>
     <string name="run_failure_reconnect_required_description">सेटिंग्स &gt; मॉडल में खाता फिर से जोड़ें या अपडेट करें, फिर दोबारा कोशिश करें।</string>
     <string name="run_failure_unsupported_model_title">चुना गया मॉडल उपलब्ध नहीं है</string>
@@ -44,9 +44,11 @@
     <string name="run_failure_usage_limit_description">उपयोग सीमा रीसेट होने पर आप जारी रख सकते हैं, या अभी मॉडल बदलें।</string>
     <string name="run_failure_unknown_title">यह रन पूरा नहीं हो सका</string>
     <string name="run_failure_unknown_description">विवरण के लिए Okou वेबसाइट पर यह चैट खोलें।</string>
-    <string name="run_failure_guest_memory_oom_killed_title">यह रन पूरा नहीं हो सका</string>
-    <string name="run_failure_guest_memory_oom_killed_description">कुछ गड़बड़ हो गई।</string>
-    <string name="run_failure_insufficient_credits_title">क्रेडिट समाप्त</string>
+    <string name="run_failure_guest_memory_oom_killed_title">इस रन की मेमोरी खत्म हो गई</string>
+    <string name="run_failure_guest_memory_oom_killed_description">अब तक बनी सामग्री उपलब्ध है।</string>
+    <string name="run_failure_provider_image_too_large_title">इमेज बहुत बड़ी है</string>
+    <string name="run_failure_provider_image_too_large_description">इमेज हटाएँ या उसकी जगह छोटी इमेज लगाएँ।</string>
+    <string name="run_failure_insufficient_credits_title">Okou क्रेडिट समाप्त</string>
     <string name="run_failure_insufficient_credits_description">अपने वर्कस्पेस का प्लान या क्रेडिट बैलेंस जाँचें।</string>
     <string name="run_failure_account_verification_required_title">Claude खाते का सत्यापन ज़रूरी है</string>
     <string name="run_failure_account_verification_required_description">आपका Claude खाता अभी जवाब प्राप्त नहीं कर सकता। अगले कदम के लिए Anthropic सत्यापन पोर्टल देखें।</string>

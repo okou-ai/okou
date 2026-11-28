@@ -5,7 +5,7 @@
     <string name="run_failure_guest_root_filesystem_full_title">This run ran out of space</string>
     <string name="run_failure_guest_root_filesystem_full_description">This run couldn\'t save more files. Try again to continue.</string>
     <string name="run_failure_execution_timeout_title">Time limit reached</string>
-    <string name="run_failure_execution_timeout_description">You can continue from where this run stopped.</string>
+    <string name="run_failure_execution_timeout_description">The content generated so far is still available.</string>
     <string name="run_failure_provider_insufficient_credits_title">Your subscription account needs more credit</string>
     <string name="run_failure_provider_insufficient_credits_description">Check your subscription account\'s usage or credit balance, then try again.</string>
     <string name="run_failure_invalid_api_key_title">Your subscription sign-in needs updating</string>
@@ -33,9 +33,9 @@
     <string name="run_failure_provider_server_error_title">The model provider had a temporary error</string>
     <string name="run_failure_provider_server_error_description">Try again in a moment, or choose another model to keep working.</string>
     <string name="run_failure_response_connection_lost_title">The response was interrupted</string>
-    <string name="run_failure_response_connection_lost_description">Try again in a moment, or choose another model to keep working.</string>
+    <string name="run_failure_response_connection_lost_description">The content generated so far is still available.</string>
     <string name="run_failure_safety_policy_refusal_title">The model couldn\'t help with this request</string>
-    <string name="run_failure_safety_policy_refusal_description">This request didn\'t pass the model\'s safety checks. Try rephrasing it or choosing another model.</string>
+    <string name="run_failure_safety_policy_refusal_description">Revise your request before sending it again.</string>
     <string name="run_failure_reconnect_required_title">Reconnect your model account</string>
     <string name="run_failure_reconnect_required_description">Open Settings &gt; Models to reconnect or update your account, then try again.</string>
     <string name="run_failure_unsupported_model_title">Selected model isn\'t available</string>
@@ -44,9 +44,11 @@
     <string name="run_failure_usage_limit_description">You can continue when your usage limit resets, or switch models now.</string>
     <string name="run_failure_unknown_title">This run couldn\'t finish</string>
     <string name="run_failure_unknown_description">Open the chat on the Okou website for details.</string>
-    <string name="run_failure_guest_memory_oom_killed_title">This run couldn\'t finish</string>
-    <string name="run_failure_guest_memory_oom_killed_description">Oops, something went wrong.</string>
-    <string name="run_failure_insufficient_credits_title">Out of credits</string>
+    <string name="run_failure_guest_memory_oom_killed_title">This run ran out of memory</string>
+    <string name="run_failure_guest_memory_oom_killed_description">The content generated so far is still available.</string>
+    <string name="run_failure_provider_image_too_large_title">Image is too large</string>
+    <string name="run_failure_provider_image_too_large_description">Remove the image or replace it with a smaller one.</string>
+    <string name="run_failure_insufficient_credits_title">Out of Okou credits</string>
     <string name="run_failure_insufficient_credits_description">Check your workspace\'s plan or credit balance.</string>
     <string name="run_failure_account_verification_required_title">Claude account verification required</string>
     <string name="run_failure_account_verification_required_description">Your Claude account can\'t receive replies right now. Check the Anthropic Verification Portal for the next step.</string>

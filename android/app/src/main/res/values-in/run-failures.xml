@@ -5,7 +5,7 @@
     <string name="run_failure_guest_root_filesystem_full_title">Penyimpanan untuk proses ini habis</string>
     <string name="run_failure_guest_root_filesystem_full_description">Proses ini tidak dapat menyimpan lebih banyak file. Coba lagi untuk melanjutkan.</string>
     <string name="run_failure_execution_timeout_title">Batas waktu tercapai</string>
-    <string name="run_failure_execution_timeout_description">Anda dapat melanjutkan dari titik proses ini terhenti.</string>
+    <string name="run_failure_execution_timeout_description">Konten yang sudah dibuat masih tersedia.</string>
     <string name="run_failure_provider_insufficient_credits_title">Akun langganan Anda memerlukan lebih banyak kredit</string>
     <string name="run_failure_provider_insufficient_credits_description">Periksa penggunaan atau saldo kredit akun langganan Anda, lalu coba lagi.</string>
     <string name="run_failure_invalid_api_key_title">Login langganan Anda perlu diperbarui</string>
@@ -33,9 +33,9 @@
     <string name="run_failure_provider_server_error_title">Penyedia model mengalami kesalahan sementara</string>
     <string name="run_failure_provider_server_error_description">Coba lagi sebentar, atau pilih model lain agar pekerjaan tetap berjalan.</string>
     <string name="run_failure_response_connection_lost_title">Jawaban terputus</string>
-    <string name="run_failure_response_connection_lost_description">Coba lagi sebentar, atau pilih model lain agar pekerjaan tetap berjalan.</string>
+    <string name="run_failure_response_connection_lost_description">Konten yang sudah dibuat masih tersedia.</string>
     <string name="run_failure_safety_policy_refusal_title">Model tidak dapat membantu permintaan ini</string>
-    <string name="run_failure_safety_policy_refusal_description">Permintaan ini tidak lolos pemeriksaan keamanan model. Coba ubah kalimatnya atau pilih model lain.</string>
+    <string name="run_failure_safety_policy_refusal_description">Ubah permintaan sebelum mengirimnya lagi.</string>
     <string name="run_failure_reconnect_required_title">Hubungkan kembali akun model Anda</string>
     <string name="run_failure_reconnect_required_description">Buka Setelan &gt; Model untuk menghubungkan ulang atau memperbarui akun, lalu coba lagi.</string>
     <string name="run_failure_unsupported_model_title">Model yang dipilih tidak tersedia</string>
@@ -44,9 +44,11 @@
     <string name="run_failure_usage_limit_description">Anda dapat melanjutkan saat batas penggunaan direset, atau ganti model sekarang.</string>
     <string name="run_failure_unknown_title">Proses ini tidak dapat diselesaikan</string>
     <string name="run_failure_unknown_description">Buka chat di situs web Okou untuk melihat detailnya.</string>
-    <string name="run_failure_guest_memory_oom_killed_title">Proses ini tidak dapat diselesaikan</string>
-    <string name="run_failure_guest_memory_oom_killed_description">Terjadi kesalahan.</string>
-    <string name="run_failure_insufficient_credits_title">Kredit habis</string>
+    <string name="run_failure_guest_memory_oom_killed_title">Proses ini kehabisan memori</string>
+    <string name="run_failure_guest_memory_oom_killed_description">Konten yang sudah dibuat masih tersedia.</string>
+    <string name="run_failure_provider_image_too_large_title">Gambar terlalu besar</string>
+    <string name="run_failure_provider_image_too_large_description">Hapus gambar atau ganti dengan gambar yang lebih kecil.</string>
+    <string name="run_failure_insufficient_credits_title">Kredit Okou habis</string>
     <string name="run_failure_insufficient_credits_description">Periksa paket atau saldo kredit ruang kerja Anda.</string>
     <string name="run_failure_account_verification_required_title">Verifikasi akun Claude diperlukan</string>
     <string name="run_failure_account_verification_required_description">Akun Claude Anda saat ini tidak dapat menerima balasan. Periksa langkah berikutnya di Portal Verifikasi Anthropic.</string>

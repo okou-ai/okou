@@ -9,13 +9,12 @@
     <string name="recovery_reset_retry">Verificar a redefinição original</string>
     <string name="recovery_checking_reset">Verificando a solicitação original…</string>
     <string name="recovery_working">Preparando para continuar…</string>
-    <string name="recovery_needs_changes">Altere o modelo, as configurações da conta ou a conversa antes de continuar.</string>
-    <string name="recovery_billing">Créditos do espaço: %1$s. Verifique a cobrança.</string>
+    <string name="recovery_billing">Créditos Okou</string>
     <string name="recovery_no_credit">Não havia crédito disponível na redefinição anterior.</string>
     <string name="recovery_submitted">Continuação aceita. Aguardando o histórico.</string>
     <string name="recovery_failed">Recuperação incompleta. Verifique a operação original antes de repetir.</string>
-    <string name="recovery_credits">Créditos de redefinição: %1$d</string>
-    <string name="recovery_account">Conta do modelo: %1$s</string>
-    <string name="recovery_reset_time">Redefinição de uso: %1$s</string>
+    <string name="recovery_credits">Redefinições disponíveis</string>
+    <string name="recovery_account">Conta do modelo</string>
+    <string name="recovery_reset_time">Redefinição de uso</string>
     <string name="recovery_reset_title">Redefinir o uso</string>
 </resources>

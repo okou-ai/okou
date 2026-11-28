@@ -5,7 +5,7 @@
     <string name="run_failure_guest_root_filesystem_full_title">Questa esecuzione ha esaurito lo spazio</string>
     <string name="run_failure_guest_root_filesystem_full_description">Questa esecuzione non ha potuto salvare altri file. Riprova per continuare.</string>
     <string name="run_failure_execution_timeout_title">Limite di tempo raggiunto</string>
-    <string name="run_failure_execution_timeout_description">Puoi riprendere da dove si è fermata questa esecuzione.</string>
+    <string name="run_failure_execution_timeout_description">I contenuti già generati sono ancora disponibili.</string>
     <string name="run_failure_provider_insufficient_credits_title">Il tuo account di abbonamento ha bisogno di più credito</string>
     <string name="run_failure_provider_insufficient_credits_description">Controlla l\'utilizzo o il saldo del credito del tuo account di abbonamento, poi riprova.</string>
     <string name="run_failure_invalid_api_key_title">L\'accesso al tuo abbonamento deve essere aggiornato</string>
@@ -33,9 +33,9 @@
     <string name="run_failure_provider_server_error_title">Il provider di modelli ha avuto un errore temporaneo</string>
     <string name="run_failure_provider_server_error_description">Riprova tra poco oppure scegli un altro modello per continuare a lavorare.</string>
     <string name="run_failure_response_connection_lost_title">La risposta si è interrotta</string>
-    <string name="run_failure_response_connection_lost_description">Riprova tra poco oppure scegli un altro modello per continuare a lavorare.</string>
+    <string name="run_failure_response_connection_lost_description">I contenuti già generati sono ancora disponibili.</string>
     <string name="run_failure_safety_policy_refusal_title">Il modello non può aiutarti con questa richiesta</string>
-    <string name="run_failure_safety_policy_refusal_description">La richiesta non ha superato i controlli di sicurezza del modello. Prova a riformularla o scegli un altro modello.</string>
+    <string name="run_failure_safety_policy_refusal_description">Modifica la richiesta prima di inviarla di nuovo.</string>
     <string name="run_failure_reconnect_required_title">Ricollega il tuo account modello</string>
     <string name="run_failure_reconnect_required_description">Apri Impostazioni &gt; Modelli per ricollegare o aggiornare il tuo account, poi riprova.</string>
     <string name="run_failure_unsupported_model_title">Il modello selezionato non è disponibile</string>
@@ -44,9 +44,11 @@
     <string name="run_failure_usage_limit_description">Puoi continuare quando il limite di utilizzo viene reimpostato oppure cambiare modello ora.</string>
     <string name="run_failure_unknown_title">Non è stato possibile completare questa esecuzione</string>
     <string name="run_failure_unknown_description">Apri la chat sul sito web di Okou per i dettagli.</string>
-    <string name="run_failure_guest_memory_oom_killed_title">Non è stato possibile completare questa esecuzione</string>
-    <string name="run_failure_guest_memory_oom_killed_description">Si è verificato un errore.</string>
-    <string name="run_failure_insufficient_credits_title">Crediti esauriti</string>
+    <string name="run_failure_guest_memory_oom_killed_title">La memoria per questa esecuzione è esaurita</string>
+    <string name="run_failure_guest_memory_oom_killed_description">I contenuti già generati sono ancora disponibili.</string>
+    <string name="run_failure_provider_image_too_large_title">L’immagine è troppo grande</string>
+    <string name="run_failure_provider_image_too_large_description">Rimuovi l’immagine o sostituiscila con una più piccola.</string>
+    <string name="run_failure_insufficient_credits_title">Crediti Okou esauriti</string>
     <string name="run_failure_insufficient_credits_description">Controlla il piano o il saldo dei crediti del tuo spazio di lavoro.</string>
     <string name="run_failure_account_verification_required_title">È richiesta la verifica dell\'account Claude</string>
     <string name="run_failure_account_verification_required_description">Al momento il tuo account Claude non può ricevere risposte. Consulta il portale di verifica Anthropic per conoscere il prossimo passaggio.</string>

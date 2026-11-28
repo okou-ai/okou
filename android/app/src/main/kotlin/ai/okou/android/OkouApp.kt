@@ -6,7 +6,7 @@ import ai.okou.android.artifacts.ChatArtifactLinkPreview
 import ai.okou.android.artifacts.ChatArtifactResources
 import ai.okou.android.artifacts.attachmentPreviewId
 import ai.okou.android.artifacts.chatAttachment
-import ai.okou.android.chat.AssistantFailureText
+import ai.okou.android.chat.AssistantFailureCard
 import ai.okou.android.chat.AssistantRecoveryModel
 import ai.okou.android.chat.AssistantRecoveryPanel
 import ai.okou.android.chat.ChatArtifactActions
@@ -2262,7 +2262,7 @@ internal fun OkouApp(
                                                         failureId = failure.id,
                                                         reason = failure.failureReason,
                                                     )
-                                                else AssistantFailureText(failure.failureReason)
+                                                else AssistantFailureCard(failure.failureReason)
                                             }
                                             Column(
                                                 contentWidth.fillMaxWidth(),
