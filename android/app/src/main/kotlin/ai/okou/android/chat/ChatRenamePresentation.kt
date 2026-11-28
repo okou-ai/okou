@@ -22,11 +22,10 @@ internal class ChatRenameEditor(
     val target: WorkspaceRenameTarget,
     initialName: String,
     val restoreFocus: Boolean,
-    submission: RenameSubmission? = null,
 ) {
-    val field = WorkspaceNameField(submission?.name ?: initialName)
+    val field = WorkspaceNameField(initialName)
     private val draft = RenameDraft(initialName, field.input)
-    var submitted by mutableStateOf(submission)
+    var submitted by mutableStateOf<RenameSubmission?>(null)
 
     fun form(confirmedName: String, enabled: Boolean) = draft.form(confirmedName, enabled, null)
 
@@ -116,31 +115,21 @@ class WorkspaceNamePresentation : ViewModel() {
         val thread =
             list.confirmedThreads.firstOrNull { it.id == id && it.hidden != true } ?: return
         val title = (list.threads.firstOrNull { it.id == id } ?: thread).title.orEmpty()
-        open(
-            WorkspaceRenameTarget.Chat(id, fromConversation),
-            title,
-            restoreFocus,
-            list.unconfirmedRenames[id],
-        )
+        open(WorkspaceRenameTarget.Chat(id, fromConversation), title, restoreFocus)
     }
 
     internal fun openProject(id: String, restoreFocus: Boolean, list: ChatListUiState) {
         val project = list.projects.firstOrNull { it.id == id } ?: return
-        val submitted =
-            list.projectList.unconfirmedRenameAttempts[id]?.takeUnless {
-                id in list.projectList.connectionFailedRenames
-            }
-        open(WorkspaceRenameTarget.Project(id), project.name, restoreFocus, submitted)
+        open(WorkspaceRenameTarget.Project(id), project.name, restoreFocus)
     }
 
     private fun open(
         target: WorkspaceRenameTarget,
         name: String,
         restoreFocus: Boolean,
-        submission: RenameSubmission?,
     ) {
         focusReturn = null
-        editor = ChatRenameEditor(target, name, restoreFocus, submission)
+        editor = ChatRenameEditor(target, name, restoreFocus)
     }
 
     internal fun dismiss(openEditor: ChatRenameEditor) {

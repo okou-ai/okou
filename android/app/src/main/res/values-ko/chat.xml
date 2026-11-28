@@ -77,7 +77,6 @@
     <string name="chat_project_create_failed">프로젝트를 만들지 못했습니다. 입력한 이름은 유지됩니다.</string>
     <string name="chat_project_create_unconfirmed">프로젝트 생성 결과가 아직 확인되지 않았습니다</string>
     <string name="chat_project_name_too_long">프로젝트 이름은 %1$d자 이하여야 합니다</string>
-    <string name="chat_project_rename_unconfirmed">프로젝트 이름을 확인할 수 없습니다.</string>
     <string name="chat_project_rename_rejected">프로젝트 이름을 변경할 수 없습니다.</string>
     <string name="chat_project_rename_save">저장</string>
     <string name="chat_project_rename_pending">프로젝트 이름 변경 중…</string>
@@ -99,8 +98,6 @@
     <string name="chat_rename_save_failed">저장하지 못했습니다. 변경 사항은 유지됩니다.</string>
     <string name="chat_rename_check_result">결과 확인</string>
     <string name="chat_rename_required">이름을 입력하세요.</string>
-    <string name="chat_rename_checking_result">결과를 확인하는 중…</string>
-    <string name="chat_rename_save_unconfirmed">저장 결과가 아직 확인되지 않았습니다.</string>
     <string name="chat_title_saved">채팅 제목이 저장되었습니다</string>
     <string name="chat_project_name_saved">프로젝트 이름이 저장되었습니다</string>
     <string name="inline_image_loading">이미지 불러오는 중…</string>

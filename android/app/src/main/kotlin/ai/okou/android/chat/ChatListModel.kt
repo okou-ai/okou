@@ -151,7 +151,6 @@ class ChatRowActionFailure
 internal constructor(
     val action: ChatRowAction,
     internal val rejected: Boolean = false,
-    internal val edits: List<ChatRowEdit> = emptyList(),
     internal val connectionFailed: Boolean = false,
     internal val conversationId: String? = null,
     internal val deleteFromWorkflow: Boolean = false,
@@ -213,7 +212,6 @@ data class ChatListUiState(
     val filter: ChatListFilter = ChatListFilter.Inbox,
     val pendingRowActions: Map<String, ChatRowAction> = emptyMap(),
     internal val rowActionFailures: List<ChatRowActionFailure> = emptyList(),
-    internal val unconfirmedRenames: Map<String, RenameSubmission> = emptyMap(),
     internal val confirmedRenameIds: Map<String, String> = emptyMap(),
     internal val conversationModelEdits: Map<String, ConversationModelEdits> = emptyMap(),
     val rowUndo: ChatRowUndo? = null,
@@ -240,9 +238,6 @@ data class ChatListUiState(
 
     val renamingProjectId: String?
         get() = projectList.renamingId
-
-    val unconfirmedProjectRenames: Set<String>
-        get() = projectList.unconfirmedRenames
 
     internal val projectRenameRejection: ProjectRenameRejection?
         get() = projectList.renameRejection
@@ -1141,9 +1136,7 @@ class ChatListModel(
         if (threadId in state.pendingRowActions) return false
         if (
             action == ChatRowAction.Rename &&
-                (value.isNullOrBlank() ||
-                    value == thread.title?.trim() ||
-                    threadId in state.unconfirmedRenames)
+                (value.isNullOrBlank() || value == thread.title?.trim())
         )
             return false
         val movingProject = action == ChatRowAction.MoveProject
@@ -1367,16 +1360,7 @@ class ChatListModel(
                     val failure = confirmation.failure
                     if (undoRequest == null) {
                         if (failure != null) {
-                            val previous = mutable.value
-                            val state =
-                                previous
-                                    .withRowFailure(failure)
-                                    .copy(
-                                        unconfirmedRenames =
-                                            if (action == ChatRowAction.Rename && !failure.rejected)
-                                                projection.unconfirmedRenames()
-                                            else previous.unconfirmedRenames,
-                                    )
+                            val state = mutable.value.withRowFailure(failure)
                             if (movingProject) reconcileProjectMoves(state, rowsChanged = true)
                             else mutable.value = state
                         } else if (!rolledBack) {
@@ -1454,13 +1438,6 @@ class ChatListModel(
                     threadsByRecency = rows.byRecency,
                     acceptedNewChats = projection.acceptedNewChats,
                     pendingRowActions = pendingRowActions,
-                    rowActionFailures =
-                        if (state.rowActionFailures.isEmpty()) state.rowActionFailures
-                        else
-                            state.rowActionFailures.filter {
-                                it.edits.isEmpty() || projection.hasUnsettledEdits(it.edits)
-                            },
-                    unconfirmedRenames = projection.unconfirmedRenames(),
                     confirmedRenameIds = confirmedRenameIds,
                 )
                 .pruneInvalidUndo { it.threadId !in pendingRowActions },
@@ -1555,12 +1532,7 @@ class ChatListModel(
 
     internal fun checkRowActionFailure(failure: ChatRowActionFailure) {
         if (!current() || failure !in mutable.value.rowActionFailures || failure.rejected) return
-        if (failure.renameThreadId != null) checkChatRename(failure.renameThreadId)
-        else reloadAfterRowActionFailure()
-    }
-
-    internal fun checkChatRename(threadId: String) {
-        if (threadId in mutable.value.unconfirmedRenames) requestListRead(userRequested = true)
+        reloadAfterRowActionFailure()
     }
 
     internal fun dismissRowActionFailure(failure: ChatRowActionFailure) {
@@ -2260,8 +2232,6 @@ class ChatListModel(
     internal fun checkProjectCreation() = projectOwner.checkProjectCreation()
 
     internal fun dismissProjectCreation() = projectOwner.dismissProjectCreation()
-
-    internal fun checkProjectRename(id: String) = projectOwner.checkProjectRename(id)
 
     internal fun dismissProjectRenameRejection(rejection: ProjectRenameRejection) =
         projectOwner.dismissProjectRenameRejection(rejection)

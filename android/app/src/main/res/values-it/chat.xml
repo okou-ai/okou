@@ -79,7 +79,6 @@
     <string name="chat_project_create_failed">Impossibile creare il progetto. Il nome è stato conservato.</string>
     <string name="chat_project_create_unconfirmed">La creazione del progetto non è ancora stata confermata</string>
     <string name="chat_project_name_too_long">Il nome del progetto non può superare %1$d caratteri</string>
-    <string name="chat_project_rename_unconfirmed">Impossibile confermare il nome del progetto.</string>
     <string name="chat_project_rename_rejected">Impossibile rinominare il progetto.</string>
     <string name="chat_project_rename_save">Salva</string>
     <string name="chat_project_rename_pending">Ridenominazione del progetto…</string>
@@ -101,8 +100,6 @@
     <string name="chat_rename_save_failed">Impossibile salvare. Le modifiche sono state mantenute.</string>
     <string name="chat_rename_check_result">Verifica risultato</string>
     <string name="chat_rename_required">Inserisci un nome.</string>
-    <string name="chat_rename_checking_result">Verifica del risultato…</string>
-    <string name="chat_rename_save_unconfirmed">Il risultato del salvataggio non è ancora confermato.</string>
     <string name="chat_title_saved">Titolo della chat salvato</string>
     <string name="chat_project_name_saved">Nome del progetto salvato</string>
     <string name="inline_image_loading">Caricamento immagine…</string>

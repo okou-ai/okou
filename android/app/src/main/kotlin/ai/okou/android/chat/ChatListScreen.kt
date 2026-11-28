@@ -210,15 +210,11 @@ internal fun ChatListScreen(
     val knownProjects = remember(state.projects) { state.projects.mapTo(hashSetOf()) { it.id } }
     val renameRejection =
         state.projectRenameRejection?.takeUnless { it.projectId == renamingProjectId }
-    val unconfirmedRenames =
-        if (renamingProjectId == null) state.unconfirmedProjectRenames
-        else state.unconfirmedProjectRenames - renamingProjectId
     val projectNoticeIds =
-        unconfirmedRenames +
-            listOfNotNull(
-                renameRejection?.projectId,
-                state.projectList.deletingId?.takeUnless { it == confirmingProjectDelete },
-            ) +
+        setOfNotNull(
+            renameRejection?.projectId,
+            state.projectList.deletingId?.takeUnless { it == confirmingProjectDelete },
+        ) +
             state.projectList.deleteFeedback.mapNotNull {
                 it.projectId.takeIf { id -> !it.rejected && id != confirmingProjectDelete }
             }
@@ -573,16 +569,6 @@ internal fun ChatListScreen(
                                 ) {
                                     dismissProjectRenameRejection(renameRejection)
                                 }
-                            }
-                        } else if (project.id in unconfirmedRenames) {
-                            item(key = "project_rename_${project.id}") {
-                                ChatNotice(
-                                    if (project.id in state.projectList.connectionFailedRenames)
-                                        R.string.chat_action_connection_failed
-                                    else R.string.chat_project_rename_unconfirmed,
-                                    Modifier.animateItem(null, placement, null)
-                                        .projectChildIndent(outline),
-                                )
                             }
                         }
                         if (section.showsEmptyProjectAction) {

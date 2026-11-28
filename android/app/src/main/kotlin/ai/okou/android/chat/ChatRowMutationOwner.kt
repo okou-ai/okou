@@ -120,9 +120,15 @@ internal class ChatRowMutationOwner(
             // The target may have disappeared while the workspace is still authorized.
             if (!targetMissing) onFailure(error)
             requireCurrent()
-            if (submittedCount > 0 && (connectionFailed || error.rejectsEdit(action))) {
+            // Rename keeps the confirmed title and ends even when delivery was ambiguous.
+            if (
+                submittedCount > 0 &&
+                    (action == ChatRowAction.Rename ||
+                        connectionFailed ||
+                        error.rejectsEdit(action))
+            ) {
                 submittedCount--
-            } else if (submittedCount > 0 && action != ChatRowAction.Rename) {
+            } else if (submittedCount > 0) {
                 uncertainEdit = edits[edits.size - submittedCount]
             }
         }
@@ -195,7 +201,6 @@ internal class ChatRowMutationOwner(
             submission.uncertainEdit?.let { projection.discardEdits(listOf(it)) } == true
         if (confirmedElsewhere || rolledBackUnknown) publishRows()
         val settled = projection.confirmEdits(edits)
-        if (settled && submission.action == ChatRowAction.Rename) publishRows()
         // A move that never reached its requested rank write already reported failure.
         // Its attempted rank edits still need event reconciliation.
         return if (rolledBackUnknown && rollback == null)
@@ -208,8 +213,8 @@ internal class ChatRowMutationOwner(
                 ),
                 false,
             )
-        // Successful write responses remain valid when the canonical list read is late.
-        else if (settled || rollback != null || submission.action != ChatRowAction.Rename) {
+        else {
+            // Successful write responses remain valid when the canonical list read is late.
             val archiveAcknowledged =
                 submission.uncertainEdit == null &&
                     (submission.action == ChatRowAction.Archive ||
@@ -220,19 +225,7 @@ internal class ChatRowMutationOwner(
                     !rolledBackUnknown &&
                     (archiveAcknowledged || settled && !confirmedElsewhere),
             )
-        } else
-            Confirmation(
-                ChatRowActionFailure(
-                    submission.action,
-                    edits = edits,
-                    conversationId = conversationId,
-                    renameThreadId =
-                        edits.singleOrNull()?.threadId.takeIf {
-                            submission.action == ChatRowAction.Rename
-                        },
-                ),
-                false,
-            )
+        }
     }
 
     private suspend fun write(edit: ChatRowEdit) {
