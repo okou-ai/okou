@@ -2237,8 +2237,15 @@ export function createThreadClaimRunObjects(
   });
   const prepareRunnerStorage$ = command(
     async ({ get, set }, args: ThreadRunnerFacts, signal: AbortSignal) => {
+      const timing = get(threadContext.dispatchTiming$);
       const [input, memory] = await joinAll([
-        set(prepareRunnerInput$, args, signal),
+        timing.measure(
+          "api_dispatch_prepare_launch_runner_input",
+          "nested",
+          () => {
+            return set(prepareRunnerInput$, args, signal);
+          },
+        ),
         get(preparedMemory$),
       ]);
       signal.throwIfAborted();
@@ -2252,8 +2259,16 @@ export function createThreadClaimRunObjects(
       // another writer established HEAD after this pick captured Memory.
       const head =
         memory.head ??
-        (await set(initializeMemberMemory$, memoryOwner, signal)) ??
-        (await get(memoryHeadAfterInitialization$));
+        (await timing.measure(
+          "api_dispatch_prepare_launch_memory_initialization",
+          "nested",
+          async () => {
+            return (
+              (await set(initializeMemberMemory$, memoryOwner, signal)) ??
+              (await get(memoryHeadAfterInitialization$))
+            );
+          },
+        ));
       signal.throwIfAborted();
       if (!head) {
         throw new Error("Member Memory has no HEAD after initialization");
@@ -2323,7 +2338,14 @@ export function createThreadClaimRunObjects(
   );
   const prepareRunnerResources$ = command(
     async ({ get, set }, signal: AbortSignal) => {
-      const plan = await get(runPlan$);
+      const timing = get(threadContext.dispatchTiming$);
+      const plan = await timing.measure(
+        "api_dispatch_prepare_launch_run_plan",
+        "nested",
+        () => {
+          return get(runPlan$);
+        },
+      );
       signal.throwIfAborted();
       const runnerLaunch =
         !plan || isRouteError(plan)
@@ -2344,12 +2366,37 @@ export function createThreadClaimRunObjects(
         await get(automationAssembly$);
         signal.throwIfAborted();
       }
+      const timing = get(threadContext.dispatchTiming$);
       const [{ plan: input, runnerLaunch }, callbacks, assembly] =
-        await joinAll([
-          set(prepareRunnerResources$, signal),
-          get(preparedCallbacks$),
-          get(assembly$),
-        ]);
+        await timing.measure(
+          "api_dispatch_prepare_launch_resources_join",
+          "nested",
+          () => {
+            return joinAll([
+              timing.measure(
+                "api_dispatch_prepare_launch_runner_resources",
+                "nested",
+                () => {
+                  return set(prepareRunnerResources$, signal);
+                },
+              ),
+              timing.measure(
+                "api_dispatch_prepare_launch_callbacks",
+                "nested",
+                () => {
+                  return get(preparedCallbacks$);
+                },
+              ),
+              timing.measure(
+                "api_dispatch_prepare_launch_assembly",
+                "nested",
+                () => {
+                  return get(assembly$);
+                },
+              ),
+            ]);
+          },
+        );
       signal.throwIfAborted();
       if (assembly.kind !== "assembled") {
         return assembly;
@@ -2384,19 +2431,55 @@ export function createThreadClaimRunObjects(
       timing: ClaimRunTiming,
       signal: AbortSignal,
     ): Promise<ThreadRunContext | null> => {
-      const head = await set(initializeRunPreparation$, timing, signal);
+      const head = await timing.run.measure(
+        "api_dispatch_prepare_launch_initialize",
+        "nested",
+        () => {
+          return set(initializeRunPreparation$, timing, signal);
+        },
+      );
       signal.throwIfAborted();
       if (!head) {
         return null;
       }
-      const [resources] = await joinAll([
-        set(prepareLaunchResources$, head, signal),
-        get(preparedMemory$),
-        // Connector reads start independently of prompt/model material. A
-        // prefetch miss joins the same loader once for this selected identity.
-        get(bootstrap.connectors$),
-        get(threadContext.connectorThreadSelections$),
-      ]);
+      // Observe elapsed waits on the existing shared nodes. Some work starts
+      // earlier, and parallel waits can overlap within the same Run.
+      const [resources] = await timing.run.measure(
+        "api_dispatch_prepare_launch_preparation_join",
+        "nested",
+        () => {
+          return joinAll([
+            timing.run.measure(
+              "api_dispatch_prepare_launch_resources",
+              "nested",
+              () => {
+                return set(prepareLaunchResources$, head, signal);
+              },
+            ),
+            timing.run.measure(
+              "api_dispatch_prepare_launch_memory",
+              "nested",
+              () => {
+                return get(preparedMemory$);
+              },
+            ),
+            timing.run.measure(
+              "api_dispatch_prepare_launch_connector_sources",
+              "nested",
+              () => {
+                return get(bootstrap.connectors$);
+              },
+            ),
+            timing.run.measure(
+              "api_dispatch_prepare_launch_connector_thread_selection",
+              "nested",
+              () => {
+                return get(threadContext.connectorThreadSelections$);
+              },
+            ),
+          ]);
+        },
+      );
       signal.throwIfAborted();
       if (resources.kind === "missing-resources") {
         throw new Error("Prepared claim is missing launch resources");
@@ -2417,7 +2500,18 @@ export function createThreadClaimRunObjects(
       }
       const { input, runnerLaunch, callbacks, assembly } = resources;
       const { runId } = get(runIds$);
-      await set(recordQueuedInputAdmissionTiming$, head, timing.run, signal);
+      await timing.run.measure(
+        "api_dispatch_prepare_launch_queue_observation",
+        "nested",
+        () => {
+          return set(
+            recordQueuedInputAdmissionTiming$,
+            head,
+            timing.run,
+            signal,
+          );
+        },
+      );
       signal.throwIfAborted();
       const preparedContext = await timing.run.measure(
         "api_dispatch_prepare_atomic_launch_persistence",
@@ -2713,9 +2807,15 @@ export function createThreadClaimRunObjects(
     },
   );
 
-  const hasFirstPickableChatEvent$ = computed(async (get) => {
+  const hasFirstPickableChatEvent$ = computed((get) => {
     get(pickStartedAt$);
-    return (await get(pickedEvent$)) !== null;
+    return get(threadContext.dispatchTiming$).measure(
+      "api_dispatch_prepare_launch_pick_snapshot",
+      "nested",
+      async () => {
+        return (await get(pickedEvent$)) !== null;
+      },
+    );
   });
   const failRunAdmission$ = command(
     async (
