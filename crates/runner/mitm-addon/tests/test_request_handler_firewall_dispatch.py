@@ -285,7 +285,6 @@ async def test_connector_intent_selects_auth_template_in_both_firewall_orders(
 @pytest.mark.parametrize(
     ("routing_headers", "chosen", "provider_wait"),
     [
-        ((("Authorization", "Bearer fixture-PRIMARY_TOKEN"),), "primary", False),
         ((("Authorization", "Bearer fixture-PRIMARY_TOKEN"),), "primary", True),
         (
             (

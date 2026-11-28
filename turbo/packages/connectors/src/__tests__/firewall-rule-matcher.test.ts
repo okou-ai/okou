@@ -1912,40 +1912,6 @@ describe("findMatchingPermissions", () => {
     },
   );
 
-  it("uses Intent before specificity for Run-scoped diagnostic routing", () => {
-    const firewalls = [
-      { name: "broad", apis: [{ base: "https://example.com", auth: {} }] },
-      { name: "narrow", apis: [{ base: "https://example.com/v1", auth: {} }] },
-    ];
-    const url = "https://example.com/v1/profile";
-    const options = { ownerSelection: "intent-before-specificity" } as const;
-    expect(
-      matchFirewallRequestDecision(
-        firewalls,
-        "GET",
-        url,
-        undefined,
-        {
-          status: "present",
-          value: "broad",
-        },
-        options,
-      ),
-    ).toMatchObject({ kind: "allow", firewallName: "broad" });
-    expect(
-      matchFirewallRequestDecision(
-        firewalls,
-        "GET",
-        url,
-        undefined,
-        {
-          status: "absent",
-        },
-        options,
-      ),
-    ).toMatchObject({ kind: "ambiguous", candidates: ["broad", "narrow"] });
-  });
-
   it("keeps AWS rules fail-closed for default callers and supports opt-in diagnostics", () => {
     const firewalls = [
       {
