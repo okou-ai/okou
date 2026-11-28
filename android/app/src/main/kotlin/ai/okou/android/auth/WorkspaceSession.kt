@@ -43,6 +43,7 @@ import ai.okou.android.chat.ChatAttachmentService
 import ai.okou.android.chat.ChatComposerService
 import ai.okou.android.chat.ChatListService
 import ai.okou.android.chat.ChatSnapshotUnavailable
+import ai.okou.android.chat.ComposerWorkflowService
 import ai.okou.android.chat.DraftChatAttachment
 import ai.okou.android.chat.HistoryBatch
 import ai.okou.android.chat.HistoryCursor
@@ -160,12 +161,22 @@ class CanonicalWorkspaceSession(
     private val locale: InitializePreferencesRequestLocale = initialLocale(Locale.getDefault()),
     private val timezone: String? = initialTimezone(),
     onUpdateRequired: (RequiredUpdate) -> Unit = {},
-) : WorkspaceSession, WorkflowService, ChatAttachmentService {
+) : WorkspaceSession, WorkflowService, ChatAttachmentService, ComposerWorkflowService {
     override val attachmentService: ChatAttachmentService
         get() = this
 
     override val workflowService: WorkflowService
         get() = this
+
+    override val composerWorkflowService: ComposerWorkflowService
+        get() = this
+
+    override suspend fun composerWorkflows() = api.composerWorkflows()
+
+    override suspend fun recentComposerWorkflows() = api.recentComposerWorkflows()
+
+    override suspend fun recordComposerWorkflowUse(ids: List<String>) =
+        api.recordComposerWorkflowUse(ids)
 
     private val api =
         ApiClient(identity.apiOrigin.toHttpUrl(), tokens, onUpdateRequired = onUpdateRequired)

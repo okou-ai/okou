@@ -59,6 +59,7 @@ internal class ChatComposerOwner(
         val history: ConversationHistoryModel? = null,
         val chatList: ChatListModel? = null,
         val connectors: ConnectorService? = null,
+        val workflowCatalog: ComposerWorkflowCatalog? = null,
     ) {
         var retired = false
 
@@ -1643,6 +1644,8 @@ internal class ChatComposerOwner(
             list?.acknowledgeOutgoingActivity(pending)
         }
         op.connection.accepted(pending.threadId)
+        if (disposition == TextDisposition.Accepted)
+            op.connection.workflowCatalog?.accepted(pending.send.prompt)
     }
 
     private fun deleteSentAttachmentFiles(pending: PendingText) {

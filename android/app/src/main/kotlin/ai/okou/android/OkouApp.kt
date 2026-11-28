@@ -2290,6 +2290,8 @@ internal fun OkouApp(
                                                     ChatComposerField(
                                                         composer,
                                                         composerTarget,
+                                                        stopPlacement = stopPlacement,
+                                                        appBarHeight = appBarHeight,
                                                         attachmentPicker = attachmentPicker,
                                                         openUploadedAttachment =
                                                             openComposerAttachment,
@@ -2375,6 +2377,8 @@ internal fun OkouApp(
                                                     ChatComposerField(
                                                         composer,
                                                         newTarget,
+                                                        stopPlacement = stopPlacement,
+                                                        appBarHeight = appBarHeight,
                                                         attachmentPicker = attachmentPicker,
                                                         openUploadedAttachment =
                                                             openComposerAttachment,
