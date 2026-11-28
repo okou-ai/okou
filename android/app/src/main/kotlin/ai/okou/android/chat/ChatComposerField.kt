@@ -192,12 +192,15 @@ internal fun ChatComposerField(
     val workflowCatalog = model.workflowCatalog
     val workflowState =
         workflowCatalog?.state?.collectAsStateWithLifecycle()?.value ?: ComposerWorkflowState()
-    val workflowToken =
-        if (workflowCatalog != null && inputFocused) input.value.activeWorkflowToken() else null
-    var dismissedWorkflowToken by
-        remember(target.key, input.value.text) {
-            mutableStateOf<WorkflowToken?>(null)
-        }
+    // Composition hides the popup without ending the active slash session.
+    val workflowContext =
+        if (workflowCatalog != null && inputFocused) {
+            val field = input.value
+            if (field.composition == null) field.activeWorkflowToken()
+            else field.copy(composition = null).activeWorkflowToken()
+        } else null
+    val workflowToken = workflowContext.takeIf { input.value.composition == null }
+    var dismissedWorkflowInput by remember(target.key) { mutableStateOf<TextFieldValue?>(null) }
     var workflowAnchor by remember(target.key) { mutableStateOf(IntRect.Zero) }
     var composerBounds by remember(target.key) { mutableStateOf(Rect.Zero) }
     val workflowQuery = workflowToken?.query.orEmpty()
@@ -216,7 +219,7 @@ internal fun ChatComposerField(
         )
     val workflowOpen =
         workflowToken != null &&
-            workflowToken != dismissedWorkflowToken &&
+            input.value != dismissedWorkflowInput &&
             workflowHeight != null &&
             conversationSnackbar?.currentSnackbarData == null
     var popupHeight by remember(workflowOpen) { mutableStateOf(0) }
@@ -233,16 +236,18 @@ internal fun ChatComposerField(
         onDispose { stopPlacement?.reportWorkflowBounds(null) }
     }
     fun dismissWorkflow() {
-        dismissedWorkflowToken = workflowToken
+        dismissedWorkflowInput = latestInput.value
     }
     fun chooseWorkflow(item: ComposerWorkflowsItem, token: WorkflowToken?) {
         val editor = latestInput
         if (token != null && editor.value.activeWorkflowToken() != token) return
         val updated = editor.value.insertWorkflow(item.name, token)
+        dismissedWorkflowInput = updated
         if (editor.edit(updated)) model.edit(target, updated.text)
     }
-    LaunchedEffect(workflowOpen, workflowCatalog) {
-        if (workflowOpen) workflowCatalog?.refresh()
+    val workflowStart = workflowContext?.range?.start
+    LaunchedEffect(target.key, workflowStart, workflowCatalog) {
+        if (workflowStart != null) workflowCatalog?.refresh()
     }
     LaunchedEffect(workflowOpen, workflowQuery) {
         if (workflowOpen) workflowPosition.requestScrollToItem(0)
@@ -438,7 +443,7 @@ internal fun ChatComposerField(
                             onValueChange = {
                                 // A retiring field can clear its selection while focus moves.
                                 if (shortWindow == currentShortWindow) {
-                                    input.edit(it)
+                                    if (input.edit(it)) dismissedWorkflowInput = null
                                     model.edit(target, it.text)
                                 }
                             },
