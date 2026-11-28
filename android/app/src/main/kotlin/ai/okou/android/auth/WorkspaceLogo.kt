@@ -13,6 +13,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.painter.ColorPainter
 import androidx.compose.ui.layout.ContentScale
@@ -93,10 +94,13 @@ internal fun workspaceInitial(name: String): String? {
 private data class WorkspaceColorway(@DrawableRes val texture: Int, val letter: Color)
 
 // Web displays the shared texture at 160%, centered inside the workspace tile.
-private val workspaceTextureCrop = ContentScale { source, destination ->
-    val crop = ContentScale.Crop.computeScaleFactor(source, destination)
-    ScaleFactor(crop.scaleX * 1.6f, crop.scaleY * 1.6f)
-}
+private val workspaceTextureCrop =
+    object : ContentScale {
+        override fun computeScaleFactor(srcSize: Size, dstSize: Size): ScaleFactor {
+            val crop = ContentScale.Crop.computeScaleFactor(srcSize, dstSize)
+            return ScaleFactor(crop.scaleX * 1.6f, crop.scaleY * 1.6f)
+        }
+    }
 
 // Match the Web colorway order and letter colors in core/src/workspace-logo.ts.
 private val workspaceColorways =
