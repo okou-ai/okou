@@ -1927,7 +1927,7 @@ def _rule_request_params(
 def _collect_rule_routes(
     *,
     collection: _FirewallMatchCollection,
-    api_match: _MatchedApi,
+    api_order: int,
     rel_path_segs: list[str],
     upper_method: str,
     rule_entries: tuple[_CompiledRuleEntry, ...],
@@ -1936,7 +1936,7 @@ def _collect_rule_routes(
     get_form_action_result: Callable[[], _AwsFormActionResult],
     request_context: FirewallRequestContext | None,
     record_winning: bool,
-    applicable_routes: dict[str, set[_AuthorizationRoute]] | None,
+    authorization_routes: set[_AuthorizationRoute] | None,
 ) -> None:
     for entry in rule_entries:
         rule = entry.rule
@@ -1945,7 +1945,7 @@ def _collect_rule_routes(
         # URI checks retain applicable rules even when they cannot win precedence.
         if (
             not (record_winning and collection.can_rule_affect_collection(rule.specificity))
-            and applicable_routes is None
+            and authorization_routes is None
         ):
             continue
 
@@ -1965,12 +1965,10 @@ def _collect_rule_routes(
             is None
         ):
             continue
-        if applicable_routes is not None:
-            applicable_routes.setdefault(api_match.firewall.name, set()).add(
-                ("rule", api_match.order, entry.order)
-            )
+        if authorization_routes is not None:
+            authorization_routes.add(("rule", api_order, entry.order))
         if record_winning:
-            collection.record_rule_route(api_match.order, rule.specificity)
+            collection.record_rule_route(api_order, rule.specificity)
 
 
 def _winning_api_matches(
@@ -2278,16 +2276,11 @@ def _match_compiled_firewall_request_with_api_candidates(
     intent: connector_intent.ConnectorIntent,
     is_asterisk_form: bool,
     request_context: FirewallRequestContext | None,
-    track_authorization_routes: bool,
     diagnostic_base_tier: bool,
     get_query_pairs: Callable[[], list[tuple[str, str]]],
     get_sigv4_service: Callable[[], str | None],
     get_form_action_result: Callable[[], _AwsFormActionResult],
 ) -> _FirewallInterpretation:
-    collection = _FirewallMatchCollection()
-    applicable_routes: dict[str, set[_AuthorizationRoute]] | None = (
-        {} if track_authorization_routes else None
-    )
     base_matches: list[_MatchedApi] = []
 
     unsafe_path: bool | None = False if is_asterisk_form else (True if url_has_backslash else None)
@@ -2394,20 +2387,24 @@ def _match_compiled_firewall_request_with_api_candidates(
     elif selected_name is None and owners:
         selected_name = next(iter(owners))
 
+    collection = _FirewallMatchCollection()
     explicit_owner = selection_hint is not None
+    authorization_routes: set[_AuthorizationRoute] | None = (
+        set() if selected_name is not None and not is_asterisk_form else None
+    )
     for api_match in base_matches:
+        is_selected_owner = api_match.firewall.name == selected_name
         if (
             selected_name is not None
-            and api_match.firewall.name != selected_name
+            and not is_selected_owner
             and (explicit_owner or not api_match.firewall.name_malformed)
         ):
             continue
-        if applicable_routes is not None:
-            applicable_routes.setdefault(api_match.firewall.name, set()).add(
-                ("api", api_match.order)
-            )
+        routes = authorization_routes if is_selected_owner else None
+        if routes is not None:
+            routes.add(("api", api_match.order))
         record_winning = collection.accept_api(api_match)
-        if not record_winning and applicable_routes is None:
+        if not record_winning and routes is None:
             continue
 
         if is_asterisk_form or not api_match.api.permissions:
@@ -2421,7 +2418,7 @@ def _match_compiled_firewall_request_with_api_candidates(
         )
         _collect_rule_routes(
             collection=collection,
-            api_match=api_match,
+            api_order=api_match.order,
             rel_path_segs=rel_path_segs,
             upper_method=upper_method,
             rule_entries=rule_entries,
@@ -2430,7 +2427,7 @@ def _match_compiled_firewall_request_with_api_candidates(
             get_form_action_result=get_form_action_result,
             request_context=request_context,
             record_winning=record_winning,
-            applicable_routes=applicable_routes,
+            authorization_routes=routes,
         )
 
     result = _reduce_selected_owner(
@@ -2465,12 +2462,7 @@ def _match_compiled_firewall_request_with_api_candidates(
             return _FirewallInterpretation(FirewallPolicyAllow(result), frozenset())
         if selection_hint is not None:
             result = result._replace(selection_hint=selection_hint)
-    return _FirewallInterpretation(
-        result,
-        frozenset(applicable_routes.get(selected_name, ()))
-        if applicable_routes is not None and selected_name is not None
-        else frozenset(),
-    )
+    return _FirewallInterpretation(result, frozenset(authorization_routes or ()))
 
 
 def _prepare_compiled_request_match(
@@ -2618,8 +2610,8 @@ def _certify_raw_firewall_allow(
     get_sigv4_service: Callable[[], str | None],
     get_form_action_result: Callable[[], _AwsFormActionResult],
 ) -> bool:
-    facts: dict[str, SelectionCandidate] = {}
-    selected: str | None = None
+    facts: dict[_AuthorizationRoute, SelectionCandidate] = {}
+    selected: _AuthorizationRoute | None = None
     source_order = 0
 
     for candidate in authority_candidates:
@@ -2643,7 +2635,7 @@ def _certify_raw_firewall_allow(
                 return False
             continue
         source_order += 1
-        api_id = repr(("api", candidate.order))
+        api_id: _AuthorizationRoute = ("api", candidate.order)
         base_proof = _path_priority_proof(proof, api, rule=False)
         facts[api_id] = SelectionCandidate(
             firewall.name,
@@ -2681,7 +2673,7 @@ def _certify_raw_firewall_allow(
                     get_form_action_result=get_form_action_result,
                 ):
                     continue
-            identity = repr(("rule", candidate.order, entry.order))
+            identity: _AuthorizationRoute = ("rule", candidate.order, entry.order)
             proof = _path_priority_proof(
                 analysis.applicability(paths.rules[entry.order]), api, rule=True
             )
@@ -2699,13 +2691,13 @@ def _certify_raw_firewall_allow(
                 and selected is None
                 and entry.permission == original.permission
                 and rule.raw == original.rule
-                and identity in {repr(route) for route in original_routes}
+                and identity in original_routes
             ):
                 selected = identity
 
     return selected is not None and certifies_selection(
         facts,
-        original_owner_sources=frozenset(repr(route) for route in original_routes),
+        original_owner_sources=original_routes,
         selected=selected,
         budget=analysis.graph.budget,
     )
@@ -2802,7 +2794,6 @@ def _match_request_interpretations(
             intent=resolved_intent,
             is_asterisk_form=is_asterisk_form,
             request_context=request_context,
-            track_authorization_routes=not is_asterisk_form,
             diagnostic_base_tier=diagnostic_base_tier,
             get_query_pairs=get_query_pairs,
             get_sigv4_service=get_sigv4_service,

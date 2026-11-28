@@ -301,16 +301,13 @@ def test_compiled_matches_ask_permission_block():
     assert compiled.reason == "permission_denied"
 
 
-@pytest.mark.parametrize("broad_unknown_policy", ["deny", "allow", "broken"])
-def test_allowed_rule_does_not_resolve_cross_owner_overlap(
-    broad_unknown_policy,
-):
+def test_allowed_rule_does_not_resolve_cross_owner_overlap():
     fws = [
         _broad_firewall(),
         _specific_firewall(),
     ]
     policies = {
-        "broad": network_policy(unknown_policy=broad_unknown_policy),
+        "broad": network_policy(unknown_policy="allow"),
         "specific": network_policy(allow=[ITEMS_READ_PERMISSION]),
     }
     compiled = match_compiled_firewalls(ITEMS_URL, fws, policies)

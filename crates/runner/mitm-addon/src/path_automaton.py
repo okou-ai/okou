@@ -1,6 +1,6 @@
 """Immutable source NFAs and exact bounded request-local subset products."""
 
-from collections.abc import Mapping
+from collections.abc import Hashable, Mapping
 from dataclasses import dataclass, field
 from itertools import groupby
 from typing import NamedTuple
@@ -617,11 +617,11 @@ class SelectionCandidate(NamedTuple):
     raw_priority: PathPriority | None = None
 
 
-def certifies_selection(
-    candidates: Mapping[str, SelectionCandidate],
+def certifies_selection[Identity: Hashable](
+    candidates: Mapping[Identity, SelectionCandidate],
     *,
-    original_owner_sources: frozenset[str],
-    selected: str,
+    original_owner_sources: frozenset[Identity],
+    selected: Identity,
     budget: WorkBudget,
 ) -> bool:
     """Certify a raw winner using matching-conditioned priority envelopes.
@@ -633,8 +633,8 @@ def certifies_selection(
     winner = candidates.get(selected)
     if winner is None or not winner.proof.certain or winner.proof.minimum is None:
         return False
-    possible: set[str] = set()
-    certain: set[str] = set()
+    possible: set[Identity] = set()
+    certain: set[Identity] = set()
     for identity, candidate in candidates.items():
         budget.charge()
         proof = candidate.proof
