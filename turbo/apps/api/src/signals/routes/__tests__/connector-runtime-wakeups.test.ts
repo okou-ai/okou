@@ -31,11 +31,10 @@ async function prepareActor(tier: "pro" | "team" = "pro") {
   return { actor, runnerGroup };
 }
 
-async function startRun(actor: ApiTestUser, runnerGroup: string) {
+async function startRun(actor: ApiTestUser) {
   const run = await runs.createThreadRun(actor, {
     prompt: "Exercise runtime wakeups",
   });
-  await runs.heartbeatRunner(runnerGroup);
   await runs.executionInput(run.runId);
   return run.runId;
 }
@@ -66,11 +65,11 @@ describe("connector runtime wakeups", () => {
   it("notifies eligible Runner groups after connector deletion even if one batch fails", async () => {
     const { actor, runnerGroup } = await prepareActor("team");
     const custom = await createConnector(actor);
-    const runId = await startRun(actor, runnerGroup);
+    const runId = await startRun(actor);
     const secondGroup = await runs.configureRunnerGroup();
 
-    const otherRun = await startRun(actor, secondGroup);
-    const cancelled = await startRun(actor, secondGroup);
+    const otherRun = await startRun(actor);
+    const cancelled = await startRun(actor);
     await runs.requestCancelRun(actor, cancelled, [200]);
     const expected = [
       { runnerGroup, runId },
@@ -80,11 +79,11 @@ describe("connector runtime wakeups", () => {
       const group = await runs.configureRunnerGroup();
       expected.push({
         runnerGroup: group,
-        runId: await startRun(actor, group),
+        runId: await startRun(actor),
       });
     }
-    const outsider = await prepareActor();
-    await startRun(outsider.actor, outsider.runnerGroup);
+    const { actor: outsider } = await prepareActor();
+    await startRun(outsider);
     context.mocks.ably.batchPublish.mockClear();
 
     const started = createDeferredPromise<void>(context.signal);
@@ -161,7 +160,7 @@ describe("connector runtime wakeups", () => {
     async (outcome) => {
       const { actor, runnerGroup } = await prepareActor();
       const custom = await createConnector(actor);
-      const runId = await startRun(actor, runnerGroup);
+      const runId = await startRun(actor);
       context.mocks.ably.batchPublish.mockClear();
       context.mocks.ably.useRealBatchPublish.mockReturnValue(true);
       const received: unknown[] = [];
