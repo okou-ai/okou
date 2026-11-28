@@ -1022,7 +1022,7 @@ impl RunControls {
         let instruction_check = if start.restore_guest_state
             && start.sandbox_startup_path == runner_types::types::SandboxStartupPath::Home
             && let Some(storage) = self.prepared_storage.as_ref()
-            && let Ok(super::storage::InstructionReusePlan::Check { input, .. }) =
+            && let Ok(super::storage::InstructionReusePlan::Check(input)) =
                 super::storage::plan_instruction_reuse(
                     context,
                     start.prev_storage,
@@ -1639,7 +1639,7 @@ async fn prepare_guest_runtime_state(
         Ok(instruction_check
             .zip(result?)
             .map(|(input, result)| CompletedInstructionCheck {
-                input,
+                check_memory_root: input.check_memory_root,
                 result: result.map_err(Box::new),
             }))
     } else {

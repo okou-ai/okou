@@ -2,9 +2,11 @@ use std::io::Write;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 
+use guest_contracts::agent_instructions::RestoredInstructionCheck;
 use guest_control_proto::{
-    ExecCapturedOutput, ExecTermination, GuestStateRestoreTimezone, MSG_GUEST_STATE_RESTORE,
-    MSG_GUEST_STATE_RESTORE_RESULT, MSG_OPERATIONS_QUIESCED,
+    DecodedGuestStateRestoreRequest, ExecCapturedOutput, ExecTermination,
+    GuestStateRestoreTimezone, MSG_GUEST_STATE_RESTORE, MSG_GUEST_STATE_RESTORE_RESULT,
+    MSG_OPERATIONS_QUIESCED,
 };
 
 use super::support::*;
@@ -97,6 +99,51 @@ printf 'helper stderr\n' >&2
     assert_eq!(result.termination, ExecTermination::Exited { exit_code: 0 });
     assert_eq!(result.stderr, b"helper stderr\n");
     assert!(!result.stderr_truncated);
+    assert!(result.diagnostic.is_empty());
+    finish_guest_connection(handle, host_stream);
+}
+
+#[test]
+fn guest_state_restore_passes_instruction_check_to_the_fixed_helper() {
+    let (_directory, program) = create_program(
+        r#"
+[ "$#" = "6" ]
+[ "$1" = "--check-instructions" ]
+[ "$2" = '{"framework":"codex","check_memory_root":true}' ]
+[ "$3" = "--restore-state" ]
+[ "$4" = "1778000000" ]
+[ "$5" = "123000000" ]
+[ "$6" = "none" ]
+[ "$(wc -c)" = "256" ]
+exit 12
+"#,
+    );
+    let (handle, mut host_stream) =
+        start_guest_connection_with_guest_state_restore_program(program);
+    let mut frame = Vec::new();
+    guest_control_proto::encode_guest_state_restore_frame(
+        &mut frame,
+        510,
+        DecodedGuestStateRestoreRequest {
+            timeout_ms: 1_000,
+            unix_seconds: 1_778_000_000,
+            unix_nanoseconds: 123_000_000,
+            entropy: &entropy(),
+            timezone: GuestStateRestoreTimezone::None,
+            instruction_check: Some(r#"{"framework":"codex","check_memory_root":true}"#),
+        },
+    )
+    .unwrap();
+    host_stream.write_all(&frame).unwrap();
+
+    let result = read_result(&mut host_stream, 510);
+    assert_eq!(
+        result.termination,
+        ExecTermination::Exited {
+            exit_code: RestoredInstructionCheck::CurrentWithMemory as i32,
+        }
+    );
+    assert!(result.stderr.is_empty());
     assert!(result.diagnostic.is_empty());
     finish_guest_connection(handle, host_stream);
 }

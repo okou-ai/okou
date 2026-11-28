@@ -13,6 +13,8 @@
 //! guest-state-restore < entropy-bytes
 //! guest-state-restore --restore-state <seconds> <nanoseconds>
 //!   <none|best-effort|required> [timezone] < entropy-bytes
+//! guest-state-restore --check-instructions <metadata> --restore-state
+//!   <seconds> <nanoseconds> <none|best-effort|required> [timezone] < entropy-bytes
 //! guest-state-restore --sync-timezone <timezone>
 //! ```
 //!
@@ -25,6 +27,9 @@
 //! update `/etc`. The command returns 0 on success and 1 for argument, input,
 //! clock, reseed, or required-timezone failures. Best-effort timezone outcomes
 //! return 0 with bounded stderr markers when unavailable or failed.
+//! With Instructions metadata, a successful restore is followed by a check
+//! under the sandbox user. That check supplies the terminal exit code defined
+//! by `guest_contracts::agent_instructions::RestoredInstructionCheck`.
 
 use guest_contracts::agent_instructions::CHECK_AFTER_RESTORE_ARG;
 

@@ -972,8 +972,22 @@ async fn home_restored_memory_reuses_a_present_root_and_repairs_a_missing_root()
     use sandbox::SandboxFactory;
     use sandbox_mock::MockSandbox;
 
+    #[derive(Clone, Copy)]
+    enum HomeStart {
+        Fresh,
+        Prewarmed,
+        PrewarmedWithRestore,
+    }
+
     let memory_mount = "/home/user/.codex/memories";
-    for (present, fused) in [(true, false), (false, false), (true, true), (false, true)] {
+    for (present, start) in [
+        (true, HomeStart::Fresh),
+        (false, HomeStart::Fresh),
+        (true, HomeStart::Prewarmed),
+        (false, HomeStart::Prewarmed),
+        (true, HomeStart::PrewarmedWithRestore),
+        (false, HomeStart::PrewarmedWithRestore),
+    ] {
         let directory = tempfile::tempdir().unwrap();
         let mut config = super::support::test_executor_config(directory.path()).await;
         let paths = RunnerPaths::new(directory.path().join("runner"));
@@ -1025,6 +1039,7 @@ async fn home_restored_memory_reuses_a_present_root_and_repairs_a_missing_root()
         )
         .unwrap();
         let overrides = Arc::new(MockSandboxOverrides::new());
+        let fused = matches!(start, HomeStart::PrewarmedWithRestore);
         if fused {
             let result = if checked.memory_root_present {
                 RestoredInstructionCheck::CurrentWithMemory
@@ -1042,60 +1057,76 @@ async fn home_restored_memory_reuses_a_present_root_and_repairs_a_missing_root()
                 sandbox::ExecResult::new(0, serde_json::to_vec(&checked).unwrap(), Vec::new()),
             );
         }
-        let factory = Arc::new(
-            Box::new(MockSandboxFactory::with_overrides(Arc::clone(&overrides)))
-                as Box<dyn SandboxFactory>,
-        );
         let sandbox_id = SandboxId::new_v4();
-        let candidate = ParkedIdleCandidate::blank(
-            Box::new(MockSandbox::with_overrides(
-                sandbox_id.to_string(),
-                Arc::clone(&overrides),
-            )),
-            factory,
-            super::support::test_budget_lease(),
-            sandbox_id,
-            "vm0/default".into(),
-            "test-rootfs".into(),
-            None,
-        );
-        let mut pool = IdlePool::new(IdlePoolConfig { max_idle: 0 });
-        assert!(matches!(pool.park(candidate), ParkResult::Parked));
-        let blank = pool.reserve_blank("vm0/default", &None).unwrap();
-        let IdleUnparkResult::Reused {
-            sandbox,
-            budget_lease: _lease,
-        } = blank.try_unpark_for_run(current.run_id).await
-        else {
-            panic!("blank must unpark");
-        };
+        let factory = MockSandboxFactory::with_overrides(Arc::clone(&overrides));
         let params = super::super::JobParams {
             home_disk_mb: 16,
-            restore_guest_state: fused,
+            restore_guest_state: !matches!(start, HomeStart::Prewarmed),
             ..default_params()
         };
-        let (outcome, _) = execute_job_reuse(
-            *sandbox,
-            current,
-            &config,
-            &params,
-            CancellationToken::new(),
-        )
-        .await;
+        let (outcome, _) = if matches!(start, HomeStart::Fresh) {
+            execute_job(
+                &factory,
+                current,
+                NewSandboxDispatch {
+                    id: sandbox_id,
+                    reuse_result: SandboxReuseResult::PoolMiss,
+                },
+                &config,
+                &params,
+                CancellationToken::new(),
+            )
+            .await
+        } else {
+            let candidate = ParkedIdleCandidate::blank(
+                Box::new(MockSandbox::with_overrides(
+                    sandbox_id.to_string(),
+                    Arc::clone(&overrides),
+                )),
+                Arc::new(Box::new(factory) as Box<dyn SandboxFactory>),
+                super::support::test_budget_lease(),
+                sandbox_id,
+                "vm0/default".into(),
+                "test-rootfs".into(),
+                None,
+            );
+            let mut pool = IdlePool::new(IdlePoolConfig { max_idle: 0 });
+            assert!(matches!(pool.park(candidate), ParkResult::Parked));
+            let blank = pool.reserve_blank("vm0/default", &None).unwrap();
+            let IdleUnparkResult::Reused {
+                sandbox,
+                budget_lease: _lease,
+            } = blank.try_unpark_for_run(current.run_id).await
+            else {
+                panic!("blank must unpark");
+            };
+            execute_job_reuse(
+                *sandbox,
+                current,
+                &config,
+                &params,
+                CancellationToken::new(),
+            )
+            .await
+        };
 
         assert_eq!(outcome.exit_code(), 0, "{:?}", outcome.error());
         assert_eq!(outcome.home_reuse_result, Some(HomeReuseResult::Reused));
-        assert_eq!(overrides.home_drive_replacements().len(), 1);
+        assert_eq!(
+            overrides.home_drive_replacements().len(),
+            usize::from(!matches!(start, HomeStart::Fresh))
+        );
         assert_eq!(outcome.storage_fingerprints, fingerprints);
         let checks = overrides.agent_instructions_calls();
+        let restores = overrides.guest_state_restore_calls();
+        assert_eq!(restores.len(), usize::from(params.restore_guest_state));
         if fused {
             assert!(checks.is_empty());
-            let calls = overrides.guest_state_restore_calls();
-            assert_eq!(calls.len(), 1);
             let requested: InstructionCheck =
-                serde_json::from_str(calls[0].instruction_check.as_deref().unwrap()).unwrap();
+                serde_json::from_str(restores[0].instruction_check.as_deref().unwrap()).unwrap();
             assert_eq!(requested, input);
         } else {
+            assert!(restores.iter().all(|call| call.instruction_check.is_none()));
             assert_eq!(checks.len(), 1);
             assert_eq!(checks[0].operation, InstructionOperation::Check);
             let requested: InstructionCheck = serde_json::from_slice(&checks[0].metadata).unwrap();
