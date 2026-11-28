@@ -46,6 +46,7 @@ class ScreenshotScenario {
             checkNotNull(device.wait(Until.findObject(selector), 12_000)) {
                 val hierarchy = ByteArrayOutputStream()
                 device.dumpWindowHierarchy(hierarchy)
+                runCatching { ScreenshotCapture.capture("workflow-diagnostic.png") }
                 "Missing $selector\n$hierarchy"
             }
         ComposerApiFixture().use { fixture ->
@@ -67,21 +68,25 @@ class ScreenshotScenario {
                     await(By.pkg(app.packageName).text("Personal chat")).click()
                     val field = By.pkg(app.packageName).desc("Message")
                     await(field).click()
+                    fun editor() =
+                        By.pkg(app.packageName).clazz("android.widget.EditText").focused(true)
                     check(device.pressKeyCode(KeyEvent.KEYCODE_SLASH))
+                    await(editor().text("/"))
                     await(By.text("Recently used"))
                     await(By.textContains("/review-changes"))
                     ScreenshotCapture.capture("workflow-recent.png")
-                    // Accessibility set-text commits the query without a Latin IME composition.
-                    await(field).text = "/rel"
-                    await(By.pkg(app.packageName).desc("Message").text("/rel"))
+                    // The accessibility label is a separate virtual node from the editor.
+                    await(editor()).text = "/rel"
+                    await(editor().text("/rel"))
                     await(By.textContains("/release-check"))
                     check(device.wait(Until.gone(By.text("Recently used")), 5_000) == true)
+                    check(workflows.catalogReads.size == 1)
                     ScreenshotCapture.capture("workflow-filtered.png")
                     await(By.textContains("/release-check")).click()
+                    await(editor().textContains("/release-check"))
                     check(device.wait(Until.gone(By.textContains("/release-notes")), 5_000) == true)
                     check(fixture.inputs.isEmpty())
                     await(By.pkg(app.packageName).desc("Send")).click()
-                    await(By.pkg(app.packageName).textContains("/release-check"))
                     check(
                         device.wait(
                             object : Condition<UiDevice, Boolean> {
@@ -96,6 +101,11 @@ class ScreenshotScenario {
                             },
                             12_000,
                         ) == true,
+                    )
+                    await(
+                        By.pkg(app.packageName)
+                            .clazz("android.widget.TextView")
+                            .textContains("/release-check"),
                     )
                     ScreenshotCapture.capture("workflow-sent.png")
                     await(By.pkg(app.packageName).desc("Chat options")).click()
