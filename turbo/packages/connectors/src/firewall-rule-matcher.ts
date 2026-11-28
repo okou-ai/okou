@@ -2761,28 +2761,20 @@ function isOriginalGrantedRule(
 }
 
 function certificateBaseProof(
-  candidate: AuthorityApi,
   analysis: PathAnalysis,
+  base: readonly CompiledPathForm[],
+  firewall: DecisionFirewall,
   ownerName: string,
   resolveOwnerFirst: boolean,
   explicitOwner: boolean,
-):
-  | {
-      paths: NonNullable<DecisionApi["paths"]>;
-      proof: PathApplicability;
-    }
-  | "unsafe"
-  | null {
-  const { api, firewall } = candidate;
-  const paths = api.paths;
-  if (paths === undefined) return null;
+): PathApplicability | "unsafe" | null {
   analysis.graph.budget.charge();
   const otherOwner = firewall.name !== ownerName;
   if (explicitOwner && otherOwner) return null;
-  const proof = analysis.applicability(paths.base);
+  const proof = analysis.applicability(base);
   if (resolveOwnerFirst && otherOwner && !firewall.nameMalformed)
     return proof.possible ? "unsafe" : null;
-  return { paths, proof };
+  return proof;
 }
 
 function certifiesRawAllow(
@@ -2814,20 +2806,23 @@ function certifiesRawAllow(
     }) ?? unknownCandidates[0];
   for (const candidate of authorities) {
     const { firewall, api, order } = candidate;
-    const base = certificateBaseProof(
-      candidate,
+    const paths = api.paths;
+    if (paths === undefined) continue;
+    const baseProof = certificateBaseProof(
       analysis,
+      paths.base,
+      firewall,
       original.firewallName,
       resolveOwnerFirst,
       explicitOwner,
     );
-    if (base === "unsafe") return false;
-    if (base === null) continue;
+    if (baseProof === "unsafe") return false;
+    if (baseProof === null) continue;
     sourceOrder += 1;
     const apiId = authorizationRouteIdentity(["api", order]);
     facts.set(apiId, {
       owner: firewall.name,
-      proof: semanticPriority(base.proof, api, false),
+      proof: semanticPriority(baseProof, api, false),
       tieRank: (api.permissionless ? MAX_REQUEST_WORK : 0) - sourceOrder,
       rawPriority: [api.rawBaseScore, ...fallback],
     });
@@ -2845,7 +2840,7 @@ function certifiesRawAllow(
       facts.set(id, {
         owner: firewall.name,
         proof: semanticPriority(
-          analysis.applicability(base.paths.rules[ruleOrder]!),
+          analysis.applicability(paths.rules[ruleOrder]!),
           api,
           true,
         ),
