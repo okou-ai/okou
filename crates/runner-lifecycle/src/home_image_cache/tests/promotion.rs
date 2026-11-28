@@ -526,7 +526,6 @@ async fn cross_device_interrupted_transfer_keeps_source_and_old_commit_or_comple
             .into_promotion_context(HomeImagePromotionRequest {
                 run_id,
                 sandbox_id,
-                restored_session_identity: None,
                 terminal_status: HomeCacheTerminalStatus::Success,
                 completed_at: "2026-10-09T09:01:00Z".into(),
                 storage_fingerprints: StorageFingerprints::default(),
@@ -596,7 +595,6 @@ async fn cross_device_sparse_publication_preserves_shape_and_transfer_ownership(
         .into_promotion_context(HomeImagePromotionRequest {
             run_id,
             sandbox_id,
-            restored_session_identity: None,
             terminal_status: HomeCacheTerminalStatus::Success,
             completed_at: "2026-10-09T09:00:00Z".into(),
             storage_fingerprints: StorageFingerprints::default(),

@@ -1686,7 +1686,10 @@ test("receives an owner DM once, resumes its native session and delivers the can
   const second = await readExecution();
 
   expect(second.platformEnvironment.OKOU_CHAT_THREAD_ID).toBe(threadId);
-  expect(second.nativeContinuation?.sessionId).toBe("wechat-native-session");
+  expect(second.sessionContinuation).toMatchObject({
+    continueNative: true,
+    expectedSourceRunId: first.runId,
+  });
   expect(second.prompt).toContain(messageText);
   expect(second.prompt).toContain("report.csv");
   expect(second.prompt).toContain("[Web file] report.csv (text/csv)");

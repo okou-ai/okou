@@ -1,20 +1,12 @@
 use super::test_support::{HomePromotionFixture, add_healthy_cache_preparation_matcher};
 use super::*;
-use guest_contracts::home_cache_history::{
-    HomeCacheHistoryProof, HomeCacheHistoryProofBinding, TerminalHomeCachePreparationRequest,
-};
-use guest_contracts::session_history_identity::{
-    SessionHistoryFramework, SessionHistoryIdentity, SessionHistoryRefKind, SessionHistorySourceRef,
-};
+use guest_contracts::reuse_preparation::{ReusePreparationReport, ReusePreparationRequest};
 use sandbox::{ExecResult, Sandbox};
 use sandbox_mock::{ExecMatcher, MockSandbox, MockSandboxOverrides};
 use std::sync::Arc;
 
-fn terminal_report() -> TerminalHomeCachePreparationReport {
-    TerminalHomeCachePreparationReport {
-        cleanup: crate::idle_reuse_preparation::healthy_reuse_preparation_report(),
-        history_proof: None,
-    }
+fn terminal_report() -> ReusePreparationReport {
+    crate::idle_reuse_preparation::healthy_reuse_preparation_report()
 }
 
 #[tokio::test]
@@ -22,8 +14,8 @@ async fn successful_run_with_full_home_is_not_frozen_published_or_advertised() {
     for (bytes, inodes) in [(0, 2048), (256 * 1024 * 1024, 0), (0, 0)] {
         let fixture = HomePromotionFixture::new("thread:full-home").await;
         let mut report = terminal_report();
-        report.cleanup.home.available_bytes = bytes;
-        report.cleanup.home.available_inodes = inodes;
+        report.home.available_bytes = bytes;
+        report.home.available_inodes = inodes;
         let overrides = Arc::new(MockSandboxOverrides::new());
         overrides.add_exec_result_matcher(
             "prepare-for-cache",
@@ -87,9 +79,8 @@ async fn parked_home_is_cleaned_then_frozen_but_not_published_before_termination
     assert_eq!(calls.len(), 2);
     assert!(calls[0].cmd.ends_with("prepare-for-cache"));
     assert!(calls[0].sudo && calls[0].env_keys.is_empty());
-    let request: TerminalHomeCachePreparationRequest =
+    let request: ReusePreparationRequest =
         serde_json::from_slice(calls[0].stdin_bytes.as_ref().unwrap()).unwrap();
-    request.validate().unwrap();
     assert!(
         request
             .current_runtime_dir
@@ -145,66 +136,11 @@ async fn unsupported_malformed_truncated_or_cancelled_cleanup_never_freezes_or_p
 }
 
 #[tokio::test]
-async fn mismatched_proof_generation_or_digest_rejects_publication_before_freeze() {
-    for wrong_generation in [true, false] {
-        let fixture = HomePromotionFixture::new("thread:proof-binding").await;
-        let mut report = terminal_report();
-        let generation = if wrong_generation {
-            uuid::Uuid::new_v4().to_string()
-        } else {
-            fixture.promotion.publication_generation()
-        };
-        let identity = SessionHistoryIdentity::new(
-            SessionHistoryFramework::ClaudeCode,
-            hex::encode(Sha256::digest(b"session-1")),
-            SessionHistoryRefKind::Blob,
-            hex::encode(Sha256::digest(b"history")),
-            7,
-            SessionHistorySourceRef::ClaudeCode {
-                config_dir: "/home/user/.claude".into(),
-                working_dir: "/home/user/workspace".into(),
-                session_id: "session-1".into(),
-            },
-        )
-        .unwrap();
-        let proof = HomeCacheHistoryProof {
-            format_version: 1,
-            generation,
-            identity,
-        };
-        let digest = if wrong_generation {
-            hex::encode(Sha256::digest(proof.to_json_vec().unwrap()))
-        } else {
-            "f".repeat(64)
-        };
-        report.history_proof = Some(HomeCacheHistoryProofBinding {
-            proof,
-            sha256: digest,
-        });
-        let overrides = Arc::new(MockSandboxOverrides::new());
-        overrides.add_exec_result_matcher(
-            "prepare-for-cache",
-            ExecResult::new(0, serde_json::to_vec(&report).unwrap(), Vec::new()),
-        );
-        let sandbox =
-            MockSandbox::with_overrides(fixture.sandbox_id.to_string(), overrides.clone());
-        let cache = fixture.cache.clone();
-        assert!(
-            prepare_home_image_from_active_sandbox(&sandbox, Some(fixture.promotion), "test")
-                .await
-                .is_none()
-        );
-        assert_eq!(overrides.exec_calls().len(), 1);
-        assert!(cache.held_home_states().await.is_empty());
-    }
-}
-
-#[tokio::test]
-async fn empty_history_proof_is_a_publication_candidate_not_an_idle_capacity_gate() {
-    let fixture = HomePromotionFixture::new("thread:home-no-history").await;
+async fn rootfs_capacity_does_not_block_home_cache_publication() {
+    let fixture = HomePromotionFixture::new("thread:home-no-rootfs-gate").await;
     let mut report = terminal_report();
-    report.cleanup.after.available_bytes = 0;
-    report.cleanup.after.available_inodes = 0;
+    report.after.available_bytes = 0;
+    report.after.available_inodes = 0;
     let overrides = Arc::new(MockSandboxOverrides::new());
     overrides.add_exec_result_matcher(
         "prepare-for-cache",

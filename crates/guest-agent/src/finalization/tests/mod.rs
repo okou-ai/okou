@@ -37,17 +37,12 @@ async fn finalization_reports_native_identity_for_success_and_recovery() {
         Duration::ZERO,
     )
     .unwrap();
-    let dir = tempfile::tempdir().unwrap();
-    let guest_paths = crate::paths::GuestPaths::from_runtime_dir(dir.path().join("runtime"));
-    let session_metadata = CapturedSessionMetadata::for_test("native-session", None);
+    let session_metadata = CapturedSessionMetadata::for_test("native-session");
     let inputs = FinalizationInputs {
         run_id: "native-finalization",
         framework: env::Framework::ClaudeCode,
         artifact_entries: &[],
         session_metadata: &session_metadata,
-        final_session_history_identity_file: guest_paths
-            .final_session_history_identity_file()
-            .into(),
     };
     for mode in [FinalizationMode::Success, FinalizationMode::Recovery] {
         let prepared = prepare_finalization_impl(&http, mode, &inputs)
@@ -92,17 +87,13 @@ async fn finalization_missing_mount_fails_before_final_completion() {
         version_id: "parent-version".to_string(),
         missing_root_policy: None,
     }];
-    let session_metadata =
-        CapturedSessionMetadata::for_test("session-finalization-missing-mount", None);
+    let session_metadata = CapturedSessionMetadata::for_test("session-finalization-missing-mount");
 
     let inputs = FinalizationInputs {
         run_id: "finalization-missing-mount",
         framework: env::Framework::ClaudeCode,
         artifact_entries: &entries,
         session_metadata: &session_metadata,
-        final_session_history_identity_file: guest_paths
-            .final_session_history_identity_file()
-            .into(),
     };
 
     let err = prepare_finalization_impl(&http, FinalizationMode::Success, &inputs)
@@ -150,15 +141,12 @@ async fn ordinary_recovery_finalization_still_snapshots_changed_artifacts() {
         version_id: "a".repeat(64),
         missing_root_policy: None,
     }];
-    let session_metadata = CapturedSessionMetadata::for_test("ordinary-recovery-run", None);
+    let session_metadata = CapturedSessionMetadata::for_test("ordinary-recovery-run");
     let inputs = FinalizationInputs {
         run_id: "ordinary-recovery-run",
         framework: env::Framework::ClaudeCode,
         artifact_entries: &entries,
         session_metadata: &session_metadata,
-        final_session_history_identity_file: guest_paths
-            .final_session_history_identity_file()
-            .into(),
     };
 
     prepare_recovery_finalization_with_inputs(&http, &inputs)

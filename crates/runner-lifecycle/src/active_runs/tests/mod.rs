@@ -26,7 +26,6 @@ async fn retained_failed_delivery_preserves_the_actual_successor_binding() {
         ResourceBudget::try_reserve_lease(&budget, 2, 8).unwrap(),
     )
     .with_source_run_id(predecessor)
-    .with_native_generation_run_id(predecessor)
     .build();
     let RetainedActiveRunHandoffDeliveryResult::Failed(candidate) = guard
         .reuse_publisher()
@@ -273,7 +272,6 @@ fn closed_accepted_handoff_receiver_returns_candidate_to_publisher() {
     let lease = ResourceBudget::try_reserve_lease(&budget, 2, 4096).unwrap();
     let candidate = ParkedIdleCandidateBuilder::new("thread:closed-handoff", lease)
         .with_source_run_id(predecessor_run_id)
-        .with_native_generation_run_id(predecessor_run_id)
         .build();
     let recovered = match publisher
         .deliver_exact_handoff(IdleParkCandidate::Ordinary(candidate), predecessor_run_id)
@@ -324,7 +322,6 @@ fn cancelled_accepted_handoff_recovers_already_sent_candidate() {
     let lease = ResourceBudget::try_reserve_lease(&budget, 2, 4096).unwrap();
     let candidate = ParkedIdleCandidateBuilder::new("thread:cancelled-handoff", lease)
         .with_source_run_id(predecessor_run_id)
-        .with_native_generation_run_id(predecessor_run_id)
         .build();
     assert!(matches!(
         publisher.deliver_exact_handoff(IdleParkCandidate::Ordinary(candidate), predecessor_run_id),
@@ -365,7 +362,6 @@ async fn deadline_preserves_accepted_handoff_before_delivery() {
     let lease = ResourceBudget::try_reserve_lease(&budget, 2, 4096).unwrap();
     let candidate = ParkedIdleCandidateBuilder::new("thread:deadline-handoff", lease)
         .with_source_run_id(predecessor_run_id)
-        .with_native_generation_run_id(predecessor_run_id)
         .build();
     assert!(matches!(
         publisher.deliver_exact_handoff(IdleParkCandidate::Ordinary(candidate), predecessor_run_id),

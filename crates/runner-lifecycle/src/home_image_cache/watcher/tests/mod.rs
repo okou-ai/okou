@@ -55,7 +55,7 @@ async fn commit_entry(cache: &HomeImageCache, reuse_key: &str) -> String {
                 rootfs_hash: TEST_ROOTFS.into(),
                 fingerprint_scope: "/home/user".into(),
                 image_generation: run_id.to_string(),
-                history_proof: None,
+                _legacy_history_proof: None,
                 reuse_key: reuse_key.into(),
                 working_dir: TEST_WORKING_DIR.into(),
                 last_completed_at: "2026-05-01T00:00:00.000Z".into(),

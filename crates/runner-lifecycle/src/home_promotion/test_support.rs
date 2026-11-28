@@ -1,9 +1,5 @@
 use api_contracts::generated::constants::runners::paths::CANONICAL_WORKING_DIR;
-use guest_contracts::session_history_identity::{
-    SessionHistoryFramework, SessionHistoryIdentity, SessionHistoryRefKind, SessionHistorySourceRef,
-};
 use sandbox::SandboxId;
-use sha2::{Digest, Sha256};
 use std::sync::Arc;
 
 use crate::home_image_cache::{
@@ -11,7 +7,6 @@ use crate::home_image_cache::{
     HomeImagePrepareRequest, HomeImagePromotionContext, HomeImagePromotionOutcome,
     HomeImagePromotionRequest,
 };
-use crate::restored_session_identity::RestoredSessionIdentity;
 use crate::storage_fingerprints::StorageFingerprints;
 use runner_host::paths::RunnerPaths;
 use runner_types::ids::RunId;
@@ -21,10 +16,7 @@ pub fn add_healthy_cache_preparation_matcher(overrides: &sandbox_mock::MockSandb
         pattern: "prepare-for-cache".to_string(),
         exit_code: 0,
         stdout: serde_json::to_vec(
-            &guest_contracts::home_cache_history::TerminalHomeCachePreparationReport {
-                cleanup: crate::idle_reuse_preparation::healthy_reuse_preparation_report(),
-                history_proof: None,
-            },
+            &crate::idle_reuse_preparation::healthy_reuse_preparation_report(),
         )
         .unwrap(),
         stderr: Vec::new(),
@@ -52,28 +44,6 @@ pub fn test_home_image() -> Vec<u8> {
     image
 }
 
-pub fn test_restored_session_identity(session_id: &str, history: &[u8]) -> RestoredSessionIdentity {
-    let metadata = SessionHistoryIdentity::new(
-        SessionHistoryFramework::ClaudeCode,
-        hex::encode(Sha256::digest(session_id.as_bytes())),
-        SessionHistoryRefKind::Blob,
-        hex::encode(Sha256::digest(history)),
-        history.len() as u64,
-        SessionHistorySourceRef::ClaudeCode {
-            config_dir: "/home/user/.claude".to_string(),
-            working_dir: CANONICAL_WORKING_DIR.to_string(),
-            session_id: session_id.to_string(),
-        },
-    )
-    .unwrap();
-    RestoredSessionIdentity::from_final_metadata(
-        metadata,
-        "/home/user/.vm0/guest-agent/runs/run-1/final-session-history-identity.json",
-        "/home/user/.vm0/guest-agent/runs/run-1",
-    )
-    .unwrap()
-}
-
 pub struct HomePromotionFixture {
     pub _dir: Arc<tempfile::TempDir>,
     pub cache: HomeImageCache,
@@ -84,24 +54,11 @@ pub struct HomePromotionFixture {
 
 impl HomePromotionFixture {
     pub async fn new(reuse_key: &str) -> Self {
-        Self::new_with_restored_session_identity(reuse_key, None).await
-    }
-
-    pub async fn new_with_restored_session_identity(
-        reuse_key: &str,
-        restored_session_identity: Option<&RestoredSessionIdentity>,
-    ) -> Self {
-        Self::new_with_terminal_status(
-            reuse_key,
-            restored_session_identity,
-            HomeCacheTerminalStatus::Success,
-        )
-        .await
+        Self::new_with_terminal_status(reuse_key, HomeCacheTerminalStatus::Success).await
     }
 
     pub async fn new_with_terminal_status(
         reuse_key: &str,
-        restored_session_identity: Option<&RestoredSessionIdentity>,
         terminal_status: HomeCacheTerminalStatus,
     ) -> Self {
         let dir = Arc::new(tempfile::tempdir().unwrap());
@@ -109,27 +66,18 @@ impl HomePromotionFixture {
         tokio::fs::create_dir_all(paths.base_dir()).await.unwrap();
         let cache = HomeImageCache::new(paths.clone());
 
-        Self::new_with_cache_and_terminal_status(
-            dir,
-            cache,
-            reuse_key,
-            restored_session_identity,
-            terminal_status,
-        )
-        .await
+        Self::new_with_cache_and_terminal_status(dir, cache, reuse_key, terminal_status).await
     }
 
     pub async fn new_with_cache(
         dir: Arc<tempfile::TempDir>,
         cache: HomeImageCache,
         reuse_key: &str,
-        restored_session_identity: Option<&RestoredSessionIdentity>,
     ) -> Self {
         Self::new_with_cache_and_terminal_status(
             dir,
             cache,
             reuse_key,
-            restored_session_identity,
             HomeCacheTerminalStatus::Success,
         )
         .await
@@ -139,7 +87,6 @@ impl HomePromotionFixture {
         dir: Arc<tempfile::TempDir>,
         cache: HomeImageCache,
         reuse_key: &str,
-        restored_session_identity: Option<&RestoredSessionIdentity>,
         terminal_status: HomeCacheTerminalStatus,
     ) -> Self {
         let paths = cache.paths().clone();
@@ -169,7 +116,6 @@ impl HomePromotionFixture {
             .into_promotion_context(HomeImagePromotionRequest {
                 run_id,
                 sandbox_id,
-                restored_session_identity,
                 terminal_status,
                 completed_at: TEST_COMPLETED_AT.into(),
                 storage_fingerprints: StorageFingerprints::default(),
@@ -221,7 +167,6 @@ impl HomePromotionFixture {
             .into_promotion_context(HomeImagePromotionRequest {
                 run_id,
                 sandbox_id,
-                restored_session_identity: None,
                 terminal_status: HomeCacheTerminalStatus::Success,
                 completed_at: "2026-06-04T00:00:00.000Z".into(),
                 storage_fingerprints: StorageFingerprints::default(),

@@ -144,9 +144,9 @@ describe("CHAT-02: incomplete-round context", () => {
     expect(appended).toContain("...[truncated]");
     expect(thirdRun.prompt).toBe("retry after two failures");
     const thirdExecution = await runExecution(third.runId);
-    expect(thirdExecution.execution.nativeContinuation).toStrictEqual({
-      sessionId: null,
-      generationRunId: null,
+    expect(thirdExecution.execution.sessionContinuation).toStrictEqual({
+      continueNative: false,
+      expectedSourceRunId: null,
       recoveryPrompt: expect.stringContaining(
         "okou chat messages --output-dir /tmp/okou-chat-history",
       ),

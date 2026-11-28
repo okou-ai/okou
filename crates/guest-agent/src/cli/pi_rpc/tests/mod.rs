@@ -144,7 +144,7 @@ fn model_request_evidence_tracks_completed_retries_and_clears_on_recovery() {
         (vec![failure.clone(), retry, success], Value::Null),
     ] {
         let (responses, _rx) = response_channel();
-        let mut projection = PiRpcProjection::new("run", "session");
+        let mut projection = PiRpcProjection::new("run");
         for record in records {
             projection
                 .project(record, &responses, 0)
@@ -170,7 +170,7 @@ fn opaque_codex_bad_request_preserves_original_error_and_failed_outcome() {
         }}]
     }});
     let (responses, _rx) = response_channel();
-    let mut projection = PiRpcProjection::new("run", "session");
+    let mut projection = PiRpcProjection::new("run");
     projection.project(failure, &responses, 0).unwrap();
     let result = projection
         .project(json!({"type": "agent_settled"}), &responses, 0)
@@ -218,7 +218,7 @@ fn semantic_http_success_keeps_failed_reason_and_observed_retries() {
             }}]
         }});
         let (responses, _rx) = response_channel();
-        let mut projection = PiRpcProjection::new("run", "session");
+        let mut projection = PiRpcProjection::new("run");
         projection.project(failure.clone(), &responses, 0).unwrap();
         for attempt in 1..=retries {
             projection
@@ -267,7 +267,7 @@ fn model_request_evidence_is_only_accepted_from_valid_failed_assistant_messages(
     });
     for message in [aborted, wrong_api, malformed, unknown, tool] {
         let (responses, _rx) = response_channel();
-        let mut projection = PiRpcProjection::new("run", "session");
+        let mut projection = PiRpcProjection::new("run");
         projection
             .project(
                 json!({"type": "message_end", "message": message}),
@@ -292,10 +292,24 @@ fn projection_matches_shared_public_event_fixtures() {
     for case in fixture["cases"].as_array().expect("fixture cases") {
         let name = case["name"].as_str().expect("case name");
         let (responses, _rx) = response_channel();
-        let mut projection = PiRpcProjection::new(
-            fixture["runId"].as_str().expect("run id"),
-            fixture["sessionId"].as_str().expect("session id"),
-        );
+        let mut projection = PiRpcProjection::new(fixture["runId"].as_str().expect("run id"));
+        let state_init = projection
+            .project(
+                json!({
+                    "id": "state",
+                    "type": "response",
+                    "command": "get_state",
+                    "success": true,
+                    "data": {
+                        "sessionId": fixture["sessionId"],
+                    },
+                }),
+                &responses,
+                1,
+            )
+            .expect("get_state should project")
+            .expect("get_state should emit init");
+        assert_eq!(state_init["session_id"], fixture["sessionId"], "{name}");
         let projected = projection
             .project(
                 json!({ "type": "message_end", "message": case["guestMessage"] }),
@@ -345,8 +359,7 @@ fn streaming_uses_native_content_indices_and_reconciles_each_response() {
     let (output, mut output_rx) = super::super::session_output::test_channel(32, "run-id");
     let (responses, _responses_rx) = response_channel();
     let masker = SecretMasker::from_raw("");
-    let mut projection =
-        PiRpcProjection::new("run-id", "thread-id").with_session_output(output, &masker);
+    let mut projection = PiRpcProjection::new("run-id").with_session_output(output, &masker);
 
     assert!(
         projection
@@ -551,8 +564,7 @@ fn streaming_overflow_preserves_the_authoritative_message_and_result() {
     let (output, _output_rx) = super::super::session_output::test_channel(1, "run-id");
     let (responses, _responses_rx) = response_channel();
     let masker = SecretMasker::from_raw("");
-    let mut projection =
-        PiRpcProjection::new("run-id", "thread-id").with_session_output(output, &masker);
+    let mut projection = PiRpcProjection::new("run-id").with_session_output(output, &masker);
 
     projection
         .project(
@@ -615,8 +627,7 @@ fn streaming_splits_utf8_deltas_at_the_request_byte_bound() {
     let (output, mut output_rx) = super::super::session_output::test_channel(8, "run-id");
     let (responses, _responses_rx) = response_channel();
     let masker = SecretMasker::from_raw("");
-    let mut projection =
-        PiRpcProjection::new("run-id", "thread-id").with_session_output(output, &masker);
+    let mut projection = PiRpcProjection::new("run-id").with_session_output(output, &masker);
     let text = "é".repeat(3000);
 
     projection
@@ -660,8 +671,7 @@ fn streaming_extension_failure_does_not_flush_a_pending_secret_tail() {
     let masker = SecretMasker::from_raw(&base64::engine::general_purpose::STANDARD.encode(secret));
     let (output, mut output_rx) = super::super::session_output::test_channel(8, "run-id");
     let (responses, _responses_rx) = response_channel();
-    let mut projection =
-        PiRpcProjection::new("run-id", "thread-id").with_session_output(output, &masker);
+    let mut projection = PiRpcProjection::new("run-id").with_session_output(output, &masker);
     projection
         .project(
             json!({"type":"message_start","message":{"role":"assistant"}}),
@@ -766,7 +776,7 @@ fn only_records_the_projection_ignores_are_discardable_when_oversized() {
 #[test]
 fn projection_uses_agent_settled_as_the_terminal_event() {
     let (responses, _rx) = response_channel();
-    let mut projection = PiRpcProjection::new("run", "session");
+    let mut projection = PiRpcProjection::new("run");
     assert!(
         projection
             .project(
@@ -820,7 +830,7 @@ fn projection_moves_large_tool_payload_allocations() {
     const LARGE_PAYLOAD_BYTES: usize = 1024 * 1024;
 
     let (responses, _rx) = response_channel();
-    let mut projection = PiRpcProjection::new("run", "session");
+    let mut projection = PiRpcProjection::new("run");
     let tool_call = json!({
         "type": "message_end",
         "message": {
@@ -907,7 +917,7 @@ fn projection_moves_large_tool_payload_allocations() {
 #[test]
 fn failed_tools_and_independent_quota_failure_reach_a_terminal_error() {
     let (responses, _rx) = response_channel();
-    let mut projection = PiRpcProjection::new("run", "session");
+    let mut projection = PiRpcProjection::new("run");
     let tool = projection
         .project(
             json!({
@@ -956,7 +966,7 @@ fn failed_tools_and_independent_quota_failure_reach_a_terminal_error() {
 #[test]
 fn projection_validates_get_state_session_identity() {
     let (responses, mut rx) = response_channel();
-    let mut projection = PiRpcProjection::new("run", "session");
+    let mut projection = PiRpcProjection::new("run");
     let event = projection
             .project(
                 json!({
@@ -988,7 +998,7 @@ fn projection_validates_get_state_session_identity() {
 #[test]
 fn projection_discards_buffered_records_after_extension_failure() {
     let (responses, _rx) = response_channel();
-    let mut projection = PiRpcProjection::new("run", "session");
+    let mut projection = PiRpcProjection::new("run");
     let error = projection
         .project(
             json!({
@@ -1233,8 +1243,7 @@ async fn assert_steer_ack_outcome(case: SteerAckCase) {
         .expect("declaration HTTP client should build");
     let active_input = ActiveInputRuntime::new("run", "initial prompt", http);
     let controller = active_input.controller();
-    let mut projection =
-        PiRpcProjection::new("run", "session").with_active_input(controller.clone());
+    let mut projection = PiRpcProjection::new("run").with_active_input(controller.clone());
     let payload = guest_contracts::active_input::encode_active_input(event_id, "steer this turn")
         .expect("active input should encode");
     assert_eq!(

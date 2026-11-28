@@ -165,10 +165,7 @@ async fn seed_idle_pool_with_overrides_and_generation(
         .with_guest_timezone_intent(guest_timezone_intent)
         .with_last_completed_at(TEST_LAST_COMPLETED_AT);
     let candidate = match native_generation_run_id {
-        Some(run_id) => builder
-            .with_source_run_id(run_id)
-            .with_native_generation_run_id(run_id)
-            .build(),
+        Some(run_id) => builder.with_source_run_id(run_id).build(),
         None => builder.build(),
     };
     let mut guard = pool.lock().await;
@@ -223,7 +220,6 @@ pub(in super::super) async fn seed_idle_pool_with_home_promotion(
         .into_promotion_context(HomeImagePromotionRequest {
             run_id,
             sandbox_id,
-            restored_session_identity: None,
             terminal_status: HomeCacheTerminalStatus::Success,
             completed_at: TEST_LAST_COMPLETED_AT.into(),
             storage_fingerprints: StorageFingerprints::default(),
@@ -328,10 +324,7 @@ pub(in super::super) async fn seed_idle_pool_with_timing(
         .with_profile_name(spec.profile_name)
         .with_rootfs_hash(super::env::TEST_ROOTFS_HASH);
     let candidate = match spec.native_generation_run_id {
-        Some(run_id) => builder
-            .with_source_run_id(run_id)
-            .with_native_generation_run_id(run_id)
-            .build(),
+        Some(run_id) => builder.with_source_run_id(run_id).build(),
         None => builder.build(),
     };
     let mut guard = pool.lock().await;

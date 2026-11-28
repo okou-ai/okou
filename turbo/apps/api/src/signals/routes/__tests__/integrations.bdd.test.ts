@@ -733,10 +733,13 @@ async function expectFirstSlackPiExecution(args: {
   // The fresh Pi session still carries the canonical Slack history to the
   // Sandbox that executes the first turn.
   const launchInput = JSON.stringify(receivedExecution);
-  expect(receivedExecution.nativeContinuation?.sessionId).toBeNull();
-  expect(receivedExecution.nativeContinuation?.recoveryPrompt).toContain(
-    "okou chat messages --output-dir /tmp/okou-chat-history",
-  );
+  expect(receivedExecution.sessionContinuation).toMatchObject({
+    continueNative: false,
+    expectedSourceRunId: null,
+    recoveryPrompt: expect.stringContaining(
+      "okou chat messages --output-dir /tmp/okou-chat-history",
+    ),
+  });
   expect(launchInput).toContain(args.turn.prompt);
   await completeSlackPiTurnInSandbox({
     scenario: args.scenario,
@@ -814,9 +817,9 @@ async function continueSlackPiExecution(args: {
   expect(execution.piLaunchConfig).toBeDefined();
   expect(execution.piSessionId).toBe(args.scenario.chatThreadId);
 
-  expect(execution.nativeContinuation).toMatchObject({
-    sessionId: args.scenario.chatThreadId,
-    generationRunId: args.firstRunId,
+  expect(execution.sessionContinuation).toMatchObject({
+    continueNative: true,
+    expectedSourceRunId: args.firstRunId,
     recoveryPrompt: expect.stringContaining(
       "okou chat messages --output-dir /tmp/okou-chat-history",
     ),
@@ -888,9 +891,9 @@ async function runSuccessfulRecoveredSlackPiTurn(args: {
   const execution = await runs.executionInput(completedRunId);
 
   expect(execution.piSessionId).toBe(args.scenario.chatThreadId);
-  expect(execution.nativeContinuation).toMatchObject({
-    sessionId: null,
-    generationRunId: null,
+  expect(execution.sessionContinuation).toMatchObject({
+    continueNative: false,
+    expectedSourceRunId: null,
     recoveryPrompt: expect.stringContaining(
       "okou chat messages --output-dir /tmp/okou-chat-history",
     ),
@@ -2962,7 +2965,10 @@ describe("INT-01: Slack app deep webhook flows", () => {
       triggerSource: "web",
     });
     const webExecution = await runs.executionInput(webRunId);
-    expect(webExecution.nativeContinuation?.sessionId).toBe(slackSessionId);
+    expect(webExecution.sessionContinuation).toMatchObject({
+      continueNative: true,
+      expectedSourceRunId: run1Id,
+    });
     context.mocks.slack.chat.postMessage.mockClear();
     await completeSlackTriggeredRun({
       runId: webRunId,
@@ -2979,7 +2985,10 @@ describe("INT-01: Slack app deep webhook flows", () => {
     });
     const run2Id = await observeSlackRun(runnerGroup);
     const execution2 = await runs.executionInput(run2Id);
-    expect(execution2.nativeContinuation?.sessionId).toBe(webSessionId);
+    expect(execution2.sessionContinuation).toMatchObject({
+      continueNative: true,
+      expectedSourceRunId: webRunId,
+    });
     await expect(readRunLog(actor, run2Id)).resolves.toMatchObject({
       triggerSource: "slack",
       prompt: expect.stringContaining("stay canonical on the same route"),
@@ -3115,7 +3124,10 @@ describe("INT-01: Slack app deep webhook flows", () => {
       });
       const firstRunId = await observeSlackRun(runnerGroup);
       const firstExecution = await runs.executionInput(firstRunId);
-      expect(firstExecution.nativeContinuation?.sessionId).toBeNull();
+      expect(firstExecution.sessionContinuation).toMatchObject({
+        continueNative: false,
+        expectedSourceRunId: null,
+      });
       await completeSlackTriggeredRun({
         runId: firstRunId,
         sandboxToken: firstExecution.sandboxToken,
@@ -3134,9 +3146,10 @@ describe("INT-01: Slack app deep webhook flows", () => {
       const returnToDefaultRunId = await observeSlackRun(runnerGroup);
       const returnToDefaultExecution =
         await runs.executionInput(returnToDefaultRunId);
-      expect(returnToDefaultExecution.nativeContinuation?.sessionId).toBe(
-        `bdd-slack-cli-${firstRunId}`,
-      );
+      expect(returnToDefaultExecution.sessionContinuation).toMatchObject({
+        continueNative: true,
+        expectedSourceRunId: firstRunId,
+      });
       await completeSlackTriggeredRun({
         runId: returnToDefaultRunId,
         sandboxToken: returnToDefaultExecution.sandboxToken,
@@ -3192,9 +3205,10 @@ describe("INT-01: Slack app deep webhook flows", () => {
       });
       const continuedRunId = await observeSlackRun(runnerGroup);
       const continuedExecution = await runs.executionInput(continuedRunId);
-      expect(continuedExecution.nativeContinuation?.sessionId).toBe(
-        `bdd-slack-cli-${firstRunId}`,
-      );
+      expect(continuedExecution.sessionContinuation).toMatchObject({
+        continueNative: true,
+        expectedSourceRunId: firstRunId,
+      });
       expect(continuedExecution.appendSystemPrompt).toContain(
         `Channel ID: ${latestChannelId}`,
       );
@@ -3247,7 +3261,10 @@ describe("INT-01: Slack app deep webhook flows", () => {
     });
     const mainRunId = await observeSlackRun(runnerGroup);
     const mainExecution = await runs.executionInput(mainRunId);
-    expect(mainExecution.nativeContinuation?.sessionId).toBeNull();
+    expect(mainExecution.sessionContinuation).toMatchObject({
+      continueNative: false,
+      expectedSourceRunId: null,
+    });
     await completeSlackTriggeredRun({
       runId: mainRunId,
       sandboxToken: mainExecution.sandboxToken,
@@ -3268,7 +3285,10 @@ describe("INT-01: Slack app deep webhook flows", () => {
     });
     const threadRunId = await observeSlackRun(runnerGroup);
     const threadExecution = await runs.executionInput(threadRunId);
-    expect(threadExecution.nativeContinuation?.sessionId).toBeNull();
+    expect(threadExecution.sessionContinuation).toMatchObject({
+      continueNative: false,
+      expectedSourceRunId: null,
+    });
     await completeSlackTriggeredRun({
       runId: threadRunId,
       sandboxToken: threadExecution.sandboxToken,
@@ -3288,9 +3308,10 @@ describe("INT-01: Slack app deep webhook flows", () => {
     const threadFollowUpRunId = await observeSlackRun(runnerGroup);
     const threadFollowUpExecution =
       await runs.executionInput(threadFollowUpRunId);
-    expect(threadFollowUpExecution.nativeContinuation?.sessionId).toBe(
-      `bdd-slack-cli-${threadRunId}`,
-    );
+    expect(threadFollowUpExecution.sessionContinuation).toMatchObject({
+      continueNative: true,
+      expectedSourceRunId: threadRunId,
+    });
     await completeSlackTriggeredRun({
       runId: threadFollowUpRunId,
       sandboxToken: threadFollowUpExecution.sandboxToken,
@@ -3308,9 +3329,10 @@ describe("INT-01: Slack app deep webhook flows", () => {
     });
     const returnToMainRunId = await observeSlackRun(runnerGroup);
     const returnToMainExecution = await runs.executionInput(returnToMainRunId);
-    expect(returnToMainExecution.nativeContinuation?.sessionId).toBe(
-      `bdd-slack-cli-${mainRunId}`,
-    );
+    expect(returnToMainExecution.sessionContinuation).toMatchObject({
+      continueNative: true,
+      expectedSourceRunId: mainRunId,
+    });
   });
 
   it("handles native Slack Stop without affecting other threads or newer inputs", async () => {
@@ -4253,9 +4275,10 @@ describe("INT-01: Slack app deep webhook flows", () => {
     });
     const run2Id = await observeSlackRun(runnerGroup);
     const execution2 = await runs.executionInput(run2Id);
-    expect(execution2.nativeContinuation?.sessionId).toBe(
-      `bdd-slack-cli-${run1Id}`,
-    );
+    expect(execution2.sessionContinuation).toMatchObject({
+      continueNative: true,
+      expectedSourceRunId: run1Id,
+    });
     await completeSlackTriggeredRun({
       runId: run2Id,
       sandboxToken: execution2.sandboxToken,
@@ -4322,9 +4345,10 @@ describe("INT-01: Slack app deep webhook flows", () => {
     expect(continuationExecution.environment).toMatchObject({
       OPENAI_MODEL: "gpt-6-astra",
     });
-    expect(continuationExecution.nativeContinuation?.sessionId).toBe(
-      `bdd-slack-cli-${gptRunId}`,
-    );
+    expect(continuationExecution.sessionContinuation).toMatchObject({
+      continueNative: true,
+      expectedSourceRunId: gptRunId,
+    });
     await completeSlackTriggeredRun({
       runId: continuationRunId,
       sandboxToken: continuationExecution.sandboxToken,

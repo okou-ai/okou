@@ -132,7 +132,6 @@ fi
                 append_system_prompt: "Your name is Okou.".to_string(),
                 pi_launch_config: r#"{"schemaVersion":2}"#.to_string(),
                 pi_model_config: "{}".to_string(),
-                pi_session_id: "11111111-1111-4111-8111-111111111111".to_string(),
                 ..guest_contracts::env::RunPayload::default()
             },
         )?;

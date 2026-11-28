@@ -125,7 +125,6 @@ async fn success_persists_current_home_partitions_and_failed_turn_unions_previou
             .into_promotion_context(HomeImagePromotionRequest {
                 run_id,
                 sandbox_id,
-                restored_session_identity: None,
                 terminal_status: status,
                 completed_at: format!(
                     "2026-10-09T09:0{}:00Z",

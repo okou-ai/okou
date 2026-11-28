@@ -1339,9 +1339,10 @@ describe("workflow queue", () => {
       scenario,
       secondWorkflowRunId,
     );
-    expect(workflowExecution.nativeContinuation?.sessionId).toBe(
-      `workflow-queue-cli-${firstRunId}`,
-    );
+    expect(workflowExecution.sessionContinuation).toMatchObject({
+      continueNative: true,
+      expectedSourceRunId: firstRunId,
+    });
     const userMessage = (await wf.readThreadEvents(automation.threadId)).find(
       (message) => {
         return (
@@ -1357,9 +1358,10 @@ describe("workflow queue", () => {
       scenario,
       userMessage.runId,
     );
-    expect(userExecution.nativeContinuation?.sessionId).toBe(
-      `workflow-queue-cli-${secondWorkflowRunId}`,
-    );
+    expect(userExecution.sessionContinuation).toMatchObject({
+      continueNative: true,
+      expectedSourceRunId: secondWorkflowRunId,
+    });
     await readCompletedRunSessionId(context, scenario.actor, firstRunId);
     await expect(
       readCompletedRunSessionId(context, scenario.actor, secondWorkflowRunId),

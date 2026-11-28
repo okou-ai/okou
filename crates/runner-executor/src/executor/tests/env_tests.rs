@@ -110,7 +110,6 @@ fn pi_model_config_v5_for_test() -> serde_json::Value {
 fn pi_context_for_test() -> ExecutionContext {
     let mut context = minimal_context();
     context.cli_agent_type = "pi".to_string();
-    context.pi_session_id = Some("22222222-2222-4222-8222-222222222222".to_string());
     context.pi_launch_config = Some(pi_launch_config_for_test());
     context.pi_model_config = Some(pi_model_config_v5_for_test());
     context
@@ -346,10 +345,6 @@ fn execution_context_validation_ignores_runner_owned_user_env_before_sandbox() {
             "ignored\0run-identity".into(),
         ),
         (
-            guest_contracts::env::PI_SESSION_ID_ENV.into(),
-            "ignored\0pi-session".into(),
-        ),
-        (
             guest_contracts::env::PI_LAUNCH_CONFIG_ENV.into(),
             "ignored\0pi-prompt".into(),
         ),
@@ -365,7 +360,6 @@ fn execution_context_validation_ignores_runner_owned_user_env_before_sandbox() {
     assert_eq!(user_env.get("CUSTOM_ENV").unwrap(), "kept");
     assert!(!user_env.contains_key("OKOU_FUTURE_PLATFORM_KEY"));
     assert!(!user_env.contains_key(guest_contracts::env::RUN_ID_ENV));
-    assert!(!user_env.contains_key(guest_contracts::env::PI_SESSION_ID_ENV));
     assert!(!user_env.contains_key(guest_contracts::env::PI_LAUNCH_CONFIG_ENV));
     assert!(!user_env.contains_key(guest_contracts::env::PI_MODEL_CONFIG_ENV));
 }
@@ -644,7 +638,6 @@ fn emitted_bootstrap_env_keys_classify_as_runner_owned() {
     }
     for key in [
         guest_contracts::env::RUN_ID_ENV,
-        guest_contracts::env::PI_SESSION_ID_ENV,
         guest_contracts::env::PI_LAUNCH_CONFIG_ENV,
         guest_contracts::env::PI_MODEL_CONFIG_ENV,
         guest_contracts::env::CLI_AGENT_TYPE_ENV,
@@ -719,19 +712,12 @@ fn antigravity_validates_resume_session_id() {
     assert!(validate_resume_session_id(&context).is_err());
 
     context.local_resume_session_id = None;
-    context.native_continuation = Some(NativeContinuation {
-        session_id: Some("ec30d0a7-1690-4e41-9da9-34dbca47bb8a".into()),
-        generation_run_id: Some("old-run".into()),
+    context.session_continuation = Some(NativeContinuation {
+        continue_native: true,
+        expected_source_run_id: Some("00000000-0000-4000-8000-000000000001".into()),
         recovery_prompt: None,
     });
     assert!(validate_resume_session_id(&context).is_ok());
-
-    context.native_continuation = Some(NativeContinuation {
-        session_id: Some("../escape".into()),
-        generation_run_id: Some("old-run".into()),
-        recovery_prompt: Some("previous chat context".into()),
-    });
-    assert!(validate_resume_session_id(&context).is_err());
 }
 
 #[test]
@@ -1040,7 +1026,6 @@ fn non_pi_execution_contexts_do_not_require_pi_resources() {
     for framework in ["claude-code", "codex"] {
         let mut ctx = minimal_context();
         ctx.cli_agent_type = framework.to_string();
-        ctx.pi_session_id = None;
         ctx.pi_launch_config = None;
         ctx.pi_model_config = None;
 
@@ -1049,7 +1034,6 @@ fn non_pi_execution_contexts_do_not_require_pi_resources() {
             "{framework} context should not require Pi resources"
         );
         let payload = build_run_payload_for_run(&ctx).unwrap();
-        assert!(payload.pi_session_id.is_empty());
         assert!(payload.pi_launch_config.is_empty());
         assert!(payload.pi_model_config.is_empty());
     }
@@ -1066,10 +1050,6 @@ fn pi_execution_context_preserves_additive_launch_fields_in_run_payload() {
         .into_run_payload(&ctx)
         .unwrap();
 
-    assert_eq!(
-        payload.pi_session_id,
-        "22222222-2222-4222-8222-222222222222"
-    );
     let launch: serde_json::Value = serde_json::from_str(&payload.pi_launch_config).unwrap();
     assert_eq!(launch["schemaVersion"], 2);
     assert_eq!(launch["futureLaunchField"], "launch-root");

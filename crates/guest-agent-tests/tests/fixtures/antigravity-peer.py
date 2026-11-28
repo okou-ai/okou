@@ -76,62 +76,98 @@ send_result(
     },
 )
 
-# 2. session/new or session/resume
+# 2. session/list -> session/resume or session/new
 session_req = read_msg()
-if mode == "resume":
-    assert session_req["method"] == "session/resume"
-    assert session_req["params"]["sessionId"] == session
-    append_prompt = (
-        session_req["params"]
-        .get("_meta", {})
-        .get("antigravity", {})
-        .get("systemPrompt", {})
-        .get("append", "")
-    )
-    assert append_prompt == "Use the run-specific system rule."
-    assert "Previous chat messages go here." not in append_prompt
-    send_result(session_req["id"], {"sessionId": session})
-    mode = "success"
-elif mode == "resume-missing":
-    assert session_req["method"] == "session/resume"
-    assert session_req["params"]["sessionId"] == session
-    send_error(
-        session_req["id"],
-        -32603,
-        f"Failed to read session {session}; retry, or load it with session/load",
-    )
-    fallback_req = read_msg()
-    assert fallback_req["method"] == "session/new"
-    append_prompt = (
-        fallback_req["params"]
-        .get("_meta", {})
-        .get("antigravity", {})
-        .get("systemPrompt", {})
-        .get("append", "")
-    )
-    assert append_prompt.startswith("Use the run-specific system rule.")
-    assert "Previous chat messages go here." in append_prompt
-    send_result(fallback_req["id"], {"sessionId": session})
-    mode = "success"
-elif mode == "resume-mismatch":
-    assert session_req["method"] == "session/resume"
-    assert session_req["params"]["sessionId"] == session
-    send_result(
-        session_req["id"],
-        {"sessionId": "11111111-1111-4111-8111-111111111111"},
-    )
-    assert read_msg() is None
-    sys.exit(0)
-elif mode in ("resume-missing-no-recovery", "resume-missing-empty-recovery"):
-    assert session_req["method"] == "session/resume"
-    assert session_req["params"]["sessionId"] == session
-    send_error(
-        session_req["id"],
-        -32603,
-        f"Failed to read session {session}; retry, or load it with session/load",
-    )
-    assert read_msg() is None
-    sys.exit(0)
+if mode in (
+    "resume",
+    "resume-empty-list",
+    "resume-missing",
+    "resume-mismatch",
+    "resume-missing-no-recovery",
+    "resume-missing-empty-recovery",
+):
+    assert session_req["method"] == "session/list"
+    assert session_req["params"] == {"cwd": "/home/user/workspace"}
+    if mode == "resume-empty-list":
+        send_result(session_req["id"], {"sessions": []})
+        fallback_req = read_msg()
+        assert fallback_req["method"] == "session/new"
+        append_prompt = (
+            fallback_req["params"]
+            .get("_meta", {})
+            .get("antigravity", {})
+            .get("systemPrompt", {})
+            .get("append", "")
+        )
+        assert append_prompt.startswith("Use the run-specific system rule.")
+        assert "Previous chat messages go here." in append_prompt
+        send_result(fallback_req["id"], {"sessionId": session})
+        mode = "success"
+    else:
+        send_result(
+            session_req["id"],
+            {
+                "sessions": [
+                    {
+                        "sessionId": "00000000-0000-4000-8000-000000000001",
+                        "updatedAt": "2026-01-01T00:00:00Z",
+                    },
+                    {
+                        "sessionId": session,
+                        "updatedAt": "2026-02-01T00:00:00Z",
+                    },
+                ]
+            },
+        )
+        resume_req = read_msg()
+        assert resume_req["method"] == "session/resume"
+        assert resume_req["params"]["sessionId"] == session
+        if mode == "resume":
+            append_prompt = (
+                resume_req["params"]
+                .get("_meta", {})
+                .get("antigravity", {})
+                .get("systemPrompt", {})
+                .get("append", "")
+            )
+            assert append_prompt == "Use the run-specific system rule."
+            assert "Previous chat messages go here." not in append_prompt
+            send_result(resume_req["id"], {"sessionId": session})
+            mode = "success"
+        elif mode == "resume-missing":
+            send_error(
+                resume_req["id"],
+                -32603,
+                f"Failed to read session {session}; retry, or load it with session/load",
+            )
+            fallback_req = read_msg()
+            assert fallback_req["method"] == "session/new"
+            append_prompt = (
+                fallback_req["params"]
+                .get("_meta", {})
+                .get("antigravity", {})
+                .get("systemPrompt", {})
+                .get("append", "")
+            )
+            assert append_prompt.startswith("Use the run-specific system rule.")
+            assert "Previous chat messages go here." in append_prompt
+            send_result(fallback_req["id"], {"sessionId": session})
+            mode = "success"
+        elif mode == "resume-mismatch":
+            send_result(
+                resume_req["id"],
+                {"sessionId": "11111111-1111-4111-8111-111111111111"},
+            )
+            assert read_msg() is None
+            sys.exit(0)
+        elif mode in ("resume-missing-no-recovery", "resume-missing-empty-recovery"):
+            send_error(
+                resume_req["id"],
+                -32603,
+                f"Failed to read session {session}; retry, or load it with session/load",
+            )
+            assert read_msg() is None
+            sys.exit(0)
 else:
     assert session_req["method"] == "session/new"
     append_prompt = (

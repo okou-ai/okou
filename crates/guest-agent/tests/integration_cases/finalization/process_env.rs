@@ -66,7 +66,6 @@ async fn success_finalization_uses_captured_startup_environment() {
     run_finalization_child(&mut command).await.unwrap();
 
     complete.assert_calls_async(1).await;
-    assert!(std::path::Path::new(paths.final_session_history_identity_file()).exists());
     assert!(std::path::Path::new(paths.system_log_file()).exists());
     assert!(std::path::Path::new(paths.sandbox_ops_file()).exists());
     assert!(

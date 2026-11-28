@@ -242,7 +242,7 @@ async fn idle_destroy_job_publishes_frozen_home_only_after_successful_kill() {
     let cache = HomeImageCache::new(RunnerPaths::new(dir.path().join("runner")))
         .with_telemetry(recorded.handle());
     let fixture =
-        HomePromotionFixture::new_with_cache(dir, cache, "sess-idle-destroy-promote", None).await;
+        HomePromotionFixture::new_with_cache(dir, cache, "sess-idle-destroy-promote").await;
     let producer = fixture.promotion.run_id();
     let overrides = Arc::new(MockSandboxOverrides::new());
     let (budget, lease) = reserved_budget_lease();

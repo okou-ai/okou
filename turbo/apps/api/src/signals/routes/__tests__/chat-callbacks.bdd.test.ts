@@ -4113,9 +4113,9 @@ describe("CHAT-02: auto-send after failures", () => {
         await api.requestCancelRun(actor, probe.runId, [200]);
         await waitForRunStatus(actor, probe.runId, "cancelled");
       } else {
-        expect(probeExecution.nativeContinuation).toMatchObject({
-          sessionId: cliAgentSessionIdForChatRun(dense.runId),
-          generationRunId: dense.runId,
+        expect(probeExecution.sessionContinuation).toMatchObject({
+          continueNative: true,
+          expectedSourceRunId: dense.runId,
         });
         chatCallbacks.mockChatOutputEvents([]);
         await completeChatRunOk(probe.runId, {

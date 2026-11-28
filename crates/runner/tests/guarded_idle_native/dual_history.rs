@@ -125,7 +125,7 @@ pub async fn exercise(setup: Setup<'_>) -> TestResult<()> {
             "run_id":original,"sandbox_id":id,"backing_generation":history.backing,"thread_id":history.thread,
             "history_hex":hex::encode(&history.bytes),"cache_key":cache_key,"reuse_key":key,
             "profile":fixture::PROFILE,"home_bytes":fixture::IMAGE_BYTES,"exit_code":prepared.exit_code,
-            "final_identity_verified":prepared.identity.is_some(),"allocated":budget.allocated(),
+            "allocated":budget.allocated(),
         }))?;
         Ok((backing, cache_key, history))
     }.await;
@@ -144,7 +144,6 @@ pub async fn exercise(setup: Setup<'_>) -> TestResult<()> {
         .into_promotion_context(HomeImagePromotionRequest {
             run_id: original,
             sandbox_id: id,
-            restored_session_identity: prepared.identity.as_ref(),
             terminal_status: if nonzero {
                 HomeCacheTerminalStatus::NonzeroExit
             } else {
@@ -160,23 +159,16 @@ pub async fn exercise(setup: Setup<'_>) -> TestResult<()> {
         proof.retain(incoming_fixture);
         return Err(failure("dual original promotion unavailable"));
     };
-    let candidate = ParkedIdleCandidateBuilder::new(&key, lease)
+    let mut candidate = ParkedIdleCandidateBuilder::new(&key, lease)
         .with_source_run_id(original)
         .with_sandbox(prepared.sandbox)
         .with_factory(factory.clone())
         .with_sandbox_id(id)
         .with_profile_name(fixture::PROFILE)
         .with_rootfs_hash(&rootfs)
-        .with_source_run_id(original)
-        .with_native_generation_run_id(original)
         .with_home_promotion(promotion)
-        .with_storage_fingerprints(prepared.storage);
-    let mut candidate = if let Some(identity) = prepared.identity {
-        candidate.with_restored_session_identity(identity)
-    } else {
-        candidate
-    }
-    .build();
+        .with_storage_fingerprints(prepared.storage)
+        .build();
     if let Err(e) = candidate.capture_retirement_backing() {
         proof.retain(candidate);
         proof.retain(original_fixture);
@@ -288,7 +280,7 @@ impl Histories {
                     && observation.reuse_key.as_deref() == Some(context.reuse_key.as_str())
                     && observation.profile_name.as_deref() == Some(fixture::PROFILE)
             });
-            if prepared.home.result()!=HomeCacheCheckoutResult::LockBusy || !locked || prepared.identity.is_none() {
+            if prepared.home.result()!=HomeCacheCheckoutResult::LockBusy || !locked {
                 return Err(failure("dual incoming did not retain a complete LockBusy history"));
             }
             fixture::prepare_started_guest(&mut *prepared.sandbox, run).await?;
@@ -326,11 +318,6 @@ impl Histories {
             phase_settled: true,
             separate_incoming_lease: true,
         };
-        let Some(identity) = prepared.identity.take() else {
-            self.proof.retain(prepared);
-            self.proof.retain(lease);
-            return Err(failure("dual incoming identity missing"));
-        };
         let mut candidate = ParkedIdleCandidateBuilder::new(&context.reuse_key, lease)
             .with_source_run_id(run)
             .with_sandbox(prepared.sandbox)
@@ -338,9 +325,6 @@ impl Histories {
             .with_sandbox_id(id)
             .with_profile_name(fixture::PROFILE)
             .with_rootfs_hash(&context.rootfs_hash)
-            .with_source_run_id(run)
-            .with_native_generation_run_id(run)
-            .with_restored_session_identity(identity)
             .with_storage_fingerprints(prepared.storage)
             .build();
         if let Err(e) = candidate.capture_retirement_backing() {
@@ -448,7 +432,7 @@ impl Histories {
                 "run_id":run,"previous_run_id":previous.generation,"sandbox_id":previous.id,"backing_generation":previous.backing,
                 "thread_id":previous.thread,"history_hex":hex::encode(&prepared.history),"original_history_hex":hex::encode(&previous.bytes),
                 "cache_key":self.cache_key,"same_full_lease_active":self.active()?,"active_checkout":"Miss",
-                "actual_executor_reuse":true,"final_identity_verified":prepared.identity.is_some(),"allocated":context.budget.allocated(),
+                "actual_executor_reuse":true,"allocated":context.budget.allocated(),
             }))?;
             Ok(backing)
         }.await;
@@ -469,17 +453,11 @@ impl Histories {
             bytes: prepared.history.clone(),
             private: vec![previous.original, run],
         };
-        let Some(identity) = prepared.identity.take() else {
-            self.proof.retain(prepared);
-            self.proof.retain(lease);
-            return Err(failure("dual continued identity missing"));
-        };
         let promotion = prepared
             .home
             .into_promotion_context(HomeImagePromotionRequest {
                 run_id: run,
                 sandbox_id: history.id,
-                restored_session_identity: Some(&identity),
                 terminal_status: HomeCacheTerminalStatus::Success,
                 completed_at: chrono::Utc::now().to_rfc3339(),
                 storage_fingerprints: prepared.storage.clone(),
@@ -496,10 +474,7 @@ impl Histories {
             .with_sandbox_id(history.id)
             .with_profile_name(fixture::PROFILE)
             .with_rootfs_hash(&context.rootfs_hash)
-            .with_source_run_id(run)
-            .with_native_generation_run_id(run)
             .with_storage_fingerprints(prepared.storage)
-            .with_restored_session_identity(identity)
             .with_home_promotion(promotion)
             .build();
         if let Err(e) = candidate.capture_retirement_backing() {
@@ -622,8 +597,7 @@ impl Histories {
         let checked:TestResult<()> = async {
             let (home,workspace,ordinary)=self.verify_payload(&*prepared.sandbox,history).await?;
             for private in &history.private {fixture::exec(&*prepared.sandbox,&format!("test ! -e {}",quote_shell_arg(&fixture::runtime_dir(*private)?))).await?;}
-            let generation=&prepared.home.history_proof_binding().ok_or_else(||failure("dual restored history binding missing"))?.proof.generation;
-            if generation!=&history.generation.to_string() || prepared.home.cache_key()!=Some(self.cache_key.as_str()) {return Err(failure("dual restored the wrong physical entry/generation"));}
+            if !prepared.home.is_cache_hit() || prepared.home.cache_key()!=Some(self.cache_key.as_str()) {return Err(failure("dual restored the wrong physical entry/generation"));}
             let prefix=prepared.history.get(..history.bytes.len()).ok_or_else(||failure("dual restored prefix truncated"))?;
             if prefix!=history.bytes{return Err(failure("dual complete original history changed"));}
             self.proof.dual_history_witness(phase,json!({
@@ -633,7 +607,7 @@ impl Histories {
                 "history_hex":hex::encode(&history.bytes),"restored_history_hex":hex::encode(prefix),
                 "home_hex":hex::encode(home),"workspace_hex":hex::encode(workspace),"ordinary_hex":hex::encode(ordinary),
                 "private_generations_removed":history.private,
-                "history_proof_generation":generation,"cache_hit":prepared.home.is_cache_hit(),"allocated":context.budget.allocated(),
+                "cache_hit":prepared.home.is_cache_hit(),"allocated":context.budget.allocated(),
             }))?;
             Ok(())
         }.await;

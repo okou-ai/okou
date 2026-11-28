@@ -152,12 +152,12 @@ describe("CHAT-02: personal subscription model selection", () => {
     ).toBe("fast");
     expect(firstCodexExecution.execution.piLaunchConfig).toBeUndefined();
 
-    expect(firstCodexExecution.execution.nativeContinuation).toMatchObject({
-      sessionId: null,
-      generationRunId: null,
+    expect(firstCodexExecution.execution.sessionContinuation).toMatchObject({
+      continueNative: false,
+      expectedSourceRunId: null,
     });
     expect(
-      firstCodexExecution.execution.nativeContinuation?.recoveryPrompt,
+      firstCodexExecution.execution.sessionContinuation?.recoveryPrompt,
     ).toContain("okou chat messages --output-dir /tmp/okou-chat-history");
     chatCallbacks.mockChatOutputEvents([assistantEvent(0, firstCodexAnswer)]);
     await own(async () => {
@@ -192,12 +192,12 @@ describe("CHAT-02: personal subscription model selection", () => {
     const returnedPiExecution = await runExecution(returnedPi.runId);
 
     expect(returnedPiExecution.execution.prompt).toBe(returnedPiPrompt);
-    expect(returnedPiExecution.execution.nativeContinuation).toMatchObject({
-      sessionId: null,
-      generationRunId: null,
+    expect(returnedPiExecution.execution.sessionContinuation).toMatchObject({
+      continueNative: false,
+      expectedSourceRunId: null,
     });
     expect(
-      returnedPiExecution.execution.nativeContinuation?.recoveryPrompt,
+      returnedPiExecution.execution.sessionContinuation?.recoveryPrompt,
     ).toContain("okou chat messages --output-dir /tmp/okou-chat-history");
     const returnedPiRun = await api.executionInput(returnedPi.runId);
     for (const prior of [
@@ -236,9 +236,9 @@ describe("CHAT-02: personal subscription model selection", () => {
     expect(piFollowUpAppend).not.toContain(firstCodexPrompt);
     const piFollowUpExecution = await runExecution(piFollowUp.runId);
 
-    expect(piFollowUpExecution.execution.nativeContinuation).toMatchObject({
-      sessionId: firstPi.threadId,
-      generationRunId: returnedPi.runId,
+    expect(piFollowUpExecution.execution.sessionContinuation).toMatchObject({
+      continueNative: true,
+      expectedSourceRunId: returnedPi.runId,
     });
     expect(piFollowUpExecution.execution.piSessionId).toBe(firstPi.threadId);
     expect(piFollowUpExecution.execution.piLaunchConfig).toMatchObject({
@@ -321,12 +321,12 @@ describe("CHAT-02: personal subscription model selection", () => {
       );
     }
     expect(repeatedPiAppend).not.toContain(piFollowUpPrompt);
-    expect(repeatedPiExecution.execution.nativeContinuation).toMatchObject({
-      sessionId: null,
-      generationRunId: null,
+    expect(repeatedPiExecution.execution.sessionContinuation).toMatchObject({
+      continueNative: false,
+      expectedSourceRunId: null,
     });
     expect(
-      repeatedPiExecution.execution.nativeContinuation?.recoveryPrompt,
+      repeatedPiExecution.execution.sessionContinuation?.recoveryPrompt,
     ).toContain("okou chat messages --output-dir /tmp/okou-chat-history");
     await own(async () => {
       return await completeSandboxFirstPiRun({
@@ -436,6 +436,57 @@ describe("CHAT-02: personal subscription model selection", () => {
     });
     await expect(api.readRun(actor, piFollowUp.runId)).resolves.toMatchObject({
       status: "cancelled",
+    });
+  }, 90_000);
+
+  it("accepts a Pi-generated session ID distinct from threadId and continues natively", async () => {
+    const {
+      run: own,
+      actor,
+      runExecution,
+      sendChatRun,
+    } = await publicChatActor(context);
+    await own(async () => {
+      return await configureSubscriptionPiModel(actor);
+    });
+
+    mockPiResourceArchiveDownloads();
+    const first = await sendChatRun(actor, {
+      model: "gpt-6-luna",
+      prompt: "start with a dynamic Pi session id",
+    });
+    await flushWaitUntilForTest();
+    const firstExecution = await runExecution(first.runId);
+    const dynamicSessionId = "33333333-3333-4333-8333-333333333333";
+    expect(dynamicSessionId).not.toBe(first.threadId);
+
+    chatCallbacks.mockChatOutputEvents([assistantEvent(0, "dynamic answer")]);
+    await own(async () => {
+      return await completeChatRunOk(
+        first.runId,
+        firstExecution.sandboxHeaders,
+        {
+          cliAgentType: "pi",
+          cliAgentSessionId: dynamicSessionId,
+          lastEventSequence: 0,
+        },
+      );
+    });
+    await flushWaitUntilForTest();
+    await expect(
+      readCompletedRunSessionId(context, actor, first.runId),
+    ).resolves.toBe(dynamicSessionId);
+
+    const followUp = await sendChatRun(actor, {
+      threadId: first.threadId,
+      model: "gpt-6-luna",
+      prompt: "continue with the same local Pi session",
+    });
+    await flushWaitUntilForTest();
+    const followUpExecution = await runExecution(followUp.runId);
+    expect(followUpExecution.execution.sessionContinuation).toMatchObject({
+      continueNative: true,
+      expectedSourceRunId: first.runId,
     });
   }, 90_000);
 });

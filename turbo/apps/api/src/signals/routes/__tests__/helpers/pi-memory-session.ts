@@ -14,11 +14,7 @@ import { x } from "tar";
 export async function readPiExecutionMemory(
   execution: Pick<
     ExecutionContext,
-    | "runId"
-    | "piSessionId"
-    | "piModelConfig"
-    | "piLaunchConfig"
-    | "appendSystemPrompt"
+    "runId" | "piModelConfig" | "piLaunchConfig" | "appendSystemPrompt"
   >,
   mount: NonNullable<ExecutionContext["startupInputs"]["memory"]>,
   signal: AbortSignal,
@@ -43,11 +39,7 @@ export async function readPiExecutionMemory(
       await writeFile(archiveFile, Buffer.from(await downloaded.arrayBuffer()));
       await x({ file: archiveFile, cwd: memory, strict: true });
     }
-    if (
-      !execution.piModelConfig ||
-      !execution.piLaunchConfig ||
-      !execution.piSessionId
-    ) {
+    if (!execution.piModelConfig || !execution.piLaunchConfig) {
       throw new Error("Expected a complete ordinary Pi execution");
     }
     const payloadFile = join(root, "launch.json");
@@ -55,6 +47,7 @@ export async function readPiExecutionMemory(
       payloadFile,
       JSON.stringify({
         schemaVersion: 1,
+        continueNative: false,
         appendSystemPrompt: execution.appendSystemPrompt,
         launchConfig: execution.piLaunchConfig,
       }),
@@ -93,7 +86,6 @@ export async function readPiExecutionMemory(
           PI_CODING_AGENT_DIR: agentDir,
           ...credentials,
           OKOU_RUN_ID: execution.runId,
-          OKOU_PI_SESSION_ID: execution.piSessionId,
           OKOU_PI_LAUNCH_PAYLOAD_FILE: payloadFile,
           OKOU_PI_MODEL_CONFIG: JSON.stringify({
             ...execution.piModelConfig,

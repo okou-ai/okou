@@ -17,6 +17,7 @@ fn build_claude_args_for_test(
         model: "",
         effort: None,
         resume_id,
+        continue_native: false,
         append_system_prompt_file: (!append_system_prompt.is_empty())
             .then_some(TEST_APPEND_SYSTEM_PROMPT_FILE),
         disallowed_tools,
@@ -37,6 +38,7 @@ fn build_claude_command_for_test(use_mock: bool) -> Vec<String> {
             model: "",
             effort: None,
             resume_id: "",
+            continue_native: false,
             append_system_prompt_file: None,
             disallowed_tools: "",
         },
@@ -50,6 +52,7 @@ fn build_claude_args_for_model_test(model: &str) -> Vec<String> {
         model,
         effort: None,
         resume_id: "",
+        continue_native: false,
         append_system_prompt_file: None,
         disallowed_tools: "",
     })
@@ -91,6 +94,7 @@ fn build_claude_args_resume_log_omits_resume_id() {
         model: "",
         effort: None,
         resume_id: "sess-secret-123",
+        continue_native: false,
         append_system_prompt_file: None,
         disallowed_tools: "",
     });
@@ -99,8 +103,38 @@ fn build_claude_args_resume_log_omits_resume_id() {
 
     assert!(args.contains(&"--resume".to_string()));
     assert!(args.contains(&"sess-secret-123".to_string()));
+    assert!(!args.contains(&"--continue".to_string()));
     assert!(system_log.contains("Resuming session"));
     assert!(!system_log.contains("sess-secret-123"));
+}
+
+#[test]
+fn build_claude_args_continue_native_passes_continue_without_resume_id() {
+    let _system_log_state_guard = crate::lock_system_log_test_state();
+    disable_system_log();
+
+    let continued = build_claude_args(ClaudeArgsConfig {
+        model: "",
+        effort: None,
+        resume_id: "",
+        continue_native: true,
+        append_system_prompt_file: None,
+        disallowed_tools: "",
+    });
+    assert!(continued.contains(&"--continue".to_string()));
+    assert!(!continued.contains(&"--resume".to_string()));
+
+    let explicit_resume = build_claude_args(ClaudeArgsConfig {
+        model: "",
+        effort: None,
+        resume_id: "local-session-id",
+        continue_native: true,
+        append_system_prompt_file: None,
+        disallowed_tools: "",
+    });
+    assert!(explicit_resume.contains(&"--resume".to_string()));
+    assert!(explicit_resume.contains(&"local-session-id".to_string()));
+    assert!(!explicit_resume.contains(&"--continue".to_string()));
 }
 
 #[test]

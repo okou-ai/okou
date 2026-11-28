@@ -125,9 +125,10 @@ describe("CHAT-02: run-level model overrides", () => {
     expect(appended).toContain(`- CHAT_THREAD_ID: ${first.threadId}`);
     expect(appended).toContain("`okou chat messages`");
     const secondExecution = await runExecution(second.runId);
-    expect(secondExecution.execution.nativeContinuation?.sessionId).toBe(
-      `bdd-cli-${first.runId}`,
-    );
+    expect(secondExecution.execution.sessionContinuation).toMatchObject({
+      continueNative: true,
+      expectedSourceRunId: first.runId,
+    });
     expect(
       executionEnvironment(secondExecution.execution).ANTHROPIC_MODEL,
     ).toBe("claude-sonnet-5-5");
@@ -159,9 +160,10 @@ describe("CHAT-02: run-level model overrides", () => {
       prompt: "continue on the thread model",
     });
     const thirdExecution = await runExecution(third.runId);
-    expect(thirdExecution.execution.nativeContinuation?.sessionId).toBe(
-      `bdd-cli-${second.runId}`,
-    );
+    expect(thirdExecution.execution.sessionContinuation).toMatchObject({
+      continueNative: true,
+      expectedSourceRunId: second.runId,
+    });
     expect(executionEnvironment(thirdExecution.execution).ANTHROPIC_MODEL).toBe(
       "claude-sonnet-5-5",
     );
@@ -415,9 +417,9 @@ describe("CHAT-02: run-level model overrides", () => {
       const continuedExecution = await runExecution(continued.runId);
       expect(continuedExecution.execution).toMatchObject({
         piSessionId: run.threadId,
-        nativeContinuation: {
-          sessionId: run.threadId,
-          generationRunId: run.runId,
+        sessionContinuation: {
+          continueNative: true,
+          expectedSourceRunId: run.runId,
         },
         piModelConfig: {
           model: selectedModel,

@@ -15,11 +15,6 @@ fn guest_paths_derives_runtime_files_from_run_dir() {
         guest_contracts::runtime_paths::finalization_error_file(&runtime_dir).to_string_lossy()
     );
     assert_eq!(
-        paths.final_session_history_identity_file(),
-        guest_contracts::runtime_paths::final_session_history_identity_file(&runtime_dir)
-            .to_string_lossy()
-    );
-    assert_eq!(
         paths.failure_diagnostic_file(),
         guest_contracts::runtime_paths::failure_diagnostic_file(&runtime_dir).to_string_lossy()
     );

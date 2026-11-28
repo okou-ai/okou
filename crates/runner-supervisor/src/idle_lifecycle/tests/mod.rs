@@ -33,7 +33,6 @@ fn accepted_idle_pool(
             ParkedIdleCandidateBuilder::new("thread:job-idle", lease)
                 .with_sandbox_id(sandbox_id)
                 .with_source_run_id(native_generation_run_id)
-                .with_native_generation_run_id(native_generation_run_id)
                 .build()
         ),
         ParkResult::Parked
@@ -139,7 +138,7 @@ async fn claimed_exact_reservation_classifies_miss_without_mutation() {
             ExactIdleReservationMiss::SourceMismatch,
         ),
     ] {
-        let miss = reserve_exact_idle_for_spawn(
+        let miss = reserve_source_idle_for_spawn(
             &idle_pool,
             reuse_key,
             profile,
@@ -152,7 +151,7 @@ async fn claimed_exact_reservation_classifies_miss_without_mutation() {
         assert_eq!(pool.revision(), initial_revision);
         assert!(pool.contains_sandbox_id(sandbox_id));
     }
-    let reservation = reserve_exact_idle_for_spawn(
+    let reservation = reserve_source_idle_for_spawn(
         &idle_pool,
         "thread:job-idle",
         "vm0/default",
@@ -383,8 +382,6 @@ async fn destroy_idle_jobs_and_wait_reports_home_cache_promotion() {
         budget_lease: lease,
         source_ip: "10.0.0.1".into(),
         storage_fingerprints: StorageFingerprints::default(),
-        restored_session_identity: None,
-        native_generation_run_id: None,
         guest_timezone_intent: runner_lifecycle::guest_timezone::GuestTimezoneIntent::Unknown,
         home_image_size_bytes:
             runner_lifecycle::home_promotion::test_support::TEST_HOME_IMAGE_SIZE_BYTES,

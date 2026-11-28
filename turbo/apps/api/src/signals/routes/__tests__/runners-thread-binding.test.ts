@@ -91,9 +91,9 @@ describe("Runner first-start Thread binding", () => {
         prompt: "Continue after preparing input was cancelled",
       });
       const input = await owned.executionInput(next.runId);
-      expect(input.nativeContinuation).toMatchObject({
-        sessionId: first.threadId,
-        generationRunId: first.runId,
+      expect(input.sessionContinuation).toMatchObject({
+        continueNative: true,
+        expectedSourceRunId: first.runId,
       });
     });
   });
@@ -137,9 +137,9 @@ describe("Runner first-start Thread binding", () => {
         prompt: "Continue after recalling the waiting input",
       });
       const execution = await owned.executionInput(next.runId);
-      expect(execution.nativeContinuation).toMatchObject({
-        sessionId: first.threadId,
-        generationRunId: first.runId,
+      expect(execution.sessionContinuation).toMatchObject({
+        continueNative: true,
+        expectedSourceRunId: first.runId,
       });
     });
   });
@@ -154,9 +154,9 @@ describe("Runner first-start Thread binding", () => {
           prompt: "start without publishing a native session",
         });
         const execution = await owned.executionInput(second.runId);
-        expect(execution.nativeContinuation).toMatchObject({
-          sessionId: first.threadId,
-          generationRunId: first.runId,
+        expect(execution.sessionContinuation).toMatchObject({
+          continueNative: true,
+          expectedSourceRunId: first.runId,
         });
         await webhooks.requestAgentEvents(
           {
@@ -195,9 +195,9 @@ describe("Runner first-start Thread binding", () => {
           prompt: "recover the Thread without skipping the last executed Run",
         });
         const nextExecution = await owned.executionInput(next.runId);
-        expect(nextExecution.nativeContinuation).toMatchObject({
-          sessionId: null,
-          generationRunId: null,
+        expect(nextExecution.sessionContinuation).toMatchObject({
+          continueNative: false,
+          expectedSourceRunId: null,
           recoveryPrompt: expect.stringContaining(
             "okou chat messages --output-dir /tmp/okou-chat-history",
           ),
@@ -216,9 +216,9 @@ describe("Runner first-start Thread binding", () => {
           prompt: "initialize exactly one accepted execution",
         });
         const execution = await owned.executionInput(second.runId);
-        expect(execution.nativeContinuation).toMatchObject({
-          sessionId: first.threadId,
-          generationRunId: first.runId,
+        expect(execution.sessionContinuation).toMatchObject({
+          continueNative: true,
+          expectedSourceRunId: first.runId,
         });
         const headers = { authorization: `Bearer ${execution.sandboxToken}` };
         const sessionId = randomUUID();
@@ -256,9 +256,9 @@ describe("Runner first-start Thread binding", () => {
           prompt: "resume the confirmed session after Runner settlement",
         });
         const nextExecution = await owned.executionInput(next.runId);
-        expect(nextExecution.nativeContinuation).toMatchObject({
-          sessionId,
-          generationRunId: second.runId,
+        expect(nextExecution.sessionContinuation).toMatchObject({
+          continueNative: true,
+          expectedSourceRunId: second.runId,
         });
       });
     },

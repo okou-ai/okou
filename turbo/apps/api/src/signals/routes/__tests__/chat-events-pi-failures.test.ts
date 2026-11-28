@@ -63,9 +63,9 @@ describe("CHAT-02: model-first routing", () => {
     });
     const execution = await runExecution(resumed.runId);
 
-    expect(execution.execution.nativeContinuation).toMatchObject({
-      sessionId: first.threadId,
-      generationRunId: first.runId,
+    expect(execution.execution.sessionContinuation).toMatchObject({
+      continueNative: true,
+      expectedSourceRunId: first.runId,
     });
     expect(execution.execution.appendSystemPrompt).not.toContain(answer);
     await own(async () => {
@@ -138,9 +138,9 @@ describe("CHAT-02: model-first routing", () => {
     });
     expect(execution.prompt).toBe(prompt);
 
-    expect(execution.nativeContinuation).toMatchObject({
-      sessionId: first.threadId,
-      generationRunId: first.runId,
+    expect(execution.sessionContinuation).toMatchObject({
+      continueNative: true,
+      expectedSourceRunId: first.runId,
     });
     expect(execution.appendSystemPrompt).not.toContain(
       "previous settled subscription answer",

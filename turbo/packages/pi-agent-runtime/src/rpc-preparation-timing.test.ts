@@ -43,9 +43,8 @@ describe("Pi sandbox RPC preparation observability", () => {
 
     await expect(
       runPiOfficialRpcMode({
-        sessionId: SESSION_ID,
+        continueNative: true,
         sessionDir: directory,
-        sessionFile,
         cwd,
         agentDir: join(directory, "agent"),
         appendSystemPrompt: null,

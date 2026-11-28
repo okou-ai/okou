@@ -30,7 +30,6 @@ async fn pi_extension_failure_masks_error_file_and_recovery_completion()
             secret_values: base64::engine::general_purpose::STANDARD.encode(SECRET),
             pi_launch_config: r#"{"schemaVersion":2}"#.to_string(),
             pi_model_config: "{}".to_string(),
-            pi_session_id: SESSION_ID.to_string(),
             ..guest_contracts::env::RunPayload::default()
         },
     )?;

@@ -301,9 +301,9 @@ describe("CHAT-02: run-level model overrides", () => {
       await flushWaitUntilForTest();
       const fastExecution = await runExecution(fast.runId);
 
-      expect(fastExecution.execution.nativeContinuation).toMatchObject({
-        sessionId: first.threadId,
-        generationRunId: first.runId,
+      expect(fastExecution.execution.sessionContinuation).toMatchObject({
+        continueNative: true,
+        expectedSourceRunId: first.runId,
       });
       expect(fastExecution.execution.piModelConfig).toMatchObject({
         model: route.runtimeModel,

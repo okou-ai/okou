@@ -2,10 +2,9 @@ use super::support::*;
 use crate::support::*;
 use httpmock::prelude::*;
 use serde_json::json;
-use sha2::{Digest, Sha256};
 
 #[tokio::test]
-async fn native_finalization_keeps_history_and_publishes_identity_after_acknowledgement() {
+async fn native_finalization_keeps_history_and_reports_completion() {
     for recovery in [false, true] {
         for accepted in [false, true] {
             let api = SharedApiMock::new().await;
@@ -51,31 +50,18 @@ async fn native_finalization_keeps_history_and_publishes_identity_after_acknowle
                     .await
             }
             .unwrap();
-            let identity_path = runtime.paths.final_session_history_identity_file();
-            assert!(!std::path::Path::new(identity_path).exists());
             let result =
                 report_prepared_finalization(&runtime, if recovery { 1 } else { 0 }, prepared)
                     .await;
             assert_eq!(result.is_ok(), accepted);
             complete.assert_calls_async(1).await;
             assert_eq!(std::fs::read(&path).unwrap(), history);
-            assert_eq!(std::path::Path::new(identity_path).exists(), accepted);
-            if accepted {
-                let identity: serde_json::Value =
-                    serde_json::from_slice(&std::fs::read(identity_path).unwrap()).unwrap();
-                assert_eq!(
-                    identity["historyHash"],
-                    hex::encode(Sha256::digest(history))
-                );
-                assert_eq!(identity["historySizeBytes"], history.len());
-                assert_eq!(identity["historyRefKind"], "local-home");
-            }
         }
     }
 }
 
 #[tokio::test]
-async fn recovery_completion_accepts_missing_local_history_without_publishing_home_proof() {
+async fn recovery_completion_accepts_missing_local_history() {
     let api = SharedApiMock::new().await;
     let _files = SessionFinalizationFilesGuard::new();
     let _telemetry = FinalizationTelemetryGuard::new(&api);
@@ -89,5 +75,4 @@ async fn recovery_completion_accepts_missing_local_history_without_publishing_ho
     });
     create_native_recovery_finalization(&runtime).await.unwrap();
     complete.assert_calls_async(1).await;
-    assert!(!std::path::Path::new(runtime.paths.final_session_history_identity_file()).exists());
 }

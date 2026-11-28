@@ -135,34 +135,6 @@ async fn observer_loss_keeps_physical_locks_and_shutdown_joins_publication() {
 }
 
 #[tokio::test]
-async fn observer_loss_cannot_change_an_accepted_generations_history_proof() {
-    let mut f = Fixture::new().await;
-    let gate = HomeImageHandoffTestGate::default();
-    let _release = gate.release_on_drop();
-    f.cache.publication_sync_test_gate = Some(gate.clone());
-    let mut owned = context(&f, "sealed-proof").await;
-    let proof = binding(&owned.publication_generation());
-    owned.set_home_history_proof(Some(proof.clone())).unwrap();
-    let mut publication = Box::pin(owned.promote());
-    tokio::select! {
-        result = publication.as_mut() => panic!("publication finished before physical sync: {result:?}"),
-        () = gate.wait_entered(Duration::from_secs(5)) => {}
-    }
-    drop(publication);
-    assert!(owned.set_home_history_proof(None).is_err());
-    gate.release();
-    assert_eq!(
-        owned.promote().await.unwrap(),
-        HomeImagePromotionOutcome::Promoted
-    );
-    drop(owned);
-    assert_eq!(
-        f.metadata("sealed-proof").await.history_proof.as_ref(),
-        Some(&proof)
-    );
-}
-
-#[tokio::test]
 async fn a_context_serializes_observers_without_repeating_physical_publication() {
     let mut f = Fixture::new().await;
     let gate = HomeImageHandoffTestGate::default();

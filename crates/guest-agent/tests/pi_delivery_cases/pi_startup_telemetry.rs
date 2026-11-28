@@ -308,7 +308,6 @@ async fn run_pi_guest_agent(
             prompt: "measure Pi sandbox startup".to_string(),
             pi_launch_config: r#"{"schemaVersion":2}"#.to_string(),
             pi_model_config: "{}".to_string(),
-            pi_session_id: PI_SESSION_ID.to_string(),
             ..guest_contracts::env::RunPayload::default()
         },
     )?;

@@ -13,30 +13,6 @@ mod disk_failure;
 
 static TEST_STATE_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
-#[test]
-fn finalization_history_limit_errors_have_a_stable_failure_reason() {
-    assert_eq!(
-        finalization_failure_reason(&AgentError::SessionHistoryTooLarge { max_bytes: 1 }),
-        Some(FailureReason::SessionHistoryLimit)
-    );
-    assert_eq!(
-        finalization_failure_reason(&AgentError::SessionHistoryEncodedTooLarge { max_bytes: 1 }),
-        Some(FailureReason::SessionHistoryLimit)
-    );
-    assert_eq!(
-        finalization_failure_reason(&AgentError::Finalization(
-            "Session history exceeds maximum size of 134217728 bytes".to_string(),
-        )),
-        None
-    );
-    assert_eq!(
-        finalization_failure_reason(&AgentError::Finalization(
-            "artifact upload failed".to_string()
-        )),
-        None
-    );
-}
-
 static COMPLETE_EXECUTION_MOCK_SERVER: LazyLock<MockServer> = LazyLock::new(MockServer::start);
 static MAIN_TEST_RUNTIME_ROOT: LazyLock<std::path::PathBuf> = LazyLock::new(|| {
     let timestamp_nanos = std::time::SystemTime::now()
@@ -826,7 +802,6 @@ fn complete_execution_attributes_proven_codex_child_oom_without_changing_wrapper
                 let original = "execution: codex app-server child exited while waiting for initialize: signal: 9 (SIGKILL)";
                 let session_metadata = session_metadata::CapturedSessionMetadata::for_test(
                     "11111111-1111-4111-8111-111111111111",
-                    None,
                 );
                 for (evidence, expected, reason) in [
                     (Some(&runtime_oom), GUEST_MEMORY_OOM_KILLED_ERROR, Some(FailureReason::GuestMemoryOomKilled)),
@@ -908,7 +883,6 @@ async fn first_completion_classifies_proven_cli_oom_inner() {
     };
     let session_metadata = session_metadata::CapturedSessionMetadata::for_test(
         "11111111-1111-4111-8111-111111111111",
-        None,
     );
     for (diagnostic, evidence, reason) in [
         (
@@ -1091,7 +1065,7 @@ async fn complete_execution_treats_combined_report_failure_as_finalization_failu
     );
     let runtime = test_guest_runtime(config, http);
     let session_metadata =
-        session_metadata::CapturedSessionMetadata::for_test("combined-failure-session", None);
+        session_metadata::CapturedSessionMetadata::for_test("combined-failure-session");
     let (exit_code, _) = complete_execution(
         &masker,
         0,
@@ -1166,7 +1140,7 @@ async fn complete_execution_keeps_success_when_history_is_unavailable_inner() {
     );
     let runtime = test_guest_runtime(config, http.clone());
     let session_metadata =
-        session_metadata::CapturedSessionMetadata::for_test("zero-turn-session", None);
+        session_metadata::CapturedSessionMetadata::for_test("zero-turn-session");
     let (exit_code, memory_published) = complete_execution(
         &masker,
         0,
@@ -1210,26 +1184,8 @@ async fn complete_execution_after_cli_failure_inner(
         let _ = std::fs::remove_file(path);
     }
 
-    let dir = tempfile::tempdir().unwrap();
     let session_id = "recovery-session-from-main";
-    let config_dir = dir.path().join("claude-config");
-    let history_path = config_dir
-        .join("projects")
-        .join("-home-user-workspace")
-        .join(format!("{session_id}.jsonl"));
-    let history = r#"{"type":"system"}"#.to_string() + "\n" + r#"{"type":"assistant"}"# + "\n";
-    std::fs::create_dir_all(history_path.parent().unwrap()).unwrap();
-    std::fs::write(&history_path, &history).unwrap();
-    let session_metadata = session_metadata::CapturedSessionMetadata::for_test(
-        session_id,
-        Some(
-            guest_contracts::session_history_identity::SessionHistorySourceRef::ClaudeCode {
-                config_dir: config_dir.to_string_lossy().into_owned(),
-                working_dir: paths::CANONICAL_WORKING_DIR.to_string(),
-                session_id: session_id.to_string(),
-            },
-        ),
-    );
+    let session_metadata = session_metadata::CapturedSessionMetadata::for_test(session_id);
 
     let complete_mock = server.mock(|when, then| {
         when.method(POST)

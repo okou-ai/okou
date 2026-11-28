@@ -67,7 +67,7 @@ fn fallback_home_lock_policy_reads_live_predecessor() {
         deadline: Instant::now(),
         reuse_key: "thread:finalizing-owner".into(),
         source_run_id: predecessor_run_id,
-        native_generation_run_id: Some(predecessor_run_id),
+        expected_source_run_id: Some(predecessor_run_id),
     };
     assert_eq!(
         handoff_context.fallback_home_prepare_policy(),
@@ -122,7 +122,7 @@ fn released_handoff_context() -> FinalizingHandoffContext {
         deadline: Instant::now(),
         reuse_key: "thread:finalizing-owner".into(),
         source_run_id: predecessor_run_id,
-        native_generation_run_id: Some(predecessor_run_id),
+        expected_source_run_id: Some(predecessor_run_id),
     }
 }
 
@@ -196,7 +196,7 @@ async fn expired_pre_finalization_deadline_uses_fallback_without_releasing_prede
         deadline: Instant::now() - Duration::from_secs(1),
         reuse_key: "thread:finalizing-owner".into(),
         source_run_id: predecessor_run_id,
-        native_generation_run_id: Some(predecessor_run_id),
+        expected_source_run_id: Some(predecessor_run_id),
     };
     let idle_pool = Arc::new(tokio::sync::Mutex::new(IdlePool::new(
         IdlePoolConfig::default(),
@@ -268,7 +268,7 @@ async fn cancelled_successor_does_not_reserve_fallback_capacity() {
         deadline: Instant::now() + Duration::from_secs(60),
         reuse_key: "thread:finalizing-owner".into(),
         source_run_id: predecessor_run_id,
-        native_generation_run_id: Some(predecessor_run_id),
+        expected_source_run_id: Some(predecessor_run_id),
     };
     let idle_pool = Arc::new(tokio::sync::Mutex::new(IdlePool::new(
         IdlePoolConfig::default(),
@@ -422,7 +422,7 @@ async fn assert_fallback_budget_wakeup_reuses_published(
 ) {
     let mut handoff_context = released_handoff_context();
     if !native_history {
-        handoff_context.native_generation_run_id = None;
+        handoff_context.expected_source_run_id = None;
     }
     let budget = Arc::new(ResourceBudget::new(5, 4096, 1.0, 0));
     let held = ResourceBudget::try_reserve_lease(&budget, 2, 2048).unwrap();
@@ -439,17 +439,13 @@ async fn assert_fallback_budget_wakeup_reuses_published(
             None,
         ),
         FallbackPublication::Exact | FallbackPublication::Generic => {
-            let builder =
+            let mut builder =
                 ParkedIdleCandidateBuilder::new(&handoff_context.reuse_key, published_lease)
-                    .with_source_run_id(handoff_context.source_run_id)
                     .with_sandbox_id(published_id);
             if matches!(publication, FallbackPublication::Exact) {
-                builder
-                    .with_native_generation_run_id(handoff_context.source_run_id)
-                    .build()
-            } else {
-                builder.build()
+                builder = builder.with_source_run_id(handoff_context.source_run_id);
             }
+            builder.build()
         }
     };
     let idle_pool = Arc::new(tokio::sync::Mutex::new(IdlePool::new(

@@ -67,15 +67,7 @@ fn execution_context_deserializes_pi_sandbox_resources() {
     assert_eq!(context.is_first_run, None);
     assert_eq!(context.firewall_token.as_deref(), Some("host-firewall"));
     assert_eq!(context.sandbox_token, "tok");
-
-    assert_eq!(
-        context.pi_session_id.as_deref(),
-        Some("22222222-2222-4222-8222-222222222222")
-    );
-    assert_eq!(
-        context.cli_agent_session_id(),
-        Some("22222222-2222-4222-8222-222222222222")
-    );
+    assert!(context.cli_agent_session_id().is_none());
     assert_eq!(
         context
             .pi_launch_config
@@ -592,14 +584,72 @@ fn execution_context_requires_custom_connector_routing_values() {
 }
 
 #[test]
-fn cli_agent_session_identity_uses_native_intent_and_local_submission() {
+fn resolved_native_continuation_prefers_session_continuation_and_falls_back_to_legacy() {
+    let source_run_id = "550e8400-e29b-41d4-a716-446655440001";
     let mut context: ExecutionContext = serde_json::from_value(json!({
-            "runId": "550e8400-e29b-41d4-a716-446655440000", "prompt": "hello", "sandboxToken": "tok", "firewallToken": "host-firewall", "cliAgentType": "claude-code", "platformEnvironment": {},
-            "connectorRuntimeTargets": [],
-            "nativeContinuation": { "sessionId": "native-session", "generationRunId": "550e8400-e29b-41d4-a716-446655440001", "recoveryPrompt": null }
-        })).unwrap();
-    assert_eq!(context.cli_agent_session_id(), Some("native-session"));
-    context.native_continuation = None;
+        "runId": "550e8400-e29b-41d4-a716-446655440000",
+        "prompt": "hello",
+        "sandboxToken": "tok",
+        "firewallToken": "host-firewall",
+        "cliAgentType": "claude-code",
+        "platformEnvironment": {},
+        "connectorRuntimeTargets": [],
+        "sessionContinuation": {
+            "continueNative": true,
+            "expectedSourceRunId": source_run_id,
+            "recoveryPrompt": "read history"
+        },
+        "nativeContinuation": {
+            "sessionId": null,
+            "generationRunId": null,
+            "recoveryPrompt": "legacy recovery"
+        }
+    }))
+    .unwrap();
+    assert_eq!(
+        context.resolved_native_continuation(),
+        Some(guest_contracts::env::NativeContinuation {
+            continue_native: true,
+            expected_source_run_id: Some(source_run_id.to_string()),
+            recovery_prompt: Some("read history".to_string()),
+        })
+    );
+    assert_eq!(
+        context.expected_home_source_run_id(),
+        Some(source_run_id.parse().unwrap())
+    );
+    assert!(context.cli_agent_session_id().is_none());
+
+    // Rollback path: Old API sends only legacy `nativeContinuation`.
+    let legacy: ExecutionContext = serde_json::from_value(json!({
+        "runId": "550e8400-e29b-41d4-a716-446655440000",
+        "prompt": "hello",
+        "sandboxToken": "tok",
+        "firewallToken": "host-firewall",
+        "cliAgentType": "claude-code",
+        "platformEnvironment": {},
+        "connectorRuntimeTargets": [],
+        "nativeContinuation": {
+            "sessionId": "legacy-session",
+            "generationRunId": source_run_id,
+            "recoveryPrompt": "legacy recovery"
+        }
+    }))
+    .unwrap();
+    assert_eq!(
+        legacy.resolved_native_continuation(),
+        Some(guest_contracts::env::NativeContinuation {
+            continue_native: true,
+            expected_source_run_id: Some(source_run_id.to_string()),
+            recovery_prompt: Some("legacy recovery".to_string()),
+        })
+    );
+    assert_eq!(
+        legacy.expected_home_source_run_id(),
+        Some(source_run_id.parse().unwrap())
+    );
+
+    // Standalone local submission still surfaces `local_resume_session_id`.
     context.local_resume_session_id = Some("local-session".into());
     assert_eq!(context.cli_agent_session_id(), Some("local-session"));
 }

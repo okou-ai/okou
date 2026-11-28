@@ -11,6 +11,7 @@ import {
   elapsedSinceApiStartMs,
   executionContextSchema,
   nativeContinuationSchema,
+  sessionContinuationSchema,
   piModelConfigSchema,
   piModelConfigV2Schema,
   piModelConfigV3Schema,
@@ -164,6 +165,11 @@ function preparedExecutionContextFixture() {
     environment: null,
     platformEnvironment: {},
     vars: null,
+    sessionContinuation: {
+      continueNative: false,
+      expectedSourceRunId: null,
+      recoveryPrompt: null,
+    },
     nativeContinuation: {
       sessionId: null,
       generationRunId: null,
@@ -1631,6 +1637,44 @@ describe("native continuation intent", () => {
       },
     ])
       expect(nativeContinuationSchema.safeParse(intent).success).toBe(false);
+  });
+
+  it("accepts valid sessionContinuation intents and rejects continueNative without expectedSourceRunId", () => {
+    for (const intent of [
+      {
+        continueNative: false,
+        expectedSourceRunId: null,
+        recoveryPrompt: null,
+      },
+      {
+        continueNative: true,
+        expectedSourceRunId: "22222222-2222-4222-8222-222222222222",
+        recoveryPrompt:
+          "Read context with okou chat messages --output-dir threads before proceeding",
+      },
+      {
+        continueNative: false,
+        expectedSourceRunId: null,
+        recoveryPrompt:
+          "Read context with okou chat messages --output-dir threads before proceeding",
+      },
+    ])
+      expect(sessionContinuationSchema.parse(intent)).toStrictEqual(intent);
+
+    expect(
+      sessionContinuationSchema.safeParse({
+        continueNative: true,
+        expectedSourceRunId: null,
+        recoveryPrompt: null,
+      }).success,
+    ).toBe(false);
+    expect(
+      sessionContinuationSchema.safeParse({
+        continueNative: false,
+        expectedSourceRunId: "22222222-2222-4222-8222-222222222222",
+        recoveryPrompt: null,
+      }).success,
+    ).toBe(false);
   });
 });
 

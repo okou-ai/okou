@@ -132,7 +132,6 @@ async fn codex_app_server_backend_uses_runtime_snapshot_and_preserves_large_prom
         Some("gpt-runtime-model")
     );
     for key in [
-        "child_env_has_pi_session_id",
         "child_env_has_pi_launch_config",
         "child_env_has_pi_launch_payload_file",
         "child_env_has_pi_model_config",

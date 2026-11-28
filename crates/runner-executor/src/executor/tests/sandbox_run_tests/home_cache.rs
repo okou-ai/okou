@@ -1,6 +1,5 @@
 use super::*;
 use httpmock::prelude::*;
-use sha2::{Digest, Sha256};
 
 use crate::executor::tests::support::RUN_IN_SANDBOX_TEST_TIMEOUT;
 use crate::home_image_cache::{HomeImagePrepareLockTestGate, HomeImagePreparePolicy};
@@ -57,9 +56,9 @@ fn set_reuse_and_session_identity(
     session_id: &str,
 ) {
     context.reuse_key = Some(format!("thread:home-cache-{session_id}"));
-    context.native_continuation = Some(guest_contracts::env::NativeContinuation {
-        session_id: Some(session_id.into()),
-        generation_run_id: Some(context.run_id.to_string()),
+    context.session_continuation = Some(guest_contracts::env::NativeContinuation {
+        continue_native: false,
+        expected_source_run_id: None,
         recovery_prompt: None,
     });
 }
@@ -219,12 +218,6 @@ async fn invalid_storage_preparation_preserves_the_selected_home_for_the_next_ru
 #[tokio::test]
 async fn rejected_seed_handoff_rebuilds_current_storage_before_one_fresh_create() {
     use crate::home_image_cache::HomeImageHandoffTestGate;
-    use guest_contracts::home_cache_history::{
-        HomeCacheHistoryProof, HomeCacheHistoryProofBinding,
-    };
-    use guest_contracts::session_history_identity::{
-        SessionHistoryIdentity, SessionHistorySourceRef,
-    };
 
     let dir = tempfile::tempdir().unwrap();
     let paths = RunnerPaths::new(dir.path().join("runner"));
@@ -245,7 +238,6 @@ async fn rejected_seed_handoff_rebuilds_current_storage_before_one_fresh_create(
             then.status(200).body(archive.clone());
         })
         .await;
-    let history = br#"{"type":"init"}"#;
     let mut context = minimal_context();
     let session = "seed-handoff-changed";
     set_reuse_and_session_identity(&mut context, session);
@@ -264,43 +256,6 @@ async fn rejected_seed_handoff_rebuilds_current_storage_before_one_fresh_create(
     context.storage_manifest = Some(manifest);
     let seed =
         seed_home_image_cache_with_fingerprints(&cache, &paths, session, 16, &fingerprints).await;
-    let generation = seed
-        .file_stem()
-        .unwrap()
-        .to_str()
-        .unwrap()
-        .strip_prefix("image-")
-        .unwrap();
-    let identity = SessionHistoryIdentity::new(
-        guest_contracts::session_history_identity::SessionHistoryFramework::ClaudeCode,
-        hex::encode(Sha256::digest(session.as_bytes())),
-        guest_contracts::session_history_identity::SessionHistoryRefKind::LocalHome,
-        hex::encode(Sha256::digest(history)),
-        history.len() as u64,
-        SessionHistorySourceRef::ClaudeCode {
-            config_dir: "/home/user/.claude".into(),
-            working_dir: CANONICAL_WORKING_DIR.into(),
-            session_id: session.into(),
-        },
-    )
-    .unwrap();
-    let proof = HomeCacheHistoryProof {
-        format_version: 1,
-        generation: generation.into(),
-        identity,
-    };
-    let binding = HomeCacheHistoryProofBinding {
-        sha256: hex::encode(Sha256::digest(proof.to_json_vec().unwrap())),
-        proof,
-    };
-    // A current-format fixture commit containing both derived-input candidates.
-    let metadata_path = seed.parent().unwrap().join("metadata.json");
-    let mut metadata: serde_json::Value =
-        serde_json::from_slice(&tokio::fs::read(&metadata_path).await.unwrap()).unwrap();
-    metadata["historyProof"] = serde_json::to_value(binding).unwrap();
-    tokio::fs::write(&metadata_path, serde_json::to_vec(&metadata).unwrap())
-        .await
-        .unwrap();
     let params = JobParams {
         home_disk_mb: 16,
         ..default_params()
@@ -363,12 +318,6 @@ async fn rejected_seed_handoff_rebuilds_current_storage_before_one_fresh_create(
     );
     assert_eq!(applied.storages[0].vas_version_id.as_deref(), Some("v1"));
     archive_get.assert_calls_async(1).await;
-    assert!(
-        !overrides
-            .exec_calls()
-            .iter()
-            .any(|call| call.cmd.contains("verify-home-cache-history"))
-    );
     assert_home_fallback(&telemetry, context.run_id, "home_preparation_failed");
     config.background_fill.shutdown().await;
     config.decoded_cache.shutdown().await;
@@ -990,7 +939,7 @@ async fn fresh_home_policy_skips_cached_bytes_and_never_enters_lock_retry() {
         let mut context = minimal_context();
         let session = "no-hint-home-policy";
         set_reuse_and_session_identity(&mut context, session);
-        context.native_continuation = None;
+        context.session_continuation = None;
         context.is_first_run = Some(true);
         let params = JobParams {
             home_disk_mb: 16,
@@ -2063,7 +2012,6 @@ async fn reusable_idle_sandbox_with_home_promotion(
         .into_promotion_context(crate::home_image_cache::HomeImagePromotionRequest {
             run_id,
             sandbox_id,
-            restored_session_identity: None,
             terminal_status: HomeCacheTerminalStatus::Success,
             completed_at: "2026-06-01T00:00:01.000Z".into(),
             storage_fingerprints: StorageFingerprints::default(),
@@ -2100,8 +2048,6 @@ async fn reusable_idle_sandbox_with_home_promotion(
         budget_lease: test_budget_lease(),
         source_ip,
         storage_fingerprints: StorageFingerprints::default(),
-        restored_session_identity: None,
-        native_generation_run_id: None,
         guest_timezone_intent: crate::guest_timezone::GuestTimezoneIntent::Unknown,
         home_image_size_bytes: u64::from(params.home_disk_mb) * 1024 * 1024,
         home_promotion: Some(promotion),

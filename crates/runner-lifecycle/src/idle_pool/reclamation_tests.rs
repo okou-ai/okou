@@ -11,17 +11,12 @@ use crate::home_image_cache::HomeCacheCheckoutResult;
 use crate::home_promotion::prepare_home_image_from_active_sandbox;
 use crate::home_promotion::test_support::{
     HomePromotionFixture, mock_sandbox_ready_for_cache_preparation as cache_sandbox,
-    test_restored_session_identity,
 };
 use crate::resource_budget::ResourceBudget;
 
 const WAIT: Duration = Duration::from_secs(5);
 
-async fn fixture_with_reclamation_capacity(
-    key: &str,
-    identity: Option<&crate::restored_session_identity::RestoredSessionIdentity>,
-    capacity: usize,
-) -> HomePromotionFixture {
+async fn fixture_with_reclamation_capacity(key: &str, capacity: usize) -> HomePromotionFixture {
     let seed = HomePromotionFixture::new("thread:reclamation-capacity-seed").await;
     let dir = Arc::clone(&seed._dir);
     let cache = seed
@@ -29,20 +24,16 @@ async fn fixture_with_reclamation_capacity(
         .clone()
         .with_promotion_capacity_for_test(capacity);
     drop(seed.promotion);
-    HomePromotionFixture::new_with_cache(dir, cache, key, identity).await
+    HomePromotionFixture::new_with_cache(dir, cache, key).await
 }
 
 async fn sibling_fixture(first: &HomePromotionFixture, key: &str) -> HomePromotionFixture {
-    HomePromotionFixture::new_with_cache(Arc::clone(&first._dir), first.cache.clone(), key, None)
-        .await
+    HomePromotionFixture::new_with_cache(Arc::clone(&first._dir), first.cache.clone(), key).await
 }
 
 #[tokio::test]
 async fn idle_reclamation_holds_from_terminal_unpark_through_kill_but_not_host_destroy() {
-    let history = br#"{"type":"message","content":"bounded reclamation"}"#;
-    let identity = test_restored_session_identity("sess-reclamation", history);
-    let first =
-        fixture_with_reclamation_capacity("thread:reclamation-first", Some(&identity), 1).await;
+    let first = fixture_with_reclamation_capacity("thread:reclamation-first", 1).await;
     let second = sibling_fixture(&first, "thread:reclamation-second").await;
     let overrides = Arc::new(MockSandboxOverrides::new());
     let unpark = MockLifecycleGate::new();
@@ -132,7 +123,6 @@ async fn idle_reclamation_uses_host_cpu_capacity_across_cache_clones() {
                 Arc::clone(&seed._dir),
                 cache.clone(),
                 &format!("thread:capacity-{index}"),
-                None,
             )
             .await;
             let payload = make_idle_destroy_payload_for(
@@ -172,7 +162,7 @@ async fn idle_reclamation_uses_host_cpu_capacity_across_cache_clones() {
 #[tokio::test]
 async fn idle_reclamation_retains_admission_through_destroy_when_kill_fails() {
     for panics in [false, true] {
-        let first = fixture_with_reclamation_capacity("thread:kill-failure", None, 1).await;
+        let first = fixture_with_reclamation_capacity("thread:kill-failure", 1).await;
         let second = sibling_fixture(&first, "thread:after-kill-failure").await;
         let overrides = Arc::new(MockSandboxOverrides::new());
         if panics {
@@ -247,7 +237,7 @@ async fn idle_reclamation_failure_releases_admission_after_cleanup() {
         Failure::FreezePanic,
         Failure::DestroyPanic,
     ] {
-        let first = fixture_with_reclamation_capacity("thread:preparation-failure", None, 1).await;
+        let first = fixture_with_reclamation_capacity("thread:preparation-failure", 1).await;
         let second = sibling_fixture(&first, "thread:after-preparation-failure").await;
         let overrides = Arc::new(MockSandboxOverrides::new());
         match failure {
@@ -293,15 +283,12 @@ async fn idle_reclamation_failure_releases_admission_after_cleanup() {
 
 #[tokio::test]
 async fn idle_reclamation_admission_does_not_block_bypass_or_active_promotion() {
-    let first = fixture_with_reclamation_capacity("thread:blocked-reclamation", None, 1).await;
+    let first = fixture_with_reclamation_capacity("thread:blocked-reclamation", 1).await;
     let abandoned = sibling_fixture(&first, "thread:abandoned-reclamation").await;
-    let history = br#"{"type":"message","content":"active publication"}"#;
-    let identity = test_restored_session_identity("sess-active-publication", history);
     let active = HomePromotionFixture::new_with_cache(
         Arc::clone(&first._dir),
         first.cache.clone(),
         "thread:active-promotion",
-        Some(&identity),
     )
     .await;
     let overrides = Arc::new(MockSandboxOverrides::new());

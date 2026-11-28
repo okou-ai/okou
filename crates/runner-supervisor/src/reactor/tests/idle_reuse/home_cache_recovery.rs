@@ -59,7 +59,6 @@ async fn publish_held(
         .into_promotion_context(HomeImagePromotionRequest {
             run_id,
             sandbox_id,
-            restored_session_identity: None,
             terminal_status: HomeCacheTerminalStatus::Success,
             completed_at: "2026-10-19T10:00:00Z".into(),
             storage_fingerprints: StorageFingerprints::default(),
@@ -305,7 +304,7 @@ async fn bootstrap_home_cache_recovery_attaches_the_image_to_an_available_blank(
     let publisher = HomeImageCache::shared(publisher_paths.clone(), &home, &group);
     let reuse_key = "thread:bootstrap-recovery";
     let promotion = publish_held(&publisher, &publisher_paths, reuse_key).await;
-    let generation = promotion.publication_generation();
+    let generation = promotion.run_id().to_string();
     let run_handle = tokio::spawn(run(config));
     wait_discover_entered(&env, Duration::from_secs(5)).await;
     wait_idle_pool_len(&env.idle_pool, 1, Duration::from_secs(5)).await;

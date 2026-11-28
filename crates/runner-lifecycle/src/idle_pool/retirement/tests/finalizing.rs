@@ -145,14 +145,13 @@ async fn finalizing_original_promotion_mismatch_refuses_before_broker_projection
 async fn finalizing_uncaptured_delivery_never_adopts_a_later_generation() {
     let (_, backing) = MockBackingProcess::channel();
     let mut fixture = JobFixture::new("thread:finalizing-unproven", Some(backing)).await;
-    let mut candidate = fixture.candidate();
+    let candidate = fixture.candidate();
     let predecessor = candidate
         .resources
         .home_promotion
         .as_ref()
         .unwrap()
         .run_id();
-    candidate.metadata.native_generation_run_id = Some(predecessor);
     let successor = RunId::new_v4();
     let mut owner = GuardedFinalizingHandoffOwner::new(Box::new(
         candidate.into_finalizing_handoff(successor, predecessor),

@@ -582,7 +582,6 @@ async fn deliver_pi_rpc_with_skips(
             prompt: "test bounded Pi delivery".into(),
             pi_launch_config: r#"{"schemaVersion":2}"#.into(),
             pi_model_config: "{}".into(),
-            pi_session_id: session_id.clone(),
             secret_values: secrets
                 .iter()
                 .map(|secret| base64::engine::general_purpose::STANDARD.encode(secret))

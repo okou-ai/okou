@@ -1047,7 +1047,7 @@ describe("Teams chat callbacks", () => {
       });
 
       clearTeamsApiCalls(teamsApi);
-      const mainSessionId = await completeSandboxRun({
+      await completeSandboxRun({
         runId: mainRunId,
         sandboxToken: mainExecution.sandboxToken,
         exitCode: 0,
@@ -1068,7 +1068,7 @@ describe("Teams chat callbacks", () => {
       });
 
       clearTeamsApiCalls(teamsApi);
-      const threadSessionId = await completeSandboxRun({
+      await completeSandboxRun({
         runId: threadRunId,
         sandboxToken: threadExecution.sandboxToken,
         exitCode: 0,
@@ -1088,9 +1088,10 @@ describe("Teams chat callbacks", () => {
           runnerGroup: teams.runnerGroup,
           runId: threadFollowUpRunId,
         });
-        expect(threadFollowUpExecution.nativeContinuation?.sessionId).toBe(
-          threadSessionId,
-        );
+        expect(threadFollowUpExecution.sessionContinuation).toMatchObject({
+          continueNative: true,
+          expectedSourceRunId: threadRunId,
+        });
         clearTeamsApiCalls(teamsApi);
         await completeSandboxRun({
           runId: threadFollowUpRunId,
@@ -1112,9 +1113,10 @@ describe("Teams chat callbacks", () => {
         runnerGroup: teams.runnerGroup,
         runId: returnToMainRunId,
       });
-      expect(returnToMainExecution.nativeContinuation?.sessionId).toBe(
-        mainSessionId,
-      );
+      expect(returnToMainExecution.sessionContinuation).toMatchObject({
+        continueNative: true,
+        expectedSourceRunId: mainRunId,
+      });
     },
   );
 
@@ -1337,7 +1339,7 @@ describe("Teams chat callbacks", () => {
         teams,
         teamsApi,
         threadId,
-        cliAgentSessionId,
+        firstRunId: runId,
         secondFixture,
         summaryRequests,
       };
@@ -1403,14 +1405,14 @@ describe("Teams chat callbacks", () => {
 
     it("starts a fresh native context for the new participant", async () => {
       const { receivedExecution } = await startParticipantExecution();
-      expect(receivedExecution.nativeContinuation).toMatchObject({
-        sessionId: null,
-        generationRunId: null,
+      expect(receivedExecution.sessionContinuation).toMatchObject({
+        continueNative: false,
+        expectedSourceRunId: null,
       });
     });
 
     it("resumes the original session after another participant completes", async () => {
-      const { teams, threadId, cliAgentSessionId } = prepared;
+      const { teams, threadId, firstRunId } = prepared;
       const { runId, receivedExecution } = await startParticipantExecution();
       await completeSandboxRun({
         runId,
@@ -1426,9 +1428,10 @@ describe("Teams chat callbacks", () => {
           "activity-completed-follow-up",
         ),
       });
-      expect(followUpExecution.nativeContinuation?.sessionId).toBe(
-        cliAgentSessionId,
-      );
+      expect(followUpExecution.sessionContinuation).toMatchObject({
+        continueNative: true,
+        expectedSourceRunId: firstRunId,
+      });
     });
   });
 
@@ -1573,7 +1576,7 @@ describe("Teams chat callbacks", () => {
     });
     clearTeamsApiCalls(teamsApi);
 
-    const cliAgentSessionId = await completeSandboxRun({
+    await completeSandboxRun({
       runId,
       sandboxToken: receivedExecution.sandboxToken,
       exitCode: 0,
@@ -1607,8 +1610,9 @@ describe("Teams chat callbacks", () => {
         "activity-teams-api-error-follow-up",
       ),
     });
-    expect(followUpExecution.nativeContinuation?.sessionId).toBe(
-      cliAgentSessionId,
-    );
+    expect(followUpExecution.sessionContinuation).toMatchObject({
+      continueNative: true,
+      expectedSourceRunId: runId,
+    });
   });
 });

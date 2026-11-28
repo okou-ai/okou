@@ -126,9 +126,9 @@ describe("Pi failed native continuation", () => {
       });
       const nextExecution = await runExecution(next.runId);
 
-      expect(nextExecution.execution.nativeContinuation).toMatchObject({
-        sessionId: first.threadId,
-        generationRunId: failed.runId,
+      expect(nextExecution.execution.sessionContinuation).toMatchObject({
+        continueNative: true,
+        expectedSourceRunId: failed.runId,
       });
       await own(() => {
         return cancelChatRun(actor, next.runId, nextExecution.sandboxHeaders);

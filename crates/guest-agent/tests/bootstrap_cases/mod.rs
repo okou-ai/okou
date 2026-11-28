@@ -6,4 +6,3 @@ mod home_reuse_cleanup;
 mod private_payload_json_diagnostics;
 mod process_control_env;
 mod reuse_preparation_helper;
-mod session_history_identity_helper;

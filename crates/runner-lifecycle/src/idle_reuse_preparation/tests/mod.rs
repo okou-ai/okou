@@ -32,21 +32,16 @@ async fn capture_preparation(
     sandbox: &MockSandbox,
     run_id: RunId,
 ) -> (Result<(), IdleReusePreparationFailure>, Vec<CapturedEvent>) {
-    capture_current_thread_events(execute_preparation(sandbox, run_id, run_id, None)).await
+    capture_current_thread_events(execute_preparation(sandbox, run_id, run_id)).await
 }
 
 async fn execute_preparation(
     sandbox: &MockSandbox,
     operation_run_id: RunId,
     current_runtime_run_id: RunId,
-    retained_runtime_dir: Option<&str>,
 ) -> Result<(), IdleReusePreparationFailure> {
-    let preparation = IdleReusePreparation::new(
-        sandbox.id(),
-        operation_run_id,
-        current_runtime_run_id,
-        retained_runtime_dir,
-    )?;
+    let preparation =
+        IdleReusePreparation::new(sandbox.id(), operation_run_id, current_runtime_run_id)?;
     let result = sandbox
         .exec_with_diagnostic_label(&preparation.exec_request(), "idle-reuse-preparation")
         .await
@@ -98,7 +93,7 @@ async fn full_home_rejects_idle_admission_with_independent_capacity_reason() {
 }
 
 #[tokio::test]
-async fn preparation_sends_canonical_current_and_retained_runtime_directories() {
+async fn preparation_sends_canonical_current_runtime_directory() {
     let sandbox = MockSandbox::new("reuse-request");
     sandbox.push_exec_result(Ok(ExecResult::new(
         0,
@@ -107,16 +102,10 @@ async fn preparation_sends_canonical_current_and_retained_runtime_directories() 
     )));
     let operation_run_id = RunId::new_v4();
     let current_runtime_run_id = RunId::new_v4();
-    let retained = "/home/user/.vm0/guest-agent/runs/previous";
 
-    execute_preparation(
-        &sandbox,
-        operation_run_id,
-        current_runtime_run_id,
-        Some(retained),
-    )
-    .await
-    .expect("healthy guest should be prepared");
+    execute_preparation(&sandbox, operation_run_id, current_runtime_run_id)
+        .await
+        .expect("healthy guest should be prepared");
 
     let calls = sandbox.exec_calls();
     assert_eq!(calls.len(), 1);
@@ -144,7 +133,6 @@ async fn preparation_sends_canonical_current_and_retained_runtime_directories() 
         request.current_runtime_dir,
         format!("/home/user/.vm0/guest-agent/runs/{current_runtime_run_id}")
     );
-    assert_eq!(request.retained_runtime_dir.as_deref(), Some(retained));
 }
 
 #[tokio::test]

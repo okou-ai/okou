@@ -74,7 +74,6 @@ async fn guest_fails_closed_before_pi_rpc_startup() -> Result<(), Box<dyn std::e
                     prompt: format!("reject {} Pi handoff boundary", case.name),
                     pi_launch_config: r#"{"schemaVersion":2}"#.to_string(),
                     pi_model_config: "{}".to_string(),
-                    pi_session_id: "11111111-1111-4111-8111-111111111111".to_string(),
                     ..guest_contracts::env::RunPayload::default()
                 },
             )?;

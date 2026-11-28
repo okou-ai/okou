@@ -1,5 +1,7 @@
 use super::acp::{AcpNotification, JsonRpcError};
-use super::backend::{has_non_empty_recovery_prompt, session_id_from_response};
+use super::backend::{
+    has_non_empty_recovery_prompt, latest_session_id_from_list, session_id_from_response,
+};
 use super::events::{EventProjector, UsageTotals};
 use super::*;
 use guest_contracts::diagnostics::FailureReason;
@@ -259,26 +261,50 @@ fn session_id_from_response_validates_resumed_identity_and_omitted_field() {
 }
 
 #[test]
+fn latest_session_id_from_list_selects_newest_valid_uuid_with_earliest_tie_break() {
+    let older = "11111111-1111-4111-8111-111111111111";
+    let newer_first = "22222222-2222-4222-8222-222222222222";
+    let newer_second = "33333333-3333-4333-8333-333333333333";
+
+    assert_eq!(
+        latest_session_id_from_list(&json!({"sessions": []})),
+        None
+    );
+    assert_eq!(
+        latest_session_id_from_list(&json!({
+            "sessions": [
+                {"sessionId": "not-a-uuid", "updatedAt": "2026-11-28T12:00:00Z"},
+                {"sessionId": older, "updatedAt": "2026-11-28T10:00:00Z"},
+                {"sessionId": newer_first, "updatedAt": "2026-11-28T11:00:00Z"},
+                {"sessionId": newer_second, "updatedAt": "2026-11-28T11:00:00Z"}
+            ]
+        }))
+        .as_deref(),
+        Some(newer_first)
+    );
+}
+
+#[test]
 fn has_non_empty_recovery_prompt_requires_non_blank_prompt() {
     assert!(!has_non_empty_recovery_prompt(None));
     assert!(!has_non_empty_recovery_prompt(Some(&NativeContinuation {
-        session_id: Some(SESSION_ID.into()),
-        generation_run_id: Some(SESSION_ID.into()),
+        continue_native: true,
+        expected_source_run_id: Some(SESSION_ID.into()),
         recovery_prompt: None,
     })));
     assert!(!has_non_empty_recovery_prompt(Some(&NativeContinuation {
-        session_id: Some(SESSION_ID.into()),
-        generation_run_id: Some(SESSION_ID.into()),
+        continue_native: true,
+        expected_source_run_id: Some(SESSION_ID.into()),
         recovery_prompt: Some(String::new()),
     })));
     assert!(!has_non_empty_recovery_prompt(Some(&NativeContinuation {
-        session_id: Some(SESSION_ID.into()),
-        generation_run_id: Some(SESSION_ID.into()),
+        continue_native: true,
+        expected_source_run_id: Some(SESSION_ID.into()),
         recovery_prompt: Some("   \n\t  ".into()),
     })));
     assert!(has_non_empty_recovery_prompt(Some(&NativeContinuation {
-        session_id: Some(SESSION_ID.into()),
-        generation_run_id: Some(SESSION_ID.into()),
+        continue_native: true,
+        expected_source_run_id: Some(SESSION_ID.into()),
         recovery_prompt: Some("Previous chat messages go here.".into()),
     })));
 }

@@ -14,7 +14,6 @@ use crate::idle_reuse_preparation::mock_sandbox_ready_for_idle_reuse;
 use crate::job_lifecycle::{RunCleanupDisposition, RunCleanupState};
 use crate::orphan_reap::OrphanedActiveRuns;
 use crate::resource_budget::ResourceBudget;
-use crate::restored_session_identity::RestoredSessionIdentity;
 use crate::status::StatusTracker;
 use crate::tests::status_active_run_records;
 use runner_lifecycle::active_runs::ActiveRuns;
@@ -160,22 +159,16 @@ impl FinalizationTelemetryFixture {
     }
 }
 
-fn executor_phase_outcome(
-    run_id: RunId,
-    sandbox_name: &str,
-    restored_session_identity: Option<RestoredSessionIdentity>,
-) -> ExecutorPhaseOutcome {
+fn executor_phase_outcome(run_id: RunId, sandbox_name: &str) -> ExecutorPhaseOutcome {
     executor_phase_outcome_with_sandbox(
         run_id,
         Box::new(mock_sandbox_ready_for_idle_reuse(sandbox_name)),
-        restored_session_identity,
     )
 }
 
 fn executor_phase_outcome_with_sandbox(
     run_id: RunId,
     sandbox: Box<dyn sandbox::Sandbox>,
-    restored_session_identity: Option<RestoredSessionIdentity>,
 ) -> ExecutorPhaseOutcome {
     ExecutorPhaseOutcome {
         outcome: executor::ExecuteOutcome {
@@ -191,7 +184,6 @@ fn executor_phase_outcome_with_sandbox(
             home_reuse_result: None,
             startup_report: None,
             discovered_cli_agent_session_id: None,
-            restored_session_identity,
             memory_published: false,
         },
         exit_code: 0,
@@ -213,7 +205,6 @@ fn executor_phase_outcome_without_sandbox(run_id: RunId) -> ExecutorPhaseOutcome
             home_reuse_result: None,
             startup_report: None,
             discovered_cli_agent_session_id: None,
-            restored_session_identity: None,
             memory_published: false,
         },
         exit_code: 1,
@@ -261,13 +252,12 @@ fn runner_job_timeout_zero_exit_code_normalizes_to_timeout_failure() {
 }
 
 #[tokio::test]
-async fn finalization_records_identity_parked_when_idle_pool_receives_restored_identity() {
+async fn finalization_records_reusable_sandbox_park_telemetry_and_source_run_id() {
     let fixture = FinalizationTelemetryFixture::new().await;
     let (_budget, lease) = test_budget_lease();
     let run_id = RunId::new_v4();
     let sandbox_id = SandboxId::new_v4();
     let cleanup_state = RunCleanupState::new();
-    let identity = RestoredSessionIdentity::claude_code_for_test("history-hash-a");
     let finalization = fixture.finalization_phase(
         run_id,
         sandbox_id,
@@ -277,11 +267,7 @@ async fn finalization_records_identity_parked_when_idle_pool_receives_restored_i
     );
 
     let finalized = finalization
-        .finalize(executor_phase_outcome(
-            run_id,
-            "identity-parked",
-            Some(identity.clone()),
-        ))
+        .finalize(executor_phase_outcome(run_id, "identity-parked"))
         .await;
 
     assert_telemetry_action(
@@ -318,7 +304,6 @@ async fn finalization_records_identity_parked_when_idle_pool_receives_restored_i
         "runner_host_physical_park_vcpu_pause",
         None,
     );
-    assert_telemetry_action(&finalized.telemetry, "session_history_identity_parked");
     assert_eq!(
         cleanup_state.disposition(),
         RunCleanupDisposition::IdlePoolOwned,
@@ -333,7 +318,7 @@ async fn finalization_records_identity_parked_when_idle_pool_receives_restored_i
     else {
         panic!("parked sandbox should unpark");
     };
-    assert_eq!(sandbox.restored_session_identity(), Some(&identity));
+    assert_eq!(sandbox.sandbox_id(), sandbox_id);
 }
 
 #[tokio::test]
@@ -350,7 +335,7 @@ async fn cooperative_cancellation_reuse_does_not_record_hard_cancellation_marker
         .cancel
         .request_cooperative_user_cancellation()
         .await;
-    let mut executor_result = executor_phase_outcome(run_id, "cooperative-cancellation", None);
+    let mut executor_result = executor_phase_outcome(run_id, "cooperative-cancellation");
     executor_result.outcome.sandbox_reuse_disposition = executor::SandboxReuseDisposition::Eligible(
         executor::SandboxReuseTerminal::CooperativeCancellation,
     );
@@ -388,7 +373,7 @@ async fn hard_cancellation_records_finalization_cancellation_marker() {
         cleanup_state.clone(),
     );
     finalization.cancel.request_hard_cancellation().await;
-    let mut executor_result = executor_phase_outcome(run_id, "hard-cancellation", None);
+    let mut executor_result = executor_phase_outcome(run_id, "hard-cancellation");
     executor_result.outcome.sandbox_reuse_disposition =
         executor::SandboxReuseDisposition::Ineligible(
             executor::SandboxReuseRejection::HardCancellation,
@@ -416,46 +401,6 @@ async fn hard_cancellation_records_finalization_cancellation_marker() {
 }
 
 #[tokio::test]
-async fn finalization_records_identity_park_missing_when_parked_without_restored_identity() {
-    let fixture = FinalizationTelemetryFixture::new().await;
-    let (_budget, lease) = test_budget_lease();
-    let run_id = RunId::new_v4();
-    let sandbox_id = SandboxId::new_v4();
-    let cleanup_state = RunCleanupState::new();
-    let session_id = "sess-park-missing";
-    let finalization =
-        fixture.finalization_phase(run_id, sandbox_id, session_id, lease, cleanup_state.clone());
-
-    let finalized = finalization
-        .finalize(executor_phase_outcome(
-            run_id,
-            "identity-park-missing",
-            None,
-        ))
-        .await;
-
-    assert_telemetry_action(
-        &finalized.telemetry,
-        "session_history_identity_park_missing",
-    );
-    assert_eq!(
-        cleanup_state.disposition(),
-        RunCleanupDisposition::IdlePoolOwned,
-    );
-    let entry = fixture
-        .idle_pool
-        .lock()
-        .await
-        .take(session_id)
-        .expect("parked sandbox should be in idle pool");
-    let IdleUnparkResult::Reused { sandbox, .. } = entry.try_unpark_for_run(RunId::new_v4()).await
-    else {
-        panic!("parked sandbox should unpark");
-    };
-    assert!(sandbox.restored_session_identity().is_none());
-}
-
-#[tokio::test]
 async fn finalization_delivers_requested_exact_handoff_without_idle_publication() {
     let fixture = FinalizationTelemetryFixture::new().await;
     let (_budget, lease) = test_budget_lease();
@@ -474,7 +419,7 @@ async fn finalization_delivers_requested_exact_handoff_without_idle_publication(
         .request_handoff(successor_run_id)
         .expect("exact successor should register one handoff");
 
-    let outcome = executor_phase_outcome(run_id, "direct-handoff", None);
+    let outcome = executor_phase_outcome(run_id, "direct-handoff");
 
     let local = CapturedEvents::default();
     let guard =
@@ -571,7 +516,6 @@ async fn finalization_records_reuse_preparation_failure_without_physical_park() 
         .finalize(executor_phase_outcome_with_sandbox(
             run_id,
             Box::new(sandbox),
-            None,
         ))
         .await;
 
@@ -613,7 +557,6 @@ async fn finalization_records_physical_park_failure_after_reuse_preparation() {
                 "physical-park-failed",
                 overrides,
             )),
-            None,
         ))
         .await;
 

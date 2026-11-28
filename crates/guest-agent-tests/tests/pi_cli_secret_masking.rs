@@ -39,7 +39,6 @@ async fn pi_masks_live_http_text_across_deltas_chunks_and_completion()
             prompt: "test synthetic Pi live masking".into(),
             pi_launch_config: r#"{"schemaVersion":2}"#.into(),
             pi_model_config: "{}".into(),
-            pi_session_id: session_id.clone(),
             secret_values: [
                 PLAIN,
                 ENCODED_SECRET,

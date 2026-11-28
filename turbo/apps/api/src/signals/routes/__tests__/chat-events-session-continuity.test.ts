@@ -155,9 +155,10 @@ describe("CHAT-02: run-level model overrides", () => {
       prompt: "continue with account B",
     });
     const secondExecution = await runExecution(second.runId);
-    expect(secondExecution.execution.nativeContinuation?.sessionId).toBe(
-      `bdd-cli-${first.runId}`,
-    );
+    expect(secondExecution.execution.sessionContinuation).toMatchObject({
+      continueNative: true,
+      expectedSourceRunId: first.runId,
+    });
     expect(
       secondExecution.execution.secretConnectorMetadataMap
         ?.CHATGPT_ACCESS_TOKEN,
@@ -197,9 +198,10 @@ describe("CHAT-02: run-level model overrides", () => {
       prompt: "continue again with account B",
     });
     const thirdExecution = await runExecution(third.runId);
-    expect(thirdExecution.execution.nativeContinuation?.sessionId).toBe(
-      `bdd-cli-${second.runId}`,
-    );
+    expect(thirdExecution.execution.sessionContinuation).toMatchObject({
+      continueNative: true,
+      expectedSourceRunId: second.runId,
+    });
     expect(
       thirdExecution.execution.secretConnectorMetadataMap?.CHATGPT_ACCESS_TOKEN,
     ).toMatchObject({ sourceId: accountBId });
@@ -248,9 +250,9 @@ describe("CHAT-02: run-level model overrides", () => {
       prompt: "continue on sonnet in the same session",
     });
     const secondExecution = await runExecution(second.runId);
-    expect(secondExecution.execution.nativeContinuation).toMatchObject({
-      sessionId: `bdd-cli-${first.runId}`,
-      generationRunId: first.runId,
+    expect(secondExecution.execution.sessionContinuation).toMatchObject({
+      continueNative: true,
+      expectedSourceRunId: first.runId,
       recoveryPrompt: expect.stringContaining(
         "okou chat messages --output-dir /tmp/okou-chat-history",
       ),
@@ -272,9 +274,9 @@ describe("CHAT-02: run-level model overrides", () => {
     expect(firstExecution.execution).toMatchObject({
       cliAgentType: "pi",
       piModelConfig: { provider: "openai-codex", model: "gpt-6-luna" },
-      nativeContinuation: {
-        sessionId: null,
-        generationRunId: null,
+      sessionContinuation: {
+        continueNative: false,
+        expectedSourceRunId: null,
         recoveryPrompt: null,
       },
     });
@@ -293,9 +295,9 @@ describe("CHAT-02: run-level model overrides", () => {
     expect(secondExecution.execution).toMatchObject({
       cliAgentType: "pi",
       piModelConfig: { provider: "openrouter" },
-      nativeContinuation: {
-        sessionId: first.threadId,
-        generationRunId: first.runId,
+      sessionContinuation: {
+        continueNative: true,
+        expectedSourceRunId: first.runId,
         recoveryPrompt: expect.stringContaining(
           "okou chat messages --output-dir /tmp/okou-chat-history",
         ),
@@ -316,9 +318,9 @@ describe("CHAT-02: run-level model overrides", () => {
     expect(thirdExecution.execution).toMatchObject({
       cliAgentType: "pi",
       piModelConfig: { provider: "openai-codex", model: "gpt-6-luna" },
-      nativeContinuation: {
-        sessionId: first.threadId,
-        generationRunId: second.runId,
+      sessionContinuation: {
+        continueNative: true,
+        expectedSourceRunId: second.runId,
       },
     });
     await cancelChatRun(actor, third.runId, thirdExecution.sandboxHeaders);
@@ -367,9 +369,9 @@ describe("CHAT-02: run-level model overrides", () => {
         prompt: "continue with a newer producer",
       });
       const secondExecution = await runExecution(second.runId);
-      expect(secondExecution.execution.nativeContinuation).toMatchObject({
-        sessionId: firstSession,
-        generationRunId: first.runId,
+      expect(secondExecution.execution.sessionContinuation).toMatchObject({
+        continueNative: true,
+        expectedSourceRunId: first.runId,
       });
       const secondSession = framework === "pi" ? first.threadId : randomUUID();
       await webhooks.requestAgentEvents(
@@ -422,9 +424,9 @@ describe("CHAT-02: run-level model overrides", () => {
         prompt: "inspect the winning native binding",
       });
       const thirdExecution = await runExecution(third.runId);
-      expect(thirdExecution.execution.nativeContinuation).toMatchObject({
-        sessionId: secondSession,
-        generationRunId: second.runId,
+      expect(thirdExecution.execution.sessionContinuation).toMatchObject({
+        continueNative: true,
+        expectedSourceRunId: second.runId,
       });
       await cancelChatRun(actor, third.runId, thirdExecution.sandboxHeaders);
     },
@@ -490,9 +492,9 @@ describe("CHAT-02: run-level model overrides", () => {
       prompt: "resume the current context after late recovery",
     });
     const thirdExecution = await runExecution(third.runId);
-    expect(thirdExecution.execution.nativeContinuation).toMatchObject({
-      sessionId: secondSession,
-      generationRunId: second.runId,
+    expect(thirdExecution.execution.sessionContinuation).toMatchObject({
+      continueNative: true,
+      expectedSourceRunId: second.runId,
     });
     await cancelChatRun(actor, third.runId, thirdExecution.sandboxHeaders);
   }, 90_000);
@@ -537,9 +539,9 @@ describe("CHAT-02: run-level model overrides", () => {
         prompt: "start the first native context",
       });
       const next = await runExecution(second.runId);
-      expect(next.execution.nativeContinuation).toMatchObject({
-        sessionId: null,
-        generationRunId: null,
+      expect(next.execution.sessionContinuation).toMatchObject({
+        continueNative: false,
+        expectedSourceRunId: null,
         recoveryPrompt: expect.stringContaining(
           "okou chat messages --output-dir /tmp/okou-chat-history",
         ),
@@ -591,9 +593,9 @@ describe("CHAT-02: run-level model overrides", () => {
         prompt: "continue from the cancelled native context",
       });
       const next = await runExecution(second.runId);
-      expect(next.execution.nativeContinuation).toMatchObject({
-        sessionId,
-        generationRunId: first.runId,
+      expect(next.execution.sessionContinuation).toMatchObject({
+        continueNative: true,
+        expectedSourceRunId: first.runId,
       });
       await cancelChatRun(actor, second.runId, next.sandboxHeaders);
     },
@@ -646,9 +648,9 @@ describe("CHAT-02: run-level model overrides", () => {
         prompt: "resume after concurrent finalization",
       });
       const next = await runExecution(second.runId);
-      expect(next.execution.nativeContinuation).toMatchObject({
-        sessionId,
-        generationRunId: first.runId,
+      expect(next.execution.sessionContinuation).toMatchObject({
+        continueNative: true,
+        expectedSourceRunId: first.runId,
       });
       await cancelChatRun(actor, second.runId, next.sandboxHeaders);
     },
@@ -692,9 +694,10 @@ describe("CHAT-02: run-level model overrides", () => {
     const picked = await waiting.launchedRun();
     await waitForRunStatus(actor, picked.runId, "running");
     const resumed = await runExecution(picked.runId);
-    expect(resumed.execution.nativeContinuation?.sessionId).toBe(
-      `bdd-cli-${first.runId}`,
-    );
+    expect(resumed.execution.sessionContinuation).toMatchObject({
+      continueNative: true,
+      expectedSourceRunId: first.runId,
+    });
     await cancelChatRun(actor, picked.runId, resumed.sandboxHeaders);
     await cancelChatRun(
       actor,
@@ -772,7 +775,10 @@ describe("CHAT-02: run-level model overrides", () => {
           : environment.ANTHROPIC_MODEL,
       ).toBe(to);
       expect(
-        secondExecution.execution.nativeContinuation?.sessionId,
+        secondExecution.execution.sessionContinuation?.continueNative,
+      ).toBe(false);
+      expect(
+        secondExecution.execution.sessionContinuation?.expectedSourceRunId,
       ).toBeNull();
       chatCallbacks.mockChatOutputEvents([]);
       await completeChatRunOk(second.runId, secondExecution.sandboxHeaders, {
@@ -785,7 +791,7 @@ describe("CHAT-02: run-level model overrides", () => {
         result: { frameworkSessionId: expect.any(String) },
       });
       expect(
-        secondExecution.execution.nativeContinuation?.recoveryPrompt,
+        secondExecution.execution.sessionContinuation?.recoveryPrompt,
       ).toContain("okou chat messages --output-dir /tmp/okou-chat-history");
       expect(secondRun.result?.framework).toBe(toRuntime);
 
@@ -827,9 +833,9 @@ describe("CHAT-02: run-level model overrides", () => {
       });
       const thirdExecution = await runExecution(third.runId);
       expect(thirdExecution.execution.cliAgentType).toBe(fromRuntime);
-      expect(thirdExecution.execution.nativeContinuation).toMatchObject({
-        sessionId: null,
-        generationRunId: null,
+      expect(thirdExecution.execution.sessionContinuation).toMatchObject({
+        continueNative: false,
+        expectedSourceRunId: null,
         recoveryPrompt: expect.stringContaining(
           "okou chat messages --output-dir /tmp/okou-chat-history",
         ),
@@ -884,9 +890,9 @@ describe("CHAT-02: run-level model overrides", () => {
       prompt: "continue after the Framework switch",
     });
     const secondExecution = await runExecution(second.runId);
-    expect(secondExecution.execution.nativeContinuation).toMatchObject({
-      sessionId: null,
-      generationRunId: null,
+    expect(secondExecution.execution.sessionContinuation).toMatchObject({
+      continueNative: false,
+      expectedSourceRunId: null,
       recoveryPrompt: expect.stringContaining(
         "okou chat messages --output-dir /tmp/okou-chat-history",
       ),
@@ -908,9 +914,9 @@ describe("CHAT-02: run-level model overrides", () => {
         model: "claude-fable-5-1",
       });
       const firstExecution = await runExecution(first.runId);
-      expect(firstExecution.execution.nativeContinuation).toMatchObject({
-        sessionId: null,
-        generationRunId: null,
+      expect(firstExecution.execution.sessionContinuation).toMatchObject({
+        continueNative: false,
+        expectedSourceRunId: null,
         recoveryPrompt: null,
       });
       if (status === "cancelled") {
@@ -938,9 +944,9 @@ describe("CHAT-02: run-level model overrides", () => {
       expect(secondExecution.execution.cliAgentType).toBe(
         firstExecution.execution.cliAgentType,
       );
-      expect(secondExecution.execution.nativeContinuation).toMatchObject({
-        sessionId: null,
-        generationRunId: null,
+      expect(secondExecution.execution.sessionContinuation).toMatchObject({
+        continueNative: false,
+        expectedSourceRunId: null,
         recoveryPrompt: expect.stringContaining(
           "okou chat messages --output-dir /tmp/okou-chat-history",
         ),
@@ -1004,6 +1010,7 @@ describe("CHAT-02: run-level model overrides", () => {
       actor,
       first.runId,
     );
+    expect(originalSession).toBe(`discarded-cli-${first.runId}`);
 
     const second = await sendChatRun(actor, {
       threadId: first.threadId,
@@ -1013,12 +1020,10 @@ describe("CHAT-02: run-level model overrides", () => {
     expect(secondRun.prompt).toBe("continue in a fresh native session");
 
     const secondExecution = await runExecution(second.runId);
-    expect(secondExecution.execution.nativeContinuation?.sessionId).toBe(
-      originalSession,
-    );
-    expect(secondExecution.execution.nativeContinuation?.generationRunId).toBe(
-      first.runId,
-    );
+    expect(secondExecution.execution.sessionContinuation).toMatchObject({
+      continueNative: true,
+      expectedSourceRunId: first.runId,
+    });
     chatCallbacks.mockChatOutputEvents([]);
     await completeChatRunOk(second.runId, secondExecution.sandboxHeaders);
     await expect(
@@ -1066,9 +1071,10 @@ describe("CHAT-02: run-level model overrides", () => {
       ),
     );
     expect(environment.ANTHROPIC_MODEL).toBe("claude-fable-5-1");
-    expect(secondExecution.execution.nativeContinuation?.sessionId).toBe(
-      `bdd-cli-${first.runId}`,
-    );
+    expect(secondExecution.execution.sessionContinuation).toMatchObject({
+      continueNative: true,
+      expectedSourceRunId: first.runId,
+    });
     await expectThreadCreatedModelEvent(
       actor,
       first.threadId,
@@ -1107,9 +1113,10 @@ describe("CHAT-02: run-level model overrides", () => {
       ),
     );
     expect(thirdExecution.execution.cliAgentType).toBe("claude-code");
-    expect(thirdExecution.execution.nativeContinuation?.sessionId).toBe(
-      `bdd-cli-${second.runId}`,
-    );
+    expect(thirdExecution.execution.sessionContinuation).toMatchObject({
+      continueNative: true,
+      expectedSourceRunId: second.runId,
+    });
     await completeChatRunOk(third.runId, thirdExecution.sandboxHeaders);
     await expect(
       readCompletedRunSessionId(context, actor, third.runId),
@@ -1125,9 +1132,10 @@ describe("CHAT-02: run-level model overrides", () => {
       prompt: "continue on the same canonical session",
     });
     const fourthExecution = await runExecution(fourth.runId);
-    expect(fourthExecution.execution.nativeContinuation?.sessionId).toBe(
-      `bdd-cli-${third.runId}`,
-    );
+    expect(fourthExecution.execution.sessionContinuation).toMatchObject({
+      continueNative: true,
+      expectedSourceRunId: third.runId,
+    });
     await completeChatRunOk(fourth.runId, fourthExecution.sandboxHeaders);
     await expect(
       readCompletedRunSessionId(context, actor, fourth.runId),

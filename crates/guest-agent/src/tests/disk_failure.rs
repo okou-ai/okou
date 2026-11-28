@@ -1,7 +1,6 @@
 //! First-completion attribution with a genuinely exhausted private home mount.
 
 use super::*;
-use guest_contracts::session_history_identity::SessionHistorySourceRef;
 use std::fs::File;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
@@ -101,13 +100,7 @@ async fn assert_full_home_completions() -> TestResult {
     paths::write_private(guest_paths.failure_diagnostic_file(), "")?;
     let session_path = native_pi_history()?;
     let native_history = std::fs::read(&session_path)?;
-    let metadata = session_metadata::CapturedSessionMetadata::for_test(
-        SESSION_ID,
-        Some(SessionHistorySourceRef::Pi {
-            session_path: session_path.to_string_lossy().into_owned(),
-            session_id: SESSION_ID.to_string(),
-        }),
-    );
+    let metadata = session_metadata::CapturedSessionMetadata::for_test(SESSION_ID);
     let mut config = test_guest_config(server, Some("continue after the tool failure"));
     config.framework = env::Framework::Pi;
     config.cli_agent_type = "pi".to_string();

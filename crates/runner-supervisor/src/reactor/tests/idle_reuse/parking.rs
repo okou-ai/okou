@@ -529,8 +529,6 @@ async fn same_thread_reuses_sandbox_across_provider_session_change() {
 #[tokio::test(start_paused = true)]
 async fn discovered_cli_session_does_not_substitute_for_reuse_key() {
     let overrides = Arc::new(sandbox_mock::MockSandboxOverrides::new());
-    // Successful execution reads final history metadata before discovering the session ID.
-    overrides.push_read_file_result(Ok(None));
     overrides.push_read_file_result(Ok(Some(b"sess-evict".to_vec())));
     let (config, env) =
         mock_run_config_with_overrides(test_profiles(), 8, 16384, 4, Arc::clone(&overrides));
@@ -584,15 +582,9 @@ async fn discovered_cli_session_does_not_substitute_for_reuse_key() {
     let read_calls = overrides.read_file_calls();
     let run_dir =
         runtime_paths::run_dir_for_home(CANONICAL_GUEST_HOME_DIR, &run_id.to_string()).unwrap();
-    assert_eq!(read_calls.len(), 2);
+    assert_eq!(read_calls.len(), 1);
     assert_eq!(
-        read_calls[0].path,
-        runtime_paths::final_session_history_identity_file(&run_dir)
-            .to_str()
-            .unwrap()
-    );
-    assert_eq!(
-        read_calls[1],
+        read_calls[0],
         sandbox_mock::ReadFileCall {
             path: runtime_paths::session_id_file(&run_dir)
                 .to_str()

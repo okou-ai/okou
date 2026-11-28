@@ -86,17 +86,25 @@ async fn full_cached_home_is_replaced_with_current_inputs_and_only_final_cold_re
     let mut context = minimal_context();
     let session = "disk-full";
     context.reuse_key = Some(format!("thread:home-cache-{session}"));
-    context.native_continuation = Some(guest_contracts::env::NativeContinuation {
-        session_id: Some(session.into()),
-        generation_run_id: Some(context.run_id.to_string()),
-        recovery_prompt: None,
-    });
     context.prompt = "Use these captured current inputs".into();
     context.environment = Some(HashMap::from([(
         "CURRENT_INPUT".into(),
         "current-value".into(),
     )]));
     let seed = seed_home_image_cache(&cache, &paths, session, 16).await;
+    let seed_run_id = seed
+        .file_stem()
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .strip_prefix("image-")
+        .unwrap()
+        .to_string();
+    context.session_continuation = Some(guest_contracts::env::NativeContinuation {
+        continue_native: true,
+        expected_source_run_id: Some(seed_run_id),
+        recovery_prompt: Some("recover from chat history".into()),
+    });
     let metadata = seed.parent().unwrap().join("metadata.json");
     let cold = api.mock(|when, then| {
         when.method(PUT)
@@ -163,7 +171,12 @@ async fn full_cached_home_is_replaced_with_current_inputs_and_only_final_cold_re
     assert_eq!(payload.prompt, context.prompt);
     let native: guest_contracts::env::NativeContinuation =
         serde_json::from_str(&payload.native_continuation).unwrap();
-    assert_eq!(native.session_id.as_deref(), Some(session));
+    assert!(!native.continue_native);
+    assert_eq!(native.expected_source_run_id, None);
+    assert_eq!(
+        native.recovery_prompt.as_deref(),
+        Some("recover from chat history")
+    );
     let environment: HashMap<String, String> =
         serde_json::from_slice(&writes[1].files[1].content).unwrap();
     assert_eq!(environment["CURRENT_INPUT"], "current-value");

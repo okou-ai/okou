@@ -6,8 +6,6 @@ use super::{
     with_carried_failure_reason, write_pi_launch_payload_file,
 };
 use crate::active_input::ActiveInputRuntime;
-use crate::paths;
-use crate::session_metadata::SessionHistoryLaunchSource;
 use crate::{constants, env};
 use api_contracts::generated::types::runners::runs::CodexRuntimeConfig;
 use guest_contracts::diagnostics::{FailureDetailSource, FailureReason};
@@ -49,7 +47,6 @@ fn guest_config_for_cli_test(user_env: HashMap<String, String>) -> env::GuestCon
         codex_runtime_config: String::new(),
         pi_launch_config: String::new(),
         pi_model_config: String::new(),
-        pi_session_id: String::new(),
         #[cfg(debug_assertions)]
         test_pi_cli_path: None,
         #[cfg(feature = "test-support")]
@@ -92,6 +89,7 @@ fn runtime_for_command_test<'a>(
         prompt: Cow::Borrowed(prompt),
         resume_session_id: Cow::Borrowed(""),
         append_system_prompt: Cow::Borrowed(append_system_prompt),
+        continue_native: false,
         native_continuation: None,
         disallowed_tools: Cow::Borrowed(""),
         use_mock_claude: false,
@@ -120,23 +118,7 @@ fn runtime_for_command_test<'a>(
         ),
         agent_log_file: Cow::Borrowed("/tmp/agent.log"),
         session_id_file: Cow::Borrowed("/tmp/session-id"),
-        session_history_launch_source: match framework {
-            env::Framework::ClaudeCode => SessionHistoryLaunchSource::ClaudeCode {
-                config_dir: Some("/tmp/home/.claude".to_string()),
-                working_dir: paths::CANONICAL_WORKING_DIR.to_string(),
-            },
-            env::Framework::Codex => SessionHistoryLaunchSource::Codex {
-                sessions_dir: Some("/tmp/codex-home/sessions".to_string()),
-            },
-            env::Framework::Pi => SessionHistoryLaunchSource::Pi,
-            env::Framework::Antigravity => SessionHistoryLaunchSource::Antigravity {
-                conversations_dir: Some(
-                    "/tmp/home/.gemini/antigravity-cli/conversations".to_string(),
-                ),
-            },
-        },
         claude_append_system_prompt_file: Cow::Borrowed("/tmp/claude-append-system-prompt"),
-        pi_session_id: Cow::Borrowed(""),
         pi_launch_config: Cow::Borrowed(""),
         pi_launch_payload_file: Cow::Borrowed("/tmp/pi-launch-payload/payload.json"),
         pi_model_config: Cow::Borrowed(""),
@@ -179,7 +161,6 @@ fn explicit_claude_effort_overrides_user_env_without_mutating_it() {
 fn pi_child_env_passes_v2_model_config_with_canonical_run_id() {
     let user_env = HashMap::new();
     let mut runtime = runtime_for_command_test(env::Framework::Pi, "prompt", "", &user_env);
-    runtime.pi_session_id = Cow::Borrowed("22222222-2222-4222-8222-222222222222");
     runtime.pi_launch_config = Cow::Borrowed(r#"{"schemaVersion":2}"#);
     runtime.pi_model_config = Cow::Borrowed(
         r#"{"schemaVersion":2,"dialect":"openai-codex-responses","transport":"sse","provider":"openai-codex","baseUrl":"https://chatgpt.com/backend-api/codex","model":"gpt-5.3-codex","credentialBindings":[{"kind":"access-token","environment":"CHATGPT_ACCESS_TOKEN","secretName":"CHATGPT_ACCESS_TOKEN"},{"kind":"account-id","environment":"CHATGPT_ACCOUNT_ID","secretName":"CHATGPT_ACCOUNT_ID"}]}"#,
@@ -194,10 +175,6 @@ fn pi_child_env_passes_v2_model_config_with_canonical_run_id() {
         .map(|(_, value)| value.as_str());
     assert_eq!(canonical_run_id, Some(runtime.run_id.as_ref()));
     for (key, expected) in [
-        (
-            guest_contracts::env::PI_SESSION_ID_ENV,
-            runtime.pi_session_id.as_ref(),
-        ),
         (
             guest_contracts::env::PI_LAUNCH_PAYLOAD_FILE_ENV,
             runtime.pi_launch_payload_file.as_ref(),
@@ -236,6 +213,7 @@ fn pi_launch_payload_file_merges_append_system_prompt_privately() {
     let path = Path::new(paths.pi_launch_payload_file());
     let payload: serde_json::Value = serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
     assert_eq!(payload["schemaVersion"], 1);
+    assert_eq!(payload["continueNative"], false);
     assert_eq!(payload["appendSystemPrompt"], "Your name is Okou.");
     assert_eq!(payload["launchConfig"]["schemaVersion"], 2);
     #[cfg(unix)]
@@ -507,11 +485,6 @@ fn codex_home_is_independent_of_child_home() {
 
     assert_eq!(runtime.home_dir, "/tmp/home");
     assert_eq!(runtime.codex_home(), "/tmp/codex-home");
-    let SessionHistoryLaunchSource::Codex { sessions_dir } = &runtime.session_history_launch_source
-    else {
-        panic!("expected Codex session-history source");
-    };
-    assert_eq!(sessions_dir.as_deref(), Some("/tmp/codex-home/sessions"));
 }
 
 #[tokio::test]

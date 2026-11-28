@@ -94,7 +94,6 @@ impl Fixture {
             .into_promotion_context(HomeImagePromotionRequest {
                 run_id,
                 sandbox_id,
-                restored_session_identity: None,
                 terminal_status: terminal,
                 completed_at: completed_at.into(),
                 storage_fingerprints: fingerprints,
@@ -157,36 +156,4 @@ pub(super) fn create_image(path: &Path, marker: &[u8], size: u64) -> std::fs::Fi
     image.set_len(size).unwrap();
     image.write_all_at(marker, 4096).unwrap();
     image
-}
-
-pub(super) fn binding(
-    generation: &str,
-) -> guest_contracts::home_cache_history::HomeCacheHistoryProofBinding {
-    use guest_contracts::home_cache_history::{
-        HomeCacheHistoryProof, HomeCacheHistoryProofBinding,
-    };
-    use guest_contracts::session_history_identity::{
-        SessionHistoryFramework, SessionHistoryIdentity, SessionHistoryRefKind,
-        SessionHistorySourceRef,
-    };
-    use sha2::{Digest, Sha256};
-    let identity = SessionHistoryIdentity::new(
-        SessionHistoryFramework::Codex,
-        "a".repeat(64),
-        SessionHistoryRefKind::Blob,
-        "b".repeat(64),
-        1024,
-        SessionHistorySourceRef::Codex {
-            sessions_dir: "/home/user/.codex/sessions".into(),
-            thread_id: uuid::Uuid::nil().to_string(),
-        },
-    )
-    .unwrap();
-    let proof = HomeCacheHistoryProof {
-        format_version: 1,
-        generation: generation.into(),
-        identity,
-    };
-    let sha256 = hex::encode(Sha256::digest(proof.to_json_vec().unwrap()));
-    HomeCacheHistoryProofBinding { proof, sha256 }
 }

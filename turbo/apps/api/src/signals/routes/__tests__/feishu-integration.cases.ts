@@ -1649,6 +1649,7 @@ function createFeishuIntegrationFixture(platform: FeishuPlatform) {
     threadId?: string,
   ): Promise<{
     readonly firstMessageId: string;
+    readonly mainRunId: string;
     readonly mainSessionId: string;
   }> {
     const { actor, runnerGroup, appId, callbackUrl } = fixture;
@@ -1679,7 +1680,7 @@ function createFeishuIntegrationFixture(platform: FeishuPlatform) {
       history: `bdd initial feishu history ${initialRun.id}`,
       assistantText: "Initial Feishu DM answer",
     });
-    return { firstMessageId, mainSessionId };
+    return { firstMessageId, mainRunId: initialRun.id, mainSessionId };
   }
 
   return {
@@ -6591,7 +6592,7 @@ export function registerFeishuIntegrationTests(
             }),
           }),
         );
-        expect(receivedExecution.nativeContinuation?.recoveryPrompt).toContain(
+        expect(receivedExecution.sessionContinuation?.recoveryPrompt).toContain(
           "okou chat messages --output-dir /tmp/okou-chat-history",
         );
         await own(() => {
@@ -7050,9 +7051,10 @@ export function registerFeishuIntegrationTests(
         expect(secondExecution.appendSystemPrompt).toContain(
           "Scope: Group mention",
         );
-        expect(secondExecution.nativeContinuation?.sessionId).toBe(
-          firstCliSessionId,
-        );
+        expect(secondExecution.sessionContinuation).toMatchObject({
+          continueNative: true,
+          expectedSourceRunId: firstRun.id,
+        });
       });
 
       it("ignores unmentioned group messages, app messages and system notifications", async () => {
@@ -7609,7 +7611,7 @@ export function registerSharedFeishuConversationTests(): void {
     it("keeps quoted Feishu DM input on the main session and replies in a thread", async () => {
       const fixture = await setupFeishuRunFixture();
       const { actor, runnerGroup, appId, callbackUrl } = fixture;
-      const { firstMessageId, mainSessionId } =
+      const { firstMessageId, mainRunId, mainSessionId } =
         await startFeishuDmSession(fixture);
 
       const quotedReplyMessageId = `om_${randomUUID()}`;
@@ -7637,9 +7639,10 @@ export function registerSharedFeishuConversationTests(): void {
         return runsApi.heartbeatRunner(runnerGroup);
       });
       const quotedReplyExecution = await readRunExecution(quotedReplyRun.id);
-      expect(quotedReplyExecution.nativeContinuation?.sessionId).toBe(
-        mainSessionId,
-      );
+      expect(quotedReplyExecution.sessionContinuation).toMatchObject({
+        continueNative: true,
+        expectedSourceRunId: mainRunId,
+      });
       await completeRunSession({
         runId: quotedReplyRun.id,
         sandboxToken: quotedReplyExecution.sandboxToken,
@@ -7753,9 +7756,10 @@ export function registerSharedFeishuConversationTests(): void {
           return runsApi.heartbeatRunner(runnerGroup);
         });
         const mainDmExecution = await readRunExecution(mainDmRun.id);
-        expect(mainDmExecution.nativeContinuation?.sessionId).toBe(
-          mainSessionId,
-        );
+        expect(mainDmExecution.sessionContinuation).toMatchObject({
+          continueNative: true,
+          expectedSourceRunId: initialRun.id,
+        });
         await completeRunSession({
           runId: mainDmRun.id,
           sandboxToken: mainDmExecution.sandboxToken,
@@ -7867,9 +7871,10 @@ export function registerSharedFeishuConversationTests(): void {
       const threadFollowUpExecution = await readRunExecution(
         threadFollowUpRun.id,
       );
-      expect(threadFollowUpExecution.nativeContinuation?.sessionId).toBe(
-        threadSessionId,
-      );
+      expect(threadFollowUpExecution.sessionContinuation).toMatchObject({
+        continueNative: true,
+        expectedSourceRunId: threadRun.id,
+      });
       await own(() => {
         return runsApi.requestCancelRun(actor, threadFollowUpRun.id, [200]);
       });
@@ -8346,9 +8351,10 @@ export function registerSharedFeishuConversationTests(): void {
         return runsApi.heartbeatRunner(runnerGroup);
       });
       const groupFollowUpExecution = await readRunExecution(groupFollowUp.id);
-      expect(groupFollowUpExecution.nativeContinuation?.sessionId).toBe(
-        groupCliSessionId,
-      );
+      expect(groupFollowUpExecution.sessionContinuation).toMatchObject({
+        continueNative: true,
+        expectedSourceRunId: groupRun.id,
+      });
       await own(() => {
         return runsApi.requestCancelRun(actor, groupFollowUp.id, [200]);
       });

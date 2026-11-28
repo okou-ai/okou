@@ -4,12 +4,10 @@ use std::time::Duration;
 use futures_util::FutureExt;
 use sandbox::{ProcessExit, ProcessOutputChunk};
 use sandbox_mock::MockLifecycleGate;
-use sha2::{Digest, Sha256};
 use tracing::Level;
 use tracing_subscriber::prelude::*;
 use tracing_test_support::{CapturedEvents, find_captured_event};
 
-use super::support::{final_identity_metadata_bytes, final_identity_runtime_paths};
 use crate::executor::agent_run::{ProcessCancelTimeouts, RunControls, RunStart, run_in_sandbox};
 use crate::executor::diagnostics::AgentStdoutStreamDiagnostics;
 use crate::executor::tests::support::{
@@ -175,10 +173,6 @@ async fn run_in_sandbox_preserves_wait_result_when_cancel_arrives_after_wait() {
         truncated: true,
     }]);
     let ctx = minimal_context();
-    let session_id = "sess-late-cancel-123";
-    let history = br#"{"type":"done"}"#;
-    let (metadata_path, _) = final_identity_runtime_paths(&ctx);
-    overrides.push_read_file_result(Ok(Some(final_identity_metadata_bytes(session_id, history))));
     let cancel = tokio_util::sync::CancellationToken::new();
     overrides.cancel_after_next_wait_process_result(cancel.clone());
     let sandbox = create_overridden_sandbox(overrides).await;
@@ -203,15 +197,6 @@ async fn run_in_sandbox_preserves_wait_result_when_cancel_arrives_after_wait() {
 
     assert!(cancel.is_cancelled());
     assert!(result.failure.is_none());
-    let identity = result
-        .reusable_session_identity
-        .as_ref()
-        .expect("completed agent identity should survive late cancellation");
-    assert_eq!(
-        identity.history_hash(),
-        hex::encode(Sha256::digest(history))
-    );
-    assert_eq!(identity.final_metadata_path(), Some(metadata_path.as_str()));
     assert_eq!(
         result.stdout_stream_diagnostics,
         AgentStdoutStreamDiagnostics {

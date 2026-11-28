@@ -6,7 +6,6 @@ use sandbox_mock::{MockSandbox, MockSandboxFactory};
 use crate::guest_timezone::GuestTimezoneIntent;
 use crate::home_image_cache::HomeImagePromotionContext;
 use crate::resource_budget::BudgetLease;
-use crate::restored_session_identity::RestoredSessionIdentity;
 use crate::storage_fingerprints::StorageFingerprints;
 use runner_types::ids::RunId;
 
@@ -29,8 +28,6 @@ pub struct ParkedIdleCandidateBuilder {
     budget_lease: BudgetLease,
     source_ip: String,
     storage_fingerprints: StorageFingerprints,
-    restored_session_identity: Option<RestoredSessionIdentity>,
-    native_generation_run_id: Option<RunId>,
     guest_timezone_intent: GuestTimezoneIntent,
     last_completed_at: Option<String>,
     home_promotion: Option<HomeImagePromotionContext>,
@@ -53,8 +50,6 @@ impl ParkedIdleCandidateBuilder {
             budget_lease,
             source_ip: DEFAULT_SOURCE_IP.into(),
             storage_fingerprints: StorageFingerprints::default(),
-            restored_session_identity: None,
-            native_generation_run_id: None,
             guest_timezone_intent: GuestTimezoneIntent::Unknown,
             last_completed_at: None,
             home_promotion: None,
@@ -111,11 +106,6 @@ impl ParkedIdleCandidateBuilder {
         self
     }
 
-    pub fn with_native_generation_run_id(mut self, native_generation_run_id: RunId) -> Self {
-        self.native_generation_run_id = Some(native_generation_run_id);
-        self
-    }
-
     pub fn with_guest_timezone_intent(
         mut self,
         guest_timezone_intent: GuestTimezoneIntent,
@@ -126,11 +116,6 @@ impl ParkedIdleCandidateBuilder {
 
     pub fn with_home_promotion(mut self, home_promotion: HomeImagePromotionContext) -> Self {
         self.home_promotion = Some(home_promotion);
-        self
-    }
-
-    pub fn with_restored_session_identity(mut self, identity: RestoredSessionIdentity) -> Self {
-        self.restored_session_identity = Some(identity);
         self
     }
 
@@ -152,8 +137,6 @@ impl ParkedIdleCandidateBuilder {
             budget_lease,
             source_ip,
             storage_fingerprints,
-            restored_session_identity,
-            native_generation_run_id,
             guest_timezone_intent,
             last_completed_at,
             home_promotion,
@@ -167,8 +150,6 @@ impl ParkedIdleCandidateBuilder {
             device_rate_limits,
             source_ip,
             storage_fingerprints,
-            restored_session_identity,
-            native_generation_run_id,
             guest_timezone_intent,
             last_completed_at,
         };

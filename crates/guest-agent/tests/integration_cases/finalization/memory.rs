@@ -88,10 +88,8 @@ async fn clearing_memory_reports_the_committed_empty_version_without_a_warmup_hi
         then.json_body(json!({"success": true, "status": "completed"}));
     });
 
-    let metadata = guest_agent::session_metadata::CapturedSessionMetadata::for_test(
-        "clear-memory-session",
-        None,
-    );
+    let metadata =
+        guest_agent::session_metadata::CapturedSessionMetadata::for_test("clear-memory-session");
     let finalization =
         guest_agent::finalization::prepare_finalization_for_runtime(&runtime, &metadata)
             .await
@@ -235,7 +233,6 @@ async fn memory_conflict_finalization_requires_merge_inputs_and_reports_the_comm
         });
         let metadata = guest_agent::session_metadata::CapturedSessionMetadata::for_test(
             "memory-merge-session",
-            None,
         );
         let result =
             guest_agent::finalization::prepare_finalization_for_runtime(&runtime, &metadata).await;

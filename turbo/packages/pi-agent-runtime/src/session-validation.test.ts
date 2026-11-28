@@ -1,12 +1,8 @@
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { fauxAssistantMessage } from "@earendil-works/pi-ai";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import { runInIsolatedProcess } from "../../../scripts/run-isolated-test.mjs";
 import { inspectPiSessionJsonl } from "./api";
-import { runPiOfficialRpcMode } from "./rpc";
 import { MemoryPiSession } from "./session-memory";
 import { UnsupportedPiSessionVersionError } from "./errors";
 
@@ -253,79 +249,4 @@ describe("native Pi history structural boundaries", () => {
       isSettledHistory: false,
     });
   });
-  it("rejects direct persisted RPC startup before rewriting files or executing runtime work", async () => {
-    if (await runInIsolatedProcess(import.meta.url)) {
-      return;
-    }
-    const directory = await mkdtemp(join(tmpdir(), "pi-invalid-rpc-"));
-    const sessionFile = join(directory, "session.jsonl");
-    const args = {
-      sessionId: SESSION_ID,
-      sessionFile,
-      sessionDir: directory,
-      cwd: directory,
-      agentDir: join(directory, "agent"),
-      appendSystemPrompt: null,
-      model: {
-        provider: "openrouter",
-        model: "openai/gpt-6-luna",
-        dialect: "openai-responses" as const,
-        transport: "sse" as const,
-        apiKey: "synthetic-key",
-        baseUrl: "http://127.0.0.1:1",
-      },
-    };
-    try {
-      for (const version of [2, 3]) {
-        for (const entries of cycles) {
-          const history = jsonl(entries, version);
-          await writeFile(sessionFile, history);
-          await expect(runPiOfficialRpcMode(args)).rejects.toThrow(
-            "Pi session parent graph contains a cycle",
-          );
-          expect(await readFile(sessionFile, "utf8")).toBe(history);
-        }
-      }
-      for (const { history, error } of [
-        {
-          history: jsonl([entry("a", null), entry("a", null)], 2),
-          error: "duplicate entry ids",
-        },
-        { history: jsonl([null], 1), error: "records must be objects" },
-        { history: jsonl([], 999), error: "newer than supported" },
-        {
-          history: jsonl([], 1).replace(SESSION_ID, "wrong-session"),
-          error: "session id does not match",
-        },
-      ]) {
-        await writeFile(sessionFile, history);
-        await expect(runPiOfficialRpcMode(args)).rejects.toThrow(error);
-        expect(await readFile(sessionFile, "utf8")).toBe(history);
-      }
-      const valid = jsonl([entry("a", null)]);
-      await writeFile(sessionFile, valid);
-      // Fault-inject the third-party load result to prove runtime validates
-      // the entries it receives, independently of the earlier byte check.
-      const open = SessionManager.open.bind(SessionManager);
-      const spy = vi
-        .spyOn(SessionManager, "open")
-        .mockImplementation((...openArgs) => {
-          const manager = open(...openArgs);
-          const loaded = manager.getEntries()[0];
-          if (!loaded) throw new Error("Expected a loaded entry");
-          loaded.parentId = loaded.id;
-          return manager;
-        });
-      try {
-        await expect(runPiOfficialRpcMode(args)).rejects.toThrow(
-          "Pi session parent graph contains a cycle",
-        );
-        expect(await readFile(sessionFile, "utf8")).toBe(valid);
-      } finally {
-        spy.mockRestore();
-      }
-    } finally {
-      await rm(directory, { recursive: true, force: true });
-    }
-  }, 150_000);
 });

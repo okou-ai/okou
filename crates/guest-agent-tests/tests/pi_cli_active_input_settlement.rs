@@ -16,7 +16,6 @@ use guest_contracts::diagnostics::{CliTerminationReason, CliTerminationSignal};
 use tokio_util::sync::CancellationToken;
 
 const RUN_ID: &str = "00000000-0000-4000-8000-000000000146";
-const SESSION_ID: &str = "11111111-1111-4111-8111-111111111146";
 const EVENT_ID: &str = "22222222-2222-4222-8222-222222222146";
 
 #[tokio::test]
@@ -89,7 +88,6 @@ exec sleep 60
                 prompt: "complete a steered Pi turn".to_string(),
                 pi_launch_config: r#"{"schemaVersion":2}"#.to_string(),
                 pi_model_config: "{}".to_string(),
-                pi_session_id: SESSION_ID.to_string(),
                 ..guest_contracts::env::RunPayload::default()
             },
         )?;

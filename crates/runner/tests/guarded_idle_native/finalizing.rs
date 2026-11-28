@@ -62,7 +62,6 @@ pub async fn exercise(
         .into_promotion_context(HomeImagePromotionRequest {
             run_id,
             sandbox_id,
-            restored_session_identity: None,
             terminal_status: HomeCacheTerminalStatus::Success,
             completed_at: chrono::Utc::now().to_rfc3339(),
             storage_fingerprints: StorageFingerprints::default(),
@@ -91,8 +90,6 @@ pub async fn exercise(
         budget_lease: lease,
         source_ip: "10.0.0.1".into(),
         storage_fingerprints: StorageFingerprints::default(),
-        restored_session_identity: None,
-        native_generation_run_id: Some(run_id),
         guest_timezone_intent: GuestTimezoneIntent::Unknown,
         home_image_size_bytes: fixture::IMAGE_BYTES,
         home_promotion: Some(promotion),

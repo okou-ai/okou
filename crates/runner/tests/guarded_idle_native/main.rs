@@ -915,7 +915,6 @@ async fn exercise_retirement(
         .await;
     }
     let mut first_lease = None;
-    let mut session_identity = None;
     let mut original_history = Vec::new();
     let mut storage_fingerprints = StorageFingerprints::default();
     let mut original_exit = 0;
@@ -961,7 +960,6 @@ async fn exercise_retirement(
         };
         original_exit = prepared.exit_code;
         storage_fingerprints = prepared.storage.clone();
-        session_identity = prepared.identity.clone();
         first_lease = Some(lease);
         let backing = prepared
             .sandbox
@@ -974,7 +972,7 @@ async fn exercise_retirement(
                 "history_run_id":run_id,"thread_id":continuation.session()?.0,
                 "history_hex":hex::encode(&prepared.history),
                 "history_sha256":continuation::digest(&prepared.history),
-                "history_bytes":prepared.history.len(),"final_identity_verified":prepared.identity.is_some(),
+                "history_bytes":prepared.history.len(),
                 "physical_history":guest_preparation::session_file(&*prepared.sandbox,&continuation.session()?.0).await?,
                 "executor_completed":true,"exit_code":prepared.exit_code,
             }))?;
@@ -1080,7 +1078,6 @@ async fn exercise_retirement(
     let promotion = home.into_promotion_context(HomeImagePromotionRequest {
         run_id,
         sandbox_id,
-        restored_session_identity: session_identity.as_ref(),
         terminal_status: if original_exit == 0 {
             HomeCacheTerminalStatus::Success
         } else {
@@ -1122,23 +1119,16 @@ async fn exercise_retirement(
     {
         proof.bind_original_lease(&lease)?;
     }
-    let candidate = ParkedIdleCandidateBuilder::new(&reuse_key, lease)
+    let mut candidate = ParkedIdleCandidateBuilder::new(&reuse_key, lease)
         .with_source_run_id(run_id)
         .with_sandbox(sandbox)
         .with_factory(factory.clone())
         .with_sandbox_id(sandbox_id)
         .with_profile_name(fixture::PROFILE)
         .with_rootfs_hash(&rootfs_hash)
-        .with_source_run_id(run_id)
-        .with_native_generation_run_id(run_id)
         .with_home_promotion(promotion)
-        .with_storage_fingerprints(storage_fingerprints);
-    let candidate = if let Some(identity) = session_identity {
-        candidate.with_restored_session_identity(identity)
-    } else {
-        candidate
-    };
-    let mut candidate = candidate.build();
+        .with_storage_fingerprints(storage_fingerprints)
+        .build();
     if let Err(error) = candidate.capture_retirement_backing() {
         if let Some(proof) = proof {
             proof.retain(candidate);
@@ -1464,6 +1454,7 @@ async fn exercise_retirement(
                         selection: IdlePressureRequest {
                             run_id: RunId::new_v4(),
                             reuse_key: None,
+                            expected_source_run_id: None,
                             profile_name: fixture::PROFILE,
                             device_rate_limits: &None,
                             allow_compatible_blank: false,

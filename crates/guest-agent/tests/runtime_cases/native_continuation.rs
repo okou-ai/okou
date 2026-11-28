@@ -1,5 +1,6 @@
-//! Real CLI process boundaries select retained native history before adding
-//! the API-owned recovery item. Config is owned; no process env is mutated.
+//! Real CLI process boundaries continue natively in reused homes or append the
+//! API-owned recovery prompt when starting fresh. Config is owned; no process
+//! env is mutated.
 
 #![cfg(target_os = "linux")]
 
@@ -16,7 +17,7 @@ use serde_json::{Value, json};
 use shell_quote::quote_shell_arg;
 use std::collections::HashMap;
 use std::os::unix::fs::PermissionsExt;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::time::Duration;
 
 type TestResult = Result<(), Box<dyn std::error::Error>>;
@@ -30,10 +31,10 @@ fn executable(path: &Path, text: &str) -> TestResult {
     Ok(())
 }
 
-fn native(id: Option<&str>, later: bool) -> NativeContinuation {
+fn native(continue_native: bool, later: bool) -> NativeContinuation {
     NativeContinuation {
-        session_id: id.map(str::to_owned),
-        generation_run_id: id.map(|_| uuid::Uuid::new_v4().to_string()),
+        continue_native,
+        expected_source_run_id: continue_native.then(|| uuid::Uuid::new_v4().to_string()),
         recovery_prompt: later.then(|| RECOVERY.to_owned()),
     }
 }
@@ -44,7 +45,6 @@ fn runtime(
     framework: &str,
     binary: &Path,
     native: NativeContinuation,
-    pi_id: &str,
     user_env: HashMap<String, String>,
 ) -> Result<GuestRuntime, Box<dyn std::error::Error>> {
     let run_id = uuid::Uuid::new_v4().to_string();
@@ -57,7 +57,6 @@ fn runtime(
             native_continuation: serde_json::to_string(&native)?,
             pi_launch_config: "{\"schemaVersion\":2}".into(),
             pi_model_config: "{}".into(),
-            pi_session_id: pi_id.into(),
             ..RunPayload::default()
         },
     )?;
@@ -105,61 +104,12 @@ async fn execute(runtime: &GuestRuntime) -> TestResult {
 }
 
 #[tokio::test]
-async fn claude_resumes_only_matching_history_and_recovers_later_misses() -> TestResult {
+async fn claude_uses_continue_flag_when_continuing_natively_and_recovers_otherwise() -> TestResult {
     common::ensure_canonical_workspace_for_test()?;
     let mock = common::build_and_locate_mock()?;
     let server = common::RecordingServer::start(200, Duration::ZERO).await?;
-    for case in [
-        "first",
-        "resumed",
-        "dense",
-        "corrupt-tail",
-        "conflicting-tail",
-        "missing",
-        "foreign",
-        "header-only",
-        "framework-switch",
-    ] {
+    for case in ["first", "continued", "framework-switch"] {
         let home = tempfile::tempdir()?;
-        let id = uuid::Uuid::new_v4().to_string();
-        let history = home.path().join(".claude/projects/-home-user-workspace");
-        std::fs::create_dir_all(&history)?;
-        if matches!(
-            case,
-            "resumed" | "dense" | "corrupt-tail" | "conflicting-tail" | "foreign" | "header-only"
-        ) {
-            std::fs::write(
-                history.join(format!("{id}.jsonl")),
-                format!(
-                    "{}\n",
-                    json!({"sessionId": if case == "foreign" { "foreign" } else { &id }})
-                ),
-            )?;
-        }
-        if matches!(
-            case,
-            "resumed" | "dense" | "corrupt-tail" | "conflicting-tail"
-        ) {
-            let mut history_file = std::fs::OpenOptions::new()
-                .append(true)
-                .open(history.join(format!("{id}.jsonl")))?;
-            use std::io::Write as _;
-            writeln!(
-                history_file,
-                "{}",
-                json!({"type":"user","sessionId":id,"message":{"role":"user","content":"Earlier context"}})
-            )?;
-            match case {
-                "dense" => writeln!(
-                    history_file,
-                    "{{\"unused\":[{}{{\"x\":0}}]}}",
-                    "{\"x\":0},".repeat(1024)
-                )?,
-                "corrupt-tail" => writeln!(history_file, "{{\"unused\":[0,]}}")?,
-                "conflicting-tail" => writeln!(history_file, "{{\"sessionId\":\"foreign\"}}")?,
-                _ => {}
-            }
-        }
         let argv = home.path().join("argv");
         let binary = home.path().join("claude");
         executable(
@@ -170,27 +120,29 @@ async fn claude_resumes_only_matching_history_and_recovers_later_misses() -> Tes
                 quote_shell_arg(&mock.to_string_lossy()),
             ),
         )?;
-        let requested = (!matches!(case, "first" | "framework-switch")).then_some(id.as_str());
         let run = runtime(
             home.path(),
             &server,
             "claude-code",
             &binary,
-            native(requested, case != "first"),
-            "",
+            native(case == "continued", case != "first"),
             HashMap::new(),
         )?;
         execute(&run).await?;
         let args = std::fs::read_to_string(argv)?;
         assert_eq!(
-            args.lines().any(|arg| arg == "--resume"),
-            matches!(case, "resumed" | "dense"),
+            args.lines().any(|arg| arg == "--continue"),
+            case == "continued",
             "{case}"
+        );
+        assert!(
+            !args.lines().any(|arg| arg == "--resume"),
+            "{case}: API runs should never pass --resume"
         );
         let appended = std::fs::read_to_string(run.paths.claude_append_system_prompt_file())?;
         assert_eq!(
             appended.contains(RECOVERY),
-            !matches!(case, "first" | "resumed" | "dense"),
+            case == "framework-switch",
             "{case}"
         );
         assert!(appended.starts_with(BASE_PROMPT));
@@ -223,8 +175,7 @@ async fn codex_continues_a_first_turn_from_the_same_retained_home() -> TestResul
         &server,
         "codex",
         &binary,
-        native(None, false),
-        "",
+        native(false, false),
         user_env.clone(),
     )?;
     execute(&first).await?;
@@ -243,12 +194,17 @@ async fn codex_continues_a_first_turn_from_the_same_retained_home() -> TestResul
         &server,
         "codex",
         &binary,
-        native(Some(id), true),
-        "",
+        native(true, true),
         user_env,
     )?;
     execute(&second).await?;
     let messages = read_json_lines(capture)?;
+    assert!(
+        messages
+            .iter()
+            .any(|message| message["method"] == "thread/list"),
+        "second turn should discover the latest thread via thread/list"
+    );
     let resumed = messages
         .iter()
         .find(|message| message["method"] == "thread/resume")
@@ -269,17 +225,14 @@ async fn codex_continues_a_first_turn_from_the_same_retained_home() -> TestResul
 }
 
 #[tokio::test]
-async fn codex_resumes_exact_rollout_and_recovers_missing_or_ambiguous_history() -> TestResult {
+async fn codex_lists_and_resumes_latest_thread_or_recovers_on_missing_rollout() -> TestResult {
     common::ensure_canonical_workspace_for_test()?;
     let mock = common::build_and_locate_mock_codex()?;
     let server = common::RecordingServer::start(200, Duration::ZERO).await?;
     for case in [
         "first",
-        "resumed",
-        "missing",
-        "duplicate",
-        "header-only",
-        "foreign",
+        "continued",
+        "empty-list",
         "framework-switch",
         "rpc-missing",
         "rpc-error",
@@ -288,27 +241,16 @@ async fn codex_resumes_exact_rollout_and_recovers_missing_or_ambiguous_history()
         let id = uuid::Uuid::new_v4().to_string();
         let sessions = home.path().join(".codex/sessions/2026/10/14");
         std::fs::create_dir_all(&sessions)?;
-        if matches!(
-            case,
-            "resumed" | "duplicate" | "foreign" | "header-only" | "rpc-missing" | "rpc-error"
-        ) {
-            let mut header = format!(
-                "{}\n",
-                json!({"type":"session_meta","payload":{"id":if case == "foreign" { "019dce97-c703-7b91-8b8b-e7a7dd145918" } else { &id }}})
+        if matches!(case, "continued" | "rpc-missing" | "rpc-error") {
+            let header = format!(
+                "{}\n{}\n",
+                json!({"type":"session_meta","payload":{"id":&id,"cwd":"/home/user/workspace"}}),
+                json!({"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"Earlier context"}]}}),
             );
-            if case != "header-only" {
-                header.push_str(&format!("{}\n", json!({"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"Earlier context"}]}})));
-            }
             std::fs::write(
                 sessions.join(format!("rollout-2026-10-14T00-00-00-{id}.jsonl")),
                 &header,
             )?;
-            if case == "duplicate" {
-                std::fs::write(
-                    sessions.join(format!("rollout-2026-10-14T00-00-01-{id}.jsonl")),
-                    &header,
-                )?;
-            }
         }
         let capture = home.path().join("rpc");
         let binary = home.path().join("codex");
@@ -325,14 +267,13 @@ async fn codex_resumes_exact_rollout_and_recovers_missing_or_ambiguous_history()
                 quote_shell_arg(&mock.to_string_lossy()),
             ),
         )?;
-        let requested = (!matches!(case, "first" | "framework-switch")).then_some(id.as_str());
+        let continue_native = !matches!(case, "first" | "framework-switch");
         let run = runtime(
             home.path(),
             &server,
             "codex",
             &binary,
-            native(requested, case != "first"),
-            "",
+            native(continue_native, case != "first"),
             HashMap::new(),
         )?;
         if case == "rpc-error" {
@@ -370,7 +311,7 @@ async fn codex_resumes_exact_rollout_and_recovers_missing_or_ambiguous_history()
             .ok_or("thread request absent")?;
         assert_eq!(
             thread_request["method"],
-            if case == "resumed" {
+            if case == "continued" {
                 "thread/resume"
             } else {
                 "thread/start"
@@ -382,7 +323,7 @@ async fn codex_resumes_exact_rollout_and_recovers_missing_or_ambiguous_history()
             .ok_or("developer instructions absent")?;
         assert_eq!(
             prompt.contains(RECOVERY),
-            !matches!(case, "first" | "resumed"),
+            !matches!(case, "first" | "continued"),
             "{case}"
         );
         assert!(prompt.starts_with(BASE_PROMPT));
@@ -390,58 +331,13 @@ async fn codex_resumes_exact_rollout_and_recovers_missing_or_ambiguous_history()
     Ok(())
 }
 
-struct PiFiles(Vec<PathBuf>);
-impl Drop for PiFiles {
-    fn drop(&mut self) {
-        for path in &self.0 {
-            let _ = std::fs::remove_file(path);
-        }
-    }
-}
-
 #[tokio::test]
-async fn pi_keeps_matching_history_and_quarantines_corrupt_history_before_fresh_launch()
--> TestResult {
+async fn pi_forwards_continue_native_and_recovers_when_starting_fresh() -> TestResult {
     common::ensure_canonical_workspace_for_test()?;
     let server = common::RecordingServer::start(200, Duration::ZERO).await?;
-    let root =
-        Path::new(api_contracts::generated::constants::runners::paths::CANONICAL_PI_SESSION_DIR);
-    std::fs::create_dir_all(root)?;
-    for case in [
-        "first",
-        "resumed",
-        "missing",
-        "corrupt",
-        "wrong-version",
-        "header-only",
-        "duplicate",
-        "framework-switch",
-    ] {
+    for case in ["first", "continued", "framework-switch"] {
         let home = tempfile::tempdir()?;
-        let id = uuid::Uuid::new_v4().to_string();
-        let path = root.join(format!("2026-10-14T00-00-00_{id}.jsonl"));
-        let duplicate = root.join(format!("2026-10-14T00-00-01_{id}.jsonl"));
-        let mut files = PiFiles(vec![path.clone(), duplicate.clone()]);
-        if matches!(
-            case,
-            "resumed" | "corrupt" | "wrong-version" | "duplicate" | "header-only"
-        ) {
-            let mut history = if case == "corrupt" {
-                "not JSON".into()
-            } else {
-                format!(
-                    "{}\n",
-                    json!({"type":"session","version":if case == "wrong-version" { 4 } else { 3 },"id":id})
-                )
-            };
-            if matches!(case, "resumed" | "duplicate" | "wrong-version") {
-                history.push_str(&format!("{}\n", json!({"type":"message","id":"00000001","parentId":null,"message":{"role":"user","content":"Earlier context"}})));
-            }
-            std::fs::write(&path, &history)?;
-            if case == "duplicate" {
-                std::fs::write(&duplicate, &history)?;
-            }
-        }
+        let dynamic_session_id = uuid::Uuid::new_v4().to_string();
         let bin = home.path().join("bin");
         std::fs::create_dir(&bin)?;
         let capture = home.path().join("pi-launch.json");
@@ -450,40 +346,33 @@ async fn pi_keeps_matching_history_and_quarantines_corrupt_history_before_fresh_
             &format!(
                 "#!/bin/sh\nset -eu\ncat \"$OKOU_PI_LAUNCH_PAYLOAD_FILE\" > {}\nIFS= read -r state\nprintf '%s\\n' '{}' | sed \"s/__RUN__/$OKOU_RUN_ID/g\"\nIFS= read -r prompt\nprintf '{{\"id\":\"%s:pi:initial-prompt\",\"type\":\"response\",\"command\":\"prompt\",\"success\":true}}\\n' \"$OKOU_RUN_ID\"\nprintf '%s\\n' '{{\"type\":\"agent_settled\"}}'\ncat >/dev/null\n",
                 quote_shell_arg(&capture.to_string_lossy()),
-                json!({"id":"__RUN__:pi:get-state","type":"response","command":"get_state","success":true,"data":{"sessionId":id,"sessionFile":path}}),
+                json!({"id":"__RUN__:pi:get-state","type":"response","command":"get_state","success":true,"data":{"sessionId":dynamic_session_id}}),
             ),
         )?;
-        let requested = (!matches!(case, "first" | "framework-switch")).then_some(id.as_str());
         let run = runtime(
             home.path(),
             &server,
             "pi",
             &bin.join("okou"),
-            native(requested, case != "first"),
-            &id,
+            native(case == "continued", case != "first"),
             HashMap::from([("PATH".into(), format!("{}:/usr/bin:/bin", bin.display()))]),
         )?;
-        for original in [&path, &duplicate] {
-            files.0.push(original.with_file_name(format!(
-                    "{}.unresumed-{}",
-                    original
-                        .file_name()
-                        .ok_or("Pi filename absent")?
-                        .to_string_lossy(),
-                    run.config.run_id
-                )));
-        }
         execute(&run).await?;
         let payload: Value = serde_json::from_slice(&std::fs::read(capture)?)?;
+        assert_eq!(payload["continueNative"], case == "continued", "{case}");
         let prompt = payload["appendSystemPrompt"]
             .as_str()
             .ok_or("Pi appended prompt absent")?;
         assert_eq!(
             prompt.contains(RECOVERY),
-            !matches!(case, "first" | "resumed"),
+            case == "framework-switch",
             "{case}"
         );
-        assert_eq!(path.exists(), case == "resumed", "{case}");
+        assert_eq!(
+            std::fs::read_to_string(run.paths.session_id_file())?,
+            dynamic_session_id,
+            "{case}: guest should capture Pi sessionId dynamically from get_state"
+        );
     }
     Ok(())
 }

@@ -950,7 +950,10 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
       heartbeatGeneration: runner.heartbeatGeneration,
       executionContext: {
         runId: followUp.id,
-        nativeContinuation: { sessionId: null, generationRunId: null },
+        sessionContinuation: {
+          continueNative: false,
+          expectedSourceRunId: null,
+        },
         reuseKey,
       },
     });
@@ -1493,9 +1496,10 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
           3504,
           branch.botReplyId,
         );
-        expect(branchFollowUp.execution.nativeContinuation?.sessionId).toBe(
-          branch.sessionId,
-        );
+        expect(branchFollowUp.execution.sessionContinuation).toMatchObject({
+          continueNative: true,
+          expectedSourceRunId: branch.execution.runId,
+        });
         replyChain = { branch, followUp: branchFollowUp };
       }
     }
@@ -1551,9 +1555,10 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
                 3505,
                 3503,
               );
-              expect(earlierReply.execution.nativeContinuation?.sessionId).toBe(
-                branchFollowUp.sessionId,
-              );
+              expect(earlierReply.execution.sessionContinuation).toMatchObject({
+                continueNative: true,
+                expectedSourceRunId: branchFollowUp.execution.runId,
+              });
               return;
             }
             await createBddIntegrationApi(dm.context).updateUserModelPreference(
@@ -1573,16 +1578,18 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
             expect(pinnedReply.chatThread.selectedModel).toBe(
               "claude-fable-5-1",
             );
-            expect(pinnedReply.execution.nativeContinuation?.sessionId).toBe(
-              branchFollowUp.sessionId,
-            );
+            expect(pinnedReply.execution.sessionContinuation).toMatchObject({
+              continueNative: true,
+              expectedSourceRunId: branchFollowUp.execution.runId,
+            });
             return;
           }
 
           const followUp = await completeDm("continue the main DM", 3502);
-          expect(followUp.execution.nativeContinuation?.sessionId).toBe(
-            main.sessionId,
-          );
+          expect(followUp.execution.sessionContinuation).toMatchObject({
+            continueNative: true,
+            expectedSourceRunId: main.execution.runId,
+          });
           expect(followUp.chatThread.id).toBe(main.chatThread.id);
           expect(followUp.chatThread.selectedModel).toBe("claude-fable-5-1");
         }),
@@ -1663,7 +1670,7 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
         `Message thread ID: ${messageThreadId}`,
       ].join("\n"),
     );
-    const cliAgentSessionId = await completeCanonicalChatRun({
+    await completeCanonicalChatRun({
       runId: firstRun.id,
       sandboxToken: firstExecution.sandboxToken,
     });
@@ -1762,9 +1769,10 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
     await expect(threadIdForRun(fixture, followUpRun.id)).resolves.toBe(
       firstThreadId,
     );
-    expect(followUpExecution.nativeContinuation?.sessionId).toBe(
-      cliAgentSessionId,
-    );
+    expect(followUpExecution.sessionContinuation).toMatchObject({
+      continueNative: true,
+      expectedSourceRunId: firstRun.id,
+    });
     await completeCanonicalChatRun({
       runId: followUpRun.id,
       sandboxToken: followUpExecution.sandboxToken,

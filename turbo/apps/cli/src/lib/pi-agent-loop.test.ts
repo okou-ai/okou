@@ -47,7 +47,6 @@ let rpcHostEntry: Awaited<ReturnType<typeof buildProcessEntry>>;
 let rpcHostPreparation: ReturnType<typeof buildProcessEntry> | undefined;
 const CONFIG: PiSandboxAgentConfig = {
   runId: RUN_ID,
-  sessionId: SESSION_ID,
   reportPreparationTiming: true,
   launchPayload: {
     schemaVersion: 1,
@@ -402,7 +401,6 @@ afterEach(async () => {
 function piEnv(runIdEnv: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   return {
     ...runIdEnv,
-    OKOU_PI_SESSION_ID: SESSION_ID,
     OKOU_PI_LAUNCH_PAYLOAD_FILE: launchPayloadFile,
     OKOU_PI_MODEL_CONFIG: JSON.stringify({
       provider: "openrouter",
@@ -430,8 +428,9 @@ function occurrences(value: string, needle: string): number {
 
 async function startSandboxHost(args: {
   readonly root: string;
-  /** History the Runner restored from the run's `resumeSession`, if any. */
+  /** History retained in sessionDir from an earlier turn, if any. */
   readonly restoredJsonl?: string;
+  readonly continueNative?: boolean;
   readonly providerBaseUrl: string;
   readonly model?: "openrouter-v41" | "openrouter-luna" | "codex-luna";
   readonly serviceTier?: "priority" | "fast";
@@ -453,6 +452,7 @@ async function startSandboxHost(args: {
     payloadFile,
     JSON.stringify({
       schemaVersion: 1,
+      continueNative: args.continueNative ?? args.restoredJsonl !== undefined,
       appendSystemPrompt: null,
       launchConfig: { schemaVersion: 2 },
     }),
@@ -462,7 +462,6 @@ async function startSandboxHost(args: {
   const env = {
     ...process.env,
     OKOU_RUN_ID: RUN_ID,
-    OKOU_PI_SESSION_ID: SESSION_ID,
     OKOU_PI_LAUNCH_PAYLOAD_FILE: payloadFile,
     OKOU_PI_MODEL_CONFIG: JSON.stringify(
       args.model === "codex-luna"
@@ -529,7 +528,8 @@ describe("sandbox Pi agent loop", () => {
     });
     try {
       const state = await host.state("startup-observation-state");
-      expect(state.sessionId).toBe(SESSION_ID);
+      expect(state.sessionId).toEqual(expect.any(String));
+      expect(String(state.sessionId).length).toBeGreaterThan(0);
       await host.terminate();
       const records = host.preparationRecords();
       expect(
@@ -541,7 +541,6 @@ describe("sandbox Pi agent loop", () => {
           "cli_config",
           "cli_launch_payload",
           "cli_credentials",
-          "cli_session_file",
           "session_manager",
           "runtime_initialize",
           "resources_prompt",
@@ -919,15 +918,11 @@ describe("sandbox Pi agent loop", () => {
         type: "response",
         id: "sandbox-first-state",
       });
-      expect(state).toMatchObject({ sessionId: SESSION_ID, messageCount: 0 });
-      expect(String(state.sessionFile)).toBe(
-        join(
-          root,
-          ".pi",
-          "agent",
-          "sessions",
-          "--test--",
-          `${SESSION_ID}.jsonl`,
+      expect(state).toMatchObject({ messageCount: 0 });
+      expect(typeof state.sessionId).toBe("string");
+      expect(String(state.sessionFile)).toMatch(
+        new RegExp(
+          `^${join(root, ".pi", "agent", "sessions", "--test--")}/.*_${String(state.sessionId)}\\.jsonl$`,
         ),
       );
 
@@ -995,16 +990,17 @@ describe("sandbox Pi agent loop", () => {
         const expectedInput = expandsSkill
           ? `<skill name="handoff-skill" location="${skillFile}">\nReferences are relative to ${skillDir}.\n\n${skillBody}\n</skill>\n\nfirst  argument\nsecond line`
           : prompt;
+        let firstSessionId: string | undefined;
+        let firstSessionFile: string | undefined;
         for (const turn of [1, 2]) {
           host = await startSandboxHost({
             root,
-            restoredJsonl: h0,
+            continueNative: turn > 1,
             providerBaseUrl: provider.baseUrl,
             model: "openrouter-luna",
           });
           const state = await host.state(`native-input-state-${turn}`);
           expect(state).toMatchObject({
-            sessionId: SESSION_ID,
             // A fresh session has projected nothing yet. Once the first turn
             // has run, 0.86's single leading transcript system message is part
             // of the projection this count reports, alongside each completed
@@ -1015,17 +1011,13 @@ describe("sandbox Pi agent loop", () => {
             type: "response",
             id: `native-input-state-${turn}`,
           });
-          const installed = await readFile(String(state.sessionFile), "utf8");
-          // The first turn opens a fresh session; a resumed turn opens the
-          // Runner-restored H0, which must remain byte-for-byte intact.
-          if (h0 === undefined) {
-            expect(String(state.sessionFile)).toMatch(
-              new RegExp(`/${SESSION_ID}\\.jsonl$`),
-            );
+          if (turn === 1) {
+            firstSessionId = String(state.sessionId);
+            firstSessionFile = String(state.sessionFile);
           } else {
-            expect(String(state.sessionFile)).toMatch(
-              new RegExp(`/restored-${SESSION_ID}\\.jsonl$`),
-            );
+            expect(state.sessionId).toBe(firstSessionId);
+            expect(state.sessionFile).toBe(firstSessionFile);
+            const installed = await readFile(String(state.sessionFile), "utf8");
             expect(installed).toBe(h0);
           }
 
@@ -1058,7 +1050,7 @@ describe("sandbox Pi agent loop", () => {
 
           h0 = await readFile(String(state.sessionFile), "utf8");
           const persisted = MemoryPiSession.fromJsonl(h0);
-          expect(persisted.getSessionId()).toBe(SESSION_ID);
+          expect(persisted.getSessionId()).toBe(firstSessionId);
           expect(persisted.isSettledHistory()).toBe(true);
           const messages = persisted.buildSessionContext().messages;
           // 0.86 declares the prompt and tool loadout as one leading transcript

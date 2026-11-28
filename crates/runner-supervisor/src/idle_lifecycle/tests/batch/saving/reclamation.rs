@@ -15,7 +15,7 @@ async fn park_shared_home(
     cache: &HomeImageCache,
     key: &str,
 ) -> ParkedHome {
-    let home = HomePromotionFixture::new_with_cache(dir.clone(), cache.clone(), key, None).await;
+    let home = HomePromotionFixture::new_with_cache(dir.clone(), cache.clone(), key).await;
     let (candidate, home) = fixture.candidate_with_home(home, true);
     assert!(matches!(
         fixture.pool.lock().await.park(candidate),
@@ -73,8 +73,7 @@ async fn shared_reclamation_failure_retains_both_batch_owners_without_blocking_s
         assert!(owners.iter().all(|owner| !owner.cleanup_completed()));
         drop(owners);
         assert_eq!(fixture.budget.allocated(), (0, 0, 0));
-        let probe =
-            HomePromotionFixture::new_with_cache(dir, cache, "thread:reconciled", None).await;
+        let probe = HomePromotionFixture::new_with_cache(dir, cache, "thread:reconciled").await;
         let permit = tokio::time::timeout(
             WAIT,
             probe
@@ -101,8 +100,7 @@ async fn queued_required_reclamation_observes_saturation_without_releasing_faile
         }));
     let mut batch = fixture.start(IdleRetirementBatchScope::All).await;
     unpark.wait_entered(1, WAIT).await.unwrap();
-    let probe =
-        HomePromotionFixture::new_with_cache(dir, cache, "thread:pending-probe", None).await;
+    let probe = HomePromotionFixture::new_with_cache(dir, cache, "thread:pending-probe").await;
     let waiting = probe
         .promotion
         .acquire_required_idle_home_reclamation_permit();

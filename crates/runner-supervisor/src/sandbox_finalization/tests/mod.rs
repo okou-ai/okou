@@ -9,12 +9,8 @@ use tracing_test_support::{
 
 use api_contracts::generated::constants::runners::paths::CANONICAL_WORKING_DIR;
 use guest_contracts::reuse_preparation::{FilesystemCapacity, ReusePreparationReport};
-use guest_contracts::session_history_identity::{
-    SessionHistoryFramework, SessionHistoryIdentity, SessionHistoryRefKind, SessionHistorySourceRef,
-};
 use sandbox::{ExecResult, SandboxFactory, SandboxId};
 use sandbox_mock::{MockLifecycleGate, MockSandbox, MockSandboxFactory, MockSandboxOverrides};
-use sha2::{Digest, Sha256};
 use tracing::Level;
 use tracing_test_support::CapturedEvent;
 
@@ -38,7 +34,6 @@ use runner_lifecycle::idle_reuse_preparation::{
     add_healthy_reuse_preparation_matcher, mock_sandbox_ready_for_idle_reuse,
 };
 use runner_lifecycle::resource_budget::{BudgetLease, ResourceBudget};
-use runner_lifecycle::restored_session_identity::RestoredSessionIdentity;
 use runner_lifecycle::status::StatusTracker;
 use runner_network::network_log_drain::NetworkLogDrainCoordinator;
 use runner_network::network_log_manager::NetworkLogManager;
@@ -224,7 +219,6 @@ impl FinalizeTestFixture {
             reuse_key: Some(session_id.into()),
             cli_agent_session_id: Some(session_id.into()),
             discovered_cli_agent_session_id: None,
-            restored_session_identity: None,
             source_ip: "10.0.0.1".into(),
             network_log_session: Some(network_log_session),
             home_image: None,
@@ -305,50 +299,6 @@ async fn prepare_test_home_image_lease(
     lease
 }
 
-fn test_verified_restored_session_identity(
-    framework: SessionHistoryFramework,
-    session_id: &str,
-    history: &[u8],
-) -> RestoredSessionIdentity {
-    let history_source = match framework {
-        SessionHistoryFramework::ClaudeCode => SessionHistorySourceRef::ClaudeCode {
-            config_dir: "/home/user/.claude".to_string(),
-            working_dir: CANONICAL_WORKING_DIR.to_string(),
-            session_id: session_id.to_string(),
-        },
-        SessionHistoryFramework::Codex => SessionHistorySourceRef::Codex {
-            sessions_dir: "/home/user/.codex/sessions".to_string(),
-            thread_id: session_id.to_string(),
-        },
-        SessionHistoryFramework::Pi => SessionHistorySourceRef::Pi {
-            session_path: format!(
-                "{}/restored-{session_id}.jsonl",
-                api_contracts::generated::constants::runners::paths::CANONICAL_PI_SESSION_DIR,
-            ),
-            session_id: session_id.to_string(),
-        },
-        SessionHistoryFramework::Antigravity => SessionHistorySourceRef::Antigravity {
-            conversations_dir: "/home/user/.gemini/antigravity-cli/conversations".to_string(),
-            session_id: session_id.to_string(),
-        },
-    };
-    let metadata = SessionHistoryIdentity::new(
-        framework,
-        hex::encode(Sha256::digest(session_id.as_bytes())),
-        SessionHistoryRefKind::Blob,
-        hex::encode(Sha256::digest(history)),
-        history.len() as u64,
-        history_source,
-    )
-    .unwrap();
-    RestoredSessionIdentity::from_final_metadata(
-        metadata,
-        "/home/user/.vm0/guest-agent/runs/run-b/final-session-history-identity.json",
-        "/home/user/.vm0/guest-agent/runs/run-b",
-    )
-    .unwrap()
-}
-
 async fn home_seed_path(lease: &mut HomeImageLease) -> std::path::PathBuf {
     let drive = lease
         .home_drive_config()
@@ -411,7 +361,6 @@ fn test_promotion_context(
         .into_promotion_context(HomeImagePromotionRequest {
             run_id,
             sandbox_id,
-            restored_session_identity: None,
             terminal_status,
             completed_at: local_completed_at(),
             storage_fingerprints,
@@ -1247,7 +1196,6 @@ async fn assert_finalizer_preserves_sessionless_home_hit(outcome: SessionlessHom
         })
         .await;
     assert!(home_image.is_cache_hit());
-    assert!(home_image.history_proof_binding().is_none());
     let seed = home_seed_path(&mut home_image).await;
     assert_eq!(tokio::fs::read(&seed).await.unwrap(), home_bytes);
     let active_image = paths.active_home_image(&sandbox_id);
@@ -1279,7 +1227,6 @@ async fn assert_finalizer_preserves_sessionless_home_hit(outcome: SessionlessHom
     context.reuse_key = Some(reuse_key.into());
     context.cli_agent_session_id = None;
     context.discovered_cli_agent_session_id = None;
-    context.restored_session_identity = None;
     context.exit_code = 1;
     context.sandbox_reuse_disposition = match outcome {
         SessionlessHomeOutcome::Failure => {
@@ -1342,9 +1289,6 @@ async fn assert_finalizer_preserves_sessionless_home_hit(outcome: SessionlessHom
             .unwrap(),
         home_bytes
     );
-    // Image reuse and history authority are distinct: no finalized eligible proof means
-    // the restore-plan owner must use the authoritative remote history path.
-    assert!(checkout.history_proof_binding().is_none());
 }
 
 #[tokio::test]
@@ -1393,11 +1337,6 @@ async fn finalizer_rotating_source_preserves_current_image_without_inheriting_hi
         .unwrap();
     tokio::fs::write(&active_image, &next_home).await.unwrap();
     let next_session_id = "019e9154-c304-70f0-adde-36efb1be1701";
-    let next_identity = test_verified_restored_session_identity(
-        SessionHistoryFramework::Codex,
-        next_session_id,
-        b"codex-b",
-    );
     let sandbox = cache_sandbox(sandbox_id.to_string());
     let mut context = fixture.finalize_context(
         run_id,
@@ -1409,7 +1348,6 @@ async fn finalizer_rotating_source_preserves_current_image_without_inheriting_hi
     context.reuse_key = Some(reuse_key.into());
     context.cli_agent_session_id = None;
     context.discovered_cli_agent_session_id = Some(next_session_id.into());
-    context.restored_session_identity = Some(next_identity);
     context.home_image = Some(home_image);
     context.home_image_size_bytes = next_home.len() as u64;
     context.parking_gate.close();
@@ -1440,9 +1378,6 @@ async fn finalizer_rotating_source_preserves_current_image_without_inheriting_hi
             .unwrap(),
         next_home
     );
-    // Final identity alone is not a terminal source/live-byte proof. The fixture returns
-    // cleanup-only evidence; it cannot authorize skipping remote restoration.
-    assert!(checkout.history_proof_binding().is_none());
 }
 
 #[tokio::test]
@@ -1612,10 +1547,6 @@ async fn finalizer_promotes_failed_first_run_home_without_session() {
             .await
             .unwrap(),
         test_home_image(b"image")
-    );
-    assert!(
-        checkout.history_proof_binding().is_none(),
-        "sessionless failure cannot invent history authority"
     );
     let active_runs = test_active_runs();
     let snapshot_states = home_cache_snapshot.current_held_home_states(&active_runs);
@@ -1824,7 +1755,6 @@ async fn finalizer_waits_for_successful_stop_before_home_generation_publication(
             .unwrap(),
         test_home_image(b"image")
     );
-    assert!(checkout.history_proof_binding().is_none());
     drop(ready);
     assert_eq!(budget.allocated().2, 0);
 }
@@ -2016,8 +1946,6 @@ async fn finalizer_notifies_after_replaced_idle_promotion_despite_destroy_panic(
         device_rate_limits: None,
         budget_lease: existing_lease,
         storage_fingerprints: runner_storage::storage_fingerprints::StorageFingerprints::default(),
-        restored_session_identity: None,
-        native_generation_run_id: None,
         guest_timezone_intent: GuestTimezoneIntent::Unknown,
         home_image_size_bytes: TEST_HOME_IMAGE_SIZE as u64,
         home_promotion: Some(old_promotion),
@@ -2213,11 +2141,9 @@ async fn finalizer_preserves_verified_success_metadata_after_late_cooperative_ca
     let cancel = RunCancellationHandle::new();
     cancel.request_cooperative_user_cancellation().await;
     let cleanup_state = RunCleanupState::new();
-    let identity = RestoredSessionIdentity::claude_code_for_test("verified-history");
     let mut context =
         fixture.finalize_context(run_id, sandbox_id, session_id, network_log_session, cancel);
     context.exit_code = 137;
-    context.restored_session_identity = Some(identity.clone());
     context.cleanup_state = cleanup_state.clone();
 
     let _finalization_ready = finalize_sandbox_for_completion(
@@ -2235,7 +2161,7 @@ async fn finalizer_preserves_verified_success_metadata_after_late_cooperative_ca
     );
     let held = fixture.idle_pool.lock().await.held_sandbox_states();
     assert_eq!(held.len(), 1);
-    assert_eq!(held[0].reusable_sandbox.source_run_id, run_id,);
+    assert_eq!(held[0].reusable_sandbox.source_run_id, run_id);
     let entry = fixture
         .idle_pool
         .lock()
@@ -2247,7 +2173,7 @@ async fn finalizer_preserves_verified_success_metadata_after_late_cooperative_ca
     else {
         panic!("late-cancelled successful sandbox should unpark");
     };
-    assert_eq!(sandbox.restored_session_identity(), Some(&identity));
+    assert_eq!(sandbox.sandbox_id(), sandbox_id);
 }
 
 #[tokio::test]

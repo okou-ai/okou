@@ -17,7 +17,6 @@ use runner_lifecycle::{
         test_support::ParkedIdleCandidateBuilder,
     },
     resource_budget::ResourceBudget,
-    restored_session_identity::RestoredSessionIdentity,
 };
 use runner_network::{
     network_log_drain::NetworkLogDrainCoordinator, network_log_manager::NetworkLogManager,
@@ -53,7 +52,6 @@ pub const SEED: &[u8] = b"";
 pub struct Prepared {
     pub sandbox: Box<dyn Sandbox>,
     pub home: HomeImageLease,
-    pub identity: Option<RestoredSessionIdentity>,
     pub history: Vec<u8>,
     pub storage: StorageFingerprints,
     pub exit_code: i32,
@@ -236,9 +234,9 @@ impl Fixture {
         } else {
             None
         };
-        context.native_continuation = Some(guest_contracts::env::NativeContinuation {
-            session_id: previous.as_ref().map(|(id, _)| id.clone()),
-            generation_run_id: previous.map(|(_, run)| run),
+        context.session_continuation = Some(guest_contracts::env::NativeContinuation {
+            continue_native: previous.is_some(),
+            expected_source_run_id: previous.map(|(_, run)| run),
             recovery_prompt: None,
         });
         context.storage_manifest = Some(StorageManifest {
@@ -312,17 +310,6 @@ impl Fixture {
             grant_finished_ns: evidence::clocks()?.0,
         };
         let context = self.context(run, &key, &history, original, continued)?;
-        let previous_generation = context
-            .native_continuation
-            .as_ref()
-            .and_then(|native| native.generation_run_id.clone());
-        let previous_session_hash = context
-            .native_continuation
-            .as_ref()
-            .and_then(|native| native.session_id.as_deref())
-            .map(|id| digest(id.as_bytes()));
-        let previous_history_hash = digest(&history);
-        let previous_history_size = history.len() as u64;
         let storage = StorageFingerprints::from_manifest(
             context
                 .storage_manifest
@@ -356,7 +343,7 @@ impl Fixture {
                     sandbox_prepared: None, active_input_source: None, pre_spawn_timing: None,
                 },
             ).await };
-            let checked: TestResult<(Vec<u8>, Option<RestoredSessionIdentity>)> = async {
+            let checked: TestResult<Vec<u8>> = async {
                 let expected_exit = if !continued && this.nonzero {1} else {0};
                 if outcome.exit_code()!=expected_exit || !outcome.sandbox_reuse_disposition.is_eligible() {
                     return Err(io::Error::other(format!("native Executor did not positively finish: {:?} {:?}", outcome.failure, outcome.sandbox_reuse_disposition)).into());
@@ -377,17 +364,6 @@ impl Fixture {
                 if !complete.starts_with(&history) {
                     return Err(io::Error::other("native continuation lost complete original history bytes").into());
                 }
-                let identity = outcome.restored_session_identity.as_ref();
-                if expected_exit == 0 {
-                    let identity = identity.ok_or_else(|| io::Error::other("native final verified session identity missing"))?;
-                    let verification = identity.final_metadata_verification().ok_or_else(|| io::Error::other("native final identity has no verifier provenance"))?;
-                    if verification.history_hash!=digest(&complete) || verification.history_size_bytes!=complete.len() as u64
-                        || verification.session_id_hash!=digest(thread.as_bytes()) {
-                        return Err(io::Error::other("native final identity does not bind complete bytes/thread").into());
-                    }
-                } else if identity.is_some() {
-                    return Err(io::Error::other("failed native execution returned a reusable session identity").into());
-                }
                 let probe_path = format!("/home/user/native-continuation-{run}.json");
                 let probe = fixture::exec(&**sandbox, &format!("cat {}", quote_shell_arg(&probe_path))).await?;
                 let probe: Value = serde_json::from_slice(&probe)?;
@@ -395,9 +371,9 @@ impl Fixture {
                 if probe != json!({"thread":thread,"prefix_sha256":digest(&history),"prefix_bytes":history.len(),"home_sha256":digest(&home)}) {
                     return Err(io::Error::other("native process did not observe original full prepared data").into());
                 }
-                Ok((complete, identity.cloned()))
+                Ok(complete)
             }.await;
-            let (history, identity) = match checked {
+            let history = match checked {
                 Ok(value) => value,
                 Err(error) => { this.case.retain(outcome); this.case.retain(factory); this.case.retain(this.clone()); return Err(error); }
             };
@@ -412,29 +388,16 @@ impl Fixture {
                 this.case.retain(outcome);
                 return Err(io::Error::other("native home lease disappeared").into());
             };
-            if continued && !reused {
-                // Acknowledged nonzero execution can finalize local history too.
-                // Executor still withholds its reusable identity, while terminal
-                // preparation independently verifies those bytes for the cache.
-                let bound = home.history_proof_binding().is_some_and(|binding| {
-                    let identity = &binding.proof.identity;
-                    Some(binding.proof.generation.as_str()) == previous_generation.as_deref()
-                        && identity.history_hash == previous_history_hash
-                        && identity.history_size_bytes == previous_history_size
-                        && Some(identity.session_id_hash.as_str()) == previous_session_hash.as_deref()
-                        && binding.proof.to_json_vec().is_ok_and(|bytes| digest(&bytes) == binding.sha256)
-                });
-                if !home.is_cache_hit() || !bound {
-                    this.case.retain(sandbox); this.case.retain(home);
-                    return Err(io::Error::other("native continuation did not use verified saved home/history").into());
-                }
+            if continued && !reused && !home.is_cache_hit() {
+                this.case.retain(sandbox); this.case.retain(home);
+                return Err(io::Error::other("native continuation did not use saved home cache").into());
             }
             if reused && (!matches!(home.result(), runner_lifecycle::home_image_cache::HomeCacheCheckoutResult::Miss)
                 || home.is_cache_hit()) {
                 this.case.retain(sandbox); this.case.retain(home);
                 return Err(io::Error::other("native reused continuation did not acquire its active entry lease").into());
             }
-            Ok::<_, Box<dyn std::error::Error + Send + Sync>>(Prepared { sandbox, home, identity, history, storage, exit_code, preparation })
+            Ok::<_, Box<dyn std::error::Error + Send + Sync>>(Prepared { sandbox, home, history, storage, exit_code, preparation })
           };
           async move {
             match connection_scope {
@@ -452,8 +415,7 @@ impl Fixture {
             "seed_history_sha256":digest(SEED),"seed_history_bytes":SEED.len(),
             "original_history_sha256":digest(&prepared.history),"original_history_bytes":prepared.history.len(),
             "original_home_sha256":digest(&fixture::home_payload(run)),"original_home_bytes":fixture::PAYLOAD_BYTES,
-            "exit_code":prepared.exit_code,"final_identity_verified":prepared.identity.is_some(),
-            "reusable_identity_withheld_after_nonzero":prepared.exit_code != 0 && prepared.identity.is_none(),"full_original_prefix_verified":true,
+            "exit_code":prepared.exit_code,"full_original_prefix_verified":true,
             "preparation_observed_by_native_process":true,"original_full_lease_witness":true,
         }))?;
         Ok(())
@@ -500,8 +462,8 @@ impl Fixture {
                         "thread_id":self.api.session(None)?.0,"restored_history_sha256":digest(&history),"restored_history_bytes":history.len(),
                         "continued_history_sha256":digest(&prepared.history),"continued_history_bytes":prepared.history.len(),
                         "original_home_sha256":digest(&fixture::home_payload(request.original)),"original_home_bytes":fixture::PAYLOAD_BYTES,
-                        "exit_code":prepared.exit_code,"final_identity_verified":true,"full_original_prefix_verified":true,
-                        "preparation_observed_by_native_process":true,"home_cache_hit":true,"history_proof_bound":prepared.home.history_proof_binding().is_some(),
+                        "exit_code":prepared.exit_code,"full_original_prefix_verified":true,
+                        "preparation_observed_by_native_process":true,"home_cache_hit":prepared.home.is_cache_hit(),
                     }))?;
                 }
                 Ok(())
@@ -551,20 +513,12 @@ impl Fixture {
             self.case.retain(lease);
             return Err(error);
         }
-        let Some(identity) = prepared.identity.clone() else {
-            self.case.retain(prepared);
-            self.case.retain(lease);
-            return Err(
-                io::Error::other("successful native saving has no verified identity").into(),
-            );
-        };
         let storage = prepared.storage.clone();
         let promotion = prepared
             .home
             .into_promotion_context(HomeImagePromotionRequest {
                 run_id: run,
                 sandbox_id: id,
-                restored_session_identity: Some(&identity),
                 terminal_status: HomeCacheTerminalStatus::Success,
                 completed_at: chrono::Utc::now().to_rfc3339(),
                 storage_fingerprints: prepared.storage,
@@ -584,9 +538,6 @@ impl Fixture {
             .with_sandbox_id(id)
             .with_profile_name(fixture::PROFILE)
             .with_rootfs_hash(&self.rootfs_hash)
-            .with_source_run_id(run)
-            .with_native_generation_run_id(run)
-            .with_restored_session_identity(identity)
             .with_storage_fingerprints(storage)
             .with_home_promotion(promotion)
             .build();

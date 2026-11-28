@@ -1908,9 +1908,9 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           prompt: "continue finalized timing session",
         });
         const resumedExecution = await api.executionInput(resumed.runId);
-        expect(resumedExecution.nativeContinuation).toMatchObject({
-          sessionId: `bdd-timing-cli-${first.runId}`,
-          generationRunId: expect.any(String),
+        expect(resumedExecution.sessionContinuation).toMatchObject({
+          continueNative: true,
+          expectedSourceRunId: first.runId,
         });
 
         await api.requestCancelRun(actor, resumed.runId, [200]);
@@ -2075,9 +2075,9 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           prompt: "continue the session",
         });
         const resumedExecution = await api.executionInput(resumed.runId);
-        expect(resumedExecution.nativeContinuation).toMatchObject({
-          sessionId: firstHistory.cliSessionId,
-          generationRunId: expect.any(String),
+        expect(resumedExecution.sessionContinuation).toMatchObject({
+          continueNative: true,
+          expectedSourceRunId: first.runId,
         });
         await finalized(
           resumed.runId,
@@ -2177,9 +2177,9 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           model: selectedModel,
         });
         const resumedExecution = await api.executionInput(resumed.runId);
-        expect(resumedExecution.nativeContinuation).toMatchObject({
-          sessionId: cliAgentSessionId,
-          generationRunId: expect.any(String),
+        expect(resumedExecution.sessionContinuation).toMatchObject({
+          continueNative: true,
+          expectedSourceRunId: first.runId,
         });
         expect(resumedExecution.startupInputs.memory).toStrictEqual(
           initialMemory,
@@ -7884,9 +7884,9 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           prompt: resumedPrompt,
         });
         const resumedExecution = await api.executionInput(resumed.runId);
-        expect(resumedExecution.nativeContinuation).toMatchObject({
-          sessionId: `bdd-combined-cli-${first.runId}`,
-          generationRunId: first.runId,
+        expect(resumedExecution.sessionContinuation).toMatchObject({
+          continueNative: true,
+          expectedSourceRunId: first.runId,
         });
 
         expect(resumedExecution.networkPolicies?.slack).toBeDefined();
@@ -9073,9 +9073,9 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           prompt: "continue without history object metadata",
         });
         const execution = await api.executionInput(resumed.runId);
-        expect(execution.nativeContinuation).toMatchObject({
-          sessionId: `bdd-failed-execution-${source.runId}`,
-          generationRunId: source.runId,
+        expect(execution.sessionContinuation).toMatchObject({
+          continueNative: true,
+          expectedSourceRunId: source.runId,
         });
 
         await api.requestCancelRun(actor, resumed.runId, [200]);
@@ -9722,19 +9722,19 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             prompt: "resume recovered native history",
           });
           const continuation = (await api.executionInput(next.runId))
-            .nativeContinuation;
+            .sessionContinuation;
           // Cancellation retains the Active slot until recovery completion.
           // A prior failure completion already released it: recovery outputs
           // still belong to that Run but cannot acquire Thread publication.
           if (terminalStatus === "cancelled") {
             expect(continuation).toMatchObject({
-              sessionId: body.completion.cliAgentSessionId,
-              generationRunId: run.runId,
+              continueNative: true,
+              expectedSourceRunId: run.runId,
             });
           } else {
             expect(continuation).toStrictEqual({
-              sessionId: null,
-              generationRunId: null,
+              continueNative: false,
+              expectedSourceRunId: null,
               recoveryPrompt: expect.stringContaining(
                 "okou chat messages --output-dir /tmp/okou-chat-history",
               ),
@@ -9857,9 +9857,9 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             model,
           });
           const continuedExecution = await api.executionInput(continued.runId);
-          expect(continuedExecution.nativeContinuation).toMatchObject({
-            sessionId: cliAgentSessionId,
-            generationRunId: expect.any(String),
+          expect(continuedExecution.sessionContinuation).toMatchObject({
+            continueNative: true,
+            expectedSourceRunId: run.runId,
           });
           const successorHistory = `bdd successor ${cliAgentType} history ${continued.runId}`;
           const successorHistoryHash = createHash("sha256")
@@ -9903,9 +9903,9 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           const afterRetryExecution = await api.executionInput(
             afterRetry.runId,
           );
-          expect(afterRetryExecution.nativeContinuation).toMatchObject({
-            sessionId: successorCliAgentSessionId,
-            generationRunId: expect.any(String),
+          expect(afterRetryExecution.sessionContinuation).toMatchObject({
+            continueNative: true,
+            expectedSourceRunId: continued.runId,
           });
           await api.requestCancelRun(actor, afterRetry.runId, [200]);
         },
@@ -9954,9 +9954,9 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           prompt: "resume cancellation recovery",
         });
         const continuedExecution = await api.executionInput(continued.runId);
-        expect(continuedExecution.nativeContinuation).toMatchObject({
-          sessionId: cliAgentSessionId,
-          generationRunId: expect.any(String),
+        expect(continuedExecution.sessionContinuation).toMatchObject({
+          continueNative: true,
+          expectedSourceRunId: run.runId,
         });
         await api.requestCancelRun(actor, continued.runId, [200]);
       });
@@ -10104,14 +10104,14 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           });
           const continuedExecution = await api.executionInput(continued.runId);
           if (nativeState === "initialized") {
-            expect(continuedExecution.nativeContinuation).toMatchObject({
-              sessionId: cliSessionId,
-              generationRunId: source.runId,
+            expect(continuedExecution.sessionContinuation).toMatchObject({
+              continueNative: true,
+              expectedSourceRunId: source.runId,
             });
           } else {
-            expect(continuedExecution.nativeContinuation).toStrictEqual({
-              sessionId: null,
-              generationRunId: null,
+            expect(continuedExecution.sessionContinuation).toStrictEqual({
+              continueNative: false,
+              expectedSourceRunId: null,
               recoveryPrompt: expect.stringContaining(
                 "okou chat messages --output-dir /tmp/okou-chat-history",
               ),

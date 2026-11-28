@@ -1097,9 +1097,9 @@ async fn home_restored_instruction_reuse_checks_target_and_repairs_missing_or_ta
         current.run_id = runner_types::ids::RunId::new_v4();
         let session = "22222222-2222-4222-8222-222222222222";
         current.reuse_key = Some(format!("thread:home-cache-{session}"));
-        current.native_continuation = Some(guest_contracts::env::NativeContinuation {
-            session_id: Some(session.into()),
-            generation_run_id: Some(current.run_id.to_string()),
+        current.session_continuation = Some(guest_contracts::env::NativeContinuation {
+            continue_native: false,
+            expected_source_run_id: None,
             recovery_prompt: None,
         });
         let mut fingerprints = current.storage_fingerprints();
@@ -1571,9 +1571,9 @@ async fn home_restored_workflow_storage_preserves_matching_local_content() {
     let mut current = context(&hash, 10, mount, "same-content-new-signature");
     let session = "workflow-home";
     current.reuse_key = Some(format!("thread:home-cache-{session}"));
-    current.native_continuation = Some(guest_contracts::env::NativeContinuation {
-        session_id: Some(session.into()),
-        generation_run_id: Some(current.run_id.to_string()),
+    current.session_continuation = Some(guest_contracts::env::NativeContinuation {
+        continue_native: false,
+        expected_source_run_id: None,
         recovery_prompt: None,
     });
     let mut fingerprints = StorageFingerprints::default();

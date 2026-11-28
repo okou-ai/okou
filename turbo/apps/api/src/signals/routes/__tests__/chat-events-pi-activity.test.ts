@@ -115,9 +115,9 @@ describe("CHAT-02: model-first routing", () => {
     expect(execution.execution.piSessionId).toBe(run.threadId);
     // The first turn has no stored history, so the Sandbox starts fresh.
 
-    expect(execution.execution.nativeContinuation).toStrictEqual({
-      sessionId: null,
-      generationRunId: null,
+    expect(execution.execution.sessionContinuation).toStrictEqual({
+      continueNative: false,
+      expectedSourceRunId: null,
       recoveryPrompt: null,
     });
     expect(execution.execution.piModelConfig).toMatchObject({
@@ -342,9 +342,9 @@ describe("CHAT-02: model-first routing", () => {
     });
     const retryExecution = await runExecution(retry.runId);
     expect(retryExecution.execution.piSessionId).toBe(run.threadId);
-    expect(retryExecution.execution.nativeContinuation).toStrictEqual({
-      sessionId: null,
-      generationRunId: null,
+    expect(retryExecution.execution.sessionContinuation).toStrictEqual({
+      continueNative: false,
+      expectedSourceRunId: null,
       recoveryPrompt: expect.stringContaining(
         "okou chat messages --output-dir /tmp/okou-chat-history",
       ),
@@ -424,9 +424,9 @@ describe("CHAT-02: model-first routing", () => {
       prompt: "verify the current native generation after rejected writes",
     });
     const probeExecution = await runExecution(probe.runId);
-    expect(probeExecution.execution.nativeContinuation).toMatchObject({
-      sessionId: run.threadId,
-      generationRunId: reportedFailureRun.runId,
+    expect(probeExecution.execution.sessionContinuation).toMatchObject({
+      continueNative: true,
+      expectedSourceRunId: reportedFailureRun.runId,
     });
     await cancelChatRun(actor, probe.runId, probeExecution.sandboxHeaders);
 
@@ -444,12 +444,12 @@ describe("CHAT-02: model-first routing", () => {
     );
     expect(explicitResumeExecution.cliAgentType).toBe("claude-code");
 
-    expect(explicitResumeExecution.nativeContinuation).toMatchObject({
-      sessionId: null,
-      generationRunId: null,
+    expect(explicitResumeExecution.sessionContinuation).toMatchObject({
+      continueNative: false,
+      expectedSourceRunId: null,
     });
     expect(
-      explicitResumeExecution.nativeContinuation?.recoveryPrompt,
+      explicitResumeExecution.sessionContinuation?.recoveryPrompt,
     ).toContain("okou chat messages --output-dir /tmp/okou-chat-history");
     await cancelChatRun(actor, explicitResume.runId, {
       authorization: `Bearer ${explicitResumeExecution.sandboxToken}`,

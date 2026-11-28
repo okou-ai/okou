@@ -5,16 +5,11 @@ use std::time::{Duration, Instant};
 use guest_contracts::reuse_preparation::{
     FilesystemCapacity, ReusePreparationReport, ReusePreparationRequest,
 };
-use guest_contracts::session_history_identity::{
-    SessionHistoryFramework, SessionHistoryIdentity, SessionHistoryRefKind, SessionHistorySourceRef,
-};
 use sandbox::{ResourceLimits, SandboxConfig, SandboxFactory, SandboxId};
 use sandbox_mock::{MockSandboxFactory, MockSandboxOverrides};
-use sha2::{Digest, Sha256};
 
 use crate::idle_reuse_preparation::add_healthy_reuse_preparation_matcher;
 use crate::resource_budget::{BudgetLease, ResourceBudget};
-use crate::restored_session_identity::RestoredSessionIdentity;
 use crate::storage_fingerprints::{StorageFingerprint, StorageFingerprints};
 use runner_types::ids::RunId;
 
@@ -45,7 +40,6 @@ fn request_running_handoff(request: &mut IdleParkRequest, overrides: &MockSandbo
     let signal = sandbox::SandboxFinalExecParkHandoff::new();
     assert!(signal.request());
     request.parts.handoff = Some(signal);
-    request.parts.native_generation_run_id = Some(request.parts.run_id);
     overrides.push_final_exec_park_handoff_point(
         sandbox::SandboxFinalExecParkHandoffPoint::DuringDeflation,
     );
@@ -93,8 +87,6 @@ async fn make_idle_park_request_with_sandbox_id(
         budget_lease,
         source_ip: "10.0.0.1".into(),
         storage_fingerprints: StorageFingerprints::default(),
-        restored_session_identity: None,
-        native_generation_run_id: None,
         guest_timezone_intent: crate::guest_timezone::GuestTimezoneIntent::Unknown,
         home_image_size_bytes: 0,
         home_promotion: None,
@@ -326,13 +318,12 @@ async fn running_handoff_validation_failure_retains_running_cleanup_ownership() 
 #[tokio::test]
 async fn speculative_repark_preserves_expected_capacity_rejection() {
     let overrides = Arc::new(MockSandboxOverrides::new());
-    let mut request = make_idle_park_request(
+    let request = make_idle_park_request(
         Arc::clone(&overrides),
         "session-speculative-capacity-rejection",
         make_budget_lease(2, 2048),
     )
     .await;
-    request.parts.native_generation_run_id = Some(request.parts.run_id);
     let candidate = match request.park_for_idle().await {
         Ok(outcome) => outcome.expect_reusable(),
         Err(_) => panic!("initial park should succeed"),
@@ -380,73 +371,13 @@ async fn speculative_repark_preserves_expected_capacity_rejection() {
 }
 
 #[tokio::test]
-async fn idle_park_request_protects_retained_identity_runtime_directory() {
-    let overrides = Arc::new(MockSandboxOverrides::new());
-    let session_id = "session-retained-runtime";
-    let mut request = make_idle_park_request(
-        Arc::clone(&overrides),
-        session_id,
-        make_budget_lease(2, 2048),
-    )
-    .await;
-    let run_id = request.parts.run_id;
-    let retained_runtime_dir = "/home/user/.vm0/guest-agent/runs/previous-run";
-    let metadata = SessionHistoryIdentity::new(
-        SessionHistoryFramework::ClaudeCode,
-        hex::encode(Sha256::digest(session_id.as_bytes())),
-        SessionHistoryRefKind::Blob,
-        hex::encode(Sha256::digest(b"history")),
-        b"history".len() as u64,
-        SessionHistorySourceRef::ClaudeCode {
-            config_dir: "/home/user/.claude".to_string(),
-            working_dir: "/home/user/workspace".to_string(),
-            session_id: session_id.to_string(),
-        },
-    )
-    .unwrap();
-    request.parts.restored_session_identity = Some(
-        RestoredSessionIdentity::from_final_metadata(
-            metadata,
-            format!("{retained_runtime_dir}/final-session-history-identity.json"),
-            retained_runtime_dir,
-        )
-        .unwrap(),
-    );
-
-    let _candidate = request
-        .park_for_idle()
-        .await
-        .unwrap_or_else(|_| panic!("healthy guest should park"));
-
-    let calls = overrides.exec_calls();
-    let call = calls
-        .iter()
-        .find(|call| call.cmd.contains("prepare-for-reuse"))
-        .expect("reuse preparation call");
-    let reuse_request: ReusePreparationRequest = serde_json::from_slice(
-        call.stdin_bytes
-            .as_deref()
-            .expect("reuse request should be sent on stdin"),
-    )
-    .unwrap();
-    assert_eq!(
-        reuse_request.current_runtime_dir,
-        format!("/home/user/.vm0/guest-agent/runs/{run_id}")
-    );
-    assert_eq!(
-        reuse_request.retained_runtime_dir.as_deref(),
-        Some(retained_runtime_dir)
-    );
-}
-
-#[tokio::test]
 async fn idle_park_request_success_preserves_reuse_metadata() {
     let overrides = Arc::new(MockSandboxOverrides::new());
     let sandbox_id = SandboxId::new_v4();
     let reuse_key = "thread:metadata";
     let profile_name = "vm0/large";
     let source_ip = "10.99.0.42";
-    let native_generation_run_id = RunId::new_v4();
+    let source_run_id = RunId::new_v4();
     let budget_lease = make_budget_lease(2, 2048);
     add_healthy_reuse_preparation_matcher(&overrides);
     let factory: Arc<Box<dyn SandboxFactory>> = Arc::new(Box::new(
@@ -475,9 +406,8 @@ async fn idle_park_request_success_preserves_reuse_metadata() {
         )]),
     };
     let expected_storage_fingerprints = storage_fingerprints.clone();
-    let restored_session_identity = RestoredSessionIdentity::claude_code_for_test("history-hash-a");
     let request = IdleParkRequest::new(IdleParkRequestParts {
-        run_id: RunId::new_v4(),
+        run_id: source_run_id,
         sandbox,
         factory,
         reuse_key: reuse_key.into(),
@@ -488,8 +418,6 @@ async fn idle_park_request_success_preserves_reuse_metadata() {
         budget_lease,
         source_ip: source_ip.into(),
         storage_fingerprints,
-        restored_session_identity: Some(restored_session_identity.clone()),
-        native_generation_run_id: Some(native_generation_run_id),
         guest_timezone_intent: crate::guest_timezone::GuestTimezoneIntent::Unknown,
         home_image_size_bytes: 0,
         home_promotion: None,
@@ -505,10 +433,7 @@ async fn idle_park_request_success_preserves_reuse_metadata() {
     assert_eq!(candidate.reuse_key(), Some(reuse_key));
     assert_eq!(candidate.sandbox_id(), sandbox_id);
     assert_eq!(candidate.metadata.profile_name, profile_name);
-    assert_eq!(
-        candidate.metadata.native_generation_run_id,
-        Some(native_generation_run_id)
-    );
+    assert_eq!(candidate.metadata.source_run_id, Some(source_run_id));
 
     let mut pool = IdlePool::new(pool_config(0));
     assert!(matches!(pool.park(candidate), ParkResult::Parked));
@@ -537,10 +462,6 @@ async fn idle_park_request_success_preserves_reuse_metadata() {
     let reused_parts = sandbox.into_parts();
     assert_eq!(reused_parts.source_ip, source_ip);
     assert_eq!(
-        reused_parts.restored_session_identity,
-        Some(restored_session_identity)
-    );
-    assert_eq!(
         reused_parts.storage_fingerprints.storages,
         expected_storage_fingerprints.storages
     );
@@ -567,7 +488,6 @@ async fn speculative_repark_preserves_original_idle_age_and_metadata() {
             tx_bytes_per_sec: 25 * 1024 * 1024,
         },
     };
-    let native_generation_run_id = RunId::new_v4();
     let mut request = make_idle_park_request(
         Arc::clone(&overrides),
         reuse_key,
@@ -576,7 +496,6 @@ async fn speculative_repark_preserves_original_idle_age_and_metadata() {
     .await;
     request.parts.profile_name = profile_name.into();
     request.parts.device_rate_limits = Some(device_rate_limits.clone());
-    request.parts.native_generation_run_id = Some(native_generation_run_id);
     let source_run_id = request.parts.run_id;
     request.parts.guest_timezone_intent =
         crate::guest_timezone::GuestTimezoneIntent::Configured("Asia/Shanghai".into());
@@ -615,10 +534,6 @@ async fn speculative_repark_preserves_original_idle_age_and_metadata() {
     assert_eq!(entry.budget_vcpu(), 2);
     assert_eq!(entry.budget_memory_mb(), 2048);
     assert_eq!(entry.metadata.source_run_id, Some(source_run_id));
-    assert_eq!(
-        entry.metadata.native_generation_run_id,
-        Some(native_generation_run_id)
-    );
     assert_eq!(overrides.unpark_call_count(), 1);
     assert_eq!(overrides.park_call_count(), 2);
     let preparation_requests: Vec<ReusePreparationRequest> = overrides
@@ -646,7 +561,7 @@ async fn speculative_repark_preserves_original_idle_age_and_metadata() {
 }
 
 #[tokio::test]
-async fn speculative_repark_without_native_history_preserves_producer() {
+async fn speculative_repark_preserves_producer() {
     let overrides = Arc::new(MockSandboxOverrides::new());
     let request = make_idle_park_request(
         Arc::clone(&overrides),
@@ -671,13 +586,12 @@ async fn speculative_repark_without_native_history_preserves_producer() {
         .repark_for_claim_rollback(RunId::new_v4(), 0)
         .await
     else {
-        panic!("producer identity must support rollback without native history");
+        panic!("producer identity must support rollback");
     };
     let entry = restored
         .into_restore_entry()
         .unwrap_or_else(|_| panic!("parked entry"));
     assert_eq!(entry.metadata.source_run_id, Some(source_run_id));
-    assert_eq!(entry.metadata.native_generation_run_id, None);
     assert_eq!(overrides.unpark_call_count(), 1);
     assert_eq!(overrides.park_call_count(), 2);
     assert_eq!(overrides.destroy_call_count(), 0);

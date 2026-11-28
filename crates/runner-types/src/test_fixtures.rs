@@ -20,7 +20,8 @@ pub fn execution_context_for_test(run_id: RunId) -> ExecutionContext {
         storage_manifest: None,
         environment: None,
         platform_environment: HashMap::new(),
-        native_continuation: None,
+        session_continuation: None,
+        legacy_native_continuation: None,
         local_resume_session_id: None,
         secret_values: None,
         local_secret_env_keys: None,
@@ -44,6 +45,5 @@ pub fn execution_context_for_test(run_id: RunId) -> ExecutionContext {
         codex_runtime_config: None,
         pi_launch_config: None,
         pi_model_config: None,
-        pi_session_id: None,
     }
 }

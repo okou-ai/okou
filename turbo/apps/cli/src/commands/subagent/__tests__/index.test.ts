@@ -302,7 +302,6 @@ describe("okou subagent", () => {
     vi.stubEnv("OKOU_RUN_ID", "run-one");
     vi.stubEnv("OKOU_PI_SESSION_ROLE", "parent");
     vi.stubEnv("OKOU_PI_RUNTIME_ROOT", root);
-    vi.stubEnv("OKOU_PI_SESSION_ID", "parent-session");
     vi.stubEnv("OKOU_PI_LAUNCH_PAYLOAD_FILE", launchFile);
     vi.stubEnv("OKOU_PI_EFFECTIVE_THINKING_LEVEL", "high");
     vi.stubEnv("OPENAI_API_KEY", "test-subagent-key");

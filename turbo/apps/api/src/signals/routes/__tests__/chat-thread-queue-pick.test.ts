@@ -250,9 +250,10 @@ describe("CHAT-02: queued chat thread picks", () => {
     ).resolves.toBeUndefined();
     const resumed = await runExecution(picked.runId);
     expect(resumed.execution.prompt).toBe("first queued message");
-    expect(resumed.execution.nativeContinuation?.sessionId).toBe(
-      `bdd-cli-${first.runId}`,
-    );
+    expect(resumed.execution.sessionContinuation).toMatchObject({
+      continueNative: true,
+      expectedSourceRunId: first.runId,
+    });
 
     // The second input waits for the head's run and then takes its slot.
     chatCallbacks.mockChatOutputEvents([]);
@@ -262,9 +263,10 @@ describe("CHAT-02: queued chat thread picks", () => {
     expect(next.runId).not.toBe(picked.runId);
     const nextExecution = await runExecution(next.runId);
     expect(nextExecution.execution.prompt).toBe("second queued message");
-    expect(nextExecution.execution.nativeContinuation?.sessionId).toBe(
-      `bdd-cli-${picked.runId}`,
-    );
+    expect(nextExecution.execution.sessionContinuation).toMatchObject({
+      continueNative: true,
+      expectedSourceRunId: picked.runId,
+    });
     await cancelChatRun(actor, next.runId);
   }, 90_000);
 

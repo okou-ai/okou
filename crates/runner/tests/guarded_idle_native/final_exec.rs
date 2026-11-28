@@ -11,15 +11,8 @@ use runner_lifecycle::idle_reuse_preparation::IdleReusePreparation;
 use super::*;
 
 fn preparation(id: &str, history: RunId, operation: RunId) -> TestResult<IdleReusePreparation> {
-    let runtime =
-        guest_contracts::runtime_paths::run_dir_for_home("/home/user", &history.to_string())?;
-    let runtime = runtime
-        .to_str()
-        .ok_or_else(|| io::Error::other("original runtime is not UTF8"))?;
-    Ok(
-        IdleReusePreparation::new(id, operation, history, Some(runtime))
-            .map_err(|error| io::Error::other(error.to_string()))?,
-    )
+    Ok(IdleReusePreparation::new(id, operation, history)
+        .map_err(|error| io::Error::other(error.to_string()))?)
 }
 
 pub(super) fn validate_request(

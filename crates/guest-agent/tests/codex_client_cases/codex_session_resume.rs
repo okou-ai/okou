@@ -222,18 +222,8 @@ fn recovery_finalization_resolves_history_from_codex_sessions_root() -> TestResu
         workload_containment: None,
         process_control_endpoint: None,
     };
-    let session_metadata = guest_agent::session_metadata::CapturedSessionMetadata::for_test(
-        thread_id,
-        Some(
-            guest_contracts::session_history_identity::SessionHistorySourceRef::Codex {
-                sessions_dir: Path::new(&guest_runtime.config.codex_home_dir)
-                    .join("sessions")
-                    .to_string_lossy()
-                    .into_owned(),
-                thread_id: thread_id.to_string(),
-            },
-        ),
-    );
+    let session_metadata =
+        guest_agent::session_metadata::CapturedSessionMetadata::for_test(thread_id);
     runtime.block_on(async {
         let finalization = guest_agent::finalization::prepare_recovery_finalization_for_runtime(
             &guest_runtime,

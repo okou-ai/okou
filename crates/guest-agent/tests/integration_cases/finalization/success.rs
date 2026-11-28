@@ -44,10 +44,8 @@ async fn other_artifact_and_memory_prepare_conflicts_still_fail_finalization() {
                 "error": {"code": "CONFLICT", "message": "Artifact conflict"},
             }));
         });
-        let metadata = guest_agent::session_metadata::CapturedSessionMetadata::for_test(
-            "conflict-session",
-            None,
-        );
+        let metadata =
+            guest_agent::session_metadata::CapturedSessionMetadata::for_test("conflict-session");
         let error =
             guest_agent::finalization::prepare_finalization_for_runtime(&runtime, &metadata)
                 .await
@@ -94,7 +92,7 @@ async fn pi_finalization_reports_full_combined_completion_payload() {
     });
 
     let session_metadata =
-        guest_agent::session_metadata::CapturedSessionMetadata::for_test(session_id, None);
+        guest_agent::session_metadata::CapturedSessionMetadata::for_test(session_id);
     let finalization =
         guest_agent::finalization::prepare_finalization_for_runtime(&runtime, &session_metadata)
             .await
@@ -166,9 +164,6 @@ async fn explicit_runtime_with_conflicting_process_env_child() {
 
     let tmp = tempfile::tempdir().unwrap();
     let runtime_dir = tmp.path().join("captured-runtime");
-    let stale_runtime_dir = std::path::PathBuf::from(
-        std::env::var_os(guest_contracts::runtime_paths::CANONICAL_GUEST_RUNTIME_DIR_ENV).unwrap(),
-    );
     assert_eq!(
         std::env::var(guest_contracts::env::RUN_ID_ENV).unwrap(),
         "stale-run"
@@ -192,8 +187,6 @@ async fn explicit_runtime_with_conflicting_process_env_child() {
         ..guest_agent::env::GuestConfigRaw::default()
     })
     .unwrap();
-    let final_identity_file = paths.final_session_history_identity_file().to_string();
-    let stale_paths = guest_agent::paths::GuestPaths::from_runtime_dir(&stale_runtime_dir);
 
     let history = r#"{"type":"system"}"#.to_string() + "\n";
     let history_path = claude_history_path(&home_dir.join(".claude"), "captured-session");
@@ -231,12 +224,4 @@ async fn explicit_runtime_with_conflicting_process_env_child() {
         .await
         .unwrap();
     complete_mock.assert_calls_async(1).await;
-    assert!(
-        std::path::Path::new(&final_identity_file).exists(),
-        "final identity should be written under explicit runtime paths"
-    );
-    assert!(
-        !std::path::Path::new(stale_paths.final_session_history_identity_file()).exists(),
-        "stale process env runtime path must not receive final identity"
-    );
 }

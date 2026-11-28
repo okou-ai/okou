@@ -113,7 +113,6 @@ done
             prompt: "x".repeat(PROMPT_BYTES),
             pi_launch_config: r#"{"schemaVersion":2}"#.to_string(),
             pi_model_config: "{}".to_string(),
-            pi_session_id: case.session_id.to_string(),
             ..guest_contracts::env::RunPayload::default()
         },
     )?;

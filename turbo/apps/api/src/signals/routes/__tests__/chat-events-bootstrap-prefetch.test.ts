@@ -538,9 +538,9 @@ describe("chat agent bootstrap prefetch", () => {
       throw new Error("Expected the follow-up Run");
     }
     const next = await runExecution(successor.runId);
-    expect(next.execution.nativeContinuation).toMatchObject({
-      sessionId,
-      generationRunId: first.runId,
+    expect(next.execution.sessionContinuation).toMatchObject({
+      continueNative: true,
+      expectedSourceRunId: first.runId,
     });
     expect(next.execution.startupInputs.memory).toMatchObject({
       storageId: memory.storageId,

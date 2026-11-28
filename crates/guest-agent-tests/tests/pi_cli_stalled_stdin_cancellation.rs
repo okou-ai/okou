@@ -14,7 +14,6 @@ use guest_contracts::diagnostics::CliTerminationReason;
 use tokio_util::sync::CancellationToken;
 
 const RUN_ID: &str = "00000000-0000-4000-8000-000000000145";
-const SESSION_ID: &str = "11111111-1111-4111-8111-111111111145";
 const EVENT_ID: &str = "22222222-2222-4222-8222-222222222145";
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
@@ -76,7 +75,6 @@ done
                 prompt: "cancel Pi while steer is blocked on stdin".to_string(),
                 pi_launch_config: r#"{"schemaVersion":2}"#.to_string(),
                 pi_model_config: "{}".to_string(),
-                pi_session_id: SESSION_ID.to_string(),
                 ..guest_contracts::env::RunPayload::default()
             },
         )?;

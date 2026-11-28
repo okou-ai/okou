@@ -92,17 +92,17 @@ describe("CHAT-02: model-first routing", () => {
             prompt: originalPrompt,
           });
 
-          expect(execution.execution.nativeContinuation).toMatchObject({
-            sessionId: turn === 1 ? null : run.threadId,
-            generationRunId: previousRunId ?? null,
+          expect(execution.execution.sessionContinuation).toMatchObject({
+            continueNative: turn !== 1,
+            expectedSourceRunId: previousRunId ?? null,
           });
           if (turn === 1) {
             expect(
-              execution.execution.nativeContinuation?.recoveryPrompt,
+              execution.execution.sessionContinuation?.recoveryPrompt,
             ).toBeNull();
           } else {
             expect(
-              execution.execution.nativeContinuation?.recoveryPrompt,
+              execution.execution.sessionContinuation?.recoveryPrompt,
             ).toContain(
               "okou chat messages --output-dir /tmp/okou-chat-history",
             );

@@ -13,6 +13,7 @@ impl BatchFixture {
         self.logical_request(IdlePressureRequest {
             run_id: RunId::new_v4(),
             reuse_key: None,
+            expected_source_run_id: None,
             profile_name: "vm0/default",
             device_rate_limits: &None,
             allow_compatible_blank: false,

@@ -344,7 +344,6 @@ fn guest_config_from_raw_loads_run_payload_and_removes_private_file() {
         codex_runtime_config: r#"{"providerId":"openrouter-codex"}"#.to_string(),
         pi_launch_config: r#"{"schemaVersion":2}"#.to_string(),
         pi_model_config: r#"{"provider":"openrouter"}"#.to_string(),
-        pi_session_id: "22222222-2222-4222-8222-222222222222".to_string(),
     };
     let path = write_run_payload_fixture(&runtime_dir, &payload);
     let parent = path.parent().unwrap().to_path_buf();
@@ -369,7 +368,6 @@ fn guest_config_from_raw_loads_run_payload_and_removes_private_file() {
     );
     assert_eq!(config.pi_launch_config, r#"{"schemaVersion":2}"#);
     assert_eq!(config.pi_model_config, r#"{"provider":"openrouter"}"#);
-    assert_eq!(config.pi_session_id, "22222222-2222-4222-8222-222222222222");
     assert!(!path.exists());
     assert!(!parent.exists());
 }

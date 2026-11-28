@@ -142,8 +142,7 @@ await runPiOfficialRpcMode({
   cwd: root,
   agentDir: join(root, "agent"),
   sessionDir: root,
-  sessionId: "00000000-0000-4000-8000-000000000915",
-  sessionFile: join(root, "session.jsonl"),
+  continueNative: true,
   appendSystemPrompt: null,
   model: {
     provider: "openrouter",

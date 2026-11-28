@@ -133,9 +133,9 @@ describe("Independent finalizing resource dispatch", () => {
         resource === "other-profile-home" ? f.runnerId : ready.runnerId,
       );
       const input = await f.owned.executionInput(next.runId);
-      expect(input.nativeContinuation).toMatchObject({
-        sessionId: null,
-        generationRunId: null,
+      expect(input.sessionContinuation).toMatchObject({
+        continueNative: false,
+        expectedSourceRunId: null,
         recoveryPrompt: expect.stringContaining(
           "okou chat messages --output-dir /tmp/okou-chat-history",
         ),
@@ -188,9 +188,9 @@ describe("Independent finalizing resource dispatch", () => {
     const next = await continuation(f);
     await expectOwner(f, next.runId, f.runnerId);
     const input = await f.owned.executionInput(next.runId);
-    expect(input.nativeContinuation).toMatchObject({
-      sessionId: null,
-      generationRunId: null,
+    expect(input.sessionContinuation).toMatchObject({
+      continueNative: false,
+      expectedSourceRunId: null,
     });
   });
 

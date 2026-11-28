@@ -273,7 +273,7 @@ async function modelSessionScenario({
     return {
       sessionId,
       cliAgentSessionId: agentPhoneCliAgentSessionIdForRun(run.runId),
-      resumedSessionId: run.resumedSessionId,
+      expectedSourceRunId: run.expectedSourceRunId,
       selectedModel: metadata.selectedModel,
       threadId: thread.chatThreadId,
       threadCount: threads.length,
@@ -289,7 +289,7 @@ async function readDispatchedRun(runnerGroup: string): Promise<{
   readonly prompt: string;
   readonly appendSystemPrompt: string;
   readonly okouToken: string | undefined;
-  readonly resumedSessionId: string | undefined;
+  readonly expectedSourceRunId: string | undefined;
   readonly cliAgentType: "claude-code" | "codex";
   readonly environment: Record<string, string> | null;
   readonly serviceTier: string | undefined;
@@ -306,10 +306,12 @@ async function readDispatchedRun(runnerGroup: string): Promise<{
       `Expected a native AgentPhone execution, got ${execution.cliAgentType}`,
     );
   }
-  if (execution.nativeContinuation?.sessionId) {
+  const expectedSourceRunId =
+    execution.sessionContinuation?.expectedSourceRunId ?? undefined;
+  if (expectedSourceRunId) {
     nativeSessionStore.set(executionNativeSessions$, {
       ...nativeSessionStore.get(executionNativeSessions$),
-      [runId]: execution.nativeContinuation.sessionId,
+      [runId]: agentPhoneCliAgentSessionIdForRun(expectedSourceRunId),
     });
   }
   return {
@@ -318,7 +320,7 @@ async function readDispatchedRun(runnerGroup: string): Promise<{
     prompt: execution.prompt,
     appendSystemPrompt: execution.appendSystemPrompt ?? "",
     okouToken: execution.platformEnvironment.OKOU_TOKEN,
-    resumedSessionId: execution.nativeContinuation?.sessionId ?? undefined,
+    expectedSourceRunId,
     cliAgentType: execution.cliAgentType,
     environment: execution.environment,
     serviceTier: execution.platformEnvironment.OKOU_CODEX_SERVICE_TIER,
@@ -5176,7 +5178,7 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
       isGroup: true,
     });
     const followUp = await readDispatchedRun(runnerGroup);
-    expect(followUp.resumedSessionId).toBe(mainSession);
+    expect(followUp.expectedSourceRunId).toBe(first.runId);
     await completeSandboxRun(followUp.sandboxToken, followUp.runId, 0);
     await waitForRunSessionId(actor, followUp.runId, mainSession);
 
@@ -5190,7 +5192,7 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
       replyToMessageId: rootMessageId,
     });
     const branch = await readDispatchedRun(runnerGroup);
-    expect(branch.resumedSessionId).toBeUndefined();
+    expect(branch.expectedSourceRunId).toBeUndefined();
     await completeSandboxRun(branch.sandboxToken, branch.runId, 0);
     await flushWaitUntilForTest();
     const branchAnswerMessageId = lastSend(sends).messageId;
@@ -5202,6 +5204,7 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
       { body: "@Okou expand your answer", parent: branchAnswerMessageId },
       { body: "@Okou list launch risks", parent: rootMessageId },
     ];
+    let previousBranchRunId = branch.runId;
     for (const { body, parent } of replyPrompts) {
       await ap.postAgentPhoneInboundMessage({
         channel: "imessage",
@@ -5212,9 +5215,10 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
         replyToMessageId: parent,
       });
       const reply = await readDispatchedRun(runnerGroup);
-      expect(reply.resumedSessionId).toBe(branchSession);
+      expect(reply.expectedSourceRunId).toBe(previousBranchRunId);
       await completeSandboxRun(reply.sandboxToken, reply.runId, 0);
       await waitForRunSessionId(actor, reply.runId, branchSession);
+      previousBranchRunId = reply.runId;
     }
 
     const returnPrompt = "@Okou back to the group discussion";
@@ -5226,7 +5230,7 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
       isGroup: true,
     });
     const returned = await readDispatchedRun(runnerGroup);
-    expect(returned.resumedSessionId).toBe(mainSession);
+    expect(returned.expectedSourceRunId).toBe(followUp.runId);
     await completeSandboxRun(returned.sandboxToken, returned.runId, 0);
     await waitForRunSessionId(actor, returned.runId, mainSession);
 
@@ -5247,7 +5251,7 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
         ...message,
       });
       const run = await readDispatchedRun(runnerGroup);
-      expect(run.resumedSessionId).toBeUndefined();
+      expect(run.expectedSourceRunId).toBeUndefined();
       await completeSandboxRun(run.sandboxToken, run.runId, 0);
       const session = await waitForRunSessionIdPresent(actor, run.runId);
       expect(session).not.toBe(mainSession);
@@ -5310,7 +5314,7 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
       conversationId,
       isGroup: true,
     });
-    let sessionId: string | undefined;
+    let previousRunId: string | undefined;
     for (const body of ["@Okou summarize this plan", "@Okou list the risks"]) {
       await ap.postAgentPhoneInboundMessage({
         channel: "imessage",
@@ -5321,9 +5325,10 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
         replyToMessageId: ambientMessageId,
       });
       const run = await readDispatchedRun(runnerGroup);
-      expect(run.resumedSessionId).toBe(sessionId);
+      expect(run.expectedSourceRunId).toBe(previousRunId);
       await completeSandboxRun(run.sandboxToken, run.runId, 0);
-      sessionId = await waitForRunSessionIdPresent(actor, run.runId);
+      await waitForRunSessionIdPresent(actor, run.runId);
+      previousRunId = run.runId;
     }
     const lifecycle = await chat.requestThreadEvents(
       actor,
@@ -5373,7 +5378,7 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
         replyToMessageId: rootMessageId,
       });
       const run = await readDispatchedRun(member.runnerGroup);
-      expect(run.resumedSessionId).toBeUndefined();
+      expect(run.expectedSourceRunId).toBeUndefined();
       await completeSandboxRun(run.sandboxToken, run.runId, 0);
       const session = await waitForRunSessionIdPresent(linked.actor, run.runId);
       expect(session).not.toBe(ownerSession);
@@ -5520,7 +5525,7 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     expect(run2.appendSystemPrompt).toContain("# Phone Message Context");
     expect(run2.appendSystemPrompt).toContain(`SENDER: {id: ${phone}}`);
     expect(run2.appendSystemPrompt).toContain("SENDER: {id: BOT}");
-    expect(run2.resumedSessionId).toBeUndefined();
+    expect(run2.expectedSourceRunId).toBeUndefined();
     await completeSandboxRun(run2.sandboxToken, run2.runId, 0);
     await expect(
       waitForRunSessionIdPresent(actor, run2.runId),

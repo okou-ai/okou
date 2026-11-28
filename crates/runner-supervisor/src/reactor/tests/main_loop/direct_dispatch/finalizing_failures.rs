@@ -216,7 +216,6 @@ async fn assert_finalizing_activation_failure_retains_lease_until_completion(dir
     let candidate = ParkedIdleCandidateBuilder::new(reuse_key, lease)
         .with_source_run_id(predecessor_run_id)
         .with_rootfs_hash(test_profiles()["vm0/default"].rootfs_hash.clone())
-        .with_native_generation_run_id(predecessor_run_id)
         .with_factory(factory)
         .with_sandbox(Box::new(sandbox_mock::MockSandbox::with_overrides(
             "finalizing-failure-completion",

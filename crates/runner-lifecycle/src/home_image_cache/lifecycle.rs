@@ -1510,6 +1510,11 @@ impl HomeImagePromotionContext {
         self.run_id
     }
 
+    #[cfg(test)]
+    pub(crate) fn publication_generation(&self) -> String {
+        self.run_id.to_string()
+    }
+
     pub fn terminal_status(&self) -> HomeCacheTerminalStatus {
         self.terminal_status
     }

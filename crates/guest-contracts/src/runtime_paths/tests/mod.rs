@@ -19,7 +19,6 @@ fn canonical_paths_are_not_under_tmp() {
     let files = [
         session_id_file(&run_dir),
         finalization_error_file(&run_dir),
-        final_session_history_identity_file(&run_dir),
         failure_diagnostic_file(&run_dir),
         system_log_file(&run_dir),
         agent_log_file(&run_dir),

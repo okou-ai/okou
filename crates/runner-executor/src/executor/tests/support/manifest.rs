@@ -36,7 +36,6 @@ pub(in crate::executor::tests) fn instruction_context(
     let mut context = workflow_context(hash, bytes, mount, suffix);
     context.cli_agent_type = framework.into();
     if framework == "pi" {
-        context.pi_session_id = Some("22222222-2222-4222-8222-222222222222".into());
         context.pi_launch_config = Some(serde_json::json!({"schemaVersion": 2}));
         context.pi_model_config = Some(serde_json::json!({
             "schemaVersion": 5, "dialect": "openai-completions", "transport": "sse",

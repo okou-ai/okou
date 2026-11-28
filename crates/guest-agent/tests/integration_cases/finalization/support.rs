@@ -112,45 +112,7 @@ pub(super) fn finalization_session_metadata(
         .unwrap_or_default()
         .trim()
         .to_string();
-    let source = match runtime.config.framework {
-        guest_agent::env::Framework::ClaudeCode => Some(
-            guest_contracts::session_history_identity::SessionHistorySourceRef::ClaudeCode {
-                config_dir: runtime.config.claude_config_dir.clone(),
-                working_dir: guest_agent::paths::CANONICAL_WORKING_DIR.to_string(),
-                session_id: session_id.clone(),
-            },
-        ),
-        guest_agent::env::Framework::Codex => Some(
-            guest_contracts::session_history_identity::SessionHistorySourceRef::Codex {
-                sessions_dir: std::path::Path::new(&runtime.config.codex_home_dir)
-                    .join("sessions")
-                    .to_string_lossy()
-                    .into_owned(),
-                thread_id: session_id.clone(),
-            },
-        ),
-        guest_agent::env::Framework::Pi => Some(
-            guest_contracts::session_history_identity::SessionHistorySourceRef::Pi {
-                session_path: format!(
-                    "{}/restored-{session_id}.jsonl",
-                    api_contracts::generated::constants::runners::paths::CANONICAL_PI_SESSION_DIR,
-                ),
-                session_id: session_id.clone(),
-            },
-        ),
-        guest_agent::env::Framework::Antigravity => Some(
-            guest_contracts::session_history_identity::SessionHistorySourceRef::Antigravity {
-                conversations_dir: std::path::Path::new(&runtime.config.home_dir)
-                    .join(".gemini")
-                    .join("antigravity-cli")
-                    .join("conversations")
-                    .to_string_lossy()
-                    .into_owned(),
-                session_id: session_id.clone(),
-            },
-        ),
-    };
-    guest_agent::session_metadata::CapturedSessionMetadata::for_test(session_id, source)
+    guest_agent::session_metadata::CapturedSessionMetadata::for_test(session_id)
 }
 
 pub(super) fn use_test_codex_home(

@@ -36,7 +36,6 @@ it("reports startup phases through the main entry without changing a failed comm
           OKOU_RUN_ID: "00000000-0000-4000-8000-000000000123",
           OKOU_PI_PREPARATION_TIMING: "1",
           OKOU_PI_MODEL_CONFIG: "invalid-json",
-          OKOU_PI_SESSION_ID: "test-session",
           OKOU_PI_LAUNCH_PAYLOAD_FILE: "/unused-invalid-config-launch.json",
           OKOU_PI_SESSION_ROLE: "parent",
         },

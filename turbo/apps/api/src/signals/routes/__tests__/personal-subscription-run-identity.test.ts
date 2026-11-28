@@ -1490,8 +1490,9 @@ describe("personal priority credential and session boundaries", () => {
       `Bearer ${replacement.token}`,
     );
     expect(second.cliAgentType).toBe("codex");
-    expect(second.nativeContinuation?.sessionId).toBe(
-      `subscription-${sent.runId}`,
-    );
+    expect(second.sessionContinuation).toMatchObject({
+      continueNative: true,
+      expectedSourceRunId: sent.runId,
+    });
   });
 });

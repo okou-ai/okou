@@ -788,9 +788,9 @@ describe("RUN-01/RUN-02: session continuation, memory policies, and volume pinni
         }),
       );
 
-      expect(continuedExecution.nativeContinuation).toMatchObject({
-        sessionId: `bdd-cli-${r1.runId}`,
-        generationRunId: r1.runId,
+      expect(continuedExecution.sessionContinuation).toMatchObject({
+        continueNative: true,
+        expectedSourceRunId: r1.runId,
       });
       const continuedMemory = continuedExecution.startupInputs.memory;
       expect(continuedMemory).toMatchObject({

@@ -1,68 +1,26 @@
 use super::super::*;
 use super::support::*;
-use crate::storage_fingerprints::StorageFingerprints;
 
 #[tokio::test]
-async fn committed_proof_binds_generation_digest_and_lease_candidate() {
+async fn metadata_tolerates_legacy_history_proof_on_read_and_omits_it_on_write() {
     let f = Fixture::new().await;
-    let mut context = f
-        .context(
-            "thread",
-            b"home-history",
-            "2026-10-09T09:00:00Z",
-            HomeCacheTerminalStatus::Success,
-            StorageFingerprints::default(),
-        )
-        .await;
-    let proof = binding(&context.publication_generation());
-    context.set_home_history_proof(Some(proof.clone())).unwrap();
-    assert_eq!(
-        context.promote().await.unwrap(),
-        HomeImagePromotionOutcome::Promoted
+    let metadata = f.commit("thread", b"home", "2026-10-09T09:00:00Z").await;
+    let mut value = serde_json::to_value(&metadata).unwrap();
+    assert!(
+        value.get("historyProof").is_none(),
+        "new metadata must not emit historyProof"
     );
-    drop(context);
-    let metadata = f.metadata("thread").await;
-    assert_eq!(metadata.history_proof.as_ref(), Some(&proof));
-    assert_eq!(metadata.image_generation, proof.proof.generation);
-    let mut lease = f.lease("thread").await;
-    assert_eq!(lease.history_proof_binding(), Some(&proof));
-    // Candidate alone never calls the verifier and does not authorize a skip.
-    lease.discard_cached_image();
-    assert!(lease.history_proof_binding().is_none());
-    assert!(lease.previous_storage().is_none());
-    assert!(lease.source_image.is_none());
-}
-
-#[tokio::test]
-async fn wrong_proof_generation_or_digest_clears_previous_candidate() {
-    let f = Fixture::new().await;
-    let mut context = f
-        .context(
-            "thread",
-            b"home",
-            "2026-10-09T09:00:00Z",
-            HomeCacheTerminalStatus::Success,
-            StorageFingerprints::default(),
-        )
-        .await;
-    context
-        .set_home_history_proof(Some(binding(&context.publication_generation())))
-        .unwrap();
-    for mut proof in [
-        binding(&runner_types::ids::RunId::new_v4().to_string()),
-        binding(&context.publication_generation()),
-    ] {
-        if proof.proof.generation == context.publication_generation() {
-            proof.sha256 = "c".repeat(64);
-        }
-        assert!(context.set_home_history_proof(Some(proof)).is_err());
-    }
-    assert_eq!(
-        context.promote().await.unwrap(),
-        HomeImagePromotionOutcome::Promoted
-    );
-    drop(context);
-    assert!(f.metadata("thread").await.history_proof.is_none());
+    value["historyProof"] = serde_json::json!({
+        "proof": {"formatVersion": 1},
+        "sha256": "a".repeat(64)
+    });
+    std::fs::write(
+        f.cache.entry_paths(&f.key("thread")).metadata(),
+        serde_json::to_vec(&value).unwrap(),
+    )
+    .unwrap();
+    let lease = f.lease("thread").await;
+    assert!(lease.is_cache_hit());
 }
 
 #[tokio::test]
@@ -98,7 +56,6 @@ async fn malformed_layout_rootfs_scope_state_shape_and_image_identity_are_not_hi
         .unwrap();
         let lease = f.lease("thread").await;
         assert!(!lease.is_cache_hit(), "{field}");
-        assert!(lease.history_proof_binding().is_none());
     }
 }
 

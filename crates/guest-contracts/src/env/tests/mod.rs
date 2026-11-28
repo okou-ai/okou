@@ -97,7 +97,6 @@ fn contract_names_match_wire_values() {
     assert_eq!(CANONICAL_SANDBOX_ID_ENV, "OKOU_SANDBOX_ID");
     assert_eq!(CANONICAL_RESUME_SESSION_ID_ENV, "OKOU_RESUME_SESSION_ID");
     assert_eq!(CANONICAL_API_START_TIME_ENV, "OKOU_API_START_TIME");
-    assert_eq!(PI_SESSION_ID_ENV, "OKOU_PI_SESSION_ID");
     assert_eq!(PI_LAUNCH_CONFIG_ENV, "OKOU_PI_LAUNCH_CONFIG");
     assert_eq!(PI_LAUNCH_PAYLOAD_FILE_ENV, "OKOU_PI_LAUNCH_PAYLOAD_FILE");
     assert_eq!(PI_LAUNCH_PAYLOAD_PRIVATE_DIR_NAME, "pi-launch-payload");
@@ -158,7 +157,6 @@ fn run_payload_uses_camel_case_wire_keys() {
         codex_runtime_config: r#"{"providerId":"openrouter-codex"}"#.to_string(),
         pi_launch_config: r#"{"schemaVersion":2}"#.to_string(),
         pi_model_config: r#"{"provider":"openrouter-codex"}"#.to_string(),
-        pi_session_id: "22222222-2222-4222-8222-222222222222".to_string(),
     };
 
     let json = serde_json::to_value(&payload).unwrap();
@@ -175,7 +173,6 @@ fn run_payload_uses_camel_case_wire_keys() {
     );
     assert_eq!(json["piLaunchConfig"], r#"{"schemaVersion":2}"#);
     assert_eq!(json["piModelConfig"], r#"{"provider":"openrouter-codex"}"#);
-    assert_eq!(json["piSessionId"], "22222222-2222-4222-8222-222222222222");
 }
 
 #[test]
@@ -191,7 +188,6 @@ fn run_payload_fields_returns_logical_names_and_values() {
         codex_runtime_config: r#"{"providerId":"openrouter-codex"}"#.to_string(),
         pi_launch_config: r#"{"schemaVersion":2}"#.to_string(),
         pi_model_config: r#"{"provider":"openrouter-codex"}"#.to_string(),
-        pi_session_id: "22222222-2222-4222-8222-222222222222".to_string(),
     };
 
     let fields = payload.fields();
@@ -238,10 +234,6 @@ fn run_payload_fields_returns_logical_names_and_values() {
             RunPayloadField {
                 name: PI_MODEL_CONFIG_RUN_PAYLOAD_FIELD,
                 value: r#"{"provider":"openrouter-codex"}"#
-            },
-            RunPayloadField {
-                name: PI_SESSION_ID_RUN_PAYLOAD_FIELD,
-                value: "22222222-2222-4222-8222-222222222222"
             },
         ]
     );
@@ -323,7 +315,6 @@ fn runner_owned_key_detection_covers_terminal_contract() {
         CANONICAL_SANDBOX_ID_ENV,
         CANONICAL_RESUME_SESSION_ID_ENV,
         CANONICAL_API_START_TIME_ENV,
-        PI_SESSION_ID_ENV,
         PI_LAUNCH_CONFIG_ENV,
         PI_LAUNCH_PAYLOAD_FILE_ENV,
         PI_MODEL_CONFIG_ENV,
@@ -424,8 +415,8 @@ fn every_declared_env_key_is_classified_for_user_env_protection() {
     }
 
     assert!(
-        total >= 28,
-        "expected at least 28 declared *_ENV keys across the contract sources, found {total}; \
+        total >= 27,
+        "expected at least 27 declared *_ENV keys across the contract sources, found {total}; \
              lower this bound only when a key is deliberately removed"
     );
     assert!(

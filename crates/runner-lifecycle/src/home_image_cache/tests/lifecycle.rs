@@ -51,7 +51,6 @@ async fn fresh_preparation_preserves_hidden_home_and_can_publish_its_own_generat
         .into_promotion_context(HomeImagePromotionRequest {
             run_id,
             sandbox_id,
-            restored_session_identity: None,
             terminal_status: HomeCacheTerminalStatus::Success,
             completed_at: "2026-10-28T00:01:00Z".into(),
             storage_fingerprints: StorageFingerprints::default(),
@@ -81,7 +80,7 @@ async fn rootfs_update_reuses_one_physical_entry_and_preserves_current_vm_public
         )]),
         artifacts: Default::default(),
     };
-    let mut original = f
+    let original = f
         .context(
             "thread",
             b"retained-home",
@@ -90,10 +89,6 @@ async fn rootfs_update_reuses_one_physical_entry_and_preserves_current_vm_public
             fingerprints.clone(),
         )
         .await;
-    let proof = binding(&original.publication_generation());
-    original
-        .set_home_history_proof(Some(proof.clone()))
-        .unwrap();
     assert_eq!(
         original.promote().await.unwrap(),
         HomeImagePromotionOutcome::Promoted
@@ -120,7 +115,6 @@ async fn rootfs_update_reuses_one_physical_entry_and_preserves_current_vm_public
         .await;
     assert!(lease.is_cache_hit());
     assert_eq!(lease.previous_storage(), Some(&fingerprints));
-    assert_eq!(lease.history_proof_binding(), Some(&proof));
     let Some(sandbox::HomeDriveSeedImage::Move(source)) =
         lease.home_drive_config().await.unwrap().unwrap().seed_image
     else {
@@ -144,7 +138,6 @@ async fn rootfs_update_reuses_one_physical_entry_and_preserves_current_vm_public
         .into_promotion_context(HomeImagePromotionRequest {
             run_id,
             sandbox_id,
-            restored_session_identity: None,
             terminal_status: HomeCacheTerminalStatus::Success,
             completed_at: "2026-10-09T09:01:00Z".into(),
             storage_fingerprints: fingerprints,
@@ -338,7 +331,6 @@ async fn replaced_seed_is_rejected_at_consumption_and_all_image_evidence_is_disc
     lease.discard_cached_image();
     assert!(!lease.is_cache_hit());
     assert!(lease.source_identity().is_none());
-    assert!(lease.history_proof_binding().is_none());
     assert!(lease.previous_storage().is_none());
     assert_eq!(&std::fs::read(pinned_old).unwrap()[4096..4104], b"original");
 }
@@ -362,7 +354,6 @@ async fn active_and_checkout_lock_owners_are_not_reusable_inventory() {
             .into_promotion_context(HomeImagePromotionRequest {
                 run_id: RunId::new_v4(),
                 sandbox_id: sandbox::SandboxId::new_v4(),
-                restored_session_identity: None,
                 terminal_status: HomeCacheTerminalStatus::Success,
                 completed_at: "2026-10-09T09:01:00Z".into(),
                 storage_fingerprints: StorageFingerprints::default()
@@ -751,7 +742,6 @@ async fn identity_partitions_cannot_checkout_another_home() {
             .await;
         assert_eq!(lease.result(), HomeCacheCheckoutResult::Miss);
         assert!(lease.previous_storage().is_none());
-        assert!(lease.history_proof_binding().is_none());
     }
     let other = HomeImageCache::shared(
         f.paths.clone(),

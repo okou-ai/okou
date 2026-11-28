@@ -48,14 +48,14 @@ fn complete_publication_preserves_canonical_execution_inputs() {
         "test-region"
     );
     assert_eq!(context.storage_manifest.as_ref().unwrap().storages.len(), 2);
-    let native = context
-        .native_continuation
+    let continuation = context
+        .session_continuation
         .as_ref()
-        .expect("complete API publications include native continuation intent");
-    assert!(native.session_id.is_none());
-    assert!(native.generation_run_id.is_none());
-    assert!(native.recovery_prompt.is_none());
-    assert!(context.cli_agent_session_id().is_none());
+        .expect("complete API publications include session continuation intent");
+    assert!(!continuation.continue_native);
+    assert!(continuation.expected_source_run_id.is_none());
+    assert!(continuation.recovery_prompt.is_none());
+    assert!(context.local_resume_session_id.is_none());
     assert_eq!(
         context.environment.as_ref().unwrap()["FIXTURE_MODEL"],
         "fixture-model"

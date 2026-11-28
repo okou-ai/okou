@@ -9,6 +9,7 @@ async fn reuse_arriving_during_admission_wins_without_detaching_the_original_vic
     let caller = fixture.logical_request(IdlePressureRequest {
         run_id: RunId::new_v4(),
         reuse_key: Some(key),
+        expected_source_run_id: None,
         profile_name: "vm0/default",
         device_rate_limits: &None,
         allow_compatible_blank: false,
@@ -284,6 +285,7 @@ async fn exact_and_compatible_blank_reuse_precede_physical_retirement() {
             .logical_request(IdlePressureRequest {
                 run_id: RunId::new_v4(),
                 reuse_key: exact.then_some(home.key.as_str()),
+                expected_source_run_id: None,
                 profile_name: "vm0/default",
                 device_rate_limits: &None,
                 allow_compatible_blank: true,

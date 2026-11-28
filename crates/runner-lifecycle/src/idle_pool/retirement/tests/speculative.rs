@@ -14,7 +14,6 @@ use super::*;
 
 fn owner(fixture: &mut JobFixture) -> GuardedSpeculativeIdleOwner {
     let mut candidate = fixture.candidate();
-    candidate.metadata.native_generation_run_id = Some(RunId::new_v4());
     candidate.metadata.guest_timezone_intent = GuestTimezoneIntent::Default;
     let mut pool = IdlePool::new(IdlePoolConfig::default());
     assert!(matches!(pool.park(candidate), ParkResult::Parked));
@@ -146,57 +145,53 @@ async fn unpark_and_guest_errors_or_panics_retain_required_promotion() {
 
 #[tokio::test]
 async fn repark_preserves_original_timestamp_metadata_and_complete_lease() {
-    for native_generation in [Some(RunId::new_v4()), None] {
-        let (_, backing) = MockBackingProcess::channel();
-        let mut fixture = JobFixture::new("thread:spec-repark", Some(backing)).await;
-        reuse_report(&fixture.overrides);
-        let mut candidate = fixture.candidate();
-        let producer = candidate.metadata.source_run_id.unwrap();
-        candidate.metadata.native_generation_run_id = native_generation;
-        let mut pool = IdlePool::new(IdlePoolConfig::default());
-        let timestamp = std::time::Instant::now() - Duration::from_secs(60);
-        assert!(matches!(
-            pool.park_at_for_test(candidate, timestamp),
-            ParkResult::Parked
-        ));
-        let mut owner =
-            GuardedSpeculativeIdleOwner::new(pool.take_reserved(&fixture.reuse_key).unwrap())
-                .unwrap_or_else(|_| panic!("parked reservation"));
-        let run = RunId::new_v4();
-        prepare(&mut owner, run).await.unwrap();
-        owner.repark(MIB).await.unwrap();
-        let incoming = owner.take_incoming().unwrap();
-        let crate::idle_pool::IdlePoolIncomingOwner::Reserved(reserved) =
-            incoming.into_owner().unwrap()
-        else {
-            panic!("restore owner");
-        };
-        let entry = reserved
-            .into_parked_entry_preserving_owner()
-            .unwrap_or_else(|_| panic!("parked owner"));
-        assert_eq!(entry.parked_at, timestamp);
-        assert_eq!(entry.metadata.native_generation_run_id, native_generation);
-        assert_eq!(entry.metadata.source_run_id, Some(producer));
-        assert_eq!(entry.resources.sandbox.id(), fixture.sandbox_id.to_string());
-        assert_eq!(
-            (entry.budget_lease.vcpu(), entry.budget_lease.memory_mb()),
-            (2, 8)
-        );
-        assert_eq!(fixture.overrides.park_call_count(), 1);
-        let calls = fixture.overrides.exec_calls();
-        let call = calls
-            .iter()
-            .find(|call| call.cmd.contains("prepare-for-reuse"))
-            .unwrap();
-        let request: guest_contracts::reuse_preparation::ReusePreparationRequest =
-            serde_json::from_slice(call.stdin_bytes.as_ref().unwrap()).unwrap();
-        assert_eq!(
-            request.current_runtime_dir,
-            format!("/home/user/.vm0/guest-agent/runs/{producer}")
-        );
-        assert!(!request.current_runtime_dir.contains(&run.to_string()));
-        retained(&fixture).await;
-    }
+    let (_, backing) = MockBackingProcess::channel();
+    let mut fixture = JobFixture::new("thread:spec-repark", Some(backing)).await;
+    reuse_report(&fixture.overrides);
+    let candidate = fixture.candidate();
+    let producer = candidate.metadata.source_run_id.unwrap();
+    let mut pool = IdlePool::new(IdlePoolConfig::default());
+    let timestamp = std::time::Instant::now() - Duration::from_secs(60);
+    assert!(matches!(
+        pool.park_at_for_test(candidate, timestamp),
+        ParkResult::Parked
+    ));
+    let mut owner =
+        GuardedSpeculativeIdleOwner::new(pool.take_reserved(&fixture.reuse_key).unwrap())
+            .unwrap_or_else(|_| panic!("parked reservation"));
+    let run = RunId::new_v4();
+    prepare(&mut owner, run).await.unwrap();
+    owner.repark(MIB).await.unwrap();
+    let incoming = owner.take_incoming().unwrap();
+    let crate::idle_pool::IdlePoolIncomingOwner::Reserved(reserved) =
+        incoming.into_owner().unwrap()
+    else {
+        panic!("restore owner");
+    };
+    let entry = reserved
+        .into_parked_entry_preserving_owner()
+        .unwrap_or_else(|_| panic!("parked owner"));
+    assert_eq!(entry.parked_at, timestamp);
+    assert_eq!(entry.metadata.source_run_id, Some(producer));
+    assert_eq!(entry.resources.sandbox.id(), fixture.sandbox_id.to_string());
+    assert_eq!(
+        (entry.budget_lease.vcpu(), entry.budget_lease.memory_mb()),
+        (2, 8)
+    );
+    assert_eq!(fixture.overrides.park_call_count(), 1);
+    let calls = fixture.overrides.exec_calls();
+    let call = calls
+        .iter()
+        .find(|call| call.cmd.contains("prepare-for-reuse"))
+        .unwrap();
+    let request: guest_contracts::reuse_preparation::ReusePreparationRequest =
+        serde_json::from_slice(call.stdin_bytes.as_ref().unwrap()).unwrap();
+    assert_eq!(
+        request.current_runtime_dir,
+        format!("/home/user/.vm0/guest-agent/runs/{producer}")
+    );
+    assert!(!request.current_runtime_dir.contains(&run.to_string()));
+    retained(&fixture).await;
 }
 
 #[tokio::test]

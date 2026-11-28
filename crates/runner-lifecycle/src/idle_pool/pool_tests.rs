@@ -197,10 +197,6 @@ fn source_reservation_matches_published_producer_without_native_history() {
         pool.reserve_reusable_source("thread", "vm0/default", &None, RunId::new_v4()),
         Err(ExactIdleReservationMiss::SourceMismatch)
     ));
-    assert!(matches!(
-        pool.reserve_reusable_native_source("thread", "vm0/default", &None, source),
-        Err(ExactIdleReservationMiss::NativeGenerationMismatch)
-    ));
     assert_eq!(pool.status_snapshot().revision, revision);
     assert_eq!(
         pool.held_sandbox_states()[0].reusable_sandbox.source_run_id,
@@ -625,9 +621,9 @@ fn pressure_ordering_breaks_equal_park_time_by_reuse_key() {
 fn pressure_selection_reserves_exact_match_before_oldest_eviction() {
     let mut pool = IdlePool::new(pool_config(0));
     let parked_at = Instant::now();
-    let native_generation_run_id = RunId::new_v4();
+    let source_run_id = RunId::new_v4();
     let matching = ParkedIdleCandidateBuilder::new("session-matching", make_budget_lease(2, 2048))
-        .with_native_generation_run_id(native_generation_run_id)
+        .with_source_run_id(source_run_id)
         .build();
     let _ = park_at(
         &mut pool,
@@ -673,7 +669,6 @@ fn held_reuse_keys() {
 #[test]
 fn held_sandbox_states_include_only_entries_with_timestamps() {
     let mut pool = IdlePool::new(pool_config(0));
-    let native_generation_run_id = RunId::new_v4();
     let unconfirmed = make_candidate_for("sess-unconfirmed", 2, 2048);
     let source_a = RunId::new_v4();
     let source_b = RunId::new_v4();
@@ -684,7 +679,6 @@ fn held_sandbox_states_include_only_entries_with_timestamps() {
     let confirmed_a = ParkedIdleCandidateBuilder::new("sess-a", make_budget_lease(2, 2048))
         .with_source_run_id(source_a)
         .with_mock_sandbox_name("test")
-        .with_native_generation_run_id(native_generation_run_id)
         .with_last_completed_at("2026-05-28T00:00:00.000Z")
         .build();
 
