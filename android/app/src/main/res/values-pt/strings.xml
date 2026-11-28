@@ -130,4 +130,11 @@
     <string name="settings_timezone">Fuso horário</string>
     <string name="settings_timezone_utc">Tempo Universal Coordenado</string>
     <string name="settings_timezone_format">%1$s (UTC%2$s)</string>
+    <string name="composer_skip_attachments_title">Ignorar anexos que não foram carregados?</string>
+    <string name="composer_skip_attachments_edit">Voltar à edição</string>
+    <string name="composer_skip_attachments_send">Continuar o envio</string>
+    <plurals name="composer_skip_attachments_message">
+        <item quantity="one">%1$d anexo será removido do rascunho antes do envio:</item>
+        <item quantity="other">%1$d anexos serão removidos do rascunho antes do envio:</item>
+    </plurals>
 </resources>

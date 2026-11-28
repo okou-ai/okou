@@ -131,4 +131,11 @@
     <string name="settings_timezone">Time zone</string>
     <string name="settings_timezone_utc">Coordinated Universal Time</string>
     <string name="settings_timezone_format">%1$s (UTC%2$s)</string>
+    <string name="composer_skip_attachments_title">Skip attachments that didn’t upload?</string>
+    <string name="composer_skip_attachments_edit">Return to editing</string>
+    <string name="composer_skip_attachments_send">Continue sending</string>
+    <plurals name="composer_skip_attachments_message">
+        <item quantity="one">%1$d attachment will be removed from this draft before sending:</item>
+        <item quantity="other">%1$d attachments will be removed from this draft before sending:</item>
+    </plurals>
 </resources>

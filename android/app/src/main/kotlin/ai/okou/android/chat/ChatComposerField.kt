@@ -1,5 +1,6 @@
 package ai.okou.android.chat
 
+import ai.okou.android.OkouConfirmationDialog
 import ai.okou.android.R
 import ai.okou.android.api.generated.ComposerWorkflowsItem
 import ai.okou.android.artifacts.InlineArtifactImages
@@ -32,6 +33,7 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -79,6 +81,7 @@ import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.clearAndSetSemantics
@@ -119,6 +122,11 @@ private data class DraftImageRequest(
     val attachment: DraftChatAttachment,
     val restoreKeyboard: Boolean,
     val unavailable: () -> Unit,
+)
+
+private data class AttachmentSendConfirmation(
+    val skip: AttachmentSkip,
+    val restoreKeyboard: Boolean,
 )
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -189,6 +197,7 @@ internal fun ChatComposerField(
     val restoreFocusOnResize = remember(shortWindow) { inputFocused }
     val currentShortWindow by rememberUpdatedState(shortWindow)
     val editorFocus = remember(target.key) { FocusRequester() }
+    val sendFocus = remember(target.key) { FocusRequester() }
     val attachmentOptionsFocus = remember(target.key) { FocusRequester() }
     val latestInput by rememberUpdatedState(input)
     val hasDraft = state.journal != null
@@ -266,6 +275,42 @@ internal fun ChatComposerField(
     var requestedImage by remember(target, draftKey) { mutableStateOf<DraftImageRequest?>(null) }
     var returnImage by remember(target, draftKey) { mutableStateOf<String?>(null) }
     var restoreKeyboard by remember(target, draftKey) { mutableStateOf(false) }
+    var attachmentConfirmation by
+        remember(model, target, draftKey) {
+            mutableStateOf<AttachmentSendConfirmation?>(null)
+        }
+    var restoreSendFocus by remember(model, target, draftKey) { mutableStateOf(false) }
+    val sendEnabled = state.canSend(target) && connectorSave == null
+    fun send(skip: AttachmentSkip?): Boolean {
+        val current = model.uiState.value
+        if (
+            !current.canSend(target) ||
+                current.attachmentSkip(target) != skip ||
+                connectorOptions?.blocksSend(target) == true
+        )
+            return false
+        focus.clearFocus()
+        beforeSend()
+        model.send(target, defaultModel?.state?.value?.options, skip)
+        return true
+    }
+    fun dismissAttachmentConfirmation() {
+        val request = attachmentConfirmation ?: return
+        attachmentConfirmation = null
+        if (request.restoreKeyboard) restoreKeyboard = true else restoreSendFocus = true
+    }
+    val currentSkip = attachmentConfirmation?.let { state.attachmentSkip(target) }
+    LaunchedEffect(attachmentConfirmation, currentSkip, sendEnabled) {
+        val request = attachmentConfirmation ?: return@LaunchedEffect
+        if (!sendEnabled || request.skip != currentSkip) dismissAttachmentConfirmation()
+    }
+    LaunchedEffect(restoreSendFocus) {
+        if (restoreSendFocus) {
+            withFrameNanos {}
+            if (sendEnabled) sendFocus.requestFocus() else editorFocus.requestFocus()
+            restoreSendFocus = false
+        }
+    }
     val imageVisit =
         model.draftImageVisit?.takeIf {
             it.targetKey == target.key && it.draftKey == draftKey
@@ -555,18 +600,24 @@ internal fun ChatComposerField(
                     }
                     FilledIconButton(
                         onClick = {
-                            if (connectorOptions?.blocksSend(target) != true) {
-                                focus.clearFocus()
-                                beforeSend()
-                                model.send(target, defaultModel?.state?.value?.options)
+                            val current = model.uiState.value
+                            if (
+                                current.canSend(target) &&
+                                    connectorOptions?.blocksSend(target) != true
+                            ) {
+                                val skip = current.attachmentSkip(target)
+                                if (skip == null) send(null)
+                                else
+                                    attachmentConfirmation =
+                                        AttachmentSendConfirmation(skip, imeVisible)
                             }
                         },
                         modifier =
-                            Modifier.semantics {
+                            Modifier.focusRequester(sendFocus).semantics {
                                 contentDescription = sendLabel
                                 if (connectorStatus != null) stateDescription = connectorStatus
                             },
-                        enabled = state.canSend(target) && connectorSave == null,
+                        enabled = sendEnabled,
                         shape = CircleShape,
                         colors =
                             IconButtonDefaults.filledIconButtonColors(
@@ -594,6 +645,39 @@ internal fun ChatComposerField(
                         onHeight = { popupHeight = it },
                     ) {
                         chooseWorkflow(it, workflowToken)
+                    }
+                }
+            }
+        }
+    }
+    attachmentConfirmation?.let { request ->
+        OkouConfirmationDialog(
+            title = stringResource(R.string.composer_skip_attachments_title),
+            confirm = stringResource(R.string.composer_skip_attachments_send),
+            dismissLabel = stringResource(R.string.composer_skip_attachments_edit),
+            onDismiss = ::dismissAttachmentConfirmation,
+            onConfirm = {
+                if (send(request.skip)) attachmentConfirmation = null
+                else dismissAttachmentConfirmation()
+            },
+            confirmEnabled = sendEnabled && request.skip == currentSkip,
+            keepActionsVisible = true,
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                val files = request.skip.attachments
+                Text(
+                    pluralStringResource(
+                        R.plurals.composer_skip_attachments_message,
+                        files.size,
+                        files.size,
+                    ),
+                )
+                Column {
+                    files.forEach {
+                        Row {
+                            Text("•", Modifier.width(20.dp).clearAndSetSemantics {})
+                            Text(it.filename, Modifier.weight(1f))
+                        }
                     }
                 }
             }

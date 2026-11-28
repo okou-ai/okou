@@ -130,4 +130,11 @@
     <string name="settings_timezone">Zona horaria</string>
     <string name="settings_timezone_utc">Tiempo universal coordinado</string>
     <string name="settings_timezone_format">%1$s (UTC%2$s)</string>
+    <string name="composer_skip_attachments_title">¿Omitir los archivos adjuntos que no se subieron?</string>
+    <string name="composer_skip_attachments_edit">Volver a editar</string>
+    <string name="composer_skip_attachments_send">Continuar con el envío</string>
+    <plurals name="composer_skip_attachments_message">
+        <item quantity="one">Se eliminará %1$d archivo adjunto del borrador antes de enviarlo:</item>
+        <item quantity="other">Se eliminarán %1$d archivos adjuntos del borrador antes de enviarlo:</item>
+    </plurals>
 </resources>

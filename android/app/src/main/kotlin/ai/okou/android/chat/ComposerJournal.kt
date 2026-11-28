@@ -166,6 +166,12 @@ enum class RecoveryOperationPhase {
     CheckingReset,
 }
 
+internal data class AttachmentSkip(
+    val target: ComposerTarget,
+    val draftKey: String,
+    val attachments: List<DraftChatAttachment>,
+)
+
 data class ComposerState(
     val journal: ComposerJournal? = null,
     val persistence: ComposerPersistence = ComposerPersistence.Loading,
@@ -216,6 +222,12 @@ data class ComposerState(
     internal fun attachments(target: ComposerTarget): List<DraftChatAttachment> =
         journal?.drafts?.get(draftKey(target))?.attachments.orEmpty()
 
+    internal fun attachmentSkip(target: ComposerTarget): AttachmentSkip? =
+        attachments(target)
+            .filter { it.reference == null && it.failure != null }
+            .takeIf { it.isNotEmpty() }
+            ?.let { AttachmentSkip(target, draftKey(target), it) }
+
     internal fun canEditDraftModel(target: ComposerTarget) =
         journal != null &&
             target.threadId == null &&
@@ -262,8 +274,8 @@ data class ComposerState(
             target.threadId?.let(::pendingNewChat) == null &&
             entry.createdThreadId == null &&
             readingAttachmentSelections.none { it.destination(journal) == draftKey } &&
-            attachments.all { it.reference != null } &&
-            (!entry.text.isBlankWebDraft() || attachments.isNotEmpty())
+            attachments.all { it.reference != null || it.failure != null } &&
+            (!entry.text.isBlankWebDraft() || attachments.any { it.reference != null })
     }
 }
 

@@ -981,14 +981,22 @@ internal class ChatComposerOwner(
         replace(journal.copy(newChatModel = selection))
     }
 
-    fun send(connection: Connection, target: ComposerTarget, options: DefaultModelOptions? = null) {
-        if (!mutable.value.canSend(target) || !connection.current()) return
+    fun send(
+        connection: Connection,
+        target: ComposerTarget,
+        options: DefaultModelOptions? = null,
+        skip: AttachmentSkip? = null,
+    ) {
+        val state = mutable.value
+        if (!state.canSend(target) || state.attachmentSkip(target) != skip || !connection.current())
+            return
         val op = begin(connection, target.key) ?: return
         val journal = checkNotNull(mutable.value.journal)
         val entry = mutable.value.entry(target)
         val draftKey = mutable.value.draftKey(target)
         val draft = journal.drafts[draftKey] ?: EditableComposerDraft()
-        val attachments = draft.attachments.map { checkNotNull(it.reference) }
+        val uploaded = draft.attachments.filter { it.reference != null }
+        val attachments = uploaded.map { checkNotNull(it.reference) }
         val hasText = !entry.text.isBlankWebDraft()
         val threadId = target.threadId ?: UUID.randomUUID().toString()
         val eventId = UUID.randomUUID().toString()
@@ -1036,7 +1044,7 @@ internal class ChatComposerOwner(
                 draftModel = draftModel,
                 attachmentReferences = attachments,
                 attachmentFiles =
-                    draft.attachments
+                    uploaded
                         .filter { it.staged }
                         .associate {
                             checkNotNull(it.reference).id to attachmentFile(it.key)
@@ -1062,6 +1070,7 @@ internal class ChatComposerOwner(
                             )),
             ),
         )
+        skip?.attachments?.forEach { discardAttachment(it.key) }
         serverTarget(draftKey)?.let { synchronize(connection, it) }
         dispatch(op)
     }

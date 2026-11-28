@@ -130,4 +130,11 @@
     <string name="settings_timezone">समय क्षेत्र</string>
     <string name="settings_timezone_utc">समन्वित सार्वभौमिक समय</string>
     <string name="settings_timezone_format">%1$s (UTC%2$s)</string>
+    <string name="composer_skip_attachments_title">अपलोड न हुए अटैचमेंट छोड़ें?</string>
+    <string name="composer_skip_attachments_edit">संपादन पर लौटें</string>
+    <string name="composer_skip_attachments_send">भेजना जारी रखें</string>
+    <plurals name="composer_skip_attachments_message">
+        <item quantity="one">भेजने से पहले ड्राफ़्ट से %1$d अटैचमेंट हटाया जाएगा:</item>
+        <item quantity="other">भेजने से पहले ड्राफ़्ट से %1$d अटैचमेंट हटाए जाएँगे:</item>
+    </plurals>
 </resources>
