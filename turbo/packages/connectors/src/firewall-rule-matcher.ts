@@ -2777,6 +2777,21 @@ function certificateBaseProof(
   return proof;
 }
 
+function unknownEndpointAuthorityApi(
+  authorities: readonly AuthorityApi[],
+  owner: string,
+  base: string,
+): AuthorityApi | undefined {
+  let firstMatch: AuthorityApi | undefined;
+  for (const candidate of authorities) {
+    if (candidate.firewall.name !== owner || candidate.api.rawBase !== base)
+      continue;
+    if (candidate.api.permissionless) return candidate;
+    firstMatch ??= candidate;
+  }
+  return firstMatch;
+}
+
 function certifiesRawAllow(
   original: Extract<FirewallRequestDecision, { kind: "allow" }>,
   originalRoutes: ReadonlySet<string>,
@@ -2795,15 +2810,14 @@ function certifiesRawAllow(
   let selected: string | undefined;
   let sourceOrder = 0;
   const fallback = [-1, 0, 0, 0, 0, 0, 0];
-  const unknownCandidates = authorities.filter(({ firewall, api }) => {
-    return (
-      firewall.name === original.firewallName && api.rawBase === original.base
-    );
-  });
   const unknownApi =
-    unknownCandidates.find(({ api }) => {
-      return api.permissionless;
-    }) ?? unknownCandidates[0];
+    original.rule === undefined
+      ? unknownEndpointAuthorityApi(
+          authorities,
+          original.firewallName,
+          original.base,
+        )
+      : undefined;
   for (const candidate of authorities) {
     const { firewall, api, order } = candidate;
     const paths = api.paths;
@@ -2826,8 +2840,7 @@ function certifiesRawAllow(
       tieRank: (api.permissionless ? MAX_REQUEST_WORK : 0) - sourceOrder,
       rawPriority: [api.rawBaseScore, ...fallback],
     });
-    if (original.rule === undefined && unknownApi === candidate)
-      selected = apiId;
+    if (unknownApi === candidate) selected = apiId;
     const policy = policies.policies.get(firewall.name);
     const evaluable = certificateApiCanGrant(firewall, api, policies);
     for (const [ruleOrder, rule] of api.rules.entries()) {
