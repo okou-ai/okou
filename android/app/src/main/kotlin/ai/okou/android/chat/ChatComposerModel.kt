@@ -31,6 +31,16 @@ class ChatComposerModel(
         scopeHash(
             listOf(identity.workspaceStorageKey(), identity.sessionId, identity.authorizationScope),
         )
+    internal val workflowCatalog =
+        service.composerWorkflowService?.let {
+            ComposerWorkflowCatalog(
+                it,
+                store.workflowCacheFile(identity),
+                viewModelScope,
+                authorized,
+                onFailure,
+            )
+        }
     private val connection =
         ChatComposerOwner.Connection(
             service,
@@ -42,6 +52,7 @@ class ChatComposerModel(
             history,
             chatList,
             connectors,
+            workflowCatalog,
         )
     private val owner = store.attach(identity, connection)
     val uiState = owner.uiState

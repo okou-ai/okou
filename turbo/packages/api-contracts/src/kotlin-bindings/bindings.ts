@@ -371,6 +371,22 @@ export const kotlinRouteBindings: readonly KotlinRouteBinding[] = [
     route: workflowsCollectionContract.list,
   },
   {
+    name: "composerWorkflows",
+    response: "ComposerWorkflows",
+    route: workflowsCollectionContract.composer,
+  },
+  {
+    name: "recentComposerWorkflows",
+    response: "RecentComposerWorkflows",
+    route: workflowsCollectionContract.recent,
+  },
+  {
+    name: "recordComposerWorkflowUse",
+    request: "RecordComposerWorkflowUseRequest",
+    response: "RecordedComposerWorkflowUse",
+    route: workflowsCollectionContract.recordRecentUse,
+  },
+  {
     name: "workflow",
     response: "WorkflowDetail",
     route: workflowsDetailContract.get,
@@ -853,6 +869,26 @@ export const kotlinTypeBindings: readonly KotlinTypeBinding[] = [
   {
     name: "Workflows",
     schema: workflowsCollectionContract.list.responses[200],
+    direction: "output",
+  },
+  {
+    name: "ComposerWorkflows",
+    schema: workflowsCollectionContract.composer.responses[200],
+    direction: "output",
+  },
+  {
+    name: "RecentComposerWorkflows",
+    schema: workflowsCollectionContract.recent.responses[200],
+    direction: "output",
+  },
+  {
+    name: "RecordComposerWorkflowUseRequest",
+    schema: workflowsCollectionContract.recordRecentUse.body,
+    direction: "input",
+  },
+  {
+    name: "RecordedComposerWorkflowUse",
+    schema: workflowsCollectionContract.recordRecentUse.responses[200],
     direction: "output",
   },
   {

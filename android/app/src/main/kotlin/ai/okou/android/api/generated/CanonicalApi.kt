@@ -262,6 +262,22 @@ internal interface CanonicalApi {
         @QueryMap parameters: Map<String, String>,
     ): Response<Workflows>
 
+    @GET("/api/workflows/for-composer")
+    suspend fun `composerWorkflows`(
+        @Header("Authorization") token: String,
+    ): Response<ComposerWorkflows>
+
+    @GET("/api/workflows/recent")
+    suspend fun `recentComposerWorkflows`(
+        @Header("Authorization") token: String,
+    ): Response<RecentComposerWorkflows>
+
+    @POST("/api/workflows/recent/use")
+    suspend fun `recordComposerWorkflowUse`(
+        @Header("Authorization") token: String,
+        @Body body: RecordComposerWorkflowUseRequest,
+    ): Response<RecordedComposerWorkflowUse>
+
     @GET("/api/workflows/{workflowId}")
     suspend fun `workflow`(
         @Header("Authorization") token: String,

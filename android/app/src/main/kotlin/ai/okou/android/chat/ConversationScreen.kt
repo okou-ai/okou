@@ -598,6 +598,7 @@ internal fun ConversationRoute(
         val newReplyUnseen = newReply || (!hasSeenLatest && list.isUnread(threadId))
         val jump =
             when {
+                stopPlacement?.workflowBounds != null -> null
                 missing || !readingReady -> null
                 newReplyUnseen && (position.canScrollBackward || revealHiddenReply) ->
                     R.string.conversation_new_reply

@@ -2,6 +2,7 @@ package ai.okou.android.chat
 
 import ai.okou.android.api.finiteReadRetryDelays
 import ai.okou.android.auth.WorkspaceIdentity
+import ai.okou.android.auth.scopeHash
 import ai.okou.android.auth.workspaceStorageKey
 import android.content.Context
 import android.net.Uri
@@ -51,6 +52,13 @@ class ComposerJournalStore(
 
     internal fun attachmentDirectory(identity: WorkspaceIdentity) =
         attachmentCache.resolve(identity.workspaceStorageKey())
+
+    internal fun workflowCacheFile(identity: WorkspaceIdentity) =
+        directory
+            .resolve("workflow-catalog")
+            .resolve(
+                scopeHash(listOf(identity.workspaceStorageKey(), identity.authorizationScope)),
+            )
 
     internal suspend fun readAttachmentMetadata(uris: List<Uri>) =
         withContext(dispatcher) { uris.map { it to contentResolver.attachmentMetadata(it) } }

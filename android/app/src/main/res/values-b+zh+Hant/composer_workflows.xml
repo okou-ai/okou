@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="composer_workflow_references">引用</string>
+    <string name="composer_workflow_title">工作流程</string>
+    <string name="composer_workflow_search">搜尋工作流程</string>
+    <string name="composer_workflow_recent">最近使用</string>
+    <string name="composer_workflow_all">所有工作流程</string>
+    <string name="composer_workflow_loading">正在載入工作流程</string>
+    <string name="composer_workflow_empty">暫無可用的工作流程</string>
+    <string name="composer_workflow_no_match">找不到相符的工作流程</string>
+    <string name="composer_workflow_read_failed">暫時無法載入工作流程</string>
+</resources>

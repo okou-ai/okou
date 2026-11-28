@@ -7357,6 +7357,31 @@ object WorkflowAutomationSerializer : KSerializer<WorkflowAutomation> {
 typealias Workflows = List<WorkflowSummary>
 
 @Serializable
+data class ComposerWorkflowsItem(
+    val `id`: String,
+    val `name`: String,
+    val `displayName`: String?,
+    val `description`: String?,
+)
+
+typealias ComposerWorkflows = List<ComposerWorkflowsItem>
+
+@Serializable
+data class RecentComposerWorkflows(
+    val `workflowIds`: List<String>?,
+)
+
+@Serializable
+data class RecordComposerWorkflowUseRequest(
+    val `workflowIds`: List<String>,
+)
+
+@Serializable
+data class RecordedComposerWorkflowUse(
+    val `workflowIds`: List<String>,
+)
+
+@Serializable
 enum class WorkflowDetailVisibility {
     @SerialName("public") PUBLIC,
     @SerialName("private") PRIVATE,
