@@ -44,8 +44,8 @@
 //! `get_state` with ID `<run-id>:pi:get-state` and waits for a response with
 //! the exact ID, command name, and `success: true`. The successful response is
 //! sent to the response channel and is also used by the projection to emit
-//! `system/init` after validating the returned `data.sessionId` and required
-//! `data.sessionFile`.
+//! `system/init` after validating the returned `data.sessionId` and including
+//! `data.sessionFile` when present.
 //!
 //! After `get_state`, the writer waits for the stdout loop to start the event
 //! pipeline. It then sends the original initial `prompt` with ID
@@ -551,22 +551,20 @@ impl<'a> PiRpcProjection<'a> {
                     "Pi RPC get_state response returned an invalid session id".to_string(),
                 ));
             }
-            let session_file = response
-                .pointer("/data/sessionFile")
-                .and_then(Value::as_str)
-                .ok_or_else(|| {
-                    AgentError::Execution(
-                        "Pi RPC get_state response omitted the session file".to_string(),
-                    )
-                })?;
-            self.session_id = Some(session_id.to_string());
-            self.emitted_session_init = true;
-            Some(json!({
+            let mut init = json!({
                 "type": "system",
                 "subtype": "init",
                 "session_id": session_id,
-                "session_file": session_file,
-            }))
+            });
+            if let Some(session_file) = response
+                .pointer("/data/sessionFile")
+                .and_then(Value::as_str)
+            {
+                init["session_file"] = json!(session_file);
+            }
+            self.session_id = Some(session_id.to_string());
+            self.emitted_session_init = true;
+            Some(init)
         } else {
             None
         };

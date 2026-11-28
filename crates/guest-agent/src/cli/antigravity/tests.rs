@@ -266,10 +266,7 @@ fn latest_session_id_from_list_selects_newest_valid_uuid_with_earliest_tie_break
     let newer_first = "22222222-2222-4222-8222-222222222222";
     let newer_second = "33333333-3333-4333-8333-333333333333";
 
-    assert_eq!(
-        latest_session_id_from_list(&json!({"sessions": []})),
-        None
-    );
+    assert_eq!(latest_session_id_from_list(&json!({"sessions": []})), None);
     assert_eq!(
         latest_session_id_from_list(&json!({
             "sessions": [

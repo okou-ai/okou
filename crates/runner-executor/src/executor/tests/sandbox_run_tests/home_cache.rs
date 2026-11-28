@@ -1858,6 +1858,7 @@ async fn assert_invalid_resume_session_publication_attribution(is_first_run: Opt
     ctx.is_first_run = is_first_run;
     let run_id = ctx.run_id;
     set_reuse_and_session_identity(&mut ctx, raw_session_id);
+    ctx.local_resume_session_id = Some(raw_session_id.into());
 
     let cancel = tokio_util::sync::CancellationToken::new();
     let (reuse_outcome, _telemetry) =
@@ -1953,6 +1954,7 @@ async fn cached_reuse_invalid_resume_session_without_promotion_skips_home_lease(
     let raw_session_id = "../invalid-resume";
     let mut ctx = minimal_context();
     set_reuse_and_session_identity(&mut ctx, raw_session_id);
+    ctx.local_resume_session_id = Some(raw_session_id.into());
 
     let cancel = tokio_util::sync::CancellationToken::new();
     let (reuse_outcome, _telemetry) =

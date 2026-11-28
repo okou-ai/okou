@@ -300,7 +300,8 @@ async fn run_finalizing_activation(
                 reservation,
                 ReservedActivationRequest {
                     run_id,
-                    required_home_source_run_id: selected_home_source_run_id,
+                    required_home_source_run_id: preferred_home_source
+                        .or(selected_home_source_run_id),
                     profile_name: &profile_name,
                     device_rate_limits: &device_rate_limits,
                     home_disk_mb,

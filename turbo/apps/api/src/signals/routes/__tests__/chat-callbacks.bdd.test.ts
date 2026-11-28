@@ -4323,7 +4323,14 @@ describe("CHAT-02: auto-send after failures", () => {
           })
         ).runId;
       }
-      await readChatRunExecution(runnerGroup, probeRunId);
+      const probeExecution = await readChatRunExecution(
+        runnerGroup,
+        probeRunId,
+      );
+      expect(probeExecution.sessionContinuation).toMatchObject({
+        continueNative: false,
+        expectedSourceRunId: null,
+      });
       const probeContext = await waitForRunContext(actor, probeRunId);
       const appended = probeContext.body.appendSystemPrompt ?? "";
       expect(appended).toContain("# Incomplete Rounds Context");
@@ -4569,7 +4576,14 @@ describe("CHAT-02: auto-send after failures", () => {
         filenameSnapshot: "queued-notes.txt",
       }),
     );
-    await readChatRunExecution(runnerGroup, claimed.runId);
+    const autoExecution = await readChatRunExecution(
+      runnerGroup,
+      claimed.runId,
+    );
+    expect(autoExecution.sessionContinuation).toMatchObject({
+      continueNative: false,
+      expectedSourceRunId: null,
+    });
     const autoContext = await waitForRunContext(actor, claimed.runId);
     expect(autoContext.body.prompt).toContain("queued with files");
     expect(autoContext.body.prompt).toContain(
@@ -4936,9 +4950,12 @@ describe("CHAT-02: auto-send across a model switch", () => {
       throw new Error("Expected the queued message to be auto-claimed");
     }
 
-    await readChatRunExecution(runnerGroup, claimed.runId);
+    const autoExecution = await readChatRunExecution(runnerGroup, claimed.runId);
+    expect(autoExecution.sessionContinuation).toMatchObject({
+      continueNative: true,
+      expectedSourceRunId: second.runId,
+    });
     const autoContext = await waitForRunContext(actor, claimed.runId);
-    expect(autoContext.body.sessionId).toBe(`bdd-cli-${second.runId}`);
     expect(autoContext.body.environment.ANTHROPIC_MODEL).toBe(
       "claude-fable-5-1",
     );

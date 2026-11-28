@@ -386,10 +386,7 @@ async fn run_codex_app_server(
         )
         .await?;
         let thread_identity = thread_identity_from_response(&thread_response)?;
-        validate_resumed_thread_id(
-            &thread_identity.canonical_id,
-            resumed_thread_id.as_deref(),
-        )?;
+        validate_resumed_thread_id(&thread_identity.canonical_id, resumed_thread_id.as_deref())?;
         let native_resumed = resumed_thread_id.is_some();
         notification_state.allow_historical_usage = native_resumed;
         while let Some(notification) = client.pop_notification() {

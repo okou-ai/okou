@@ -6,7 +6,7 @@ use crate::home_image_cache::{
 use crate::idle_pool::{ParkResult, ParkedIdleCandidate};
 use crate::reactor::tests::support::{
     seed_home_cache_state, seed_home_cache_state_for_run, seed_idle_pool_with_overrides,
-    wait_heartbeat_matching_after,
+    seed_idle_pool_with_overrides_and_source, wait_heartbeat_matching_after,
 };
 use runner_host::paths::RunnerPaths;
 use sandbox::{HomeDriveSeedImage, SandboxId};
@@ -292,7 +292,7 @@ async fn assert_fallback(available: Available) {
     });
     let retained = if matches!(available, Available::Retained) {
         Some(
-            seed_idle_pool_with_overrides(
+            seed_idle_pool_with_overrides_and_source(
                 &env.idle_pool,
                 &budget,
                 &overrides,
@@ -300,6 +300,7 @@ async fn assert_fallback(available: Available) {
                 "vm0/default",
                 2,
                 4096,
+                Some(source),
             )
             .await,
         )
@@ -363,8 +364,8 @@ async fn assert_fallback(available: Available) {
     let run_id = RunId::new_v4();
     let mut body = envelope(identity, run_id);
     body["executionContext"]["reuseKey"] = json!(key);
-    body["executionContext"]["nativeContinuation"] = json!({
-        "sessionId": RunId::new_v4(), "generationRunId": source, "recoveryPrompt": null
+    body["executionContext"]["sessionContinuation"] = json!({
+        "continueNative": true, "expectedSourceRunId": source, "recoveryPrompt": null
     });
     if different_preferred_home_source {
         body["preferredHomeCheckout"] = json!({

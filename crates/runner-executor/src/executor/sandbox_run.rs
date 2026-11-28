@@ -1019,9 +1019,9 @@ pub(super) async fn prepare_home_image(
         },
         home_drive_required: true,
     };
-    let required_source = context
-        .expected_home_source_run_id()
-        .or(params.required_home_source_run_id);
+    let required_source = params
+        .required_home_source_run_id
+        .or_else(|| context.expected_home_source_run_id());
     let lease = cache
         .prepare_with_policy(request, params.home_image_prepare_policy, required_source)
         .await;

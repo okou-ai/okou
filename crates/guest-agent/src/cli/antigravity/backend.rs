@@ -902,8 +902,13 @@ async fn start_or_resume_session(
             LOG_TAG,
             "Antigravity ACP session/list returned no resumable session; starting fresh session with recovery context"
         );
-        return start_fresh_session_with_recovery(client, runtime, heartbeat_monitor, heartbeat_done)
-            .await;
+        return start_fresh_session_with_recovery(
+            client,
+            runtime,
+            heartbeat_monitor,
+            heartbeat_done,
+        )
+        .await;
     }
 
     Ok(race_with_heartbeat(
@@ -980,7 +985,11 @@ pub(super) fn latest_session_id_from_list(response: &Value) -> Option<String> {
                 .get("updatedAt")
                 .and_then(Value::as_str)
                 .and_then(|value| chrono::DateTime::parse_from_rfc3339(value).ok())
-                .map(|timestamp| timestamp.timestamp_nanos_opt().unwrap_or_else(|| timestamp.timestamp_millis() * 1_000_000));
+                .map(|timestamp| {
+                    timestamp
+                        .timestamp_nanos_opt()
+                        .unwrap_or_else(|| timestamp.timestamp_millis() * 1_000_000)
+                });
             Some((updated_at, std::cmp::Reverse(index), id))
         })
         .max_by_key(|(updated_at, reverse_index, _)| (*updated_at, *reverse_index))

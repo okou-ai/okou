@@ -293,7 +293,7 @@ describe("CHAT-02: model-first routing", () => {
       [400],
     );
     expect(JSON.stringify(replacementOutputs.body)).toContain(
-      "Native Run output does not match its captured Framework identity",
+      "RUN_OUTPUT_ALREADY_COMMITTED",
     );
     expect((await api.readRun(actor, run.runId)).result).toStrictEqual(
       committedResult,

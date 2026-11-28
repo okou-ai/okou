@@ -881,9 +881,8 @@ async fn first_completion_classifies_proven_cli_oom_inner() {
         memory_oom_group_kill_events: 0,
         pids_max_events: 0,
     };
-    let session_metadata = session_metadata::CapturedSessionMetadata::for_test(
-        "11111111-1111-4111-8111-111111111111",
-    );
+    let session_metadata =
+        session_metadata::CapturedSessionMetadata::for_test("11111111-1111-4111-8111-111111111111");
     for (diagnostic, evidence, reason) in [
         (
             natural.clone(),
@@ -1021,7 +1020,7 @@ async fn complete_execution_writes_finalization_failure_diagnostic_inner() {
     assert_eq!(diagnostic.cli_exit_code, Some(0));
     assert_eq!(
         diagnostic.session_history_status,
-        SessionHistoryStatus::Missing
+        SessionHistoryStatus::NotApplicable
     );
     for path in cleanup_paths {
         let _ = std::fs::remove_file(path);
@@ -1139,8 +1138,7 @@ async fn complete_execution_keeps_success_when_history_is_unavailable_inner() {
         http.clone(),
     );
     let runtime = test_guest_runtime(config, http.clone());
-    let session_metadata =
-        session_metadata::CapturedSessionMetadata::for_test("zero-turn-session");
+    let session_metadata = session_metadata::CapturedSessionMetadata::for_test("zero-turn-session");
     let (exit_code, memory_published) = complete_execution(
         &masker,
         0,

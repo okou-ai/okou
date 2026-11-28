@@ -14,7 +14,8 @@ pub(super) use self::env::{
 pub(super) use self::idle_pool::{
     HomePromotionSeedSpec, TestParkedIdleCandidateSpec, seed_home_cache_state,
     seed_home_cache_state_for_run, seed_idle_pool, seed_idle_pool_with_history_generation,
-    seed_idle_pool_with_home_promotion, seed_idle_pool_with_overrides, seed_idle_pool_with_timing,
+    seed_idle_pool_with_home_promotion, seed_idle_pool_with_overrides,
+    seed_idle_pool_with_overrides_and_source, seed_idle_pool_with_timing,
 };
 pub(super) use self::jobs::{context_with_session, minimal_context, push_job, shutdown};
 pub(super) use self::status::{

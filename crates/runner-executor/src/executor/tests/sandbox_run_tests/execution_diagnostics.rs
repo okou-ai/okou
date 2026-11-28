@@ -370,7 +370,6 @@ async fn execute_prepared_sandbox_run_logs_discovered_guest_session_id() {
     let overrides = Arc::new(sandbox_mock::MockSandboxOverrides::new());
     let raw_session_id = "sess-sensitive-first-run-17975";
     overrides.push_wait_process_exit(ProcessExit::new(1, 0, Vec::new(), Vec::new()));
-    overrides.push_read_file_result(Ok(None));
     overrides.push_read_file_result(Ok(Some(raw_session_id.as_bytes().to_vec())));
     let sandbox = create_overridden_sandbox(Arc::clone(&overrides)).await;
     let ctx = minimal_context();
@@ -483,7 +482,6 @@ async fn execute_prepared_sandbox_run_canonicalizes_codex_discovered_cli_agent_s
     let raw_session_id = "019E9154C30470F0ADDE36EFB1BE1701";
     let canonical_session_id = "019e9154-c304-70f0-adde-36efb1be1701";
     overrides.push_wait_process_exit(ProcessExit::new(1, 0, Vec::new(), Vec::new()));
-    overrides.push_read_file_result(Ok(None));
     overrides.push_read_file_result(Ok(Some(raw_session_id.as_bytes().to_vec())));
     let sandbox = create_overridden_sandbox(Arc::clone(&overrides)).await;
     let mut ctx = minimal_context();
@@ -537,7 +535,6 @@ async fn execute_prepared_sandbox_run_ignores_non_uuid_codex_discovered_cli_agen
     let overrides = Arc::new(sandbox_mock::MockSandboxOverrides::new());
     let raw_session_id = "codex-safe-but-not-uuid";
     overrides.push_wait_process_exit(ProcessExit::new(1, 0, Vec::new(), Vec::new()));
-    overrides.push_read_file_result(Ok(None));
     overrides.push_read_file_result(Ok(Some(raw_session_id.as_bytes().to_vec())));
     let sandbox = create_overridden_sandbox(Arc::clone(&overrides)).await;
     let mut ctx = minimal_context();

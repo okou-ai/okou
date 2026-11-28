@@ -140,6 +140,7 @@ async fn pi_masks_live_http_text_across_deltas_chunks_and_completion()
     std::fs::set_permissions(&okou, std::fs::Permissions::from_mode(0o700))?;
     config.user_env.extend([
         ("PATH".into(), format!("{}:/usr/bin:/bin", bin.display())),
+        ("OKOU_CHAT_THREAD_ID".into(), session_id.clone()),
         ("PI_SESSION_ID".into(), session_id.clone()),
         (
             "PI_SESSION_PATH".into(),

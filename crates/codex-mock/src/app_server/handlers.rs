@@ -131,7 +131,9 @@ impl AppServerState {
             .map(|kinds| kinds.iter().filter_map(Value::as_str).collect::<Vec<_>>());
         if let Some(kinds) = source_kinds.as_ref()
             && !kinds.is_empty()
-            && !kinds.iter().any(|kind| matches!(*kind, "vscode" | "appServer"))
+            && !kinds
+                .iter()
+                .any(|kind| matches!(*kind, "vscode" | "appServer"))
         {
             write_success(output, id, json!({ "data": [], "nextCursor": Value::Null }))?;
             return Ok(ServerAction::Continue);
@@ -210,7 +212,11 @@ impl AppServerState {
             .into_iter()
             .map(|(_, _, entry)| entry)
             .collect::<Vec<_>>();
-        write_success(output, id, json!({ "data": data, "nextCursor": Value::Null }))?;
+        write_success(
+            output,
+            id,
+            json!({ "data": data, "nextCursor": Value::Null }),
+        )?;
         Ok(ServerAction::Continue)
     }
 

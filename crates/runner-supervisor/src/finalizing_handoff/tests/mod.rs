@@ -396,7 +396,7 @@ async fn fallback_budget_wakeup_reuses_exact_published_while_waiting() {
 }
 
 #[tokio::test]
-async fn fallback_budget_wakeup_reuses_generic_published_while_waiting() {
+async fn fallback_budget_wakeup_rejects_mismatched_source_and_uses_fresh_capacity() {
     assert_fallback_budget_wakeup_reuses_published(FallbackPublication::Generic, true).await;
 }
 
@@ -519,6 +519,19 @@ async fn assert_fallback_budget_wakeup_reuses_published(
         .await
         .expect("selector should accept the published sandbox")
         .unwrap();
+    if matches!(publication, FallbackPublication::Generic) && native_history {
+        let FinalizingResource::Fresh(fresh_lease) = selected else {
+            panic!("mismatched source idle sandbox must not be reused for native continuation");
+        };
+        assert_eq!(idle_pool.lock().await.len(), 1);
+        assert_eq!(budget.allocated(), (4, 4096, 2));
+        drop(fresh_lease);
+        for job in idle_pool.lock().await.drain() {
+            job.run().await;
+        }
+        assert_eq!(budget.allocated(), (0, 0, 0));
+        return;
+    }
     let reservation = match (&publication, selected) {
         (FallbackPublication::Exact, FinalizingResource::Exact(reservation))
         | (

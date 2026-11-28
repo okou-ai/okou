@@ -466,28 +466,25 @@ async fn park_idle_transition(
         });
     }
 
-    let preparation = match IdleReusePreparation::new(
-        sandbox.id(),
-        operation_run_id,
-        current_runtime_run_id,
-    ) {
-        Ok(preparation) => preparation,
-        Err(error) => {
-            return Err(IdleParkFailure {
-                ownership: IdleParkFailureOwnership::Active {
-                    resources: Box::new(IdleSandboxResources {
-                        sandbox,
-                        factory,
-                        home_promotion,
-                    }),
-                    budget_lease,
-                },
-                reason: "reuse_preparation_failed",
-                error: error.to_string(),
-                expected_capacity_rejection: false,
-            });
-        }
-    };
+    let preparation =
+        match IdleReusePreparation::new(sandbox.id(), operation_run_id, current_runtime_run_id) {
+            Ok(preparation) => preparation,
+            Err(error) => {
+                return Err(IdleParkFailure {
+                    ownership: IdleParkFailureOwnership::Active {
+                        resources: Box::new(IdleSandboxResources {
+                            sandbox,
+                            factory,
+                            home_promotion,
+                        }),
+                        budget_lease,
+                    },
+                    reason: "reuse_preparation_failed",
+                    error: error.to_string(),
+                    expected_capacity_rejection: false,
+                });
+            }
+        };
 
     let final_exec_and_park = {
         let request = preparation.exec_request();

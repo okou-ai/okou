@@ -774,12 +774,10 @@ describe("CHAT-02: run-level model overrides", () => {
           ? environment.OPENAI_MODEL
           : environment.ANTHROPIC_MODEL,
       ).toBe(to);
-      expect(
-        secondExecution.execution.sessionContinuation?.continueNative,
-      ).toBe(false);
-      expect(
-        secondExecution.execution.sessionContinuation?.expectedSourceRunId,
-      ).toBeNull();
+      expect(secondExecution.execution.sessionContinuation).toMatchObject({
+        continueNative: false,
+        expectedSourceRunId: null,
+      });
       chatCallbacks.mockChatOutputEvents([]);
       await completeChatRunOk(second.runId, secondExecution.sandboxHeaders, {
         cliAgentType: toRuntime,

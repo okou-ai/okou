@@ -91,6 +91,30 @@ pub(in super::super) async fn seed_idle_pool_with_overrides(
     vcpu: u32,
     memory_mb: u32,
 ) -> SandboxId {
+    seed_idle_pool_with_overrides_and_source(
+        pool,
+        budget,
+        overrides,
+        reuse_key,
+        profile_name,
+        vcpu,
+        memory_mb,
+        None,
+    )
+    .await
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(in super::super) async fn seed_idle_pool_with_overrides_and_source(
+    pool: &SharedIdlePool,
+    budget: &Arc<ResourceBudget>,
+    overrides: &Arc<sandbox_mock::MockSandboxOverrides>,
+    reuse_key: &str,
+    profile_name: &str,
+    vcpu: u32,
+    memory_mb: u32,
+    source_run_id: Option<RunId>,
+) -> SandboxId {
     seed_idle_pool_with_overrides_and_generation(
         pool,
         budget,
@@ -100,7 +124,7 @@ pub(in super::super) async fn seed_idle_pool_with_overrides(
             profile_name,
             vcpu,
             memory_mb,
-            native_generation_run_id: None,
+            native_generation_run_id: source_run_id,
             guest_timezone_intent: GuestTimezoneIntent::Unknown,
             timing: None,
         },
