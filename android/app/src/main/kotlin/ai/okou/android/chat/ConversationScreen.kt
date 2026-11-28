@@ -748,7 +748,9 @@ internal fun ConversationRoute(
                                     if (entry.showHeader) {
                                         ConversationReplyHeader(
                                             animateAvatarIn =
-                                                avatarViewport.takeIf { animateCurrentTurn },
+                                                avatarViewport.takeIf {
+                                                    animateCurrentTurn && entry.runId == activeRun
+                                                },
                                         )
                                     }
                                     ConversationActivity(
