@@ -20,10 +20,13 @@ import androidx.test.services.storage.TestStorage
 import androidx.test.uiautomator.By
 import androidx.test.uiautomator.BySelector
 import androidx.test.uiautomator.Condition
+import androidx.test.uiautomator.StaleObjectException
 import androidx.test.uiautomator.UiDevice
 import androidx.test.uiautomator.UiObject2
 import androidx.test.uiautomator.Until
 import java.util.UUID
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import okhttp3.mockwebserver.MockResponse
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -131,27 +134,38 @@ class ScreenshotScenario {
             closeIme(scenario)
 
             resize(scenario, 360, 280, 2f)
-            val initialSave = reveal(save, ::disabledButton)
-            val saveBounds = initialSave.visibleBounds
+            reveal(save, ::disabledButton)
             assertTrue(action(viewConnections).isEnabled)
             val originalResponse = fixture.chats.commandResponse
+            val refreshStarted = CountDownLatch(1)
+            val releaseRefresh = CountDownLatch(1)
             fixture.chats.commandResponse = { request ->
                 if (request.requestUrl?.encodedPath == "/api/connectors/connected") {
+                    refreshStarted.countDown()
+                    check(releaseRefresh.await(30, TimeUnit.SECONDS)) { "Refresh response stayed held" }
                     MockResponse().setResponseCode(400)
                 } else {
                     originalResponse(request)
                 }
             }
-            scenario.moveToState(Lifecycle.State.STARTED)
-            scenario.moveToState(Lifecycle.State.RESUMED)
+            val saveBounds = try {
+                scenario.moveToState(Lifecycle.State.STARTED)
+                scenario.moveToState(Lifecycle.State.RESUMED)
+                assertTrue("Resuming starts a connection read", refreshStarted.await(10, TimeUnit.SECONDS))
+                device.waitForIdle()
+                checkNotNull(disabledButton(node(save))).visibleBounds
+            } finally {
+                releaseRefresh.countDown()
+            }
             val feedback = By.text("Could not refresh. Showing last loaded data.")
             node(feedback)
             val close = action(dismiss)
             assertTrue("The Snackbar close action retains a 48 dp target", close.visibleBounds.height() >= 48)
             device.waitForIdle()
             ScreenshotCapture.capture("short-editor-feedback.png")
-            close.click()
+            action(dismiss).click()
             assertTrue("The user can dismiss the notice", device.wait(Until.gone(scoped(feedback)), 5_000))
+            device.waitForIdle()
             assertEquals(saveBounds, checkNotNull(disabledButton(node(save))).visibleBounds)
             assertTrue(action(viewConnections).isEnabled)
             ScreenshotCapture.capture("short-editor-actions.png")
@@ -290,7 +304,7 @@ class ScreenshotScenario {
     ): UiObject2 {
         var previousVisible: Rect? = null
         repeat(12) {
-            val item = device.findObject(scoped(selector))?.let(target)
+            val item = findTarget(selector, target)
             if (item != null && item.visibleBounds.height() >= 48) return item
             previousVisible = item?.visibleBounds
             val viewport =
@@ -323,7 +337,20 @@ class ScreenshotScenario {
             "Missing workflow selector $selector"
         }
 
-    private fun action(selector: BySelector) = checkNotNull(clickableAncestor(node(selector)))
+    private fun findTarget(selector: BySelector, target: (UiObject2) -> UiObject2?): UiObject2? =
+        try {
+            device.findObject(scoped(selector))?.let(target)
+        } catch (_: StaleObjectException) {
+            null
+        }
+
+    private fun action(selector: BySelector): UiObject2 {
+        val ready = object : Condition<UiDevice, UiObject2?> {
+            override fun apply(device: UiDevice): UiObject2? =
+                findTarget(selector) { item -> clickableAncestor(item)?.takeIf { it.isEnabled } }
+        }
+        return checkNotNull(device.wait(ready, 10_000)) { "Missing actionable workflow selector $selector" }
+    }
 
     private fun displayOverride(setting: String, pattern: String): String? =
         Regex("Override $setting: ($pattern)").find(device.executeShellCommand("wm $setting"))?.groupValues?.get(1)
