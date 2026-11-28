@@ -20,7 +20,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.CornerRadius
@@ -234,34 +234,43 @@ internal fun ConversationLinkText(
     }
     Text(
         rendered,
-        modifier.focusRequester(focus).focusGroup().drawWithContent {
-            val measured = layout
+        modifier.focusRequester(focus).focusGroup().drawWithCache {
+            val measured = layout ?: return@drawWithCache onDrawWithContent { drawContent() }
             val corner = CornerRadius(4.dp.toPx())
             val chipHeight = style.fontSize.toPx() + 4.dp.toPx()
-            if (measured != null)
+            val focusInset = 2.dp.toPx()
+            val focusStroke = Stroke(focusInset)
+            val chips = buildList {
                 for (range in chatRanges) {
-                    measured.forEachLinkLine(range.start, range.end) { bounds ->
-                        val chip = bounds.limitHeight(chipHeight)
-                        drawRoundRect(colors.secondaryContainer, chip.topLeft, chip.size, corner)
+                    measured.forEachLinkFragment(range.start, range.end) { bounds ->
+                        add(bounds.limitHeight(chipHeight))
                     }
                 }
-            drawContent()
-            // Compose reports the active link style on the measured text. Use its exact range
-            // so the focus ring follows a wrapped link without surrounding its paragraph.
-            if (measured != null)
+            }
+            // Compose reports the active link style on the measured text.
+            val outlines = buildList {
                 for (span in measured.layoutInput.text.spanStyles) {
                     if (span.item.background != focusFill) continue
-                    measured.forEachLinkLine(span.start, span.end) { bounds ->
-                        val outline = bounds.limitHeight(chipHeight).inflate(2.dp.toPx())
-                        drawRoundRect(
-                            focusColor,
-                            outline.topLeft,
-                            outline.size,
-                            corner,
-                            style = Stroke(2.dp.toPx()),
-                        )
+                    measured.forEachLinkFragment(span.start, span.end) { bounds ->
+                        add(bounds.limitHeight(chipHeight).inflate(focusInset))
                     }
                 }
+            }
+            onDrawWithContent {
+                for (chip in chips) {
+                    drawRoundRect(colors.secondaryContainer, chip.topLeft, chip.size, corner)
+                }
+                drawContent()
+                for (outline in outlines) {
+                    drawRoundRect(
+                        focusColor,
+                        outline.topLeft,
+                        outline.size,
+                        corner,
+                        style = focusStroke,
+                    )
+                }
+            }
         },
         style = style,
         textAlign = alignment,
@@ -275,12 +284,32 @@ private fun Rect.limitHeight(height: Float): Rect {
     return Rect(left, top + inset, right, bottom - inset)
 }
 
-private inline fun TextLayoutResult.forEachLinkLine(start: Int, end: Int, draw: (Rect) -> Unit) {
+private inline fun TextLayoutResult.forEachLinkFragment(
+    start: Int,
+    end: Int,
+    draw: (Rect) -> Unit,
+) {
     val first = getLineForOffset(start)
     val last = getLineForOffset(end - 1)
     for (line in first..last) {
         val from = maxOf(start, getLineStart(line))
         val to = minOf(end, getLineEnd(line, visibleEnd = true))
-        if (from < to) draw(getPathForRange(from, to).getBounds())
+        // A selection path ending at a soft wrap can include space on the following line.
+        // Combine only adjacent character bounds, including the inline placeholders.
+        val boxes =
+            (from until to)
+                .mapNotNull { getBoundingBox(it).takeIf { box -> box.width > 0 } }
+                .sortedBy { it.left }
+        var fragment = boxes.firstOrNull() ?: continue
+        for (index in 1 until boxes.size) {
+            val box = boxes[index]
+            if (box.left > fragment.right) {
+                draw(fragment)
+                fragment = box
+            } else {
+                fragment = fragment.copy(right = maxOf(fragment.right, box.right))
+            }
+        }
+        draw(fragment)
     }
 }
