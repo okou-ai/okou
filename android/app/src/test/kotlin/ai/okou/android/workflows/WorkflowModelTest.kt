@@ -240,6 +240,44 @@ internal abstract class WorkflowModelTestFixture {
 @OptIn(ExperimentalCoroutinesApi::class)
 internal class WorkflowModelTest : WorkflowModelTestFixture() {
     @Test
+    fun detailReadKeepsItsDispatchTimeThroughRetryAndResetsOnSelection() = check { service, model ->
+        val firstId = service.summary.id
+        val nextId = "a2222222-2222-4222-8222-222222222222"
+        val finish = CompletableDeferred<Unit>()
+        val attempts = mutableListOf<String>()
+        service.detailRead = { id ->
+            attempts += id
+            if (attempts.size == 1) throw ApiFailure.Http(503, null, null, null)
+            finish.await()
+            service.detail.copy(id = id)
+        }
+
+        model.select(firstId)
+        model.visibilityChanged(true)
+        assertNull(model.state.value.detailReadStart)
+        runCurrent()
+        val first = checkNotNull(model.state.value.detailReadStart)
+        advanceTimeBy(3_000)
+        runCurrent()
+        assertEquals(listOf(firstId, firstId), attempts)
+        assertEquals(first, model.state.value.detailReadStart)
+        assertEquals(3_000L, first.startedAt.elapsedNow().inWholeMilliseconds)
+
+        model.select(nextId)
+        assertNull(model.state.value.detailReadStart)
+        runCurrent()
+        val next = checkNotNull(model.state.value.detailReadStart)
+        assertEquals(listOf(firstId, firstId, nextId), attempts)
+        assertEquals(nextId, next.workflowId)
+        assertEquals(0L, next.startedAt.elapsedNow().inWholeMilliseconds)
+
+        finish.complete(Unit)
+        runCurrent()
+        assertEquals(nextId, model.state.value.detail?.id)
+        assertNull(model.state.value.detailReadStart)
+    }
+
+    @Test
     fun workspaceSearchReusesTheUnexpiredCatalogAndSharesItsRefreshWithTheDirectory() =
         check { service, model ->
             model.visibilityChanged(true)
