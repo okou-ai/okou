@@ -341,6 +341,37 @@ final class ComposerConnectorAccountTests: XCTestCase {
     XCTAssertNil(loaded.nextCursor)
   }
 
+  func testClosingTheAccountPageCancelsItsOffPageSelectionRead() async throws {
+    let started = expectation(description: "Off-page account read started")
+    let cancelled = expectation(description: "Off-page account read cancelled")
+    let gate = ModelResponseGate()
+    let fixture = AccountPageFixture { request in
+      guard request.url?.path == "/api/connector-accounts/\(FixtureData.siblingID)" else { return }
+      await withTaskCancellationHandler {
+        started.fulfill()
+        await gate.wait()
+      } onCancel: {
+        cancelled.fulfill()
+      }
+    }
+    let composer = await makeComposer(fixture, thread: true)
+    defer {
+      composer.close()
+      gate.open()
+    }
+    try await composer.service.setCurrentAccount(
+      target: .builtin("slack"), connectionID: FixtureData.siblingID, threadID: FixtureData.threadID
+    )
+    await composer.refresh()
+    let resources = try open(composer)
+    let page = try resources.store.get(resources.page)
+    await fulfillment(of: [started], timeout: 3)
+    resources.close()
+    await fulfillment(of: [cancelled], timeout: 3)
+    gate.open()
+    if case .success = await page.result { XCTFail("The closed page returned account details") }
+  }
+
   func testRapidSearchRoundTripDoesNotReuseACancelledRead() async throws {
     let gate = ModelResponseGate()
     let started = expectation(description: "Initial search reached HTTP")

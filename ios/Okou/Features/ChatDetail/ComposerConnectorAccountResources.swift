@@ -71,7 +71,7 @@ final class ComposerConnectorAccountResources {
   private var firstTask: Task<ChatConnectorAccounts, Error>?
   private var detailsTask: Task<Controls, Error>?
   private var moreTask: Task<Void, Error>?
-  private var pinnedTask: Task<ChatConnectorAccount, Error>?
+  private var pinnedTask: Task<ChatConnectorAccount?, Error>?
 
   init(
     composer: ComposerConnectorStore, connector: ChatComposerConnector,
@@ -227,19 +227,17 @@ final class ComposerConnectorAccountResources {
         !accounts.contains(where: { $0.id == id })
       {
         // Keep the selected account visible even when it falls outside the loaded pages.
-        let target = connector.target
-        let pinned = Task { [service = composer.authorizationService] in
-          try await service.account(id: id, target: target)
+        let pinned: ChatConnectorAccount?
+        if result.defaultConnection?.id == id {
+          pinned = result.defaultConnection
+        } else {
+          pinned = try await readPinnedAccount(
+            id, service: composer.authorizationService, signal: options.signal
+          ).value
+          try Task.checkCancellation()
+          try options.signal.checkCancellation()
         }
-        pinnedTask = pinned
-        options.signal.onCancel { pinned.cancel() }
-        do {
-          accounts.insert(try await pinned.value, at: 0)
-        } catch let error as APIClientError where error.statusCode == 404 {
-          // The account was removed after the overview was read.
-        }
-        try Task.checkCancellation()
-        try options.signal.checkCancellation()
+        if let pinned { accounts.insert(pinned, at: 0) }
       }
       let cursor: String?
       if let tail { cursor = tail.nextCursor } else { cursor = result.nextCursor }
@@ -269,6 +267,23 @@ final class ComposerConnectorAccountResources {
         accounts: accounts, nextCursor: cursor, access: access, defaults: defaults,
         policies: policies)
     }
+  }
+
+  private func readPinnedAccount(
+    _ id: String, service: ChatConnectorService, signal: EvaluationSignal
+  ) -> Task<ChatConnectorAccount?, Error> {
+    let target = connector.target
+    let task = Task<ChatConnectorAccount?, Error> {
+      do {
+        return try await service.account(id: id, target: target)
+      } catch let error as APIClientError where error.statusCode == 404 {
+        // The account was removed after the overview was read.
+        return nil
+      }
+    }
+    pinnedTask = task
+    signal.onCancel { task.cancel() }
+    return task
   }
 
   lazy var deletionImpact = makeDeletionImpact()
