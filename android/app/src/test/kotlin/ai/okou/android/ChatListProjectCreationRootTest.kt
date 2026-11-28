@@ -3,6 +3,7 @@ package ai.okou.android
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertTextContains
@@ -18,6 +19,7 @@ import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.unit.dp
 import androidx.test.platform.app.InstrumentationRegistry
 import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
@@ -212,12 +214,13 @@ internal class ChatListProjectCreationRootTest : ChatListRootTestFixture() {
     }
 
     @Test
-    fun anUnconfirmedResponseResumesAfterCloseAndChecksTheOriginalIdWithoutAnotherCreate() {
+    fun anUnconfirmedResponseRestoresEditingAndCreateChecksTheOriginalId() {
         val app = compose.activity.application as ChatListApplication
         val id = AtomicReference<String>()
         val writes = AtomicInteger()
         val committed = AtomicBoolean(false)
         val lookups = AtomicInteger()
+        val releaseReceipt = CountDownLatch(1)
         app.fixture.commandResponse = { request ->
             when {
                 request.method == "POST" && request.path == "/api/projects" -> {
@@ -231,8 +234,10 @@ internal class ChatListProjectCreationRootTest : ChatListRootTestFixture() {
                 }
                 request.method == "GET" && request.path == "/api/projects/${id.get()}" -> {
                     lookups.incrementAndGet()
-                    if (committed.get()) projectReceipt(id.get())
-                    else MockResponse().setResponseCode(404)
+                    if (committed.get()) {
+                        check(releaseReceipt.await(10, TimeUnit.SECONDS))
+                        projectReceipt(id.get())
+                    } else MockResponse().setResponseCode(404)
                 }
                 else -> null
             }
@@ -243,22 +248,78 @@ internal class ChatListProjectCreationRootTest : ChatListRootTestFixture() {
         val field = openCreate()
         field.performTextReplacement("Field notes")
         confirm().performClick()
-        val check = hasText("Check result")
-        compose.waitUntilExactlyOneExists(check, 10_000)
+        val failed = hasText("Couldn’t create the project. The name has been kept.")
+        compose.waitUntilExactlyOneExists(failed, 10_000)
         assertEquals(1, writes.get())
         assertEquals(1, lookups.get())
         field.assertTextContains("Field notes")
-        compose.onNodeWithText("Project creation hasn’t been confirmed").assertIsDisplayed()
-        compose.onNodeWithText("Close").performClick()
+        confirm().assertIsEnabled()
+        field.performTextReplacement("Another draft")
+        field.assertTextContains("Another draft")
+        compose.onNodeWithText("Cancel").performClick()
         field.assertDoesNotExist()
-        openCreate().assertTextContains("Field notes")
+        openCreate().assertTextContains("Another draft")
+        field.performTextReplacement("  Field notes  ")
         committed.set(true)
-        compose.onNode(check).performClick()
+        try {
+            confirm().performClick()
+            compose.onNodeWithText("Checking whether the project was created").assertIsDisplayed()
+            compose.onNodeWithText("Checking…").assertIsNotEnabled()
+            compose.onNodeWithText("Cancel").assertIsNotEnabled()
+            compose.onNode(failed).assertDoesNotExist()
+        } finally {
+            releaseReceipt.countDown()
+        }
         compose.waitUntilExactlyOneExists(createdProject(), 10_000)
         field.assertDoesNotExist()
         compose.onNodeWithText("New chat in this Project").assertIsDisplayed()
         assertEquals(1, writes.get())
         assertEquals(2, lookups.get())
+    }
+
+    @Test
+    fun aLateCreationReceiptKeepsTheNewerDraftOpen() {
+        val app = compose.activity.application as ChatListApplication
+        val id = AtomicReference<String>()
+        val publishCreation = AtomicBoolean(false)
+        app.fixture.commandResponse = { request ->
+            when {
+                request.method == "POST" && request.path == "/api/projects" -> {
+                    id.set(request.jsonCommandBody().getValue("id").jsonPrimitive.content)
+                    jsonResponse("{}").setResponseCode(201)
+                }
+                request.method == "GET" && request.path == "/api/projects/${id.get()}" ->
+                    MockResponse().setResponseCode(404)
+                else -> null
+            }
+        }
+        app.fixture.projectEvents = { request ->
+            val events =
+                if (
+                    publishCreation.get() && request.requestUrl?.queryParameter("sinceSeqId") == "0"
+                )
+                    """{"id":"${id.get()}","seqId":1,"projectId":"${id.get()}","kind":"created","name":"Field notes","createdAt":"$CHAT_DATE"}"""
+                else ""
+            jsonResponse("""{"events":[$events],"hasMore":false}""")
+        }
+        app.responseGate.countDown()
+        awaitListAndNames()
+        val field = openCreate()
+        field.performTextReplacement("Field notes")
+        confirm().performClick()
+        val failed = hasText("Couldn’t create the project. The name has been kept.")
+        compose.waitUntilExactlyOneExists(failed, 10_000)
+        field.performTextReplacement("Another draft")
+
+        publishCreation.set(true)
+        refreshWorkspaceChats()
+        compose.waitUntil(10_000) {
+            val state = currentList() ?: return@waitUntil false
+            state.projectList.creation == null && state.projects.count { it.id == id.get() } == 1
+        }
+        field.assertTextContains("Another draft")
+        confirm().assertIsEnabled()
+        compose.onNode(failed).assertDoesNotExist()
     }
 
     private fun openCreate() =

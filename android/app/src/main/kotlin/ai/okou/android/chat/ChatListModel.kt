@@ -2243,8 +2243,6 @@ class ChatListModel(
 
     internal fun createProject(name: String) = projectOwner.createProject(name)
 
-    internal fun checkProjectCreation() = projectOwner.checkProjectCreation()
-
     internal fun dismissProjectCreation() = projectOwner.dismissProjectCreation()
 
     internal fun dismissProjectRenameRejection(rejection: ProjectRenameRejection) =

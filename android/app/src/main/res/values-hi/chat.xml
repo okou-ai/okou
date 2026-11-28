@@ -73,10 +73,9 @@
     <string name="chat_project_create">नया प्रोजेक्ट</string>
     <string name="chat_project_create_confirm">बनाएँ</string>
     <string name="chat_project_creating">बनाया जा रहा है…</string>
-    <string name="chat_project_create_close">बंद करें</string>
     <string name="chat_project_checking">जाँच हो रही है…</string>
+    <string name="chat_project_create_checking_status">जाँच की जा रही है कि प्रोजेक्ट बना या नहीं</string>
     <string name="chat_project_create_failed">प्रोजेक्ट नहीं बन सका। नाम बरकरार रखा गया है।</string>
-    <string name="chat_project_create_unconfirmed">प्रोजेक्ट बनने की पुष्टि नहीं हुई है</string>
     <string name="chat_project_name_too_long">प्रोजेक्ट का नाम %1$d वर्णों से अधिक नहीं हो सकता</string>
     <string name="chat_project_rename_rejected">प्रोजेक्ट का नाम नहीं बदला जा सका।</string>
     <string name="chat_project_rename_save">सहेजें</string>

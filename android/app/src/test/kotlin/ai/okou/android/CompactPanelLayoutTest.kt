@@ -45,7 +45,7 @@ class CompactPanelLayoutTest {
         var submitted: String? = null
         compose.setContent {
             OkouTheme {
-                CreateProjectSheet(editor, null, { submitted = it }, {}, {})
+                CreateProjectSheet(editor, null, create = { submitted = it }, dismiss = {})
             }
         }
 
