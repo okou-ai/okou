@@ -1,9 +1,11 @@
 package ai.okou.android
 
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.assertTextContains
+import androidx.compose.ui.test.click
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
@@ -13,6 +15,7 @@ import androidx.compose.ui.test.performKeyInput
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTextInputSelection
 import androidx.compose.ui.test.performTextReplacement
+import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.pressKey
 import androidx.compose.ui.text.TextRange
 import androidx.test.platform.app.InstrumentationRegistry
@@ -34,6 +37,24 @@ import org.robolectric.annotation.GraphicsMode
 )
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 internal class ComposerWorkflowRootTest : ChatComposerRootTestFixture() {
+    @Test
+    fun composerTouchKeepsSuggestionsAndTranscriptTouchDismissesThem() {
+        val app = compose.activity.application as ComposerRootApplication
+        ComposerWorkflowApiFixture(app.fixture)
+        app.contextGate.countDown()
+        compose.waitUntilExactlyOneExists(hasText("Personal chat"), 8_000)
+        compose.onNodeWithText("Personal chat").performClick()
+        val input = compose.onNodeWithTag("message_input")
+        input.performClick().performTextInput("/rel")
+        compose.waitUntilExactlyOneExists(hasText("/release-check"), 8_000)
+        compose.onNodeWithTag("chat_input_card").performTouchInput { click(Offset(2f, centerY)) }
+        compose.onNodeWithTag("composer-workflow-popup").assertIsDisplayed()
+
+        compose.onNodeWithText("No messages yet.").performTouchInput { click() }
+        compose.onNodeWithTag("composer-workflow-popup").assertDoesNotExist()
+        input.assertTextContains("/rel")
+    }
+
     @Test
     fun catalogFailureLeavesTheDraftAndNormalSendAvailable() {
         val app = compose.activity.application as ComposerRootApplication

@@ -106,6 +106,9 @@ import kotlin.math.roundToInt
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
+private fun TextFieldValue.sameDraftPosition(other: TextFieldValue?): Boolean =
+    other != null && text == other.text && selection == other.selection
+
 // Keep original line breaks in the journal and preserve native selection offsets.
 private val CompactDraftDisplay = VisualTransformation { text ->
     val line = text.text.replace('\n', ' ').replace('\r', ' ')
@@ -194,14 +197,8 @@ internal fun ChatComposerField(
     val workflowCatalog = model.workflowCatalog
     val workflowState =
         workflowCatalog?.state?.collectAsStateWithLifecycle()?.value ?: ComposerWorkflowState()
-    // Composition hides the popup without ending the active slash session.
-    val workflowContext =
-        if (workflowCatalog != null && inputFocused) {
-            val field = input.value
-            if (field.composition == null) field.activeWorkflowToken()
-            else field.copy(composition = null).activeWorkflowToken()
-        } else null
-    val workflowToken = workflowContext.takeIf { input.value.composition == null }
+    val workflowToken =
+        if (workflowCatalog != null && inputFocused) input.value.activeWorkflowToken() else null
     var dismissedWorkflowInput by remember(target.key) { mutableStateOf<TextFieldValue?>(null) }
     var workflowAnchor by remember(target.key) { mutableStateOf(IntRect.Zero) }
     var composerBounds by remember(target.key) { mutableStateOf(Rect.Zero) }
@@ -221,7 +218,7 @@ internal fun ChatComposerField(
         )
     val workflowOpen =
         workflowToken != null &&
-            input.value != dismissedWorkflowInput &&
+            !input.value.sameDraftPosition(dismissedWorkflowInput) &&
             workflowHeight != null &&
             conversationSnackbar?.currentSnackbarData == null
     var popupHeight by remember(workflowOpen) { mutableStateOf(0) }
@@ -240,6 +237,11 @@ internal fun ChatComposerField(
     fun dismissWorkflow() {
         dismissedWorkflowInput = latestInput.value
     }
+    DisposableEffect(stopPlacement, target.key, workflowOpen, composerBounds) {
+        if (workflowOpen)
+            stopPlacement?.registerWorkflowDismissal(composerBounds, ::dismissWorkflow)
+        onDispose { if (workflowOpen) stopPlacement?.registerWorkflowDismissal(null, null) }
+    }
     fun chooseWorkflow(item: ComposerWorkflowsItem, token: WorkflowToken?) {
         val editor = latestInput
         if (token != null && editor.value.activeWorkflowToken() != token) return
@@ -247,7 +249,7 @@ internal fun ChatComposerField(
         dismissedWorkflowInput = updated
         if (editor.edit(updated)) model.edit(target, updated.text)
     }
-    val workflowStart = workflowContext?.range?.start
+    val workflowStart = workflowToken?.range?.start
     LaunchedEffect(target.key, workflowStart, workflowCatalog) {
         if (workflowStart != null) workflowCatalog?.refresh()
     }
@@ -446,7 +448,8 @@ internal fun ChatComposerField(
                                 // A retiring field can clear its selection while focus moves.
                                 if (shortWindow == currentShortWindow) {
                                     input.edit(it)
-                                    if (it != dismissedWorkflowInput) dismissedWorkflowInput = null
+                                    if (!it.sameDraftPosition(dismissedWorkflowInput))
+                                        dismissedWorkflowInput = null
                                     model.edit(target, it.text)
                                 }
                             },
@@ -463,7 +466,11 @@ internal fun ChatComposerField(
                                         inputFocused = it.isFocused
                                     }
                                     .onPreviewKeyEvent { event ->
-                                        if (!workflowOpen || event.type != KeyEventType.KeyDown)
+                                        if (
+                                            !workflowOpen ||
+                                                latestInput.value.composition != null ||
+                                                event.type != KeyEventType.KeyDown
+                                        )
                                             return@onPreviewKeyEvent false
                                         val rows = workflowCandidates.rows
                                         val index = rows.indexOfFirst {
@@ -584,7 +591,6 @@ internal fun ChatComposerField(
                         workflowCandidates,
                         workflowPosition,
                         highlightedWorkflow,
-                        ::dismissWorkflow,
                         onHeight = { popupHeight = it },
                     ) {
                         chooseWorkflow(it, workflowToken)
