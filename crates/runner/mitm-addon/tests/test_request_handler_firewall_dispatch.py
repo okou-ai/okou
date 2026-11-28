@@ -1,5 +1,6 @@
 """Core firewall dispatch and network policy tests for the request hook."""
 
+import base64
 import json
 import urllib.parse
 from collections.abc import Iterator
@@ -342,6 +343,93 @@ async def test_intent_and_credential_placeholders_select_dispatch_owner(
         auth_fetch.assert_awaited_once()
         assert flow.metadata[metadata_keys.FIREWALL_NAME] == chosen
         assert flow.request.headers["Authorization"] == "Bearer resolved-primary"
+
+
+@pytest.mark.parametrize(
+    ("template", "user_password", "selected"),
+    [
+        ("${{ basic(secrets.USER, secrets.PASS) }}", "fixture-user:fixture-pass", True),
+        ("${{ basic(vars.USER, secrets.PASS) }}", "configured-user:fixture-pass", True),
+        ('${{ basic(secrets.PASS, "") }}', "fixture-pass:", True),
+        ("${{ basic(vars.USER, secrets.PASS) }}", "different-user:fixture-pass", False),
+    ],
+    ids=["two-placeholders", "variable-user", "empty-password", "different-user"],
+)
+async def test_basic_auth_placeholder_selects_overlapping_firewall(
+    tmp_path,
+    real_flow,
+    mitm_ctx,
+    fake_firewall_headers,
+    headers,
+    template,
+    user_password,
+    selected,
+):
+    sandbox_info = _shared_route_sandbox(tmp_path)
+    sandbox_info["vars"] = {"USER": "configured-user"}
+    firewalls = sandbox_info["firewalls"]
+    assert isinstance(firewalls, list)
+    primary = firewalls[0]["firewall"]
+    primary["placeholders"] = {"USER": "fixture-user", "PASS": "fixture-pass"}
+    primary["apis"][0]["auth"] = {"headers": {"Authorization": template}}
+    reg_path = _write_registry(tmp_path, sandbox_info=sandbox_info)
+    auth_value = "Basic " + base64.b64encode(user_password.encode()).decode("ascii")
+    resolved_value = "Basic " + base64.b64encode(b"test-user:test-password").decode("ascii")
+    flow = real_flow(
+        with_response=False,
+        client_ip="10.200.0.5",
+        host="shared.example.com",
+        path="/items/123",
+        request_headers=headers(("Host", "shared.example.com"), ("Authorization", auth_value)),
+    )
+
+    with (
+        mitm_ctx(registry_path=str(reg_path), api_url="https://api.okou.ai"),
+        fake_firewall_headers(headers={"Authorization": resolved_value}) as auth_fetch,
+    ):
+        await mitm_addon.request(flow)
+
+    assert flow.response is None
+    assert flow.request.headers["Authorization"] == (resolved_value if selected else auth_value)
+    if selected:
+        assert auth_fetch.await_count == 1
+        assert auth_fetch.await_args.args[1].auth_headers == {"Authorization": template}
+    else:
+        auth_fetch.assert_not_awaited()
+
+
+async def test_intent_authorization_survives_when_same_owner_becomes_sole_match(
+    tmp_path, real_flow, mitm_ctx, fake_firewall_headers, headers
+):
+    sandbox_info = _shared_route_sandbox(tmp_path)
+    reg_path = _write_registry(tmp_path, sandbox_info=sandbox_info)
+    flow = real_flow(
+        with_response=False,
+        client_ip="10.200.0.5",
+        host="shared.example.com",
+        path="/items/123",
+        request_headers=headers(
+            ("Host", "shared.example.com"), ("X-Okou-Connector-Intent", "primary")
+        ),
+    )
+
+    async def prepare_provider(*_args, **_kwargs):
+        firewalls = sandbox_info["firewalls"]
+        assert isinstance(firewalls, list)
+        sandbox_info["firewalls"] = firewalls[:1]
+        _write_registry(tmp_path, sandbox_info=sandbox_info)
+        return True
+
+    with (
+        mitm_ctx(registry_path=str(reg_path), api_url="https://api.okou.ai"),
+        fake_firewall_headers(headers={"Authorization": "Bearer resolved-primary"}) as auth_fetch,
+        patch.object(mitm_addon.codex_model_catalog_cache, "prepare_request", prepare_provider),
+    ):
+        await mitm_addon.request(flow)
+
+    assert flow.response is None
+    assert flow.request.headers["Authorization"] == "Bearer resolved-primary"
+    auth_fetch.assert_awaited_once()
 
 
 @pytest.mark.parametrize(

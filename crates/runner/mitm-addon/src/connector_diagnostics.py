@@ -78,8 +78,8 @@ discards trailers before applying JSON framing.
 
 A separate HTTP ``409`` ``connector_auth_owner_conflict`` response blocks
 confirmed request authentication on a unique inactive route before active
-base-only owner credentials are fetched. It is not a connector availability
-diagnostic and does not depend on connector intent.
+base-only owner credentials are fetched. This check applies when the active
+base has a sole owner.
 
 Authentication inspection has per-invocation header and query work budgets.
 An exhausted budget leaves authentication indeterminate and suppresses the
@@ -200,9 +200,10 @@ def maybe_make_connector_owner_local_response(
     provisional probe; ``request()`` passes ``commit=True`` for the committed
     path.
 
-    A unique inactive route owner can be diagnosed despite an active base-only
+    A unique inactive route owner can be diagnosed for a sole active base-only
     firewall. Existing authentication material on that route blocks credential
-    injection, independently of connector intent.
+    injection. An owner explicitly selected from overlapping active firewalls uses
+    its own policy.
 
     ``commit`` controls catalog snapshot retention, not response construction.
     Once snapshot selection is reached, the committed path pins that snapshot
@@ -221,7 +222,7 @@ def maybe_make_connector_owner_local_response(
 
     sandbox_info = classification.sandbox_info
     allow = classification.firewall_allow
-    if not _firewall_allow_is_unknown_endpoint(allow):
+    if allow.selection_hint is not None or not _firewall_allow_is_unknown_endpoint(allow):
         return False
     matched_firewall_name = allow.name
 

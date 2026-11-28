@@ -286,14 +286,17 @@ firewall owner goes directly to permission evaluation. For overlapping owners,
 the private `X-Okou-Connector-Intent` header selects an owner when it uniquely
 identifies an active match. If intent is unusable, the addon compares complete
 request header or query values against placeholders derived from the matched
-APIs' credential templates. A unique result selects an owner. Requests with no
-active match or unresolved overlap use ordinary egress without credential
-injection. The private intent header is stripped before upstream forwarding.
+APIs' credential templates. Basic auth hints render the complete header from
+the declared placeholders and any referenced Run variables. A unique result
+selects an owner. Requests with no active match or unresolved overlap use
+ordinary egress without credential injection. The private intent header is
+stripped before upstream forwarding.
 
 Base and permission-rule specificity apply inside the selected owner. Its
-permission, account, and destination checks govern the request. Continuation
-after credential replacement revalidates that owner against the current registry
-and current destination. See the [owner selection tests](../../crates/runner/mitm-addon/tests/test_firewall_placeholder_selection.py).
+permission, account, and destination checks govern the request. Pre-authentication
+catalog diagnostics for inactive connectors apply only to a sole active owner.
+Continuation after credential replacement revalidates that owner against the
+current registry and current destination. See the [owner selection tests](../../crates/runner/mitm-addon/tests/test_firewall_placeholder_selection.py).
 
 Firewall matching governs when managed connector credentials may be attached;
 it is not a blanket outbound deny rule. An inline API whose base cannot compile

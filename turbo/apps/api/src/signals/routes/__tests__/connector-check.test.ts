@@ -1620,6 +1620,35 @@ describe("POST /api/connectors/diagnostics/check", () => {
       expect(JSON.stringify(legacy.body)).not.toContain(custom.id);
     });
 
+    it("drops an absent builtin from Run URL ownership after account disconnect", async () => {
+      const { actor, token, url, custom } = await prepareScenario();
+      const request = {
+        mode: "url" as const,
+        method: "POST",
+        url,
+        includeCustomConnectors: true,
+      };
+      const before = await checkWithToken(token, request);
+      expect(before.body).toMatchObject({ outcome: "ambiguous" });
+
+      await connectorsApi.deleteDefaultBuiltinConnectorAccount(actor, "reap");
+
+      const after = await checkWithToken(token, request);
+      expect(after.body).toMatchObject({
+        outcome: "resolved",
+        connector: { target: { kind: "custom", customConnectorId: custom.id } },
+      });
+      const removed = await checkWithToken(token, {
+        ...request,
+        target: { kind: "builtin", connectorSlug: "reap" },
+      });
+      expect(removed.body).toStrictEqual({
+        outcome: "target-unavailable",
+        target: { kind: "builtin", connectorSlug: "reap" },
+        reason: "connector-unavailable",
+      });
+    });
+
     it("redacts explicit custom diagnostics and reflects permission changes and selection precedence", async () => {
       const {
         actor,

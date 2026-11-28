@@ -448,6 +448,7 @@ class FirewallRequestContext(NamedTuple):
     aws_inspection_available: bool = True
     raw_header_fields: tuple[tuple[bytes, bytes], ...] = ()
     applied_credential_owner: str | None = None
+    credential_variables: Mapping[str, str] | None = None
 
 
 def _api_auth_uses_aws_sigv4(api_entry: dict) -> bool:
@@ -1353,6 +1354,7 @@ class FirewallAllow(NamedTuple):
     ``permission`` and ``rule`` are present for a matched permission. They are
     ``None`` for unknown-endpoint allow, where the firewall base matched but no
     permission rule did and ``unknownPolicy`` allowed the request.
+    ``selection_hint`` records what selected this owner from an overlap.
     """
 
     api_entry: dict
@@ -1361,7 +1363,7 @@ class FirewallAllow(NamedTuple):
     params: dict[str, str]
     rule: str | None
     rel_path: str
-    selected_by_placeholder: bool = False
+    selection_hint: Literal["intent", "placeholder"] | None = None
 
 
 class FirewallPolicyAllow(NamedTuple):
@@ -2335,19 +2337,23 @@ def _match_compiled_firewall_request_with_api_candidates(
         )
         base_matches.append(api_match)
 
-    if diagnostic_base_tier and base_matches:
-        best = max(match.api.base.specificity for match in base_matches)
-        base_matches = [match for match in base_matches if match.api.base.specificity == best]
+    owner_matches = base_matches
+    if diagnostic_base_tier and owner_matches:
+        best = max(match.api.base.specificity for match in owner_matches)
+        owner_matches = [match for match in owner_matches if match.api.base.specificity == best]
 
     selected_name: str | None = (
         request_context.applied_credential_owner if request_context is not None else None
     )
-    selected_by_placeholder = selected_name is not None
-    explicit_owner = selected_name is not None or diagnostic_base_tier
-    owners = {match.firewall.name for match in base_matches if not match.firewall.name_malformed}
+    selection_hint: Literal["intent", "placeholder"] | None = (
+        "placeholder" if selected_name is not None else None
+    )
+    owners = {match.firewall.name for match in owner_matches if not match.firewall.name_malformed}
     if selected_name is None and len(owners) > 1:
         if intent.status == "present" and intent.value is not None:
-            selected_name = _owner_name_for_intent(base_matches, intent.value)
+            selected_name = _owner_name_for_intent(owner_matches, intent.value)
+            if selected_name is not None:
+                selection_hint = "intent"
         marked_owners: set[str] = set()
         if (
             selected_name is None
@@ -2360,13 +2366,17 @@ def _match_compiled_firewall_request_with_api_candidates(
             )
             marked_owners = {
                 match.firewall.name
-                for match in base_matches
+                for match in owner_matches
                 if not match.firewall.name_malformed
-                and match.api.core.credential_hints.matches(headers, get_query_pairs)
+                and match.api.core.credential_hints.matches(
+                    headers,
+                    get_query_pairs,
+                    request_context.credential_variables,
+                )
             }
             if len(marked_owners) == 1:
                 selected_name = next(iter(marked_owners))
-                selected_by_placeholder = True
+                selection_hint = "placeholder"
         if selected_name is None:
             return _FirewallInterpretation(
                 FirewallAmbiguous(
@@ -2381,10 +2391,10 @@ def _match_compiled_firewall_request_with_api_candidates(
                 ),
                 frozenset(),
             )
-        explicit_owner = True
     elif selected_name is None and owners:
         selected_name = next(iter(owners))
 
+    explicit_owner = selection_hint is not None
     for api_match in base_matches:
         if (
             selected_name is not None
@@ -2450,10 +2460,11 @@ def _match_compiled_firewall_request_with_api_candidates(
         )
     ):
         result = result._replace(aws_sigv4_body_pending=True)
-    if is_asterisk_form and isinstance(result, FirewallAllow):
-        return _FirewallInterpretation(FirewallPolicyAllow(result), frozenset())
-    if isinstance(result, FirewallAllow) and selected_by_placeholder:
-        result = result._replace(selected_by_placeholder=True)
+    if isinstance(result, FirewallAllow):
+        if is_asterisk_form:
+            return _FirewallInterpretation(FirewallPolicyAllow(result), frozenset())
+        if selection_hint is not None:
+            result = result._replace(selection_hint=selection_hint)
     return _FirewallInterpretation(
         result,
         frozenset(applicable_routes.get(selected_name, ()))
@@ -2602,6 +2613,7 @@ def _certify_raw_firewall_allow(
     upper_method: str,
     policies: CompiledNetworkPolicies,
     explicit_owner: bool,
+    diagnostic_base_tier: bool,
     request_context: FirewallRequestContext | None,
     get_query_pairs: Callable[[], list[tuple[str, str]]],
     get_sigv4_service: Callable[[], str | None],
@@ -2621,7 +2633,11 @@ def _certify_raw_firewall_allow(
         if firewall.name != original.name and explicit_owner:
             continue
         proof = analysis.applicability(paths.base)
-        if firewall.name != original.name and not firewall.name_malformed:
+        if (
+            firewall.name != original.name
+            and not firewall.name_malformed
+            and not diagnostic_base_tier
+        ):
             # A different interpretation must not introduce a competing owner
             # into a request that proceeded without an explicit hint.
             if proof.possible:
@@ -2814,6 +2830,7 @@ def _match_request_interpretations(
             upper_method=upper_method,
             policies=policies,
             explicit_owner=original_match.explicit_owner,
+            diagnostic_base_tier=diagnostic_base_tier,
             request_context=request_context,
             get_query_pairs=get_query_pairs,
             get_sigv4_service=get_sigv4_service,

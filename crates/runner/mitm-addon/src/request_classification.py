@@ -76,10 +76,13 @@ _BROWSER_USER_AGENT_MARKERS = (
 _MAX_BROWSER_USER_AGENT_BYTES = 4096
 
 
-def _aws_firewall_request_context(
-    flow: http.HTTPFlow, *, applied_credential_owner: str | None = None
+def _firewall_request_context(
+    flow: http.HTTPFlow,
+    *,
+    applied_credential_owner: str | None = None,
+    credential_variables: object = None,
 ) -> matching.FirewallRequestContext:
-    """Build bounded request input for AWS permission selectors.
+    """Build bounded input for credential hints and AWS permission selectors.
 
     Ordinary firewall classification must not decode unrelated header values or
     parse oversized request targets. AWS signing already bounds both inputs;
@@ -122,6 +125,9 @@ def _aws_firewall_request_context(
         body=flow.request.raw_content,
         raw_header_fields=raw_fields,
         applied_credential_owner=applied_credential_owner,
+        credential_variables=(
+            credential_variables if isinstance(credential_variables, dict) else None
+        ),
     )
 
 
@@ -621,9 +627,10 @@ def _classify_request(
             compiled_firewalls,
             compiled_network_policies,
             intent,
-            _aws_firewall_request_context(
+            _firewall_request_context(
                 flow,
                 applied_credential_owner=applied_credential_owner,
+                credential_variables=sandbox_info.get("vars"),
             ),
             is_asterisk_form=is_asterisk_form,
         )

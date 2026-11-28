@@ -702,7 +702,7 @@ async function loadRunDiagnosticState(args: {
       configs.push(configFromCustomRuntime(runtime));
       continue;
     }
-    if (!isBuiltinDiagnosticRuntime(runtime)) {
+    if (!isBuiltinDiagnosticRuntime(runtime) || runtime.state === "absent") {
       unavailableReasonByTargetKey.set(key, unavailableRuntimeReason(runtime));
       continue;
     }

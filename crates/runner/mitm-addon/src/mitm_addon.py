@@ -1468,7 +1468,7 @@ def _revalidate_current_firewall_authorization_for_request(
         flow,
         original_authority=expected_request.authority,
         applied_credential_owner=(
-            allow.name if credentials_applied and allow.selected_by_placeholder else None
+            allow.name if credentials_applied and allow.selection_hint == "placeholder" else None
         ),
     )
     current_allow = _equivalent_current_firewall_allow(
@@ -1554,7 +1554,13 @@ def _equivalent_current_firewall_allow(
     current_run_id = classification.sandbox_info.get("runId")
     if current_run_id != expected_run_id:
         return None
-    if classification.firewall_allow != expected_allow:
+    current_allow = classification.firewall_allow
+    # Intent and a sole owner can authorize the same route. The placeholder
+    # binding must remain stable because injection replaces its input.
+    if current_allow != expected_allow and (
+        "placeholder" in (current_allow.selection_hint, expected_allow.selection_hint)
+        or current_allow._replace(selection_hint=expected_allow.selection_hint) != expected_allow
+    ):
         return None
     return classification
 
@@ -1572,7 +1578,7 @@ def _firewall_authorization_is_current_for_requestheaders(
         flow,
         original_authority=expected_request.authority,
         applied_credential_owner=(
-            allow.name if credentials_applied and allow.selected_by_placeholder else None
+            allow.name if credentials_applied and allow.selection_hint == "placeholder" else None
         ),
     )
     current_allow = _equivalent_current_firewall_allow(
