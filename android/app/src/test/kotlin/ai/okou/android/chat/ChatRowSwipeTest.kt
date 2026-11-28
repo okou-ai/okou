@@ -2,13 +2,18 @@ package ai.okou.android.chat
 
 import ai.okou.android.OkouTheme
 import ai.okou.android.TestOkouApplication
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.width
+import androidx.compose.material3.ListItem
+import androidx.compose.material3.ListItemDefaults
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toPixelMap
 import androidx.compose.ui.hapticfeedback.HapticFeedback
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
@@ -49,6 +54,7 @@ class ChatRowSwipeTest {
                         ChatRowAction.MarkRead,
                         ChatRowAction.Archive,
                         { actions.add(it) },
+                        selected = false,
                     ) {
                         Box(it.fillMaxWidth().height(52.dp))
                     }
@@ -83,6 +89,45 @@ class ChatRowSwipeTest {
     }
 
     @Test
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    fun selectedRowHasActionColorBehindItsRoundedEdgeInBothDirections() {
+        compose.setContent {
+            OkouTheme(dark = true) {
+                Box(Modifier.width(300.dp).background(Color.Black).testTag("swipe")) {
+                    ChatRowSwipe(
+                        ChatRowAction.MarkUnread,
+                        ChatRowAction.Archive,
+                        {},
+                        selected = true,
+                    ) { modifier ->
+                        ListItem(
+                            selected = true,
+                            onClick = {},
+                            shapes =
+                                ListItemDefaults.shapes(
+                                    selectedShape = MaterialTheme.shapes.extraLarge,
+                                ),
+                            modifier = modifier.fillMaxWidth(),
+                        ) {}
+                    }
+                }
+            }
+        }
+        val row = compose.onNodeWithTag("swipe")
+        row.performTouchInput { down(center) }
+        for (sign in listOf(1, -1)) {
+            row.performTouchInput { moveTo(center + Offset(sign * 88.dp.toPx(), 0f)) }
+            val pixels = row.captureToImage().toPixelMap()
+            fun x(distance: Int) = if (sign > 0) distance else pixels.width - distance - 1
+            val action = pixels[x(30), 2]
+            assertTrue(action != Color.Black)
+            assertEquals(action, pixels[x(90), 2])
+            assertTrue(action != pixels[x(90), pixels.height / 2])
+        }
+        row.performTouchInput { cancel() }
+    }
+
+    @Test
     fun theRowFollowsADragAndOnlyAnArmedReleaseCommits() {
         val haptics = mutableListOf<HapticFeedbackType>()
         val actions = mutableListOf<ChatRowAction>()
@@ -99,6 +144,7 @@ class ChatRowSwipeTest {
                         ChatRowAction.MarkRead,
                         ChatRowAction.Archive,
                         { actions.add(it) },
+                        selected = false,
                     ) { modifier ->
                         Box(modifier.fillMaxWidth().height(52.dp).testTag("swipe_foreground"))
                     }

@@ -1175,6 +1175,7 @@ private fun ChatRow(
         readAction = readAction.takeIf { openMenu != null },
         archiveAction = archiveAction.takeIf { openMenu != null },
         performAction = performAction,
+        selected = isSelected,
     ) { swipeModifier ->
         WithButtonFocusOutline(foreground, inset = ChatListRowFocusInset) {
             ListItem(
