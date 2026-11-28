@@ -1,4 +1,5 @@
 /** Runtime connector capability shared by launch preparation and runtime sync. */
+import { connectorCredentialPlaceholder } from "@okouai/connectors/firewall-metadata/credential-placeholder";
 import type { ConnectorRuntimeTargetRegistration } from "@okouai/api-contracts/contracts/runners";
 import {
   type ExecutionFirewallInlineEntry,
@@ -385,6 +386,14 @@ function buildCustomConnectorRuntimeRow(args: {
   if (apis.length === 0) {
     return unavailableCustomConnectorRuntimeRow();
   }
+  const firewallName = customConnectorInternalName(args.row.connector.id);
+  const placeholders = compactRecord(
+    Object.fromEntries(
+      extractSecretNamesFromApis(apis).map((name) => {
+        return [name, connectorCredentialPlaceholder(firewallName, name)];
+      }),
+    ),
+  );
   return {
     registration: {
       kind: "custom",
@@ -395,9 +404,10 @@ function buildCustomConnectorRuntimeRow(args: {
         : { sourceId: args.row.credentialAccess.memberConnectorId }),
     },
     firewall: {
-      name: customConnectorInternalName(args.row.connector.id),
+      name: firewallName,
       description: args.row.connector.displayName,
       apis,
+      ...(placeholders === undefined ? {} : { placeholders }),
     },
     permissionPolicy: customRuntimePermissionPolicy({
       ...args,
@@ -457,7 +467,7 @@ export function buildCustomConnectorRuntimeContext(
     if (built.permissionPolicy) {
       permissionPolicies[built.firewall.name] = built.permissionPolicy;
     }
-    for (const secretName of extractSecretNamesFromApis(built.firewall.apis)) {
+    for (const secretName of Object.keys(built.firewall.placeholders ?? {})) {
       reservedSecretAliases[secretName] = true;
     }
   }
@@ -472,7 +482,10 @@ export function buildCustomConnectorRuntimeContext(
   };
 }
 
-type CustomConnectorRuntimeFirewall = Omit<Firewall, "apis"> & {
+type CustomConnectorRuntimeFirewall = Omit<
+  ExecutionFirewallInlineEntry["firewall"],
+  "apis"
+> & {
   readonly apis: (Firewall["apis"][number] & {
     readonly id: string;
   })[];
@@ -580,6 +593,9 @@ export function customConnectorRuntimeFirewall(
   const runtime = runtimeFirewall(firewall);
   return {
     ...runtime,
+    ...(firewall.placeholders === undefined
+      ? {}
+      : { placeholders: firewall.placeholders }),
     apis: runtime.apis.map((api, index) => {
       return {
         id: `${runtime.name}:${index}`,

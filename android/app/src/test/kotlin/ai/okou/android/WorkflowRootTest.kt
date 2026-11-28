@@ -66,6 +66,7 @@ import java.time.Duration
 import java.util.UUID
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.runBlocking
@@ -457,6 +458,45 @@ internal class WorkflowRootTest : WorkflowRootTestFixture() {
             compose.onNodeWithText(message).assertDoesNotExist()
         } finally {
             nextRead.countDown()
+        }
+    }
+
+    @Test
+    fun leavingAutomationTabRetiresItsConnectionReadFeedback() {
+        app.gate.countDown()
+        compose.onNodeWithContentDescription("Workflows").performClick()
+        waitFor("Needs connection")
+        compose.onNodeWithTag("workflow_row_$WORKFLOW_RELEASE").performClick()
+        waitForTag("workflow_detail_title")
+
+        val nextRead = CountDownLatch(1)
+        val finishRead = CountDownLatch(1)
+        val firstRefresh = AtomicBoolean(true)
+        val chats = app.fixture.chats
+        val respond = chats.commandResponse
+        chats.commandResponse = { request ->
+            if (request.requestUrl?.encodedPath != "/api/connectors/connected") respond(request)
+            else if (firstRefresh.getAndSet(false)) MockResponse().setResponseCode(400)
+            else {
+                nextRead.countDown()
+                finishRead.await()
+                respond(request)
+            }
+        }
+        try {
+            val automations = compose.onNodeWithTag("workflow_tab_automations")
+            automations.performClick()
+            val message = app.getString(R.string.workflow_refresh_failed)
+            waitFor(message)
+            val feedback = compose.onNodeWithText(message).assertIsDisplayed()
+
+            compose.onNodeWithTag("workflow_tab_instructions").performClick()
+            feedback.assertDoesNotExist()
+            automations.performClick().assertIsSelected()
+            compose.waitUntil(10_000) { nextRead.count == 0L }
+            feedback.assertDoesNotExist()
+        } finally {
+            finishRead.countDown()
         }
     }
 
@@ -1917,49 +1957,55 @@ internal class WorkflowHistoryRootTest : WorkflowRootTestFixture() {
 
     @Test
     @Config(qualifiers = "en-rUS-w1180dp-h800dp")
-    fun rejectedSourceChatDeletionRestoresTheRunLinkAndShowsFeedbackInHistory() {
+    fun rejectedSourceChatDeletionWaitsForReadFeedbackInHistory() {
         val requested = CountDownLatch(1)
         val releaseDelete = CountDownLatch(1)
+        val failDetailRefresh = AtomicBoolean(false)
         val workflowResponse = app.fixture.chats.commandResponse
         app.fixture.chats.commandResponse = { request ->
-            if (
-                request.method == "DELETE" &&
-                    request.requestUrl?.encodedPath == "/api/chat-threads/$CHAT_PERSONAL"
-            ) {
-                requested.countDown()
-                releaseDelete.await()
-                MockResponse().setResponseCode(400)
-            } else workflowResponse(request)
+            val path = request.requestUrl?.encodedPath
+            when {
+                request.method == "DELETE" && path == "/api/chat-threads/$CHAT_PERSONAL" -> {
+                    requested.countDown()
+                    releaseDelete.await()
+                    MockResponse().setResponseCode(400)
+                }
+                request.method == "GET" &&
+                    path == "/api/workflows/$WORKFLOW_RELEASE" &&
+                    failDetailRefresh.get() -> MockResponse().setResponseCode(400)
+                else -> workflowResponse(request)
+            }
         }
         try {
-            openWorkflowDetail()
-            compose.onNodeWithTag("workflow_tab_history").performClick()
-            val source = hasTestTag("workflow_run_$WORKFLOW_SOURCE_RUN") and hasClickAction()
-            compose.waitUntil(10_000) {
-                compose.onAllNodes(source).fetchSemanticsNodes().isNotEmpty()
-            }
-            compose.onNode(source).performClick()
-            waitForTag("conversation")
-
-            compose.onNodeWithContentDescription("Chat actions").performClick()
-            compose.onNodeWithText("Delete chat").performClick()
-            compose.onNodeWithText("Delete chat").performClick()
+            val source = openSourceChatForDeletion()
+            failDetailRefresh.set(true)
+            confirmSourceChatDeletion()
 
             compose.waitUntil(10_000) { requested.count == 0L }
             compose.onNodeWithTag("workflow_tab_history").assertIsSelected()
             compose.onNodeWithTag("conversation").assertDoesNotExist()
             compose.onNode(source).assertDoesNotExist()
 
-            releaseDelete.countDown()
-            val rejected = "Could not finish changing the chat."
-            compose.waitUntil(10_000) {
-                compose.onAllNodesWithText(rejected).fetchSemanticsNodes().isNotEmpty()
-            }
-            val feedback = compose.onNodeWithText(rejected).assertIsDisplayed()
-            compose.onNode(source).assertIsDisplayed()
+            val readMessage = app.getString(R.string.workflow_refresh_failed)
+            waitFor(readMessage)
+            val readFeedback = compose.onNodeWithText(readMessage).assertIsDisplayed()
+            val feedback = compose.onNodeWithText("Could not finish changing the chat.")
 
             compose.mainClock.autoAdvance = false
             try {
+                releaseDelete.countDown()
+                compose.waitUntil(10_000) {
+                    compose.mainClock.advanceTimeByFrame()
+                    compose.onAllNodes(source).fetchSemanticsNodes().isNotEmpty()
+                }
+                compose.onNode(source).assertIsDisplayed()
+                readFeedback.assertIsDisplayed()
+                feedback.assertDoesNotExist()
+
+                compose.mainClock.advanceTimeBy(5_300)
+                readFeedback.assertDoesNotExist()
+                feedback.assertIsDisplayed()
+
                 compose.mainClock.advanceTimeBy(3_000)
                 feedback.assertIsDisplayed()
                 val instructions = compose.onNodeWithTag("workflow_tab_instructions")
@@ -1976,6 +2022,61 @@ internal class WorkflowHistoryRootTest : WorkflowRootTestFixture() {
         } finally {
             releaseDelete.countDown()
         }
+    }
+
+    @Test
+    @Config(qualifiers = "en-rUS-w1180dp-h800dp")
+    fun rejectedSourceChatDeletionStaysInItsOriginatingWorkflow() {
+        val requested = CountDownLatch(1)
+        val releaseDelete = CountDownLatch(1)
+        val workflowResponse = app.fixture.chats.commandResponse
+        app.fixture.chats.commandResponse = { request ->
+            if (
+                request.method == "DELETE" &&
+                    request.requestUrl?.encodedPath == "/api/chat-threads/$CHAT_PERSONAL"
+            ) {
+                requested.countDown()
+                releaseDelete.await()
+                MockResponse().setResponseCode(400)
+            } else workflowResponse(request)
+        }
+        try {
+            val source = openSourceChatForDeletion()
+            confirmSourceChatDeletion()
+            compose.waitUntil(10_000) { requested.count == 0L }
+            compose.onNode(source).assertDoesNotExist()
+
+            compose.onNodeWithTag("workflow_row_$WORKFLOW_SHARED").performClick().assertIsSelected()
+            val chats = compose.runOnIdle {
+                val session = ViewModelProvider(compose.activity)[SessionModel::class.java]
+                checkNotNull(session.uiState.value.ready).chats.also {
+                    assertTrue(CHAT_PERSONAL in it.uiState.value.pendingRowActions)
+                }
+            }
+            releaseDelete.countDown()
+            compose.waitUntil(10_000) {
+                compose.runOnIdle { CHAT_PERSONAL !in chats.uiState.value.pendingRowActions }
+            }
+            compose.onNodeWithText("Could not finish changing the chat.").assertDoesNotExist()
+        } finally {
+            releaseDelete.countDown()
+        }
+    }
+
+    private fun openSourceChatForDeletion(): SemanticsMatcher {
+        openWorkflowDetail()
+        compose.onNodeWithTag("workflow_tab_history").performClick()
+        val source = hasTestTag("workflow_run_$WORKFLOW_SOURCE_RUN") and hasClickAction()
+        compose.waitUntil(10_000) { compose.onAllNodes(source).fetchSemanticsNodes().isNotEmpty() }
+        compose.onNode(source).performClick()
+        waitForTag("conversation")
+        return source
+    }
+
+    private fun confirmSourceChatDeletion() {
+        compose.onNodeWithContentDescription("Chat actions").performClick()
+        compose.onNodeWithText("Delete chat").performClick()
+        compose.onNodeWithText("Delete chat").performClick()
     }
 }
 

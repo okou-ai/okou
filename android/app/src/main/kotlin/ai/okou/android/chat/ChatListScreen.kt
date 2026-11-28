@@ -218,7 +218,10 @@ internal fun ChatListScreen(
             listOfNotNull(
                 renameRejection?.projectId,
                 state.projectList.deletingId?.takeUnless { it == confirmingProjectDelete },
-            )
+            ) +
+            state.projectList.deleteFeedback.mapNotNull {
+                it.projectId.takeIf { id -> !it.rejected && id != confirmingProjectDelete }
+            }
     val expansion = projectExpansion?.state?.collectAsStateWithLifecycle()?.value
     val savedExpansion = expansion?.expandedIds
     val expandedProjectIds = savedExpansion.orEmpty()
@@ -523,6 +526,7 @@ internal fun ChatListScreen(
                     val project = group.project
                     val pending = section.provisionalChats
                     if (project != null) {
+                        val deleting = state.projectList.isDeleting(project.id)
                         item(key = projectRowKey(project.id)) {
                             ProjectRow(
                                 project.name,
@@ -533,10 +537,11 @@ internal fun ChatListScreen(
                                 toggle = { projectExpansion?.toggle(project.id) },
                                 newChat = if (newChatEnabled) ({ newChat(project.id) }) else null,
                                 rename = { restore -> renameProject(project.id, restore) },
-                                canRename = canRenameProject,
+                                canRename = canRenameProject && !deleting,
                                 renaming = state.renamingProjectId == project.id,
                                 delete = { requestDeleteProject(project.id) },
-                                canDelete = chatActionsEnabled && state.canDeleteProject,
+                                canDelete =
+                                    chatActionsEnabled && state.canDeleteProject && !deleting,
                                 deleteDialogOpen = confirmingProjectDelete == project.id,
                                 renameFocus =
                                     (renameFocus as? WorkspaceRenameTarget.Project)?.takeIf {
@@ -550,10 +555,7 @@ internal fun ChatListScreen(
                                 onMoveFocusFinished = onMoveFocusFinished,
                             )
                         }
-                        if (
-                            project.id == state.projectList.deletingId &&
-                                project.id != confirmingProjectDelete
-                        ) {
+                        if (deleting && project.id != confirmingProjectDelete) {
                             item(key = "project_deleting_${project.id}") {
                                 ChatNotice(
                                     R.string.chat_project_delete_pending,
@@ -877,7 +879,6 @@ internal fun DeleteProjectDialog(
             when (status) {
                 ProjectDeleteStatus.Rejected -> R.string.chat_project_delete_rejected
                 ProjectDeleteStatus.ConnectionFailed -> R.string.chat_action_connection_failed
-                ProjectDeleteStatus.Unconfirmed -> R.string.chat_project_delete_unconfirmed
                 ProjectDeleteStatus.Confirmed,
                 null -> null
             }
@@ -897,7 +898,6 @@ internal fun DeleteProjectDialog(
                     listOf(
                         R.string.chat_project_delete_rejected,
                         R.string.chat_action_connection_failed,
-                        R.string.chat_project_delete_unconfirmed,
                     )) {
                     if (message != noticeRes) {
                         Text(
@@ -911,10 +911,7 @@ internal fun DeleteProjectDialog(
                     Text(
                         stringResource(noticeRes),
                         Modifier.semantics { liveRegion = LiveRegionMode.Polite },
-                        color =
-                            if (status == ProjectDeleteStatus.Unconfirmed)
-                                MaterialTheme.colorScheme.onSurfaceVariant
-                            else MaterialTheme.colorScheme.error,
+                        color = MaterialTheme.colorScheme.error,
                         style = style,
                     )
                 }

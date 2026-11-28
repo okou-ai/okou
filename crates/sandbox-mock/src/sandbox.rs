@@ -897,13 +897,10 @@ impl Sandbox for MockSandbox {
         handoff: &SandboxFinalExecParkHandoff,
         observer: &mut dyn SandboxFinalExecParkObserver,
     ) -> Result<SandboxFinalExecParkTransitionOutcome> {
-        let point = self.overrides.as_ref().and_then(|overrides| {
-            overrides
-                .lifecycle
-                .final_exec_park_handoff_points
-                .lock_ignoring_poison()
-                .pop_front()
-        });
+        let point = self
+            .overrides
+            .as_deref()
+            .and_then(MockSandboxOverrides::take_final_exec_park_handoff_point);
         self.final_exec_and_park_with_observer_and_handoff(
             request,
             diagnostic_label,
@@ -922,13 +919,10 @@ impl Sandbox for MockSandbox {
         admission: &dyn SandboxIdleAdmission,
         observer: &mut dyn SandboxFinalExecParkObserver,
     ) -> Result<SandboxFinalExecParkTransitionOutcome> {
-        let point = self.overrides.as_ref().and_then(|overrides| {
-            overrides
-                .lifecycle
-                .final_exec_park_handoff_points
-                .lock_ignoring_poison()
-                .pop_front()
-        });
+        let point = self
+            .overrides
+            .as_deref()
+            .and_then(MockSandboxOverrides::take_final_exec_park_handoff_point);
         self.final_exec_and_park_with_observer_and_handoff(
             request,
             diagnostic_label,

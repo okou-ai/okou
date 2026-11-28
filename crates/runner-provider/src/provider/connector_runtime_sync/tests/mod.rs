@@ -116,7 +116,8 @@ fn custom_runtime_firewall_with_source(
     source_id: Option<&str>,
 ) -> FirewallEntry {
     FirewallEntry::Inline {
-        firewall: Firewall {
+        firewall: Box::new(Firewall {
+            placeholders: None,
             name: format!("custom_connector_{}", custom_connector_id.replace('-', "")),
             apis: vec![FirewallApi {
                 network_intent: None,
@@ -134,7 +135,7 @@ fn custom_runtime_firewall_with_source(
                 host_policy: None,
                 permissions: None,
             }],
-        },
+        }),
         custom_connector_id: Some(custom_connector_id.to_string()),
         source_id: source_id.map(str::to_string),
     }

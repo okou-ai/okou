@@ -151,7 +151,7 @@ pub(crate) struct LifecycleOverrideState {
     pub(crate) park_behaviors: LifecycleBehaviors<SandboxParkOutcome>,
     /// FIFO handoff points returned by `final_exec_and_park_for_handoff` when
     /// an exact-successor request is pending. Empty queue preserves full park.
-    pub(crate) final_exec_park_handoff_points: Mutex<VecDeque<SandboxFinalExecParkHandoffPoint>>,
+    final_exec_park_handoff_points: Mutex<VecDeque<SandboxFinalExecParkHandoffPoint>>,
     /// Completed handoff points returned across all sandboxes built with these
     /// overrides.
     pub(crate) completed_final_exec_park_handoff_points:
@@ -937,6 +937,15 @@ impl MockSandboxOverrides {
             .final_exec_park_handoff_points
             .lock_ignoring_poison()
             .push_back(point);
+    }
+
+    pub(crate) fn take_final_exec_park_handoff_point(
+        &self,
+    ) -> Option<SandboxFinalExecParkHandoffPoint> {
+        self.lifecycle
+            .final_exec_park_handoff_points
+            .lock_ignoring_poison()
+            .pop_front()
     }
 
     /// Return handoff points successfully returned by handoff-aware final park.

@@ -31,15 +31,26 @@ const providersListClient = setupApp({
 // Cloud Code method URLs with regular expressions.
 const LOAD_CODE_ASSIST =
   /^https:\/\/daily-cloudcode-pa\.googleapis\.com\/v1internal:loadCodeAssist$/;
-const FETCH_AVAILABLE_MODELS =
-  /^https:\/\/daily-cloudcode-pa\.googleapis\.com\/v1internal:fetchAvailableModels$/;
+const RETRIEVE_USER_QUOTA_SUMMARY =
+  /^https:\/\/daily-cloudcode-pa\.googleapis\.com\/v1internal:retrieveUserQuotaSummary$/;
+
+interface QuotaSummaryBucketFixture {
+  readonly bucketId: string;
+  readonly displayName?: string;
+  readonly window?: string;
+  readonly remainingFraction: number;
+  readonly disabled?: boolean;
+  readonly resetTime?: string;
+}
+
+interface QuotaSummaryGroupFixture {
+  readonly displayName: string;
+  readonly buckets: readonly QuotaSummaryBucketFixture[];
+}
 
 interface GoogleQuota {
   readonly tier: { readonly id: string; readonly name: string };
-  readonly models: Record<
-    string,
-    { readonly quotaInfo: { remainingFraction: number; resetTime: string } }
-  >;
+  readonly groups: readonly QuotaSummaryGroupFixture[];
 }
 
 /** Google signs in once, then serves the plan and quota per Settings read. */
@@ -77,9 +88,9 @@ function mockGoogle(quota: GoogleQuota) {
         paidTier: quota.tier,
       });
     }),
-    http.post(FETCH_AVAILABLE_MODELS, async ({ request }) => {
+    http.post(RETRIEVE_USER_QUOTA_SUMMARY, async ({ request }) => {
       quotaRequests.push(await request.json());
-      return HttpResponse.json({ models: quota.models });
+      return HttpResponse.json({ groups: quota.groups });
     }),
   );
   return quotaRequests;
@@ -145,27 +156,66 @@ describe("Google AI subscription usage", () => {
     mockOptionalEnv("ANTIGRAVITY_OAUTH_CLIENT_SECRET", "agy-client-secret");
   });
 
-  it("shows the Google AI plan and the tightest Gemini 4 quota", async () => {
+  it("shows the Google AI plan and the tightest Gemini 5-hour quota from the summary", async () => {
     const carbonReset = inHours(3);
     const quotaRequests = mockGoogle({
       tier: { id: "g1-pro-tier", name: "Google AI Pro" },
-      models: {
-        "gemini-4-neon": {
-          quotaInfo: { remainingFraction: 0.75, resetTime: inHours(2) },
+      groups: [
+        {
+          displayName: "Gemini",
+          buckets: [
+            {
+              bucketId: "gemini-5h-primary",
+              window: "5h",
+              remainingFraction: 0.75,
+              resetTime: inHours(2),
+            },
+            {
+              bucketId: "gemini-5h-tight",
+              window: "5h",
+              remainingFraction: 0.4,
+              resetTime: carbonReset,
+            },
+            {
+              bucketId: "gemini-5h-disabled",
+              window: "5h",
+              remainingFraction: 0,
+              disabled: true,
+              resetTime: inHours(1),
+            },
+          ],
         },
-        "gemini-4-carbon": {
-          quotaInfo: { remainingFraction: 0.4, resetTime: carbonReset },
+        // Third-party and Argon preview pools are excluded from Gemini quota.
+        {
+          displayName: "Claude & GPT",
+          buckets: [
+            {
+              bucketId: "claude-5h",
+              window: "5h",
+              remainingFraction: 0,
+              resetTime: inHours(1),
+            },
+          ],
         },
-        // Other models in the response do not describe Gemini 4 quota.
-        "claude-sonnet-4-6": {
-          quotaInfo: { remainingFraction: 0, resetTime: inHours(1) },
+        {
+          displayName: "Gemini Argon Preview",
+          buckets: [
+            {
+              bucketId: "argon-5h",
+              window: "5h",
+              remainingFraction: 0.1,
+              resetTime: inHours(1),
+            },
+          ],
         },
-      },
+      ],
     });
     await connectGoogleAccount();
 
     await expect(listGoogleAccount()).resolves.toMatchObject({
       planType: "pro",
+      subscriptionResetPeriod: "5-hour window",
+      subscriptionNextResetAt: carbonReset,
       subscriptionUsage: {
         fiveHour: {
           usedPercent: 60,
@@ -179,20 +229,30 @@ describe("Google AI subscription usage", () => {
     expect(quotaRequests).toStrictEqual([{ project: "agy-project-1" }]);
   });
 
-  it("places a quota that resets after five hours in the weekly window", async () => {
+  it("maps weekly quota summary windows and weekly reset metadata", async () => {
     const weeklyReset = inHours(72);
     mockGoogle({
       tier: { id: "free-tier", name: "Antigravity Free" },
-      models: {
-        "gemini-4-hydrogen": {
-          quotaInfo: { remainingFraction: 0.9, resetTime: weeklyReset },
+      groups: [
+        {
+          displayName: "Gemini",
+          buckets: [
+            {
+              bucketId: "gemini-weekly",
+              window: "7d",
+              remainingFraction: 0.9,
+              resetTime: weeklyReset,
+            },
+          ],
         },
-      },
+      ],
     });
     await connectGoogleAccount();
 
     await expect(listGoogleAccount()).resolves.toMatchObject({
       planType: "free",
+      subscriptionResetPeriod: "weekly",
+      subscriptionNextResetAt: weeklyReset,
       subscriptionUsage: {
         fiveHour: null,
         weekly: {

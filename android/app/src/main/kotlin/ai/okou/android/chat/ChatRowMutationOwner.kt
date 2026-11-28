@@ -159,7 +159,7 @@ internal class ChatRowMutationOwner(
         submission: Submission,
         rollback: Rollback?,
         conversationId: String?,
-        deleteFromWorkflow: Boolean,
+        feedbackWorkflowId: String?,
     ): Confirmation {
         requireCurrent()
         val edits = submission.edits.takeLast(submission.submittedCount)
@@ -183,7 +183,7 @@ internal class ChatRowMutationOwner(
                         submission.action,
                         rejected = true,
                         conversationId = conversationId,
-                        deleteFromWorkflow = deleteFromWorkflow,
+                        feedbackWorkflowId = feedbackWorkflowId,
                     )
                 else null,
                 false,
@@ -204,7 +204,7 @@ internal class ChatRowMutationOwner(
                     submission.action,
                     rejected = true,
                     conversationId = conversationId,
-                    deleteFromWorkflow = deleteFromWorkflow,
+                    feedbackWorkflowId = feedbackWorkflowId,
                 ),
                 false,
             )

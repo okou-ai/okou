@@ -167,6 +167,10 @@ fn execution_context_rejects_unknown_firewall_kind() {
 fn firewall_round_trip() {
     let fw = Firewall {
         name: "github".into(),
+        placeholders: Some(BTreeMap::from([(
+            "TEST_TOKEN".into(),
+            "fixture-token-placeholder".into(),
+        )])),
         apis: vec![FirewallApi {
             network_intent: None,
             id: "api-1".into(),
@@ -191,7 +195,7 @@ fn firewall_round_trip() {
     assert_eq!(json["name"], "github");
     // round-trip
     let deserialized: Firewall = serde_json::from_value(json).unwrap();
-    assert_eq!(deserialized.name, "github");
+    assert_eq!(deserialized, fw);
     assert_eq!(
         deserialized.apis[0].permissions.as_ref().unwrap()[0].name,
         "metadata:read"

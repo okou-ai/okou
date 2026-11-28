@@ -200,7 +200,7 @@ internal fun WorkspaceChatFeedback(
     runControls: ConversationRunControls?,
     codeFeedback: List<FeedbackReceipt<Int>>,
     dismissCodeFeedback: (FeedbackReceipt<Int>) -> Unit,
-    showWorkflowFeedback: Boolean,
+    visibleWorkflowId: String?,
     confirmingProjectDelete: String?,
     dismissProjectDelete: () -> Unit,
     renameEditor: ChatRenameEditor?,
@@ -221,21 +221,26 @@ internal fun WorkspaceChatFeedback(
         val feedback = deleteFeedback.lastOrNull { it.projectId == deleteProject.id }
         DeleteProjectDialog(
             projectName = deleteProject.name,
-            pending = list.projectList.deletingId == deleteProject.id,
+            pending = list.projectList.isDeleting(deleteProject.id),
             status = feedback?.status,
             enabled = list.canDeleteProject,
             dismiss = {
                 dismissProjectDelete()
                 if (feedback?.rejected == true) chats.dismissProjectDeleteFeedback(feedback)
             },
-            confirm = {
-                if (feedback?.status == ProjectDeleteStatus.Unconfirmed)
-                    chats.retryProjectDelete(feedback)
-                else chats.deleteProject(deleteProject.id)
-            },
+            confirm = { chats.deleteProject(deleteProject.id) },
         )
     } else if (confirmingProjectDelete != null && list.projectsPhase == ChatReadPhase.Ready) {
-        LaunchedEffect(confirmingProjectDelete) { dismissProjectDelete() }
+        LaunchedEffect(confirmingProjectDelete) {
+            dismissProjectDelete()
+            if (deleteProject == null) {
+                deleteFeedback
+                    .firstOrNull {
+                        it.projectId == confirmingProjectDelete && it.rejected
+                    }
+                    ?.let(chats::dismissProjectDeleteFeedback)
+            }
+        }
     }
 
     val conversationUndo = list.conversationUndo?.takeIf { it.threadId == visibleConversationId }
@@ -248,14 +253,14 @@ internal fun WorkspaceChatFeedback(
     val failures = list.rowActionFailures
     fun ChatRowActionFailure.isVisible(): Boolean =
         when {
-            deleteFromWorkflow -> showWorkflowFeedback
+            feedbackWorkflowId != null -> feedbackWorkflowId == visibleWorkflowId
             feedbackConversationId != null -> feedbackConversationId == visibleConversationId
             else -> showChatList
         }
-    LaunchedEffect(chats, failures, showChatList, visibleConversationId, showWorkflowFeedback) {
+    LaunchedEffect(chats, failures, showChatList, visibleConversationId, visibleWorkflowId) {
         failures.forEach {
             // A rejected delete can arrive after navigation has already left the deleted chat.
-            val returnsToList = it.action == ChatRowAction.Delete && !it.deleteFromWorkflow
+            val returnsToList = it.action == ChatRowAction.Delete && it.feedbackWorkflowId == null
             if (it.rejected && !it.isVisible() && !returnsToList) chats.dismissRowActionFailure(it)
         }
     }
@@ -393,12 +398,13 @@ internal fun WorkspaceChatFeedback(
     }
     val listFailures = failures.filter {
         it.feedbackConversationId == null &&
+            it.feedbackWorkflowId == null &&
             it.isVisible() &&
             (it.renameThreadId == null || it.renameThreadId != openRenameId)
     }
     val rowError = listFailures.firstOrNull { it.rejected }
     val projectError = deleteFeedback.firstOrNull {
-        it.rejected && it.projectId != deleteProject?.id
+        it.rejected && it.projectId != confirmingProjectDelete
     }
     val projectNotice = deleteFeedback.lastOrNull {
         !it.rejected && it.projectId != deleteProject?.id
@@ -442,7 +448,7 @@ internal fun WorkspaceChatFeedback(
                 },
                 projectError?.let { error ->
                     PaneFeedbackError(error.feedbackOrder) {
-                        ProjectDeleteSnackbar(chats, error, list.canDeleteProject, listSnackbar)
+                        ProjectDeleteSnackbar(chats, error, listSnackbar)
                     }
                 },
                 batchError?.let { error ->
@@ -481,8 +487,7 @@ internal fun WorkspaceChatFeedback(
         result = {
             when {
                 rowNotice != null -> ChatRowFailureFeedback(chats, list, rowNotice, listSnackbar)
-                projectNotice != null ->
-                    ProjectDeleteSnackbar(chats, projectNotice, list.canDeleteProject, listSnackbar)
+                projectNotice != null -> ProjectDeleteSnackbar(chats, projectNotice, listSnackbar)
                 batchNotice != null -> MarkAllReadSnackbar(chats, batchNotice, listSnackbar)
                 moveNotice != null -> {
                     val message =
@@ -522,34 +527,23 @@ private fun RenameSavedSnackbar(
 private fun ProjectDeleteSnackbar(
     chats: ChatListModel,
     feedback: ProjectDeleteFeedback,
-    canDeleteProject: Boolean,
     snackbar: SnackbarHostState,
 ) {
-    val unconfirmed = feedback.status == ProjectDeleteStatus.Unconfirmed
     val message =
         stringResource(
             when (feedback.status) {
                 ProjectDeleteStatus.Confirmed -> R.string.chat_project_deleted
                 ProjectDeleteStatus.Rejected -> R.string.chat_project_delete_rejected
                 ProjectDeleteStatus.ConnectionFailed -> R.string.chat_action_connection_failed
-                ProjectDeleteStatus.Unconfirmed -> R.string.chat_project_delete_unconfirmed
             },
         )
-    val retry = if (unconfirmed && canDeleteProject) stringResource(R.string.retry) else null
-    LaunchedEffect(chats, snackbar, feedback, message, retry) {
-        val result =
-            try {
-                snackbar.showSnackbar(
-                    message,
-                    actionLabel = retry,
-                    withDismissAction = unconfirmed,
-                    duration = SnackbarDuration.Indefinite,
-                )
-            } finally {
-                if (feedback.rejected) chats.dismissProjectDeleteFeedback(feedback)
-            }
-        if (result == SnackbarResult.ActionPerformed) chats.retryProjectDelete(feedback)
-        else if (!feedback.rejected) chats.dismissProjectDeleteFeedback(feedback)
+    LaunchedEffect(chats, snackbar, feedback, message) {
+        try {
+            snackbar.showSnackbar(message, duration = SnackbarDuration.Indefinite)
+        } finally {
+            if (feedback.rejected) chats.dismissProjectDeleteFeedback(feedback)
+        }
+        if (!feedback.rejected) chats.dismissProjectDeleteFeedback(feedback)
     }
 }
 
@@ -667,6 +661,36 @@ private fun WorkspaceRenameForm(
 }
 
 @Composable
+internal fun WorkspaceWorkflowFeedback(
+    chats: ChatListModel?,
+    listState: State<ChatListUiState>,
+    workflowId: String?,
+    readErrors: List<PaneFeedbackError>,
+    snackbar: SnackbarHostState,
+) {
+    if (chats == null || workflowId == null) {
+        PaneFeedback(readErrors)
+        return
+    }
+    val list = listState.value
+    val failures = list.rowActionFailures.filter { it.feedbackWorkflowId == workflowId }
+    val error = failures.firstOrNull { it.rejected }
+    val result = failures.firstOrNull { !it.rejected }
+    PaneFeedback(
+        errors =
+            readErrors +
+                error?.let {
+                    PaneFeedbackError(it.feedbackOrder) {
+                        ChatRowFailureFeedback(chats, list, it, snackbar)
+                    }
+                },
+        result = {
+            if (result != null) ChatRowFailureFeedback(chats, list, result, snackbar)
+        },
+    )
+}
+
+@Composable
 private fun ChatRowFailureFeedback(
     chats: ChatListModel,
     list: ChatListUiState,
@@ -679,8 +703,9 @@ private fun ChatRowFailureFeedback(
             failure.fromUndo -> stringResource(R.string.chat_undo_failed)
             failure.rejected && !action.updatesChat && !failure.connectionFailed ->
                 stringResource(R.string.chat_read_action_failed)
-            action == ChatRowAction.Delete && failure.rejected && !failure.deleteFromWorkflow ->
-                stringResource(R.string.chat_delete_rejected)
+            action == ChatRowAction.Delete &&
+                failure.rejected &&
+                failure.feedbackWorkflowId == null -> stringResource(R.string.chat_delete_rejected)
             failure.rejected && action.recoversInBackground ->
                 stringResource(
                     if (failure.connectionFailed) R.string.chat_row_action_offline_named

@@ -258,7 +258,8 @@ async fn real_python_registry_owner_accepts_rust_writer_source_bound_inline_buil
 
     let source_id = "550e8400-e29b-41d4-a716-446655440001";
     let firewalls = [FirewallEntry::Inline {
-        firewall: Firewall {
+        firewall: Box::new(Firewall {
+            placeholders: None,
             name: "builtin-mcp".to_owned(),
             apis: vec![FirewallApi {
                 network_intent: None,
@@ -273,7 +274,7 @@ async fn real_python_registry_owner_accepts_rust_writer_source_bound_inline_buil
                 host_policy: None,
                 permissions: None,
             }],
-        },
+        }),
         custom_connector_id: None,
         source_id: Some(source_id.to_owned()),
     }];

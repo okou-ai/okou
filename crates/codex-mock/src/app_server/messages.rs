@@ -415,10 +415,12 @@ pub(super) fn write_oversized_delivery_notifications<W: Write>(
     let large = "α".repeat(2_150_000);
     let secret = "delivery-secret-value";
     let completed_at_ms = 2;
-    let original_command = format!("command-head-{secret}-{large}-command-tail");
-    let managed_command =
-        render_managed_shell_command(&original_command).map_err(io::Error::other)?;
-    let codex_command = format!("/bin/bash -lc '{managed_command}'");
+    let codex_command = {
+        let original_command = format!("command-head-{secret}-{large}-command-tail");
+        let managed_command =
+            render_managed_shell_command(&original_command).map_err(io::Error::other)?;
+        format!("/bin/bash -lc '{managed_command}'")
+    };
     write_json_line(
         output,
         &item_notification(

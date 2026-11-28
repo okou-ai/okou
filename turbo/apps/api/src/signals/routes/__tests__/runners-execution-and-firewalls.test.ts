@@ -24,6 +24,7 @@ import {
 } from "@okouai/api-contracts/contracts/webhooks";
 import {
   createRunnerRuntimeFirewallCatalog,
+  projectRunnerConnectorFirewall,
   projectRunnerRuntimeFirewall,
 } from "@okouai/connectors/firewall-metadata/runner-runtime-catalog";
 import { beforeAll, describe, expect, it } from "vitest";
@@ -31,7 +32,7 @@ import { setupAppWithRoutes } from "../../../__tests__/test-app";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { TEST_WITH_TRIPLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE } from "../../../__tests__/test-timeouts";
 import { env, mockEnv, mockOptionalEnv } from "../../../lib/env";
-import { API_TEST_CONNECTOR_FIREWALL_CONFIGS } from "../../../test-fixtures/connector-catalog";
+import { API_TEST_CONNECTOR_CATALOG } from "../../../test-fixtures/connector-catalog";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { chatEventsRoutes } from "../chat-events";
 import { chatThreadRoutes } from "../chat-threads";
@@ -63,7 +64,10 @@ function officialRunnerAuthHeaders() {
 
 function expectedRunnerFirewallCatalog() {
   return createRunnerRuntimeFirewallCatalog([
-    ...API_TEST_CONNECTOR_FIREWALL_CONFIGS.map(projectRunnerRuntimeFirewall),
+    ...API_TEST_CONNECTOR_CATALOG.connectors.flatMap((connector) => {
+      const firewall = projectRunnerConnectorFirewall(connector);
+      return firewall === null ? [] : [firewall];
+    }),
     ...Object.values(MODEL_PROVIDER_FIREWALL_CONFIGS).map(
       projectRunnerRuntimeFirewall,
     ),

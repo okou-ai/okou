@@ -136,17 +136,22 @@ describe("Antigravity Google sign-in", () => {
         },
       ),
       http.post(
-        /^https:\/\/daily-cloudcode-pa\.googleapis\.com\/v1internal:fetchAvailableModels$/,
+        /^https:\/\/daily-cloudcode-pa\.googleapis\.com\/v1internal:retrieveUserQuotaSummary$/,
         () => {
           return HttpResponse.json({
-            models: {
-              "gemini-4-pro": {
-                quotaInfo: {
-                  remainingFraction: 0.75,
-                  resetTime: "2026-12-01T00:00:00Z",
-                },
+            groups: [
+              {
+                displayName: "Gemini",
+                buckets: [
+                  {
+                    bucketId: "gemini-5h",
+                    window: "5h",
+                    remainingFraction: 0.75,
+                    resetTime: "2026-12-01T00:00:00Z",
+                  },
+                ],
               },
-            },
+            ],
           });
         },
       ),

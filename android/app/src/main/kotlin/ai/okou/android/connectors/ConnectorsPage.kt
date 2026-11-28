@@ -2,6 +2,7 @@ package ai.okou.android.connectors
 
 import ai.okou.android.ContentReadFeedbackDelayMillis
 import ai.okou.android.DirectoryReturnFocus
+import ai.okou.android.PaneReadAnnouncements
 import ai.okou.android.R
 import ai.okou.android.WorkspaceMenu
 import ai.okou.android.WorkspaceMenuItem
@@ -63,6 +64,7 @@ import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
@@ -119,8 +121,24 @@ internal fun ConnectorsPage(
     val route = rememberConnectorDirectory(initialSlug)
     val discoverPosition = rememberLazyListState()
     val connectedPosition = rememberLazyListState()
-    val directoryAnnouncements = remember(model) { ConnectorReadAnnouncements() }
-    val detailAnnouncements = remember(model) { ConnectorReadAnnouncements() }
+    val directoryAnnouncements = remember(model) { PaneReadAnnouncements() }
+    val detailAnnouncements = remember(model) { PaneReadAnnouncements() }
+    SideEffect {
+        directoryAnnouncements.retain(
+            listOfNotNull(
+                state.browse.failureRound,
+                state.connected.failureRound,
+                state.matches?.entries?.failureRound,
+            ),
+        )
+        detailAnnouncements.retain(
+            listOfNotNull(
+                state.detail.failureRound,
+                state.accounts.failureRound,
+                state.permissions.failureRound,
+            ),
+        )
+    }
     val focus = LocalFocusManager.current
     val inputMode = LocalInputModeManager.current
     val keyboard = LocalSoftwareKeyboardController.current
@@ -301,7 +319,7 @@ private fun ConnectorDirectory(
     state: ConnectorUiState,
     filter: ConnectorBrowseFilter?,
     position: LazyListState,
-    announcements: ConnectorReadAnnouncements,
+    announcements: PaneReadAnnouncements,
     selected: String?,
     returnFocus: DirectoryReturnFocus,
     onBack: () -> Unit,
@@ -407,13 +425,11 @@ private fun ConnectorDirectory(
                 }
             rememberContentReadFeedbackAfter(remaining, readScope = startedAt)
         }
-    val notice =
+    val notices =
         when {
-            entries == null || failure == ConnectorReadFailure.Unavailable -> null
-            route.connected ->
-                listOfNotNull(directory.connected.notice(), filtered?.notice())
-                    .maxByOrNull(ConnectorReadNotice::round)
-            else -> catalogRead.notice()
+            entries == null || failure == ConnectorReadFailure.Unavailable -> emptyList()
+            route.connected -> listOfNotNull(directory.connected.notice(), filtered?.notice())
+            else -> listOfNotNull(catalogRead.notice())
         }
     val restoreFocus = remember { FocusRequester() }
     val tabFocus = remember { List(2) { FocusRequester() } }
@@ -513,7 +529,7 @@ private fun ConnectorDirectory(
                 }
                 key(route.connected, filter, query) {
                     ConnectorReadFeedbackHost(
-                        notice,
+                        notices,
                         announcements,
                         Modifier.align(Alignment.BottomCenter).padding(bottom = 8.dp),
                     )

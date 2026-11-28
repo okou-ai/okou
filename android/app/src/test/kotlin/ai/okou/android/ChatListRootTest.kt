@@ -3751,10 +3751,16 @@ internal class ChatListRowActionsRootTest : ChatListRootTestFixture() {
     @GraphicsMode(GraphicsMode.Mode.NATIVE)
     fun aConversationFailureAndListFeedbackAreVisibleAtTheSameTime() {
         val app = compose.activity.application as ChatListApplication
+        val deleteStarted = CountDownLatch(1)
+        val releaseDelete = CountDownLatch(1)
         app.fixture.commandResponse = { request ->
             when (request.requestUrl?.encodedPath) {
                 "/api/projects/$CHAT_PROJECT" ->
-                    if (request.method == "DELETE") MockResponse().setResponseCode(503) else null
+                    if (request.method == "DELETE") {
+                        deleteStarted.countDown()
+                        releaseDelete.await()
+                        MockResponse().setResponseCode(503)
+                    } else null
                 "/api/chat-threads/$CHAT_PERSONAL/archive" -> MockResponse().setResponseCode(400)
                 else -> null
             }
@@ -3766,14 +3772,14 @@ internal class ChatListRowActionsRootTest : ChatListRootTestFixture() {
             click(button = MouseButton.Secondary)
         }
         compose.onNodeWithText("Delete Project").performClick()
-        compose.onNodeWithText("Delete Project").performClick()
-
-        val listNotice = "Could not confirm Project deletion."
-        compose.waitUntilExactlyOneExists(
-            hasText(listNotice) and hasAnyAncestor(isDialog()),
-            10_000,
-        )
-        compose.onNodeWithText("Cancel").performClick()
+        try {
+            compose.onNodeWithText("Delete Project").performClick()
+            compose.waitUntil(10_000) { deleteStarted.count == 0L }
+            compose.onNodeWithText("Cancel").performClick()
+        } finally {
+            releaseDelete.countDown()
+        }
+        val listNotice = "Could not delete the Project."
         val inList = hasAnyAncestor(hasTestTag("chat_list_feedback"))
         val inConversation = hasAnyAncestor(hasTestTag("conversation_feedback"))
         compose.waitUntilExactlyOneExists(hasText(listNotice) and inList, 10_000)
@@ -3783,8 +3789,8 @@ internal class ChatListRowActionsRootTest : ChatListRootTestFixture() {
         val conversationNotice = hasText("Could not complete “Archive chat”.")
         compose.waitUntilExactlyOneExists(conversationNotice and inConversation, 10_000)
         compose.onNode(hasText(listNotice) and inList).assertIsDisplayed()
-        compose.onNode(hasContentDescription("Dismiss") and inList).performClick()
-        compose.onNode(conversationNotice and inConversation).assertIsDisplayed()
+        compose.onNode(hasText("Try again") and inList).assertDoesNotExist()
+        compose.onNode(hasContentDescription("Dismiss") and inList).assertDoesNotExist()
     }
 
     @Test
@@ -4464,7 +4470,7 @@ internal class ChatListProjectsRootTest : ChatListRootTestFixture() {
 
     @Test
     @Config(qualifiers = "en-rUS-w400dp-h800dp")
-    fun projectDeletionRejectionStaysInTheConfirmation() {
+    fun unknownProjectDeletionUsesTheReservedConfirmationStatus() {
         InstrumentationRegistry.getInstrumentation().setInTouchMode(false)
         compose.activityRule.scenario.recreate()
         val app = compose.activity.application as ChatListApplication
@@ -4477,7 +4483,7 @@ internal class ChatListProjectsRootTest : ChatListRootTestFixture() {
             ) {
                 deletes.incrementAndGet()
                 releaseDelete.await()
-                MockResponse().setResponseCode(409)
+                MockResponse().setResponseCode(503)
             } else null
         }
         app.responseGate.countDown()
@@ -4524,7 +4530,7 @@ internal class ChatListProjectsRootTest : ChatListRootTestFixture() {
 
     @Test
     @Config(qualifiers = "en-rUS-w400dp-h800dp")
-    fun projectDeletionRejectionWaitsForTheListAfterClosingTheConfirmation() {
+    fun unknownProjectDeletionDoesNotReplayFeedbackAfterLeavingTheList() {
         val app = compose.activity.application as ChatListApplication
         val deleteStarted = CountDownLatch(1)
         val releaseDelete = CountDownLatch(1)
@@ -4535,7 +4541,7 @@ internal class ChatListProjectsRootTest : ChatListRootTestFixture() {
             ) {
                 deleteStarted.countDown()
                 releaseDelete.await()
-                MockResponse().setResponseCode(409)
+                MockResponse().setResponseCode(503)
             } else null
         }
         app.responseGate.countDown()
@@ -4551,20 +4557,13 @@ internal class ChatListProjectsRootTest : ChatListRootTestFixture() {
 
             releaseDelete.countDown()
             compose.waitUntil(10_000) {
-                currentList()?.projectDeleteFeedback?.singleOrNull()?.status ==
-                    ProjectDeleteStatus.Rejected
+                currentList()?.let { it.projectList.deletingId == null } == true
             }
             val failure = "Could not delete the Project."
             compose.onNodeWithText(failure).assertDoesNotExist()
 
             compose.onNodeWithContentDescription("Back").performClick()
-            val listFeedback = hasAnyAncestor(hasTestTag("chat_list_feedback"))
-            compose.onNode(hasText(failure) and listFeedback).assertIsDisplayed()
             compose.onNodeWithText("Research").assertIsDisplayed()
-
-            compose.onNodeWithTag("chat_$CHAT_PERSONAL").performClick()
-            compose.onNodeWithTag("chat_list").assertDoesNotExist()
-            compose.onNodeWithContentDescription("Back").performClick()
             compose.onNodeWithText(failure).assertDoesNotExist()
         } finally {
             releaseDelete.countDown()

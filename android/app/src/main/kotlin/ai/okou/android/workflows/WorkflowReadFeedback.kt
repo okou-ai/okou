@@ -1,22 +1,27 @@
 package ai.okou.android.workflows
 
+import ai.okou.android.PaneFeedback
+import ai.okou.android.PaneFeedbackError
+import ai.okou.android.PaneReadAnnouncements
 import ai.okou.android.R
 import ai.okou.android.WorkspaceFeedbackHost
+import ai.okou.android.paneReadError
 import androidx.annotation.StringRes
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 
 internal class WorkflowReadAnnouncements {
-    val directory = mutableSetOf<WorkflowReadFailure.Failed>()
-    val detail = mutableSetOf<WorkflowReadFailure.Failed>()
+    val directory = PaneReadAnnouncements()
+    val detail = PaneReadAnnouncements()
+}
+
+internal fun PaneReadAnnouncements.retainWorkflowReads(vararg failures: WorkflowReadFailure?) {
+    retain(failures.mapNotNull { (it as? WorkflowReadFailure.Failed)?.feedbackOrder })
 }
 
 internal data class WorkflowReadNotice(
@@ -37,29 +42,30 @@ internal fun WorkflowState.connectionReadNotice() =
 
 @Composable
 internal fun WorkflowReadFeedbackHost(
-    notice: WorkflowReadNotice?,
-    announced: MutableSet<WorkflowReadFailure.Failed>,
-    actionSnackbar: SnackbarHostState? = null,
+    notices: List<WorkflowReadNotice>,
+    announced: PaneReadAnnouncements,
 ) {
     val snackbar = remember { SnackbarHostState() }
-    val activeActionSnackbar = actionSnackbar?.takeIf { it.currentSnackbarData != null }
-    val message = notice?.let { stringResource(it.message) }
-    LaunchedEffect(notice?.failure, message, activeActionSnackbar) {
-        if (
-            activeActionSnackbar == null &&
-                notice != null &&
-                message != null &&
-                announced.add(notice.failure)
-        ) {
-            snackbar.showSnackbar(message, duration = SnackbarDuration.Indefinite)
-        }
-    }
+    announced.RetireOnExit(notices.map { it.failure.feedbackOrder })
+    PaneFeedback(workflowReadErrors(notices, announced, snackbar))
+    WorkflowSnackbarHost(snackbar)
+}
+
+@Composable
+internal fun workflowReadErrors(
+    notices: List<WorkflowReadNotice>,
+    announced: PaneReadAnnouncements,
+    snackbar: SnackbarHostState,
+): List<PaneFeedbackError> = notices.mapNotNull {
+    paneReadError(it.failure.feedbackOrder, it.message, announced, snackbar)
+}
+
+@Composable
+internal fun WorkflowSnackbarHost(snackbar: SnackbarHostState, manageTimeout: Boolean = true) {
     WorkspaceFeedbackHost(
-        activeActionSnackbar ?: snackbar,
+        snackbar,
         Modifier.padding(bottom = 8.dp),
-        manageTimeout = activeActionSnackbar == null,
-        surfaceModifier =
-            if (activeActionSnackbar == null) Modifier.testTag("workflow_read_snackbar")
-            else Modifier,
+        manageTimeout = manageTimeout,
+        surfaceModifier = Modifier.testTag("workflow_read_snackbar"),
     )
 }
