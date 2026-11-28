@@ -492,8 +492,8 @@ def test_indexed_matches_linear_for_asterisk_form_owner_ambiguity():
     )
 
     assert isinstance(result, matching.FirewallAmbiguous)
-    assert result.path == "*"
     assert result.candidates == ("auditor", "primary")
+    assert result.reason == "connector_intent_required"
 
 
 def _long_path(prefix, segment_count=1000):

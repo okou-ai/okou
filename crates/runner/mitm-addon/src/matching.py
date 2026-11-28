@@ -1428,8 +1428,6 @@ ConnectorRouteAmbiguityReason = Literal[
 class FirewallAmbiguous(NamedTuple):
     """Multiple connector owners matched without a uniquely usable hint."""
 
-    method: str
-    path: str
     candidates: tuple[str, ...]
     reason: ConnectorRouteAmbiguityReason
 
@@ -1449,7 +1447,6 @@ class _FirewallInterpretation(NamedTuple):
 
     decision: FirewallAllow | FirewallPolicyAllow | FirewallBlock | FirewallAmbiguous | None
     authorization_routes: frozenset[_AuthorizationRoute]
-    explicit_owner: bool = False
 
 
 class _BaseMatch(NamedTuple):
@@ -2293,7 +2290,6 @@ def _match_compiled_firewall_request_with_api_candidates(
     base_matches: list[_MatchedApi] = []
 
     unsafe_path: bool | None = False if is_asterisk_form else (True if url_has_backslash else None)
-    decision_path = "*" if is_asterisk_form else (url_parts.path or "/")
 
     for candidate in api_candidates:
         fw_entry = candidate.firewall
@@ -2380,8 +2376,6 @@ def _match_compiled_firewall_request_with_api_candidates(
         if selected_name is None:
             return _FirewallInterpretation(
                 FirewallAmbiguous(
-                    upper_method,
-                    decision_path,
                     tuple(sorted(owners)),
                     (
                         "conflicting_credential_placeholders"
@@ -2470,7 +2464,6 @@ def _match_compiled_firewall_request_with_api_candidates(
         frozenset(applicable_routes.get(selected_name, ()))
         if applicable_routes is not None and selected_name is not None
         else frozenset(),
-        explicit_owner,
     )
 
 
@@ -2829,7 +2822,7 @@ def _match_request_interpretations(
             analysis=analysis,
             upper_method=upper_method,
             policies=policies,
-            explicit_owner=original_match.explicit_owner,
+            explicit_owner=original.selection_hint is not None,
             diagnostic_base_tier=diagnostic_base_tier,
             request_context=request_context,
             get_query_pairs=get_query_pairs,

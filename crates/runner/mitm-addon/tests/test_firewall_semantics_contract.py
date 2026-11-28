@@ -150,8 +150,6 @@ def _normalize_final_decision(result: object | None) -> dict[str, object]:
     if isinstance(result, matching.FirewallAmbiguous):
         return {
             "kind": "ambiguous",
-            "method": result.method,
-            "path": result.path,
             "candidates": list(result.candidates),
             "reason": result.reason,
         }
@@ -286,4 +284,7 @@ def test_final_decision_matches_shared_contract(case: dict[str, object]):
         intent,
     )
 
+    if expected["kind"] == "ambiguous":
+        # The TypeScript diagnostic also carries the input method and path.
+        expected = {key: value for key, value in expected.items() if key not in {"method", "path"}}
     assert _normalize_final_decision(result) == expected
