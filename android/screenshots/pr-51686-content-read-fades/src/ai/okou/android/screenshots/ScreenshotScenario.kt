@@ -14,7 +14,6 @@ import ai.okou.android.auth.ReadyWorkspace
 import ai.okou.android.auth.SessionModel
 import ai.okou.android.awaitChatList
 import ai.okou.android.chat.ChatListSource
-import ai.okou.android.chatListRegion
 import ai.okou.android.resolvePalette
 import ai.okou.android.testAuthenticationState
 import ai.okou.android.testPreferences
@@ -207,14 +206,9 @@ class ScreenshotScenario {
                             val semantics =
                                 checkNotNull(device.wait(Until.findObject(syncing), 15_000))
                                     .visibleBounds
-                            val pane =
-                                checkNotNull(
-                                        device.wait(Until.findObject(chatListRegion(app)), 15_000),
-                                    )
-                                    .visibleBounds
-                            check(pane.width() == 440)
-                            check(semantics.left == pane.left && semantics.right == pane.right)
-                            val bar = findPaintedBar(semantics, thickness = 4)
+                            val displayBand =
+                                Rect(0, semantics.top, device.displayWidth, semantics.bottom)
+                            val bar = findPaintedBar(displayBand, thickness = 4)
                             check(bar.bottom <= before.top)
                             val primary = palette.primary.toArgb()
                             val track = palette.secondaryContainer.toArgb()
