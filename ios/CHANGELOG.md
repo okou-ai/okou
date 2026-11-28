@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.74.1](https://github.com/okou-ai/okou/compare/ios-v0.74.0...ios-v0.74.1) (2026-11-27)
+
+
+### Bug Fixes
+
+* **ios:** show optimistic thinking footer and keep queued avatar ([#51619](https://github.com/okou-ai/okou/issues/51619)) ([769f407](https://github.com/okou-ai/okou/commit/769f4079c8a763b42fdb2f1d462d1bf1190fecc1))
+
 ## [0.74.0](https://github.com/okou-ai/okou/compare/ios-v0.73.0...ios-v0.74.0) (2026-11-27)
 
 

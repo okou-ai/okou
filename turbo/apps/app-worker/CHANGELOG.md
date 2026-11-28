@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.12.20](https://github.com/okou-ai/okou/compare/app-worker-v1.12.19...app-worker-v1.12.20) (2026-11-27)
+
+
+### Refactoring
+
+* **platform:** remove shared worker and move chat database to main thread ([#51617](https://github.com/okou-ai/okou/issues/51617)) ([28b4617](https://github.com/okou-ai/okou/commit/28b46179ab594879c6500dce635118be837fd576))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.143.1
+    * @okouai/core bumped to 8.888.1
+
 ## [1.12.19](https://github.com/okou-ai/okou/compare/app-worker-v1.12.18...app-worker-v1.12.19) (2026-11-27)
 
 

@@ -1,6 +1,7 @@
 import type { BootstrapFeatureSwitchContext } from "../agent-run-context.signals";
-import type { SupportedFramework } from "@okouai/core/frameworks";
+import type { LaunchFramework } from "../launch-framework";
 import { computed, type Computed } from "ccstate";
+import { voiceModeForFramework } from "../../../lib/conversation-guidance";
 import {
   chatRunSourceAnnotation,
   projectUserMessage,
@@ -19,7 +20,7 @@ const CODEX_WEB_IMAGE_GENERATION_UPLOAD_PROMPT =
 export function createWebThreadPrompt(
   pickedEvent$: Computed<Promise<PickedThreadInputEvent | null>>,
   featureSwitches$: Computed<Promise<BootstrapFeatureSwitchContext>>,
-  framework$: Computed<Promise<SupportedFramework>>,
+  framework$: Computed<Promise<LaunchFramework>>,
   projectContext$: Computed<Promise<ThreadProjectContext | null>>,
 ): Computed<Promise<RunPrompt | null>> {
   return computed(async (get) => {
@@ -41,10 +42,13 @@ export function createWebThreadPrompt(
     const [framework, featureSwitchContext, projectContext] = await Promise.all(
       [get(framework$), get(featureSwitches$), get(projectContext$)],
     );
+    const voiceMode = voiceModeForFramework(framework);
     const triggerSource =
       pickedEvent.contextType === "agent_run" ? "agent" : "web";
     return {
-      userPromptVariables: { message: projectUserMessage(message).agentPrompt },
+      userPromptVariables: {
+        message: projectUserMessage(message, { voiceMode }).agentPrompt,
+      },
       systemPromptVariables: {
         ...(framework === "codex" && pickedEvent.chatThreadId
           ? { codexImageUpload: CODEX_WEB_IMAGE_GENERATION_UPLOAD_PROMPT }
@@ -64,6 +68,7 @@ export function createWebThreadPrompt(
               triggerSource,
               featureSwitchContext,
             }),
+            voiceMode,
           },
         }),
       },

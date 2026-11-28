@@ -35,6 +35,27 @@ fn current_managed_source_does_not_inherit_cached_or_user_config() {
     );
 }
 
+#[test]
+fn current_source_resolves_antigravity_conversations_dir() {
+    let mut context = context();
+    context.cli_agent_type = "antigravity".into();
+    let session_id = "ec30d0a7-1690-4e41-9da9-34dbca47bb8a";
+    context.native_continuation.as_mut().unwrap().session_id = Some(session_id.into());
+    let stale = SessionHistorySourceRef::Antigravity {
+        conversations_dir: "/tmp/old".into(),
+        session_id: session_id.into(),
+    };
+    assert_eq!(
+        current_source(&context, &stale),
+        Some(SessionHistorySourceRef::Antigravity {
+            conversations_dir: format!(
+                "{CANONICAL_GUEST_HOME_DIR}/.gemini/antigravity-cli/conversations"
+            ),
+            session_id: session_id.into(),
+        })
+    );
+}
+
 #[tokio::test]
 async fn cancellation_is_not_a_successful_history_miss() {
     let context = context();

@@ -1,7 +1,9 @@
 use super::acp::{AcpNotification, JsonRpcError};
+use super::backend::{has_non_empty_recovery_prompt, session_id_from_response};
 use super::events::{EventProjector, UsageTotals};
 use super::*;
 use guest_contracts::diagnostics::FailureReason;
+use guest_contracts::env::NativeContinuation;
 use serde_json::json;
 
 const SESSION_ID: &str = "59bba40e-6fa2-4ddf-8340-24f38f4e9a12";
@@ -225,4 +227,58 @@ async fn stdout_eof_before_process_exit_preserves_nonzero_exit_code() {
         other => panic!("expected ChildExited(23), got {other:?}"),
     }
     client.terminate().await.expect("terminate after exit");
+}
+
+#[test]
+fn session_id_from_response_validates_resumed_identity_and_omitted_field() {
+    let other_uuid = "11111111-1111-4111-8111-111111111111";
+
+    assert_eq!(
+        session_id_from_response(&json!({"sessionId": SESSION_ID}), None).unwrap(),
+        SESSION_ID
+    );
+    assert!(session_id_from_response(&json!({}), None).is_err());
+    assert!(session_id_from_response(&json!({"sessionId": "not-a-uuid"}), None).is_err());
+
+    assert_eq!(
+        session_id_from_response(&json!({"sessionId": SESSION_ID}), Some(SESSION_ID)).unwrap(),
+        SESSION_ID
+    );
+    assert_eq!(
+        session_id_from_response(&json!({}), Some(SESSION_ID)).unwrap(),
+        SESSION_ID
+    );
+
+    let mismatch = session_id_from_response(&json!({"sessionId": other_uuid}), Some(SESSION_ID))
+        .expect_err("mismatched resumed sessionId must fail closed");
+    assert!(mismatch.to_string().contains("different session ID"));
+
+    assert!(session_id_from_response(&json!({"sessionId": null}), Some(SESSION_ID)).is_err());
+    assert!(session_id_from_response(&json!({"sessionId": 42}), Some(SESSION_ID)).is_err());
+    assert!(session_id_from_response(&json!({"sessionId": ""}), Some(SESSION_ID)).is_err());
+}
+
+#[test]
+fn has_non_empty_recovery_prompt_requires_non_blank_prompt() {
+    assert!(!has_non_empty_recovery_prompt(None));
+    assert!(!has_non_empty_recovery_prompt(Some(&NativeContinuation {
+        session_id: Some(SESSION_ID.into()),
+        generation_run_id: Some(SESSION_ID.into()),
+        recovery_prompt: None,
+    })));
+    assert!(!has_non_empty_recovery_prompt(Some(&NativeContinuation {
+        session_id: Some(SESSION_ID.into()),
+        generation_run_id: Some(SESSION_ID.into()),
+        recovery_prompt: Some(String::new()),
+    })));
+    assert!(!has_non_empty_recovery_prompt(Some(&NativeContinuation {
+        session_id: Some(SESSION_ID.into()),
+        generation_run_id: Some(SESSION_ID.into()),
+        recovery_prompt: Some("   \n\t  ".into()),
+    })));
+    assert!(has_non_empty_recovery_prompt(Some(&NativeContinuation {
+        session_id: Some(SESSION_ID.into()),
+        generation_run_id: Some(SESSION_ID.into()),
+        recovery_prompt: Some("Previous chat messages go here.".into()),
+    })));
 }

@@ -129,7 +129,11 @@ fn runtime_for_command_test<'a>(
                 sessions_dir: Some("/tmp/codex-home/sessions".to_string()),
             },
             env::Framework::Pi => SessionHistoryLaunchSource::Pi,
-            env::Framework::Antigravity => SessionHistoryLaunchSource::Antigravity,
+            env::Framework::Antigravity => SessionHistoryLaunchSource::Antigravity {
+                conversations_dir: Some(
+                    "/tmp/home/.gemini/antigravity-cli/conversations".to_string(),
+                ),
+            },
         },
         claude_append_system_prompt_file: Cow::Borrowed("/tmp/claude-append-system-prompt"),
         pi_session_id: Cow::Borrowed(""),

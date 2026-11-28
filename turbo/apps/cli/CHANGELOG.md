@@ -1,5 +1,21 @@
 # Changelog
 
+## [10.45.1](https://github.com/okou-ai/okou/compare/cli-v10.45.0...cli-v10.45.1) (2026-11-27)
+
+
+### Refactoring
+
+* drop the pre-retirement official workflow list filters ([#51624](https://github.com/okou-ai/okou/issues/51624)) ([890ee9b](https://github.com/okou-ai/okou/commit/890ee9bc4aa296ab682131772bb972da561811e9))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.143.1
+    * @okouai/core bumped to 8.888.1
+    * @okouai/pi-agent-runtime bumped to 1.52.108
+
 ## [10.45.0](https://github.com/okou-ai/okou/compare/cli-v10.44.33...cli-v10.45.0) (2026-11-27)
 
 

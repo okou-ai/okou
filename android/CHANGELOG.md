@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.69.1](https://github.com/okou-ai/okou/compare/android-v0.69.0...android-v0.69.1) (2026-11-27)
+
+
+### Refactoring
+
+* **platform:** remove shared worker and move chat database to main thread ([#51617](https://github.com/okou-ai/okou/issues/51617)) ([28b4617](https://github.com/okou-ai/okou/commit/28b46179ab594879c6500dce635118be837fd576))
+
 ## [0.69.0](https://github.com/okou-ai/okou/compare/android-v0.68.1...android-v0.69.0) (2026-11-27)
 
 

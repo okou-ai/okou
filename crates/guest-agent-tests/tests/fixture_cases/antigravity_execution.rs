@@ -21,6 +21,7 @@ use tokio_util::sync::CancellationToken;
 
 const RUN: &str = "cc8ec675-4a68-4bf1-af0d-a3be79807935";
 const THREAD: &str = "61795dd2-782c-420a-9a17-7fe8773aa34d";
+const RESUMED_SESSION: &str = "ec30d0a7-1690-4e41-9da9-34dbca47bb8a";
 const STEER_EVENT_ID: &str = "6bd71939-58df-48f2-81d4-468da3c788a5";
 const RULE: &str = "Use the run-specific system rule.";
 const PROMPT: &str = "First line\n\"Second\" line.";
@@ -32,16 +33,47 @@ fn runtime(
 ) -> Result<GuestRuntime, Box<dyn std::error::Error>> {
     common::ensure_canonical_workspace_for_test()?;
     let dir = root.join(mode);
+    let home = dir.join("home");
+    fs::create_dir_all(&home)?;
+    if matches!(
+        mode,
+        "resume"
+            | "resume-missing"
+            | "resume-mismatch"
+            | "resume-missing-no-recovery"
+            | "resume-missing-empty-recovery"
+    ) {
+        let conversations = home.join(".gemini/antigravity-cli/conversations");
+        fs::create_dir_all(&conversations)?;
+        let mut valid_db = b"SQLite format 3\0".to_vec();
+        valid_db.resize(512, 0);
+        fs::write(
+            conversations.join(format!("{RESUMED_SESSION}.db")),
+            valid_db,
+        )?;
+    }
     let payload = common::write_run_payload_file_for_test(
         &dir,
         &guest_contracts::env::RunPayload {
             prompt: PROMPT.into(),
             append_system_prompt: RULE.into(),
-            native_continuation: if mode == "recovery" {
+            native_continuation: if matches!(
+                mode,
+                "recovery"
+                    | "resume"
+                    | "resume-missing"
+                    | "resume-mismatch"
+                    | "resume-missing-no-recovery"
+                    | "resume-missing-empty-recovery"
+            ) {
                 serde_json::to_string(&guest_contracts::env::NativeContinuation {
-                    session_id: Some("old-provider-session".into()),
+                    session_id: Some(RESUMED_SESSION.into()),
                     generation_run_id: Some(THREAD.into()),
-                    recovery_prompt: Some("Previous chat messages go here.".into()),
+                    recovery_prompt: match mode {
+                        "resume-missing-no-recovery" => None,
+                        "resume-missing-empty-recovery" => Some(String::new()),
+                        _ => Some("Previous chat messages go here.".into()),
+                    },
                 })?
             } else {
                 String::new()
@@ -56,7 +88,7 @@ fn runtime(
         api_token: "fixture-token".into(),
         sandbox_id: THREAD.into(),
         guest_runtime_dir: Some(dir.clone()),
-        home: Some(root.display().to_string()),
+        home: Some(home.display().to_string()),
         run_payload_file: payload.display().to_string(),
         ..Default::default()
     })?;
@@ -97,6 +129,11 @@ async fn antigravity_turn_delivery_failure_and_cancellation()
         "nonzero",
         "cancel",
         "recovery",
+        "resume",
+        "resume-missing",
+        "resume-mismatch",
+        "resume-missing-no-recovery",
+        "resume-missing-empty-recovery",
     ] {
         let runtime = runtime(root.path(), &server.base_url, mode)?;
         let dir = root.path().join(mode);
@@ -122,6 +159,9 @@ async fn antigravity_turn_delivery_failure_and_cancellation()
         if mode == "malformed" {
             let err = result.unwrap_err();
             assert!(err.to_string().contains("Invalid Antigravity JSON record"));
+        } else if mode == "resume-mismatch" {
+            let err = result.unwrap_err();
+            assert!(err.to_string().contains("different session ID"));
         } else {
             let result = result?;
             assert!(result.stderr_lines.is_empty());
@@ -190,7 +230,21 @@ async fn antigravity_turn_delivery_failure_and_cancellation()
                             .contains("signed-in Google account")
                     );
                 }
-                "recovery" => assert_eq!(result.exit_code, 0),
+                "recovery" | "resume" | "resume-missing" => assert_eq!(result.exit_code, 0),
+                "resume-missing-no-recovery" | "resume-missing-empty-recovery" => {
+                    assert_eq!(result.exit_code, 1);
+                    assert_eq!(
+                        result.jsonl_result.unwrap().status,
+                        JsonlResultStatus::Error
+                    );
+                    assert!(
+                        result
+                            .failure_diagnostic
+                            .unwrap()
+                            .message
+                            .contains("Antigravity reported an execution error")
+                    );
+                }
                 "missing" => {
                     assert_eq!(result.exit_code, 1);
                     assert!(

@@ -12,6 +12,7 @@ import type { ImageModel } from "@okouai/core/image-model-catalog";
 import { computed, type Computed } from "ccstate";
 import type { AgentRunContextSignals } from "../agent-run-context.signals";
 import { createConnectorsContext } from "../connectors-context.service";
+import { launchFrameworkForProviderType } from "../launch-framework";
 import { createSystemSkills } from "../system-skills-context.service";
 import type { ThreadContext } from "../thread-context.signals";
 import { createAgentPrompt } from "./agent";
@@ -64,11 +65,11 @@ function createIntegrationPrompts(
   threadContext: ThreadContext,
 ) {
   const framework$ = computed(async (get) => {
-    const framework = await get(threadContext.providerFramework$);
-    if (typeof framework !== "string") {
+    const model = await get(threadContext.modelRoute$);
+    if ("status" in model) {
       throw new Error("Runtime prompt requires a valid run model route");
     }
-    return framework;
+    return launchFrameworkForProviderType(model.type);
   });
   const webPrompt$ = createWebThreadPrompt(
     pickedEvent$,

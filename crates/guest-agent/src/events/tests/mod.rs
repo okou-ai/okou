@@ -1275,11 +1275,14 @@ fn non_failure_codex_event_has_no_failure_diagnostic() {
 // exercised transitively through `send_event`.
 
 #[test]
-fn antigravity_init_captures_conversation_without_native_history() {
+fn antigravity_init_captures_conversation_and_history_source() {
     let temp = tempfile::tempdir().unwrap();
     let store = SessionMetadataStore::default();
+    let conversations_dir = "/home/user/.gemini/antigravity-cli/conversations".to_string();
     let capture = SessionMetadataCapture::new(
-        SessionHistoryLaunchSource::Antigravity,
+        SessionHistoryLaunchSource::Antigravity {
+            conversations_dir: Some(conversations_dir.clone()),
+        },
         store.clone(),
         temp.path().join("session-id").to_str().unwrap(),
     );
@@ -1296,5 +1299,13 @@ fn antigravity_init_captures_conversation_without_native_history() {
         .captured()
         .expect("the projected init should identify the session");
     assert_eq!(captured.cli_agent_session_id(), conversation_id);
-    assert!(captured.history_source().is_none());
+    assert_eq!(
+        captured.history_source(),
+        Some(
+            &guest_contracts::session_history_identity::SessionHistorySourceRef::Antigravity {
+                conversations_dir,
+                session_id: conversation_id.to_string(),
+            }
+        )
+    );
 }

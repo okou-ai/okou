@@ -22,7 +22,9 @@ pub(crate) enum SessionHistoryLaunchSource {
         sessions_dir: Option<String>,
     },
     Pi,
-    Antigravity,
+    Antigravity {
+        conversations_dir: Option<String>,
+    },
 }
 
 impl SessionHistoryLaunchSource {
@@ -46,7 +48,16 @@ impl SessionHistoryLaunchSource {
                 ),
             },
             Framework::Pi => Self::Pi,
-            Framework::Antigravity => Self::Antigravity,
+            Framework::Antigravity => Self::Antigravity {
+                conversations_dir: normalized_absolute_launch_path(
+                    &Path::new(&config.home_dir)
+                        .join(".gemini")
+                        .join("antigravity-cli")
+                        .join("conversations")
+                        .to_string_lossy(),
+                    paths::CANONICAL_WORKING_DIR,
+                ),
+            },
         }
     }
 
@@ -55,7 +66,7 @@ impl SessionHistoryLaunchSource {
             Self::ClaudeCode { .. } => Framework::ClaudeCode,
             Self::Codex { .. } => Framework::Codex,
             Self::Pi => Framework::Pi,
-            Self::Antigravity => Framework::Antigravity,
+            Self::Antigravity { .. } => Framework::Antigravity,
         }
     }
 
@@ -93,13 +104,17 @@ impl SessionHistoryLaunchSource {
                         });
                 (thread_id, source)
             }
-            // agy keeps no resumable native history, but its conversation ID
-            // still identifies the session for finalization.
-            Self::Antigravity => {
+            Self::Antigravity { conversations_dir } => {
                 if !is_valid_cli_agent_session_id(raw_session_id) {
                     return None;
                 }
-                (raw_session_id.to_string(), None)
+                let source = conversations_dir.as_ref().map(|conversations_dir| {
+                    SessionHistorySourceRef::Antigravity {
+                        conversations_dir: conversations_dir.clone(),
+                        session_id: raw_session_id.to_string(),
+                    }
+                });
+                (raw_session_id.to_string(), source)
             }
             Self::Pi => {
                 if !is_valid_cli_agent_session_id(raw_session_id) {

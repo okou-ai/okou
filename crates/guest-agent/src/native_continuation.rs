@@ -53,6 +53,7 @@ pub(crate) fn retained_session_is_usable(
     session_id: &str,
     claude_dir: &str,
     codex_home: &str,
+    home_dir: &str,
 ) -> Result<bool, AgentError> {
     if !guest_contracts::cli_agent_session_id::is_valid_cli_agent_session_id(session_id) {
         return Ok(false);
@@ -74,7 +75,20 @@ pub(crate) fn retained_session_is_usable(
                 thread_id,
             }
         }
-        Framework::Antigravity => return Ok(false),
+        Framework::Antigravity => {
+            if uuid::Uuid::try_parse(session_id).is_err() {
+                return Ok(false);
+            }
+            let source = SessionHistorySourceRef::Antigravity {
+                conversations_dir: format!("{home_dir}/.gemini/antigravity-cli/conversations"),
+                session_id: session_id.into(),
+            };
+            let mut file = match resolve_session_history_from_source(&source) {
+                Ok(file) => file,
+                Err(error) => return unavailable_native_source(error),
+            };
+            return Ok(file.is_valid_sqlite_database());
+        }
         Framework::Pi => {
             let mut sources = match pi_sources(session_id) {
                 Ok(sources) => sources,

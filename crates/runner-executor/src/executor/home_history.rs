@@ -3,8 +3,8 @@
 use std::time::Duration;
 
 use api_contracts::generated::constants::runners::paths::{
-    CANONICAL_CLAUDE_CONFIG_DIR, CANONICAL_CODEX_HOME_DIR, CANONICAL_PI_SESSION_DIR,
-    CANONICAL_WORKING_DIR,
+    CANONICAL_CLAUDE_CONFIG_DIR, CANONICAL_CODEX_HOME_DIR, CANONICAL_GUEST_HOME_DIR,
+    CANONICAL_PI_SESSION_DIR, CANONICAL_WORKING_DIR,
 };
 use guest_contracts::home_cache_history::{
     HOME_CACHE_HISTORY_HELPER_MAX_BYTES, HOME_CACHE_HISTORY_VERIFY_COMMAND,
@@ -39,7 +39,12 @@ pub(super) fn current_source(
             sessions_dir: format!("{CANONICAL_CODEX_HOME_DIR}/sessions"),
             thread_id: guest_contracts::codex_thread_id::canonical_codex_thread_id(session_id)?,
         }),
-        EffectiveCliFramework::Antigravity => None,
+        EffectiveCliFramework::Antigravity => Some(SessionHistorySourceRef::Antigravity {
+            conversations_dir: format!(
+                "{CANONICAL_GUEST_HOME_DIR}/.gemini/antigravity-cli/conversations"
+            ),
+            session_id: session_id.clone(),
+        }),
         EffectiveCliFramework::Pi => {
             let SessionHistorySourceRef::Pi {
                 session_path,
