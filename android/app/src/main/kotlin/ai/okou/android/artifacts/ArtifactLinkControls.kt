@@ -23,6 +23,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -93,6 +94,7 @@ internal fun ArtifactLinkControls(
                         R.string.artifact_private_link_copied
                     else R.string.artifact_link_copied,
                 ),
+                duration = SnackbarDuration.Indefinite,
             )
         }
     }

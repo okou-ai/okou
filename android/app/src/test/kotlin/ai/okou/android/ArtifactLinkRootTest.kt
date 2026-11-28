@@ -7,6 +7,7 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsSelected
+import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
@@ -26,6 +27,7 @@ import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.SocketPolicy
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -74,6 +76,10 @@ internal class ArtifactLinkRootTest : ArtifactCatalogRootTestFixture() {
             compose.onNodeWithText("Share link").assertDoesNotExist()
             compose.onNodeWithText("Copy link").performClick()
             awaitText("Link copied. Only you and invited people can open it.")
+            val notice = compose.onNodeWithText("Preview only").getUnclippedBoundsInRoot()
+            val feedback =
+                compose.onNodeWithTag("artifact_action_feedback").getUnclippedBoundsInRoot()
+            assertTrue("Image status must remain above the Snackbar", notice.bottom < feedback.top)
         } finally {
             releaseChecklist.countDown()
         }
