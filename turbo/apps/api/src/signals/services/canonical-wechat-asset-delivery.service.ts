@@ -169,7 +169,7 @@ const deliverWechatMedia$ = command(
 
 function wechatFinalizeErrorResponse(finalized: {
   readonly ok: false;
-  readonly code: "NOT_FOUND" | "STORAGE_UNAVAILABLE" | "BAD_REQUEST";
+  readonly code: string;
   readonly message: string;
 }) {
   if (finalized.code === "NOT_FOUND") {

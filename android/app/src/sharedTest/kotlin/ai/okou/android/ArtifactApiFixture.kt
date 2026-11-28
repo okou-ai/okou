@@ -317,7 +317,7 @@ internal class ArtifactApiFixture(
         val filename = if (item == image) "avatar.png" else "$path.md"
         val type = if (item == image) "image/png" else "text/markdown"
         return jsonResponse(
-            """{"url":"${api.server.url("/artifact-bytes/$path")}","expiresAt":"${date(1)}","downloadUrl":"${api.server.url("/artifact-bytes/$path")}","downloadAllowed":$downloadAllowed,"filename":"$filename","contentType":"$type","target":{"kind":"file","id":"${item.id}"}}""",
+            """{"artifactId":"${item.id}","url":"${api.server.url("/artifact-bytes/$path")}","expiresAt":"${date(1)}","downloadUrl":"${api.server.url("/artifact-bytes/$path")}","downloadAllowed":$downloadAllowed,"filename":"$filename","contentType":"$type","target":{"kind":"file","id":"${item.id}"}}""",
         )
     }
 }
