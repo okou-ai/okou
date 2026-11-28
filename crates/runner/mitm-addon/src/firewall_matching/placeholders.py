@@ -1,7 +1,7 @@
 """Exact request fields that carry a firewall's declared credential placeholders."""
 
 import base64
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterator, Mapping
 from typing import NamedTuple
 
 from connector_template_syntax import (
@@ -143,17 +143,15 @@ def _header_value(template: _Template, variables: Mapping[str, str] | None) -> b
 
 def _compile_fields(
     fields: object, placeholders: Mapping[str, object], *, allow_basic: bool
-) -> list[tuple[str, _Template]]:
+) -> Iterator[tuple[str, _Template]]:
     if not isinstance(fields, dict):
-        return []
-    compiled = []
+        return
     for name, template in fields.items():
         if not isinstance(name, str) or not isinstance(template, str):
             continue
         hint = _compile_template(template, placeholders, allow_basic=allow_basic)
         if hint is not None:
-            compiled.append((name, hint))
-    return compiled
+            yield name, hint
 
 
 def compile_credential_hints(auth: object, placeholders: object) -> CredentialHints:
