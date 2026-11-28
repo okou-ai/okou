@@ -32,6 +32,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.input.InputMode
 import androidx.compose.ui.layout.onSizeChanged
@@ -131,6 +132,7 @@ internal fun ComposerWorkflowPopup(
                 candidates,
                 position,
                 highlighted,
+                focusableRows = false,
                 select,
                 modifier = Modifier.padding(4.dp),
             )
@@ -172,6 +174,7 @@ internal fun ComposerWorkflowPicker(
             candidates,
             position,
             null,
+            focusableRows = true,
             select,
             Modifier.heightIn(max = 320.dp),
         )
@@ -184,6 +187,7 @@ private fun ComposerWorkflowRows(
     candidates: WorkflowCandidates,
     position: LazyListState,
     highlighted: String?,
+    focusableRows: Boolean,
     select: (ComposerWorkflowsItem) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -210,13 +214,13 @@ private fun ComposerWorkflowRows(
         if (candidates.recent.isNotEmpty()) {
             item("recent-heading") { WorkflowHeading(R.string.composer_workflow_recent) }
             items(candidates.recent, key = { it.workflow.id }) {
-                WorkflowCandidate(it, it.workflow.id == highlighted, select)
+                WorkflowCandidate(it, it.workflow.id == highlighted, focusableRows, select)
             }
             if (candidates.all.isNotEmpty())
                 item("all-heading") { WorkflowHeading(R.string.composer_workflow_all) }
         }
         items(candidates.all, key = { it.workflow.id }) {
-            WorkflowCandidate(it, it.workflow.id == highlighted, select)
+            WorkflowCandidate(it, it.workflow.id == highlighted, focusableRows, select)
         }
     }
 }
@@ -235,6 +239,7 @@ private fun WorkflowHeading(label: Int) {
 private fun WorkflowCandidate(
     match: WorkflowMatch,
     highlighted: Boolean,
+    focusable: Boolean,
     select: (ComposerWorkflowsItem) -> Unit,
 ) {
     val item = match.workflow
@@ -242,7 +247,8 @@ private fun WorkflowCandidate(
     val shape = RoundedCornerShape(8.dp)
     var focused by remember { mutableStateOf(false) }
     val active =
-        highlighted || focused && LocalInputModeManager.current.inputMode == InputMode.Keyboard
+        highlighted ||
+            focusable && focused && LocalInputModeManager.current.inputMode == InputMode.Keyboard
     val subdued = if (active) colors.onSecondaryContainer else colors.onSurfaceVariant
     val title = item.displayName?.takeIf { it.isNotBlank() && it != item.name }
     val details =
@@ -271,6 +277,7 @@ private fun WorkflowCandidate(
             Modifier.fillMaxWidth()
                 .heightIn(min = 56.dp)
                 .then(if (active) Modifier.border(2.dp, colors.primary, shape) else Modifier)
+                .focusProperties { canFocus = focusable }
                 .onFocusChanged { focused = it.isFocused }
                 .clickable { select(item) }
                 .semantics { selected = highlighted }

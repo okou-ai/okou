@@ -43,7 +43,7 @@ private fun Int.isWorkflowCharacter(): Boolean =
         }
 
 internal fun TextFieldValue.insertWorkflow(name: String, token: WorkflowToken?): TextFieldValue {
-    val range = token?.range ?: selection
+    val range = token?.range ?: TextRange(selection.max)
     val prefix = text.substring(0, range.min)
     val suffix = text.substring(range.max)
     val separator = if (token == null && prefix.lastOrNull()?.isWhitespace() == false) " " else ""

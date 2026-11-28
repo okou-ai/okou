@@ -133,6 +133,9 @@ internal class ComposerWorkflowRootTest : ChatComposerRootTestFixture() {
                 pressKey(Key.Enter)
             }
             input.assertTextContains("/review-changes ").assertIsFocused()
+            input.performTextInput("Keep this text")
+            val selectedStart = "/review-changes Keep ".length
+            input.performTextInputSelection(TextRange(selectedStart + "this".length, selectedStart))
             compose.onNodeWithTag("chat-options-button").performClick()
             compose.onNodeWithTag("chat-options-workflows").performClick()
             compose
@@ -141,7 +144,9 @@ internal class ComposerWorkflowRootTest : ChatComposerRootTestFixture() {
                 .performTextInput("daily")
             compose.waitUntilExactlyOneExists(hasText("/daily-digest"), 8_000)
             compose.onNodeWithText("/daily-digest").assertIsDisplayed().performClick()
-            input.assertTextContains("/review-changes /daily-digest ").assertIsFocused()
+            input
+                .assertTextContains("/review-changes Keep this /daily-digest text")
+                .assertIsFocused()
             assertTrue(app.fixture.inputs.isEmpty())
         } finally {
             instrumentation.resetInTouchMode()
